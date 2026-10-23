@@ -923,33 +923,25 @@ fn a_gate_report_beside_a_piece_is_skipped_by_name_and_a_malformed_metadata_file
 
 /// The gallery's site-plan overlay point, materialised as
 /// `tools/ci/gallery_domain.py` does it.
-/// The site-plan point with the east door's shortcut taken out (spec-0117): a
-/// test that drops every detail leaves the near hall a stand-in, and the door's
-/// own answer is anchored at a mark only the hall's program places.
-fn without_the_east_door(dir: &Path) {
-    common::patch_file(&dir.join("quests.json"), |v| {
-        v["content"]["shortcuts"] = json!([]);
-        v["content"]["triggers"]
-            .as_array_mut()
-            .unwrap()
-            .retain(|t| t["id"] != "trigger/east-door-wrong-side");
-    });
-    common::patch_file(&dir.join("layout-graph.json"), |v| {
-        for e in v["content"]["edges"].as_array_mut().unwrap() {
-            if e["id"] == "edge/east-door" {
-                let o = e.as_object_mut().unwrap();
-                o.remove("shortcut");
-                o.remove("gating");
-                o.remove("one_way");
-            }
-        }
-    });
-    common::patch_file(&dir.join("l10n/zh-cn.json"), |v| {
-        for half in ["content", "source"] {
-            let m = v[half].as_object_mut().unwrap();
-            m.retain(|k, _| !k.contains("east-door"));
-        }
-    });
+/// Every detail of the site-plan point dropped but the near hall's: the hall's
+/// east door is a shortcut whose own answer is anchored at a cell of its bar,
+/// a mark only the hall's program writes (spec-0117), so the hall stays
+/// detailed while the test re-cuts the rest.
+fn only_the_near_hall(v: &mut Value) {
+    v["content"]["details"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|d| d["place"] == "node/near-hall");
+    assert_eq!(v["content"]["details"].as_array().unwrap().len(), 1);
+}
+
+/// The near hall's program, written back after a test empties `programs/`.
+fn keep_the_near_hall_program(programs: &Path) {
+    std::fs::copy(
+        common::repo_root().join("gallery/overlays/site-plan/programs/near-hall.json"),
+        programs.join("near-hall.json"),
+    )
+    .unwrap();
 }
 
 fn gallery_site_plan(root: &Path) -> PathBuf {
@@ -1190,11 +1182,12 @@ fn a_climb_inside_a_hung_place_proves_and_hung_scenery_states_its_zero() {
         }
     });
     common::patch_file(&dir.join("detail-plan.json"), |v| {
-        v["content"]["details"] = json!([]);
+        only_the_near_hall(v);
     });
     let programs = dir.join("programs");
     std::fs::remove_dir_all(&programs).unwrap();
     std::fs::create_dir_all(&programs).unwrap();
+    keep_the_near_hall_program(&programs);
     for (name, hollow) in [("causeway", None), ("beacon", Some(1))] {
         std::fs::write(
             programs.join(format!("{name}.json")),
@@ -1355,13 +1348,13 @@ fn leafy_beacon() -> Value {
 fn a_leafy_scenery_crown_owes_no_floor_and_no_light_and_a_reached_one_is_judged() {
     let tmp = tempdir("leafy-crown");
     let dir = gallery_site_plan(&tmp);
-    without_the_east_door(&dir);
     common::patch_file(&dir.join("detail-plan.json"), |v| {
-        v["content"]["details"] = json!([]);
+        only_the_near_hall(v);
     });
     let programs = dir.join("programs");
     std::fs::remove_dir_all(&programs).unwrap();
     std::fs::create_dir_all(&programs).unwrap();
+    keep_the_near_hall_program(&programs);
     std::fs::write(
         programs.join("beacon.json"),
         serde_json::to_string_pretty(&leafy_beacon()).unwrap(),
@@ -1450,9 +1443,8 @@ fn a_leafy_scenery_crown_owes_no_floor_and_no_light_and_a_reached_one_is_judged(
 fn an_unlit_leafy_scenery_room_is_never_surveyed_for_light() {
     let tmp = tempdir("unlit-scenery");
     let dir = gallery_site_plan(&tmp);
-    without_the_east_door(&dir);
     common::patch_file(&dir.join("detail-plan.json"), |v| {
-        v["content"]["details"] = json!([]);
+        only_the_near_hall(v);
     });
     common::patch_file(&dir.join("programs/beacon.json"), |v| {
         v["palette"]["lamp"] =
@@ -1512,11 +1504,12 @@ fn the_audit_judges_a_scenery_piece_as_its_writer_did_and_no_piece_vouches_for_i
     std::fs::create_dir_all(&campaigns).unwrap();
     let dir = gallery_site_plan(&campaigns);
     common::patch_file(&dir.join("detail-plan.json"), |v| {
-        v["content"]["details"] = json!([]);
+        only_the_near_hall(v);
     });
     let programs = dir.join("programs");
     std::fs::remove_dir_all(&programs).unwrap();
     std::fs::create_dir_all(&programs).unwrap();
+    keep_the_near_hall_program(&programs);
     std::fs::write(
         programs.join("beacon.json"),
         serde_json::to_string_pretty(&leafy_beacon()).unwrap(),

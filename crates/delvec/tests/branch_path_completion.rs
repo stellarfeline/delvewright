@@ -128,7 +128,7 @@ fn a_branch_path_that_runs_past_the_ending_does_not_replay() {
         .expect_err("a path with objective steps past `campaign-complete` must not replay");
     assert_eq!(err.objective, "obj/reach-the-end");
     assert!(
-        err.reason.contains("3 step(s) before the end of the path"),
+        err.reason.contains("5 step(s) before the end of the path"),
         "{}",
         err.reason
     );

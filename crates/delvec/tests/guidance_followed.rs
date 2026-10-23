@@ -930,8 +930,9 @@ fn a_highlight_lights_the_thing_while_armed_and_near() {
     objs[2]["title"] = json!("Ring the bell");
     objs[2]["highlight"] = json!({ "within": 6 });
     let out = try_build(&variant("highlight", q, dialogue(GREETING))).expect("builds");
-    // The activation places the prop and nothing else: a display exists
-    // only while the highlight is lit, summoned by `hl_hold_<a>` alone.
+    // The prop stands from world init (spec-0117) and its activation summons
+    // no display: a display exists only while the highlight is lit, summoned
+    // by `hl_hold_<a>` alone.
     let act = fn_body(&out, "activate_o_pull").unwrap();
     assert!(!act.contains("dw_hl"), "{act}");
     let show = fn_body(&out, "hl_hold_o_pull").unwrap();
@@ -975,13 +976,13 @@ fn a_highlight_lights_the_thing_while_armed_and_near() {
             .1;
         line.split(' ').take(3).collect::<Vec<_>>().join(" ")
     };
-    let [x, y, z] = cell_of("activate_o_pull", "minecraft:lever");
+    let [x, y, z] = cell_of("setup_finish", "minecraft:lever");
     assert_eq!(
         summon_at(show, "minecraft:block_display"),
         format!("{x}.0 {y}.0 {z}.0"),
         "{show}"
     );
-    let [x, y, z] = cell_of("activate_o_press", "minecraft:bell");
+    let [x, y, z] = cell_of("setup_finish", "minecraft:bell");
     assert_eq!(
         summon_at(bell, "minecraft:item_display"),
         format!(
@@ -993,9 +994,10 @@ fn a_highlight_lights_the_thing_while_armed_and_near() {
         "{bell}"
     );
     let poll = fn_body(&out, "hl_poll_o_pull").unwrap();
+    // Lit only from the cells the lever's pressed face is in sight from, within
+    // six blocks (spec-0117 §3b): boxes, not a sphere.
     assert!(
-        poll.contains("if score #gs_pull dw.guide matches 1")
-            && poll.contains("@a[distance=..6,tag=!dw_cutscene]"),
+        poll.contains("if score #gs_pull dw.guide matches 1") && poll.contains("if entity @a[x="),
         "{poll}"
     );
     // Lit, the displays are held to their cells; dark, none exists.

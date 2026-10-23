@@ -135,6 +135,7 @@ static QUESTS: LazyLock<String> = LazyLock::new(|| {
       {
         "id": "shop/keeper-wares",
         "anchor": "spawn",
+        "prop": { "block": "minecraft:stone_button[face=floor,facing=north]" },
         "title": "What the keeper will part with",
         "offers": [
           { "label": "A coin's worth of nerve",

@@ -246,15 +246,14 @@ fn keep_trial_builds_all_verbs_and_is_deterministic() {
             && !setup.contains("minecraft:chest"),
         "the interact's lever stands from world init; the collect chest does not (gap 13)"
     );
-    // A gated lever is boxed until its step; activation takes the box away.
-    let act_door = text(
-        &a,
-        "datapack/data/keep-trial/function/activate_o_door.mcfunction",
-    );
+    // The door's lever needs the key in hand, so its box stays through the
+    // open window (the lever's own flip would skip the hand check): it stands
+    // from world init and the objective needs no activation function.
     assert!(
-        act_door.contains("kill @e[tag=dw_i_door]"),
-        "the door's lever is handed to the press at activation: {act_door}"
+        setup.contains("\"dw_i_door\""),
+        "the door's lever is boxed from world init"
     );
+    assert!(!a.contains_key("datapack/data/keep-trial/function/activate_o_door.mcfunction"));
     let act_key = text(
         &a,
         "datapack/data/keep-trial/function/activate_o_key.mcfunction",
@@ -417,13 +416,11 @@ fn keep_trial_m2_presentation_fixes() {
 
     // spec-0117: no objective summons a marker; the reach places nothing, so it
     // has no activation function.
-    let act_door = text(
-        &a,
-        "datapack/data/keep-trial/function/activate_o_door.mcfunction",
-    );
     assert!(
-        !act_door.contains("summon minecraft:item_display"),
-        "nothing glows beside the lever: {act_door}"
+        !a.iter()
+            .any(|(k, v)| k.ends_with(".mcfunction")
+                && String::from_utf8_lossy(v).contains("dw_hw_")),
+        "no hardware stands beside the lever"
     );
     assert!(
         !a.contains_key("datapack/data/keep-trial/function/activate_o_shrine.mcfunction"),

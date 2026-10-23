@@ -151,21 +151,36 @@ fn read(dir: &Path, name: &str) -> String {
         .unwrap_or_else(|e| panic!("{name}: {e}"))
 }
 
+/// The gallery's primary, built once per process: its output directory.
+fn gallery() -> &'static Path {
+    static OUT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    OUT.get_or_init(|| {
+        let dir = tmp("press-agreement");
+        let (campaign, prefabs) = common::gallery_primary_at(&dir.join("gallery"));
+        let out = dir.join("build");
+        let r = Command::new(BIN)
+            .arg("build")
+            .arg(&campaign)
+            .arg("-o")
+            .arg(&out)
+            .arg("--prefabs")
+            .arg(&prefabs)
+            .output()
+            .unwrap();
+        assert!(r.status.success(), "{}", String::from_utf8_lossy(&r.stderr));
+        out
+    })
+}
+
+fn advancement(name: &str) -> serde_json::Value {
+    let p = gallery().join(format!("datapack/data/gallery/advancement/{name}.json"));
+    serde_json::from_str(&std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("{name}: {e}")))
+        .unwrap()
+}
+
 #[test]
 fn every_press_dispatches_exactly_one_thing_in_every_state() {
-    let dir = tmp("press-agreement");
-    let (campaign, prefabs) = common::gallery_primary_at(&dir.join("gallery"));
-    let out = dir.join("build");
-    let r = Command::new(BIN)
-        .arg("build")
-        .arg(&campaign)
-        .arg("-o")
-        .arg(&out)
-        .arg("--prefabs")
-        .arg(&prefabs)
-        .output()
-        .unwrap();
-    assert!(r.status.success(), "{}", String::from_utf8_lossy(&r.stderr));
+    let out = gallery();
     let f = out.join("datapack/data/gallery/function");
     let tick = read(&f, "tick");
     let mut owners: Vec<String> = std::fs::read_dir(&f)
@@ -299,5 +314,101 @@ fn every_press_dispatches_exactly_one_thing_in_every_state() {
     assert!(
         judged >= 8,
         "the gallery's interacts and gated triggers are judged: {judged}"
+    );
+}
+
+/// Criterion 9: every synthesized answer plays the refusal cue, a sound the
+/// pinned registry has, and the cue ledger states it.
+#[test]
+fn every_answer_plays_the_refusal_cue() {
+    let f = gallery().join("datapack/data/gallery/function");
+    let mut answers = 0;
+    for e in std::fs::read_dir(&f).unwrap() {
+        let p = e.unwrap().path();
+        let n = p.file_name().unwrap().to_string_lossy().into_owned();
+        if !n.starts_with("trig_dw_answer_") {
+            continue;
+        }
+        let body = std::fs::read_to_string(&p).unwrap();
+        // A body's own answers (spec-0119) carry their own cue.
+        if n.starts_with("trig_dw_answer_npc_") || n.starts_with("trig_dw_answer_actor_") {
+            continue;
+        }
+        assert!(
+            body.contains("playsound minecraft:block.chest.locked player @s"),
+            "`{n}` plays the refusal cue: {body}"
+        );
+        answers += 1;
+    }
+    assert!(answers >= 20, "the gallery's answers are read: {answers}");
+    let sounds =
+        std::fs::read_to_string(common::repo_root().join("crates/delvec/data/sounds-1.21.11.json"))
+            .unwrap();
+    assert!(
+        sounds.contains("\"block.chest.locked\"")
+            || sounds.contains("minecraft:block.chest.locked")
+    );
+    let cues: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(gallery().join("validation/cues.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(cues["cues"]["refused"], "minecraft:block.chest.locked");
+}
+
+/// Criterion 19: the released bay door answers nothing once open — no `done`
+/// answer is emitted for it — and the unreleased chest emits one.
+#[test]
+fn a_released_door_answers_nothing_once_open_and_the_chest_does() {
+    let f = gallery().join("datapack/data/gallery/function");
+    assert!(
+        !f.join("trig_dw_answer_obj_open_the_bay_door_done.mcfunction")
+            .exists()
+    );
+    assert!(
+        f.join("trig_dw_answer_obj_lift_the_lid_done.mcfunction")
+            .exists()
+    );
+    let complete =
+        std::fs::read_to_string(f.join("complete_o_open_the_bay_door.mcfunction")).unwrap();
+    assert!(
+        !complete.contains("summon minecraft:interaction"),
+        "the released door's box does not return: {complete}"
+    );
+}
+
+/// Criterion 20: a `presser` strike's dispatch and its `done` answer are each
+/// `player_hurt_entity` on the struck box's tag; a `party` `strike-assembly`
+/// emits no dispatch advancement of its own.
+#[test]
+fn the_blow_names_its_striker() {
+    for name in [
+        "press_strike_the_hearth",
+        "press_dw_answer_trig_strike_the_hearth_done",
+    ] {
+        let a = advancement(name);
+        assert_eq!(
+            a["criteria"]["interact"]["trigger"], "minecraft:player_hurt_entity",
+            "{name}: {a}"
+        );
+        assert!(
+            a["criteria"]["interact"]["conditions"]["entity"]["nbt"]
+                .as_str()
+                .unwrap()
+                .contains("dw_trig_strike_the_hearth"),
+            "{name}: {a}"
+        );
+    }
+    assert!(
+        !gallery()
+            .join("datapack/data/gallery/advancement/press_strike_the_sentinel.json")
+            .exists(),
+        "a party strike-assembly keeps its poll"
+    );
+    let tick =
+        std::fs::read_to_string(gallery().join("datapack/data/gallery/function/tick.mcfunction"))
+            .unwrap();
+    assert!(
+        !tick.contains("run function gallery:trig_strike_the_hearth"),
+        "a presser strike has no fire clause in tick"
     );
 }

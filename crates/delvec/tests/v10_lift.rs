@@ -461,9 +461,18 @@ fn the_car_exists_at_every_tick_of_the_ride() {
 #[test]
 fn the_call_gate_is_the_shared_gate_on_the_tick_line() {
     let out = build("gate");
+    let tick = func(&out, "tick");
     for (trig, floor) in [("call_lower", 1), ("call_upper", 2)] {
-        // A press is dispatched by its advancement (spec-0117), as the presser.
-        let press = func(&out, &format!("press_{trig}"));
+        // A boxed party press is read off its box's record on the tick; a button
+        // reports its own press to an advancement (spec-0117 §3a).
+        let by_tick = tick
+            .lines()
+            .any(|l| l.contains(&format!("run function {NS}:trig_{trig}")));
+        let press = if by_tick {
+            tick.to_string()
+        } else {
+            func(&out, &format!("press_{trig}")).to_string()
+        };
         let dispatch = press
             .lines()
             .find(|l| l.contains(&format!("run function {NS}:trig_{trig}")))
@@ -478,14 +487,24 @@ fn the_call_gate_is_the_shared_gate_on_the_tick_line() {
             dispatch.contains("if score #party dw.s_ride_in_progress matches 0"),
             "a pull during a ride must not open the gate: {dispatch}"
         );
-        assert!(
-            press
-                .lines()
-                .next()
-                .is_some_and(|l| l.starts_with("advancement revoke @s only ")),
-            "the press is revoked UNCONDITIONALLY, before the gate is read — that is what \
-             makes a pull during a ride *ignored* rather than queued:\n{press}"
-        );
+        if by_tick {
+            assert!(
+                tick.lines().any(|l| l
+                    == format!(
+                        "execute as @e[tag=dw_trig_{trig}] run data remove entity @s interaction"
+                    )),
+                "the interaction record must be discarded UNCONDITIONALLY — that is what \
+                 makes a pull during a ride *ignored* rather than queued:\n{tick}"
+            );
+        } else {
+            assert!(
+                press
+                    .lines()
+                    .next()
+                    .is_some_and(|l| l.starts_with("advancement revoke @s only ")),
+                "the press is revoked UNCONDITIONALLY, before the gate is read:\n{press}"
+            );
+        }
     }
 }
 

@@ -90,8 +90,18 @@ fn the_door_answers_each_side_with_its_own_line() {
     let not_sealed = vol(&far, "unless")
         .unwrap_or_else(|| panic!("the far-side line is held off the sealed side: {far}"));
     assert_eq!(sealed, not_sealed, "one derived volume, read both ways");
-    // The sealed side is the spawn's (z < 6): the volume's z ends at 5.
-    assert!(sealed.contains("z=") && !sealed.contains("z=7"), "{sealed}");
+    // The sealed side is the spawn's (z < 6): the volume ends short of the door.
+    let field = |k: &str| -> i32 {
+        sealed
+            .trim_start_matches("@s[")
+            .trim_end_matches(']')
+            .split(',')
+            .find_map(|kv| kv.strip_prefix(&format!("{k}=")))
+            .unwrap()
+            .parse()
+            .unwrap()
+    };
+    assert!(field("z") + field("dz") < 6, "{sealed}");
 }
 
 /// The box retires with the bars: an opened doorway that still intercepts a
@@ -234,7 +244,7 @@ fn a_campaign_that_arms_no_click_states_its_own_zero() {
         l["reason"]
             .as_str()
             .unwrap_or_default()
-            .contains("has not passed it, it is outside it"),
+            .contains("nothing here can be pressed"),
         "the zero must be a named finding, never silence: {l}"
     );
 }

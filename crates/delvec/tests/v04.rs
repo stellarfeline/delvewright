@@ -530,21 +530,26 @@ fn killless_spawn_wave_emits_function_and_packtest() {
     );
 }
 
-/// Objective-marker lifecycle. An interact's box goes at activation and returns
-/// at completion (spec-0117 §3a); a reach summons nothing. The prop BLOCK (the
+/// Objective-marker lifecycle. An interact's box stands where the block would act
+/// or report nothing (spec-0117 §3a); a reach summons nothing. The prop BLOCK (the
 /// lever) stands for the whole delve and is NOT removed.
 #[test]
 fn completed_objectives_despawn_their_summoned_markers() {
     let out = build_showcase();
 
-    // interact obj/door: its lever is boxed outside its window (spec-0117 §3a) —
-    // activation takes the box away so the press is the lever's own, and
-    // completion returns it (the door is not released) for its `done` answer.
-    // The lever itself stands for the whole delve.
+    // interact obj/door: its lever needs the key in hand, so its box stands in
+    // every state (spec-0117 §3a: the lever's own flip would skip the hand
+    // check) — summoned at world init, never killed by the objective. The lever
+    // itself stands for the whole delve.
+    let setup = fn_body(&out, "setup_finish");
+    assert!(
+        setup.contains("\"dw_i_door\""),
+        "the box stands from world init: {setup}"
+    );
     let door = fn_body(&out, "complete_o_door");
     assert!(
-        door.contains("summon minecraft:interaction") && door.contains("\"dw_i_door\""),
-        "interact completion returns the box over its lever: {door}"
+        !door.contains("kill @e[tag=dw_i_door]"),
+        "completion keeps the box for the door's `done` answer: {door}"
     );
     assert!(
         !door.contains("setblock") || !door.contains("minecraft:air"),
@@ -563,12 +568,6 @@ fn completed_objectives_despawn_their_summoned_markers() {
     assert!(
         !talk.contains("kill @e[tag=dw_i_") && !talk.contains("kill @e[tag=dw_r_"),
         "talk-to completion emits no marker cleanup: {talk}"
-    );
-
-    let activate = fn_body(&out, "activate_o_door");
-    assert!(
-        activate.contains("kill @e[tag=dw_i_door]"),
-        "activation hands the lever to the press: {activate}"
     );
 }
 

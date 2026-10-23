@@ -168,25 +168,53 @@ fn a_second_answer_on_the_doors_cell_is_two_presses_on_one_cell() {
              "effects": [ { "type": "narrate", "style": "actionbar", "text": "Again." } ] }"#,
     ));
     let (code, message) = refusal(&c);
-    assert_eq!(code, "DW0896", "{message}");
+    assert_eq!(code, "DW0878", "{message}");
 }
 
-/// `DW0422`: a body whose hitbox stands in the door's answered cell contests
-/// the door's own box.
+/// `DW0422`: another press's box in the door's answered cell contests the
+/// door's own box.
 #[test]
-fn a_body_in_the_doors_cell_is_dw0422() {
-    let dir = common::compiler_fixtures_dir().join("souls-shortcut");
-    let mut loaded = load_campaign_dir(&dir).unwrap();
-    loaded.raw.npcs = loaded
-        .raw
-        .npcs
-        .replace("anchor/keeper-stand", "anchor/door-leaf");
-    loaded.raw.quests = loaded
-        .raw
-        .quests
-        .replace("anchor/keeper-stand", "anchor/door-leaf");
-    let c = parse_campaign(&loaded.raw).expect("parses");
+fn another_box_in_the_doors_cell_is_dw0422() {
+    let mut c = fixture();
+    c.quests.content.triggers.push(trigger(
+        r#"{ "id": "trigger/rattle", "at": "anchor/door-leaf", "on": { "on": "strike" },
+             "prop": { "block": "minecraft:iron_bars" }, "audience": "presser", "once": false,
+             "effects": [ { "type": "narrate", "style": "actionbar", "text": "The bars ring." } ] }"#,
+    ));
     let (code, message) = refusal(&c);
     assert_eq!(code, "DW0422", "{message}");
     assert!(message.contains("anchor/door"), "{message}");
+}
+
+/// Criterion 16: the unlock's highlight is lit only from the side it is
+/// pressed from — every box its poll tests lies on the far side of the door
+/// (`z > 6`, the side the unlock at `z = 8` stands on), and none on the sealed
+/// side; the poll is shut once the shortcut is open.
+#[test]
+fn the_unlock_is_lit_only_from_its_far_side() {
+    let mut c = fixture();
+    c.quests.content.shortcuts[0].highlight =
+        Some(serde_json::from_str(r#"{ "within": 6 }"#).unwrap());
+    let out = try_build(&c).expect("builds with a highlight");
+    let poll = function(&out, "hl_poll_p_sc_inner_door");
+    let mut boxes = 0;
+    for l in poll.lines() {
+        let Some(sel) = l.split("@a[").nth(1) else {
+            continue;
+        };
+        assert!(
+            l.contains("unless score #sc_inner_door dw.sys matches 1"),
+            "the glow is off once the door is open: {l}"
+        );
+        let field = |k: &str| -> i32 {
+            sel.split(',')
+                .find_map(|kv| kv.strip_prefix(&format!("{k}=")))
+                .and_then(|v| v.trim_end_matches(']').parse().ok())
+                .unwrap_or(0)
+        };
+        let (z, dz) = (field("z"), field("dz"));
+        assert!(z >= 7 && z + dz >= 7, "a lit box on the sealed side: {l}");
+        boxes += 1;
+    }
+    assert!(boxes > 0, "the lit set is not empty: {poll}");
 }

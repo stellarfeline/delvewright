@@ -314,6 +314,39 @@ The row for `docs/demo-levels.md`: **Three Buttons and a Bell** — one room off
 - **Vanilla's `lock` component** as a body for a locked container (the pinned game's own refused use, with its own line and sound; `ChestBlock.useWithoutItem` reports the press whatever the lock did) is a different carrier for the same class and is not taken here; it would carry vanilla's own wording beside the campaign's.
 - **A per-viewer glow.** Spec-0104 §7.4's limitation stands; §3b narrows when a highlight is on, not who sees it.
 
+## 12. What the implementation decided
+
+Each departure from the text above, with its reason, and each criterion the tree does not yet satisfy at its written strength. Loosenings are declared in those words.
+
+**Departures.**
+- **A bonfire on a campfire is refused where the party respawns.** `HURTING_BLOCKS_1_21_11` lists the campfire whatever its `lit`, and a bonfire's prop stands at the cell the party respawns at, so `DW0315` refuses it (measured on the gallery at `anchor/hearth` and on the demo level). The gallery's and the demo level's rest points are a candle (`minecraft:candle[candles=4,lit=false]`), which the game reports no press of and which is boxed in every state, binding the same arm. A campfire bonfire away from the respawn cell is admitted.
+- **An `interact` with `requires_item` on a block that acts on its own keeps its box through the open window**: the block's own act would bypass the item check, so the press is the box's, the hand is judged, and a released door becomes the player's at completion. Criterion 18's "no entity carries the tag after activation" holds for such a block only without `requires_item`.
+- **Every block outside {pressed on its own, acts on its own} is unobservable**, boxed in every state; the outline table decides the box, and the read of §2a names the forms.
+- **A shortcut's far-side `not_yet`** rides the box of the gate's own answer; where a knocker answers instead, no leaf is boxed and the shortcut owes no `not_yet` (a declared one is `DW1052`). A shortcut's own answer must address its presser.
+- **A gate's own answer owes and admits neither `not_yet` nor `done`**: the gate is sealed from load (a shortcut) or its box is armed only while sealed (a `close-gate`), and the opening removes the body.
+- **A bonfire always has a shut state** before its arming beat; the beat writes `#bf_<i>`, and a lever on a bonfire is boxed.
+- **`serves: {objective}` is open under the objective's activation without the objective's own gate**: a press that feeds the gate could otherwise never be made.
+- **Two boxed pressables on one cell are refused (`DW0896`)** rather than sharing a box; two presses of one block pressed on its own on one cell are one body that one press reaches (criterion 2's shape) and contest nothing (`DW0878`).
+- **`DW1059` (d) and the knocker and gate-answer checks run at the build tier**, where regions resolve; a `use` trigger at a gate region is refused with `DW1059` wherever it is met, before `DW0426`.
+- **Codes retired beyond §6**: `DW0423` (two wordings for one gate; the wording field is gone) and `DW0880` (two marker faces at one place; no stake declares a face). `DW0422` is rebound to the gate's own answer boxes: a body in a gate's answered cell is a contest; another answer on that cell is `DW0896`.
+- **A disarm or shortcut unlock whose block is boxed** is read off its box's `interaction` record by the tick (fired once behind its sentinel), as before; one pressed on its own is read by its `default_block_use` advancement.
+- **The gallery**: the ferry tiller and the strike-assembly carry `not_yet` (each is gated in the tree, against §7's reading); the reliquary quest gains the door and chest objectives; the knocker is `trigger/knock-the-bay`.
+- **`structure_void` has an outline** in the pinned jar, against §2b's list; the table records the measurement.
+- **A spectator's use of a block** fires no `default_block_use` (§2a), so a button that opens a dialog is no root a waiting player stands in.
+
+**Recorded debts** (criterion: what is not yet asserted).
+- 2: the PackTest that asserts the block present before the quest is armed and after completion, and that two `interact` objectives on one cell with one block complete on one granted press.
+- 3: `verb_interact_arming` is not extended to drive one dummy through the three answers; each answer's `env_trigger_dw_answer_<owner>_<state>` template drives it in its state and asserts `#ans_<owner>`.
+- 4: the PackTest of three presses, the completion and a fourth press on the gallery's knocker; `path_triggers`' Rust test over the exported path; the agreement test covers the state function, the answers and the act (`tests/press_agreement.rs`) but not `path_triggers` or the flow's liveness.
+- 5, 6: not every listed shape has its own Rust assertion (the bonfire armed after step 0, the knocker with no `done`, the shortcut with no `not_yet`, `release` with no settled state); each is a branch of `dsl::trigger::press_checks` the gallery's probes and fixtures reach.
+- 15: the PackTest that writes the `interaction` record on the sealed door's box from each side.
+- 16: the PackTest of the glow from each side; the Rust half (`the_unlock_is_lit_only_from_its_far_side`) is asserted, and the binding line states lit boxes but not lit cells.
+- 18: the reconciliation-pair PackTest over the real `tick`, and the box-dimension read from `validation/press-bodies.json`.
+- 20: the PackTest granting the boulder's advancements to a dummy; the Rust half is asserted on the gallery.
+- 11: the skill page lands at the re-pin, as §9 says.
+- A place that is still a stand-in cannot carry its gate's own answer: the answer is anchored at a mark only the place's program writes. A seam-derived cell of the door's bar would let the answer be stated before the place is detailed; not done here.
+- A doorway's transit cell refuses an `interact`'s prop (`DW0845`): a released door cannot stand in its own doorway and stands just inside it on the demo level.
+
 ## Acceptance criteria
 
 Each is a test or a gate run, named; a criterion the tree cannot yet satisfy is a recorded debt, never a pass. Criteria marked *amended* changed with the block-only amendment; those marked *click-box* changed with the click-box amendment. **Loosenings, declared in those words**: the stake marker stays an entity (§3a, criterion 2); criterion 2 no longer asserts that no click box is summoned — it asserts that every one summoned is fitted to a block and proven so; criterion 5 no longer asserts that a `strike` at a place is refused; criterion 14 no longer asserts that a lever on a gated pressable, a door, a chest or a campfire is refused. Each of these asserts less than it did because the click-box form admits the thing it refused; what replaces the refusal is criterion 17.

@@ -189,8 +189,9 @@ fn build_handoff_hello_world() -> BuildOutput {
         );
         d["content"]["triggers"] = serde_json::json!([
             { "id": "trigger/wake", "at": "anchor/keeper-stand", "on": { "on": "strike" },
-              "once": true,
-              "effects": [ { "type": "narrate", "style": "chat", "text": "He stirs." } ] }
+              "once": true, "answers": { "done": "He is already awake." },
+              "effects": [ { "type": "narrate", "style": "chat", "text": "He stirs." } ] },
+            common::door_answer_value("The door is shut behind you.")
         ]);
         d["content"]["actors"] = serde_json::json!([
             { "id": "actor/giant", "entity": "minecraft:zombie", "answers": { "struck": "It does not stir.", "touched": "Cold, and still." }, "name": "The Sleeper",

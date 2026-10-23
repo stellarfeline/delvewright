@@ -207,7 +207,9 @@ fn a_body_within_a_block_of_the_affordance_warns() {
         .unwrap_or_else(|| panic!("expected a DW0359 warning, got {warnings:#?}"));
     assert_eq!(w.severity, Severity::Warning);
     assert!(
-        w.message.contains("0.52 blocks clear"),
+        // The torch's box is fitted to its outline (spec-0117 §3a): 0.27 wide at
+        // the cell centre, so the ravager's 1.95-wide body ends 0.89 short of it.
+        w.message.contains("0.89 blocks clear"),
         "the warning must report the measured gap: {}",
         w.message
     );
@@ -672,7 +674,11 @@ fn a_second_box_armed_after_the_first_completes_is_not_a_contest() {
     };
     let (first, second) = (adv("i_board_first"), adv("i_board_second"));
     assert!(first.contains("minecraft:default_block_use"), "{first}");
-    let pos = |a: &str| a[a.find("\"position\"").unwrap()..].to_string();
+    let pos = |a: &str| {
+        let v: serde_json::Value = serde_json::from_str(a).unwrap();
+        v["criteria"]["interact"]["conditions"]["location"][0]["predicate"]["position"].clone()
+    };
+    assert!(!pos(&first).is_null(), "{first}");
     assert_eq!(pos(&first), pos(&second), "one cell, one block");
     assert!(
         !out.iter().any(|(k, v)| k.ends_with(".mcfunction")

@@ -267,17 +267,6 @@ pub(super) fn prove_declarations(
         })?,
     );
 
-    // …and no OTHER affordance may contest the hitboxes a sealed gate arms to
-    // answer a right-click (DW0422). Same box arithmetic, same tier:
-    // two interaction entities in one cell is a ray-pick tie the client resolves
-    // by iteration order, so one of them silently stops receiving clicks.
-    crate::compiler::eclipse::check_seal_collisions(plan).map_err(|e| {
-        BuildFailure::Diagnostic {
-            code: e.code,
-            message: e.message,
-        }
-    })?;
-
     // A shortcut whose sealed side the geometry does not name (DW0425) is
     // refused BEFORE the affordance proof below, and that ordering is load-bearing
     // rather than tidy. A `use` trigger on such a gate cannot ride the door —
@@ -290,6 +279,17 @@ pub(super) fn prove_declarations(
     // that assembles no world, which is a structural fault about the declaration
     // either way.)
     check_shortcut_sides(plan)?;
+
+    // …and no OTHER affordance may contest the hitboxes a sealed gate arms to
+    // answer a right-click (DW0422). Same box arithmetic, same tier:
+    // two interaction entities in one cell is a ray-pick tie the client resolves
+    // by iteration order, so one of them silently stops receiving clicks.
+    crate::compiler::eclipse::check_seal_collisions(plan).map_err(|e| {
+        BuildFailure::Diagnostic {
+            code: e.code,
+            message: e.message,
+        }
+    })?;
 
     // …and no two AFFORDANCES may stand on one cell either (DW0878). The three
     // proofs above each need one side of their pair to be something else — a

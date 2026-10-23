@@ -1195,7 +1195,7 @@ fn the_place_collected_is_the_box_that_was_clicked() {
 }
 
 /// Collecting restores exactly the amount recorded, retires the hardware through
-/// the ONE function allowed to (`DW0421`), and is idempotent under a double
+/// the ONE function that does it, and is idempotent under a double
 /// right-click in one tick — structurally, because taking a slot clears its live
 /// flag as part of taking it.
 #[test]
