@@ -1,0 +1,13 @@
+{
+  "code": "DW1053",
+  "patch": [
+    {
+      "doc": "layout-graph.json",
+      "op": "remove",
+      "path": "/content/edges/4/gating/learned"
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The east door with no word for how it is learned. It is a one-way door, opened only from the far hall, and the party meets it first from the near hall: the wrong side, the face a player walks up to and presses. Its gating is a term and nothing else, so nothing says whether the player sees it from where they turn off, is told at its face, or is paid for the walk, and `DW1053` refuses the connection, naming the face it is met at and what each of the three words would need there. It declares no unit: what must not compile is a shut way the party meets that says nothing."
+}

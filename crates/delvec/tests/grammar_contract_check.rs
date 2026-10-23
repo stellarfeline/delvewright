@@ -98,6 +98,7 @@ fn edge(a: &str, b: &str, class: &str) -> ContractEdge {
         via: None,
         bar: None,
         way: None,
+        extra: Default::default(),
     }
 }
 
@@ -2397,4 +2398,41 @@ fn a_leafy_scenery_crown_owes_no_floor_and_a_reached_one_does() {
         gate(&reached, "contract-coverage").failed(),
         "a reached place's standable leaf tops are owed a declaration"
     );
+}
+
+/// **No excuse on a piece way** (spec-0120 §4.2, criterion 6): a `narrowed`
+/// written on a contract edge — the withdrawn surface — is a key the edge does
+/// not have, and `contract-well-formed` refuses it by name, as it refuses any
+/// key a contract edge does not model.
+#[test]
+fn a_narrowing_on_a_contract_edge_is_an_unknown_key_and_is_refused() {
+    let (b, c) = hall();
+    let report = check(&b.model, &c, &no_anchors());
+    let g = gate(&report, "contract-well-formed");
+    assert!(g.passed(), "{}", g.detail);
+
+    for key in ["narrowed", "a_key_nobody_wrote"] {
+        let (b, mut c) = hall();
+        c.edges[0].extra.insert(
+            key.to_string(),
+            serde_json::json!([{"cells": [[0, 1, 4]], "block": "minecraft:oak_fence", "what": "a rail post"}]),
+        );
+        let report = check(&b.model, &c, &no_anchors());
+        let g = gate(&report, "contract-well-formed");
+        assert!(!g.passed(), "{key}: {}", g.detail);
+        assert!(
+            g.detail
+                .contains(&format!("`{key}` is not a field of a contract edge")),
+            "{key}: {}",
+            g.detail
+        );
+    }
+
+    // Read from a document, the key lands where the gate reads it.
+    let edge: delvec::schem::prefab::ContractEdge = serde_json::from_value(serde_json::json!({
+        "a": "hall", "b": "exterior", "class": "walk",
+        "narrowed": [{"cells": [[0, 1, 4]], "block": "minecraft:oak_fence", "what": "a post"}]
+    }))
+    .expect("an edge parses");
+    assert!(edge.extra.contains_key("narrowed"), "{edge:?}");
 }

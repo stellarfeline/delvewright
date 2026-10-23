@@ -21,6 +21,7 @@
 //! - [`blocking`]: `delvec blocking-chart` — per-elevation cutaway floor plans.
 //! - [`blockout`]: the derived blockout — the map pipeline's stage nobody authors.
 //! - [`blockstate`]: interned block states — the assembled world's block map holds one handle per cell, not one string.
+//! - [`bodies`]: a harmless body says what it is — its answers, its answer box, and `DW1055` (spec-0119).
 //! - [`bound`]: `DW0960` — the boundary and the world agree: every place a body is put lies inside a region that returns, and a region that does not return encloses a world nobody can leave (spec-0092 §10).
 //! - [`branch`]: branch-complete narrative verification (`DW0480`–`DW0485`).
 //! - [`burial`]: is a placed piece's outward solid boundary buried, or declared (`DW0885`)?
@@ -132,6 +133,7 @@ pub mod blind;
 pub mod blocking;
 pub mod blockout;
 pub mod blockstate;
+pub mod bodies;
 pub mod bound;
 pub mod branch;
 pub mod burial;

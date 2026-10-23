@@ -1,0 +1,32 @@
+{
+  "code": "DW1055",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/actors/7/answers"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "remove",
+      "path": "/content/actor.hall-sentry.answers.struck"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "remove",
+      "path": "/content/actor.hall-sentry.answers.touched"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "remove",
+      "path": "/source/actor.hall-sentry.answers.struck"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "remove",
+      "path": "/source/actor.hall-sentry.answers.touched"
+    }
+  ],
+  "units": [],
+  "why": "`actor/hall-sentry` is a zombie in iron set on the speaking row: not `vulnerable`, never unleashed, a kind the pinned game discards on peaceful, and a walking player can strike it from the row. With its `answers` removed it is a statue that takes every blow in silence, and a player cannot tell it from a broken fight. The build names the body, its kind, the station and the stance cell that reaches it, and both missing keys. The sidecar's two rows go with the English, so this document demonstrates one refusal. It declares no unit: `answers` and both of its lines are bound by the primary on this same actor and on `npc/copyist`; what the engine refuses is a harmless monster-kind body in reach that owes a line and declares none."
+}

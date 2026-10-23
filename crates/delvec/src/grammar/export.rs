@@ -1065,6 +1065,7 @@ fn contract_without_faces(expansion: &Expansion) -> Option<SpatialContract> {
                     role: Some(w.role.clone()),
                     block: w.block.to_string(),
                 }),
+                extra: Default::default(),
             })
             .collect(),
         faces: Vec::new(),

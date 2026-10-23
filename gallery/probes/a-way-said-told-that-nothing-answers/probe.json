@@ -1,0 +1,14 @@
+{
+  "code": "DW1054",
+  "patch": [
+    {
+      "doc": "layout-graph.json",
+      "op": "replace",
+      "path": "/content/edges/8/gating/learned",
+      "value": "told"
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The undercroft crawl's cover declared `told`, and no `use` trigger stands at `anchor/seam-undercroft-crawl`: the word says a press at the cover answers, and nothing does. `DW1054` refuses the declaration the world does not confirm, carrying the trigger `DW0429` prescribes for an unanswered press so the two rules name one remedy. It declares no unit: `gating.learned` and its words are bound on the overlay's gated connections."
+}

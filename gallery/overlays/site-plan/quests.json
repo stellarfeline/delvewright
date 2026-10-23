@@ -316,6 +316,86 @@
           "on": "use"
         },
         "once": false
+      },
+      {
+        "at": "anchor/seam-annex-chute",
+        "audience": "presser",
+        "effects": [
+          {
+            "style": "actionbar",
+            "text": "The chute's bars hold. The near hall's business comes first.",
+            "type": "narrate"
+          }
+        ],
+        "id": "trigger/annex-chute-shut",
+        "on": {
+          "on": "use"
+        },
+        "once": false
+      },
+      {
+        "at": "anchor/seam-west-door",
+        "audience": "presser",
+        "effects": [
+          {
+            "style": "actionbar",
+            "text": "The bars will not lift until the near hall's work is done.",
+            "type": "narrate"
+          }
+        ],
+        "id": "trigger/west-door-shut",
+        "on": {
+          "on": "use"
+        },
+        "once": false
+      },
+      {
+        "at": "anchor/seam-centre-door",
+        "audience": "presser",
+        "effects": [
+          {
+            "style": "actionbar",
+            "text": "Barred. The near hall has not finished with you yet.",
+            "type": "narrate"
+          }
+        ],
+        "id": "trigger/centre-door-shut",
+        "on": {
+          "on": "use"
+        },
+        "once": false
+      },
+      {
+        "at": "anchor/seam-undercroft-shaft",
+        "audience": "presser",
+        "effects": [
+          {
+            "style": "actionbar",
+            "text": "The hatch is shut fast. What lies below waits on the muster.",
+            "type": "narrate"
+          }
+        ],
+        "id": "trigger/undercroft-shaft-shut",
+        "on": {
+          "on": "use"
+        },
+        "once": false
+      },
+      {
+        "at": "anchor/seam-loft-stair",
+        "audience": "presser",
+        "effects": [
+          {
+            "style": "actionbar",
+            "text": "The loft stair is barred. The muster comes first.",
+            "type": "narrate"
+          }
+        ],
+        "id": "trigger/loft-stair-shut",
+        "on": {
+          "on": "use"
+        },
+        "once": false
       }
     ],
     "waves": [

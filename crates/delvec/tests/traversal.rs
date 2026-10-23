@@ -79,7 +79,7 @@ fn quests_with_actor(entity: &str) -> String {
         "stage": "quests",
         "content": {
             "actors": [
-                { "id": "actor/subject", "entity": entity, "name": "Subject",
+                { "id": "actor/subject", "entity": entity, "answers": { "struck": "It does not stir.", "touched": "Cold, and still." }, "name": "Subject",
                   "anchor": "spawn" }
             ],
             "quests": [ {
@@ -150,6 +150,7 @@ fn npcs_declaring(base_entity: &str, locomotion: Option<&str>) -> String {
     doc["dsl_version"] = serde_json::json!(DSL_VERSION);
     let npc = &mut doc["content"]["npcs"][0];
     npc["base_entity"] = serde_json::json!(base_entity);
+    npc["answers"] = serde_json::json!({ "struck": "It does not stir." });
     if let Some(l) = locomotion {
         npc["traversal"] = serde_json::json!({ "locomotion": l });
     }
