@@ -67,22 +67,22 @@ jobs:
     name: the format version at a main commit, and what it still owes
     runs-on: ubuntu-latest
     permissions:
-      # The changelog endpoint renders text and creates nothing, but GitHub asks
-      # contents: write of the caller; no step here writes a tag or a Release.
+      # Writes nothing — no step here writes a tag or a Release — but the
+      # draft/absent split lists releases, and a draft is listed only to a token
+      # with push access.
       contents: write
     outputs:
       publish: ${{ steps.release.outputs.publish }}
       version: ${{ steps.plan.outputs.version }}
       tag: ${{ steps.release.outputs.tag }}
       commit: ${{ steps.release.outputs.commit }}
-      previous: ${{ steps.release.outputs.previous }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.commit }}
           # A tag is written at this commit, so it must be shown to be on `main`,
-          # and the previous tag of this line is read for the notes: both need
-          # the history and the tags.
+          # and the notes compare the entry with the changes since the previous
+          # tag of this line: both need the history and the tags.
           fetch-depth: 0
       # A job that packages a crate saves no cache: `cargo package`/`cargo publish` leave
       # a half-unpacked `target/package/` the cache's post-job cleanup cannot walk, and it
@@ -160,13 +160,11 @@ jobs:
             fi
             commit="$at"
           fi
-          previous="$(python3 tools/lib/release_tags.py previous "$tag")"
           {
             echo "tag=$tag"
             echo "commit=$commit"
-            echo "previous=$previous"
           } >> "$GITHUB_OUTPUT"
-          echo "registry: $REGISTRY; Release $tag: $state; tag at: ${at:-(not written)}; previous: ${previous:-(none)}"
+          echo "registry: $REGISTRY; Release $tag: $state; tag at: ${at:-(not written)}"
           if [ "$REGISTRY" = "served" ] && [ "$state" = "published" ]; then
             echo "delvewright-dsl $VERSION is on crates.io and released as $tag — nothing to publish."
             echo "publish=false" >> "$GITHUB_OUTPUT"
@@ -175,16 +173,17 @@ jobs:
             echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
       # The notes the approval is asked for, written once here and published
-      # verbatim by `publish`: the opening this tree states, then the changelog
-      # GitHub generates for the tag-to-be. A Release that already exists as a
-      # draft keeps its own body, so that body is what is shown.
+      # verbatim by `publish`: the opening this tree states, the `CHANGELOG.md`
+      # entry written for this version (judged a summary against the changes
+      # merged since the previous format release, and refused before any
+      # approval when the tree has none), and the compare link. A Release that
+      # already exists as a draft keeps its own body, so that body is what is shown.
       - name: the notes the approval page shows
         if: steps.release.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.release.outputs.tag }}
           COMMIT: ${{ steps.release.outputs.commit }}
-          PREVIOUS: ${{ steps.release.outputs.previous }}
         run: |
           set -euo pipefail
           rc=0
@@ -193,9 +192,7 @@ jobs:
           if [ "$state" = "draft" ]; then
             gh release view "$TAG" --json body --jq .body > notes.md
           else
-            python3 tools/ci/release-notes.py delvewright-dsl --commit "$COMMIT" > notes.md
-            python3 tools/lib/github_releases.py notes "$GITHUB_REPOSITORY" "$TAG" "$COMMIT" "$PREVIOUS" > generated.md
-            { echo ""; cat generated.md; } >> notes.md
+            python3 tools/ci/release-notes.py delvewright-dsl --commit "$COMMIT" --repository "$GITHUB_REPOSITORY" > notes.md
           fi
           if [ ! -s notes.md ]; then
             echo "::error::the notes for $TAG are empty; there is nothing to approve."
@@ -282,8 +279,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.plan.outputs.tag }}
           VERSION: ${{ needs.plan.outputs.version }}
-          COMMIT: ${{ needs.plan.outputs.commit }}
-          PREVIOUS: ${{ needs.plan.outputs.previous }}
         run: |
           set -euo pipefail
           rc=0

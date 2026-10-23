@@ -26,9 +26,9 @@ workflows reach it through the CLI below the way shell reaches
 `v1.0.0` … `v1.5.0` are published `delvec` releases from before the grammar
 (ADR-0028 §7). They are never a valid tag for anything new — `parse` refuses
 them — and they are read in exactly one place: `previous`, for the `delvec`
-line only, so the first `delvec--v*` release's generated notes start from the
-last release of the same line rather than from whatever the repository tagged
-last.
+line only, so a `delvec` release's notes compare its changelog entry with, and
+link to, the changes since the last release of the same line rather than since
+whatever the repository tagged last (`tools/ci/release-notes.py`).
 
 Stdlib only. CLI exit codes: 0 answered, 1 refused, 2 usage.
 """
