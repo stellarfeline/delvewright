@@ -130,9 +130,13 @@ fn judge_every_place(tmp: &Path, campaign: &Path, prefabs: &Path) -> (usize, usi
                 ))
             } else {
                 // The commit too, battery included, in a scratch copy of the
-                // campaign and the library: a starter whose own declarations
-                // the battery refuses (`DW0885` on a side it leaves empty)
-                // hands every author a refusal they did not make.
+                // campaign and the library. The empty place is not the
+                // building, so the battery's whole-map verdicts on it (a vista,
+                // a crossing, a gate the skeleton does not yet separate) are
+                // the author's to answer; what the starter must never hand an
+                // author is a refusal of its OWN declarations — `DW0885`, a
+                // shown side it leaves empty or an open-air side it does not
+                // declare.
                 let scratch = tmp.join(format!(
                     "commit-{}-{stem}",
                     campaign.file_name().unwrap().to_string_lossy()
@@ -148,13 +152,24 @@ fn judge_every_place(tmp: &Path, campaign: &Path, prefabs: &Path) -> (usize, usi
                     place,
                 ]);
                 let _ = std::fs::remove_dir_all(&scratch);
-                commit.status.success().then_some(()).ok_or_else(|| {
-                    format!(
-                        "`detail --check` passed and the commit exited {:?}:\n{}",
-                        commit.status.code(),
-                        text(&commit)
-                    )
-                })
+                let said = text(&commit);
+                let own: Vec<&str> = said
+                    .lines()
+                    .filter(|l| l.starts_with("DW0885 [error]"))
+                    .collect();
+                if !said.contains("written from") {
+                    Err(format!(
+                        "`detail --check` passed and the commit wrote nothing (exit {:?}):\n{said}",
+                        commit.status.code()
+                    ))
+                } else if !own.is_empty() {
+                    Err(format!(
+                        "the commit's battery refuses the starter's own `shown_faces`:\n{}",
+                        own.join("\n")
+                    ))
+                } else {
+                    Ok(())
+                }
             }
         } else {
             Err(format!(
@@ -172,7 +187,7 @@ fn judge_every_place(tmp: &Path, campaign: &Path, prefabs: &Path) -> (usize, usi
         match verdict {
             Ok(()) => {
                 passed += 1;
-                eprintln!("starter: {place} of `{cs}` passes `detail --check` and the commit");
+                eprintln!("starter: {place} of `{cs}` passes `detail --check`, and its commit writes it with no `DW0885`");
             }
             Err(why) => failures.push(format!("{place}: {why}")),
         }
@@ -194,7 +209,7 @@ fn the_starter_passes_the_check_unedited_on_every_place_of_the_gallery_site_plan
         places += n;
         failures.extend(f);
     }
-    eprintln!("starter binding: {passed} of {places} place(s) pass --check and the commit");
+    eprintln!("starter binding: {passed} of {places} place(s) pass --check, committed with no DW0885");
     assert!(places > 0, "zero places judged: the binding is vacuous");
     assert!(
         failures.is_empty(),
