@@ -63,7 +63,7 @@ pub fn two_high(block: &str) -> bool {
 /// order) leaves at `cell`: the declared state, with a two-high block's half
 /// set by the cell's course above the region's floor.
 #[must_use]
-pub fn state_at<'a>(region: ([i32; 3], [i32; 3]), block: &'a str, cell: [i32; 3]) -> Cow<'a, str> {
+pub fn state_at<'a>(region: Region, block: &'a str, cell: [i32; 3]) -> Cow<'a, str> {
     let Some((s, e)) = half_value(block) else {
         return Cow::Borrowed(block);
     };
@@ -83,7 +83,7 @@ pub fn state_at<'a>(region: ([i32; 3], [i32; 3]), block: &'a str, cell: [i32; 3]
 /// Every cell of `region` with the block one write of `block` leaves there, in
 /// [`crate::compiler::assembled::region_cells`] order.
 pub fn cells<'a>(
-    region: ([i32; 3], [i32; 3]),
+    region: Region,
     block: &'a str,
 ) -> impl Iterator<Item = ([i32; 3], Cow<'a, str>)> + 'a {
     crate::compiler::assembled::region_cells(region.0, region.1)
@@ -95,10 +95,7 @@ pub fn cells<'a>(
 /// two-high, else one box per course, lowest first, each keeping the region's
 /// `x`/`z` corner order.
 #[must_use]
-pub fn boxes<'a>(
-    region: ([i32; 3], [i32; 3]),
-    block: &'a str,
-) -> Vec<(Region, Cow<'a, str>)> {
+pub fn boxes<'a>(region: Region, block: &'a str) -> Vec<(Region, Cow<'a, str>)> {
     if !two_high(block) {
         return vec![(region, Cow::Borrowed(block))];
     }
