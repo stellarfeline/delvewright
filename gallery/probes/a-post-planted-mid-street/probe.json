@@ -1,0 +1,187 @@
+{
+  "code": "DW1057",
+  "patch": [
+    {
+      "doc": "programs/causeway.json",
+      "op": "replace",
+      "path": "/rules/place/0/body/body/children/2/children/1/children/0",
+      "value": {
+        "axis": "x",
+        "children": [
+          {
+            "axis": "z",
+            "children": [
+              {
+                "op": "call",
+                "symbol": "causeway-front-air"
+              },
+              {
+                "op": "call",
+                "symbol": "room-air"
+              },
+              {
+                "op": "call",
+                "symbol": "wall"
+              }
+            ],
+            "op": "split",
+            "sizes": [
+              {
+                "blocks": {
+                  "expr": "int",
+                  "value": 1
+                },
+                "size": "absolute"
+              },
+              {
+                "blocks": {
+                  "expr": "int",
+                  "value": 23
+                },
+                "size": "absolute"
+              },
+              {
+                "size": "relative",
+                "weight": {
+                  "expr": "int",
+                  "value": 1
+                }
+              }
+            ]
+          },
+          {
+            "axis": "z",
+            "children": [
+              {
+                "op": "call",
+                "symbol": "causeway-front-air"
+              },
+              {
+                "op": "call",
+                "symbol": "room-air"
+              },
+              {
+                "op": "call",
+                "symbol": "lamp-post"
+              },
+              {
+                "op": "call",
+                "symbol": "room-air"
+              },
+              {
+                "op": "call",
+                "symbol": "wall"
+              }
+            ],
+            "op": "split",
+            "sizes": [
+              {
+                "blocks": {
+                  "expr": "int",
+                  "value": 1
+                },
+                "size": "absolute"
+              },
+              {
+                "blocks": {
+                  "expr": "int",
+                  "value": 11
+                },
+                "size": "absolute"
+              },
+              {
+                "blocks": {
+                  "expr": "int",
+                  "value": 1
+                },
+                "size": "absolute"
+              },
+              {
+                "blocks": {
+                  "expr": "int",
+                  "value": 11
+                },
+                "size": "absolute"
+              },
+              {
+                "size": "relative",
+                "weight": {
+                  "expr": "int",
+                  "value": 1
+                }
+              }
+            ]
+          },
+          {
+            "axis": "z",
+            "children": [
+              {
+                "op": "call",
+                "symbol": "causeway-front-air"
+              },
+              {
+                "op": "call",
+                "symbol": "room-air"
+              },
+              {
+                "op": "call",
+                "symbol": "wall"
+              }
+            ],
+            "op": "split",
+            "sizes": [
+              {
+                "blocks": {
+                  "expr": "int",
+                  "value": 1
+                },
+                "size": "absolute"
+              },
+              {
+                "blocks": {
+                  "expr": "int",
+                  "value": 23
+                },
+                "size": "absolute"
+              },
+              {
+                "size": "relative",
+                "weight": {
+                  "expr": "int",
+                  "value": 1
+                }
+              }
+            ]
+          }
+        ],
+        "op": "split",
+        "sizes": [
+          {
+            "blocks": {
+              "expr": "int",
+              "value": 2
+            },
+            "size": "absolute"
+          },
+          {
+            "blocks": {
+              "expr": "int",
+              "value": 1
+            },
+            "size": "absolute"
+          },
+          {
+            "size": "relative",
+            "weight": {
+              "expr": "int",
+              "value": 1
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The causeway's program edited to stand a second lamp post in a middle column of the road, half-way along its run. The causeway declares itself a way six columns wide, so its run is judged at every station along its whole length, where no seam and no approach reaches: the post takes one of the six columns at its station, the rest stay clear, and every route proof passes beside it. Its own lamp post stands on the verge, outside the six, and is not judged. It declares no unit: what must not compile is a road narrowed along its length."
+}

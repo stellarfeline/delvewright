@@ -347,6 +347,20 @@ How a quest plan is shaped as a web rather than a chain, how an ending reads the
   (`what is left in its barrels is salt and dust`), never the mechanism (`the
   barrels are decoration`). The engine proves the line is shown first and is
   true (spec-0105). **Authored**, from a playtest, on the two citations.
+- **L4 — A secret the level shows is not told by text before it is shown.** A
+  reveal the design stages — a passage behind a fireplace opened by a beat and
+  shown by a close-up shot — is told to the player by that shot and by nothing
+  before it: no arrival line, hint, title, goal or tooltip names the hidden
+  thing or says where it is. A hidden way carries no plain hint at all: no line
+  points at the mechanism that opens it or says what pressing it will do
+  (`turn the sluice and the water douses the hearth` tells the secret as surely
+  as naming it). The mechanism is found by exploring — unremarkable, out of the
+  obvious line, its purpose unknown when found, often some distance from what it
+  opens — and pressing it plays the close-up shot of what changed elsewhere, after
+  which the way is open. Text after the reveal may name what was shown. The
+  engine holds the declared words of the secret to the play order (`DW1060`);
+  the rest — the mechanism's place and every sentence around it — is the
+  author's. **Authored**, from two playtests, on L1's pattern.
 
 ## Sources
 

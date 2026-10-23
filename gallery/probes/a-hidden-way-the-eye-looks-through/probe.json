@@ -1,0 +1,72 @@
+{
+  "code": "DW1054",
+  "patch": [
+    {
+      "doc": "layout-graph.json",
+      "op": "replace",
+      "path": "/content/edges/2/gating/learned",
+      "value": "hidden"
+    },
+    {
+      "doc": "layout-graph.json",
+      "op": "add",
+      "path": "/content/edges/2/gating/secret",
+      "value": [
+        "undershelf"
+      ]
+    },
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/0/on_complete/-",
+      "value": {
+        "look_at": {
+          "anchor": "anchor/seam-west-door"
+        },
+        "path": [
+          {
+            "anchor": "anchor/seam-west-door",
+            "offset": [
+              0,
+              2,
+              -4
+            ]
+          }
+        ],
+        "seconds": 3,
+        "subject": {
+          "anchor": "anchor/seam-west-door"
+        },
+        "type": "cutscene"
+      }
+    },
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/0/on_complete/-",
+      "value": {
+        "style": "chat",
+        "text": "Beyond that door, the undershelf: the far hall's lowest shelf of stone.",
+        "type": "narrate"
+      }
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "add",
+      "path": "/content/fx.near-hall.done.6.narrate",
+      "value": "那道门后是下架：远厅最低的一层石架。"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "add",
+      "path": "/source/fx.near-hall.done.6.narrate",
+      "value": "Beyond that door, the undershelf: the far hall's lowest shelf of stone."
+    }
+  ],
+  "point": "site-plan",
+  "units": [
+    "Learned::hidden",
+    "EdgeGating.secret"
+  ],
+  "why": "The west door declared `learned: hidden` with its secret, the beat that opens it given a close-up shot of its seam and a line after the shot that tells the word — a hidden way every text rule keeps. Its shutter is the derivation's own, iron bars, and the near hall's other doors are grilles too: from the near hall the eye looks through them into the far hall, the place the hidden way leads to. A way whose far side the eye sees is not hidden. The build refuses it `DW1054`, naming the eye cell and the far-hall cell it reaches through nothing that hides. It declares `Learned::hidden` and `EdgeGating.secret`: the gallery holds no way a grille does not give away (the recorded debt of spec-0118 criterion 11), so the word and the field are refusal-proven here."
+}

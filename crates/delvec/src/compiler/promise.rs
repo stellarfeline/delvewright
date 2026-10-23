@@ -500,9 +500,7 @@ fn unseen(
         eye[1].floor() as i32,
         eye[2].floor() as i32,
     ];
-    let lines = in_sight(eye, &sight_box, &|cell| {
-        cell != from && cell != eye_cell && world.blocks_camera(cell)
-    });
+    let lines = in_sight(world, eye, &sight_box, &[from, eye_cell]);
     (!lines.seen()).then(|| {
         let first = lines.centre_block.map_or_else(String::new, |cell| {
             format!(": the centre line is stopped first at {cell:?}")
@@ -514,8 +512,9 @@ fn unseen(
 /// **An act the party can find** (`DW0863`, spec-0104 §4). On every walked
 /// path, every act ([`crate::compiler::acts`]) is announced with a `hint` (an
 /// objective only), or in sight from the cell the party stands on before it —
-/// a clear line by [`crate::compiler::nav::walk_cells`] over
-/// [`crate::compiler::nav::World::blocks_camera`], within [`SIGHT_BLOCKS`] —
+/// a clear line by the one sight rule ([`crate::compiler::framing`]'s
+/// `in_sight`, stopped only by a cell that hides what is behind it), within
+/// [`SIGHT_BLOCKS`] —
 /// and, for a `kill`, its wave's anchor within the wave's reach of that cell
 /// too. A kill fired by acts is judged from each firing act's cell, all of
 /// which must see it; a kill on no walk is judged from those cells alone.

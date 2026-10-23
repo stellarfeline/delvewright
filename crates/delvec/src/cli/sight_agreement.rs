@@ -78,7 +78,15 @@ fn case(rng: &mut SplitMix) -> Case {
         for y in 0..EDGE {
             for z in 0..EDGE {
                 if rng.unit() < density {
-                    blocks.insert([x, y, z], BlockState::new("minecraft:stone"));
+                    // Stone hides; glass, bars and a fence are looked through
+                    // (`Occupancy::hides`, the pinned occlusion table).
+                    let b = [
+                        "minecraft:stone",
+                        "minecraft:glass",
+                        "minecraft:iron_bars",
+                        "minecraft:oak_fence",
+                    ][rng.below(4) as usize];
+                    blocks.insert([x, y, z], BlockState::new(b));
                 }
             }
         }

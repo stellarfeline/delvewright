@@ -284,6 +284,23 @@ impl QuestsContent {
         out
     }
 
+    /// **The triggers that answer a press on the gate `gate`** (spec-0117 §6):
+    /// every `use` trigger that declares `serves: {gate}` naming it, in
+    /// declared order — the gate's own answer at a cell of its region, or a
+    /// knocker beside it.
+    ///
+    /// One predicate for every reader of "this sealed gate answers a press":
+    /// `DW0429`'s obligation on a sealed gate (`compiler::pressable::check`)
+    /// and `DW1054`'s confirmation of a way declared `told` (spec-0118 §6.2,
+    /// `compiler::nav::learned`). A `told` way's press answer is a press
+    /// answer, so the two read one rule.
+    pub fn gate_answers<'a>(&'a self, gate: &'a str) -> impl Iterator<Item = &'a EnvTrigger> + 'a {
+        self.triggers.iter().filter(move |t| {
+            matches!(t.on, crate::TriggerOn::Use)
+                && matches!(&t.serves, Some(crate::Serves::Gate(g)) if g.as_str() == gate)
+        })
+    }
+
     /// Desugar every `ambush` into a real environment trigger and clear the
     /// ambush list (spec-0016 §3). Called once, by
     /// [`parse_campaign`](crate::parse_campaign); idempotent by construction

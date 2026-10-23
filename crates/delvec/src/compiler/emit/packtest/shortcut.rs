@@ -25,9 +25,17 @@ pub(super) fn emit_shortcut_packtest(plan: &Plan, out: &mut BuildOutput) {
         "fill {} {} {} {} {} {} {}",
         from[0], from[1], from[2], to[0], to[1], to[2], sc.gate_block
     ));
+    // Sealed is the gate's block, by id: a block that connects to its
+    // neighbours (iron bars, a pane, a fence) has its connection properties
+    // rewritten by vanilla's shape update as soon as the fill lands beside a
+    // wall or a second cell of itself, so the exact state the fill wrote is
+    // not the state the cell holds a tick later.
     b.push(format!(
         "execute store success score #sb_scut dw.sys if block {} {} {} {}",
-        probe[0], probe[1], probe[2], sc.gate_block
+        probe[0],
+        probe[1],
+        probe[2],
+        crate::compiler::pressable::block_id(&sc.gate_block)
     ));
     b.push("assert score #sb_scut dw.sys matches 1".to_string());
     // Pull the mechanism: the gate is air and the sentinel is latched.

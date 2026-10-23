@@ -1390,14 +1390,7 @@ pub fn check(
         let Some((from, to, _)) = gate_region(plan, gate) else {
             continue;
         };
-        let answers: Vec<&EnvTrigger> = quests
-            .triggers
-            .iter()
-            .filter(|t| {
-                matches!(t.on, TriggerOn::Use)
-                    && matches!(&t.serves, Some(Serves::Gate(g)) if g.as_str() == gate)
-            })
-            .collect();
+        let answers: Vec<&EnvTrigger> = quests.gate_answers(gate).collect();
         let mut own = 0usize;
         let mut knock = 0usize;
         for t in &answers {
@@ -1503,11 +1496,8 @@ pub fn check(
                         "{what}, and nothing answers a press on it: no `use` trigger `serves` it. \
                          A push on a sealed door is otherwise silent, and the compiler does not \
                          word it for you. Prescription: anchor a trigger at a point on the door's \
-                         own cell — `{{\"id\": \"trigger/<name>\", \"at\": \"<the door cell's \
-                         anchor>\", \"on\": {{\"on\": \"use\"}}, \"once\": false, \"audience\": \
-                         \"presser\", \"serves\": {{\"gate\": \"{gate}\"}}, \"effects\": [{{\"type\": \
-                         \"narrate\", \"style\": \"actionbar\", \"text\": \"<what the door \
-                         says>\"}}]}}` — whose body is the gate's own block{}",
+                         own cell — {} — whose body is the gate's own block{}",
+                        delvewright_dsl::trigger::press_answer_prescription(gate, "the door"),
                         if *shortcut {
                             ""
                         } else {

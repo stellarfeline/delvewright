@@ -1,0 +1,16 @@
+{
+  "code": "DW1054",
+  "patch": [
+    {
+      "doc": "layout-graph.json",
+      "op": "replace",
+      "path": "/content/edges/5/gating/learned",
+      "value": "rewarded"
+    }
+  ],
+  "point": "site-plan",
+  "units": [
+    "Learned::rewarded"
+  ],
+  "why": "The loft stair declared `rewarded`. Its bar stands at the head of the stair, met from the far hall's floor and from the loft, both open ground the route crosses: neither face is at the end of a branch, so the ground only the stair leads to is empty, and the muster fighting on the far-hall floor pays for no branch. `DW1054` refuses the declaration. The gallery has no dead-end branch to a shut way, so `rewarded` is proven here by its refusal; a confirmed `rewarded` is the demo level's keeper's hatch."
+}

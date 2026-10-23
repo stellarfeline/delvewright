@@ -738,15 +738,17 @@ fn space_holding(contract: &SpatialContract, local: [i32; 3]) -> Option<String> 
         .map(|(name, _)| name.clone())
 }
 
-/// A local cell, placed and rotated — the transform `crate::compiler::faces` and
-/// `crate::compiler::solver` both use, so a way's cells land on the piece's blocks.
-fn world_cell(rotation: Rotation, pos: [i32; 3], local: [i32; 3]) -> [i32; 3] {
+/// A local cell, placed and rotated — the one transform from a piece's frame
+/// to the world that every reader of a placed piece's regions asks
+/// (`compiler::faces`, `compiler::nav::width`), so a way's cells land on the
+/// piece's blocks.
+pub(crate) fn world_cell(rotation: Rotation, pos: [i32; 3], local: [i32; 3]) -> [i32; 3] {
     let t = rotation.transform(local);
     [pos[0] + t[0], pos[1] + t[1], pos[2] + t[2]]
 }
 
 /// The inverse of [`world_cell`]: a world cell back into the piece's own frame.
-fn local_cell(rotation: Rotation, pos: [i32; 3], world: [i32; 3]) -> [i32; 3] {
+pub(crate) fn local_cell(rotation: Rotation, pos: [i32; 3], world: [i32; 3]) -> [i32; 3] {
     let d = [world[0] - pos[0], world[1] - pos[1], world[2] - pos[2]];
     let back = match rotation {
         Rotation::None => Rotation::None,

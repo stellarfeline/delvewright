@@ -548,6 +548,21 @@ pub(crate) fn press_answer_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     }
 }
 
+/// **The trigger that answers a press on the sealed gate `gate`**, as `DW0429`
+/// prescribes it and `DW1054` repeats it for a way declared `told` (spec-0117
+/// §6, spec-0118 §6.2): one remedy, written once, in backticks — the JSON of a
+/// `use` trigger at a point on the door's own cell that `serves` the gate, whose
+/// one effect narrates what `thing` says. Its body is the gate's own block.
+#[must_use]
+pub fn press_answer_prescription(gate: &str, thing: &str) -> String {
+    format!(
+        "`{{\"id\": \"trigger/<name>\", \"at\": \"<the door cell's anchor>\", \"on\": \
+         {{\"on\": \"use\"}}, \"once\": false, \"audience\": \"presser\", \"serves\": \
+         {{\"gate\": \"{gate}\"}}, \"effects\": [{{\"type\": \"narrate\", \"style\": \
+         \"actionbar\", \"text\": \"<what {thing} says>\"}}]}}`"
+    )
+}
+
 /// The id prefix the compiler reserves for triggers it synthesizes
 /// (`plan::press_answer_trigger_id`). Stated here because the *reservation* is a
 /// DSL-level fact even though today's only user is in the compiler.

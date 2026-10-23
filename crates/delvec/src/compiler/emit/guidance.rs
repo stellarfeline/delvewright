@@ -580,11 +580,7 @@ pub(super) fn lit_set(
                     eye[1].floor() as i32,
                     eye[2].floor() as i32,
                 ];
-                if crate::compiler::framing::in_sight(eye, &target, &|q| {
-                    q != c && q != eye_cell && world.blocks_camera(q)
-                })
-                .seen()
-                {
+                if crate::compiler::framing::in_sight(world, eye, &target, &[c, eye_cell]).seen() {
                     cells.push(c);
                 }
             }

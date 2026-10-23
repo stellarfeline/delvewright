@@ -2527,6 +2527,7 @@ mod tests {
                 climb: Default::default(),
                 unheld_climb: Default::default(),
                 footprints: Default::default(),
+                hiding: Default::default(),
             },
             Premises::geometry_only(),
         )

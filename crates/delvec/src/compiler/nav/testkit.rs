@@ -34,6 +34,7 @@ pub(in crate::compiler::nav) fn floored_with_lethal(
             solid.insert([x, y + 2, z]);
         }
     }
+    let solid_hides = solid.clone();
     World::from_occupancy(
         crate::compiler::assembled::Occupancy {
             solid,
@@ -47,6 +48,8 @@ pub(in crate::compiler::nav) fn floored_with_lethal(
             climb: Default::default(),
             unheld_climb: Default::default(),
             footprints: Default::default(),
+            // A synthetic solid cell is a full cube of stone: it hides.
+            hiding: solid_hides,
         },
         // The premises spelled out rather than derived from
         // `Premises::geometry_only()`: a struct literal is what makes a
@@ -183,6 +186,7 @@ pub(in crate::compiler::nav) fn classified(
             solid.insert([x, y - 1, z]);
         }
     }
+    let solid_hides = solid.clone();
     World::from_occupancy(
         crate::compiler::assembled::Occupancy {
             solid,
@@ -195,6 +199,8 @@ pub(in crate::compiler::nav) fn classified(
             climb: Default::default(),
             unheld_climb: Default::default(),
             footprints: Default::default(),
+            // A synthetic solid cell is a full cube of stone: it hides.
+            hiding: solid_hides,
         },
         Premises::geometry_only(),
     )
