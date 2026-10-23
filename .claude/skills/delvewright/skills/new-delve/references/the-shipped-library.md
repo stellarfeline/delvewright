@@ -52,7 +52,7 @@ The means are yours. These four are not, and each one is checkable in a line:
    second is a broken one; a document this engine cannot read, or a piece that
    does not open, is refused by name.
 4. **`DELVEWRIGHT_PREFABS` names its `prefabs/` directory**, in
-   `~/.delvewright/env.sh`, so every later command reads the same library.
+   `.out/env.sh`, so every later command reads the same library.
 
 ```sh
 git -C "$LIB_CLONE" rev-parse HEAD          # == $CONTENT_SHA

@@ -4,7 +4,7 @@
 
 - [What a detail plan is](#what-a-detail-plan-is)
 - [Each place has its own author](#each-place-has-its-own-author)
-- [The procedure, per place](#the-procedure-per-place)
+- [The loop](#the-loop)
 - [The program's contract](#the-programs-contract)
 - [After a plan or graph edit](#after-a-plan-or-graph-edit)
 - [What `GENERATION.md` records](#what-generationmd-records)
@@ -13,8 +13,8 @@
 
 Required before hand-over, for **every** place: the staging gate refuses a
 build with no detail plan, and one whose derivation still stands a
-stand-in in any place — a stand-in never ships. Places are detailed one at a
-time. Until a place is detailed the derivation masses it with a stand-in —
+stand-in in any place — a stand-in never ships. Places are authored
+concurrently and committed one at a time. Until a place is detailed the derivation masses it with a stand-in —
 walkable, legible, made of concrete; detailing replaces that place's stand-in
 with a real building — so the map builds, walks and renders at every point
 between none detailed and all of them, and the build records every place still
@@ -55,30 +55,41 @@ agent** that is handed only that place's own necessary information — what the
 whole hands it, and that place's rows of the campaign's design — and a summary
 of each adjacent box: what it is, its floors, its facade and material, its
 roofline, and the seam joining the two. The agent writes one document, checks
-it with the one verb that judges a place, and reports. You confirm the verdict,
-record the attempt, and launch the next place's agent. A refusal is repaired by
-a **fresh** agent, with the refusal added to its handout; you never edit a
-program yourself, and you never read one.
+it with `detail --check`, and reports. You **commit** what it left, with
+`delvec detail`, record the attempt, and keep the wave full. A refusal is
+repaired by a **fresh** agent, with the refusal added to its handout; you never
+edit a program yourself, and you never read one.
 
 The handout is a file a tool writes from the campaign on every invocation. You
 type nothing into it: to tell a place's author more, edit a document the
 handout quotes — the node's `note` in `layout-graph.json`, the seam's `form` in
-`site-plan.json` — and run the tool again. One agent runs at a time: the check
-writes the plan row and the piece and judges the whole as that run would leave
-it, so two agents checking at once race on both and judge a whole the other is
-changing. The order is the critical path from `entry`, then every other place
-in the order `delvec --prefabs "$DELVEWRIGHT_PREFABS" allocation
-<campaign-dir> --all` prints them, scenery last — a spine
-place no program can answer is found before the rest of the map is spent on it.
+`site-plan.json` — and run the tool again.
+
+**Authors run concurrently, commits run one at a time.** The check and the
+commit are two runs of one verb: `delvec --prefabs "$DELVEWRIGHT_PREFABS" detail --check <campaign-dir> <place>`
+binds, expands, voids, runs every gate of the place and the bindings check over
+the whole **as committed on disk**, and writes nothing; `delvec --prefabs "$DELVEWRIGHT_PREFABS" detail
+<campaign-dir> <place>` runs the same judge, then writes the piece, its report
+and the plan row — each through a temporary file renamed into place, so a check
+running at that instant reads the old file or the new one, never a torn one —
+and then runs the battery over the committed whole. Up to **N** authors are in
+flight at once, N the line `delvec --prefabs "$DELVEWRIGHT_PREFABS" allocation
+<campaign-dir> --all` prints on stderr, `concurrency: N = min(P, max(1, C /
+2))` — P the places with no passing program, C the cores the machine offers.
+You never type N; the handout's header quotes the line. The order is the
+critical path from `entry`, then every other place in the order `allocation
+--all` prints them, scenery last — a spine place no program can answer is found
+before the rest of the map is spent on it.
 
 A place filled by a piece the library already has, or by one admitted through
 `delvec prefab` instead of written as a program, is bound by you without an
 agent: *Reference: when the prefab library has no piece you need* and
 *Reference: the shipped library* say how.
 
-## The procedure, per place
+## The loop
 
-1. **Write the handout.** Mandatory, and the only input to the agent:
+1. **Write the handouts of the first wave**, at most N, in the order above.
+   Mandatory, and the only input to each agent:
 
    ```sh
    "$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/handout.py" <campaign-dir> <place> \
@@ -89,17 +100,20 @@ agent: *Reference: when the prefab library has no piece you need* and
    `<campaign-dir>/.out/handouts/<place stem>/handout-<n>.md` — `n` is the
    attempt, counted from the files already there — and prints two lines: the
    handout's path, and the one-line prompt you launch the agent with. Where the
-   place already has a program it runs `delvec detail` on it: a program that
-   passes is **exit 3** and no handout (nothing is owed), a refused one puts the
-   verdict into the handout verbatim as the refusal the next attempt repairs.
-   A place the plan allocates no box to is exit 1, naming every place it does;
-   a directory that is not a campaign, an engine tree or a prefab directory
-   that is not there is exit 2. Read its stderr line: it states the handout's
-   binding — design rows, neighbours, seams, voids, owed names, refusal lines.
+   place already has a program it runs `detail --check` on it: a program
+   that passes is **exit 3** and no handout (commit it, step 3), a refused one
+   puts the verdict into the handout verbatim as the refusal the next attempt
+   repairs. A place the plan allocates no box to is exit 1, naming every place
+   it does; a directory that is not a campaign, an engine tree or a prefab
+   directory that is not there, or a `delvec` that states no concurrency line,
+   is exit 2. Read its stderr: the handout's binding — design rows, neighbours,
+   seams, voids, owed names, refusal lines — and the concurrency line. The
+   handout says which neighbours are detailed **as of the handout**, and that
+   the author's check reads the whole as it stands when the check runs.
    **Do not read the handout**: it carries the allocation, and holding it is
    how a session starts authoring.
 
-2. **Launch the agent** with the **Agent tool**: `subagent_type`
+2. **Launch each agent** with the **Agent tool**: `subagent_type`
    `general-purpose`, and as its prompt exactly the second line the script
    printed — `Read and execute <handout path>. Report, then exit.` Nothing is
    added. **Never a fork**: a fork inherits this session's whole context, every
@@ -107,38 +121,47 @@ agent: *Reference: when the prefab library has no piece you need* and
    not hold. The handout tells the agent what it may read (the handout, its
    own program, the authoring references, the grammar corpus), what it may run
    (`delvec allocation` for the same facts again; `delvec grammar expand` at
-   the frame and a render to look; `delvec detail` to check), what it writes
-   (`programs/<place stem>.json`, and a generator script beside it under
+   the frame and a render to look; `detail --check` to check), what it
+   writes (`programs/<place stem>.json`, and a generator script beside it under
    `design/generator/` when the program is emitted), and what it never does:
    read another place's program, the design record, the site plan, the layout
    graph, the quest documents or another handout; edit any other document; run
-   `detail --all`, `build`, a server or `git`; retype a handed number; weaken a
-   check. Wait for its report.
+   `detail` without `--check`, `detail --all`, `build`, a server or
+   `git`; retype a handed number; weaken a check. It returns its report with
+   the exit of its last check.
 
-3. **Confirm the verdict yourself**: `delvec --prefabs "$DELVEWRIGHT_PREFABS"
-   detail <campaign-dir> <place>` must exit 0. It binds the handing into the
-   program, expands at the frame, voids every cell the place does not own, runs
-   every gate before any file is written, writes the piece into the prefab
-   directory and the row into `detail-plan.json`, and builds the whole to prove
-   the map still walks. The agent ran the same verb green; your run after a
-   green one moves no byte, and a byte that moves is a finding. Each owed anchor
-   name is re-bound to one of the piece's own anchors (`DW0845`) — that is what
-   keeps the quest layer working, because those names were bound to places
-   before any detail existed and detailing must never force a quest edit — and
-   a way the plan did not allocate is refused in both directions (`DW0844`).
+3. **On each return, in return order, commit** — serially, never while another
+   commit runs: `delvec --prefabs "$DELVEWRIGHT_PREFABS" detail <campaign-dir>
+   <place>`. The place's own gates and the bindings check run before anything
+   is written; a place that passes them is **written**, and the battery then
+   builds the whole that now stands on disk, so a red from the battery leaves
+   the piece and its row in place and names the place. Each owed anchor name is
+   re-bound to one of the piece's own anchors (`DW0845`) — that is what keeps
+   the quest layer working, because those names were bound to places before any
+   detail existed and detailing must never force a quest edit — and a way the
+   plan did not allocate is refused in both directions (`DW0844`). **Exit 0**:
+   record the attempt, write the next unstarted place's handout and launch its
+   agent, keeping at most N in flight.
 
-4. **On any other exit, repair with a fresh agent**: run step 1 again — the
-   script captures the refusal from the program the agent left and writes
-   `handout-<n+1>.md` with it — and step 2 on that handout. The refused program
-   stays where it is; the new agent repairs it. **Three consecutive refusals of
-   one place naming the same diagnostic code** mean the cause is upstream of
-   the program — the plan's box or seam, a `form` no program can answer, or a
-   capability the grammar lacks. Launch no fourth agent: say so, with the
-   three verdicts, and act on the cause — a plan edit (below), or the page's
-   rule for a missing capability: say what is missing and offer the closest
-   authorable alternative.
+4. **On any other exit, hand it back**: the author's check passed against a
+   whole a neighbour has since moved, or passed and the battery over the
+   committed whole refuses. Run step 1 for that place again — the script runs
+   `detail --check` on the program the agent left and writes
+   `handout-<n+1>.md` with the verdict — and launch a fresh agent on it. The
+   refused program stays where it is; the new agent repairs it. **Three
+   consecutive refusals of one place naming the same diagnostic code** mean the
+   cause is upstream of the program — the plan's box or seam, a `form` no
+   program can answer, or a capability the grammar lacks. Launch no fourth
+   agent for it: act on the cause — a plan edit (below), or the page's rule for
+   a missing capability: author the closest alternative, report what the player
+   will see, and record the missing capability with `debug-note.py` (`--kind
+   limit --step 9/<place>`). A **spine** place refused three times with one
+   code stops new launches: authors already in flight return and are committed
+   or handed back, and the cause is acted on before anything else is launched.
 
-5. **Record the attempt** in `GENERATION.md` (below), then the next place.
+5. **Record every attempt** in `GENERATION.md` (below), and every refusal you
+   hand back with `debug-note.py` (`--kind refusal --step 9/<place> --from
+   <the commit's captured output>`).
 
 ## The program's contract
 
@@ -146,7 +169,11 @@ What the agent's program has to meet — the handout carries it, and you read it
 here only to know what a refusal is about. The program lives at
 `programs/<place stem>.json` inside the campaign, by hand or emitted by a
 script (*New pieces*, step 3; a script reads the handed values from the
-allocation and retypes none). It declares the handed values it uses as
+allocation and retypes none). The shape a generator takes is the engine's own
+worked example, `$DELVEWRIGHT_ENGINE/gallery/overlays/site-plan/design/generator/annex.py`
+(`$DELVEWRIGHT_ENGINE/docs/reference/grammar.md` §2c, *A place from its
+allocation*): it reads the saved output of `delvec --prefabs "$DELVEWRIGHT_PREFABS" allocation
+<campaign> <place>`, runs no binary, names no path, and writes the program. It declares the handed values it uses as
 parameters under the `handed/` prefix, with the allocation's values as their
 defaults (`handed/datum-y`; `handed/ground/{min-y,max-y,bottom-y}`;
 `handed/roof/…` on a declared roof;
@@ -180,15 +207,15 @@ nothing put there survives and nothing may depend on it.
 The agent iterates with `delvec --prefabs "$DELVEWRIGHT_PREFABS" grammar
 expand --file … --region <the frame>` and a render until it reads as the place
 — the program's `handed/…` defaults are the handed values, so no `--param` is
-typed — and checks with `delvec detail`, which is the only run that sees the
-voids and the seams.
+typed — and checks with `detail --check`, which is the only run that
+sees the voids, the seams and the whole.
 
 ## After a plan or graph edit
 
 Including one that answers a playtest finding in a later round:
 `delvec --prefabs "$DELVEWRIGHT_PREFABS" detail <campaign-dir> --all`. Every
 program-detailed place is re-made; one that no longer fits is refused by name,
-and that place goes back through the procedure above from step 1 — the script
+and that place goes back through the loop above from step 1 — the script
 captures the refusal as the next attempt's. The run judges the whole it would
 leave, so the order of the places decides nothing, and it writes nothing
 unless every place and that whole pass.
@@ -200,9 +227,10 @@ carve.
 ## What `GENERATION.md` records
 
 One table, **Detail**, one row per attempt, written by you after the agent's
-report and your confirming run: the place; the attempt number; the handout's
-path (a regenerable file under `.out/`, which the table says once above it);
-the agent's token reading and its duration as the Agent tool's completion
-reports them; the diagnostic codes of the refusal that attempt repaired (none
-on a first authoring); the `delvec detail` exit you confirmed. No date, no
-model name, no agent id.
+report and your commit: the place; the attempt number; the handout's path (a
+regenerable file under `.out/`, which the table says once above it); the
+agent's token reading and its duration as the Agent tool's completion reports
+them; the diagnostic codes of the refusal that attempt repaired (none on a
+first authoring); the exit of **your commit**. One line above the table states
+the wave bound as `allocation --all` printed it. No date, no model name, no
+agent id.

@@ -7,7 +7,7 @@ metadata:
 
 # /new-delve — building a delve, end to end
 
-This page is the spine: the two stops, the thirteen steps in order, the
+This page is the spine: the asks, the thirteen steps in order, the
 standing constraints, and a pointer per step to the file that carries its body.
 Read the pointer's file when you reach that step, and not before.
 
@@ -18,6 +18,7 @@ Read the pointer's file when you reach that step, and not before.
 - [The shape of the run](#the-shape-of-the-run)
 - [Hard rules](#hard-rules)
 - [Init — build the toolchain before you author anything](#init--build-the-toolchain-before-you-author-anything)
+- [The opening check — one message, before step 1](#the-opening-check--one-message-before-step-1)
 - [The map is a site plan](#the-map-is-a-site-plan)
 - [The steps](#the-steps)
 - [Where each reference lives](#where-each-reference-lives)
@@ -32,25 +33,36 @@ this page, and their prompt is a constraint set — what it pins down is honoure
 verbatim, what it leaves open is yours to invent.
 
 Every command below is yours to run and every document below is yours to write.
-**Two things are not**, because they need a judgement that is the user's to
-make, or their permission to touch something outside this project. At each one
-you stop, hand over exactly what is needed, and **wait for an answer**:
+**A question to the user is a design question**: a creative judgement that needs
+a person's attention, in words a player who has never seen `delvec`, a DW code,
+a schema or a file path can answer from the message alone. Anything technical —
+a refusal, an engine limit, a default, a workaround — is decided by you and never
+put to the user: take the default the page states, record the event with
+`scripts/debug-note.py` (it writes only when `DELVEWRIGHT_DEBUG` is on, so the
+instruction is the same either way), and carry on. A departure from the design
+the **player will see** is reported at the hand-over in player words, whether
+debug is on or off.
 
-| where | what you hand the user | what you wait for |
-|---|---|---|
-| **Init I5** the client jar | the two ways it can reach the machine, download named as the default | which one — or the directory to copy from |
-| **§4** the design gate | the design walkthrough — every scene, near view and far | an explicit yes |
+The run stops for the user at these points and at no other:
 
-Stopping means: say what you have done, hand over the thing, say what you need
-back, and **end your turn there**. Do not proceed on silence, do not substitute
-your own judgement for the answer, and **never write anything that asserts a
-step whose actor is the user actually happened** — an approval nobody gave is how
+| id | where | what the user is asked, in player words | what the run waits for |
+|---|---|---|---|
+| **A1** | [the opening check](#the-opening-check--one-message-before-step-1), once, before step 1 | one message carrying only the items that apply: the delve itself when the prompt is too thin, the languages, the image-service key, the translation key | one answer, read for each item; an item the prompt already pins is not asked |
+| **A2** | [step 4, the design gate](#4-the-design-gate--the-user-says-yes); [`references/design-gate.md`, the stop](references/design-gate.md#the-stop) | the design walkthrough — every scene, a near view and a far view, each under its hour and weather — and the one line: *Is this the delve you want built?* | an explicit yes; silence is not one; a yes to the pictures is a yes to the hour they were drawn under |
+| **H** | [step 13, the hand-over](#13-hand-it-over) | the storybook, the connect line, what the machine could not check, and the report | nothing: the run ends |
+
+At A1 and A2: say what you have done, hand over the thing, say what you need
+back, and the turn is over. Do not proceed on silence, do not substitute your
+own judgement for the answer, and **never write anything that asserts a step
+whose actor is the user actually happened** — an approval nobody gave is how
 this pipeline produces a green run and a delve no one has ever looked at.
 
-§13 is also a hand-over, but nothing comes back: it ends the run. The first time
-the user plays the delve is the finished first version. Anywhere else
-the user *may* be offered a choice — which candidate piece, which frame — the
-offer is optional and you proceed without it.
+**Offers** are optional and never a stop; each is presented beside the approved
+image where one exists, and the run proceeds without an answer. **O1**: which
+candidate piece or which frame, where a page offers a choice. **O2**: standing
+in the running game where a shot should be taken (*a render camera nobody is
+satisfied with*), the camera's field of view taken as **70**, the game's
+default, unless the user volunteers a number.
 
 ## What you are building
 
@@ -76,8 +88,8 @@ spent asking comes out of the user's.
 
 A prompt is a **constraint set over the documents**: honour everything it pins
 down — theme, specific levels, plot beats, NPCs, homages — and invent the rest.
-Ask two or three clarifying questions only if the prompt is too thin to pick a
-theme and a target length; otherwise proceed.
+A prompt too thin to pick a theme and a target length is the opening check's
+item (a); otherwise proceed.
 
 **A thin prompt is creative licence.** When a prompt pins down little — a
 one-line theme, no detailed brief — treat it as a **showcase** brief and
@@ -111,22 +123,24 @@ step needs something the step before it produced.
 Init            every run: I0 · I1 · I1b, the pin check      ── §Init
                 I1b exits 0 before any document is read or any
                 subcommand is run; the rest of Init is run where
-                I1b names it. STOP at Init I5 — the jar is the user's
+                I1b names it
+  ↓
+A1  opening     one message: only the items that apply
   ↓
  1  workspace   the campaign directory and its documents
  2  placement   the map's reference, then brief → graph → plan
  3  story       npcs · classes · quest-plan
- 4  GATE        STOP — the design walkthrough, the user says yes
+ 4  GATE        A2 — the design walkthrough, the user says yes
  5  content     quests · dialogue
  6  fmt         delvec fmt              ← every campaign, not optional
  7  analyze     analyze the quest graph
  8  build       build the datapack and the world
  8b cameras     one showcase camera per approved image
- 9  detail      every place, one at a time
+ 9  detail      every place, N authors at once, commits one at a time
 10  ladder      PackTest · bot · branch runs, on the detailed build
 11  chronicle   only when the plan declares branch_points
 12  visual      the POV sequence, then the renders
-13  hand over   storybook, staging gate, play commands — the end
+13  hand over   H — storybook, staging gate, the report — the end
 ```
 
 One branch changes what you do, and it is decided before step 1: **do you
@@ -171,39 +185,43 @@ They hold at every step by their nature, and nothing below repeats them.
 
 **Every run starts here, and a run on a machine that has run Init before is no
 exception.** I0, I1 and **I1b** run first on every run; I1b compares the binary,
-the engine tree and `env.sh` with this page's own `versions.toml`, and **no
+the engine tree and `.out/env.sh` with this page's own `versions.toml`, and **no
 campaign document is read and no `delvec` subcommand is run until it exits 0**.
 What else in Init a run owes is what I1b's row says. **If any step here cannot
 be completed, say so and stop**: authoring against a half-built toolchain
 produces a campaign whose visual half was never reviewed, and nothing downstream
 reports that.
 
-The toolchain lives in **`~/.delvewright/`** — `engine/` the checkout, `bin/`
-the unpacked archive, `env.sh` the environment every later command sources, and
-`campaigns/` if the shipped library is ever taken. One directory, created by the
-first run, the same in both modes, and held to the pin by I1b on every run.
+The machine's toolchain lives in **`~/.delvewright/`** — `engine/` the checkout,
+`bin/` the unpacked archive, `client/` the jar, and `campaigns/` if the shipped
+library is ever taken — created by the first run, read-only after Init, and held
+to the pin by I1b on every run. The **session's** state lives in the working
+directory's own `.out/`: `.out/env.sh`, the environment every later command
+sources, and `.out/delve`, the build tree. Two sessions in two working
+directories never share either; two in one working directory are two writers
+of one tree, so run one.
 
 **The commands, and the meaning of every failure, are `references/init.md`.**
 Read it now and run from it. The table below is the order and the postconditions.
 
 | step | what it establishes, and what has to be true after it |
 |---|---|
-| **I0 · mode** | `DELVEWRIGHT_MODE` is `dev` when the working directory carries **both** `crates/delvec/Cargo.toml` and `.claude/skills/delvewright/skills/new-delve/SKILL.md`, else `creator`. `DELVEWRIGHT_ENGINE` is the working directory in dev, `~/.delvewright/engine` otherwise. Dev: `campaigns/` there resolves to a directory, or **stop** |
+| **I0 · mode** | `DELVEWRIGHT_MODE` is `dev` when the working directory carries **both** `crates/delvec/Cargo.toml` and `.claude/skills/delvewright/skills/new-delve/SKILL.md`, else `creator`. `DELVEWRIGHT_ENGINE` is the working directory in dev, `~/.delvewright/engine` otherwise. `DELVEWRIGHT_DEBUG` is read from the shell that started the session: unset or `0` is off — **the released default** — and any other value is on; it decides only whether the final report carries *Technical decisions and engine limits*. Dev: `campaigns/` there resolves to a directory, or **stop** |
 | **I1 · already here** | `git`; a Python ≥ 3.11 recorded as `DELVEWRIGHT_PYTHON` and used by every Python invocation on this page; the **skill root** recorded as `DELVEWRIGHT_SKILL` — every bundled path below is `"$DELVEWRIGHT_SKILL/…"`, and it is never the working directory; `java` ≥ 21, enumerated with `scripts/find-jdk.py` before halting, and exported; `docker info` exits 0, **and `docker compose version` exits 0** — Compose v2 is a separate per-user CLI plugin that `docker info` says nothing about, and every entry point of step 10 is built on it. Not here: Rust and `git-lfs` |
-| **I1b · the pin, every run** | `"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/check-toolchain.py" --mode "$DELVEWRIGHT_MODE" --engine "$DELVEWRIGHT_ENGINE"`, with **this run's** I0 and I1 values and never `env.sh`'s, exits 0: `delvec --version` through `env.sh` equals the version `[engine].ref` states (dev: the checkout's `[engine].version`), the creator engine tree's `rev-parse HEAD` equals the commit `[engine].ref` resolves to, and `env.sh`'s `DELVEWRIGHT_SKILL`, `DELVEWRIGHT_MODE` and `DELVEWRIGHT_ENGINE` are this run's. **Exit 3 is a refusal**: run the steps it prints, in order, then I1b again. Exit 4: no toolchain, all of I2–I8. Exit 2: stop. After 0: I2–I4 are skipped and nothing is downloaded; I5 only if the jar is not at its path; I6 on every run; I7 and I8 after a repair or a first run |
+| **I1b · the pin, every run** | `"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/check-toolchain.py" --mode "$DELVEWRIGHT_MODE" --engine "$DELVEWRIGHT_ENGINE"`, with **this run's** I0 and I1 values and never `.out/env.sh`'s, exits 0: `delvec --version` through `.out/env.sh` equals the version `[engine].ref` states (dev: the checkout's `[engine].version`), the creator engine tree's `rev-parse HEAD` equals the commit `[engine].ref` resolves to, and `.out/env.sh`'s `DELVEWRIGHT_SKILL`, `DELVEWRIGHT_MODE`, `DELVEWRIGHT_ENGINE` and `DELVE_OUTPUT` are this run's, and no stale `~/.delvewright/env.sh` stands. **Exit 3 is a refusal**: run the steps it prints, in order, then I1b again. Exit 4: no toolchain, all of I2–I8. Exit 2: stop. After 0: I2–I4 are skipped and nothing is downloaded; I5 only if the jar is not at its path; I6 on every run; I7 and I8 after a repair or a first run |
 | **I2 · engine tree** | `"$DELVEWRIGHT_SKILL/versions.toml"` is read, never restated. Creator: the clone at `~/.delvewright/engine` fetches the tag `[engine].ref`, is `--detach`ed at it, and `rev-parse HEAD` equals `rev-parse "$ENGINE_REF^{commit}"`. Dev: HEAD is recorded and said out loud |
 | **I3a · `delvec`** | `"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/fetch-delvec.py" --into ~/.delvewright/bin` exits 0 having printed its target, archive, digest and version. Exit 3 or 4 → I3b. **Exit 5 is a refusal** — never the floor, never a retry. Exit 6: stop |
 | **I3b · the floor** | Only after exit 3 or 4, and in dev mode always. `cargo build --release -p delvec` **from inside** the engine tree, with `cargo --version` and `rustc --version` equal to the channel `rust-toolchain.toml` names. No `cargo`: hand over `rustup` and wait |
 | **I3c · the binary** | `delvec --version` answers **the number I1b holds it to**. **Write down the `dsl` number** — step 1 needs it on every document. The GPU arms are **not** asked here: they draw with the client jar I5 fetches, so a gate run now refuses on every clean machine there is, for a reason this page created |
-| **I4 · environment** | `~/.delvewright/env.sh` carries `JAVA_HOME`, `DELVEWRIGHT_MODE`, `DELVEWRIGHT_ENGINE`, `DELVEWRIGHT_PYTHON`, `DELVEWRIGHT_SKILL`, `DELVEWRIGHT_PREFABS` and `PATH`, this run's values in the lines I4 owns and every other line kept. Every later command runs as `. ~/.delvewright/env.sh && <command>` |
-| **I5 · client jar** | **STOP — the user's choice.** Download by default, or a copy from a directory they name. Either way the jar lands at `~/.delvewright/client/minecraft-1.21.11.jar` and you have looked at it there. That it *reads* is I8's line |
+| **I4 · environment** | `$PWD/.out/env.sh` carries `JAVA_HOME`, `DELVEWRIGHT_MODE`, `DELVEWRIGHT_ENGINE`, `DELVEWRIGHT_PYTHON`, `DELVEWRIGHT_SKILL`, `DELVEWRIGHT_PREFABS`, `DELVEWRIGHT_DEBUG`, `DELVE_OUTPUT` (`$PWD/.out/delve`), `DELVE_DOCKERFILE` and `PATH`, this run's values in the lines I4 owns and every other line kept. Every later command runs as `. .out/env.sh && <command>`, from the working directory |
+| **I5 · client jar** | Downloaded by default, digest-verified; a copy only when the prompt itself names a Minecraft directory. Either way the jar lands at `~/.delvewright/client/minecraft-1.21.11.jar` and you have looked at it there. That it *reads* is I8's line |
 | **I6 · the library** | `DELVEWRIGHT_PREFABS` names a prefabs directory and you have said which of the four cases produced it. **Nothing is cloned here** — step 2 takes the shipped library, if the campaign wants one |
-| **I7 · named, not installed** | On the drawing path only: `refimg.py --dry-run` exits 0. The skin toolchain is not mentioned. Nothing is installed for frames: `delvec` draws them itself, with the jar I5 placed |
-| **I8 · finished when** | Every line of the checklist below answers, through `env.sh`. This is the one place the toolchain is exercised end to end, because three of those lines need the jar, the binary and the library at once |
+| **I7 · named, not installed** | On the drawing path only: `refimg.py --dry-run` exits 0, with the key the opening check's item (c) put in `.out/env.sh` under its provider's name. The skin toolchain is not mentioned. Nothing is installed for frames: `delvec` draws them itself, with the jar I5 placed |
+| **I8 · finished when** | Every line of the checklist below answers, through `.out/env.sh`. This is the one place the toolchain is exercised end to end, because three of those lines need the jar, the binary and the library at once |
 
 ### I8 — Init is finished when every one of these answers
 
-Each of them through `env.sh`, since a line answering wrongly because the
+Each of them through `.out/env.sh`, since a line answering wrongly because the
 environment was lost is indistinguishable from a missing tool:
 
 ```sh
@@ -230,6 +248,34 @@ means Init is not finished**, and a run that continues authors against a
 half-built toolchain — `references/init.md`'s I8 says what each one means when
 it does not answer, and `render fidelity-gate` in particular says three
 different things.
+
+## The opening check — one message, before step 1
+
+Once Init is finished, ask the user **one message** carrying only the items
+below that apply — an item the prompt already pins is not asked — and end your
+turn there. Read the one answer for each item; nothing of step 1 is written
+before it. Each item is a thing only the person holds:
+
+- **(a)** only when the prompt is too thin to pick a theme and a length: two or
+  three questions about the delve — *what kind of place, what kind of story,
+  roughly how long an evening*.
+- **(b)** *English only, or shall it also be playable in <the language the
+  prompt is written in>?* Asked even when the prompt is silent about language:
+  a prompt written in Chinese is neither a request for a Chinese delve nor a
+  refusal of one. The answer is `world.json`'s `languages`.
+- **(c)** on the drawing path only (no approved `design/`, Init I7), and only
+  when neither `GEMINI_API_KEY` nor `IDEOGRAM_API_KEY` is set: *The design will
+  be shown to you as pictures. I can draw them with a paid image service you
+  have an account with — Google Gemini or Ideogram — if you paste its key;
+  otherwise you will review the design as text and plans.*
+- **(d)** only when (b) chose a language other than English and no translation
+  key is set (`references/other-languages.md`): *<That language>'s text is
+  written by a translation service; paste a DeepSeek key, or it is written here,
+  which a native-reader trial found worse.*
+
+A key pasted under (c) or (d) goes into `.out/env.sh` under its provider's
+name, and you say so in one line. An item declined is the user's choice, and
+the run proceeds on the other path.
 
 ## The map is a site plan
 
@@ -275,12 +321,13 @@ correct state to leave this step in, and it is not something to mention,
 apologise for or try to fix. **Read**: `references/story.md` before you start the
 loop, not after a refusal.
 
-## 4. The design gate — STOP, the user says yes
+## 4. The design gate — the user says yes
 
-**Needs**: step 3. **Hands over**: a visual walkthrough of the whole design —
-every scene, a near view and a far view, each image shown with the `time` and
-`weather` tokens it was drawn under. **Waits for**: an explicit yes, from the
-user, never inferred from silence and never from a reviewer you invented.
+**Needs**: step 3. **Hands over** (A2): a visual walkthrough of the whole
+design — every scene, a near view and a far view, each image shown under the
+hour and weather it was drawn under — and the one line *Is this the delve you
+want built?* **Waits for an explicit yes** from the user, never inferred from
+silence and never from a reviewer you invented.
 **Produces**, once they say yes: `campaigns/<id>/design/`, `design/README.md`
 and `design.json`. **Read**: `references/design-gate.md`.
 
@@ -311,7 +358,7 @@ dead quest is a design bug. **Read**: `references/build.md`.
 ## 8. `delvec build`
 
 **Needs**: step 7 clean. **Produces**: the datapack tree at
-`"$DELVEWRIGHT_ENGINE/validation/delve-output"`, `critical-path.json` and
+`"$DELVE_OUTPUT"`, `critical-path.json` and
 `render-plan.json` and the pacing line. Must exit 0. **Read**: `references/build.md`.
 
 ## 8b. The showcase cameras
@@ -336,13 +383,16 @@ hand, in the running game, is `$DELVEWRIGHT_ENGINE/docs/reference/tools.md`
 
 Required for every place: the staging gate at step 13 refuses a build with no
 detail plan, or with any place still standing in its stand-in. **Needs**:
-step 8. **Produces**: `detail-plan.json`, one place at a time. **You write no
-program**: each place's program is written by a **fresh agent** handed only
-that place's handout — `scripts/handout.py` writes it from the campaign, you
-launch the agent with the Agent tool on the one-line prompt the script prints,
-and `delvec detail` on your side is the verdict; a refusal goes back into a
-fresh agent's handout, never into your own edit. One agent at a time, in
-critical-path order. **Read**:
+step 8. **Produces**: `detail-plan.json`. **You write no program**: each
+place's program is written by a **fresh agent** handed only that place's
+handout — `scripts/handout.py` writes it from the campaign, and you launch the
+agent with the Agent tool on the one-line prompt the script prints. **Up to N
+at once**, N the `concurrency:` line `delvec --prefabs "$DELVEWRIGHT_PREFABS" allocation <campaign> --all` prints, in
+critical-path order then allocation order, scenery last. Each author checks
+with `detail --check`, which writes nothing; on each return **you commit,
+one at a time**, with `delvec --prefabs "$DELVEWRIGHT_PREFABS" detail <campaign> <place>`, and launch the next.
+A commit that refuses goes back into a fresh agent's handout, never into your
+own edit. **Read**:
 `references/detail.md`; a piece the library does not have is
 `references/new-pieces.md`; a row that binds a piece the shipped library holds
 takes the library through `references/the-shipped-library.md`.
@@ -379,10 +429,12 @@ not a render one: place that one by hand in the running game
 **Needs**: everything above — step 10's ladder green on the build that ships,
 step 11 where it applies, and your step 12 visual review done — and the staging
 gate run against that build. **Produces**: `campaigns/<id>/README.md` — the
-storybook — its localized editions, and the report that ends the run. Nothing
-comes back: the first time the user plays the delve, it is the finished first
-version. **Read**: `references/hand-over.md`, and `references/playtest-rounds.md`
-from round 2 on. **When the exterior or
+storybook — its localized editions, and the report that ends the run (H). Hand
+it over and end your turn: nothing comes back, and the first time the user
+plays the delve it is the finished first version. With debug on, the report closes with
+*Technical decisions and engine limits*, rendered by `scripts/debug-report.py`
+and appended to `GENERATION.md`. **Read**: `references/hand-over.md`, and
+`references/playtest-rounds.md` from round 2 on. **When the exterior or
 starting-scene shot is not the one to ship**, place that camera by hand in the
 running game (`references/tools-by-symptom.md`, *a render camera nobody is
 satisfied with*) rather than re-rendering the one you have.
@@ -432,3 +484,5 @@ reference means the file listed here.
 | `scripts/find-jdk.py` | run at I1: the newest JDK 21+ already on this machine | I1 |
 | `scripts/fetch-client-jar.py` | run at I5, on the download path | I5 |
 | `scripts/handout.py` | run at step 9, once per place per attempt: the handout a fresh agent authors that place's program from | step 9 |
+| `scripts/debug-note.py` | run wherever a default is taken or a refusal, limit, workaround or departure is met: one row of `.out/technical.jsonl`, written only under `DELVEWRIGHT_DEBUG` | any step |
+| `scripts/debug-report.py` | run at step 13: the *Technical decisions and engine limits* section, rendered and appended to `GENERATION.md`, only under `DELVEWRIGHT_DEBUG` | step 13 |

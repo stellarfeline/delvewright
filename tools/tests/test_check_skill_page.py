@@ -328,6 +328,72 @@ def test_a_bare_piece_reading_invocation_reds(mod, tree, engine):
     assert has(run(mod, engine), "is invoked without `--prefabs")
 
 
+def test_a_build_into_a_shared_tree_reds(mod, tree, engine):
+    """Rule 9's second arm: the build writes the session's own `$DELVE_OUTPUT`."""
+    edit(
+        tree / "references" / "build.md",
+        'build campaigns/<id> -o "$DELVE_OUTPUT"',
+        'build campaigns/<id> -o "$DELVEWRIGHT_ENGINE/validation/delve-output"',
+    )
+    rep = run(mod, engine)
+    assert has(rep, 'writes somewhere other than `-o "$DELVE_OUTPUT"`')
+    assert any(w.startswith("build invocation(s)") and b < o for w, b, o in rep.bindings), rep.bindings
+
+
+# ------------------------------------------------------------ rule 22, the asks --
+
+
+def test_an_ask_outside_every_listed_section_reds(mod, tree, engine):
+    """spec-0122 §5's first perturbation: the provider question back in Init I7."""
+    edit(
+        tree / "references" / "init.md",
+        "A variable whose name says what a key is *for* and nothing about *whose* it\n    is names no provider and is treated as absent.",
+        "A variable whose name says what a key is *for* and nothing about *whose* it\n    is names no provider and is treated as absent. Ask the user which provider the key is for.",
+    )
+    rep = run(mod, engine)
+    assert has(rep, "references/init.md:")
+    assert has(rep, "asks the user to stop outside every section the ask table lists")
+    assert any(w == "ask line(s) inside a listed section" and b < o for w, b, o in rep.bindings), rep.bindings
+
+
+def test_a_row_deleted_while_its_ask_stands_reds(mod, tree, engine):
+    """spec-0122 §5's second perturbation: A1 gone, the opening check still asking."""
+    page = tree / "SKILL.md"
+    text = page.read_text(encoding="utf-8")
+    row = next(line for line in text.split("\n") if line.startswith("| **A1** |"))
+    page.write_text(text.replace(row + "\n", ""), encoding="utf-8")
+    rep = run(mod, engine)
+    assert has(rep, "asks the user to stop outside every section the ask table lists")
+    assert has(rep, "SKILL.md:")
+
+
+def test_a_row_no_page_executes_is_unbound(mod, tree, engine):
+    """The unrun shape: H's one stop removed, the row still listed."""
+    edit(tree / "SKILL.md", "Hand\nit over and end your turn: nothing comes back", "Hand\nit over: nothing comes back")
+    rep = run(mod, engine)
+    assert has(rep, "the ask table's row H is bound by no stop")
+    assert any(w == "listed row(s) bound" and b < o for w, b, o in rep.bindings), rep.bindings
+
+
+def test_an_offer_that_stops_reds(mod, tree, engine):
+    edit(
+        tree / "SKILL.md",
+        "default, unless the user volunteers a number.",
+        "default, unless the user volunteers a number; end your turn until they pick.",
+    )
+    rep = run(mod, engine)
+    assert has(rep, "a paragraph that makes an offer also stops for an answer")
+
+
+def test_no_ask_table_binds_nothing_and_reds(mod, tree, engine):
+    edit(
+        tree / "SKILL.md",
+        "| id | where | what the user is asked, in player words | what the run waits for |",
+        "| id | place | what the user is asked, in player words | what the run waits for |",
+    )
+    assert has(run(mod, engine), "carries no ask table")
+
+
 def test_a_piece_free_subcommand_owes_nothing(mod, tree, engine):
     """The opt-out is the OBJECT's, so it cannot be widened by an author.
 

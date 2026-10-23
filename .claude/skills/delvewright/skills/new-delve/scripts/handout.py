@@ -558,7 +558,7 @@ def go(args: argparse.Namespace) -> int:
     # binary this handout was derived with and not whatever its own shell finds.
     delvec = shutil.which(args.delvec) or args.delvec
     if not pathlib.Path(delvec).is_file():
-        raise Refusal(EXIT_UNUSABLE, f"`{args.delvec}` is not a `delvec` this shell can run (source `~/.delvewright/env.sh`, or pass `--delvec`)")
+        raise Refusal(EXIT_UNUSABLE, f"`{args.delvec}` is not a `delvec` this shell can run (source `.out/env.sh`, or pass `--delvec`)")
     delvec = str(pathlib.Path(delvec).resolve())
     args.delvec = delvec
     version = run([delvec, "--version"])
