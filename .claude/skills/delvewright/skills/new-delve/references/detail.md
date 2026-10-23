@@ -155,9 +155,19 @@ agent: *Reference: when the prefab library has no piece you need* and
 
 4. **On any other exit, hand it back**: the author's check passed against a
    whole a neighbour has since moved, or passed and the battery over the
-   committed whole refuses. Run step 1 for that place again — the script runs
-   `detail --check` on the program the agent left and writes
-   `handout-<n+1>.md` with the verdict — and launch a fresh agent on it. The
+   committed whole refuses. Capture every commit's output to a file
+   (`… > .out/commit-<stem>.txt 2>&1`). A refusal before the write is what
+   `detail --check` gives too: run step 1 for that place again and the script
+   embeds the check's verdict. **A battery refusal is one `--check` cannot
+   see** — the piece is already written, its own gates passed — so hand the
+   commit's output to the script: step 1 with `--from .out/commit-<stem>.txt`
+   embeds it verbatim. The battery names the place whose piece it judges;
+   where it names a cell, the place whose frame holds that cell is the one
+   handed back. Either way the script writes `handout-<n+1>.md` and you
+   launch a fresh agent on it. While a battery refusal stands, every later
+   commit's battery repeats it: commit the others as they return — each is
+   written once its own gates pass — and read each commit's refusals for the
+   ones that name it. The
    refused program stays where it is; the new agent repairs it. **Three
    consecutive refusals of one place naming the same diagnostic code** mean the
    cause is upstream of the program — the plan's box or seam, a `form` no

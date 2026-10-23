@@ -122,13 +122,40 @@ fn judge_every_place(tmp: &Path, campaign: &Path, prefabs: &Path) -> (usize, usi
                 cs,
                 place,
             ]);
-            check.status.success().then_some(()).ok_or_else(|| {
-                format!(
+            if !check.status.success() {
+                Err(format!(
                     "`detail --check` exited {:?}:\n{}",
                     check.status.code(),
                     text(&check)
-                )
-            })
+                ))
+            } else {
+                // The commit too, battery included, in a scratch copy of the
+                // campaign and the library: a starter whose own declarations
+                // the battery refuses (`DW0885` on a side it leaves empty)
+                // hands every author a refusal they did not make.
+                let scratch = tmp.join(format!(
+                    "commit-{}-{stem}",
+                    campaign.file_name().unwrap().to_string_lossy()
+                ));
+                let _ = std::fs::remove_dir_all(&scratch);
+                common::copy_dir_all(campaign, &scratch.join("campaign"));
+                common::copy_dir_all(prefabs, &scratch.join("prefabs"));
+                let commit = delvec(&[
+                    "--prefabs",
+                    scratch.join("prefabs").to_str().unwrap(),
+                    "detail",
+                    scratch.join("campaign").to_str().unwrap(),
+                    place,
+                ]);
+                let _ = std::fs::remove_dir_all(&scratch);
+                commit.status.success().then_some(()).ok_or_else(|| {
+                    format!(
+                        "`detail --check` passed and the commit exited {:?}:\n{}",
+                        commit.status.code(),
+                        text(&commit)
+                    )
+                })
+            }
         } else {
             Err(format!(
                 "the starter exited {:?}:\n{}",
@@ -145,7 +172,7 @@ fn judge_every_place(tmp: &Path, campaign: &Path, prefabs: &Path) -> (usize, usi
         match verdict {
             Ok(()) => {
                 passed += 1;
-                eprintln!("starter: {place} of `{cs}` passes `detail --check`");
+                eprintln!("starter: {place} of `{cs}` passes `detail --check` and the commit");
             }
             Err(why) => failures.push(format!("{place}: {why}")),
         }
@@ -167,7 +194,7 @@ fn the_starter_passes_the_check_unedited_on_every_place_of_the_gallery_site_plan
         places += n;
         failures.extend(f);
     }
-    eprintln!("starter binding: {passed} of {places} place(s) pass --check");
+    eprintln!("starter binding: {passed} of {places} place(s) pass --check and the commit");
     assert!(places > 0, "zero places judged: the binding is vacuous");
     assert!(
         failures.is_empty(),

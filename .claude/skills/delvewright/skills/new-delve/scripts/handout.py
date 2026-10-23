@@ -373,6 +373,7 @@ def render(
     handout_path: pathlib.Path,
     delvec: str,
     concurrency: str,
+    from_commit: bool,
     starter: pathlib.Path,
     allocation_file: pathlib.Path,
 ) -> tuple[str, dict[str, int]]:
@@ -504,7 +505,7 @@ def render(
     if refusal is not None:
         w("## The refusal this attempt repairs")
         w("")
-        w(f"A previous agent left the program at `{program}`. `delvec detail --check` refuses it against the whole as it stood when this handout was written; the verdict below is verbatim. Read the program, repair the cause the verdict names, and check again. Do not start from nothing unless the program is beyond repair.")
+        w(f"A previous agent left the program at `{program}`. " + ("The orchestrator's commit of it refused — after the place's own gates and the bindings check passed, the battery over the committed whole named this place, which `--check` cannot see" if from_commit else "`delvec detail --check` refuses it against the whole as it stood when this handout was written") + "; the verdict below is verbatim. Read the program, repair the cause the verdict names, and check again. Do not start from nothing unless the program is beyond repair.")
         w("")
         w("```text")
         lines.extend(refusal.rstrip("\n").split("\n"))
@@ -547,6 +548,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--engine", required=True, type=pathlib.Path, help="the engine tree ($DELVEWRIGHT_ENGINE)")
     ap.add_argument("--prefabs", required=True, type=pathlib.Path, help="the prefab directory ($DELVEWRIGHT_PREFABS)")
     ap.add_argument("--delvec", default="delvec", help="the `delvec` to run (default: the one on PATH)")
+    ap.add_argument(
+        "--from",
+        dest="commit_output",
+        type=pathlib.Path,
+        help="the captured output of the orchestrator's commit (`delvec detail`) that refused this "
+        "place: embedded verbatim as the refusal, in place of a fresh `--check`, since a refusal of "
+        "the battery over the committed whole is one `--check` cannot see",
+    )
     args = ap.parse_args(argv)
     try:
         return go(args)
@@ -617,7 +626,19 @@ def go(args: argparse.Namespace) -> int:
     stem = stem_of(place)
     program = campaign_dir / PROGRAMS_DIR / f"{stem}.json"
     refusal: str | None = None
-    if program.is_file():
+    if args.commit_output is not None:
+        try:
+            captured = args.commit_output.read_text(encoding="utf-8")
+        except OSError as e:
+            raise Refusal(EXIT_UNUSABLE, f"cannot read the commit's output `{args.commit_output}`: {e}") from e
+        if place not in captured:
+            raise Refusal(
+                EXIT_UNUSABLE,
+                f"`{args.commit_output}` never names `{place}`; `--from` takes the output of the commit "
+                "that refused this place, captured by the orchestrator, never another place's",
+            )
+        refusal = f"$ {delvec} --prefabs {prefabs} detail {campaign_dir} {place}   (the orchestrator's commit)\n{captured}"
+    elif program.is_file():
         verdict = run([args.delvec, "--prefabs", str(prefabs), "detail", "--check", str(campaign_dir), place])
         if verdict.returncode == 0:
             print(
@@ -652,6 +673,7 @@ def go(args: argparse.Namespace) -> int:
         handout_path=handout_path,
         delvec=delvec,
         concurrency=concurrency,
+        from_commit=args.commit_output is not None,
         starter=starter,
         allocation_file=allocation_file,
     )

@@ -514,10 +514,26 @@ def program(a: dict) -> dict:
         "params": dict(sorted(p.h.params.items())),
         "rules": rules.rules,
         # ── BUILD HERE: the faces the piece shows the world (grammar.md §2f).
-        "shown_faces": ["east", "north", "south", "up", "west"],
+        # Derived from what this skeleton draws: a declared side must hold a
+        # block (`DW0885`), and a side over open air must be declared.
+        "shown_faces": shown_faces(p),
         "start": "place",
         "version": "1.10.0" if climbs else "1.9.0",
     }
+
+
+def shown_faces(p) -> list[str]:
+    """The sides this skeleton finishes: the four walls; the top course where
+    the lid stands at it, or the walls reach it under an open sky (a lid under a
+    declared roof zone leaves the top course to the roof the author builds, so
+    `up` is the author's to add with the roof); and the underside of an aloft
+    place, which stands over air the party can be in."""
+    faces = ["east", "north", "south", "west"]
+    if (p.lid is not None and p.lid.value == p.ey - 1) or (p.lid is None and p.wall_top.value >= p.ey):
+        faces.append("up")
+    if p.aloft:
+        faces.append("down")
+    return sorted(faces)
 
 
 def main(argv: list[str] | None = None) -> int:

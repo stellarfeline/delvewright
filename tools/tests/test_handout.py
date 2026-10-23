@@ -271,6 +271,32 @@ def test_a_refused_program_puts_the_verdict_into_the_next_attempt(rig: Rig):
     assert "a repair of the program the last agent left" in second.stderr
 
 
+def test_a_commit_the_battery_refused_is_handed_back_with_the_commit_s_own_output(rig: Rig):
+    """`--check` cannot see the battery, so the commit's captured output is the refusal."""
+    rig.program("hall")
+    rig.plant_detail(0, "")  # the check passes: only the commit's battery refused
+    captured = rig.root / "commit-hall.txt"
+    captured.write_text(
+        "node/hall: `prefab/three-places-hall` written from `programs/hall.json`\n"
+        "DW0885 [error] build: area `area/site` places `prefab/three-places-hall`, whose side is empty\n",
+        encoding="utf-8",
+    )
+    out = rig.run("--from", str(captured))
+    assert out.returncode == 0, out.stderr
+    text = rig.handouts("hall")[0].read_text(encoding="utf-8")
+    assert "The orchestrator's commit of it refused" in text
+    assert "DW0885 [error] build" in text
+    assert "detail --check" not in refusal_cmd(text)
+
+
+def test_a_commit_output_that_never_names_the_place_is_refused(rig: Rig):
+    captured = rig.root / "commit-yard.txt"
+    captured.write_text("node/yard: written\n", encoding="utf-8")
+    out = rig.run("--from", str(captured))
+    assert out.returncode == 2 and "never names `node/hall`" in out.stderr
+    assert rig.handouts("hall") == []
+
+
 def refusal_cmd(text: str) -> str:
     """The `$ …` line the refusal section quotes: the command that gave the verdict."""
     return next(line for line in text.split("\n") if line.startswith("$ "))
