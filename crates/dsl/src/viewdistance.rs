@@ -69,6 +69,14 @@ pub fn distance(a: [i64; 3], b: [i64; 3]) -> f64 {
     ((d[0] * d[0] + d[1] * d[1] + d[2] * d[2]) as f64).sqrt()
 }
 
+/// The straight-line length between two points stated in blocks and
+/// fractions of one — a view's eye stands where a body's eye does (spec-0122
+/// §7.3).
+pub fn distance_f(a: [f64; 3], b: [f64; 3]) -> f64 {
+    let d = [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+}
+
 /// What the document-tier check examined, stated on every run, zeroes included.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Binding {
@@ -158,7 +166,7 @@ pub fn checks(c: &Campaign, d: &mut Vec<Diagnostic>) -> Binding {
     }
     for (i, v) in plan.views.iter().enumerate() {
         b.views += 1;
-        let len = distance(v.eye, v.look_at);
+        let len = distance_f(v.eye, v.look_at);
         if len > radius {
             b.beyond += 1;
             d.push(Diagnostic::error(

@@ -3118,6 +3118,28 @@
               }
             },
             {
+              "time": {
+                "daytime": 15000,
+                "phase": "first-quarter"
+              },
+              "type": "set-time",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
+            },
+            {
               "type": "set-weather",
               "weather": "thunder",
               "when": {

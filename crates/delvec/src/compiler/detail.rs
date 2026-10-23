@@ -523,12 +523,8 @@ fn kind_of(b: &PlacedBox) -> String {
 }
 
 /// The `delvec frames --camera` value that stands at `eye` looking at `at`.
-fn camera(eye: [i64; 3], at: [i64; 3]) -> String {
-    let d = [
-        (at[0] - eye[0]) as f64,
-        (at[1] - eye[1]) as f64,
-        (at[2] - eye[2]) as f64,
-    ];
+fn camera(eye: [f64; 3], at: [f64; 3]) -> String {
+    let d = [at[0] - eye[0], at[1] - eye[1], at[2] - eye[2]];
     let yaw = (-d[0]).atan2(d[2]).to_degrees();
     let horiz = (d[0] * d[0] + d[2] * d[2]).sqrt();
     let pitch = -(d[1].atan2(horiz)).to_degrees();
@@ -537,15 +533,9 @@ fn camera(eye: [i64; 3], at: [i64; 3]) -> String {
 
 /// True when a view's eye sees `p`: inside a cone of half-angle 35° about the
 /// line from the eye to its `look_at`.
-fn view_sees(eye: [i64; 3], at: [i64; 3], p: [i64; 3]) -> bool {
-    let v = |a: [i64; 3]| {
-        [
-            (a[0] - eye[0]) as f64,
-            (a[1] - eye[1]) as f64,
-            (a[2] - eye[2]) as f64,
-        ]
-    };
-    let (u, w) = (v(at), v(p));
+fn view_sees(eye: [f64; 3], at: [f64; 3], p: [i64; 3]) -> bool {
+    let v = |a: [f64; 3]| [a[0] - eye[0], a[1] - eye[1], a[2] - eye[2]];
+    let (u, w) = (v(at), v([p[0] as f64, p[1] as f64, p[2] as f64]));
     let dot = u[0] * w[0] + u[1] * w[1] + u[2] * w[2];
     let n = (u.iter().map(|x| x * x).sum::<f64>() * w.iter().map(|x| x * x).sum::<f64>()).sqrt();
     n > 0.0 && dot / n >= 35f64.to_radians().cos()

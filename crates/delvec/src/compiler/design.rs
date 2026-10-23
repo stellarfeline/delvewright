@@ -706,6 +706,19 @@ pub fn answered(c: &Campaign, files: &DesignFiles) -> Vec<Diagnostic> {
         }
     };
     let mut d = Vec::new();
+    if let Some(why) =
+        crate::compiler::view::camera::unbound_refusal(&a, c.world.content.test_level)
+    {
+        d.push(Diagnostic::error(
+            crate::compiler::view::camera::DW_RECORD_AT_BUILD,
+            "design",
+            crate::compiler::view::camera::CAMERAS_FILE,
+            why.strip_prefix(&format!("{}: ", crate::compiler::view::camera::CAMERAS_FILE))
+                .unwrap_or(&why)
+                .to_string(),
+        ));
+        return d;
+    }
     if let Some((name, answers)) = a.stray.first() {
         d.push(Diagnostic::error(
             crate::compiler::view::camera::DW_RECORD_AT_BUILD,

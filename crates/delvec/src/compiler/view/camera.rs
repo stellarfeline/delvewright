@@ -168,14 +168,21 @@ pub struct Camera {
     /// the world at load.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub after: Option<CameraAfter>,
-    /// The `design.json` row whose approved image this camera answers.
-    pub answers: String,
+    /// The `design.json` row whose approved image this camera answers. Absent
+    /// only on a test level (`world.json` `test_level: true`, spec-0122 §7.2),
+    /// which carries no design record: its `note` names what it frames.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answers: Option<String>,
     /// Vertical field of view, degrees.
     pub fov: f64,
     /// Frame height, pixels.
     pub height: u32,
     /// The camera's name: lowercase letters, digits, `.`, `+`, `-`.
     pub name: String,
+    /// What the camera frames, in words, where it answers no approved image
+    /// (a test level's camera).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
     /// Minecraft pitch, degrees: positive looks down.
     pub pitch: f64,
     /// The lens, world blocks.
@@ -344,12 +351,23 @@ impl Camera {
                 self.name
             ));
         }
-        if self.answers.trim().is_empty() {
-            return Err(
-                "`answers` is empty. Every showcase camera is judged against an approved image: \
-                 name the `design.json` row it answers"
-                    .to_string(),
-            );
+        match (&self.answers, &self.note) {
+            (Some(a), _) if a.trim().is_empty() => {
+                return Err(
+                    "`answers` is empty. Every showcase camera is judged against an approved \
+                     image: name the `design.json` row it answers"
+                        .to_string(),
+                );
+            }
+            (None, n) if n.as_deref().is_none_or(|n| n.trim().is_empty()) => {
+                return Err(
+                    "states neither `answers` nor `note`. A camera answers a `design.json` row, \
+                     or — on a test level, which carries no design record — names what it \
+                     frames in `note`"
+                        .to_string(),
+                );
+            }
+            _ => {}
         }
         if !self.pos.iter().all(|v| v.is_finite()) {
             return Err(format!("`pos` {:?} is not three finite numbers", self.pos));
@@ -557,6 +575,9 @@ pub struct Answers {
     /// `(camera name, what it answers)` for every camera naming no row, in the
     /// record's order.
     pub stray: Vec<(String, String)>,
+    /// Cameras that state no `answers` — a test level's (spec-0122 §7.2), in
+    /// the record's order. Refused on any other campaign ([`unbound_refusal`]).
+    pub unbound: Vec<String>,
 }
 
 impl Answers {
@@ -588,12 +609,16 @@ pub fn tally(sheet: &CameraSheet, rows: &[String]) -> Answers {
         ..Answers::default()
     };
     for cam in &sheet.cameras {
-        if !rows.iter().any(|r| r == &cam.answers) {
-            a.stray.push((cam.name.clone(), cam.answers.clone()));
+        match &cam.answers {
+            None => a.unbound.push(cam.name.clone()),
+            Some(answers) if !rows.iter().any(|r| r == answers) => {
+                a.stray.push((cam.name.clone(), answers.clone()));
+            }
+            Some(_) => {}
         }
     }
     for r in rows {
-        if sheet.cameras.iter().any(|c| &c.answers == r) {
+        if sheet.cameras.iter().any(|c| c.answers.as_ref() == Some(r)) {
             a.answered.push(r.clone());
         } else {
             a.unanswered.push(r.clone());
@@ -616,6 +641,47 @@ pub fn bind_answers(sheet: &CameraSheet, rows: &[String]) -> Result<Vec<String>,
         ));
     }
     Ok(a.unanswered)
+}
+
+/// **A camera that answers no approved image belongs to a test level**
+/// (spec-0122 §7.2): on any other campaign the first such camera is refused,
+/// naming it; on a test level nothing is.
+pub fn unbound_refusal(a: &Answers, test_level: bool) -> Option<String> {
+    if test_level {
+        return None;
+    }
+    a.unbound.first().map(|name| {
+        format!(
+            "{CAMERAS_FILE}: camera `{name}` states no `answers`. Every showcase camera of a \
+             campaign answers a `design.json` row; only a test level (`world.json` \
+             `test_level: true`), which carries no design record, has cameras that answer no \
+             approved image. Name the row it answers"
+        )
+    })
+}
+
+/// Whether the campaign directory declares itself a test level: `world.json`
+/// `content.test_level` is `true`. Read by the camera commands, which read the
+/// record beside the campaign rather than the parsed campaign.
+pub fn declares_test_level(campaign: &std::path::Path) -> bool {
+    std::fs::read(campaign.join("world.json"))
+        .ok()
+        .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+        .and_then(|v| v.get("content")?.get("test_level")?.as_bool())
+        .unwrap_or(false)
+}
+
+/// The approved rows a camera command holds the record to: `design.json`'s,
+/// or none on a test level that carries no design record (spec-0122 §7.2).
+pub fn rows_of(campaign: &std::path::Path) -> Result<(Vec<ApprovedRow>, bool), Diagnostic> {
+    let test_level = declares_test_level(campaign);
+    let path = campaign.join("design.json");
+    if test_level && !path.exists() {
+        return Ok((Vec::new(), true));
+    }
+    let bytes = std::fs::read(&path)
+        .map_err(|e| Diagnostic::error(DW_INPUT, format!("read {}: {e}", path.display())))?;
+    Ok((reference_rows(&bytes)?, test_level))
 }
 
 /// The sentence a camera answering no row earns, wherever it is read.
@@ -686,10 +752,25 @@ impl ResolvedSky {
 /// stale the moment the row changes.
 pub fn resolve_sky(cam: &Camera, rows: &[ApprovedRow]) -> Result<ResolvedSky, String> {
     let names = || rows.iter().map(|r| r.name.clone()).collect::<Vec<_>>();
+    let Some(answers) = &cam.answers else {
+        // A test level's camera answers no row, so its sky is its own.
+        return match cam.sky {
+            Some(sky) => Ok(ResolvedSky {
+                camera: cam.name.clone(),
+                sky,
+                origin: SkyOrigin::Stated,
+            }),
+            None => Err(format!(
+                "{CAMERAS_FILE}: camera `{}` answers no approved image and states no `sky`, so \
+                 nothing says what sky it is taken under. STATE `sky` on the camera",
+                cam.name
+            )),
+        };
+    };
     let row = rows
         .iter()
-        .find(|r| r.name == cam.answers)
-        .ok_or_else(|| stray_message(&cam.name, &cam.answers, &names()))?;
+        .find(|r| &r.name == answers)
+        .ok_or_else(|| stray_message(&cam.name, answers, &names()))?;
     let (sky, origin) = match (cam.sky, row.sky) {
         (Some(stated), Some(own)) if stated == own => {
             return Err(restated_message(&cam.name, &row.name, stated));
@@ -1184,12 +1265,12 @@ pub fn place(
                 )));
             }
             if let Some(a) = answers
-                && a != old.answers
+                && Some(a) != old.answers.as_deref()
             {
                 return Err(refuse(format!(
                     "camera `{name}` answers `{}`, not `{a}`: a camera is an answer to one \
                      picture, so aiming at another picture is a new row with its own name",
-                    old.answers
+                    old.answers.as_deref().unwrap_or("no approved image")
                 )));
             }
             match placement {
@@ -1215,7 +1296,7 @@ pub fn place(
             }
         }
         (None, Placement::Estimate(est)) => {
-            let answers = answers.unwrap_or(&est.answers).to_string();
+            let answers = answers.map(str::to_string).or_else(|| est.answers.clone());
             Camera {
                 answers,
                 name: name.to_string(),
@@ -1240,10 +1321,11 @@ pub fn place(
             };
             Camera {
                 after: None,
-                answers: answers.to_string(),
+                answers: Some(answers.to_string()),
                 fov: *fov,
                 height: crate::compiler::view::panorama::DEFAULT_HEIGHT,
                 name: name.to_string(),
+                note: None,
                 pitch: *pitch,
                 pos: *pos,
                 sky: None,
