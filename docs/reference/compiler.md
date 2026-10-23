@@ -265,7 +265,7 @@ one place.
 **A prefab library that is not there is refused, not faulted.** Every verb
 that reads pieces — `validate` and everything built on it, `detail` (commit and
 `--check`), `rig describe` — refuses a `--prefabs` path that does not exist at
-exit 1 with one sentence naming `--prefabs` and `DELVEWRIGHT_PREFABS`
+exit 1 as `DW1062`, one sentence naming `--prefabs` and `DELVEWRIGHT_PREFABS`
 (`compiler::registry::missing_library`, the one wording); the admission verbs
 that read a whole library (`prefab anchors`, the library audit) carry the same
 sentence in their input diagnostic, `DW0732`, at their own exit. That state —

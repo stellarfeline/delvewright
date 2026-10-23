@@ -190,12 +190,18 @@ pub(crate) fn run_textures(
 }
 
 /// The prefab library `--prefabs` names, read for a compiler verb. A path that
-/// does not exist is refused at exit 1 with the sentence
+/// does not exist is refused at exit 1 as `DW1062` with the sentence
 /// [`missing_library`](delvec::compiler::registry::missing_library) words; an
 /// existing directory that cannot be read is an internal fault.
-pub(crate) fn load_library(prefabs_dir: &Path) -> Result<PrefabRegistry, u8> {
+pub(crate) fn load_library(prefabs_dir: &Path, json: bool) -> Result<PrefabRegistry, u8> {
     if let Some(msg) = delvec::compiler::registry::missing_library(prefabs_dir) {
-        eprintln!("error: {msg}");
+        let d = Diagnostic::error(
+            delvec::compiler::registry::DW_NO_LIBRARY,
+            "prefabs",
+            prefabs_dir.display().to_string(),
+            msg,
+        );
+        print_diags(std::slice::from_ref(&d), json);
         return Err(1);
     }
     PrefabRegistry::load_dir(prefabs_dir).map_err(|e| {
@@ -227,7 +233,7 @@ pub(super) fn validate_loaded(
     prefabs_dir: &Path,
     json: bool,
 ) -> Result<Validated, u8> {
-    let prefabs = load_library(prefabs_dir)?;
+    let prefabs = load_library(prefabs_dir, json)?;
     let items = FullItemRegistry::v1_21_11();
     // v0.3 wave-mob entity validation against the full 1.21.11 entity registry
     // (157 ids, same misode/mcmeta provenance as the item registry).

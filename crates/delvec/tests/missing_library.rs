@@ -68,6 +68,7 @@ fn every_piece_reading_verb_refuses_an_absent_library_by_name() {
         let out = run(args);
         assert_eq!(out.status.code(), Some(1), "{label}: {}", text(&out));
         assert_named(&out, label);
+        assert!(text(&out).contains("DW1062"), "{label}: {}", text(&out));
     }
     // Neither the check nor the commit made a library of its own.
     assert!(!tmp.join("campaigns").exists());

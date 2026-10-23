@@ -21,6 +21,17 @@ delvewright_dsl::dw_code! {
 }
 
 delvewright_dsl::dw_code! {
+    /// `DW1062` (spec-0122 §7.5): **the prefab library a piece-reading verb was
+    /// pointed at is not there.** `--prefabs` (or the default `campaigns/prefabs`,
+    /// which exists only in an engine checkout) names a path that does not exist.
+    /// Refused at **validation tier (exit 1)** by every compiler verb that reads
+    /// pieces, with the sentence [`missing_library`] words, which names
+    /// `--prefabs` and `DELVEWRIGHT_PREFABS`. A directory that exists and cannot be
+    /// read is not this: it stays an internal fault.
+    pub const DW_NO_LIBRARY: DwCode = DwCode::new("DW1062", ExitTier::Build);
+}
+
+delvewright_dsl::dw_code! {
     /// `DW0543`: a prefab metadata file carries a key this delvec does not model.
     ///
     /// A **warning**, and the severity is the decision. Refusing the document was
@@ -438,7 +449,7 @@ pub struct PrefabRegistry {
 /// and nothing else. `None` when the path exists, so an unreadable directory
 /// that IS there stays the internal fault it is.
 ///
-/// One implementation: the compiler's verbs print it as a refusal at exit 1,
+/// One implementation: the compiler's verbs print it as [`DW_NO_LIBRARY`] at exit 1,
 /// the admission surface inside its own input diagnostic at its own exit, and
 /// neither words the remedy itself.
 #[must_use]

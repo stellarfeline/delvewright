@@ -136,7 +136,7 @@ fn run(
     // refusal every piece-reading verb gives (spec-0122 §7.5), for the commit
     // as for the check, so a default `--prefabs` in a creator's working
     // directory never grows a `campaigns/prefabs` of its own.
-    let library = load_library(prefabs_dir)?;
+    let library = load_library(prefabs_dir, json)?;
 
     // Every place this run details is expanded, gated, measured and audited in
     // memory first; then the whole the run would leave is judged ONCE, with

@@ -77,7 +77,7 @@ pub(crate) fn run_rig_describe(
             id.syntax_form()
         ));
     }
-    let prefabs = match crate::cli::campaign::load_library(prefabs_dir) {
+    let prefabs = match crate::cli::campaign::load_library(prefabs_dir, json) {
         Ok(p) => p,
         Err(code) => return ExitCode::from(code),
     };
