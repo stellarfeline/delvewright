@@ -1429,7 +1429,11 @@ fn hidden_unconfirmed_words(
     if !shot_ok(way) {
         fails.push(shot_words(way));
     }
-    format!("{} is declared `hidden`, but {}", way.words, fails.join("; and "))
+    format!(
+        "{} is declared `hidden`, but {}",
+        way.words,
+        fails.join("; and ")
+    )
 }
 
 fn row(
