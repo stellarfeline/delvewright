@@ -431,6 +431,31 @@ pub struct PrefabRegistry {
     rigs: BTreeMap<String, Result<delvewright_dsl::rig::Rig, String>>,
 }
 
+/// **The library a verb was pointed at is not there** (spec-0122 §7.5): the
+/// sentence every verb that reads pieces prints when `--prefabs` names a path
+/// that does not exist — the ordinary state of a creator's working directory,
+/// where the default `campaigns/prefabs` is a development checkout's symlink
+/// and nothing else. `None` when the path exists, so an unreadable directory
+/// that IS there stays the internal fault it is.
+///
+/// One implementation: the compiler's verbs print it as a refusal at exit 1,
+/// the admission surface inside its own input diagnostic at its own exit, and
+/// neither words the remedy itself.
+#[must_use]
+pub fn missing_library(dir: &Path) -> Option<String> {
+    if dir.exists() {
+        return None;
+    }
+    Some(format!(
+        "no prefab library at `{}`: this verb reads pieces, and the path it was given does not \
+         exist. Pass the library with `--prefabs <dir>` — a creator's session names it in \
+         `DELVEWRIGHT_PREFABS`, so `--prefabs \"$DELVEWRIGHT_PREFABS\"`. The default \
+         `campaigns/prefabs` exists only in an engine checkout with the content repository \
+         linked at `campaigns/`.",
+        dir.display()
+    ))
+}
+
 impl PrefabRegistry {
     /// Load every `*.json` prefab metadata file in `dir`. An optional
     /// `pools.json` (`{ "pools": { "pool/<name>": { "members": [...] } } }`)

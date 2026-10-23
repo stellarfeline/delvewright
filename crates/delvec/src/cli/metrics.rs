@@ -5,7 +5,6 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use clap::Subcommand;
-use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::Diagnostic;
 
 use crate::EXIT_INTERNAL;
@@ -78,15 +77,9 @@ pub(crate) fn run_rig_describe(
             id.syntax_form()
         ));
     }
-    let prefabs = match PrefabRegistry::load_dir(prefabs_dir) {
+    let prefabs = match crate::cli::campaign::load_library(prefabs_dir) {
         Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "internal error: cannot read prefabs dir {}: {e}",
-                prefabs_dir.display()
-            );
-            return ExitCode::from(EXIT_INTERNAL);
-        }
+        Err(code) => return ExitCode::from(code),
     };
     let found = match delvewright_dsl::AnchorRegistry::rig(&prefabs, &id) {
         RigLookup::Found(r) => r,

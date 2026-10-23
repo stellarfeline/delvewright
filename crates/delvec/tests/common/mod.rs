@@ -1560,3 +1560,51 @@ pub fn world_file_of(out: &delvec::compiler::emit::BuildOutput, id: &str, what: 
 pub fn horizon(base: &str) -> serde_json::Value {
     serde_json::json!({ "base": base, "attributes": { "audio/background_music": {} } })
 }
+
+/// **The gallery's site-plan point, every program place committed** (spec-0122
+/// §6): the overlay materialised at `<root>/site-plan` as
+/// [`gallery_site_plan_at`] makes it, the generator's pieces at
+/// `<root>/prefabs` (the pieces the point's non-program rows name), and every
+/// program place detailed into that library by one `delvec detail --all` — the
+/// state `tools/ci/gallery-prefabs.py` leaves, with the program rows stripped
+/// first so no place is judged against a piece not yet made. Returns
+/// `(campaign, prefabs)`.
+#[allow(dead_code)]
+pub fn gallery_site_plan_detailed(root: &Path) -> (PathBuf, PathBuf) {
+    let (_, pieces) = gallery_primary_at(&root.join("primary"));
+    let prefabs = root.join("prefabs");
+    let _ = std::fs::remove_dir_all(&prefabs);
+    copy_dir_all(&pieces, &prefabs);
+    let campaign = root.join("site-plan");
+    gallery_site_plan_at(&campaign);
+    let stems: Vec<String> = std::fs::read_dir(campaign.join("programs"))
+        .unwrap()
+        .filter_map(|e| {
+            let p = e.unwrap().path();
+            (p.extension().and_then(|x| x.to_str()) == Some("json"))
+                .then(|| p.file_stem().unwrap().to_string_lossy().to_string())
+        })
+        .collect();
+    patch_file(&campaign.join("detail-plan.json"), |v| {
+        let rows = v["content"]["details"].as_array_mut().unwrap();
+        rows.retain(|r| {
+            let place = r["place"].as_str().unwrap();
+            !stems.iter().any(|s| place == format!("node/{s}"))
+        });
+    });
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_delvec"))
+        .arg("--prefabs")
+        .arg(&prefabs)
+        .arg("detail")
+        .arg(&campaign)
+        .arg("--all")
+        .output()
+        .expect("run delvec");
+    assert!(
+        out.status.success(),
+        "`detail --all` over the gallery's site-plan point exited {:?}: {}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr)
+    );
+    (campaign, prefabs)
+}

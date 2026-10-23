@@ -11,11 +11,15 @@
 //! This verb takes the campaign and the place. Everything else is derived: the
 //! allocation is computed from the site plan (the same function `delvec
 //! allocation` prints from), bound into the program under the `handed/`
-//! parameter prefix, expanded at the frame, judged by every gate the chain ran —
-//! **before any file is written** — then frozen into the prefab directory with
-//! its row written into `detail-plan.json`. `--all` re-details every place that
-//! has a program, in site-plan order, so a plan edit is answered by one command
-//! and no creator input.
+//! parameter prefix, expanded at the frame, judged by every gate the chain ran
+//! and by the bindings check over the whole the run would leave — **before any
+//! file is written** — then frozen into the prefab directory with its row
+//! written into `detail-plan.json`, each file moved into place by `rename`.
+//! The battery then builds the whole over what was written. `--all` re-details
+//! every place that has a program, in site-plan order, so a plan edit is
+//! answered by one command and no creator input. `--check` is the same
+//! preparation and bindings check with neither the write nor the battery
+//! (spec-0122 §6.1).
 //!
 //! The dependency direction of spec-0050 §10.3 holds: the compiler library
 //! reads a frozen piece and nothing of the program; this binary composes the
@@ -46,7 +50,7 @@ use sha2::{Digest, Sha256};
 
 use crate::EXIT_INTERNAL;
 use crate::cli::campaign::{
-    has_error, load_or_refuse, read_skins, read_structures, validate_stage,
+    has_error, load_library, load_or_refuse, read_skins, read_structures, validate_stage,
 };
 use crate::cli::report::{print_build_error, print_diags, print_one_diag};
 
@@ -76,11 +80,12 @@ pub(crate) fn run_detail(
     campaign_dir: &Path,
     place: Option<&str>,
     all: bool,
+    check: bool,
     prefabs_dir: &Path,
     lang: &str,
     json: bool,
 ) -> ExitCode {
-    match run(campaign_dir, place, all, prefabs_dir, lang, json) {
+    match run(campaign_dir, place, all, check, prefabs_dir, lang, json) {
         Ok(()) => ExitCode::SUCCESS,
         Err(code) => ExitCode::from(code),
     }
@@ -90,10 +95,22 @@ fn run(
     campaign_dir: &Path,
     place: Option<&str>,
     all: bool,
+    check: bool,
     prefabs_dir: &Path,
     lang: &str,
     json: bool,
 ) -> Result<(), u8> {
+    // `--all` is the re-detail after a plan edit, a commit by nature: a check
+    // over every program at once would judge a whole no single author leaves.
+    if check && all {
+        eprintln!(
+            "error: `--check` and `--all` do not combine. `--check` asks whether ONE place's \
+             program would commit against the whole as it stands; `--all` re-details every \
+             place and is a commit. Run `detail --check <campaign> <place>` per place, or \
+             `detail --all` to commit."
+        );
+        return Err(2);
+    }
     let loaded = load_or_refuse(campaign_dir, json)?;
     // Parsed rather than fully validated, on `allocation`'s precedent: the
     // campaign is validated in full at the end of the run, over the pieces this
@@ -115,23 +132,11 @@ fn run(
     }
     let targets = targets(campaign_dir, &campaign, place, all)?;
 
-    if let Err(e) = std::fs::create_dir_all(prefabs_dir) {
-        eprintln!(
-            "internal error: cannot create prefabs dir {}: {e}",
-            prefabs_dir.display()
-        );
-        return Err(EXIT_INTERNAL);
-    }
-    let library = match PrefabRegistry::load_dir(prefabs_dir) {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!(
-                "internal error: cannot read prefabs dir {}: {e}",
-                prefabs_dir.display()
-            );
-            return Err(EXIT_INTERNAL);
-        }
-    };
+    // The library is read, never made: a library that is not there is the
+    // refusal every piece-reading verb gives (spec-0122 §7.5), for the commit
+    // as for the check, so a default `--prefabs` in a creator's working
+    // directory never grows a `campaigns/prefabs` of its own.
+    let library = load_library(prefabs_dir)?;
 
     // Every place this run details is expanded, gated, measured and audited in
     // memory first; then the whole the run would leave is judged ONCE, with
@@ -143,7 +148,24 @@ fn run(
     for node in &targets {
         prepared.push(prepare(campaign_dir, &campaign, node, json)?);
     }
-    judge_run(&campaign, &library, &prepared, json)?;
+    let binding = judge_run(&campaign, &library, &prepared, json)?;
+    if check {
+        // `--check` is the commit's own `prepare` and `judge_run` with the
+        // write and the battery not called (spec-0122 §6.1): the verdict
+        // above is the one the commit would give against the whole as it
+        // stands on disk now, and nothing was written.
+        eprintln!(
+            "detail --check: {places} would commit against the whole as it stands; nothing \
+             written. {binding}; peak rss: {rss}",
+            places = prepared
+                .iter()
+                .map(|p| format!("`{}`", p.place))
+                .collect::<Vec<_>>()
+                .join(", "),
+            rss = peak_rss()
+        );
+        return Ok(());
+    }
     let mut done: Vec<String> = Vec::new();
     for p in &prepared {
         done.push(write_one(campaign_dir, &campaign, prefabs_dir, p, json)?);
@@ -651,7 +673,7 @@ fn judge_run(
     library: &PrefabRegistry,
     prepared: &[Prepared],
     json: bool,
-) -> Result<(), u8> {
+) -> Result<String, u8> {
     let mut registry = library.clone();
     let mut judged = campaign.clone();
     for p in prepared {
@@ -664,7 +686,7 @@ fn judge_run(
         .filter(|d| d.severity == delvewright_dsl::Severity::Error)
         .collect();
     if errors.is_empty() {
-        return Ok(());
+        return Ok(binding.line());
     }
     for d in &errors {
         print_one_diag(d, json);
@@ -909,20 +931,34 @@ fn write_row(campaign_dir: &Path, campaign: &Campaign, row: &Detail) -> Result<(
         None => env.content.details.push(row.clone()),
     }
     let text = delvewright_dsl::to_canonical_string(&env).expect("a detail plan serialises");
-    std::fs::write(&path, text).map_err(|e| {
-        eprintln!("internal error: cannot write {}: {e}", path.display());
+    write(campaign_dir, delvec::compiler::load::DETAIL_PLAN_FILE, text.as_bytes())
+}
+
+/// Write one file of a commit so that no reader ever sees it half written
+/// (spec-0122 §6.4): the bytes go to a temporary file in the target's own
+/// directory and are moved into place with `rename`, which POSIX makes atomic
+/// — a `detail --check` running at that instant reads the old file or the new
+/// one, never a torn one. The temporary name carries the process id, so two
+/// writers never share one.
+fn write(dir: &Path, file: &str, bytes: &[u8]) -> Result<(), u8> {
+    let target = dir.join(file);
+    let tmp = dir.join(format!(".{file}.{}.tmp", std::process::id()));
+    let done = std::fs::write(&tmp, bytes).and_then(|()| std::fs::rename(&tmp, &target));
+    done.map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        eprintln!("internal error: cannot write {}: {e}", target.display());
         EXIT_INTERNAL
     })
 }
 
-fn write(dir: &Path, file: &str, bytes: &[u8]) -> Result<(), u8> {
-    std::fs::write(dir.join(file), bytes).map_err(|e| {
-        eprintln!(
-            "internal error: cannot write {}: {e}",
-            dir.join(file).display()
-        );
-        EXIT_INTERNAL
-    })
+/// The process's peak resident set size (spec-0122 §6.2): every `--check`
+/// prints it, so the record carries the number that replaces the authored
+/// two-cores-per-author divisor.
+fn peak_rss() -> String {
+    match delvec::compiler::view::frameset::peak_rss_bytes() {
+        Some(b) => format!("{b} bytes"),
+        None => "unmeasured on this platform".to_string(),
+    }
 }
 
 /// The whole, validated and built in memory — the same observers `delvec
