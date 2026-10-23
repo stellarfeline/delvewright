@@ -37,14 +37,16 @@ For every engine release the page moves to, in order:
    `tools/ci/check-skill-page.py` refuses a name that is not this tree's own tag
    and a `plugin.json` version that is not the tag's, and
    `tools/ci/check-pins.py --online` refuses the name too. The same pull
-   request writes the release's notes: an entry in `CHANGELOG.md` for every
-   line the commit will release (`## delvec <version>`, `## delvewright
-   <version>`, and `## delvewright-dsl <dsl_version>` when the format moved
-   since its last release), written from `git log <previous tag of the
-   line>..HEAD` as a summary for the reader — `### Highlights`, then the
-   changes grouped under the Keep a Changelog headings — never the merged
-   titles. `tools/ci/check-changelog.py` judges the entry on the pull request;
-   the release workflow refuses a commit whose version has no entry.
+   request writes the release's notes: it replaces `RELEASE-NOTES.md` wholesale
+   with one entry per line the commit will release (`## delvec <version>`,
+   `## delvewright <version>`, and `## delvewright-dsl <dsl_version>` when the
+   format moved since its last release), each written from `git log <previous
+   tag of the line>..HEAD` as a summary for the reader — `### Highlights`, then
+   the changes grouped — never the merged titles. The published Release keeps
+   each version's text; the file holds only the release being prepared.
+   `tools/ci/check-release-notes.py` judges the entries on the pull request
+   (an entry for a version the tree has moved past is stale); the release
+   workflow refuses a commit whose version has no entry.
 2. **The release is dispatched on the merge commit**, as the next act.
    `engine-release.yml` derives the same name from the same tree, fills the
    shelf, uploads to crates.io, writes the tag at that commit and undrafts. From

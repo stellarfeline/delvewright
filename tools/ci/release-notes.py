@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A Release's notes, read from the tree at the released commit (ADR-0028 §2, ADR-<next>).
+"""A Release's notes, read from the tree at the released commit (ADR-0028 §2, ADR-0036).
 
 WHY THIS EXISTS
 
@@ -22,7 +22,7 @@ THE OPENING, from the tree:
                    checkout carries the tag), and the plugin root's tree hash at
                    the release commit
 
-THE SUMMARY, from `CHANGELOG.md` at the same commit (`tools/lib/changelog.py`):
+THE SUMMARY, from `RELEASE-NOTES.md` at the same commit (`tools/lib/release_notes.py`):
 the entry headed by this Release's title — `### Highlights`, then the change
 groups — judged a summary before it is printed: a release whose tree has no
 entry for its version, or whose entry is the merged changes' titles again, is
@@ -52,7 +52,7 @@ import tomllib
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "lib"))
 
-import changelog  # noqa: E402
+import release_notes  # noqa: E402
 import release_tags  # noqa: E402
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
@@ -175,37 +175,37 @@ def merged_subjects(repo: pathlib.Path, previous: str, sha: str) -> list[str]:
 
 
 def summary(line: str, version: str, repo: pathlib.Path, sha: str, repository: str) -> str:
-    """The changelog entry for this release, judged, with its compare link; `Missing` when the
+    """The RELEASE-NOTES.md entry for this release, judged, with its compare link; `Missing` when the
     tree has none or the entry is not a summary."""
     tag = release_tags.tag_for(line, version)
     title = release_tags.title(tag)
     try:
-        text = show(repo, sha, changelog.FILE)
+        text = show(repo, sha, release_notes.FILE)
     except Missing:
-        raise Missing(f"{sha[:12]} has no {changelog.FILE}; a release publishes the entry written for it there")
-    entries, file_findings = changelog.parse(text)
-    entry = changelog.entry_for(entries, title)
+        raise Missing(f"{sha[:12]} has no {release_notes.FILE}; a release publishes the entry written for it there")
+    entries, file_findings = release_notes.parse(text)
+    entry = release_notes.entry_for(entries, title)
     if entry is None:
         raise Missing(
-            f"{changelog.FILE} at {sha[:12]} has no entry `## {title}`: a Release's notes are a summary written "
+            f"{release_notes.FILE} at {sha[:12]} has no entry `## {title}`: a Release's notes are a summary written "
             f"before the release, and a release with none is refused "
             f"({len(entries)} entr{'y' if len(entries) == 1 else 'ies'} read)"
         )
     tags = git(repo, "tag", "-l").stdout.split("\n")
     previous = release_tags.previous(tag, tags)
     subjects = merged_subjects(repo, previous, sha) if previous else None
-    findings = [f for f in file_findings if f"{changelog.FILE}:{entry.line}:" in f] + changelog.shape(entry, subjects)
+    findings = [f for f in file_findings if f"{release_notes.FILE}:{entry.line}:" in f] + release_notes.shape(entry, subjects)
     if findings:
         raise Missing(f"the entry `## {title}` is not a summary:\n  " + "\n  ".join(findings))
     print(
-        f"release-notes: `## {title}` at {changelog.FILE}:{entry.line}; {len(entry.highlights)} highlight(s), "
+        f"release-notes: `## {title}` at {release_notes.FILE}:{entry.line}; {len(entry.highlights)} highlight(s), "
         f"{entry.change_count} change(s) in {len(entry.groups)} group(s); compared with "
         f"{len(subjects) if subjects is not None else 0} merged subject(s) since "
         f"{previous or '(no previous release of this line)'}",
         file=sys.stderr,
     )
     if previous:
-        link = f"Everything merged since `{previous}`, for the record: {changelog.compare_url(repository, previous, tag)}"
+        link = f"Everything merged since `{previous}`, for the record: {release_notes.compare_url(repository, previous, tag)}"
     else:
         link = "This is the first release of its line; there is no earlier release to compare with."
     return f"\n{entry.body}\n\n{link}\n"

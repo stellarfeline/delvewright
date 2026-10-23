@@ -1,7 +1,7 @@
 """A Release's notes are a summary written before the release, never the merged list.
 
-`tools/lib/changelog.py` reads `CHANGELOG.md`; `tools/ci/release-notes.py`
-publishes an entry through it and `tools/ci/check-changelog.py` judges every
+`tools/lib/release_notes.py` reads `RELEASE-NOTES.md`; `tools/ci/release-notes.py`
+publishes an entry through it and `tools/ci/check-release-notes.py` judges every
 entry through it. Each gate below is perturbed toward the shape the rule
 forbids — the merged commit subjects copied in as bullets, an entry missing, a
 Highlights section missing or over its ceiling, a heading outside the Release
@@ -24,10 +24,10 @@ import pytest
 REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "tools" / "lib"))
 
-import changelog  # noqa: E402
+import release_notes  # noqa: E402
 
 RELEASE_NOTES = REPO / "tools" / "ci" / "release-notes.py"
-CHECK = REPO / "tools" / "ci" / "check-changelog.py"
+CHECK = REPO / "tools" / "ci" / "check-release-notes.py"
 
 SUBJECTS = [
     "feat(view): the camera frames the whole scene (#7)",
@@ -105,7 +105,7 @@ def repo(tmp_path):
         ".claude/skills/delvewright/skills/new-delve/SKILL.md",
         '---\nname: new-delve\nmetadata:\n  requires_delvec: ">=1.14.0, <2.0.0"\n---\n# page\n',
     )
-    _write(root, "CHANGELOG.md", "# Changelog\n\nHeader.\n")
+    _write(root, "RELEASE-NOTES.md", "# Changelog\n\nHeader.\n")
     _commit(root, "chore: the released tree")
     _git(root, "tag", "-a", "delvec--v1.14.0", "-m", "delvec 1.14.0")
     for i, subject in enumerate(SUBJECTS):
@@ -127,7 +127,7 @@ def repo(tmp_path):
 
 
 def _with_changelog(repo: pathlib.Path, body: str) -> None:
-    _write(repo, "CHANGELOG.md", "# Changelog\n\nHeader.\n\n" + body)
+    _write(repo, "RELEASE-NOTES.md", "# Changelog\n\nHeader.\n\n" + body)
     _commit(repo, "release: the notes for 1.15.0")
 
 
@@ -145,13 +145,13 @@ def _check(repo: pathlib.Path) -> subprocess.CompletedProcess:
 
 # ------------------------------------------------------------------ the reader --
 def test_normalize_reads_a_bullet_and_a_subject_the_same_way():
-    assert changelog.normalize("feat(view): The camera **frames** the whole scene (#7)") == "the camera frames the whole scene"
-    assert changelog.normalize("The camera frames the whole scene.") == "the camera frames the whole scene"
-    assert changelog.normalize("fix!: a `thing`") == "a thing"
+    assert release_notes.normalize("feat(view): The camera **frames** the whole scene (#7)") == "the camera frames the whole scene"
+    assert release_notes.normalize("The camera frames the whole scene.") == "the camera frames the whole scene"
+    assert release_notes.normalize("fix!: a `thing`") == "a thing"
 
 
 def test_parse_reads_entries_sections_and_continuations():
-    entries, findings = changelog.parse("# Changelog\n\nheader\n\n" + GOOD_ENTRY)
+    entries, findings = release_notes.parse("# Changelog\n\nheader\n\n" + GOOD_ENTRY)
     assert findings == []
     assert [e.title for e in entries] == ["delvec 1.15.0"]
     e = entries[0]
@@ -160,7 +160,7 @@ def test_parse_reads_entries_sections_and_continuations():
     assert list(e.groups) == ["Added", "Fixed"]
     assert e.groups["Fixed"][0].endswith("navigation failure.")  # the continuation joined
     assert e.body.startswith("### Highlights")
-    assert changelog.shape(e, SUBJECTS) == []
+    assert release_notes.shape(e, SUBJECTS) == []
 
 
 @pytest.mark.parametrize(
@@ -171,12 +171,12 @@ def test_parse_reads_entries_sections_and_continuations():
         ("## delvec 1.15.0\n\nA paragraph.\n\n### Highlights\n\n- x\n", "stands before the first section"),
         ("## delvec 1.15.0\n\n### Highlights\n\n- x\n\n#### Fixed\n\n- y\n", "an entry holds `###` sections only"),
         ("## delvec 1.15.0\n\n### Highlights\n\n- x\n\n### Highlights\n\n- y\n", "a second `### Highlights`"),
-        ("## delvec 1.14.0\n\n### Fixed\n\n- y\n\n## delvec 1.15.0\n\n### Fixed\n\n- y\n", "newest first"),
+        ("## delvec 1.15.0\n\n### Fixed\n\n- y\n\n## delvec 1.14.0\n\n### Fixed\n\n- y\n", "one entry per line"),
         ("## delvec 1.15.0\n\n### Fixed\n\n- y\n\n## delvec 1.15.0\n\n### Fixed\n\n- y\n", "already an entry"),
     ],
 )
 def test_parse_names_each_structural_defect(text, needle):
-    entries, findings = changelog.parse(text)
+    entries, findings = release_notes.parse(text)
     all_findings = findings + [f for e in entries for f in e.findings]
     assert any(needle in f for f in all_findings), all_findings
 
@@ -190,31 +190,31 @@ def test_parse_names_each_structural_defect(text, needle):
         ("## delvec 1.15.0\n\n### Highlights\n\n- x\n\n### Fixed\n", "`### Fixed` has no bullet"),
         (
             "## delvec 1.15.0\n\n### Highlights\n\n"
-            + "".join(f"- h{i}\n" for i in range(changelog.HIGHLIGHTS_CEILING + 1))
+            + "".join(f"- h{i}\n" for i in range(release_notes.HIGHLIGHTS_CEILING + 1))
             + "\n### Fixed\n\n- y\n",
-            f"at most {changelog.HIGHLIGHTS_CEILING}",
+            f"at most {release_notes.HIGHLIGHTS_CEILING}",
         ),
         (
             "## delvec 1.15.0\n\n### Highlights\n\n- x\n\n### Fixed\n\n"
-            + "".join(f"- c{i}\n" for i in range(changelog.CHANGES_CEILING + 1)),
-            f"at most {changelog.CHANGES_CEILING}",
+            + "".join(f"- c{i}\n" for i in range(release_notes.CHANGES_CEILING + 1)),
+            f"at most {release_notes.CHANGES_CEILING}",
         ),
     ],
 )
 def test_shape_names_each_summary_defect(text, needle):
-    entries, _ = changelog.parse(text)
-    findings = changelog.shape(entries[0], SUBJECTS)
+    entries, _ = release_notes.parse(text)
+    findings = release_notes.shape(entries[0], SUBJECTS)
     assert any(needle in f for f in findings), findings
 
 
 def test_shape_refuses_a_bullet_that_is_a_merged_subject_in_any_section():
-    entries, _ = changelog.parse(COPIED_ENTRY)
-    findings = changelog.shape(entries[0], SUBJECTS)
+    entries, _ = release_notes.parse(COPIED_ENTRY)
+    findings = release_notes.shape(entries[0], SUBJECTS)
     assert len(findings) == 2, findings
     assert all("is the merged change's own title" in f for f in findings)
     assert any("`### Added`" in f for f in findings) and any("`### Fixed`" in f for f in findings)
     # With no previous release there is nothing to be a copy of.
-    assert changelog.shape(entries[0], None) == []
+    assert release_notes.shape(entries[0], None) == []
 
 
 def test_groups_are_the_authors_and_prose_is_read_too():
@@ -225,14 +225,14 @@ def test_groups_are_the_authors_and_prose_is_read_too():
         "## delvec 1.15.0\n\n### Highlights\n\n- x\n\n### Rendering and review frames\n\n- Frames show the scene.\n\n"
         "About thirty further merged changes alter nothing a creator uses.\n"
     )
-    entries, findings = changelog.parse(text)
+    entries, findings = release_notes.parse(text)
     assert findings == [] and entries[0].findings == []
     assert list(entries[0].groups) == ["Rendering and review frames"]
     assert entries[0].prose == [("Rendering and review frames", "About thirty further merged changes alter nothing a creator uses.")]
-    assert changelog.shape(entries[0], SUBJECTS) == []
+    assert release_notes.shape(entries[0], SUBJECTS) == []
     pasted = text + "\n" + SUBJECTS[2] + "\n"
-    entries, _ = changelog.parse(pasted)
-    findings = changelog.shape(entries[0], SUBJECTS)
+    entries, _ = release_notes.parse(pasted)
+    findings = release_notes.shape(entries[0], SUBJECTS)
     assert len(findings) == 1 and "is the merged change's own title" in findings[0], findings
 
 
@@ -259,11 +259,11 @@ def test_a_release_with_no_entry_is_refused(repo):
 
 
 def test_a_tree_with_no_changelog_is_refused(repo):
-    _git(repo, "rm", "-q", "CHANGELOG.md")
+    _git(repo, "rm", "-q", "RELEASE-NOTES.md")
     _commit(repo, "chore: drop the changelog")
     result = _notes(repo)
     assert result.returncode == 1
-    assert "has no CHANGELOG.md" in result.stderr
+    assert "has no RELEASE-NOTES.md" in result.stderr
 
 
 def test_an_entry_that_is_the_merged_list_is_refused(repo):
@@ -312,7 +312,7 @@ def test_the_plugin_notes_pin_the_marketplace_with_a_hash_ref(repo):
     assert "`/plugin marketplace update delvewright`" in result.stdout
 
 
-# ------------------------------------------------------------ check-changelog --
+# ------------------------------------------------------------ check-release-notes --
 def test_check_passes_a_clean_changelog_and_states_what_it_compared(repo):
     _with_changelog(repo, GOOD_ENTRY)
     result = _check(repo)
@@ -338,7 +338,7 @@ def test_check_reds_on_a_version_nothing_names(repo):
     _with_changelog(repo, GOOD_ENTRY.replace("## delvec 1.15.0", "## delvec 1.16.0"))
     result = _check(repo)
     assert result.returncode == 1
-    assert "names a version no tag names and the tree does not state (delvec is 1.15.0 here)" in result.stderr
+    assert "names a version the tree does not state (delvec is 1.15.0 here) and no tag names" in result.stderr
 
 
 def test_check_reds_on_a_heading_outside_the_title_grammar(repo):
@@ -348,15 +348,28 @@ def test_check_reds_on_a_heading_outside_the_title_grammar(repo):
     assert "is not a Release title" in result.stderr
 
 
-def test_check_judges_a_released_entry_over_its_own_range(repo):
-    """An entry whose tag exists is compared with the changes up to that tag, not
-    to HEAD: the released entry is frozen with its Release."""
-    released = GOOD_ENTRY.replace("## delvec 1.15.0", "## delvec 1.14.0")
-    _with_changelog(repo, GOOD_ENTRY + "\n" + released)
+def test_check_accepts_the_release_being_re_run_and_refuses_a_stale_entry(repo):
+    """The file holds the release being prepared. An entry whose tag is already
+    written is the re-run case while the tree still states that version — judged
+    over the range up to its tag — and stale once the line has moved on."""
+    _with_changelog(repo, GOOD_ENTRY)
+    _git(repo, "tag", "-a", "delvec--v1.15.0", "-m", "delvec 1.15.0")
     result = _check(repo)
     assert result.returncode == 0, result.stderr
-    assert "delvec 1.14.0: released" in result.stdout
-    assert "compared with 0 merged subject(s) since (none)" in result.stdout
+    assert "delvec 1.15.0: released" in result.stdout
+    assert "compared with 5 merged subject(s) since delvec--v1.14.0" in result.stdout
+    _write(repo, "versions.toml", '[engine]\nversion = "1.16.0"\ndsl_crate_version = "0.2.0"\n')
+    _commit(repo, "release: delvec 1.16.0 names its tag")
+    result = _check(repo)
+    assert result.returncode == 1
+    assert "is stale: delvec--v1.15.0 is released and the tree is at 1.16.0" in result.stderr
+
+
+def test_check_refuses_two_entries_for_one_line(repo):
+    _with_changelog(repo, GOOD_ENTRY + "\n" + GOOD_ENTRY.replace("## delvec 1.15.0", "## delvec 1.14.0"))
+    result = _check(repo)
+    assert result.returncode == 1
+    assert "the file holds one entry per line, the release being prepared" in result.stderr
 
 
 def test_check_refuses_an_unreadable_tree(tmp_path):

@@ -1,4 +1,4 @@
-# ADR-<next>: A Release's notes are a summary written before the release, never the list of merged pull requests
+# ADR-0036: A Release's notes are a summary written before the release, never the list of merged pull requests
 
 - **Status**: Proposed
 - **Date**: 2026-10-22
@@ -149,32 +149,36 @@ nothing below (*Revisit triggers*).
 
 ## Decision
 
-### 1. The summary is a `CHANGELOG.md` entry, written before the release
+### 1. The summary is a `RELEASE-NOTES.md` entry, written before the release
 
-`CHANGELOG.md` at the repository root holds one entry per released version of
-each of the three things, newest first, headed by the Release's title in
-ADR-0028 §1's grammar — `## delvec 1.15.0`, `## delvewright-dsl 0.57.0`,
-`## delvewright 1.15.0` — so the heading is the title the workflow derives, not
-a second spelling of it. The entry is written by the agent that prepares the
-release, in the pull request that names the tag (`docs/reference/skill-workflow.md`,
-step 1), from `git log <previous tag of the line>..HEAD`, for every line the
-commit will release. It is part of the approved tree the release is built
-from: nothing is added on top of the frozen tree, so the frozen-tree rule needs
-no exception and the release reads the entry at the released commit like every
-other value it reads.
+`RELEASE-NOTES.md` at the repository root holds the notes of the release being
+prepared: one entry per line that release names — at most one per line — each
+headed by the Release's title in ADR-0028 §1's grammar (`## delvec 1.15.0`,
+`## delvewright-dsl 0.57.0`, `## delvewright 1.15.0`), so the heading is the
+title the workflow derives, not a second spelling of it. The entry is written
+by the agent that prepares the release, in the pull request that names the tag
+(`docs/reference/skill-workflow.md`, step 1), from `git log <previous tag of
+the line>..HEAD`; that pull request replaces the file wholesale. It is part of
+the approved tree the release is built from: nothing is added on top of the
+frozen tree, so the frozen-tree rule needs no exception and the release reads
+the entry at the released commit like every other value it reads.
 
-The file lives outside `docs/`, and `docs/` stays in the present tense of the
-current version. The changelog is not a second history: ADRs record decisions,
-and this file records what each released version changes for the person who
-installs it — the Release's text, in the tree the Release is built from. One
-text, one home; the published Release body is its copy, written from the same
-bytes by the workflow. Entries begin at the first release under this record;
-earlier Releases keep the notes they were published with (ADR-0028 §4: nothing
-is tagged or re-written retroactively).
+The file is not a changelog and keeps no history: the published GitHub Release
+keeps each version's text, and the tree carries only the next release's. ADRs
+stay the only place history lives, and `docs/` stays in the present tense of
+the current version, which is why the file sits outside it. Keep a Changelog's
+"an entry for every single version" is met on the repository's Releases page,
+one Release per version, each carrying the entry it was published from; it is
+not met by an accumulating file in the tree, which this record rejects as a
+second history. Earlier Releases keep the notes they were published with
+(ADR-0028 §4: nothing is tagged or re-written retroactively). The name is
+`RELEASE-NOTES.md` rather than `CHANGELOG.md` because the file is the next
+Release's notes and nothing else; the conventional name would promise the
+accumulation it does not hold.
 
 ### 2. The shape of an entry, and what makes it a summary
 
-`tools/lib/changelog.py` is the one reader of the file. An entry is:
+`tools/lib/release_notes.py` is the one reader of the file. An entry is:
 
 ```
 ## delvec 1.15.0
@@ -190,7 +194,7 @@ is tagged or re-written retroactively).
 A closing paragraph may say what the entry leaves out.
 ```
 
-`changelog.shape` holds it to that, one finding per defect:
+`release_notes.shape` holds it to that, one finding per defect:
 
 | rule | cited or authored |
 |---|---|
@@ -198,10 +202,10 @@ A closing paragraph may say what the entry leaves out.
 | at least one `### <group>` of changes, each with at least one bullet; the group names are the author's — the Keep a Changelog kinds or the areas of the engine the changes touch | cited: Keep a Changelog, "the same types of changes should be grouped"; cargo and ripgrep group by kind, the 1.14.0 body by area |
 | at most `CHANGES_CEILING` (40) change bullets in all | authored: the 1.14.0 body states 24 changes over 59 merged pull requests and says what it leaves out |
 | every line inside a section: a bullet, its indented continuation, or a line of prose; nothing before the first section | authored, so that every line is read |
-| no line — bullet or prose — that is a merged change's own subject, both read through `changelog.normalize` (casefolded; a conventional-commit prefix and a trailing pull-request suffix removed; inline markup and the final period dropped), over the commits between the previous release of the line and the released commit | cited: Keep a Changelog, "Using commit log diffs as changelogs is a bad idea" — this is the machine form of the ruling |
-| the heading is a Release title; no title twice; a line's entries newest first | cited: Keep a Changelog, "There should be an entry for every single version", "The latest version comes first"; ADR-0028 §1 |
+| no line — bullet or prose — that is a merged change's own subject, both read through `release_notes.normalize` (casefolded; a conventional-commit prefix and a trailing pull-request suffix removed; inline markup and the final period dropped), over the commits between the previous release of the line and the released commit | cited: Keep a Changelog, "Using commit log diffs as changelogs is a bad idea" — this is the machine form of the ruling |
+| the heading is a Release title; no title twice; one entry per line; the entry's version is the one the tree states for its line (an entry whose tag is written while the tree states a later version is stale and refused; one whose tag is written while the tree still states it is the release being re-run) | cited for the heading: ADR-0028 §1; authored for the rest — the file holds the release being prepared and nothing older |
 
-The ceilings are numbers in `tools/lib/changelog.py`, printed by the
+The ceilings are numbers in `tools/lib/release_notes.py`, printed by the
 diagnostic that applies them, and restated nowhere.
 
 ### 3. What a Release publishes
@@ -231,12 +235,13 @@ longer calls the generate-notes endpoint. The same shape for all three lines.
   the approval. Nothing is dispatched twice: the remedy is a pull request
   writing the entry, then a dispatch on its merge commit.
 - **A defective entry refuses on the pull request that writes it**:
-  `tools/ci/check-changelog.py`, a step of `docs (local link check)`, judges
+  `tools/ci/check-release-notes.py`, a step of `docs (local link check)`, judges
   every entry of the file through the same reader: the file-level rules, the
-  shape, and that every entry names a real release — its tag exists, or its
-  version is the one the tree states for that line. Its range for the copy
-  check ends at the entry's tag where it exists, else `HEAD`. A changelog with
-  no entry is a legitimate zero and passes saying so.
+  shape, and that every entry is the release being prepared — its version is
+  the one the tree states for that line; an entry for a released version the
+  tree has moved past is refused as stale. Its range for the copy check ends at
+  the entry's tag where it exists, else `HEAD`. A file with no entry is a
+  legitimate zero and passes saying so.
 - Both are held by `tools/tests/test_release_notes.py` (each refusal perturbed
   toward the forbidden shape and named) and `tools/tests/test_release_tags.py`
   (every release workflow reads the notes from the tree before `gh release
@@ -246,8 +251,12 @@ longer calls the generate-notes endpoint. The same shape for all three lines.
 ## Consequences
 
 - Preparing a release gains one obligation, in the pull request that already
-  names the tag: the entry for each line being released. A dispatch on a
-  commit without it is refused in the first job, with the remedy named.
+  names the tag: replacing `RELEASE-NOTES.md` with the entry for each line
+  being released. A dispatch on a commit without it is refused in the first
+  job, with the remedy named. Between releases the file carries the last
+  release's entries, which the check accepts while the tree still states those
+  versions and refuses as stale once a version moves — on the pull request that
+  moves it, where the new entry is owed.
 - `engine-release.yml` loses its `previous` output and gains the notes step and
   artifact; `plugin-release.yml` and `dsl-crate-publish.yml` lose their
   `previous` outputs and the generated-notes calls; `github_releases.py` loses
@@ -255,7 +264,7 @@ longer calls the generate-notes endpoint. The same shape for all three lines.
   link.
 - GitHub's "New Contributors" section no longer appears; the repository has one
   author, and the compare link lists every pull request with its author.
-- `CHANGELOG.md` is a file that only release-preparing pull requests touch, so
+- `RELEASE-NOTES.md` is a file that only release-preparing pull requests touch, so
   it is not the conflict class ADR-0034 removed; it is outside `docs/`, so
   `check-doc-dupes.py` (which refuses a repeated heading within a document) does
   not read it, and its repeated `### Highlights` headings are the format.
@@ -267,8 +276,8 @@ longer calls the generate-notes endpoint. The same shape for all three lines.
   request; that spends her account's monthly allowance and is her credential to
   grant or withhold.
 - Docs: `docs/reference/tools.md` rows for `release-notes.py`,
-  `check-changelog.py` and `changelog.py`, and the removal of the `notes` row;
-  `docs/reference/skill-workflow.md` step 1; `CHANGELOG.md`'s header. The
+  `check-release-notes.py` and `release_notes.py`, and the removal of the `notes` row;
+  `docs/reference/skill-workflow.md` step 1; `RELEASE-NOTES.md`'s header. The
   ACKNOWLEDGEMENTS ledger gains nothing: no library is adopted.
 
 ## Revisit triggers
@@ -280,7 +289,7 @@ longer calls the generate-notes endpoint. The same shape for all three lines.
   show", which is a second hatch on the gate (`CLAUDE.md`, *Vacuity*), and is
   not taken without re-deciding §1.
 - The ceilings prove wrong in practice: they are constants in
-  `tools/lib/changelog.py`, an engine-internal number, moved with the entry
+  `tools/lib/release_notes.py`, an engine-internal number, moved with the entry
   that needed it and no re-decision.
 - A fourth released thing: it joins `release_tags.NAMES` and the grammar of §1
   reaches it unchanged.

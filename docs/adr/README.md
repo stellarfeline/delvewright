@@ -32,13 +32,13 @@ edit. Template at the bottom.
 | [0025](0025-one-package.md) | One package — `delvec` is the engine, `delvewright-dsl` is the format, and nothing else is published | Accepted |
 | [0026](0026-one-approval-two-platforms.md) | One approval authorises both platforms — an engine release reaches crates.io and the GitHub Release together, or neither | Accepted; §4's open question closed by ADR-0028 |
 | [0027](0027-the-content-repository-is-optional-and-the-rig-is-reached-not-carried.md) | The content repository is an optional clone, and the plugin reaches the engine tree instead of carrying pieces of it | Accepted |
-| [0028](0028-three-things-released-by-name.md) | Three things, each released by its name and its version: `<name>--v<semver>` tags for `delvec`, `delvewright-dsl` and the `delvewright` plugin | Superseded in part by ADR-0033 (§5) and by ADR-<next> (§2's notes); §3 superseded by ADR-0029 |
+| [0028](0028-three-things-released-by-name.md) | Three things, each released by its name and its version: `<name>--v<semver>` tags for `delvec`, `delvewright-dsl` and the `delvewright` plugin | Superseded in part by ADR-0033 (§5) and by ADR-0036 (§2's notes); §3 superseded by ADR-0029 |
 | [0029](0029-the-page-ships-at-a-tag.md) | The page ships at a tag — the marketplace serves the plugin from the engine release the page pins | Accepted |
 | [0031](0031-a-module-per-object-class.md) | A module per object class — no file that every feature touches | Proposed |
 | [0032](0032-one-map-route.md) | One map route — a site is a plan of scenes, and a scene is drawn whole | Accepted |
 | [0033](0033-the-plugin-version-is-the-engine-release-it-ships-at.md) | The plugin's version is the engine release it ships at: derived and checked, the pin names the unborn tag, the plugin release writes no branch | Accepted |
 | [0034](0034-the-gallery-baseline-is-computed-in-ci.md) | The gallery emission baseline is computed in CI from the merge base and the head, both built from source; only the expected-warnings ledger is committed | Accepted |
-| [<next>](NEXT-a-release-notes-are-a-summary-not-the-merged-list.md) | A Release's notes are a summary written before the release — a `CHANGELOG.md` entry the workflows judge and publish — never the list of merged pull-request titles | Proposed |
+| [0036](0036-a-release-notes-are-a-summary-not-the-merged-list.md) | A Release's notes are a summary written before the release — a `RELEASE-NOTES.md` entry the workflows judge and publish — never the list of merged pull-request titles | Proposed |
 
 ## Template
 

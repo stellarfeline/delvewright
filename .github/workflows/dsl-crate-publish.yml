@@ -173,7 +173,7 @@ jobs:
             echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
       # The notes the approval is asked for, written once here and published
-      # verbatim by `publish`: the opening this tree states, the `CHANGELOG.md`
+      # verbatim by `publish`: the opening this tree states, the `RELEASE-NOTES.md`
       # entry written for this version (judged a summary against the changes
       # merged since the previous format release, and refused before any
       # approval when the tree has none), and the compare link. A Release that

@@ -105,7 +105,7 @@ jobs:
           git archive --format=zip --mtime="$(git log -1 --format=%cI "$SHA")" \
             --output "dist/delvewright-plugin-$VERSION.zip" "$SHA:.claude/skills/delvewright"
           (cd dist && sha256sum "delvewright-plugin-$VERSION.zip" > SHA256SUMS && cat SHA256SUMS)
-          # The opening the released tree states and the `CHANGELOG.md` entry
+          # The opening the released tree states and the `RELEASE-NOTES.md` entry
           # written for this version, judged a summary against the changes merged
           # since the previous plugin release; a tree with no entry is refused
           # here, before the tag is written.

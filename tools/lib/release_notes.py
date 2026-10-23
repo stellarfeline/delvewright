@@ -1,10 +1,12 @@
-"""`CHANGELOG.md`, read one way: an entry per released version, and what makes it a summary.
+"""`RELEASE-NOTES.md`, read one way: the notes of the release being prepared, and what makes them a summary.
 
 ## What the file is
 
 The repository releases three things by name and version (`tools/lib/release_tags.py`).
-`CHANGELOG.md` at the root holds one entry per released version of each, newest
-first, headed by the Release's title — the tag with `--v` read as a space:
+`RELEASE-NOTES.md` at the root holds the notes of the release being prepared —
+one entry per line that release names, at most one entry per line, replaced
+wholesale by the pull request that prepares the next release — each headed by
+the Release's title, the tag with `--v` read as a space:
 
     ## delvec 1.15.0
 
@@ -24,8 +26,10 @@ The entry is written before the release, by the agent that prepares it, from
 the changes merged since the previous release of the same line; the release
 workflow publishes it as the Release's notes below the opening
 `tools/ci/release-notes.py` reads from the tree, with a compare link to the full
-merged list. Nothing here is a list of merged pull-request titles: that list is
-one click away, and a Release's notes are what a reader needs instead of it.
+merged list. The published Release keeps each version's text; the tree keeps
+only the next release's, so no record of past versions accumulates here.
+Nothing here is a list of merged pull-request titles: that list is one click
+away, and a Release's notes are what a reader needs instead of it.
 
 ## What makes an entry a summary, machine-checkably
 
@@ -42,11 +46,10 @@ one click away, and a Release's notes are what a reader needs instead of it.
   line that survives that is the author's sentence, not the commit's.
 
 `parse` returns every entry with its own structural findings, and the file's:
-a heading that is not a Release title, a title twice, a line's entries out of
-order (newest first).
+a heading that is not a Release title, a title twice, a line with two entries.
 
 Stdlib only. This module is the one reader of the file; `tools/ci/release-notes.py`
-publishes through it and `tools/ci/check-changelog.py` judges through it.
+publishes through it and `tools/ci/check-release-notes.py` judges through it.
 """
 
 from __future__ import annotations
@@ -60,7 +63,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import release_tags  # noqa: E402
 
-FILE = "CHANGELOG.md"
+FILE = "RELEASE-NOTES.md"
 HIGHLIGHTS = "Highlights"
 KEEP_A_CHANGELOG_GROUPS = ("Added", "Changed", "Deprecated", "Removed", "Fixed", "Security")
 HIGHLIGHTS_CEILING = 7
@@ -116,7 +119,7 @@ def _title_tag(title: str) -> str | None:
 
 
 def parse(text: str) -> tuple[list[Entry], list[str]]:
-    """Every entry of a changelog, each with its structural findings, and the
+    """Every entry of the file, each with its structural findings, and the
     file-level findings. Text before the first entry is the file's header and is
     not read."""
     lines = text.split("\n")
@@ -143,15 +146,14 @@ def parse(text: str) -> tuple[list[Entry], list[str]]:
         if entry.title in seen:
             findings.append(f"{FILE}:{entry.line}: {entry.title!r} is already an entry at line {seen[entry.title]}")
         seen.setdefault(entry.title, entry.line)
-    by_line: dict[str, list[Entry]] = {}
+    first: dict[str, Entry] = {}
     for entry in entries:
-        by_line.setdefault(entry.name, []).append(entry)
-    for mine in by_line.values():
-        for earlier, later in zip(mine, mine[1:]):
-            if release_tags.version_key(later.version) >= release_tags.version_key(earlier.version):
-                findings.append(
-                    f"{FILE}:{later.line}: {later.title!r} follows {earlier.title!r}; a line's entries run newest first"
-                )
+        if entry.name in first and first[entry.name].title != entry.title:
+            findings.append(
+                f"{FILE}:{entry.line}: {entry.title!r} beside {first[entry.name].title!r} at line "
+                f"{first[entry.name].line}; the file holds one entry per line, the release being prepared"
+            )
+        first.setdefault(entry.name, entry)
     return entries, findings
 
 

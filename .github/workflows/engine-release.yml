@@ -194,11 +194,11 @@ jobs:
           echo "shelf: $TARGETS"
           echo "ok: delvec $VERSION at $COMMIT; $TAG is not written yet (1 of 1 release identity)"
       # The notes this Release publishes: the opening this tree states and the
-      # `CHANGELOG.md` entry written for this version before the release — a
+      # `RELEASE-NOTES.md` entry written for this version before the release — a
       # summary, judged here against the changes merged since the previous
       # release OF THIS LINE (the repository's last two tags may be a plugin
       # release and a format release), never the list of their titles. A commit
-      # whose changelog has no entry for this version, or whose entry is that
+      # whose RELEASE-NOTES.md has no entry for this version, or whose entry is that
       # list again, is refused before anything builds. Read here because this
       # checkout carries every tag; `shelf` publishes these bytes unchanged.
       - name: the notes, read from the tree and judged (a summary, never the merged list)
@@ -348,7 +348,7 @@ jobs:
           if [ "$rc" -ne 0 ]; then
             if grep -qiE 'release not found|HTTP 404' state.err; then
               # The notes `identity` judged: the opening the released tree states,
-              # the changelog entry written for this version, the compare link.
+              # the RELEASE-NOTES.md entry written for this version, the compare link.
               [ -s notes/notes.md ] || { echo "::error::the judged notes are missing or empty"; exit 1; }
               title="$(python3 tools/lib/release_tags.py title "$TAG")"
               gh release create "$TAG" --draft --target "$COMMIT" --title "$title" --notes-file notes/notes.md
