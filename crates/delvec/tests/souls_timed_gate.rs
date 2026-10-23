@@ -548,6 +548,19 @@ fn a_crush_gate_enters_the_death_plan() {
         g["crossed_at"].is_u64(),
         "the fixture's route crosses its gate: {g:#}"
     );
+    // The death is walked at a boundary the build names, before the crossing,
+    // at a mouth of the gate's own.
+    let trial_at = g["trial_at"]
+        .as_u64()
+        .expect("the build names the trial's boundary");
+    assert!(
+        trial_at < g["crossed_at"].as_u64().unwrap(),
+        "a gate the path crosses is reached before it is crossed: {g:#}"
+    );
+    assert!(
+        approaches.iter().any(|a| a["mouth"] == g["trial_mouth"]),
+        "the trial's mouth is one of the gate's: {g:#}"
+    );
     assert_eq!(v["binding"]["crush_gates"], serde_json::json!(1));
     let seats = v["placement"]["seats"].as_array().unwrap();
     assert!(

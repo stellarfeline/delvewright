@@ -50,14 +50,15 @@ export function atSeat(pos: Vec3Tuple, seat: Seat, tolerance = SEAT_TOLERANCE): 
 }
 
 /**
- * Whether a crush gate is due at the boundary after exported step `boundary`.
- * A gate a proven leg crosses is due at the boundary right before that step
- * and at every later one — never earlier, where reaching its mouth would mean
- * crossing gates the path has not crossed yet. A gate no proven leg crosses is
- * due wherever its mouth can be reached.
+ * Whether a crush gate's death is walked at the boundary after exported step
+ * `boundary`: exactly at the one boundary the build names (`trialAt`), the
+ * first proven leg whose start reaches a mouth, and at no other. A gate the
+ * build names no boundary for is walked after the path. The run never chooses
+ * the boundary by what its own pathfinder finds live: that answer moves with
+ * the clock of every timed gate in the way and with the client's timing.
  */
 export function crushDueAt(gate: CrushGate, boundary: number): boolean {
-  return gate.crossedAt === undefined || boundary >= gate.crossedAt - 1;
+  return gate.trialAt !== undefined && boundary === gate.trialAt;
 }
 
 /** One walk into one crush gate's closing cells, and what was observed of it. */
@@ -67,6 +68,8 @@ export interface CrushTrial {
   readonly at: string;
   /** The exported step after which it ran. */
   readonly boundary: number;
+  /** The exported step after which the build says it runs (`trialAt`), if it names one. */
+  readonly named: number | undefined;
   /** The side the bot stepped in from. */
   approach: GateApproach | undefined;
   /** Labels of the seats that govern a death here ({@link governingSeats}). */
@@ -94,6 +97,7 @@ export function openCrushTrial(gate: CrushGate, boundary: number, at: string): C
     gate: gate.id,
     at,
     boundary,
+    named: gate.trialAt,
     approach: undefined,
     expectedSeats: [],
     enteredRegion: false,
@@ -113,6 +117,13 @@ const fmtPos = (p: Vec3Tuple | undefined): string =>
 
 /** One trial's observations, turned into the failures they represent. */
 export function crushTrialFailures(t: CrushTrial): string[] {
+  if (t.named !== undefined && t.boundary !== t.named) {
+    return [
+      `${t.gate}: the trial ran ${t.at} (boundary ${t.boundary}), and the build names the ` +
+        `boundary after step ${t.named}: the seat a death returns to is judged at the boundary ` +
+        `the build names, never at one the run found`,
+    ];
+  }
   if (t.notLiveAtTrial !== undefined) return [];
   if (t.abandoned !== undefined) {
     return [`${t.gate}: the crush death could not be walked — ${t.abandoned}`];

@@ -11,6 +11,7 @@ import {
 import {
   bodyInVolume,
   gateVerdict,
+  sameCell,
   seatAtRespawn,
   termKey,
   type CrushGate,
@@ -106,7 +107,9 @@ export const methods = {
   /**
    * Every crush gate no step boundary walked, after the proven path; `boundary`
    * is the path's last exported step. A gate that cannot be reached here is
-   * that gate's failure, never a skip.
+   * that gate's failure, never a skip. A gate the build names a boundary for is
+   * never walked here: its trial is recorded as abandoned at the boundary the
+   * run did not walk it at.
    */
   async runCrushDeaths(this: MineflayerExecutor, boundary: number): Promise<void> {
     const plan = this.deathPlan;
@@ -116,7 +119,16 @@ export const methods = {
     try {
       for (const g of plan.crushGates) {
         if (this.crushTried.has(g.id)) continue;
-        await this.crushTrial(plan, g, boundary, "after the critical path", true);
+        if (g.trialAt !== undefined) {
+          this.crushTried.add(g.id);
+          const trial = openCrushTrial(g, g.trialAt, `after step ${g.trialAt}`);
+          trial.abandoned =
+            `the build names the boundary after step ${g.trialAt} for this death, and the run ` +
+            `never walked it there`;
+          this.crushTrials.push(trial);
+          continue;
+        }
+        await this.crushTrial(plan, g, boundary, "after the critical path");
       }
       if (this.death !== undefined) await this.recoverFromDeath();
     } finally {
@@ -130,9 +142,11 @@ export const methods = {
    * read where the death happened and where the respawn put the party, against
    * the seats that govern a death at this boundary ({@link governingSeats}).
    *
-   * `mustRun` is set after the path: there the trial is the gate's last chance,
-   * so a gate no mouth of which can be reached is recorded as abandoned. At a
-   * step boundary such a gate is left for a later boundary instead.
+   * At the boundary the build names (`trialAt`) the walk goes to the mouth the
+   * build names (`trialMouth`); nothing is probed, and a walk that falls short
+   * is the trial's failure. After the path, for a gate the build names no
+   * boundary for, the first mouth the pathfinder reaches is walked to, and a
+   * gate none of whose mouths can be reached is recorded as abandoned.
    */
   async crushTrial(
     this: MineflayerExecutor,
@@ -140,7 +154,6 @@ export const methods = {
     gate: CrushGate,
     boundary: number,
     at: string,
-    mustRun: boolean,
   ): Promise<void> {
     const bot = this.requireBot();
     if (this.death !== undefined) await this.recoverFromDeath();
@@ -154,7 +167,6 @@ export const methods = {
         answers.get(termKey(t)),
       );
       if (verdict.kind !== "open") {
-        if (!mustRun && verdict.kind === "shut") return;
         this.crushTried.add(gate.id);
         const trial = openCrushTrial(gate, boundary, at);
         if (verdict.kind === "shut") trial.notLiveAtTrial = verdict.why;
@@ -169,16 +181,11 @@ export const methods = {
     // gallery the inner door's near mouth is a sealed vestibule, and a cell two
     // away from it lies on the other side of its wall.
     const others = plan.crushGates.filter((g) => g.id !== gate.id).map((g) => g.region);
-    const approach = gate.approaches.find((a) =>
-      this.reachableFromHere(a.mouth, 0, [gate.region], others),
-    );
-    if (approach === undefined && !mustRun) {
-      process.stderr.write(
-        `[crush] ${gate.id} ${at}: no mouth reachable from ` +
-          `[${(this.feetCell() ?? []).join(", ")}] — left for a later boundary\n`,
-      );
-      return;
-    }
+    const named = gate.trialMouth;
+    const approach =
+      named !== undefined
+        ? gate.approaches.find((a) => sameCell(a.mouth, named))
+        : gate.approaches.find((a) => this.reachableFromHere(a.mouth, 0, [gate.region], others));
     this.crushTried.add(gate.id);
     const trial = openCrushTrial(gate, boundary, at);
     this.crushTrials.push(trial);
