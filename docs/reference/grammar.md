@@ -1700,13 +1700,12 @@ the program needs. Ids are audit labels, so both corpora are recordable:
 `library/<program>` and `<campaign>/<zone>`.
 
 The rule library holds
-one recorded red: `library/causeway` (`DW0800`) floods its ward floor to
-ceiling on both flanks of its spine, and that body of water is not contained —
-134 of its 252 cells run into open air and 36 run directions leave the piece's
-own faces. The repair is a contained ward: a lowered waterline with a wall under
-it. `nav` knows a body cannot stand on water (the `nav` entry at the top of
-this page), so a lowered waterline reads as what it is rather than as walkable
-floor; the entry is removed by the change that repairs the piece.
+one recorded red: `library/causeway` (`DW0800`). Its flood stands one course
+below the berm's top on both flanks of its spine, and runs 8 ways out of its 56
+cells, every one into the open corbel of `guard_cantilever` at the ward's far
+end. The repair still owed is a wall under the corbel at the waterline that
+keeps the cantilever's slice free of standable floor; the entry is removed by
+the change that makes it.
 
 The sweep also totals the **local-frame binding count** — how many fills read
 their states in the scope's own axes — beside the gate whose population they
@@ -2163,9 +2162,12 @@ Gates:
 
 ### `causeway` — the flooded ward
 
-A ward whose flood zones are water from the floor almost to the ceiling — not
-a shallow pool with a walkable rim — either side of a solid, 1-wide raised
-berm (`rise` blocks tall). A guard station sits at the far end, deliberately
+A ward whose flood zones are water from the floor to one course below the
+berm's top, air over it, either side of a solid, 1-wide raised berm (`rise`
+blocks tall). The waterline is the claim: water does not flow up, so the berm
+stays dry, and a body that swims the flood surfaces `tower_rise` blocks below
+the post's floor, out of reach of any climb out of water, so the post stays a
+terminus for a body that swims. A guard station sits at the far end, deliberately
 **not flush** with the causeway: its own floor sits `tower_rise` blocks higher,
 reached by a two-Z-slice post (`guard_support`, with the pillar and
 `anchor/elite`; `guard_cantilever`, the same headroom one cell further out with

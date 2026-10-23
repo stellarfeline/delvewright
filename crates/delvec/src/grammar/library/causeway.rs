@@ -15,15 +15,16 @@
 //!            post:  plinth               the post's own column
 //! ```
 //!
-//! `flooded_ward`'s floor rule is deliberately extreme: the flood zones are
-//! **water from the floor almost to the ceiling**, not a shallow pool with a
-//! walkable rim — the ward's whole claim is that off the spline there is
-//! nothing to stand on. It was written that way to hold that claim up on its
-//! own, when the walk read any non-air cell as floor and a body-height air
-//! pocket over the water would have quietly made it false. `nav` answers that
-//! now — a fluid is not a floor — so the extreme waterline is no longer what
-//! carries the claim, and a contained ward with a lowered waterline is the
-//! repair this piece owes (`DW0800`: the flood as written is not walled).
+//! `flooded_ward`'s waterline is **one course below the berm's top**: the
+//! flood is water from the ward floor to `rise - 1`, and air over it to the
+//! ceiling. That is what keeps the ward's claim for a body that swims. Water
+//! does not flow up, so the cell a body stands in on the berm stays dry; and a
+//! body that steps off into the flood swims at a surface `tower_rise` blocks
+//! below the post's floor, further than any climb out of water reaches, so the
+//! flood is no way onto the post or past it. A flood to the ceiling would flow
+//! over the berm and fill the cantilever, and a body would swim up it onto the
+//! post. Off the spline there is still nothing to stand on: water is not a
+//! floor.
 //! The causeway itself is a solid berm a body walks on top of, `rise` blocks
 //! above the ward floor, with the same headroom as every other room in the
 //! vocabulary.
@@ -88,16 +89,10 @@
 //! 1. **The causeway is standable end to end; stepping off it is not.** Every
 //!    causeway cell is standable and connects the approach end to the guard
 //!    station end (`grammar::nav::reaches`, the reach graph); every
-//!    flood cell is asserted directly not standable. As this piece is built
-//!    that holds twice over, and the two reasons are worth keeping apart. The
-//!    foot cell is water, and **a body does not occupy a fluid cell** — that is
-//!    the collision class fluid gets, not an inference from the cell not being
-//!    air (`delvewright_dsl::blockshape`, spec-0056; the walk once read *not
-//!    air* as *solid*, and under that reading a torch was a wall too). And the
-//!    cell under a foot is water, which is not a floor, so it would fail
-//!    `standable` even with air over it. Only the first is a fact about
-//!    flooding to the ceiling; the second is the rule, and it is what makes a
-//!    lowered waterline safe.
+//!    flood cell is asserted directly not standable: the cell under a foot
+//!    there is water, and water is not a floor — the collision class fluid
+//!    gets (`delvewright_dsl::blockshape`, spec-0056), not an inference from
+//!    the cell not being air.
 //! 2. **The guard station commands the causeway.** `anchor/elite` sees every
 //!    standable causeway cell, walked with the same Amanatides–Woo traversal
 //!    `watch_bay` uses, **at every width** — odd and even — and with the lane
@@ -210,28 +205,29 @@ pub fn causeway() -> Program {
         )
         // --- the flooded ward (near end, low elevation) -------------------------
         .rule("flooded_ward", section("flood_column", "causeway_column"))
-        // Floor, then water almost to the roof — not a shallow pool. Total
-        // non-roof height matches `causeway_column`/`post_flank` so all three
-        // share one flat ceiling: `1 + (rise + tower_rise + head - 1) ==
-        // rise + tower_rise + head`. Reaching guard-station height, not just
-        // causeway height, is what lets the elevated post see over the
-        // boundary into the ward at all — a lower ceiling here would block its
-        // own sightline before `obstruct` ever gets a chance to.
+        // Floor, water to one course below the berm's top, then air to the
+        // roof. The waterline is the claim: water does not flow up, so a
+        // surface one course under the cell a body stands in on the berm keeps
+        // the berm dry, and a body swimming the flood comes up `tower_rise`
+        // blocks short of the post's floor — further than any climb out of
+        // water reaches. Total non-roof height matches
+        // `causeway_column`/`post_flank` so all three share one flat ceiling:
+        // `1 + (rise - 1) + (tower_rise + head) == rise + tower_rise + head`.
+        // Reaching guard-station height, not just causeway height, is what
+        // lets the elevated post see over the boundary into the ward at all —
+        // a lower ceiling here would block its own sightline before `obstruct`
+        // ever gets a chance to.
         .rule(
             "flood_column",
             split(
                 Axis::Y,
                 vec![
                     abs(1),
-                    abse(
-                        par("rise")
-                            .arith(ArithOp::Add, par("tower_rise"))
-                            .arith(ArithOp::Add, par("head"))
-                            .arith(ArithOp::Sub, int(1)),
-                    ),
+                    abse(par("rise").arith(ArithOp::Sub, int(1))),
+                    abse(par("tower_rise").arith(ArithOp::Add, par("head"))),
                     rel(1),
                 ],
-                vec![fill("stone"), fill("water"), fill("stone")],
+                vec![fill("stone"), fill("water"), void(), fill("stone")],
             ),
         )
         // The berm, then an interior reaching the same height as the guard
