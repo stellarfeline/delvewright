@@ -208,6 +208,9 @@ impl BodyAnswer<'_> {
             requires_state: Vec::new(),
             once: false,
             audience: delvewright_dsl::TriggerAudience::Presser,
+            // An answer is a reply to a blow, not an act the party is guided
+            // to (spec-0104 §7): nothing lights the body for it.
+            highlight: None,
             effects: vec![
                 Verb::Narrate(delvewright_dsl::Narration {
                     text: self.text.clone(),
