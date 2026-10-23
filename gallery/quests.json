@@ -3097,30 +3097,8 @@
             },
             {
               "time": {
-                "phase": "waxing-crescent",
-                "sun": "just-set"
-              },
-              "type": "set-time",
-              "when": {
-                "forbids_flags": [
-                  "flag/hall-sealed"
-                ],
-                "requires_flags": [
-                  "flag/hall-open"
-                ],
-                "requires_state": [
-                  {
-                    "op": "at-most",
-                    "state": "state/labels-read",
-                    "value": 9
-                  }
-                ]
-              }
-            },
-            {
-              "time": {
-                "daytime": 15000,
-                "phase": "first-quarter"
+                "daytime": 13047,
+                "phase": "waxing-crescent"
               },
               "type": "set-time",
               "when": {

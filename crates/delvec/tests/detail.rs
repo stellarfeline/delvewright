@@ -1419,7 +1419,7 @@ fn the_whole_does_not_light_a_bound_place_and_a_dark_one_is_a_finding() {
     let (out, s) = unlit_bound_place(&tmp, "node/exit");
     assert_ne!(out.status.code(), Some(0), "a dark place is a finding: {s}");
     assert!(
-        s.contains("DW0210"),
+        s.contains("DW0210 [error]"),
         "and it is the darkness gate that says so, not a silence: {s}"
     );
     assert!(
@@ -1464,7 +1464,7 @@ fn a_dark_bound_place_is_told_what_it_owes_and_not_to_declare_the_plans_lighting
         Some(0),
         "a dark bound place refuses: {s}"
     );
-    assert!(s.contains("DW0210"), "under the darkness gate: {s}");
+    assert!(s.contains("DW0210 [error]"), "under the darkness gate: {s}");
 
     assert!(
         s.contains("bound place(s) measure dark"),
@@ -2865,6 +2865,6 @@ fn a_stand_in_is_not_judged_and_its_detail_is() {
     ]);
     let s = String::from_utf8_lossy(&out.stderr).to_string();
     assert_eq!(out.status.code(), Some(2), "{s}");
-    assert!(s.contains("DW0210"), "{s}");
+    assert!(s.contains("DW0210 [error]"), "{s}");
     assert_eq!(standin_binding(&s), (0, 0), "{s}");
 }
