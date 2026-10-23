@@ -2660,6 +2660,28 @@ impl World {
         seen
     }
 
+    /// **The floor a body reaches from `entry`**: the cells of `standable` in
+    /// the unconfined closure of the reach graph's moves from `entry`
+    /// ([`World::body_flood`], every move admitted) — the walk, the climb,
+    /// every fall, every swim and every jump of the launch set. A cell of
+    /// `entry` that is no rest state is kept and moves nowhere.
+    ///
+    /// The one answer every per-piece reader takes to "which floor can a body
+    /// get to" over [`World::of_piece`]: `reachable-floor`, the sculpt's entry
+    /// reading, the light probe's measured cells and the enclosure survey
+    /// (`compiler::nav::world::reach::agreement`).
+    pub fn floor_reached(
+        &self,
+        standable: &BTreeSet<[i32; 3]>,
+        entry: &BTreeSet<[i32; 3]>,
+    ) -> BTreeSet<[i32; 3]> {
+        let seeds: Vec<[i32; 3]> = entry.iter().copied().collect();
+        self.body_flood(&seeds, &|_, _| true)
+            .intersection(standable)
+            .copied()
+            .collect()
+    }
+
     /// **Where a body let go in `c` comes to rest**: `c` itself when it is a
     /// rest state; otherwise a body at rest with its feet at the bottom centre
     /// of `c` and no key held, flown by the graph's simulator until it stands,

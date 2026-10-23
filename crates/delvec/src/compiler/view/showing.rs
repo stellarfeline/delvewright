@@ -28,7 +28,7 @@
 //! is the [`Voxels`] adapter over the renderer's own parsed structure, which is
 //! what that trait exists for.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use delvewright_dsl::blockshape;
 
@@ -154,12 +154,33 @@ pub struct Enclosure {
 /// author goes; the totals above it are exact however many there are.
 const STEPS_NAMED: usize = 3;
 
+/// **The floor a body reaches from the piece's ground-level entrance**: the
+/// standable cells, the entrance ([`nav::ground_entry`]), and the standable
+/// cells a body gets to from it by the reach graph's moves over the piece's
+/// own blocks ([`crate::compiler::nav::World::floor_reached`] over
+/// [`crate::compiler::nav::World::of_piece`]) — a gap a jump clears, a ladder
+/// and a ledge stepped off all count, so floor reported unreached is floor no
+/// body gets to.
+pub(crate) fn floor_reached(
+    st: &Structure,
+    v: &Cells<'_>,
+) -> (BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>) {
+    let standable = nav::standable_cells(v);
+    let entry = nav::ground_entry(v);
+    let blocks: BTreeMap<[i32; 3], String> = st
+        .blocks
+        .iter()
+        .filter(|(pos, _)| (0..3).all(|a| pos[a] >= 0 && pos[a] < st.size[a]))
+        .filter_map(|(pos, i)| Some((*pos, st.palette.get(*i)?.clone())))
+        .collect();
+    let reached = crate::compiler::nav::World::of_piece(blocks).floor_reached(&standable, &entry);
+    (standable, entry, reached)
+}
+
 /// Run the survey over a piece's own bytes.
 pub fn survey(st: &Structure) -> Enclosure {
     let v = Cells::of(st);
-    let standable = nav::standable_cells(&v);
-    let entry = nav::ground_entry(&v);
-    let reached = nav::reachable_from(&v, &standable, &entry);
+    let (standable, entry, reached) = floor_reached(st, &v);
     let stranded: BTreeSet<[i32; 3]> = standable.difference(&reached).copied().collect();
 
     let mut stranded_sheltered = 0usize;

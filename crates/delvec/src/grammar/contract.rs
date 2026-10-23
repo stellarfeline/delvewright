@@ -231,31 +231,13 @@ fn is_transit(edge: &crate::schem::prefab::ContractEdge) -> bool {
     matches!(edge.class.as_str(), "stair" | "climb" | "drop") || edge.way.is_some()
 }
 
-/// **The body that climbs, over this piece's own blocks** — the compiler's nav
-/// model (spec-0099) built from the model, so a `climb` edge is proved by the
-/// same moves every route proof takes: a climbable is a cell a body holds in
-/// only while its `canSurvive` rule holds over these blocks
-/// ([`crate::compiler::assembled::climb_holds`]), and from it a body moves only
-/// by the climb's own moves ([`crate::compiler::nav::World::neighbors`]). A
-/// private climb rule here would be a second opinion two proofs could disagree
-/// about. Outside the model is air to this world, as it is to an assembled one.
-pub(crate) fn body_world(model: &VoxelModel) -> crate::compiler::nav::World {
-    let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
-    for pos in model.region().positions() {
-        if let Some(b) = model.get(pos)
-            && !b.is_air()
-        {
-            blocks.insert(pos, b.to_string());
-        }
-    }
-    crate::compiler::nav::World::from_occupancy(
-        crate::compiler::assembled::occupancy_of(blocks, &BTreeSet::new()),
-        // Declined by design: a contract judges one piece before any
-        // campaign places it, so there is no horizon, volume or gate to
-        // state — the piece's own blocks are the whole question.
-        crate::compiler::nav::Premises::geometry_only(),
-    )
-}
+/// **The body that climbs, over this piece's own blocks** —
+/// [`nav::body_world`], so a `climb` edge is proved by the same moves every
+/// route proof takes: a climbable is a cell a body holds in only while its
+/// `canSurvive` rule holds over these blocks
+/// ([`crate::compiler::assembled::climb_holds`]). A private climb rule here
+/// would be a second opinion two proofs could disagree about.
+pub(crate) use crate::grammar::nav::body_world;
 
 /// **Every cell a body reaches from `from`, moving only into `cells`**, by the
 /// reach graph's moves over `world` ([`body_world`]): the walk, the climb,

@@ -40,7 +40,7 @@ use delvewright_dsl::blockshape::Collision;
 
 use crate::grammar::model::VoxelModel;
 
-pub use crate::schem::nav::{components, connected, reachable_from};
+pub use crate::schem::nav::components;
 
 /// What a body may occupy, what it may stand on, and how high that floor is —
 /// **asked, not decided, here**.
@@ -182,15 +182,37 @@ pub fn standable_cells(model: &VoxelModel) -> BTreeSet<[i32; 3]> {
     crate::schem::nav::standable_cells(model)
 }
 
-/// [`connected`]'s ±1-step walk, plus a one-way **fall** — see
-/// [`delvec::schem::nav::reachable_with_fall`].
-pub fn reachable_with_fall(
+/// **The body, over this model's own blocks**: [`crate::compiler::nav::World::of_piece`]
+/// built from the model, so every reach question asked of a piece is asked of
+/// the reach graph — a climbable is a cell a body holds in only while its
+/// `canSurvive` rule holds over these blocks, and from every rest state the
+/// walk, the climb, every fall and every jump of the launch set are the
+/// graph's. Outside the model is air to this world, as it is to an assembled
+/// one.
+pub fn body_world(model: &VoxelModel) -> crate::compiler::nav::World {
+    let mut blocks: std::collections::BTreeMap<[i32; 3], String> =
+        std::collections::BTreeMap::new();
+    for pos in model.region().positions() {
+        if let Some(b) = model.get(pos) {
+            blocks.insert(pos, b.to_string());
+        }
+    }
+    crate::compiler::nav::World::of_piece(blocks)
+}
+
+/// **Can a body get from any cell of `from` to any cell of `to`, moving only
+/// into `cells`**, by the reach graph's moves over the model's blocks
+/// ([`body_world`], [`crate::compiler::nav::World::body_flood`])? A cell of
+/// `from` outside `cells` is no start. The edge proof's walk
+/// ([`crate::grammar::contract`]), offered to a reader holding a model; a
+/// `cells` that leaves some floor out proves a route is the only one.
+pub fn reaches(
     model: &VoxelModel,
     cells: &BTreeSet<[i32; 3]>,
     from: &BTreeSet<[i32; 3]>,
     to: &BTreeSet<[i32; 3]>,
 ) -> bool {
-    crate::schem::nav::reachable_with_fall(model, cells, from, to)
+    !crate::grammar::contract::body_reached(&body_world(model), cells, from).is_disjoint(to)
 }
 
 /// Where a body walks in: the standable cells on the region's four **vertical**
@@ -445,7 +467,7 @@ mod tests {
             "the doorway is the way in"
         );
         assert_eq!(
-            reachable_from(&bare, &bare_cells, &entry),
+            body_world(&bare).floor_reached(&bare_cells, &entry),
             bare_cells,
             "an empty room is walkable end to end"
         );
@@ -475,7 +497,7 @@ mod tests {
              torch as a wall again"
         );
         assert_eq!(
-            reachable_from(&lit, &lit_cells, &entry),
+            body_world(&lit).floor_reached(&lit_cells, &entry),
             bare_cells,
             "the decoration severed the room"
         );
@@ -523,7 +545,7 @@ mod tests {
             "on the stone, and on top of each slab"
         );
         assert!(
-            crate::schem::nav::connected(
+            reaches(
                 &m,
                 &cells,
                 &BTreeSet::from([[0, 1, 0]]),
@@ -543,7 +565,7 @@ mod tests {
         full.set([0, 3, 0], &stone).unwrap();
         let full_cells = standable_cells(&full);
         assert!(
-            !crate::schem::nav::connected(
+            !reaches(
                 &full,
                 &full_cells,
                 &BTreeSet::from([[0, 1, 0]]),

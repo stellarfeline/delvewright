@@ -1840,6 +1840,27 @@ impl World {
         self.use_gates.contains(&c)
     }
 
+    /// **One piece alone, as a body meets it**: the world of `blocks` (a cell
+    /// to block-state map; air spellings are dropped) with nothing outside them
+    /// — outside is air, with nothing to stand on. What every reader that asks
+    /// "can a body reach this cell" of one piece before any campaign places it
+    /// builds its reach graph over: the grammar's gates and edge proofs, the
+    /// sculpt, the light probe and the enclosure survey.
+    ///
+    /// A piece is judged before a campaign states anything about the world it
+    /// sits in, so there is no horizon, volume or gate to declare:
+    /// [`Premises::geometry_only`], said by name.
+    pub fn of_piece(blocks: BTreeMap<[i32; 3], String>) -> Self {
+        let blocks: BTreeMap<[i32; 3], String> = blocks
+            .into_iter()
+            .filter(|(_, name)| !delvewright_dsl::blockshape::is_air(name))
+            .collect();
+        Self::from_occupancy(
+            crate::compiler::assembled::occupancy_of(blocks, &BTreeSet::new()),
+            Premises::geometry_only(),
+        )
+    }
+
     /// Build a [`World`] directly from a set of solid cells, with no water (test /
     /// synthetic entry point; the relight unit tests build a world without a full
     /// [`Plan`]).

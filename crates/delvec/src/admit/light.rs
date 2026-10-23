@@ -508,10 +508,7 @@ pub fn probe_entered<V: BlockCells + ?Sized>(
     let night_field = model.flood(sky_light as u8);
     let day_field = model.flood(daylight as u8);
 
-    let standable = nav::standable_cells(zone);
-    let mut entry = nav::ground_entry(zone);
-    entry.extend(doors.iter().filter(|c| standable.contains(*c)).copied());
-    let measured = nav::reachable_from(zone, &standable, &entry);
+    let (standable, entry, measured) = floor_measured(zone, doors);
 
     let at = |f: &BTreeMap<[i32; 3], u8>, c: [i32; 3]| f.get(&c).copied().unwrap_or(0) as i32;
     let mut min_light: Option<i32> = None;
@@ -554,6 +551,28 @@ pub fn probe_entered<V: BlockCells + ?Sized>(
         entry_cells: entry.len(),
         measured_cells: measured.len(),
     }
+}
+
+/// **The floor the probe measures over**: the zone's standable cells, the
+/// cells it is walked in from (the ground-level entrance and every standable
+/// cell of `doors`), and the standable cells a body reaches from those — by
+/// the reach graph's moves over the zone's own blocks
+/// ([`crate::compiler::nav::World::floor_reached`] over
+/// [`crate::compiler::nav::World::of_piece`]), so a gap a jump clears, a
+/// ladder and a ledge stepped off all count, as they do for every other
+/// reader that asks where a body can be.
+pub(crate) fn floor_measured<V: BlockCells + ?Sized>(
+    zone: &V,
+    doors: &BTreeSet<[i32; 3]>,
+) -> (BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>) {
+    let standable = nav::standable_cells(zone);
+    let mut entry = nav::ground_entry(zone);
+    entry.extend(doors.iter().filter(|c| standable.contains(*c)).copied());
+    let blocks: BTreeMap<[i32; 3], String> = nav::positions(zone.origin(), zone.size())
+        .filter_map(|pos| Some((pos, zone.block_state(pos)?.into_owned())))
+        .collect();
+    let measured = crate::compiler::nav::World::of_piece(blocks).floor_reached(&standable, &entry);
+    (standable, entry, measured)
 }
 
 /// The zone as the compiler's light model, in a box that lets sky in.

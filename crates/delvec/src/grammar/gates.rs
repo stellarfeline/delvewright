@@ -400,18 +400,15 @@ fn piece_reached(
     world.body_flood(&seeds, &|_, _| true)
 }
 
-/// The cells of `standable` a body reaches from `entry` ([`piece_reached`]):
-/// what `reachable-floor` counts as reached.
+/// The cells of `standable` a body reaches from `entry`
+/// ([`crate::compiler::nav::World::floor_reached`] over
+/// [`contract::body_world`]): what `reachable-floor` counts as reached.
 pub(crate) fn floor_walked(
     model: &VoxelModel,
     standable: &BTreeSet<[i32; 3]>,
     entry: &BTreeSet<[i32; 3]>,
 ) -> BTreeSet<[i32; 3]> {
-    let world = contract::body_world(model);
-    piece_reached(&world, entry)
-        .intersection(standable)
-        .copied()
-        .collect()
+    contract::body_world(model).floor_reached(standable, entry)
 }
 
 /// [`reachability`] from the cells `entry` names.
