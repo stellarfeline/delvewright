@@ -1066,6 +1066,24 @@ jobs:
       # stdlib-only python3.
       - name: only the approval-gated job publishes anything
         run: python3 tools/ci/check-release-publish-gate.py
+      # A Release's notes are a summary of what the release changes for its
+      # consumer — Highlights, then grouped changes, written for the version
+      # before it is released — never the titles of the merged pull requests,
+      # which the compare link already gives. `RELEASE-NOTES.md` holds the
+      # entries of the release being prepared (the published Release keeps each
+      # version's text; the file is replaced for the next release), and the three
+      # release workflows refuse a version with none (`tools/ci/release-notes.py`).
+      # This judges every entry where it is written: a heading that is not a
+      # Release title, two entries for one line, a version the tree does not
+      # state (stale once its tag is written and the line has moved on), a
+      # missing or oversized Highlights, no group of changes, a line that is a
+      # merged change's own subject again. Reads the file through
+      # `tools/lib/release_notes.py`, the one reader; `git` for the tags and the
+      # merged subjects, nothing else. States its binding counts; an empty file
+      # is a legitimate zero and says so. Deterministic, offline, stdlib-only
+      # python3.
+      - name: every release-notes entry is a summary, not the merged list
+        run: python3 tools/ci/check-release-notes.py
       # ADR-0016's third version line — the `/new-delve` skill's own version and
       # the `delvec` window it drives — is checked in the CONTENT repository, by
       # `tools/check-skill-version.py` there, because that is where the page
