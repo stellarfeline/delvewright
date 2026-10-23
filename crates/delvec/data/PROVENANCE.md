@@ -247,6 +247,26 @@ not third-party reconstructions.
   and hiding counts must equal the rows' coverage. Two runs of one jar give the
   same bytes.
 
+- **`light-block-1.21.11.tsv`** (in `crates/dsl/data/`) — what every 1.21.11
+  blockstate **takes from light** passing through it, asked inside the pinned
+  server jar (same jar sha256 and mappings sha1 as the occlusion table, both
+  recorded in the file's header): `light_block` is the game's own
+  `BlockState.getLightBlock()` (15 stops light; below it light loses
+  `max(1, light_block)` a step) and `shape_occludes` its
+  `BlockState.useShapeForLightOcclusion()`. 29,671 states collapse onto the
+  properties that move the answer: 2,064 rows; 2,559 states stop light — the
+  2,558 that hide from the eye and `tinted_glass`.
+  **Why it exists**: whether light passes a block is the light question, and
+  neither the collision class nor the occlusion table answers it — tinted glass
+  is looked through and stops light. Consumed by
+  `delvewright_dsl::blockshape::light_block`, which `light::passes_light` reads
+  for every block a body cannot occupy.
+  **Reproduce it**: `python3 tools/maintenance/dump-block-light.py [--check]
+  [--work DIR]`, which writes it from the same booted jar as the emission
+  fixture and the occlusion table; `tools/maintenance/blocklight/LightBlockDump.java`
+  names no obfuscated member; the collapse is `dump-collision-tops.py`'s own,
+  imported; the dumper's state and stopping counts must equal the rows' coverage.
+
 - **`redstone-1.21.11.tsv`** (in `crates/dsl/data/`) — three redstone facts of
   every 1.21.11 block, one row per block id (1,166 rows over 29,671 states; same
   jar sha256 and mappings sha1 as the collision table, both recorded in the
@@ -730,6 +750,7 @@ What it establishes, all verified against 1.21.11 client bytecode rather than as
 | `collision-tops-1.21.11.tsv` | `f4ea1e01f4463272ef527bafcbb36dbe4d8669e58fabfda5ec54c307469196bc` |
 | `faces-1.21.11.tsv` | `ba718f855a73609ebd15f9ede83b43fec9f2bc1db2f53de0ba10ad8289ce8ad4` |
 | `occlusion-1.21.11.tsv` | `a867d92c5144be884c17c4627735e691fb395b6ab5f0c302cd99e188447c3cc7` |
+| `light-block-1.21.11.tsv` | `78125571c524732059d502b5144307d34dcb62a15c897f3e943f2793a19f4de9` |
 | `redstone-1.21.11.tsv` | `8a2ca8673d01d420125e1bb0b288533d72d5847d0f69a7f51286593f6bc6d496` |
 | `block-entities-1.21.11.tsv` | `0c302bdc0e3830886accc0c7f1305e65cceae0faf7b936050e1db635ddab2ca0` |
 | `support-1.21.11.tsv` | `c70c0fab67a9c236b7df85f7107a667f4c56f9142f3c1300f7ead807ca45cd4b` |
