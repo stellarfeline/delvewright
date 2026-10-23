@@ -906,6 +906,9 @@ pub(crate) fn read_inventory(c: &Campaign) -> BTreeMap<String, String> {
         .collect()
 }
 
+/// An objective's site: `(quest id, objective id, after, announced)`.
+type ObjectiveSite = (String, String, Vec<String>, bool);
+
 /// What a string's key is tied to in the documents, for placing it on a walk:
 /// an effect's string by its pointer, an objective's and a quest's by their
 /// ids, a dialogue string by its tree, node and option.
@@ -916,7 +919,7 @@ pub(crate) struct Sites {
     /// after, announced)`. An objective that is not announced
     /// (`Objective::announced`, spec-0093) never puts its title or
     /// hint on a screen.
-    objectives: BTreeMap<(String, String), (String, String, Vec<String>, bool)>,
+    objectives: BTreeMap<(String, String), ObjectiveSite>,
     /// Quest local id → quest id.
     quests: BTreeMap<String, String>,
     /// Dialogue key → `(npc id, node id, option index, pointer)`.
@@ -933,8 +936,7 @@ impl Sites {
             .map(|(_, path, kb)| (kb, path))
             .collect();
         // Objectives and quests by the local ids their keys carry.
-        let mut objectives: BTreeMap<(String, String), (String, String, Vec<String>, bool)> =
-            BTreeMap::new();
+        let mut objectives: BTreeMap<(String, String), ObjectiveSite> = BTreeMap::new();
         let mut quests: BTreeMap<String, String> = BTreeMap::new();
         let guidance = &c.quests.content.guidance;
         for q in &c.quests.content.quests {
