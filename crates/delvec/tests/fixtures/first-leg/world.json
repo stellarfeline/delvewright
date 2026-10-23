@@ -27,6 +27,6 @@
     "title": "The Long Yard",
     "weather": "clear"
   },
-  "dsl_version": "0.60.0",
+  "dsl_version": "0.64.0",
   "stage": "world"
 }
