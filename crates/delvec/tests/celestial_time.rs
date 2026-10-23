@@ -599,7 +599,7 @@ fn every_build_prints_its_clocks_zeroes_included() {
     );
     assert!(
         out.contains(
-            "clocks: 1 world + 0 cut(s); 0 celestial, 1 keyword; phases stated {}; days {0}"
+            "clocks: 1 world + 0 cut(s); 0 celestial, 0 tick, 1 keyword; phases stated {}; days {0}"
         ),
         "{out}"
     );
@@ -626,7 +626,7 @@ fn every_build_prints_its_clocks_zeroes_included() {
     );
     assert!(
         out.contains(
-            "clocks: 1 world + 1 cut(s); 1 celestial, 1 keyword; phases stated {new-moon}; days {4}"
+            "clocks: 1 world + 1 cut(s); 1 celestial, 0 tick, 1 keyword; phases stated {new-moon}; days {4}"
         ),
         "{out}"
     );

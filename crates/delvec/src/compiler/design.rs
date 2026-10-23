@@ -448,11 +448,11 @@ pub fn check(c: &Campaign, files: &DesignFiles) -> (Vec<Diagnostic>, DesignBindi
         && let Ok(sheet) = crate::compiler::view::camera::parse_sheet(bytes)
     {
         for (i, cam) in sheet.cameras.iter().enumerate() {
-            let Some(ct) = cam.sky.and_then(|s| s.time.celestial()) else {
+            let Some(t) = cam.sky.map(|s| s.time) else {
                 continue;
             };
-            for m in delvewright_dsl::celestial::shape_findings(
-                ct,
+            for m in delvewright_dsl::celestial::time_findings(
+                t,
                 delvewright_dsl::celestial::CelestialSite::Camera,
                 c.world.content.time,
             ) {

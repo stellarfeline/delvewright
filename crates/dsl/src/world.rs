@@ -7,7 +7,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::serde_fields::default_true;
-use crate::{AreaId, AtmosphereId, CelestialTime, Clock, MoonPhase, PoolId, PrefabId};
+use crate::{AreaId, AtmosphereId, CelestialTime, Clock, ClockStatement, MoonPhase, PoolId, PrefabId};
 
 #[cfg(doc)]
 use crate::Verb;
@@ -305,13 +305,15 @@ pub struct RespawnWait {
 /// frozen (`advance_time false`), so a set state persists for the whole delve
 /// until a `set-time` effect cuts to another.
 ///
-/// **Two spellings of one clock.** A keyword — `day`, `noon`, `dusk`, `night`,
+/// **Three spellings of one clock.** A keyword — `day`, `noon`, `dusk`, `night`,
 /// `midnight`, `dawn` — states vanilla's word with vanilla's meaning: the hour,
 /// on day 0, so a keyword night shows a full moon. A celestial statement
 /// ([`CelestialTime`], `{"moon": "just-risen", "phase": "new-moon"}`) names one
 /// body, where it stands and, where the moon shows, its phase, and the engine
-/// computes the tick count, day included. Both resolve to one [`Clock`]
-/// ([`WorldTime::clock`]); two values are equal when their clocks are.
+/// computes the tick count, day included. A clock statement
+/// ([`ClockStatement`], `{"daytime": 10500}`) states the tick itself, with the
+/// phase where the moon shows (spec-0122 §7.1). All three resolve to one
+/// [`Clock`] ([`WorldTime::clock`]); two values are equal when their clocks are.
 ///
 /// Vanilla's `/time set` primitive takes **either** one of four keywords or a raw
 /// tick count, and the tick form is the general one. `dusk` and `dawn` are the
@@ -342,6 +344,8 @@ pub enum WorldTime {
     Dawn,
     /// A sky stated in a designer's words (spec-0081).
     Celestial(CelestialTime),
+    /// The clock in ticks (spec-0122 §7.1): `{"daytime": 10500}`.
+    Daytime(ClockStatement),
 }
 
 /// The six keyword spellings of a [`WorldTime`] — the wire and schema form of
@@ -385,6 +389,7 @@ impl Serialize for WorldTime {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         match self {
             WorldTime::Celestial(c) => c.serialize(s),
+            WorldTime::Daytime(c) => c.serialize(s),
             kw => s.serialize_str(kw.keyword_str().expect("a keyword")),
         }
     }
@@ -397,9 +402,10 @@ impl<'de> Deserialize<'de> for WorldTime {
             type Value = WorldTime;
             fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
                 f.write_str(
-                    "a time: a keyword (day, noon, dusk, night, midnight, dawn) or an object \
+                    "a time: a keyword (day, noon, dusk, night, midnight, dawn), an object \
                      naming one body, where it stands and its phase \
-                     ({\"moon\": \"just-risen\", \"phase\": \"new-moon\"})",
+                     ({\"moon\": \"just-risen\", \"phase\": \"new-moon\"}), or the clock \
+                     in ticks ({\"daytime\": 10500})",
                 )
             }
             fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<WorldTime, E> {
@@ -410,8 +416,22 @@ impl<'de> Deserialize<'de> for WorldTime {
                 self,
                 map: A,
             ) -> Result<WorldTime, A::Error> {
-                CelestialTime::deserialize(serde::de::value::MapAccessDeserializer::new(map))
-                    .map(WorldTime::Celestial)
+                use serde::de::Error;
+                // The clock statement is the object that names `daytime`;
+                // every other object is a celestial statement, refused by its
+                // own `deny_unknown_fields` where it names neither shape.
+                let v = serde_json::Value::deserialize(
+                    serde::de::value::MapAccessDeserializer::new(map),
+                )?;
+                if v.get("daytime").is_some() {
+                    serde_json::from_value::<ClockStatement>(v)
+                        .map(WorldTime::Daytime)
+                        .map_err(A::Error::custom)
+                } else {
+                    serde_json::from_value::<CelestialTime>(v)
+                        .map(WorldTime::Celestial)
+                        .map_err(A::Error::custom)
+                }
             }
         }
         de.deserialize_any(V)
@@ -426,9 +446,15 @@ impl JsonSchema for WorldTime {
     fn json_schema(g: &mut schemars::SchemaGenerator) -> schemars::Schema {
         schemars::json_schema!({
             "description": "A time: a keyword, vanilla's hour on day 0 (a keyword night is a full \
-                            moon), or a celestial statement naming one body, where it stands and, \
-                            where the moon shows, its phase (spec-0081).",
-            "anyOf": [g.subschema_for::<TimeKeyword>(), g.subschema_for::<CelestialTime>()],
+                            moon); a celestial statement naming one body, where it stands and, \
+                            where the moon shows, its phase (spec-0081); or the clock statement, \
+                            the tick within the day and, where the moon shows, its phase \
+                            (spec-0122).",
+            "anyOf": [
+                g.subschema_for::<TimeKeyword>(),
+                g.subschema_for::<CelestialTime>(),
+                g.subschema_for::<ClockStatement>()
+            ],
         })
     }
 }
@@ -448,13 +474,21 @@ impl WorldTime {
             WorldTime::Night => Some(("night", 13000)),
             WorldTime::Midnight => Some(("midnight", 18000)),
             WorldTime::Dawn => Some(("23000", 23000)),
-            WorldTime::Celestial(_) => None,
+            WorldTime::Celestial(_) | WorldTime::Daytime(_) => None,
         }
     }
 
     /// Whether this is one of the six keywords.
     pub fn is_keyword(self) -> bool {
-        !matches!(self, WorldTime::Celestial(_))
+        self.spec().is_some()
+    }
+
+    /// The clock statement, if this is one.
+    pub fn clock_statement(self) -> Option<ClockStatement> {
+        match self {
+            WorldTime::Daytime(c) => Some(c),
+            _ => None,
+        }
     }
 
     /// The celestial statement, if this is one.
@@ -467,17 +501,22 @@ impl WorldTime {
 
     /// The phase this value states, if any.
     pub fn stated_phase(self) -> Option<MoonPhase> {
-        self.celestial().and_then(|c| c.phase)
+        match self {
+            WorldTime::Celestial(c) => c.phase,
+            WorldTime::Daytime(c) => c.phase,
+            _ => None,
+        }
     }
 
     /// The `daytime` tick value this state sets (the `time query daytime`
     /// read-back). Keywords: day=1000, noon=6000, dusk=12000 (sunset onset),
-    /// night=13000, midnight=18000, dawn=23000; a celestial statement its
+    /// night=13000, midnight=18000, dawn=23000; a clock statement its `daytime`; a celestial statement its
     /// position's tick ([`crate::celestial::position_tick`]).
     pub fn daytime_ticks(self) -> i64 {
-        match self.spec() {
-            Some((_, t)) => t,
-            None => self.celestial().expect("celestial").daytime(),
+        match self {
+            WorldTime::Celestial(c) => c.daytime(),
+            WorldTime::Daytime(c) => c.daytime.ticks(),
+            kw => kw.spec().expect("a keyword").1,
         }
     }
 
@@ -501,8 +540,8 @@ impl WorldTime {
     pub fn clock(self, site: TimeSite, world: WorldTime) -> Clock {
         let daytime = self.daytime_ticks();
         let day = match (self, site) {
-            (WorldTime::Celestial(c), _) => c
-                .phase
+            (WorldTime::Celestial(_) | WorldTime::Daytime(_), _) => self
+                .stated_phase()
                 .map(MoonPhase::index)
                 .unwrap_or_else(|| world.world_day()),
             (_, TimeSite::Cut) => world.world_day(),
@@ -536,7 +575,7 @@ impl WorldTime {
             WorldTime::Night => Some("night"),
             WorldTime::Midnight => Some("midnight"),
             WorldTime::Dawn => Some("dawn"),
-            WorldTime::Celestial(_) => None,
+            WorldTime::Celestial(_) | WorldTime::Daytime(_) => None,
         }
     }
 
@@ -550,6 +589,7 @@ impl WorldTime {
     pub fn keyword(self) -> String {
         match self {
             WorldTime::Celestial(c) => c.spelling(),
+            WorldTime::Daytime(c) => c.spelling(),
             kw => kw.keyword_str().expect("a keyword").to_string(),
         }
     }

@@ -555,6 +555,94 @@ impl CelestialTime {
     }
 }
 
+/// **The clock in ticks** (spec-0122 §7.1): vanilla's `dayTime` modulo 24000,
+/// the general form of `/time set`, with the moon's phase where the moon shows.
+/// `{"daytime": 10500}` is late afternoon. The phase follows spec-0081's rule
+/// exactly — required on `world.time` where the moon is at or above the horizon
+/// at that tick, refused where it is below (`DW0931`) — and names the day; absent
+/// on a cut, a design row or a camera, the day is the world's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ClockStatement {
+    /// `time query daytime`: the tick within the day, `0..=23999`.
+    pub daytime: Daytime,
+    /// The moon's phase, where the moon shows at `daytime`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase: Option<MoonPhase>,
+}
+
+impl ClockStatement {
+    /// Whether the moon is at or above the horizon at this tick.
+    pub fn moon_shows(self) -> bool {
+        moon_up(self.daytime.ticks())
+    }
+
+    /// The moon's altitude at this tick, in hundredths of a degree: the sun's,
+    /// negated — the moon stands exactly opposite.
+    pub fn moon_altitude_centideg(self) -> i32 {
+        let alt = -sun_altitude_degrees(self.daytime.ticks() as f64);
+        (alt * 100.0).round() as i32
+    }
+
+    /// The canonical JSON spelling — `{"daytime":10500}`.
+    pub fn spelling(self) -> String {
+        serde_json::to_string(&self).expect("a clock statement serialises")
+    }
+}
+
+/// A tick within the day, `0..=23999` — `dayTime` modulo [`DAY_TICKS`]. A value
+/// outside the range is refused where the document is read (`DW0100`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(try_from = "i64", into = "i64")]
+pub struct Daytime(i64);
+
+impl Daytime {
+    /// The tick.
+    pub fn ticks(self) -> i64 {
+        self.0
+    }
+
+    /// `ticks` as a daytime, or `None` outside `0..=23999`.
+    pub fn new(ticks: i64) -> Option<Daytime> {
+        (0..DAY_TICKS).contains(&ticks).then_some(Daytime(ticks))
+    }
+}
+
+impl TryFrom<i64> for Daytime {
+    type Error = String;
+    fn try_from(v: i64) -> Result<Daytime, String> {
+        Daytime::new(v).ok_or_else(|| {
+            format!(
+                "`daytime` {v} is outside 0..=23999: it is the tick within one day, vanilla's \
+                 `dayTime` modulo 24000 (`time query daytime`), and the day is the `phase`'s"
+            )
+        })
+    }
+}
+
+impl From<Daytime> for i64 {
+    fn from(d: Daytime) -> i64 {
+        d.0
+    }
+}
+
+impl JsonSchema for Daytime {
+    fn schema_name() -> Cow<'static, str> {
+        "Daytime".into()
+    }
+
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        json_schema!({
+            "type": "integer",
+            "minimum": 0,
+            "maximum": DAY_TICKS - 1,
+            "description": "The tick within one day: vanilla's `dayTime` modulo 24000, as \
+                            `time query daytime` reads it. 0 is sunrise's hour, 6000 noon, \
+                            12000 sunset's onset, 18000 midnight.",
+        })
+    }
+}
+
 /// **The clock one time value sets**: `dayTime` split the way the game's two
 /// read-backs split it. Two time values are equal when their clocks are.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -658,12 +746,81 @@ pub fn shape_findings(
     // The world's phase is only a fact when the world's own time is well formed:
     // a world refused for naming no body, or for leaving a visible moon
     // unnamed, has no phase for a cut to restate, and its own refusal says so.
-    let world_phase_known = match world.celestial() {
-        None => true,
-        Some(w) => w.stated().is_some() && (w.phase.is_some() || !w.moon_shows()),
-    };
+    let world_phase_known = world_phase_known(world);
     if site != CelestialSite::World
         && world_phase_known
+        && let Some(p) = t.phase
+        && t.moon_shows()
+        && p == MoonPhase::of_day(world.world_day())
+    {
+        out.push(format!(
+            "`{spelling}` states the phase `{}`, which is the world's: `world.time` `{}` shows \
+             `{}` on day {}. A phase left out here is the world's, so this one is a copy that \
+             goes stale the moment the world's changes. REMOVE `phase` from this time",
+            p.name(),
+            world.keyword(),
+            p.name(),
+            world.world_day(),
+        ));
+    }
+    out
+}
+
+/// The world's phase is only a fact when the world's own time is well formed:
+/// a world refused for naming no body, or for leaving a visible moon unnamed,
+/// has no phase for a cut to restate, and its own refusal says so.
+fn world_phase_known(world: crate::WorldTime) -> bool {
+    match world {
+        crate::WorldTime::Celestial(w) => {
+            w.stated().is_some() && (w.phase.is_some() || !w.moon_shows())
+        }
+        crate::WorldTime::Daytime(w) => w.phase.is_some() || !w.moon_shows(),
+        _ => true,
+    }
+}
+
+/// **The rules of one stated time's shape**, whichever spelling states it: a
+/// celestial statement's ([`shape_findings`]) or a clock statement's — the same
+/// phase rule (spec-0081 §6, spec-0122 §7.1) read at the tick. Empty for a
+/// keyword.
+pub fn time_findings(t: crate::WorldTime, site: CelestialSite, world: crate::WorldTime) -> Vec<String> {
+    match t {
+        crate::WorldTime::Celestial(c) => shape_findings(c, site, world),
+        crate::WorldTime::Daytime(c) => clock_findings(c, site, world),
+        _ => Vec::new(),
+    }
+}
+
+/// The phase rule over a clock statement (spec-0122 §7.1): refused where the
+/// moon is below the horizon at the tick, required on `world.time` where it
+/// shows, and refused off the world where it restates the world's own.
+fn clock_findings(t: ClockStatement, site: CelestialSite, world: crate::WorldTime) -> Vec<String> {
+    let spelling = t.spelling();
+    let alt = t.moon_altitude_centideg();
+    let mut out = Vec::new();
+    if let Some(p) = t.phase
+        && !t.moon_shows()
+    {
+        out.push(format!(
+            "`{spelling}` states the phase `{}` at a tick where the moon stands at {} — below \
+             the horizon, where nobody can see it. A judgement about a body nobody can see \
+             reaches nothing. REMOVE `phase` from this time",
+            p.name(),
+            degrees_label(alt),
+        ));
+    }
+    if site == CelestialSite::World && t.phase.is_none() && t.moon_shows() {
+        out.push(format!(
+            "`world.time` `{spelling}` puts the moon at {} — at or above the horizon, where the \
+             party sees it — and states no `phase`. The phase the party sees is a judgement \
+             nobody may leave to a default. STATE `phase`, one of the eight the pinned game \
+             names: {}",
+            degrees_label(alt),
+            MoonPhase::names_line(),
+        ));
+    }
+    if site != CelestialSite::World
+        && world_phase_known(world)
         && let Some(p) = t.phase
         && t.moon_shows()
         && p == MoonPhase::of_day(world.world_day())
@@ -689,8 +846,8 @@ pub(crate) fn check(c: &crate::envelope::Campaign, d: &mut Vec<crate::diagnostic
     use crate::diagnostic::{Diagnostic, codes};
     let world = c.world.content.time;
     let mut push = |stage: &str, path: String, t: crate::WorldTime, site: CelestialSite| {
-        if let Some(ct) = t.celestial() {
-            for m in shape_findings(ct, site, world) {
+        {
+            for m in time_findings(t, site, world) {
                 d.push(Diagnostic::error(
                     codes::CELESTIAL_TIME,
                     stage,
