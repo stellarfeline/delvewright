@@ -418,7 +418,11 @@ fn every_consumer_reaches_what_the_reach_graph_reaches() {
             .intersection(&wide_standable)
             .copied()
             .collect();
-        let (_, light_entry, light) = crate::admit::light::floor_measured(&wide, &BTreeSet::new());
+        let crate::schem::nav::EnteredFloor {
+            entry: light_entry,
+            reached: light,
+            ..
+        } = crate::admit::light::floor_measured(&wide, &BTreeSet::new());
         assert_eq!(light_entry, entry, "case {seed}: the probe's entry");
         assert_eq!(
             light, graph_floor,
@@ -435,7 +439,7 @@ fn every_consumer_reaches_what_the_reach_graph_reaches() {
         );
         let st = structure_of(&wide);
         let st_cells = crate::compiler::view::showing::Cells::of(&st);
-        let (_, _, surveyed) = crate::compiler::view::showing::floor_reached(&st, &st_cells);
+        let surveyed = crate::compiler::view::showing::floor_reached(&st, &st_cells).reached;
         assert_eq!(
             surveyed, graph_floor,
             "case {seed}: the enclosure survey's reached floor differs from the reach graph's"
@@ -453,7 +457,7 @@ fn every_consumer_reaches_what_the_reach_graph_reaches() {
         if !entry.is_empty() && graph_floor.len() > walked_floor.len() {
             floor_needed += 1;
         }
-        let (_, _, doored) = crate::admit::light::floor_measured(&model, &roots);
+        let doored = crate::admit::light::floor_measured(&model, &roots).reached;
         assert_eq!(
             doored, from_root,
             "case {seed}: the light probe's floor from a door differs from the reach graph's"

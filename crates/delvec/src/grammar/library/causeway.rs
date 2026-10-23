@@ -87,7 +87,7 @@
 //!
 //! 1. **The causeway is standable end to end; stepping off it is not.** Every
 //!    causeway cell is standable and connects the approach end to the guard
-//!    station end (`connected`, the same technique `cliff_path` uses); every
+//!    station end (`grammar::nav::reaches`, the reach graph); every
 //!    flood cell is asserted directly not standable. As this piece is built
 //!    that holds twice over, and the two reasons are worth keeping apart. The
 //!    foot cell is water, and **a body does not occupy a fluid cell** — that is

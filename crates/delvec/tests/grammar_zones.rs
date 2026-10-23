@@ -158,22 +158,16 @@ const TOWER_RING_RUN: i32 = 20;
 /// The odd barrel's block (`store_room`'s `barrel_unbanded` default).
 const TELL_BLOCK: &str = "minecraft:spruce_log";
 
-/// A zone, the box it is pinned in, and how a player crosses it.
+/// A zone and the box it is pinned in.
 ///
-/// `falls` is not a dial on how hard the gate tries: it says which movement
-/// model is the *truthful* one for this zone. Three of the seven are flat, and a
-/// walker crosses them with [`connected`]'s ±1 step. The other four have a drop
-/// on the route — Z4 and Z6 are *entered* by stepping off a ledge, Z2 and Z5 are
-/// *left* down one — so `connected` alone would call them severed and would be
-/// measuring the wrong thing; they are crossed under
-/// [`support::reachable_with_fall`] instead, and each of the four additionally
-/// owes the negative claim, that the model's extra freedom still does not carry
-/// a player back up.
+/// Every zone is crossed by the reach graph ([`support::reaches`]), whose moves
+/// include the fall: Z4 and Z6 are *entered* by stepping off a ledge, Z2 and Z5
+/// are *left* down one, and each of those four additionally owes the negative
+/// claim, that a body does not get back up.
 struct ZoneFixture {
     program: Program,
     region: Box3,
     seed: u64,
-    falls: bool,
 }
 
 fn zone(program: Program, region: Box3, seed: u64) -> ZoneFixture {
@@ -181,7 +175,6 @@ fn zone(program: Program, region: Box3, seed: u64) -> ZoneFixture {
         program,
         region,
         seed,
-        falls: false,
     }
 }
 
@@ -189,23 +182,11 @@ fn zones() -> Vec<ZoneFixture> {
     vec![
         zone(barrow_shore(), SHORE_REGION, SHORE_SEED),
         zone(cliff_road(), CLIFF_REGION, CLIFF_SEED),
-        ZoneFixture {
-            falls: true,
-            ..zone(gate_ward(), WARD_REGION, WARD_SEED)
-        },
+        zone(gate_ward(), WARD_REGION, WARD_SEED),
         zone(drowned_ward(), DROWNED_REGION, DROWNED_SEED),
-        ZoneFixture {
-            falls: true,
-            ..zone(chapel_ward(), CHAPEL_REGION, CHAPEL_SEED)
-        },
-        ZoneFixture {
-            falls: true,
-            ..zone(hall_keep(), KEEP_REGION, KEEP_SEED)
-        },
-        ZoneFixture {
-            falls: true,
-            ..zone(cistern_deep(), DEEP_REGION, DEEP_SEED)
-        },
+        zone(chapel_ward(), CHAPEL_REGION, CHAPEL_SEED),
+        zone(hall_keep(), KEEP_REGION, KEEP_SEED),
+        zone(cistern_deep(), DEEP_REGION, DEEP_SEED),
         zone(bell_tower(), TOWER_REGION, TOWER_SEED),
     ]
 }
@@ -375,7 +356,6 @@ fn every_zone_is_walkable_end_to_end() {
         program,
         region,
         seed,
-        falls,
     } in zones()
     {
         let out = expand_at(&program, region, seed);
@@ -387,13 +367,8 @@ fn every_zone_is_walkable_end_to_end() {
             program.name,
             cells.len()
         );
-        let crossed = if falls {
-            reaches(&out.model, &cells, &entry, &exit)
-        } else {
-            reaches(&out.model, &cells, &entry, &exit)
-        };
         assert!(
-            crossed,
+            reaches(&out.model, &cells, &entry, &exit),
             "{}: the zone's pieces do not join into a route ({} standable cells, \
              {} at the entry end, {} at the exit end)",
             program.name,
@@ -964,9 +939,8 @@ fn the_drowned_wards_shortcut_is_sealed_and_reached_through_one_doorway() {
 /// `elite_ground`'s own gate counts this inside the piece's box. At zone scale
 /// the question is a different one: a bypass that stops at the arena's own seam
 /// is not a bypass, so the walk runs the whole length of the zone, through
-/// whatever else the zone put in the way. `falls` picks the movement model the
-/// zone is truthful under (see [`ZoneFixture`]).
-fn flank_routes(model: &VoxelModel, elite: [i32; 3], falls: bool) -> usize {
+/// whatever else the zone put in the way.
+fn flank_routes(model: &VoxelModel, elite: [i32; 3]) -> usize {
     let cells = standable_cells(model);
     let far = model.region().size[2] as i32 - 1;
     let west: BTreeSet<[i32; 3]> = cells
@@ -987,11 +961,7 @@ fn flank_routes(model: &VoxelModel, elite: [i32; 3], falls: bool) -> usize {
             if entry.is_empty() || exit.is_empty() {
                 return false;
             }
-            if falls {
-                reaches(model, band, &entry, &exit)
-            } else {
-                reaches(model, band, &entry, &exit)
-            }
+            reaches(model, band, &entry, &exit)
         })
         .count()
 }
@@ -1011,7 +981,7 @@ fn the_shore_keeps_a_lane_on_each_side_of_the_fight() {
     let elite = out.anchors["anchor/elite"].pos;
     assert!(standable(&out.model, elite), "the elite cell {elite:?}");
     assert_eq!(
-        flank_routes(&out.model, elite, false),
+        flank_routes(&out.model, elite),
         2,
         "the shore does not carry a lane on each side of the circle — the opening \
          fight is compulsory"
@@ -1033,7 +1003,7 @@ fn sealing_a_flank_of_the_shore_drops_its_route() {
         let out = expand_at(&sealed, SHORE_REGION, SHORE_SEED);
         let elite = out.anchors["anchor/elite"].pos;
         assert_eq!(
-            flank_routes(&out.model, elite, false),
+            flank_routes(&out.model, elite),
             want,
             "arena/seal_flank={knob} did not drop the zone-scale route count — the \
              gate proves nothing"
@@ -2210,10 +2180,8 @@ fn gallery_view(out: &Expansion) -> ([i32; 3], [i32; 3], Vec<[i32; 3]>) {
 /// — cannot be re-entered from anywhere in the deep. Two seams and three other
 /// pieces sit between those two sets, and any of them could have left a step.
 ///
-/// The two directions use different models on purpose (see
-/// [`support::reachable_with_fall`]): down under walk-and-fall, up under the
-/// plain step, because a fall edge only ever points down and proving the
-/// negative under the generous model would be circular.
+/// Both directions are asked of the reach graph ([`support::reaches`]): down,
+/// a body falls; up, no walk, climb or jump of the launch set carries it.
 ///
 /// Binding: 17 cells at the entry ledge, 19 at the exit, 2078 standable.
 #[test]
@@ -2324,7 +2292,7 @@ fn the_deep_keeps_a_lane_on_each_side_of_the_fight() {
     let out = expand_at(&cistern_deep(), DEEP_REGION, DEEP_SEED);
     let elite = out.anchors["anchor/elite"].pos;
     assert_eq!(
-        flank_routes(&out.model, elite, true),
+        flank_routes(&out.model, elite),
         2,
         "the cistern does not carry a lane past the elite's ground — a fight at the \
          bottom of a one-way zone with no way round it is a wall"
@@ -2341,7 +2309,7 @@ fn sealing_a_flank_of_the_deep_drops_its_route() {
         let out = expand_at(&sealed, DEEP_REGION, DEEP_SEED);
         let elite = out.anchors["anchor/elite"].pos;
         assert_eq!(
-            flank_routes(&out.model, elite, true),
+            flank_routes(&out.model, elite),
             want,
             "arena/seal_flank={knob} did not drop the zone-scale route count — the \
              gate proves nothing"
@@ -2707,8 +2675,8 @@ fn hub_nook(out: &Expansion) -> BTreeSet<[i32; 3]> {
 /// pieces are at the same height" are the same sentence. Here they are not: the
 /// four upper pieces stand on a plinth this program writes, and if the plinth
 /// and the flight's rise disagree by one course the zone is two rooms with a
-/// step between them — which walks perfectly under `connected`'s ±1 edge and
-/// would pass a route gate in silence.
+/// step between them — which a body walks perfectly and which would pass a route
+/// gate in silence.
 ///
 /// So three claims, not one. The route walks (both ways — this zone has no
 /// one-way hardware on its mainline, so it owes the stronger walk); the exit

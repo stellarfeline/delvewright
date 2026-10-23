@@ -100,14 +100,10 @@
 //! # The gates
 //!
 //! Calibrated against the L family's, deliberately: the same `standable`
-//! predicate and the same plain ±1-step `connected` walk, so the vocabulary has
-//! one model of "can a body get there" and not two.
-//!
-//! `connected`'s edge relation is **symmetric** (a step of `dy` has a matching
-//! step of `-dy`), so "walks up" and "walks down" are literally one claim under
-//! it. Both are asserted anyway, and that is the point rather than a redundancy:
-//! `drop_shaft`'s gate is `!connected(landing, spill)` and this one is
-//! `connected(foot, head)` — the same predicate, the same direction of travel,
+//! predicate and the same reach graph (`grammar::nav::reaches`), so the
+//! vocabulary has one model of "can a body get there" and not two. Both
+//! directions are asserted: `drop_shaft`'s gate is `!reaches(landing, spill)`
+//! and this one is `reaches(foot, head)` — the same predicate, the same direction of travel,
 //! opposite verdicts. Anything that made one of them lie would make the other
 //! lie too, which is what "calibrated against one model" buys.
 //!

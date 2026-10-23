@@ -164,32 +164,12 @@ const ARENA_SEED: u64 = 1;
 // Reading the expanded model the way a player meets it
 // ---------------------------------------------------------------------------
 
-// This file used to carry its own copy of the walk — `passable`, `solid`,
-// `standable`, `standable_cells`, `connected` and `reachable_with_fall`, all
-// six re-implemented — and the crate's own module header named folding it in as
-// a follow-up rather than a silence. It is folded in here, with the change that
-// made the copy dangerous rather than merely duplicated: the step rule now asks
-// whether a jumping body has room over its head, and a copy nobody edits would
-// have gone on proving routes the compiler refuses.
-//
-// The one behaviour that was genuinely this file's is preserved by the crate's
-// version and not by accident: `reachable_with_fall` is still deliberately more
-// permissive than the plain walk, and the fixtures below still rely on that
-// asymmetry — the L family proves "no way back **up**" under the plain walk,
-// where a fall edge cannot help, and proves arrival under the fall walk.
-//
-// **What neither models: a horizontal jump.** Every "unreachable" this file
-// proves means unreachable by walking and falling. The consequence differs per
-// rule and is stated here rather than left to be re-derived:
-//
-// * `drop_shaft` / `dumbwaiter` — unaffected in the direction that matters.
-//   Their claim is that you cannot get back up, and a jump does not lift you.
-// * `far_side_bar` — **this is where it bites.** The rule's whole point is that
-//   the near side cannot reach `anchor/unlock` while the bar is down. A gap a
-//   player could jump would defeat that and this model would not see it, so the
-//   fixture must not leave one: keep the separation wider than a jump, or solid.
-// * `elite_ground` — safe. A jump can only *add* flank routes, and the gate
-//   cares about there being enough, not few.
+// Every route this file proves is asked of the reach graph over the model's
+// own blocks (`grammar::nav::reaches`): the walk, the climb, every fall, every
+// swim and every jump of the launch set. An "unreachable" here means no body
+// gets there by any of them; a cut that proves a route is the only route walls
+// the removed floor up (`reaches_walled`), because a jump crosses a cut made by
+// leaving cells out.
 use delvec::grammar::nav::{passable, reaches, reaches_walled, solid, standable, standable_cells};
 
 // ---------------------------------------------------------------------------
@@ -1896,8 +1876,8 @@ fn a_drop_shaft_expands_deterministically() {
     assert!(a.anchors.contains_key("anchor/landing"));
 }
 
-/// The gate the entry is named for, half one: granting a player's own
-/// free-fall (`reachable_with_fall`), the brink genuinely reaches the landing
+/// The gate the entry is named for, half one: a body falls from the brink to
+/// the landing ([`reaches`], whose moves include the fall), so the brink genuinely reaches the landing
 /// — the structure is not simply broken in two.
 #[test]
 fn the_spill_falls_to_the_landing() {
@@ -2067,14 +2047,14 @@ fn a_rescued_dumbwaiter_has_a_way_back() {
 // ---------------------------------------------------------------------------
 //
 // Every gate here is read with the **same** `standable` predicate and the same
-// plain ±1-step `connected` walk the L family's one-wayness is proved with, and
-// that is the whole design of this section: `drop_shaft` asserts
-// `!reaches(landing, spill)` and this asserts `connected(foot, head)`. One
+// reach graph the L family's one-wayness is proved with, and that is the whole
+// design of this section: `drop_shaft` asserts `!reaches(landing, spill)` and
+// this asserts `reaches(foot, head)`. One
 // model of "can a body get there", two rules, opposite verdicts — rather than
 // two independent ideas of reachability that could drift apart and both be
 // green.
 
-/// Anchor cells of a stem, as a one-element set for `connected`.
+/// Anchor cells of a stem, as a one-element set for [`reaches`].
 fn cell(out: &Expansion, name: &str) -> BTreeSet<[i32; 3]> {
     [out.anchors[name].pos].into_iter().collect()
 }
@@ -2095,15 +2075,11 @@ fn a_stair_flight_expands_deterministically() {
     );
 }
 
-/// **The gate the entry exists for.** A body walks from the foot landing to the
-/// head landing under the plain ±1 step — no fall edge, because a fall never
-/// points up — and walks back down again.
-///
-/// Both directions are asserted and they are deliberately the *same* claim:
-/// `connected`'s edge relation is symmetric (every `dy` step has a matching
-/// `-dy` step), so a graph that carries a climb carries the descent. Writing
-/// both down is what makes the calibration against `drop_shaft` legible —
-/// see `the_flight_and_the_drop_shaft_are_one_gate_read_twice`.
+/// **The gate the entry exists for.** A body gets from the foot landing to the
+/// head landing — a fall never points up, so the climb is the treads' — and
+/// back down again. Writing both down is what makes the calibration against
+/// `drop_shaft` legible — see
+/// `the_flight_and_the_drop_shaft_are_one_gate_read_twice`.
 ///
 /// Binding: 66 standable cells, 2 landings, 8 treads.
 #[test]
@@ -2137,7 +2113,7 @@ fn the_flight_walks_up_and_back_down() {
 /// The calibration, written as one test so nobody has to take it on trust:
 /// the same predicate, the same walk, the same direction of travel, run over
 /// this rule and over `drop_shaft`, must disagree. A change that broke
-/// `connected` into always-true would red the shaft's half; one that broke it
+/// [`reaches`] into always-true would red the shaft's half; one that broke it
 /// into always-false would red the flight's.
 #[test]
 fn the_flight_and_the_drop_shaft_are_one_gate_read_twice() {
@@ -3132,11 +3108,8 @@ const CAUSEWAY_GATE_REGION: Box3 = Box3::at_origin([9, 14, 24]);
 /// satisfy "chainable" and destroy the rule.
 ///
 /// 1. **With the gate open the piece is walkable through**: its `Z`-max face
-///    reaches its `Z`-min face under [`connected`] — the same ±1-step walk over
-///    standable cells every other gate in this file uses. That model is
-///    *test-local* (see [`reachable_with_fall`]'s note) and it does **not**
-///    model a horizontal jump; here that only ever under-counts routes, so a
-///    green means the lane is walkable, never merely jumpable.
+///    reaches its `Z`-min face by the reach graph ([`reaches`]) — the same
+///    moves every other gate in this file asks.
 /// 2. **With the gate shut it is not** — the terminus the rule is by default,
 ///    which is also the teeth for claim 1: the two runs differ in one
 ///    parameter, and only in that parameter.
@@ -4342,10 +4315,8 @@ fn the_shell_opens_exactly_once_a_storey() {
 }
 
 /// **The L family's pair, the third time.** A body steps off a landing into an
-/// empty shaft and falls to `anchor/lift-pit` (`reachable_with_fall`, the
-/// player's own movement model); the pit does **not** walk back up to any
-/// landing under the plain ±1 step, because a fall edge only ever points down
-/// and proving the negative under the generous model would be circular.
+/// empty shaft and falls to `anchor/lift-pit`; the pit does **not** get back up
+/// to any landing by any move of the reach graph ([`reaches`]).
 ///
 /// The control is what `sill` is for, and it is the same short-drop pairing
 /// `drop_shaft` uses: at `sill = 2` the pit is one block under the lowest

@@ -161,10 +161,7 @@ const STEPS_NAMED: usize = 3;
 /// [`crate::compiler::nav::World::of_piece`]) — a gap a jump clears, a ladder
 /// and a ledge stepped off all count, so floor reported unreached is floor no
 /// body gets to.
-pub(crate) fn floor_reached(
-    st: &Structure,
-    v: &Cells<'_>,
-) -> (BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>) {
+pub(crate) fn floor_reached(st: &Structure, v: &Cells<'_>) -> nav::EnteredFloor {
     let standable = nav::standable_cells(v);
     let entry = nav::ground_entry(v);
     let blocks: BTreeMap<[i32; 3], String> = st
@@ -174,13 +171,21 @@ pub(crate) fn floor_reached(
         .filter_map(|(pos, i)| Some((*pos, st.palette.get(*i)?.clone())))
         .collect();
     let reached = crate::compiler::nav::World::of_piece(blocks).floor_reached(&standable, &entry);
-    (standable, entry, reached)
+    nav::EnteredFloor {
+        standable,
+        entry,
+        reached,
+    }
 }
 
 /// Run the survey over a piece's own bytes.
 pub fn survey(st: &Structure) -> Enclosure {
     let v = Cells::of(st);
-    let (standable, entry, reached) = floor_reached(st, &v);
+    let nav::EnteredFloor {
+        standable,
+        entry,
+        reached,
+    } = floor_reached(st, &v);
     let stranded: BTreeSet<[i32; 3]> = standable.difference(&reached).copied().collect();
 
     let mut stranded_sheltered = 0usize;

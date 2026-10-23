@@ -1,37 +1,26 @@
 //! Reading an expanded model the way a body meets it: what it can stand in, and
-//! what it can walk to.
+//! where it can get to.
 //!
-//! # Where the walk lives
+//! # Where the answers live
 //!
-//! The walk itself is not here. It is [`delvec::schem::nav`], because "can a
-//! body stand on this cell, and can it walk from that one to this one" is the
-//! same question over a grammar expansion, over a structure template read off
-//! disk, and over a zone reassembled from tiles — one question, one
-//! implementation, and a fix to it reaches every caller. A capability belongs to
-//! the object class it acts on (CLAUDE.md), and that class is *a box of cells
-//! with a passability answer for each*, not `VoxelModel`.
+//! **Where a body can get to is the reach graph's**: [`body_world`] builds the
+//! model's own blocks into [`crate::compiler::nav::World::of_piece`], and
+//! [`reaches`] and [`reaches_walled`] ask its moves — the walk, the climb,
+//! every fall, every swim and every jump of the launch set — the same moves
+//! every route proof in the engine takes. No step walk of this crate's own
+//! survives to disagree with it.
+//!
+//! Which cells hold a body, which lump of floor a cell belongs to and which
+//! are under a roof are [`delvec::schem::nav`]'s, because those are the same
+//! question over a grammar expansion, a structure template read off disk and a
+//! zone reassembled from tiles. A capability belongs to the object class it
+//! acts on (CLAUDE.md), and that class is *a box of cells with a passability
+//! answer for each*, not `VoxelModel`.
 //!
 //! What lives here is the part that is genuinely this crate's: which of **its**
 //! blocks a body can occupy and which of them it can stand on, plus the rule
-//! library's own travel-axis convention. Everything else re-exports, so a
-//! program authored outside this repo still reaches the walk by the name it has
-//! always had.
-//!
-//! `tests/support/mod.rs` delegates here. `tests/staging.rs` still carries its
-//! own copy — that file's own header records why — and folding it in is a
-//! follow-up, not a silence.
-//!
-//! # What the model is, and is not
-//!
-//! One walker: one cell horizontally at a time, stepping at most one cell up or
-//! down, and — under [`reachable_with_fall`] only — walking off a ledge and
-//! landing on the first floor below. Every step is decided by the engine's one
-//! step rule, `delvewright_dsl::metrics::step_allowed`, which is also what
-//! `delvec` routes with: a full-block rise is a jump, and a jump needs the cell
-//! the head sweeps through clear.
-//!
-//! [`reachable_with_fall`] remains deliberately more permissive than the plain
-//! walk, and its own doc records which direction of claim may use it.
+//! library's own travel-axis convention. `tests/support/mod.rs` and
+//! `tests/grammar_staging.rs` both read the model through this module.
 
 use std::collections::BTreeSet;
 

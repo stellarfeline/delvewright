@@ -31,8 +31,8 @@
 //!    asserted standable: 81 cells at the default.
 //! 2. **Two proven flank lanes.** The west band (`X` strictly left of the
 //!    circle) and the east band (strictly right of it) each connect the entry
-//!    end to the exit end by `connected`, the same technique `cliff_path`
-//!    uses — two *counted* routes, not an eyeballed "there is space on the
+//!    end to the exit end by `grammar::nav::reaches`, the reach graph —
+//!    two *counted* routes, not an eyeballed "there is space on the
 //!    sides". Teeth: `seal_flank` walls off the west band, the east band, or
 //!    both across the circle's own length — exactly the shape a fog-gate
 //!    motif would take, a wall between the open floor and the bypass — and the
