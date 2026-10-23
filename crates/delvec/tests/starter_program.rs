@@ -62,13 +62,10 @@ fn solid_point_detailed(root: &Path, prefabs: &Path) -> PathBuf {
         })
         .collect();
     common::patch_file(&campaign.join("detail-plan.json"), |v| {
-        v["content"]["details"]
-            .as_array_mut()
-            .unwrap()
-            .retain(|r| {
-                let place = r["place"].as_str().unwrap();
-                !stems.iter().any(|s| place == format!("node/{s}"))
-            });
+        v["content"]["details"].as_array_mut().unwrap().retain(|r| {
+            let place = r["place"].as_str().unwrap();
+            !stems.iter().any(|s| place == format!("node/{s}"))
+        });
     });
     let all = delvec(&[
         "--prefabs",
@@ -83,13 +80,15 @@ fn solid_point_detailed(root: &Path, prefabs: &Path) -> PathBuf {
 
 /// Every place `campaign` allocates a box to, its starter program run unedited
 /// and checked. Returns `(passed, places, failures)`.
-fn judge_every_place(
-    tmp: &Path,
-    campaign: &Path,
-    prefabs: &Path,
-) -> (usize, usize, Vec<String>) {
+fn judge_every_place(tmp: &Path, campaign: &Path, prefabs: &Path) -> (usize, usize, Vec<String>) {
     let cs = campaign.to_str().unwrap();
-    let all = delvec(&["--prefabs", prefabs.to_str().unwrap(), "allocation", cs, "--all"]);
+    let all = delvec(&[
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+        "allocation",
+        cs,
+        "--all",
+    ]);
     assert!(all.status.success(), "{}", text(&all));
     let allocations: Vec<serde_json::Value> = serde_json::from_slice(&all.stdout).unwrap();
     assert!(!allocations.is_empty(), "the point allocates no box");
@@ -123,13 +122,19 @@ fn judge_every_place(
                 cs,
                 place,
             ]);
-            check
-                .status
-                .success()
-                .then_some(())
-                .ok_or_else(|| format!("`detail --check` exited {:?}:\n{}", check.status.code(), text(&check)))
+            check.status.success().then_some(()).ok_or_else(|| {
+                format!(
+                    "`detail --check` exited {:?}:\n{}",
+                    check.status.code(),
+                    text(&check)
+                )
+            })
         } else {
-            Err(format!("the starter exited {:?}:\n{}", run.status.code(), text(&run)))
+            Err(format!(
+                "the starter exited {:?}:\n{}",
+                run.status.code(),
+                text(&run)
+            ))
         };
         // The committed program goes back: each place is judged with every
         // other place standing as the gallery commits it.
