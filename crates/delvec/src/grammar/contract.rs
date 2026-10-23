@@ -2301,52 +2301,99 @@ impl Confined {
             .flat_map(|&e| self.elements[e].cells.iter().copied())
             .filter(|c| world.is_climb_cell(*c))
             .collect();
-        let mut seen: BTreeSet<[i32; 3]> = start
+        let seeds: Vec<[i32; 3]> = start
             .iter()
             .filter(|c| targets.contains(*c))
             .copied()
             .collect();
-        let mut queue: VecDeque<[i32; 3]> = seen.iter().copied().collect();
-        while let Some(cur) = queue.pop_front() {
-            for edge in world.body_edges(cur) {
-                let next = edge.to;
-                if seen.contains(&next) || !(targets.contains(&next) || held.contains(&next)) {
-                    continue;
-                }
-                if self.hop(open, cur, next, cur[1] - next[1] > 1) {
-                    seen.insert(next);
-                    queue.push_back(next);
-                }
-            }
-        }
+        let seen = world.body_flood(&seeds, &|cur, next| {
+            (targets.contains(&next) || held.contains(&next))
+                && self.hop(open, cur, next, cur[1] - next[1] > 1)
+        });
         (targets, seen)
     }
 }
 
 /// The cells `contract-reachability` counts and the cells it reaches, with
-/// every way shut: the gate's own walk, for the agreement test that asks it
-/// and the reach graph the same cases (`compiler::nav::world::reach`).
+/// every way shut, from the entry's mouths: the gate's own walk, for the
+/// agreement test that asks it and the reach graph the same cases
+/// (`compiler::nav::world::reach`).
 #[cfg(test)]
 pub(crate) fn reached_shut(
     model: &VoxelModel,
     contract: &SpatialContract,
 ) -> (BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>) {
     let ix = Index::new(model, contract);
-    let start = ix.standable_in(&ix.contract.entry);
+    let start = entry_seeds(&ix, model).cells;
     build_confined(&ix).reach(model, &start, &BTreeSet::new())
+}
+
+/// **Where the walk starts**: the mouth of every way into the entry space —
+/// each traversal edge between the entry and `exterior`, at its own cells.
+///
+/// A mouth is the edge's `via` when it declares one, its bar when it declares
+/// only that, and otherwise the entry space's cells on the model's outer layer
+/// (where [`exterior_faces`] reads the same edge's opening). Seeding from the
+/// mouths, not from every standable cell of the entry space, is what makes a
+/// part of the entry space no way in reaches a red: a space that held every
+/// platform of a course was otherwise reached by construction.
+///
+/// An entry space with no way in at all is seeded whole, and the verdict says
+/// so: a seated, reached piece is refused that shape by `contract-well-formed`,
+/// so the fallback is left only to scenery and to a bare piece, whose entry has
+/// no subject yet.
+struct EntrySeeds {
+    /// The cells the walk may start from; filtered per opening state to the
+    /// cells a body stands in.
+    cells: BTreeSet<[i32; 3]>,
+    /// How many ways in the entry space declares; zero means the space was
+    /// seeded whole.
+    ways_in: usize,
+}
+
+fn entry_seeds(ix: &Index, model: &VoxelModel) -> EntrySeeds {
+    let entry = ix.contract.entry.as_str();
+    let region = model.region();
+    let (min, max) = (region.origin, region.maximum());
+    let outer = |c: &[i32; 3]| (0..3).any(|a| c[a] == min[a] || c[a] == max[a] - 1);
+    let mut mouths = BTreeSet::new();
+    let mut ways_in = 0usize;
+    for (i, edge) in ix.contract.edges.iter().enumerate() {
+        let into_entry =
+            (edge.a == entry && edge.b == EXTERIOR) || (edge.b == entry && edge.a == EXTERIOR);
+        if !into_entry || !is_traversal(&edge.class) {
+            continue;
+        }
+        ways_in += 1;
+        if !ix.via_cells[i].is_empty() {
+            mouths.extend(ix.via_cells[i].iter().copied());
+        } else if let Some(bar) = &edge.bar {
+            mouths.extend(cells(&bar.boxes));
+        } else {
+            mouths.extend(ix.space(entry).iter().filter(|c| outer(c)).copied());
+        }
+    }
+    if ways_in == 0 {
+        mouths = ix.standable_in(entry);
+    }
+    EntrySeeds {
+        cells: mouths,
+        ways_in,
+    }
 }
 
 fn reachability(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> Gate {
     let confined = build_confined(ix);
 
-    let start = ix.standable_in(&ix.contract.entry);
+    let seeds = entry_seeds(ix, model);
+    let start = &seeds.cells;
 
     // **Ways shut**: the walk over the bytes as shipped. Its target set is
     // every standable cell of every element (spaces, minus nested out-of-walk
     // cells, plus transit volumes — or an unreached space could be deleted and
     // its cells re-hung on a stair edge as 1x1x1 vias).
     let none: BTreeSet<&str> = BTreeSet::new();
-    let (mut targets, mut reached) = confined.reach(model, &start, &none);
+    let (mut targets, mut reached) = confined.reach(model, start, &none);
 
     // **Then opened cumulatively, by name** (spec-0042 §2.1/§3). A space behind
     // a way is not unreachable; it is reachable once the way is opened, and the
@@ -2368,7 +2415,7 @@ fn reachability(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -
         for name in &all {
             let mut trial = opened.clone();
             trial.insert(name);
-            let (got_targets, got) = confined.reach(model, &start, &trial);
+            let (got_targets, got) = confined.reach(model, start, &trial);
             let newly: BTreeSet<[i32; 3]> = got.difference(&reached).copied().collect();
             targets.extend(got_targets.iter().copied());
             reached.extend(got.iter().copied());
@@ -2388,7 +2435,7 @@ fn reachability(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -
             }
             opened = trial;
         }
-        let (all_targets, all_reached) = confined.reach(model, &start, &all);
+        let (all_targets, all_reached) = confined.reach(model, start, &all);
         targets.extend(all_targets);
         reached.extend(all_reached);
         for (element, by_verb) in &required {
@@ -2403,6 +2450,19 @@ fn reachability(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -
         }
     }
     let unreached: BTreeSet<[i32; 3]> = targets.difference(&reached).copied().collect();
+    let from = if seeds.ways_in > 0 {
+        format!(
+            "the mouth(s) of the entry space {:?}'s {} way(s) in ({} cell(s))",
+            ix.contract.entry,
+            seeds.ways_in,
+            seeds.cells.len()
+        )
+    } else {
+        format!(
+            "every standable cell of the entry space {:?}, which declares no way in",
+            ix.contract.entry
+        )
+    };
 
     let mut per_element: Vec<String> = Vec::new();
     for element in &confined.elements {
@@ -2431,12 +2491,11 @@ fn reachability(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -
         bound: targets.len(),
         detail: if !unreached.is_empty() {
             format!(
-                "{} of {} standable cell(s) in declared space cannot be reached from the entry \
-                 space {:?} by a walk confined to declared spaces and crossing only through \
-                 declared edges — {} · {}",
+                "{} of {} standable cell(s) in declared space cannot be reached from {from} by \
+                 a walk confined to declared spaces and crossing only through declared edges — \
+                 {} · {}",
                 unreached.len(),
                 targets.len(),
-                ix.contract.entry,
                 per_element.join(", "),
                 describe_cells(&unreached)
             )
@@ -2446,10 +2505,9 @@ fn reachability(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -
                 .to_string()
         } else {
             format!(
-                "every one of {} standable cell(s) in declared space is reached from {:?} through \
-                 declared edges only{}",
+                "every one of {} standable cell(s) in declared space is reached from {from} \
+                 through declared edges only{}",
                 targets.len(),
-                ix.contract.entry,
                 if required.is_empty() {
                     String::new()
                 } else {

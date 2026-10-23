@@ -2632,6 +2632,34 @@ impl World {
         out
     }
 
+    /// **Every rest state a body reaches from `seeds` by the reach graph's
+    /// moves, confined by `admit`**: the closure of [`World::body_edges`] in
+    /// which a move from `from` to `to` is taken only when `admit(from, to)`.
+    /// A seed that is no rest state is kept and moves nowhere.
+    ///
+    /// The one confined walk over the graph: a consumer that adds a
+    /// confinement of its own (a declared edge's licence, a wall's plane, the
+    /// ways a plan cut) states it as `admit` and keeps no walk of its own.
+    /// With every move admitted it reaches exactly the states
+    /// [`World::body_reach`] does (`compiler::nav::world::reach::agreement`).
+    pub fn body_flood(
+        &self,
+        seeds: &[[i32; 3]],
+        admit: &dyn Fn([i32; 3], [i32; 3]) -> bool,
+    ) -> BTreeSet<[i32; 3]> {
+        let mut seen: BTreeSet<[i32; 3]> = seeds.iter().copied().collect();
+        let mut queue: std::collections::VecDeque<[i32; 3]> = seen.iter().copied().collect();
+        while let Some(cur) = queue.pop_front() {
+            for edge in self.body_edges(cur) {
+                if !seen.contains(&edge.to) && admit(cur, edge.to) {
+                    seen.insert(edge.to);
+                    queue.push_back(edge.to);
+                }
+            }
+        }
+        seen
+    }
+
     /// **Fly a declared jump's window** (spec-0113 §4.4) from `from` toward
     /// `to` under `rules`: facing every whole degree within
     /// [`delvewright_dsl::metrics::DECLARED_JUMP_FACING_DEG`] of the line
