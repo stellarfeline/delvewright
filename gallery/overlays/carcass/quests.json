@@ -73,6 +73,6 @@
       }
     ]
   },
-  "dsl_version": "0.56.0",
+  "dsl_version": "0.60.0",
   "stage": "quests"
 }

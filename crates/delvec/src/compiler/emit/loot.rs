@@ -286,6 +286,7 @@ mod loot_emit_tests {
             drops: Vec::new(),
             traversal: None,
             watch: None,
+            answers: None,
             health_bar: None,
         }
     }

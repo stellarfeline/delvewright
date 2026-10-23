@@ -29,7 +29,15 @@ fn read_hw(name: &str) -> String {
 
 /// The hello-world NPC document with `npc/keeper`'s body swapped for `entity`.
 fn npcs_doc(base_entity: &str) -> String {
-    read_hw("npcs.json").replace("\"minecraft:villager\"", &format!("\"{base_entity}\""))
+    // A body the game calls a monster, standing where the party walks, owes the
+    // line a blow on it answers with (`DW1055`, spec-0119).
+    common::patch_doc(
+        &read_hw("npcs.json").replace("\"minecraft:villager\"", &format!("\"{base_entity}\"")),
+        |d| {
+            d["content"]["npcs"][0]["answers"] =
+                serde_json::json!({ "struck": "It does not stir." })
+        },
+    )
 }
 
 /// A one-batch stage-7 script that fills the single cell at `offset` from

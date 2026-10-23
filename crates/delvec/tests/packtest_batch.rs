@@ -140,7 +140,7 @@ fn build_actor_hello_world() -> BuildOutput {
             serde_json::json!({ "type": "unleash-actor", "actor": "actor/giant" }),
         ]);
         d["content"]["actors"] = serde_json::json!([
-            { "id": "actor/giant", "entity": "minecraft:zombie", "name": "The Sleeper",
+            { "id": "actor/giant", "entity": "minecraft:zombie", "answers": { "struck": "It does not stir.", "touched": "Cold, and still." }, "name": "The Sleeper",
               "anchor": "spawn", "facing": "east" }
         ]);
     });
@@ -193,7 +193,7 @@ fn build_handoff_hello_world() -> BuildOutput {
               "effects": [ { "type": "narrate", "style": "chat", "text": "He stirs." } ] }
         ]);
         d["content"]["actors"] = serde_json::json!([
-            { "id": "actor/giant", "entity": "minecraft:zombie", "name": "The Sleeper",
+            { "id": "actor/giant", "entity": "minecraft:zombie", "answers": { "struck": "It does not stir.", "touched": "Cold, and still." }, "name": "The Sleeper",
               "anchor": "spawn", "facing": "east" }
         ]);
     });

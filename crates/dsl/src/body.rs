@@ -217,6 +217,85 @@ pub struct WatchClass {
     pub class: ClassId,
 }
 
+/// **What a body says when a player presses it** (spec-0119) — the declaration
+/// both body classes carry, as one type, because the answer belongs to the body
+/// and not to the verb that first wanted one.
+///
+/// A body has two presses: a **blow** (a left-click, `struck`) and a **touch**
+/// (a right-click, `touched`). Each line is one `Refusal` the campaign writes,
+/// shown on the action bar of the player who pressed, to that player alone. The
+/// engine never writes the words.
+///
+/// Which lines a body owes is the compiler's `DW1055`: a body of a kind the
+/// pinned game discards on peaceful (its own statement of which kinds are
+/// monsters), that cannot be harmed and does not fight, and that a walking player
+/// can reach at some station it is declared to stand on, owes `struck` — and an
+/// actor `touched` too. Which lines a body cannot show is `DW1056`: a line on a
+/// `vulnerable` actor, a `touched` on an NPC (its right-click is its dialogue),
+/// and a `struck` on a body a `strike` / `strike-npc` trigger already rides.
+/// A line on a body of a kind the game keeps on peaceful is admitted, never owed.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BodyAnswers {
+    /// What the body answers a blow (a left-click), in the campaign's words.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub struck: Option<String>,
+    /// What the body answers a touch (a right-click), in the campaign's words.
+    /// Never on a stage-2 NPC: its right-click is its dialogue (`DW1056`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub touched: Option<String>,
+}
+
+/// One press a body can be answered for ([`BodyAnswers`]): the blow or the
+/// touch. The closed set, stated once, so the l10n key, the synthesized trigger
+/// and the criterion that dispatches it are all read off one value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum BodyPress {
+    /// A left-click — `struck`.
+    Struck,
+    /// A right-click — `touched`.
+    Touched,
+}
+
+impl BodyPress {
+    /// Both presses, in declaration order.
+    pub const ALL: [BodyPress; 2] = [BodyPress::Struck, BodyPress::Touched];
+
+    /// The field name and key segment (`struck` / `touched`).
+    pub fn token(self) -> &'static str {
+        match self {
+            BodyPress::Struck => "struck",
+            BodyPress::Touched => "touched",
+        }
+    }
+
+    /// The press a player makes, in words a message reads.
+    pub fn act(self) -> &'static str {
+        match self {
+            BodyPress::Struck => "a blow (a left-click)",
+            BodyPress::Touched => "a touch (a right-click)",
+        }
+    }
+}
+
+impl BodyAnswers {
+    /// The line declared for `press`, if any.
+    pub fn line(&self, press: BodyPress) -> Option<&String> {
+        match press {
+            BodyPress::Struck => self.struck.as_ref(),
+            BodyPress::Touched => self.touched.as_ref(),
+        }
+    }
+
+    /// The line declared for `press`, mutably (the l10n walk).
+    pub fn line_mut(&mut self, press: BodyPress) -> Option<&mut String> {
+        match press {
+            BodyPress::Struck => self.struck.as_mut(),
+            BodyPress::Touched => self.touched.as_mut(),
+        }
+    }
+}
+
 /// One object class that has a **body the compiler stages**: a declared
 /// position, a declared species, and a compiler-emitted route.
 ///
@@ -392,6 +471,51 @@ impl<'a> BodyRef<'a> {
             BodyRef::Npc(n) => matches!(n.watch, Some(NpcWatch::Holds(_))),
             BodyRef::Actor(_) => false,
         }
+    }
+
+    /// This body's declared answers (spec-0119), if it declares any.
+    pub fn answers(self) -> Option<&'a BodyAnswers> {
+        match self {
+            BodyRef::Npc(n) => n.answers.as_ref(),
+            BodyRef::Actor(a) => a.answers.as_ref(),
+        }
+    }
+
+    /// Whether this body is **inert** while it is staged: it cannot be harmed
+    /// and does not fight (spec-0119 §2). Every NPC is, for its whole life; an
+    /// actor is unless it is `vulnerable` — while its puppet stands, before any
+    /// `unleash-actor` replaces it with a twin that fights.
+    pub fn inert(self) -> bool {
+        !self.killable_by_players()
+    }
+
+    /// The presses this class can be answered for (spec-0119 §3): an NPC's
+    /// blow alone (its right-click is its dialogue), an actor's blow and touch.
+    pub fn presses(self) -> &'static [BodyPress] {
+        match self {
+            BodyRef::Npc(_) => &[BodyPress::Struck],
+            BodyRef::Actor(_) => &BodyPress::ALL,
+        }
+    }
+
+    /// **The authored trigger that rides this body's blow**, if any — a
+    /// `strike-npc` naming this NPC, or a `strike` anchored on the cell the
+    /// body stands on (its anchor, at no offset). Such a blow already has an
+    /// answer, the trigger's act, so the body owes no `struck` line and may
+    /// not declare one (spec-0119 §3). The one authority `DW1055` and `DW1056`
+    /// both read.
+    pub fn struck_rider(self, c: &'a crate::envelope::Campaign) -> Option<&'a crate::EnvTrigger> {
+        let (anchor, offset) = match self {
+            BodyRef::Npc(n) => (n.anchor.as_str(), n.offset),
+            BodyRef::Actor(a) => (a.anchor.as_str(), a.offset),
+        };
+        c.quests.content.triggers.iter().find(|t| match &t.on {
+            crate::TriggerOn::StrikeNpc { npc } => {
+                matches!(self, BodyRef::Npc(n) if n.id == *npc)
+            }
+            crate::TriggerOn::Strike => offset == [0, 0, 0] && t.at_anchor() == Some(anchor),
+            _ => false,
+        })
     }
 
     /// This class's name in the JSON Schema export (`delvec schema --stage all`).
@@ -730,5 +854,72 @@ pub(crate) fn body_watch_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                  watch `\"nearest\"`."
             ),
         ));
+    }
+}
+
+crate::dw_code! {
+    /// (spec-0119) **A line on a body that cannot show it.** A body's
+    /// `answers` declares a line no press of that body can ever reach: any line
+    /// on a `vulnerable` actor (an answer box on a body that must take blows
+    /// would take every blow meant for it), a `touched` on a stage-2 NPC (its
+    /// right-click is its dialogue), or a `struck` on a body a `strike` /
+    /// `strike-npc` trigger already rides (the blow is the trigger's). An inert
+    /// declaration is refused, never ignored. Read off the declaration alone,
+    /// so it is raised at validation (exit 1).
+    pub const BODY_ANSWER_UNSHOWABLE: DwCode = DwCode::new("DW1056", ExitTier::Build);
+}
+
+/// spec-0119: a body's `answers` names no line it cannot show (`DW1056`).
+/// Over [`body_sites`], so both body classes are judged by one rule.
+pub(crate) fn body_answer_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    for site in body_sites(c) {
+        let Some(answers) = site.body.answers() else {
+            continue;
+        };
+        let (stage, id) = (site.body.stage(), site.body.id());
+        for press in BodyPress::ALL {
+            if answers.line(press).is_none() {
+                continue;
+            }
+            let path = format!("{}/answers/{}", site.path, press.token());
+            let why = if site.body.killable_by_players() {
+                Some(format!(
+                    "`{id}` is `vulnerable`: its puppet takes blows, so no answer box can stand \
+                     on it — the box would take every blow meant for the body and the fight \
+                     could not be hit. A body that can be harmed answers with its health. \
+                     Prescription: drop the line, or drop `vulnerable`"
+                ))
+            } else if press == BodyPress::Touched && matches!(site.body, BodyRef::Npc(_)) {
+                Some(format!(
+                    "`{id}` is a stage-2 NPC: a right-click on it opens its dialogue, so a \
+                     `touched` line could never be shown. The dialogue is the answer. \
+                     Prescription: drop `answers.touched`, or put the words in its dialogue"
+                ))
+            } else if press == BodyPress::Struck
+                && let Some(t) = site.body.struck_rider(c)
+            {
+                Some(format!(
+                    "a blow on `{id}` is already answered: the `{}` trigger `{}` rides its \
+                     body, and the blow fires that trigger's act. Two answers to one blow is \
+                     the collision one hitbox exists to end. Prescription: drop \
+                     `answers.struck`, or move the trigger off the body",
+                    t.on.kind(),
+                    t.id
+                ))
+            } else {
+                None
+            };
+            if let Some(why) = why {
+                d.push(Diagnostic::error(
+                    BODY_ANSWER_UNSHOWABLE,
+                    stage,
+                    path,
+                    format!(
+                        "`answers.{}` on `{id}` can never be shown: {why}.",
+                        press.token()
+                    ),
+                ));
+            }
+        }
     }
 }

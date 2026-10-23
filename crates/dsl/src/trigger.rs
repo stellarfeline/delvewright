@@ -103,11 +103,16 @@ impl EnvTrigger {
 
     /// Whether vanilla can name the player whose act fired this trigger, which
     /// is what `audience: presser` needs: a right-click (`use`, through
-    /// `minecraft:player_interacted_with_entity`) and a step (`step`, a player
-    /// in the cell). A left-click is recorded as a UUID no command can become;
-    /// everything else is refused by `DW0427`.
+    /// `minecraft:player_interacted_with_entity`), a left-click on an
+    /// interaction entity (`strike`, `strike-npc`, `strike-assembly`, through
+    /// `minecraft:player_hurt_entity`, measured in
+    /// `docs/reference/click-attribution.md`) and a step (`step`, a player in
+    /// the cell). An `approach` has no carrier entity, so nothing names its
+    /// player: it alone is refused by `DW0427`. The DSL-side statement of the
+    /// compiler's criterion table (`emit::trigger::press_criterion`), held
+    /// equal to it by an agreement test.
     pub fn attributes_its_actor(&self) -> bool {
-        matches!(self.on, TriggerOn::Use | TriggerOn::Step)
+        self.on.attributes_its_actor()
     }
 }
 
@@ -115,19 +120,21 @@ impl EnvTrigger {
 ///
 /// **This is a dispatch decision, not a cosmetic one.** A `party` trigger is
 /// polled on the tick with no executor, so `@s` does not exist and every
-/// player-facing command addresses `@a`. A `presser` trigger is dispatched by a
-/// `minecraft:player_interacted_with_entity` advancement — the one vanilla
-/// primitive that runs a function *as the player who clicked* — so `@s` is the
-/// presser and the bundle addresses them alone. A `presser` trigger `on: step`
-/// is polled as `execute as @a[<the cell>]`, so `@s` is each player who stepped
-/// on, on their own step.
+/// player-facing command addresses `@a`. A `presser` trigger is dispatched by an
+/// advancement whose reward runs a function *as the player who clicked*, so `@s`
+/// is the presser and the bundle addresses them alone: a right-click (`use`) by
+/// `minecraft:player_interacted_with_entity`, a left-click on an interaction
+/// entity (`strike`, `strike-npc`, `strike-assembly`) by
+/// `minecraft:player_hurt_entity`, which vanilla grants to the attacking player
+/// when the struck entity is a `minecraft:interaction`
+/// (`docs/reference/click-attribution.md`, measured on the pinned jar). A
+/// `presser` trigger `on: step` is polled as `execute as @a[<the cell>]`, so
+/// `@s` is each player who stepped on, on their own step.
 ///
-/// The click primitive exists for **right-clicks only**. Vanilla records a
-/// left-click on an interaction entity in NBT (which names a UUID no command can
-/// become) and offers no criterion for it, so `presser` on a `strike` is refused
-/// (`DW0427`) rather than approximated: per CLAUDE.md's no-hack rule, a
-/// capability with no vanilla primitive under it is excluded, never faked
-/// downstream.
+/// An `approach` has no carrier entity and no criterion names its player, so
+/// `presser` on one is refused (`DW0427`) rather than approximated: per
+/// CLAUDE.md's no-hack rule, a capability with no vanilla primitive under it is
+/// excluded, never faked downstream.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum TriggerAudience {
@@ -135,7 +142,8 @@ pub enum TriggerAudience {
     #[default]
     Party,
     /// The one player whose press fired it: the right-click of a `use`, the
-    /// step of a `step`.
+    /// left-click of a `strike`, `strike-npc` or `strike-assembly`, the step of
+    /// a `step`.
     Presser,
 }
 
@@ -238,6 +246,13 @@ impl TriggerOn {
         )
     }
 
+    /// Whether vanilla names the player whose act this event is — every event
+    /// but an `approach`, which has no carrier entity. The one table
+    /// [`EnvTrigger::attributes_its_actor`] reads.
+    pub fn attributes_its_actor(&self) -> bool {
+        !matches!(self, TriggerOn::Approach { .. })
+    }
+
     /// The assembly whose hitbox this event watches (`strike-assembly` only).
     pub fn assembly_target(&self) -> Option<&AssemblyId> {
         match self {
@@ -314,18 +329,17 @@ crate::dw_code! {
 }
 
 crate::dw_code! {
-    /// (v0.11) **A press answer addressed to a click vanilla cannot attribute.**
-    /// A trigger declares `audience: presser` on something other than an
-    /// `on: use` or an `on: step`.
+    /// (v0.11; spec-0119) **A press answer addressed to an event nobody is named
+    /// for.** A trigger declares `audience: presser` on an `on: approach`.
     ///
-    /// `minecraft:player_interacted_with_entity` is the only vanilla criterion
-    /// that runs a function as the player who clicked, and it fires on
-    /// right-clicks alone; a step is a player standing in the cell, which a
-    /// positional selector names. A left-click is recorded in the interaction entity's
-    /// `attack` NBT — a UUID no command can become — and an `approach` involves no
-    /// click at all. Approximating it (polling the record and assuming the nearest
-    /// player) is the downstream folklore CLAUDE.md's no-hack rule excludes, so the
-    /// capability is refused rather than faked.
+    /// A presser is named by the event's own carrier: a right-click on an
+    /// interaction entity by `minecraft:player_interacted_with_entity`, a
+    /// left-click on one by `minecraft:player_hurt_entity`
+    /// (`docs/reference/click-attribution.md`), a step by the positional
+    /// selector over the cell. An `approach` is a distance test on the tick with
+    /// no carrier entity, so no criterion names its player. Approximating it
+    /// (assuming the nearest player) is the downstream folklore CLAUDE.md's
+    /// no-hack rule excludes, so the capability is refused rather than faked.
     pub const TRIGGER_AUDIENCE_UNATTRIBUTABLE: DwCode = DwCode::new("DW0427", ExitTier::Build);
 }
 
@@ -372,17 +386,17 @@ pub(crate) fn press_answer_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 "quests",
                 format!("/content/triggers/{i}/audience"),
                 format!(
-                    "trigger `{}` watches a `{}` and asks for `audience: presser`, but vanilla \
-                     names the player only for a RIGHT-click and a step. \
-                     `minecraft:player_interacted_with_entity` is the one criterion that runs a \
-                     function as the clicker, and a step is a player standing in the cell; a \
-                     left-click is recorded in the interaction entity's `attack` NBT, which names \
-                     a UUID no command can become, and an `approach` is not attributed. Guessing \
-                     — polling the record and hoping the nearest player is the striker — is the \
-                     kind of downstream folklore this engine refuses (CLAUDE.md: a capability \
-                     with no vanilla primitive under it is excluded, not faked). Prescription: \
-                     make it an `on: use` or `on: step` trigger, or drop `audience` and let the \
-                     beat address the party",
+                    "trigger `{}` watches a `{}` and asks for `audience: presser`, but a presser \
+                     needs a carrier that names the player, and an approach has none: it is a \
+                     distance test on the tick, with no entity a criterion could report. A click \
+                     names its player through its interaction entity (a right-click by \
+                     `minecraft:player_interacted_with_entity`, a left-click by \
+                     `minecraft:player_hurt_entity`), and a step through the cell's selector. \
+                     Guessing — hoping the nearest player is the one who came — is the kind of \
+                     downstream folklore this engine refuses (CLAUDE.md: a capability with no \
+                     vanilla primitive under it is excluded, not faked). Prescription: make it a \
+                     `use`, `strike` or `step` trigger on something the player presses, or drop \
+                     `audience` and let the beat address the party",
                     t.id,
                     t.on.kind()
                 ),

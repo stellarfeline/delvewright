@@ -51,7 +51,7 @@ fn campaign(scenery_style: &str) -> Campaign {
         c.quests.content.actors.push(
             serde_json::from_value(serde_json::json!({
                 "id": a,
-                "entity": "minecraft:wither_skeleton",
+                "entity": "minecraft:wither_skeleton", "answers": { "struck": "It does not stir.", "touched": "Cold, and still." },
                 "name": "The Barrow Warden",
                 "anchor": anchor,
                 "facing": "north"

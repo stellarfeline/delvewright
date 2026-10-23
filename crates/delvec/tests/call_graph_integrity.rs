@@ -224,7 +224,7 @@ fn every_summon_of_a_bar_carrying_body_captures_the_bars_max() {
     c.quests.content.actors.push(
         serde_json::from_value(serde_json::json!({
             "id": "actor/barrow-warden",
-            "entity": "minecraft:wither_skeleton",
+            "entity": "minecraft:wither_skeleton", "answers": { "struck": "It does not stir.", "touched": "Cold, and still." },
             "name": "The Barrow Warden",
             "anchor": "anchor/wave",
             "health_bar": {"range": 16}

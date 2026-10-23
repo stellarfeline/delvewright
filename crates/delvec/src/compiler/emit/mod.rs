@@ -629,6 +629,22 @@ pub fn build_with_warnings(
     // never inside the holder the block model reads as air — every route
     // proof, waypoint and the critical-path step read one stance.
 
+    // ---- spec-0119: a harmless body says what it is (`DW1055`) ----
+    //
+    // Over the world `holders::final_walk` derived and the walk-reachable set
+    // its stance pass reads, asked through the one stance entry point
+    // (`nav::interaction_stances`). The binding line is printed before the
+    // verdict, zeroes included.
+    let body_answers = {
+        let (binding, verdict) = crate::compiler::bodies::check(plan, &world);
+        eprintln!("{}", binding.line());
+        verdict.map_err(|e| BuildFailure::Diagnostic {
+            code: e.code,
+            message: e.message,
+        })?;
+        binding
+    };
+
     // What the camera reads in each carried place (spec-0080 §2.2): its fog
     // and sky are the client's blend over the 4-cells within `BLEND_REACH`, so
     // a place too small for its paint shows a sky mixed with the one outside
@@ -1241,6 +1257,15 @@ pub fn build_with_warnings(
         );
     }
     put_json(&mut out, "critical-path.json", &cp);
+    // spec-0119: the body-answer record, for a campaign that stages a body at
+    // all; absent otherwise → byte-identical.
+    if body_answers.bodies > 0 {
+        put_json(
+            &mut out,
+            "validation/body-answers.json",
+            &body_answers.to_json(),
+        );
+    }
 
     // ---- visual-tier render plan (spec-0003 / spec-0007) ----
     // Deterministic camera + expect-checklist shot list for the visual tier;
