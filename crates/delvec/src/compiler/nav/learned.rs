@@ -1694,8 +1694,8 @@ mod learned_tests {
                 );
                 let (_, at_player) = judge(&shut, &base, &ways, &[], PLAYER_EYE);
                 let (_, at_mob) = judge(&shut, &base, &ways, &[], 1.5);
-                if at_player.is_ok() && at_mob.is_err() {
-                    assert_eq!(at_mob.unwrap_err().code.id(), "DW1054");
+                if let (Ok(()), Err(mob)) = (&at_player, &at_mob) {
+                    assert_eq!(mob.code.id(), "DW1054");
                     found = Some((base, shut));
                     break 'search;
                 }
