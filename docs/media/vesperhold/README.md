@@ -24,7 +24,7 @@ The cloister from above: one tree in the garth, the arcades around it, the well-
 
 ![The Chapel of Hours](07-chapel-of-hours.jpg)
 
-The Chapel of Hours, shown by day: noon light falling through the broken roof onto the pews, and the rose window in the west front.
+The Chapel of Hours, shown by day: noon light falling through the broken roof onto the pews, and the rose window glowing in the west front.
 
 ![The undertide pool](08-undertide-pool.jpg)
 
