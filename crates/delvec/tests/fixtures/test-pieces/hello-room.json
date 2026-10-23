@@ -46,6 +46,14 @@
         4
       ]
     },
+    "anchor/latch": {
+      "note": "a floor cell on the spawn side, clear of the keeper's stand and the exit: where a fixture's own press stands",
+      "pos": [
+        2,
+        1,
+        5
+      ]
+    },
     "spawn": {
       "facing": "south",
       "pos": [

@@ -132,7 +132,12 @@
             },
             "requires_item": "minecraft:tripwire_hook",
             "title": "Open the Inner Door",
-            "type": "interact"
+            "type": "interact",
+            "answers": {
+              "not_yet": "Not yet.",
+              "missing_item": "Your hand is empty of what this takes.",
+              "done": "Already done."
+            }
           },
           {
             "after": [
@@ -279,7 +284,19 @@
                 }
               ]
             }
-          ]
+          ],
+          "obj": {
+            "slay": {
+              "4": {
+                "prop": {
+                  "block": "minecraft:candle[candles=4,lit=false]"
+                },
+                "answers": {
+                  "not_yet": "Not yet."
+                }
+              }
+            }
+          }
         },
         "trigger": {
           "quest": "quest/greet",
@@ -324,7 +341,13 @@
         "on": {
           "on": "strike"
         },
-        "once": true
+        "once": true,
+        "prop": {
+          "block": "minecraft:stone_button[face=floor,facing=north]"
+        },
+        "answers": {
+          "done": "Already done."
+        }
       }
     ],
     "waves": [

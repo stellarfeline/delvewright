@@ -147,7 +147,10 @@
         },
         "requires_flags": [
           "flag/boarded"
-        ]
+        ],
+        "answers": {
+          "not_yet": "Not yet."
+        }
       },
       {
         "at": "anchor/far-tiller",
@@ -187,7 +190,10 @@
         },
         "requires_flags": [
           "flag/far-shore"
-        ]
+        ],
+        "answers": {
+          "not_yet": "Not yet."
+        }
       }
     ]
   },

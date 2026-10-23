@@ -4515,9 +4515,9 @@ fn dw1044_closing_the_way_round_builds() {
 fn dolly_campaign(tag: &str, from: [i32; 3], to: [i32; 3]) -> PathBuf {
     let camp = campaign(tag, None);
     common::patch_file(&camp.join("quests.json"), |v| {
+        v["content"]["triggers"] = serde_json::json!([common::door_answer_value("The bars hold.")]);
         v["content"]["quests"][0]["on_objective_complete"]["obj/exit"] = serde_json::json!([
             {"type": "close-gate", "anchor": "anchor/door",
-             "sealed_hint": "The bars hold.",
              "happening": {"verb": "seals", "text": "the door shuts behind the party"}},
             {"type": "cutscene", "shots": [{"path": [
                 {"anchor": "anchor/exit", "offset": from},

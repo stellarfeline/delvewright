@@ -314,12 +314,22 @@ fn a_campaign_that_opens_its_gate_emits_the_same_datapack() {
 /// leg into `obj/exit` starts at `obj/look`: the lever the walk pulled two steps
 /// earlier is an ancestor of neither end of that leg, only earlier in the walk.
 fn quests_doc_siblings(pull: &str, look: &str) -> String {
+    // A seal answers for itself (`DW0429`).
+    let triggers = if format!("{pull}{look}").contains("close-gate") {
+        format!(
+            r#""triggers": [ {} ],"#,
+            common::door_answer("The bars hold.")
+        )
+    } else {
+        String::new()
+    };
     common::at_dsl_version(&format!(
         r#"{{
   "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
+    {triggers}
     "quests": [
       {{
         "id": "quest/open-the-door",
@@ -346,8 +356,7 @@ fn quests_doc_siblings(pull: &str, look: &str) -> String {
 }
 
 const OPEN_DOOR: &str = r#"{ "type": "open-gate", "anchor": "anchor/door" }"#;
-const CLOSE_DOOR: &str =
-    r#"{ "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "The bars hold." }"#;
+const CLOSE_DOOR: &str = r#"{ "type": "close-gate", "anchor": "anchor/door" }"#;
 const NOTHING: &str = r#"{ "type": "set-flag", "flag": "flag/noted" }"#;
 
 /// **The green.** A sibling the proven walk performs before the gated leg opens

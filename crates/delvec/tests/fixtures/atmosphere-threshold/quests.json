@@ -21,7 +21,11 @@
               "block": "minecraft:bell"
             },
             "title": "Ring the bell",
-            "type": "interact"
+            "type": "interact",
+            "answers": {
+              "not_yet": "Not yet.",
+              "done": "Already done."
+            }
           },
           {
             "after": [

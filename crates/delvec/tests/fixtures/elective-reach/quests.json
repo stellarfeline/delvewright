@@ -148,6 +148,12 @@
         "id": "trigger/bell",
         "on": {
           "on": "use"
+        },
+        "prop": {
+          "block": "minecraft:stone_button[face=floor,facing=north]"
+        },
+        "answers": {
+          "done": "Already done."
         }
       }
     ]

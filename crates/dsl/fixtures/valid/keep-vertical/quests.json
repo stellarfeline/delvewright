@@ -120,7 +120,12 @@
             },
             "requires_item": "minecraft:tripwire_hook",
             "title": "Open the door",
-            "type": "interact"
+            "type": "interact",
+            "answers": {
+              "not_yet": "Not yet.",
+              "missing_item": "Your hand is empty of what this takes.",
+              "done": "Already done."
+            }
           },
           {
             "after": [

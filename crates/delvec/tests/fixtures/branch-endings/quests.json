@@ -80,7 +80,11 @@
             "requires_flags": [
               "flag/flee"
             ],
-            "type": "interact"
+            "type": "interact",
+            "answers": {
+              "not_yet": "Not yet.",
+              "done": "Already done."
+            }
           }
         ],
         "on_complete": [],

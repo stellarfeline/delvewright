@@ -93,7 +93,10 @@
         },
         "requires_flags": [
           "flag/boarded"
-        ]
+        ],
+        "answers": {
+          "not_yet": "Not yet."
+        }
       }
     ]
   },

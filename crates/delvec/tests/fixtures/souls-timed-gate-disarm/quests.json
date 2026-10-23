@@ -66,7 +66,13 @@
         "crush": true,
         "disarm": {
           "sets_flag": "flag/portcullis-jammed",
-          "via": "anchor/exit"
+          "via": "anchor/exit",
+          "prop": {
+            "block": "minecraft:stone_button[face=floor,facing=north]"
+          },
+          "answers": {
+            "done": "Already done."
+          }
         },
         "gate": "anchor/door",
         "id": "timed-gate/inner-door",

@@ -209,10 +209,13 @@
             "state": "state/ride-in-progress",
             "value": 0
           }
-        ]
+        ],
+        "answers": {
+          "not_yet": "Not yet."
+        }
       },
       {
-        "at": "anchor/door",
+        "at": "anchor/latch",
         "effects": [
           {
             "steps": [
@@ -331,7 +334,13 @@
             "state": "state/ride-in-progress",
             "value": 0
           }
-        ]
+        ],
+        "prop": {
+          "block": "minecraft:stone_button[face=floor,facing=north]"
+        },
+        "answers": {
+          "not_yet": "Not yet."
+        }
       }
     ]
   },

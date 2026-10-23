@@ -167,7 +167,7 @@
     ],
     "triggers": [
       {
-        "at": "anchor/door",
+        "at": "anchor/latch",
         "effects": [
           {
             "text": "The latch will not give.",
@@ -177,6 +177,12 @@
         "id": "trigger/door-latch",
         "on": {
           "on": "use"
+        },
+        "prop": {
+          "block": "minecraft:stone_button[face=floor,facing=north]"
+        },
+        "answers": {
+          "done": "Already done."
         }
       }
     ]

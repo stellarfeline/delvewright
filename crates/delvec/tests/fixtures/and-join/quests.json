@@ -77,7 +77,11 @@
               "block": "minecraft:lever"
             },
             "title": "Draw the North Ward",
-            "type": "interact"
+            "type": "interact",
+            "answers": {
+              "not_yet": "Not yet.",
+              "done": "Already done."
+            }
           },
           {
             "anchor": "anchor/chest",
@@ -91,7 +95,11 @@
               "block": "minecraft:lever"
             },
             "title": "Draw the South Ward",
-            "type": "interact"
+            "type": "interact",
+            "answers": {
+              "not_yet": "Not yet.",
+              "done": "Already done."
+            }
           },
           {
             "after": [
