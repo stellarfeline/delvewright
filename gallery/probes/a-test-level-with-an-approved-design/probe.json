@@ -1,0 +1,15 @@
+{
+  "code": "DW1061",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "add",
+      "path": "/content/test_level",
+      "value": true
+    }
+  ],
+  "units": [
+    "WorldContent.test_level"
+  ],
+  "why": "The gallery declares itself a test level while it carries `design.json`, the approved design record step 4 wrote. A test level is a level built to try something with no approved design; a level with an approved design is not one, so the two are two authorities for one design and `DW1061` refuses the pair at validate, naming both ways out. The other half — `test_level: true` with no record builds, carries `test_level: true` in its manifest and moves no emitted byte — has no subject on the gallery, which ships its design record, and is proven by `crates/delvec/tests/test_level.rs`."
+}

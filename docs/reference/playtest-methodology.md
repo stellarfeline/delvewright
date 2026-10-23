@@ -471,7 +471,7 @@ the class is HERE and nothing this build carries would catch the defect again.
 | `UNBOUND` | the check matched zero objects, and objects that could have carried the defect are there — or nobody has measured whether they are | rule 1's coverage ledger, nineteen rounds |
 | `NO-SOURCE` | the campaign has no stage JSON, so nothing can be measured | a campaign directory holding design records and no stage documents |
 
-One more red is not a way a green lied but what a demo level owes: `DEMO-UNQUEUED`. A campaign whose `world.json` declares `demo_level: true` carries no design record, and the declaration excuses the design-record rows only when the build's `manifest.json` carries the same declaration and a row of `docs/demo-levels.md` names the campaign's directory, `campaigns/<id>`, in its Status cell; otherwise it is one more red row, counted by `--acknowledge-red` and admitted by `--stage-anyway` like any other.
+A test level is not a red: a campaign whose `world.json` declares `test_level: true` carries no design record, and the declaration measures the design-record rows zero when the build's `manifest.json` carries the same declaration; a source and a build that disagree about it are refused before any row is read, as a build that is not of this source.
 
 **The refusal is on presence, not on absence.** `INAPPLICABLE` — zero binding
 **and** a MEASURED zero precondition, so the campaign declares none of the

@@ -1,0 +1,20 @@
+{
+  "code": "DW0721",
+  "patch": [
+    {
+      "doc": "design/cameras.json",
+      "op": "remove",
+      "path": "/cameras/0/answers"
+    },
+    {
+      "doc": "design/cameras.json",
+      "op": "add",
+      "path": "/cameras/0/note",
+      "value": "the hall's exterior at sunrise"
+    }
+  ],
+  "units": [
+    "Camera.note"
+  ],
+  "why": "The first camera, `hall-exterior`, stops answering `concept/noon-hall` and names what it frames in `note` instead, as a test level's camera does. The gallery is not a test level: every showcase camera of a campaign answers an approved image, so the build refuses the record under `DW0721`, naming the camera, before anything is placed. On a test level, which carries no design record, the same row builds and `delvec cameras` draws it (`crates/delvec/tests/test_level.rs`)."
+}
