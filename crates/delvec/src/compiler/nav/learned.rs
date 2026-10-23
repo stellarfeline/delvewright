@@ -1936,7 +1936,7 @@ mod learned_tests {
         );
         for w in [
             "`seen` — the bar is seen",
-            "`told` — nothing answers",
+            "`told` — no `use` trigger serves",
             "`rewarded` — no pickup",
         ] {
             assert!(err.message.contains(w), "{w}: {}", err.message);

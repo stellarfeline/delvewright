@@ -1020,7 +1020,10 @@ fn the_handout_is_complete_and_hands_each_seams_form_to_both_sides() {
     assert!(!annex["seams"].as_array().unwrap().is_empty());
     assert_eq!(
         annex["brief"]["stations"],
-        json!(["anchor/annex-bench (point)"])
+        json!([
+            "anchor/annex-bench (point)",
+            "anchor/annex-chute-leaf (point)"
+        ])
     );
     assert!(!annex["brief"]["intent"].as_str().unwrap().is_empty());
     assert!(!annex["palette"].as_object().unwrap().is_empty());
