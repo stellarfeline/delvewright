@@ -1535,9 +1535,12 @@ fn a_laid_way_exports_the_sign_and_the_block_it_will_be_filled_with() {
     }
 
     // **And the way is load-bearing.** Take the declaration off the same bytes
-    // and the piece is refused: the far room is unreachable and the walk does
-    // not connect. A green over a piece that would have been green anyway says
-    // nothing about the surface being exported.
+    // and the piece is refused: the walk does not connect. A green over a piece
+    // that would have been green anyway says nothing about the surface being
+    // exported. The far room is not unreachable: a body jumps the one-cell
+    // threshold (the reach graph's launch set), so `contract-reachability`,
+    // which asks the graph, is green over the twin and only the walk edge's own
+    // proof refuses it.
     let undeclared = broken_threshold_undeclared();
     assert_eq!(
         run(&undeclared, PIECE, 1).model.canonical_bytes(),
@@ -1548,7 +1551,7 @@ fn a_laid_way_exports_the_sign_and_the_block_it_will_be_filled_with() {
         Err(delvec::grammar::ExportError::Contract { gates }) => {
             let joined = gates.join(" · ");
             assert!(joined.contains("contract-edge-proof"), "{joined}");
-            assert!(joined.contains("contract-reachability"), "{joined}");
+            assert!(!joined.contains("contract-reachability"), "{joined}");
         }
         other => panic!("the undeclared twin must be refused, got {other:?}"),
     }

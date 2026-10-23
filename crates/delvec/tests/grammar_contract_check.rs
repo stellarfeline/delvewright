@@ -2398,3 +2398,59 @@ fn a_leafy_scenery_crown_owes_no_floor_and_a_reached_one_does() {
         "a reached place's standable leaf tops are owed a declaration"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Reachability is the body's: the reach graph's moves, jumps included
+// ---------------------------------------------------------------------------
+
+/// Two platforms three wide, `near` (the entry) and `far`, joined by a walk
+/// edge; `far` starts `gap` columns past `near`'s end and stands `rise`
+/// courses higher. `ceiling` lays a course over `near` that many cells over
+/// its floor's top, so `Some(3)` leaves a body exactly its two cells.
+fn two_platforms(gap: i32, rise: i32, ceiling: Option<i32>) -> (Build, SpatialContract) {
+    let far_x = 5 + gap;
+    let mut b = Build::new([(far_x + 5) as u32, 8, 3]);
+    b.stone([0, 0, 0], [4, 1, 2]);
+    b.stone([far_x, 0, 0], [far_x + 4, 1 + rise, 2]);
+    if let Some(h) = ceiling {
+        b.stone([0, 1 + h, 0], [4, 1 + h, 2]);
+    }
+    let mut c = contract("near");
+    c.spaces.insert(
+        "near".to_string(),
+        space("open", vec![region([0, 2, 0], [4, 7, 2])]),
+    );
+    c.spaces.insert(
+        "far".to_string(),
+        space("open", vec![region([5, 2, 0], [far_x + 4, 7, 2])]),
+    );
+    c.edges.push(edge("near", "far", "walk"));
+    (b, c)
+}
+
+/// **A platform only a leap reaches is reached**: two columns of air with
+/// nothing under them, crossed by a jump of the reach graph's launch set. A
+/// private walk that took one cell at a time never crossed it.
+#[test]
+fn a_platform_a_jump_reaches_is_reached() {
+    let (b, c) = two_platforms(2, 0, None);
+    let g = gate(&check(&b.model, &c, &no_anchors()), "contract-reachability").clone();
+    assert!(g.passed(), "{}", g.detail);
+    assert_eq!(g.bound, 30, "{}", g.detail);
+}
+
+/// **A step a body cannot jump is not reached**: a full block up from a floor
+/// with a ceiling over the body's two cells leaves no room for the jump the step
+/// needs. A private walk that stepped one course up under any ceiling called
+/// the far platform reached.
+#[test]
+fn a_step_under_a_ceiling_that_forbids_the_jump_is_not_reached() {
+    let (b, c) = two_platforms(0, 1, Some(3));
+    let g = gate(&check(&b.model, &c, &no_anchors()), "contract-reachability").clone();
+    assert!(!g.passed(), "{}", g.detail);
+    assert!(g.detail.contains("space far: 15 cell(s)"), "{}", g.detail);
+    // The same step with room over it is a jump the body makes.
+    let (b, c) = two_platforms(0, 1, Some(5));
+    let g = gate(&check(&b.model, &c, &no_anchors()), "contract-reachability").clone();
+    assert!(g.passed(), "{}", g.detail);
+}
