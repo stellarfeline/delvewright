@@ -128,140 +128,74 @@ pub(super) fn quests_ending_tail(
         .unwrap_or(0)
 }
 
-/// Splice a **`rest`** step into the exported critical path after the beat that
-/// arms each bonfire (spec-0016 §1; bell round-3 finding, 2026-08-03).
+/// Lay a path's steps out as its exported `critical-path.json` carries them
+/// ([`Plan::exported_layout`]): each step of the walked path, a **`rest`** step
+/// where the party rests at each bonfire (spec-0016 §1; [`Plan::rest_after`]),
+/// and each witnessed assembly's witness steps (spec-0082 §5.4).
 ///
 /// A bonfire arms an affordance and moves nothing until the party rests — which is
 /// souls-correct and was also invisible to the validation ladder: the proven path
 /// walked past every bonfire without touching it, so the checkpoint never moved,
-/// and a die-retry trial respawned the bot at world spawn (the beach) instead of
-/// at the fire it had just walked past. The walk-back budget blew, and the run
-/// judged the *campaign* for a *proof* that never performed the player loop.
-///
-/// Resting is the intended loop, so the proven path performs it: after the step
-/// that arms bonfire `i` (its `fire_step` — the earliest tick at which a rest is
-/// possible, the same index `DW0315` roots the no-stranding proof at), the path
-/// gains one `rest` step choosing **rest and save**. Several bonfires armed by the
-/// same beat are spliced in bonfire order, so the emission is deterministic.
+/// and a die-retry trial respawned the bot at world spawn instead of at the fire
+/// it had just walked past. Resting is the intended loop, so the proven path
+/// performs it, choosing **rest and save**.
 ///
 /// This is a *path export* change only: `plan.critical_path` is untouched, so
 /// every `fire_step` index, every nav proof and every other consumer sees exactly
-/// what it saw before. Emits nothing for a campaign with no bonfire →
-/// byte-identical.
+/// what it saw before. A campaign with no bonfire and no witness is laid out as
+/// its steps, byte-identical.
 ///
-/// **Step shape** (the harness contract; execution lands in a follow-up):
+/// **Rest step shape** (the harness contract):
 /// ```json
 /// { "action": "rest", "bonfire": 0, "anchor": "anchor/keeper-stand",
 ///   "pos": [44, 65, 2], "command": "/trigger dw.rest set 2" }
 /// ```
 /// The bot walks to `pos`, right-clicks the `dw_bonfire_<bonfire>` interaction —
 /// which is what opens the dialog and what *enables* the trigger — and then sends
-/// `command`, the exact chat line the "rest and save" button runs. The click is not
-/// optional: `dw.rest` is a trigger objective and is disabled until the opener
-/// enables it, so a bot that only chats the command changes nothing.
-///
-/// `walked` is the step list the JSON was serialized from — the exported path, or
-/// (spec-0025) one branch's path, whose indices are its own. See
-/// [`rest_step_index`] for how a `fire_step` crosses that boundary.
-pub(super) fn with_bonfire_rest_steps(
+/// `command`, the exact chat line the "rest and save" button runs.
+fn laid_out(
     plan: &Plan,
-    walked: &[plan::Step],
+    layout: &plan::ExportedLayout,
     steps: Vec<Value>,
+    witnesses: &[(String, Vec<Value>)],
 ) -> Vec<Value> {
-    if plan.bonfires().next().is_none() {
-        return steps;
-    }
-    // The area a cell stands in; areas sit `plan::AREA_SPACING` apart, so the
-    // horizontal box decides it.
-    let area_of = |pos: &Value| -> Option<usize> {
-        let c: Vec<i64> = pos.as_array()?.iter().filter_map(Value::as_i64).collect();
-        let (x, z) = (*c.first()? as i32, *c.get(2)? as i32);
-        plan.areas.iter().position(|a| {
-            let (lo, hi) = a.bounds();
-            lo[0] <= x && x <= hi[0] && lo[2] <= z && z <= hi[2]
-        })
-    };
-    let step_area = |st: &Value| st.get("pos").and_then(area_of);
-    // A rest is spliced where the party can walk to the fire: the step that arms
-    // it, unless a crossing carries the party out of the fire's area right after
-    // that step (a crossing is the only move between areas, so the next step then
-    // stands in another area) — then the first later step after which the party
-    // stands in the fire's area again. On a route that stays in one area this is
-    // always the arming step.
-    let rest_after: Vec<(usize, &plan::CheckpointPlan)> = plan
-        .bonfires()
-        .filter_map(|b| {
-            let armed = rest_step_index(plan, walked, b.fire_step)?;
-            let Some(home) = plan.areas.iter().position(|a| {
-                let (lo, hi) = a.bounds();
-                lo[0] <= b.pos[0] && b.pos[0] <= hi[0] && lo[2] <= b.pos[2] && b.pos[2] <= hi[2]
-            }) else {
-                return Some((armed, b));
-            };
-            // Where the party stands after step `i`: the last step at or before
-            // it that names a position; a step that names none (a class pick,
-            // the completion assert) leaves it where it was.
-            let stands_home = |i: usize| {
-                let here = steps[..=i].iter().rev().find_map(step_area);
-                let next = steps[i + 1..].iter().find_map(step_area);
-                here == Some(home) && next.is_none_or(|a| a == home)
-            };
-            let at = (armed..steps.len()).find(|&i| stands_home(i))?;
-            Some((at, b))
-        })
-        .collect();
-    let mut out: Vec<Value> = Vec::with_capacity(steps.len());
-    for (i, step) in steps.into_iter().enumerate() {
-        out.push(step);
-        for bf in rest_after
-            .iter()
-            .filter(|(at, _)| *at == i)
-            .map(|(_, b)| *b)
-        {
-            let mut rest = json!({
-                "action": "rest",
-                "bonfire": bf.index,
-                "anchor": bf.anchor,
-                "pos": bf.pos,
-                "command": "/trigger dw.rest set 2"
-            });
-            // A rest plays the bonfire's `on_rest`: every cutscene on its
-            // timeline is waited out after the rest (`compiler::hold`).
-            if let Some(secs) = crate::compiler::hold::rest_hold(&bf.on_respawn)
-                && secs > 0
-            {
-                rest["cutscene_seconds"] = json!(secs);
+    let mut steps: Vec<Option<Value>> = steps.into_iter().map(Some).collect();
+    let mut out: Vec<Value> = Vec::with_capacity(layout.entries.len());
+    for entry in &layout.entries {
+        match entry {
+            plan::Exported::Step(i) => out.push(steps[*i].take().expect("each step is laid once")),
+            plan::Exported::Rest(cp) => {
+                let bf = plan
+                    .bonfires()
+                    .find(|b| b.index == *cp)
+                    .expect("a laid rest is a bonfire's");
+                let mut rest = json!({
+                    "action": "rest",
+                    "bonfire": bf.index,
+                    "anchor": bf.anchor,
+                    "pos": bf.pos,
+                    "command": "/trigger dw.rest set 2"
+                });
+                // A rest plays the bonfire's `on_rest`: every cutscene on its
+                // timeline is waited out after the rest (`compiler::hold`).
+                if let Some(secs) = crate::compiler::hold::rest_hold(&bf.on_respawn)
+                    && secs > 0
+                {
+                    rest["cutscene_seconds"] = json!(secs);
+                }
+                out.push(rest);
             }
-            out.push(rest);
+            plan::Exported::Witness { assembly, k } => {
+                let ws = witnesses
+                    .iter()
+                    .find(|(id, _)| id == assembly)
+                    .map(|(_, ws)| ws)
+                    .expect("a laid witness is an assembly's");
+                out.push(ws[*k].clone());
+            }
         }
     }
     out
-}
-
-/// Where bonfire `fire_step` — an index into the EXPORTED path — lands on `walked`.
-///
-/// A per-branch path (spec-0025) is a different sequence of the same steps, so the
-/// index cannot be carried across: it is translated through the **objective** the
-/// firing beat names, because a fire is armed by a beat, not by a position. A beat
-/// that does not happen on this branch arms nothing there, and the branch path
-/// carries no rest step for it. On the exported path the translation is the
-/// identity (an objective appears at exactly one step), so this emits byte-for-byte
-/// what it emitted before.
-pub(super) fn rest_step_index(
-    plan: &Plan,
-    walked: &[plan::Step],
-    fire_step: usize,
-) -> Option<usize> {
-    match plan
-        .critical_path
-        .get(fire_step)
-        .and_then(plan::Step::objective)
-    {
-        // `fire_step: 0` is the class-select / conservative "before everything"
-        // index (see `Plan::gate_fired_before`); it precedes every path the same way.
-        None => (fire_step < walked.len()).then_some(fire_step),
-        Some(obj) => walked.iter().position(|s| s.objective() == Some(obj)),
-    }
 }
 
 pub(super) fn emit_critical_path(
@@ -269,6 +203,8 @@ pub(super) fn emit_critical_path(
     moves: &[crate::compiler::nav::MovePlan],
     actor_moves: &[crate::compiler::nav::ActorMovePlan],
     routes: &[crate::compiler::nav::LegRoute],
+    layout: &plan::ExportedLayout,
+    witnesses: &[(String, Vec<Value>)],
 ) -> Value {
     let en_route = crate::compiler::hold::en_route_holds(plan, &plan.critical_path, routes);
     // What one world shows after the exported path's ending (spec-0108 §6.3):
@@ -300,6 +236,8 @@ pub(super) fn emit_critical_path(
         moves,
         actor_moves,
         &fired,
+        layout,
+        witnesses,
     )
 }
 
@@ -334,6 +272,8 @@ pub(super) fn critical_path_json(
     moves: &[crate::compiler::nav::MovePlan],
     actor_moves: &[crate::compiler::nav::ActorMovePlan],
     fired: &BTreeSet<String>,
+    layout: &plan::ExportedLayout,
+    witnesses: &[(String, Vec<Value>)],
 ) -> Value {
     // spec-0108 §6.3: what the world the ending left looks like, for the bot to
     // read after the campaign marker and the tail — each aftermath line of the
@@ -529,7 +469,7 @@ pub(super) fn critical_path_json(
             step
         })
         .collect();
-    let steps = with_bonfire_rest_steps(plan, walked, steps);
+    let steps = laid_out(plan, layout, steps, witnesses);
     json!({
         // Campaign-derived (not the compiler's max supported version): a v0.2
         // campaign emits a v0.2 critical path, a v0.3 campaign a v0.3 one.
