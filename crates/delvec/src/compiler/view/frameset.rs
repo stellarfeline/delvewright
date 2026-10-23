@@ -145,8 +145,11 @@ fn write_rgba(path: &Path, w: u32, h: u32, rgba: &[u8]) -> Result<(), Diagnostic
         .map_err(|e| Diagnostic::error(DW_OUTPUT, format!("write {}: {e}", path.display())))
 }
 
-/// This process's peak resident memory, MiB, where the platform reports it.
-pub fn peak_mib() -> Option<f64> {
+/// This process's peak resident memory in bytes, where the platform reports
+/// it — the one reading of `getrusage` the binary has; `delvec detail --check`
+/// prints it and [`peak_mib`] scales it.
+#[must_use]
+pub fn peak_rss_bytes() -> Option<u64> {
     #[cfg(unix)]
     {
         let mut ru: libc::rusage = unsafe { std::mem::zeroed() };
@@ -154,19 +157,23 @@ pub fn peak_mib() -> Option<f64> {
         if unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut ru) } != 0 {
             return None;
         }
-        let raw = ru.ru_maxrss as f64;
+        let raw = u64::try_from(ru.ru_maxrss).ok()?;
         // macOS reports bytes, Linux kilobytes.
-        let bytes = if cfg!(target_os = "macos") {
+        Some(if cfg!(target_os = "macos") {
             raw
         } else {
-            raw * 1024.0
-        };
-        Some(bytes / (1024.0 * 1024.0))
+            raw * 1024
+        })
     }
     #[cfg(not(unix))]
     {
         None
     }
+}
+
+/// This process's peak resident memory, MiB, where the platform reports it.
+pub fn peak_mib() -> Option<f64> {
+    peak_rss_bytes().map(|b| b as f64 / (1024.0 * 1024.0))
 }
 
 /// A `shows` entry's screen box at `size` pixels, from the box the build

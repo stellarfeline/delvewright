@@ -828,6 +828,36 @@ pub fn allocations(c: &Campaign) -> Vec<Allocation> {
         .collect()
 }
 
+/// **How many place authors run at once** (spec-0122 §6.2):
+/// `min(places, max(1, cores / 2))`. `places` is the plan's places with no
+/// passing program ([`unauthored_places`]); `cores` is the machine's
+/// parallelism as `std::thread::available_parallelism` reads it at the moment
+/// of asking. The divisor 2 is authored — two cores per author, so a check and
+/// a render do not starve each other — until a measured peak (`detail --check`
+/// prints its own) replaces it. Zero places is zero authors.
+#[must_use]
+pub fn concurrency_bound(places: usize, cores: usize) -> usize {
+    places.min((cores / 2).max(1))
+}
+
+/// The places the plan allocates a box to that have no passing program: those
+/// with no `details[]` row. A row is written only by a `delvec detail` commit
+/// whose program passed the place's gates and the bindings check, so a row is
+/// the evidence a program passed that can be read without running one; a
+/// program file with no row has not passed.
+#[must_use]
+pub fn unauthored_places(c: &Campaign) -> usize {
+    let rows: BTreeSet<&NodeId> = c
+        .detail_plan
+        .as_ref()
+        .map(|e| e.content.details.iter().map(|d| &d.place).collect())
+        .unwrap_or_default();
+    frames(c)
+        .iter()
+        .filter(|(f, _)| !rows.contains(&f.node))
+        .count()
+}
+
 // ---------------------------------------------------------------------------
 // The bindings check (spec-0050 §3, §5, §6)
 // ---------------------------------------------------------------------------
