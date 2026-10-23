@@ -187,7 +187,9 @@ fn judge_every_place(tmp: &Path, campaign: &Path, prefabs: &Path) -> (usize, usi
         match verdict {
             Ok(()) => {
                 passed += 1;
-                eprintln!("starter: {place} of `{cs}` passes `detail --check`, and its commit writes it with no `DW0885`");
+                eprintln!(
+                    "starter: {place} of `{cs}` passes `detail --check`, and its commit writes it with no `DW0885`"
+                );
             }
             Err(why) => failures.push(format!("{place}: {why}")),
         }
@@ -209,7 +211,9 @@ fn the_starter_passes_the_check_unedited_on_every_place_of_the_gallery_site_plan
         places += n;
         failures.extend(f);
     }
-    eprintln!("starter binding: {passed} of {places} place(s) pass --check, committed with no DW0885");
+    eprintln!(
+        "starter binding: {passed} of {places} place(s) pass --check, committed with no DW0885"
+    );
     assert!(places > 0, "zero places judged: the binding is vacuous");
     assert!(
         failures.is_empty(),
