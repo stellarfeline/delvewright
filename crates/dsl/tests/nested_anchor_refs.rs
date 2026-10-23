@@ -158,6 +158,8 @@ fn trigger_effect_on_a_real_anchor_validates_clean() {
     let triggers = r#",
     "triggers": [
       { "id": "trigger/gong", "at": "anchor/exit", "on": { "on": "use" }, "once": true,
+        "prop": { "block": "minecraft:bell[attachment=floor]" },
+        "answers": { "done": "The gong has sounded." },
         "effects": [ { "type": "set-block", "anchor": "anchor/exit",
                        "block": "minecraft:air" } ] }
     ]"#;

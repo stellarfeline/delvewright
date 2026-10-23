@@ -107,11 +107,14 @@ pub struct Shop {
     /// The dialog's title line. Player-visible, inventoried under
     /// `shop.<id>.title`.
     pub title: String,
-    /// The item the visible marker renders as (default `minecraft:emerald`).
-    /// Cosmetic only: the marker is a `minecraft:item_display`, so it never
-    /// occupies the cell or obstructs the hitbox.
+    /// **The real block the shop is pressed at** (spec-0117 §3a), placed at
+    /// `anchor` at `setup_finish`. Required (`DW1059`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub marker_item: Option<String>,
+    #[schemars(required)]
+    pub prop: Option<crate::Prop>,
+    /// The proximity highlight (spec-0104 §7, spec-0117 §3b).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub highlight: Option<crate::Highlight>,
     /// The offers, in declaration order — which is button order, and the order
     /// the `/trigger` routing values are assigned in.
     pub offers: Vec<ShopOffer>,
@@ -293,10 +296,16 @@ pub struct Stake {
     /// The line a collection says, on the action bar. Player-visible, inventoried
     /// under `stake.<id>.collected`.
     pub collected_message: String,
-    /// The item the glowing marker renders as (default `minecraft:soul_lantern`).
+    /// The proximity highlight (spec-0104 §7, spec-0117 §3b): the stake's
+    /// marker glows while a player who may collect it is within `within`
+    /// blocks. Its only glow: the marker is never lit from afar.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub marker_item: Option<String>,
+    pub highlight: Option<crate::Highlight>,
 }
+
+/// The item every recovery stake's marker renders as (spec-0117 §3a: the marker
+/// is the one interaction point still an entity; it carries no glow).
+pub const STAKE_MARKER_ITEM: &str = "minecraft:soul_lantern";
 
 impl Stake {
     /// The forfeit rule, with the documented default applied.
@@ -319,11 +328,11 @@ impl Stake {
         self.collect_by.unwrap_or(CollectBy::Owner)
     }
 
-    /// The item the marker renders as, with the documented default.
+    /// The item the marker renders as: the engine's one marker item. A stake's
+    /// marker is the one interaction point that stays an entity (spec-0117 §11),
+    /// and it is lit only by `highlight`.
     pub fn marker_item(&self) -> &str {
-        self.marker_item
-            .as_deref()
-            .unwrap_or("minecraft:soul_lantern")
+        STAKE_MARKER_ITEM
     }
 }
 

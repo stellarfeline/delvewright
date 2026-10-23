@@ -84,6 +84,20 @@ pub struct TimedGateDisarm {
     /// some area's prefab provides, and never the gate anchor itself — the
     /// mechanism belongs beside the doorway, not inside the span that crushes.
     pub via: AnchorId,
+    /// **The real block at `via`** (spec-0117 §3a). Required (`DW1059`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(required)]
+    pub prop: Option<crate::Prop>,
+    /// What the spent disarm answers (spec-0117 §4): `done`, owed unless
+    /// `release` (`DW1051`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answers: Option<crate::Answers>,
+    /// **The block is vanilla's once spent** (spec-0117 §3a). Default `false`.
+    #[serde(default, skip_serializing_if = "crate::serde_fields::is_false")]
+    pub release: bool,
+    /// The proximity highlight (spec-0104 §7, spec-0117 §3b).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub highlight: Option<crate::Highlight>,
     /// The flag set when the gate is disarmed (a new flag this gate produces;
     /// other objectives/triggers may read it via `requires_flags`).
     pub sets_flag: FlagId,

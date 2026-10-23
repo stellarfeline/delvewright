@@ -45,7 +45,10 @@
 //! | `actor.<actor>.answers.struck` / `.touched` | what an actor's body answers a blow / a touch (spec-0119, only if set) |
 //! | `quest.<quest>.goal` | each stage-4 planned-quest `goal` |
 //! | `obj.<quest>.<obj>.title` / `.hint` | a stage-5 objective's `title`/`hint` (only if set) |
-//! | `obj.<quest>.<obj>.missing_item_hint` | a stage-5 `interact`'s `missing_item_hint` (v0.7, only if set) |
+//! | `obj.<quest>.<obj>.answers.not_yet` / `.missing_item` / `.done` | what a stage-5 `interact` answers a press outside its window (spec-0117, only if set) |
+//! | `trigger.<id>.answers.not_yet` / `.done` | what a stage-5 trigger answers a press outside its window (spec-0117, only if set) |
+//! | `shortcut.<id>.answers.not_yet` / `.done` | what a shortcut's sealed door says from the far side / its thrown unlock says (spec-0117, only if set) |
+//! | `trap.<id>.disarm.answers.done` / `timed_gate.<id>.disarm.answers.done` | what a spent disarm answers a press (spec-0117, only if set) |
 //! | `obj.<quest>.<obj>.item_name` | a stage-5 `collect`'s `item_name` (v0.8, only if set) |
 //! | `dlg.<npc>.<node>.text` | each stage-6 dialogue node `text` |
 //! | `dlg.<npc>.<node>.opt.<i>.label` | each dialogue option `label` |
@@ -56,7 +59,7 @@
 //! | `fx.…​.narrate` / `fx.…​.give` | a `narrate` line / named `give-item` in an effect list |
 //! | `fx.…​.rest_prompt` / `.rest_label` / `.save_label` | a `bonfire`'s authored rest-dialog strings (v0.8, only if set) |
 //! | `fx.…​.rest_tooltip` / `.save_tooltip` | a `bonfire` button's hover tooltip (spec-0078, only if set) |
-//! | `fx.…​.sealed_hint` | a `close-gate`'s authored answer to a right-click on the seal (v0.8, only if set) |
+//! | `fx.…​.answers.not_yet` | what a `bonfire` answers a press before its arming beat (spec-0117, only if set) |
 //! | `lethal.<volume>.message` | a stage-5 lethal volume's death wording (v0.10) |
 //! | `state.<datum>.name` | a runtime datum's player-visible name — a currency (v0.10) |
 //! | `shop.<shop>.title` | a stage-5 shop dialog's title (v0.10) |
@@ -135,8 +138,14 @@ fn effect_strings(eff: &mut QuestEffect, keybase: &str, f: &mut dyn FnMut(&str, 
             save_label,
             rest_tooltip,
             save_tooltip,
+            answers,
             ..
         } => {
+            // spec-0117: what the rest point answers a press before its arming
+            // beat, read off the action bar like any refusal.
+            if let Some(a) = answers.as_mut() {
+                answer_strings(a, &format!("{keybase}.answers"), f);
+            }
             if let Some(p) = prompt.as_mut() {
                 f(&format!("{keybase}.rest_prompt"), p);
             }
@@ -154,14 +163,6 @@ fn effect_strings(eff: &mut QuestEffect, keybase: &str, f: &mut dyn FnMut(&str, 
                 f(&format!("{keybase}.save_tooltip"), t);
             }
         }
-        // DSL v0.8: what a sealed gate answers when the party right-clicks it. Read
-        // off the actionbar exactly like a `narrate`, so it translates like one. An
-        // unauthored hint is absent from the inventory — the compiler bakes its
-        // canonical English, exactly as `world.boundary.message` does.
-        Verb::CloseGate {
-            sealed_hint: Some(h),
-            ..
-        } => f(&format!("{keybase}.sealed_hint"), h),
         _ => {}
     }
 }
@@ -401,15 +402,13 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
             if let Some(hint) = o.hint_mut().as_mut() {
                 f(&format!("obj.{ql}.{ol}.hint"), hint);
             }
-            // Stage 5 — v0.7 `interact.missing_item_hint`: narrated in chat to the
-            // player who clicks without the required item in hand, so it is as
-            // player-visible as `hint` and translates like it. Absent → no key.
+            // Stage 5 — spec-0117: what an `interact` answers a press outside
+            // its window, read off the presser's action bar. Absent → no key.
             if let crate::Objective::Interact {
-                missing_item_hint: Some(m),
-                ..
+                answers: Some(a), ..
             } = o
             {
-                f(&format!("obj.{ql}.{ol}.missing_item_hint"), m);
+                answer_strings(a, &format!("obj.{ql}.{ol}.answers"), f);
             }
             // Stage 5 — v0.8 `collect.item_name`: the display name the
             // collected item carries as a `custom_name` component. A player reads
@@ -574,6 +573,34 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
         let sl = local(st.id.as_str()).to_string();
         f(&format!("stake.{sl}.collected"), &mut st.collected_message);
     }
+    // Stage 5 — spec-0117: what every other pressable answers a press outside its
+    // window — a trigger, a shortcut (its sealed door from the far side, its
+    // thrown unlock), a spent disarm. Each is a `Refusal` line on the presser's
+    // action bar. Absent → no key.
+    for t in &mut c.quests.content.triggers {
+        let tl = local(t.id.as_str()).to_string();
+        if let Some(a) = t.answers.as_mut() {
+            answer_strings(a, &format!("trigger.{tl}.answers"), f);
+        }
+    }
+    for sc in &mut c.quests.content.shortcuts {
+        let sl = local(sc.id.as_str()).to_string();
+        if let Some(a) = sc.answers.as_mut() {
+            answer_strings(a, &format!("shortcut.{sl}.answers"), f);
+        }
+    }
+    for t in &mut c.quests.content.traps {
+        let tl = local(t.id.as_str()).to_string();
+        if let Some(a) = t.disarm.as_mut().and_then(|d| d.answers.as_mut()) {
+            answer_strings(a, &format!("trap.{tl}.disarm.answers"), f);
+        }
+    }
+    for g in &mut c.quests.content.timed_gates {
+        let gl = local(g.id.as_str()).to_string();
+        if let Some(a) = g.disarm.as_mut().and_then(|d| d.answers.as_mut()) {
+            answer_strings(a, &format!("timed_gate.{gl}.disarm.answers"), f);
+        }
+    }
     // v0.4 effect strings — `narrate` text, a named `give-item`, a bonfire's rest
     // dialog, a seal's answer — over **every** root emission can lower an effect
     // from, not just the quests stage's three ([`effect_roots_mut`]).
@@ -581,6 +608,20 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
     // in a `sequence` step of a trap payload is inventoried like any other.
     for (_stage, _path, keybase, eff) in effect_roots_mut(c) {
         effect_strings_deep(eff, &keybase, f);
+    }
+}
+
+/// Walk a pressable's declared answers (spec-0117 §4), each under
+/// `<base>.<state>` in [`crate::AnswerState::ALL`] order.
+fn answer_strings(a: &mut crate::Answers, base: &str, f: &mut dyn FnMut(&str, &mut String)) {
+    for (state, line) in [
+        ("not_yet", a.not_yet.as_mut()),
+        ("missing_item", a.missing_item.as_mut()),
+        ("done", a.done.as_mut()),
+    ] {
+        if let Some(l) = line {
+            f(&format!("{base}.{state}"), l);
+        }
     }
 }
 
@@ -699,6 +740,28 @@ pub enum TextKind {
     Narration,
 }
 
+/// The situation line every answer of `state` carries (spec-0117 §4): when the
+/// line is shown, and that it explains a press that did nothing.
+fn answer_situation(state: &str) -> &'static str {
+    match state {
+        "not_yet" => {
+            "Shown on the action bar, with a refusal sound, to the one player who presses              it before its step: nothing happens, and this line says why."
+        }
+        "missing_item" => {
+            "Shown on the action bar, with a refusal sound, to the one player who presses              it at its step without the item it needs in hand: nothing happens, and this              line says what is missing."
+        }
+        _ => {
+            "Shown on the action bar, with a refusal sound, to the one player who presses              it after it is done: nothing changes, and this line says so."
+        }
+    }
+}
+
+/// Whether a key's last segment names one of a pressable's answer states
+/// (spec-0117 §4).
+fn is_answer_state(last: &str) -> bool {
+    matches!(last, "not_yet" | "missing_item" | "done")
+}
+
 /// The [`TextKind`] of an inventory key, or `None` for a key the scheme does not
 /// define. Pure on the key, like [`key_speaker`].
 pub fn key_kind(key: &str) -> Option<TextKind> {
@@ -731,10 +794,19 @@ pub fn key_kind(key: &str) -> Option<TextKind> {
         "quest" if n == 3 && last == "goal" => Objective,
         "obj" if n == 4 => match last {
             "title" | "hint" => Objective,
-            "missing_item_hint" => Refusal,
             "item_name" => ItemName,
             _ => return None,
         },
+        // spec-0117: a pressable's answer to a press outside its window.
+        "obj" if n == 5 && segs[3] == "answers" && is_answer_state(last) => Refusal,
+        "trigger" | "shortcut" if n == 4 && segs[2] == "answers" && is_answer_state(last) => {
+            Refusal
+        }
+        "trap" | "timed_gate"
+            if n == 5 && segs[2] == "disarm" && segs[3] == "answers" && is_answer_state(last) =>
+        {
+            Refusal
+        }
         "cast" if n == 6 && segs[4] == "bark" => Bark,
         "dlg" => match (n, last) {
             (4, "text") => Dialogue,
@@ -772,7 +844,8 @@ pub fn key_kind(key: &str) -> Option<TextKind> {
             // spec-0078: a bonfire's buttons carry hover text like every other
             // dialog button.
             "rest_tooltip" | "save_tooltip" => ButtonTooltip,
-            "sealed_hint" => Refusal,
+            // spec-0117: a bonfire's answer before its arming beat.
+            "not_yet" if segs[n - 2] == "answers" => Refusal,
             _ => return None,
         },
         _ => return None,
@@ -979,6 +1052,33 @@ pub fn key_situations(c: &Campaign) -> BTreeMap<String, Vec<String>> {
                         lines.push(format!("Stands in: {}", area.name));
                     }
                 }
+            }
+            ["obj", q, o, "answers", state] => {
+                quest_lines(q, &mut lines, false);
+                if let Some(obj) = objective(q, o) {
+                    if let Some(t) = obj.title() {
+                        lines.push(format!("Objective: {t}"));
+                    }
+                    if let Some(p) = obj.prop() {
+                        lines.push(format!("The thing pressed: {}", p.block));
+                    }
+                }
+                lines.push(answer_situation(state).into());
+            }
+            ["trigger", _, "answers", state]
+            | ["shortcut", _, "answers", state]
+            | ["trap" | "timed_gate", _, "disarm", "answers", state] => {
+                let what = match segs[0] {
+                    "trigger" => "a thing placed in the world",
+                    "shortcut" if *state == "not_yet" => {
+                        "a shortcut's barred door, pressed from the side it does not open from"
+                    }
+                    "shortcut" => "a shortcut's unlock, already thrown",
+                    "trap" => "a trap's disarm, already spent",
+                    _ => "a timed gate's disarm, already spent",
+                };
+                lines.push(format!("The thing pressed: {what}."));
+                lines.push(answer_situation(state).into());
             }
             ["stake", _, "collected"] => {
                 lines.push("Shown when a player picks up what they dropped at death.".into())

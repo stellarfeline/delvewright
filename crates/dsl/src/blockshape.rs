@@ -2310,7 +2310,14 @@ mod tests {
     }
     /// `Block.cube(x, y, z)`: the centred box of three extents.
     fn cube3(x: i32, y: i32, z: i32) -> B {
-        [8 - x / 2, 8 - y / 2, 8 - z / 2, 8 + x / 2, 8 + y / 2, 8 + z / 2]
+        [
+            8 - x / 2,
+            8 - y / 2,
+            8 - z / 2,
+            8 + x / 2,
+            8 + y / 2,
+            8 + z / 2,
+        ]
     }
     /// `Block.column(xz, y0, y1)`.
     fn column(xz: i32, y0: i32, y1: i32) -> B {
@@ -2429,8 +2436,13 @@ mod tests {
         for face in FACES {
             for facing in FACINGS {
                 for powered in ["false", "true"] {
-                    let state = format!("minecraft:lever[face={face},facing={facing},powered={powered}]");
-                    assert_eq!(table(&state), cells(&[attach(canonical, face, facing)]), "{state}");
+                    let state =
+                        format!("minecraft:lever[face={face},facing={facing},powered={powered}]");
+                    assert_eq!(
+                        table(&state),
+                        cells(&[attach(canonical, face, facing)]),
+                        "{state}"
+                    );
                     compared += 1;
                 }
             }
@@ -2446,8 +2458,13 @@ mod tests {
             for face in FACES {
                 for facing in FACINGS {
                     for (powered, cut) in [("false", cube(12)), ("true", cube(14))] {
-                        let state = format!("{button}[face={face},facing={facing},powered={powered}]");
-                        assert_eq!(table(&state), minus(&[attach(canonical, face, facing)], cut), "{state}");
+                        let state =
+                            format!("{button}[face={face},facing={facing},powered={powered}]");
+                        assert_eq!(
+                            table(&state),
+                            minus(&[attach(canonical, face, facing)], cut),
+                            "{state}"
+                        );
                         compared += 1;
                     }
                 }
@@ -2498,7 +2515,11 @@ mod tests {
             _ => "north",
         };
         let mut compared = 0;
-        for door in ["minecraft:oak_door", "minecraft:spruce_door", "minecraft:iron_door"] {
+        for door in [
+            "minecraft:oak_door",
+            "minecraft:spruce_door",
+            "minecraft:iron_door",
+        ] {
             for facing in FACINGS {
                 for hinge in ["left", "right"] {
                     for open in ["false", "true"] {
@@ -2531,7 +2552,8 @@ mod tests {
                 ("bottom", "true", turn(box_z(16, 13, 16), facing)),
                 ("top", "true", turn(box_z(16, 13, 16), facing)),
             ] {
-                let state = format!("minecraft:oak_trapdoor[facing={facing},half={half},open={open}]");
+                let state =
+                    format!("minecraft:oak_trapdoor[facing={facing},half={half},open={open}]");
                 assert_eq!(table(&state), cells(&[shape]), "{state}");
                 compared += 1;
             }
@@ -2543,8 +2565,13 @@ mod tests {
     fn the_fence_gate_campfire_and_chest_outlines_are_the_bytecodes() {
         let mut compared = 0;
         for facing in FACINGS {
-            let state = format!("minecraft:oak_fence_gate[facing={facing},in_wall=false,open=false]");
-            assert_eq!(table(&state), cells(&[on_axis(cube3(16, 16, 4), facing)]), "{state}");
+            let state =
+                format!("minecraft:oak_fence_gate[facing={facing},in_wall=false,open=false]");
+            assert_eq!(
+                table(&state),
+                cells(&[on_axis(cube3(16, 16, 4), facing)]),
+                "{state}"
+            );
             compared += 1;
         }
         for lit in ["true", "false"] {
@@ -2586,7 +2613,12 @@ mod tests {
     /// the measurement.
     #[test]
     fn a_state_with_no_outline_has_none() {
-        for s in ["minecraft:air", "minecraft:water", "minecraft:lava", "minecraft:light"] {
+        for s in [
+            "minecraft:air",
+            "minecraft:water",
+            "minecraft:lava",
+            "minecraft:light",
+        ] {
             assert_eq!(outline(s), Some(&[][..]), "{s}");
             assert!(!has_outline(s), "{s}");
         }

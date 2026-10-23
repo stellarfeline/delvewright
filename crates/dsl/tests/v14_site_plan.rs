@@ -1672,7 +1672,7 @@ fn no_stage_five_verb_calls_a_synthesized_anchor_an_invented_name() {
         "id": "shop/counter",
         "anchor": "anchor/node-hall",
         "title": "The counter",
-        "marker_item": "minecraft:emerald",
+        "prop": { "block": "minecraft:barrel" },
         "offers": [{
             "label": "Bread, one emerald",
             "effects": [{ "type": "give-item", "item": "minecraft:bread", "count": 1 }]
@@ -1871,7 +1871,7 @@ fn no_refusal_on_a_derived_map_prescribes_a_prefab_document() {
         "id": "shop/counter",
         "anchor": "anchor/nowhere-shop",
         "title": "The counter",
-        "marker_item": "minecraft:emerald",
+        "prop": { "block": "minecraft:barrel" },
         "offers": [{
             "label": "Bread, one emerald",
             "effects": [{ "type": "give-item", "item": "minecraft:bread", "count": 1 }]

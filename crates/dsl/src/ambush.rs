@@ -109,6 +109,9 @@ impl Ambush {
             // An ambush springs on a body's position or a click on open air; it
             // binds to no pressed block.
             prop: None,
+            answers: None,
+            release: false,
+            serves: None,
             highlight: None,
             on: self.trigger.clone(),
             requires_flags: Vec::new(),

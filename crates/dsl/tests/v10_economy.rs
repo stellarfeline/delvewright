@@ -82,6 +82,7 @@ const GOOD: &str = r#",
     "on_death": [ { "type": "drop-stake", "stake": "stake/embers" } ],
     "shops": [
       { "id": "shop/brazier", "anchor": "spawn", "title": "The brazier",
+        "prop": { "block": "minecraft:barrel" },
         "offers": [
           { "label": "Bank an ember",
             "effects": [
@@ -566,6 +567,7 @@ fn an_effect_site_names_the_offer_it_stands_in() {
     ],
     "shops": [
       { "id": "shop/brazier", "anchor": "spawn", "title": "The brazier",
+        "prop": { "block": "minecraft:barrel" },
         "offers": [
           { "label": "First", "effects": [ { "type": "narrate", "text": "One." } ] },
           { "label": "Second", "effects": [ { "type": "narrate", "text": "Two." } ] }

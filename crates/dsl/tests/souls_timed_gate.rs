@@ -167,7 +167,9 @@ static QUESTS_DISARM: LazyLock<String> = LazyLock::new(|| {
     ],
     "timed_gates": [
       { "id": "timed-gate/inner-door", "gate": "anchor/door", "open_ticks": 60, "closed_ticks": 40,
-        "disarm": { "via": "anchor/exit", "sets_flag": "flag/portcullis-jammed" } }
+        "disarm": { "via": "anchor/exit", "sets_flag": "flag/portcullis-jammed",
+                    "prop": { "block": "minecraft:lever[face=wall,facing=south]" },
+                    "answers": { "done": "The portcullis is jammed open." } } }
     ]
   }
 }"#,

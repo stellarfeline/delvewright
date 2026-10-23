@@ -36,7 +36,7 @@ static QUESTS_V06: LazyLock<String> = LazyLock::new(|| {
                           "happening": { "verb": "opens", "text": "the door opens" } } ]
         },
         "on_complete": [
-          { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "The bars are down for good.",
+          { "type": "close-gate", "anchor": "anchor/door",
             "happening": { "verb": "seals", "text": "the door seals behind the party" } },
           { "type": "campaign-complete",
             "happening": { "verb": "survives", "text": "the delve is complete" } }
