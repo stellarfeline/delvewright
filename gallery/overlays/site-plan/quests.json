@@ -87,7 +87,13 @@
           },
           {
             "anchor": "anchor/node-causeway",
+            "answers": {
+              "not_yet": "The beacon fire is cold; nothing has been lit here yet."
+            },
             "prompt": "Rest on the causeway",
+            "prop": {
+              "block": "minecraft:stone_button[face=floor,facing=north]"
+            },
             "rest_label": "Rest",
             "save_label": "Save and quit",
             "type": "bonfire"
@@ -284,6 +290,10 @@
     ],
     "shortcuts": [
       {
+        "answers": {
+          "done": "The bar is drawn back; the door stays open.",
+          "not_yet": "Barred. The bar is drawn from the other side."
+        },
         "gate": "anchor/seam-east-door",
         "id": "shortcut/east-door",
         "on_unlock": [
@@ -297,12 +307,15 @@
             "type": "narrate"
           }
         ],
+        "prop": {
+          "block": "minecraft:stone_button[face=floor,facing=north]"
+        },
         "unlock": "anchor/unlock-east-door"
       }
     ],
     "triggers": [
       {
-        "at": "anchor/seam-east-door",
+        "at": "anchor/east-door-leaf",
         "audience": "presser",
         "effects": [
           {
@@ -315,7 +328,10 @@
         "on": {
           "on": "use"
         },
-        "once": false
+        "once": false,
+        "serves": {
+          "gate": "anchor/seam-east-door"
+        }
       }
     ],
     "waves": [

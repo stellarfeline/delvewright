@@ -249,7 +249,7 @@ pub(super) fn trigger_poll_guards(
                     .find(|x| x.id().as_str() == o.as_str())
                     .map(|x| (q, x))
             }) {
-                let pg = pending_guard(plan, obj, &quest_active_score(q.id.as_str()));
+                let pg = serving_guard(obj, &quest_active_score(q.id.as_str()));
                 flag_guard.push_str(&format!("{} ", pg.trim()));
             }
         }

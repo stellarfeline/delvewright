@@ -659,9 +659,13 @@ pub fn check_seal_collisions(plan: &Plan) -> Result<(), Failure> {
             }),
     );
     for body in pressable_bodies(plan) {
-        for cell in body.cells {
+        for &cell in &body.cells {
             let sbox = seal_box(cell);
             for a in &affordances {
+                // The gate's own answer is the body itself.
+                if a.pos == cell && body.cells.contains(&a.pos) {
+                    continue;
+                }
                 let abox = a.boxed();
                 if (0..3).all(|i| sbox[i].overlaps(abox[i])) {
                     return Err(seal_collision_error(body.kind, &body.anchor, cell, a));
@@ -865,24 +869,31 @@ pub fn pressable_body_binding(plan: &Plan) -> Vec<(&'static str, String, usize)>
 }
 
 fn pressable_bodies(plan: &Plan) -> Vec<PressableBody> {
-    let mut out: Vec<PressableBody> = plan
-        .seal_hints
-        .iter()
-        .map(|s| PressableBody {
-            kind: "close-gate seal",
-            anchor: s.anchor.clone(),
-            cells: s.shell_cells(),
-        })
-        .collect();
-    out.extend(plan.shortcuts.iter().filter_map(|sc| {
-        Some(PressableBody {
-            kind: "shortcut door",
-            anchor: sc.gate_anchor.clone(),
-            // A door whose sealed side did not resolve places no bodies at all
-            // (`DW0425` has already failed the build).
-            cells: sc.sealed_side.as_ref()?.approach_cells(),
-        })
-    }));
+    // spec-0117: a sealed gate's body is its own answer's click box, fitted
+    // over the gate's block at each answer's cell, one set per gate.
+    let mut out: Vec<PressableBody> = Vec::new();
+    for p in plan.presses() {
+        let crate::compiler::pressable::Owner::GateAnswer { gate, .. } = &p.owner else {
+            continue;
+        };
+        let kind = if plan.shortcuts.iter().any(|s| &s.gate_anchor == gate) {
+            "shortcut door"
+        } else {
+            "close-gate seal"
+        };
+        match out.iter_mut().find(|b| &b.anchor == gate) {
+            Some(b) => {
+                if !b.cells.contains(&p.cell) {
+                    b.cells.push(p.cell);
+                }
+            }
+            None => out.push(PressableBody {
+                kind,
+                anchor: gate.clone(),
+                cells: vec![p.cell],
+            }),
+        }
+    }
     out
 }
 

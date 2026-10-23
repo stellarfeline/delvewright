@@ -124,43 +124,27 @@ pub(super) fn emit_v04_packtests(
         );
     };
 
-    // prop appears on activation: the first interact objective carrying a prop.
-    'prop: for q in &c.quests.content.quests {
-        let area = plan.quest_area(q.id.as_str()).unwrap_or("");
-        for o in &q.objectives {
-            if let Objective::Interact {
-                id,
-                anchor,
-                prop: Some(prop),
-                ..
-            } = o
-                && let Some(pos) = plan.point(area, anchor.as_str())
-            {
-                let mut b = packtest_header(&format!(
-                    "{}: prop `{}` appears only when its objective activates",
-                    artifact_title(c),
-                    prop.block
-                ));
-                b.push(format!("function {ns}:setup"));
-                b.push(format!(
-                    "setblock {} {} {} minecraft:air",
-                    pos[0], pos[1], pos[2]
-                ));
-                b.push(format!(
-                    "assert block {} {} {} minecraft:air",
-                    pos[0], pos[1], pos[2]
-                ));
-                b.push(format!(
-                    "function {ns}:activate_{}",
-                    safe_obj_fn(id.as_str())
-                ));
+    // spec-0117 §5.1: every pressable's block stands from load, whatever step
+    // the party is at — the block `setup_finish` places (a door's two halves).
+    {
+        let placed = crate::compiler::pressable::props(plan);
+        if !placed.is_empty() {
+            let mut b = packtest_header(&format!(
+                "{}: every pressable's block stands from load ({} block(s))",
+                artifact_title(c),
+                placed.len()
+            ));
+            b.push(format!("function {ns}:setup"));
+            for (_, p) in &placed {
                 b.push(format!(
                     "assert block {} {} {} {}",
-                    pos[0], pos[1], pos[2], prop.block
+                    p.pos[0],
+                    p.pos[1],
+                    p.pos[2],
+                    crate::compiler::pressable::block_id(&p.block)
                 ));
-                write("v04_prop", b);
-                break 'prop;
             }
+            write("v04_prop", b);
         }
     }
 

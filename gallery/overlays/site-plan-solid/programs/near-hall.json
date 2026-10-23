@@ -1406,8 +1406,15 @@
                               "symbol": "room-air"
                             },
                             {
-                              "op": "call",
-                              "symbol": "seam-east-door-bar"
+                              "body": {
+                                "op": "call",
+                                "symbol": "seam-east-door-bar"
+                              },
+                              "mark": {
+                                "anchor": "east-door-leaf",
+                                "at": "floor_center"
+                              },
+                              "op": "mark"
                             }
                           ],
                           "op": "split",

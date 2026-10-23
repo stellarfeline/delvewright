@@ -44,6 +44,18 @@ export const methods = {
   async rest(this: MineflayerExecutor, step: RestStep): Promise<void> {
     const bot = this.requireBot();
     await this.walkTo(step.pos, REST_RANGE, `bonfire ${step.anchor}`, step.sneak);
+    if (step.block !== undefined) {
+      // spec-0117: the rest point is a block that reports its own press (a
+      // bell, a button): the bot presses the block, as a player does.
+      await this.pressBlock(step.pos, step.block, `bonfire ${step.anchor}`);
+      await delay(REST_OPEN_SETTLE_MS);
+      bot.chat(step.command);
+      await delay(EFFECT_SETTLE_MS);
+      this.restedBonfires.add(step.bonfire);
+      this.restedAt.set(step.bonfire, this.currentStep);
+      this.seatEpoch += 1;
+      return;
+    }
     // The one step in the tree with a REAL right-click, so acquisition and
     // actuation are the same act here: the ray picks the fire, the bot looks
     // where the ray went, and only then does it click. Selecting the nearest

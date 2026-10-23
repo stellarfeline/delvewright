@@ -53,6 +53,7 @@
       },
       {
         "anchors": {
+          "anchor/east-door-leaf": "anchor/east-door-leaf",
           "anchor/node-near-hall": "anchor/node-near-hall",
           "anchor/reading-desk": "anchor/reading-desk",
           "anchor/reliquary-grille": "anchor/reliquary-grille",

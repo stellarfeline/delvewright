@@ -232,7 +232,7 @@ impl ClickBox {
     /// every face, and the click box reaches no neighbouring cell. `None` when
     /// the block has no outline or one that leaves its cells (`DW1059`).
     pub fn fitted_to(cell: [i32; 3], block: &str) -> Option<Self> {
-        let boxes = delvewright_dsl::blockshape::outline(block)?;
+        let boxes = delvewright_dsl::blockshape::server_outline(block);
         if boxes.is_empty() {
             return None;
         }
@@ -244,7 +244,7 @@ impl ClickBox {
         let mut lo = [Dec(i128::MAX); 3];
         let mut hi = [Dec(i128::MIN); 3];
         for k in 0..cells {
-            for b in boxes {
+            for b in &boxes {
                 for a in 0..3 {
                     let base = Dec::int(i64::from(cell[a]) + if a == 1 { k } else { 0 });
                     lo[a] = lo[a].min(base + Dec::sixteenths(b.min[a], false));
@@ -732,9 +732,8 @@ pub fn check(
                     ),
                 ));
             };
-            let Some(outline) =
-                delvewright_dsl::blockshape::outline(block).filter(|o| !o.is_empty())
-            else {
+            let outline = delvewright_dsl::blockshape::server_outline(block);
+            if outline.is_empty() {
                 return Err(Failure::new(
                     DW_CLICK_BOX_FLUSH,
                     format!(
@@ -744,14 +743,14 @@ pub fn check(
                         line.trim()
                     ),
                 ));
-            };
+            }
             let door = crate::compiler::pressable::is_door(block);
             let cells = if door { 2 } else { 1 };
             let six = |v: delvewright_dsl::blockshape::Sixteenths| {
                 f64::from(v.num) / (16.0 * f64::from(v.den))
             };
             for k in 0..cells {
-                for ob in outline {
+                for ob in &outline {
                     let olo = [
                         f64::from(cell[0]) + six(ob.min[0]),
                         f64::from(cell[1] + k) + six(ob.min[1]),

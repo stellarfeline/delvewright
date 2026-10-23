@@ -176,6 +176,14 @@ fn laid_out(
                     "pos": bf.pos,
                     "command": "/trigger dw.rest set 2"
                 });
+                // spec-0117: a rest point whose block reports its own press is
+                // pressed as itself; a boxed one through its box.
+                if let Some(p) = plan.presses().iter().find(|p| {
+                    p.owner == crate::compiler::pressable::Owner::Bonfire { index: bf.index }
+                }) && p.block_detects(crate::compiler::pressable::State::Open)
+                {
+                    rest["block"] = json!(p.block);
+                }
                 // A rest plays the bonfire's `on_rest`: every cutscene on its
                 // timeline is waited out after the rest (`compiler::hold`).
                 if let Some(secs) = crate::compiler::hold::rest_hold(&bf.on_respawn)

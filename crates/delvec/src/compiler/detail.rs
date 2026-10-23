@@ -910,6 +910,10 @@ pub struct KillingSeats {
     /// Station name → every place a document spells it, as `doc:pointer`,
     /// beside the volumes it centres.
     uses: BTreeMap<String, (Vec<String>, Vec<String>)>,
+    /// Station name → the gates the triggers anchored at it answer for
+    /// (spec-0117: a gate's own answer is anchored at a cell of the gate's
+    /// bar, the block the press lands on).
+    gate_answers: BTreeMap<String, Vec<String>>,
 }
 
 impl KillingSeats {
@@ -960,6 +964,15 @@ impl KillingSeats {
                 if is_station {
                     continue;
                 }
+                if *doc == "quests"
+                    && let Some(g) = gate_answer_pointer(c, &pointer)
+                {
+                    out.gate_answers
+                        .entry(text.to_string())
+                        .or_default()
+                        .push(g);
+                    continue;
+                }
                 match (*doc, volume_anchor_pointer(&pointer)) {
                     ("quests", Some(i)) => {
                         volumes.push(c.quests.content.lethal_volumes[i].id.as_str().to_string())
@@ -978,6 +991,18 @@ impl KillingSeats {
     pub fn only_volumes(&self, name: &str) -> Option<&[String]> {
         match self.uses.get(name) {
             Some((others, volumes)) if others.is_empty() && !volumes.is_empty() => Some(volumes),
+            _ => None,
+        }
+    }
+
+    /// The gates `name` answers for, when answering for them is the name's
+    /// only use: every string spelling it is the `at` of a trigger that
+    /// `serves` a gate (spec-0117 §3a). `None` otherwise.
+    #[must_use]
+    pub fn only_gate_answers(&self, name: &str) -> Option<&[String]> {
+        let gates = self.gate_answers.get(name)?;
+        match self.uses.get(name) {
+            Some((others, volumes)) if others.is_empty() && volumes.is_empty() => Some(gates),
             _ => None,
         }
     }
@@ -1028,6 +1053,20 @@ fn station_pointer(p: &str) -> bool {
 }
 
 /// `/lethal_volumes/<i>/region/anchor` — a killing volume's centre, as `i`.
+/// The gate a quests-document pointer's trigger answers for, when the pointer
+/// is that trigger's `at` and it `serves` a gate.
+fn gate_answer_pointer(c: &Campaign, p: &str) -> Option<String> {
+    let parts: Vec<&str> = p.split('/').collect();
+    let ["", "triggers", i, "at"] = parts.as_slice() else {
+        return None;
+    };
+    let t = c.quests.content.triggers.get(i.parse::<usize>().ok()?)?;
+    match &t.serves {
+        Some(delvewright_dsl::Serves::Gate(g)) => Some(g.as_str().to_string()),
+        _ => None,
+    }
+}
+
 fn volume_anchor_pointer(p: &str) -> Option<usize> {
     let parts: Vec<&str> = p.split('/').collect();
     match parts.as_slice() {
@@ -1223,6 +1262,17 @@ fn check_owed(
                 binding.killing_seats += 1;
                 continue;
             }
+            // spec-0117: a gate's own answer stands in the gate's bar — the
+            // press lands on the bar's block, and no body is put there.
+            if let Some(region) = resolves.strip_prefix("bar:")
+                && seats.only_gate_answers(name).is_some_and(|gates| {
+                    gates
+                        .iter()
+                        .all(|g| g.strip_prefix("anchor/").unwrap_or(g) == region)
+                })
+            {
+                continue;
+            }
             let why = if resolves.starts_with("no_body:") && !seats.volumes(name).is_empty() {
                 let others = seats.others(name);
                 format!(
@@ -1254,7 +1304,8 @@ fn check_owed(
                      anchor standing in one of the piece's declared spaces.{why} A station \
                      whose only use is a `lethal_volumes[]` region anchor may stand in a \
                      `no_body` region: that is a pit's bottom, where `DW0891` sends a \
-                     volume.",
+                     volume; one whose only use is the `at` of a gate's own answer may \
+                     stand in that gate's bar.",
                     piece = row.piece,
                 ),
             ));

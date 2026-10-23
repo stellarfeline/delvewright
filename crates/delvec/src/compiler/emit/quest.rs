@@ -184,6 +184,27 @@ pub(super) fn quests_in_arming_order(
     out
 }
 
+/// The guard a press that `serves` objective `o` is open under (spec-0117
+/// §5.3): its quest active, every `after` complete, and `o` not complete — the
+/// objective's [`pending_guard`] without its own gate, because the press may be
+/// what opens that gate (a puzzle whose presses count into the datum the
+/// objective reads), and a press held to the gate it feeds could never be made.
+pub(super) fn serving_guard(o: &Objective, quest_active: &str) -> String {
+    let p = plan::PARTY;
+    let mut g = format!(" if score {p} {quest_active} matches 1");
+    for a in o.after() {
+        g.push_str(&format!(
+            " if score {p} {} matches 1",
+            obj_score(a.as_str())
+        ));
+    }
+    g.push_str(&format!(
+        " unless score {p} {} matches 1",
+        obj_score(o.id().as_str())
+    ));
+    g
+}
+
 pub(super) fn pending_guard(plan: &Plan, o: &Objective, quest_active: &str) -> String {
     let p = plan::PARTY;
     let mut g = format!(" if score {p} {quest_active} matches 1");

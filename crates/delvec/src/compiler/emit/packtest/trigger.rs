@@ -83,6 +83,10 @@ pub(super) fn emit_env_trigger_packtests(plan: &Plan, out: &mut BuildOutput) {
         // The gate is the trigger's own, driven through the one gate helper
         // rather than a partial copy of it beside this caller.
         b.extend(packtest_gate_drive(plan, t.gate(), true));
+        // spec-0117: a trigger that `serves` a thing is open while that thing
+        // is (its objective pending, its gate sealed), and a shortcut door's own
+        // answer hears a presser on the sealed side only.
+        b.extend(serves_drive(plan, &t, &sel));
         // 1. The BUNDLE's own body. This is the object's own code — its own
         //    effects, its own gate — and nothing else in the suite runs it.
         b.push(if t.addresses_presser() {
@@ -125,10 +129,30 @@ pub(super) fn emit_env_trigger_packtests(plan: &Plan, out: &mut BuildOutput) {
         b.push(format!("scoreboard players set #trig_{id} dw.sys 0"));
         b.push("# Grant the interaction advancement, exactly as a right-click".to_string());
         b.push("# on the trigger's hitbox does: the record is written.".to_string());
+        // spec-0117 §5.2: an answer dispatches only in the state it answers,
+        // so the owner is driven into that state first, every term its state
+        // function reads written here.
+        let answer = crate::compiler::pressable::answer_of(plan, t.id.as_str()).cloned();
+        if let Some(a) = &answer {
+            b.extend(answer_drive(plan, a, &sel));
+            b.push(format!(
+                "scoreboard players set {} dw.sys 0",
+                super::super::press::ans_holder(&a.owner_safe)
+            ));
+        }
         b.push(format!(
             "execute as {sel} run advancement grant @s only {ns}:press_{id}"
         ));
         b.push(format!("execute as {sel} run function {ns}:press_{id}"));
+        // …and wrote its trace: the state it answered, which an action-bar line
+        // does not leave behind.
+        if let Some(a) = &answer {
+            b.push(format!(
+                "assert score {} dw.sys matches {}",
+                super::super::press::ans_holder(&a.owner_safe),
+                a.state.trace()
+            ));
+        }
         // 2. The DISPATCH reached the bundle. `trig_<id>`'s first line is its own
         //    ungated marker, so this separates "the reward function loaded" from
         //    "the reward function dispatched" — a `press_` whose
@@ -405,4 +429,237 @@ pub(super) fn emit_shared_hitbox_packtest(plan: &Plan, out: &mut BuildOutput) {
         format!("packtest-datapack/data/{ns}/test/v06_shared_hitbox.mcfunction"),
         lines(&t).into_bytes(),
     );
+}
+
+/// The lines that open a trigger's `serves` terms for its own dispatch
+/// (spec-0117 §5.3): a served objective pending (its quest active, every
+/// `after` complete, itself not), a served gate sealed — and, for a shortcut
+/// door's own answer, the dummy stood on the door's sealed side.
+fn serves_drive(plan: &Plan, t: &delvewright_dsl::EnvTrigger, sel: &str) -> Vec<String> {
+    let party = plan::PARTY;
+    let mut v = Vec::new();
+    match &t.serves {
+        Some(delvewright_dsl::Serves::Objective(o)) => {
+            v.extend(objective_drive(plan, o.as_str(), Some(false)));
+        }
+        Some(delvewright_dsl::Serves::Gate(g)) => {
+            v.extend(gate_drive(plan, g.as_str(), true));
+            if t.addresses_presser()
+                && let Some(side) = plan
+                    .shortcuts
+                    .iter()
+                    .find(|s| s.gate_anchor == g.as_str())
+                    .and_then(|s| s.sealed_side.as_ref())
+                && let Some(c) = side.approach_cells().first()
+            {
+                v.push(format!(
+                    "tp {sel} {} {} {}",
+                    center(c[0]),
+                    corner(c[1]),
+                    center(c[2])
+                ));
+            }
+        }
+        None => {}
+    }
+    let _ = party;
+    v
+}
+
+/// The terms of objective `oid`'s pending state: its quest active, every
+/// `after` complete, and itself complete (`Some(true)`), not (`Some(false)`),
+/// or its quest not active (`None`).
+fn objective_drive(plan: &Plan, oid: &str, complete: Option<bool>) -> Vec<String> {
+    let party = plan::PARTY;
+    let Some((q, o)) = plan.campaign.quests.content.quests.iter().find_map(|q| {
+        q.objectives
+            .iter()
+            .find(|o| o.id().as_str() == oid)
+            .map(|o| (q, o))
+    }) else {
+        return Vec::new();
+    };
+    let mut v = vec![format!(
+        "scoreboard players set {party} {} {}",
+        quest_active_score(q.id.as_str()),
+        if complete.is_some() { 1 } else { 0 }
+    )];
+    for a in o.after() {
+        v.push(format!(
+            "scoreboard players set {party} {} 1",
+            obj_score(a.as_str())
+        ));
+    }
+    v.push(format!(
+        "scoreboard players set {party} {} {}",
+        obj_score(oid),
+        if complete == Some(true) { 1 } else { 0 }
+    ));
+    v
+}
+
+/// The terms of gate `gate`'s seal: sealed (`true`) or opened after a seal
+/// (`false`).
+fn gate_drive(plan: &Plan, gate: &str, sealed: bool) -> Vec<String> {
+    if let Some(sc) = plan.shortcuts.iter().find(|s| s.gate_anchor == gate) {
+        return vec![format!(
+            "scoreboard players set #sc_{} dw.sys {}",
+            sc.safe,
+            if sealed { 0 } else { 1 }
+        )];
+    }
+    let safe = plan::safe_local(gate);
+    vec![
+        format!(
+            "scoreboard players set #gseal_{safe} dw.sys {}",
+            if sealed { 1 } else { 0 }
+        ),
+        format!("scoreboard players set #gsealed_{safe} dw.sys 1"),
+    ]
+}
+
+/// **The owner of answer `a`, driven into the state `a` answers** (spec-0117
+/// §5.2): every term the owner's state function reads written to the value
+/// that puts it there, the dummy's hand emptied for a `missing_item`, its acted
+/// tag cleared, and a shortcut's far-side line heard from the unlock's side.
+fn answer_drive(plan: &Plan, a: &crate::compiler::pressable::AnswerPlan, sel: &str) -> Vec<String> {
+    use crate::compiler::pressable::Owner;
+    use delvewright_dsl::AnswerState;
+    let party = plan::PARTY;
+    let mut v = vec![format!(
+        "tag {sel} remove {}",
+        super::super::press::acted_tag(&a.owner_safe)
+    )];
+    let c = plan.campaign;
+    match (&a.owner, a.state) {
+        (
+            Owner::Interact {
+                id,
+                quest,
+                objective,
+            },
+            state,
+        ) => {
+            let o = &c.quests.content.quests[*quest].objectives[*objective];
+            v.extend(packtest_gate_drive(plan, o.gate(), true));
+            v.extend(objective_drive(
+                plan,
+                id,
+                match state {
+                    AnswerState::NotYet => None,
+                    AnswerState::MissingItem => Some(false),
+                    AnswerState::Done => Some(true),
+                },
+            ));
+            if state == AnswerState::MissingItem {
+                v.push(format!(
+                    "item replace entity {sel} weapon.mainhand with minecraft:air"
+                ));
+            }
+        }
+        (Owner::Trigger { id } | Owner::GateAnswer { id, .. }, state) => {
+            let Some(t) = c
+                .quests
+                .content
+                .triggers
+                .iter()
+                .find(|t| t.id.as_str() == id)
+            else {
+                return v;
+            };
+            let safe = plan::safe_local(id);
+            let shut = state == AnswerState::NotYet;
+            // The trigger's own gate: open for `done`, shut on its first term
+            // for `not_yet` where it has one; its serves referent likewise.
+            v.extend(packtest_gate_drive(plan, t.gate(), true));
+            v.push(format!(
+                "scoreboard players set #trig_{safe} dw.sys {}",
+                if !shut && t.once { 1 } else { 0 }
+            ));
+            if shut {
+                if let Some(f) = t.requires_flags.first() {
+                    v.push(format!(
+                        "scoreboard players set {party} {} 0",
+                        plan::flag_score(f.as_str())
+                    ));
+                } else if let Some(f) = t.forbids_flags.first() {
+                    v.push(format!(
+                        "scoreboard players set {party} {} 1",
+                        plan::flag_score(f.as_str())
+                    ));
+                } else if !t.requires_state.is_empty() {
+                    v.extend(state_drive_lines(plan, &t.requires_state, false));
+                }
+            }
+            match &t.serves {
+                Some(delvewright_dsl::Serves::Objective(o)) => v.extend(objective_drive(
+                    plan,
+                    o.as_str(),
+                    if shut {
+                        if t.requires_flags.is_empty()
+                            && t.forbids_flags.is_empty()
+                            && t.requires_state.is_empty()
+                        {
+                            None
+                        } else {
+                            Some(false)
+                        }
+                    } else {
+                        Some(true)
+                    },
+                )),
+                Some(delvewright_dsl::Serves::Gate(g)) => {
+                    if shut {
+                        let gs = plan::safe_local(g.as_str());
+                        if !plan.shortcuts.iter().any(|s| s.gate_anchor == g.as_str())
+                            && t.requires_flags.is_empty()
+                            && t.forbids_flags.is_empty()
+                            && t.requires_state.is_empty()
+                        {
+                            v.push(format!("scoreboard players set #gseal_{gs} dw.sys 0"));
+                            v.push(format!("scoreboard players set #gsealed_{gs} dw.sys 0"));
+                        } else {
+                            v.extend(gate_drive(plan, g.as_str(), true));
+                        }
+                    } else {
+                        v.extend(gate_drive(plan, g.as_str(), false));
+                    }
+                }
+                None => {}
+            }
+        }
+        (Owner::Shortcut { id }, AnswerState::NotYet) => {
+            if let Some(sc) = plan.shortcuts.iter().find(|s| &s.id == id) {
+                v.push(format!("scoreboard players set #sc_{} dw.sys 0", sc.safe));
+                v.push(format!(
+                    "tp {sel} {} {} {}",
+                    center(sc.unlock[0]),
+                    corner(sc.unlock[1]),
+                    center(sc.unlock[2])
+                ));
+            }
+        }
+        (Owner::Shortcut { id }, _) => {
+            if let Some(sc) = plan.shortcuts.iter().find(|s| &s.id == id) {
+                v.push(format!("scoreboard players set #sc_{} dw.sys 1", sc.safe));
+            }
+        }
+        (Owner::Bonfire { index }, _) => {
+            v.push(format!("scoreboard players set #bf_{index} dw.sys 0"));
+        }
+        (Owner::Shop { .. }, _) => {}
+        (Owner::TrapDisarm { id }, _) => {
+            v.push(format!(
+                "scoreboard players set #trapdis_{} dw.sys 1",
+                plan::safe_local(id)
+            ));
+        }
+        (Owner::TimedGateDisarm { id }, _) => {
+            v.push(format!(
+                "scoreboard players set #tgdis_{} dw.sys 1",
+                plan::safe_local(id)
+            ));
+        }
+    }
+    v
 }

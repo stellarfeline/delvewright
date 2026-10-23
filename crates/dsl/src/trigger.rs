@@ -973,9 +973,7 @@ pub fn press_form(block: &str, only_open: bool) -> Option<PressForm> {
 /// Whether `block` has an outline and every box of it lies within its own cell
 /// (a door's within its two).
 pub fn outline_in_cell(block: &str) -> bool {
-    let Some(boxes) = crate::blockshape::outline(block) else {
-        return false;
-    };
+    let boxes = crate::blockshape::server_outline(block);
     !boxes.is_empty()
         && boxes.iter().all(|b| {
             (0..3).all(|a| {

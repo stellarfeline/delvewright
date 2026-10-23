@@ -181,6 +181,11 @@
           {
             "anchor": "anchor/reliquary-grille",
             "kind": "gate"
+          },
+          {
+            "anchor": "anchor/east-door-leaf",
+            "kind": "point",
+            "note": "A cell of the east door's own bar: where the door answers a press while it is barred (spec-0117, the gate's own answer)."
           }
         ]
       },

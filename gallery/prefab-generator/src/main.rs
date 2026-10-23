@@ -679,6 +679,68 @@ const ANCHORS: &[Anchor] = &[
     // nothing else claims (DW0878) — a row of levers is what a room with three
     // things to unlatch actually looks like, and it is the shape the engine's
     // one-press-one-anchor rule produces.
+    // spec-0117: the two sealed gates answer for themselves, through their own
+    // bars — a press on the door is a press on the door's block, answered by a
+    // trigger anchored on one of its cells. These are those cells: a point inside
+    // each gate's region, where the bar stands while the gate is shut.
+    Anchor {
+        name: "anchor/gate-main-leaf",
+        pos: [4, 1, DIVIDER_Z],
+        facing: None,
+        trigger_block: None,
+        note: "a cell of the story gate's own bars: where the gate answers a press \
+               while it is sealed (spec-0117, the gate's own answer)",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/shortcut-door-leaf",
+        pos: [14, 1, DIVIDER_Z],
+        facing: None,
+        trigger_block: None,
+        note: "a cell of the shortcut door's own bars: pressed from the sealed side it \
+               says the door will not open from there, from the far side what the \
+               shortcut says before its bar is thrown (spec-0117)",
+        role: None,
+    },
+    // spec-0117: a gated lever pressed once, boxed until the hall opens and
+    // after it is thrown, beside the valves on the south wall.
+    Anchor {
+        name: "anchor/sluice-lever",
+        pos: [17, 1, 1],
+        facing: Some("north"),
+        trigger_block: None,
+        note: "the sluice lever: chained until the hall opens, and thrown once",
+        role: None,
+    },
+    // spec-0117: the reliquary's knocks, its bay door and its chest — a button
+    // whose presses count toward the door's objective (`serves`), a door
+    // released to the hand once unbarred, and a chest that answers once taken.
+    Anchor {
+        name: "anchor/bay-knock",
+        pos: [29, 1, 24],
+        facing: Some("west"),
+        trigger_block: None,
+        note: "the bay's knocker, a button on the floor: two knocks unbar the bay door",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/bay-door",
+        pos: [27, 1, 26],
+        facing: Some("north"),
+        trigger_block: None,
+        note: "the bay door, a door standing on its own: barred until knocked twice, \
+               then the party's to open by hand",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/reliquary-chest",
+        pos: [29, 1, 22],
+        facing: Some("west"),
+        trigger_block: None,
+        note: "the reliquary chest against the east wall: its lid will not lift before \
+               the bay door is unbarred, and it is empty once lifted",
+        role: None,
+    },
     Anchor {
         name: "anchor/side-lever",
         pos: [14, 1, 27],
@@ -1591,6 +1653,14 @@ fn assert_anchors_are_standable(s: &Structure) {
     };
     for a in ANCHORS {
         let [x, y, z] = a.pos;
+        // spec-0117: a cell of a gate's own bars is a gate's own answer — the
+        // point a trigger that answers for the gate is anchored at, standing in
+        // the gate's block, not a place a body stands.
+        if GATE_ANCHORS.iter().any(|g| {
+            (0..3).all(|i| g.from[i].min(g.to[i]) <= a.pos[i] && a.pos[i] <= g.from[i].max(g.to[i]))
+        }) {
+            continue;
+        }
         // Air, or the trap trigger this very anchor declares. A pressure plate
         // and a tripwire are the two blocks a body stands ON rather than in, and
         // an anchor that declares one is an anchor whose own cell holds it —

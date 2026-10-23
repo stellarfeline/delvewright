@@ -1400,20 +1400,29 @@ pub fn check(
                 // its region with the gate's block; a shortcut's door is the
                 // prefab's.
                 if *shortcut {
+                    // The shortcut's gate is sealed from load: the shipped world
+                    // holds the gate's declared block over its whole region (the
+                    // world-load seal, `assembled::shipped_blocks`), whatever the
+                    // template's bytes say there.
+                    let sealed_with = gate_region(plan, gate)
+                        .map(|(_, _, b)| b)
+                        .filter(|b| !delvewright_dsl::blockshape::is_air(b));
                     let held = blocks
                         .get(&cell)
                         .map(|s| s.as_str().to_string())
-                        .filter(|s| !delvewright_dsl::blockshape::is_air(s));
+                        .filter(|s| !delvewright_dsl::blockshape::is_air(s))
+                        .or(sealed_with);
                     if held.is_none() {
                         return (
                             b,
                             fail(
                                 SEALED_GATE_UNANSWERED,
                                 format!(
-                                    "trigger `{}` answers the sealed gate `{gate}` from {cell:?}, \
-                                     a cell of the door the prefab leaves as air: there is no \
-                                     block there to press. Prescription: anchor the answer at a \
-                                     cell of the door that holds its block",
+                                    "trigger `{}` answers the sealed gate `{gate}` (cells \
+                                     {from:?}..{to:?}) from {cell:?}, a cell of the door the \
+                                     prefab leaves as air: there is no block there to press. \
+                                     Prescription: anchor the answer at a cell of the door that \
+                                     holds its block",
                                     t.id
                                 ),
                             ),

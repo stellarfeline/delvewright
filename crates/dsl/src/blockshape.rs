@@ -737,6 +737,47 @@ pub fn outline(name: &str) -> Option<&'static [OutlineBox]> {
     pinned_row(outline_rows(), name).map(Vec::as_slice)
 }
 
+/// **The outline the server can give this block state**: the boxes of every
+/// row the state selects with its shape-carrying properties free — a bar's or
+/// a pane's connections, a fence's or a wall's arms, which the game re-derives
+/// from the neighbours whatever the template wrote — as one list (their
+/// union). A click box fitted to it encloses the block whichever arms the
+/// server gives it; for a block with no such property it is [`outline`].
+/// Empty for a state with no outline, and for a block the table does not hold.
+/// The union, where [`server_footprint`] takes the intersection: an outline
+/// must be covered whatever the neighbours do, a floor only where it holds.
+pub fn server_outline(name: &str) -> Vec<OutlineBox> {
+    let id = namespaced_id(name);
+    let reg = crate::blocks::BlockRegistry::v1_21_11();
+    let derived = reg.shape_carrying(&id);
+    if derived.is_empty() {
+        return outline(name)
+            .map(<[OutlineBox]>::to_vec)
+            .unwrap_or_default();
+    }
+    let Some(rows) = outline_rows().get(id.as_ref()) else {
+        return Vec::new();
+    };
+    let defaults = reg.default_state(&id);
+    let mut out: Vec<OutlineBox> = Vec::new();
+    for (props, boxes) in rows {
+        let selected = props.iter().all(|(k, v)| {
+            derived.iter().any(|d| d == k)
+                || state_value(name, k)
+                    .or_else(|| defaults.and_then(|d| d.get(k)).map(String::as_str))
+                    == Some(v.as_str())
+        });
+        if selected {
+            for b in boxes {
+                if !out.contains(b) {
+                    out.push(*b);
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Whether the pinned game gives this block state an outline at all — a box a
 /// crosshair can land on. False for an empty outline and for a block the table
 /// does not hold.
@@ -2624,6 +2665,14 @@ mod tests {
         }
         assert_eq!(outline("modded:thing"), None);
         assert!(has_outline("minecraft:structure_void"));
+        // A bar's arms are the server's: the union covers all four.
+        let bars = server_outline("minecraft:iron_bars");
+        let (x0, x1) = (
+            bars.iter().map(|b| b.min[0].num).min().unwrap(),
+            bars.iter().map(|b| b.max[0].num).max().unwrap(),
+        );
+        assert_eq!((x0, x1), (0, 16), "{bars:?}");
+        assert_eq!(server_outline("minecraft:lever").len(), 1);
         assert!(has_outline("minecraft:stone"));
         assert!(has_outline("minecraft:lever"));
     }
