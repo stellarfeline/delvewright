@@ -30,8 +30,10 @@ fn premise_declines_are_enumerated() {
         // `Premises::with_body_of`); and the stairwell pass,
         // which asks only whether one step between two courses of a stair
         // is a body move over the mass as laid — a question about geometry
-        // inside the stair's own box, with no campaign premise to consult.
-        ("compiler/blockout.rs", 4),
+        // inside the stair's own box, with no campaign premise to consult;
+        // and `DW0838`'s world without the commons, which is the opening-walled
+        // world with the commons' floor walled too (also `with_body_of`).
+        ("compiler/blockout.rs", 5),
         // `edit.rs`: a `relight` verb's own darkness survey.
         ("compiler/edit.rs", 1),
         // `light.rs`: the relight pass's darkness survey.
