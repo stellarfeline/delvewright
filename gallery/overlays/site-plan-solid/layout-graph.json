@@ -106,7 +106,7 @@
           "flags": [
             "flag/muster-cleared"
           ],
-          "learned": "told",
+          "learned": "seen",
           "opens_from": "a"
         },
         "id": "edge/loft-stair"

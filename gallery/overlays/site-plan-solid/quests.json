@@ -381,22 +381,6 @@
           "on": "use"
         },
         "once": false
-      },
-      {
-        "at": "anchor/seam-loft-stair",
-        "audience": "presser",
-        "effects": [
-          {
-            "style": "actionbar",
-            "text": "The loft stair is barred. The muster comes first.",
-            "type": "narrate"
-          }
-        ],
-        "id": "trigger/loft-stair-shut",
-        "on": {
-          "on": "use"
-        },
-        "once": false
       }
     ],
     "waves": [
