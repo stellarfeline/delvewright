@@ -99,7 +99,10 @@ form and the commands are in *Reference: drawing the map's reference*.
      the engine stands in a plain seam are looked through, so a hidden way's
      mouth belongs to a piece that shuts it in a block that hides. The beat
      that opens it carries the close-up shot of the opened mouth: the shot is
-     what tells the player. The text before the shot keeps the secret too —
+     what tells the player. The mechanism that opens it is placed to be
+     found by looking — out of the obvious line, plain to the eye, often in
+     another room from the mouth — never a lever beside the way it opens.
+     The text before the shot keeps the secret too —
      *Step 5 — quests and dialogue* says how.
    - Every seam `opening` that names a standard names an entry in the **metrics
      table**. `delvec metrics` prints it — 223 lines of JSON on stdout, and a
