@@ -2940,19 +2940,23 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   one beat are spliced in bonfire order. This is a path *export* only:
   `plan.critical_path` is untouched, so every `fire_step` index and every nav proof
   sees the unspliced path. **That is what makes two coordinate
-  systems**, and they drift by one per bonfire armed earlier: internal indices
-  (`fire_step`, `Encounter::step`, every nav proof) count `plan.critical_path`;
-  exported indices count these `steps[]`. Every artifact a harness reads states
-  the EXPORTED one, and `Plan::exported_step` is the single translation — a
-  consumer that mixes them is a silent off-by-N.
+  systems**: internal indices (`fire_step`, `Encounter::step`, every nav proof)
+  count `plan.critical_path`; exported indices count these `steps[]`, which add
+  each `rest` (where `Plan::rest_after` places it) and each `witness-strike`.
+  Every artifact a harness reads states the EXPORTED one. `Plan::exported_layout`
+  is the one place the exported path is laid out: the emitter writes `steps[]` by
+  walking it, and the death plan and the combat plan read their indices from it
+  (`ExportedLayout::step`, `ExportedLayout::rest`), so no document can name a step
+  the path does not carry there. `tests/exported_coordinates.rs` holds every
+  such index on the gallery primary to the step it must name.
 
   **`witness-strike` steps** (spec-0082 §5.4, §5.7). Per assembly with a strike
   pattern, just before the first exported step that strikes it, the path carries
   `{"action":"witness-strike","assembly":…,"expect":"struck","pos":[x,y,z],
   "step":j,"facing":k,"facing_count":n,"yaw":y,"amount":a,"window_ticks":w}` then
   `{"action":"witness-strike","assembly":…,"expect":"spared","pos":[x,y,z],
-  "window_ticks":w}` (`assembly::with_witness_steps`, spliced into the exported
-  `steps[]` after the rest steps, so it moves exported indices exactly as `rest`
+  "window_ticks":w}` (`Exported::Witness` in `Plan::exported_layout`, after any
+  rest the previous step carries, so it moves exported indices exactly as `rest`
   does). `struck`'s cell is facing 0's stand cell — a landing cell under the
   limb, inside the arming region, from which a body draws that facing; the bot
   stands there until a blow takes health. `spared`'s is a walked cell outside the
@@ -3183,7 +3187,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   objective or quest the branch path never plays is unforced there, so it opens
   nothing that path may cross) — a branch path is a
   different sequence, so default-path step indices are never carried across (the
-  same trap `emit::rest_step_index` documents for bonfires). Each branch's
+  same trap `Plan::rest_after` documents for bonfires). Each branch's
   routes also pass the `DW0314` standability self-check. Branch diagnostics are
   prefixed ``branch `<id>` (world/<k>):`` — or ``world/<k>:`` for a world
   realizing no declared branch. The harness derives the filename from the
@@ -3292,9 +3296,11 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
     asserts the death is the gate's and the respawn is at the governing seat.
   - every `placement.seats[]` row carries `in_force_after`: the
     exported step after which the seat is where a death returns the party —
-    `-1` for the entry spawn, `exported_step(fire_step)` for a plain
-    `set-checkpoint`, one more for a bonfire (its spliced `rest` step), `null`
-    for a checkpoint a trigger sets. The governing seat after boundary `i` is
+    `-1` for the entry spawn, the exported index of the step during which the
+    beat that fires it completes for a plain `set-checkpoint` (the carrying
+    step, for a `reach` that completes on landing: `Plan::completes_at`), the index of its `rest` step for a bonfire (both
+    `Plan::exported_layout`'s; `null` for a bonfire the path never rests at),
+    `null` for a checkpoint a trigger sets. The governing seat after boundary `i` is
     the seat with the latest `in_force_after ≤ i`, plus every `null` seat.
   - `binding.crush_gates` — the length of `crush_gates[]`.
   - `on_death` — how many effects the bundle carries at every nesting depth
@@ -3594,23 +3600,15 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   encounter, and the `census` probe naming the three functions that measure this
   wave by tag. The document also states the `difficulty` the run is verified AT.
   Two of those fields carry rules worth stating exactly:
-  - `step` is an index into the **exported** `critical-path.json` `steps[]`
-    (`Plan::exported_step`). Two coordinate systems exist because of
-    spec-0016 §1's rest splice: `plan.critical_path` is the compiler's own list —
-    what every `CheckpointPlan::fire_step`, every nav proof and every internal
-    index means — while the exported path additionally carries one `rest` step
-    after the beat arming each bonfire, so they drift by one per bonfire armed
-    earlier. **Every artifact a harness reads states exported coordinates**;
-    `Plan::exported_step` is the translation for the main path, and
-    `the_combat_plan_step_indexes_the_exported_path` pins it against the real
-    emitted documents (the step the plan points at must BE the encounter's kill)
-    rather than against the arithmetic. It is deliberately **main-path only**:
-    spec-0025's per-branch paths resequence the same steps, so an index cannot be
-    carried across at all and `emit::rest_step_index` translates through the
-    *objective* the arming beat names instead. On the main path that translation
-    is the identity, which is exactly what makes the simple count valid there and
-    nowhere else. There is one `combat-plan.json`, over the main path, so this
-    never crosses the boundary.
+  - `step` is an index into the **exported** `critical-path.json` `steps[]`,
+    read from the main path's `Plan::exported_layout` (`ExportedLayout::step`):
+    `plan.critical_path` is the compiler's own list, and the exported path adds
+    the `rest` and `witness-strike` steps. `the_combat_plan_step_indexes_the_exported_path`
+    and `tests/exported_coordinates.rs` hold it against the real emitted documents
+    (the step the plan points at must BE the encounter's kill). There is one
+    `combat-plan.json`, over the main path; a per-branch path is laid out by its
+    own `exported_layout`, whose rests `Plan::rest_after` finds through the
+    objective the arming beat names.
   - `census` is `{census, brand, unbrand}` — the fully-qualified ids
     of this wave's `wave_census_<wave>` / `wave_brand_<wave>` /
     `wave_unbrand_<wave>` functions. It exists so the harness calls what the
