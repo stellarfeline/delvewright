@@ -676,6 +676,90 @@ pub fn measured_collision(name: &str) -> Option<MeasuredExtent> {
     pinned_row(measured_rows(), name).copied()
 }
 
+// ---------------------------------------------------------------------------
+// The outline a crosshair picks (spec-0117 §2b)
+// ---------------------------------------------------------------------------
+
+/// The pinned jar's outline-shape table: `crates/dsl/data/outline-shapes-1.21.11.tsv`,
+/// every blockstate's `BlockState.getShape(EmptyBlockGetter.INSTANCE, BlockPos.ZERO)`
+/// as its boxes in sixteenths (`tools/maintenance/dump-outline-shapes.py`). An
+/// outline is not a collision shape: a lever and a button have no collision and
+/// a real outline, and the outline is what the crosshair's pick hits.
+const OUTLINE_TSV: &str = include_str!("../data/outline-shapes-1.21.11.tsv");
+
+/// One box of a block's outline, in sixteenths of a block from the cell's
+/// minimum corner, exactly as the measured table spells it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OutlineBox {
+    /// The minimum corner `(x, y, z)`.
+    pub min: [Sixteenths; 3],
+    /// The maximum corner `(x, y, z)`.
+    pub max: [Sixteenths; 3],
+}
+
+fn outline_rows() -> &'static PinnedRows<Vec<OutlineBox>> {
+    static ROWS: std::sync::OnceLock<PinnedRows<Vec<OutlineBox>>> = std::sync::OnceLock::new();
+    ROWS.get_or_init(|| {
+        pinned_rows(OUTLINE_TSV, "outline", |boxes, _count| {
+            if boxes == "-" {
+                return Vec::new();
+            }
+            boxes
+                .split(';')
+                .map(|b| {
+                    let v: Vec<Sixteenths> = b
+                        .split(',')
+                        .map(|x| Sixteenths::parse(x).expect("outline table bound parses"))
+                        .collect();
+                    let [x0, y0, z0, x1, y1, z1] = v[..] else {
+                        panic!("outline table box is not six bounds: {b:?}");
+                    };
+                    OutlineBox {
+                        min: [x0, y0, z0],
+                        max: [x1, y1, z1],
+                    }
+                })
+                .collect()
+        })
+    })
+}
+
+/// **The pinned jar's outline for this block state**: its boxes, empty for a
+/// state the game gives no outline (air, a fluid, `structure_void`, `light`),
+/// or `None` when the table does not hold the block (a non-`minecraft:` id, or
+/// one the pin lacks). The one authority for *what is this blockstate's
+/// outline*, beside [`measured_collision`].
+///
+/// A property the name leaves out is read at the block's pinned default, as
+/// every measured table here is read ([`state_has`]); a door's two halves share
+/// one outline, so its `half` never selects a row.
+pub fn outline(name: &str) -> Option<&'static [OutlineBox]> {
+    pinned_row(outline_rows(), name).map(Vec::as_slice)
+}
+
+/// Whether the pinned game gives this block state an outline at all — a box a
+/// crosshair can land on. False for an empty outline and for a block the table
+/// does not hold.
+pub fn has_outline(name: &str) -> bool {
+    outline(name).is_some_and(|b| !b.is_empty())
+}
+
+/// How many rows the outline table holds, and how many blockstates they stand
+/// for — the table's own binding count (spec-0117 criterion 21).
+pub fn outline_table_counts() -> (usize, usize) {
+    let mut rows = 0;
+    let mut states = 0;
+    for line in OUTLINE_TSV.lines().filter(|l| !l.starts_with('#')) {
+        rows += 1;
+        states += line
+            .rsplit('\t')
+            .next()
+            .and_then(|c| c.parse::<usize>().ok())
+            .unwrap_or(0);
+    }
+    (rows, states)
+}
+
 /// The measured floor height of a block whose collision box rests on its cell
 /// floor and tops out in [`THIN_HEIGHT_16`]..[`FULL_HEIGHT_16`] — a body stands
 /// on it lower than on a full cube and cannot walk through it. `None` for any
@@ -2201,5 +2285,332 @@ mod tests {
             [stone; 3],
         ];
         assert!(body_falls_through(&edge, &pit));
+    }
+
+    // -----------------------------------------------------------------------
+    // spec-0117 §2b: the outline table against the bytecode's constants.
+    //
+    // The SECOND METHOD: every shape below is built from the constants §2b
+    // reads out of the pinned jar's `<clinit>`s and `makeShapes` bodies, with
+    // `Block.cube` / `column` / `boxZ`, `Shapes.or` / `join(ONLY_FIRST)` and the
+    // four rotations re-stated here, sharing no configuration with the runtime
+    // dump the table came from. Two shapes are equal when they cover the same
+    // sixteenth cells, so a different decomposition into boxes is no difference.
+    // -----------------------------------------------------------------------
+
+    use std::collections::BTreeSet;
+
+    /// A box in sixteenths: `[x0, y0, z0, x1, y1, z1]`.
+    type B = [i32; 6];
+
+    /// `Block.cube(s)`: the cube of side `s` centred in the cell.
+    fn cube(s: i32) -> B {
+        let a = 8 - s / 2;
+        [a, a, a, 16 - a, 16 - a, 16 - a]
+    }
+    /// `Block.cube(x, y, z)`: the centred box of three extents.
+    fn cube3(x: i32, y: i32, z: i32) -> B {
+        [8 - x / 2, 8 - y / 2, 8 - z / 2, 8 + x / 2, 8 + y / 2, 8 + z / 2]
+    }
+    /// `Block.column(xz, y0, y1)`.
+    fn column(xz: i32, y0: i32, y1: i32) -> B {
+        [8 - xz / 2, y0, 8 - xz / 2, 8 + xz / 2, y1, 8 + xz / 2]
+    }
+    /// `Block.column(x, z, y0, y1)`.
+    fn column4(x: i32, z: i32, y0: i32, y1: i32) -> B {
+        [8 - x / 2, y0, 8 - z / 2, 8 + x / 2, y1, 8 + z / 2]
+    }
+    /// `Block.boxZ(xy, z0, z1)`.
+    fn box_z(xy: i32, z0: i32, z1: i32) -> B {
+        [8 - xy / 2, 8 - xy / 2, z0, 8 + xy / 2, 8 + xy / 2, z1]
+    }
+    /// `Block.boxZ(x, y, z0, z1)`.
+    fn box_z4(x: i32, y: i32, z0: i32, z1: i32) -> B {
+        [8 - x / 2, 8 - y / 2, z0, 8 + x / 2, 8 + y / 2, z1]
+    }
+    /// `Block.boxZ(x, y0, y1, z0, z1)`.
+    fn box_z5(x: i32, y0: i32, y1: i32, z0: i32, z1: i32) -> B {
+        [8 - x / 2, y0, z0, 8 + x / 2, y1, z1]
+    }
+
+    /// The shape a list of boxes covers, as its set of sixteenth cells.
+    fn cells(boxes: &[B]) -> BTreeSet<(i32, i32, i32)> {
+        let mut out = BTreeSet::new();
+        for b in boxes {
+            for x in b[0]..b[3] {
+                for y in b[1]..b[4] {
+                    for z in b[2]..b[5] {
+                        out.insert((x, y, z));
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// `Shapes.join(a, b, ONLY_FIRST)`: `a` minus `b`.
+    fn minus(a: &[B], b: B) -> BTreeSet<(i32, i32, i32)> {
+        let cut = cells(&[b]);
+        cells(a).difference(&cut).copied().collect()
+    }
+
+    /// One quarter turn about Y, clockwise seen from above (north → east):
+    /// `(x, z) → (16 − z, x)` — the step `rotateHorizontal` takes from the
+    /// canonical north shape.
+    fn quarter(b: B) -> B {
+        [16 - b[5], b[1], b[0], 16 - b[2], b[4], b[3]]
+    }
+
+    /// The canonical north shape turned to `facing`.
+    fn turn(b: B, facing: &str) -> B {
+        let n = match facing {
+            "north" => 0,
+            "east" => 1,
+            "south" => 2,
+            "west" => 3,
+            other => panic!("not a horizontal facing: {other}"),
+        };
+        (0..n).fold(b, |b, _| quarter(b))
+    }
+
+    /// `rotateHorizontalAxis`: the canonical shape on the z axis for
+    /// north/south, turned once onto the x axis for east/west.
+    fn on_axis(b: B, facing: &str) -> B {
+        match facing {
+            "north" | "south" => b,
+            _ => quarter(b),
+        }
+    }
+
+    /// `rotateAttachFace`: the canonical wall shape (hanging on the cell's
+    /// south face, facing north) laid on the floor or hung from the ceiling —
+    /// the depth toward the wall becomes height — then turned to `facing`.
+    fn attach(b: B, face: &str, facing: &str) -> B {
+        let laid = match face {
+            "wall" => b,
+            // The depth `z` runs down from the top: z → 16 − y.
+            "floor" => [b[0], 16 - b[5], b[1], b[3], 16 - b[2], b[4]],
+            // The depth runs up from the bottom: z → y.
+            "ceiling" => [b[0], b[2], 16 - b[4], b[3], b[5], 16 - b[1]],
+            other => panic!("not a face: {other}"),
+        };
+        turn(laid, facing)
+    }
+
+    /// The table's row for `state`, as the cells it covers, asserting the
+    /// table holds the state.
+    fn table(state: &str) -> BTreeSet<(i32, i32, i32)> {
+        let boxes = outline(state).unwrap_or_else(|| panic!("the table holds no row for {state}"));
+        assert!(!boxes.is_empty(), "{state} has an outline");
+        let whole = |s: Sixteenths| s.whole().expect("every §2b bound is a whole sixteenth");
+        let v: Vec<B> = boxes
+            .iter()
+            .map(|b| {
+                [
+                    whole(b.min[0]),
+                    whole(b.min[1]),
+                    whole(b.min[2]),
+                    whole(b.max[0]),
+                    whole(b.max[1]),
+                    whole(b.max[2]),
+                ]
+            })
+            .collect();
+        cells(&v)
+    }
+
+    const FACINGS: [&str; 4] = ["north", "east", "south", "west"];
+    const FACES: [&str; 3] = ["floor", "wall", "ceiling"];
+
+    #[test]
+    fn the_lever_outline_is_the_bytecodes() {
+        let canonical = box_z4(6, 8, 10, 16);
+        let mut compared = 0;
+        for face in FACES {
+            for facing in FACINGS {
+                for powered in ["false", "true"] {
+                    let state = format!("minecraft:lever[face={face},facing={facing},powered={powered}]");
+                    assert_eq!(table(&state), cells(&[attach(canonical, face, facing)]), "{state}");
+                    compared += 1;
+                }
+            }
+        }
+        assert_eq!(compared, 24);
+    }
+
+    #[test]
+    fn the_button_outline_is_the_bytecodes() {
+        let canonical = box_z4(6, 4, 8, 16);
+        let mut compared = 0;
+        for button in ["minecraft:stone_button", "minecraft:oak_button"] {
+            for face in FACES {
+                for facing in FACINGS {
+                    for (powered, cut) in [("false", cube(12)), ("true", cube(14))] {
+                        let state = format!("{button}[face={face},facing={facing},powered={powered}]");
+                        assert_eq!(table(&state), minus(&[attach(canonical, face, facing)], cut), "{state}");
+                        compared += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(compared, 48);
+    }
+
+    #[test]
+    fn the_bell_outline_is_the_bytecodes() {
+        let bell = [column(6, 6, 13), column(8, 4, 6)];
+        let mut compared = 0;
+        for facing in FACINGS {
+            let mut ceiling = bell.to_vec();
+            ceiling.push(column(2, 13, 16));
+            let floor = vec![on_axis(cube3(16, 16, 8), facing)];
+            let mut double = bell.to_vec();
+            double.push(on_axis(column4(2, 16, 13, 15), facing));
+            let mut single = bell.to_vec();
+            single.push(turn(box_z5(2, 13, 15, 0, 13), facing));
+            for (attachment, shape) in [
+                ("ceiling", ceiling),
+                ("floor", floor),
+                ("double_wall", double),
+                ("single_wall", single),
+            ] {
+                let state = format!("minecraft:bell[attachment={attachment},facing={facing}]");
+                assert_eq!(table(&state), cells(&shape), "{state}");
+                compared += 1;
+            }
+        }
+        assert_eq!(compared, 16);
+    }
+
+    #[test]
+    fn the_door_outline_is_the_bytecodes() {
+        let leaf = box_z(16, 13, 16);
+        let clockwise = |f: &str| match f {
+            "north" => "east",
+            "east" => "south",
+            "south" => "west",
+            _ => "north",
+        };
+        let counter = |f: &str| match f {
+            "north" => "west",
+            "west" => "south",
+            "south" => "east",
+            _ => "north",
+        };
+        let mut compared = 0;
+        for door in ["minecraft:oak_door", "minecraft:spruce_door", "minecraft:iron_door"] {
+            for facing in FACINGS {
+                for hinge in ["left", "right"] {
+                    for open in ["false", "true"] {
+                        let toward = match (open, hinge) {
+                            ("false", _) => facing,
+                            (_, "left") => clockwise(facing),
+                            _ => counter(facing),
+                        };
+                        for half in ["lower", "upper"] {
+                            let state = format!(
+                                "{door}[facing={facing},half={half},hinge={hinge},open={open}]"
+                            );
+                            assert_eq!(table(&state), cells(&[turn(leaf, toward)]), "{state}");
+                            compared += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(compared, 96);
+    }
+
+    #[test]
+    fn the_trapdoor_outline_is_the_bytecodes() {
+        let mut compared = 0;
+        for facing in FACINGS {
+            for (half, open, shape) in [
+                ("bottom", "false", [0, 0, 0, 16, 3, 16]),
+                ("top", "false", [0, 13, 0, 16, 16, 16]),
+                ("bottom", "true", turn(box_z(16, 13, 16), facing)),
+                ("top", "true", turn(box_z(16, 13, 16), facing)),
+            ] {
+                let state = format!("minecraft:oak_trapdoor[facing={facing},half={half},open={open}]");
+                assert_eq!(table(&state), cells(&[shape]), "{state}");
+                compared += 1;
+            }
+        }
+        assert_eq!(compared, 16);
+    }
+
+    #[test]
+    fn the_fence_gate_campfire_and_chest_outlines_are_the_bytecodes() {
+        let mut compared = 0;
+        for facing in FACINGS {
+            let state = format!("minecraft:oak_fence_gate[facing={facing},in_wall=false,open=false]");
+            assert_eq!(table(&state), cells(&[on_axis(cube3(16, 16, 4), facing)]), "{state}");
+            compared += 1;
+        }
+        for lit in ["true", "false"] {
+            let state = format!("minecraft:campfire[lit={lit}]");
+            assert_eq!(table(&state), cells(&[column(16, 0, 7)]), "{state}");
+            compared += 1;
+        }
+        let half = box_z5(14, 0, 14, 0, 15);
+        let clockwise = |f: &str| match f {
+            "north" => "east",
+            "east" => "south",
+            "south" => "west",
+            _ => "north",
+        };
+        let counter = |f: &str| match f {
+            "north" => "west",
+            "west" => "south",
+            "south" => "east",
+            _ => "north",
+        };
+        for facing in FACINGS {
+            for (kind, shape) in [
+                ("single", column(14, 0, 14)),
+                ("left", turn(half, clockwise(facing))),
+                ("right", turn(half, counter(facing))),
+            ] {
+                let state = format!("minecraft:chest[facing={facing},type={kind}]");
+                assert_eq!(table(&state), cells(&[shape]), "{state}");
+                compared += 1;
+            }
+        }
+        assert_eq!(compared, 18);
+    }
+
+    /// A state with no outline is not a body: air, a fluid and `light` carry
+    /// `-`, and a foreign block is not in the table. `structure_void` is NOT
+    /// one of them, whatever a reading of its class suggests: the pinned jar
+    /// gives it a six-sixteenth cube (`[5,11]` on every axis), and the table is
+    /// the measurement.
+    #[test]
+    fn a_state_with_no_outline_has_none() {
+        for s in ["minecraft:air", "minecraft:water", "minecraft:lava", "minecraft:light"] {
+            assert_eq!(outline(s), Some(&[][..]), "{s}");
+            assert!(!has_outline(s), "{s}");
+        }
+        assert_eq!(outline("modded:thing"), None);
+        assert!(has_outline("minecraft:structure_void"));
+        assert!(has_outline("minecraft:stone"));
+        assert!(has_outline("minecraft:lever"));
+    }
+
+    /// Every blockstate of the pinned registry is stood for by the table: the
+    /// states its rows stand for sum to the product of every block's property
+    /// value counts in `blocks-1.21.11.json` (spec-0117 criterion 21).
+    #[test]
+    fn the_outline_table_stands_for_every_blockstate() {
+        let reg = crate::blocks::BlockRegistry::v1_21_11();
+        let registry_states: usize = reg
+            .ids()
+            .map(|id| {
+                reg.properties(id)
+                    .map_or(1, |p| p.values().map(Vec::len).product::<usize>())
+            })
+            .sum();
+        let (rows, states) = outline_table_counts();
+        assert!(rows > 0 && registry_states > 0);
+        assert_eq!(states, registry_states, "{rows} rows");
     }
 }
