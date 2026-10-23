@@ -184,6 +184,11 @@
     },
     {
       "code": "DW0353",
+      "pointer": "/content/batches/batch/stamp-the-shards",
+      "stage": "world-edits"
+    },
+    {
+      "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
       "stage": "world-edits"
     },
@@ -378,6 +383,11 @@
       "code": "DW0498",
       "pointer": "/content/areas/1",
       "stage": "world"
+    },
+    {
+      "code": "DW0353",
+      "pointer": "/content/batches/batch/stamp-the-shards",
+      "stage": "world-edits"
     },
     {
       "code": "DW0353",
@@ -578,6 +588,11 @@
     },
     {
       "code": "DW0353",
+      "pointer": "/content/batches/batch/stamp-the-shards",
+      "stage": "world-edits"
+    },
+    {
+      "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
       "stage": "world-edits"
     },
@@ -775,7 +790,17 @@
     },
     {
       "code": "DW0353",
+      "pointer": "/content/batches/batch/stamp-the-shards",
+      "stage": "world-edits"
+    },
+    {
+      "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
+      "stage": "world-edits"
+    },
+    {
+      "code": "DW0353",
+      "pointer": "/content/batches/batch/rough-the-lane",
       "stage": "world-edits"
     },
     {
@@ -969,6 +994,11 @@
       "code": "DW0498",
       "pointer": "/content/areas/1",
       "stage": "world"
+    },
+    {
+      "code": "DW0353",
+      "pointer": "/content/batches/batch/stamp-the-shards",
+      "stage": "world-edits"
     },
     {
       "code": "DW0353",
@@ -1166,6 +1196,11 @@
       "code": "DW0498",
       "pointer": "/content/areas/1",
       "stage": "world"
+    },
+    {
+      "code": "DW0353",
+      "pointer": "/content/batches/batch/stamp-the-shards",
+      "stage": "world-edits"
     },
     {
       "code": "DW0353",
@@ -1474,6 +1509,11 @@
       "code": "DW0498",
       "pointer": "/content/areas/1",
       "stage": "world"
+    },
+    {
+      "code": "DW0353",
+      "pointer": "/content/batches/batch/stamp-the-shards",
+      "stage": "world-edits"
     },
     {
       "code": "DW0353",
