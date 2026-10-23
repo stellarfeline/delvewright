@@ -629,10 +629,18 @@ fn an_open_stairwell_reddens_dw0836() {
         open_stairwells: true,
         ..Perturb::none()
     });
+    // The wider hole is also a way nothing allocated: a body on the upper floor
+    // falls through it onto the treads below, a move of the reach graph, so
+    // `DW0838` names the crossing beside `DW0836`'s hole.
     assert_eq!(
         errors(&b),
-        vec!["DW0836".to_string()],
-        "a floor opened over courses no head reaches is a wider hole and nothing else"
+        vec!["DW0836".to_string(), "DW0838".to_string()],
+        "a floor opened over courses no head reaches is a wider hole, and a fall through it"
+    );
+    let crossing = message_for(&b, "DW0838");
+    assert!(
+        crossing.contains("node/cell") && crossing.contains("node/undercroft"),
+        "the crossing is the stair's two places: {crossing}"
     );
     let m = message_for(&b, "DW0836");
     assert!(

@@ -2660,6 +2660,56 @@ impl World {
         seen
     }
 
+    /// **Where a body let go in `c` comes to rest**: `c` itself when it is a
+    /// rest state; otherwise a body at rest with its feet at the bottom centre
+    /// of `c` and no key held, flown by the graph's simulator until it stands,
+    /// swims or holds, and the rest states it lands in. Empty when it dies
+    /// (lava, a killing volume, a fall it does not survive) or does not come
+    /// to rest within one launch's ticks.
+    ///
+    /// What a way in that a body falls through hands the walk beyond it: the
+    /// mouth of a shaft holds nothing to stand on, and where the fall ends is
+    /// the graph's to say.
+    pub fn released_at(&self, c: [i32; 3]) -> Vec<[i32; 3]> {
+        if self.rest_kind(c).is_some() {
+            return vec![c];
+        }
+        let params = ReachParams::shipped(self.unbounded_fall);
+        let memo = self.graph_memo(&params);
+        let world = Sim(&memo.dense);
+        let body = Attributes::PLAYER;
+        let pos = [
+            f64::from(c[0]) + 0.5,
+            f64::from(c[1]),
+            f64::from(c[2]) + 0.5,
+        ];
+        let mut st = State {
+            on_ground: false,
+            ..State::standing(pos, &body)
+        };
+        let idle = Input::default();
+        for _ in 0..LAUNCH_TICKS {
+            sim::tick(&world, &body, Rules::Game, &mut st, &idle);
+            if self.kills(&st)
+                || st.in_lava
+                || (!self.unbounded_fall && st.landing_damage >= body.max_health)
+            {
+                return Vec::new();
+            }
+            let here = cell_of(st.pos);
+            if st.in_water || self.rest_kind(here) == Some(RestKind::Holding) {
+                return self.rest_kind(here).map(|_| vec![here]).unwrap_or_default();
+            }
+            if st.on_ground {
+                return landing_cells(&memo.dense, &body, st.pos)
+                    .into_iter()
+                    .filter(|to| self.rest_kind(*to).is_some())
+                    .collect();
+            }
+        }
+        Vec::new()
+    }
+
     /// **Fly a declared jump's window** (spec-0113 §4.4) from `from` toward
     /// `to` under `rules`: facing every whole degree within
     /// [`delvewright_dsl::metrics::DECLARED_JUMP_FACING_DEG`] of the line

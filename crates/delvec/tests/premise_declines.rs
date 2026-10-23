@@ -24,11 +24,14 @@ fn premise_declines_are_enumerated() {
     // the file name: `mod.rs` names more than one file.
     const EXPECTED: &[(&str, usize)] = &[
         // `blockout.rs`: the stage-5 battery's `open` and `sealed` worlds,
-        // which carry their own sealing authority; and the stairwell pass,
+        // which carry their own sealing authority, and `DW0838`'s world with
+        // every allocated opening walled, which is `open` with the plan's
+        // ways deleted (all three take the body's premises,
+        // `Premises::with_body_of`); and the stairwell pass,
         // which asks only whether one step between two courses of a stair
         // is a body move over the mass as laid — a question about geometry
         // inside the stair's own box, with no campaign premise to consult.
-        ("compiler/blockout.rs", 3),
+        ("compiler/blockout.rs", 4),
         // `edit.rs`: a `relight` verb's own darkness survey.
         ("compiler/edit.rs", 1),
         // `light.rs`: the relight pass's darkness survey.

@@ -2067,9 +2067,6 @@ struct Confined {
     ways: BTreeMap<String, WayGate>,
     /// Cells no walk ever counts: the out-of-walk regions.
     excluded: BTreeSet<[i32; 3]>,
-    /// The volume elements of every `climb` edge: the cells a body may HOLD
-    /// in, on the climb's own moves, besides standing ([`body_world`]).
-    climbs: Vec<usize>,
 }
 
 /// One contingent region, as the reachability walk sees it.
@@ -2104,7 +2101,6 @@ fn build_confined(ix: &Index) -> Confined {
     let mut walk: BTreeSet<(usize, usize)> = BTreeSet::new();
     let mut fall: BTreeSet<(usize, usize)> = BTreeSet::new();
     let mut ways: BTreeMap<String, WayGate> = BTreeMap::new();
-    let mut climbs: Vec<usize> = Vec::new();
 
     for (i, edge) in ix.contract.edges.iter().enumerate() {
         if !is_traversal(&edge.class) {
@@ -2124,9 +2120,6 @@ fn build_confined(ix: &Index) -> Confined {
             });
             id
         });
-        if edge.class == "climb" {
-            climbs.extend(via);
-        }
         // A bar's own cells are a place too, once the bar is gone: a body walks
         // *through* the gateway, and a graph that hops the two rooms without it
         // would call a room reachable that no route enters. A declared way
@@ -2209,7 +2202,6 @@ fn build_confined(ix: &Index) -> Confined {
         fall,
         ways,
         excluded: ix.all_no_body_cells.clone(),
-        climbs,
     }
 }
 
@@ -2293,18 +2285,24 @@ impl Confined {
         // second answer to "can a body get there", and it was one: it stepped a
         // full block up under any ceiling and crossed no gap a jump clears.
         let world = body_world(model);
-        // The cells of a climb volume a body holds in: passed through, never
-        // owed — a target is a cell a body stands in.
+        // The cells of an element a body holds in on a climbable — a `climb`
+        // edge's volume, or a ladder down into a space from its way in:
+        // passed through, never owed — a target is a cell a body stands in.
         let held: BTreeSet<[i32; 3]> = self
-            .climbs
+            .elements
             .iter()
-            .flat_map(|&e| self.elements[e].cells.iter().copied())
-            .filter(|c| world.is_climb_cell(*c))
+            .flat_map(|e| e.cells.iter().copied())
+            .filter(|c| world.is_climb_cell(*c) && !self.excluded.contains(c))
             .collect();
+        // A start a body cannot stand or hold in — the mouth of a shaft, the
+        // air over a doorway's sill — hands on the rest states a body let go
+        // there comes to rest in.
         let seeds: Vec<[i32; 3]> = start
             .iter()
-            .filter(|c| targets.contains(*c))
-            .copied()
+            .flat_map(|c| world.released_at(*c))
+            .filter(|c| targets.contains(c) || held.contains(c))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
             .collect();
         let seen = world.body_flood(&seeds, &|cur, next| {
             (targets.contains(&next) || held.contains(&next))
@@ -2335,7 +2333,9 @@ pub(crate) fn reached_shut(
 /// only that, and otherwise the entry space's cells on the model's outer layer
 /// (where [`exterior_faces`] reads the same edge's opening) — with the entry
 /// space's cells within one cell of it, where a body that comes through it
-/// first stands. Seeding from the
+/// first stands; a mouth cell a body neither stands nor holds in hands on where
+/// a body let go there comes to rest (`World::released_at`), which is how a
+/// shaft a body drops through seeds the floor under it. Seeding from the
 /// mouths, not from every standable cell of the entry space, is what makes a
 /// part of the entry space no way in reaches a red: a space that held every
 /// platform of a course was otherwise reached by construction.
