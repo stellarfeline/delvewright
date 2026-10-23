@@ -10,6 +10,7 @@ import { BotDeathError } from "../death.ts";
 import { lethalStepCost, sameBox, spanStepCost } from "../death-loop.ts";
 import { allowNonCollidingEntities, configureLeg, describeStuckNeighbours } from "../movement.ts";
 import {
+  doorsCrossed,
   nextLegWaypoints,
   LEG_START_REACH,
   MAX_HOP_BLOCKS,
@@ -597,6 +598,9 @@ export const methods = {
       // leg before it (a run-back approach, a pulse station walk), which is
       // the same leg being walked.
       let legVibrations: readonly Vibration[] = [];
+      // spec-0123 §3.1: the closed doors a hand opens the proven route walks
+      // through — asserted crossed after the leg, never how they opened.
+      let legDoors: readonly Vec3Tuple[] = [];
       let heardFrom: LegStart | undefined;
       // spec-0016 §4: the timed gates that bind THIS walk. A gate is a world fact
       // the compiler exports for the whole campaign; a proven leg's `timed_gates`
@@ -625,6 +629,12 @@ export const methods = {
         legWaypoints = match.waypoints;
         legClimbs = match.climbs;
         legVibrations = match.vibrations;
+        // A walk that starts off the leg, or resumes it part-way, does not walk
+        // the whole proven route, so its doors are not this walk's to assert.
+        legDoors =
+          match.matched && match.startsOnLeg && this.legResume?.leg !== this.legCursor
+            ? match.doors
+            : [];
         if (match.matched) {
           if (this.legHearingFrom?.leg === this.legCursor) heardFrom = this.legHearingFrom.start;
           this.legHearingFrom = undefined;
@@ -774,6 +784,15 @@ export const methods = {
             `as a climb hop\n`,
         );
       }
+      const visited: Vec3Tuple[] = [];
+      const onMove = (): void => {
+        const feet = this.feetCell();
+        if (feet && legDoors.some((d) => d[0] === feet[0] && d[1] === feet[1] && d[2] === feet[2])) {
+          visited.push(feet);
+        }
+      };
+      if (legDoors.length > 0) bot.on("move", onMove);
+      try {
       await replayLegWithRecovery(
         goalsList,
         label,
@@ -809,6 +828,24 @@ export const methods = {
           : undefined,
         completion ? () => this.stepSettled(completion) : undefined,
       );
+      } finally {
+        if (legDoors.length > 0) bot.removeListener("move", onMove);
+      }
+      if (legDoors.length > 0) {
+        const crossings = doorsCrossed(legDoors, visited);
+        const missed = crossings.filter((c) => !c.crossed);
+        process.stderr.write(
+          `[door] ${label}: ${legDoors.length} door(s) a hand opens on the proven leg, ` +
+            `${crossings.length - missed.length} crossed\n`,
+        );
+        if (missed.length > 0) {
+          throw new Error(
+            `${label}: the proven route walks through the door(s) at ` +
+              `${missed.map((m) => `[${m.door.join(", ")}]`).join(" ")} and the walk never stood in ` +
+              `${missed.length === 1 ? "it" : "them"} (spec-0123 §3.1)`,
+          );
+        }
+      }
       if (legVibrations.length > 0 && heardFrom !== undefined) {
         await this.hearVibrations(label, legVibrations, heardFrom);
       }

@@ -4,6 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
+  doorsCrossed,
   branchWaypointsFileFor,
   loadWaypointsForBranchPath,
   parseWaypoints,
@@ -651,4 +652,38 @@ test("a sensor beside the middle of a straight two-waypoint leg is in earshot of
   );
   // Past the leg's end the distance is to the end, not to the line's extension.
   assert.equal(distSqToRoute([40, 64, 0], [[0, 64, 0], [30, 64, 0]]), 100);
+});
+
+// spec-0123 §3.1: a leg's doors a hand opens parse, each a waypoint of the leg;
+// one that is not is a structural fault, and the crossing rule says which door
+// a walk stood in.
+test("a leg's doors parse, are waypoints of the leg, and are asserted crossed (spec-0123)", () => {
+  const leg = {
+    from: [0, 64, 0],
+    to: [0, 64, 6],
+    waypoints: [
+      [0, 64, 0],
+      [0, 64, 3],
+      [0, 64, 6],
+    ],
+    use_gates: [[0, 64, 3]],
+  };
+  const wp = parseWaypoints({ version: "0.4.0", campaign_id: "door", legs: [leg] });
+  assert.deepEqual(wp.legs[0]!.doors, [[0, 64, 3]]);
+  const match = nextLegWaypoints(wp.legs, 0, [0, 64, 6], [0, 64, 0]);
+  assert.deepEqual(match.doors, [[0, 64, 3]]);
+  assert.deepEqual(nextLegWaypoints(wp.legs, 0, [9, 9, 9]).doors, []);
+  assert.throws(
+    () =>
+      parseWaypoints({
+        version: "0.4.0",
+        campaign_id: "door",
+        legs: [{ ...leg, use_gates: [[1, 64, 3]] }],
+      }),
+    (e: unknown) => e instanceof WaypointsParseError && e.pointer === "/legs/0/use_gates/0",
+  );
+  const absent = parseWaypoints({ version: "0.4.0", campaign_id: "door", legs: [{ ...leg, use_gates: undefined }] });
+  assert.deepEqual(absent.legs[0]!.doors, []);
+  assert.deepEqual(doorsCrossed([[0, 64, 3]], [[0, 64, 2], [0, 64, 3]]), [{ door: [0, 64, 3], crossed: true }]);
+  assert.deepEqual(doorsCrossed([[0, 64, 3]], [[0, 64, 2], [0, 65, 3]]), [{ door: [0, 64, 3], crossed: false }]);
 });
