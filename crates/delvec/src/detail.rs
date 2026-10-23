@@ -931,7 +931,11 @@ fn write_row(campaign_dir: &Path, campaign: &Campaign, row: &Detail) -> Result<(
         None => env.content.details.push(row.clone()),
     }
     let text = delvewright_dsl::to_canonical_string(&env).expect("a detail plan serialises");
-    write(campaign_dir, delvec::compiler::load::DETAIL_PLAN_FILE, text.as_bytes())
+    write(
+        campaign_dir,
+        delvec::compiler::load::DETAIL_PLAN_FILE,
+        text.as_bytes(),
+    )
 }
 
 /// Write one file of a commit so that no reader ever sees it half written

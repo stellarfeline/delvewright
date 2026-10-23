@@ -83,7 +83,7 @@ fn codes(out: &Output) -> Vec<String> {
 
 /// One place, checked then committed: the check writes nothing, and the two
 /// print the same codes. Returns the shared code list.
-fn agree(campaign: &Path, prefabs: &Path, place: &str) -> (Vec<String>, i32, i32) {
+fn agree(campaign: &Path, prefabs: &Path, place: &str) -> (Vec<String>, i32, i32, String) {
     let cs = campaign.to_str().unwrap();
     let ps = prefabs.to_str().unwrap();
     let before = (snapshot(prefabs), snapshot(campaign));
@@ -115,7 +115,8 @@ fn agree(campaign: &Path, prefabs: &Path, place: &str) -> (Vec<String>, i32, i32
         // A refusal before the write is the same refusal, at the same exit.
         assert_eq!(check_exit, commit_exit, "{place}");
     }
-    (c, check_exit, commit_exit)
+    let shown = format!("--check: {}\ncommit: {}", text(&check), text(&commit));
+    (c, check_exit, commit_exit, shown)
 }
 
 fn stems(campaign: &Path) -> Vec<String> {
@@ -144,9 +145,8 @@ fn check_and_commit_agree_over_every_gallery_place_and_three_refusals() {
 
     // Green: every program place of the gallery's site-plan point.
     for stem in &places {
-        let (_, check, commit) = agree(&campaign, &prefabs, &format!("node/{stem}"));
-        assert_eq!(check, 0, "node/{stem}: --check refused");
-        assert_eq!(commit, 0, "node/{stem}: the commit refused");
+        let (_, check, commit, shown) = agree(&campaign, &prefabs, &format!("node/{stem}"));
+        assert_eq!((check, commit), (0, 0), "node/{stem}: {shown}");
     }
     eprintln!(
         "agreement binding: {n} of {n} program place(s) checked and committed",
@@ -162,19 +162,19 @@ fn check_and_commit_agree_over_every_gallery_place_and_three_refusals() {
         (c, p)
     };
 
-    // DW0843 — an undersize piece: the beacon's box shrinks under its
+    // DW0843 — an undersize piece: the perch's box shrinks under its
     // committed piece, and the annex's check judges the whole that holds it.
     let (c, p) = copy("dw0843");
     patch(&c.join("site-plan.json"), |v| {
         let boxes = v["content"]["boxes"].as_array_mut().unwrap();
         let b = boxes
             .iter_mut()
-            .find(|b| b["node"] == "node/beacon")
+            .find(|b| b["node"] == "node/perch")
             .unwrap();
         b["extent"] = json!([8, 6]);
     });
-    let (k, _, _) = agree(&c, &p, "node/annex");
-    assert!(k.contains(&"DW0843".to_string()), "{k:?}");
+    let (k, _, _, shown) = agree(&c, &p, "node/annex");
+    assert!(k.contains(&"DW0843".to_string()), "{k:?}\n{shown}");
 
     // DW0844 — an unanswered seam: the annex's arch cut one cell along the
     // wall from where the plan hands it.
@@ -184,8 +184,8 @@ fn check_and_commit_agree_over_every_gallery_place_and_three_refusals() {
         *size = json!({"expr": "arith", "lhs": size.clone(), "op": "add",
                        "rhs": {"expr": "int", "value": 1}});
     });
-    let (k, _, _) = agree(&c, &p, "node/annex");
-    assert!(k.contains(&"DW0844".to_string()), "{k:?}");
+    let (k, _, _, shown) = agree(&c, &p, "node/annex");
+    assert!(k.contains(&"DW0844".to_string()), "{k:?}\n{shown}");
 
     // DW0845 — an owed name unbound: the annex's own place mark removed.
     let (c, p) = copy("dw0845");
@@ -193,8 +193,8 @@ fn check_and_commit_agree_over_every_gallery_place_and_three_refusals() {
         let body = v["rules"]["room"][0]["body"]["body"].clone();
         v["rules"]["room"][0]["body"] = body;
     });
-    let (k, _, _) = agree(&c, &p, "node/annex");
-    assert!(k.contains(&"DW0845".to_string()), "{k:?}");
+    let (k, _, _, shown) = agree(&c, &p, "node/annex");
+    assert!(k.contains(&"DW0845".to_string()), "{k:?}\n{shown}");
 }
 
 #[test]

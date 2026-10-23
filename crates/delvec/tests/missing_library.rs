@@ -58,7 +58,10 @@ fn every_piece_reading_verb_refuses_an_absent_library_by_name() {
         ("validate", vec!["validate", cs]),
         ("analyze", vec!["analyze", cs]),
         ("build", vec!["build", cs, "-o", os]),
-        ("detail --check", vec!["detail", "--check", ss, "node/annex"]),
+        (
+            "detail --check",
+            vec!["detail", "--check", ss, "node/annex"],
+        ),
         ("detail", vec!["detail", ss, "node/annex"]),
     ];
     for (label, args) in &compiler {

@@ -99,7 +99,10 @@ fn a_commit_leaves_only_its_targets_and_a_reader_never_sees_a_torn_plan() {
     let after = (paths(&prefabs), paths(&campaign));
     let new_pieces: BTreeSet<String> = after.0.difference(&before.0).cloned().collect();
     let expected: BTreeSet<String> = targets.iter().map(|s| (*s).to_string()).collect();
-    assert_eq!(new_pieces, expected, "the library gained exactly the targets");
+    assert_eq!(
+        new_pieces, expected,
+        "the library gained exactly the targets"
+    );
     assert_eq!(before.0.difference(&after.0).count(), 0);
     assert_eq!(after.1, before.1, "the campaign gained and lost no path");
     assert!(

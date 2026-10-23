@@ -64,10 +64,9 @@ fn the_annex_generator_emits_the_committed_program_and_it_passes_the_check() {
 
     let fmt = delvec(&["fmt", emitted.to_str().unwrap()]);
     assert!(fmt.status.success(), "{}", text(&fmt));
-    let committed = std::fs::read(
-        common::repo_root().join("gallery/overlays/site-plan/programs/annex.json"),
-    )
-    .unwrap();
+    let committed =
+        std::fs::read(common::repo_root().join("gallery/overlays/site-plan/programs/annex.json"))
+            .unwrap();
     assert!(
         std::fs::read(&emitted).unwrap() == committed,
         "the committed program is not the generator's output"
