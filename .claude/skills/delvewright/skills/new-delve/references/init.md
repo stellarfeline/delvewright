@@ -427,6 +427,8 @@ provider key I7 put there:
 
 ```sh
 mkdir -p .out
+git rev-parse --git-dir >/dev/null 2>&1 && ! git check-ignore -q .out/env.sh \
+  && printf '.out/\n' >> .gitignore
 E="$PWD/.out/env.sh"
 touch "$E"
 {
@@ -446,6 +448,9 @@ EOF
 } > "$E.next" && mv "$E.next" "$E"
 ```
 
+**The file holds keys, so it is never committed**: in a working directory that
+is a git checkout, the second line adds `.out/` to `.gitignore` unless git
+already ignores it (the content repository does).
 `DELVEWRIGHT_PREFABS` is written by I6; the first I4 leaves the line empty for
 it. `DELVE_OUTPUT` and `DELVE_DOCKERFILE` are the pair every build and ladder
 command reads together (*Where output goes*, below). Every command on this page
