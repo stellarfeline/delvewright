@@ -457,7 +457,7 @@ files that exist.
 joins are at ground level, so a piece can pass it with every storey above the
 floor stranded. The **reachability measurement** answers the other question and
 runs on every expansion, flag or no flag — how much of the standable floor a body
-reaches on foot from the grade entrance, how much of the rest sits under a roof
+reaches from the grade entrance by the reach graph, how much of the rest sits under a roof
 (a room with no way in) versus open to the sky (a roof, a parapet, a terrace: the
 engine cannot tell which and never gates on them), how many disconnected pockets
 there are, and the bounding box of the five worth walking to. `--reachable-floor`
@@ -465,9 +465,7 @@ turns the roofed half of that into a verdict, for a piece that claims a body can
 get everywhere indoors.
 
 **A one-way descent cannot make that claim and cannot be excused from it.** The
-predicate that would say "a body gets down there and not back up"
-(`nav::reachable_with_fall`) is library-internal and no CLI surface reaches it,
-so a piece whose design is a one-way drop simply fails `--reachable-floor`
+claim "a body gets down there and not back up" has no CLI surface, so a piece whose design is a one-way drop simply fails `--reachable-floor`
 (`drop-shaft` 9×12×9 seed 1: 28 of 63 roofed cells unreached) and takes exit 4
 with nothing written. Leave the flag off on such a piece and read the always-on
 measurement, where the lower level is an `unreachable_sheltered` pocket.
@@ -649,8 +647,10 @@ every step to this, path by path, on a real export carrying every field at risk.
 
 `lighting` measures the light over the **floor a body can walk to from outside**,
 and its report states the binding it measured: `standable_cells` in the whole
-region box, of which `measured_cells` are reachable on foot from `entry_cells` at
-grade. The flood is the compiler's own (`delvec::compiler::light`) — block
+region box, of which `measured_cells` are the ones a body reaches from
+`entry_cells` at grade — by the reach graph over the piece's own blocks
+(`admit::light::floor_measured`: walk, climb, fall, swim and every jump of the
+launch set). The flood is the compiler's own (`delvec::compiler::light`) — block
 light and sky light, the same model `DW0210`/`DW0211` measure the assembled world
 with.
 

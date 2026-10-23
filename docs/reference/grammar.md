@@ -18,8 +18,9 @@ in `crates/delvec/tests/grammar_prefab.rs`.
 
 Two library modules exist for the tool and are public for it:
 
-- [`nav`] — `passable` / `solid` / `standable` / `standable_cells` / `connected`
-  / `reachable_with_fall` / `ends` / `components` / `ground_entry` / `sheltered`.
+- [`nav`] — `passable` / `solid` / `standable` / `standable_cells` /
+  `body_world` / `reaches` / `reaches_walled` / `ends` / `components` /
+  `ground_entry` / `sheltered`.
   **What a body can pass through is not decided here.** It is
   `delvewright_dsl::blockshape::collision_class` — the one place in the
   workspace that knows what a vanilla block state does to a body, and the same
@@ -49,24 +50,22 @@ Two library modules exist for the tool and are public for it:
   rule's own gate is the right place for the gate and the wrong place for the
   *predicate* it is written in: a program authored outside this repo has no
   `tests/support` to reach for, so its author had no way to ask whether the piece
-  could be walked at all. Every test in this crate delegates here, and no copy of
-  the walk survives anywhere.
+  could be walked at all. Every test in this crate delegates here.
 
-  **The step rule these are written in terms of is the engine's one rule**, not
-  this crate's: `delvewright_dsl::metrics::step_allowed`, which `delvec`'s own
-  router also asks. A full-block rise is a jump, and a jump requires the cell the
-  body's head sweeps through to be clear — so a piece cannot be admitted on a
-  climb the compiler will later refuse. The walk functions take the model as their
-  first argument for exactly that reason: the set of standable cells cannot answer
-  what is above them.
-
-  One thing the walk still reads its own way, stated so it is not mistaken for
-  a second rule: `reachable_with_fall` remains
-  deliberately more permissive than the plain walk: it adds a one-way fall edge,
-  which is why a forward-arrival claim may use it and a no-way-back claim may not.
-  No gate of this module judges with `connected` or `reachable_with_fall`:
-  `traversable`, `reachable-floor` and `contract-edge-proof` ask the reach graph
-  over the piece's own blocks (§4c, §4d, §2d).
+  **Where a body gets to is the reach graph's**, not this module's:
+  `body_world` builds the model's own blocks into `World::of_piece` (air round
+  them), and `reaches` asks the graph's moves — the walk, the climb, every fall,
+  every swim and every jump of the launch set — standing only on the floor the
+  caller names and never leaving the model's box. `reaches_walled` is the form a
+  proof that a route is the **only** route takes: every standable cell outside
+  the kept set is walled up with stone (it and the two cells over it), because a
+  jump that lands past a doorway flies through the doorway's cells without
+  standing in them, so a cut made by leaving cells out is crossed in the air.
+  `traversable`, `reachable-floor` and `contract-edge-proof` ask the same graph
+  over the piece's own blocks (§4c, §4d, §2d). No step walk survives in
+  `schem::nav`; what stays there (`components`, `refused_frontier`) is
+  grouping and the step rule's own report, both read with
+  `delvewright_dsl::metrics::step_allowed`.
 - [`gates`] — `judge(&Expansion, Options) -> Report`, and the distinction the
   module is built around: a **gate** has a verdict and a binding count, a
   **measurement** is a number with no threshold, and the two are never mixed.
@@ -2071,20 +2070,16 @@ ledge finds nothing underfoot.
 
 Gates:
 
-1. **`anchor/spill` reaches `anchor/landing`** under `reachable_with_fall`
-   (`crates/delvec/tests/grammar_staging.rs`) — the ±1-step walk `cliff_path` uses, plus a one-way
-   **fall** edge: stepping off a standable cell into an adjacent column with
-   nothing underfoot, landing on the first solid floor below however far that
-   is. Deliberately more permissive than the compiler's NPC pathing
-   (`compiler::nav::World::walk_region`, ±1 only) — a player can walk off a ledge, an escorted
-   NPC never has to.
-2. **`anchor/landing` does *not* reach `anchor/spill`**, under the *plain* ±1
-   step walk (no fall edge helps a climb). Proving the negative under gate 1's
-   own stricter model would be circular; the plain walk is the stronger claim.
-   Teeth: `rescue_ladder` notches every column of the entry floor but the one
-   `anchor/spill` stands on — paired in the test with a `drop` of 2 (short
-   enough that one notch plus one diagonal step actually bridges the gap) —
-   and the same plain-walk check must find a way back.
+1. **`anchor/spill` reaches `anchor/landing`** by the reach graph
+   (`nav::reaches`, `crates/delvec/tests/grammar_staging.rs`): a body steps off
+   the brink and falls to the landing — a player can walk off a ledge, an
+   escorted NPC never has to (`compiler::nav::World::walk_region`).
+2. **`anchor/landing` does *not* reach `anchor/spill`**: no walk, climb or jump
+   of the launch set carries a body back up. Teeth: `rescue_ladder` notches
+   every column of the entry floor but the one `anchor/spill` stands on —
+   paired in the test with a `drop` of 2 (short enough that one notch plus one
+   diagonal step actually bridges the gap) — and the same check must find a way
+   back.
 
 ### `dumbwaiter` — the walled duct
 
@@ -2101,8 +2096,7 @@ by walking off anywhere along the boundary.
 | Smallest region | (`duct_width + 4`) × (`drop + head + 1`) × (`duct_len + 4`), and at least as long as it is wide |
 | Anchors | `anchor/hatch` — the entry ledge's brink, where the floor stops. `anchor/landing` — the landing floor cell nearest the duct |
 
-Gates: the same two as `drop_shaft`, against the same `reachable_with_fall` /
-plain-walk pair. The `rescue_ladder` teeth test notches every column but
+Gates: the same two as `drop_shaft`, against the same reach graph. The `rescue_ladder` teeth test notches every column but
 `anchor/hatch`'s own — wide enough to be certain of overlapping wherever
 `duct_core`'s own runtime-split margins actually landed, since a single fixed
 column (what `drop_shaft` uses) is not guaranteed to line up with a core whose
@@ -2223,10 +2217,9 @@ Gates:
    least one cell it can no longer see, while the causeway stays walkable end to
    end.
 3. **`berm_gate` opens a lane and nothing else** — with it on the piece's
-   `Z`-max face reaches its `Z`-min face under `connected`; with it off it does
-   not; the guard's own floor stays unreachable from the lane under both
-   `connected` and the permissive walk-and-fall model, so the post is still not a
-   landing; and gate 2 still holds. The `guard_len` cells of lane *under* the
+   `Z`-max face reaches its `Z`-min face by the reach graph (`nav::reaches`);
+   with it off it does not; the guard's own floor stays unreachable from the
+   lane, so the post is still not a landing; and gate 2 still holds. The `guard_len` cells of lane *under* the
    post are counted and named rather than folded into gate 2: the guard cannot
    see the floor beneath its own feet, which is what "pass under" means, and
    hiding that inside a green would be the vacuity §5c's binding counts exist to
@@ -2253,7 +2246,7 @@ Gates:
    `anchor/elite` is asserted standable: 81 cells at the default.
 2. **Two proven flank lanes** — the west band and the east band (`X` strictly
    outside the circle radius) each independently connect the approach end to
-   the exit end by `connected`, counted rather than eyeballed. Teeth:
+   the exit end by `nav::reaches`, counted rather than eyeballed. Teeth:
    `seal_flank` walls off one or both bands across the circle's own length —
    exactly the shape a fog-gate motif would take — and the counted route total
    drops from 2 to 1 or 0.
@@ -2327,9 +2320,8 @@ construction is available and the shape is a recurring one. `cliff_path` under
 
 Gates (`crates/delvec/tests/grammar_staging.rs`), each with its binding count:
 
-1. **The flight walks up, and back down** — the plain ±1-step `connected` walk,
-   66 standable cells in the fixture, 2 landings, 8 treads. `connected`'s edge
-   relation is symmetric, so both directions are literally one claim; both are
+1. **The flight walks up, and back down** — the reach graph (`nav::reaches`),
+   66 standable cells in the fixture, 2 landings, 8 treads; both directions are
    written down because the calibration is the point. A second test runs the
    *same* predicate over this rule and over `drop_shaft` and requires them to
    disagree — one model of "can a body get there", two rules, opposite verdicts.
@@ -2787,8 +2779,7 @@ the box it is handed and stands a body one course up; a flight *arrives on* its
 head landing, whose floor is the last course the run laid. So the upper storey's
 box has to start one course **below** the level a body stands on, and the plinth
 is `climb − 1`. Get that by one and the zone is two rooms with a step between
-them — which walks perfectly under `connected`'s ±1 edge and passes a route
-gate in silence. Hence Z7's gate 1 asserts three things, not one: the walk, the
+them — which a body walks perfectly and which passes a route gate in silence. Hence Z7's gate 1 asserts three things, not one: the walk, the
 `RISE` between the two end faces measured off the model, and `anchor/stair-head`
 at the exact height of the upper floor.
 
@@ -2966,7 +2957,7 @@ Each is asserted rather than asserted-about: every one has a test in
 | `barrow_shore` | 19 × 6 × 24 | `arena/*` only; role `arena/stone` | `elite` |
 | `cliff_road` | 11 × 13 × 40 | `sea` (3), `fall` (8), `turn_run` (4), `ledge_shelf` (0) and `gulf_screen` (0) — both test knobs — plus `near/*` and `far/*`; role `crag` | `near-niche-<i>` / `near-niche-watch-<i>` on the way in, `far-niche-<i>` / `far-niche-watch-<i>` on the way out |
 | `gate_ward` | 20 × 10 × 84 | `shaft_run` (12), `motif_run` (10), `tee_run` (10), `stair_run` (16), `stand_run` (10), `door_run` (10) — the gated passage takes the rest — `strip_depth` (11), plus `gate/*`, `door/*`, `stand/*`, `stair/*`, `tee/*`, `sally/*`, `motif/*`, `shaft/*`; role `margin`. The upper ward stands on a plinth `shaft/drop` thick | `watch`, `gate`, `threshold`, `alcove`, `release`, `run-head`, `stair-run`, `volley-slot`, `pocket-<i>`, `branch-door`, `sally-gate`, `unlock`, `threshold-narrate`, `spill`, `landing` |
-| `drowned_ward` | 40 × 10 × 60 | `ward_run` (20), `junction_run` (20) — the crossing takes the rest — `strip_depth` (21), plus `ward/*`, `ring/*`, `junction/*`, `shortcut/*`; role `margin`. The zone pins `ward/berm_gate = 1` and `ward/rise = 2`: the post has to be passable at all, and the berm has to meet its neighbours' floor within the one-block step `connected` allows, or the seam is one-way | `causeway-head`, `keeper-elite`, `branch-door`, `gate`, `unlock`, `elite` |
+| `drowned_ward` | 40 × 10 × 60 | `ward_run` (20), `junction_run` (20) — the crossing takes the rest — `strip_depth` (21), plus `ward/*`, `ring/*`, `junction/*`, `shortcut/*`; role `margin`. The zone pins `ward/berm_gate = 1` and `ward/rise = 2`: the post has to be passable at all, and the berm has to meet its neighbours' floor closely enough that a body gets back up it, or the seam is one-way | `causeway-head`, `keeper-elite`, `branch-door`, `gate`, `unlock`, `elite` |
 | `chapel_ward` | 16 × 9 × 26 | `strip_depth` (9), `junction_run` (8), `hearth_run` (8) — the chute takes the rest — plus `chute/*`, `hearth/*`, `junction/*`, `shortcut/*`; role `margin` | `hatch`, `landing`, `hearth`, `branch-door`, `gate`, `unlock` |
 | `hall_keep` | 11 × 11 × 76 | `duct_run` (12), `motif_run` (12), `gallery_run` (12), `store_run` (12), `door_run` (12) — the hall takes the rest — plus `hall/*`, `door/*`, `stores/*`, `gallery/*`, `motif/*`, `duct/*`; role `margin`. The keep stands on a plinth `duct/drop` thick | `hall-door`, `perch-<i>`, `threshold`, `alcove`, `store-line`, `tell`, `bait`, `bait-perch`, `threshold-narrate`, `hatch`, `landing` |
 | `cistern_deep` | 40 × 10 × 100 | `arena_run` (20), `sally_run` (20), `vent_run` (20), `gallery_run` (20) — the shaft takes the rest — `strip_depth` (21), plus `arena/*`, `tee/*`, `sally/*`, `vent/*`, `gallery/*`, `shaft/*`; role `margin` | `spill`, `landing`, `watch`, `gate`, `grate-secret`, `branch-door`, `sally-gate`, `unlock`, `elite` |
@@ -3039,22 +3030,13 @@ the piece-level claims stay in §5b.
 | ...and the branch's teeth | 42 standable, 9 near-room | `tee/sealed = 1` → the branch is unreachable, mainline still walks |
 | A composed route the player walks **up** | 133 standable, 3 in the entry face, 7 blocks of rise | the level walk to the flight's own foot landing is the control; a flat chain reads 0 |
 
-**Which zones fall.** Four of the eight are crossed with the ±1 step
-`connected` uses, and **Z7 is one of them on purpose**: its mainline climbs, and a
-zone that climbs owes the stronger walk rather than the more permissive one. The
-other four have a drop on the route — Z4 and Z6 are *entered* by stepping off a
-ledge, Z2 and Z5 are *left* down one — so they are crossed under
-`reachable_with_fall` (`connected`'s walk plus a one-way fall), and each of the
-four also owes the negative: the extra freedom still does not carry a player back
-up (asserted under the plain step, since proving a negative under the generous
-model would be circular). The fall model is also the *adversary*: a fall edge only
-ever adds routes, so Z2's and Z6's "the span is on the route" cuts and Z5's
-doorway cut are re-walked under it — and Z7 uses it in the third way, as the only
-model under which its own lift shaft is enterable at all.
-`nav::reachable_with_fall` carries it for piece and zone tests alike
-(`crates/delvec/tests/support/mod.rs` and `crates/delvec/tests/grammar_staging.rs`
-both delegate to it), and a landing must be a member of the cell set under
-consideration, or a fall would walk straight through a gate's own cut.
+**Which zones fall.** Every zone is crossed by the reach graph (`nav::reaches`),
+whose moves include the fall. Four have a drop on the route — Z4 and Z6 are
+*entered* by stepping off a ledge, Z2 and Z5 are *left* down one — and each of
+those four also owes the negative: no walk, climb or jump carries a player back
+up. Z2's and Z6's "the span is on the route" cuts and Z5's doorway cut wall the
+removed floor up (`nav::reaches_walled`), so a jump cannot cross a cut in the
+air, and Z7's lift shaft is entered by the fall.
 
 Zone programs are **not** in the export suite. Size is not why — every zone
 exports, tiling if it must (§6) — so the statement is the narrow one: **no zone
