@@ -23,8 +23,10 @@
               "text": "The keeper hears the asking and yields the cell.",
               "verb": "opens"
             },
+            "hint": "Someone in this hall has the answer.",
             "id": "obj/ask",
             "npc": "npc/keeper",
+            "title": "Ask about the way on",
             "type": "talk-to"
           },
           {
@@ -36,8 +38,10 @@
               "text": "The party steps through the opened door into the cell.",
               "verb": "arrives"
             },
+            "hint": "Through the low door.",
             "id": "obj/enter-the-cell",
             "radius": 3,
+            "title": "Enter the cell",
             "type": "reach-anchor"
           },
           {
@@ -49,8 +53,10 @@
               "text": "The party walks out the far side and the whole is behind them.",
               "verb": "departs"
             },
+            "hint": "Back the way you came in.",
             "id": "obj/walk-out",
             "radius": 3,
+            "title": "Walk out",
             "type": "reach-anchor"
           }
         ],
@@ -85,6 +91,6 @@
       }
     ]
   },
-  "dsl_version": "0.58.0",
+  "dsl_version": "0.61.0",
   "stage": "quests"
 }

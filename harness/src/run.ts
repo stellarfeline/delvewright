@@ -6,10 +6,15 @@
 // step, or timeout). No campaign knowledge lives here (spec-0003): everything
 // comes from critical-path.json.
 
-import { loadRepaintPlanForCriticalPath, repaintBindingLine } from "./repaint.ts";
 import { loadPulsePlanForCriticalPath, pulseBindingLine } from "./pulse.ts";
 import { loadContainerLedgerForCriticalPath } from "./containers.ts";
 import { cueBinding, cueBindingLine, loadCueLedgerForCriticalPath } from "./cues.ts";
+import {
+  ShotSubjectObserver,
+  loadShotSubjectPlanForCriticalPath,
+  shotSubjectBindingLine,
+  shotSubjectFailures,
+} from "./shot-subjects.ts";
 import { readFile } from "node:fs/promises";
 import nodePath from "node:path";
 import { parseCriticalPathJson } from "./critical-path.ts";
@@ -345,17 +350,6 @@ async function main(): Promise<number> {
       process.stderr.write(`death plan: UNBOUND — ${b.reason ?? "no reason given"}\n`);
     }
   }
-  // spec-0080 §5.2: what each repaint must tell the client. Absent → the build
-  // repaints nothing, said out loud.
-  const repaintPlan = await loadRepaintPlanForCriticalPath(pathArg);
-  if (repaintPlan) {
-    executor.useRepaintPlan(repaintPlan);
-    process.stderr.write(
-      `repaint plan: ${repaintPlan.repaints.length} set-atmosphere effect(s) to watch reach the client\n`,
-    );
-  } else {
-    process.stderr.write(`repaint plan: none in this build (no set-atmosphere)\n`);
-  }
   // spec-0102 §5.3: where each pulse must be heard and where it must not.
   // Absent → the build declares no pulse, said out loud.
   const pulsePlan = await loadPulsePlanForCriticalPath(pathArg);
@@ -393,6 +387,17 @@ async function main(): Promise<number> {
     );
   } else {
     process.stderr.write(`cue ledger: none in this build\n`);
+  }
+  // spec-0110 §7: every body a cutscene shot frames, watched from the camera.
+  // Absent → the build has no cutscene; empty → no shot frames a body.
+  const shotPlan = await loadShotSubjectPlanForCriticalPath(pathArg);
+  if (shotPlan && shotPlan.cutscenes.length > 0) {
+    executor.shotSubjects = new ShotSubjectObserver(shotPlan);
+    process.stderr.write(
+      `shot-subject plan: ${shotPlan.cutscenes.length} cutscene(s) framing a body\n`,
+    );
+  } else {
+    process.stderr.write(`shot-subject plan: no cutscene shot frames a body in this build\n`);
   }
   const combatPlan = await loadCombatPlanForCriticalPath(pathArg);
   const dieRetry = combatPlan !== undefined && dieRetryFromEnv();
@@ -621,12 +626,6 @@ async function main(): Promise<number> {
     for (const verdict of musters.values()) {
       for (const f of verdict.findings) report.recordMusterFinding(`${verdict.wave}: ${f}`);
     }
-    // spec-0080 §5.2: every repaint the path performed reached the client.
-    const repaintVerdicts = executor.repaintVerdicts();
-    if (repaintPlan) {
-      process.stderr.write(`${repaintBindingLine(repaintPlan, repaintVerdicts)}\n`);
-    }
-    const repaintFailures = repaintVerdicts.flatMap((v) => (v.failure ? [v.failure] : []));
     // spec-0101 §5.4: every body that did not face the bot where it should have.
     const watchLedger = executor.watchLedger();
     watchLedger.armed = false;
@@ -648,6 +647,14 @@ async function main(): Promise<number> {
     if (pulsePlan) {
       process.stderr.write(`${pulseBindingLine(pulsePlan, pulseVerdicts)}\n`);
     }
+    // spec-0110 §7: every framed body read true, before and through its shot.
+    const shotRecords = executor.shotSubjects?.records ?? [];
+    const shotSpans = executor.shotSubjects?.spans ?? [];
+    report.recordShotSubjects(shotRecords);
+    if (shotPlan && shotPlan.cutscenes.length > 0) {
+      process.stderr.write(`${shotSubjectBindingLine(shotPlan, shotRecords, shotSpans)}\n`);
+    }
+    const shotFailures = shotSubjectFailures(shotRecords, shotSpans);
     const pulseFailures = pulseVerdicts.flatMap((v) => [
       ...v.failures,
       ...(pathFailure === undefined ? v.unreached : []),
@@ -669,18 +676,18 @@ async function main(): Promise<number> {
       passed:
         pathFailure === undefined &&
         musterFailures.length === 0 &&
-        repaintFailures.length === 0 &&
         watchFailures.length === 0 &&
         pulseFailures.length === 0 &&
-        cueFailures.length === 0,
+        cueFailures.length === 0 &&
+        shotFailures.length === 0,
       findings: report.musterFindings(),
       failures: [
         ...(pathFailure === undefined ? [] : [describe(pathFailure)]),
         ...musterFailures,
-        ...repaintFailures,
         ...watchFailures,
         ...pulseFailures,
         ...cueFailures,
+        ...shotFailures,
       ],
     });
     // The death loop. Recorded whether it ran or not, and a stage that

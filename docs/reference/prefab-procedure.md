@@ -181,7 +181,7 @@ What the numbers cannot decide, stated so you do not wait for them to:
 **When the tool cannot run.** It needs two things that are not always there: the
 pinned block registry at `crates/dsl/data/blocks-1.21.11.json`, and a
 1.21.11 client jar (`--jar`, `$DELVEWRIGHT_CLIENT_JAR`, or
-`~/.chunky/resources/minecraft.jar`). Missing either one is a named refusal that
+`~/.delvewright/client/minecraft-1.21.11.jar`). Missing either one is a named refusal that
 says which. **The step does not become optional** — it becomes a different
 source of measured names: the rule library is a corpus somebody already
 measured, so take roles from it (`delvec grammar list`, then `delvec grammar show
@@ -884,7 +884,7 @@ use.
 | `lighting` | no | `{profile, measured_min_light?, measured?, rationale?, method?}`. |
 | `license` | no | `{source, spdx, note, provenance, generated_by?}`. |
 | `walk_y` | no (owed where seated) | Local y of the piece's own walk plane — the cell a body's feet occupy on its principal floor (spec-0060 §4). An area's origin is derived from it on a horizon whose datum is a walk plane. It has no default; a piece a campaign seats without one is `DW0886`. A measurement, written by the generator or by `delvec prefab planes --write`, never typed. |
-| `waterline_y` | no | Local y of the piece's top authored water block. `DW0887` asks whether the bytes bear it out; `DW0344` asks whether the placement honours it in a `horizon: ocean` world. Absent for a piece that authors no sea. |
+| `waterline_y` | no | Local y of the piece's top authored water block. `DW0887` asks whether the bytes bear it out; `DW0344` asks whether the placement honours it in a world whose horizon's `base` is `ocean`. Absent for a piece that authors no sea. |
 | `shown_faces` | no (`[]`) | The sides the player is meant to see, as local side names (`east` `west` `up` `down` `south` `north`) that turn with the placement. Absent means no side is shown — the strict answer for a piece authored to be buried; `DW0885` reads it. |
 | `spatial_contract` | no | The piece's declared spaces, out-of-walk regions, edges and faces (ADR-0020). |
 

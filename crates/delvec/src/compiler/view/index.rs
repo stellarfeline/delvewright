@@ -1,223 +1,306 @@
-//! Shot index emission (spec-0003 visual tier, ladder integration).
+//! **The shot index** (spec-0003 visual tier, spec-0112 §9): the (image ↔
+//! expect) pairs a reviewing agent is handed, one entry per frame `delvec
+//! frames` drew, each stating what the frame is of and what it shows.
 //!
-//! Pairs every `render-plan.json` shot with its `expect` checklist and the image
-//! filename a renderer produces, so a reviewing agent / vision model is handed
-//! **(image ↔ expect) pairs** — the deliverable of the visual tier. The review step
-//! itself stays agent-driven (no vision-model call is wired into CI); this module
-//! only produces the contract the reviewer consumes.
+//! [`plan_shots`] is the one reader of a `render-plan.json`'s shots: the id and
+//! kind, the camera in Minecraft's convention, the world the frame stands in,
+//! its clock, its mode, its `expect` checklist and its `lighting` stamp. An
+//! entry ([`IndexEntry`]) adds what only drawing the frame can say: the image,
+//! the backend and renderer that drew it, what it shows, what the renderer did
+//! not draw (`undrawn`, `DW1039`), what lies outside it and what no frame can
+//! show (`unchecked`).
 //!
-//! Order and content mirror `render-plan.json` exactly (shots in plan order), and
-//! the emitter is a pure byte-deterministic function (fixed field order, 2-space
-//! pretty, trailing newline), so the index rides the determinism gate like the plan
-//! it derives from.
-//!
-//! Shots stamped dark-with-night-vision (see [`crate::compiler::view::scene`]'s REVIEW POLICY)
-//! additionally carry `review_policy` = [`crate::compiler::view::scene::REVIEW_POLICY`] and their
-//! `lighting` stamp, so the reviewer knows those images are night-vision
-//! **emulations** (legibility ground truth, not lighting ground truth). Both
-//! fields are absent — not null — everywhere else, keeping indexes for
-//! declaration-free campaigns byte-identical.
+//! Entries follow the plan's shot order; the bytes are a function of the plan,
+//! the review record and the renderer's statistics, never of the pixels.
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
+use crate::compiler::framing::Camera;
 use crate::compiler::view::diag::{DW_INPUT, Diagnostic};
-use crate::compiler::view::scene::{
-    LightingStamp, REVIEW_POLICY, needs_emulation, scene_file_stem,
-};
+use crate::compiler::view::frames::{FrameSky, Mode, REVIEW_HQ_SPP};
 
 #[derive(Debug, Deserialize)]
 struct RenderPlan {
     campaign_id: String,
-    shots: Vec<Shot>,
+    /// The world's own time and weather: the day a shot's moon stands on is
+    /// read against it ([`crate::compiler::view::scene::frame_day`]).
+    #[serde(default)]
+    sky: Option<crate::compiler::view::scene::Sky>,
+    shots: Vec<RawShot>,
 }
 
 #[derive(Debug, Deserialize)]
-struct Shot {
+struct RawCamera {
+    pos: [f64; 3],
+    yaw: f64,
+    pitch: f64,
+    #[serde(default)]
+    fov: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawSky {
+    #[serde(default)]
+    time: Value,
+    daytime_ticks: i64,
+    weather: delvewright_dsl::WorldWeather,
+    #[serde(default)]
+    set_by: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawShot {
     id: String,
     kind: String,
-    /// Critical-path leg index (player-POV shots only).
+    camera: RawCamera,
+    #[serde(default)]
+    world: Option<String>,
+    #[serde(default)]
+    sky: Option<RawSky>,
+    #[serde(default)]
+    mode: Option<String>,
     #[serde(default)]
     leg: Option<u32>,
-    /// The objective the shot serves (player-POV shots; may be null).
     #[serde(default)]
     objective: Option<String>,
-    /// The machine-generated expect checklist; the first entry of a POV shot is the
-    /// one-sentence first-person description.
     #[serde(default)]
     expect: Vec<String>,
-    /// The compiler's declaration-derived lighting stamp, if any (raw
-    /// passthrough for the entry, plus the emulation predicate).
     #[serde(default)]
-    lighting: Option<serde_json::Value>,
+    lighting: Option<Value>,
+    /// A cutscene shot's facts (`step`, `shot`, `tick`, `seconds`).
+    #[serde(default)]
+    step: Option<Value>,
+    #[serde(default)]
+    shot: Option<Value>,
+    #[serde(default)]
+    tick: Option<Value>,
+    #[serde(default)]
+    seconds: Option<Value>,
 }
 
-#[derive(Debug, Serialize)]
-struct IndexEntry {
-    id: String,
-    kind: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    leg: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    objective: Option<String>,
-    /// The image filename a renderer produces for this shot: the scene's own
-    /// name (`crate::compiler::view::scene::scene_file_stem`) with a `.png` extension, so the
-    /// scene JSON, its Chunky caches and this image all share one stem.
-    image: String,
-    expect: Vec<String>,
-    /// The shot's `lighting` stamp, passed through verbatim from the plan
-    /// (absent for shots of undeclared areas — index bytes unchanged for them).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    lighting: Option<serde_json::Value>,
-    /// [`REVIEW_POLICY`] for shots whose scene `delvec scene` emulates
-    /// (dark-with-night-vision stamp): tells the reviewing agent/vision model
-    /// the image approximates the night-vision player view — judge layout and
-    /// readability from it, never the world's real lighting.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    review_policy: Option<&'static str>,
+/// One shot of a plan, as a frame is drawn from it.
+#[derive(Debug, Clone)]
+pub struct PlanShot {
+    pub id: String,
+    pub kind: String,
+    pub camera: Camera,
+    /// The key of the world the frame stands in.
+    pub world: String,
+    pub sky: FrameSky,
+    /// The `sky` as the plan states it, passed through to the index.
+    pub sky_json: Value,
+    pub mode: Mode,
+    pub leg: Option<u32>,
+    pub objective: Option<String>,
+    pub expect: Vec<String>,
+    pub lighting: Option<Value>,
+    /// A cutscene shot's `{step, shot, tick, seconds}`.
+    pub cutscene: Option<Value>,
 }
 
-#[derive(Debug, Serialize)]
-struct ShotIndex {
-    campaign_id: String,
-    count: usize,
-    shots: Vec<IndexEntry>,
-}
-
-/// Build the shot index bytes from a `render-plan.json`. `DW0721` on malformed
-/// input.
-pub fn index_from_plan(plan_json: &[u8]) -> Result<Vec<u8>, Diagnostic> {
+/// **Read every shot of a `render-plan.json`.** A shot that states no world,
+/// no sky or no mode was written by an engine that did not say what its
+/// frame is of, and is refused by name (`DW0721`): the remedy is a rebuild.
+pub fn plan_shots(plan_json: &[u8]) -> Result<(String, Vec<PlanShot>), Diagnostic> {
     let plan: RenderPlan = serde_json::from_slice(plan_json)
         .map_err(|e| Diagnostic::error(DW_INPUT, format!("parse render-plan.json: {e}")))?;
-    let shots: Vec<IndexEntry> = plan
-        .shots
-        .iter()
-        .map(|s| {
-            // The same predicate `delvec scene` applies, over the same
-            // stamp — index and scene can never disagree about which shots are
-            // emulated.
-            let stamp: Option<LightingStamp> = s
-                .lighting
-                .clone()
-                .and_then(|v| serde_json::from_value(v).ok());
-            let emulated = needs_emulation(stamp.as_ref());
-            IndexEntry {
-                id: s.id.clone(),
-                kind: s.kind.clone(),
-                leg: s.leg,
-                objective: s.objective.clone(),
-                image: format!("{}.png", scene_file_stem(&plan.campaign_id, &s.id)),
-                expect: s.expect.clone(),
-                lighting: s.lighting.clone(),
-                review_policy: emulated.then_some(REVIEW_POLICY),
+    let mut out = Vec::with_capacity(plan.shots.len());
+    for s in plan.shots {
+        let stale = |what: &str| {
+            Diagnostic::error(
+                DW_INPUT,
+                format!(
+                    "render-plan.json: shot `{}` states no `{what}`, so nothing says what its \
+                     frame is of. The plan was written by an engine older than this one (delvec \
+                     {}): rebuild the delve with `delvec build`",
+                    s.id,
+                    crate::compiler::DELVEC_VERSION
+                ),
+            )
+        };
+        let world = s.world.clone().ok_or_else(|| stale("world"))?;
+        let sky = s.sky.as_ref().ok_or_else(|| stale("sky"))?;
+        let world_time = plan
+            .sky
+            .as_ref()
+            .ok_or_else(|| {
+                Diagnostic::error(
+                    DW_INPUT,
+                    format!(
+                        "render-plan.json states no top-level `sky`, so no shot's day can be read \
+                         against the world's own time. The plan was written by an engine older \
+                         than this one (delvec {}): rebuild the delve with `delvec build`",
+                        crate::compiler::DELVEC_VERSION
+                    ),
+                )
+            })?
+            .world_time()?;
+        let shot_time: delvewright_dsl::WorldTime = serde_json::from_value(sky.time.clone())
+            .map_err(|e| {
+                Diagnostic::error(
+                    DW_INPUT,
+                    format!(
+                        "render-plan.json: shot `{}` states the time `{}`, which is not a time of \
+                         day this engine reads ({e}): rebuild the delve with `delvec build`",
+                        s.id, sky.time
+                    ),
+                )
+            })?;
+        let mode = match s.mode.as_deref() {
+            Some("quick") => Mode::Quick,
+            Some("hq") => Mode::Hq { spp: REVIEW_HQ_SPP },
+            Some(other) => {
+                return Err(Diagnostic::error(
+                    DW_INPUT,
+                    format!(
+                        "render-plan.json: shot `{}` states mode `{other}`, which is neither \
+                         `quick` nor `hq`",
+                        s.id
+                    ),
+                ));
             }
-        })
-        .collect();
+            None => return Err(stale("mode")),
+        };
+        let cutscene = (s.kind == "cutscene").then(|| {
+            serde_json::json!({
+                "step": s.step,
+                "shot": s.shot,
+                "tick": s.tick,
+                "seconds": s.seconds,
+            })
+        });
+        out.push(PlanShot {
+            camera: Camera {
+                pos: s.camera.pos,
+                yaw: s.camera.yaw,
+                pitch: s.camera.pitch,
+                fov: s
+                    .camera
+                    .fov
+                    .unwrap_or(crate::compiler::render_plan::DEFAULT_FOV_DEG),
+            },
+            world,
+            sky: FrameSky {
+                day: crate::compiler::view::scene::frame_day(shot_time, world_time),
+                daytime_ticks: sky.daytime_ticks,
+                weather: sky.weather,
+            },
+            sky_json: serde_json::json!({
+                "time": sky.time,
+                "daytime_ticks": sky.daytime_ticks,
+                "weather": sky.weather.keyword(),
+                "set_by": sky.set_by,
+            }),
+            mode,
+            leg: s.leg,
+            objective: s.objective.clone(),
+            expect: s.expect.clone(),
+            lighting: s.lighting.clone(),
+            cutscene,
+            id: s.id,
+            kind: s.kind,
+        });
+    }
+    Ok((plan.campaign_id, out))
+}
+
+/// One entry of `shot-index.json`.
+#[derive(Debug, Clone, Serialize)]
+pub struct IndexEntry {
+    pub id: String,
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub leg: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub objective: Option<String>,
+    /// The frame's file name, beside the index.
+    pub image: String,
+    pub expect: Vec<String>,
+    /// The shot's `lighting` stamp, passed through from the plan.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lighting: Option<Value>,
+    pub world: String,
+    pub sky: Value,
+    pub mode: &'static str,
+    /// The backend that drew the frame, in the renderer's words.
+    pub backend: String,
+    /// `lumenwright <revision>`.
+    pub renderer: String,
+    /// Every target in frame, with its screen box, distance and whether a
+    /// block hides it.
+    pub shows: Vec<Value>,
+    /// The bodies in `shows` the renderer did not draw, each with its reason
+    /// and how to judge it (`DW1039`).
+    pub undrawn: Vec<Value>,
+    pub out_of_frame: Vec<Value>,
+    /// What this frame cannot show, by name (spec-0112 §11).
+    pub unchecked: Vec<String>,
+    /// A cutscene frame's `{step, shot, tick, seconds}`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cutscene: Option<Value>,
+}
+
+#[derive(Debug, Serialize)]
+struct ShotIndex<'a> {
+    campaign_id: &'a str,
+    count: usize,
+    shots: &'a [IndexEntry],
+}
+
+/// The index bytes: fixed field order, 2-space pretty, trailing newline.
+pub fn index_bytes(campaign_id: &str, entries: &[IndexEntry]) -> Vec<u8> {
     let idx = ShotIndex {
-        campaign_id: plan.campaign_id,
-        count: shots.len(),
-        shots,
+        campaign_id,
+        count: entries.len(),
+        shots: entries,
     };
-    let mut bytes = serde_json::to_vec_pretty(&idx)
-        .map_err(|e| Diagnostic::error(DW_INPUT, format!("serialize shot index: {e}")))?;
+    let mut bytes = serde_json::to_vec_pretty(&idx).expect("the shot index serializes");
     bytes.push(b'\n');
-    Ok(bytes)
+    bytes
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compiler::view::diag::DW_INPUT;
 
-    const MINI: &[u8] = include_bytes!("../../../tests/fixtures/view/render-plan-mini.json");
     const POV: &[u8] = include_bytes!("../../../tests/fixtures/view/render-plan-pov.json");
 
     #[test]
     fn malformed_plan_is_dw0721() {
-        let err = index_from_plan(b"nope").unwrap_err();
+        let err = plan_shots(b"nope").unwrap_err();
         assert_eq!(err.code, DW_INPUT);
     }
 
     #[test]
-    fn pairs_every_shot_with_an_image_and_expect() {
-        let out = index_from_plan(MINI).unwrap();
-        let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
-        assert_eq!(v["campaign_id"], "mini");
-        let shots = v["shots"].as_array().unwrap();
-        assert_eq!(v["count"].as_u64().unwrap() as usize, shots.len());
-        // Order mirrors the plan; every entry has a `.png` image and its expects.
-        assert_eq!(shots[0]["id"], "spawn");
-        for s in shots {
-            assert!(
-                s["image"].as_str().unwrap().ends_with(".png"),
-                "image is a png filename"
-            );
-            assert!(
-                !s["image"].as_str().unwrap().contains('/'),
-                "path-safe name"
-            );
-            assert!(!s["expect"].as_array().unwrap().is_empty());
-        }
-    }
-
-    #[test]
-    fn pov_shots_carry_leg_and_objective() {
-        let out = index_from_plan(POV).unwrap();
-        let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
-        let pov = v["shots"]
-            .as_array()
-            .unwrap()
+    fn every_shot_states_its_world_sky_and_mode() {
+        let (id, shots) = plan_shots(POV).unwrap();
+        assert_eq!(id, "hello-world");
+        assert!(!shots.is_empty());
+        // hello-world's first leg walks at load; its second, to the exit,
+        // stands in the world the talk's completion arrives under.
+        let first = shots.iter().find(|s| s.kind == "pov").expect("a pov shot");
+        assert_eq!(first.objective.as_deref(), Some("obj/talk"));
+        assert_eq!(first.world, "at-load");
+        let exit = shots
             .iter()
-            .find(|s| s["kind"] == "pov")
-            .expect("a pov shot");
-        assert!(pov["leg"].is_number(), "POV entry keeps its leg index");
-        assert_eq!(pov["objective"], "obj/exit");
-        // image stem == the Chunky scene name (campaign-qualified).
-        assert_eq!(pov["image"], "hello-world_pov_leg0_wp0.png");
+            .find(|s| s.kind == "pov" && s.objective.as_deref() == Some("obj/exit"))
+            .expect("a pov shot on the exit's leg");
+        assert_eq!(exit.world, "after-obj-talk");
+        assert!(shots.iter().all(|s| s.mode == Mode::Quick));
         assert!(
-            pov["expect"][0]
-                .as_str()
-                .unwrap()
-                .starts_with("First-person view")
+            shots
+                .iter()
+                .all(|s| s.sky_json["daytime_ticks"].is_number())
         );
     }
 
     #[test]
-    fn index_is_deterministic() {
-        assert_eq!(index_from_plan(POV).unwrap(), index_from_plan(POV).unwrap());
-    }
-
-    #[test]
-    fn emulated_shots_are_marked_and_others_untouched() {
-        let plan = br#"{"campaign_id":"cave","shots":[
-          {"id":"pov/leg0/wp0","kind":"pov","leg":0,
-           "lighting":{"profile":"dark","mitigation":"night-vision"},
-           "expect":["First-person view walking east."]},
-          {"id":"interior/cave/0","kind":"interior",
-           "lighting":{"profile":"lit"},
-           "expect":["room interior assembled"]},
-          {"id":"spawn","kind":"spawn","expect":["spawn point clear"]}
-        ]}"#;
-        let v: serde_json::Value = serde_json::from_slice(&index_from_plan(plan).unwrap()).unwrap();
-        let shots = v["shots"].as_array().unwrap();
-        // Dark + night-vision → marked, stamp passed through.
-        assert_eq!(
-            shots[0]["review_policy"],
-            crate::compiler::view::scene::REVIEW_POLICY,
-            "emulated shot carries the review marker"
-        );
-        assert_eq!(shots[0]["lighting"]["profile"], "dark");
-        assert_eq!(shots[0]["lighting"]["mitigation"], "night-vision");
-        // Lit → stamp passed through, but never the emulation marker.
-        assert_eq!(shots[1]["lighting"]["profile"], "lit");
-        assert!(shots[1].get("review_policy").is_none());
-        // Unstamped → neither key exists (byte-identical for old campaigns —
-        // the POV fixture proves the same across the whole index).
-        assert!(shots[2].get("lighting").is_none());
-        assert!(shots[2].get("review_policy").is_none());
-        let unstamped: serde_json::Value =
-            serde_json::from_slice(&index_from_plan(POV).unwrap()).unwrap();
-        for s in unstamped["shots"].as_array().unwrap() {
-            assert!(s.get("lighting").is_none() && s.get("review_policy").is_none());
-        }
+    fn a_shot_that_states_no_world_is_refused_by_name() {
+        let plan = br#"{"campaign_id":"c","shots":[{"id":"spawn","kind":"spawn",
+          "camera":{"pos":[0.5,65.0,0.5],"yaw":0.0,"pitch":0.0}}]}"#;
+        let err = plan_shots(plan).unwrap_err();
+        assert_eq!(err.code, DW_INPUT);
+        assert!(err.message.contains("`world`"), "{err:?}");
     }
 }

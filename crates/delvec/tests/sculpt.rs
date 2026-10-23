@@ -689,7 +689,8 @@ fn carcass_campaign(tag: &str, form: &serde_json::Value) -> (i32, String) {
     let reach = |id: &str, anchor: &str, after: Option<&str>| {
         let mut o = serde_json::json!({
             "anchor": anchor, "happening": {"text": format!("they reach {anchor}"), "verb": "arrives"},
-            "id": id, "radius": 2, "type": "reach-anchor"
+            "id": id, "radius": 2, "type": "reach-anchor",
+            "title": format!("Go to {anchor}"), "hint": "Where the path leads."
         });
         if let Some(a) = after {
             o["after"] = serde_json::json!([a]);
@@ -705,7 +706,7 @@ fn carcass_campaign(tag: &str, form: &serde_json::Value) -> (i32, String) {
                     "areas": [{"id": "area/carcass", "name": "The Carcass", "prefab": "prefab/gallery-carcass"}],
                     "boundary": {"margin": 16, "message": "The valley ends here."},
                     "difficulty": "normal",
-                    "horizon": {"base": "valley", "ratio": 2.5, "rim_height": 48},
+                    "horizon": {"base": "valley", "ratio": 2.5, "rim_height": 48, "attributes": {"audio/background_music": {}}},
                     "min_players": 1,
                     "outro": "Walked.", "premise": "A sculpted body on its own ground.", "seed": 1,
                     "target_minutes": 5, "theme": "A test.", "time": "night", "title": "Sculpt Test",

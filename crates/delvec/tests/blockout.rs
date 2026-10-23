@@ -2216,6 +2216,103 @@ fn scenery_is_proven_not_reached_and_reachable_scenery_is_refused() {
     assert_eq!(b.binding.scenery, 2, "{}", b.binding.line());
 }
 
+/// The fixture with a scenery crown (`reached: false`) carrying one station,
+/// `anchor/crown-top`; with `teleport_in`, the keeper's yielding also
+/// teleports the party onto that station.
+fn crown_with_station(tag: &str, teleport_in: bool) -> Campaign {
+    let dir = variant(
+        &format!("crown-station-{tag}"),
+        |v| {
+            v["content"]["boxes"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({
+                    "node": "node/crown", "min": [48, 48], "extent": [8, 8],
+                    "floor": {"datum": "datum/grade"}, "ceiling": {"clearance": 3}
+                }));
+        },
+        None,
+    );
+    common::patch_file(&dir.join("layout-graph.json"), |v| {
+        v["content"]["nodes"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "id": "node/crown", "intent": "scenery", "reached": false,
+                "stations": [{"anchor": "anchor/crown-top", "kind": "point"}]
+            }));
+    });
+    if teleport_in {
+        common::patch_file(&dir.join("quests.json"), |v| {
+            v["content"]["quests"][0]["on_objective_complete"]["obj/ask"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({
+                    "type": "teleport",
+                    "from": {"anchor": "anchor/node-hall", "extent": [2, 1, 2]},
+                    "to": {"anchor": "anchor/crown-top"}
+                }));
+        });
+    }
+    common::campaign_at(&dir)
+}
+
+/// **A scenery place's station is not a start of the boundary proof**
+/// (`DW0322`, `edit::body_starts`). Scenery is built to be seen and never
+/// entered — `DW0837` proves no walk from the entry gets in — so a station it
+/// declares is a mark, not a floor a body stands on. Rooted at every anchor,
+/// the walk region took in cells inside the crown that no player is ever on;
+/// rooted where a body can start, it takes in none of them, and the proof
+/// states the one anchor it left out. The perturbation that only this rule
+/// answers: the campaign teleports the party onto that station, and the
+/// station is a start again.
+#[test]
+fn a_scenery_station_is_not_a_start_of_the_boundary_proof() {
+    let reg = prefabs();
+    let c = crown_with_station("bare", false);
+    let plan = Plan::build(&c, &reg).expect("the crown fixture plans");
+    let all = delvec::compiler::edit::anchor_starts(&plan);
+    let starts = delvec::compiler::edit::body_starts(&plan);
+    assert_eq!(starts.anchors, all.len());
+    assert_eq!(starts.excluded, vec!["anchor/crown-top".to_string()]);
+    assert_eq!(starts.roots.len(), all.len() - 1);
+
+    let structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    let world = delvec::compiler::nav::World::from_plan(&plan, &structures);
+    let every = world.body_region_rooted(&all);
+    let bodies = world.body_region_rooted(&starts.roots);
+    let crown = box_of(&plan.blockout.as_ref().unwrap().boxes, "node/crown").space();
+    let in_crown = |c: &[i32; 3]| {
+        (0..3).all(|i| i64::from(c[i]) >= crown.0[i] - 1 && i64::from(c[i]) <= crown.1[i] + 1)
+    };
+    let only_from_the_station: Vec<&[i32; 3]> = every.difference(&bodies).collect();
+    assert!(
+        !only_from_the_station.is_empty(),
+        "rooted at every anchor, the walk took in cells only the crown's station reaches"
+    );
+    assert!(
+        only_from_the_station.iter().all(|c| in_crown(c)),
+        "every cell left out lies in the crown: {only_from_the_station:?}"
+    );
+    assert!(
+        !bodies.iter().any(in_crown),
+        "no walk from a start enters the crown"
+    );
+
+    let c = crown_with_station("teleported", true);
+    let plan = Plan::build(&c, &reg).expect("the teleporting crown fixture plans");
+    let starts = delvec::compiler::edit::body_starts(&plan);
+    assert!(
+        starts.excluded.is_empty(),
+        "a scenery place a body is put in keeps its station: {:?}",
+        starts.excluded
+    );
+    assert_eq!(
+        starts.roots.len(),
+        delvec::compiler::edit::anchor_starts(&plan).len()
+    );
+}
+
 /// **An aloft place owns no ground, and the battery says so** (spec-0098 §14,
 /// correction 3). The fixture's loft hung from its floor course (`base:
 /// {"aloft": 0}`): its claim stops at y 68, so the crack shape counts it and
@@ -2509,8 +2606,18 @@ fn overview_of(c: &Campaign, prefab: &str) -> serde_json::Value {
     let reg = prefabs();
     let plan = Plan::build(c, &reg).expect("the variant plans");
     let world = delvec::compiler::nav::World::from_plan(&plan, &BTreeMap::new());
-    let (rp, _) = delvec::compiler::render_plan::render_plan(&plan, &reg, &[], &world, None)
-        .expect("every camera's eye is proven clear");
+    let frames = delvec::compiler::view::review::frame_worlds(&plan, &world);
+    let picture = delvec::compiler::blockstate::BlockMap::new();
+    let (rp, _) = delvec::compiler::render_plan::render_plan(
+        &plan,
+        &reg,
+        &[],
+        &[],
+        &world,
+        &frames,
+        &picture,
+    )
+    .expect("every camera's eye is proven clear");
     rp["shots"]
         .as_array()
         .unwrap()

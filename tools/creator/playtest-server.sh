@@ -135,8 +135,8 @@
 # equal to `versions.toml` `[engine].version`, which is what a creator's `Init`
 # puts there (ADR-0023) — and otherwise builds one from source. Either way it
 # prints, in one line, which binary it chose and why, before it builds anything.
-# `tools/lib/delvec-bin.sh` holds the rule and is shared with the other creator
-# step that reaches for `delvec`, `validation/render-shots.sh`.
+# `tools/lib/delvec-bin.sh` holds the rule, for every creator shell step that
+# reaches for `delvec`.
 #
 # Owner-facing contract: `up` ends by printing the connect address, how many
 # seconds the run took from the command to joinable and, if the build ships a

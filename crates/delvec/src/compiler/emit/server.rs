@@ -148,7 +148,12 @@ fn styled_rows(
             }
             Ok(Some(l)) => {
                 out.insert(k.clone(), l.format);
-                for (i, (_, t)) in l.spans.into_iter().enumerate() {
+                for (i, (st, t)) in l.spans.into_iter().enumerate() {
+                    // A key span's component is a `keybind`, read by no
+                    // language file (spec-0104 §8.9).
+                    if st.key.is_some() {
+                        continue;
+                    }
                     let sk = delvewright_dsl::textstyle::span_key(k, i);
                     // No inventory key has a `span` segment followed by an index
                     // (the key scheme of `dsl::l10n`), so a span key cannot
@@ -274,7 +279,7 @@ pub(super) fn pack_note(
                 licence.push_str(&format!("; attribution: {a}"));
             }
             let shown = if t.is_block() {
-                "shown by Chunky, the viewer and the palette".to_string()
+                "shown by every frame, the viewer and the palette".to_string()
             } else {
                 "sheet only — no frame this engine renders draws it".to_string()
             };
@@ -341,8 +346,9 @@ pub(super) fn emit_server(plan: &Plan, out: &mut BuildOutput) {
     // Horizon (DSL v0.6, spec-0013). `void` (default/absent) is the empty-layer
     // superflat over the delve's own void biome. `ocean` swaps in a
     // pinned bedrock/stone/water superflat: from the -64 build floor, 1+118+8
-    // layers top the water at y=62 (= sea level); areas are placed on that datum
-    // (`plan::OCEAN_BASE_Y` = 60) so island pieces read as land ringed by the sea. No structures (generate-structures=false) or mobs (gamerule
+    // layers top the water at y=62 (`plan::SEA_LEVEL`); an area's walk plane
+    // stands at `horizon::OCEAN_WALK_REF_Y`, one above the sea, so island pieces
+    // read as land ringed by the sea. No structures (generate-structures=false) or mobs (gamerule
     // spawn_mobs false); the sea is pure backdrop. The string is a fixed literal,
     // so both horizons stay deterministic (ADR-0006).
     let ocean = delvewright_dsl::horizon_base(&plan.campaign.world.content.horizon)

@@ -5,7 +5,7 @@ use super::*;
 
 /// World-space distance between successive area origins.
 pub const AREA_SPACING: i32 = 256;
-/// The Y of every area origin under `horizon: void` (structures carry their own
+/// The Y of every area origin on a `void` base (structures carry their own
 /// floor at local y=0). Also the fallback Y for an unresolvable position.
 pub const BASE_Y: i32 = 64;
 /// Sea level of the `ocean` horizon superflat (spec-0013): the pinned

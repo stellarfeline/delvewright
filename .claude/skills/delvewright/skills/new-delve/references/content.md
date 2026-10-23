@@ -7,9 +7,11 @@ be written is in *Reference: writing craft*** — apply its section F as each
 line is written, and run its section A over every line before calling this step
 done.
 
-The order inside `quests.json` matters: **write the `cast` block first, before
-the objectives.** Every quest declares, for every NPC live in it,
-`{at, doing, dialogue}` — position first, story second.
+The order inside `quests.json` matters: **write the `cast` block first, then
+the campaign's `guidance` block, then the objectives.** Every quest declares,
+for every NPC live in it, `{at, doing, dialogue}` — position first, story
+second. `guidance` is usually omitted: write it only to hide the compass or
+announcements by default, or to give the journal a `manual`.
 
 Then `dialogue.json`. Three rules that are not style preferences:
 
@@ -24,6 +26,8 @@ Then `dialogue.json`. Three rules that are not style preferences:
   leads (`next`) to a node in which the speaker answers it plainly; an option
   with no `next` closes the dialog, so a question there is asked into silence.
   Its `complete-objective` still fires when it is chosen.
+
+**A line names a thing as the player sees it.** Every title, hint, notice and dialogue line calls a built object by the word a player would use for the block or build in front of them: a vanilla sign is a sign or a notice, never a slate. Where the story needs a noun the vanilla block does not read as, build the thing out of blocks so it reads as that noun, or change the noun. This rule is authored, not cited; the engine does not check it and the playtest judges it.
 
 Loop `delvec --prefabs "$DELVEWRIGHT_PREFABS" validate <campaign-dir>` until clean after each.
 **This is the step where clean is reachable**, and it is where the codes step 3

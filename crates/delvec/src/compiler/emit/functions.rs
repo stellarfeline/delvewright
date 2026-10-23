@@ -21,6 +21,8 @@ pub(super) fn emit_functions(
     asm_locks: &crate::compiler::assembly::Locks,
     pulses: &[crate::compiler::pulse::PulseRow],
     holders: &[crate::compiler::holders::OwnedHolder],
+    guide: &guidance::Guide,
+    assembly_ranges: &[crate::compiler::framing::AssemblyRange],
 ) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
@@ -32,10 +34,16 @@ pub(super) fn emit_functions(
     // --- load ---
     fns.push((
         "load".to_string(),
-        lines(&[
-            "scoreboard objectives add dw.sys dummy".to_string(),
-            format!("execute unless score #init dw.sys matches 1 run function {ns}:setup"),
-        ]),
+        lines(
+            &[
+                "scoreboard objectives add dw.sys dummy".to_string(),
+                format!("execute unless score #init dw.sys matches 1 run function {ns}:setup"),
+            ]
+            .into_iter()
+            // spec-0109 §3.6: a paint that may have outlived its cutscene.
+            .chain(cutscene_paint_load_marks(plan))
+            .collect::<Vec<_>>(),
+        ),
     ));
 
     // --- setup ---
@@ -625,6 +633,9 @@ pub(super) fn emit_functions(
     // spec-0077 §5: every answer channel the delve declares, read off the
     // finished `setup` — the one place a trigger objective is declared — so the
     // respawn wait locks each one, including any an emitter adds later.
+    // spec-0104 §6–§8: the guidance scoreboards and the highlight team. Empty
+    // for a campaign with no announced objective, no manual and no highlight.
+    setup.extend(guidance::setup_lines(guide));
     let answer_channels = trigger_objectives(&setup);
     let mut setup = {
         let finished_setup = setup;
@@ -857,6 +868,10 @@ pub(super) fn emit_functions(
     // which a relog also keeps. So the repair is its own tick clause, keyed on the
     // stuck state itself. Empty for a cutscene-less campaign → byte-identical.
     tick.extend(cutscene_repair_tick(plan));
+    // spec-0109 §3.6: a cutscene's paint restored when it outlived its
+    // cutscene (an interrupt, a restart, a chunk that was unloaded at the end).
+    // Empty without a cutscene that declares its own music → byte-identical.
+    tick.extend(cutscene_unpaint_tick(plan));
     // The class trigger is ONE-SHOT per player. `class_apply_<c>` ends in a
     // teleport to the campaign entry point, so re-firing `/trigger dw.class`
     // mid-run would warp whoever ran it back to the start of the delve — an
@@ -900,6 +915,8 @@ pub(super) fn emit_functions(
             plan::interact_trigger(&oid)
         ));
     }
+    // spec-0104 §6.4: the compass menu's answer channel.
+    tick.extend(guidance::enable_lines(guide));
     // The lobby (spec-0018 `world.min_players`). A design that genuinely needs n
     // players declares it, and the delve refuses to START below n: the class
     // dialog stays shut and the waiting players get a live party-count actionbar.
@@ -1262,7 +1279,11 @@ pub(super) fn emit_functions(
     tick.extend(crate::compiler::watching::tick_lines(plan));
     tick.extend(named_state_tick(plan));
     tick.extend(economy_tick(plan));
+    // spec-0104 §6–§8: the guidance scan, the highlight polls, the compass
+    // gesture and the refresh. Last, so it reads the state this tick left.
+    tick.extend(guidance::tick_lines(guide, ns));
     fns.push(("tick".to_string(), lines(&tick)));
+    fns.extend(guidance::functions(guide, plan, chrome));
     fns.extend(crate::compiler::healthbar::functions(ns, &health_bars));
     fns.extend(crate::compiler::watching::functions(plan));
     // spec-0082: the assemblies' bodies, clips, drivers and landings. A landing
@@ -1270,6 +1291,7 @@ pub(super) fn emit_functions(
     fns.extend(crate::compiler::assembly::assembly_functions(
         plan,
         asm_locks,
+        assembly_ranges,
         &|e, body| {
             emit_gated_effect(
                 plan,
@@ -1402,7 +1424,7 @@ pub(super) fn emit_functions(
     ));
 
     // --- class apply ---
-    fns.extend(class_apply_fns(plan));
+    fns.extend(class_apply_fns(plan, guide));
 
     // --- dialog option handlers ---
     fns.extend(dialog_handler_fns(plan, &casts));
@@ -1413,6 +1435,7 @@ pub(super) fn emit_functions(
         chrome,
         branch_transport,
         holders,
+        guide,
     ));
 
     // --- campaign_complete (shared by campaign-complete effect) ---

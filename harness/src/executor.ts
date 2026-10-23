@@ -34,7 +34,6 @@ import { type ClientLoadedState } from "./client-loaded.ts";
 import type { ResourcePackState } from "./resource-pack.ts";
 import { type LoadWindowTracer } from "./load-window.ts";
 import { type CensusMob, type CensusSummary } from "./markers.ts";
-import { RepaintWatch } from "./repaint.ts";
 import { SculkEar, type LegStart } from "./sculk.ts";
 import type { PulsePlan } from "./pulse.ts";
 import type { CueEvent, CueLedger } from "./cues.ts";
@@ -59,7 +58,6 @@ import { methods as loopMethods } from "./executor/loop.ts";
 import { methods as mockMethods } from "./executor/mock.ts";
 import { methods as sustainMethods } from "./executor/sustain.ts";
 import { methods as deathMethods } from "./executor/death.ts";
-import { methods as repaintMethods } from "./executor/repaint.ts";
 import { methods as pulseMethods } from "./executor/pulse.ts";
 import { methods as cueMethods } from "./executor/cue.ts";
 import { methods as scoreMethods } from "./executor/score.ts";
@@ -120,8 +118,6 @@ export class MineflayerExecutor implements StepExecutor {
    * wait for it) and campaign completion lands during the last objective step.
    */
   readonly completedObjectives = new Map<string, number>();
-  /** The repaint ledger (spec-0080 §5.2), when the build repaints anything. */
-  repaintWatch: RepaintWatch | undefined;
   /** The sculk family's ear (spec-0100 §4.7): sensor clicks, shrieks, darkness
    * on the bot and warden spawns, from connect. */
   readonly sculk = new SculkEar();
@@ -141,6 +137,12 @@ export class MineflayerExecutor implements StepExecutor {
   cueLedger: CueLedger | undefined;
   /** Every cue packet and completion marker, in arrival order, from connect. */
   readonly cueLog: CueEvent[] = [];
+  /** The framed bodies watched through every cutscene (spec-0110 §7), when the
+   * build has a cutscene that frames one. Fed from connect, on the server's
+   * clock: game-time readings, gamemode changes, lens packets, entity churn. */
+  shotSubjects: import("./shot-subjects.ts").ShotSubjectObserver | undefined;
+  /** Whether the shot observer's game-time reading loop is running. */
+  shotClockRunning = false;
   /**
    * How many times each marker token has been broadcast this run. A repeatable
    * trigger broadcasts its marker every time it fires, and a hit count on the
@@ -632,7 +634,6 @@ type Methods = typeof connectionMethods &
   typeof mockMethods &
   typeof sustainMethods &
   typeof deathMethods &
-  typeof repaintMethods &
   typeof pulseMethods &
   typeof cueMethods &
   typeof scoreMethods &
@@ -652,4 +653,4 @@ type Methods = typeof connectionMethods &
   typeof placementMethods &
   typeof clockMethods;
 export interface MineflayerExecutor extends Methods {}
-for (const methods of [connectionMethods, chatMethods, objectiveMethods, triggerMethods, interactMethods, classMethods, talkMethods, walkMethods, timedGateMethods, climbMethods, cutsceneMethods, transportMethods, loopMethods, mockMethods, sustainMethods, deathMethods, repaintMethods, pulseMethods, cueMethods, scoreMethods, lethalMethods, crushMethods, stakeMethods, waveMethods, dieRetryMethods, stagingMethods, musterMethods, restMethods, witnessMethods, watchMethods, crosshairMethods, collectMethods, settleMethods, placementMethods, clockMethods]) Object.assign(MineflayerExecutor.prototype, methods);
+for (const methods of [connectionMethods, chatMethods, objectiveMethods, triggerMethods, interactMethods, classMethods, talkMethods, walkMethods, timedGateMethods, climbMethods, cutsceneMethods, transportMethods, loopMethods, mockMethods, sustainMethods, deathMethods, pulseMethods, cueMethods, scoreMethods, lethalMethods, crushMethods, stakeMethods, waveMethods, dieRetryMethods, stagingMethods, musterMethods, restMethods, witnessMethods, watchMethods, crosshairMethods, collectMethods, settleMethods, placementMethods, clockMethods]) Object.assign(MineflayerExecutor.prototype, methods);

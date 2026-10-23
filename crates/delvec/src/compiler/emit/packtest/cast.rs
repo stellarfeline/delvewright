@@ -439,6 +439,7 @@ pub(super) fn cast_ladder_watch_claim(plan: &Plan) -> crate::compiler::watch::Cl
     let casts = crate::compiler::cast::npc_casts(plan.campaign);
     crate::compiler::watch::Claim {
         mechanic: "cast-ladder",
+        kind: crate::compiler::watch::ClaimKind::Body,
         families: vec!["cast_".to_string()],
         declared: plan
             .npcs
@@ -471,6 +472,7 @@ pub(super) fn cast_bark_watch_claims(plan: &Plan) -> Vec<crate::compiler::watch:
             }
             Some(crate::compiler::watch::Claim {
                 mechanic: "cast-bark",
+                kind: crate::compiler::watch::ClaimKind::Body,
                 families: vec![format!("bark_{}_", npc.safe)],
                 declared,
             })

@@ -1262,3 +1262,14 @@ def test_prefab_root_that_is_not_a_directory_is_refused(tmp_path, monkeypatch, c
     )
     assert rc == 2
     assert "not a directory" in capsys.readouterr().err
+
+
+def test_fact_check_keeps_a_key_span_whole():
+    """spec-0104 §8.9: a key span's identifier is a fact the translation keeps."""
+    en = "Things here answer to a touch: [[key|use]] on them."
+    row = _row("guidance.teaching.use-block", en, "narration")
+    assert t.check_row(row, "这里的东西一碰就有回应：对它们按[[key|use]]。", NAMES, "zh-cn") == []
+    failures = t.check_row(row, "这里的东西一碰就有回应：对它们按[[key|attack]]。", NAMES, "zh-cn")
+    assert any("key|use" in f for f in failures), failures
+    failures = t.check_row(row, "这里的东西一碰就有回应：对它们按右键。", NAMES, "zh-cn")
+    assert failures, failures

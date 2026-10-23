@@ -53,7 +53,8 @@ languages are delivered as sidecars.
    a table of canonical English → your line, from which the tool writes
    `l10n/<code>.json` — it addresses the keys, so an inserted effect that shifts
    an `fx.` key cannot re-attach a line to the wrong English. It prints `N of M rows
-   translated` and every English still missing; exit 1 until none is.
+   translated`, every English still missing and every table entry that matches no
+   row; exit 1 until neither list has an entry.
    Keep every `[[<styles>|…]]` span of the English: its opener byte for byte,
    its text transcreated, placed where your line puts that phrase.
    A direction stays relative to the player's body or a landmark in every language: add no compass point the English does not give.

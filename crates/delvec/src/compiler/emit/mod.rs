@@ -56,6 +56,7 @@ mod ending;
 mod equipment;
 mod firework;
 mod functions;
+pub(super) mod guidance;
 mod holders;
 mod lane;
 mod lethal;
@@ -527,7 +528,11 @@ pub fn build_with_warnings(
     // reachable cells and no `lighting` declaration → output byte-identical.
     // The geometry is classified once: relight surveys it as it stands, and the
     // campaign's world below is the same cells under the campaign's premises.
-    let (world, relight) = crate::compiler::light::final_world(plan, assembled);
+    // The world every route below is walked in, with the holder stances the
+    // census judges further down (spec-0111 §5.2): one derivation, the one
+    // every reader of the critical path takes (`holders::final_walk`).
+    let owned_holders = crate::compiler::holders::own_holders(plan, &entity_holders);
+    let (walked, relight) = crate::compiler::holders::final_walk(plan, assembled, &owned_holders);
     if let Some(diag) = relight.diagnostics.first() {
         return Err(BuildFailure::Diagnostic {
             code: diag.code,
@@ -565,8 +570,7 @@ pub fn build_with_warnings(
     // printed before any verdict: `DW1018` (built vs declared), `DW1024`
     // (arrangement), `DW1037` (a holder the party cannot take from), `DW1038`
     // (a runtime edit reaches a holder).
-    let owned_holders = crate::compiler::holders::own_holders(plan, &entity_holders);
-    let (container_census, holder_stances) =
+    let (container_census, holder_stances, world) =
         {
             let blocks = &assembled.blocks;
             let claims = crate::compiler::holders::claims_of(plan, blocks, &entity_holders);
@@ -587,16 +591,9 @@ pub fn build_with_warnings(
             // place still standing in its stand-in owes its containers to its
             // detail, so a notice over no scenery is judged there.
             .deferring(plan.blockout.as_ref().map_or(&[][..], |b| &b.massed[..]));
-            // A stance is where the critical path's leg ends and the bot takes
-            // the item (spec-0111 §5.2): a cell the party walks to on cue, so
-            // the walk relation, not the reach graph (spec-0113 §4.5).
-            let reachable = if owned_holders.iter().any(|o| o.is_filled()) {
-                world.walk_region_rooted(&crate::compiler::edit::anchor_starts(plan))
-            } else {
-                BTreeSet::new()
-            };
-            let (stances, (unsupported, unreachable), stance_verdict) =
-                crate::compiler::holders::check_stance(&world, &owned_holders, &reachable);
+            let (unsupported, unreachable) = walked.counts;
+            let stances = walked.stances;
+            let stance_verdict = walked.verdict;
             let census = census.with_stance(unsupported, unreachable);
             eprintln!("{}", census.line());
             census
@@ -625,15 +622,12 @@ pub fn build_with_warnings(
              reaching a holder (DW1038).",
                 owned_holders.len()
             );
-            (census, stances)
+            (census, stances, walked.world)
         };
-    // A leg that ends at a holder `collect` ends at the stance the pass chose
-    // (spec-0111 §5.2), never inside the holder the block model reads as air:
-    // every route proof, waypoint and the critical-path step read one stance.
-    let world = world.with_holder_stances(crate::compiler::holders::collect_stances(
-        &owned_holders,
-        &holder_stances,
-    ));
+    // From here `world` is `holders::final_walk`'s: a leg that ends at a
+    // holder `collect` ends at the stance the pass chose (spec-0111 §5.2),
+    // never inside the holder the block model reads as air — every route
+    // proof, waypoint and the critical-path step read one stance.
 
     // What the camera reads in each carried place (spec-0080 §2.2): its fog
     // and sky are the client's blend over the 4-cells within `BLEND_REACH`, so
@@ -678,6 +672,9 @@ pub fn build_with_warnings(
     // The binding is kept: the critical path carries the bot's witness of each
     // blow, and the staging record states which were witnessed.
     let population = walked_population(plan, &world);
+    // spec-0110 §5.8: how far a standing player's eye is from each assembly,
+    // in the place it stands in — the floor its `view_range` is derived to.
+    let assembly_place_reach = crate::compiler::framing::place_reach(plan, &population);
     let assembly_binding: Option<crate::compiler::assembly::AssemblyBinding> =
         Some(prove_assemblies(plan, &world, &population)?);
 
@@ -692,6 +689,25 @@ pub fn build_with_warnings(
     // After the declaration proofs, so a body whose mark leaves its piece
     // (`DW0897`) is sent to that line rather than told nobody can reach it.
     let mut watch_binding = prove_watchers(plan, &population)?;
+
+    // The configurations the critical path arrives under (spec-0112 §3): the
+    // worlds the review frames stand in, and the worlds a cutscene a critical
+    // step fires is flown through (`DW0308`).
+    let frame_worlds = crate::compiler::view::review::frame_worlds(plan, &world);
+
+    // The exported path's layout (`Plan::exported_layout`): the one answer to
+    // which index each step, rest and witness carries in `critical-path.json`,
+    // read by the emitter that writes the path and by every harness document
+    // that names one of its steps (the death plan, the combat plan).
+    let witnesses = assembly_binding
+        .as_ref()
+        .map(crate::compiler::assembly::witness_steps)
+        .unwrap_or_default();
+    let witness_counts: Vec<(String, usize)> = witnesses
+        .iter()
+        .map(|(id, ws)| (id.clone(), ws.len()))
+        .collect();
+    let layout = plan.exported_layout(&plan.critical_path, &witness_counts);
 
     // ---- the world block: every proof over the assembled world ----
     let WorldProofs {
@@ -714,7 +730,8 @@ pub fn build_with_warnings(
         lethal_gate,
         loop_gate,
         firework_gate,
-        cutscene_shots_judged,
+        shot_ledger,
+        cutscene_proof,
         lightning_gate,
         stake_table,
         death_plan,
@@ -729,6 +746,8 @@ pub fn build_with_warnings(
         &mut out,
         &mut warnings,
         &mut pacing,
+        &frame_worlds,
+        &layout,
     )?;
 
     // ---- `DW1025`: a body that holds its facing faces every approach ----
@@ -756,18 +775,32 @@ pub fn build_with_warnings(
     // the wave would silently never spawn (DW0310). Guards against the class of bug
     // where the spawn position was resolvable only via a `kill` objective.
     check_wave_spawns(plan)?;
-    // DW0863 (spec-0093 §5): a `kill` objective is announced with a hint, or its
-    // wave arrives within reach of the act that spawns it. Judged here, where
-    // the acts have places; the binding is printed whichever way it goes.
+    // spec-0110 §5.8: every assembly's `view_range`, derived from the shots
+    // that frame it and the place it stands in, raised by its `seen_from`.
+    let assembly_ranges = crate::compiler::framing::view_ranges(
+        plan,
+        &shot_ledger
+            .as_ref()
+            .map(|l| l.assembly_reach.clone())
+            .unwrap_or_default(),
+        &assembly_place_reach,
+    );
+    if let Some(ledger) = &shot_ledger {
+        put_json(
+            &mut out,
+            "validation/shot-subjects.json",
+            &ledger.to_json(&assembly_ranges),
+        );
+    }
+    // DW0863 (spec-0104 §4): every act on a walked path is announced with a
+    // hint, or in sight from where the party stands (and a kill's wave within
+    // reach). Judged here, where the acts have places and the world has
+    // blocks; the binding is printed whichever way it goes.
     {
-        let (fights, verdict) = crate::compiler::promise::check_fight_signposts(plan);
-        eprintln!("{}", fights.line());
-        if let Err(f) = verdict {
-            return Err(BuildFailure::Diagnostic {
-                code: f.code,
-                message: f.message,
-            });
-        }
+        crate::compiler::acts::fix_walks(plan, &branch_takes);
+        let (acts, refusals) = crate::compiler::promise::check_acts_found(plan, &world);
+        eprintln!("{}", acts.line());
+        refuse_first(refusals)?;
     }
     // DW0963 (spec-0093 §7): an unmarked `interact` with no `prop` stands on a
     // block the piece authored, or the party is asked to press empty space.
@@ -922,7 +955,29 @@ pub fn build_with_warnings(
             g
         }
     };
-    let functions = emit_functions(
+    // spec-0104 §6–§8: the compass, the journal and the highlights, derived once
+    // over the assembled world every emitter here reads.
+    let guide = guidance::guide(plan, &assembled.blocks, &owned_holders);
+    // spec-0109 §5.1: what every biome a camera can stand in plays, what each
+    // cutscene hears, what each `stop-sound` cuts — read over the forced
+    // route's legs (none for a campaign that walks no world). The line is
+    // printed on every build, zeroes and a refusal included, and the ledger is
+    // written on every build: every campaign states the ground's music.
+    {
+        let routes: &[crate::compiler::nav::LegRoute] = path_legs
+            .iter()
+            .find(|(slug, _, _)| slug == "critical-path")
+            .map(|(_, _, r)| r.as_slice())
+            .unwrap_or(&[]);
+        let (music, verdict) = crate::compiler::music::measure(plan, routes, &moves, &actor_moves);
+        eprintln!("{}", music.line());
+        verdict.map_err(|f| BuildFailure::Diagnostic {
+            code: f.code,
+            message: f.message,
+        })?;
+        put_json(&mut out, "validation/music.json", &music.to_json());
+    }
+    let mut functions = emit_functions(
         plan,
         &chrome,
         &sentinels,
@@ -942,7 +997,36 @@ pub fn build_with_warnings(
         &asm_locks,
         &pulse_gate.rows,
         &owned_holders,
+        &guide,
+        &assembly_ranges,
     );
+    // **The placements ledger** (spec-0112 §4): every block, container item and
+    // body the datapack places outside the templates, and every removal, read
+    // off the functions that place them and written back from the row, so a
+    // line and its record cannot disagree. A review frame's world lays the rows
+    // its arrival holds.
+    let (ledger, placing_lines) =
+        crate::compiler::placed::ledger_of_functions(plan, &mut functions);
+    let unplaceable = ledger.unplaceable();
+    eprintln!(
+        "placements ledger: {} row(s) over {placing_lines} placing line(s) of the functions that \
+         place outside the templates; {} body row(s) no frame's world can hold as written{}",
+        ledger.rows.len(),
+        unplaceable.len(),
+        if unplaceable.is_empty() {
+            String::new()
+        } else {
+            format!(
+                " ({})",
+                unplaceable
+                    .iter()
+                    .map(|r| format!("`{}` in `{}`", r.command(), r.function))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            )
+        }
+    );
+    put_json(&mut out, "validation/placed.json", &ledger.to_json(plan));
     // DW1002's write arms over the FINAL function list, read off the shipped
     // commands so what is judged is what is emitted: the load as the server
     // runs it — `setup`, the ground, the templates, the world build,
@@ -1051,6 +1135,27 @@ pub fn build_with_warnings(
         )?;
     }
 
+    // spec-0104 §8.3: the journal's item modifiers; §6.4: the compass gesture.
+    for (name, value) in guidance::item_modifiers(&guide, plan, &chrome) {
+        insert_unique(
+            &mut out,
+            format!("datapack/data/{ns}/item_modifier/{name}.json"),
+            json_bytes(&value),
+            "item modifier",
+            &name,
+        )?;
+    }
+    if guide.compass {
+        put_json(
+            &mut out,
+            &format!(
+                "datapack/data/{ns}/advancement/{}.json",
+                guidance::COMPASS_USE_ADVANCEMENT
+            ),
+            &guidance::use_advancement(ns),
+        );
+    }
+
     // predicates — currently only the sneak-held gate (see
     // SNEAK_HELD_PREDICATE) the cutscene bounce and the respawn wait's view
     // binding read; a campaign with neither emits none.
@@ -1084,6 +1189,8 @@ pub fn build_with_warnings(
                 .map(|r| (r.cell, r.block.clone()))
                 .collect(),
             holders: &owned_holders,
+            guide: &guide,
+            chrome: &chrome,
         },
     );
     // spec-0018 criterion 1: the party-division checks state what they bound,
@@ -1100,7 +1207,14 @@ pub fn build_with_warnings(
     crate::compiler::creator::emit_creator(plan, &mut out, &moves, &actor_moves);
 
     // ---- server ----
-    emit_ground_biome(plan, &mut out);
+    {
+        // spec-0109 §3.6: every variant a cutscene's own music derives ships
+        // beside the biomes it is derived from.
+        let (scores, _) = crate::compiler::music::scores(plan, &moves, &actor_moves);
+        let variants: Vec<crate::compiler::music::Variant> =
+            scores.into_iter().flat_map(|s| s.variants).collect();
+        emit_ground_biome(plan, &mut out, &variants);
+    }
     emit_server(plan, &mut out);
 
     // ---- critical path ----
@@ -1109,17 +1223,24 @@ pub fn build_with_warnings(
         .find(|(slug, _, _)| slug == "critical-path")
         .map(|(_, _, r)| r.as_slice())
         .unwrap_or(&[]);
-    let mut cp = emit_critical_path(plan, &moves, &actor_moves, exported_routes);
+    let mut cp = emit_critical_path(
+        plan,
+        &moves,
+        &actor_moves,
+        exported_routes,
+        &layout,
+        &witnesses,
+    );
     // spec-0111 §5.4: a collect that takes from a frame or a stand says how.
     let holder_step_hints = holder_steps(&owned_holders, &holder_stances);
     annotate_holder_steps(&mut cp, &holder_step_hints);
     if let Some(mut b) = assembly_binding {
-        if let Some(steps) = cp.get_mut("steps").and_then(Value::as_array_mut) {
-            b.witnessed = crate::compiler::assembly::with_witness_steps(
-                steps,
-                crate::compiler::assembly::witness_steps(&b),
-            );
-        }
+        let laid = layout.witnessed();
+        b.witnessed = witnesses
+            .iter()
+            .map(|(id, _)| id.clone())
+            .filter(|id| laid.contains(id))
+            .collect();
         if b.declared > 0 {
             put_json(&mut out, "validation/assembly.json", &b.to_json());
         }
@@ -1153,15 +1274,43 @@ pub fn build_with_warnings(
     // proof — every kind, not the one that needed it first. It also states the
     // proof's binding count in the artifact and hands back a warning when that
     // count is zero.
+    //
+    // Every shot stands in a world of the critical path's own configurations
+    // (spec-0112 §3) and its eye is proven clear there; the worlds are written
+    // under `validation/worlds/` beside the plan, with the review record.
+    // The frame worlds again, now that the ledger exists: a world is its
+    // configuration's bytes, the rows its arrival holds, and its clock.
+    let pov_legs: Vec<(usize, usize)> = pov_shots.iter().map(|s| (s.from_step, s.step)).collect();
+    let frame_worlds =
+        crate::compiler::view::review::frame_worlds_with(plan, &world, Some(&ledger), &pov_legs);
     let (render_plan_doc, camera_warnings) = crate::compiler::render_plan::render_plan(
         plan,
         prefabs,
         &pov_shots,
+        &cutscene_proof.frames,
         &world,
-        Some(&picture),
+        &frame_worlds,
+        &picture,
     )?;
     warnings.extend(camera_warnings);
     put_json(&mut out, "render-plan.json", &render_plan_doc);
+    let maker =
+        crate::compiler::view::review::WorldMaker::new(plan, assembled, &picture, structures);
+    let review = crate::compiler::view::review::write_review(
+        plan,
+        &picture,
+        &maker,
+        crate::compiler::view::review::ReviewOf {
+            frames: &frame_worlds,
+            ledger: &ledger,
+            cutscenes: &cutscene_proof,
+        },
+        &render_plan_doc,
+        &mut out,
+    );
+    for line in &review.lines {
+        eprintln!("{line}");
+    }
     // spec-0091: the served view distance, what the build judged against it
     // (every showcase camera and cutscene shot — a refusal stopped the build
     // before here), and the cost stated to the host.
@@ -1173,7 +1322,7 @@ pub fn build_with_warnings(
             showcase_cameras: render_plan_doc["camera_eye_proof"]["showcase"]
                 .as_u64()
                 .unwrap_or(0) as usize,
-            cutscene_shots: cutscene_shots_judged,
+            cutscene_shots: cutscene_proof.judged,
         }
         .line()
     );
@@ -1468,6 +1617,10 @@ pub fn build_with_warnings(
         put_json(&mut out, "validation/teleport-gate.json", &gate.to_json());
     }
     if let Some(gate) = &lethal_gate {
+        // Counted from the emission, like the teleport ledger above: every
+        // template a volume got (kill, wording guard, a staged volume's shut half).
+        let mut gate = gate.clone();
+        gate.packtests = packtest::emitted_lethal_templates(plan, &out);
         put_json(&mut out, "validation/lethal-gate.json", &gate.to_json());
     }
     if let Some(gate) = &loop_gate {
@@ -1513,16 +1666,9 @@ pub fn build_with_warnings(
     if let Some(dp) = &death_plan {
         put_json(&mut out, "validation/death-plan.json", dp);
     }
-    // spec-0080 §5.2: what each repaint must tell a connected client — the
-    // chunks of its painted 4-cell box, and the completion marker of the bundle
-    // that fires it — so the bot tier asserts the `chunk_biomes` packets and
-    // the absent reload. A campaign with no `set-atmosphere` emits no file.
-    if let Some(rp) = atmosphere_repaint_plan(plan) {
-        put_json(&mut out, "validation/atmosphere-repaints.json", &rp);
-    }
     // spec-0080 §5.3: which biome each carried place stands in at the first
     // tick, as the biome map states it, so a reader that draws a scene inside
-    // a place (`delvec view palette --build … --place …`) tints it under that
+    // a place (`delvec palette --build … --place …`) tints it under that
     // place's own biome rather than a guess. Emitted only when a place carries
     // an atmosphere.
     {
@@ -1760,4 +1906,19 @@ delvewright_dsl::dw_code! {
     /// `DW0447`: a trap-payload verb centres its volume on an anchor no placed
     /// prefab piece provides, so the kill zone / collapse region cannot be resolved.
     pub const DW_PAYLOAD_ANCHOR_UNRESOLVED: DwCode = DwCode::new("DW0447", ExitTier::Build);
+}
+
+/// Report every refusal of a rule that returns them all: the first is the
+/// build's verdict, the rest are printed as further errors before it.
+fn refuse_first(refusals: Vec<crate::compiler::failure::Failure>) -> Result<(), BuildFailure> {
+    if let Some((first, rest)) = refusals.split_first() {
+        for extra in rest {
+            eprintln!("{} [error] build: {}", extra.code, extra.message);
+        }
+        return Err(BuildFailure::Diagnostic {
+            code: first.code,
+            message: first.message.clone(),
+        });
+    }
+    Ok(())
 }

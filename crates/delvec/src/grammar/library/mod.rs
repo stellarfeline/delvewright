@@ -478,7 +478,7 @@ const fn entry(
 /// campaign's own material as if it were library surface is the "authored
 /// content wearing a primitive's clothes" shape CLAUDE.md names. A campaign's
 /// zones declare their own expansions, in the campaign, at
-/// `design/programs/zones.toml`.
+/// `design/programs/zones.json`.
 pub const PROGRAMS: &[LibraryProgram] = &[
     entry(
         "ambush-door",

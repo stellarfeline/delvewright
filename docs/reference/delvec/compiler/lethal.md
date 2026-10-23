@@ -9,7 +9,7 @@ this module declares. The catalog's shared rules are in [`compiler.md` §5](../.
 
 A lethal volume is **geometry that kills**, so most of its completability
 reasoning is not a check of its own: [`nav::World`] carries its cells as
-impassable — one of the six premises `nav::Premises::of_plan` applies to every
+impassable — one of the premises `nav::Premises::of_plan` applies to every
 world built from a campaign, on every arm — and every route proof in the engine
 inherits that for free: the critical path, the checkpoint no-stranding proof
 (`DW0315`), the branch paths, the trap forced-cell set, the exported harness
@@ -152,7 +152,7 @@ when its gate flips is killed in the same server tick (`tools/spike-staged-letha
 three of three trials at zero ticks), so the floor it stood on must read as
 danger in that configuration's own bytes. Each configuration's world is its
 region state with every exclusion lifted, its population the standing states
-of that world's reach graph from `lethal::population_roots` that a body can also
+of that world's reach graph from `lethal::put_at_roots` that a body can also
 get back to the roots from (`lethal::body_population`; the cells `DW0921` would
 call a pocket are not in it), and its bytes `RegionState::blocks_over` — the
 assembled block map with every forced write it credits laid as the block its
@@ -226,8 +226,8 @@ needs such a lane is a room that needs another way.
 Binding (playtest-methodology rule 1): a campaign with a volume emits
 `validation/lethal-gate.json` — volumes declared vs. resolved, world cells closed,
 posted places examined (`respawn_seats_examined`, which counts both families),
-critical-path legs routed, PackTest templates generated (one per volume, and a
-`lethal_<id>_shut` one more per staged volume), `staged[]` (spec-0088: per staged
+critical-path legs routed, PackTest templates (`packtest_templates`, counted from the emission: per volume
+`lethal_<id>` and `lethal_<id>_claim`, and `lethal_<id>_shut` for a staged one), `staged[]` (spec-0088: per staged
 volume its gate terms and how many configurations judged / may hold it live /
 hold it live / exist), and `danger_visibility`: the walked population, one row
 per (volume, configuration) with its caught and shown cells, and how many

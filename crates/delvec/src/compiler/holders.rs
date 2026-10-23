@@ -1420,6 +1420,62 @@ pub struct Stance {
     pub cells: Vec<[i32; 3]>,
 }
 
+/// What [`walk_world`] found: the world a route is walked in, and the stance
+/// pass's own answer the build judges (`DW1037`).
+pub struct Walked {
+    /// `world` with each holder `collect`'s stance
+    /// ([`crate::compiler::nav::World::with_holder_stances`]).
+    pub world: crate::compiler::nav::World,
+    /// Each holder's stance cells, in [`own_holders`] order.
+    pub stances: Vec<Stance>,
+    /// `(unsupported, unreachable)`.
+    pub counts: (usize, usize),
+    /// `DW1037`, or nothing.
+    pub verdict: Result<(), Failure>,
+}
+
+/// **The world every critical-path route is walked in, derived once**
+/// (spec-0111 §5.2): the build's final world
+/// ([`crate::compiler::light::final_world`]: the assembled cells under every
+/// premise the campaign states, relight fixtures standing in them), the stance
+/// pass over it for the holders `owned`, and that world ending each holder
+/// `collect`'s leg at the stance the pass chose. `delvec build` and every tool
+/// that reads the critical path (`delvec blocking-chart`) take their world
+/// here and nowhere else, so a leg ends where the build's does. The caller reads `Relight::diagnostics` and
+/// [`Walked::verdict`] — a refused pass is the build's failure to raise, not
+/// this derivation's.
+pub fn final_walk(
+    plan: &Plan,
+    assembled: &crate::compiler::assembled::Assembled,
+    owned: &[OwnedHolder],
+) -> (Walked, crate::compiler::light::Relight) {
+    let (world, relight) = crate::compiler::light::final_world(plan, assembled);
+    (walk_world(plan, world, owned), relight)
+}
+
+/// The stance pass over `world` for the holders `owned`, from the cells the
+/// party can walk to, and `world` ending each holder `collect`'s leg at the
+/// stance that pass chose. Private: every reader takes it through
+/// [`final_walk`].
+fn walk_world(plan: &Plan, world: crate::compiler::nav::World, owned: &[OwnedHolder]) -> Walked {
+    // A stance is where the critical path's leg ends and the bot takes the
+    // item (spec-0111 §5.2): a cell the party walks to on cue, so the walk
+    // relation, not the reach graph (spec-0113 §4.5).
+    let reachable = if owned.iter().any(|o| o.is_filled()) {
+        world.walk_region_rooted(&crate::compiler::edit::anchor_starts(plan))
+    } else {
+        std::collections::BTreeSet::new()
+    };
+    let (stances, counts, verdict) = check_stance(&world, owned, &reachable);
+    let world = world.with_holder_stances(collect_stances(owned, &stances));
+    Walked {
+        world,
+        stances,
+        counts,
+        verdict,
+    }
+}
+
 /// **The stance pass** (spec-0111 §5.2): every holder is kept by the game —
 /// a frame's support solid and its own cell clear, a stand's foot cell
 /// standable — and every filled holder has a standable, walk-reachable cell

@@ -190,7 +190,10 @@ def write_campaign(dest: Path, pool: str, base: str) -> None:
     shutil.copytree(src, dest)
     world = json.loads((dest / "world.json").read_text())
     content = world["content"]
-    content["horizon"] = base
+    # The ground states its music (spec-0109): a declared silence, so the
+    # campaign is one this `delvec` builds and the pair under test is all
+    # that varies.
+    content["horizon"] = {"base": base, "attributes": {"audio/background_music": {}}}
     content["boundary"] = {"margin": 20}
     area = content["areas"][0]
     area.pop("prefab", None)

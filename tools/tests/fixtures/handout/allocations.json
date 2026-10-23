@@ -1,0 +1,4732 @@
+[
+  {
+    "brief": {
+      "intent": "arrival",
+      "kind": "roofed",
+      "note": "A low stone porch a body arrives in: four blocks to its ceiling, one way on, the hall's arch ahead. It reads as a threshold, not a room.",
+      "stations": []
+    },
+    "concept": {
+      "absent": "no approved image yet: the place's concept is generated at step 9, after the walk, anchored on the whole's sheet and on this handout",
+      "name": "concept/landing"
+    },
+    "datum_y": 1,
+    "extent": [
+      10,
+      6,
+      10
+    ],
+    "ground": {
+      "base": "ground",
+      "bottom_y": 0,
+      "columns": [
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 1,
+          "z": 1
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 1,
+          "z": 2
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 1,
+          "z": 3
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 1,
+          "z": 4
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 1,
+          "z": 5
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 1,
+          "z": 6
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 1,
+          "z": 7
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 1,
+          "z": 8
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 2,
+          "z": 1
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 2,
+          "z": 2
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 2,
+          "z": 3
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 2,
+          "z": 4
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 2,
+          "z": 5
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 2,
+          "z": 6
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 2,
+          "z": 7
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 2,
+          "z": 8
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 3,
+          "z": 1
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 3,
+          "z": 2
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 3,
+          "z": 3
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 3,
+          "z": 4
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 3,
+          "z": 5
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 3,
+          "z": 6
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 3,
+          "z": 7
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 3,
+          "z": 8
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 4,
+          "z": 1
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 4,
+          "z": 2
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 4,
+          "z": 3
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 4,
+          "z": 4
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 4,
+          "z": 5
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 4,
+          "z": 6
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 4,
+          "z": 7
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 4,
+          "z": 8
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 5,
+          "z": 1
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 5,
+          "z": 2
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 5,
+          "z": 3
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 5,
+          "z": 4
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 5,
+          "z": 5
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 5,
+          "z": 6
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 5,
+          "z": 7
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 5,
+          "z": 8
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 6,
+          "z": 1
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 6,
+          "z": 2
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 6,
+          "z": 3
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 6,
+          "z": 4
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 6,
+          "z": 5
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 6,
+          "z": 6
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 6,
+          "z": 7
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 6,
+          "z": 8
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 7,
+          "z": 1
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 7,
+          "z": 2
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 7,
+          "z": 3
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 7,
+          "z": 4
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 7,
+          "z": 5
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 7,
+          "z": 6
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 7,
+          "z": 7
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 7,
+          "z": 8
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 8,
+          "z": 1
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 8,
+          "z": 2
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 8,
+          "z": 3
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 8,
+          "z": 4
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 8,
+          "z": 5
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 8,
+          "z": 6
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 8,
+          "z": 7
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 8,
+          "z": 8
+        }
+      ],
+      "fill": "open",
+      "fixed": [
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            2
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            3
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            4
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            5
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            6
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            7
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            8
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            9
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            1,
+            0,
+            0
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            1,
+            0,
+            9
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            2,
+            0,
+            0
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            2,
+            0,
+            9
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            3,
+            0,
+            0
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            3,
+            0,
+            9
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            4,
+            0,
+            0
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            4,
+            0,
+            9
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            5,
+            0,
+            0
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            5,
+            0,
+            9
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            6,
+            0,
+            0
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            6,
+            0,
+            9
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            7,
+            0,
+            0
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            7,
+            0,
+            9
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            8,
+            0,
+            0
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            8,
+            0,
+            9
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            9,
+            0,
+            0
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            9,
+            0,
+            1
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            9,
+            0,
+            2
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            9,
+            0,
+            3
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            9,
+            0,
+            4
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            9,
+            0,
+            5
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            9,
+            0,
+            6
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            9,
+            0,
+            7
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            9,
+            0,
+            8
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            9,
+            0,
+            9
+          ]
+        }
+      ],
+      "floor_y": 1,
+      "max_y": 0,
+      "min_y": 0,
+      "perimeter": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          1
+        ],
+        [
+          0,
+          0,
+          2
+        ],
+        [
+          0,
+          0,
+          3
+        ],
+        [
+          0,
+          0,
+          4
+        ],
+        [
+          0,
+          0,
+          5
+        ],
+        [
+          0,
+          0,
+          6
+        ],
+        [
+          0,
+          0,
+          7
+        ],
+        [
+          0,
+          0,
+          8
+        ],
+        [
+          0,
+          0,
+          9
+        ],
+        [
+          1,
+          0,
+          0
+        ],
+        [
+          1,
+          0,
+          9
+        ],
+        [
+          2,
+          0,
+          0
+        ],
+        [
+          2,
+          0,
+          9
+        ],
+        [
+          3,
+          0,
+          0
+        ],
+        [
+          3,
+          0,
+          9
+        ],
+        [
+          4,
+          0,
+          0
+        ],
+        [
+          4,
+          0,
+          9
+        ],
+        [
+          5,
+          0,
+          0
+        ],
+        [
+          5,
+          0,
+          9
+        ],
+        [
+          6,
+          0,
+          0
+        ],
+        [
+          6,
+          0,
+          9
+        ],
+        [
+          7,
+          0,
+          0
+        ],
+        [
+          7,
+          0,
+          9
+        ],
+        [
+          8,
+          0,
+          0
+        ],
+        [
+          8,
+          0,
+          9
+        ],
+        [
+          9,
+          0,
+          0
+        ],
+        [
+          9,
+          0,
+          1
+        ],
+        [
+          9,
+          0,
+          2
+        ],
+        [
+          9,
+          0,
+          3
+        ],
+        [
+          9,
+          0,
+          4
+        ],
+        [
+          9,
+          0,
+          5
+        ],
+        [
+          9,
+          0,
+          6
+        ],
+        [
+          9,
+          0,
+          7
+        ],
+        [
+          9,
+          0,
+          8
+        ],
+        [
+          9,
+          0,
+          9
+        ]
+      ]
+    },
+    "neighbours": [
+      {
+        "face": "east",
+        "floor": 64,
+        "kind": "roofed",
+        "place": "node/hall",
+        "seams": [
+          "edge/landing-hall"
+        ]
+      }
+    ],
+    "owed_anchors": [
+      "anchor/node-landing",
+      "spawn"
+    ],
+    "place": "node/landing",
+    "seams": [
+      {
+        "answer_with": [
+          "walk"
+        ],
+        "cells": [
+          [
+            9,
+            1,
+            3
+          ],
+          [
+            9,
+            3,
+            4
+          ]
+        ],
+        "class": "walk",
+        "edge": "edge/landing-hall",
+        "face": "east",
+        "form": "a stone arch",
+        "ground_y": 0,
+        "other": "node/hall",
+        "owns_plane": true,
+        "rise": 0
+      }
+    ],
+    "sheet": [],
+    "space": [
+      [
+        1,
+        1,
+        1
+      ],
+      [
+        8,
+        4,
+        8
+      ]
+    ],
+    "views": [
+      {
+        "frame": "delvec frames --campaign <campaign> --camera 24,84,44,168.7,27.6",
+        "id": "view/the-approach",
+        "note": "The silhouette as a body walking in from the south first meets it."
+      }
+    ],
+    "voids": [
+      {
+        "cells": [
+          [
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            9
+          ]
+        ],
+        "owner": "the whole's fixed ground"
+      },
+      {
+        "cells": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            9,
+            0,
+            0
+          ]
+        ],
+        "owner": "the whole's fixed ground"
+      },
+      {
+        "cells": [
+          [
+            1,
+            0,
+            9
+          ],
+          [
+            9,
+            0,
+            9
+          ]
+        ],
+        "owner": "the whole's fixed ground"
+      },
+      {
+        "cells": [
+          [
+            9,
+            0,
+            1
+          ],
+          [
+            9,
+            0,
+            8
+          ]
+        ],
+        "owner": "the whole's fixed ground"
+      }
+    ],
+    "world_min": [
+      3,
+      63,
+      7
+    ]
+  },
+  {
+    "brief": {
+      "intent": "hub",
+      "kind": "roofed",
+      "note": "The keeper's hall: a tall stone room with a timber ceiling, the keeper standing in the middle with his back to the barred south arch. The landing opens in from the west; the yard lies beyond the bars.",
+      "stations": []
+    },
+    "concept": {
+      "absent": "no approved image yet: the place's concept is generated at step 9, after the walk, anchored on the whole's sheet and on this handout",
+      "name": "concept/hall"
+    },
+    "datum_y": 1,
+    "extent": [
+      14,
+      10,
+      18
+    ],
+    "ground": {
+      "base": "ground",
+      "bottom_y": 0,
+      "columns": [
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 1,
+          "z": 1
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 1,
+          "z": 2
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 1,
+          "z": 3
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 1,
+          "z": 4
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 1,
+          "z": 5
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 1,
+          "z": 6
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 1,
+          "z": 7
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 1,
+          "z": 8
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 1,
+          "z": 9
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 1,
+          "z": 10
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 1,
+          "z": 11
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 1,
+          "z": 12
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 1,
+          "z": 13
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 1,
+          "z": 14
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 1,
+          "z": 15
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 1,
+          "z": 16
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 2,
+          "z": 1
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 2,
+          "z": 2
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 2,
+          "z": 3
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 2,
+          "z": 4
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 2,
+          "z": 5
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 2,
+          "z": 6
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 2,
+          "z": 7
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 2,
+          "z": 8
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 2,
+          "z": 9
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 2,
+          "z": 10
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 2,
+          "z": 11
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 2,
+          "z": 12
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 2,
+          "z": 13
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 2,
+          "z": 14
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 2,
+          "z": 15
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 2,
+          "z": 16
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 3,
+          "z": 1
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 3,
+          "z": 2
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 3,
+          "z": 3
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 3,
+          "z": 4
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 3,
+          "z": 5
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 3,
+          "z": 6
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 3,
+          "z": 7
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 3,
+          "z": 8
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 3,
+          "z": 9
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 3,
+          "z": 10
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 3,
+          "z": 11
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 3,
+          "z": 12
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 3,
+          "z": 13
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 3,
+          "z": 14
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 3,
+          "z": 15
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 3,
+          "z": 16
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 4,
+          "z": 1
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 4,
+          "z": 2
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 4,
+          "z": 3
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 4,
+          "z": 4
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 4,
+          "z": 5
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 4,
+          "z": 6
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 4,
+          "z": 7
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 4,
+          "z": 8
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 4,
+          "z": 9
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 4,
+          "z": 10
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 4,
+          "z": 11
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 4,
+          "z": 12
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 4,
+          "z": 13
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 4,
+          "z": 14
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 4,
+          "z": 15
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 4,
+          "z": 16
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 5,
+          "z": 1
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 5,
+          "z": 2
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 5,
+          "z": 3
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 5,
+          "z": 4
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 5,
+          "z": 5
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 5,
+          "z": 6
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 5,
+          "z": 7
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 5,
+          "z": 8
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 5,
+          "z": 9
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 5,
+          "z": 10
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 5,
+          "z": 11
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 5,
+          "z": 12
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 5,
+          "z": 13
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 5,
+          "z": 14
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 5,
+          "z": 15
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 5,
+          "z": 16
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 6,
+          "z": 1
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 6,
+          "z": 2
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 6,
+          "z": 3
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 6,
+          "z": 4
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 6,
+          "z": 5
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 6,
+          "z": 6
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 6,
+          "z": 7
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 6,
+          "z": 8
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 6,
+          "z": 9
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 6,
+          "z": 10
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 6,
+          "z": 11
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 6,
+          "z": 12
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 6,
+          "z": 13
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 6,
+          "z": 14
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 6,
+          "z": 15
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 6,
+          "z": 16
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 7,
+          "z": 1
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 7,
+          "z": 2
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 7,
+          "z": 3
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 7,
+          "z": 4
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 7,
+          "z": 5
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 7,
+          "z": 6
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 7,
+          "z": 7
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 7,
+          "z": 8
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 7,
+          "z": 9
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 7,
+          "z": 10
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 7,
+          "z": 11
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 7,
+          "z": 12
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 7,
+          "z": 13
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 7,
+          "z": 14
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 7,
+          "z": 15
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 7,
+          "z": 16
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 8,
+          "z": 1
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 8,
+          "z": 2
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 8,
+          "z": 3
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 8,
+          "z": 4
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 8,
+          "z": 5
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 8,
+          "z": 6
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 8,
+          "z": 7
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 8,
+          "z": 8
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 8,
+          "z": 9
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 8,
+          "z": 10
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 8,
+          "z": 11
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 8,
+          "z": 12
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 8,
+          "z": 13
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 8,
+          "z": 14
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 8,
+          "z": 15
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 8,
+          "z": 16
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 9,
+          "z": 1
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 9,
+          "z": 2
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 9,
+          "z": 3
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 9,
+          "z": 4
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 9,
+          "z": 5
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 9,
+          "z": 6
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 9,
+          "z": 7
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 9,
+          "z": 8
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 9,
+          "z": 9
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 9,
+          "z": 10
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 9,
+          "z": 11
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 9,
+          "z": 12
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 9,
+          "z": 13
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 9,
+          "z": 14
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 9,
+          "z": 15
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 9,
+          "z": 16
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 10,
+          "z": 1
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 10,
+          "z": 2
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 10,
+          "z": 3
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 10,
+          "z": 4
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 10,
+          "z": 5
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 10,
+          "z": 6
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 10,
+          "z": 7
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 10,
+          "z": 8
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 10,
+          "z": 9
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 10,
+          "z": 10
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 10,
+          "z": 11
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 10,
+          "z": 12
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 10,
+          "z": 13
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 10,
+          "z": 14
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 10,
+          "z": 15
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 10,
+          "z": 16
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 11,
+          "z": 1
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 11,
+          "z": 2
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 11,
+          "z": 3
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 11,
+          "z": 4
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 11,
+          "z": 5
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 11,
+          "z": 6
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 11,
+          "z": 7
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 11,
+          "z": 8
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 11,
+          "z": 9
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 11,
+          "z": 10
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 11,
+          "z": 11
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 11,
+          "z": 12
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 11,
+          "z": 13
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 11,
+          "z": 14
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 11,
+          "z": 15
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 11,
+          "z": 16
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 12,
+          "z": 1
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 12,
+          "z": 2
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 12,
+          "z": 3
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 12,
+          "z": 4
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 12,
+          "z": 5
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 12,
+          "z": 6
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 12,
+          "z": 7
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 12,
+          "z": 8
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 12,
+          "z": 9
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 12,
+          "z": 10
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 12,
+          "z": 11
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 12,
+          "z": 12
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 12,
+          "z": 13
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 12,
+          "z": 14
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 12,
+          "z": 15
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 12,
+          "z": 16
+        }
+      ],
+      "fill": "open",
+      "fixed": [
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            2
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            3
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            4
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            5
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            6
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            7
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            8
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            9
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            10
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            11
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            12
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            13
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            14
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            15
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            16
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            17
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            1,
+            0,
+            0
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            1,
+            0,
+            17
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            2,
+            0,
+            0
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            2,
+            0,
+            17
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            3,
+            0,
+            0
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            3,
+            0,
+            17
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            4,
+            0,
+            0
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            4,
+            0,
+            17
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            5,
+            0,
+            0
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            5,
+            0,
+            17
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            6,
+            0,
+            0
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            6,
+            0,
+            17
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            7,
+            0,
+            0
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            7,
+            0,
+            17
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            8,
+            0,
+            0
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            8,
+            0,
+            17
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            9,
+            0,
+            0
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            9,
+            0,
+            17
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            10,
+            0,
+            0
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            10,
+            0,
+            17
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            11,
+            0,
+            0
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            11,
+            0,
+            17
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            12,
+            0,
+            0
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            12,
+            0,
+            17
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            13,
+            0,
+            0
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            13,
+            0,
+            1
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            13,
+            0,
+            2
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            13,
+            0,
+            3
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            13,
+            0,
+            4
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            13,
+            0,
+            5
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            13,
+            0,
+            6
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            13,
+            0,
+            7
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            13,
+            0,
+            8
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            13,
+            0,
+            9
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            13,
+            0,
+            10
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            13,
+            0,
+            11
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            13,
+            0,
+            12
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            13,
+            0,
+            13
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            13,
+            0,
+            14
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            13,
+            0,
+            15
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            13,
+            0,
+            16
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            13,
+            0,
+            17
+          ]
+        }
+      ],
+      "floor_y": 1,
+      "max_y": 0,
+      "min_y": 0,
+      "perimeter": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          1
+        ],
+        [
+          0,
+          0,
+          2
+        ],
+        [
+          0,
+          0,
+          3
+        ],
+        [
+          0,
+          0,
+          4
+        ],
+        [
+          0,
+          0,
+          5
+        ],
+        [
+          0,
+          0,
+          6
+        ],
+        [
+          0,
+          0,
+          7
+        ],
+        [
+          0,
+          0,
+          8
+        ],
+        [
+          0,
+          0,
+          9
+        ],
+        [
+          0,
+          0,
+          10
+        ],
+        [
+          0,
+          0,
+          11
+        ],
+        [
+          0,
+          0,
+          12
+        ],
+        [
+          0,
+          0,
+          13
+        ],
+        [
+          0,
+          0,
+          14
+        ],
+        [
+          0,
+          0,
+          15
+        ],
+        [
+          0,
+          0,
+          16
+        ],
+        [
+          0,
+          0,
+          17
+        ],
+        [
+          1,
+          0,
+          0
+        ],
+        [
+          1,
+          0,
+          17
+        ],
+        [
+          2,
+          0,
+          0
+        ],
+        [
+          2,
+          0,
+          17
+        ],
+        [
+          3,
+          0,
+          0
+        ],
+        [
+          3,
+          0,
+          17
+        ],
+        [
+          4,
+          0,
+          0
+        ],
+        [
+          4,
+          0,
+          17
+        ],
+        [
+          5,
+          0,
+          0
+        ],
+        [
+          5,
+          0,
+          17
+        ],
+        [
+          6,
+          0,
+          0
+        ],
+        [
+          6,
+          0,
+          17
+        ],
+        [
+          7,
+          0,
+          0
+        ],
+        [
+          7,
+          0,
+          17
+        ],
+        [
+          8,
+          0,
+          0
+        ],
+        [
+          8,
+          0,
+          17
+        ],
+        [
+          9,
+          0,
+          0
+        ],
+        [
+          9,
+          0,
+          17
+        ],
+        [
+          10,
+          0,
+          0
+        ],
+        [
+          10,
+          0,
+          17
+        ],
+        [
+          11,
+          0,
+          0
+        ],
+        [
+          11,
+          0,
+          17
+        ],
+        [
+          12,
+          0,
+          0
+        ],
+        [
+          12,
+          0,
+          17
+        ],
+        [
+          13,
+          0,
+          0
+        ],
+        [
+          13,
+          0,
+          1
+        ],
+        [
+          13,
+          0,
+          2
+        ],
+        [
+          13,
+          0,
+          3
+        ],
+        [
+          13,
+          0,
+          4
+        ],
+        [
+          13,
+          0,
+          5
+        ],
+        [
+          13,
+          0,
+          6
+        ],
+        [
+          13,
+          0,
+          7
+        ],
+        [
+          13,
+          0,
+          8
+        ],
+        [
+          13,
+          0,
+          9
+        ],
+        [
+          13,
+          0,
+          10
+        ],
+        [
+          13,
+          0,
+          11
+        ],
+        [
+          13,
+          0,
+          12
+        ],
+        [
+          13,
+          0,
+          13
+        ],
+        [
+          13,
+          0,
+          14
+        ],
+        [
+          13,
+          0,
+          15
+        ],
+        [
+          13,
+          0,
+          16
+        ],
+        [
+          13,
+          0,
+          17
+        ]
+      ]
+    },
+    "neighbours": [
+      {
+        "face": "west",
+        "floor": 64,
+        "kind": "roofed",
+        "place": "node/landing",
+        "seams": [
+          "edge/landing-hall"
+        ]
+      },
+      {
+        "face": "south",
+        "floor": 64,
+        "kind": "open",
+        "place": "node/yard",
+        "seams": [
+          "edge/hall-yard"
+        ]
+      }
+    ],
+    "owed_anchors": [
+      "anchor/node-hall",
+      "anchor/seam-hall-yard",
+      "anchor/unlock-hall-yard"
+    ],
+    "place": "node/hall",
+    "seams": [
+      {
+        "answer_with": [
+          "walk"
+        ],
+        "cells": [
+          [
+            1,
+            1,
+            7
+          ],
+          [
+            1,
+            3,
+            8
+          ]
+        ],
+        "class": "walk",
+        "edge": "edge/landing-hall",
+        "face": "west",
+        "form": "a stone arch",
+        "ground_y": 0,
+        "other": "node/landing",
+        "owns_plane": false,
+        "rise": 0
+      },
+      {
+        "answer_with": [
+          "barred",
+          "walk"
+        ],
+        "bar": [
+          [
+            3,
+            1,
+            17
+          ],
+          [
+            4,
+            3,
+            17
+          ]
+        ],
+        "bar_block": "minecraft:iron_bars",
+        "cells": [
+          [
+            3,
+            1,
+            17
+          ],
+          [
+            4,
+            3,
+            17
+          ]
+        ],
+        "class": "walk",
+        "edge": "edge/hall-yard",
+        "face": "south",
+        "form": "a stone arch closed by iron bars",
+        "ground_y": 0,
+        "other": "node/yard",
+        "owns_plane": true,
+        "rise": 0
+      }
+    ],
+    "sheet": [],
+    "space": [
+      [
+        1,
+        1,
+        1
+      ],
+      [
+        12,
+        8,
+        16
+      ]
+    ],
+    "views": [
+      {
+        "frame": "delvec frames --campaign <campaign> --camera 24,84,44,168.7,27.6",
+        "id": "view/the-approach",
+        "note": "The silhouette as a body walking in from the south first meets it."
+      }
+    ],
+    "voids": [
+      {
+        "cells": [
+          [
+            0,
+            1,
+            4
+          ],
+          [
+            0,
+            5,
+            13
+          ]
+        ],
+        "owner": "`node/landing`"
+      },
+      {
+        "cells": [
+          [
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            17
+          ]
+        ],
+        "owner": "the whole's fixed ground"
+      },
+      {
+        "cells": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            13,
+            0,
+            0
+          ]
+        ],
+        "owner": "the whole's fixed ground"
+      },
+      {
+        "cells": [
+          [
+            1,
+            0,
+            17
+          ],
+          [
+            13,
+            0,
+            17
+          ]
+        ],
+        "owner": "the whole's fixed ground"
+      },
+      {
+        "cells": [
+          [
+            13,
+            0,
+            1
+          ],
+          [
+            13,
+            0,
+            16
+          ]
+        ],
+        "owner": "the whole's fixed ground"
+      }
+    ],
+    "world_min": [
+      12,
+      63,
+      3
+    ]
+  },
+  {
+    "brief": {
+      "intent": "goal-chamber",
+      "kind": "open",
+      "note": "A walled yard open to the sky, paved in stone, entered through the hall's barred arch on its north side. The whole ends here.",
+      "stations": []
+    },
+    "concept": {
+      "absent": "no approved image yet: the place's concept is generated at step 9, after the walk, anchored on the whole's sheet and on this handout",
+      "name": "concept/yard"
+    },
+    "datum_y": 1,
+    "extent": [
+      10,
+      5,
+      9
+    ],
+    "ground": {
+      "base": "ground",
+      "bottom_y": 0,
+      "columns": [
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 1,
+          "z": 0
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 1,
+          "z": 1
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 1,
+          "z": 2
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 1,
+          "z": 3
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 1,
+          "z": 4
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 1,
+          "z": 5
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 1,
+          "z": 6
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 1,
+          "z": 7
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 2,
+          "z": 0
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 2,
+          "z": 1
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 2,
+          "z": 2
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 2,
+          "z": 3
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 2,
+          "z": 4
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 2,
+          "z": 5
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 2,
+          "z": 6
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 2,
+          "z": 7
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 3,
+          "z": 0
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 3,
+          "z": 1
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 3,
+          "z": 2
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 3,
+          "z": 3
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 3,
+          "z": 4
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 3,
+          "z": 5
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 3,
+          "z": 6
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 3,
+          "z": 7
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 4,
+          "z": 0
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 4,
+          "z": 1
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 4,
+          "z": 2
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 4,
+          "z": 3
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 4,
+          "z": 4
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 4,
+          "z": 5
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 4,
+          "z": 6
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 4,
+          "z": 7
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 5,
+          "z": 0
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 5,
+          "z": 1
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 5,
+          "z": 2
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 5,
+          "z": 3
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 5,
+          "z": 4
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 5,
+          "z": 5
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 5,
+          "z": 6
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 5,
+          "z": 7
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 6,
+          "z": 0
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 6,
+          "z": 1
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 6,
+          "z": 2
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 6,
+          "z": 3
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 6,
+          "z": 4
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 6,
+          "z": 5
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 6,
+          "z": 6
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 6,
+          "z": 7
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 7,
+          "z": 0
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 7,
+          "z": 1
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 7,
+          "z": 2
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 7,
+          "z": 3
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 7,
+          "z": 4
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 7,
+          "z": 5
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 7,
+          "z": 6
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 7,
+          "z": 7
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 8,
+          "z": 0
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 8,
+          "z": 1
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 8,
+          "z": 2
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 8,
+          "z": 3
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 8,
+          "z": 4
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 8,
+          "z": 5
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 8,
+          "z": 6
+        },
+        {
+          "blocks": [
+            "minecraft:grass_block"
+          ],
+          "top": 0,
+          "x": 8,
+          "z": 7
+        }
+      ],
+      "fill": "open",
+      "fixed": [
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            2
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            3
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            4
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            5
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            6
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            7
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            0,
+            0,
+            8
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            1,
+            0,
+            8
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            2,
+            0,
+            8
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            3,
+            0,
+            8
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            4,
+            0,
+            8
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            5,
+            0,
+            8
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            6,
+            0,
+            8
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            7,
+            0,
+            8
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            8,
+            0,
+            8
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            9,
+            0,
+            0
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            9,
+            0,
+            1
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            9,
+            0,
+            2
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            9,
+            0,
+            3
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            9,
+            0,
+            4
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            9,
+            0,
+            5
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            9,
+            0,
+            6
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            9,
+            0,
+            7
+          ]
+        },
+        {
+          "block": "minecraft:grass_block",
+          "cell": [
+            9,
+            0,
+            8
+          ]
+        }
+      ],
+      "floor_y": 1,
+      "max_y": 0,
+      "min_y": 0,
+      "perimeter": [
+        [
+          0,
+          0,
+          -1
+        ],
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          1
+        ],
+        [
+          0,
+          0,
+          2
+        ],
+        [
+          0,
+          0,
+          3
+        ],
+        [
+          0,
+          0,
+          4
+        ],
+        [
+          0,
+          0,
+          5
+        ],
+        [
+          0,
+          0,
+          6
+        ],
+        [
+          0,
+          0,
+          7
+        ],
+        [
+          0,
+          0,
+          8
+        ],
+        [
+          1,
+          0,
+          -1
+        ],
+        [
+          1,
+          0,
+          8
+        ],
+        [
+          2,
+          0,
+          -1
+        ],
+        [
+          2,
+          0,
+          8
+        ],
+        [
+          3,
+          0,
+          -1
+        ],
+        [
+          3,
+          0,
+          8
+        ],
+        [
+          4,
+          0,
+          -1
+        ],
+        [
+          4,
+          0,
+          8
+        ],
+        [
+          5,
+          0,
+          -1
+        ],
+        [
+          5,
+          0,
+          8
+        ],
+        [
+          6,
+          0,
+          -1
+        ],
+        [
+          6,
+          0,
+          8
+        ],
+        [
+          7,
+          0,
+          -1
+        ],
+        [
+          7,
+          0,
+          8
+        ],
+        [
+          8,
+          0,
+          -1
+        ],
+        [
+          8,
+          0,
+          8
+        ],
+        [
+          9,
+          0,
+          -1
+        ],
+        [
+          9,
+          0,
+          0
+        ],
+        [
+          9,
+          0,
+          1
+        ],
+        [
+          9,
+          0,
+          2
+        ],
+        [
+          9,
+          0,
+          3
+        ],
+        [
+          9,
+          0,
+          4
+        ],
+        [
+          9,
+          0,
+          5
+        ],
+        [
+          9,
+          0,
+          6
+        ],
+        [
+          9,
+          0,
+          7
+        ],
+        [
+          9,
+          0,
+          8
+        ]
+      ]
+    },
+    "neighbours": [
+      {
+        "face": "north",
+        "floor": 64,
+        "kind": "roofed",
+        "place": "node/hall",
+        "seams": [
+          "edge/hall-yard"
+        ]
+      }
+    ],
+    "owed_anchors": [
+      "anchor/node-yard"
+    ],
+    "place": "node/yard",
+    "seams": [
+      {
+        "answer_with": [
+          "walk"
+        ],
+        "cells": [
+          [
+            3,
+            1,
+            0
+          ],
+          [
+            4,
+            3,
+            0
+          ]
+        ],
+        "class": "walk",
+        "edge": "edge/hall-yard",
+        "face": "north",
+        "form": "a stone arch closed by iron bars",
+        "ground_y": 0,
+        "other": "node/hall",
+        "owns_plane": false,
+        "rise": 0
+      }
+    ],
+    "sheet": [],
+    "space": [
+      [
+        1,
+        1,
+        0
+      ],
+      [
+        8,
+        4,
+        7
+      ]
+    ],
+    "views": [
+      {
+        "frame": "delvec frames --campaign <campaign> --camera 24,84,44,168.7,27.6",
+        "id": "view/the-approach",
+        "note": "The silhouette as a body walking in from the south first meets it."
+      }
+    ],
+    "voids": [
+      {
+        "cells": [
+          [
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            8
+          ]
+        ],
+        "owner": "the whole's fixed ground"
+      },
+      {
+        "cells": [
+          [
+            1,
+            0,
+            8
+          ],
+          [
+            9,
+            0,
+            8
+          ]
+        ],
+        "owner": "the whole's fixed ground"
+      },
+      {
+        "cells": [
+          [
+            9,
+            0,
+            0
+          ],
+          [
+            9,
+            0,
+            7
+          ]
+        ],
+        "owner": "the whole's fixed ground"
+      }
+    ],
+    "world_min": [
+      12,
+      63,
+      21
+    ]
+  }
+]

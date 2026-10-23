@@ -36,20 +36,21 @@ fn quests(cutscene: &str) -> String {
     )
 }
 
-const SINGLE: &str = r#"{ "type": "cutscene", "seconds": 2,
+const SINGLE: &str = r#"{ "type": "cutscene", "seconds": 2, "subject": "landscape",
   "path": [ { "anchor": "anchor/exit", "offset": [0, 2, 0] },
             { "anchor": "anchor/exit", "offset": [0, 2, -2] } ] }"#;
 
 const SINGLE_LOOK_AT: &str = r#"{ "type": "cutscene", "seconds": 2,
   "path": [ { "anchor": "anchor/exit", "offset": [0, 2, 0] },
             { "anchor": "anchor/exit", "offset": [0, 2, -2] } ],
-  "look_at": { "anchor": "anchor/keeper-stand", "offset": [0, 2, 0] } }"#;
+  "look_at": { "anchor": "anchor/keeper-stand", "offset": [0, 2, 0] },
+  "subject": { "npc": "npc/keeper" } }"#;
 
 const MULTI: &str = r#"{ "type": "cutscene", "shots": [
-    { "seconds": 2,
+    { "seconds": 2, "subject": { "anchor": "anchor/exit" },
       "path": [ { "anchor": "anchor/exit", "offset": [0, 2, 0] },
                 { "anchor": "anchor/exit", "offset": [0, 2, -2] } ] },
-    { "seconds": 3,
+    { "seconds": 3, "subject": { "npc": "npc/keeper" },
       "path": [ { "anchor": "anchor/keeper-stand", "offset": [0, 2, 1] } ],
       "look_at": { "anchor": "anchor/keeper-stand", "offset": [0, 1, 0] } } ] }"#;
 
@@ -74,8 +75,8 @@ fn diags(cutscene: &str) -> Vec<delvewright_dsl::Diagnostic> {
     check_campaign(&campaign_with_quests(&quests(cutscene)))
 }
 
-/// The pre-0.6 single-shot spelling still validates clean under 0.4.0 — the
-/// v0.6 additions never invalidate an existing campaign.
+/// The single-shot spelling validates clean with its `subject` beside `path`
+/// and `seconds`.
 #[test]
 fn single_shot_cutscene_still_validates_under_0_4() {
     let d = diags(SINGLE);
@@ -154,16 +155,15 @@ fn styled_shot_validates_clean() {
     assert!(d.is_empty(), "styled shot must validate clean: {d:#?}");
 }
 
-/// Style-shape violations are `DW0348`: a style without `subject`, style params
-/// on an unstyled shot, `subject_b` off `two-shot`, a `two-shot` without
-/// `subject_b`, and `degrees` off `orbit-arc` / out of range.
+/// Style-shape violations are `DW0348`: style params on an unstyled shot,
+/// `subject_b` off `two-shot`, a `two-shot` without `subject_b`, and `degrees`
+/// off `orbit-arc` / out of range. A styled shot with no subject is the shape
+/// defect every shot shares, `DW0199` (spec-0110).
 #[test]
 fn style_shape_violations_are_dw0348() {
     let cases = [
-        // style, no subject
-        r#"{ "type": "cutscene", "shots": [ { "shot_style": "insert" } ] }"#,
         // style params without a style
-        r#"{ "type": "cutscene", "shots": [ { "seconds": 2, "dist": 8,
+        r#"{ "type": "cutscene", "shots": [ { "seconds": 2, "dist": 8, "subject": "landscape",
              "path": [ { "anchor": "anchor/exit", "offset": [0, 2, 0] } ] } ] }"#,
         // subject_b on a non-two-shot style
         r#"{ "type": "cutscene", "shots": [ { "shot_style": "insert",

@@ -200,7 +200,7 @@ pub(super) fn build_surround(
                  union of what happens to get placed is not a substitute: areas sit {sp} blocks \
                  apart, so that union is mostly the void between them, and the horizon would be \
                  a mountain range built around empty space. Make the map one area bound to one \
-                 `prefab`, or give the campaign a site plan, or set `horizon` to `void` or \
+                 `prefab`, or give the campaign a site plan, or set `horizon.base` to `void` or \
                  `ocean`, which need no map to be a horizon of.",
                 base = h.base.token(),
                 n = areas.len(),

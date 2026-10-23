@@ -25,10 +25,10 @@
 //! - The **exported critical path** is one world's playthrough, and it must
 //!   replay legally step by step (`DW0204`).
 //!
-//! The lighting gate (`DW0210`/`DW0211`) is **no longer** here: spec-0010 moved it
-//! to the compiler's assembled-world light model ([`crate::compiler::light`]), which measures
-//! real light over the placed geometry (per-seam, sealed-cavity aware) instead of
-//! reading per-piece admission profiles.
+//! The lighting gate (`DW0210`/`DW0211`) is not here: it belongs to the
+//! compiler's assembled-world light model ([`crate::compiler::light`], spec-0010),
+//! which measures real light over the placed geometry (per-seam, sealed-cavity
+//! aware).
 //!
 //! ## Codes (`DW02xx`)
 //!
@@ -85,8 +85,8 @@ pub mod codes {
         /// A declared `min_players: n` has no n-agent division of labour (spec-0018).
         pub const PARTY_UNDIVIDABLE: DwCode = DwCode::new("DW0358", ExitTier::Build);
     }
-    // DW0210 (dark-area mitigation) moved to `crate::compiler::light` (spec-0010): it is now
-    // measured over the assembled world, not a per-piece admission profile.
+    // DW0210 (dark-area mitigation) is declared in `crate::compiler::light`
+    // (spec-0010), measured over the assembled world.
 }
 
 /// Run reachability analysis. Returns `DW02xx` diagnostics (sorted); empty means
@@ -101,20 +101,13 @@ pub fn analyze_campaign(c: &Campaign, prefabs: &dyn AnchorRegistry) -> Vec<Diagn
 
     let mut diags = Vec::new();
 
-    // THE LAYOUT GRAPH'S REACHABILITY PROOFS ARE NOT HERE ANY MORE.
-    //
-    // `DW0816` / `DW0817` / `DW0819` used to be raised from this pass, sorted
-    // by KIND: they are reachability questions like `DW0202`–`DW0204`, so they
-    // went where reachability goes. Measured, that argument put them somewhere
-    // no verb could reach them at the step they exist for. This pass runs only
-    // on a campaign that already validates, and a campaign at the graph step
-    // carries `DW0150` by construction — the plan is written and stage 5 is not
-    // — so `delvec analyze` returned at the validation gate and the graph went
-    // unchecked until stage 5 was written, which is past the design gate. They
-    // now run in `dsl::layout::check`, which is what `delvec validate` goes
-    // through, and there is exactly one call site — see
-    // `delvewright_dsl::layout::reachability`. Nothing is lost here: `analyze`
-    // and `build` both validate first, so a graph fault still cannot reach a
+    // The layout graph's reachability proofs (`DW0816` / `DW0817` / `DW0819`)
+    // are not raised here. This pass runs only on a campaign that validates, and
+    // a campaign at the graph step carries `DW0150` by construction (the plan is
+    // written and stage 5 is not), so a proof here would not run at the step it
+    // exists for. They run in `dsl::layout::check`, which `delvec validate` goes
+    // through, at one call site (`delvewright_dsl::layout::reachability`);
+    // `analyze` and `build` both validate first, so a graph fault cannot reach a
     // built world.
 
     // DW0202: quests never activated, in any world.
@@ -234,11 +227,8 @@ pub fn analyze_campaign(c: &Campaign, prefabs: &dyn AnchorRegistry) -> Vec<Diagn
         }
     }
 
-    // DW0210 is no longer computed here (spec-0010): the lighting gate moved to the
-    // compiler's assembled-world light model (`crate::compiler::light`), which measures real
-    // light over the placed geometry rather than reading per-piece admission
-    // profiles. `prefabs` is retained in the signature for the reachability model's
-    // other uses and API stability.
+    // DW0210 belongs to the assembled-world light model (`crate::compiler::light`,
+    // spec-0010), not to this pass. This pass does not read `prefabs`.
     let _ = prefabs;
 
     diags.sort_by(|a, b| (&a.code, &a.path).cmp(&(&b.code, &b.path)));

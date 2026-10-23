@@ -71,7 +71,7 @@ ba = load(TOOL)
 def client_jar() -> Path | None:
     for candidate in (
         os.environ.get("DELVEWRIGHT_CLIENT_JAR"),
-        str(Path.home() / ".chunky" / "resources" / "minecraft.jar"),
+        str(Path.home() / ".delvewright" / "client" / "minecraft-1.21.11.jar"),
     ):
         if candidate and Path(candidate).exists():
             return Path(candidate)
@@ -1246,7 +1246,7 @@ def test_the_single_block_that_reconciles_the_two_cascades(shelf):
 
 @needs_jar
 def test_swatch_sheet_is_byte_identical_at_one_seed(shelf, tmp_path):
-    """AC6: no GPU, no Chunky, no world, and the same bytes twice at one seed."""
+    """AC6: no GPU, no renderer, no world, and the same bytes twice at one seed."""
     jar = ba.Jar(JAR)
     shortlist, _ = ba.run_screen(
         shelf, ["full_cube", "L>=0.75", "L<=0.95", "C_mean<0.02", "texture_range<=0.30"]

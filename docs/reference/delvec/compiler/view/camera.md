@@ -5,7 +5,7 @@ this module declares. The catalog's shared rules are in [`compiler.md` §5](../.
 
 ## A frame's exposure is the engine's
 
-Every scene is written at `scene::EXPOSURE`, 1.0: the one value at which the sky's radiances are the pinned client's lightmap colours, the tone curve holds the mid-grey where the game's transfer does, and the lantern scale makes a lantern-lit surface read as the game draws it ([`compiler.md` §4](../../../compiler.md)). The camera record (`design/cameras.json`) has no `exposure` field, and neither does a review shot or a panorama.
+Every scene is written at `frames::HQ_EXPOSURE`, 1.0: the one value at which the sky's radiances are the pinned client's lightmap colours, the tone curve holds the mid-grey where the game's transfer does, and the lantern scale makes a lantern-lit surface read as the game draws it ([`compiler.md` §4](../../../compiler.md)). The camera record (`design/cameras.json`) has no `exposure` field, and neither does a review shot or a panorama.
 
 ## Diagnostics
 

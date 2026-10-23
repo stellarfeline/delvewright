@@ -55,8 +55,8 @@ spectator` + per-tick `tp` of two `item_display` proxies + alternating
   dynamic-FOV response to Speed/Slowness, and that is doubly dead for us:
   spectator flight speed ignores those effects, and FOV changes propagate to a
   spectator only when the spectated entity **is a player** — ours is an
-  `item_display`. Consequence: `fov` stays a *render-tier* parameter (Chunky /
-  `delvec snapshot`) and never appears in an in-game `shot_style`. "Lens feel"
+  `item_display`. Consequence: `fov` stays a *render-tier* parameter (`delvec frames`,
+  `delvec cameras`) and never appears in an in-game `shot_style`. "Lens feel"
   in-game is produced by **camera distance only**.
 - **No roll.** `tp <rot>` has yaw and pitch; there is no Dutch angle.
 - **Our own gaps, independent of vanilla**: `lerp_polyline` parameterizes by
@@ -157,6 +157,8 @@ spec-0015's pillar 4 ("shot grammar = the assertion").
   decidable at emission.** Ray-march camera→subject over the voxel model at
   each sampled tick. That is strictly stronger than cut-on-occlusion: the
   reference systems *recover* from a bad shot, we *cannot ship* one.
+  *Closed by spec-0110: `compiler::framing` (`DW1033`, `DW1034`); see
+  `docs/reference/delvec/compiler/framing/shot.md`.*
 - **Compile-time ClearShot.** Where a style has candidate placements, score
   each by (unoccluded fraction of the shot) → (distance vs. the style's
   optimal `dist`) → (subject inside the soft zone), ties broken by

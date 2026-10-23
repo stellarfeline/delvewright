@@ -16,7 +16,7 @@ Methodology; CI enforces the DW-code subset — see `tools/ci/check-dw-codes.py`
   other subcommand `delvec --help` lists — and
   the scripts around it (`tools/`, `validation/`) are indexed in
   [`tools.md`](tools.md).
-- Versions (as of this doc): `delvec 1.13.0`, `dsl 0.58.0`, `mc 1.21.11`.
+- Versions (as of this doc): `delvec 1.14.0`, `dsl 0.61.0`, `mc 1.21.11`.
   The `dsl` number is the **one** `dsl_version` this engine accepts (ADR-0024):
   every stage document, map-pipeline document and l10n sidecar declares it, and
   any other number is refused at the envelope with `DW0102`, which names it. The
@@ -41,7 +41,7 @@ Methodology; CI enforces the DW-code subset — see `tools/ci/check-dw-codes.py`
 
 | # | Pass | Crate/module | Fails with |
 |---|------|--------------|-----------|
-| 1 | Load campaign dir (6 required stage docs + the 5 optional documents + `l10n/` sidecars) | `compiler::load` | internal (≥10), **naming the document that could not be read** |
+| 1 | Load campaign dir (6 required stage docs + the 6 optional documents — `world-edits`, `design`, `geometry-brief`, `layout-graph`, `site-plan`, `detail-plan` — + `l10n/` sidecars) | `compiler::load` | `DW0874` (exit 1) for a missing stage document; otherwise internal (≥10), **naming the document that could not be read** |
 | 2 | Parse (serde, `deny_unknown_fields`) | `dsl::parse_campaign` | `DW0100` (exit 1) |
 | 3 | Validate stages 1–7 (schema + referential, full injected registries), then the compiler's own document checks in the validation funnel (`cli::campaign`), among them one named character is one body over every story state of every configuration (`DW1026`, `compiler::presence`; prints `presence binding (DW1026):`) | `dsl::validate_campaign_with`, `compiler::presence` | `DW01xx` (exit 1); also `DW0455`, a body-family code refused at declaration time, and `DW1026` |
 | 4 | l10n sidecar coverage + reserved channels + language-code mapping + inline style markup + no compass point in a player-facing English line ([`dsl/compass.md`](dsl/compass.md)) | `dsl::validate_l10n`, `dsl::validate_marker_channel`, `dsl::validate_tr_sigil`, `dsl::declared_mc_codes`, `dsl::textstyle::validate_inline_styles`, `dsl::compass::validate_compass_directions` | `DW0180`/`DW0181`/`DW0182`/`DW0183`/`DW0184`/`DW0975`/`DW0976`/`DW1049` (exit 1) |
@@ -69,7 +69,7 @@ Methodology; CI enforces the DW-code subset — see `tools/ci/check-dw-codes.py`
 - The assembled-light gate (`DW0210`/`DW0211`) runs inside the build (it needs the
   placed geometry) but is analysis-tier: `main` maps a `DW02xx` build diagnostic to
   **exit 2**. Its relight fixtures feed both `setup_finish` emission and the nav
-  re-verification in pass 9.
+  re-verification in pass 10.
 - The light field itself (`compiler::light`) is **dense**: over the assembled
   AABB plus the layer of open air above it (the cell a body stands in on the
   tallest block, which reads the sky and block light it really has), each cell is one byte holding whether light passes it, whether the sky is
@@ -179,7 +179,7 @@ delvec analyze  <dir>                      # + quest-graph reachability
 delvec build    <dir> -o <out>             # full deterministic build
 delvec build    <dir> --perturb <knob> [--perturb-place <place>]
                                            # ask the derivation for a named defect and
-                                           #   watch the observer; writes NO tree (§5.3)
+                                           #   watch the observer; writes NO tree (delvec/compiler/blockout.md)
 delvec fmt      <path>… [--check]          # canonical form for authored JSON (§9)
 delvec schema   --stage <1..7|name|all>    # export JSON Schema (named documents: §2)
 delvec metrics  [--gym <dir>]              # export the metrics standard as JSON (§10)
@@ -190,7 +190,8 @@ delvec l10n-apply <dir> --lang <c> --table <f>
                                            # write the sidecar from an English → translation table
 delvec allocation <dir> [<place>|--all]    # the handed allocation for a site-plan place
 delvec detail   <dir> [<place>|--all]      # detail a place inside its allocation (spec-0058)
-delvec snapshot <dir> [framing] [-o f.png] # draft frame + scene manifest (§7)
+delvec frames <build-dir> [-o dir]         # every review frame of a build, drawn by Lumenwright (§7)
+delvec frames --campaign <dir> [framing]   # one frame of a campaign's load world (§7)
 delvec blocking-chart <dir> [-o dir]       # per-elevation cutaway floor plans (§7)
 delvec edit apply   <dir> [--batch f] [-o dir]  # replay edit script (+ candidate), persist on green (§7)
 delvec edit preview <dir> [--batch f] [-o dir]  # same replay + renders, never persists
@@ -318,8 +319,8 @@ Envelope (every stage): `{ dsl_version, campaign_id, stage, content }`,
 | `time` (**required**) | **A keyword or a celestial statement** (spec-0081). A keyword — `day`/`noon`/`dusk`/`night`/`midnight`/`dawn` (`sunrise` is accepted as a synonym of `dawn`) — states vanilla's word with vanilla's meaning: the hour, **on day 0**, so a keyword night shows a **full moon**. A celestial statement — `{"sun"|"moon": <position>, "phase"?: <phase>}` — names exactly one body, one of six positions (*Celestial time*, below) and the moon's phase, one of the eight names the pinned `moon.json` gives, kebab-cased (`full-moon`, `waning-gibbous`, `third-quarter`, `waning-crescent`, `new-moon`, `waxing-crescent`, `first-quarter`, `waxing-gibbous`); the engine computes the tick count, day included. `phase` is **required** on `world.time` wherever the moon is at or above the horizon and **refused** wherever it is below (`DW0931`). **No default, and no `Default` impl** (spec-0061 §4): "this delve is played at noon" is a design decision. An omitted `time` is `DW0100` like any other missing required field; so is a phase outside the eight or a position outside the six. It is also the world half of `DW0890`'s comparison against the approved design. Dimension-global initial state, emitted in the sealing baseline through one token (`WorldTime::token`): a keyword on day 0 emits its table argument — the four vanilla keywords **verbatim** (`time set night`), `dusk` and `dawn` as ticks (`time set 12000`, `time set 23000`) — so no keyword campaign's bytes move; any other clock emits the integer `day × 24000 + daytime` (`{"moon": "just-risen", "phase": "new-moon"}` → `time set 108959`). `dusk` is the **sunset onset** (12000), deliberately not 13000 — that is what `night` sets; `dawn` (23000) is the sunrise onset. Every reader of the hour reads the clock: the sky-light model (`DW0210`) judges 15 on the day plateau of the vendored `sky_light_level` track and 4 elsewhere, so a twilight is judged as night (the conservative direction); `DW0496` reads the vendored `monsters_burn` window by tick. Same type for the `set-time` effect, a design row and a camera's `sky.time`. | 0.5 / dusk+dawn 0.5 / celestial 0.35 |
 | `weather` (**required**) | `clear`/`rain`/`thunder`. Dimension-global, emitted after sealing (`weather <kw>`). Rain/thunder attenuate the assembled-light sky term. **Required, with no default**, for the reason `time` gives. The declared state is emitted. | 0.5 / required 0.22 |
 | `difficulty` (opt) | The delve's combat difficulty: `easy` / `normal` / `hard`. Absent = the compiler's **derivation** (`delvewright_dsl::derived_difficulty`): the lowest difficulty that keeps every staged body — `easy` when the campaign fields any wave or stages any body of a type the pinned game discards on peaceful, `peaceful` otherwise. A staged body is a wave mob, an NPC and an actor as each ships (a skinned one is a mannequin), an unleashed actor's real-AI twin, and a `volley` projectile. The discarded types are `crates/dsl/data/peaceful-despawn-1.21.11.json` (38 of 157), read from the pinned jar by `tools/maintenance/extract-peaceful-despawn.py`: `Mob#checkDespawn()` and `WitherBoss#checkDespawn()` discard a body on peaceful unless `EntityType#isAllowedInPeaceful()` holds, `ShulkerBullet#checkDespawn()` discards it on peaceful unconditionally, and `NoAI`, `PersistenceRequired` and a `/summon` origin are not consulted. Peaceful is the only difficulty any `checkDespawn()` branches on, so no declarable keyword removes a body. Declaring it overrides the derivation in BOTH places a difficulty comes from: `server/server.properties` (what the shipped image and every compose profile boot from, via `validation/world-settings-entrypoint.sh`) and a `/difficulty <kw>` appended to the sealing baseline, so the declaration also holds when the datapack alone is dropped into another world. A declaring campaign also emits the `declared_difficulty` PackTest, which asserts the live world's difficulty via the bare `/difficulty` query command (vanilla returns `Difficulty#getId()`: peaceful 0, easy 1, normal 2, hard 3) — so properties, sealing and declaration are proven to agree on a real server. `peaceful` is refused (`DW0468`); a fighting actor of a species peaceful keeps, on the derived `peaceful`, is the advisory `DW0469` (on peaceful a difficulty-scaled hit on a player lands as 0). **Retuning warning:** the derived `easy` HALVES incoming player damage (`min(dmg / 2 + 1, dmg)`) — content tuned under it that declares `normal` or `hard` must redo that arithmetic, not merely flip the keyword. | 0.6 |
-| `horizon` (opt) | The ground and the sky the map stands in. Either a **string shorthand** — `void` (default/absent) or `ocean` — or the **object form** `{base, …params}`. `void`: nothing outside the placed geometry. `ocean`: a pinned bedrock/stone/water superflat, sea level y=62, no structures or mobs; it drives `generator-settings` **and the area-origin datum**, placing ocean areas at y=60 = `sea_level − 2` so an island piece's authored waterline (local y=2) meets the world ocean and its walk plane is the vanilla-normal one block above the sea (`DW0344`). `valley`: the one base that BUILDS terrain — see *The horizon's surround* below. Params: `ratio` (2.0..=3.0, default 2.5) and `rim_height` (16..=128, default 48), both `valley`-only, both `DW0853` out of range or beside another base. Any horizon whose ambient a body can ENTER — the sea, and a valley's gap floor — needs a `boundary` (`DW0320`); `void` is the only one it cannot, because there is nothing out there to stand on. | 0.19 |
-| `atmospheres[]` (opt) | spec-0080: **the skies a place can stand under**, declared once on the campaign. Each is `{id: atmosphere/<kebab>, attributes?, tint?, precipitation, climate?}` and ships as a datapack biome `<ns>:atmosphere/<kebab>` (see *World / build output*). `attributes` maps an environment-attribute id (`visual/sky_color`; the `minecraft:` prefix optional) to a value in its shape — the ids, scope, shapes and the range the pinned codec rejects outside of are vendored data (`crates/delvec/data/environment-attributes-1.21.11.json`, read from the pinned jar by `tools/maintenance/extract-environment-attributes.py`), so the one DSL unit is the map. **20 ids are admitted**; the 5 the overworld day cycle overrides (`sun_angle`, `moon_angle`, `star_angle`, `sunrise_sunset_color`, `moon_phase`) and the 20 `gameplay/` ids are `DW0928`. A float may also be written in vanilla's modifier form `{"argument": <n>, "modifier": add\|subtract\|multiply\|minimum\|maximum\|override}` (`alpha_blend` takes a `FloatWithAlpha` and is not admitted). `tint` is `{grass?, foliage?, dry_foliage?, water?}`, each `#rrggbb`. `precipitation` (`none`/`rain`/`snow`, required) derives `has_precipitation`, `temperature` and `downfall` (`rain` → true, 0.5, 0.5; `snow` → true, 0.0, 0.5; `none` → false, 0.5, 0.5), and is the fact `DW0496` reads at a cell; `climate {temperature, downfall}` overrides the derived pair and must agree with it (`DW0930`: snow below 0.15, rain at or above). The day timeline stacks over a biome: colours and `sky_light_factor` survive darkened at night, `star_brightness` takes the maximum (stars at noon are possible), and the sun cannot be moved from a place. One no place carries and no beat paints is `DW0930`. | 0.35 |
+| `horizon` (**required**) | The ground and the sky the map stands in, in the **object form** `{base, …params, attributes}` (spec-0109). An absent `horizon` and the string shorthand (`"void"`, `"ocean"`) are `DW1031`: the ground is a biome a camera stands in, so it states its music. **`attributes`** is the ground biome's audio statement — the same attribute map an atmosphere carries, read by the same reader, admitting the `audio/` ids only (a `visual/` or `gameplay/` id is `DW1031`; the ground's look is the base's); `audio/background_music` is required within it — `{}` for silence, or `{default: {sound, min_delay, max_delay, replace_current_music?}, underwater?: {…}}` for a track — and a `creative` entry is `DW1031` (no delve body is in creative mode); a value outside its shape or range is `DW0928`. The declared attributes are written into the ground biome (*World / build output*, *The ground biome*). `void`: nothing outside the placed geometry. `ocean`: a pinned bedrock/stone/water superflat, sea level y=62, no structures or mobs; it drives `generator-settings` **and the area-origin datum**, placing ocean areas at y=60 = `sea_level − 2` so an island piece's authored waterline (local y=2) meets the world ocean and its walk plane is the vanilla-normal one block above the sea (`DW0344`). `valley`: the one base that BUILDS terrain — see *The horizon's surround* below. Params: `ratio` (2.0..=3.0, default 2.5) and `rim_height` (16..=128, default 48), both `valley`-only, both `DW0853` out of range or beside another base. Any horizon whose ambient a body can ENTER — the sea, and a valley's gap floor — needs a `boundary` (`DW0320`); `void` is the only one it cannot, because there is nothing out there to stand on. | 0.19 |
+| `atmospheres[]` (opt) | spec-0080: **the skies a place can stand under**, declared once on the campaign. Each is `{id: atmosphere/<kebab>, attributes?, tint?, precipitation, climate?}` and ships as a datapack biome `<ns>:atmosphere/<kebab>` (see *World / build output*). `attributes` maps an environment-attribute id (`visual/sky_color`; the `minecraft:` prefix optional) to a value in its shape — the ids, scope, shapes and the range the pinned codec rejects outside of are vendored data (`crates/delvec/data/environment-attributes-1.21.11.json`, read from the pinned jar by `tools/maintenance/extract-environment-attributes.py`), so the one DSL unit is the map. **20 ids are admitted**; the 5 the overworld day cycle overrides (`sun_angle`, `moon_angle`, `star_angle`, `sunrise_sunset_color`, `moon_phase`) and the 20 `gameplay/` ids are `DW0928`. A float may also be written in vanilla's modifier form `{"argument": <n>, "modifier": add\|subtract\|multiply\|minimum\|maximum\|override}` (`alpha_blend` takes a `FloatWithAlpha` and is not admitted). `tint` is `{grass?, foliage?, dry_foliage?, water?}`, each `#rrggbb`. `precipitation` (`none`/`rain`/`snow`, required) derives `has_precipitation`, `temperature` and `downfall` (`rain` → true, 0.5, 0.5; `snow` → true, 0.0, 0.5; `none` → false, 0.5, 0.5), and is the fact `DW0496` reads at a cell; `climate {temperature, downfall}` overrides the derived pair and must agree with it (`DW0930`: snow below 0.15, rain at or above). **Every atmosphere states its music** (spec-0109 §3.1): `attributes` must carry `audio/background_music` — `{}` for silence, or a track `{default: {…}, underwater?: {…}}` — or the build refuses `DW1031` (absent, the overworld dimension's own `music.game` would play); a `creative` entry is `DW1031`. What a playing track does when a camera enters the atmosphere is read from the declaration and written to the music ledger: a track with `replace_current_music: true` **replaces** it within `min_delay / 2` ticks; a track without lets it **play out**; `{}` at `audio/music_volume: 0.0` **fades** it over about 15 s; `{}` at a gain above 0 lets it play out at that gain. Two atmospheres may differ in music alone, and a story stage moves the music by repainting a place with another (`set-atmosphere`). The day timeline stacks over a biome: colours and `sky_light_factor` survive darkened at night, `star_brightness` takes the maximum (stars at noon are possible), and the sun cannot be moved from a place. One no place carries and no beat paints is `DW0930`. | 0.35 |
 | `areas[].atmosphere` (opt) | spec-0080: the atmosphere this place stands under **from the first tick** — painted by the bootstrap `atmosphere_bootstrap` function over the area's placed bounds (`AreaPlacement::bounds`) grown by the client's blend reach on every face, sideways within the area's claim (*The blend*, under *World / build output*). The volume is the placement's, never typed. Absent: the horizon's biome. The site plan's `boxes[].atmosphere` is the same capability on the other class of place with a world box. | 0.35 |
 | `min_players` (opt, 1..=4) | spec-0018: the party size the delve **requires**. Absent = 1 (a party of one is always legal). `>= 2` emits the **lobby gate**: `tick` recomputes the live count into `#lobby dw.sys`, the class-selection dialog driver is prefixed `if score #lobby dw.sys matches <n>..` (so the delve cannot START short-handed), and unclassed players get a self-updating `x / n` actionbar (`{"score":{"name":"#lobby","objective":"dw.sys"}}` — one emitted line, no per-count strings; a compiler default, not an l10n key). Out of range = `DW0356`; a mandatory-n declaration with no n-way division of labour = `DW0358`. `min_players: 1` emits **nothing** (byte-identical). | 0.6 |
 | `respawn_wait {seconds, alone?}` (opt) | spec-0077: a fallen player **waits** before rejoining. `seconds` (`1..=120`) is counted from the *Respawn* click; `alone` (default `false`) decides whether a player who comes back with nobody else present waits too — absent or `false`, a party of one never waits. In a party, the player waits when somebody else is in play and they were not part of a party wipe; while waiting they are a spectator under the observation tag `dw_cutscene`, watch the nearest teammate in play (sneak frees the view while held), see the chrome countdown `delvewright.ui.respawn.wait`, and count as **down** for the party wipe — so a wipe ends every wait at once. Needs a `set-checkpoint` or `bonfire` (else `DW0925`). Emission: the `respawn_wait` row of §3 (verb → emission mapping). Absent = no wait, and every datapack byte is unchanged (the resource pack's lang files carry the chrome row either way). | 0.35 |
@@ -465,20 +466,20 @@ flag only optional content produces is `DW0868`. The closure is
 | Element | Fields → behavior | Since |
 |---------|-------------------|-------|
 | `trigger` | `campaign-start` \| `quest-complete{quest}`. | 0.1 |
-| `guidance` | `{markers?, announcements?}`, each `shown` (default) or `hidden` (spec-0093) — the campaign's default for every objective's `marker` and `announcement`. Omitted = both `shown`, byte-identical to every campaign written before the block existed. **An objective is announced** when it has a `title` and its resolved `announcement` (its own, else `guidance.announcements`) is `shown`; the activation announcement (`New objective: <title>`, the hint's line, the cue), its once-flag `dw.ann_<obj>`, its `tick` line and the `Objective complete` line exist for exactly the announced objectives; the bot's `[dw:complete …]` marker is broadcast either way. **An objective is marked** when its kind summons a marker — a `reach-anchor`, an `interact` with no `prop` — and its resolved `marker` (its own, else `guidance.markers`) is `shown`. Every objective kind carries `announcement`; `marker` rides `interact` and `reach-anchor` only. A `hint` on an unannounced objective is `DW0862`; `announcement: shown` with no `title` is `DW0961`; `marker` beside a `prop` is `DW0962`. A title on an unannounced objective still names the marker's nameplate, the critical path, the render plan and the l10n inventory. | 0.36 |
-| Objective `talk-to` | `{npc}`; completes via a stage-6 dialogue option (backward). | 0.1 |
-| Objective `reach-anchor` | `{anchor,radius,marker?,announcement?}`; completes inside a block box of half-extent `max(1, radius)` at the anchor cell. **`radius` is a tolerance around the place, and the volume it draws must not reach a second one**: vanilla adjudicates the selector against a body's whole hitbox, so a standing body one course under the box already reaches into it, and every cell of floor the box covers is a cell the objective completes from. Every one of them has to be able to walk to the anchor's own footing without leaving the box — a stair inside it passes, a hall floor three courses down does not (`DW0881`). `marker` (spec-0093) says whether the glowing end rod is summoned; the volume adjudicates either way. | 0.1 / marker 0.36 |
-| Objective `kill` | `{wave,after?,requires_flags?}`; completes when wave countdown hits 0. | 0.3 |
-| Objective `collect` | `{item,count,anchor,holder?,slot?,item_name?,fill_count?,…}`; chest at anchor, `inventory_changed` advancement. **Holder adoption:** `holder` names the anchor whose assembled-world cell holds an item holder the PREFAB placed — a container (one of the twelve kinds of `delvewright_dsl::blocks::CONTAINER_KINDS_1_21_11`), an item frame or an armour stand (spec-0111) — the objective fills that furniture where it stands and the compiler places nothing. `slot` names the slot of the adopted holder the stack lands in, in the holder class's one vocabulary and under the one stack check a `loot` stack's `slot` passes (`dsl::loot::check_stack_slot`; `DW1035`); omitted, it lands positionally — `container.0`, a frame's `contents` — and a stand collect naming no slot is `DW1035` at build, as a stand `loot` stack is; a slot the holder at the anchor lacks is `DW0438`; a `slot` on a collect with no `holder` is `DW1035`. On a frame or a stand the stack is filled at activation by `item replace entity @e[tag=dw_holder_<id>,limit=1] <slot> with …`, a frame unfrozen (`data merge … {Fixed:0b,Invulnerable:0b}`); `fill_count` there is `DW1035`, since neither has a `container.<n>` slot (the same division of labour `loot` and a trap's dispenser keep; a cell with no container is `DW0438`; an empty cell inside a place still standing in its stand-in is deferred to that place's detail and counted on the `holder binding` line, never refused before the step that places the furniture). `item_name` gives the collected item a display name as a vanilla `custom_name` component — player-visible, so it is l10n-inventoried (`obj.<quest>.<obj>.item_name`) and translated like any other line; adjudication is unaffected because both the completion advancement and the per-tick held check match on ITEM ID. `fill_count` pads the container so it READS full (vanilla fullness is occupied slots, not stack size): the objective's own stack lands in `container.0` (or the `container.<n>` its `slot` names) and each padding stack repeats it in the slots after it, positionally and totally (ADR-0006). Ceiling `1 + fill_count ≤ 27`, the largest container (`DW0432`, the `loot` rule), and at build no wider than the adopted container's own slots (`DW0438`); a container claimed by both a `loot` entry and a `collect` — or by two collects — is `DW0435`, since positional fills overwrite each other slot-for-slot. An adopted container also joins the layout solver's **required-anchor** set (a pool draw that omitted its carrier would leave the objective nothing to fill) and becomes the `critical_path` step position, because the bot's job is to open *that* block. **Drop gating:** `dropped_by` names the **wave** whose declared `drops[]` provide this item, and provisioning moves from the world to the fight — no chest is placed and no fill is written, because the item does not exist until the boss dies. Waves only: an actor's death is observable by no objective, so an actor-gated collect would be an unprovable claim and is excluded per the no-hack doctrine (an actor may still declare drops; they just cannot gate a quest). Mutually exclusive with `holder` (`DW0492`). Two proofs make "kill the boss -> take its key -> open the door" a chain the compiler checks rather than an authoring intention: the wave really declares an `{item}` drop of this item, in at least the count asked for (`DW0492`), and a `kill` objective for that wave provably precedes this collect — through the intra-quest `after` graph or a quest this one `depends_on` (`DW0493`). The `critical_path` step points at the wave's own anchor and carries `dropped_by`, so the bot walks the ground the fight ended on instead of opening a block that is not there. | 0.3 / adoption 0.8 / drop gating 0.9 |
-| Objective `interact` | `{anchor,requires_item?,missing_item_hint?,takes_item?,prop?,marker?,announcement?,…}`; interaction entity. **`requires_item` means HELD, not possessed**: `execute if items entity @s weapon.mainhand <item>`. Presenting the item IS the action — a player who right-clicks a sleeping giant with the stake stowed in their pack has not stabbed anything, and an inventory-wide reading (`container.*`) would fire the moment the item was picked up anywhere, whatever the hands were doing. It is a **global semantics, not an opt-in flag**: every `requires_item` in every campaign means held. `missing_item_hint` is the diegetic answer to a click that arrives without the item in hand — one guarded per-player `tellraw`, carrying the objective's own activation guard so an inactive or finished interaction stays silent, emitted before the trigger reset so one click yields exactly one line. Absent = silence. Requires `requires_item` (`DW0437`); l10n key `obj.<quest>.<obj>.missing_item_hint`. **`takes_item: true`** (spec-0114 §6.3; default `false`, absent when false) makes the presented item leave the hand: `complete_<obj>` opens with `clear @s <item> 1`, run as the player the hand guard found holding it, so exactly one is taken at the moment of completion; the exported step keeps its shape, and the generated `verb_interact` PackTest (`verb_interact_takes` when the campaign's first interact does not take) puts a second stack of the item in the pack and asserts the count goes 2 → 1 across the click. What the world shows afterwards is the author's (`set-block` in `on_objective_complete`). The laid item should be what the receiving block shows (authoring guidance: `quest-capabilities.md`); the compiler does not check it. Requires `requires_item` (`DW1046`). `prop{block}` `setblock`s the affordance; `block` accepts a verbatim blockstate suffix `id[key=value,…]`; a block a step fires (a pressure plate, the tripwire) is `DW0957`. `marker` (spec-0093) says whether the glowing lantern is summoned beside the hitbox when there is no `prop`; `marker` beside a `prop` is `DW0962`. **A prop vanilla reports the use of** (spec-0093 §6.5: the lever, every button, the bell — `dsl::blockshape::is_hand_pressed`) **is the whole affordance**: `activate_<obj>` places the block and summons nothing, the objective's `i_<obj>` advancement is `minecraft:default_block_use` at the block's cell (rewarding `i_reward_<obj>` as the player who pressed, into the same `dw.i_<obj>` trigger the tick adjudicates with `requires_item` and the pending guard), the exported `interact` step carries `block` for the harness to right-click, and the generated `verb_interact` and `obj_activate_<obj>` PackTests grant the advancement and assert the block. Any other prop is placed with the hitbox standing in its cell. An unmarked interact with no prop on open air is `DW0963`. | 0.3 / prop 0.4 / held + hint 0.7 / marker 0.36 |
+| `guidance` | `{announcements?, compass?, manual?}` (spec-0093, spec-0104). `announcements` and `compass` are each `shown` (default) or `hidden` — the campaign's default for every objective's `announcement` and `compass`. Omitted = every default. **An objective is announced** when it has a `title` and its resolved `announcement` (its own, else `guidance.announcements`) is `shown`; the activation announcement (`New objective: <title>`, the hint's line, the cue), its once-flag `dw.ann_<obj>`, its `tick` line and the `Objective complete` line exist for exactly the announced objectives; the bot's `[dw:complete …]` marker is broadcast either way. **An objective is tracked** when it is announced and its resolved `compass` (its own, else `guidance.compass`) is `shown`: the compass follows exactly these (`Objective::tracked`); `compass: shown` on an unannounced objective is `DW1017`. A campaign with no tracked objective carries no compass. **`manual`** `{title?, pages[]}`: the author's pages of the journal, written only for a setting that contradicts vanilla or an item that needs instructions; `title` names the journal in the hand (the chrome `journal.title`, `Journal`, when absent); `pages` is one string per book page (at least one; an empty list is refused at parse, `DW0100`), each a line of the span grammar with the key span for any key it names; inventoried as `guidance.manual.title` and `guidance.manual.pages.<i>` (narration) and transcreated like any line. Every objective kind carries `announcement` and `compass`; `interact`, `collect`, `talk-to` and `kill` carry `highlight {within}` (1–64 blocks, refused at parse outside it), and so does every trigger. A `hint` on an unannounced objective is `DW0862`; `announcement: shown` with no `title` is `DW0961`; a highlight with nothing to light is `DW1016`. **An objective's title opens on the act its completion performs** (`DW1045`, a refusal; a hint that names another act is a `DW1045` warning; the one act lexicon `crates/delvec/data/acts-en.json`), **every act on a walked path is announced with a hint or in sight of where the party stands** (`DW0863`), and an announced objective's title and hint name only what the play order has told (`DW0982`). | 0.36 / compass, highlight, manual 0.42 |
+| Objective `talk-to` | `{npc,compass?,highlight?}`; completes via a stage-6 dialogue option (backward). | 0.1 |
+| Objective `reach-anchor` | `{anchor,radius,announcement?,compass?}`; completes inside a block box of half-extent `max(1, radius)` at the anchor cell. **`radius` is a tolerance around the place, and the volume it draws must not reach a second one**: vanilla adjudicates the selector against a body's whole hitbox, so a standing body one course under the box already reaches into it, and every cell of floor the box covers is a cell the objective completes from. Every one of them has to be able to walk to the anchor's own footing without leaving the box — a stair inside it passes, a hall floor three courses down does not (`DW0881`). Nothing is summoned at the anchor (spec-0104 §7.6): the place is found by sight, hint and compass. | 0.1 |
+| Objective `kill` | `{wave,after?,requires_flags?,compass?,highlight?}`; completes when wave countdown hits 0. | 0.3 |
+| Objective `collect` | `{item,count,anchor,holder?,slot?,item_name?,fill_count?,compass?,highlight?,…}`; chest at anchor, `inventory_changed` advancement. **Holder adoption:** `holder` names the anchor whose assembled-world cell holds an item holder the PREFAB placed — a container (one of the twelve kinds of `delvewright_dsl::blocks::CONTAINER_KINDS_1_21_11`), an item frame or an armour stand (spec-0111) — the objective fills that furniture where it stands and the compiler places nothing. `slot` names the slot of the adopted holder the stack lands in, in the holder class's one vocabulary and under the one stack check a `loot` stack's `slot` passes (`dsl::loot::check_stack_slot`; `DW1035`); omitted, it lands positionally — `container.0`, a frame's `contents` — and a stand collect naming no slot is `DW1035` at build, as a stand `loot` stack is; a slot the holder at the anchor lacks is `DW0438`; a `slot` on a collect with no `holder` is `DW1035`. On a frame or a stand the stack is filled at activation by `item replace entity @e[tag=dw_holder_<id>,limit=1] <slot> with …`, a frame unfrozen (`data merge … {Fixed:0b,Invulnerable:0b}`); `fill_count` there is `DW1035`, since neither has a `container.<n>` slot (the same division of labour `loot` and a trap's dispenser keep; a cell with no container is `DW0438`; an empty cell inside a place still standing in its stand-in is deferred to that place's detail and counted on the `holder binding` line, never refused before the step that places the furniture). `item_name` gives the collected item a display name as a vanilla `custom_name` component — player-visible, so it is l10n-inventoried (`obj.<quest>.<obj>.item_name`) and translated like any other line; adjudication is unaffected because both the completion advancement and the per-tick held check match on ITEM ID. `fill_count` pads the container so it READS full (vanilla fullness is occupied slots, not stack size): the objective's own stack lands in `container.0` (or the `container.<n>` its `slot` names) and each padding stack repeats it in the slots after it, positionally and totally (ADR-0006). Ceiling `1 + fill_count ≤ 27`, the largest container (`DW0432`, the `loot` rule), and at build no wider than the adopted container's own slots (`DW0438`); a container claimed by both a `loot` entry and a `collect` — or by two collects — is `DW0435`, since positional fills overwrite each other slot-for-slot. An adopted container also joins the layout solver's **required-anchor** set (a pool draw that omitted its carrier would leave the objective nothing to fill) and becomes the `critical_path` step position, because the bot's job is to open *that* block. **Drop gating:** `dropped_by` names the **wave** whose declared `drops[]` provide this item, and provisioning moves from the world to the fight — no chest is placed and no fill is written, because the item does not exist until the boss dies. Waves only: an actor's death is observable by no objective, so an actor-gated collect would be an unprovable claim and is excluded per the no-hack doctrine (an actor may still declare drops; they just cannot gate a quest). Mutually exclusive with `holder` (`DW0492`). Two proofs make "kill the boss -> take its key -> open the door" a chain the compiler checks rather than an authoring intention: the wave really declares an `{item}` drop of this item, in at least the count asked for (`DW0492`), and a `kill` objective for that wave provably precedes this collect — through the intra-quest `after` graph or a quest this one `depends_on` (`DW0493`). The `critical_path` step points at the wave's own anchor and carries `dropped_by`, so the bot walks the ground the fight ended on instead of opening a block that is not there. | 0.3 / adoption 0.8 / drop gating 0.9 |
+| Objective `interact` | `{anchor,requires_item?,missing_item_hint?,takes_item?,prop?,announcement?,compass?,highlight?,…}`; interaction entity. **`requires_item` means HELD, not possessed**: `execute if items entity @s weapon.mainhand <item>`. Presenting the item IS the action — a player who right-clicks a sleeping giant with the stake stowed in their pack has not stabbed anything, and an inventory-wide reading (`container.*`) would fire the moment the item was picked up anywhere, whatever the hands were doing. It is a **global semantics, not an opt-in flag**: every `requires_item` in every campaign means held. `missing_item_hint` is the diegetic answer to a click that arrives without the item in hand — one guarded per-player `tellraw`, carrying the objective's own activation guard so an inactive or finished interaction stays silent, emitted before the trigger reset so one click yields exactly one line. Absent = silence. Requires `requires_item` (`DW0437`); l10n key `obj.<quest>.<obj>.missing_item_hint`. **`takes_item: true`** (spec-0114 §6.3; default `false`, absent when false) makes the presented item leave the hand: `complete_<obj>` opens with `clear @s <item> 1`, run as the player the hand guard found holding it, so exactly one is taken at the moment of completion; the exported step keeps its shape, and the generated `verb_interact` PackTest (`verb_interact_takes` when the campaign's first interact does not take) puts a second stack of the item in the pack and asserts the count goes 2 → 1 across the click. What the world shows afterwards is the author's (`set-block` in `on_objective_complete`). The laid item should be what the receiving block shows (authoring guidance: `quest-capabilities.md`); the compiler does not check it. Requires `requires_item` (`DW1046`). `prop{block}` `setblock`s the affordance; `block` accepts a verbatim blockstate suffix `id[key=value,…]`; a block a step fires (a pressure plate, the tripwire) is `DW0957`. With no `prop` the interact stands on a block the piece authored at the anchor. **A prop vanilla reports the use of** (spec-0093 §6.5: the lever, every button, the bell — `dsl::blockshape::is_hand_pressed`) **is the whole affordance**: `activate_<obj>` places the block and summons nothing, the objective's `i_<obj>` advancement is `minecraft:default_block_use` at the block's cell (rewarding `i_reward_<obj>` as the player who pressed, into the same `dw.i_<obj>` trigger the tick adjudicates with `requires_item` and the pending guard), the exported `interact` step carries `block` for the harness to right-click, and the generated `verb_interact` and `obj_activate_<obj>` PackTests grant the advancement and assert the block. Any other prop is placed with the hitbox standing in its cell. An interact with no prop on open air is `DW0963`. | 0.3 / prop 0.4 / held + hint 0.7 |
 | `after[]` | Ordering (acyclic → `DW0140`). | 0.1 |
 | `requires_flags[]` | AND-gate on set flags (puzzle primitive). | 0.3 |
 | Effect `when` | **The effect's whole gate, as one object** — `{requires_flags?, forbids_flags?, requires_state?}`, declared once as `Guard` and carried by an effect rather than by a verb. Absent = the always-open gate. Every verb takes it, the staging and souls vocabulary included (`spawn-actor`, `unleash-actor`, `move-actor`, `despawn-actor`, `spawn-npc`, `set-checkpoint`, `bonfire`, `begin-stealth`, `end-stealth`, `sequence`, `campaign-complete`). A gate that can never open on a `campaign-complete` is judged by the completability replay, which applies an effect's gate before it looks at the verb, not by a rule about which verbs may be gated. The verb is `#[serde(flatten)]`-ed beside it, so an effect is still `{"type": "…", …}` with the guard under `when`; `deny_unknown_fields` rides the flattened enum, so a typo in a verb's own field is still `DW0100`. Diagnostics about a gate point at `<effect>/when/<field>`. | 0.20 |
-| Effect `audience` (any player-facing effect) | **Who the effect addresses** (spec-0085): `party` (`@a`) or `actor` (`@s` — the one player whose act fired the root: the completing player, the presser, the dying or respawning player, the buyer, the credited killer). An envelope field beside `when`, so it reaches every verb the emitter addresses to players (`Verb::addresses_players`: `narrate`, `give-item`, `play-sound`, `particle`, `give-effect`, `clear-effect`, `damage-players`). **Absent = the root's own answer**: a quest completion `@a`, a `presser` trigger, `on_death`, a respawn, a shop offer and an `on_kill` `@s`, a polled trigger, a trap payload and a shortcut `@a` with no actor — so a document that never writes it emits exactly what it did before the field existed. On a party-fact verb it is `DW0942`; `actor` where emission has no acting player is `DW0503`. | 0.35 |
-| Effect `in` (any player-facing effect) | **Narrows the audience to players inside an anchor-centred box** (`{anchor, extent}`, `anchor ± extent`) at the moment the effect fires — the same `StealthZone` a `begin-stealth` zone and a `lethal_volumes[]` region take, through the one `Plan::zone_box` and `emit::box_selector_args`. An envelope field (spec-0085), not a field of any verb; the JSON of the three verbs that carried it before is byte-identical. Composes with `audience` (`actor` + `in` is the actor, if they stand in the box). On a party-fact verb it is `DW0942`. The box is the bodies standing in it, so its selector excludes `dw_cutscene` — a watcher's camera is not a body (`DW0926`) — save on `give-effect`/`clear-effect`, the status-effect site `observer::ALLOWED` names. | 0.35 |
+| Effect `audience` (any player-facing effect) | **Who the effect addresses** (spec-0085): `party` (`@a`) or `actor` (`@s` — the one player whose act fired the root: the completing player, the presser, the dying or respawning player, the buyer, the credited killer). An envelope field beside `when`, so it reaches every verb the emitter addresses to players (`Verb::addresses_players`: `narrate`, `give-item`, `play-sound`, `stop-sound`, `particle`, `give-effect`, `clear-effect`, `damage-players`). **Absent = the root's own answer**: a quest completion `@a`, a `presser` trigger, `on_death`, a respawn, a shop offer and an `on_kill` `@s`, a polled trigger, a trap payload, a shortcut, an assembly landing and a loop crossing `@a` with no actor. On a party-fact verb it is `DW0942`; `actor` where emission has no acting player is `DW0503`. | 0.35 |
+| Effect `in` (any player-facing effect) | **Narrows the audience to players inside an anchor-centred box** (`{anchor, extent}`, `anchor ± extent`) at the moment the effect fires — the same `StealthZone` a `begin-stealth` zone and a `lethal_volumes[]` region take, through the one `Plan::zone_box` and `emit::box_selector_args`. An envelope field (spec-0085), not a field of any verb. Composes with `audience` (`actor` + `in` is the actor, if they stand in the box). On a party-fact verb it is `DW0942`. The box is the bodies standing in it, so its selector excludes `dw_cutscene` — a watcher's camera is not a body (`DW0926`) — save on `give-effect`/`clear-effect`, the status-effect site `observer::ALLOWED` names, and on `stop-sound`, its `sound cut` site (spec-0109: a cut is not harm). | 0.35 |
 | Effect `happening` | What the beat does to the story (spec-0025), declared on the effect for the same reason. Which verbs are **story nodes** — the eleven `DW0481` demands a `happening` from — stays a property of the verb. | 0.20 |
 | `state[]` | `{id, scope, initial?, note?, name?, display?}` (spec-0031/spec-0032/spec-0076) — **runtime state**: a named, integer-valued datum the campaign sets, adds to and clears while the delve is played. What `FlagId` is not: a flag is boolean, party-wide and monotonic (no verb clears one), which is right for "this has happened" and useless for a balance, a floor number, or "a ride is in progress". Unlike a flag a datum **is declared**, because two facts about it cannot be recovered from its use sites: `scope` (`player` = each player holds their own, `party` = one shared value on the `#party` holder, spec-0018) and `initial` (the value it starts at, and the value `clear-state` returns it to — one field, not two, so a datum can never be un-returnable to its own start). `note` is authoring prose, never machine-checked and never shown (the forcing function `cast[].doing` plays for a scene). Emission: one `dw.s_<local>` scoreboard objective per datum; a `party` datum seeded in `setup` (world init is exactly its lifetime), a `player` datum seeded on each player's first tick by `state_seed`, tagged `dw_state` so a relog does not re-seed. Absent = no objective, no function, no tick clause. | 0.10 |
-| `requires_state[]` | `[{state, op, value}]`, `op` ∈ `equals` \| `not-equals` \| `at-least` \| `at-most` (spec-0031) — the **numeric third field of the gate**, accepted at every one of the 11 gate-declaring objects in the schema: all five objective kinds, the effect's own `Guard`, `triggers[]`, `traps[]`, dialogue options, cast placements and **shop offers** — where it is the price. The count is re-derived from the schema, never adjusted to fit; the effect counts once because it declares its gate once, as one `Guard` under `when`, so every verb carries the gate and a verb carrying two of the three fields is unspellable. It lives in the gate and not in any verb because the comparison's consumers are exactly the gate's consumers — "this door opens at 500", "this line is withheld below 200", "this lever does nothing while the car is moving" — and generality is decided at the FIRST site (CLAUDE.md). Emission: ` if score <holder> dw.s_<local> matches <range>`, spliced into the guard each consumer already builds, where `<holder>` is `#party` or `@s` per the datum's declared scope. Four operators, not six: over integers `less-than n` is `at-most n-1`, and a second spelling of one thing is a second emission path to keep honest. Absent = no clause. Enforced total by `crates/dsl/tests/gate_consumers.rs`, which enumerates the consumers from the **generated JSON Schema** (i.e. from the types) and reds when any gate-declaring object carries only part of the gate. | 0.10 |
+| `requires_state[]` | `[{state, op, value}]`, `op` ∈ `equals` \| `not-equals` \| `at-least` \| `at-most` (spec-0031) — the **numeric third field of the gate**, accepted at every one of the 12 gate-declaring objects in the schema: all five objective kinds, the effect's own `Guard`, `triggers[]`, `traps[]`, dialogue options, cast placements, **shop offers** — where it is the price — and `loops[]`. The count is re-derived from the schema, never adjusted to fit; the effect counts once because it declares its gate once, as one `Guard` under `when`, so every verb carries the gate and a verb carrying two of the three fields is unspellable. It lives in the gate and not in any verb because the comparison's consumers are exactly the gate's consumers — "this door opens at 500", "this line is withheld below 200", "this lever does nothing while the car is moving" — and generality is decided at the FIRST site (CLAUDE.md). Emission: ` if score <holder> dw.s_<local> matches <range>`, spliced into the guard each consumer already builds, where `<holder>` is `#party` or `@s` per the datum's declared scope. Four operators, not six: over integers `less-than n` is `at-most n-1`, and a second spelling of one thing is a second emission path to keep honest. Absent = no clause. Enforced total by `crates/dsl/tests/gate_consumers.rs`, which enumerates the consumers from the **generated JSON Schema** (i.e. from the types) and reds when any gate-declaring object carries only part of the gate. | 0.10 |
 | Effect `set-state{state,value}` | Writes a declared datum to an absolute value (spec-0031). `scoreboard players set <holder> dw.s_<local> <value>`. | 0.10 |
 | Effect `add-state{state,amount}` | Moves a declared datum by a **signed** amount (spec-0031); negative counts down. One verb, not an `add`/`subtract` pair: a purse a shop debits and a stake a death forfeits are one operation with the sign flipped. Lowers via vanilla's `scoreboard players remove` (its `add` takes an unsigned operand). | 0.10 |
 | Effect `clear-state{state}` | Returns a declared datum to its declared `initial` (spec-0031) — the verb a flag has never had, and the reason a datum is not a flag. It **writes** the initial rather than `reset`ting the score: a reset score is *absent*, and an absent score makes `unless … matches` true, so a cleared datum would silently satisfy a `not-equals` comparison against its own starting value. | 0.10 |
@@ -489,9 +490,9 @@ flag only optional content produces is `DW0868`. The closure is
 | `waves[]` | `{id,anchor,mobs[{entity,count,name?,attributes?,effects?,equipment?}]}`; entity validated (`DW0173`); `name` is a name tag, which marks one body, so a name a wave spawns more than one body under is refused wherever it is worn (`DW0983`); `attributes`/`effects` are validated (`DW0192`). `equipment{head?,chest?,legs?,feet?,main_hand?,off_hand?,body?,saddle?}` — the pinned game's eight equipment slots (`EquipSlot::ALL`; `body` carries horse armour, wolf armour, a llama's carpet, a nautilus's armour or a happy ghast's harness, `saddle` the saddle): slot item ids validate against the pinned 1.21.11 item registry (`DW0143`, the give-item family), and every piece is held to **what the body shows** (`DW0898`, spec-0067): the body table `crates/dsl/data/entity-slots-1.21.11.json` says which slots each of the 92 living entity types draws and for which kind of piece (`armour`, `wings`, `animal`, `item`), and the item table `crates/delvec/data/item-equippable-1.21.11.json` says which slot an item declares and which entities it admits. Each slot is **either a bare item id string or `{item, enchantments{<id>: <level>}}`** (spec-0021) — the plain string stays the plain string on re-serialisation; enchantments emit as the 1.21 `minecraft:enchantments` item component inside the slot compound, ids validated (`DW0433`) and levels range-checked (`DW0434`); emitted as component-era `equipment`/`drop_chances` summon NBT (never legacy `ArmorItems`/`HandItems` — 1.21.11 ignores them) with **drop chance 0 on every slot** (no-grind: wave gear is never lootable). Explicit slots merge over the armed-mob main-hand default (a helmeted skeleton keeps its bow; explicit `main_hand` overrides). A helmet is the sanctioned daylight-undead fix — never `set-time` — and that rule is **enforced**, not merely offered: a burning species staged for a fight whose ground reaches open sky in an hour it burns in is `DW0496`. **`drops[]`** names the DECLARED SUBSET this mob leaves behind — usually one piece, never automatically everything. Two entry forms: `{slot}` (a worn piece; the slot must be one the same mob's `equipment` really fills, and each slot at most once — `DW0490`) and `{item, name?}` (a quest token the fight yields rather than wears; id validated `DW0143`, `name` l10n-inventoried as `wave.<wave>.mob.<i>.drop.<n>.name`). Only an `elite`/`boss` wave may declare drops (`DW0491`) — rank-and-file gear stays unfarmable by construction. | 0.3 / tuning 0.4 / equipment 0.6 / drops 0.9 |
 | `loot[]` | `{id,anchor,items[{item,count?,name?,enchantments?,slot?}]}` (spec-0021, spec-0111) — contents for an item holder the **prefab already placed** — a container, an item frame or an armour stand, the same division of labour a trap has with its dispenser. A container is any of the twelve kinds of `delvewright_dsl::blocks::CONTAINER_KINDS_1_21_11` (spec-0105): chest, trapped chest, barrel, shulker box (27 slots), hopper, brewing stand (5), dispenser, dropper, crafter (9), furnace, blast furnace, smoker (3 — input, fuel, result, in that order, so a cooked fish waiting in a smoker is a stack in `container.2` after two in the slots before it). The compiler never places the container; `DW0431` proves one is really there and that the fill fits its slots. `items` holds at least one stack (`DW1019`): a container meant to hold nothing is scenery, declared by `containers`. Slot assignment is **positional and deterministic**: the nth declared stack lands in `container.<n>` (ADR-0006 — no loot tables, no RNG, no seeded shuffle) — unless the stack names its **`slot`** in the holder family's vocabulary, which is also `item replace`'s spelling: `container.<n>` on a container (below the kind's slot count), `contents` on a frame (the default when omitted; a second stack is `DW0431`), `armor.head` / `armor.chest` / `armor.legs` / `armor.feet` / `weapon.mainhand` / `weapon.offhand` on a stand (named on every stack). A slot outside every vocabulary, named twice, a fill mixing named and unnamed stacks, or an armour slot given a stack whose `equippable` slot is another is `DW1035`; a slot the holder at the anchor lacks is `DW0431`; a stand stack with no slot is `DW1035` at build. A fill of a frame or a stand is emitted by the holder's own body (`holder_<id>`, below) as `item replace entity @e[tag=dw_holder_<id>,limit=1] <slot> with …`. Emitted in `setup_finish` as `item replace block … container.<n> with <item>[components] <count>`, so a campaign with no `loot` is byte-identical. An `enchanted_book` stack's `enchantments` are written as `stored_enchantments` (spec-0075; see `give-item` below). `name` enters the l10n inventory as `loot.<id>.item.<i>.name`, exactly like a class kit item's name. Item ids validate against the pinned registry (`DW0143`), anchors against prefab metadata (`DW0142`); `DW0432` caps a fill at 27 stacks and `DW0435` rejects two fills of one container. Generated PackTests: `v06_loot_<kind>`, one per container kind a fill reaches (the first fill into each kind, the kind read off the container census), asserting slot 0 and the last slot hold the declared items after `setup` — what the server takes into a slot depends on the kind, so a chest's proof does not stand for a brewing stand's. | 0.6 |
 | `containers` | `{decoration_notice?}` (spec-0105) — the container class's home in stage 5. Every container cell of the built world is loot, a device or scenery, proved by the build's holder census ([`delvec/compiler/holders.md`](delvec/compiler/holders.md); a holder whose contents show — a frame, a stand, a brewing stand's bottle slots — is exempt, spec-0105 §9.5). `decoration_notice` is the one `narrate` payload (`Narration {text, style?, sound?}`, the type `narrate` itself carries): declaring it says every container no fill and no device claims is scenery, and is the line that tells each player so, emitted in every `class_apply_<c>` after the teleport, so its sound plays at the arrival where the player stands. `text` is inventoried as `containers.decoration_notice`; `style` and `sound` take `narrate`'s checks (`DW0326`, `DW0328`, `DW0330`). Scenery with no notice, or a notice with no scenery, is `DW1018`; a place mixing scenery with containers that matter, or holding more than two scenery cells, is `DW1024`; present and empty is `DW1019`. Absent → nothing emitted, byte-identical. | 0.43 |
-| `lethal_volumes[]` | `{id,region{anchor,extent},message,damage_type?,shown_by?,when?}` (spec-0031; `shown_by` spec-0062; `when` spec-0088) — a declared box that **kills whatever enters it**, worded by the campaign's own strings. A mechanism, not a fiction: the commissioning case was a cliff whose fall must be fatal, and the same declaration is a lava pit, an acid pool, an out-of-bounds plane or the bottom of a lift shaft. The alternative considered and **rejected** for the cliff was making the world's `horizon` void so the fall kills anyway — that changes approved art to obtain a behaviour, and it serves exactly one fiction. `region` is the existing anchor-centred box (`anchor ± extent`), the SAME `StealthZone` type a `begin-stealth` beat and a `damage-players` `in` filter use, resolved through the one `Plan::zone_box`; a private twin with the same two fields would be `tools/ci/check-capability-ownership.py` check C by construction. `message` is required (`DW0512` rejects a blank one) and is l10n-inventoried as `lethal.<id>.message`. `damage_type` is the curated `DamageKind` shared with `damage-players` (default `generic`), so a volume can no more void a held totem than a scripted hit can; it is what words **vanilla's own** death broadcast (`fall` → *fell from a high place*) while `message` says what the place was. Emission: one `function <ns>:lethal_<id>` line on the tick, and a two-line body — `execute as @a[<box>,tag=!dw_cutscene] run function <ns>:lethal_<id>_kill` (which `damage @s 1000 <type>`s, reads the player's health back into `#leth_hp dw.sys`, and `tellraw`s the wording as a `{translate,fallback}` component **only if that health reached 0**), plus one `execute as @e[<box>,type=!minecraft:player,type=!…] run damage @s 1000 <type>` for everything else. The engine's own machinery types (`interaction`, `marker`, `item_display`, `block_display`, `text_display`) are excluded — a volume drawn across a cutscene dolly must not erase the camera. Content bodies (wave mobs, actor puppets, NPCs) are deliberately NOT excluded: a mob that walks into the lava dies, which is the mechanism working. The kill is an ordinary `/damage`, so the vanilla `deathCount` edge (`dw.deaths`/`dw.death_ack`), the checkpoint re-seat (`cp_respawn_check`) and `keep_inventory` see the death they already handle — there is **no second death detector**. Completability: the volume is impassable in the shared nav `World`, **widened by the walker's own half-width** because vanilla selects on hitbox intersection and a body standing in the cell beside a face reaches into the box (`DW0510`; the widening is `metrics::keep_out_box`, one cell horizontally for every body up to two blocks wide); and no place the campaign POSTS something — a respawn seat, an NPC anchor, a `cast` placement, an actor anchor, a wave's seated cell — may hold a body whose hitbox meets one (`DW0511`). **And the volume may not reach a cell the player would read as safe floor** (`DW0891`, spec-0062): the same keep-out, intersected with the cells the party can walk to over the world with lethality removed, is the set a body can be caught from, and every one of those cells must stand on — or in — one of the blocks `shown_by` names. `shown_by` is an optional list of block ids, held to `waterline_y`'s standard: checked per caught cell against the assembled bytes, refused when no caught cell bears one out, and refused at validation when it names a block vanilla does not hurt a body with (`blockshape::HURTING_BLOCKS_1_21_11`; an id the pinned version does not have at all is `DW0193`). It does **not** exempt a cell from the walk graph — a visible hazard is still a hazard, and the router refuses the whole keep-out either way. **`when` is the one `Guard` an effect's `when` is** (spec-0088): absent, the volume is live from world-load to the end; present, it is **live while its gate holds**, and the volume is the eighth gate consumer (`GateConsumer::LethalVolume`). `when: {}` and a `requires_state` term on a `player`-scoped datum are `DW0953`. A staged volume ticks through `function <ns>:lethal_<id>_tick`, whose one line is `execute <terms> run function <ns>:lethal_<id>` with `<terms>` = `Plan::gate_terms` rendered by `GateTerm::clause(false)`; an unstaged volume's tick line is unchanged. The proofs read its gate two ways at each quest configuration (see *A volume live from a story stage* under `DW0510`–`DW0512`): **may be live** (route proofs and visibility) and **is live** (the forced route, `DW0954`). A campaign that declares none emits no tick line, no function and no ledger. | 0.10 |
+| `lethal_volumes[]` | `{id,region{anchor,extent},message,damage_type?,shown_by?,when?}` (spec-0031; `shown_by` spec-0062; `when` spec-0088) — a declared box that **kills whatever enters it**, worded by the campaign's own strings. A mechanism, not a fiction: the commissioning case was a cliff whose fall must be fatal, and the same declaration is a lava pit, an acid pool, an out-of-bounds plane or the bottom of a lift shaft. The alternative considered and **rejected** for the cliff was making the world's `horizon` void so the fall kills anyway — that changes approved art to obtain a behaviour, and it serves exactly one fiction. `region` is the existing anchor-centred box (`anchor ± extent`), the SAME `StealthZone` type a `begin-stealth` beat and a `damage-players` `in` filter use, resolved through the one `Plan::zone_box`; a private twin with the same two fields would be `tools/ci/check-capability-ownership.py` check C by construction. `message` is required (`DW0512` rejects a blank one) and is l10n-inventoried as `lethal.<id>.message`. `damage_type` is the curated `DamageKind` shared with `damage-players` (default `generic`), so a volume can no more void a held totem than a scripted hit can; it is what words **vanilla's own** death broadcast (`fall` → *fell from a high place*) while `message` says what the place was. Emission: one `function <ns>:lethal_<id>` line on the tick, and a two-line body — `execute as @a[<box>,tag=!dw_cutscene] run function <ns>:lethal_<id>_kill` (which `damage @s 1000 <type>`s, reads the player's health back into `#leth_hp dw.sys`, and `tellraw`s the wording as a `{translate,fallback}` component **only if that health reached 0**), plus one `execute as @e[<box>,type=!minecraft:player,type=!…] run damage @s 1000 <type>` for everything else. The engine's own machinery types (`interaction`, `marker`, `item_display`, `block_display`, `text_display`) are excluded — a volume drawn across a cutscene dolly must not erase the camera. Content bodies (wave mobs, actor puppets, NPCs) are deliberately NOT excluded: a mob that walks into the lava dies, which is the mechanism working. The kill is an ordinary `/damage`, so the vanilla `deathCount` edge (`dw.deaths`/`dw.death_ack`), the checkpoint re-seat (`cp_respawn_check`) and `keep_inventory` see the death they already handle — there is **no second death detector**. Completability: the volume is impassable in the shared nav `World`, **widened by the walker's own half-width** because vanilla selects on hitbox intersection and a body standing in the cell beside a face reaches into the box (`DW0510`; the widening is `metrics::keep_out_box`, one cell horizontally for every body up to two blocks wide); and no place the campaign POSTS something — a respawn seat, an NPC anchor, a `cast` placement, an actor anchor, a wave's seated cell — may hold a body whose hitbox meets one (`DW0511`). **And the volume may not reach a cell the player would read as safe floor** (`DW0891`, spec-0062): the same keep-out, intersected with the cells the party can walk to over the world with lethality removed, is the set a body can be caught from, and every one of those cells must stand on — or in — one of the blocks `shown_by` names. `shown_by` is an optional list of block ids, held to `waterline_y`'s standard: checked per caught cell against the assembled bytes, refused when no caught cell bears one out, and refused at validation when it names a block vanilla does not hurt a body with (`blockshape::HURTING_BLOCKS_1_21_11`; an id the pinned version does not have at all is `DW0193`). It does **not** exempt a cell from the walk graph — a visible hazard is still a hazard, and the router refuses the whole keep-out either way. **`when` is the one `Guard` an effect's `when` is** (spec-0088): absent, the volume is live from world-load to the end; present, it is **live while its gate holds**, and the volume is the ninth gate consumer (`GateConsumer::LethalVolume`). `when: {}` and a `requires_state` term on a `player`-scoped datum are `DW0953`. A staged volume ticks through `function <ns>:lethal_<id>_tick`, whose one line is `execute <terms> run function <ns>:lethal_<id>` with `<terms>` = `Plan::gate_terms` rendered by `GateTerm::clause(false)`; an unstaged volume's tick line is unchanged. The proofs read its gate two ways at each quest configuration (see *A volume live from a story stage* under `DW0510`–`DW0512`): **may be live** (route proofs and visibility) and **is live** (the forced route, `DW0954`). A campaign that declares none emits no tick line, no function and no ledger. | 0.10 |
 | `loops[]` | `{id,region{anchor,extent},to{anchor,offset?},requires_flags?,forbids_flags?,requires_state?,counts?,on_cross?}` (spec-0086) — **an endless corridor**: a slab `region` that moves every body crossing it by one fixed offset `d = cell(to) − cell(region.anchor)`, so a hall goes on until the story says it ends. **The gate is the release**: the loop holds while its `requires_flags`/`forbids_flags`/`requires_state` hold (the one `Gate` every consumer reads, `GateConsumer::Loop`), and stands down for good when they stop; a loop with no gate term, a `requires_state` or `counts` naming a `player`-scoped datum, and a `teleport` inside `on_cross` are `DW0949` — the release is a fact about the party, so there is no configuration in which one player is looped and another is not. `counts` names a `party` datum the move raises by one before `on_cross` runs; `on_cross` is effect root R10 (`loop on_cross`, l10n key `fx.loop.<local>`), run under `Audience::Scheduled` from the server source, each effect keyed to a count by its own `when`. Who is moved: every entity in the slab but `dw_fixture` and `dw_cutscene` bodies, each on its own crossing, with its facing, velocity and in-cell position kept (a relative `tp`). The engine proves the move invisible (*Seamlessness*, §4) and the release reachable (the slab is a gated seal, *Runtime region solidity*); the forced route that meets a holding loop is exercised by a `loop` step (`critical-path.json`). A campaign that declares none emits no tick line, no function, no PackTest and no ledger. | 0.35 |
-| `pulses[]` | `{id,sound,at{anchor,offset?},region{anchor,extent}\|place,every,floor,pitch?,when?}` (spec-0102) — **a sound that beats over a place**: a vanilla sound event sounding from a mark on a fixed interval to every player standing in a place, loudest at the mark, while a story stage holds. `sound` is a pinned sound event (`minecraft:` optional), read by the one sound-id rule (`DW0326`). `at` is a mark (spec-0066, `DW0897`): the sound stands at the cell's centre and need not lie inside the place. Where it is heard is a `PlaceRef` — exactly one of `region` (the anchor-centred box, `Plan::zone_box`) or `place` (an `area/…` or site-plan `node/…`, its bounds as placed, `horizon::place_bounds`) — the same type `set-atmosphere` carries, refused by the same `DW0929` when it names neither or both; a pulse takes the bounds as they are. `every` is the interval in server ticks (`≥ 1`); `floor` is required, `0 ≤ floor < 1`: the loudness at the farthest cell a body can stand in inside the place, as a fraction of the loudness at the source — the reach is derived from it (`compiler::pulse`: `far` = the greatest distance from the source point to the standing eye of any standable cell of the box, `R = far / (1 − floor)`, `V = max(R / 16, 1)`, because the pinned client's gain is `1 − d / R` with `R = 16 · max(V, 1)`). The vendored registry carries no `attenuation_distance`, so an event whose `sounds.json` row sets its own (44 of the pinned game's) is derived as if it were 16. `pitch` defaults to 1, within `[0, 2]`. `when` is the one `Guard` (`GateConsumer::Pulse`, the tenth gate consumer): absent, it beats from world load; present, it beats **while the gate holds** — first beat on the tick the gate opens, stopped at the first interval it no longer holds. A quickening beat is a second pulse on the same source with a disjoint gate. `every: 0`, a `floor` outside `[0, 1)`, a `pitch` outside `[0, 2]`, `when: {}`, a `player`-scoped term and a duplicate id are `DW0993`; a box with no standable cell is `DW0994`; a pulse the forced route never hears live in its box is the `DW0995` advisory. A pulse addresses every player in its box but a `dw_cutscene` watcher and takes no `audience`. A campaign that declares none emits no tick line, no function, no PackTest and no ledger. | 0.39 |
+| `pulses[]` | `{id,sound,at{anchor,offset?},region{anchor,extent}\|place,every,floor,pitch?,category?,when?}` (spec-0102) — **a sound that beats over a place**: a vanilla sound event sounding from a mark on a fixed interval to every player standing in a place, loudest at the mark, while a story stage holds. `sound` is a pinned sound event (`minecraft:` optional), read by the one sound-id rule (`DW0326`). `at` is a mark (spec-0066, `DW0897`): the sound stands at the cell's centre and need not lie inside the place. Where it is heard is a `PlaceRef` — exactly one of `region` (the anchor-centred box, `Plan::zone_box`) or `place` (an `area/…` or site-plan `node/…`, its bounds as placed, `horizon::place_bounds`) — the same type `set-atmosphere` carries, refused by the same `DW0929` when it names neither or both; a pulse takes the bounds as they are. `every` is the interval in server ticks (`≥ 1`); `floor` is required, `0 ≤ floor < 1`: the loudness at the farthest cell a body can stand in inside the place, as a fraction of the loudness at the source — the reach is derived from it (`compiler::pulse`: `far` = the greatest distance from the source point to the standing eye of any standable cell of the box, `R = far / (1 − floor)`, `V = max(R / 16, 1)`, because the pinned client's gain is `1 − d / R` with `R = 16 · max(V, 1)`). The vendored registry carries no `attenuation_distance`, so an event whose `sounds.json` row sets its own (44 of the pinned game's) is derived as if it were 16. `pitch` defaults to 1, within `[0, 2]`. `category` (spec-0109) is the beat's sound category, the one `SoundCategory` a `play-sound` names; absent = `master`. `when` is the one `Guard` (`GateConsumer::Pulse`, the tenth gate consumer): absent, it beats from world load; present, it beats **while the gate holds** — first beat on the tick the gate opens, stopped at the first interval it no longer holds. A quickening beat is a second pulse on the same source with a disjoint gate. `every: 0`, a `floor` outside `[0, 1)`, a `pitch` outside `[0, 2]`, `when: {}`, a `player`-scoped term and a duplicate id are `DW0993`; a box with no standable cell is `DW0994`; a pulse the forced route never hears live in its box is the `DW0995` advisory. A pulse addresses every player in its box but a `dw_cutscene` watcher and takes no `audience`. A campaign that declares none emits no tick line, no function, no PackTest and no ledger. | 0.39 |
 | `timed_gates[]` | `{id,gate,open_ticks,closed_ticks,phase?,crush?,disarm?}` (spec-0016 §4 + addendum) — a gate region on a deterministic open/close clock, so passage is a timing read rather than a permanent state. Emission is a **self-sustaining two-function ping-pong** (`tgate_open_<id>` / `tgate_close_<id>`), each half doing its `fill` and scheduling the other; `schedule` is replace-mode so the clock can never double up, and a timed gate costs **nothing per tick**. The gate is sealed by the prefab at world-load, so the clock's first act is always an OPEN (`phase` holds it shut that many ticks first). Structural errors are `DW0377` (id, a half-cycle of 0, a `phase` at or beyond the cycle, two clocks on one region, or a gate a `shortcut` already owns — a clock would re-seal what `DW0372` forbids re-sealing); a gate anchor with no declared fill `block` is `DW0343`. The design proof is `DW0378`: **not** all-phase passability (a gate that punishes bad timing is the point) but ≥ 20% of the cycle admitting a crossing. **`crush`** (optional, default `false`) makes the closing edge a real portcullis judgement: every player whose position intersects the gate region when it shuts is dealt lethal `damage` by command. It is a *command*, not suffocation, because vanilla's in-wall damage is slow, gear-dependent and escapable — a portcullis that merely inconveniences teaches nothing, and `DW0378` has already proven the window fair, so the penalty may be absolute. Zero per-tick cost is preserved: the judgement rides the closing tick of the ping-pong that already runs. **`disarm`** (optional — souls dossier §5.2) is the ladder's third rung: readable, avoidable, and finally *disable-able*, the way Smouldering Lake's ballista and the Fringefolk chariot can be removed for good. Its shape is `{via, sets_flag}`, **exactly** a trap's `disarm`, and it carries the same obligations: the `via` anchor gets a compiler-owned interaction entity **plus visible hardware** (`DW0420`), it may not be the gate anchor itself (`DW0377`), and it must be reachable from the campaign entry while the gate is SHUT (`DW0393`). Interacting with it suppresses the clock **permanently with the gate resting OPEN** — a jammed portcullis stays up — and permanence is structural exactly as a shortcut's is: no emitted function re-arms the clock and no `close-gate` may name the gate (`DW0389`). A disarmed gate therefore **can never crush**: the judgement rides the closing tick, and the closing tick is inside the suppressed clock. `DW0378`'s 20% duty-cycle proof and `DW0388`'s observability proof are unchanged and apply identically — observability is about the *pre-disarm* read, which is how the party decides the jam is worth the walk. Defaulting to absent keeps a campaign that declares no `disarm` byte-identical. | 0.6 |
 | `on_death[]` | `[<effect>, …]` (spec-0031) — the campaign's **death beat**: effects run at the moment a player dies, for that player. Effect root **R7**, so it is visited by `for_each_effect_root` and therefore by every walk defined over it (l10n inventory, the flag model, the timeline, `DW0360`'s anchor seal, the completability model). One bundle per campaign, not one per checkpoint: *where you come back* is a property of a checkpoint, *that you died* is not, and a bundle repeated on each checkpoint would be N copies with N chances to forget one. Phase-specific behaviour uses the ordinary per-effect `requires_flags`/`forbids_flags` gate every root already carries — there is no second gating surface. It exists so that a delve's death consequence ("the purse is dropped where you fell") is ordinary content in a general mechanism rather than an engine feature. Optional in the strongest sense the completability model has — nobody is forced to die — so it registers `close-gate`s only, never an `open-gate` the proof could lean on, and nothing inside it is credited as a flag producer (a mainline reachable only by dying is not reachable). Emission and the death edge: see the `on_death` row under "Effect verbs". | 0.10 |
 | `state[].name` | A datum's **player-visible name** (spec-0032). **A named datum is a currency**, and there is deliberately no separate `currencies` section: a purse is a runtime datum the player can see, and "the player can see it" is a property of the datum, not a different object class — a second struct carrying `id`+`scope`+`initial`+`name` would be a private copy of this one. Present ⇒ the datum **announces its new balance whenever it changes, from any cause** — a purchase, a death's forfeit, a stake collected, a plain `set-state` — on its holder's action bar as `<name>: <value>`, with the value carried by vanilla's own `{"score":…}` component so the line is the live balance rather than a number baked at emit time. One tick driver and one `st_show_<id>` function per named datum, keyed on a shadow score seeded beside the datum itself (so joining a world announces nothing). **The announcement belongs to the datum, not to the verbs that write it**, and that is a correctness property rather than tidiness: a readout emitted inside a gated effect carries that effect's gate, and the gate is evaluated AFTER the write it reports — spend your last coin behind `at-least 1` and the balance moves to 0, so the inherited guard stops holding and the one change the player most needs to see is the one they are never told about. Absent ⇒ the datum is silent bookkeeping and nothing is announced. l10n-inventoried as `state.<id>.name`. |
@@ -515,7 +516,7 @@ flag only optional content produces is `DW0868`. The closure is
 | Effect `campaign-complete` | Sets `dw.campaign`; finale fanfare. `ending` (opt, spec-0025) NAMES this ending — there is no separate `endings` section, the set of endings is exactly the set named here, the same rule flags follow — so a stage-4 branch can declare which ending it runs to and `DW0482` can state *which* ending a branch reached rather than merely that something ended. It is an id, `ending/<kebab>` (`DW0110` at any nesting depth, spec-0108); one naming none is reported as `ending/<unnamed>`. Validation metadata: never emitted. The effect takes `when` like every verb, so several in one final scene with exclusive gates are several endings; what each reads, its aftermath and the worlds that reach it are `compiler::ending`'s ([`delvec/compiler/ending.md`](delvec/compiler/ending.md), `DW1029`, `DW1030`). | 0.1 / `ending` 0.8 / an id 0.46 |
 | Effect `spawn-wave` | Summons wave mobs (AI on), tag `dw_wave_<id>`. | 0.3 |
 | Effect `give-item{item,count,name?,carrier?,enchantments?}` | Grants item. `enchantments` (spec-0075) is a `loot` stack's field — id → level, checked by `DW0433`/`DW0434` at every effect root and any nesting depth — so a shop offer can sell an enchanted sword and a quest can hand over an enchanted book. | 0.3 |
-| Effect `set-flag{flag}` | Sets `dw.f_<flag>` (per-player). | 0.3 |
+| Effect `set-flag{flag}` | Sets `dw.f_<flag>` on the party holder `#party` (spec-0018). | 0.3 |
 | Effect `narrate{text,style?,sound?}` | chat/title/subtitle/**art**/**actionbar**; `text` → l10n; `sound` validated (`DW0326`); `art` = the `delve:art` pixel-banner font, glyph-checked (`DW0328`), width-checked (`DW0330`); **`actionbar`** = the reply strip above the hotbar, the channel every compiler-written reply already used, not width-checked (vanilla neither wraps nor truncates it, and a reply is a fragment rather than a banner). | 0.4 / art 0.6 / actionbar 0.11 |
 | Trigger `audience: party\|presser` | Who a trigger's bundle addresses. `party` (default) is polled on the tick with no executor and addresses `@a`. `presser` is dispatched by a `minecraft:player_interacted_with_entity` advancement and runs **as the player who right-clicked**, so `@s` is the presser — which also makes a `player`-scoped `requires_state` legal there (`DW0503` asks the site, not the root class). A `presser` **`step`** is polled `as` each player in the plate's cell, so `@s` is the player who stepped on (see *A step names its actor*). Vanilla names the player for a right-click and a step only, so `presser` on a `strike` / `strike-npc` / `strike-assembly` / `approach` is `DW0427`. | 0.11 |
 | Effect `set-block{anchor,block}` | `setblock` at anchor; base block id validated (`DW0193`). `block` accepts a verbatim blockstate suffix `id[key=value,…]`. A runtime write in the one region model (`plan::effect_writes`): the one-cell box at the anchor's cell (a gate's `from` corner when the anchor is a gate), concluded from its block exactly as a `fill-region` is — a block a body collides with walls the cell and floors the one above from the DAG point the effect fires at (a critical path that must cross it afterwards fails `DW0311`), a block with no collision box is a pass, air a clear, a fluid a flood — and dated, forced or unforced, by the same `plan::firing_of`. | 0.4 / state 0.6 |
@@ -526,10 +527,11 @@ flag only optional content produces is `DW0868`. The closure is
 | Effect `despawn-npc{npc}` | Removes NPC + hitbox, unseen: a call to `despawn_npc_<id>`, one function per NPC a `despawn-npc` names (§4 "A body the story removes is never seen to die"). | 0.4 |
 | Effect `spawn-npc{npc}` | The dual of `despawn-npc`: summons a stage-2 NPC — body + interaction hitbox + name display — at its declared anchor, via the **same** `npc_summon_commands` authority world init uses. Idempotent (per-entity tag guards), so a re-fire never doubles a body. Also a dialogue effect. **`spawn_npc_<id>` is emitted for every NPC any `spawn-npc` site names**, not only `deferred` ones: the registration walk IS the call walk (quest/trigger/trap effect trees at any nesting depth, plus every dialogue option's `spawn-npc`), so a call and its callee can never disagree. `spawn-npc` on a non-deferred NPC is the legal way to bring a character back after a `despawn-npc`. For an NPC already standing at its mark the entrance is exactly the no-op it reads as; a campaign that fires no `spawn-npc` and defers nobody emits nothing here. | 0.6 |
 | Effect `move-npc{npc,to{anchor,offset?},speed?,on_arrive[]?}` | The destination is a mark (spec-0066): `to.anchor` resolves through `plan::body_station` (`BodyScope::Beat`: the area the firing quest bundle plays in, then the npc's home, then an unambiguous crossing) — a name two areas answer to and neither settles is `DW0859`; the snap to a standable cell starts from the mark's cell, the anchor's plus `to.offset`, and a mark leaving the anchor's piece is `DW0897`. The walk driver is named `mv_<npc>_<anchor>` and, for a non-zero offset, `mv_<npc>_<anchor>_o<x>_<y>_<z>` (a negative component spelled `m<n>`), so two walks to one anchor at two offsets are two drivers. A*-planned per-tick tp through walkable space; unroutable → `DW0307`. `on_arrive[]` fires once on the driver's final-waypoint tick — **exact parity with `move-actor.on_arrive`**: same arrival detection, same execution context (`mv_arrive_<key>` mirrors `ma_arrive_<key>`), and every deep effect walker (flag/wave producer scans, consumer-ref checks, checkpoint/stealth collector, l10n inventory + localization, nav flattening, emission) recurses into it via the shared `nested_effect_lists` authority. Lets content gate a beat on walk *completion* (`on_arrive` → `set-flag`) instead of fire-and-forgetting the walk. | 0.4 / `on_arrive` 0.6 |
-| Effect `cutscene{shots[]}` / `cutscene{path[],seconds,look_at?}` | Two-camera spectator dolly; clip → `DW0308` (checked **per shot**, over both the authored polyline and the client-rendered keyframe chords); a shot panning over the 6°/tick angular budget → `DW0347`. Two mutually exclusive spellings, normalized to one shot list: multi-shot `shots: [{path[],seconds,look_at?}, …]` or the single-shot `path`+`seconds` fields — mixing/omitting both, or a shot with an empty `path`, is `DW0199`. Shots play back-to-back inside ONE save/restore bracket (hard cut). `look_at {anchor,offset?}` aims every dolly camera at that world point; absent = face along the direction of travel. **`shot_style` (spec-0015)**: a shot may instead declare a style preset + `subject {anchor|npc|actor, offset?}` (+ optional `dist`, `bearing`, `degrees` (orbit only), `subject_b` (two-shot only)); the compiler expands the style deterministically into the dolly + aim + duration (see "Shot styles" below). Explicit `path`/`look_at`/`seconds` always override the corresponding expanded part. Style-shape violations are `DW0348`; a `side-track`/`low-follow` whose subject has no sibling `move-npc`/`move-actor` (same effect group or sequence) is `DW0349`; an unknown subject npc/actor is `DW0112`. **`party` (spec-0095)**: `present` (default) or `absent`, in both spellings — `present` shows every player in play by a stand-in where they stood for the cutscene's length (see "The party stays in the scene" below); `absent` places none, and the cutscene's functions are named `cs_<bare>_absent`. **`then` (spec-0108)**: effects run when the camera returns, from `cs_end_<bare>` after every restore line, dispatched from the server source (`DW0503` on a `player`-scoped datum there); a nested effect list in every walk; dated one tick past `cs_end` by the timeline model, so a `teleport` there is never `DW0933`. See the `cutscene` row of §3. | 0.4 / `look_at`+`shots`+`shot_style` 0.6 / `party` 0.36 / `then` 0.46 |
+| Effect `cutscene{shots[]}` / `cutscene{path[],seconds,subject,look_at?}` | Two-camera spectator dolly; clip → `DW0308` (checked **per shot**, over both the authored polyline and the client-rendered keyframe chords); a shot panning over the 6°/tick angular budget → `DW0347`. Two mutually exclusive spellings, normalized to one shot list: multi-shot `shots: [{path[],seconds,subject,look_at?}, …]` or the single-shot `path`+`seconds`+`subject` fields — mixing/omitting both, a shot with an empty `path`, or a shot with no `subject` (spec-0110) is `DW0199`. Shots play back-to-back inside ONE save/restore bracket (hard cut). **`subject` (spec-0110, required on every shot)** says what the shot shows: `{anchor, offset?}` (a mark: reference point the cell's centre, sight box the cell), `{npc, offset?}` / `{actor, offset?}` (a body: the feet cell's centre one block up; the feet and head cells — carried along a sibling `move-npc`/`move-actor`'s planned track per tick), `{assembly}` (the centre of its envelope; the union of its parts' cells over its spawn pose and every frame of every clip, turned to its `facing`), `{place}` (an `area/` or site-plan `node/` id: the centre of `place_bounds`; the place's box), `{region: {anchor, extent}}` (the centre of `Plan::zone_box`; the box), or `"landscape"` (an establishing shot of the place the camera stands in: no reference point, no box). **The aim follows the subject**: with no `look_at` every keyframe faces the subject's reference point (static or tracking), styled or not; `look_at {anchor,offset?}` overrides the aim and nothing else; a `"landscape"` with no `look_at` faces along the direction of travel. The build proves every shot frames its subject and every body subject is there to be seen (`DW1033`, `DW1034`, see [`compiler::framing::shot`](delvec/compiler/framing/shot.md)); a `"landscape"` passes with zero objects stated. An unknown subject npc, actor, assembly or place is `DW0112`; two kind keys or an unknown key is `DW0100`. **`shot_style` (spec-0015)**: a shot may instead declare a style preset (+ optional `dist`, `bearing`, `degrees` (orbit only), `subject_b` (two-shot only)); the compiler expands the style deterministically from the subject into the dolly + aim + duration (see "Shot styles" below). Explicit `path`/`look_at`/`seconds` always override the corresponding expanded part. Style-shape violations — a `"landscape"` under a style or as `subject_b` among them — are `DW0348`; a `side-track`/`low-follow` whose subject has no sibling `move-npc`/`move-actor` (same effect group or sequence) is `DW0349`. **`party` (spec-0095)**: `present` (default) or `absent`, in both spellings — `present` shows every player in play by a stand-in where they stood for the cutscene's length (see "The party stays in the scene" below); `absent` places none, and the cutscene's functions are named `cs_<bare>_absent`. **`then` (spec-0108)**: effects run when the camera returns, from `cs_end_<bare>` after every restore line, dispatched from the server source (`DW0503` on a `player`-scoped datum there); a nested effect list in every walk; dated one tick past `cs_end` by the timeline model, so a `teleport` there is never `DW0933`. See the `cutscene` row of §3. **`hears` (spec-0109 §3.5)**: optional, an `atmosphere/<id>` or `null` for the ground — a confirmation, never a mover: a cutscene has no music of its own, its camera stands in a biome and the biome's declaration plays. The build reads every 4-cell the camera passes through — each shot's waypoints and every 4-cell the straight segments between them cross, for a `path` shot and for the dolly a `shot_style` expands to, from the same resolved camera the rehearsal reads — in the configuration the forced route reaches the cutscene in (the biome map after every `set-atmosphere` the route fires before it, in route order; a cutscene the route never reaches is judged against the first tick's map, and the ledger says so); a cell wearing another biome is `DW1032`, naming the shot, the cell, the biome it wears and the one declared. A `hears` naming an undeclared atmosphere is `DW0112`. Absent, nothing is judged and `validation/music.json` still reports what the camera hears. For a cutscene that also declares `music`, `hears` is judged over the places themselves — the biomes the camera cells wear before the cutscene's own paint. **`music` (spec-0109 §3.6)**: optional, the cutscene's own score — the music statement every atmosphere makes, as an attribute map admitting exactly `audio/background_music` (required inside it; `{}` is a scored silence) and `audio/music_volume` (optional), read by the one attribute reader `horizon.attributes` and `atmospheres[].attributes` are read by. A `music` without `audio/background_music`, with a `creative` entry, or with any other id is `DW1031`; a value outside its shape is `DW0928`. While the cutscene plays, every 4-cell its camera can be in wears a derived variant of the biome it wore, carrying the declared music; when it ends, is interrupted, or the server restarts under it, every cell wears its base again (the `cutscene` emission row). A painted cell outside the map's extent, or wearing a biome the delve does not own, is `DW0929`. The way in is the declaration's own `replace_current_music` and delays (the recommended shape: `true`, `min_delay` and `max_delay` 0); the way out is each base's own declaration, and a creator who wants the score cut dead writes `stop-sound {category: music}` after the cutscene in a `sequence`. The function name carries a digest of the shot list whenever a shot aims anywhere but along its travel (a `"landscape"` adds nothing to it). | 0.4 / `look_at`+`shots`+`shot_style` 0.6 / `party` 0.36 / `then` 0.46 / `hears` 0.47 / `music` 0.47 / `subject` on every shot 0.48 |
 | Effect `set-time{time}` | Instantaneous dimension-global cut to a keyword or a celestial statement (the stage-1 `time` row). The cut changes the hour and keeps the world's moon: a keyword resolves on the world's day, a celestial statement on its `phase`'s day or the world's; `time set <kw>` for a keyword on day 0, `time set <ticks>` for `dusk`/`dawn`, `time set <day × 24000 + daytime>` otherwise (`noon` in a world whose moon is new → `time set 102000`). A `phase` equal to the world's is `DW0931`; persists (cycle frozen). | 0.5 / celestial 0.35 |
 | Effect `set-weather{weather}` | Instantaneous dimension-global cut (`weather <kw>`); persists (cycle frozen). | 0.5 |
-| Effect `play-sound{sound,at?,volume?,pitch?}` | Plays a sound event; `sound` validated (`DW0326`); `at` = `{anchor, offset?}`\|`{players, offset?}` (default `players`) — the anchor form is a mark (spec-0066), playing at the anchor's cell plus `offset`; the `players` form's `offset` (spec-0085) is integer blocks in **the listener's own frame** — `+x` left, `+y` up, `+z` the way the listener faces, the pitch flattened so behind stays at ear height (`[0, 0, -3]` is three blocks behind); `{actor}` parses and is refused (`DW0335` — no live-actor position resolves); positional or per-player. | 0.6 |
+| Effect `play-sound{sound,at?,volume?,pitch?,category?}` | Plays a sound event; `sound` validated (`DW0326`); `category` (spec-0109) is one of the eleven `SoundCategory` words the pinned command tree spells (`master`, `music`, `record`, `weather`, `block`, `hostile`, `neutral`, `player`, `ambient`, `voice`, `ui`; another word is `DW0100`), absent = `master`, vanilla's own default — a stinger in `music` is governed by the player's music slider and the scene's music fade and is cut by `stop-sound music`, and the client's music manager still starts its own track over it unless the camera's biome declares silence; `at` = `{anchor, offset?}`\|`{players, offset?}` (default `players`) — the anchor form is a mark (spec-0066), playing at the anchor's cell plus `offset`; the `players` form's `offset` (spec-0085) is integer blocks in **the listener's own frame** — `+x` left, `+y` up, `+z` the way the listener faces, the pitch flattened so behind stays at ear height (`[0, 0, -3]` is three blocks behind); `{actor}` parses and is refused (`DW0335` — no live-actor position resolves); positional or per-player. | 0.6 / `category` 0.47 |
+| Effect `stop-sound{category?,sound?}` | spec-0109 §3.4: **stops sounds the audience hears**, vanilla's `stopsound`, the counterpart of `play-sound`. `category` is one `SoundCategory` word (`DW0100` otherwise); `sound` a registered sound event (`DW0326`). `category` alone stops every playing instance in it; `sound` alone stops that event in any category; both, that event in that category; neither, every sound. It addresses players (`Verb::addresses_players`) and takes the `audience` / `in` envelope; a `dw_cutscene` watcher **is** addressed — a cut is not harm, and the watcher is who hears the scene. It stops instances and never touches the client's music manager: in a scene that declares silence it is the hard cut of a play-out (and of a `music` stinger); in a scene whose track restarts at once (a loop) it is a hiccup of a few ticks, and in a scene with a spaced track it cuts the play-out until the scene's own delay starts the next. The music ledger says which per `stop-sound`. A cut on walking in is an environment trigger carrying this verb. | 0.47 |
 | Effect `firework{at,flight?,explosions}` | Fires a `minecraft:firework_rocket` from a mark (spec-0068): `at` is the same `{anchor, offset?}` `play-sound` takes, `flight` is 1, 2 or 3 (default 1 — the three the game crafts), `explosions` is 1–7 bursts of `{shape, colors, fade_colors?, trail?, twinkle?}` with `shape` one of the game's five (`small_ball`, `large_ball`, `star`, `creeper`, `burst`) and every colour a `#rrggbb` literal. Out-of-range flight, an explosion list outside 1–7, an empty `colors` and a malformed colour are each `DW0100` — the bound the exported schema states, restated at the document tier because serde does not enforce it. The burst stands 8, 18 or 32 blocks over the mark and `DW0899` proves it bursts in open air, clear of every posted body. A display of many rockets is a `sequence` of these. | 0.29 |
 | Effect `particle{particle,at,count?,spread?,speed?}` | Spawns particles (spec-0085), the next one-shot point effect after `firework`. `particle` is a vanilla particle-type id (`minecraft:` optional) validated against the pinned registry `crates/dsl/data/particles-1.21.11.json` (115 types, derived from the server jar by `tools/maintenance/extract-particle-registry.py`); an unknown id, or one whose type takes options (18 of them — `dust`, `block`, `item`, `flash`, …), is `DW0941`. `at` is a mark (`{anchor, offset?}`) or the literal `players` — at each addressed player. `count` (default 1, minimum 1 — `0` is `DW0100`, vanilla's spelling of one particle with a velocity), `spread` (`[x, y, z]` standard deviations, default `[0, 0, 0]`), `speed` (default 0). Always emitted in **`force`** mode, its viewers the effect's audience; a `minecraft:elder_guardian` at `players` is the full-screen face. | 0.35 |
 | Effect `lightning{at}` | Strikes a `minecraft:lightning_bolt` at a mark (spec-0092): `at` is the same `{anchor, offset?}` the other point effects take, and is the verb's one field. The bolt stands at the mark's cell centre on the mark's plane, so it strikes the block under the mark. It is the real bolt — every client in tracking range draws it and the sky flash and hears the thunder — and it hurts: `DW0958` refuses one whose reach holds a posted body and `DW0959` one whose struck block the game rewrites (a lightning rod, weathering copper). It lights no fire, because every delve seals `fire_spread_radius_around_player` at `0`. A party fact: `audience` and `in` on it are `DW0942`. A storm is a `sequence` of strikes. | 0.36 |
@@ -546,15 +548,15 @@ flag only optional content produces is `DW0868`. The closure is
 | `actors[].watch{who,within}` (opt) | The same `BodyWatch` a stage-2 NPC declares (spec-0101; see stage 2's `watch` row): it watches the **puppet** (`dw_pup_<id>`), never the unleashed twin, whose facing is its own AI's. An actor is never talked to, so it has no default watch and no `"none"`: absent, it does not turn. `DW0100`/`DW0996`/`DW0997` as there. | 0.39 |
 | Effect `spawn-actor{actor}` | Idempotent puppet summon at the actor's anchor. | 0.6 |
 | Effect `despawn-actor{actor,style}` | `kill` = the author's on-screen death: vanilla `/kill` in place, with its death animation. `vanish` = the body leaves unseen (§4 "A body the story removes is never seen to die"). Targets `dw_actor_<id>` (puppet or twin). | 0.6 |
-| Effect `move-actor{actor,to{anchor,offset?},speed?,on_arrive[]}` | The destination is a mark (spec-0066), snapped from its own cell and named `ma_<actor>_<anchor>[_o<x>_<y>_<z>]` exactly as `move-npc`'s. Footprint-aware A*-planned per-tick tp of the puppet, string-pulled over level ground at the puppet's own footprint (§4 "A walked path goes straight where the ground allows"), yaw along the path tangent, with the walked body's arrival turn on the final waypoint (§4 "A walked body faces where it is walking"); `on_arrive` fires at the destination cell; unroutable → `DW0325`. `move-npc` is a thin wrapper over the same planner (player footprint). **Chained origins (live-server proven):** an actor's (and NPC's) successive moves chain — the first leg plans from the declared anchor, every later leg from the previous leg's target. Planning every leg from the declared anchor would degenerate a second consecutive move into a single-waypoint instant teleport. Two moves sharing `(id, to)` still share one content-keyed driver, planned from the first occurrence's origin (a limitation of the content key). **Handoff PackTest:** for the first `move-actor` whose `on_arrive` fires a `spawn-npc` (the walker→NPC scene handoff), a generated `v06_arrive_handoff` template seals every campaign gate (`close-gate` fill), drives the arrival tick, and asserts puppet gone / NPC body present / exactly one NPC hitbox — the beat a delve soft-locks on if the handoff half-fires; gates are re-opened and entities cleared afterwards (batch model). **Concurrent moves are independent:** each `(actor, to)` gets its own start function, per-tick driver, run latch `#arun_<bare>` and step counter `#at_<bare>`, and each driver teleports only its own `dw_pup_<id>` — so N moves in flight at once cannot starve one another whatever order they start in (the island cinematic runs four sheep plus the giant). Pinned by `concurrent_move_actors_share_no_state`. **Overlapping legs on ONE puppet supersede:** concurrency across DIFFERENT puppets is independence (above); two legs for the SAME puppet is a contest, and the later one wins — see §4 "One body, one live walk driver". A puppet with only one planned leg carries none of that machinery (byte-identical). | 0.6 |
+| Effect `move-actor{actor,to{anchor,offset?},speed?,on_arrive[]?}` | The destination is a mark (spec-0066), snapped from its own cell and named `ma_<actor>_<anchor>[_o<x>_<y>_<z>]` exactly as `move-npc`'s. Footprint-aware A*-planned per-tick tp of the puppet, string-pulled over level ground at the puppet's own footprint (§4 "A walked path goes straight where the ground allows"), yaw along the path tangent, with the walked body's arrival turn on the final waypoint (§4 "A walked body faces where it is walking"); `on_arrive` fires at the destination cell; unroutable → `DW0325`. `move-npc` is a thin wrapper over the same planner (player footprint). **Chained origins (live-server proven):** an actor's (and NPC's) successive moves chain — the first leg plans from the declared anchor, every later leg from the previous leg's target. Planning every leg from the declared anchor would degenerate a second consecutive move into a single-waypoint instant teleport. Two moves sharing `(id, to)` still share one content-keyed driver, planned from the first occurrence's origin (a limitation of the content key). **Handoff PackTest:** for the first `move-actor` whose `on_arrive` fires a `spawn-npc` (the walker→NPC scene handoff), a generated `v06_arrive_handoff` template seals every campaign gate (`close-gate` fill), drives the arrival tick, and asserts puppet gone / NPC body present / exactly one NPC hitbox — the beat a delve soft-locks on if the handoff half-fires; gates are re-opened and entities cleared afterwards (batch model). **Concurrent moves are independent:** each `(actor, to)` gets its own start function, per-tick driver, run latch `#arun_<bare>` and step counter `#at_<bare>`, and each driver teleports only its own `dw_pup_<id>` — so N moves in flight at once cannot starve one another whatever order they start in (the island cinematic runs four sheep plus the giant). Pinned by `concurrent_move_actors_share_no_state`. **Overlapping legs on ONE puppet supersede:** concurrency across DIFFERENT puppets is independence (above); two legs for the SAME puppet is a contest, and the later one wins — see §4 "One body, one live walk driver". A puppet with only one planned leg carries none of that machinery (byte-identical). | 0.6 |
 | Effect `unleash-actor{actor}` | Replaces the puppet with a real-AI twin (same entity/pos/name/tag, no puppet marker); the puppet leaves unseen (§4 "A body the story removes is never seen to die"), so no second body dies beside the one standing up. Re-caging = `despawn-actor` + `spawn-actor`. **Spawn finalization (live-proven):** `/summon <entity> <pos> <nbt>` — *any* NBT compound, even `{}` — makes vanilla skip `finalizeSpawn`; `/summon <entity> <pos>` does not. The compiler always passes NBT (tags are how it addresses everything it owns), so every mob it summons is un-finalized. For `minecraft:warden` that is fatal: `finalizeSpawn` is the only place the `minecraft:dig_cooldown` brain memory is seeded, and a warden without it enters the DIG activity on its first AI tick, burrows, and despawns ~5 s later. A/B on the pinned server: bare summon → `Brain{memories:{"minecraft:dig_cooldown":{value:{},ttl:1200L}}}`; summon with `{}` → `Brain{memories:{}}`, gone. The twin summon carries that memory verbatim (vanilla's own 1200-tick value — the awake warden refreshes it itself, verified present and roaming past 80 s). Only the **twin** needs it: a caged puppet is `NoAI` and never runs `customServerAiStep`, which is why a puppet warden can stand in a meadow indefinitely. Species needing no finalization data get no memory. **Aggro lock:** an unleashed hostile targets the player who *struck* the trigger. The click trigger parks that player's UUID in `storage dw:strike player` (`data modify … set from entity <hitbox> attack.player` — vanilla's own record of who clicked) for the length of its own bundle and removes it after, so it can never go stale; `unleash_<id>` seeds the warden's vanilla `anger.suspects` from it at max anger (150), guarded on the storage holding a value. Live end-to-end: the warden left its spawn cell, closed on the seeded player and killed that player. Emitted only for a campaign whose click triggers actually unleash, so other campaigns' unleash functions carry none of it. **Limit:** the warden is the only species with a data-settable target that survives a tick on 1.21.11 — the `NeutralMob` pair (`AngerTime`/`AngryAt`) was tried against endermen, piglins, wolves and iron golems, with a real online player's UUID, and neither field reads back afterwards, so nothing is emitted for them and they acquire targets by vanilla's own nearest-player search. | 0.6 |
 | Effect `sequence{steps[]{at_ticks,effects[]}}` | Deterministic timeline: one schedule chain firing effect groups at exact tick offsets. **Named by position**: the start function is `seq_<root>_<n>` and step `i` is `seq_<root>_<n>_<i>`, where `<root>` is the effect root's own key with its `fx.` prefix dropped (`fx.near-hall.oc.take-the-emeralds` → `seq_near_hall_oc_take_the_emeralds_0`) and `<n>` counts timelines within that root's deep walk, so a reader of the pack can see which bundle a timeline came from. Uniqueness is asserted over the collected names. The names come from one enumeration built on `for_each_effect_root` and read by both the generator and the caller, so the two cannot disagree; identity is by the timeline's value, since emission reads a trap's payload from a clone, and the first declaration wins, so two identical timelines still share one function. No nested `sequence` → `DW0329`. Effects nested in a step are **first-class**: the flag/wave producer scans, the checkpoint/stealth collector, the l10n inventory, and emission all descend into `sequence.steps` and every nested effect list (`on_respawn`/`on_caught`/`on_arrive`) via one shared traversal, so a `set-flag`/`set-checkpoint` nested in a step produces its flag / registers its indexed checkpoint exactly as at top level. **A timeline keeps its actor** (spec-0085): started where there is an acting player and using it, it tags that player and runs every step as them — §4 "A scheduled bundle has no `@s`". | 0.6 |
-| Stage-5 `assemblies[] {id,rig,at,facing?,initial?,hitbox?,strikes?}` | **A fixed thing that can be hit and hits back** (spec-0082): an object built of display entities at a mark, moving through the clips of a library **rig**, struck in melee through an optional hitbox, and striking a player who stands in its arming region. Not a fight class: no health, equipment, traversal, health bar or kill credit, and it never dies. `rig` is `rig/<name>`, resolved against the prefab library's `rigs/<name>/rig.json` the way `prefab/<name>` resolves against a piece (a rig is a generator's output, never campaign JSON — `gallery/prefab-generator`); a missing, malformed or rule-breaking rig, or a clip name the rig lacks, is `DW0935`. `at` is a `Mark` (the rig's origin: the mark cell's centre at its floor plane; held in its piece by `DW0897`, resolved by `DW0360`). `facing` (default `south`) is applied to every frame by the compiler, so the entities stand at yaw 0. `initial` names the clip playing from spawn; absent, the parts stand in the rig's rest pose (`parts[].rest`, else the first frame of the first clip). `hitbox {width, height, offset?}` is a `minecraft:interaction` whose bottom centre is the mark cell's centre plus `offset`: width over 6 or height over 22 is `DW0936` (vanilla registers an attack only within 3.3 blocks toward −X/−Z and 22.6 above), and so is a box that meets none of the cells the spawned parts stand in. `strikes {while_in, pattern[] {windup, hold, strike, ticks_per_frame?, lock?, on_land[]}, aim?}`: `while_in` is the anchor-centred box `StealthZone` is; the pattern runs, repeating from its first step, while some player's body is in it (a player in a cutscene neither arms it nor is struck), and stops at the end of the step in flight when nobody is. A step plays `windup`, holds its last frame `hold` ticks, plays `strike`, and runs `on_land` — effect root R10, with no acting player — on the tick a client has drawn the strike clip's last frame whole, one cadence after it is applied (`Clip::landing_ticks`); a step with no `on_land` is a feint. **The wind-up's length is the creator's two knobs**: the wind-up clip's `1 + (frames − 1) × cadence` ticks, then `hold`. `ticks_per_frame` (1–20, else `DW0935`) is the step's pace: its wind-up and strike play as emitted clips after the rig's own (`assembly::paced_index`) at that cadence, and the record times the wind-up and the landing by it. `aim {facings}` (spec-0082 §5.7): at the start of every wind-up the root is turned, by `tp` (every riding part takes the root's change of yaw, stays seated and keeps its interpolation — spec-0082 §8 rows 3, 10), to the one of `facings` evenly spaced turns from `facing` nearest the bearing of the player in `while_in` nearest the mark — chosen by `assembly::target_lines`, every player in the box tagged and then `execute positioned <mark> run tag @a[tag=…,sort=nearest,limit=1]`, because a selector's own `x`/`y`/`z` are the origin its `sort` measures from (spec-0094 §2.3) — (`execute … facing entity`, the yaw read as a whole number of `1/facings` degrees, rounded with the scoreboard's floor division); only facings a player in `while_in` can draw are emitted (`assembly::drawn_facings`), a pick outside them resolves to the nearest drawn one, and every `damage-players` box at the top of `on_land` is turned with it (`assembly::turned_region`) and dealt through one tag per caught player (`assembly::region_damage_lines`). Where a blow lands is judged (`DW0938`); when it lands and how hard are the creator's (spec-0016 §3). **`lock {within, pick, reaches?}` on a step** (spec-0094): at the start of the step's wind-up one player in `within` (a `StealthZone`) is chosen by `pick` — `nearest`, `furthest` or `random`, vanilla's selector orders, measured from the mark — and the cell their feet stand in is read (`data get entity … Pos[a]`, the floor of the coordinate), made relative to `within`'s low corner and clamped to it, and dispatched (`asm_lock_<s>_<j>` → `asm_lockat_<s>_<j>` → one `asm_lockc_<s>_<j>_<ix>_<iy>_<iz>` per cell of `within`, so every macro call names a function that exists): the root is `tp`'d to the yaw proved for that cell and the cell's pose and landing are remembered in `dw:asm <s>.r` / `.q`; the swing plays `$function …:asm_play_<s>_$(r)`, the landing `$function …:asm_land_<s>_<j>_$(q)`. A display does not bend to a point, so a lock is a continuous **turn** plus a choice among **poses** — the step's `strike`, then each of `reaches` — and both are proved per standable cell of `within` (`assembly::lock_plan`, `DW0968`); a non-standable cell resolves to the proved cell in its column below it, else the nearest. The blow is **derived**: a top-level `damage-players` in a locked step declares no `in` (`DW0969`) and lands, through `region_damage_lines`, on the cells the chosen pose comes down on at the locked turn — the area shape 2 demands, by construction. A locked step winds up only while a player is in its `within`; the plans travel from `assembly::check` to the emitter (`assembly::Locks`), never re-derived. **Arming**: a wind-up begins only while `#asm_<s>_armed` is 1 — set by the summon and by `arm-strikes`, cleared by every `play-clip` — so a clip the story plays completes and holds whoever stands in `while_in`. A hit count is an ordinary `state` datum a `strike-assembly` trigger with `once: false` adds to, and what happens at a count is an effect behind the ordinary gate. | 0.35 |
+| Stage-5 `assemblies[] {id,rig,at,facing?,initial?,hitbox?,strikes?,seen_from?}` | **A fixed thing that can be hit and hits back** (spec-0082): **How far it is seen from** (spec-0110 §4.4, §5.8): `asm_summon_<s>` emits `view_range:<v>f` on the root and every part, `v = max(1.0, seen_from/32, d_max/32)` rounded up to two decimals (`framing::view_ranges`), `d_max` the greatest lens-to-root distance over every shot framing the assembly and every tick, and over the farthest standing eye of the walked population inside the place its mark stands in; the divisor `64 × 0.5` holds the range at the client's lowest entity distance. `seen_from` (optional, whole blocks `1..=512`, outside it `DW0100`) only raises it; `validation/shot-subjects.json` names the term that won. an object built of display entities at a mark, moving through the clips of a library **rig**, struck in melee through an optional hitbox, and striking a player who stands in its arming region. Not a fight class: no health, equipment, traversal, health bar or kill credit, and it never dies. `rig` is `rig/<name>`, resolved against the prefab library's `rigs/<name>/rig.json` the way `prefab/<name>` resolves against a piece (a rig is a generator's output, never campaign JSON — `gallery/prefab-generator`); a missing, malformed or rule-breaking rig, or a clip name the rig lacks, is `DW0935`. `at` is a `Mark` (the rig's origin: the mark cell's centre at its floor plane; held in its piece by `DW0897`, resolved by `DW0360`). `facing` (default `south`) is applied to every frame by the compiler, so the entities stand at yaw 0. `initial` names the clip playing from spawn; absent, the parts stand in the rig's rest pose (`parts[].rest`, else the first frame of the first clip). `hitbox {width, height, offset?}` is a `minecraft:interaction` whose bottom centre is the mark cell's centre plus `offset`: width over 6 or height over 22 is `DW0936` (vanilla registers an attack only within 3.3 blocks toward −X/−Z and 22.6 above), and so is a box that meets none of the cells the spawned parts stand in. `strikes {while_in, pattern[] {windup, hold, strike, ticks_per_frame?, lock?, on_land[]}, aim?}`: `while_in` is the anchor-centred box `StealthZone` is; the pattern runs, repeating from its first step, while some player's body is in it (a player in a cutscene neither arms it nor is struck), and stops at the end of the step in flight when nobody is. A step plays `windup`, holds its last frame `hold` ticks, plays `strike`, and runs `on_land` — effect root R10, with no acting player — on the tick a client has drawn the strike clip's last frame whole, one cadence after it is applied (`Clip::landing_ticks`); a step with no `on_land` is a feint. **The wind-up's length is the creator's two knobs**: the wind-up clip's `1 + (frames − 1) × cadence` ticks, then `hold`. `ticks_per_frame` (1–20, else `DW0935`) is the step's pace: its wind-up and strike play as emitted clips after the rig's own (`assembly::paced_index`) at that cadence, and the record times the wind-up and the landing by it. `aim {facings}` (spec-0082 §5.7): at the start of every wind-up the root is turned, by `tp` (every riding part takes the root's change of yaw, stays seated and keeps its interpolation — spec-0082 §8 rows 3, 10), to the one of `facings` evenly spaced turns from `facing` nearest the bearing of the player in `while_in` nearest the mark — chosen by `assembly::target_lines`, every player in the box tagged and then `execute positioned <mark> run tag @a[tag=…,sort=nearest,limit=1]`, because a selector's own `x`/`y`/`z` are the origin its `sort` measures from (spec-0094 §2.3) — (`execute … facing entity`, the yaw read as a whole number of `1/facings` degrees, rounded with the scoreboard's floor division); only facings a player in `while_in` can draw are emitted (`assembly::drawn_facings`), a pick outside them resolves to the nearest drawn one, and every `damage-players` box at the top of `on_land` is turned with it (`assembly::turned_region`) and dealt through one tag per caught player (`assembly::region_damage_lines`). Where a blow lands is judged (`DW0938`); when it lands and how hard are the creator's (spec-0016 §3). **`lock {within, pick, reaches?}` on a step** (spec-0094): at the start of the step's wind-up one player in `within` (a `StealthZone`) is chosen by `pick` — `nearest`, `furthest` or `random`, vanilla's selector orders, measured from the mark — and the cell their feet stand in is read (`data get entity … Pos[a]`, the floor of the coordinate), made relative to `within`'s low corner and clamped to it, and dispatched (`asm_lock_<s>_<j>` → `asm_lockat_<s>_<j>` → one `asm_lockc_<s>_<j>_<ix>_<iy>_<iz>` per cell of `within`, so every macro call names a function that exists): the root is `tp`'d to the yaw proved for that cell and the cell's pose and landing are remembered in `dw:asm <s>.r` / `.q`; the swing plays `$function …:asm_play_<s>_$(r)`, the landing `$function …:asm_land_<s>_<j>_$(q)`. A display does not bend to a point, so a lock is a continuous **turn** plus a choice among **poses** — the step's `strike`, then each of `reaches` — and both are proved per standable cell of `within` (`assembly::lock_plan`, `DW0968`); a non-standable cell resolves to the proved cell in its column below it, else the nearest. The blow is **derived**: a top-level `damage-players` in a locked step declares no `in` (`DW0969`) and lands, through `region_damage_lines`, on the cells the chosen pose comes down on at the locked turn — the area shape 2 demands, by construction. A locked step winds up only while a player is in its `within`; the plans travel from `assembly::check` to the emitter (`assembly::Locks`), never re-derived. **Arming**: a wind-up begins only while `#asm_<s>_armed` is 1 — set by the summon and by `arm-strikes`, cleared by every `play-clip` — so a clip the story plays completes and holds whoever stands in `while_in`. A hit count is an ordinary `state` datum a `strike-assembly` trigger with `once: false` adds to, and what happens at a count is an effect behind the ordinary gate. | 0.35 |
 | Effect `spawn-assembly{assembly}` | Summons the assembly (root, parts riding it, hitbox) at its mark, playing `initial`. Idempotent: guarded on the root's absence. | 0.35 |
 | Effect `despawn-assembly{assembly}` | Removes every entity of the assembly. A display entity has no death, so there is no `style`: the parts and the hitbox leave unseen. | 0.35 |
 | Effect `play-clip{assembly,clip}` | Makes `clip` the clip the assembly plays and returns to; its first frame is applied on the next tick. While a strike step is in flight the switch waits for the step to land, so a story beat never cuts a strike at the frame before it lands. **It stands the strike pattern down** (spec-0094 §3.3): `asm_cue_<s>_<k>` writes `#asm_<s>_armed` 0, so the clip completes and holds (or loops) with a player in `while_in` until an `arm-strikes`. A clip the rig lacks is `DW0935`. | 0.35 |
 | Effect `arm-strikes{assembly}` | Re-arms the assembly's strike pattern a `play-clip` stood down (spec-0094 §3.3): `asm_rearm_<s>` writes `#asm_<s>_armed` 1 and the step index 0, so the pattern resumes from its first step on the next tick a player is in its arming region. Re-arming is a rule the author writes — a `sequence` step after the clip's length, a trigger, a rest — never a property of standing still. On an assembly with no `strikes` it is `DW0970`. | 0.36 |
-| `traps[]` | spec-0011 + **spec-0022**: `{id,at,trigger,effect?,payload?,lethality?,disarm?,reset?,requires_flags?,forbids_flags?}`. **Redstone keeps exactly one job — the trigger**; the consequence is commands (spec-0022). `payload` is an ordered effect list in the SAME vocabulary quests use, plus the two trap verbs `volley` and `collapse` (see below); it is how a trap's consequence is authored. `effect` (the spec-0011 `dispense` wiring) is the alternative — a trap must declare at least one of the two (`DW0440`). `at` binds a **point anchor** an area's prefab provides — the trigger/hazard cell, under whatever name the piece gave it (`anchor/trap` is what the shipped pieces call it, and a name is all it is). **A `payload` trap needs nothing of the piece but that cell and the trigger block standing in it** — the plate, tripwire or trapped chest the `trigger` names, which the piece places and the compiler proves is there (`DW0917`): the compiler emits the detection, an edge-latched per-tick `execute … if entity @a[<cell>]` (a trapped chest's is an interaction hitbox over the chest). The anchor additionally needs a `dispenser` socket cell only for a legacy `effect` (which the prefab's own redstone fires, and which is the one case where no detection is emitted), and a `trigger_block` only for a flag-gated trap. `trigger` ∈ `pressure-plate`/`tripwire`/`trapped-chest` (all redstone-native; `trapped-chest` = the only player-distinct trigger). `effect` = `{dispense:{item,count}}` (item `DW0341`; a non-`dispense` key e.g. `tnt` is an unknown variant → `DW0100`). `lethality` ∈ `lethal`/`harmful`(default)/`nonlethal`. `disarm{via,sets_flag}` = a reachable affordance that turns the trap off. `reset` ∈ `once`/`rearm`(default). Structural errors `DW0340`; a lethal forced-path trap without discharge `DW0342`. `requires_flags`/`forbids_flags` are a **physical** gate (see §4 emission): the trigger block is removed from the world while the gate is shut and restored verbatim when it opens, so a gated trap is genuinely inert rather than nominally so — the trigger must be a plate/tripwire declaring `trigger_block` in its prefab metadata, else `DW0363`. | 0.6 |
+| `traps[]` | spec-0011 + **spec-0022**: `{id,at,trigger,effect?,payload?,lethality?,disarm?,reset?,requires_flags?,forbids_flags?,requires_state?}`. **Redstone keeps exactly one job — the trigger**; the consequence is commands (spec-0022). `payload` is an ordered effect list in the SAME vocabulary quests use, plus the two trap verbs `volley` and `collapse` (see below); it is how a trap's consequence is authored. `effect` (the spec-0011 `dispense` wiring) is the alternative — a trap must declare at least one of the two (`DW0440`). `at` binds a **point anchor** an area's prefab provides — the trigger/hazard cell, under whatever name the piece gave it (`anchor/trap` is what the shipped pieces call it, and a name is all it is). **A `payload` trap needs nothing of the piece but that cell and the trigger block standing in it** — the plate, tripwire or trapped chest the `trigger` names, which the piece places and the compiler proves is there (`DW0917`): the compiler emits the detection, an edge-latched per-tick `execute … if entity @a[<cell>]` (a trapped chest's is an interaction hitbox over the chest). The anchor additionally needs a `dispenser` socket cell only for an `effect` (which the prefab's own redstone fires, and which is the one case where no detection is emitted), and a `trigger_block` only for a flag-gated trap. `trigger` ∈ `pressure-plate`/`tripwire`/`trapped-chest` (all redstone-native; `trapped-chest` = the only player-distinct trigger). `effect` = `{dispense:{item,count}}` (item `DW0341`; a non-`dispense` key e.g. `tnt` is an unknown variant → `DW0100`). `lethality` ∈ `lethal`/`harmful`(default)/`nonlethal`. `disarm{via,sets_flag}` = a reachable affordance that turns the trap off. `reset` ∈ `once`/`rearm`(default). Structural errors `DW0340`; a lethal forced-path trap without discharge `DW0342`. `requires_flags`/`forbids_flags` are a **physical** gate (see §4 emission): the trigger block is removed from the world while the gate is shut and restored verbatim when it opens, so a gated trap is genuinely inert rather than nominally so — the trigger must be a plate/tripwire declaring `trigger_block` in its prefab metadata, else `DW0363`. | 0.6 |
 
 Dialogue effects `set-flag`, `set-time`/`set-weather`,
 `set-checkpoint`/`spawn-npc` and option `requires_flags` mirror the quest
@@ -583,7 +585,7 @@ complete ∧ `requires_flags` ∧ `forbids_flags` ∧ `requires_state` ∧ not y
 complete — the same `pending_guard` every other objective driver goes through, so
 a button cannot complete a beat before the beats it declares `after`; that guard
 is the engine's, opens exactly when the objective activates, and is what `DW0191`'s
-"ungated" does not count. The generated `dialogue_mask` PackTest breaks each of
+"ungated" does not count. The generated `dlg_mask_<npc>_<node>` PackTest breaks each of
 its terms on its own. Node `text` → l10n `dlg.<n>.<node>.text`, option
 labels → `.opt.<i>.label`. An option label is a **button caption**: it is drawn on a
 fixed 150-GUI-px dialog button and scrolls if it does not fit, so every label —
@@ -720,14 +722,14 @@ from l10n (no stage-7 string is player-visible).
 
 | Element | Behavior |
 |---------|----------|
-| `batches[]` | Ordered `{id: batch/<kebab>, area, note?, edits[]}`. Batch ids are unique (`DW0111`), the seed-stream label and the snapshot name; `area` must be an area the campaign declares (`DW0112`) — a stage-1 `areas[]` entry, or `area/site` on a **site-plan** campaign, whose one place is the site the plan lays out and whose `areas[]` is required to be empty (`DW0839`). After EVERY batch the invariants re-prove (§4). |
+| `batches[]` | Ordered `{id: batch/<kebab>, area, note?, edits[]}`. Batch ids are unique (`DW0111`), the seed-stream label and the frame name; `area` must be an area the campaign declares (`DW0112`) — a stage-1 `areas[]` entry, or `area/site` on a **site-plan** campaign, whose one place is the site the plan lays out and whose `areas[]` is required to be empty (`DW0839`). After EVERY batch the invariants re-prove (§4). |
 | `select` | `{name: region/<kebab>, shape}` — defines a named region for later verbs **in the same batch** (strictly backward; dangling/forward = `DW0162`, duplicate = `DW0111`). Shapes: `box` (inclusive `min`/`max` in a declared frame), `surface-band` (`over` + `from..=to` offsets from each column's surface), `palette-match` (`within` + base-id `blocks`), `union`/`intersect` (`of`, ≥2), `subtract` (`base` − `remove`). |
 | Frames | `piece-local` (`piece` placement index + `prefab` drift-guard — mismatch is `DW0323`) or `anchor-relative` (a resolved anchor of the batch's area) — never raw world coordinates, so a script survives placement moves. |
 | `fill` / `replace` | Seeded palette-recipe write over a region (`replace` only rewrites cells whose base id is in `matching`). A recipe is weighted `blocks[]` (+ optional noise `scale`, default 0.35 blocks⁻¹) sampled by smooth value noise — picks cluster into strata/patches, never a uniform fill. Block ids validate against the pinned registry with optional verbatim blockstate suffix (`DW0193`); weights/scale finite > 0 (`DW0162`). |
 | `carve` | Clear a region to air. Sealing-aware by construction: the carved region re-enters relight + walkability + boundary proofs. |
 | `morph` | Surface reshape per region column: `raise{by,recipe}`, `lower{by}`, `smooth{passes,recipe}` (±1/pass relaxation toward the cardinal-neighbour mean). The region gives the footprint + where the surface is read; `raise`/`smooth` may add cells above the region top. |
 | `scatter` | Seeded dressing over a region's **standable** cells (air over an occupied cell): weighted `items[]` (blockstate suffixes allowed), per-candidate white-noise `density` gate in `(0, 1]` (dressing wants speckle, not the fill verbs' clustered patches), keep-clear `avoid[]` region envelopes (matched by `(x, z)` column), optional both-axes `spacing` rule and `limit` cap taken in descending noise order — the greenfield generator's spread idiom, ported. |
-| `plant` | Structural flora via the **lean-or-grow** canopy rules (ported from the island terrain generator): up to `count` trees on the region's highest-noise standable cells (both-axes `spacing`, default 4; trunks never on `avoid[]` columns). A canopy that would cover an `avoid` column leans one block directly away; if that still covers it, the tree grows tall instead — its whole ball arched 3 above the trunk's floor. **No leaf is ever sliced**; leaves write only into air, so near walls/ceilings the ball may extend past them — review via the batch snapshot. `tree: oak` (per-species rule sets, extensible). |
+| `plant` | Structural flora via the **lean-or-grow** canopy rules (ported from the island terrain generator): up to `count` trees on the region's highest-noise standable cells (both-axes `spacing`, default 4; trunks never on `avoid[]` columns). A canopy that would cover an `avoid` column leans one block directly away; if that still covers it, the tree grows tall instead — its whole ball arched 3 above the trunk's floor. **No leaf is ever sliced**; leaves write only into air, so near walls/ceilings the ball may extend past them — review via the batch frame. `tree: oak` (per-species rule sets, extensible). |
 | `fragment` | Stamp a **library prefab**'s non-air cells at a frame-resolved `at` (+ optional quarter-turn `rotation`) — semantically a `/place template` whose bytes the compiler models (non-air overwrites; authored air never erases). Only admitted library prefabs can be stamped, so provenance/license ride the prefab's own metadata (ADR-0013); an id outside the library is `DW0323`. Stamped cells keep their **full blockstate** (`assembled::structure_cells_stateful`; properties in sorted key order): the stamp's writes ARE the runtime `setblock` lines, so an authored `lantern[hanging=true]` stays a hanging lantern. **`rotation` turns POSITIONS only, and the compiler REFUSES rather than warns.** There is no rotate-aware blockstate rewriter, so a quarter-turned stamp would keep every `facing`/`axis`/`shape`/connection value unrotated and ship visibly deformed geometry — the silently-deformed-map class. A `rotation` other than `none` on a prefab carrying any **yaw-dependent** property (`facing` except `up`/`down`, `axis` except `y`, `shape`, `rotation`, `orientation`, `hinge`, `north`/`south`/`east`/`west`) is a build error (`DW0323`) naming the block, its prefab-local cell and the offending property; the prescription is to stamp unrotated or admit a pre-rotated prefab variant, never to hand-fix facings downstream. It is a **collision test, not a blanket ban**: prefabs whose every state is yaw-invariant (`hanging`, `half`, `waterlogged`, `open`, `lit`, `type`, `level`, `thickness`, `vertical_direction`, `axis=y`, `facing=up|down`) rotate correctly and stay allowed — a stone box with a hanging lantern and an upright log stamps fine at every quarter-turn. **No piece in the shipped library is one**, and that is a property of the library rather than of the rule: every emitted state names the connections it joins, so each carries `north`/`south`/`east`/`west` (or a `facing`, or an `axis`) that a quarter-turn moves. The accepting half of this test is therefore exercised against a piece built for it, not borrowed from the library — a check whose "provably-correct output is accepted" half has no case left is a blanket ban nobody can tell apart from a rule. |
 | `relight` | Run the spec-0010 fixture-placement pass over ONE region and **bake** the fixtures into the edit script's writes — authorial control of where fixtures land (the whole-area relight still re-proves after every batch). Fixture/target default to the area's declared `lighting`; `fixture` + `min_light` (1..=14) override, and are **required** when the area declares none (`DW0162`). An unlightable region is the area pass's own `DW0211`, batch-attributed; a region with no reachable walkable cell is `DW0323`. |
 | L2 massing verbs | `swap-piece` (replace a piece with a library prefab that re-mates every mated socket at its exact world pose, any rotation, overlap-checked), `insert-piece` (attach at a specific **unmated** socket — the targeted form of the solver's frontier attach), `remove-piece` (a **leaf** only — exactly one mated socket, never the entry; the neighbour's socket unmates and re-seals), `rewire-socket` (`sealed` **unmates the doorway pair** — a graph operation: both planes wall up and the DW0306 connectivity proof loses the edge; `open` clears an unmated socket's fill — deliberately without granting the proof an edge, conservative), `reseed-piece` (seeded weighted re-pick among the area pool's compatible members, current excluded — a reseed always changes the piece or errors). All carry the `piece` index + `prefab` drift guard. Applied at **plan** time (`compiler::massing`, inside `Plan::build` right after `solve_area`): seals are regenerated from the massaged mated flags (`seal_layout`), and anchors, gate reachability, waterline, assembly, relight, nav and the L3 replay all run over the massaged layout — the full assembly validation re-runs by construction. Massing verbs live in **massing-only** batches ordered before every detailing batch (`DW0162`); an inapplicable verb is `DW0324`. `resize-piece` from the spec's initial list is **excluded**: the library has no size-parameterized piece primitive to express it through (no-hack doctrine); `swap-piece` covers the different-sized-variant case. |
@@ -844,14 +846,14 @@ it.
 
 | Element | Behavior |
 |---------|----------|
-| `region` | `{min: [x,y,z], extent: [dx,dy,dz]}` in world coordinates — the whole map's one region, and the number the brief hands down. **Required, with no derived spelling**: there is no "compute this from the boxes", so extent-flows-up is unrepresentable rather than forbidden, and `DW0826` refuses a box that does not fit while naming the box. Extents are `NonZeroU32`, so a zero-volume region is a schema failure (`DW0100`) rather than a rule some check has to remember. The water plane is deliberately absent — `horizon: ocean` in the stage-1 world document already fixes sea level. |
+| `region` | `{min: [x,y,z], extent: [dx,dy,dz]}` in world coordinates — the whole map's one region, and the number the brief hands down. **Required, with no derived spelling**: there is no "compute this from the boxes", so extent-flows-up is unrepresentable rather than forbidden, and `DW0826` refuses a box that does not fit while naming the box. Extents are `NonZeroU32`, so a zero-volume region is a schema failure (`DW0100`) rather than a rule some check has to remember. The water plane is deliberately absent — an `ocean` base in the stage-1 world document's `horizon` already fixes sea level. |
 | `datums[]` | `{id: datum/<kebab>, y, note?}` — named ground planes. Ids are the ordinary `DW0110`/`DW0111`; a `floor` naming an undeclared one is the ordinary `DW0112`. |
 | `boxes[]` | `{node, extent: [dx,dz], floor, ceiling, base?, min?: [x,z]}` — **exactly one per graph node** (`DW0824`). **A box states what it is; where it stands is derived** (spec-0059). **A box is a cuboid** (spec-0098 §14, correction 3): its footprint is `min`/`extent` and its vertical extent three declared planes. `floor` is the one authority for the walk plane, `{"datum": <id>}` or `{"y": <n>}`. `ceiling` is `{"clearance": <cells>}` (a lid at `floor + cells`) or `{"open": <cells>}` (sky-open: exactly that many courses of air claimed, nothing above). `base` is `"ground"` (the default: the claim reaches down, column by column, to the lower of the terrain and the floor course, stopping one course over any place stacked under that column, and the whole hands that ground and fixes the ring) or `{"aloft": <n>}` (the place hangs: its claim stops `n` underside courses under the floor course everywhere, it is handed no ground and no fixed ring, and terrain reaching the claim is `DW0990`). The claim is the footprint grown by the one-cell ring, from that bottom to the open top, the lid or the roof zone; two places conflict only where their cuboids overlap (`DW0827`), and a cell no claim covers is the site's fill — on an `open` site, the commons under and between aloft places. `min` is a **pin**, optional: a creative choice of the corner, verified against the packing (`DW0883` when the two disagree); every connected component of the seam graph pins at least one box, or nothing places it (`DW0883`). Horizontal extents are any whole number of blocks; the packed box stands inside the region (`DW0826`, naming how its corner was obtained); boxes are disjoint (`DW0827`). A box's extent and headroom are the author's declaration, and no class refuses them. |
 | `boxes[].atmosphere` | (spec-0080) The atmosphere this place stands under from the first tick, painted at world setup over the box's play space (`PlacedBox::space`) grown by the client's blend reach on every face (*The blend*, under *World / build output*) — `areas[].atmosphere`'s capability on a box. Two carried boxes whose own 4-cells meet under different atmospheres are `DW0929`: a box and its neighbour sit one cell apart, so neighbours carrying two skies must be a whole 4-cell apart. |
 | `boxes[].roof` | (spec-0098) `{courses, eaves}`, optional, on a roofed box: the roof zone the whole reserves — the shell footprint grown by `eaves` on every side, from the ceiling course up `courses` courses. Massed solid at stage 5 over a place no piece fills; drawn by the place's own piece once detailed. Refused on a sky-open box and where its courses rise into another place's play space or floor course (`DW0988`); an eave stops where a neighbour's shell begins. Both numbers are judgements the plan states against `docs/reference/roof-and-facade-craft.md`. |
 | `ceiling: {"open": n}` | A sky-open place — a courtyard, a shore, a summit, a bridge's deck. It claims exactly `n` courses of air over its walk plane and **nothing above them**, which is what makes a `clearance` volume over a courtyard the whole reserving sky rather than two authorities over one cell, and lets a place hung over the courtyard stand in its sky: a climb from the courtyard into a place above is a hole through that place's floor course, which the courtyard's headroom reaches when its top is one course under it (one short is `DW0828`, naming the gap). |
 | `base` | (spec-0098 §14, correction 3) `"ground"` (the default, not printed) or `{"aloft": n}`. A ground place stands on the site's ground and is handed it (§2c). An aloft place hangs: its claim's bottom is `floor − 1 − n`, it is handed no ground (`allocation`'s `ground.base` says which; `fixed` and `columns` are empty and no wall seam has a `ground_y`), its ring is never fixed, and the terrain is never consulted except to refuse terrain reaching into the claim (`DW0990`, third shape). The space under it is whoever claims it — a lower place's open headroom, a scenery box — else the site's fill: on `open`, the commons; on `solid`, rock up to its bottom. |
-| `seams[]` | `{edge, face, at?, meets?, opening? \| contact?, stair_in?}` — **exactly one per traversal edge** (`DW0824`). `face` is one of the engine's six face names (`east`/`west`/`up`/`down`/`south`/`north`), **of the edge's `a` box**. `at` is where the crossing sits on `a`'s face and `meets` where it sits on `b`'s, each an **offset from that box's own low corner**, never a world coordinate — one integer along a wall face (cells along `z` for east/west, `x` for north/south), `[dx, dz]` through a floor or ceiling — and each defaults to **centred**, `max(0, (extent − width) div 2)` by the standard's width (a contact's `extent`, or `0` for a contact with none). **The packing** (spec-0059 §3): the pinned boxes seed it; then `seams[]` in document order, repeatedly, a seam with exactly one end standing places the other **one cell beyond the named face** (`x0(b) = x0(a) + dx(a) + 1` across `east`, and so on) with `corner(b) = corner(a) + at − meets` along it, until a pass places nothing. A seam whose two ends both stand places nothing and is **checked**: the cells it names from `a` must be the cells it names from `b` (`DW0828`, the loop that does not close; `DW0883` when `b`'s corner is a pin). An offset off its own face, or of the wrong shape for the face, is `DW0828`. **The sill is not written**: it is `max(floor(a), floor(b))`. `delvec validate` prints every box's corner and the seam that placed it — the derivation handed back, never typed. A seam allocates **one of two kinds** of connection, and both or neither is `DW0876`. `stair_in` names which of the two boxes hosts the treads: required on a `stair` (`DW0830`) and refused on anything else (`DW0824`). |
+| `seams[]` | `{edge, face, form, at?, meets?, opening? \| contact?, stair_in?}` — **exactly one per traversal edge** (`DW0824`). `face` is one of the engine's six face names (`east`/`west`/`up`/`down`/`south`/`north`), **of the edge's `a` box**. `at` is where the crossing sits on `a`'s face and `meets` where it sits on `b`'s, each an **offset from that box's own low corner**, never a world coordinate — one integer along a wall face (cells along `z` for east/west, `x` for north/south), `[dx, dz]` through a floor or ceiling — and each defaults to **centred**, `max(0, (extent − width) div 2)` by the standard's width (a contact's `extent`, or `0` for a contact with none). **The packing** (spec-0059 §3): the pinned boxes seed it; then `seams[]` in document order, repeatedly, a seam with exactly one end standing places the other **one cell beyond the named face** (`x0(b) = x0(a) + dx(a) + 1` across `east`, and so on) with `corner(b) = corner(a) + at − meets` along it, until a pass places nothing. A seam whose two ends both stand places nothing and is **checked**: the cells it names from `a` must be the cells it names from `b` (`DW0828`, the loop that does not close; `DW0883` when `b`'s corner is a pin). An offset off its own face, or of the wrong shape for the face, is `DW0828`. **The sill is not written**: it is `max(floor(a), floor(b))`. `delvec validate` prints every box's corner and the seam that placed it — the derivation handed back, never typed. A seam allocates **one of two kinds** of connection, and both or neither is `DW0876`. `stair_in` names which of the two boxes hosts the treads: required on a `stair` (`DW0830`) and refused on anything else (`DW0824`). |
 | `seams[].opening` | **A PORTAL**: a named standard from the metrics table (`DW0812` on an unknown name), or a size the seam declares itself, `{"width": w, "height": h}` on the face's two in-plane axes — the author's own opening, a one-cell rope-bridge end included. `DW0829` refuses either when it does not fit the shared face or its sill cannot be reached. A body crosses at exactly the cells `at` and the standard allocate, and **every one of them must be passable** over the built bytes (`DW0836`), and the hole must **lead somewhere**: a body standing in it steps onto ground on both sides, with every bar open (`DW0986`; a `drop` owes its high side only). |
 | `seams[].contact` | (spec-0053) **A CONTACT**: the two places simply meet along a front, rather than through a doorway. `{extent?: [u,v]}` — the span in cells on the face's own two in-plane axes, anchored where `at`/`meets` put it; omitted, it runs from that corner to the far edge of the shared face, which is how a front along the whole of a face is written (and both offsets then default to `0`). **What it means**: the boundary is continuous ground — the derivation writes **no wall along the span**, and wall as ever outside it, and no frame ring, because a ring around a fifty-five-cell front is a wall drawn in a second block. **What the proof reads**: the author allocates *where* the places meet and the engine measures the crossing profile from assembled bytes, so *"this face is fine"* is never a declaration this engine accepts. Seams stay allocated, never discovered: the span is the edge's allocation set for `DW0838`, so a crossing outside it is still a refusal. **No door check applies** — a contact has no opening name to resolve and no single sill, and calling a wide front a door would make every downstream door check wrong. A contact carries `walk` or `drop` only; `stair`, `barred` and `vision` are excluded. Its width is the author's: a front one cell wide is as legal as a wide one. Refusals: `DW0876`, `DW0877`. |
 | `seams[].form` | (spec-0098) **Required**: what the crossing is, in a few words — "a wooden arch bridge, 3 wide", "a stone stair, down 4". A creative judgement the plan states once; the handout gives it to **both** places the seam joins, so each designs its side knowing what meets it. Never player-facing, never inventoried. A connector that is itself a structure — a bridge, a long stair over a gap — is a place of its own with its own piece; its neighbours provide a landing or an opening at each seam. |
@@ -877,8 +879,8 @@ nothing analytic out there: everything out there was built.
 
 That difference is the design, not an implementation detail. A surround entering
 as a new `Ambient` variant would owe a new branch to gravity settling, the
-occupancy model, relight, the fluid model, boundary safety and the snapshot
-renderer, and each branch would be a second model of the same ground that could
+occupancy model, relight, the fluid model, boundary safety and the world
+writer, and each branch would be a second model of the same ground that could
 disagree with the first. Entering as **placed blocks** it owes none of them:
 every proof already knows how to read a block.
 
@@ -993,9 +995,10 @@ free and looks exactly like one that did not.
 
 **Not reachable from the DSL**: the generator carries a second flora (cherry
 over `minecraft:cherry_grove`) and a second surface palette, on one code path
-with parallel id tables. Neither is exposed, because the gallery element a second
-flora needs is a second whole-map campaign and a surface lands with its element
-or it does not land.
+with parallel id tables. Neither is exposed: the gallery element a second flora
+needs is a valley overlay ringing a one-prefab campaign (the extent `DW0855`
+accepts), nothing has written it, and a surface lands with its element or it
+does not land.
 
 ### The blockout (derived — there is no document)
 
@@ -1071,9 +1074,9 @@ option's `set-checkpoint` `on_respawn` bundle,
 `wave.<wave>.on_kill.<i>.…` / `actor.<actor>.on_kill.<i>.…` (root 9), because the
 bundle belongs to the body, not to a beat; spec-0082 keys an assembly strike
 step's `on_land` the same way, `assembly.<assembly>.strike.<step>.<i>.…` (root
-10). `dsl::l10n::effect_roots` (immutable,
+10), and a `loops[].on_cross` bundle is `fx.loop.<loop>.<i>.…` (root 11). `dsl::l10n::effect_roots` (immutable,
 for the glyph/text-fit/sound consumer scans) and `effect_roots_mut` (for
-`each_string`, hence `inventory` + `localize`) enumerate the same ten roots, so
+`each_string`, hence `inventory` + `localize`) enumerate the same eleven roots, so
 what is measured and what is translated cannot drift; each ref carries the `stage`
 it was authored in, so a dialogue-rooted `DW0326`/`DW0328`/`DW0330` names
 `dialogue` rather than `quests`.
@@ -1201,6 +1204,7 @@ The ledger is kept by [[obfuscated|someone else]] at [[italic,color=dark_purple|
 | Lang files | Each language writes `K → F` and `K.span.<i> → T_i` (`emit::server::styled_rows`), `en_us` from the English as authored. A translation's spans are **aligned to the English by style** (`dsl::textstyle::lower_aligned`) — the k-th span of a style in the translation answers the k-th span of that style in the English — so a sidecar row may place spans in its own order (`%2$s…%1$s`) and the style, which rides on the component, always meets its own text. A row whose span multiset is not the English's is `DW0976` at validate, re-proved by the build with the same code. No inventory key has a `span` segment followed by an index, so a span key never shadows a row (asserted). |
 | `--lang` bake | Strings are swapped and untagged, so a styled line is drawn from its own spans in its own order as `{"text": "", "extra": [{"text": …, <style>}…]}`. |
 | Visible text | `dsl::l10n::plain` returns the line with each span replaced by its text (`dsl::textstyle::visible`); `dsl::textstyle::legible` is the same with an `obfuscated` span's characters unreadable (U+FFFD), for a reader that asks what the player was told (`DW0982`), so every named exclusion below, the death plan's `message` the bot watches chat for (`deathplan::worded`), the art-glyph check (`DW0328`), both width gates and the dialogue checks (`DW0981` a question, `DW0982` a name told, `DW0983` a name tag; `compiler::telling`) read what is drawn, never markup. |
+| Key span | (spec-0104 §8.9) `[[key|<input>]]`, `<input>` one of `use`, `attack`, `jump`, `sneak`, `sprint`, `inventory`, `drop`, `swap` (`dsl::textstyle::KEY_INPUTS`: the vanilla key mappings `key.use`, `key.attack`, `key.jump`, `key.sneak`, `key.sprint`, `key.inventory`, `key.drop`, `key.swapOffhand`). `key` takes no other style and its text is the input itself; an unknown input, or `key` beside another style, is `DW0975`. It lowers to the `with` argument `{"keybind": "key.<input>"}` — the client draws the name of the key the viewer has bound — so it writes no `K.span.<i>` row; the `--lang` bake draws it the same way. Its visible text is `[<input>]` (`visible`, `legible`, `l10n::plain`); the width gates measure it as the longest default key name of the pinned client for that input (`dsl::textstyle::measured`: `Right Button` for `use`, `Left Button` for `attack`), which can only be wider than a default rendering. Its signature is `key=<input>`, so a translation that drops it or names another input is `DW0976`, and the translator's fact check keeps it whole (`tools/creator/i18n-translate.py` `PLACEHOLDER_RE`). |
 | Binding | `validate` prints `inline-style binding: N of M player-facing line(s) carry S span(s); R sidecar row(s) held to their English's spans`. |
 
 #### One delve, one vocabulary
@@ -1260,30 +1264,34 @@ away again when the player leaves.
 
 | Piece | Behaviour |
 |---|---|
-| The census | `crates/delvec/data/textures-1.21.11.json`: every `assets/minecraft/textures/**.png` of the pinned client jar, keyed `minecraft:<path>`, with `w`, `h`, `sha256` of vanilla's bytes, `mcmeta` (vanilla ships a sidecar) and, where that sidecar animates, `animated`, `fw`, `fh` (one frame, by vanilla's rule: `animation.width`/`height` where stated, else the square of the shorter side). Its header states the jar's sha256 (`client_jar_sha256`); 3517 rows. Derived by `tools/maintenance/derive-client-textures.py`, which refuses a jar whose sha256 is not `versions.toml` `[render] textures_sha256`; `--check` compares without writing. A build never reaches for a jar. |
+| The census | `crates/delvec/data/textures-1.21.11.json`: every `assets/minecraft/textures/**.png` of the pinned client jar, keyed `minecraft:<path>`, with `w`, `h`, `sha256` of vanilla's bytes, `mcmeta` (vanilla ships a sidecar) and, where that sidecar animates, `animated`, `fw`, `fh` (one frame, by vanilla's rule: `animation.width`/`height` where stated, else the square of the shorter side). Its header states the jar's sha256 (`client_jar_sha256`); 3517 rows. Derived by `tools/maintenance/derive-client-textures.py`, which refuses a jar whose sha256 is not `versions.toml` `[minecraft] client_jar_sha256`; `--check` compares without writing. A build never reaches for a jar. |
 | One resolution | `compiler::textures::resolve(campaign, file)`, called by `delvec validate` (every row's findings at once, and a `textures:` binding line — rows resolved of rows declared, against the census size) and by `emit` over the same bytes from the manifest inputs, so the rule a row is judged by and the rule its bytes ship by are one function. |
 | The image rule | A PNG that decodes; width `k·w₀` and height `k·h₀` for one integer `k ≥ 1` of vanilla's frame; with a sidecar, height `n·k·h₀` for `n ≥ 1` frames and a sidecar that is exactly vanilla's animation metadata (`animation` with `frametime`, `interpolate`, `frames` of indices or `{index,time}`, every index `< n`; `width`/`height` and any other key refused). Bytes equal to vanilla's (the census sha256) replace nothing and are refused; a re-encoded copy of vanilla's pixels is not detected. A row replacing a texture vanilla animates with no sidecar ships a still image, and the pack note says *still*. |
 | The licence rule | `dsl::license::image_license_refusals`: the ADR-0013 allowlist (`license_allowed`, the catalog card's own list); `original` requires `source: original`; any other licence requires `url`; `CC-BY-*` requires `attribution`. Code `DW0741`, declared once in `dsl::codes::LICENSE_REFUSED`, the catalog's `DW_LICENSE` reading it. |
 | The pack | Each row adds `assets/minecraft/textures/<path>.png` (+ `.png.mcmeta`) to the `extra` map `resourcepack::build_pack` takes; the creator's bytes, never re-encoded. A campaign with one row and nothing else ships a pack of `pack.mcmeta` and that texture. |
 | The manifest | `textures/<id>.png` and `textures/<id>.png.mcmeta` are `inputs` (the loader reads `textures/` beside `l10n/`). `resource_pack_overrides_vanilla` (bool) stands beside `resource_pack_sha1` on every build that ships a pack: true exactly when an archive path starts `assets/minecraft/`, read off the paths the pack was built from (`textures::overrides_vanilla`). Every serving script reads it, and the staging gate holds it to the zip. |
 | Delivery | **Served, never installed** — every pack, whatever it carries (spec-0084 §11). See the `server.properties` record. |
-| What the creator is shown | Block textures through every review tool, the delve's pack layered above the jar: `delvec viewer --pack`, `delvec palette --pack`, `delvec render --pack`, `tools/creator/block-appearance.py --pack`, and `validation/chunky.sh --pack` (`-textures <pack>:<jar>`, the core's first-listed-wins order). Every other texture on a comparison sheet: `delvec textures <campaign> [-o review/textures]`, vanilla on the left and the override on the right, each nearest-neighbour to 256 px wide, a one-pixel separator, a chequered ground — written by a verb of its own because it reads the jar, which a build never does. `SKINS.md`'s **Textures** section: one line per row — id → vanilla path, scale and frames, the licence with its URL and attribution, which tools show it (*Chunky, viewer, palette* for `block/…`; *sheet only* otherwise), the sheet path, and *still* where it applies. |
+| What the creator is shown | Block textures through every review tool, the delve's pack layered above the jar: `delvec viewer --pack`, `delvec palette --pack`, `delvec render --pack`, `tools/creator/block-appearance.py --pack`, and every frame `delvec frames`, `delvec cameras` and `delvec panorama` draw (the build's own resource pack layered over the jar). Every other texture on a comparison sheet: `delvec textures <campaign> [-o review/textures]`, vanilla on the left and the override on the right, each nearest-neighbour to 256 px wide, a one-pixel separator, a chequered ground — written by a verb of its own because it reads the jar, which a build never does. `SKINS.md`'s **Textures** section: one line per row — id → vanilla path, scale and frames, the licence with its URL and attribution, which tools show it (*shown by every frame, the viewer and the palette* for `block/…`; *sheet only* otherwise), the sheet path, and *still* where it applies. |
 | Proof | `crates/delvec/tests/texture_overrides.rs` (the pack of one texture, byte identity, the manifest key and input, every refusal on its shape, an animation's sidecar, the sheet), `crates/delvec/tests/remedy_reachability.rs` (each refusal's named move admits the row), the gallery's `hall-stone` row and four probes. |
 
 #### Compiler chrome — the strings the compiler writes itself
 
 A delve's on-screen text has two authors. Everything
-above concerns the **campaign's** strings. The compiler writes fourteen of its own
+above concerns the **campaign's** strings. The compiler writes twenty-eight of its own
 — `New objective: `, `Delve Complete`, `Choose your class`, the default a bonfire
-shows when the campaign authors no label — and each is keyed and translated, so a
+shows when the campaign authors no label, the compass's lines and the journal's
+compass page — and each is keyed and translated, so a
 player reading a fully translated delve does not see English chrome wrapped
 around it.
 
 They are **compiler-owned end to end** (`dsl::chrome`): the keys, the English, and
-every translation live with the engine, and a campaign authors nothing. Nine of
+every translation live with the engine, and a campaign authors nothing. Twenty-three of
 them are *product chrome* (`objective.new`, `objective.complete`,
 `campaign.complete`, `campaign.signature`, `campaign.banner`, `lobby.waiting`,
-`class.title`, `class.body`, `respawn.wait`) — no campaign author wants to write those, which is
+`class.title`, `class.body`, `respawn.wait`, `compass.name`, `compass.following`,
+`compass.others`, `compass.nothing`, `compass.choose`, `journal.title`, `journal.compass.heading`,
+`journal.compass.follows`, `journal.compass.switch`, `journal.compass.spin`,
+`journal.compass.pages`, `journal.open`, `journal.done`, `journal.following`) — no campaign author wants to write those, which is
 why the answer is not to give them an override; that would move the engine's
 maintenance cost onto content. The other five are *diegetic defaults*
 (`boundary.message`, `gate.sealed`, `bonfire.title|rest|save`) whose authored
@@ -1294,7 +1302,7 @@ only what the compiler bakes when nothing is authored.
 |---|---|
 | Key space | `delvewright.ui.<area>.<name>` within the campaign's own space, emitted as `delve.<campaign_id>.delvewright.ui.<area>.<name>` like every other key. Collision-proof both ways by construction: the l10n key scheme derives a fixed set of kinds and can never produce `delvewright.`, and vanilla never defines it either. A sidecar that writes one anyway is `DW0186` — a sidecar holds campaign-relative keys, so the reserved prefix is unchanged there. |
 | Delivery | Identical to an authored string: the chrome string enters emission as a translation tag, an emitter lowers it through `emit::tr`/`snbt_component`, and a site that fails to is `DW0185` — chrome inherits the whole invariant rather than getting a parallel path. `Chrome::for_build(<campaign id>, <language>)` is what binds a chrome key to the delve; the plan-time default (`ChromeString::tagged()`, for a `sealed_hint` or a bonfire label the compiler bakes before the language is known) carries the bare key and is bound by `Chrome::rebind` at emission. A site that forgot to rebind would emit a key no pack defines, which `i18n_v2.rs` fails the tree for. |
-| Sentences, not fragments | Five chrome strings frame a value and are **one key with `%s`**, carried by the component's `with` (`"%s — complete."`, `"New objective: %s"`, `"Waiting for the party — %s / %s"`, `"Back in %s"`). A concatenation freezes English word order into every language; `translate`+`with` is vanilla's own primitive for it. A unit test requires each language's placeholder count to equal the English's. |
+| Sentences, not fragments | Eight chrome strings frame a value and are **one key with `%s`**, carried by the component's `with` (`"%s — complete."`, `"New objective: %s"`, `"Waiting for the party — %s / %s"`, `"Back in %s"`, `"Following: %s"`, the compass's count and key, the journal's key). A concatenation freezes English word order into every language; `translate`+`with` is vanilla's own primitive for it. A unit test requires each language's placeholder count to equal the English's. |
 | Lang files | Chrome is written into `en_us.json` and into each **declared** language's file — never into languages the delve does not already ship, or a French client on a Chinese-only campaign would read French chrome around English story. Partial-by-language reads as broken; uniform English does not. |
 | The honest fallback | A language the compiler has no chrome table for gets **no chrome rows at all**: the client resolves through `en_us.json` (or, for a player who declined the pack, the component's own `fallback`) and reads English. Absent, never English written into `fr_fr.json` under a translated name. |
 | Coverage | `dsl::chrome::TABLES` maps a client language stem to a table; its rows are the covered locales out of `dsl::mclang::CLIENT_LANGS`, plus the 5 English locales that need none. The rest render English. |
@@ -1318,10 +1326,9 @@ list that emits an authored string outside a component fails the build with
 |---|---|---|
 | `emit::artifact_title` | `packtest-datapack/**` test `#>` descriptions | A PackTest source is a generated test, read by the validation server and by a maintainer — never rendered to a player. |
 | `emit::emit_packtest` (dialogue-mask tests) | `packtest-datapack/**/dlg_mask_<npc>_<node>.mcfunction` | Same: the node id appears in the test's own description line. |
-| `combat::actor_json` (an actor's `name`) | `validation/combat-plan.json` | The validation ladder's own artifact, read by the bot and by a maintainer. It reads the English through `plain`. |
 | `render_plan::npc_name` / `area_name_of` / `first_clause` / the NPC shot `expect` | `render-plan.json` | The reviewer/vision artifact. Its `expect` prose is read by a vision model against a rendered frame, in English, regardless of what the delve ships. |
 
-`delvec l10n-inventory`, `validate`, `analyze`, `snapshot` and `edit` never see a
+`delvec l10n-inventory`, `validate`, `analyze`, `frames --campaign` and `edit` never see a
 tag at all: tagging happens inside `build`, after validation and analysis, so
 every other subcommand reads the campaign exactly as authored.
 
@@ -1341,18 +1348,18 @@ Mechanism level (not full mcfunction). See `crates/delvec/src/compiler/emit/`, o
 
 | Verb / effect | Emitted mechanism |
 |---------------|-------------------|
-| `talk-to` / dialog option | `minecraft:villager` body (NoAI/Invulnerable/Silent) + co-located `minecraft:interaction` (tag `dw_npc_<n>`); click advancement + `/trigger dw.dlg_<n>` both feed one per-tick option handler. |
+| `talk-to` / dialog option | The NPC's `base_entity` body (NoAI/Invulnerable/Silent; a `minecraft:mannequin` when it declares a `skin`) + co-located `minecraft:interaction` (tag `dw_npc_<n>`); click advancement + `/trigger dw.dlg_<n>` both feed one per-tick option handler. |
 | dialog display gating | A node with any display-gated option (`requires_flags`, `forbids_flags` and/or `completes`) emits one `__m<mask>` variant per per-node availability bitmask + a chooser: `dmask_<n>_<node>` sets `dw.dmask` (bit `i` = the node's i-th gated option is displayable — its required flags set, no forbidden flag set (`unless score #party dw.f_<flag> matches 1`, unset-safe), and every completed objective active: `if …qa_<q>==1 unless …o_<obj>==1`), then `show_<n>_<node>` `dialog show`s the matching variant. Ungated nodes/options `dialog show` directly. Click handler keeps its own guard (defense-in-depth for the `/trigger` path). Generated PackTest: `dlg_mask_<npc>_<node>`, **one per gated node** (`DW0811`'s `dialogue-mask` claim, one claim per NPC). Each drives EVERY gated option of its node through that option's own full display condition, asserts the bit shown, then breaks each term of the condition on its own and asserts the bit gone (numeric terms are driven jointly per datum: the option's own `requires_state` and every completed objective's are satisfied by one value meeting all of them, and a break moves one term while holding the rest where a value can) — so the axis is never chosen and every gate the DSL has (`requires_flags`, `forbids_flags`, `requires_state`, `completes`) is covered by construction. The assertion is always on the option's **isolated** bit (`(dmask>>bit)&1` via `%= 2^(bit+1)` then `/= 2^bit`), never the whole `dw.dmask` — sibling options in a node can share a `qa_<q>` score, so a whole-mask compare would read a sibling's bit as this option's. |
 | dialogue trigger re-arm | `dlg_<npc>_<n>` consumes the trigger with `scoreboard players reset @s dw.dlg_<npc>` — which also **re-locks** it — and therefore re-arms it in the very next line (`scoreboard players enable @s dw.dlg_<npc>`), before the flag gate's `return fail` and before any `dialog show`. The per-tick `scoreboard players enable @a` stays as belt-and-braces but cannot close the window on its own: 1.21.9+ **freezes the integrated (singleplayer) server while a screen is open**, and the handler's last act is to show the next node, so ticking stops with the trigger locked and the player's next click is executed the instant ticking resumes — before the tick function — and vanilla rejects it ("You can't trigger this objective yet"), silently swallowing one dialogue choice. A dedicated server never pauses, so no rung of the validation ladder can reproduce it. The generated `dialogue_trigger_rearm` PackTest drives a terminal option and uses the trigger twice **with the tick function never run in between** — that suppression is the freeze. |
 | cast-ledger dispatch (spec-0020) | **The declaration is the gate.** `talk_<npc>` keeps its `advancement revoke @s only <ns>:<npc>_interact` (the interaction record is written by the click and consumed here), then calls `cast_<npc>` and dispatches on the per-player `dw.cast` selector: `execute if score @s dw.cast matches <i> run <action>`. `cast_<npc>` is pure scoreboard math — `set @s dw.cast 0`, then one `execute if score #party dw.qa_<quest> matches 1 [if/unless score #party dw.f_<flag> matches 1 …] run scoreboard players set @s dw.cast <scene>` per **declared placement**, in quest-DAG order then declaration order. A per-branch cast contributes one clause per branch carrying that branch's `requires_flags`/`forbids_flags`, so a branch-divergent NPC genuinely dispatches per branch rather than collapsing to its first placement; later clauses override earlier ones, so a per-branch entry lists its fallback first. Branch-gate flags are added to the setup objective declarations (`declared_flags`), since a *read* of an undeclared objective is a runtime command error and — unlike a `set-flag` write — nothing else guarantees the declaration. Because `dw.qa_<quest>` is set when a quest *begins* and is never cleared, the latest-begun beat wins and keeps winning: that is the whole retirement mechanism — once the escape beat opens, the premise root is unreachable because the ledger says so, not because an author remembered a flag. Scene `0` (no declaring quest begun) shows the stage-6 tree `root`. Actions: a root → the ordinary `show_node_cmd` (direct `dialog show` or the `dmask`/`show_` chooser); a bark pool → `function <ns>:bark_<npc>_<scene>`; `"none"` → **no clause at all** (the record is still consumed one line above, and nothing opens); `"unchanged"` → no new scene, the selector simply keeps pointing at the carried-forward one. Splitting the selector out of `talk_` mirrors `dmask_`/`show_` and for the same reason: a PackTest can drive it and assert which scene the ledger chose without opening a dialog a dummy player has no client for. `dw.cast` is declared only when some quest casts an NPC, and an NPC no quest casts emits the single root line. Generated PackTests: one `cast_ladder_<npc>` per ledger NPC — scene 0 asserted under the empty story, then EVERY clause asserted under a solved distinguishing drive (its own gate satisfied, every later same-quest clause's gate violated, all earlier quests still active — the retirement mechanism proven per clause), then every term of the clause's gate broken one at a time with the expected fallback scene computed by the compiler-side ladder model (`cast::eval_ladder`); plus `cast_bark_cycle` (every pool of every NPC) and `cast_none_silent` (every `"none"` scene: record written, scene selected, advancement re-armed). The walk is registered as `watch::Claim`s (`cast-ladder` over `cast_`, `cast-bark` over each NPC's `bark_<npc>_`), so a suite that drives fewer bodies than the authored ledger declares is a `DW0811` refusal. **The same resolution answers "where is this body?"**: `cast::station` walks those clauses in the same order under a playthrough's flag state and yields the governing placement's `at` — which is how a `talk-to` critical-path step gets its position (see `critical-path.json` in §5) and how `DW0483` decides a branch's placement. One model, so the cell the ladder walks to and the scene the datapack shows can never disagree. **Templates that assert dispatch pin EVERYTHING the ladder reads**: the batch is one shared server and three sibling verb templates legitimately end with a campaign flag set to 1, so any term left undriven is decided by batch order (expected `dw.cast 2`, got 3). Every dispatch drive is preceded by a pin of every quest-active score, every flag and every datum any clause of that NPC reads — and the values are not "requires → 1, all else → 0" but the **solved** assignment from `cast::distinguishing_drive`, because two clauses of one quest can differ only by `requires_state` and a flag pin cannot separate them: the drive satisfies the asserted clause's gate and provably violates every later same-quest clause's, or the clause is refused as dead (`DW0846`) before any template is written. This is what makes the per-clause assert a proof rather than a template that can name the wrong scene. |
 | cast bark pool | `bark_<npc>_<scene>` advances `#bk_<npc>_<scene>` on the shared `dw.sys` objective by 1, wraps it with `matches <n+1>.. → set 1`, then `execute if score … matches <i> run tellraw @s [{name},": ",{line, italic}]`. An explicit clause ladder, never `%=` and never RNG (ADR-0006): the n-th right-click always yields the same line. Bark text is baked localized at emit time like every other player-visible string. |
 | body watch (spec-0101) | One generated function `watch_tick`, called from the root `tick` by one line (`function <ns>:watch_tick`, after the assemblies' lines) when the campaign declares a watcher, holding one line per watching body in stage order: `execute as @e[<body>,tag=dw_watch,tag=!dw_unseen,limit=1] at @s anchored eyes run rotate @s facing entity @p[distance=..<within>,tag=!dw_cutscene(,tag=dw_class_<c>)] eyes`, `<body>` `tag=dw_npc_<n>,tag=dw_npc` for an NPC (the body, never its hitbox) and `tag=dw_pup_<id>` for a puppet (`compiler::watching::watch_line`). `rotate … facing entity` hands a non-player body to `Entity.lookAt(source anchor, player point)`: the trailing `eyes` is the player's eye point and `anchored eyes` makes the source anchor the body's eyes (without it the anchor is `feet` and the pitch aims over a near player's head); `Anchor.EYES` is position plus `Entity.getEyeHeight()`, the eye height `refreshDimensions` writes from the body's own dimensions, pose and scale, so one rule serves villager, mannequin, any mob body and puppet. `Entity.lookAt` writes yaw and pitch from that tick's two positions with nothing interpolated, and `LivingEntity.lookAt` sets the body's yaw to the head's; a tie between players is `@p`'s nearest-sort. Every watching body is summoned with the tag `dw_watch` (both NPC summons, the puppet summon); the start function of each of its walk drivers (`mv_<npc>_<to>`, `ma_<actor>_<to>`) removes it after the re-entry guards, and the driver's arrival tick (`if score #mt_<bare>/#at_<bare> matches <total>`) restores it — the game runs `#minecraft:tick` before the tick's scheduled functions, so the arrival turn stands one tick before the watch claims the body. A superseded driver never arrives, so the tag comes back with the walk that does. Four chain units a watcher a tick (`as`, `at`, `anchored`, the `rotate`) (`DW0984` measures them). A class watch makes `class_apply_<c>` add `dw_class_<c>`. **Proof** (`compiler::watching::prove`, after the declaration proofs): every watching body has a cell of the walked population `P` (`lethal::walked_population`, the one `DW0938` reads) whose standing point is within `within` of its feet, else `DW0997`; a default watch (an NPC declaring no `watch`) is never refused; every build prints `watch binding: N watcher(s) (W declared, F by default), over P walked cell(s), D drawable, R refused, G default(s) nobody can draw, U unobservable`. `validation/watchers.json` (written when any body watches) carries the binding (`watchers`, `declared`, `by_default`, `undrawn_defaults`, `population`, `drawable`, `refused`, `unobservable`) and per watcher `id`, `class`, `tag`, `selector`, `feet`, `stands` (the summon point, then each of its walks' ends), `home_yaw`, `who`, `class_tag`, `within`, `drawable_cells`, `test_cell` and `test_yaw`; the same rows ride `critical-path.json` as `watchers[]`. **Generated PackTests**: `watch_<npc|actor>_<id>` per watcher with an observable cell — the dummy stands on the drawable cell (outside every killing volume) whose bearing differs most, by at least 10°, from the home facing (`unobservable` in the binding line otherwise, and no template); every other player is tagged `dw_cutscene` for the template's length and put back before its asserts; the body stands at its home yaw (±1°); for a class watch, a `watch_tick` with the dummy unclassed leaves it there; `watch_tick` turns it to the game's bearing (±1°); with the dummy moved `within + 3` above, a `watch_tick` leaves that yaw; the gaze is eye to eye: the dummy, placed by the body's own eye point (`execute as <body> at @s anchored eyes positioned ^ ^ ^ run tp <dummy> ~<h> ~<rise − 1.62> ~`, `h = min(2, within/2)`, `rise` 0 then `min(1, within/2)`, 1.62 the player's eye height), must find the body's pitch after a `watch_tick` within ±1° of the game's `-atan2(rise, h)` — 0 with level eyes — where a look from the body's feet reads about −39° two blocks out (`#wpl_`, `#wpu_`); then the body, stood fresh at home, and the dummy are lifted up their columns until the body stands at y = 400, above the build limit, in the same geometry, and one real `tick` (shielded, the dummy wearing `dw_joined` and `dw_free`, `#cs_live` held at 1 across it) must turn the body to the same bearing — the wiring, read apart from the content, because a real tick with a player on a content cell runs that content (on the gallery the bearer's cell starts `trigger/glimpse-the-marshal`'s cutscene, and the watch rightly draws nobody in a cutscene). Dropping the `tick` line that calls `watch_tick` reds that assertion and nothing else. `watch_yield_<npc|actor>_<id>` per watcher that walks: per walk, latch cleared, driver claimed (`walk_claim`), start run, `dw_watch` absent; driver driven to its arrival tick, `dw_watch` present — or, for a walk whose own arrival takes the body away, driven to the tick before (`fast_forward_walk`), the body present and `dw_watch` still absent, the leg named in the header. No watching body (every NPC declaring `"none"`, no actor declaring a watch) → no `watch_tick`, no `dw_watch`, no `tick` line, no record. |
 | class select | Dialog button → `/trigger dw.class set <n>`, dispatched per tick to `class_apply_<c>` (kit, `dw.classed`, campaign-start party arming, teleport to the entry point, then the `containers.decoration_notice` line when declared — lowered by the one `narrate` emitter to the player as `@s`, its sound played at the arrival). **One-shot per player**: the trigger is re-armed each tick only for a player who has not classed (`class_arm`), and the dispatch carries the same `unless score @s dw.classed matches 1` guard — see "The class trigger is ONE-SHOT per player" in §4 Hard invariants. Generated PackTests: `class_trigger_once` for the seal (a property of the trigger, not of any class), plus `class_apply_<c>` **per declared class** for that class's own kit, worn tag and entry warp (`DW0811`'s `class-apply` claim). |
-| `reach-anchor` | Per-tick `execute if entity @s[…]` over the completion volume `reach::reach_completion` returns — a box of half-extent `max(1, radius)` at the anchor cell, formatted from that value rather than restated here; glowing `end_rod` `item_display` marker (tag `dw_r_<obj>`) **when the objective is marked** (spec-0093: its `marker`, else `guidance.markers`, is `shown`), labeled with the objective `title` — an **untitled** objective gets a nameless glowing marker, never a raw-id label; an unmarked one summons nothing and adjudicates the same volume. Completion despawns the marker (`kill @e[tag=dw_r_<obj>]`). |
+| `reach-anchor` | Per-tick `execute if entity @s[…]` over the completion volume `reach::reach_completion` returns — a box of half-extent `max(1, radius)` at the anchor cell, formatted from that value rather than restated here; nothing is summoned (spec-0104 §7.6). |
 | `kill` / `spawn-wave` | `spawn-wave` summons mobs (AI on) tag `dw_wave_<id>`, countdown `#<id> dw.wave`; `kill` completes at 0. **The countdown is a measurement of what still stands, not a tally of kills.** `tick` recomputes it for every spawned wave, ahead of every gate that reads it: `execute store result score #wlive dw.sys if entity @e[tag=dw_wave_<id>,nbt=!{Health:0.0f}]` then `execute if score #<id> dw.wave matches 1.. run scoreboard players operation #<id> dw.wave = #wlive dw.sys`. Three parts carry the rule. The `Health` filter separates a standing body from one still playing its death animation, so the clear lands on the tick of the last death rather than twenty ticks later. The `matches 1..` guard means the line only ever CORRECTS a countdown a spawn has opened — an unspawned wave has no score at all and must not acquire one, or its `kill` objective would complete on tick one, and a `respawns_on_rest` re-seat writes its fresh total before this next reads it. And the scratch holder is shared across waves because `tick` is one atomic function call, the same argument `#wcen_*` makes. Vanilla has no trigger for “this entity died”, so the `player_killed_entity` advancement `k_<id>` and its reward `k_reward_<id>` can only ever see a CREDITED kill: they still decrement on the tick of the kill, and the recount is what makes a body that fell, burned, drowned, walked into a lethal volume or was cut down by another mob count the same as one the party felled. Generated PackTests `verb_kill` (the countdown drained through the reward) and `verb_kill_uncredited` (every body killed with no player credited, one tick, the objective complete) — the second never touches `k_reward_<id>`, which is what makes it able to fail. Armed species get `equipment` NBT (drop 0): `wither_skeleton→stone_sword`, `skeleton`/`stray→bow`, `pillager→crossbow`, `vindicator→iron_axe` (the pillager row is load-bearing, not cosmetic — see `waves[].lane`/`DW0384`). **Arming assertion (generated `verb_kill`)**: the test picks the wave's first mob with an **effective** main hand — the author's `equipment.main_hand` when given, the default table otherwise (`emit::effective_mainhand`, the same source the summon NBT reads) — and asserts that exact item via `execute if items entity … weapon.mainhand <item>`. Reading the override keeps a campaign that arms a vindicator with a `stone_axe` from failing a test that demands `iron_axe`, and *extends* coverage to authored weapons on species the table calls unarmed. **Mob placement:** each mob is seated on a distinct compiler-validated standable cell (2-tall clearance, solid floor) chosen by a deterministic BFS outward from the wave anchor over the assembled occupancy world (`compiler::nav`), ordered by ascending BFS distance with a fixed `(y,z,x)` tie-break. The flood-fill is confined to the anchor's own assembled piece, so a flock never crosses a socket seam into a neighbouring room. A wave needing more footing than its room offers is `DW0312` (never `+x`-strung mobs piling into blocks or spilling toward void). **spec-0016 §6 changes where, not how:** a `summon: aggro-edge` wave is seated on per-mob perception RINGS across the whole area instead (`DW0387`), and a `lane` wave additionally carries the patrol NBT and starts its `lane_tick_<wave>` clock at the end of its own `spawn_<wave>` (so a wave that never spawns never ticks, and a bonfire re-seat re-arms the clock through the same replace-mode `schedule`). **Census probe:** every wave also gets `wave_census_<wave>`, `wave_census_one_<wave>`, `wave_brand_<wave>` and `wave_unbrand_<wave>`. The census zeroes `#wcen_n`/`#wcen_b`/`#wcen_d`, bumps `#wcen_seq`, runs the per-mob function `as @e[tag=dw_wave_<id>]`, and states the totals on the anchored marker channel as `[dw:census <ns> <wave> <seq> <present> <branded> <damaged> <credited>]`, one `[dw:censusmob <ns> <wave> <seq> <x> <y> <z> <health> <max>]` per mob first (all ×100 fixed-point, so nothing crosses chat as a float). **`credited` is the only field about the FALLEN**, and it is what a run's attribution reads: `#wcred_<wave>` counts the wave's deaths a player was credited with since the seating in force — seeded to 0 in `setup`, set back to 0 by `spawn_<wave>` so a re-seat's own uncredited `kill @e[tag=…]` sweep is not charged to the next cohort, and incremented by `k_reward_<wave>`, which is where vanilla's only credit (`minecraft:player_killed_entity`) lands. `count - present - credited` is therefore how many of the wave the WORLD killed — a fall, a lethal volume, a trap, another mob — which the countdown deliberately does not distinguish. The `setup` seed is load-bearing: the census renders the holder as a `score` component, and a holder with no score renders as the empty string, producing a line no reader parses. The SEATING is deliberately not on the wire beside it — `spawn_<wave>` writes a compile-time constant that already reaches the harness as `combat-plan.json`'s `count`, and one fact by two routes is a pair that can disagree, not a second measurement. `damaged` compares `data get entity @s Health` against `attribute @s minecraft:max_health get` — vanilla's own primitives, so it is never a table the compiler refuses to invent (`DW0475`) and never a value the client happened to be sent (an unmodified max health is not on the wire at all). `wave_brand_<wave>` stamps `dw_brand_<wave>` on the wave's living mobs and the unbrand clears it, which is how the die-retry ladder names a survivor **by identity**: a re-summon cannot carry the stamp. Counting silhouettes instead — every entity the client tracks — would report another encounter's bodies as wave mobs a re-seat failed to remove. Generated PackTest `wave_census` proves the arithmetic live, including that a bystander of the wave's own species summoned on the wave's own anchor cell moves no count. **Muster probe:** beside the census, every wave gets `wave_muster_<wave>` plus one `wave_muster_one_<wave>_<i>` per declared entity kind, and the two staged functions `wave_strike_<wave>` (`execute as @e[tag=dw_wave_<id>,limit=1,sort=nearest] run damage @s 100000 minecraft:player_attack by @p`) and `wave_chip_<wave>` (one point of the same attributed damage to every body). The muster bumps `#wmus_seq`, counts every tagged body into `#wmus_all`, then runs the per-kind function `as @e[tag=dw_wave_<id>,type=<entity>]` and states `[dw:muster <ns> <wave> <seq> <counted> <tagged>]`; each body first states `[dw:musterbody <ns> <wave> <seq> <type> <mask> <max_health> <armor> <armor_toughness> <movement_speed> <attack_damage> <follow_range> <effective_attack_damage>]`, all ×1000 fixed-point. Every DECLARED attribute is read with `attribute @s <attr> base get 1000`, never the total: a summoned zombie carries vanilla's own random spawn bonus on `movement_speed` (0.23 base reads 0.276 total) and its weapon's `attack_damage` modifier (2.0 base reads 5.0 with a wooden sword), so comparing a declaration against a total is a check that fails on every correct body. `armor`/`armor_toughness` are the totals on purpose — they are not declared, and the question they answer is whether the declared gear reached the body. The identity half is a bitmask: one `execute if data entity @s {…}` per declared fact (a `CustomName` component, an `equipment.<slot>` item id), so a name and an item id are answered by the SERVER as bits and no player-visible text is ever parsed off chat. The plan's `muster` block names the facts in the same order (§ `combat-plan.json`). `damage … by @p` rather than `kill` is load-bearing: `on_kill`, the countdown's `k_reward_<id>` and a declared drop all pay on a PLAYER's kill, and a removal crediting nobody would skip every one of them and leave the step reading green over machinery that never ran. **Which waves get machinery (uniform emission):** all of it is gated on the wave resolving a spawn AREA, and that resolution (`plan::wave_area`) walks every effect root **deep**, through `QuestEffect::nested_effect_lists` — the same nesting authority emission itself walks — so a `spawn-wave` inside a `sequence` step, a `set-checkpoint` `on_respawn`, a `bonfire` `on_rest`, a `begin-stealth` `on_caught`, a `move-npc`/`move-actor` `on_arrive` or a trap `payload` registers exactly like a top-level one. `DW0497` proves no emitter ships a `function <ns>:spawn_…` call pointing at nothing. A wave declared in `waves[]` that nothing fires anywhere resolves an area only through the defensive `kill`-objective fallback, and otherwise emits nothing (`DW0171` owns the killed-but-never-spawned case, `DW0310` the spawned-but-unplaceable one). |
 | `on_kill` (spec-0074) | **Wave:** `k_reward_<wave>` gains one line between the credited-kill ledger and the revoke — `function <ns>:on_kill_w_<wave>` for `every-kill`, `execute if score #kf_w_<wave> dw.sys matches ..<N−1> run function <ns>:on_kill_w_<wave>` otherwise (N = `wave_total`; an absent `fires`, admitted only where the fight never comes back, takes the guard). **Actor:** `advancement/ka_<actor>.json` (`minecraft:player_killed_entity` over `{Tags:["dw_actor_<actor>"]}`), `ka_reward_<actor>` (the call, guarded `..0` unless `every-kill`, then `advancement revoke @s only <ns>:ka_<actor>`), emitted only for an actor that declares a bundle and whose body resolves. **The bundle** `on_kill_w_<wave>` / `on_kill_a_<actor>`: `scoreboard players add #kf_<f> dw.sys 1` FIRST — so the ledger counts firings and nothing else — then the effects under `Audience::Solo`. **The ledger** `#kf_w_<wave>` / `#kf_a_<actor>` on `dw.sys` counts payments over the whole delve: seeded `0` by `setup` beside `#wcred_<wave>`, reset by no spawn, re-seat or rest (the census's `credited` counts credited kills per seating — two facts, two holders). **Ordering** within one credited kill: countdown decrement, credited ledger, the bundle, the re-arm; the `kill` objective completes on the next `tick`, so the last body's bundle fires before that objective's `on_objective_complete`. **A compiler removal never pays**: every one (`wave_reseat_<wave>`, `actor_restand_<actor>`, `unleash_<actor>`'s puppet swap, `despawn-actor` in either style) ends in `/kill` from the server source, which credits nobody. **Generated PackTests**, one set per fight that declares a bundle (`DW0811` claim `kill-pays` over `on_kill_w_`/`on_kill_a_`), all driven with the credited blow `execute as <body> run damage @s 1000 minecraft:player_attack by <dummy>` — measured on the pinned server to grant the dummy `player_killed_entity` (and `damage … minecraft:generic` with no `by` to grant nobody): `kill_pays_<f>` (one credited blow → the ledger is 1 and the bundle's first ungated `add-state` holder moved by its amount; the body then driven directly pays again), `kill_pays_uncredited_<f>` (every body dies uncredited, the real `tick` runs → the ledger is 0), `kill_pays_removed_<f>` (a rest's re-seat through the real `bonfire_rest_<i>` and, for an actor, both `despawn-actor` styles, each over branded standing bodies dragged onto the template's dummy; where the removal is unseen, at least one body must be waiting in the dummy's column at Y −128, and a kill of the `dw_unseen` bodies in that column in the same tick must leave none alive, so the ledger is read after the body's death under the world → every brand removed and the ledger 0), `kill_pays_across_rest_<f>` where a rest brings the fight back (kill, rest, kill again: a `respawns_on_rest` wave pays N for `first-kill` and 2N for `every-kill`; a fight re-seated only while it stands is left one body standing before the rest and pays N or 2N−1). |
 | `collect` | Chest at anchor pre-loaded `count×item`; `inventory_changed` advancement runs guarded completion. **Adoption:** with a `holder` on a frame or a stand, `activate_<obj>` emits `item replace entity @e[tag=dw_holder_<id>,limit=1] <slot> with <item>[custom_name=…] <count>` (the collect's `slot`; `contents` on a frame that names none) and, on a frame, `data merge entity … {Fixed:0b,Invulnerable:0b}`; its `obj_activate_<obj>` PackTest empties the slot, activates and asserts the stack (`if items entity …`). With a `holder` on a container, `activate_<obj>` emits **no `setblock`** and fills the prefab's own chest/barrel at the container anchor's cell instead — `item replace block <x> <y> <z> container.<slot> with <item>[custom_name=…] <count>`, the required stack in the slot the collect names (`container.0` when it names none) and the `fill_count` slots after it the padding that makes it read full (`holders::collect_slots`, the landing rule a `loot` fill uses). The component suffix is rendered by the same helper `loot` uses (`emit::container_stack_components`), so a named quest item and a named loot stack cannot drift apart. Fill time is **activation**, not world-init: a late objective's items are not lootable from minute one, and an item pocketed before activation still completes it via the per-tick held check. Generated PackTest `collect_container` (only when some collect adopts): clear the adopted slots (the same `collect_slots`), run the objective's own `activate_<obj>`, assert the filled item count across the container (`if items block … container.* <item>` = `count × (fill_count+1)` — a dropped fill reads 0, padding that overwrote slot 0 reads one stack short), then put the **named** stack in the player's inventory and tick, asserting completion. That last phase is the point: it proves on a live server that a `custom_name` component does not change what the adjudication sees. |
-| `interact` | `minecraft:interaction` (tag `dw_i_<obj>`; the cell's two-cell column built by `compiler::clickbox::ClickBox`, `X.5 Y-0.01 Z.5 {width:1.02f,height:2.02f}`, so a prop in the cell never ties the pick — `DW1013`) + `player_interacted_with_entity` advancement + `/trigger dw.i_<obj>` — or, for a prop vanilla reports the use of (spec-0093 §6.5), no hitbox and a `default_block_use` advancement at the block's cell feeding the same trigger. **`requires_item` = `execute … if items entity @s weapon.mainhand <item>` — HELD, not possessed**; a campaign that declares none is untouched. Optional `missing_item_hint` adds ONE line to `tick`: `execute as @a[scores={dw.i_<obj>=1..}]<same activation guard> unless items entity @s weapon.mainhand <item> run tellraw @s {"text":…}` — placed between the completion line and the trigger reset, so it rides the existing two-phase click handling (advancement reward sets the trigger, `tick` reads it and resets it) and one click narrates once. Guarded identically to the completion line, so a not-yet-active or already-finished objective answers a stray click with silence. Generated `verb_interact_held` PackTest proves the semantics live in two phases on one dummy — item in `inventory.0` with an empty hand must NOT complete (and asserts, via `if items entity @s container.*`, that the item really is carried, so the phase is not vacuous), then the same item in `weapon.mainhand` completes; the `tellraw` itself is asserted in Rust because a chat line leaves no game state for PackTest to look at. `packtest_preamble` therefore places a `requires_item` in `weapon.mainhand` rather than `give`-ing it. Glowing lantern `item_display` marker (also tag `dw_i_<obj>`, only when no `prop` **and the objective is marked** — spec-0093: its `marker`, else `guidance.markers`, is `shown`; the hitbox is summoned either way), labeled with the objective `title` — untitled → nameless glow, never a raw-id label. `prop{block}` = `setblock` affordance. Completion despawns both entities (`kill @e[tag=dw_i_<obj>]`) so a finished objective is not clickable; the `prop` block persists as scenery. **Arming before adjudication.** The completion line is gated on `#party dw.qa_<quest>` and the very next line resets the trigger with NO guard at all, so a click is spent whether or not it landed. That pair is only safe because `tick`'s completion loop visits quests in **arming order** (`emit::quests_in_arming_order`, a stable topological sort over the `quest-complete` edges): the completion loop is the one place a quest is armed — a completion line runs `complete_<obj>` → `check_q_<q>` → `complete_q_<q>`, which writes `dw.qa_<next>` — so a quest's lines must precede the lines of any quest it arms, or a click already pending when its quest arms is adjudicated against an unarmed quest and then thrown away. Nothing in the DSL orders quest declarations, so the order is the sort's, never the JSON array's. The sort is stable, so a campaign already declared in arming order keeps its declaration order. The unconditional reset is deliberate and stays: a trigger fired long before arming is DISCARDED, never banked — a banked click would auto-complete the objective the moment the quest armed, with nobody having clicked. Losing input is a bug; fabricating it is worse. Pinned by `tests/tick_arming.rs` (the invariant over every fixture, plus a campaign deliberately declared out of order) and by the generated `verb_interact_arming` PackTest (premature click → no completion and no banked score; arming alone → still nothing; a real click after arming → completes). |
+| `interact` | `minecraft:interaction` (tag `dw_i_<obj>`; the cell's two-cell column built by `compiler::clickbox::ClickBox`, `X.5 Y-0.01 Z.5 {width:1.02f,height:2.02f}`, so a prop in the cell never ties the pick — `DW1013`) + `player_interacted_with_entity` advancement + `/trigger dw.i_<obj>` — or, for a prop vanilla reports the use of (spec-0093 §6.5), no hitbox and a `default_block_use` advancement at the block's cell feeding the same trigger. **`requires_item` = `execute … if items entity @s weapon.mainhand <item>` — HELD, not possessed**; a campaign that declares none is untouched. Optional `missing_item_hint` adds ONE line to `tick`: `execute as @a[scores={dw.i_<obj>=1..}]<same activation guard> unless items entity @s weapon.mainhand <item> run tellraw @s {"text":…}` — placed between the completion line and the trigger reset, so it rides the existing two-phase click handling (advancement reward sets the trigger, `tick` reads it and resets it) and one click narrates once. Guarded identically to the completion line, so a not-yet-active or already-finished objective answers a stray click with silence. Generated `verb_interact_held` PackTest proves the semantics live in two phases on one dummy — item in `inventory.0` with an empty hand must NOT complete (and asserts, via `if items entity @s container.*`, that the item really is carried, so the phase is not vacuous), then the same item in `weapon.mainhand` completes; the `tellraw` itself is asserted in Rust because a chat line leaves no game state for PackTest to look at. `packtest_preamble` therefore places a `requires_item` in `weapon.mainhand` rather than `give`-ing it. No marker is summoned (spec-0104 §7.6): a prop-less interact's hitbox stands over the block the piece authored. `prop{block}` = `setblock` affordance. Completion despawns the hitbox (`kill @e[tag=dw_i_<obj>]`) so a finished objective is not clickable; the `prop` block persists as scenery. **Arming before adjudication.** The completion line is gated on `#party dw.qa_<quest>` and the very next line resets the trigger with NO guard at all, so a click is spent whether or not it landed. That pair is only safe because `tick`'s completion loop visits quests in **arming order** (`emit::quests_in_arming_order`, a stable topological sort over the `quest-complete` edges): the completion loop is the one place a quest is armed — a completion line runs `complete_<obj>` → `check_q_<q>` → `complete_q_<q>`, which writes `dw.qa_<next>` — so a quest's lines must precede the lines of any quest it arms, or a click already pending when its quest arms is adjudicated against an unarmed quest and then thrown away. Nothing in the DSL orders quest declarations, so the order is the sort's, never the JSON array's. The sort is stable, so a campaign already declared in arming order keeps its declaration order. The unconditional reset is deliberate and stays: a trigger fired long before arming is DISCARDED, never banked — a banked click would auto-complete the objective the moment the quest armed, with nobody having clicked. Losing input is a bug; fabricating it is worse. Pinned by `tests/tick_arming.rs` (the invariant over every fixture, plus a campaign deliberately declared out of order) and by the generated `verb_interact_arming` PackTest (premature click → no completion and no banked score; arming alone → still nothing; a real click after arming → completes). |
 | stage-5 `loot[]` (spec-0021) | `setup_finish` emits one `item replace block <x> <y> <z> container.<slot> with <item>[components] <count>` per declared stack, slot = the stack's named `slot` or its declaration index, into any of the twelve container kinds. `components` carries `custom_name` (localized) and `enchantments` when present. The container itself is never emitted — it is prefab furniture, proven present by `DW0431`. A campaign with no `loot` emits nothing here and stays byte-identical. |
 | holder entities (spec-0111 §4) | The holder class's entity families — kinds, scene keys, hitboxes, slot vocabularies, the stand's click bands and filter bits, the owned-key rules — are the table `delvewright_dsl::holders::ENTITY_HOLDERS_1_21_11` (sibling of `blocks::CONTAINER_KINDS_1_21_11`; read from the pinned jar, recorded in `crates/delvec/data/PROVENANCE.md`, its ids held to `entities-1.21.11.json` by `tests/holder_table.rs`). Every holder entity a piece carries is stripped from the template the build ships (`admit::structure::as_placed` empties `entities`) and summoned from `setup_finish` by `function <ns>:holder_<id>`, before the container fills: `execute unless entity @e[tag=dw_holder_<id>] run summon <kind> <x> <y> <z> {<scene properties>,…,Tags:["dw_fixture","dw_holder","dw_holder_<id>"]}` — a frame with `Facing`, `Pos` and `block_pos` (so the body loads where it hangs), `Fixed` and `Invulnerable` (`0b` while it starts holding an item, `1b` otherwise) and `ItemDropChance:1.0f`; a stand with `Rotation`, `ShowArms` (forced `1b` when a hand slot is filled), `Marker:0b`, `Invulnerable:1b` and `DisabledSlots` (putting disabled on all six slots, taking disabled on every slot no fill claims) — then one `item replace entity @e[tag=dw_holder_<id>,limit=1] <slot> with <item>[components] <count>` per `loot` stack. `<id>` is the claiming anchor's stem (`at_<x>_<y>_<z>` for a holder no fill claims). When a frame holder exists, `tick` carries `execute as @e[type=#<ns>:frames,tag=dw_holder] unless items entity @s contents * run data merge entity @s {Fixed:1b,Invulnerable:1b}` and `data/<ns>/tags/entity_type/frames.json` names the two frame kinds. Every campaign's setup writes `gamerule entity_drops true` (a frame under `false` deletes the item a hit pops). Generated PackTests: `holder_<id>`, one per filled holder (`DW0811`'s `holder_` family), driving the body and asserting one body, every `loot` slot, the owned flags and, on a frame, the emptied-frame freeze over a real `tick`, with the load latched after its `setup` so the tick judges the frame the template emptied. The stance pass and `DW1037` / `DW1038`: [`delvec/compiler/holders.md`](delvec/compiler/holders.md). |
 | environment `triggers[]` | `setup_finish` gives each `strike`/`use` trigger a body at its `at` anchor (tag `dw_trig_<id>`); `approach` needs no entity. **The body is the shape of the object at that anchor, not a point.** `compiler::pressable::body_at` is the single authority and both this emitter and `compiler::eclipse` read it, so the two can never disagree about whether a body exists. Three outcomes: where a compiler-owned interaction set already covers the anchor — a `close-gate` seal, a sealed shortcut door — the trigger **rides** it and summons nothing (one cell, one hitbox; a second co-located box is the `DW0422` ray-pick tie); where the anchor names a **gate region**, one `1.02f` box is summoned per clickable **shell** cell of that region, exactly as a `close-gate` seal does; where it names a point, the standard two-cell column. Every one of these boxes is built by `compiler::clickbox::ClickBox` (`DW1013`). **Why the region form exists:** a point body at a region anchor lands *inside* the solid block. Measured on the `souls-shortcut` fixture, a `use` trigger on the shortcut's gate emitted one body with AABB `[4,65,6]..[5,67,7]` inside a doorway slab occupying `[4,65,6]..[6,68,7]` — flush with the block on the faces it touched and interior on the rest. Vanilla bounds its entity raycast by the block hit and takes the entity only when it is *strictly* nearer, so that trigger was pressable from **no angle at all**, and it compiled with zero diagnostics; a doorway is also six cells, of which a point body covers one. The region form is the machinery a `close-gate` seal uses, reachable by every trigger. A trigger whose anchor resolves to nothing at all is `DW0426`.  `tick`: `strike` fires on `nbt={attack:{}}`, `use` on `nbt={interaction:{}}`; `approach` is a `distance=..<range>` selector; `step` needs no entity and is a player in the cell — `@a[x,dx=0,y,dy=0,z,dz=0,tag=!dw_cutscene]` (`emit::step_cell_terms`, the one selector a plate or tripwire trap's detection also uses). A party `step` is edge-latched on `#stp_<id> dw.sys`: `execute <once/forbid> unless score #stp_<id> dw.sys matches 1 if entity @a[<cell>] <flags>run function <ns>:step_<id>` (the gate fragments `trigger_poll_guards` writes, each space-terminated, the one authority every trigger dispatch reads), and `execute unless entity @a[<cell>] run scoreboard players set #stp_<id> dw.sys 0`; `step_<id>` sets the latch and calls `trig_<id>`, so a plate stood on fires once and fires again only after it is stepped off and on. A presser `step` is `execute as @a[<cell>,tag=!dw_stp_<id>] run function <ns>:step_<id>` and `execute as @a[tag=dw_stp_<id>] unless entity @s[<cell box>] run tag @s remove dw_stp_<id>`; `step_<id>` tags `@s` and dispatches `trig_<id>` behind the trigger's own gate (`once`, forbidden flags, required flags and state, spelled by `trigger_poll_guards`), so every player who steps on is dispatched once per step, as `@s`. A `step` writes no advancement and summons no hitbox; its `env_trigger_<id>` template also drives `step_<id>` and asserts the latch, and `DW0811`'s `step-trigger` claim covers every `step_<id>`. **The click block is two phases, not one:** every click trigger's fire clause first, in declaration order, then every clear clause (`data remove entity @s <field>`). Emitting the pair inline per trigger is only sound while at most one trigger reads a given interaction entity, and several `strike-npc` triggers legitimately ride ONE NPC hitbox — e.g. a giant carrying `wake-the-giant` (requires `flag/asleep`) and `his-house` (requires `flag/sealed`, forbids `flag/asleep`) on the same entity. Inline removal would make the FIRST-DECLARED trigger consume the click even with its own gate shut: a suppressed trigger would starve its siblings and declaration order would decide which of two legal triggers worked. Two phases make it order-independent — every trigger sharing a hitbox is offered the same click and fires exactly when its own gate says so — while consumption is unchanged (the record is gone by the end of the same `tick` pass, so a held click still fires once). `once` guards on `#trig_<id> dw.sys`, which **every** trigger writes on firing (not only `once` ones): the write is what makes dispatch observable at all — a trigger that never fires is otherwise invisible to every automated check — and it is what the generated `v06_shared_hitbox` template reads. One added line per non-`once` trigger function. **Generated `v06_shared_hitbox`:** emitted for a campaign that has two click triggers on one NPC hitbox whose flags can tell them apart; it proves the hitbox really is shared, then writes the vanilla `attack` compound and runs the real `tick` twice — once with the later trigger's gate open and the earlier one's shut (the starvation case: the later one must fire, the earlier must stay silent, the record must still be consumed), once with the earlier one's gate open (so both are reachable). Players are shielded with Resistance V across each pass because a real `tick` runs real effects and a delve's effects include `damage-players`; flags, actors and NPCs are handed back untouched (batch model). **`strike-npc` — the body IS the target:** `on: {on:"strike-npc", npc}` has **no anchor**. Its tag rides the interaction hitbox the named NPC already owns and `setup_finish` summons nothing for it, so it works wherever that NPC stands and whatever body it wears. This is the form that can express "hit the giant": a place-based `strike` summons its own entity at a *cell*, and a large NPC's body eclipses that cell (`DW0359`), so the click never reaches it. Right- and left-click stay separate all the way down because a `minecraft:interaction` records them in **two distinct NBT fields**: the dialogue advancement takes the right-click (`interaction`), the trigger takes the left-click (`attack`), and neither consumes the other's record. That separability is machine-proven, not assumed — the generated `v04_strike_npc` PackTest writes a right-click record on the shared hitbox, ticks, and asserts no `attack` record appeared and the trigger did not fire. **Strike on an NPC's anchor — one cell, one hitbox:** the place-based spelling of the same mechanism — when a `strike` trigger's `at` is also where an NPC stands, the NPC's own interaction hitbox carries `dw_trig_<id>` **and is the trigger's sole entity** — `setup_finish` suppresses the trigger's own summon. The NPC's body is `Invulnerable`, so without the shared tag a swing could land where nothing was watching and the trigger never fire; and with a *second*, exactly co-located hitbox the client's entity ray-pick is ambiguous — an exact tie resolves to whichever entity iterates first, in practice the world-init summon — so a right-click lands on an entity without `dw_npc_<n>` and the dialogue advancement never fires (proven on a live server). Consequences: the trigger's lifecycle follows the NPC's — a `deferred` NPC's strike trigger is armed only after its `spawn-npc` entrance, a `move-npc`'d NPC carries the strike target with it, and `despawn-npc` removes it entirely (which is the trigger's meaning: the thing being struck is the NPC). Scoped to left-clicks: right-click on an NPC already belongs to the dialogue advancement, so a co-located `use` trigger is rejected at validate time (`DW0350`) and again at build time (`DW0359`). Generated PackTests: `v04_strike_npc` writes the vanilla `attack` compound onto the NPC's hitbox and asserts the trigger fires, once, with the record consumed; `v04_strike_talk` pins the single-hitbox invariant — exactly one interaction entity wears the trigger tag, none wears it without the NPC tag, before and after an attack record is consumed (attack-then-talk must stay clickable); and **`env_trigger_<id>`, one per declared trigger** (`DW0811`'s `env-trigger` claim), which opens that trigger's own gate through `packtest_gate_drive`, calls `trig_<id>` the way that trigger's own dispatch route calls it — with no executor for a `party` bundle, `as` the test's dummy for a `presser` one — and asserts the `#trig_<id> dw.sys` marker every trigger writes on firing. |
@@ -1366,7 +1373,8 @@ Mechanism level (not full mcfunction). See `crates/delvec/src/compiler/emit/`, o
 | `fill-region` / `clear-region` | The **general** region write: one `fill <lo> <hi> <block>` over `Plan::zone_box(region)`, with `minecraft:air` and no `replace` filter for the clear. Same builder as the two gate verbs above; the only difference between all four is where the box comes from and whether the fill carries a filter. An unresolvable `region/anchor` emits nothing — that is `DW0142`/`DW0360`, not a silently mis-aimed fill here. |
 | `give-item` | Grants item to player: `give <target> <item>[custom_name=…,enchantments={…}] <count>`, the component suffix rendered by the ONE renderer a `loot` fill uses (`container_stack_components`), so a given stack and a container stack of one item agree; a plain, unnamed, unenchanted give emits the bare line. **An enchanted book stores**: the component is the item's, by vanilla's rule (`EnchantmentHelper.getComponentType`), exposed as `delvewright_dsl::enchantment_component` — `minecraft:stored_enchantments` on `minecraft:enchanted_book` (what an anvil applies), `minecraft:enchantments` on everything else; both are in the pinned 1.21.11 `data_component_type` registry. Every surface that writes an enchanted stack asks it: a `give-item`, a `loot` fill, an equipped piece. |
 | `narrate` | chat / `title` / `subtitle` (+ optional sound, played at each listener: `execute as <who> at @s run playsound <s> player @s` — a positionless `playsound` would sound at the command source, the world spawn for a tick-run function); `art` = `title` with a `{"font":"delve:art"}` text component, rendered uppercase in the pixel-banner font (6 font px/glyph → ~15 glyphs fit; see [The `delve:art` font](delvec/compiler/atmos.md#the-delveart-font)); `actionbar` = `title <who> actionbar <component>`. |
-| `play-sound` | `anchor`: `playsound <sound> master <who> <x> <y> <z> [<vol> [<pitch>]]` at the resolved anchor pos — every listener hears it there. `players` (the default): `execute as <who> at @s run playsound <sound> master @s [~ ~ ~ <vol> [<pitch>]]`, for `@s` too — each listener hears it at their own feet, never at the command source (the world spawn for a tick- or setup-run function; a solo bundle runs `as` its player, never `at` them). A `players` sound with a non-zero `offset` is `execute as <who> at @s rotated ~ 0 positioned ^<x> ^<y> ^<z> run playsound <sound> master @s ~ ~ ~ [<vol> [<pitch>]]` — the listener inside the loop is `@s`, never the audience selector, so each listener hears it once, at their own behind. |
+| `play-sound` | `anchor`: `playsound <sound> <category> <who> <x> <y> <z> [<vol> [<pitch>]]` at the resolved anchor pos — every listener hears it there (`<category>` the declared `category`'s token, `master` when absent). `players` (the default): `execute as <who> at @s run playsound <sound> <category> @s [~ ~ ~ <vol> [<pitch>]]`, for `@s` too — each listener hears it at their own feet, never at the command source (the world spawn for a tick- or setup-run function; a solo bundle runs `as` its player, never `at` them). A `players` sound with a non-zero `offset` is `execute as <who> at @s rotated ~ 0 positioned ^<x> ^<y> ^<z> run playsound <sound> <category> @s ~ ~ ~ [<vol> [<pitch>]]` — the listener inside the loop is `@s`, never the audience selector, so each listener hears it once, at their own behind. |
+| `stop-sound` (spec-0109) | One line under the effect's audience: `stopsound <who>`, `stopsound <who> <category>`, `stopsound <who> <category> <sound>`, or `stopsound <who> * <sound>` for a `sound` without a `category` — the pinned tree's only spelling of that form; a bare sound id is written under `minecraft:`. Under an `in` box the selector carries no `tag=!dw_cutscene` (a watcher hears the cut): the observer census counts it at the `sound cut` allowed site. |
 | `firework` | `summon minecraft:firework_rocket <x>.5 <y> <z>.5 {LifeTime:<L>,FireworksItem:{id:"minecraft:firework_rocket",count:1,components:{"minecraft:fireworks":{flight_duration:<f>b,explosions:[…]}}}}` at the mark's cell centre. **`LifeTime` is written, never left to the game**: unset, vanilla randomises it at launch (`(flight + 1) × 10 + random(0..5) + random(0..6)` ticks [cited — *Firework Rocket*, entity data]), so two runs of one datapack would burst at two heights and nothing could be proven about where the burst is. The emitter writes `L = (flight + 1) × 10` — 20, 30, 40 — the floor of that range, which is deterministic (ADR-0006) and the conservative side of `DW0899`. The entity's item field is `FireworksItem` [cited — *Firework Rocket*]; colours are the packed integers the component reads (`#ffd700` → `16766720`), through `dsl::color`, which the potion bottle's `custom_color` also reads; an undeclared `trail`/`twinkle` is absent rather than false. Every spelling comes from `dsl::firework`, the one file the game facts are pinned in. |
 | `particle` | At `players`: `execute as <who> at @s run particle <id> ~ ~ ~ <dx> <dy> <dz> <speed> <count> force @s` — spawned at, and shown to, each addressed player. At a mark: `particle <id> <x>.5 <y> <z>.5 <dx> <dy> <dz> <speed> <count> force <who>` at the cell's horizontal centre on the mark's plane. `force` is written, never chosen: `normal` sends 32 blocks and may be dropped at the client's Minimal particle setting; `force` sends 512 and is always drawn [cited — Minecraft Wiki, *Commands/particle*]. `<who>` is the effect's audience, narrowed by its `in` box. |
 | `lightning` | `summon minecraft:lightning_bolt <x>.5 <y> <z>.5` at the mark's cell centre on its plane. Setup holds the strike's chunk loaded for the session (`forceload add`, beside an area's claim): a `summon` into a chunk nothing loads is refused by the server, and the beat would ship with no bolt. A generated `lightning_<n>` PackTest first waits for the strike's chunk — setup force-loads it on the template's own first tick, which loads nothing yet, so a scheduled probe (`lightning_wait_<n>`, in the PackTest datapack) sets `#lbl<n>` once `execute if loaded` holds at the cell and the template awaits it — then runs the beat's own line and asserts a `minecraft:lightning_bolt` within a block of the mark on the same tick. |
@@ -1375,21 +1383,25 @@ Mechanism level (not full mcfunction). See `crates/delvec/src/compiler/emit/`, o
 | `despawn-npc` | `function <ns>:despawn_npc_<id>`: body + interaction hitbox leave unseen (§4 "A body the story removes is never seen to die"). One generated `v04_despawn_<id>` PackTest per NPC a `despawn-npc` names (each function is that NPC's own body, `DW0810`); when the NPC is **deferred** it runs its `spawn_npc_<id>` entrance right after `setup_finish`. It re-issues the NPC's own body summon with a fixed UUID, asserts 2 entities before and 0 after the real `despawn_npc_<id>`, then reads the body by UUID through its death (a selector never matches a dying body): not dying on the removal's tick, nor `UNSEEN_DELAY_TICKS - 1` ticks later, and at Y ≤ -127 on the first tick it is. |
 | `spawn-npc` | `function <ns>:spawn_npc_<npc>` — the generated entrance function, emitted once per NPC any `spawn-npc` names (deferred or not). Its two lines are the world-init summons, each independently guarded: body by `unless entity @e[tag=dw_npc,tag=dw_npc_<n>]`, hitbox by `unless entity @e[tag=dw_npc_<n>,tag=!dw_npc]` (both carry the id tag, so a single shared guard would let the body's own summon suppress the hitbox). The `npc_summons` PackTest fires each deferred NPC's entrance after `setup_finish` and asserts exactly one body. |
 | `move-npc` | Per-tick tp along A*-planned walkable waypoints (hitbox in lockstep), at cell **centres** with L-shaped vertical steps — see §4 "Entity placement". The route is **string-pulled** before it is resampled, so a body crosses open level ground in a straight line instead of tracing the four-connected grid; every rise, drop, stair edge and use-gate ends a straight run and is still rendered as a cardinal step — see §4 "A walked path goes straight where the ground allows". Every `tp` carries `<yaw> 0` — the **exact bearing of the segment that tick walks**; see §4 "A walked body faces where it is walking". **The ARRIVAL tick is the exception, and deliberately** — the walked body's arrival turn, one rule this verb shares with `move-actor`: see §4 "A walked body faces where it is walking". `on_arrive`: the driver's final-waypoint tick additionally runs `mv_arrive_<key>` (the bundle's effects), mirroring `ma_tick`/`ma_arrive_<key>` exactly; a bare move emits no hook. The arrive bundle runs with the **server** command source (the driver reached it through `schedule`), so its effects are split per-player / global — see §4 "A scheduled bundle has no `@s`". A later `move-npc` for the **same body** supersedes any walk still running for it — see §4 "One body, one live walk driver"; a body with only one planned walk carries none of that machinery (byte-identical). |
-| `cutscene` | Per player: save gamemode+pos → spectator → alternate `spectate` between two co-located dolly cameras each tick (skipping any player actively holding sneak — `predicate=!<ns>:sneak_held`, see §4 "The `spectate` bounce is sneak-gated") → restore. **Keyframe dolly (`compiler::camera`)**: each shot's waypoint polyline is arc-length parameterized (equal distance per time, not equal segments) with baked smoothstep ease-in/ease-out, then emitted as a tick-0 snap + a `tp` every *N* ticks with display-entity `teleport_duration:N` armed via `data merge` — the **client** tweens position and rotation linearly between keyframes (spike-measured: one position-sync packet per keyframe, rotation interpolates, the `spectate` bounce cannot reset an in-flight tween, and a same-tick merge+`tp` applies the OLD duration because position syncs flush before metadata — which is exactly why the snap and its cadence merge may share a tick). Cadence *N* = the widest of {10, 5, 4, 2, 1} whose rendered chords stay within 0.25 blocks (perpendicular) and 2° (aim) of the exact eased path; a single-waypoint or 1-tick shot is a static snap (cadence 0, no merge). Each shot with a successor resets `teleport_duration:0` on its last owned tick so the next snap is a hard cut, not a glide. Every keyframe `tp` carries an explicit `<yaw> <pitch>` — **Minecraft** entity rotation (`yaw = atan2(-dx, dz)`, 0 = +Z south; `pitch = atan2(-dy, hypot(dx,dz))`, + = down), *not* the render-plan/Chunky yaw convention — computed at emission from the camera's own position: at the shot's `look_at` subject if it has one, else along the eased path's direction of travel. Never the summon default (yaw 0 = south). Positions and rotations rounded to 3 decimals, `-0.0` collapsed to `0.0`, so emission is byte-stable. The bracket also arms the `dw_cutscene` state on every player and releases it on restore — see §4 "A cutscene is pure observation". Multi-shot: all shots share one `#t_<bare>` counter — shot *k* owns `[offset_k, offset_k+len_k]` and the next starts at `offset_k+len_k+1` (hard cut); one marker, one `gamemode spectator @a`, one camera pair, one restore. Both single-shot spellings emit identical bytes. `critical-path.json`'s `cutscene_seconds` covers every shot, to the tick `cs_end` runs (see `critical-path.json` in §5). Function key = `cs_<first anchor>_<seconds>_<waypoints>` (a pathless styled shot keys `cs_<style>_<subject>_…`), plus an 8-hex sha256 digest of the whole normalized shot list whenever the cutscene is not a bare single shot without `look_at`/`shot_style` (the key must be injective — two shots sharing a first waypoint must never collapse onto one function). Styled shots are expanded (`compiler::camera::expand_shot`) before keyframe planning; a moving subject's per-tick track comes from its sibling move's A* plan, aligned by effect-group/sequence timing. Deduplication stays DSL-content-keyed, so two byte-identical styled cutscenes in *different* move contexts plan from the first occurrence (a limitation of the content key; give the shots distinguishing content to split them). **`then`** (spec-0108 §3.6): the effects that run when the camera returns — lowered into `cs_end_<bare>` after its last restore line (`scoreboard players remove #cs_live dw.sys 1`) through the scheduled-bundle emitter, `Audience::Scheduled` (`cs_end` runs from the scheduled driver, so `@a`, never `@s`; a `player`-scoped datum read or written there is `DW0503`, by `nested_effect_dispatch` → `NestedDispatch::Server`). A cutscene with a `then` keys its functions `…_then_<8-hex sha256 of the list's canonical JSON>`; an empty `then` adds nothing, so its bytes are those of a cutscene without the field. The timeline model dates a `then` effect one tick past the tick `cs_end` runs, so a `teleport` there is after the bracket by construction (`DW0933` cannot fire on it); `ending_tail_ticks` and `hold`'s cutscene holds count the cutscene's length plus one. A `sequence` or a second `cutscene` inside `then` is legal and plays from that tick. |
+| `cutscene` | Per player: save gamemode+pos → spectator → alternate `spectate` between two co-located dolly cameras each tick (skipping any player actively holding sneak — `predicate=!<ns>:sneak_held`, see §4 "The `spectate` bounce is sneak-gated") → restore. **Keyframe dolly (`compiler::camera`)**: each shot's waypoint polyline is arc-length parameterized (equal distance per time, not equal segments) with baked smoothstep ease-in/ease-out, then emitted as a tick-0 snap + a `tp` every *N* ticks with display-entity `teleport_duration:N` armed via `data merge` — the **client** tweens position and rotation linearly between keyframes (spike-measured: one position-sync packet per keyframe, rotation interpolates, the `spectate` bounce cannot reset an in-flight tween, and a same-tick merge+`tp` applies the OLD duration because position syncs flush before metadata — which is exactly why the snap and its cadence merge may share a tick). Cadence *N* = the widest of {10, 5, 4, 2, 1} whose rendered chords stay within 0.25 blocks (perpendicular) and 2° (aim) of the exact eased path; a single-waypoint or 1-tick shot is a static snap (cadence 0, no merge). Each shot with a successor resets `teleport_duration:0` on its last owned tick so the next snap is a hard cut, not a glide. Every keyframe `tp` carries an explicit `<yaw> <pitch>` — **Minecraft** entity rotation (`yaw = atan2(-dx, dz)`, 0 = +Z south; `pitch = atan2(-dy, hypot(dx,dz))`, + = down), the convention the render plan states its cameras in — computed at emission from the camera's own position: at the shot's `look_at` subject if it has one, else along the eased path's direction of travel. Never the summon default (yaw 0 = south). Positions and rotations rounded to 3 decimals, `-0.0` collapsed to `0.0`, so emission is byte-stable. The bracket also arms the `dw_cutscene` state on every player and releases it on restore — see §4 "A cutscene is pure observation". Multi-shot: all shots share one `#t_<bare>` counter — shot *k* owns `[offset_k, offset_k+len_k]` and the next starts at `offset_k+len_k+1` (hard cut); one marker, one `gamemode spectator @a`, one camera pair, one restore. Both single-shot spellings emit identical bytes. `critical-path.json`'s `cutscene_seconds` covers every shot, to the tick `cs_end` runs (see `critical-path.json` in §5). Function key = `cs_<first anchor>_<seconds>_<waypoints>` (a pathless styled shot keys `cs_<style>_<subject>_…`), plus an 8-hex sha256 digest of the whole normalized shot list whenever the cutscene is not a bare single shot without `look_at`/`shot_style` (the key must be injective — two shots sharing a first waypoint must never collapse onto one function). Styled shots are expanded (`compiler::camera::expand_shot`) before keyframe planning; a moving subject's per-tick track comes from its sibling move's A* plan, aligned by effect-group/sequence timing. Deduplication stays DSL-content-keyed, so two byte-identical styled cutscenes in *different* move contexts plan from the first occurrence (a limitation of the content key; give the shots distinguishing content to split them). **`then`** (spec-0108 §3.6): the effects that run when the camera returns — lowered into `cs_end_<bare>` after its last restore line (`scoreboard players remove #cs_live dw.sys 1`) through the scheduled-bundle emitter, `Audience::Scheduled` (`cs_end` runs from the scheduled driver, so `@a`, never `@s`; a `player`-scoped datum read or written there is `DW0503`, by `nested_effect_dispatch` → `NestedDispatch::Server`). A cutscene with a `then` keys its functions `…_then_<8-hex sha256 of the list's canonical JSON>`; an empty `then` adds nothing, so its bytes are those of a cutscene without the field. The timeline model dates a `then` effect one tick past the tick `cs_end` runs, so a `teleport` there is after the bracket by construction (`DW0933` cannot fire on it); `ending_tail_ticks` and `hold`'s cutscene holds count the cutscene's length plus one. A `sequence` or a second `cutscene` inside `then` is legal and plays from that tick. **A cutscene's own music (spec-0109 §3.6, `compiler::music::scores`)**: the function key gains `_m<digest>`, the first eight hex digits of the sha256 of the canonical declaration (both music ids under their `minecraft:` ids, through the one attribute reader, so `0` and `0.0` are one declaration); a cutscene without `music` keeps its key byte for byte. The cells painted are every 4-cell within the dolly's chord tolerance (`camera::CHORD_POS_TOLERANCE`, 0.25) of every shot's resolved polyline (`music::polyline_quarts_within`: an exact segment-to-cell distance over the walked cells and their neighbours, so a path along a cell face paints both sides) — the cells the camera can be in and no other, since the music reads the cell the camera is in. They are merged along the camera's order into 4-aligned boxes covering exactly them; per box, the candidate bases are every biome a cell can wear — its first-tick biome and the atmosphere of every `set-atmosphere` whose volume covers it, in any order. Each base yields one **variant** `<ns>:music/<digest>/<base path>` (`atmosphere/<id>`, `void`, `ocean`), emitted at `datapack/data/<ns>/worldgen/biome/music/<digest>/<base path>.json`: the base's emitted definition field for field with `audio/background_music` set to the declaration's and `audio/music_volume` set when declared, removed when not (the statement moves as one object); it joins the void biome's tags exactly when its base does; two cutscenes with one declaration share their variants. `cs_paint_<bare>` is `scoreboard players set #cs_paint_<bare> dw.sys 1` then one `fillbiome <box> <variant> replace <base>` per box per candidate base, each box split by the cap as `fillbiome_lines` splits; `cs_<bare>` calls it before `gamemode spectator @a`, so the first frame hears the score. `cs_unpaint_<bare>` sets the latch 0, then runs every line reversed under `execute store success score #cs_ok dw.sys run …`, each followed by `execute if score #cs_ok dw.sys matches 0 run scoreboard players set #cs_paint_<bare> dw.sys 1` — the one failure a restore line has is an unloaded chunk; `cs_end_<bare>` calls it after `tp @a …`. Both directions are `replace`, so a cell another score painted first is left to it and a restore run twice is harmless. `tick` runs `cs_unpaint_tick`, one clause per declaring cutscene — `execute if score #cs_paint_<bare> dw.sys matches 1 unless score #run_<bare> dw.sys matches 1 run function <ns>:cs_unpaint_<bare>` — so an interrupted or unreachable restore is retried until its chunks load; `load` (every world load) carries `execute unless score #run_<bare> dw.sys matches 1 run scoreboard players set #cs_paint_<bare> dw.sys 1`, so a world saved painted under scores from before the cutscene is restored. A campaign without a declaring cutscene emits none of it. Generated PackTest `cutscene_music_<n>` (`<n>` the cutscene's index among the build's cutscenes) lays the ground under every paint box, re-establishes the first tick, runs the judged configuration's repaints, and at every painted cell's 2-mod-4 sample asserts the base, then runs the real `cs_paint_<bare>` (the variant, latch 1), `cs_unpaint_<bare>` (the base, latch 0), the interrupt (paint, `#run_<bare>` 0, `cs_unpaint_tick`: the base, latch 0) and the restart (paint, latch saved 0, `#run_<bare>` 0, the real `load`: latch 1; `cs_unpaint_tick`: the base, latch 0); one per declaring cutscene, a template-kind `DW0811` claim (`cutscene-music`). |
 | `campaign-complete` | `dw.campaign` = 1 (dummy objective, **never on the sidebar** — a raw internal id must not surface to players; the sidebar is a currency's slot, spec-0076, and what stands there is a datum's display name); broadcast `[dw:complete <campaign_id> campaign]` (dark-gray bot channel, the harness's completion signal — §4 "The completion-marker channel"); title fanfare. It takes `when` like every verb: several in one final scene with exclusive gates are several endings. `ending` is an id, `ending/<kebab>` (`DW0110` at any nesting depth); one naming none is reported as `ending/<unnamed>`. **What it reads** is every gate of its final scene, and its **aftermath** is every effect there whose verb changes the world (`Verb::changes_world`) — the world the ending leaves, proven by a PackTest per (ending, world) and read by the bot (spec-0108; [`delvec/compiler/ending.md`](delvec/compiler/ending.md)). The emission itself is unchanged: the aftermath is the author's effects, lowered where they stand. |
-| objective lifecycle | **For an announced objective** (spec-0093: a `title` and a resolved `announcement` of `shown`) activation shows `title`+`hint`+`note_block.pling` once (flag `dw.ann_<obj>`, the `announce_<obj>` function and its `tick` line exist only for these); completion sets `dw.o_<obj>` = 1, immediately broadcasts the anchored marker `[dw:complete <campaign_id> obj/<id>]` (§4 "The completion-marker channel") whether or not the objective is announced, then — announced only — prints `Objective complete: <title>` and plays `experience_orb.pickup`. The two cues, and `campaign_complete`'s `ui.toast.challenge_complete`, are the engine's **quest cues** (`emit::quest::CUE_*`), each emitted by `cue_line` as `execute as @a at @s run playsound <cue> player @s` — every member of the party, at that member; the functions they run in carry the server's source, at the world spawn. `validation/cues.json` states them for the bot. The marker precedes the objective's effects deliberately: it timestamps *completion*, not the aftermath. **Marker cleanup:** completion despawns every entity the objective's activation summoned via the objective-scoped tag — `interact` hitbox + wayfinding marker (`dw_i_<obj>`), `reach` marker (`dw_r_<obj>`). Prop/affordance *blocks* (`interact.prop`, `collect` chest) are scenery and persist; `talk-to`/`kill` summon no per-objective marker. Gated on a resolved activation. |
+| objective lifecycle | **For an announced objective** (spec-0093: a `title` and a resolved `announcement` of `shown`) activation shows `title`+`hint`+`note_block.pling` once (flag `dw.ann_<obj>`, the `announce_<obj>` function and its `tick` line exist only for these); completion sets `dw.o_<obj>` = 1, immediately broadcasts the anchored marker `[dw:complete <campaign_id> obj/<id>]` (§4 "The completion-marker channel") whether or not the objective is announced, then — announced only — prints `Objective complete: <title>` and plays `experience_orb.pickup`. The two cues, and `campaign_complete`'s `ui.toast.challenge_complete`, are the engine's **quest cues** (`emit::quest::CUE_*`), each emitted by `cue_line` as `execute as @a at @s run playsound <cue> player @s` — every member of the party, at that member; the functions they run in carry the server's source, at the world spawn. `validation/cues.json` states them for the bot. The marker precedes the objective's effects deliberately: it timestamps *completion*, not the aftermath. **Cleanup:** completion despawns every entity the objective's activation summoned via the objective-scoped tag — the `interact` hitbox (`dw_i_<obj>`) — and its highlight (§`highlight` below). Prop/affordance *blocks* (`interact.prop`, `collect` chest) are scenery and persist; `talk-to`/`kill` summon no per-objective marker. Gated on a resolved activation. |
+| `compass` (spec-0104 §6) | Emitted when an objective is tracked. `class_apply_<c>` gives `compass_give` (one `minecraft:compass[custom_name=<chrome compass.name, italic:false>,custom_data={dw_compass:1b},consumable={consume_seconds:1000000f,animation:"none",has_consume_particles:false},lodestone_tracker={tracked:false}]`, unless one is held in `container.*`, `armor.*` or `weapon.offhand`) and runs `guide_refresh`. **Read from the pinned jar**: a compass carrying `lodestone_tracker` is named `item.minecraft.lodestone_compass` and never reads `item_name` (`CompassItem#getName`), so the name is a `custom_name`; `LodestoneTracker#tick` keeps a `tracked:false` tracker with no lodestone at its target, and one with no `target` draws a spinning needle (`CompassAngleState`); `container.36`–`53` resolve to nothing on a player (`SlotRanges`, `Player#getSlot`), so the 41 carried slots are `emit::checkpoint::CARRIED_SLOTS`. Each tracked objective has an ordinal (document order, from 1); per player `dw.track` holds the followed one. `compass_refresh` (as a player): keep `dw.track` if that objective is pending (its `pending_guard`), else the first pending tracked objective, else 0; tell the change (`compass_tell`: `compass.following` with the title, `compass.others` with the count and `{"keybind":"key.use"}` when two or more are open, `compass.nothing` at 0); aim (`compass_aim_followed`): a cell target calls the macro `compass_aim {x,y,z}`, which replaces the compass in whichever carried slot holds it with one whose `lodestone_tracker` is `{target:{pos:[I;x,y,z],dimension:"minecraft:overworld"},tracked:false}`; a `talk-to`'s target is the NPC's body (`@e[tag=dw_npc_<n>,type=!minecraft:interaction,limit=1]`), its `Pos` read into storage `<ns>:guide aim` each time; a `kill`'s target is the living body of its wave nearest the player (`compass_aim_wave_<obj>`: `execute at @s run tag @e[tag=dw_wave_<w>,sort=nearest,limit=1] add dw_caim`, its `Pos` read into the same storage, the tag removed; **read from the pinned jar**: `EntitySelectorParser.parseSelector` adds the predicate `Entity::isAlive` for `@e` (and `@n`), and `LivingEntity.isAlive` is `!isRemoved() && getHealth() > 0`, so a body in its death animation is never picked), and the wave's anchor cell while none is alive; nothing open calls `compass_spin` (`{tracked:false}`). The target per kind is `compiler::promise::objective_place`'s, `DW0863`'s own. **The choice is a menu.** The `consumable` component gives the compass a use, so a right-click starts using it; advancement `<ns>:compass_use` (`minecraft:using_item`, the compass by its `custom_data`) runs `compass_used` as that player every tick of use, which revokes it and, on the first tick of a press (latch `dw.cuse`, set to 2 and run down by the tick), runs `compass_menu`: a `multi_action` dialog built in storage `<ns>:guide menu.dialog` — title chrome `compass.choose`, `pause:false`, `after_action:"close"`, one button per pending tracked objective in document order, its label the title (prefixed `◆ ` on the one followed), its tooltip the hint, its action `run_command` `trigger dw.cpick set <ordinal>` — shown by the macro `compass_menu_show` (`$dialog show @s $(dialog)`); with nothing open the player reads `compass.nothing`. The tick enables the `dw.cpick` trigger for every classed player and runs `compass_pick` for one whose `dw.cpick` moved: `dw.track` takes it, the line is told, the compass refreshes and the journal is rewritten. **Read from the pinned jar**: `dialog show` takes an inline dialog (`ResourceOrIdArgument$DialogArgument` over `Dialog.CODEC`); a macro substitutes a compound as SNBT (`MacroFunction`, `Tag#toString`); `multi_action.actions` is non-empty; `CompassItem` does not override `use`, `Item#use` starts use on `consumable`, `using_item` fires every tick of use, and use reads neither the needle nor the tracker; a spectator uses no item (`ServerPlayerGameMode#useItem` passes), and `compass_used` also skips a player tagged `dw_cutscene`, so a watcher is offered no menu; the `dw.cpick` enable stands with the other answer channels ahead of the respawn wait's lock; `Consumable#onConsume` runs only when `consume_seconds` is done; `trigger` needs permission level 0 and a dialog's `run_command` of it is sent without a confirmation screen (`ClientPacketListener#sendUnattendedCommand`). A followed `talk-to` or `kill` re-aims every 20 ticks (`#gclock dw.guide`, `dw.tbody`, set by the aim for exactly those two kinds); a completed `kill` leaves the followed set at its completion refresh. Generated PackTests `guide_compass` (aim, the menu's buttons, a pick, spin, re-give), `guide_compass_person` (the target moves with the NPC) and `guide_compass_wave` (two bodies of a followed kill's wave at two and four blocks: the target is the nearer; it is killed, and the re-aim names the other). |
+| `journal` (spec-0104 §8) | Emitted when an objective is announced or `guidance.manual` is declared. One `minecraft:written_book[custom_data={dw_journal:1b},item_name=<manual title or chrome journal.title>,written_book_content={title:"",author:<the campaign's English title>,pages:[]}]` per player, from `class_apply_<c>` (`journal_give`, unless held). **Read from the pinned jar**: a non-blank `written_book_content.title` names the item ahead of `item_name` (`ItemStack#getCustomName`), so the title is written empty and the translated `item_name` names the book; a written book's pages, `set_written_book_pages` (`ListOperation.UNLIMITED_CODEC`) and `BookViewScreen` bound no page count — the 100-page limit is the book and quill's — so the journal has no page bound; `BookViewScreen` wraps a page at 114 px and draws 14 lines. **The pages** are item modifiers, every one a committed file: `journal_prefix` (`set_written_book_pages`, `replace_all`: the compass page — chrome `journal.compass.*`, the use key as `{"keybind":"key.use"}` — when the campaign has a compass, then each manual page lowered through `emit::tr`), per announced objective `journal_open_<obj>` (`append`: chrome `journal.open`, the title bold, the hint), per tracked objective `journal_open_following_<obj>` (the same with chrome `journal.following`), and `journal_done_<obj>` (`append`: chrome `journal.done`, the title struck through). `journal_rewrite` (as a player) gives the book if none is held, then for each carried slot holding it runs the macro `journal_write {slot}`: the prefix, each open page under its objective's `pending_guard` (the following variant where `dw.track` names it), then each done page under `#party dw.o_<obj> matches 1`. `item modify` edits the book where it lies. Generated PackTests `guide_journal_pages`, `guide_journal_dropped`, `guide_journal_join`. |
+| `highlight` (spec-0104 §7) | Per declared highlight, `hl_poll_<a>` on the tick (`<a>` = `o_<obj>` or `t_<trigger>`): while the act is armed — an objective's guidance state `#gs_<obj> dw.guide` is 1 (pending), a trigger's own `once`/flag guards hold — and a player not watching stands within `within` blocks of the target (`@a[distance=..W,tag=!dw_cutscene]`), it is lit; the edge toggles through `#hl_<a> dw.guide` (`hl_on_<a>` / `hl_off_<a>`). **A block** is lit through a display tagged `dw_hl_<a>` and `dw_hl_<a>.<i>` (its cell's index; `.` is never in a `safe_local` name), which **exists only while the highlight is lit and its cell holds what it draws**: `hl_hold_<a>`, the one place a display is summoned, run by `hl_on_<a>` and by the poll on every lit tick, kills a cell's display where `execute unless block` the cell holds the drawn state and summons it (`Glowing:1b` from birth) where the cell does and none stands; `hl_off_<a>` kills every `dw_hl_<a>`, and an objective's completion runs that same `hl_off_<a>`. So no display exists while dark, none outlives its act (a trigger's spent `once` latch or flag gate turns the poll dark the same tick; an objective goes dark at completion), and none stands over a cell that changed (a lever pulled, a button pressed, a block taken). The drawn state is the **complete** state (`guidance::drawn_state`: the written properties plus the pinned defaults, `BlockRegistry::default_state`, so a lever written without `powered` is drawn and held as `powered=false`) of the prop, or the assembled world's block, or the compiler's chest for a `collect` without a container: a `minecraft:block_display` of it, `transformation` scale `1.002` and translation `-0.001`, `glow_color_override` `0xFFAA00`, summoned at the cell's corner written `x.0 y.0 z.0` (a bare integer x or z is centred by the summon, *Entity placement* below); a block whose model draws nothing or only part of the thing (`crates/delvec/data/block-entity-renderers-1.21.11.json`: derived from the client jar's models by `tools/maintenance/extract-block-entity-renderers.py`, plus the bell, authored) is an `item_display` of its item instead, a wall variant's item its standing one's, turned by `facing`, summoned at the cell's centre `x.5 y.5 z.5`, its cell held to the block and its `facing` (what the item draws; `guidance::drawn_predicate`). **A body** (a `talk-to`'s or `strike-npc`'s NPC, a `kill`'s wave) is lit by `effect give … minecraft:glowing infinite 0 true` and `team join dw_hl` (team colour `gold`), and a body that arrives while lit is lit too. **A holder entity** a `collect` takes from (an item frame or an armour stand, spec-0111) is lit by its own flag: `data merge entity @s {Glowing:1b}` (`{Glowing:0b}` to darken) over `@e[tag=dw_holder_<id>]` and `team join dw_hl` — the pinned client reads `Glowing` on every entity (`Entity.load`), writes the team colour to `outlineColor` when one appears glowing (`EntityRenderer.extractRenderState`), and `ItemFrameRenderer.submit` passes it to the frame and its item; the gallery's `obj/take-the-seal` carries one. The glow is a flag on the entity, so every player in range of it sees it. Generated PackTest `guide_highlight_<a>` per block, NPC and holder highlight (a holder stood first by its own `holder_<id>`; a block an objective's activation places, set first as the activation sets it): dark while unarmed, lit within range while armed, dark beyond it; for a block, no `dw_hl_<a>` exists while unarmed or out of range, and while lit every display stands within a thousandth of a block of the position its kind draws the lit cell from (corner or centre, written from the cell) and the displays number the cells. Generated PackTest `guide_highlight_spent_<a>` per block highlight whose act a firing or a completion ends — an objective's, and a trigger's that is `once` or whose block a press changes (a state with `powered`): lit with the displays numbering the cells, then the trigger fired (`#trig_<id>` written, as `trig_<id>` writes it first, and each pressed block's `powered` turned over, as the hand's press does) or `complete_<obj>` run as the dummy, and zero `dw_hl_<a>` entities after the poll (a trigger) or at once and after the next `guide_scan` and poll (an objective). |
+| guidance refresh (spec-0104 §6.3, §8.3) | `guide_scan` (tick) keeps each guided objective's state on `#gs_<obj> dw.guide` (`execute store success … <pending_guard>`, then 2 once `#party dw.o_<obj>` is 1) and adds 1 to `#epoch dw.guide` when any state changed — an objective or quest activating or completing, or a gate opening or closing. A classed player whose `dw.gseen` is not `#epoch` runs `guide_refresh` (`compass_refresh`, `journal_rewrite`); `guide_seed` gives each player their entries once (`dw_guide_seeded`); a living player with a death since (`dw.gdeath`, `deathCount`, read through `@e[type=player]`) is refreshed at respawn; `guide_strays` kills a dropped item carrying either `custom_data` and moves the epoch, so its owner is given a fresh one. Nothing is rewritten on a tick where nothing moved. |
 | `on_death` (spec-0031) | The campaign-wide death beat — **effect root R7**, at `/content/on_death`, one bundle per campaign. It rides the SAME detector `set-checkpoint` arms and adds no second one: `dw.deaths` (`deathCount`) is the only thing in the delve that notices a death, `cp_respawn_check` is the only function that reads it, and one `tick` line runs it per player. What it adds is a second **acknowledgement** of that one counter. `dw.death_ack` is deliberately withheld while a player is dead (the whole edge is held until they are alive again, so an unspent edge stays armed instead of burning on the corpse), which is exactly the window this beat wants, so the corpse side gets its own ack `dw.death_seen`: `execute if data entity @s {Health:0.0f} if score @s dw.deaths > @s dw.death_seen run function <ns>:on_death_fire`, then the matching `= @s dw.deaths` so it fires once per death rather than every tick of the death screen. The corpse side is emitted FIRST, in the order the player lives the two moments. `on_death_fire` is the bundle under **`Audience::Solo`** — the dying player's own, like `on_respawn` and `on_caught`; broadcasting one death to the party would duplicate their narration and their kit. A campaign declaring no death beat emits none of it (no branch, no function, no `dw.death_seen`) and a campaign with a death beat and no checkpoint arms `dw.deaths` and this branch alone — no `#cp` marker, no re-seat, no `dw.death_ack`. **The death POSITION needs no capture**: `emit::death_position_capture` is a named, deliberately empty seam ahead of the dispatch, because the corpse stands on the death position for every cause measured — void, fall, drowning, lava, a mob kill (`docs/notes/death-and-teleport-spike.md`) — so `execute at @s` inside the bundle is the death point. Tests: `v10_on_death.rs`. |
-| `set-atmosphere` | spec-0080: `fillbiome <lo> <hi> <biome>` over `Plan::zone_box(region)` or the `place`'s paint (`horizon::place_paint`: an area's placed bounds or a site-plan box's play space, grown by the blend reach — the cells the place's own `atmosphere` paints; a `region` is painted exactly as sized), with `<ns>:atmosphere/<kebab>`, or the ground biome for `atmosphere: null`. Exactly one of `region` / `place` — the `PlaceRef` a pulse carries too (`DW0929`). Lines come from `atmosphere::fillbiome_lines`, the one writer of `fillbiome` under `crates/delvec/src/` (the surround's bands and the bootstrap paint use it too), which splits the box at 4-cell boundaries so no command exceeds the default `max_block_modifications` (32768, measured the way `FillBiomeCommand.fill` measures: the spans of the box its corners quantize to) — a repaint fires mid-play, where raising a gamerule around it would be a second world-wide write. `fillbiome` paints every 4×4×4 cell the range touches, so the painted volume is the enclosing 4-aligned box. A hard cut: the client re-reads fog and sky every frame and re-meshes grass, foliage and water (`chunk_biomes`, no chunk reload — the spike's measurement, re-asserted by the bot tier). Fires from every quest-effect root and depth; a dialogue option reaches it through a flag a trigger reads, since `DialogueEffect` is its own closed vocabulary. Generated PackTest `atmosphere_repaint_<n>`, one per repaint with a resolvable volume: re-establish the first tick (the ground over every repaint volume of the build, then the carried places), read the first-tick biome inside (`execute if biome`), run exactly the lines the verb emits, read the new biome inside and the unchanged one just outside — a cell no OTHER repaint's volume holds, so a sibling that runs a beat and leaves its paint standing cannot be read (no such cell: no reading, a comment says so) — restore. |
+| `set-atmosphere` | spec-0080: `fillbiome <lo> <hi> <biome>` over `Plan::zone_box(region)` or the `place`'s paint (`horizon::place_paint`: an area's placed bounds or a site-plan box's play space, grown by the blend reach — the cells the place's own `atmosphere` paints; a `region` is painted exactly as sized), with `<ns>:atmosphere/<kebab>`, or the ground biome for `atmosphere: null`. Exactly one of `region` / `place` — the `PlaceRef` a pulse carries too (`DW0929`). Lines come from `atmosphere::fillbiome_lines`, the one writer of `fillbiome` under `crates/delvec/src/` (the surround's bands and the bootstrap paint use it too), which splits the box at 4-cell boundaries so no command exceeds the default `max_block_modifications` (32768, measured the way `FillBiomeCommand.fill` measures: the spans of the box its corners quantize to) — a repaint fires mid-play, where raising a gamerule around it would be a second world-wide write. `fillbiome` paints every 4×4×4 cell the range touches, so the painted volume is the enclosing 4-aligned box. A hard cut: the client re-reads fog and sky every frame and re-meshes grass, foliage and water (`chunk_biomes`, no chunk reload — the recorded reading under *The biome map*). Fires from every quest-effect root and depth; a dialogue option reaches it through a flag a trigger reads, since `DialogueEffect` is its own closed vocabulary. Generated PackTest `atmosphere_repaint_<n>`, one per repaint with a resolvable volume: re-establish the first tick (the ground over every repaint volume of the build, then the carried places), read the first-tick biome inside (`execute if biome`), run exactly the lines the verb emits, read the new biome inside and the unchanged one just outside — a cell no OTHER repaint's volume holds, so a sibling that runs a beat and leaves its paint standing cannot be read (no such cell: no reading, a comment says so) — restore. |
 | `set-time` / `set-weather` | `time set <kw|ticks>` / `weather <kw>` (dimension-global, no selector) inline in the effect/dialogue-option function, the time through `WorldTime::token` of its clock (a keyword on day 0 verbatim, any other clock the integer `day × 24000 + daytime`); instantaneous cut, persists (cycle frozen). |
 | relight fixtures (`lighting`) | `setblock` per placed fixture in `setup_finish`, after structure placement + socket seals (spec-0010). Blocks: `torch`/`wall_torch`, `lantern[hanging=…]`, `campfire[lit=true]`, `shroomlight`. **What decides whether a fixture can be sited is its ATTACHMENT SURFACE, not its clearance**, and the four differ widely: `torch` takes an off-path air cell over a floor that holds it OR against a face that holds it (`wall_torch`), and `shroomlight` REPLACES a solid block that borders air, so those two site almost anywhere geometry exists at all; `lantern` hangs under a ceiling that holds it, falling back to a floor only on a cell outside the reachable set; `campfire` needs a solid floor with air above AND is barred from every required-path cell, from all four of its horizontal neighbours, and from the reachable set, because it is a damage source — which makes it the narrowest of the four. **"Holds it" is the pinned jar's own `canSurvive` rule**, measured (`delvewright_dsl::support`): a torch or a lantern asks a face sturdy at its centre, a wall torch a full face behind it — so leaves, a bottom slab's top and a lantern's underside hold none of them, and a glass pane's post holds a torch and a lantern but not a wall torch; a campfire's floor and a shroomlight's block are solid blocks that are not `*_leaves`. **No fixture stands in, or hangs from, a cell the campaign rewrites after load** (`light::fixture_keep_out`: every required walk cell, a gate's region, every dated region write, every `collapse` region): the siting rule reads each such cell as air, so a lantern hung from a lid a beat clears is never sited. **A fixture the collision table says a body cannot share a cell with (a lantern, hanging or standing; a campfire) is never sited in a body's cell** — the feet or head cell of a reachable or required standing cell — so a lantern never hangs at head height over a walked floor or over the bottom of a pit a body falls into, where it would be a floor the body lands on. A fixture sited anywhere the rule does not hold is a block `DW1002` refuses. `DW0211`'s remedy hint names this order, so a creator refused on one fixture is sent to the one the geometry can actually take. |
-| `mitigation: "night-vision"` | `night_vision_tick`: one `effect give @a[x=…,dx=…,y=…,dy=…,z=…,dz=…] minecraft:night_vision <lease> 0 true` per declaring area — written since v0.10 by `emit::effect_give_command`, the same formatter the author-facing `give-effect` verb uses, so the engine's own grant is one configured use of the general verb's emission rather than a private copy of it (byte-identical: the line was already the full five-token form) (the lease is `max(12, longest camera + 11)` s — the camera-coverage guarantee, see §"world") (selector = the area's final placed bounds, compile-time literals), then `schedule function <ns>:night_vision_tick 20t` (vanilla replace-mode, so the clock can never double up). `setup_finish` arms it once. A generated `v06_night_vision` PackTest teleports a dummy into the declared bounds, runs one clock tick and asserts it holds the effect — then teleports it 1000 blocks out and asserts it does not. |
+| `mitigation: "night-vision"` | `night_vision_tick`: one `effect give @a[x=…,dx=…,y=…,dy=…,z=…,dz=…] minecraft:night_vision <lease> 0 true` per declaring area — written by `emit::effect_give_command`, the same formatter the author-facing `give-effect` verb uses, so the engine's own grant is one configured use of the general verb's emission rather than a private copy of it (the lease is `max(12, longest camera + 11)` s — the camera-coverage guarantee, see §"world") (selector = the area's final placed bounds, compile-time literals), then `schedule function <ns>:night_vision_tick 20t` (vanilla replace-mode, so the clock can never double up). `setup_finish` arms it once. A generated `v06_night_vision` PackTest teleports a dummy into the declared bounds, runs one clock tick and asserts it holds the effect — then teleports it 1000 blocks out and asserts it does not. |
 | `set-checkpoint` | Inline: `spawnpoint @a <x y z>` + `data modify storage dw:cp pos set value [x,y,z]` (the readable "last checkpoint" mirror) + `#cp dw.sys = <index>` (the active-checkpoint marker; emitted for **every** campaign that declares a checkpoint). `setup_finish` seeds `dw:cp` to the spawn cell. Any checkpoint arms the respawn machinery: a `deathCount` objective (`dw.deaths`) + per-player ack, and a `tick` line running `cp_respawn_check`. **`cp_respawn_check` seeds every score it compares first** (`scoreboard players add @s <obj> 0`, idempotent, and on a `deathCount` objective it does not disturb the criterion): a player who has never died has an entry in none of the three, and a comparison against a missing entry is FALSE on the pinned server — so before this the whole edge was dead on a player's FIRST death and worked only from the second onward. `DW0495` is the standing proof that no emitter can ship that shape again. **The re-seat.** `spawnpoint` is a *hint*, not a promise: vanilla re-validates the recorded cell at respawn time and, whenever that cell or the cell above it is solid or liquid, silently discards it and respawns the player at the **world spawn** — the campaign entrance. Measured live on pinned 1.21.11: a spawnpoint on a dry cell respawns at `cell + (0.5, 0.1, 0.5)`; the same spawnpoint on a water cell respawns at `setworldspawn`. Past a one-way transport that is not a lost checkpoint but an unrecoverable softlock (the owner's tide-mill playtest). So the delve stops delegating its own promise: `cp_respawn_fire` dispatches `cp_seat_<index>` (a bare `tp @s <cell centre>`, coordinates compiled in — no macro, no storage read) for the active checkpoint **before** any authored `on_respawn` beat. When vanilla honoured the spawnpoint the player is already there and the teleport is invisible; when vanilla dropped it, this is the only thing that puts them back. It is edge-triggered, never a leash. **Edge timing**: `deathCount` ticks up on the DEATH, while the player is still a corpse on the death screen, so `cp_respawn_check` holds *both* the fire and the acknowledgement behind `execute unless data entity @s {Health:0.0f}` — the whole bundle lands on a player who has actually come back, and an unspent edge stays armed. Generated PackTests: `v06_checkpoint_respawn` (the record) and `v06_checkpoint_reseat` (the landing — drive a real `deathCount` edge from the campaign entrance, assert the player ends on the checkpoint cell centre, assert the ack, then assert no second re-seat without a second death). |
 | `timed-gate` (spec-0016 §4) | `setup_finish` starts the clock: `function <ns>:tgate_open_<id>` at `phase: 0`, else `schedule … <phase>t`. `tgate_open_<id>` = `fill … minecraft:air replace <block>` + `schedule function <ns>:tgate_close_<id> <open_ticks>t`; `tgate_close_<id>` = (when `crush: true`) `execute as @a[<gate region>,tag=!dw_cutscene] run damage @s 1000 minecraft:generic`, then `fill … <block>` + `schedule function <ns>:tgate_open_<id> <closed_ticks>t`. The judgement precedes the `fill` deliberately — after the seal the victim is already encased and vanilla suffocation, not the portcullis, would be what kills them. `/damage` takes ONE entity, so the party form re-binds via `execute as` rather than widening the target. Both halves are pure world edits naming no player, so the server command source they are re-entered under is irrelevant (§4). Generated PackTest `souls_timed_gate_<id>`, **one per declared gate**: re-seal, assert sealed, drive the real open, assert air, drive the real close, assert sealed again. Every scratch score carries the gate id too, because the suite is one batch on one server with no ordering between templates. With `crush: true`, one more for that gate — `souls_timed_gate_crush_<id>`: it waits out the dummy's spawn protection (`await delay 80t`; a fresh PackTest dummy refuses `/damage` for vanilla's 60-tick spawn protection — measured on the pinned toolserver: 1000 `minecraft:generic` leaves `Health` 20 at ticks 20, 40 and 59 and kills at 61 and 80), then in one tick: the emitted region selector holds the dummy standing in the gate and releases it two blocks clear; a closing tick with the dummy clear leaves it at `Health` ≥ 1; and a closing tick with the dummy standing in the region leaves it at `Health` 0. The jam score is pinned before and after the wait. The respawn after a crush death is the bot tier's (`crush_gates[]` in `validation/death-plan.json`). The test binds `@s`, never `@a`: PackTest runs the whole suite in ONE shared world, so a sibling template's dummy in the same fixture cell would otherwise be counted.  With a `disarm` every line of `tgate_close_<id>` — the judgement, the `fill` and the next hop — plus the open half's `schedule` is prefixed `execute unless score #tgdis_<id> dw.sys matches 1`; the open's own `fill` is deliberately NOT guarded, because a jam landing while the gate is shut leaves one already-scheduled open in flight and that open is what parks the portcullis in its resting position. `setup_finish` summons the jam affordance (interaction hitbox + `dw_hw_…` item_display, `DW0420`), the tick carries the same one-shot `#tgdis_<id>` poll a shortcut unlock uses, and `tgate_disarm_<id>` is four commands whose ORDER is the semantics: latch the sentinel, raise `sets_flag` party-wide, `fill … minecraft:air replace <block>` once, `kill` the hardware (the one function `DW0421` allows to). There is deliberately no `schedule clear`: a close already in flight fires into the guard and does nothing — including not scheduling the next open — so the ping-pong dies of its own accord within one hop. Generated PackTest `souls_timed_gate_disarm_<id>`: prove the clock really seals while armed, pull the real lever, then drive `tgate_close_<id>`/`tgate_open_<id>` across three former cycle boundaries and assert the span is air at each. |
 | `shortcut` (spec-0016 §2) | `setup_finish` summons the far-side unlock affordance (`minecraft:interaction`, tag `dw_sc_<id>`) — Alongside the hitbox the compiler summons its **visible hardware** — a glowing, collision-free `minecraft:item_display` at the same cell, tagged `["dw_marker","dw_hw_<tag>"]` (a `minecraft:lever` icon). `minecraft:interaction` is invisible, so the hitbox alone is a right-click target the player cannot see: the drowned-bell soft-lock (`DW0420`). Visibility is the compiler's, never the tileset's. `shortcut_open_<id>` kills it as the bar is thrown: the affordance is spent, and it is the ONLY function permitted to retire it (`DW0421`). — and emits **nothing** for the gate, which the prefab already seals. `tick` polls the affordance's `interaction` record once, guarded by the `#sc_<id> dw.sys` sentinel → `shortcut_open_<id>`, then clears the record. `shortcut_open_<id>` latches the sentinel, clears the gate region (`fill … minecraft:air replace <block>`, the same command `open-gate` emits) and runs `on_unlock` server-source-safe. `on_unlock` is **effect root R6** since spec-0031 — the bundle emission lowers here is now the same bundle every proof and every l10n pass walks. No emitted function anywhere ever re-fills a shortcut gate — the runtime half of permanence, asserted by a test over the whole datapack. Generated PackTest `souls_shortcut`: sealed before, air after, still air after a second unlock pass. |
 | `lane` / `summon: aggro-edge` (spec-0016 §6) | A lane wave's `spawn_<wave>` summons the squad with `,Patrolling:1b[,PatrolLeader:1b],patrol_target:[I;x,y,z]` (leader = the first summoned mob, also tagged `dw_lead_<wave>`), `follow_range` forced to `aggro_radius`, then sets `#lane_<wave> dw.sys 0` and schedules `lane_tick_<wave>` at 30t. **Only the snake_case int-array routes** — 1.21.11's strict codec silently drops the legacy `PatrolTarget:{X,Y,Z}` compound and the squad then patrols to vanilla-rolled random points (working-but-drunk); `Patrolling`/`PatrolLeader` keep their camelCase names. `lane_tick_<wave>`: advance guards in DESCENDING index order (so one cycle steps at most one waypoint) firing when ANY squad member is within 8 blocks of the current waypoint (any member, not the leader — a dead leader must not strand the warband); one `data merge entity @s {Patrolling:0b}` release for every mob with a player inside `aggro_radius`; one per-index re-assert `{Patrolling:1b,patrol_target:[I;…]}` for every mob with nobody inside it (this is what defeats vanilla's arrival re-roll and the lone-patroller self-cancel, and it is inert during combat because the patrol goal cannot restart while the mob has a target); then a `schedule … 30t` re-arm guarded on the squad still existing, so the clock stops by itself. An `aggro-edge` wave carries no patrol NBT at all — only its ring placement. Because a re-seat is `kill` + this same `spawn_<wave>`, everything above is also what re-stations a re-seated squad (spec-0016 §1). Generated PackTests `souls_td_patrol_nbt`, `souls_td_lane_march`, `souls_td_lane_release`, `souls_td_lane_reseat` (the squad hauled onto the party, released to native AI and its clock run to the lane's end, then re-summoned: routed again from waypoint 0, release gone), `souls_td_aggro_edge`. |
 | `bonfire` (spec-0016 §1) | Inline at the arming beat: `execute unless entity @e[tag=dw_bonfire_<i>] run summon minecraft:interaction … Tags:["dw_bonfire_<i>"]` — Alongside the hitbox the compiler summons its **visible hardware** — a glowing, collision-free `minecraft:item_display` at the same cell, tagged `["dw_marker","dw_hw_<tag>"]` (a `minecraft:campfire` icon, under the same absence guard so a re-fired beat never stacks a second one). `minecraft:interaction` is invisible, so the hitbox alone is a right-click target the player cannot see: the drowned-bell soft-lock (`DW0420`). Visibility is the compiler's, never the tileset's. Never retired: a bonfire is rested at, not used up, so **nothing** may kill its hardware (`DW0421`). — nothing else; the checkpoint does not move. **The click opens a choice, it does not rest.** A per-bonfire advancement `bf_<i>` on the vanilla `player_interacted_with_entity` criterion rewards `bonfire_open_<i>`, which therefore runs **as the clicking player** — the interaction entity's own `interaction` record names no player a `dialog show` could target, which is why the poll was replaced by the same primitive every `interact` objective already uses. `bonfire_open_<i>` revokes its own advancement (a rest point is used, never consumed), sets `dw.rest_at = <i>`, resets then `enable`s the **trigger** objective `dw.rest`, and shows dialog `<ns>:bonfire_<i>`. A trigger because a dialog button runs its command as the player and `/trigger` is the only command a non-operator player may run. The two buttons write `2` (*rest and save*) or `1` (*save only*); `tick` turns each answer into its function — `execute as @a[scores={dw.rest=1,dw.rest_at=<i>}] run function <ns>:bonfire_pick_save_<i>` and the `=2` twin for `bonfire_pick_rest_<i>`. `dw.rest_at` is what keeps a multi-bonfire campaign from routing every answer to the first fire. Each pick resets `dw.rest` first, so one press is one rest. **`bonfire_save_<i>`** = exactly the three `set-checkpoint` lines (`spawnpoint @a`, the `dw:cp pos` mirror, `#cp dw.sys = <i>`) and nothing else. **`bonfire_pick_rest_<i>`** = `bonfire_restore` then `bonfire_rest_<i>`. **`bonfire_rest_<i>`** is unchanged from v0.6 — those three lines + the wave re-seats + the `on_rest` bundle, emitted **server-source-safe** (§4: player-facing effects re-bind to `as @a`, so the whole party rests together and party state fires once). **`bonfire_restore`** is the player-local half: `effect give @s instant_health 1 9 true`, `effect give @s saturation 1 9 true`, one `effect clear @s <id>` per harmful effect (enumerated, never a bare `effect clear @s`, which would also strip the per-area night-vision mitigation clock and any beneficial effect the story granted), then `bonfire_flask`. `instant_health`/`saturation` because vanilla has no `/health` or `/food` command and `/data merge entity` refuses players — those two effects ARE the primitive. **`bonfire_flask`** refills each `flask` kit entry for the class the player took: `execute if entity @s[tag=dw_class_<c>] run clear @s <item-predicate>` then the matching `give @s <item>[components] <count>` — both built by the same two helpers the class kit's own give uses, so the refilled item is poured-identical, and the clear names the flask's potion `contents` rather than a bare item id (§2 stage 3) so it cannot take an unrelated potion out of the bag. `clear`+`give` rather than `item replace` because a kit item has no fixed slot; replenishment is two-directional by construction (a hoarded stack comes back DOWN to the declared count — the flask is a per-rest budget, not a stockpile). The respawn path runs the same `on_rest` bundle through `cp_reset_<i>` (entered from `cp_on_respawn_<i>` only by a body dead at a party wipe) under the player executor, so a bonfire with an empty `on_rest` still dispatches when it owes a re-seat, and — since vanilla already returns a dead player at full health but not with a full flask — it calls `bonfire_flask` too, so retry never costs a second walk to the fire you just respawned at. The **exported critical path rests**: after the step that arms bonfire `<i>` the path gains `{"action":"rest","bonfire":<i>,"anchor":…,"pos":…,"command":"/trigger dw.rest set 2"}` (see `critical-path.json` below). Generated PackTests `souls_bonfire_rest` (the real rest function moves `dw:cp` to the bonfire cell), `souls_bonfire_reseat` (a met, wiped wave stands again at its authored count after a rest; an unmet one is not conjured; and a **chipped survivor**, branded with an ad-hoc tag no re-summon can carry, is gone after the rest while the wave stands full — the no-chip-through rule proven by identity, not arithmetic) `souls_bonfire_options` (save-only moves `dw:cp` and leaves the flask alone; rest replenishes it to the declared count) and `souls_reseat_stationed` (the **stationed** re-seat: the wave is dragged onto the party and — for a lane — released to native AI by the real clock with its march clock run to the lane's end, then the real rest runs, and the fresh squad must stand at its own seating footing, at the authored count, with no mob of the previous life left and the routed state re-applied). **The undefeated re-seat.** A rest re-seats two more things, and both are gated on the body still being there rather than on a sentinel, so "undefeated" is asked of the world: (a) every **billed `elite`/`boss` wave** that does not declare `respawns_on_rest` — `execute if entity @e[tag=dw_wave_<id>] run function <ns>:wave_reseat_<id>`, the same removal-and-respawn the stationed re-seat uses, so a boss chipped one hit per life comes back at full count and full health; (b) every **hostile actor** — an actor the campaign `unleash-actor`s anywhere (`combat::hostile_actors`, the compiler's one "unleash or nothing" definition of an actor that is a fight) — as `execute unless entity @e[tag=dw_pup_<id>] if entity @e[tag=dw_actor_<id>] run function <ns>:actor_restand_<id>`. `actor_restand_<id>` is the removal of `dw_actor_<id>` (its declared `drops` stripped first) then the twin summon at the actor's **absolute origin cell**, byte-identical to the body `unleash_<id>` produces. Three deliberate asymmetries: it puts the elite back **freed, never re-caged** (the `unleash-actor` beat fires from a one-shot trigger the engine never re-arms, so a re-caged elite would be dormant `Invulnerable` scenery for the rest of the delve); it does **not** re-apply the striker aggro lock (nobody has provoked this body — it stands on its anchor under vanilla-local AI, inside the `follow_range` `DW0478` measured the fire against); and it leaves a **caged puppet alone** (a puppet is `NoAI`, knockback-immune and normally `Invulnerable`, so combat can neither damage nor move it, and re-seating one would only undo authored `move-actor` staging). A killed or `despawn-actor`ed body selects nothing, so a **defeated boss stays dead** by construction (spec-0016 §1) with no state to keep. Generated PackTests `souls_reseat_actor` (stage the elite, unleash it, drag it onto the party, chip it to 1 HP and brand it, then run the REAL rest: one body, unbranded, within 2 blocks of its origin, no puppet — then kill it, rest again, and nothing comes back) and `souls_reseat_undefeated` (the same claim for a boss wave: ground down to a branded survivor, restored whole and unbranded by a rest; killed outright, never conjured back). `souls_unleash_yields_nothing` and `souls_reseat_yields_nothing`, emitted when a re-seated wave or hostile actor declares `drops` — one template per removal, because a failing `assert` does not abort a template and the log names only the last one (see "PackTest batch model"), so one template judging both removals reported a leaking unleash as the rest's failure. In each, the body is dragged onto the party and the real removal runs — `unleash_<id>` on each drop-declaring hostile actor's puppet; `bonfire_rest_<i>` on every drop-declaring re-seated wave and on each such actor's unleashed twin, after what the unleash parked is killed and cleared uncounted — followed in the same tick by a kill of the `dw_unseen` bodies in the party's column at Y −128 (see "A body the story removes" — a template never runs `unseen_sweep`); no item entity may lie within 3 blocks of Y −128 in the party's column, where an unseen removal's body dies. Then the body that removal takes, fresh — a puppet for the unleash, each wave and twin for the rest — is moved to that same place and killed by a bare `kill`, which must yield one there, so the zero is measured where the removal kills, against a body that carries the loot. Each template's title states its binding: the number of bodies it meets, by id. Both re-seats also ride the respawn path (`party_reseat`, entered from `cp_reset_<i>` while `#wipe` is latched), because a party wiped at a bonfire is owed the same scene; a death in a party still fighting re-seats nothing. Where a bonfire may STAND is proven separately: `DW0478` forbids one inside any wave's or fighting actor's aggro range — seated cells and lane polyline alike — because the fire is where the party respawns and where every `respawns_on_rest` wave is put back on its feet. |
 | `loops[]` (spec-0086) | One tick line `function <ns>:loop_<id>_poll` per loop. `loop_<id>_poll` is one line: `execute<gate> as @e[<slab box>,tag=!dw_fixture,tag=!dw_cutscene] at @s run function <ns>:loop_<id>`, where `<gate>` is the loop's gate as `if`/`unless score #party …` terms (the same formatter every gate consumer uses) and the box is the slab from `Plan::zone_box` through `emit::box_selector_args`. `loop_<id>` = `scoreboard players add #party dw.s_<counts> 1` (when `counts` is declared), then `tp @s ~dx ~dy ~dz`, then `function <ns>:loop_<id>_cross`, the `on_cross` bundle emitted under `Audience::Scheduled`. The move is relative, so position-in-cell, facing and velocity carry (spec-0086 §2). Generated PackTests, synchronous: `loop_<id>` drives the gate to hold (each flag and datum at a value the gate admits), summons a tagged `NoAI` zombie in the slab, asserts it is selected by the slab box, runs the real `loop_<id>_poll`, and asserts its position moved by exactly the offset (read in thousandths of a block) and the count by one; `loop_<id>_released` drives one gate term shut and asserts the same poll moves nothing and counts nothing. |
-| `pulses[]` (spec-0102) | One function `pulse_<s>` per pulse (`<s>` = `safe_local(id)`). **Gated**: `scoreboard players set #pulse_<s> dw.sys 1`; `execute <terms> run playsound <sound> master @a[<box>,tag=!dw_cutscene] <x> <y> <z> <V> <pitch>`; `execute <terms> run schedule function <ns>:pulse_<s> <every>t replace`; then one `execute <¬term> run scoreboard players set #pulse_<s> dw.sys 0` per term (*not every term holds* is a disjunction, the trap gate's shape). `setup_finish` seeds `#pulse_<s> dw.sys 0` and `tick` carries the open edge, `execute <terms> unless score #pulse_<s> dw.sys matches 1 run function <ns>:pulse_<s>`: the first beat sounds on the tick the gate opens, the chain carries itself, and a call after the gate shuts plays nothing, schedules nothing and clears the latch, so the chain is dead within one interval and the edge re-arms it on the next opening. **Ungated**: the `playsound` and the `schedule` alone, started once by `setup_finish`; no holder, no latch, no tick line. `<terms>` are `Plan::gate_terms` rendered by `GateTerm::clause`; `<box>` is the `PlaceRef` box through `emit::box_selector_args`; `<x> <y> <z>` the source cell's centre; `V` and `pitch` by `fmt_f64`; the category is `master`, as `play-sound` writes it. Generated PackTests, synchronous, each emptying `<ns>:pulse_<s>`'s schedule before the call it measures (the queue is server-global: a sibling template that leaves the gate open across a tick lets the tick's edge line start the real chain) and ending in `schedule clear`: per gated pulse `pulse_<s>` (gate open by `lethal_gate_lines`, latch 0, the edge line run, latch asserted 1 and one schedule cleared) and `pulse_<s>_shut` (latch 1, gate shut by one term, the beat run, latch asserted 0 and nothing scheduled); per ungated pulse `pulse_<s>` (the beat run, one schedule cleared). Bound by the `pulse` claim (`DW0811`, family `pulse_`). The `playsound` is a client-bound packet no PackTest observes; the bot hears it (`harness/src/pulse.ts`). |
+| `pulses[]` (spec-0102) | One function `pulse_<s>` per pulse (`<s>` = `safe_local(id)`). **Gated**: `scoreboard players set #pulse_<s> dw.sys 1`; `execute <terms> run playsound <sound> <category> @a[<box>,tag=!dw_cutscene] <x> <y> <z> <V> <pitch>`; `execute <terms> run schedule function <ns>:pulse_<s> <every>t replace`; then one `execute <¬term> run scoreboard players set #pulse_<s> dw.sys 0` per term (*not every term holds* is a disjunction, the trap gate's shape). `setup_finish` seeds `#pulse_<s> dw.sys 0` and `tick` carries the open edge, `execute <terms> unless score #pulse_<s> dw.sys matches 1 run function <ns>:pulse_<s>`: the first beat sounds on the tick the gate opens, the chain carries itself, and a call after the gate shuts plays nothing, schedules nothing and clears the latch, so the chain is dead within one interval and the edge re-arms it on the next opening. **Ungated**: the `playsound` and the `schedule` alone, started once by `setup_finish`; no holder, no latch, no tick line. `<terms>` are `Plan::gate_terms` rendered by `GateTerm::clause`; `<box>` is the `PlaceRef` box through `emit::box_selector_args`; `<x> <y> <z>` the source cell's centre; `V` and `pitch` by `fmt_f64`; the category is `master`, as `play-sound` writes it. Generated PackTests, synchronous, each emptying `<ns>:pulse_<s>`'s schedule before the call it measures (the queue is server-global: a sibling template that leaves the gate open across a tick lets the tick's edge line start the real chain) and ending in `schedule clear`: per gated pulse `pulse_<s>` (gate open by `lethal_gate_lines`, latch 0, the edge line run, latch asserted 1 and one schedule cleared) and `pulse_<s>_shut` (latch 1, gate shut by one term, the beat run, latch asserted 0 and nothing scheduled); per ungated pulse `pulse_<s>` (the beat run, one schedule cleared). Bound by the `pulse` claim (`DW0811`, family `pulse_`). The `playsound` is a client-bound packet no PackTest observes; the bot hears it (`harness/src/pulse.ts`). |
 | `respawn_wait` (spec-0077) | World-level, emitted only when declared. `setup` adds the per-player clock `dw.rwait` (dummy, held **from 1** exactly while a player waits, so `matches 1..` is "waiting" and a missing entry reads the same as a reset one — `DW0495`). The party-wipe detector (emitted for a bonfire **or** a declared wait) counts `#alive` as alive **and** unclocked, and counts `#present`; the wait is read off its clock, not the tag, because a cutscene tags every player and would otherwise latch a wipe. The respawn edge in `cp_respawn_check` calls **`rw_begin`** instead of `cp_respawn_fire`: with a second player present it starts the wait (`rw_start`) when `#alive − 1 ≥ 1` and the player is not tagged `dw_wiped`; with `alone: true` and nobody else present it starts it too; otherwise it fires `cp_respawn_fire` itself. `rw_start` sets the clock to 1, takes the player out of this tick's `#alive`, adds `dw_cutscene`, switches to spectator and runs `rw_lock`. **A waiting player answers nothing**: `rw_lock` is one `scoreboard players reset @s <t>` per trigger objective the finished `setup` declares (read off `setup` itself, so a channel an emitter adds later is locked by existing — the class pick, the bonfire, the shop, each NPC dialog, each interact), which clears the score and revokes the permission, so the waiting player's own `/trigger` is refused and no dispatch reads a stale answer; `rw_release` enables nothing, and each channel is re-armed by the normal flow as for any player (the per-tick `enable @a`, `class_arm`, a bonfire or shop opening its dialog). `tick`, after the wipe detector and before the edge: `execute if score #alive dw.sys matches 0 [if score #present dw.sys matches 2.. — alone only] as @a if score @s dw.rwait matches 1.. run function <ns>:rw_release` (a wipe ends every wait), then `execute as @a if score @s dw.rwait matches 1.. run function <ns>:rw_lock` — after every per-tick `enable @a`, and not held by a cutscene, so every tick ends with a waiting player's channels shut — then `rw_tick` for every clocked player (held whole while a cutscene plays: `unless score #cs_live dw.sys matches 1..`). `rw_tick` re-applies spectator and the tag (a relog comes back in adventure under `force-gamemode`; a cutscene's end restores adventure), releases at `matches <seconds×20>..`, shows the seconds left on the action bar (`delvewright.ui.respawn.wait`, `with` = `#rw_left dw.sys`), counts the clock, and runs `execute at @s unless predicate <ns>:sneak_held run spectate @p[tag=!dw_cutscene,nbt=!{Health:0.0f}] @s` — the cutscene bounce's sneak rule; the watcher stands where its target stands, so the nearest is the one it already watches. With `alone: true`, a watcher with nobody to watch is held on the active checkpoint cell (`rw_watch_fire`, the `cp_seat_<i>` dispatch). `rw_release` resets the clock, removes the tag, returns to adventure and runs `cp_respawn_fire` — the seat, the fire's per-player half (flask refill) and, after a wipe, the one re-seat. **A watcher is out of play everywhere** (`crate::compiler::observer`): in every campaign, with or without a wait (a cutscene viewer carries the tag too), the approach-trigger test, a lane's patrol test, the cutscene repair driver and the cutscene's return mark (`@p`) gain `tag=!dw_cutscene`, and every build censuses every positional player selector in the shipped tree (`@a`/`@r`/player-typed `@e` with a box or `distance` term; `@p`; player-typed `@n`) into *excludes the tag*, *at an allowed site* (`observer::ALLOWED`, each with its reason: boxed status effects, the ladder's staged blow) or *unguarded*; one unguarded selector refuses the build with `DW0926` (an engine self-check) and the count is printed as `observer binding: …` and written to `validation/observer-census.json`. Gallery primary: 119 positional player selectors over 348 functions, 110 guarded, 9 allowed, 0 unguarded. Live proof: `harness/probe/respawn-wait-party.ts`. |
 | health bar (`waves[]`/`actors[]` `health_bar`, spec-0073) | One vanilla custom boss bar per declaring fight, id `<ns>:hb_<key>` where `<key>` is `wave_<safe id>` or `actor_<safe id>` (a wave and an actor sharing a local name never share a bar). **World init** (`setup`): `bossbar remove` then `bossbar add <id> <title component>` — an `add` on an existing id fails, and a bar left by an earlier build of the same world must not survive — then `bossbar set <id> color|style <lit>` only when declared, `bossbar set <id> players` (no audience) and the holders `#hbv_<key>`/`#hbm_<key>` zeroed on `dw.sys`. The title component is the i18n v2 `{translate, fallback}` form: a stated `title` under `wave.<w>.health_bar.title`/`actor.<a>.health_bar.title`, a derived one under the name's own key. **Every tick**: `function <ns>:hb_<key>`, whose first line is `execute unless entity @e[<bodies>,nbt=!{Health:0.0f},limit=1] run return run bossbar set <id> visible false` — no live body, hidden for everyone, on the tick of the last death. Otherwise it zeroes `#hbv_<key>`, runs `hb_acc_<key>` as every live body (`data get entity @s Health 1` added in), stores the value into the bar, restates the max from `#hbm_<key>` when it is `1..`, clears the player tag `dw_hb_<key>`, re-tags every player within `range` of a live body who is not in a cutscene and not dead (`execute as @e[<bodies>,nbt=!{Health:0.0f}] at @s run tag @a[distance=..<range>,tag=!dw_cutscene,nbt=!{Health:0.0f}] add dw_hb_<key>`), sets the bar's players to `@a[tag=dw_hb_<key>]` and `visible true`. `<bodies>` is `tag=dw_wave_<id>` for a wave; `tag=dw_actor_<id>,tag=!dw_pup_<id>` for an actor, without the narrowing when it is `vulnerable`. **Max capture**: `hb_max_<key>` zeroes `#hbm_<key>` and sums `attribute @s minecraft:max_health get 1` over the live bodies (`hb_macc_<key>`); it is the last line of every function that summons the fight's bodies — `spawn_<wave>` (so every re-seat, which re-runs it, recaptures), `spawn_actor_<id>`, `unleash_<id>` and `actor_restand_<id>` — so a fight of three with one dead reads two-thirds, and a re-seated fight reads full. `crates/delvec/tests/call_graph_integrity.rs` finds every summoner from the bytes and holds each to its capture. On a server restart the bar persists in `level.dat` (vanilla stores custom bars there) and the first tick re-derives value, max, audience and visibility from the world, so nothing stale outlives one tick. Generated PackTests: `health_bar_<key>` per declared bar (meet the fight through its real spawn/unleash, lift the dummy and the fight to a private altitude so the audience count is exact in a shared batch, then in range: one player, visible, value = max = the fight's summed `max_health` — the declared literal when every body declares it, else the server's own `attribute … base get` summed by `scoreboard players operation`; chip one body to 1 HP with `data modify` and the value moves by exactly what it lost; lifted out of `range`: no player; with a bonfire that re-seats the fight, the real `bonfire_rest_<i>` and value = max again; every body killed: hidden) and `health_bar_several` when two or more are declared (`bossbar list` returns the declared count after `setup`, and each id answers `bossbar get … max`). A campaign that declares no bar emits none of this. |
 | `begin-stealth` / `end-stealth` | `begin` → `#stealth dw.sys = <session>` + reset per-player `dw.st_grace`. `tick` runs `stealth_tick_<session>` while active → per-player `stealth_eval_<session>`: safe iff inside some zone box (a pure position selector — **zone presence alone = hidden**; there is no sneak requirement, which would collide with the spectator cutscene camera); grace resets when safe, climbs when exposed, and at `grace_ticks` fires `stealth_caught_<session>` (`on_caught`). `end` → `#stealth dw.sys = 0`. The `v06_stealth` PackTest disarms `#stealth` (sets it 0) after each `stealth_begin` because it drives `stealth_eval` explicitly: an armed session would make the world `tick` loop run a *second* judge pass in the same tick, double-counting exposure and mis-accruing grace (this only isolates the test; runtime gameplay has the tick loop as sole caller). It pins its dummy by tag (see "PackTest batch model" below), drives hidden/exposed purely by teleporting the dummy in/out of the zone box, runs the spare (safe-player) section first and the `on_caught` trip LAST — the trip executes arbitrary campaign `on_caught` content (possibly lethal), so nothing state-dependent follows it and the closing assert reads the dummy through the tag, which keeps matching even if the trip killed it. |
@@ -1436,7 +1448,7 @@ migration — player A's objective set, player B's guard still shut — is the
 soft-lock that no single-player test can see.
 
 Naming: `dw.o_<obj>`, `dw.q_<quest>`, `dw.qa_<quest>` (active), `dw.dlg_<npc>`,
-`dw.f_<flag>`, tags `dw_npc_<npc>`/`dw_wave_<id>`/`dw_i_<obj>`/`dw_r_<obj>`.
+`dw.f_<flag>`, tags `dw_npc_<npc>`/`dw_wave_<id>`/`dw_i_<obj>`.
 Cast ledger (spec-0020): the per-player scene selector `dw.cast`, and one
 `#bk_<npc>_<scene>` bark-pool counter per pool on `dw.sys`.
 `CustomName` is a plain SNBT text component (not `'{"text":…}'`).
@@ -1482,7 +1494,7 @@ no `dsl_version`; `tools/ci/check-dw-codes.py` resolves both forms.
 
 `schedule function <ns>:<f> <n>t` re-invokes `<f>` with the **server** command
 source: no executor, so `@s` resolves to nothing and every `@s`-addressed command
-in it *silently does nothing* — no error, no log line. Three generated bundles are
+in it *silently does nothing* — no error, no log line. Four generated bundles are
 reached only that way:
 
 | bundle | reached from |
@@ -1490,6 +1502,7 @@ reached only that way:
 | `mv_arrive_<key>` | `mv_tick_<key>`, itself re-scheduled every tick |
 | `ma_arrive_<key>` | `ma_tick_<key>`, likewise |
 | `seq_<root>_<n>_<i>` | `seq_<root>_<n>`'s `schedule … <at_ticks>t` chain |
+| `cs_end_<bare>` (a cutscene's `then`) | `cs_tick_<bare>`, itself re-scheduled every tick |
 
 The cost of emitting them verbatim: an `on_arrive` bundle that sets a flag an
 objective gates on soft-locks the party, and every `title`/`tellraw`/`playsound`
@@ -1502,17 +1515,20 @@ selector; the executor match is exhaustive — a new effect verb must state its
 scope or the compiler refuses to build):
 
 - `Party` — a party event entered as one player (`complete_<obj>`,
-  `complete_q_<quest>`, `trig_<id>`): `@s` exists and is the completing player;
-- `Scheduled` — the three bundles above: **no `@s` at all**;
+  `complete_q_<quest>`): `@s` exists and is the completing player;
+- `Scheduled` — the bundles above, and every root run from the server source
+  (a polled trigger's `trig_<id>`, a trap payload, a shortcut unlock, an
+  assembly's landed blow, a loop's crossing, a `bonfire`'s `on_rest`): **no `@s` at all**;
 - `Solo` — a checkpoint `on_respawn` / a stealth `on_caught` / `on_death` / a
-  shop offer / a fight's `on_kill` (the player credited with the kill): the
+  shop offer / a fight's `on_kill` (the player credited with the kill) / an
+  `audience: presser` trigger (the player who pressed): the
   bundle belongs to the one player it fired for, and stays `@s` throughout (re-broadcasting one
   player's death would re-gift and re-narrate at every survivor).
 
 Under `Party`/`Scheduled`:
 
 - **player-facing** (`Verb::addresses_players`: `narrate`, `give-item`,
-  `play-sound`, `particle`, `give-effect`, `clear-effect`, `damage-players`) →
+  `play-sound`, `stop-sound`, `particle`, `give-effect`, `clear-effect`, `damage-players`) →
   the command names `@a` directly (`tellraw @a`, `give @a`, `damage @a[…]`,
   `playsound … @a`), so the whole party sees the beat **once**. A sound for the
   listeners (a `narrate` sound, a `players` play-sound) is wrapped
@@ -1522,8 +1538,8 @@ Under `Party`/`Scheduled`:
   `spawn-wave`, `spawn`/`despawn`/`move`/`unleash-actor`,
   `spawn`/`despawn`/`move-npc`, `cutscene`, `set-time`/`set-weather`,
   `set-checkpoint`, `bonfire`, `begin`/`end-stealth`, `sequence`,
-  `campaign-complete`, the region writes, `teleport`, `volley`, `collapse`,
-  `firework`, `lightning`, the state verbs) → emitted **bare**, so it fires exactly once.
+  `campaign-complete`, the region writes, `open-way`, `set-atmosphere`, `teleport`, `volley`, `collapse`,
+  `firework`, `lightning`, `spawn`/`despawn-assembly`, `play-clip`, `arm-strikes`, `drop-stake`, the state verbs) → emitted **bare**, so it fires exactly once.
   The envelope's `audience` and `in` on one of these is `DW0942`; the set is
   `Verb::addresses_players`, bound to the emitted bytes by
   `tests/v35_perception.rs::every_verb_is_classified_by_what_the_emitter_does`. A blanket `execute as @a run
@@ -1570,7 +1586,7 @@ player who leaves the server before a step runs takes that step with them.
 Which nested bundle has an acting player is one statement,
 `QuestEffect::nested_effect_dispatch`: a `sequence` step inherits its parent's;
 a `set-checkpoint`'s `on_respawn` and a `begin-stealth`'s `on_caught` always have
-one; a `move-npc`/`move-actor` `on_arrive` and a `bonfire`'s `on_rest` never do.
+one; a `move-npc`/`move-actor` `on_arrive`, a `bonfire`'s `on_rest` and a `cutscene`'s `then` never do.
 `DW0357` and `DW0503` read it.
 
 **Enforcement** (all three; never relax one):
@@ -1671,7 +1687,7 @@ writes a death on screen in exactly one place: `despawn-actor` `style: kill`
 (`Exit::OnScreen`, `kill @e[tag=<tag>]` in place). Every other removal —
 `despawn-npc`, `despawn-actor` `vanish`, the puppet an `unleash` replaces, an
 actor re-stand (`actor_restand_<id>`), a wave re-seat (`wave_reseat_<wave>`) —
-is `Exit::Unseen`, four commands over `@e[tag=<tag>]`:
+is `Exit::Unseen`, four commands over `@e[tag=<tag>]` (after the drop strip, for a body that declares drops):
 
 1. `execute if entity … run schedule function <ns>:unseen_sweep 5t replace` —
    only when a body is really leaving, and `replace`, so every body waits at
@@ -1748,7 +1764,7 @@ properties make a forged completion impossible rather than merely unlikely:
 3. `DW0182` reserves the sigil in every player-visible string — authored English
    and every sidecar translation alike.
 
-The harness side of the contract (`critical-path.json` `format_version` 2, the
+The harness side of the contract (`critical-path.json` `format_version`, the
 per-step `objective` id, and the endgame rule that campaign completion belongs to
 the last objective step) is described under "World / build output" below.
 
@@ -1796,6 +1812,28 @@ clause keyed on the **stuck state itself** — tagged while nothing is playing:
 
 A cutscene-less campaign emits none of it (byte-identical).
 
+**Where the spectating camera is, recorded once** (spec-0109 §2.9; the pinned
+1.21.11 client jar, `Minecraft.getSituationalMusic`, `Camera.{setup, tick,
+attributeProbe}`, `EnvironmentAttributeProbe.tick`,
+`EnvironmentAttributeSystem.getValue`, `BiomeManager.getNoiseBiomeAtPosition`;
+the server jar, `ServerPlayer.tick`, `PrimaryLevelData`, `TimerQueue`; read from
+bytecode through Mojang's official mappings, held constant by ADR-0009):
+*the listener is the camera's own 4-cell* — `Camera.setup` and `Camera.tick`
+probe the attributes at the camera's position, and an attribute that is not
+spatially interpolated (both `audio/` ones) is read at
+`getNoiseBiomeAtQuart(QuartPos.fromBlock(floor(x)), …)`, the cell containing
+the camera, with none of the seeded fiddle `BiomeManager.getBiome` applies;
+*the body stands at the camera* — while a player's camera is another live
+entity, `ServerPlayer.tick` snaps the player to the camera's position every
+tick, so every watcher's body is in the camera's cell, the chunks the camera
+passes are the chunks the watchers load, and `isUnderWater` is read where the
+camera is; *a scheduled function survives a stop* — `PrimaryLevelData` writes
+its `TimerQueue` under `ScheduledEvents` and reads it back, so a pending
+`cs_tick_<bare>` fires when the world next ticks and `cs_end_<bare>` runs; a
+crash restores the last save, where `level.dat` and `scoreboard.dat` agree and a
+chunk saved at unload may be newer than both — the case `load`'s paint mark
+covers (the `cutscene` emission row).
+
 **The `spectate` bounce is sneak-gated.** In spectator
 mode the sneak key dismounts the spectated entity, so an unconditional per-tick
 re-attach against a held key strobes: attach → client dismount → attach, every
@@ -1827,11 +1865,14 @@ candidate scoring — dossier §4's compile-time ClearShot is not built);
 `bearing` (compass degrees: 0 = camera south of subject, 90 = west) steers the
 placement, and an explicit `path`/`look_at`/`seconds` overrides any part.
 Entity subjects (`npc`/`actor`) aim one block above the feet cell (torso)
-before `offset`; `anchor` subjects use the block centre exactly.
+before `offset`; `anchor` subjects use the block centre exactly; an
+`assembly`, `place` or `region` subject is aimed at the centre of its box.
+`subject` is not style-only: every shot declares one (see the `cutscene` row),
+and a style refuses a `"landscape"` (`DW0348`).
 
-A `subject` is discriminated by its key — exactly one of `anchor` / `npc` /
-`actor`, plus an optional `offset`, **and nothing else**. Each spelling is its own
-`deny_unknown_fields` type (`Mark` / `NpcSubject` / `ActorSubject`), so
+A `subject` is the word `"landscape"` or an object discriminated by its key — exactly one of `anchor` / `npc` /
+`actor` (each with an optional `offset`) / `assembly` / `place` / `region`, **and nothing else**. Each spelling is its own
+`deny_unknown_fields` type (`Mark` / `NpcSubject` / `ActorSubject` / `AssemblySubject` / `PlaceSubject` / `RegionSubject`), so
 both serde and the exported JSON Schema (`additionalProperties: false`) reject a
 typo'd key or a subject naming two discriminators at once with `DW0100`. An
 untagged enum would instead silently *ignore* an unrecognised key: a mistyped
@@ -2021,7 +2062,7 @@ CI-enforced over every fixture family by `tests/packtest_batch.rs`):
   working directory, so a value read out of the filesystem above the inputs is
   invisible to it.
 - Only randomness = stage-1 `seed` → named splitmix64 per-area streams. Solver
-  retry (≤32 attempts) is seed-deterministic; attempt 0 reproduces pre-M2 growth.
+  retry (≤32 attempts, `solver::MAX_BRANCH_ATTEMPTS`) is seed-deterministic: each attempt restarts from the same entry state and keeps drawing from the one seeded stream.
 - **Parallel work merges in a fixed order.** Every multi-core site goes through
   `delvec::par` (`map`, and `try_for_each_ordered` for large results, which
   holds at most `2 × threads` results at once). Each result is computed from
@@ -2044,7 +2085,7 @@ CI-enforced over every fixture family by `tests/packtest_batch.rs`):
 
 ### Environment sealing (bootstrap `#minecraft:load`, idempotent, `#init`-guarded)
 
-**1.21.11 renamed every gamerule** (verified live 2026-07-30; legacy camelCase
+**1.21.11 renamed every gamerule** (verified live, and against the vendored `crates/delvec/data/commands-1.21.11.json` the emitter checks every line against; legacy camelCase
 and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
 (`emit::sealing_commands`):
 
@@ -2055,6 +2096,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
 | `doWeatherCycle` | `gamerule advance_weather false` |
 | `doFireTick` | `gamerule fire_spread_radius_around_player 0` (no boolean successor; radius 0 = no spread) |
 | `mobGriefing` | `gamerule mob_griefing false` |
+| — | `gamerule entity_drops true` (spec-0111: an item frame drops its item only under this rule, so the take of a framed item hands the player the item) |
 | `spawnRadius` | `gamerule respawn_radius 0` (spawn **scatter** off — vanilla otherwise scatters a first join / spawnpoint-less respawn uniformly in a square of this radius around world spawn; every scattered cell in a box garden is solid prefab or void, so the only correct radius is the exact compiler-chosen anchor) |
 | — | `gamerule keep_inventory true` (box-garden death policy; **not in spec-0002** — see §6) |
 | — | `gamerule send_command_feedback false` (the delve's own machinery must not narrate itself: a dialogue option is a `/trigger`, and vanilla would answer it in chat) |
@@ -2092,7 +2134,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   staged body is of a type peaceful discards, `peaceful` otherwise. No server jar, no region files (ADR-0010) — the
   bootstrap `/place template`s prefabs, so byte-identity covers the whole tree.
   `view-distance=<the campaign's, floor 10>` and `simulation-distance=10` (below).
-  The file writes 15 keys and the key set is asserted exactly
+  The file writes 15 keys (16 when the campaign declares `require_resource_pack`) and the key set is asserted exactly
   (`crates/delvec/tests/server_properties.rs`): what a delve pins and what it
   leaves to the host is a reviewed decision, not a residue.
 - **Chunk distances.** `view-distance=<n>` — the campaign's `world.view_distance`
@@ -2149,7 +2191,10 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
     datapack command in the pack runs at — a host that lowered it would break the
     whole bootstrap), `initial-enabled-packs=vanilla` (an enabled experimental
     feature pack changes worldgen and content), `entity-broadcast-range-percentage=100`
-    (how far NPCs and markers are sent to a client), `hardcore=false`,
+    (how far NPCs and markers are sent to a client; spec-0110 judges every
+    framed body against its type's tracking range at 100 and refuses a farther
+    one (`DW1034`) rather than raising it, because raising it scales every
+    entity's tracking for the whole delve for the sake of one shot), `hardcore=false`,
     `allow-flight=false`. Safe at their defaults today and the first place to
     look if a host ever renders or ticks a delve differently.
   - **Agree, product-shaped**: `max-players=20` against a 1–4 player delve
@@ -2203,6 +2248,20 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   when the world is generated. `minecraft:river`, the vanilla biome closest to
   it, is not a substitute: it carries monster, water and ambient spawners,
   carvers, ore and lake features, underwater music and ten biome-tag memberships (`the_void` has one).
+  **An `ocean` horizon** lays `<ns>:ocean`, emitted at
+  `datapack/data/<ns>/worldgen/biome/ocean.json` and named in the generator
+  settings: the pinned `minecraft:ocean` field for field (vendored verbatim from
+  the server jar as `crates/delvec/data/biome-ocean-1.21.11.json`), under the
+  delve's own id so no vanilla registry entry is overridden, and no
+  `data/minecraft/worldgen/biome/ocean.json` is emitted. It rains, as vanilla's
+  ocean does, and joins none of the void biome's tags (`minecraft:ocean` is in
+  none of them; structures and mob spawning are off in every delve). **Either
+  ground biome carries the horizon's declared `audio/` attributes** (spec-0109
+  §3.2), each under its `minecraft:` id in the canonical form the attribute
+  reader writes, over the pinned definition's own value for that id; an audio
+  id the horizon does not name keeps the pinned value, which for both bases is
+  none beside `audio/background_music` — which every horizon names, so vanilla's
+  ocean music (`music.game`, `music.creative`, `music.under_water`) never ships.
 - **Atmosphere biomes** (spec-0080). Every `world.atmospheres[]` entry ships as
   `datapack/data/<ns>/worldgen/biome/atmosphere/<kebab>.json`, biome id
   `<ns>:atmosphere/<kebab>`: the void definition above with `features: []` (a
@@ -2221,7 +2280,12 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   `fillbiome` does. It is the only reader of the ground biome and the bands: the
   bootstrap pass, the generator settings, the biome files and `DW0496` all read
   it, and it answers precipitation for a vanilla biome, a declared atmosphere or
-  the ground through one method. A cell is answered by the 4-cell it lies in;
+  the ground through one method. A valley's bands keep the generator's vanilla
+  biomes and their vanilla music (`cherry_grove` declares
+  `music.overworld.cherry_grove`; `windswept_forest` declares none and inherits
+  the overworld dimension's `music.game`): a body that crosses the boundary onto
+  the gap floor hears them until the boundary returns it, and the music ledger
+  names them on every valley build. A cell is answered by the 4-cell it lies in;
   vanilla's own reading (`BiomeManager.getBiome`) jitters the sample, so a block
   within two of a 4-cell face may read its neighbour, and a block whose
   coordinates are all 2 mod 4 always reads its own cell — where the generated
@@ -2230,10 +2294,76 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   paint (*The blend*, below) through `fillbiome_lines`. Generated PackTest `atmosphere_places` first
   re-establishes the first tick (the ground over every repaint volume, then the bootstrap), then reads
   each carried place inside (`execute if biome`) and just outside (`execute
-  unless biome`), at a cell in no repaint volume and in no other place's paint under the same sky. Every build prints `atmosphere binding: A declared; P of N
+  unless biome`), at a cell in no repaint volume and in no other place's paint under the same sky.
+  **What `fillbiome` does, recorded once** (spec-0109 §2.8; the pinned 1.21.11
+  server jar, `FillBiomeCommand.{register, quantize, makeResolver, fill}`,
+  `GameRules.<clinit>`, `ChunkMap.resendBiomesForChunks`,
+  `QuartPos.{fromBlock, toBlock}`, read from bytecode through Mojang's official
+  mappings; held constant by ADR-0009, re-read at a pin bump, never a recurring
+  check): *the grammar* — `fillbiome <from> <to> <biome> [replace <filter>]`,
+  `<filter>` a biome id or `#tag`; *the box* — both corners quantize to their
+  4-cell and the volume judged is the product of the quantized box's spans, a
+  volume above the gamerule `max_block_modifications` (default 32768) is
+  `commands.fillbiome.toobig` and writes nothing (`atmosphere::command_volume`
+  computes the same); *loaded chunks only* — every touched chunk is fetched
+  before any cell is written, and one unloaded chunk fails the whole line; *the
+  cell rule* — a 4-cell takes the new biome exactly when its 2-mod-4 block lies
+  in the box and the filter accepts the biome it wears, so `fillbiome … X
+  replace Y` moves exactly the cells wearing `Y`, and run where none does it is
+  a successful command that changed nothing (`execute store success` reads 1);
+  *the client* — after the fill every tracking player is sent one
+  `chunk_biomes` packet naming the touched chunks, and no chunk is resent
+  (spec-0080 §2.1's spike measured 2 packets naming 6 of 6 chunks, 0
+  `map_chunk`, 0 `unload_chunk`).
+  Every build prints `atmosphere binding: A declared; P of N
   place(s) carry one; R repaint effect(s) over V volume(s); Q quart cells
   painted at bootstrap of M paint(s) in the map; B biome file(s) emitted` —
   hello-world prints a measured zero.
+- **The music ledger** (`compiler::music`, spec-0109 §5.1). Every build prints
+  `music binding: B biome(s) a camera can stand in — A atmosphere(s) and the
+  ground declared (T with a track, S silent: F fading, O playing out), U band
+  biome(s) undeclared; C cutscene(s), H declare what they hear, G of H
+  confirmed, D declare their music over E painted 4-cell(s) in L paint line(s)
+  and V variant biome(s); K stop-sound effect(s), M of K cut a play-out, N a
+  stinger, Q a hiccup; P sound(s) in a category other than master` (`B` counts
+  every row below; `A`, `T`, `S` the atmospheres and the ground), every figure computed
+  from the declarations, zeroes included, and writes `validation/music.json`:
+  `measured_sha256` (the canonical sha256 of every declaration the ledger
+  reads — each atmosphere and the horizon, each place's carried atmosphere, and
+  every `set-atmosphere`, `cutscene` (its normalized shots, `hears` and `music`),
+  `stop-sound` and `play-sound` with its path, and each pulse's category — so a
+  change music does not read, a translated line or another mechanic's field,
+  moves no byte of the ledger, and an integral float hashes as its integer);
+  per biome (`atmosphere`, `ground`, `band`, `variant`) its
+  `id`, `music` (`silence`, or the `default` / `underwater` tracks), the declared
+  `music_volume`, `entering` (`replaces`, `plays-out`, `fades`,
+  `plays-out-at-gain` — what a playing track does when the camera enters), for a
+  band the vanilla declaration it carries (`vanilla.declares`,
+  `inherits_dimension`), and for a variant its `base` and the cutscenes that
+  derive it (`derived_by`); per cutscene its effect path, `hears`, the
+  configuration it was judged in (`reached`, `judged_at`, `repaints` — the
+  `set-atmosphere` paths in route order), the 4-cells judged and the biomes they
+  wear, the verdict (`confirmed`, `refused`, `undeclared`), and `music` — `null`,
+  or the declaration, its digest, statement and `entering` word, the
+  `painted_cells`, the `boxes` with their candidate `bases`, the `paint_lines`
+  count, the `variants` by base, the carried places the paint `reaches`, and per
+  base the `way_out` word (what the score does when the restore returns a cell
+  to that base); per `stop-sound` its path, `category`, `sound`, `audience`, the
+  biome the forced route stands in when it fires (`null` when the route does
+  not fire it) and `cut` — `cut` (it reaches the music where the biome declares
+  silence, or a spaced track whose next start waits its declared delay),
+  `stinger` (its category cannot reach the music manager's track) or `hiccup` (it
+  reaches the music where the biome's track restarts at once: `max_delay` at
+  most `music::RESTART_TICKS`, 100 ticks, the `CONSTANT` frequency's gap); per
+  `play-sound` and pulse its `category`. The route fires a root
+  at its objective's step, its quest's completion step, or the step that
+  performs its trigger; a trap, a respawn, an `on_kill` or a trigger the path
+  does not perform is not fired by it. Nothing at runtime reads the ledger: it
+  is the build's statement of what each scene plays, for the creator and for the
+  Rust tests that assert it. Music itself is client-side: no instrument outside
+  a client observes the fade, the loop seam, the now-playing toast or a score's
+  way in and out; they are confirmed on a demo level. A cutscene's own music is
+  proven on a server by `cutscene_music_<n>` (the `cutscene` emission row).
 - **The blend** (spec-0080 §2.2; `horizon::BLEND_REACH`, `place_paint`,
   `camera_weight`). Read from the pinned 1.21.11 client through Mojang's
   official mappings: the camera does not read a spatially interpolated
@@ -2309,7 +2439,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   flash rather than a fade repaints between two atmospheres with the same
   `precipitation`, over a volume that holds the camera's whole kernel.
 - `horizon:"ocean"` (spec-0013) swaps `generator-settings` for a pinned
-  superflat `{"biome":"minecraft:ocean","layers":[bedrock×1, stone×118,
+  superflat `{"biome":"<ns>:ocean","layers":[bedrock×1, stone×118,
   water×8]}`: from the −64 build floor the top water block lands at **y=62** (sea
   level). Still no structures/mobs (`generate-structures=false` + gamerule
   `spawn_mobs false`).
@@ -2573,9 +2703,9 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   the release image's `org.opencontainers.image.revision` and
   `ca.stellarfeline.delvewright.campaign-commit` labels.
 - `<out>/critical-path.json`: the bot contract. `version` is the **campaign's DSL
-  version**; `format_version` is the **contract's own** version, currently `5`
+  version**; `format_version` is the **contract's own** version, `5`
   (`plan::CRITICAL_PATH_FORMAT_VERSION`) — bumped when what the harness is told
-  about proving the path changes, independently of the DSL. At format 5 a
+  about proving the path changes, independently of the DSL. A
   `collect` that takes from an item frame or an armour stand (spec-0111) carries
   `holder: {kind, slot, click_height?, stance?}` — the holder's census kind, the
   slot its stack is in, the height (feet-relative, world units) whose
@@ -2583,7 +2713,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   frame, which is hit), and the stance cell nearest the holder the stance pass
   proved in reach and in sight — never a cell in which the player's body
   shares a cell with a holder entity's body. The proven leg to that step
-  ends at the stance and keeps the holder's cell as its `to`. At format 2 every
+  ends at the stance and keeps the holder's cell as its `to`. Every
   objective-bearing step (`talk-to`/`reach`/`kill`/`collect`/`interact`) carries
   `objective`: the `obj/<id>` that step must prove, and the harness passes the step
   only when **that** objective's anchored completion marker arrives (position
@@ -2610,7 +2740,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   trap the leg steps on (the same widening); a `loop` step's `on_cross`; and an `on_arrive` bundle of
   a body an earlier step set moving, which lands at a time no tick count states and
   is owed by every later step. The nested lists of the effect grammar are
-  classified by `hold::Nesting` (a `sequence` step's timeline, `on_arrive`,
+  classified by `hold::Nesting` (a `sequence` step's timeline and a cutscene's `then`, `on_arrive`,
   `on_rest`, `on_respawn`, `on_caught`), and `crates/delvec/tests/hold_containers.rs`
   holds that classification equal to the containers `delvec schema` declares. A list
   fired by a death or a capture (`on_respawn`, `on_caught`, `on_death`) holds no step
@@ -2632,7 +2762,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   there, passes on the trigger's fired marker and then awaits the landing as for
   every carried step. The same keys ride every `world-path-<k>.json`.
 
-  **`keep_out[]` — the armed volumes a step stays out of** (format 5). Every
+  **`keep_out[]` — the armed volumes a step stays out of.** Every
   walking step carries, when non-empty, `{objective, lo, hi}` per `reach`
   objective the path walks later that the replay proves armed while the party
   performs it — the emitter's pending guard read over the guaranteed stance
@@ -2657,7 +2787,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   such a trigger, with no way outside is refused under `DW0311`, naming the armed
   objective.
 
-  **`mock` — an act no step kind drives** (format 5, spec-0108 §6.5).
+  **`mock` — an act no step kind drives** (spec-0108 §6.5).
   `{act, kind, function, before[], after[]}`: an entry deed of a story world that
   is a shop purchase, a trap payload, a shortcut unlock, a fight's `on_kill`, or a
   trap's or timed gate's disarm, placed in front of the step its run performed it
@@ -2690,8 +2820,8 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   lands, is the shape. The harness refuses the key on a step with no carrying step
   before it (a bonfire `rest` between the two is looked past).
 
-  **`non_combatants` — who the bot may never swing at** (format 4,
-  `combat::non_combatants`). A block of `kinds`, `ambiguous`, `examined`,
+  **`non_combatants` — who the bot may never swing at**
+  (`combat::non_combatants`). A block of `kinds`, `ambiguous`, `examined`,
   `unbound` and (exactly when unbound) `reason`. `kinds` names the entity kinds,
   in the **client's** vocabulary (`mannequin`, `villager` — no namespace, because
   that is the only identity mineflayer exposes on 1.21.11), no body of which is
@@ -2820,19 +2950,23 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   one beat are spliced in bonfire order. This is a path *export* only:
   `plan.critical_path` is untouched, so every `fire_step` index and every nav proof
   sees the unspliced path. **That is what makes two coordinate
-  systems**, and they drift by one per bonfire armed earlier: internal indices
-  (`fire_step`, `Encounter::step`, every nav proof) count `plan.critical_path`;
-  exported indices count these `steps[]`. Every artifact a harness reads states
-  the EXPORTED one, and `Plan::exported_step` is the single translation — a
-  consumer that mixes them is a silent off-by-N.
+  systems**: internal indices (`fire_step`, `Encounter::step`, every nav proof)
+  count `plan.critical_path`; exported indices count these `steps[]`, which add
+  each `rest` (where `Plan::rest_after` places it) and each `witness-strike`.
+  Every artifact a harness reads states the EXPORTED one. `Plan::exported_layout`
+  is the one place the exported path is laid out: the emitter writes `steps[]` by
+  walking it, and the death plan and the combat plan read their indices from it
+  (`ExportedLayout::step`, `ExportedLayout::rest`), so no document can name a step
+  the path does not carry there. `tests/exported_coordinates.rs` holds every
+  such index on the gallery primary to the step it must name.
 
   **`witness-strike` steps** (spec-0082 §5.4, §5.7). Per assembly with a strike
   pattern, just before the first exported step that strikes it, the path carries
   `{"action":"witness-strike","assembly":…,"expect":"struck","pos":[x,y,z],
   "step":j,"facing":k,"facing_count":n,"yaw":y,"amount":a,"window_ticks":w}` then
   `{"action":"witness-strike","assembly":…,"expect":"spared","pos":[x,y,z],
-  "window_ticks":w}` (`assembly::with_witness_steps`, spliced into the exported
-  `steps[]` after the rest steps, so it moves exported indices exactly as `rest`
+  "window_ticks":w}` (`Exported::Witness` in `Plan::exported_layout`, after any
+  rest the previous step carries, so it moves exported indices exactly as `rest`
   does). `struck`'s cell is facing 0's stand cell — a landing cell under the
   limb, inside the arming region, from which a body draws that facing; the bot
   stands there until a blow takes health. `spared`'s is a walked cell outside the
@@ -3068,7 +3202,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   objective or quest the branch path never plays is unforced there, so it opens
   nothing that path may cross) — a branch path is a
   different sequence, so default-path step indices are never carried across (the
-  same trap `emit::rest_step_index` documents for bonfires). Each branch's
+  same trap `Plan::rest_after` documents for bonfires). Each branch's
   routes also pass the `DW0314` standability self-check. Branch diagnostics are
   prefixed ``branch `<id>` (world/<k>):`` — or ``world/<k>:`` for a world
   realizing no declared branch. The harness derives the filename from the
@@ -3090,7 +3224,8 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   actually made impassable), `respawn_seats_examined` (every posted place tested
   against `DW0511` — respawn seats and posted bodies alike),
   `critical_path_legs_examined` (legs routed with lethality applied) and
-  `packtest_templates` (the runtime half, one per volume; a compile-time-only
+  `packtest_templates` (the runtime half, counted from the emission: per volume
+  `lethal_<id>` and `lethal_<id>_claim`, and `lethal_<id>_shut` for a staged one; a compile-time-only
   green over a runtime mechanism is exactly the vacuity this number exposes).
   `blind_reach` is `DW0943`'s (spec-0085 §6.3): `grants_examined`, `caught`, and
   per blinding grant its `path`, `effect`, `seconds`, `standing` (`|S|`),
@@ -3134,19 +3269,6 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   (volume V₁..V₂); L of N live on the forced route in some configuration; H of
   N with a listening station`, `0 pulse(s)` for a campaign with none. Emitted
   only for a campaign that declares a pulse.
-- `<out>/validation/atmosphere-repaints.json` (spec-0080 §5.2): **what each
-  repaint must tell a connected client** — per `set-atmosphere` with a
-  resolvable volume, its `effect` path, the `biome` it paints, the `chunks`
-  `[cx, cz]` of its painted 4-cell box, and `after`, the completion-marker token
-  of the bundle that fires it (an objective's `obj/<id>`, or a trigger's
-  `trigger/<id>` when it carries a marker), or `null` for a repaint nested in a
-  later `sequence` step or another deferred list, gated by `when`, or fired from
-  a root no marker announces. `harness/src/repaint.ts` reds a performed repaint
-  whose held chunks no `chunk_biomes` named within 10 s, any held chunk a
-  `map_chunk` resent, or one that binds no chunk held inside the view distance
-  the client is served from where it stood when the bundle fired (see
-  `docs/reference/tools.md` §8). Emitted
-  only for a campaign that repaints.
 - `<out>/validation/biome-map.json` (spec-0080 §5.3): the biome map's place
   paints — `{ground, places: [{place, atmosphere, biome, precipitates,
   cells}]}` — read by `delvec palette --build … --place …` to tint a scene
@@ -3166,14 +3288,14 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
     width — read, never re-derived, so the cell-versus-hitbox rule has no
     second implementation in TypeScript), its canonical-English
     `message` plus the `message_key` a localized run asserts instead, its
-    `damage_type`, and its **`gate.terms`** (format 4, spec-0088): the same
+    `damage_type`, and its **`gate.terms`** (spec-0088): the same
     term rows a `drop-stake`'s gates carry, `Plan::gate_terms` over the
     volume's `when`, empty for a volume live from world-load. The harness
     excludes a staged volume from a walk leg only while its gate reads open
     (asked before each leg; an unanswered term excludes it), enters it in the
     death loop only when it reads open, and refuses a row with no `gate`.
     `format_version` is `DEATH_PLAN_FORMAT_VERSION`, 5.
-  - `crush_gates[]` (format 5) — every `crush: true` timed gate, in
+  - `crush_gates[]` — every `crush: true` timed gate, in
     declaration order: `id`, the normalized `region` the closing tick's
     selector judges, `open_ticks`/`closed_ticks`/`phase`, `approaches[]` (per
     side, x−, x+, z−, z+, at most one: a `mouth` standable with the region
@@ -3187,11 +3309,13 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
     stands in each gate's closing cells once — at the boundary after step
     `crossed_at − 1`, or the first boundary a mouth is reachable from — and
     asserts the death is the gate's and the respawn is at the governing seat.
-  - every `placement.seats[]` row carries `in_force_after` (format 5): the
+  - every `placement.seats[]` row carries `in_force_after`: the
     exported step after which the seat is where a death returns the party —
-    `-1` for the entry spawn, `exported_step(fire_step)` for a plain
-    `set-checkpoint`, one more for a bonfire (its spliced `rest` step), `null`
-    for a checkpoint a trigger sets. The governing seat after boundary `i` is
+    `-1` for the entry spawn, the exported index of the step during which the
+    beat that fires it completes for a plain `set-checkpoint` (the carrying
+    step, for a `reach` that completes on landing: `Plan::completes_at`), the index of its `rest` step for a bonfire (both
+    `Plan::exported_layout`'s; `null` for a bonfire the path never rests at),
+    `null` for a checkpoint a trigger sets. The governing seat after boundary `i` is
     the seat with the latest `in_force_after ≤ i`, plus every `null` seat.
   - `binding.crush_gates` — the length of `crush_gates[]`.
   - `on_death` — how many effects the bundle carries at every nesting depth
@@ -3252,15 +3376,11 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   campaign that declares a teleport and reports zero links states a fact, not a
   finding. **Emitted only for a campaign that declares a teleport**, so a file
   that exists and reports zero is a finding rather than an absence.
-- Every `snapshot` manifest carries a **`frame`** block: `targets_in_frame`,
-  `targets_out_of_frame`, and `featureless` (`null`, or the distinct-colour count
-  when the frame shows no scene at all). The binding rule applied to a picture —
-  a render that succeeds, writes a file and is a rectangle of flat background is
-  indistinguishable from one more shot taken to a directory listing, to a contact
-  sheet and to a reviewer skimming, and the only thing that separates a camera
-  aimed at the room from one aimed at a wall is the count. Judged by the arm that
-  DREW the frame (`view::detect::is_featureless`), so a consumer never computes a
-  second verdict on the same question. `tools/ci/check-gallery-render.py` reads these
+- Every frame manifest carries a **`frame`** block (§7): `targets_in_frame`,
+  `targets_out_of_frame`, and `featureless` (`null`, or the distinct-colour
+  count when the frame shows no scene at all), judged by the arm that DREW the
+  frame (`view::detect::is_featureless`), so a consumer never computes a second
+  verdict on the same question; `tools/ci/check-gallery-render.py` reads these
   back rather than re-deriving them.
 
 - `<out>/validation/effect-roots.json`: the **effect-root walk's own binding
@@ -3273,7 +3393,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   because the walk runs for every campaign; a zero at a root is not a failure (a
   campaign with no traps has no trap payloads) but it is the reason any proof over
   that root is unbound, which is what a reader needs and cannot infer. For scale:
-  the gallery binds all ten roots, where the largest shipped campaign binds
+  the gallery binds all eleven roots, where the largest shipped campaign binds
   three.
 - `<out>/validation/ways.json`: the contingent-way gate's **binding ledger**
   (`compiler::ways`, spec-0042, playtest-methodology.md rule 1). `pieces` and
@@ -3453,6 +3573,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   stand, hold a climbable or float at), `reached` (the party's reach graph gets it to a face) and `bypassed`
   (zero on a build that ships). Written only when the proof holds.
 - `<out>/validation/watchers.json`: the watchers' **binding ledger and PackTest record** (`compiler::watching::WatchBinding`, spec-0101 §5.2): `binding {declared, population, drawable, refused, unobservable}` and one row per watching body — see §3 "body watch". Written for a campaign that declares a watcher, when the proof holds; the same rows are `critical-path.json`'s `watchers[]`, which the bot judges at every waypoint within reach (`docs/reference/playtest-methodology.md`).
+- `<out>/validation/shot-subjects.json`: the cutscene shots' **framing ledger** (`compiler::framing::ShotLedger`, spec-0110 §7), written for every build with a cutscene: `proof_frame` (70°/60° vertical, 854 × 480, action-safe 0.93, entity distance 1.0, broadcast 100), `counts` (cutscenes, shots, declared subjects by kind, ticks judged, out of frame, occluded, clear lines and their `9·T` denominator), per cutscene its effect `path` and `cutscene_digest` (the canonical hash of the shot list measured), per shot its `kind` and per judged subject (`subject`, `subject_b`) its `reference`, per-tick `in_frame` and `lines_clear`, the `presence` derivation, the `farthest` and `farthest_horizontal` distances against its `tracking_range` and `cull_radius`; every placed assembly's emitted `view_range` with its `terms` (`floor`, `seen_from`, `shots`, `place`) and the one that `won`; and `unchecked` — what no server-side fact decides (the viewer's field of view, aspect, entity distance, FOV effects and render distance, the client's occlusion culling, a body hidden by another entity, particle or weather, the frame rate). Every such build prints the binding line first: `shot subjects: S shot(s) in C cutscene(s), S declare a subject (L landscape, M marks, B bodies, A assemblies, P places, R regions); T tick(s) judged, O out of frame, K occluded, clear lines Q of 9·T; bodies: N present, sent, drawn — farthest F blocks, hidden below entity distance s` (`s` the largest distance-to-cull-radius ratio over every framed NPC or actor). A cutscene-less campaign prints and writes neither.
 - `<out>/validation/assembly.json`: the assemblies' **binding ledger and staging record** (`compiler::assembly::AssemblyBinding`, spec-0082 §5.6): `declared`, `parts`, `clips`, `hitboxes`, `steps`, `refused`, `locks` (cells locked steps can lock onto, each proved), `writes_per_tick` (each assembly's part count over its fastest clip's cadence, summed) and `facings` (facings judged, one per landing per facing a blow can take), per strike step `windup_ticks`, `hold`, `strike_ticks` (to the landing: the strike's last frame drawn whole), the landings' `amounts`, every `caught` cell, `facing_count`, and per facing a blow can take its `k`, root `yaw`, `caught` cells, the cells the limb `comes_down` on and the `stand` cell that draws it — for a `locked` step one row per lockable cell, `k` its index, with the `clip` that strikes it and the cell itself as its `stand`; `spared` (per assembly, a cell outside its arming region) and `witnessed` (the assemblies the critical path's bot witnesses) — what a round summary states about a blow, and what the engine does not judge. Written for a campaign that declares an assembly, when the proofs hold. The same counts are the line every build prints, zeroes included: `assembly binding: A assembl(ies) declared, P part(s), C clip(s), H hitbox(es) examined, S strike step(s) checked over F facing(s) and L locked cell(s), R refused`, followed by `assembly cost: P display part(s) in all; at most W keyframe write(s) per tick at the declared cadences` beside spec-0082 §8 row 7's measured rate — the host meets the number; it never caps the capability.
 - `<out>/validation/strand.json`: the `DW0924` **binding ledger**
   (`compiler::strand::StrandBinding`): `waves`, `stacks` (also as `examined`) and
@@ -3505,23 +3626,15 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   encounter, and the `census` probe naming the three functions that measure this
   wave by tag. The document also states the `difficulty` the run is verified AT.
   Two of those fields carry rules worth stating exactly:
-  - `step` is an index into the **exported** `critical-path.json` `steps[]`
-    (`Plan::exported_step`). Two coordinate systems exist because of
-    spec-0016 §1's rest splice: `plan.critical_path` is the compiler's own list —
-    what every `CheckpointPlan::fire_step`, every nav proof and every internal
-    index means — while the exported path additionally carries one `rest` step
-    after the beat arming each bonfire, so they drift by one per bonfire armed
-    earlier. **Every artifact a harness reads states exported coordinates**;
-    `Plan::exported_step` is the translation for the main path, and
-    `the_combat_plan_step_indexes_the_exported_path` pins it against the real
-    emitted documents (the step the plan points at must BE the encounter's kill)
-    rather than against the arithmetic. It is deliberately **main-path only**:
-    spec-0025's per-branch paths resequence the same steps, so an index cannot be
-    carried across at all and `emit::rest_step_index` translates through the
-    *objective* the arming beat names instead. On the main path that translation
-    is the identity, which is exactly what makes the simple count valid there and
-    nowhere else. There is one `combat-plan.json`, over the main path, so this
-    never crosses the boundary.
+  - `step` is an index into the **exported** `critical-path.json` `steps[]`,
+    read from the main path's `Plan::exported_layout` (`ExportedLayout::step`):
+    `plan.critical_path` is the compiler's own list, and the exported path adds
+    the `rest` and `witness-strike` steps. `the_combat_plan_step_indexes_the_exported_path`
+    and `tests/exported_coordinates.rs` hold it against the real emitted documents
+    (the step the plan points at must BE the encounter's kill). There is one
+    `combat-plan.json`, over the main path; a per-branch path is laid out by its
+    own `exported_layout`, whose rests `Plan::rest_after` finds through the
+    objective the arming beat names.
   - `census` is `{census, brand, unbrand}` — the fully-qualified ids
     of this wave's `wave_census_<wave>` / `wave_brand_<wave>` /
     `wave_unbrand_<wave>` functions. It exists so the harness calls what the
@@ -3633,13 +3746,24 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   datapack, world, resource-pack or creator-overlay byte. The manifest indexes
   what the build produced, and pretending otherwise would make it a worse index
   for a cosmetic win.
-- `<out>/render-plan.json` **player-POV shots** (`crate::render_plan::pov_shots`):
+- `<out>/render-plan.json` **player-POV shots** (`compiler::render_plan::pov_shots`):
   the visual tier of the *player's own eye*, not the
   overhead/orbit cameras of the other shot kinds. One first-person `pov` shot per
   corner-thinned critical-path waypoint (the same `thin()` list the harness
   replays), camera at eye height (`1.62` above the standing cell), oriented along
   the walk toward the next waypoint and — at each leg's final waypoint — toward the
-  objective anchor it arrives at. **The arrival aim is derived from the objective
+  objective anchor it arrives at. **A walking frame frames something the campaign
+  declares** (`render_plan::walking_aim`, authored): it keeps the next waypoint when
+  that frame holds a declared target in frame (`framing::resolve_targets` at the
+  review frame's size, `view::frames::REVIEW_SIZE` — the question
+  `check-gallery-render.py` asks), the shot before a climb's take-hold looking
+  past it to where the climb lands; otherwise it looks at the first later
+  waypoint of the leg whose frame holds a target in frame *and* in sight (the
+  one sight rule over the build's nav world); otherwise at the
+  nearest declared target on the walked side of the eye that is in sight; with
+  none, it keeps the next waypoint and the view gate names it. The legs are
+  routed in `holders::final_walk`, the world the build's route proof walks, so a
+  leg that ends at a holder `collect` ends at its stance. **The arrival aim is derived from the objective
   and from nothing else** (`render_plan::arrival_aim`): an anchor 4+ blocks away
   is framed directly; a nearer one is aimed at *along its own direction*, out to
   4 blocks at the anchor's height, so the objective is centred and near with the
@@ -3654,20 +3778,24 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   machine description composed from campaign data (area name + objective/anchor/NPC
   names + objective hint) — the (image ↔ expect) pair a vision model reviews.
   **Each POV shot states the configuration its leg is walked in** (spec-0089
-  §8): `after: {step, cells_moved}` — `cells_moved` the cells whose block the
-  configuration the leg arrives under (`path_configurations`' `per_step`) holds
-  differently from the load world, over the world as shipped
+  §8, spec-0112 §5 item 1): the state the route proof walks the leg under
+  (`nav::leg_configuration`, the same `World::walked_leg_region_state` the
+  walk is proven in — every write of the arrival's ancestors, of the start step
+  and of the start's ancestors), which holds a write of a start the arrival
+  does not causally descend from, such as a door that start opens. `after:
+  {step, cells_moved}` — `cells_moved` the cells whose block that configuration
+  holds differently from the load world, over the world as shipped
   (`view::beat::picture_base`), and `step` the latest step of `plan.critical_path`
-  before the leg's that carries an id (`null` when none does). A review frame
-  still renders the server save at load, and `delvec scene` says so on every run:
-  `review frames render the world at load; <k> of <m> POV shots stand in a
-  configuration other than load` (`k` counts the POV shots with `cells_moved`
-  above 0). `delvec snapshot --shot` reads one shot's camera and writes no plan,
-  so its in-memory plan carries no `after`.
+  before the leg's that carries an id (`null` when none does); its `world` is
+  that configuration's key (`view::review::FrameWorlds::legs`; a leg's world
+  that lays the bytes of an arrival's is that arrival's world), and its frame is
+  drawn from that world. The shot
+  before a climb's take-hold looks where the climb lands, so it frames the climb
+  rather than the wall the climbable hangs on.
   Deterministic (route order → waypoint order; no RNG/clock) and appended after the
   overhead kinds. Emitted only when a
   walked critical leg exists.
-- **`lighting` stamp** (POV + interior shots, `crate::render_plan::area_lighting_stamp`):
+- **`lighting` stamp** (POV + interior shots, `compiler::render_plan::area_lighting_stamp`):
   pure metadata derived from the shot's area's **stage-1 declarations** — never from
   measurement (the measured model gates via `DW0210`/`DW0211`). `lighting` declared
   → `{"profile": "lit"}`; only `mitigation: "night-vision"` declared →
@@ -3677,414 +3805,241 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   to an honest path tracer (exposure boosts cannot reveal a sealed cave — no
   light, only amplified noise — while real emitters render), so the stamp tells `delvec render` exactly which shots need its
   night-vision review emulation (below) and guarantees it touches no others.
-- **Every camera's eye cell is proven clear** (`DW0724`,
-  `crate::nav::verify_camera_eyes`). A camera whose eye cell holds a block
-  renders the inside of that block, which is a picture indistinguishable from a
-  picture of a featureless room. `render_plan::render_plan` is the only
-  constructor of a plan document and it takes the assembled world, so there is no
-  render plan that skipped the proof; every kind enters the shot list through one
-  `push` that records the eye from the same position it writes into the camera.
-  Six of the seven kinds place their camera at a fixed stand-off from a subject,
-  and such a camera whose own cell is occupied stands instead at the furthest
-  clear point on its own sight line (`crate::camera::stand_in_open_air`), stating
-  `camera.requested_pos` and `camera.standoff` on that shot. `pov` is never
-  moved — that eye IS the player's — so a `pov` violation stays a build error
-  against the derivation. The plan carries the proof's binding counts:
-  `"camera_eye_proof": {"cameras": N, "pulled_in": M}`. An `interior`
-  overview's eye stands three courses over the highest of: its piece's top, a
-  horizon's ground, the site's declared fill at the eye's column, and every
-  placement or site-plan place stacked over that column (its ceiling course and
-  roof, out to its eaves) — a place over another is a stack the overview looks
-  down into, never a block its eye stands inside.
+- **Every camera is proven clear in the world its frame stands in** (`DW0724`,
+  `compiler::nav::view::verify_camera_eyes`; spec-0112 §7.4). A camera whose eye cell
+  holds a block draws the inside of that block, which is a picture
+  indistinguishable from a picture of a featureless room. `render_plan::render_plan`
+  is the only constructor of a plan document, and every kind enters the shot
+  list through one `push` that records the eye from the same position it writes
+  into the camera. Each shot names the world it stands in (`world`): the
+  configuration the critical path arrives under at its arrival — `at-load` for
+  the `spawn`, `interior`, `seam`, `npc` and `gate` kinds, the walked leg's
+  configuration for a `pov`, the firing step's arrival for a `cutscene`, the arrival at its
+  objective's own step for an `interact` (so a `prop` its quest's activation
+  places stands in its frame; `at-load`, said in its `expect`, when no
+  critical-path step does the objective) — and its eye
+  is proven against that configuration's `World` (`Configuration::world`), one
+  per distinct arrival or walked leg. Six kinds place their camera at a fixed stand-off from a
+  subject; such a camera whose own cell is occupied, **or whose sight line to its
+  subject crosses a block** past the subject's own cells, stands at the farthest
+  open point on that line (`compiler::camera::stand_before`, which starts past a
+  subject that is itself a block — a gate a frame at load shows shut), stating
+  `camera.requested_pos` and `camera.standoff` on that shot: a frame drawn from
+  real geometry shows the block, so a spawn camera behind a wall would draw the
+  wall and an interior dollhouse eye over a roof would draw the roof. A gate one
+  cell thick on two axes is framed along the axis whose two sides are open in the
+  base world. `pov` and `cutscene` are never moved — a `pov` eye IS the player's,
+  a `cutscene` keyframe is what the datapack flies — so a violation stays a build
+  error naming the shot, the cell, the world key and the block there. A `pov` eye
+  stands 1.62 over a cell the walk proved standable in the same configuration,
+  and a cutscene keyframe is judged first by `DW0308` in the same world, so
+  neither is reached by a document; the shape is held by
+  `compiler::nav::view`'s unit tests. The plan carries the proof's binding
+  counts: `"camera_eye_proof": {"cameras": N, "pulled_in": M, "worlds": K}`. An
+  `interior` overview's eye stands three courses over the highest of: its
+  piece's top, a horizon's ground, the site's declared fill at the eye's column,
+  and every placement or site-plan place stacked over that column — and is then
+  stood before the roof that hides its subject.
 - **Every showcase camera photographs the scene** (`DW0724`, second shape;
   spec-0069). When the campaign has `design/cameras.json` (read by the loader,
   hashed into the manifest's inputs), `render_plan` proves each of its cameras
   after the plan's own: the lens cell is clear by the same `World::is_clear`, the
   lens lies within the world's build height (−64..320), and the ray along its
-  view meets the box the scene's chunk list is cut from
-  (`scene::loaded_extent`, widened to whole blocks), read back through the plan
-  just built. A showcase camera is not a plan shot — `delvec cameras` emits its
-  scene from the record — so nothing moves it: a violation refuses the build
-  naming the row, telling a hand camera to be placed again (`/trigger dw.cam`)
-  and an estimate to be moved, and never the geometry. A record its reader
-  refuses stops the build as `DW0721` (exit 3). The count is
-  `camera_eye_proof.showcase`, present only when the record is.
-- **`sky` fact** (`crate::render_plan::sky_fact`): **the hour and weather this
-  delve is played at**, stated for the render layer exactly as `horizon` is —
+  view meets the box the frame's chunk rectangle is cut from
+  (`render_plan::loaded_extent`, widened to whole blocks). A showcase camera is
+  not a plan shot — `delvec cameras` draws it from the record — so nothing moves
+  it: a violation refuses the build naming the row, telling a hand camera to be
+  placed again (`/trigger dw.cam`) and an estimate to be moved, and never the
+  geometry. A record its reader refuses stops the build as `DW0721` (exit 3).
+  The count is `camera_eye_proof.showcase`, present only when the record is.
+- **`sky` per shot, and the plan's `sky` fact** (`compiler::render_plan::sky_fact`,
+  `compiler::view::review::Clock`; spec-0112 §7.6). The plan's top-level `sky`
+  is **the hour and weather this delve is played at** —
   `{"time": "dusk", "daytime_ticks": 12000, "weather": "rain"}`, the author's
-  spelling (the keyword, or the celestial object as written — no phase key,
-  because no consumer of the plan can act on one), the vanilla `daytime` value it sets, and the declared initial
-  `weather` keyword. Always present, because `world.json`'s `time` and `weather`
-  are required. It is the **declared initial** hour — what the world save
-  is written at, and therefore what every frame is of; a campaign that moves the
-  clock with `set-time` reaches other hours at play (`DW0890` holds the design's
-  rows equal to that whole reachable set), and a still frame has one sun and is
-  not evidence about the beats after the cut. The renderer derives the sun from the **ticks** and never
-  from the keyword, so a state vanilla does not name is worth as much as one it
-  does. The **weather** reaches a frame as the game's sky under that weather
-  (`scene::sky_of`, below): the pinned Chunky core draws no rain, but the light
-  the sky casts and the sky the lens sees are the client's under its weather
-  layer. The panorama and the review
-  frames take this sky; a showcase camera takes its picture's (§7 `delvec
-  cameras`).
-- **The Chunky sun** (`crate::view::scene::sun_at`, used by `delvec scene` **and**
-  `delvec panorama`): an altitude of `90° − α` on the western half of the arc and
-  `α − 270°` on the eastern half, and an azimuth of exactly east or exactly west,
-  where α is the pinned day timeline's `visual/sun_angle` at the plan's
-  `daytime_ticks` — two keyframes at 6000 (360 then 0) eased by `cubic_bezier
-  [0.362, 0.241, 0.638, 0.759]`, read from the vendored file (spec-0081 §4.3), the
-  same curve the celestial position table is derived from. minecraft.wiki's
-  closed form (*Daylight cycle* §Sky angle) and the game's pre-timeline
-  `DimensionType.timeOfDay` are kept as the second method in
-  `the_two_published_sun_angle_formulas_agree`: the two closed forms agree to
-  1e-9 at every tick, and the pinned track agrees with them to 0.056° (worst at
-  tick 11457). The sun rises in the east and stands overhead at noon, so one
-  angle fixes the whole position; the curve is not linear in ticks, which is the
-  term that makes vanilla's sunrise and sunset linger near the horizon. A camera
-  whose `sky.time` is celestial renders under the sun its position names; **the
-  pinned Chunky core draws no moon** (its sky package holds no moon), so a night
-  frame carries no phase and every `sky:` line whose moon is up says *moon not
-  drawn by the renderer* — the phase is confirmed in the game, never on a
-  render. Chunky's direction toward
-  the sun is `(cos az·cos alt, sin alt, sin az·cos alt)` (pinned core's
-  `Sun.initSun`) and nothing clamps the altitude, so `night`/`midnight` emit a sun
-  below the horizon and those frames render dark — which is what a night delve
-  looks like. **A plan with no `sky`, or a `sky` with no `weather`, is
-  `DW0721`**, in `scene`, `panorama` and `cameras` (`scene::plan_sky`), naming
-  the plan as written by an engine older than the running one: Chunky's own
-  default is a 60° midday sun under a clear sky, so emitting anyway would hand
-  back a noon frame of a midnight delve, or a clear frame of a rain delve, and
-  say nothing.
-- **The sky of a scene** (`crate::view::scene::sky_of`, spec-0079 §4): the one
-  writer of every `sky`, `sun` and `fog` key under `compiler::view`; the review
-  frames (`scene::scenes_from_plan`), the panorama and every showcase camera
-  (`camera::world_scene`) take their sky through it, and every scene carries
-  the whole block. Every scene's block is the **sky cell** of its tick and
-  weather (`scene::sky_cell`). **`clear`** is the pinned game's day, one
-  function for every hour,
-  with noon, the dusk and dawn ramps and the night plateau as points of it. The
-  game lights the world from the sky alone — a cell open to the sky is drawn at
-  the lightmap's sky colour whatever the sun's direction, and nothing casts a
-  shadow from the sun — so:
-
-  | Key | Value | Cited | Authored |
-  |---|---|---|---|
-  | the light the sky casts (`sky.color` and the cell's `sky_light`) | the lightmap's full-sky colour, decoded to linear: `L` | `assets/minecraft/shaders/core/lightmap.fsh` of the pinned client at sky light 15 with `SkyFactor` = `visual/sky_light_factor` and `SkyLightColor` = `visual/sky_light_color` (the two attributes `LightTexture` reads), `ambient_light` 0, the `gamma` option's default 0.5 as `BrightnessFactor`; the two tracks at the tick | decoding by `x^2.2` (`Scene.DEFAULT_GAMMA`, by arithmetic: `scene::to_linear`) and reading it as the radiance a top face is lit by — a Lambertian face under an open sky returns `albedo ×` the sky's cosine-weighted mean radiance, so the face shows at the shader's colour |
-  | `sky.mode SKYMAP_EQUIRECTANGULAR`, `sky.skymap`, `sky.skyMirrored false`, `sky.apparentSkyLight` 1 | what the lens sees: the game's own sky, as a 360 × 180 linear-float map `<scene>.sky.pfm` drawn for the scene's camera at its tick and weather (`sky_image::sky_map`) and written beside the scene by the scene writer from the scene's own `delvewrightSky` (`daytimeTicks`, and `weather` when it is not clear) and orientation (`sky_image::companion`) | the pinned client's drawing, off its bytecode through Mojang's mappings: the clear colour of `AtmosphericFogEnvironment.getBaseColor` (`visual/fog_color` × `#c0d8ff`, lerped toward the opaque `visual/sunrise_sunset_color` by the camera look's dot with the sun's side times the colour's alpha, then toward `visual/sky_color` × `#7ba4ff` by `1 − clamp(min(512/16, 12)/32, 0.25, 1)^0.25`); the sky disc of `SkyRenderer.buildSkyDisc` (an octagon at height 16, rim at 512, every 45° from −180°) in the sky colour with `sky.fsh`'s fog at `sky_end` = `min(12 × 16, 512)` on the distances interpolated from centre to rim; the sunrise fan of `buildSunriseFan` / `renderSunriseAndSunset` (centre `(0, 100, 0)`, 17 rim vertices `(sin a · 120, cos a · 120, −cos a · 40)`, turned `XP 90°` then `ZP 90°` or `270°` by the sun's side, depth scaled by the alpha, `TRANSLUCENT`); render distance 12 (`options.renderDistance`) and `visual/sky_fog_end_distance` 512 at their defaults; the core's unmirrored equirectangular lookup and its `.pfm` reader (linear, no gamma) | — |
-  | `sky.skyLight` | the multiplier that makes the map's light `L`: the largest `s ≤ 50` with the veil `R = L/s − Ē ≥ 0` in every channel, `Ē` the game's sky's cosine-weighted mean over the upper hemisphere; the map is the game's sky plus `R` | `Sky.MAX_INTENSITY` 50; the core lights the scene with the map the lens sees — `getSkyColorInterpolated` and `getSkyColorDiffuseSun` both read `getSkyDiffuseColorInner`, scaled by `apparentSkyLight` or `skyLight` | the least uniform veil that makes the light exact; the lens carries it |
-  | `fog.uniformDensity` 0, `fog.skyFogDensity` 0, `fog.color` | none: the client's sky fog is in the map | `visual/fog_color` × `#c0d8ff` as the colour no ray reads | — |
-  | `sun.intensity` 0, `sun.color` white | no light | nothing in the lightmap depends on the sun's direction | the core's sun is a directional light the game does not have |
-  | `sun.drawTexture` | the disc, drawn while any of it is above the horizon (altitude ≥ −4.29°) | the disc half-width, `celestial::SUN_DISC_HALF_CENTIDEG` | — |
-
-  The core lets the lens and the light be set apart only by magnitude, and
-  that was measured on the Treehouse Camp's `toward-the-sun` draft (400 × 225,
-  128 samples): with `skyLight` 0 the lens's sky stays (80, 78, 116) and the
-  ground goes from (19, 25, 16) to (0, 0, 0); with the map's red channel
-  zeroed the lens's sky goes to (0, 78, 116) and the ground to (0, 25, 16).
-  Colour tracks are read as the client reads them: each 8-bit channel
-  `a + floor(p × (b − a))` between keyframes (`ARGB.srgbLerp` → `Mth.lerpInt`,
-  the alpha with the rest) and multiplied as `ARGB.multiply` (`scene::day_rgb`,
-  `scene::day_argb`, `scene::multiply_rgb`). Every sine and cosine of the map
-  is `sky_image::det_sin`, a Taylor series in IEEE arithmetic, and the file is
-  raw little-endian `f32`: its bytes are a function of the tick and the
-  camera. **Not expressed:** the stars, the moon and the clouds (the map draws
-  none of them, and the core draws no moon), and the dark disc the client
-  draws under a camera below the world's horizon height. A face that looks at
-  open sky under the horizon — the sides of a block over the void — takes
-  light from the clear colour the map holds there, warm on the sun's side,
-  which the game does not cast: the light is exact on an open top face, not
-  on a face that sees the void. A place's declared
-  atmosphere (spec-0080) is not read: the scene is lit as the ground biome is.
-  The veil pales the lens's sky where the game's sky is far from the light's
-  hue: at noon the light is white and the sky blue, so the veil is the light's
-  yellow remainder and the lens sees a pale zenith; at the setting sun it is
-  small; at night, under a black sky, `skyLight` is 50 and the veil `L/50`.
-  Pinned by `the_clear_sky_is_the_timeline_at_its_tick` (the night plateau,
-  noon and the setting sun read back from the timeline's keyframes),
-  `the_sky_cell_has_no_seam_over_the_day` (under each weather, the largest change of the cell's
-  light between two adjacent ticks: 0.0005 `skyLight`, 0.0081
-  `sky.color.red`), `sky_image`'s tests (the fan on the sun's side, the clear
-  colour following the look, the light exact, the map byte-stable and moved by
-  the tick) and `every_scene_builder_writes_the_whole_block`. At the Treehouse
-  Camp's setting sun (tick 12782) the light is `sky.color` (0.357581,
-  0.357581, 1) at 0.374446, and the scenes' `skyLight` is 1.380618
-  (`from-the-glade`), 1.564742 (`north-east-aerial`), 1.490059
-  (`toward-the-sun`); at the night plateau the light is 0.209457 and
-  `skyLight` 50. Left to the renderer — the simulated sky and its default sun
-  at 1.25 — the setting sun draws a beam along the horizon over a
-  yellow-brown Preetham sky (the core clamps the sun to the horizon before it
-  shades the sky), where the game draws a dim, flat evening, blue-violet away
-  from the sun with an orange-red band toward it. spec-0079 criteria 4 and 5 —
-  byte identity with the base for a clear scene with the sun up, and "no
-  block keys" on it — do not hold: **a loosening of what those criteria
-  assert, replaced by the clear sky's own assertions above**. **`rain`** and **`thunder`** are
-  the same function under the client's **weather layer** (`scene::sky_attributes`,
-  `scene::WeatherLayer`): `WeatherAttributes` lays a `RAIN` and a `THUNDER` map
-  over the dimension, the biome and the day timeline in every level that
-  `canHaveWeather` (`EnvironmentAttributeSystem.addDefaultLayers`), and the
-  lightmap and the sky are drawn from the result. An attribute's value `v`
-  becomes `lerp(rain − thunder, v, RAIN(v))`, then `lerp(thunder, ·,
-  THUNDER(·))`; a `rain` delve stands at rain level 1 and thunder level 0, a
-  `thunder` delve at both 1 (`Level.getThunderLevel` is the thunder level
-  times the rain level), so each applies its own map whole. Read off the
-  pinned client's bytecode through Mojang's client mappings (`client.txt`
-  sha1 `031a68be…`), **cited** value by value:
-
-  | Attribute | `RAIN` | `THUNDER` | What reads it |
-  |---|---|---|---|
-  | `visual/sky_light_factor` | `alpha_blend` 0.24 at 0.3125 | `alpha_blend` 0.24 at 0.52734375 | the lightmap (`LightTexture`) |
-  | `visual/sky_light_color` | `alpha_blend` `#7a7aff` at 0.3125 | `alpha_blend` `#7a7aff` at 0.52734375 | the lightmap |
-  | `visual/sky_color` | `blend_to_gray` 0.6, 0.75 | `blend_to_gray` 0.24, 0.94 | the sky disc; the clear colour's sky term |
-  | `visual/fog_color` | `multiply` (0.5, 0.5, 0.6) | `multiply` (0.25, 0.25, 0.3) | the clear colour |
-  | `visual/sunrise_sunset_color` | `multiply` (0.5, 0.5, 0.6) | `multiply` (0.25, 0.25, 0.3) | the clear colour's tint; the fan |
-
-  `#7a7aff` is `Timelines.NIGHT_SKY_LIGHT_COLOR` (`ARGB.colorFromFloat(1,
-  0.48, 0.48, 1)`); a float `alpha_blend` is `Mth.lerp(alpha, v, value)`, a
-  colour one `ARGB.alphaBlend` (an opaque `#rrggbb` under an alpha of
-  `floor(alpha × 255)`), `blend_to_gray` the colour's `ARGB.greyscale` scaled
-  by the brightness and `srgbLerp`ed in by the factor, `multiply`
-  `ARGB.multiply`. The layer's cloud colour, star brightness and sky light
-  level reach nothing a scene carries. Two steps of the client's drawing read
-  the weather levels directly: the clear colour is lerped toward the sky
-  colour `AtmosphericFogEnvironment.applyWeatherDarken` scales by `(1 − 0.5r,
-  1 − 0.5r, 1 − 0.4r)` at rain level `r` and by `1 − 0.5t` at thunder level
-  `t` (the disc keeps the layer's sky colour), and the sun is drawn at the
-  alpha `1 − r` (`SkyRenderer.extractRenderState` → `renderSunMoonAndStars`).
-  So a rain or thunder scene carries the clear scene's keys, with the light
-  the lightmap's under the weather, the map the client's sky under it, the
-  marker `delvewrightSky.weather`, and `sun.drawTexture false`. At noon the
-  light falls from the clear 0.967729 to 0.743987 under rain and 0.593479
-  under thunder (peak channel, blue), at the setting sun from 0.374446 to
-  0.32354 and 0.287972, and on the night plateau, where the layer blends
-  toward the night's own factor and colour, it is the clear night's 0.209457
-  under every weather (to the float the client blends in). The arithmetic is
-  integer channels and the client's float where it is float
-  (`the_weather_is_the_clients_layer`, values worked by hand; the whole-map
-  gate holds the emitted map and light to its own Python port of the same
-  layer, `tools/ci/check-whole-map-render.py`). **Not expressed under
-  weather:** the rain itself and the clouds, which the core cannot draw, and
-  the client's **rain fog** — `AtmosphericFogEnvironment.setupFog` pulls the
-  environmental fog's start in by `160 m` and its end to `max(min(96, end),
-  end − 256 m)` (`end` 1024, the overworld's `visual/fog_end_distance`), `m`
-  the rain level × `clamp((sky light at the camera − 8) / 7, 0, 1)` × (1 in a
-  biome with precipitation, else 0.5), so a camera in the open in the
-  Glasshouse's `windswept_forest` sees a linear fog of `(d + 160) / 928` toward
-  the clear colour: 17% at the lens, 23% at 50 blocks. The pinned core's
-  uniform fog cannot carry it: its in-scatter is the light of the sun's
-  direction where the sun is unoccluded (`PathTracer` → `Fog.addGroundFog`),
-  and these scenes cast no sun light, whose direction is under the ground at
-  the setting sun and at night — the fog would only darken. **A recorded
-  debt**; rain and thunder scenes write `fog.uniformDensity` 0 like a clear
-  one. **No preset table is left**: every value a scene carries about its
-  sky has a formula in the pinned client, so the finite set a render chooses
-  from is the three weathers, each a function of the tick. Measured on the
-  standard level (`showcase-shots.md` §6), the seven showcase cameras of the
-  Glasshouse at exposure 1 —
-  content `demo/the-glasshouse` at `c45f340`, built by delvec 1.13.0 (manifest
-  `044b3edb…`), each camera stating its sky through the record, 400 × 225 at
-  128 samples (512 in `potting-room` and `stoke-hole`), denoised; *before* is
-  this branch's engine with the look table, *now* the weather layer (the
-  clear scenes are byte-identical between the two, so they were rendered
-  once). Mean luma, clipped (any channel at 254 or more) and crushed (Rec. 709
-  luma at 8 or less) read by Pillow and again from an ffmpeg decode, which
-  agree to 0.0000 over 112 frames; a patch is every pixel the camera's ray
-  meets on that face of a full cube of that block (plank top: oak and spruce
-  planks; grass top; stone face: the sides of stone, andesite, cobblestone and
-  stone bricks; a lit lantern's own box), its render luma pooled over the
-  frames that show it, pixel-weighted, beside the game's: the texture's
-  texels × the pinned client's lightmap at the face's own block and sky light
-  (both flooded over the same world) under the weather × `ClientLevel.getShade`:
-
-  | Sky | mean luma, avg of 7 (before / now) | clipped, worst | crushed, worst | grass top: game; render | stone face: game; render | plank top: game; render | lit lantern: game; render |
-  |---|---|---|---|---|---|---|---|
-  | clear, rising sun | 54.9 / 54.9 | 1.04% / 1.04% | 4.75% / 4.75% | 63.9; 47.0 / 47.0 | 44.9; 45.1 / 45.1 | 83.0; 50.5 / 50.5 | 93.8; 214.1 / 214.1 |
-  | clear, noon | 92.6 / 92.6 | 1.04% / 1.04% | 4.71% / 4.71% | 96.6; 90.5 / 90.5 | 50.9; 50.9 / 50.9 | 101.7; 51.4 / 51.4 | 93.8; 214.5 / 214.5 |
-  | clear, setting sun | 55.7 / 55.7 | 1.04% / 1.04% | 4.75% / 4.75% | 63.9; 47.0 / 47.0 | 44.9; 45.2 / 45.2 | 83.0; 50.8 / 50.8 | 93.8; 214.1 / 214.1 |
-  | clear, midnight | 38.5 / 38.5 | 1.04% / 1.04% | 4.73% / 4.73% | 55.6; 39.2 / 39.2 | 43.5; 43.8 / 43.8 | 79.6; 50.7 / 50.7 | 93.8; 214.9 / 214.9 |
-  | rain, noon | 64.4 / 69.5 | 1.04% / 1.04% | 4.76% / 4.74% | 87.1; 65.8 / 72.4 | 48.4; 47.6 / 48.7 | 93.9; 50.9 / 50.8 | 93.8; 214.5 / 214.2 |
-  | rain, setting sun | 37.0 / 48.4 | 1.03% / 1.03% | 4.72% / 4.71% | 61.3; 33.3 / 44.5 | 44.5; 42.4 / 44.7 | 81.9; 50.6 / 50.6 | 93.8; 215.0 / 214.2 |
-  | rain, midnight | 36.5 / 38.4 | 1.03% / 1.03% | 4.72% / 4.69% | 55.6; 33.2 / 39.5 | 43.5; 42.4 / 43.6 | 79.6; 50.2 / 50.8 | 93.8; 215.0 / 214.7 |
-  | thunder, noon | 56.3 / 54.6 | 1.04% / 1.04% | 4.71% / 4.69% | 77.4; 54.3 / 60.6 | 46.8; 46.0 / 47.2 | 88.9; 50.7 / 51.0 | 93.8; 214.3 / 214.2 |
-  | thunder, setting sun | 35.9 / 42.5 | 1.04% / 1.03% | 4.72% / 4.73% | 59.4; 32.4 / 42.8 | 44.1; 42.2 / 44.4 | 81.1; 50.6 / 50.6 | 93.8; 215.2 / 214.4 |
-  | thunder, midnight | 35.2 / 38.4 | 1.04% / 1.04% | 8.98% / 4.70% | 55.6; 31.2 / 39.2 | 43.5; 42.1 / 43.7 | 79.6; 50.4 / 50.4 | 93.8; 215.2 / 214.7 |
-
-  The lantern and the room-lit planks do not move with the sky, as the
-  game's do not. What the look table got wrong is read in the ratio of
-  render to game on a face the sky lights, which a correct sky holds at the
-  clear sky's ratio of the same hour (walls and trees hide sky the game's
-  light ignores, so the ratio is below 1 and the same under every weather):
-  grass top at the setting sun 0.74 clear against 0.54 / 0.55 under rain /
-  thunder before and 0.73 / 0.72 now, at midnight 0.70 against 0.60 / 0.56
-  before and 0.71 / 0.71 now; stone face 1.01 clear against 0.95 / 0.96 before
-  and 1.01 / 1.01 now at the setting sun. At noon the grass reads 0.94 clear and
-  0.83 / 0.78 now (0.76 / 0.70 before): the clear noon light saturates the
-  lightmap's clamp, which the curve's shoulder does not. The look table's
-  `below` cells, which a setting sun takes (its altitude is −0.0021°), lit
-  the sky at a tenth of the game's light; no frame under any sky clips more
-  than 1.04%, and that is the cellar's candles.
-
-  This replaces spec-0079 §4.3–4.4 — the look table keyed by a daylight class
-  read off the sun's altitude, its one cell judged by eye and five scaled by
-  authored rules — with the client's formula, and loosens what criterion 6
-  asserts, in those words: **a loosening** — the daylight class it asserts no
-  longer exists, and thunder is darker than rain in the light only where the
-  sky is lit (at noon and the setting sun; on the night plateau the light is
-  equal, as the game's is), and no denser in fog (the client's rain fog is the
-  same under both, and neither carries one); `the_weather_is_the_clients_layer`
-  asserts what replaces it. The binding line names no class. A night-vision
-  review emulation (`REVIEW_POLICY`) is a material override and independent
-  of the sky: a declared-dark room under rain gets both. The panorama's
-  bearing decides only which side is in shot; no face is in the sun's shadow,
-  and under a clear sky a bearing that looks into the sun puts its disc in
-  frame.
-- **The post-process** (`scene::POSTPROCESS`): every scene is written with
-  `TONEMAP3`, the pinned core's Hable filmic curve, with the settings derived
-  below, which rolls a radiance above the display's white off along a shoulder where
-  `GAMMA` cuts it at 1. Chosen by measurement over the five the core offers,
-  each at its default and re-exposed (`-snapshot`) from one accumulated draft
-  at exposure 1 under the clear cell — the Treehouse Camp's `from-the-glade`, `north-east-aerial`
-  and `lantern-night` at 400 × 225 and 128 samples, Pillow reader, sRGB:
-
-  | Post-process | clipped (any channel ≥ 254) | crushed (luma ≤ 8) | mean luma |
-  |---|---|---|---|
-  | `GAMMA` | 0.60 / 0.18 / 0.49% | 5.24 / 0.39 / 0.84% | 34.4 / 46.3 / 21.2 |
-  | `TONEMAP1` | 0.00 / 0.00 / 0.00% | 51.32 / 31.76 / 85.83% | 21.6 / 33.9 / 5.5 |
-  | `TONEMAP2` (ACES) | 0.38 / 0.02 / 0.11% | 25.70 / 3.69 / 38.35% | 28.6 / 42.4 / 13.6 |
-  | `TONEMAP3` (Hable) | 0.37 / 0.02 / 0.11% | 7.59 / 0.70 / 1.22% | 30.3 / 40.4 / 18.8 |
-  | `UE4_FILMIC` | 0.37 / 0.02 / 0.10% | 36.56 / 9.44 / 55.83% | 26.1 / 40.2 / 10.8 |
-
-  Hable is the one curve that compresses the highlights without sinking the
-  dim half of the frame. **Its settings** (`scene::tone_curve`, written as
-  `postprocessSettings`, the seven floats `HableToneMappingFilter` reads): at
-  its preset (`scene::HABLE_FILMIC_WORLDS`, the core's `FILMIC_WORLDS`) the
-  curve shows linear 0.18 at 0.393 where the game's transfer of a decoded
-  colour, `x^(1/2.2)`, shows 0.459. Every scene therefore carries the preset
-  read `k` times brighter — `A·k²`, `B·k` and `W/k` with `C`, `D`, `E`, `F`
-  unchanged, which is the curve `h(k·y)` with its white scale held — at the `k`
-  that holds `scene::MID_GREY` 0.18 at 0.18 before the core's display exponent
-  (`HableCurve::mid_grey_gain`, the positive root of the quadratic `h(y) = m /
-  whiteScale` is in `y`): `k` = 1.463761, settings 0.32138956, 0.7318806, 0.1,
-  0.2, 0.02, 0.3, 7.651521. **Derived**; the anchor is the 18% grey card
-  exposure is metered against, **cited**. **The exposure is derived with it**:
-  every scene is written at `scene::EXPOSURE`, 1.0, the one value at which
-  the sky's radiances are the lightmap's colours, this curve holds the
-  mid-grey and the lantern scale below is fitted; no camera, review shot or
-  panorama states its own, and a camera record that does is refused
-  (`DW1010`). A second derivation was measured
-  and not taken: the `k` that best fits the game's transfer, in least squares
-  with equal weight per display level, over the range a clear cell lights,
-  `(0, L^(1/2.2)]` for its light `L` (the place frames below hold 99.6–99.9% of
-  their channel values under `L`, the two frames toward the sun 89–91%), is 1.491390 at the setting sun, 1.391937 on
-  the night plateau and 1.932816 at noon — a function of the tick where the
-  mid-grey gain is one constant, and within 2% of it at the setting sun. On the
-  Treehouse Camp's twelve showcase frames, re-exposed from their accumulated
-  sample buffers (the raw buffer written by `-snapshot` with `outputMode PFM`,
-  the curve applied by a numpy port the core's own PNG reproduces bit for bit
-  at the preset; clipped is any channel at 254 or more, crushed Rec. 709 luma
-  at 8 or less, both of 1 440 000 pixels):
-
-  | Frame | clipped, preset → anchored | crushed, preset → anchored | mean luma, preset → anchored |
-  |---|---|---|---|
-  | whole camp (sunset, toward the sun) | 0.39 → 0.40% | 0.78 → 0.33% | 50.6 → 58.9 |
-  | the nine place frames (sunset) | 0.10–0.39 → 0.12–0.44% | 1.62–9.32 → 0.88–5.86% | 24.5–32.7 → 28.9–38.6 |
-  | Crown Lookout (sunset, toward the sun) | 0.37 → 0.38% | 0.98 → 0.50% | 45.7 → 53.4 |
-  | Lantern Night | 0.14 → 0.18% | 1.08 → 0.60% | 20.4 → 24.2 |
-
-  **The light is the game's on an open top face that sees the whole sky, and
-  a frame's darkness is mostly elsewhere.** The clear cell's radiances are the
-  lightmap's colours decoded, so at exposure 1 a top face under the whole sky
-  shows at the colour the game draws it. Measured on the same eleven sunset
-  frames by casting every pixel through its scene's camera into the world the
-  scene loads (5 075 588 pixels on full cubes of 29 single-texture block types,
-  albedo the texture's mean), with the game's sky and block light flooded over
-  the same world and the pinned client's lightmap (`lightmap.fsh`, the block
-  factor `LightTexture` adds 1.5 to) and directional shade (`ClientLevel.
-  getShade`: up 1.0, down 0.5, north and south 0.8, east and west 0.6): the game
-  model of those pixels reads a mean luma of 35.2–48.2 (five in-game
-  screenshots of the camp at that hour, other views: 41.4–47.9), the frames 18.5–28.1 at the preset and 20.9–31.8
-  under no curve at all. 92.6% of the linear shortfall is in pixels a lantern
-  lights in the game: its block light reaches 14 blocks flat, where the path
-  tracer's lantern is a small emitter whose light falls with distance, and
-  those pixels take 0.21 of the game's light. Where no lantern reaches, an
-  open top face takes 0.53 of the game's light — its cosine-weighted sky
-  visibility is 0.57 on average, the camp's trees and the valley's rim hiding
-  sky the game's sky light ignores — and the sides 0.67 (north and south) and
-  1.19 (east and west, which the game shades to 0.6). Those figures are at the
-  core's default emitter intensity; the lantern scale below answers them.
-- **The lantern light** (`scene::emitter_intensity`, `scene::LANTERN_LIGHT_SCALE`):
-  every scene is written with `emitterIntensity` 159.003, the core's default 13
-  (`Scene.DEFAULT_EMITTER_INTENSITY`, **cited**) times 12.2310, and leaves
-  emitter sampling at the core's `NONE`. The pinned core gives a scene three
-  controls over emitted light — this global intensity, a per-material
-  `emittance` and the emitter sampling strategy — and nothing that limits how
-  far an emitter reaches (`PathTracer` at the pin: emission = texel colour² ×
-  emittance × intensity; the lantern's emittance 1.0, `BlockPalette`). The
-  sampling strategies change the light, not only the noise: measured at the
-  lantern scale on Root Glade and Loom House (two independent runs each,
-  noise the standard deviation of their difference over √2, time the core's
-  `renderTime`), `ONE`, `ONE_BLOCK` and `ALL` cut noise² × time to 0.04–0.13,
-  0.05–0.11 and 0.36–0.37 of `NONE` and cut the emitted light to 0.527–0.538
-  of it, because at the pin the sampled estimate averages the emitters near a
-  point (`ONE` draws one of n without the factor n; `ALL` scales by π / n) and
-  takes the texel colour where the unsampled path takes its square. Chunky
-  users close the torch-light gap by raising the intensity by eye and pair it
-  with a denoiser ([`chunky-lighting-practice.md`](chunky-lighting-practice.md),
-  which compares every setting here with that practice). **A showcase frame is
-  denoised**: Open Image Denoise 2.5.1 (RT filter, HDR) over the raw sample
-  buffer, with the chunky-denoiser plugin's albedo and normal passes (16
-  samples each), the result written back as a core render dump so the core's
-  own `-snapshot` applies the scene's post-process. `validation/chunky.sh` runs
-  the step after every `-render`, with both tools pinned in `versions.toml
-  [render]` and installed by `validation/chunky-install.sh`
-  (`tools/lib/chunky_denoise.py`; `tools.md` §4a).
-  The scale is the one at which the mean display luma of lantern-lit pixels,
-  denoised, under the anchored curve, equals the game model's (**authored from
-  this measurement**): the twelve showcase frames at 400 × 225, each rendered
-  as a sky pass (emitters off, 256 spp) and an emitter pass (sky light 0, 1024
-  spp), whose sum at scale 1 matches a normal render within 1%; render(k) =
-  denoise(sky + k × emitters); over the 102 139 pixels on full cubes of
-  single-texture blocks with game block light 1–15, equal weight, bisection
-  gives 12.2310. Fitted on the noisy buffers it reads 15.04, because grain shown
-  through the curve reads darker than its mean. A night-vision emulation writes
-  its `emittance` as `0.05 × 13 / emitterIntensity` (0.004088), so its glow
-  stays calibrated. Rendered in full and denoised (1600 × 900, the published
-  frames' spp; method 1 the core's PNGs read by Pillow, method 2 the denoised
-  buffers through the numpy port of the curve — they agree):
-
-  | Frame | mean luma, anchored → lantern scale | crushed | clipped |
-  |---|---|---|---|
-  | whole camp | 58.9 → 62.6 | 0.32 → 0.04% | 0.40 → 0.48% |
-  | the eight place frames, Root Glade to Watch House | 28.9–38.6 → 36.7–47.1 | 0.88–5.87 → 0.02–1.63% | 0.12–0.21 → 0.28–0.67% |
-  | the climb | 31.8 → 53.6 | 4.97 → 0.16% | 0.44 → 0.79% |
-  | Crown Lookout | 53.4 → 57.9 | 0.51 → 0.15% | 0.38 → 0.50% |
-  | Lantern Night | 24.2 → 39.5 | 0.60 → 0.06% | 0.18 → 0.60% |
-
-  Grain, as the mean distance of a pixel's luma from its 5 × 5 median, is at
-  or under the anchored set's on every frame (1.16–2.52 against 1.81–3.46;
-  undenoised at the lantern scale 4.03–12.55). On the 3 637 398
-  full-resolution lantern-lit pixels the frames read 40.8 against the game
-  model's 46.1 (23.7 under the anchored curve alone; mean absolute error 16.0,
-  from 22.6), and per frame from 20 luma under (Loom House 41.5 against 61.5)
-  to 16 over (the climb 55.0 against 39.4); the 1 697 997 sky-only pixels read
-  38.7 against 35.7, because the core's lantern light has no 14-block edge.
-  **What is left**: the falloff's shape — near a lantern the render is brighter
-  than the game, far from it dimmer — which no control of the core expresses;
-  and the lantern itself, which reads 204 where the game draws its texture at
-  94: the core scales the lamp and the light it casts together, and the
-  control that would part them (an emittance map) is an open draft upstream,
-  not in the pinned core.
-- **`horizon` fact** (`crate::render_plan::horizon_fact`): the world-generator
-  ambient the render layer cannot see. A `horizon: ocean` campaign (spec-0013)
-  ships a world save holding only the chunks its layout occupies — the sea around
-  the island belongs to the level generator — so a renderer loading that save
-  draws void past the shoreline unless it raises its own water plane, at exactly
-  the compiler's sea-level datum (anywhere else leaves a two-tone seam against the
-  authored block water). The plan therefore *states* it,
-  `{"kind": "ocean", "sea_level": 62}`, rather than leaving `delvec render` to
-  infer a generator setting from blocks. `horizon: void` (default/absent) emits
-  **no key** (absent, not null), so every campaign that declares nothing keeps a
-  byte-identical `render-plan.json`. A `valley` states the `extent` of the
-  landform it built: every scene loads it, and `delvec panorama` fits its frame
+  spelling (the keyword, or the celestial object as written), the vanilla
+  `daytime` value it sets, and the declared initial `weather` keyword; always
+  present, because `world.json`'s `time` and `weather` are required. **Every
+  shot carries its own `sky`**: the clock of the configuration it stands in —
+  the world's initial hour and weather, moved by every forced `set-time` and
+  `set-weather` the critical path fires before the shot's arrival
+  (`plan::collect_clock_events`), with `set_by` naming the step that set it
+  (`null` at the world's own clock). A frame of a leg after a cut to dusk is a
+  frame at dusk. A `set-time` or `set-weather` in a dialogue option, a trigger no
+  step is, or an optional quest is unforced and moves no shot's sky. The
+  renderer derives the sun from the **ticks** and never from the keyword, so a
+  state vanilla does not name is worth as much as one it does. `level.dat`'s
+  `DayTime` in each written world is the configuration's clock.
+- **The sky a frame is drawn under is the engine's** (`compiler::view::frames`,
+  spec-0112 §6.1 item 6): the renderer is handed every colour and direction and
+  draws its own of none. In quick mode the sky colour, the fog colour and the
+  lightmap's sky factor are `scene::sky_attributes(daytime, weather)` — the
+  pinned client's `visual/sky_color`, `visual/fog_color` and
+  `visual/sky_light_factor` at the tick under the weather layer, read off its
+  day timeline (spec-0081 §4.3) and `WeatherAttributes`' `RAIN`/`THUNDER` maps;
+  the fog colour handed is the clear colour the client draws behind its sky
+  disc and under the horizon for the frame's look vector, `scene::clear_color`
+  (`AtmosphericFogEnvironment.getBaseColor`, **cited**): `visual/fog_color`,
+  leaned toward `visual/sunrise_sunset_color` on the sun's side by the look's
+  dot with the sun's side times the colour's alpha, then toward the sky colour
+  the weather darkens by `1 − Mth.clampedLerp(min(512 / 16, 12) / 32, 0.25,
+  1)^0.25` = 0.146 at the client's default render distance, since the renderer
+  draws a stated fog as given —
+  and the sun's direction is `frames::sun_direction` over `scene::sun_at`, the
+  pinned day timeline's `visual/sun_angle` eased as the client eases it (minecraft.wiki's
+  closed form and the game's pre-timeline `DimensionType.timeOfDay` are the
+  second method in `the_two_published_sun_angle_formulas_agree`, within 0.056°).
+  Under rain or thunder the sun is placed below the horizon, where the client
+  draws none. **Under a clear sky the statement stands at the frame's clock**
+  (`frames::stated_sky`: `StatedTick` at `day × 24000 + daytime`, the day
+  `scene::frame_day` reads — a celestial statement's phase, else the world's —
+  with `SkyLook::ByTime` at the client's render distance), so in both modes the
+  renderer draws what the client derives from the tick alone, the sunrise and
+  sunset fan, the moon at the clock's phase and the stars, from the pinned jar;
+  a rain or thunder frame stands at no clock, because the game's look draws no
+  weather and the client draws no moon or stars at full rain. `crates/delvec/tests/review_frame_sky.rs` measures the same camera
+  at noon and midnight (mean luma 187.64 against 6.14 on the CPU backend) and
+  holds that the engine calls none of the renderer's own sky. In hq mode
+  the traced sky is Lumenwright's (`frames::hq_sky` over `lumenwright::render::sky::hq_sky`, the Preetham
+  sky and its fall through twilight, with a white sun at `DEFAULT_SUN_INTENSITY`,
+  **cited** there) along the same direction, its radiance
+  scaled by the light the client's sky casts under the frame's weather as a
+  fraction of the clear sky's at the same tick, and its sun dark while the
+  client draws no disc. A clear hq frame is drawn in the game's look by the time
+  of day: that traced sky on the client's day plateau, the game's own sky and
+  the light it casts at night, mixed between by the lightmap's sky factor
+  (Lumenwright's `SkyLook::ByTime`); a rain or thunder hq frame is the traced
+  sky alone. The gallery's `dusk-check` camera at tick 12782 measures the
+  sky band beside the sun at hue 28.7° and the frame 1.1% yellow and 38.8%
+  orange, against 28.7°, 1.1% and 39.5% for Lumenwright's own `--sky auto` on
+  the same world and camera (and 48.9°, 93.0% yellow for the traced sky alone);
+  the hq exposure is
+  `frames::HQ_EXPOSURE` (1.0, **authored**) until the showcase standard level is
+  re-measured (spec-0112 phase 3). **What no frame shows is named**, in the
+  review record's `unchecked` (`review::UNCHECKED`: the
+  block entities the renderer has no model for, the weather in the air, the
+  clouds and hq-mode fog, under rain or thunder the sunrise and sunset fan, a
+  night-vision room's lightmap, a body's pose
+  at a tick and the party, a cutscene no critical step fires) and in each index
+  entry's own `unchecked` for what that frame's state makes apply. A plan
+  whose shot states no `world`, `sky` or `mode` is refused by `delvec frames`
+  (`DW0721`, `view::index::plan_shots`) naming the shot and the remedy, a
+  rebuild.
+- **The placements ledger** (`compiler::placed`, `<out>/validation/placed.json`;
+  spec-0112 §4). Every block, container item and body the datapack places
+  outside the templates, and every removal, is one row: `{fired, function,
+  object, command}`, `fired` one of `"setup"`, `{"id", "step"}` (the
+  `critical_path` index of the step whose completion, activation or trigger runs
+  it) or `{"unforced": <blame>}` (a beat nobody has to play, which no
+  configuration lays). The rows are read off the functions that place —
+  `setup_finish`, `ws_arm_<shortcut>` (a shortcut gate's wrong-side
+  hitboxes, armed at world init) and `holder_<id>` (an item holder's body,
+  summoned at world init; its `item replace entity` fills are no row, so a
+  frame's world holds the frame or stand without the item it is filled with;
+  the body is written as the pinned server holds it, `placed::as_the_server_holds`
+  — a frame on the face its `Facing` turns from, 0.46875 off its cell's
+  centre and turned by the facing, a stand with no `Marker:0b` and only the
+  pose parts that differ from the default — measured against the server's save
+  of the gallery by `check-written-world.py`);
+  `activate_<obj>` (at the latest critical step
+  its objective's step causally follows, else at the `select-class` step — a
+  campaign-start quest is armed by the party's first class pick, never at world
+  load); `shortcut_open_<shortcut>` (unforced); `complete_<obj>` and `complete_q_<quest>`
+  (at the objective's, or the quest's last objective's, step);
+  `trig_<trigger>` (at the trigger's step); `spawn_npc_`, `despawn_npc_`,
+  `spawn_actor_`, `despawn_actor_`, `asm_summon_`, `asm_despawn_` (at every step
+  an effect running it fires, `plan::firing_of`); and the `trap_` and `loop_`
+  functions (unforced) — every `summon`, `setblock` and `item replace block`
+  line (under an `execute … run` prefix too), every `kill @e[tag=…]` and every
+  unseen hand-off. **Each such line is written back from its row**
+  (`Placed::command`), so a line and its record cannot disagree; a body whose
+  position is no absolute number or whose compound does not read as SNBT is
+  named on the binding line, `placements ledger: <n> row(s) over <m> placing
+  line(s) …; <u> body row(s) no frame's world can hold as written`.
+  `tests/placed_ledger.rs` audits it over the gallery: every placing line of a
+  ledger function is one row and every row one line, and every other placing
+  function is named by its class (a region write — `seal_`, `collapse_`,
+  `tgate_`, `shortcut_`, the world build — laid by the configuration, or a body
+  present only once a player has played — a wave, an unleashed or re-stood
+  actor, a cutscene's stand-in, a volley, a dropped stake, a block
+  highlight's display copy — `hl_hold_`/`hl_off_`, alive only while a player
+  stands within the highlight's reach).
+- **The worlds the build writes** (`<out>/validation/worlds/<key>/`,
+  `compiler::view::review`; spec-0112 §5). One world per distinct
+  configuration the plan's shots stand in — `at-load` always, and
+  `after-<step>` (`/` as `-`, `-at-<n>` when two configurations follow one
+  step) — a configuration's identity being the cells its writes lay, the ledger
+  rows its arrival holds (`placed::rows_at`: every `setup` row and every row of a
+  step the arrival causally follows, in firing order, a removal deleting every
+  earlier body carrying its tag) and its clock. Each world holds `level.dat`
+  (gzip, mtime 0: `Data{DataVersion, LevelName, SpawnX/Y/Z, version, DayTime}`,
+  `DayTime` the configuration's clock), `region/r.<x>.<z>.mca` and
+  `entities/r.<x>.<z>.mca`, every chunk of the loaded extent
+  (`render_plan::loaded_extent`: the layout, a valley's landform, the plan
+  volumes) written whole. A chunk carries `DataVersion` (the pin's), `xPos`,
+  `zPos`, `yPos`, `Status: minecraft:full`, a section per height holding a
+  block or the generator's ground — `Y` a byte, `block_states{palette, data}`
+  and `biomes{palette, data}` with palettes in first-seen order, every state
+  completed with the pinned defaults of the properties it leaves out, indices at
+  `max(4, ⌈log2 n⌉)` bits for blocks and `max(1, ⌈log2 n⌉)` for biomes never
+  across a long — and **`BlockLight` and `SkyLight`** in every section: the two
+  terms of the light model (`light::LightArrays`) over the configuration's
+  blocks, block light from the emitters the configuration holds and sky light
+  seeded at 15, one nibble a cell in `y`-`z`-`x` order, low nibble first.
+  **`block_entities`** carries one block entity at every cell whose block
+  carries one on the pinned server (`registry::block_entity_type`,
+  `data/block-entities-1.21.11.tsv`), because the server makes it whenever it
+  places the block, compound or none: the template's compound where the cell
+  still holds the template's block (`assembled::template_block_entities`),
+  otherwise its `id` alone, every other key the server's default; a ledger item
+  is laid into its container's `Items`, and a cell whose block carries none
+  holds no item; the entity file carries every
+  ledger body the configuration holds — the summon's whole compound with `id`,
+  `Pos`, `Rotation` (`[yaw, 0]`), `Tags` and a `UUID` derived from its tags and
+  position. **A cell no build write reached holds the horizon generator's
+  block** (`world::Ground`): under `horizon: ocean` the stack
+  `plan::OCEAN_LAYERS` states once (bedrock at −64, stone to 54, water to 62);
+  under `void` and `valley` nothing. Which cells a write reached is
+  `assembled::Reached`, widened by the configuration's laid regions and the
+  ledger's blocks. Every region timestamp is zero, zlib at level 6, chunks in
+  index order: two builds write byte-identical worlds (ADR-0006,
+  `tests/review_frame_worlds.rs`). Every file is in `manifest.json`;
+  `validation/` ships in no image (`validation/Dockerfile.delve` copies nothing
+  under it). Per world one binding line, `world: <key> <chunks> chunk(s),
+  <cells> cell(s), <g> ground cell(s), <b> block entit(ies), <e> entit(ies),
+  light arrays over <chunks> chunk(s), sha256 <hash> -> validation/worlds/<key>,
+  written in <ms> ms`. The worlds are a classified verbatim binary output of
+  `DW0185`'s scan (`emit::text::is_verbatim_binary_output`): every string they
+  hold is a copy of a template's block-entity text or of a summon compound the
+  scan reads where the datapack emits it.
+- **The review record** (`<out>/validation/review-frames.json`;
+  spec-0112 §9): per world its key, chunk, cell, ground-cell, block-entity and
+  entity counts, the light arrays' cell count and sha256 and the world's sha256;
+  per shot its id, kind, world, mode, sky, frame size, what it `shows` and what
+  lies `out_of_frame` (`framing::resolve_targets` over the shot's own world, the
+  ledger's bodies included as kind `body`); the cutscenes framed and the
+  cutscenes no critical step fires, by name; `shots_digest`; and `unchecked`.
+  The build's binding line: `review frames: <m> shot(s) in <k> world(s) (<l> at
+  load, <a> after a step); <q> quick, <h> hq, <n> light frame(s) rendered quick;
+  <c> cutscene frame(s) of <s> shot(s) in <n> cutscene(s), <u> cutscene(s) no
+  critical step fires[: <where>]; cameras proven clear: <m> of <m> in their own
+  worlds`. A campaign with no cutscene prints `0 cutscene frame(s)`.
+- **Cutscene shots** (`render-plan.json`, spec-0112 §7.2): every cutscene a
+  critical step fires gets a frame where each shot starts and, for a shot whose
+  camera or aim moves, where it ends — `cutscene/<step id, / as ->/<n>/shot<i>/t<tick>`,
+  kind `cutscene`, its camera the keyframe pose with `fov` 70, `world` the
+  configuration the firing step arrives under, `after`, `step`, `shot`, `tick`,
+  `seconds` and an `expect` line — appended after the POV shots. A cutscene no
+  critical step fires gets no frame and is named on the review line; a branch's
+  cutscenes get none (spec-0112, debt).
+- **`horizon` fact** (`compiler::render_plan::horizon_fact`): the world-generator
+  ambient a consumer of the plan cannot see. A campaign whose horizon's `base` is `ocean`
+  (spec-0013) ships no sea — the sea around the island belongs to the level
+  generator — and the worlds the build writes carry the generator's stack
+  wherever no write reached (above), so the plan *states* the generator,
+  `{"kind": "ocean", "sea_level": 62}`, rather than leaving a reader to infer a
+  generator setting from blocks. A `void` base (default/absent) emits
+  **no key** (absent, not null): there is no generator for a reader to infer. A `valley` states the `extent` of the
+  landform it built: every frame's world loads it, and `delvec panorama` fits its frame
   to `layout_aabb` (or to the anchors `--subject` names) and never to the
   landform, so the ground is the built place's setting and never what the frame
   is sized to.
@@ -4206,7 +4161,7 @@ wall's `none`/`low`/`tall` values travel with their side), crafter/jigsaw
 (`inner_left`, `outer_right`, …) is expressed relative to its own `facing` and
 is already correct once `facing` moves. Every occupancy classifier reads only
 rotation-invariant properties (`type`, `layers`, `open`, `waterlogged`,
-`bottom`), so the rotation moves nothing in nav, seating, relight, snapshots or
+`bottom`), so the rotation moves nothing in nav, seating, relight, frames or
 emission; the `DW0430` stair proof is the consumer of `facing`, and without the
 rotation it would report a false defect on every rotated piece.
 
@@ -4298,9 +4253,10 @@ never around a phantom "solid" plate that would call every trap avoidable.
 **Where the collision table lives.** `delvewright_dsl::blockshape` holds it,
 and `crate::assembled` re-exports its names by `pub use` — there is one
 definition in the workspace and no second copy for anything to drift from. It is
-in `delvewright-dsl` for the reason `metrics::step_allowed` is: `delvec` is
-published and may depend only on published crates, so the one crate the grammar
-back end, the admission pipeline and the compiler can all reach is that one. And
+in `delvewright-dsl` for the reason `metrics::step_allowed` is: its readers are
+the engine (`delvec`'s compiler, grammar back end and admission pipeline) and the
+prefab generators, a workspace of their own that depends on `delvewright-dsl` and
+never on `delvec`, so that is the one crate both reach. And
 it is the right home by object class — a collision box is a fact about a vanilla
 block state under the pinned game version, in the same sixteenths as the
 auto-step and jump-apex budgets it feeds.
@@ -4334,9 +4290,9 @@ a block's collision-box top face in sixteenths, against the 1.21.11 shapes:
 | `candle`, `*_candle` | 6/16 | every candle count has the same 6-pixel box, so a candle on a floor is stepped over |
 | `flower_pot`, `potted_*` | 6/16 | |
 | `lantern`, `soul_lantern`, `*copper_lantern` | 9/16, 10/16 `hanging=true` | two stacked boxes, the cap on top; a floor lantern is a step a mob takes onto a curb (content measurement: top at the cell floor + 0.5625). `sea_lantern` and `jack_o_lantern` are full cubes |
-| no-collision fixtures (`assembled::is_no_collision_fixture`) | 0/16 | torches (`torch`, `*_torch` — wall, soul and redstone alike), signs and banners (`*_sign`, `*_banner`), `lever`, `*_button`, rails (`rail`, `*_rail`), `redstone_wire`, `light`, `structure_void` — vanilla declares every one of them `noCollission()`. A wall torch occupies the air cell beside the wall it is fixed to, and a model that calls that cell a full cube severs a corridor. **Deliberately excluded, and not because they collide**: `fire`, `soul_fire`, `cobweb` and the portals also have empty collision boxes and stay full cubes here, because a body that *passes through* one is not a body that may be *routed* through one. Also excluded because their shapes are not read out of the pin: lanterns, chains, end rods, ladders. |
+| no-collision fixtures (`blockshape::is_no_collision_fixture`) | 0/16 | torches (`torch`, `*_torch` — wall, soul and redstone alike), signs and banners (`*_sign`, `*_banner`), `lever`, `*_button`, rails (`rail`, `*_rail`), `redstone_wire`, `light`, `structure_void` — vanilla declares every one of them `noCollission()`. A wall torch occupies the air cell beside the wall it is fixed to, and a model that calls that cell a full cube severs a corridor. **Deliberately excluded, and not because they collide**: `fire`, `soul_fire`, `cobweb` and the portals also have empty collision boxes and stay full cubes here, because a body that *passes through* one is not a body that may be *routed* through one. Also outside this class: lanterns and ladders, which have rows of their own, and chains and end rods, which stay full cubes. |
 | climbables (`blockshape::climbable`, every member of the pinned `#minecraft:climbable` but `scaffolding`) | — (class `Climbable`) | `ladder` (a 3/16 panel against its support), `vine`, `weeping_vines`, `twisting_vines`, `cave_vines` and their `_plant` bodies: a body passes the cell and never stands on it; what holds it there is the climb (spec-0099, below). `scaffolding` stays a full cube |
-| no-collision vegetation (`assembled::is_no_collision_plant`) | 0/16 | grasses/ferns, every small and tall flower, `pink_petals`/`wildflowers`/`leaf_litter`, saplings, crops, mushrooms and nether flora, kelp/seagrass, vines/`glow_lichen` — vanilla gives them an **empty** collision shape. Modelling them as full cubes makes a plant cell a phantom standable surface, which refuses valid geometry (a tuft on a terrace splits a 2-block riser into two climbable 1-block steps) and, worse, accepts invalid: a walkability proof that stands a body ON a tuft is unsound, and a flower cell measures light 0 as if it were opaque. The list is the **class**, never the ids one generator happens to scatter; lookalikes that DO collide (`azalea`, `big_dripleaf`, `bamboo`, `cactus`, `pointed_dripstone`, `sea_pickle`, leaves, …) keep a box a body cannot walk through: a full cube, or the measured floor height of the next row (`cactus` 15, an upward dripstone tip 11). Fidelity consequence: plant cells no longer dam the water-flood model either — vanilla water flows into and breaks them. |
+| no-collision vegetation (`assembled::is_no_collision_plant`) | 0/16 | grasses/ferns, every small and tall flower, `pink_petals`/`wildflowers`/`leaf_litter`, saplings, crops, mushrooms and nether flora, kelp/seagrass, vines/`glow_lichen` — vanilla gives them an **empty** collision shape. Modelling them as full cubes makes a plant cell a phantom standable surface, which refuses valid geometry (a tuft on a terrace splits a 2-block riser into two climbable 1-block steps) and, worse, accepts invalid: a walkability proof that stands a body ON a tuft is unsound, and a flower cell measures light 0 as if it were opaque. The list is the **class**, never the ids one generator happens to scatter; lookalikes that DO collide (`azalea`, `big_dripleaf`, `bamboo`, `cactus`, `pointed_dripstone`, `sea_pickle`, leaves, …) keep a box a body cannot walk through: a full cube, or the measured floor height of the next row (`cactus` 15, an upward dripstone tip 11). Fidelity consequence: plant cells do not dam the water-flood model either — vanilla water flows into and breaks them. |
 | every other block whose pinned collision box rests on the cell floor and tops out at 8–15/16 (`blockshape::measured_collision`) | the measured top | read from `crates/dsl/data/collision-tops-1.21.11.tsv`, the vertical extent of `BlockState.getCollisionShape(EmptyBlockGetter.INSTANCE, BlockPos.ZERO)` for every blockstate of the pinned server jar (`tools/maintenance/dump-collision-tops.py`; 29,671 states in 5,724 rows). A property the name leaves out is read at the block's pinned default, so a bare `pointed_dripstone` is the upward tip it places: 11/16, the feet of a body standing on it 0.6875 into the tip's cell. Chests, beds, soul sand, mud, honey, cactus, cakes, lecterns, skulls and the rest of the class come in at their own tops by the same rule |
 | everything else | 16/16 | the conservative default: a box under 8/16 no row above names, a box that does not start at the cell floor (a downward dripstone tip is 5–16), a box over a block tall, or an empty box this table refuses to route through |
 
@@ -4374,7 +4330,7 @@ for a runtime fill, its block's) and derives from them, on every view, the
 a floor, and a falling body passes it. The direction: a block read at its least
 can only report a gap the server closes (a 2×1 row of bars the server joins with
 arms is read as a gap), never close one it leaves open. A seal or fill whose
-footprint covers the cell is a full cube, as before.
+footprint covers the cell is a full cube.
 
 *Cited* (the pinned jar, `versions.toml` `server_jar_sha256` `f83b8e09…1726`,
 read once while this was built): `iron_bars` with no connection is a post of
@@ -4514,6 +4470,22 @@ Every entity the compiler **summons or teleports** is positioned at
 proven-walkable cell. Block-targeting commands (`setblock`, `fill`, `place`,
 `spawnpoint`) keep the bare integer cell, which is the coordinate space they take.
 
+**A position argument centres a bare integer.** On the pinned server, an absolute x
+or z written without a `.` in a position argument (`summon`, `tp`, `execute
+positioned`, every `Vec3Argument.vec3()`) is read as `value + 0.5`; y never is
+[read in the pinned 1.21.11 server jar, Mojang mappings:
+`WorldCoordinate.parseDouble(StringReader, boolean centerCorrect)` adds `0.5` when
+the token contains no `.`, is not relative and `centerCorrect` holds;
+`WorldCoordinates.parseDouble` passes `centerCorrect` for x and z and `false` for y;
+`Vec3Argument.vec3()` is `new Vec3Argument(true)`, the argument `SummonCommand`
+takes]. So `summon … 8209 64 8192` stands at `8209.5 64.0 8192.5`. The engine never
+writes a bare integer x or z into a position argument: a centre is
+`coords::center` (`x.5`, through `f64`, so `-16` centres on `-15.5`), a corner is
+`coords::corner` (`x.0`), and the two display kinds a highlight summons differ — a
+`block_display` draws its block from its origin as the minimum corner, so it stands
+at the cell's corner; an `item_display` draws its item centred on its origin, so it
+stands at the cell's centre on all three axes (`guidance::display_origin`).
+
 The distinction is load-bearing. A block cell `(x, y, z)` spans `[x, x+1)`, but an
 *entity's* position is the centre of its AABB, so summoning at the bare integer
 coordinate parks the body on the corner where four columns meet: a 0.6-wide villager
@@ -4569,7 +4541,7 @@ one.
 both endpoints and every swept column share one cell `y` *and* one true feet height
 (`feet_16_fp`). So a rise, a drop, a slab lip, a stair edge and a closed fence gate
 each **end** a run and survive as their own vertex, rendered by the cardinal step
-shape above exactly as before. A closed fence gate needs its own clause because it is
+shape above. A closed fence gate needs its own clause because it is
 deliberately not `is_occupied` (the player opens it with a click), so without it a
 diagonal could be routed through a shut gate — or past the one the traversal proof
 recorded the leg as using. A route with no level run of three or more cells comes
@@ -4710,7 +4682,7 @@ template that fast-forwards a driver does it through one rule, `fast_forward_wal
 (`emit/packtest.rs`), which reads the bundle the driver runs (`walk_on_arrive`, the
 lookup both drivers use): such a walk is jumped to the tick before arrival, the
 reschedule it queues and its run latch cleared (so the arrival never runs into a
-sibling template); any other walk is jumped to its last tick, as it always was. On
+sibling template); any other walk is jumped to its last tick. On
 the tick before arrival `v04_move` asserts the body on that waypoint and within one
 block of the target cell, `v06_move_actor` the puppet on that waypoint, and
 `watch_yield_<class>_<id>` the body present and still yielded. Two templates drive
@@ -4915,21 +4887,22 @@ own it. Every `EffectRootKind` does — quest `on_objective_complete`, quest
 `on_complete`, `triggers[].effects`, `traps[].payload` (spec-0022: a payload is an
 effect root), a **dialogue option's `set-checkpoint` `on_respawn` bundle**,
 `shortcuts[].on_unlock` and the campaign's `on_death` (both spec-0031),
-`shops[].offers[].effects` (spec-0032) and a wave's or actor's `on_kill`
-(spec-0074). The dialogue one is the trap: `DialogueEffect` carries no gate verb,
+`shops[].offers[].effects` (spec-0032), a wave's or actor's `on_kill`
+(spec-0074), an assembly's `strikes.pattern[].on_land` (spec-0082) and a loop's
+`on_cross` (spec-0086). The dialogue one is the trap: `DialogueEffect` carries no gate verb,
 so a walk that stops at the quests stage misses it — but `on_respawn` is a plain
 `Vec<QuestEffect>` and a `close-gate` inside it really is lowered, into
 `cp_on_respawn_<i>`. A seal the compiler fills but never arms is the finding
 again, one effect root further out. A walk written against a remembered list
 rather than against what emission reaches misses roots in exactly this way.
 The seal planner, `DW0423` and the `close-gate` completability
-model (`plan::collect_gate_events`, feeding `DW0311`/`DW0315`/`DW0342`/`DW0410`)
+model (`plan::collect_region_events`, feeding `DW0311`/`DW0315`/`DW0342`/`DW0410`)
 all walk it, so the checks, the proofs and the emission can never disagree about
 which firings exist.
 
 The roots themselves are enumerated exactly once, in
 `plan::for_each_effect_root` (which yields each top-level effect *list*, with an
-`EffectRoot` naming which of the nine it is and carrying its owner where it has
+`EffectRoot` naming which of the eleven it is and carrying its owner where it has
 one). `for_each_gate_effect` is that enumeration flattened; `timeline::walk_campaign`
 (→ `DW0410`, `nav::all_effects`), `emit::all_campaign_effects` (→ the
 generated functions), **both halves of `compiler::flow`**
@@ -4957,9 +4930,10 @@ assumed up from the start and never assumed down before somebody strikes it. A
 trigger step precedes every later step of its path in the ancestry relation
 (`compute_strict_ancestor_steps`). A trap payload, a dialogue-hosted `on_respawn`
 bundle, a shortcut's `on_unlock`, the campaign's `on_death`, a shop offer's
-effects and an `on_kill` bundle have no step of their own (a sprung trap, a death,
-a bar thrown, a purchase, a kill), so all six root conservatively at step 0, which
-precedes every leg (`plan::firing_of`). These six **optional** roots
+effects, an `on_kill` bundle, an assembly strike's `on_land` and a loop's
+`on_cross` have no step of their own (a sprung trap, a death, a bar thrown, a
+purchase, a kill, a blow, a crossing), so all eight root conservatively at step 0,
+which precedes every leg (`plan::firing_of`). These eight **optional** roots
 register their `close-gate`s **only**: an
 unguaranteed firing may be assumed to have happened exactly when assuming so is
 conservative, so it can seal a region but never unseal one. That is the rule a
@@ -5009,9 +4983,7 @@ synthetic constructor every unit-test world goes through; the two relight darkne
 surveys (`light::relight_over` and a `relight` verb's own — applying the premises
 would cut the reachable flood at a kill box and *shrink* the `DW0210` survey
 rather than sharpen it, and a pit that kills is a pit the player must be able to
-see before stepping into it); and `delvec snapshot`, where a camera is stood up
-against blocks and a reviewer framing a shot down into a lethal volume is looking
-at open air. `delvec blocking-chart` goes the other way: it re-derives
+see before stepping into it); and two proofs over one piece alone, before any campaign places it — the grammar contract's climb-edge proof and the sculpted piece's pocket proof. `delvec blocking-chart` goes the other way: it re-derives
 `critical_path_routes`, so it carries the full set and draws the corridor the
 proof actually walks.
 
@@ -5027,7 +4999,7 @@ beside the lethal one in the one predicate, so every route proof, `move-npc` /
 Air cells of a region contribute nothing, and a body beside a table, feet on the
 floor, is untouched. **What is not judged**: a body *posted* on furniture (an
 NPC's anchor, an actor's anchor) stands where it is declared — posts answer to
-`DW0450` and `DW0511` as before — and a walk that starts from one snaps to the
+`DW0450` and `DW0511` — and a walk that starts from one snaps to the
 nearest standable cell. `DW0891`'s population is taken over
 `World::without_exclusions`, which lifts lethal volumes **and** furniture
 together, so a declaration over the stone round a pit cannot hide caught floor;
@@ -5099,9 +5071,9 @@ a head-clear answer and returns the verdict above; `compiler::nav` asks it, and 
 does `delvec::schem::nav`, which is the walk a grammar expansion, an ingested
 structure template and a reassembled zone are read with, and which a prefab's
 contract-reachability gate proves over. The site is `delvewright-dsl` because
-`delvec` is published to crates.io and may only depend on published crates, so the
-rule cannot live in the schem crate and be shared; `dsl` is the one crate both
-already reach, and it is where the three constants already live.
+that is where the three constants live (`MAX_AUTO_STEP_16`, `MAX_JUMP_RISE_16`,
+`FULL_16`) and where the collision table it is measured against lives, which the
+prefab generators reach without depending on `delvec`.
 
 What each caller keeps is the **measurement** of the rise, not the rule. This
 model reads real collision tops and a footprint's highest supporting face. A box
@@ -5132,7 +5104,7 @@ the prefab `.nbt` authors there, and both cases ship in the library:
 never defaulted** (`assembled::measure_gate_seals`, taken immediately before the
 base model clears the gate cells), and a gate the world authors shut re-enters the
 model as a `Fill` at step 0 — the identical shape a shortcut gate's world-load seal
-already used. A gate state that is a function of what *sealed* it and never of
+takes. A gate state that is a function of what *sealed* it and never of
 what *opened* it ("passable unless a `close-gate` seals it") can only fail to
 notice an obstruction, never invent one, and the mistake an author makes is
 forgetting to open a door: a campaign missing its one `open-gate` would compile
@@ -5201,11 +5173,11 @@ independent per-piece count (1200 + 672 = 1872 authored fluid cells, and
 **Binding ledger — `validation/stealth-judge.json`.** What the `DW0852` audit
 read off the emitted datapack: `beats`, `judges`, `examined` (per-player tests),
 `arguments` (the selector vocabulary those tests actually used), the
-`allowed_arguments` they are held to, `offenders` and `verdict`. Emitted only by a
-campaign that declares a stealth beat — the `gate-seal.json` rule, and for the
-same reason: a campaign that fields no stealth has nothing to audit, so a file
-that EXISTS and reports zero examined tests is a finding rather than an absence.
-`judges` must equal `beats`; a disagreement is reported as an internal-invariant
+`allowed_arguments` they are held to, `offenders` and `verdict`. Emitted by
+**every** campaign, on the `fluid-escape.json` terms: a stealth-less one ships
+zeroes rather than nothing, because the staging gate reports an absent file as a
+check nobody ran. Zero beats and zero tests is inapplicable; beats with zero
+tests is unbound. `judges` must equal `beats`; a disagreement is reported as an internal-invariant
 violation rather than as a pass over whatever the scan happened to see. Readings:
 `nobodys-cave-island` — 1 beat, 1 judge, 3
 per-player tests, vocabulary exactly the six box arguments.
@@ -5217,7 +5189,7 @@ leaving the built volume, this measures the ambient sea coming into it.
 the sea is directly touching — the seed set), `cells_the_sea_reaches`,
 `walk_cells_examined`, `walk_cells_submerged`, `walk_cells_wading`, `in_pieces`
 and `verdict`. Emitted by **every** campaign that assembles a world; a
-`horizon: void` one ships `"horizon": "void"` and zeroes rather than nothing at
+`void`-base one ships `"horizon": "void"` and zeroes rather than nothing at
 all, because "there is no sea here" and "nobody ran this" are different facts.
 `contact_face_cells: 0` is the only honest way this proof passes without looking
 at anything — a watertight hull — and it is a number rather than a silence.
@@ -5376,7 +5348,7 @@ finishes before *i > j* starts); a `sequence`, ordered by `(at_ticks, declaratio
 index)` — real elapsed time, which is exactly what the shape above turns on; or an `on_arrive`
 bundle, which inherits the state as of its move.
 
-**Optional roots need no special case**. Six roots have no guaranteed firing —
+**Optional roots need no special case**. Eight roots have no guaranteed firing —
 the party may never trip a trap, nobody is forced to die at a checkpoint — and the DAG-causal model above has to rule on that (an unguaranteed
 firing registers its `close-gate` only). The staged walk does not, and the
 asymmetry is deliberate: that model reasons *across* bundles about the route the
@@ -5492,7 +5464,7 @@ write, and no leg state restores it.
 
 `crate::edit` replays the optional stage-7 script over the assembled model
 (§1 pass 8) so **every** downstream consumer — relight, nav, wave seating,
-waypoint/POV export, `snapshot`/`blocking-chart`, emission — sees the edited
+waypoint/POV export, `frames --campaign`/`blocking-chart`, emission — sees the edited
 world. Invariants:
 
 - **Per-batch re-proofs.** After each batch the replay re-settles gravity
@@ -5501,9 +5473,8 @@ world. Invariants:
   (`DW0311`/`DW0315`/`DW0316`, with the relight fixtures solid), and runs the
   **boundary-safety** check (`DW0322`, `nav::verify_boundary_safety`, stated
   per **horizon** — see the `DW0322` catalog row and *Boundary safety and the
-  world-generator ambient* below). This is the guarantee the greenfield berm
-  provided physically, made checkable so an edit script may reshape a boundary
-  into natural landform. Reused codes keep their tiers; failures are prefixed
+  world-generator ambient* below). The check is what lets an edit script reshape
+  a boundary into natural landform. Reused codes keep their tiers; failures are prefixed
   `after world-edits batch `<id>``, and every violation of a run is aggregated
   into one report (bounded listing + total), never just the first.
 - **Trap-hardware integrity (`DW0352`).** No batch write may land on a trap's
@@ -5519,7 +5490,7 @@ world. Invariants:
   pinned jar's measured `canSurvive` table (`delvewright_dsl::support`): a later
   batch that carved its support away, or a `scatter` that dropped flowers onto a
   non-soil block, leaves a block the server pops off as an item the first time a
-  shape update reaches it — the edit silently undone while every snapshot still
+  shape update reaches it — the edit silently undone while every frame still
   shows it. **Advisory** for decoration (aggregated per block, with a count, one
   example cell and what its rule asks); **error** when the popped block is a
   fixture the script's own `relight` verb placed, since that is a declared
@@ -5535,7 +5506,9 @@ world. Invariants:
   it by construction rather than by three call sites remembering. It never feeds
   the walkability sets, so routing and standability are untouched by it.
   - **Anchor seating (`nav::AnchorRoot`).** The walk region this proof examines
-    is flooded from every resolved anchor, and an anchor is a declared *point*,
+    is flooded from every resolved anchor but a station of a scenery place no
+    body is put in (`edit::body_starts`; the stage-10 call prints the count it
+    left out), and an anchor is a declared *point*,
     not a floor cell — seating it is a nearest-standable-cell snap. That snap
     chooses by squared distance and **nothing else**: it does not care that solid
     geometry stands between the anchor and the cell it lands on. So each root
@@ -5551,9 +5524,9 @@ world. Invariants:
     flood would shrink the region examined, which is a weaker check, not a more
     correct one. An anchor whose piece offers no footing within `SNAP_RADIUS`
     seats nowhere and contributes no root, as an unsnappable start does.
-  - **`Ambient::Void`** (`horizon: void`, the default): bottomless columns are the
+  - **`Ambient::Void`** (`base: void`): bottomless columns are the
     hazard.
-  - **`Ambient::Ocean`** (`horizon: ocean`) — the ambient is the pinned superflat
+  - **`Ambient::Ocean`** (`base: ocean`) — the ambient is the pinned superflat
     (`plan::SEA_LEVEL` = 62 water top, `plan::SEA_FLOOR_TOP_Y` = 54 sea floor,
     bedrock below), present in every column **except** inside a placed piece's
     AABB (`/place template` writes the whole box, air included; the water *under*
@@ -5600,11 +5573,11 @@ world. Invariants:
   (the island/cave generators' primitive family, ported into `crate::edit`)
   seeded per script position; the double-build gate covers the edited fixture
   (`tests/edit.rs`).
-- **View mode.** `snapshot`/`blocking-chart` replay the script **without**
+- **View mode.** `frames --campaign`/`blocking-chart` replay the script **without**
   enforcing invariants (`edit::replay_view`) — a broken state must be
   viewable; only region-resolution failures (`DW0323`) stop a view.
 - **The loop** (`delvec edit apply|preview`, §7): full validation → replay
-  with invariants → one labelled snapshot + manifest per batch (framing the
+  with invariants → one labelled frame + manifest per batch (framing the
   batch's edited AABB over the final edited world) → **the whole build-tier
   proof set**. `apply --batch` appends a candidate batch and persists
   `world-edits.json` (canonical form) only when all of that is green; `preview`
@@ -5616,7 +5589,7 @@ world. Invariants:
   `move-npc`/`move-actor` routability, and the exported-route/POV self-checks.
   `edit` therefore runs `analyze` + `emit::build` (output discarded) before
   persisting, so a script `apply` accepts is a script `build` accepts; the build
-  costs about what the command's own snapshot render does, so a cheaper tier has
+  costs about what the command's own frames do, so a cheaper tier has
   no reason to exist.
 - **Atomic persist.** `world-edits.json` is written to a sibling `.tmp` and
   renamed into place: the artifact of record (ADR-0006) is never left truncated
@@ -5664,6 +5637,8 @@ page, so a code whose declaration moves and whose row does not is a red;
 through. A page may say more than its rows; nothing on it is a row for another
 module's code.
 
+**A command a message names is one the binary has.** Every backticked `` `delvec <sub> [<sub>]` `` in the workspace's Rust sources — a remedy, a help line, a doc comment — resolves against the command tree the built binary prints under `--help`, walked recursively (`crates/delvec/tests/named_commands_exist.rs`; it prints `named-command binding:` with its mention, file and command-path counts, and reds on a dead mention or on a scan that binds fewer than 100).
+
 **A code is declared inside `dw_code!`, and nowhere else.** The macro
 (`delvewright_dsl::dw_code!`) expands to the constant as written —
 `pub const NAME: DwCode = DwCode::new("DWxxxx", ExitTier::…);`, or
@@ -5674,7 +5649,7 @@ no list beside the declarations. `delvec codes` prints the registry, sorted by
 code, one JSON object per line:
 
 ```
-{"code":"DW0944","tier":"Build","subject":"Campaign","name":"PERCEPTION_SIGHT_UNDER_A_CAMERA","module":"delvewright_dsl::diagnostic::codes"}
+{"code":"DW0944","tier":"Build","subject":"Campaign","name":"PERCEPTION_SIGHT_UNDER_A_CAMERA","module":"delvewright_dsl::perception"}
 {"code":"DW0721","tier":null,"subject":null,"name":"DW_INPUT","module":"delvec::compiler::view::diag"}
 ```
 
@@ -5816,7 +5791,8 @@ this doc is current behavior).
 | Stage-1 `horizon` (ocean superflat), `boundary` (derived playable region + 1s return clock), `dw:region`/`dw:cp` mirrors, `DW0320`/`DW0321` (all v0.6) | spec-0013 |
 | Sound + art-title surface (`play-sound`, `narrate` `art`, `delve:art` font, `DW0326`/`DW0328`/`DW0335`) | spec-0014 (v0.6) |
 | Traps: stage-5 `traps[]`, `anchor/trap` dispenser fill + disarm emission, `tnt_explodes` seal, passable plate/tripwire model, `DW0340`/`DW0341`/`DW0342` (all v0.6) | spec-0011 |
-| Visual authoring loop: `delvec snapshot` + `delvec blocking-chart`, the voxel raycaster, scene manifest and cutaway floor plans (§7) | spec-0015 |
+| Visual authoring loop: `delvec frames --campaign` + `delvec blocking-chart`, the frame manifest and cutaway floor plans (§7) | spec-0015 |
+| Review frames drawn in-process by Lumenwright from the worlds the build writes, the placements ledger, cutscene frames, `DW1039`/`DW1040` (§4, §7) | spec-0112 |
 | Souls-mode timed gates: stage-5 `timed_gates[]`, the two-function schedule clock, `DW0377`/`DW0378` (≥20% of cycle) (v0.6) | spec-0016 §4 |
 | Hazard observability: every `timed-gate` span and `volley` kill zone needs a watch cell — standoff, pre-commit reachability, sightline (`DW0388`; error for a bonfire campaign, warning otherwise) | spec-0016 §4 addendum |
 | Timed-gate `disarm`: the hazard ladder's third rung — a jam lever that stops the clock with the gate resting open, permanently (`DW0377` structural, `DW0389` no re-arm, `DW0393` reachable while shut, `DW0420` visible) | spec-0016 §4 |
@@ -5827,7 +5803,7 @@ this doc is current behavior).
 | Souls-mode shortcut doors: stage-5 `shortcuts[]`, `DW0371`/`DW0372`/`DW0373`/`DW0374`, shortcut gates sealed for the whole completability model (v0.6) | spec-0016 §2 |
 | Souls-mode pacing lints: retry cost `DW0379`, optional-elite bypass `DW0380` (both warning tier) (v0.6) | spec-0016 §7 |
 | Souls-mode bonfires: `bonfire{anchor,on_rest?}`, wave `respawns_on_rest`, `DW0370` (v0.6); the two-option rest dialog + authored labels, the class-kit `flask` + `DW0476`, the flask's potion `contents` + `DW0486`/`DW0487`, the critical path's `rest` step (v0.8); the stationed re-seat + the bonfire safe zone `DW0478`, whose lane term includes the measured marching drift; the **undefeated re-seat** — a still-standing actor elite / billed wave is deleted and re-seated fresh at its origin on rest and on death-respawn, a defeated one stays defeated | spec-0016 §1 |
-| The map editor: stage-7 `world-edits.json`, the full L3 verb set (`select`/`fill`/`replace`/`carve`/`morph`/`scatter`/`plant`/`fragment`/`relight`), the L2 massing verbs (`swap`/`insert`/`remove`/`rewire-socket`/`reseed`; `resize` excluded — no size primitive), per-batch invariant re-proofs, `DW0162`/`DW0322`/`DW0323`/`DW0324`, `delvec edit apply|preview` (all v0.6) | spec-0017 |
+| The map editor: stage-7 `world-edits.json`, the full L3 verb set (`select`/`fill`/`replace`/`carve`/`morph`/`scatter`/`plant`/`fragment`/`relight`), the L2 massing verbs (`swap-piece`/`insert-piece`/`remove-piece`/`rewire-socket`/`reseed-piece`; `resize` excluded — no size primitive), per-batch invariant re-proofs, `DW0162`/`DW0322`/`DW0323`/`DW0324`, `delvec edit apply|preview` (all v0.6) | spec-0017 |
 | Map-editor audit fixes: trap-hardware integrity `DW0352`, gate-region + block-support advisories `DW0353`/`DW0354`, out-of-bbox edit-chunk load convergence + forceload release, `edit` running the full build-tier proof set, blockstate-preserving `fragment` stamps | — |
 | Party-shared progression: the `#party` holder, party-addressed UI, `world.min_players` + lobby gate, `give-item`/kit `carrier`, the n-agent division proof and the n-dummy `party_join_<obj>` PackTests, `DW0356`/`DW0357`/`DW0358` (all v0.6) | spec-0018 |
 | The NPC scene ledger: stage-5 `cast` (DSL **v0.7**), the four build proofs `DW0460`–`DW0462`, the forcing function `DW0463`, dangling refs `DW0464`, the `"unchanged"` sugar `DW0466`, the staleness lint `DW0467`, the dead-clause proof `DW0846` and the unanswerable-objective refusal `DW0858`; the `dw.cast` scene dispatch + bark pools; cast roots as dialogue entry points | spec-0020 |
@@ -5839,7 +5815,7 @@ this doc is current behavior).
 ### Known spec ↔ code drift (current, for maintainers)
 
 - **Effect roots are enumerated once.** An *effect root* is a `Vec<QuestEffect>`
-  emission can lower. There are nine (`EffectRootKind::ALL`); eight hang off the
+  emission can lower. There are eleven (`EffectRootKind::ALL`); ten hang off the
   quests stage and one off dialogue. A walk that visits four of five roots
   produces correct-looking output over any campaign that does not use the fifth,
   so no walk enumerates roots for itself:
@@ -5865,7 +5841,7 @@ this doc is current behavior).
 
   **The claim is also a test matrix.** `crates/delvec/tests/effect_root_walkers.rs`
   iterates `EffectRootKind::ALL`, builds one campaign per root from an exhaustive
-  `match` (a tenth root is a compile error there), and asks six walkers — the
+  `match` (a new root is a compile error there), and asks six walkers — the
   enumeration, `for_each_campaign_effect`, the l10n inventory, `flow::gate_flags`,
   `emit::declared_flags` and emission itself — plus `DW0360` about every root. The
   per-walker tests beside it each prove ONE walker against the roots their author
@@ -5934,7 +5910,7 @@ this doc is current behavior).
   right for `min_players: 1` and is a *sound* (if not maximal) proof for a bigger
   party — one agent can always walk what n can divide. The harness does not run
   `min_players` bots; that is harness work, not a gap in this layer's contract.
-- **Sky attenuation constants** (`crate::light::effective_sky`, spec-0010): the
+- **Sky attenuation constants** (`compiler::light::effective_sky`, spec-0010): the
   stored sky-light baseline (15 at a sky-open cell) and the `time`/`weather` set
   commands are live-verified (1.21.11 itzg VANILLA); the per-state *effective*
   attenuation follows the documented vanilla `getSkyDarken` surface model
@@ -5946,212 +5922,170 @@ this doc is current behavior).
 
 ---
 
-## 7. Visual authoring loop (spec-0015)
+## 7. Visual authoring loop (spec-0015, spec-0112)
 
-A **view-only** tier of `delvec`: draft renders of the assembled world plus a
-structured description of the same frame, so an authoring agent can look at its
-own build mid-authoring instead of waiting on a full build + Chunky pass. Two
-commands — `snapshot` (a perspective viewport: what does it look like from here)
-and `blocking-chart` (orthographic cutaway plans: is there room). Both add no DW
-diagnostics, change no emission (build output is byte-identical), and never write
-a datapack.
+Every frame `delvec` draws is drawn **in-process by Lumenwright**
+(`stellarfeline/lumenwright`, a crates.io dependency pinned by exact version; `tools.md`
+§4a) with the pinned client jar's own textures and models, from a world the
+engine wrote: a review frame from the world its configuration stands in, a
+campaign frame from the campaign's load world assembled in the same process.
+`compiler::view::frames` is the one caller of the renderer: it opens a world,
+hands it the camera, the sky (above, §4 "The sky a frame is drawn under") and
+the mode, and returns the pixels with the renderer's own statistics.
 
-### `delvec snapshot`
+- **Modes.** `quick` — the lightmap the client draws, from the block and sky
+  light the written world carries — is every review frame's mode; `hq` — a
+  path-traced frame at `frames::REVIEW_HQ_SPP` (256) samples, or the camera's
+  own `spp` — is the showcase cameras' and the panorama's. A shot states its
+  mode in the plan (`render_plan::review_mode`); light-question shots (a
+  declared `lighting` or a `dark` stamp, a sky a step set, a weather that is not
+  clear) are counted on the binding line as drawn quick until the hq light
+  frames land (spec-0112 phase 2).
+- **Backends.** `--backend auto` (default) takes the GPU wgpu finds — Metal,
+  Vulkan, DX12 — and falls back to the CPU, saying so on the first line;
+  `--backend cpu|metal|vulkan|dx12` names one, and a named backend that is not available is
+  refused (`DW0723`). The CPU backend's pixels are a function of the inputs
+  alone at any `--threads` (`tests/frames.rs` draws one build at 1 and at 10
+  threads and compares every byte); a GPU frame is not byte-stable across
+  drivers, so nothing compares one.
+- **The jar** resolves `--textures`, then `$DELVEWRIGHT_CLIENT_JAR`, then
+  `~/.delvewright/client/minecraft-1.21.11.jar` (where Init I5 puts it); none
+  is `DW0723` naming I5. The jar is EULA-bound, never committed and never
+  fetched by an arm that draws; CI fetches it once per job through
+  `validation/client-jar-cache.sh`, sha256-checked against `versions.toml
+  [minecraft] client_jar_sha256`.
+
+### `delvec frames`
 
 ```
-delvec snapshot <campaign-dir>
-    [--camera x,y,z,yaw,pitch[,fov]]      # explicit eye
-    [--at <anchor> [--orbit <deg>] [--dist <n>]]   # frame a subject
-    [--shot <render-plan id> --build <build-dir>]   # reuse a planned camera
-    [-o out.png] [--labels]
-    [--width 960] [--height 540] [--timing] [--json]
+delvec frames <build-dir> [-o <dir>] [--shot <id>]... [--labels] [--size 1024]
+    [--backend auto|cpu|metal|vulkan|dx12] [--threads N] [--textures <jar>]
+delvec frames --campaign <campaign-dir> (--camera x,y,z,yaw,pitch[,fov] | --at <anchor>
+    [--orbit <deg>] [--dist <n>]) [-o out.png] [--labels] [--size 1024] [draw flags]
 ```
 
-Framing precedence (the first three are mutually exclusive, enforced by clap):
-`--camera` → `--at` → `--shot` → a default dollhouse overview of the whole
-layout. Details:
+**A build's frames.** Every shot of `<build-dir>/render-plan.json` (or the
+`--shot`s named), each drawn from `<build-dir>/validation/worlds/<key>/` —
+the world the shot names — under the shot's own sky and mode, into `-o`
+(default `<build-dir>/frames`, a derived artifact of the build:
+`outdir::DERIVED`): `<stem>.png` and `<stem>.manifest.json` per shot (the stem
+is the id with `/` as `_`) and `shot-index.json`. A shot naming a world the
+build directory does not hold is refused before anything is drawn (`DW0721`,
+naming the key and the remedy, a rebuild); so is a plan an older engine wrote
+(a shot with no `world`, `sky` or `mode`) and a `--shot` the plan lacks (the
+shots listed). **What a frame shows** is read off the build's review record
+(`validation/review-frames.json`, below), which `framing::resolve_targets` —
+the one sight rule — wrote over the shot's own world: the index and the
+manifests never re-derive it. The binding lines: first `renderer: lumenwright
+<rev>, backend <name> (<auto | auto: fell back to cpu — why | named>)`, then `frames: <m>
+of <m> shot(s) rendered over <k> world(s) in <s> s, peak <MiB> MiB; per frame
+<min> / <median> / <max> s (min / median / max) -> <index>` and `shows: <t> object(s) in frame over <m>
+frame(s), <u> not drawn by the renderer (DW1039) in <f> frame(s); skies: <j> at
+the world's clock, <q> set by a step`. **`DW1039`** is printed once per frame
+whose `shows` holds a body (kind `body`) the renderer's own statistics for that
+frame put among the kinds it skipped or drew as a fallback box — or, for a
+body that holds items (`frames::HOLDS_ITEMS`), a frame in which the renderer
+counted an item stack it could not draw — naming each body, its kind, cell,
+facing, distance, the reason (the items it could not draw, or no model in the
+renderer) and `judge_by`; the frame is right and the body is real, so it is a
+report and never a refusal ([`compiler::view::frameset`](delvec/compiler/view/frameset.md)).
 
-- **`--camera`** — `x,y,z` is the eye in world coordinates; `yaw`/`pitch` are
-  **Minecraft** degrees (`0` = south/+Z, `90` = west/−X, `180` north, `270`
-  east; pitch positive looks **down**), the same convention the v0.6 cutscene aim
-  uses. `fov` is optional (vertical, default `70`).
-- **`--at <anchor>`** — accepts a bare anchor name (`anchor/fire-pit`, matched in
-  the first declaring area) or `area:anchor` (`area/island:anchor/pen`) to
-  disambiguate; a gate anchor resolves to its region centre. `--orbit` is a
-  compass bearing in the same yaw sense (`0` = the camera stands due south of the
-  subject looking north, `90` due west looking east); `--dist` is blocks (default
-  `14`), with the eye raised `0.45 × dist`. **The eye is then pulled along its own
-  sight line until it stands in open air**, so `--at` frames an interior (a
-  cavern fire pit, an alcove) instead of rendering the inside of the mountain.
-  The walk is `compiler::camera::stand_in_open_air`, shared with the render
-  plan's own cameras: standing a camera up in open air is a property of a
-  camera, so there is one of it.
-- **`--shot <id>`** (requires **`--build <dir>`**) — reuses a camera of the
-  `render-plan.json` that `delvec build` emitted into `<dir>`, by id
-  (`interior/…`, `npc/…`, `interact/…`, `gate/…`, `seam/…`,
-  `pov/leg{L}/wp{W}`). Which cameras a campaign has is answered once, by the
-  build, over its final world (relight fixtures standing, every premise applied,
-  the links taken), and this reads that answer; it derives no plan of its own.
-  The build is refused unless it is of this campaign as it stands — every input
-  its `manifest.json` records hashes to the file in `<campaign-dir>` — and was
-  written by this `delvec`. The render plan states cameras in its own Chunky yaw
-  convention, so the bridge reads only its `pos`/`look_at` world points and
-  re-derives Minecraft yaw/pitch. An unknown id lists the available ones.
-  `tests/render_plan_agreement.rs` holds the gallery primary's and
-  keep-vertical's plans to the cameras the snapshot frames, over every leg's
-  last POV shot and every other kind's first.
+**A campaign frame** (`--campaign`): one quick frame of a campaign's load
+world, for placing things — the authoring loop's viewport. The campaign is
+parsed, placed and assembled in this process (no emission, no nav proofs:
+validation diagnostics are printed and never gate the frame, so a half-written
+campaign still draws), its load world written under the PNG's directory as
+`world/`, and drawn from the camera stated by hand: `--camera` in Minecraft
+degrees (`0` = south/+Z, `90` = west/−X; pitch positive looks **down**; `fov`
+vertical, default 70), or `--at <anchor>` (a bare anchor name or
+`area:anchor`) from `--dist` blocks (default 14) at compass bearing `--orbit`,
+the eye then pulled along its sight line into open air
+(`compiler::camera::stand_in_open_air`, the render plan's own walk). A
+campaign frame lays no datapack placement — its world is the templates, the
+assembly and the load configuration — and writes the PNG, its manifest and
+`world/`, nothing else.
 
-**Pipeline stages required** — parse → `Plan::build` (placement) → read the
-placed `.nbt` → `assembled::assembled_blocks`. That is all: no relight, no nav
-proofs, no emission. Validation diagnostics are printed but **never gate** the
-render (only an unparseable campaign, exit 1, or a placement failure, exit 3,
-stops it), because the loop exists precisely to look at builds that are not
-finished yet. `--shot` is the one framing that needs a finished build: it reads
-that build's plan.
+**`--labels`** stamps every target's outline and name on the frame; it changes
+the frame and never the manifest.
 
-**Renderer** — a voxel DDA raycaster (`compiler::snapshot`) over a chunked
-flattening of the assembled block map. Shading is block-palette colour ×
-face brightness (top brightest, bottom darkest, the two horizontal axes
-distinct — the "ambient occlusion by face orientation") × a **grain** whose
-amplitude is the block's measured roughness × a block-edge relief darkening,
-then a distance fade toward the horizon. Background is a sky
-gradient; for an `ocean`-horizon campaign the world generator's sea plane is
-drawn analytically at `SEA_LEVEL` (a world-generation backdrop, never part of
-the voxel model, never occluding a manifest target).
-
-Three properties worth stating explicitly:
-
-- **There is no lighting model.** The raycaster sees geometry regardless of block
-  light, so a pitch-black cavern renders as legibly as a noon meadow — which is
-  exactly what makes this the right tier for reviewing dark areas. A frame that
-  looks fine here and black in Chunky has a *lighting* defect, not a geometry
-  one, and the two tiers separate that. Emissive blocks (glowstone, lantern,
-  campfire, torch, …) still render at full brightness so a fire pit reads as one.
-- **Only blocks exist.** Entities (NPC mannequins, scripted actors, item
-  displays) are not in the assembled model and are not drawn; their *posts* are
-  in the manifest and, with `--labels`, stamped on the frame.
-- **The colour is the pinned client jar's, and a block the pin does not have
-  renders magenta** (`255,0,255`, the same missing-texture key `delvec render`'s
-  fidelity gate scans for). `snapshot::block_color` reads
-  `crates/delvec/data/block-appearance-1.21.11.json` — every block of the pinned
-  registry at its default state, `minecraft:plains` tints, derived by
-  `compiler::view::blockcolor::Deriver` from the jar the GPU path textures with,
-  so the draft and the render hold one opinion about what a block looks like.
-  1161 of 1161 non-air blocks resolve; `crates/delvec/tests/preview_palette.rs`
-  enumerates the registry and reds on any that does not, and holds the table's
-  recorded `mc_version` to the engine's pin, so a pin bump that leaves the table
-  behind reds with no jar in hand. The jar is EULA-bound and never committed; the
-  derivation's output is, as for the shape-carrying property table and the font
-  metrics. `python3 tools/maintenance/refresh-block-appearance.py <jar>`
-  re-derives the table and proves every entry against that jar in the same run;
-  the file is never edited by hand. The derivation it runs is a `cargo` example
-  and not a `delvec` flag, because `delvec` is what an authoring session runs and
-  a creator never holds this file. Keyed by block id: the grid draws every cell
-  as a full cube, so a blockstate's own geometry has nowhere to go and
-  `oak_slab[type=top]` shades as `oak_slab`. **What varies inside a face is the
-  grain**, and the two halves of it are in different places. The PATTERN is this
-  renderer's: an FNV-1a hash of the world cell, the face and a 4×4 sub-cell, so
-  it belongs to the wall rather than to the camera and two runs give the same
-  bytes (ADR-0006). The AMPLITUDE is the block's measured `roughness` — the
-  standard deviation of its texture's brightness as a fraction of that texture's
-  mean — scaled so the drawn face's spread is the spread the texture has, which
-  is why smooth stone reads smooth and cobble reads rubbly. Without it a wall of
-  one material is one rectangle of one value whatever the material: a draft worth
-  as much as a paint swatch, and, for a dark stone, a frame the gallery render
-  gate reads as showing no scene at all. **The table holds one number and no
-  layout**, which is what lets it be committed while the jar cannot be: a
-  reduced rendition of an asset would not be (ADR-0013).
-  Magenta therefore means one of three
-  things: `jigsaw` or `structure_block` reached the model (the solver strips
-  both — the magenta is the alarm), a template carries an id 1.21.11 renamed
-  (`chain` → `iron_chain`), or a datapack block outside `minecraft:`. **The
-  fallback is never silent**: every surface that draws a grid prints `unpainted:
-  N of M block kind(s) …` on stderr naming every id
-  (`snapshot::unpainted_report`).
-
-**`--labels`** burns in: a coordinate lattice tinted onto every visible **top**
-face on a 16-block X/Z line (so it follows the terrain rather than an invented
-flat plane), `x,z` readouts at the ten nearest visible lattice intersections, an
-outline per in-frustum target (dim when occluded), and the target's name. Names
-are placed **visible-first** and nudged down to avoid overlap; an occluded name is
-stamped only where it lands clear on the first try. `--labels` changes the frame
-and never the manifest.
-
-**Output** — the PNG at `-o` (default `snapshot.png`) and a manifest sidecar at
-the same path with its extension replaced: `shot.png` → `shot.manifest.json`.
-
-### Scene manifest (`manifest_version: 2`)
+### The frame manifest (`manifest_version: 3`)
 
 ```json
 {
-  "manifest_version": 2,
-  "campaign_id": "nobodys-cave-island",
+  "manifest_version": 3,
+  "campaign_id": "gallery",
   "delvec": "<x.y.z>",
-  "image":  { "path": "shot.png", "width": 960, "height": 540 },
+  "renderer": "lumenwright <version>",
+  "backend": "cpu",
+  "shot": "pov/leg4/wp0",
+  "image":  { "path": "pov_leg4_wp0.png", "width": 1024, "height": 1024 },
   "camera": { "pos": [x,y,z], "yaw": 0.0, "pitch": 25.7, "fov": 70.0,
               "convention": "minecraft degrees: yaw 0 = south (+Z) …" },
-  "world":  { "block_kinds": 48,
-              "bounds": { "min": [x,y,z], "max": [x,y,z] },
-              "sea_plane": 62 },
-  "pieces": [
-    { "area": "area/island", "index": 1, "prefab": "prefab/island-greenfield",
-      "origin": [0, 60, -30], "size": [16, 12, 16], "rotation": "none",
-      "box": { "min": [0, 60, -30], "max": [15, 71, -15] } }
-  ],
+  "world": "after-trigger-strike-the-sentinel",
+  "sky": { "time": "noon", "daytime_ticks": 6000, "weather": "clear", "set_by": null },
+  "mode": "quick",
   "targets": [
-    { "id": "anchor/fire-pit", "kind": "anchor", "area": "area/island",
-      "pos": [9, 69, -56],
+    { "id": "dw_npc_curator@10,67,5", "kind": "body", "body": "mannequin",
+      "facing": "south", "pos": [10, 67, 5],
       "screen_bbox": { "x": 466, "y": 264, "w": 28, "h": 36 },
       "occluded": false, "distance": 14.724 }
   ],
-  "out_of_frame": [ { "id": "anchor/pen", "kind": "anchor", "area": "…",
-                      "pos": [x,y,z] } ]
+  "out_of_frame": [ { "id": "anchor/pen", "kind": "anchor", "area": "…", "pos": [x,y,z] } ],
+  "undrawn": [],
+  "unchecked": [],
+  "renderer_stats": { "entities": { "rendered": {}, "fallback_boxes": {}, "skipped": {},
+                                    "items_rendered": {}, "items_skipped": {} },
+                      "block_entities": { "rendered": {}, "skipped": {}, "text_lines": 0, "glyphs": 0 } },
+  "frame": { "targets_in_frame": 1, "targets_out_of_frame": 1, "featureless": null }
 }
 ```
 
-- **`pieces`** is the **layout** half of the scene, beside the point/region
-  targets: every placed structure piece of the whole plan (not just the ones in
-  frame), in plan order — areas as the plan holds them, pieces entry-first
-  within each area. It carries exactly the inputs a `piece-local` edit frame
-  resolves against (`edit::resolve_frame_point`: `origin + rotation(local)`
-  against `area.pieces[index]`): the per-area `index` (the frame's `piece`
-  field), the `prefab` guard value, the `/place template` `origin` + `rotation`
-  token, the unrotated `size`, and the resulting inclusive `box`. Without it an
-  editor authoring a piece-local frame would back-solve the index and the
-  transform from the rendered geometry by hand.
+A campaign frame's manifest carries the layout half instead of `shot`, `sky`
+and `unchecked`: `world` is `{block_kinds, bounds, key: "at-load"}` and
+`pieces` lists every placed structure piece of the plan — `area`, the
+per-area `index` (the `piece` field of a `piece-local` edit frame), the
+`prefab` guard value, the `/place template` `origin` and `rotation`, the
+unrotated `size` and the inclusive `box` — the exact inputs
+`edit::resolve_frame_point` resolves against. `delvec cameras` and `delvec
+panorama` write a manifest beside every frame too (camera, world key and path,
+sky, mode, renderer, backend, `frame.featureless`; the panorama its chunk
+rectangle, its subject box and the share of the frame the box takes).
+
 - **Kinds**: `anchor` · `gate` · `npc-post` · `actor-post` · `interact` ·
-  `stealth-zone` · `trigger`. A point target carries `pos` (an inclusive cell);
-  a region target carries `box: {min,max}` (inclusive cells) — never both.
-  `gate` is the gate region, `stealth-zone` a `begin-stealth` zone box
-  (`stealth-<beat>/<anchor>`), `trigger` an `EnvTrigger` — a box of its `range`
-  for `approach`, the single interaction cell for `strike`/`use`/`step`.
-- **Deliberate duplication**: an `interact` objective's marker and the `anchor`
-  it binds to are the same cell under two ids. They are different *things* —
-  "the interact is occluded" and "the anchor is occluded" are different findings
-  — so no deduplication is applied.
+  `stealth-zone` · `trigger` · `body`. A point target carries `pos`; a region
+  target `box: {min,max}` (inclusive cells) — never both. A `body` is an entity
+  the frame's world holds from the placements ledger (an NPC, an actor, a
+  marker, an assembly's part), named `<its first tag that is no class
+  tag>@<cell>`, with its entity kind and facing; an entity that draws nothing
+  (an `interaction` hitbox, a `marker`, a display with nothing to display) is
+  no body.
 - **`screen_bbox`** is the projected inclusive cell box, clipped to the frame,
-  in whole pixels with the origin top-left. This is the vocabulary spec-0015
-  pillar 2 asks for: review feedback and edits address ids and boxes.
-- **`occluded`** = every one of nine sight lines (the box centre plus the corners
-  of a slightly inset box) meets a block that is **not part of the target**. Both
-  refinements matter: a marker often *is* a block (`anchor/fire-pit` names the
-  campfire), and a single centre ray grazing the rim of a platform would call the
-  thing standing on it hidden.
-- **`out_of_frame`** carries the same world-space fields, with no screen box, for
-  every known target outside the frustum. It is what makes "the subject is absent
-  entirely" machine-visible instead of something a reviewer has to notice.
-- **Ordering** is `(kind, area, id)`; floats are rounded to 3 decimals.
+  in whole pixels, origin top-left; **`occluded`** = no one of nine sight
+  lines (the box centre and the corners of the box inset by 0.3) reaches the
+  target past a block of the frame's world that is not part of the target —
+  the one sight rule, `framing::in_sight`, which a cutscene shot (`DW1033`) and
+  `DW0863` ask too, each over its own world's occupancy (`framing::Occupancy`).
+  `framing::resolve_targets` is the one public entry point to "in frame, and
+  hidden there", its building blocks are private to `compiler::framing`, and `every_consumer_of_the_sight_rule_agrees_with_it` in
+  `crates/delvec/src/cli/sight_agreement.rs` asks its consumers — the manifest,
+  `frames --campaign`'s and `edit`'s labels, the review rows, the room camera's
+  stand-back — the same seeded cases, and `every_consumer_of_in_sight_answers_alike` in `compiler/framing/shot/tests.rs` asks the shot's sight, `DW0863` and the manifest the same generated walls); **`out_of_frame`** carries every known target outside the frustum,
+  so "the subject is absent entirely" is machine-visible.
+- **`frame`** is the verdict of the arm that drew it: `targets_in_frame`,
+  `targets_out_of_frame` and `featureless` (`null`, or the distinct-colour count
+  when the frame shows no scene: `view::detect::is_featureless`).
+  `tools/ci/check-gallery-render.py` reads these back rather than re-deriving
+  them.
+- **Determinism (ADR-0006)**: targets are sorted `(kind, area, id)`, floats
+  rounded to 3 decimals, no clock in the manifest or the index, and no pixel
+  hash in either; the PNG encoder pins its DEFLATE level.
 
-**Determinism (ADR-0006)** — no RNG, clock, parallelism or hash-order iteration:
-the voxel palette comes from a `BTreeMap` walk, targets are sorted, and the PNG
-encoder (`compiler::png`) pins its DEFLATE level. Two runs on one input produce
-byte-identical PNG **and** manifest; `crates/delvec/tests/snapshot.rs` asserts
-both.
-
-**Performance** (measured, `nobodys-cave-island`, release build, macOS/M-series,
-single-threaded): assemble + voxel-grid flattening ≈ **30 ms**, a 960×540 frame
-with `--labels` + manifest ≈ **190 ms**. `--timing` prints both to stderr (never
-to the output, so it cannot affect byte-identity).
+**The shot index** (`shot-index.json`, `compiler::view::index`): `{campaign_id,
+count, shots[]}`, one entry per frame drawn, in plan order — `id`, `kind`,
+`leg`, `objective`, `image`, `expect`, `lighting`, `world`, `sky`, `mode`,
+`backend`, `renderer`, `shows`, `undrawn`, `out_of_frame`, `unchecked`, and a
+cutscene's `{step, shot, tick, seconds}`. It is the (image ↔ expect) pairing a
+reviewing agent reads first.
 
 ### `delvec blocking-chart`
 
@@ -6200,29 +6134,52 @@ bands, lowest first, bypassing the merge rule — coverage outranks tidiness.
 gives the cavern its own tight frame at its own larger scale, instead of a small
 drawing in a large field of void.
 
-**Overlays**, in order: terrain flat-shaded by [`snapshot::block_color`] and
+**Overlays**, in order: terrain flat-shaded by [`blocking::block_color`] and
 lightened with height within the cut (so a step reads as a step); a green wash on
 the band's walkable cells; the DW0311-proven critical-path walk corridor as an
 orange tint; then an outlined, labelled marker for every anchor, gate, NPC/actor
 post, interact marker, stealth zone and trigger region whose elevation range
-meets the cut. Labels use the same kind colours as `snapshot --labels` and the
+meets the cut. Labels use the same kind colours as `frames --labels` and the
 same deterministic placer; a label that cannot be fitted on the plan is dropped
 from the image but recorded in the index, never pushed off the edge. Routing is
 best-effort — a campaign whose critical path does not route yet charts without
 the corridor tint rather than refusing to chart.
 
 The corridor is derived by `blocking::walked_corridor` and nowhere else: the
-world is `light::final_world` (the same entry `delvec build` takes its world
-from — assembled cells under every premise `nav::Premises::of_plan` states, the
-relight pass's fixtures standing in them), the path is the one with the links
+world is `holders::final_walk` (the one entry `delvec build` and this chart
+take their route world from — assembled cells under every
+premise `nav::Premises::of_plan` states, the relight pass's fixtures standing in
+them, and each holder `collect`'s leg ending at the stance the build's stance
+pass chose), the path is the one with the links
 the route proof takes spliced in (`nav::with_links_taken`), and the routes are
 `nav::critical_path_routes` over both. `tests/chart_routes.rs` holds the index's
 corridor to the build's `validation/critical-path-waypoints.json`: the leg count
 must be equal, and every waypoint, use-gate and climb end the build names must
-lie in the corridor.
+lie in the corridor — over four fixtures and over a leg ending at a holder
+`collect`.
 
 Orientation is **+X right, +Z down (north up)**; each slice carries a title bar
 naming its area, band index, floor Y and cut range.
+
+**The colour is the pinned client jar's, and a block the pin does not have
+draws magenta** (`255,0,255`, the missing-texture key `delvec render`'s fidelity
+gate scans for). `blocking::block_color` reads
+`crates/delvec/data/block-appearance-1.21.11.json` — every block of the pinned
+registry at its default state, `minecraft:plains` tints, derived by
+`compiler::view::blockcolor::Deriver` from the jar the frames are drawn with,
+so the chart and the frame hold one opinion about what a block looks like.
+1161 of 1161 non-air blocks resolve; `crates/delvec/tests/preview_palette.rs`
+enumerates the registry and reds on any that does not, and holds the table's
+recorded `mc_version` to the engine's pin. The jar is EULA-bound and never
+committed; the derivation's output is, as for the shape-carrying property table
+and the font metrics. `python3 tools/maintenance/refresh-block-appearance.py
+<jar>` re-derives the table and proves every entry against that jar in the same
+run; the file is never edited by hand. **The table holds a few numbers and no
+layout** per block (its colour, coverage, roughness and model box), which is
+what lets it be committed while the jar cannot be (ADR-0013). Magenta means
+`jigsaw` or `structure_block` reached the model, a template carries an id the
+pin renamed (`chain` → `iron_chain`), or a datapack block outside `minecraft:`
+(`blocking::FALLBACK_COLOR`).
 
 **Index** (`blocking-chart.json`, `chart_version: 1`):
 
@@ -6315,145 +6272,99 @@ equals load byte for byte (the remedy is to remove the field or name the first
 step after which a block moves that the path carries once; or the line says the
 path moves none).
 
-**The world the engine writes** (spec-0089 §5; `compiler::view::world`). One
+**The world a camera's frame is drawn from** (spec-0089 §5, spec-0112 §5). One
 world per distinct configuration a framed camera stands in, under
 `<out>/worlds/<key>/` — `at-load`, or `after-<step>` (`/` as `-`) with
-`-on-<branch slug>` for a branch — named in each scene by absolute path, since
-Chunky resolves it against the rendering process's working directory. It holds
-`level.dat` (gzip, mtime 0: `Data{DataVersion, LevelName, SpawnX/Y/Z,
-version}`, the spawn the campaign's start cell) and `region/r.<x>.<z>.mca`,
-nothing else: per chunk holding a cell, `DataVersion` (the pin's, 4671),
-`xPos`, `zPos`, `yPos` (−4), `Status: minecraft:full`, and a section for each
-section holding a cell — `Y` a byte, as the game writes it and the pinned core
-reads it (an int `Y` loads as an empty chunk) — with `block_states{palette,
-data}` and `biomes{palette, data}`, palettes in first-seen order over the
-section's own index order, every state completed with the pinned defaults of
-the properties it leaves out (what the game resolves them to on load), indices
-packed at `max(4, ⌈log2 n⌉)` bits for blocks and `max(1, ⌈log2 n⌉)` for biomes,
-never across a long, `data` absent for a one-entry palette. Biomes are the
-build's biome map (`horizon::biome_map`) sampled at each 4-cell's centre. Every
-region timestamp is zero, zlib at level 6, chunks in index order, sectors
-contiguous; two writes of one map are byte-identical, and each world's sha-256
-over its region files in name order is printed. **A cell no build write reached
-holds the horizon generator's block** (`world::Ground`), because the server's
-world is the generator's wherever the datapack writes nothing: under `horizon:
-ocean` the stack `plan::OCEAN_LAYERS` states once and `generator-settings` is
-built from (bedrock at −64, stone to 54, water to 62), laid in every written
-chunk's sections from −64 up; under `void` and `valley` nothing. Which cells a
-write reached is `assembled::Reached` (one bit per height per column over
-−64..63): a template's placed cells, its air included and its `structure_void`
-not; an area's mass and seals; the surround; every edit write; the picture
-base's cells; and the regions the world's own configuration lays
-(`Configuration::laid_regions`), air writes included. `<g>` on the binding line
-counts the cells the generator fills. No light arrays, heightmaps,
-entities, block entities or ticks. **`--world` is gone**: a showcase frame has
-one world source. The server save (`validation/world-save.sh`) is the
-instrument that checks the writer (`DW0955`, `tools/ci/check-written-world.py`),
-and stays the world source of `delvec scene` and `delvec panorama`. The check is
-bound to staging: `check-written-world.py --record` writes its verdict named by
-the build's manifest sha256, and `tools/creator/staging-gate.py` mints no
-admission token without a passing record of that build (`--written-world`).
+`-on-<branch slug>` for a branch — written through the one writer every frame
+world goes through (`view::review::WorldMaker`, `view::world::encode_world`;
+§4 "The worlds the build writes" states its bytes), with the placements
+ledger's rows the camera's arrival holds laid from the build's own
+`validation/placed.json`. A frame has one world source.
+The server save (`validation/world-save.sh`) is the instrument that checks the
+writer — cells (`DW0955`) and placed objects (`DW1040`), both in
+`tools/ci/check-written-world.py` — and the check is bound to staging:
+`check-written-world.py --record` writes both verdicts named by the build's
+manifest sha256, and `tools/creator/staging-gate.py` mints no admission token
+without a record of that build that passes both (`--written-world`).
 
 **`delvec written-world <campaign-dir> -o <world-dir>`** writes the load world
-alone — the configuration `view::beat::load_blocks` derives, the world a camera
-with no `after` stands in — from the campaign and `--prefabs`, with no
-`design.json` or `design/cameras.json` read, so a campaign built without a
-design gate (a demo level) has its written world. It assembles the campaign as
-`delvec cameras` does and writes through the same writer, so on a campaign whose
-record frames a camera at load its `level.dat` and region files are
-`<out>/worlds/at-load`'s byte for byte; `-o` is the world directory itself.
-Prints the `world: at-load …` line (chunks, cells, sha-256, absolute path) and
-the count of block-entity pictures drawn blank; `--json` prints the path. A
-campaign that does not plan exits 3 with its own refusal. It is the written half
-`check-written-world.py` reads, in CI and at the skill's step 10.
+alone: the build, run in memory, of which `validation/worlds/at-load` is
+written to `-o` — the same bytes `delvec build` writes there, because it is
+that world (`tests/review_frame_worlds.rs` compares every file). No
+`design.json` or `design/cameras.json` is read, so a campaign built without a
+design gate (a demo level) has its written world. Prints the `world: at-load …`
+line; `--json` prints the path. A campaign that does not build exits with its
+own refusal. It is the written half `check-written-world.py` reads, in CI and at
+the skill's step 10.
 
-**What a frame does not show, by name** (spec-0089 §6): entities (the pinned
-core draws none of the kinds the engine summons, from any world); block-entity
-content — a sign's text, a banner's pattern, a head's profile, a lectern's book,
-counted on the binding line from the blocks of those kinds the world holds; a
-`set-atmosphere` repaint by a beat (the biomes are the map at load, and the line
-says `biomes: at load`); the configuration's clock (the frame's sky is the
-picture's, spec-0079); a fluid's spread past the cells a `Flood` write lays; a
-write only an unforced root lays; **a `collapse`** — a collapse reaches the
+**What a frame does not show, by name** (spec-0089 §6, spec-0112 §11): the
+review record's `unchecked` list (§4 "The sky a frame is drawn under"); a
+`set-atmosphere` repaint by a beat (the biomes are the map at load, and the
+line says `biomes: at load`); a fluid's spread past the cells a `Flood` write
+lays; a write only an unforced root lays; **a `collapse`** — it reaches the
 route proofs as `DW0445`'s settled debris (sealed where its landed block — the
 falling block, or `then_floor` on a column's top — collides), not as a region write, so no
 configuration lays its debris or its `then_floor` and a frame after a collapse
 beat shows the ceiling standing; and a gated trap's trigger re-armed by a later
-beat (it is drawn as at load).
+beat (it is drawn as at load). A camera frame is of its picture's sky, not of
+the configuration's clock (`clock: as the picture` on its `after:` line).
 
-Emission writes one Chunky scene per camera (`<campaign>_camera_<name>.json`)
-against a build's `render-plan.json`: the camera verbatim, rounded to six
-decimals; the camera's sky (`scene::sky_of`, §4 above); the layout and its landform
-in the chunk list and Y clip; the ocean plane on an ocean horizon; no review
-emulation. `delvec panorama` emits through the same scene builder
-(`camera::world_scene`), so a solved camera and a stated one are one scene shape,
-and prints its solved camera as a record line. Refusals are `DW0721` (exit 2),
-before any file: a record that does not parse or carries an unknown key, an
-illegal name, two cameras of one name, an empty `answers` or one naming no row,
-a pitch outside −90..90, a field of view outside
-(0, 180), a zero frame or sample target, an empty record, a record for another
-campaign than the build, an `--only` name the record lacks, a `sky` with a
-member missing or a keyword outside the enums, **a stated `sky` equal to the
-answered row's** (a derivation typed where a judgement belongs; the remedy is to
-remove the field), an `after` its rules refuse (above), and a plan whose `sky`
-states no `weather`. A campaign that does not plan is refused with its own
-build code (exit 3), because the world is assembled from it. **Scene emission is
-also held to `DW0900`** (exit 2): a record leaving any approved image unanswered
-emits no scene, `--only` included, because the record is what is judged and a
-set with a hole in it is not a set. Every run prints how many approved images
-have a camera and names the rest.
+`delvec cameras` draws one frame per camera — hq at the camera's frame and
+samples as `<stem>.png`, `--draft` a quarter of the frame at no more than 128 samples as
+`<stem>_draft.png`, `--preview` quick at half the frame as
+`<stem>_preview.png` — each with its manifest, from the world its camera stands
+in, under the camera's sky. `delvec panorama` draws the solved whole-map camera
+hq from the build's load world through the same call and prints its camera as a
+record line. Refusals are `DW0721` (exit 2), before any frame: a record that
+does not parse or carries an unknown key, an illegal name, two cameras of one
+name, an empty `answers` or one naming no row, a pitch outside −90..90, a field
+of view outside (0, 180), a zero frame or sample target, an empty record, a
+record for another campaign than the build, an `--only` name the record lacks,
+a `sky` with a member missing or a keyword outside the enums, **a stated `sky`
+equal to the answered row's** (the remedy is to remove the field), an `after`
+its rules refuse (above), and a plan whose `sky` states no `weather`. A
+campaign that does not plan is refused with its own build code (exit 3).
+**Drawing is held to `DW0900`** (exit 2): a record leaving any approved image
+unanswered draws no frame, `--only` included; `--preview` is exempt — it is the
+instrument that closes the hole, and prints the count it is closing. Every run
+prints how many approved images have a camera and names the rest.
 
-**Where each scene's sky comes from** (spec-0079 §5), one function, three callers:
+**Where each frame's sky comes from** (spec-0079 §5, spec-0112 §7.6):
 
-| Scene | `time`, `weather` from |
+| Frame | `time`, `weather` from |
 |---|---|
 | a showcase camera (`delvec cameras`) | the camera's `sky`, else the `design.json` row it `answers` |
 | the whole-map panorama (`delvec panorama`) | `render-plan.json`'s `sky` |
-| a review frame (`delvec scene`: POV, interior, seam, …) | `render-plan.json`'s `sky` |
+| a review frame (`delvec frames`) | the shot's own `sky`: its configuration's clock |
 
 A camera with no `sky` is a frame of its picture, so it takes its row's hour and
-weather, not the world's initial ones — `DW0890` holds every row's sky to a sky
-the party can be in. The record's sky rule (`camera::resolve_sky`) is asked by
-`delvec cameras` (and `--preview`), `delvec place-camera` and `delvec build`
-alike (`compiler::design::answered`, exit 3), one sentence wherever it is read.
-**Binding line**, printed by every `delvec cameras` run, refused or not, beside
-the `answers:` sentence: one line per camera this run frames — `sky: <name>
+weather — `DW0890` holds every row's sky to a sky the party can be in. The
+record's sky rule (`camera::resolve_sky`) is asked by `delvec cameras` (and
+`--preview`), `delvec place-camera` and `delvec build` alike
+(`compiler::design::answered`, exit 3). **Binding line**, printed by every
+`delvec cameras` run, refused or not: one line per camera — `sky: <name>
 <time>+<weather> <derived from <row> | stated> — <weather> sky at daytime
-<tick>: the game's sky as a map, its light … (the lightmap's, peak channel),
-sun …` — and `skies: D derived, S stated, over C
-camera(s)[ (R refused)]; weathers emitted: {…}`, whose set names the non-clear
-weathers. A record stating no sky prints `0
-stated`; a rain delve rendering clear prints the empty set. Beside them, per
-framed camera, `after: <name> at load` or `after: <name> after <step> (step <i>
-of <n> on <the critical path | branch `<id>`'s path>): <c> cells moved from load,
-<u> unforced write(s) not laid, <b> block entit(ies) omitted; biomes: at load;
-clock: as the picture; <h> holder(s) not drawn` (the load form ends `at load; <h>
-holder(s) not drawn`: the holder entities whose body centre projects inside the
-frame, which the pinned renderer does not draw, spec-0111 §5.1) — `<c>` the cells whose block differs from the load
-world's (`Configuration::moved_from`); per written world, `world: <key> <chunks>
-chunk(s), <cells> cell(s), <g> ground cell(s), sha256 <hash> -> <dir>`; and `configurations: <k>
-written for <c> camera(s), <a> after a step, <l> at load`. A record with no
-`after` prints `0 after a step` and one world, `at-load`.
+<tick>: the client's sky colours, its light … (the lightmap's, peak channel),
+sun <drawn | not drawn>[; moon drawn at its day's phase | ; no moon under <weather>, as the client draws none]` — and `skies: D derived, S stated, over C camera(s)[ (R
+refused)]; weathers emitted: {…}`, whose set names the non-clear weathers.
+Beside them, per framed camera, `after: <name> at load` or `after: <name> after
+<step> (step <i> of <n> on <the critical path | branch `<id>`'s path>): <c>
+cells moved from load, <u> unforced write(s) not laid, <b> block entit(ies)
+omitted; biomes: at load; clock: as the picture`; per written world the
+`world:` line (§4); `configurations: <k> written for <c> camera(s), <a> after a
+step, <l> at load`; the renderer line; `drew|previewed <n> camera frame(s) for
+<s> of <t> stated camera(s) -> <dir> (<mode> in <s> s)`; and `lens: <k> of <n>
+camera(s) clear of every block by 0.25 block, <f> flagged` — a camera whose lens
+is inside or within `LENS_CLEARANCE` of a placed block is named, a report, since
+a pinhole camera has no near plane.
 
 `--bracket` appends, after each camera, the camera moved one field by one step
 each way (`dolly` along the heading, `truck` to the frame's right, `rise` up),
-skipping any candidate outside the legal ranges, and writes every emitted camera
+skipping any candidate outside the legal ranges, and writes every drawn camera
 to `candidates.json` in the record format; a moved candidate is `estimated`
-whatever its camera was. `--draft` divides the frame by 4 and
-caps samples at 128 under `<stem>_draft`. A candidate carries its camera's
-`after`, so it stands in its camera's world. `--preview` writes no scene: it
-assembles the world as `snapshot` does (it reads `--prefabs`) and rasterises each
-camera, in the configuration it stands in, at half its frame as `<stem>_preview.png`, byte-identical to `snapshot
---camera` with the same numbers, and names each camera whose lens is inside or
-within `LENS_CLEARANCE` (0.25 block) of a placed block, with a `lens:` binding
-line — a report, since the grid counts every block as a full cube. The material
-is the pinned jar's, off the same derivation the emitted scene is path-traced
-with, so what the preview says a wall is made of is what the render will say; a
-block the pin does not have is magenta and named on stderr (`unpainted:`, above).
-It draws any
-record its reader accepts and is never refused by `DW0900`: it is the instrument
-that closes the hole, and it prints the count it is closing. Byte-deterministic (ADR-0006): the same record,
-plan and options give the same scene, candidate and preview bytes.
+whatever its camera was, and carries its camera's `after`. Byte-deterministic on
+the CPU backend (ADR-0006): the same record, plan and options give the same
+frame, manifest and candidate bytes (`tests/post_beat_camera.rs`).
 
 ### `delvec place-camera` — the record's one writer
 
@@ -6494,17 +6405,18 @@ and write nothing.
 ### `delvec edit apply` / `delvec edit preview` (spec-0017)
 
 The map editor's write half, closing the loop with the read half above: edit
-verb → deterministic replay → snapshot. Both subcommands run full validation
+verb → deterministic replay → frame. Both subcommands run full validation
 (exit 1 on any error — unlike the view commands, an edit session must not
 build on a broken campaign), `Plan::build`, the checked replay (§4 "The map
-editor edit stage"), then render **one labelled snapshot + manifest per
-batch** into `-o` (default `edit-shots/`): the camera frames the batch's
+editor edit stage"), then draw **one labelled quick frame + manifest per
+batch** into `-o` (default `edit-shots/`) from the edited load world, written
+under `-o` as `world/`: the camera frames the batch's
 edited AABB over the final edited world, dollhouse-style, pulled into open
 air like `--at` (so an interior edit is viewed from inside its room). File
 names are the batch's kebab (`batch/dress-floor` → `dress-floor.png` +
 `dress-floor.manifest.json`).
 
-After the snapshots, both subcommands run the **entire build-tier proof set** —
+After the frames, both subcommands run the **entire build-tier proof set** —
 the DW02xx reachability analysis and `emit::build` itself, output discarded. The
 per-batch invariants are only a subset (they miss `DW0308` cutscene clipping,
 `DW0327` stealth zones, `DW0342` trap completability, `DW0312` wave seating,
@@ -6525,14 +6437,16 @@ failure by the failing code's tier (same mapping as `build`).
 
 ### PNG writing
 
-`compiler::png` is a hand-rolled 8-bit RGBA writer shared by two callers, for the
+`compiler::png` is a hand-rolled 8-bit RGBA writer with two encoders, for the
 same reason `compiler::resourcepack`'s ZIP/SHA-1 is hand-rolled — byte-stability
 must be a function of this repo:
 
 - `encode_rgba_stored` (uncompressed) — the `delve:art` font atlas, whose bytes
   are hashed into a shipped resource pack.
 - `encode_rgba` (DEFLATE at a pinned level, via the existing `flate2` dep) — the
-  snapshot renders, which are megapixel review artifacts.
+  review, campaign and edit frames, the blocking charts and the texture comparison
+  sheets, which are megapixel review artifacts. The contact sheet is written by the
+  `image` crate, not by this writer.
 
 ---
 
@@ -6781,15 +6695,9 @@ than a second repository's contents; `delvec build` output trees are absent for
 the same reason `BUILD_OUTPUT_MARKER` skips them. None of those is a rule that
 can go stale.
 
-There is exactly **one** exemption, and it is a pointer rather than a judgement:
-`crates/delvec/tests/golden/`, whose files are recordings of emitter output
-asserted byte-for-byte by `golden_scene_matches`, with the directory's membership
-closed by `every_golden_is_emitter_output`. Getting a document in there means
-making the emitter actually emit its bytes — which is why it is not a hatch that
-"it's generated" can open. The check refuses if that exemption matches zero
-tracked files, or if either pin has been deleted.
+Nothing is exempt.
 
-Generated JSON is otherwise not exempt: it is made canonical **at the writer**.
+Generated JSON is not exempt: it is made canonical **at the writer**.
 `tools/ci/gallery-baseline.py` writes `gallery/baseline/warnings.json` with `ensure_ascii=False`
 for exactly that reason. Where a foreign program owns the file — npm's
 `package.json` and `package-lock.json`, the agent harness's `.claude/settings.json`

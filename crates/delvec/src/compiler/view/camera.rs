@@ -42,15 +42,15 @@
 //!   record without arithmetic (the eye is 1.62 blocks above the feet position the
 //!   game prints).
 //! - `fov` is the **vertical** field of view in degrees — Minecraft's FOV setting
-//!   and Chunky's `fov` are both vertical — so a narrower frame from further back
+//!   and the renderer's are both vertical — so a narrower frame from further back
 //!   is a smaller number.
-//! - There is no `exposure`: every frame is exposed at [`scene::EXPOSURE`], the
-//!   one value the sky, the tone curve and the lantern scale are calibrated at.
-//!   A record that states one is refused ([`DW_EXPOSURE_STATED`]); a room that
+//! - There is no `exposure`: every frame is exposed at
+//!   [`crate::compiler::view::frames::HQ_EXPOSURE`], derived by the engine. A
+//!   record that states one is refused ([`DW_EXPOSURE_STATED`]); a room that
 //!   reads too dark is lit, never exposed.
 //! - `width`, `height` and `spp` are the frame and the path tracer's sample target:
-//!   everything else Chunky needs to reproduce the frame comes from the build (the
-//!   loaded chunks, the ocean plane) or from the record (the sky).
+//!   everything else the renderer needs to reproduce the frame comes from the
+//!   build (the written world and its loaded chunks) or from the record (the sky).
 //! - `answers` names the row of `design.json` whose approved image the camera is
 //!   judged against, and is refused when it names no row.
 //! - `sky` (optional, `{"time": "noon", "weather": "clear"}`) is the sky the
@@ -73,10 +73,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::compiler::view::diag::{DW_INPUT, Diagnostic};
-use crate::compiler::view::scene::{
-    self, ChunkyCamera, ChunkyScene, Orientation, RenderPlan, SceneSky, WorldRef, Xyz,
-    chunky_orientation, round6,
-};
+use crate::compiler::view::scene::{self, RenderPlan, SceneSky, round6};
 
 /// Where the record lives inside a campaign directory.
 pub const CAMERAS_FILE: &str = "design/cameras.json";
@@ -91,7 +88,7 @@ pub const DW_RECORD_AT_BUILD: delvewright_dsl::DwCode =
 
 delvewright_dsl::dw_code! {
     /// `DW1010`: **a camera record states an `exposure`.** A frame's exposure is
-    /// derived by the engine ([`scene::EXPOSURE`]), so a typed one is a
+    /// derived by the engine ([`crate::compiler::view::frames::HQ_EXPOSURE`]), so a typed one is a
     /// derivation entered where only judgements belong, and the usual reason
     /// for typing one — a room too dark to read — is repaired by the room's
     /// lights. Refused by the record's one reader ([`parse_sheet`]), so every
@@ -309,9 +306,10 @@ impl CameraSky {
         format!("{}+{}", self.time.keyword(), self.weather.keyword())
     }
 
-    /// The scene sky this pair is.
-    pub fn scene(self) -> SceneSky {
+    /// The scene sky this pair is, in a world whose own time is `world`.
+    pub fn scene(self, world: WorldTime) -> SceneSky {
         SceneSky {
+            day: scene::frame_day(self.time, world),
             daytime_ticks: self.time.daytime_ticks(),
             weather: self.weather,
         }
@@ -326,22 +324,6 @@ impl Source {
             Source::Hand => "hand",
         }
     }
-}
-
-/// Minecraft yaw → the render plan's yaw (`atan2(-dz, dx)`: 0 east, 90 north),
-/// in `(-180, 180]`.
-///
-/// Minecraft looks along `(-sin yaw, 0, cos yaw)`; the plan's yaw of that vector
-/// is `atan2(-cos yaw, -sin yaw)`, which is `-yaw - 90`.
-pub fn plan_yaw(minecraft_yaw: f64) -> f64 {
-    let y = (-minecraft_yaw - 90.0).rem_euclid(360.0);
-    if y > 180.0 { y - 360.0 } else { y }
-}
-
-/// The render plan's yaw → Minecraft yaw, in `[0, 360)`: the inverse of
-/// [`plan_yaw`].
-pub fn minecraft_yaw(plan_yaw_deg: f64) -> f64 {
-    (-plan_yaw_deg - 90.0).rem_euclid(360.0)
 }
 
 /// Is `name` a legal camera name?
@@ -468,7 +450,7 @@ fn exposure_stated(bytes: &[u8]) -> Option<Diagnostic> {
             c.get("name").and_then(|n| n.as_str()).unwrap_or("?"),
             c.get("answers").and_then(|a| a.as_str()).unwrap_or("?"),
             c["exposure"],
-            scene::EXPOSURE,
+            crate::compiler::view::frames::HQ_EXPOSURE,
         ),
     ))
 }
@@ -680,12 +662,17 @@ impl ResolvedSky {
                 SkyOrigin::Stated => "stated".to_string(),
             },
             scene::sky_phrase(self.sky.weather, self.sky.time.daytime_ticks()),
-            // spec-0081 §5.4: the pinned renderer draws no moon, so a frame of a
-            // sky whose moon is up carries no phase — said where it is read.
-            if delvewright_dsl::celestial::moon_up(self.sky.time.daytime_ticks()) {
-                "; moon not drawn by the renderer"
-            } else {
-                ""
+            // A clear frame stands at its clock (`frames::stated_sky`), so the
+            // renderer draws the moon at the clock's phase; under rain or
+            // thunder the client draws none, and neither does the frame — said
+            // where it is read.
+            match (
+                delvewright_dsl::celestial::moon_up(self.sky.time.daytime_ticks()),
+                self.sky.weather,
+            ) {
+                (false, _) => String::new(),
+                (true, WorldWeather::Clear) => "; moon drawn at its day's phase".to_string(),
+                (true, w) => format!("; no moon under {}, as the client draws none", w.keyword()),
             }
         )
     }
@@ -909,26 +896,29 @@ impl Bracket {
     }
 }
 
-/// The scene stem of a camera: `<campaign>_camera_<name>`, with `_draft` when
-/// the frame is a draft, so a draft never shares a name — and so never a cache —
-/// with the frame it drafts.
+/// The file stem of a camera's frame: `<campaign>_camera_<name>`, with
+/// `_draft` when the frame is a draft and `_preview` when it is a preview, so
+/// no two frames of one camera share a file.
 pub fn camera_stem(campaign_id: &str, name: &str, draft: bool) -> String {
     let shot = if draft {
         format!("camera_{name}_draft")
     } else {
         format!("camera_{name}")
     };
-    scene::scene_file_stem(campaign_id, &shot)
+    format!(
+        "{}_{}",
+        crate::compiler::view::frames::frame_stem(campaign_id),
+        crate::compiler::view::frames::frame_stem(&shot)
+    )
 }
 
-/// A frame as Chunky reads it: where, which way, how wide, how big, how many
-/// samples. The one thing every world scene of a stated or solved camera is
-/// built from.
+/// A frame of a stated or solved camera: where, which way, how wide, how big,
+/// how many samples. The one thing every showcase frame is drawn from.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Frame {
     pub pos: [f64; 3],
-    /// The render plan's yaw convention (`atan2(-dz, dx)`).
-    pub plan_yaw_deg: f64,
+    /// Minecraft yaw: 0 south, 90 west.
+    pub yaw_deg: f64,
     /// Positive looks down.
     pub pitch_deg: f64,
     /// Vertical field of view.
@@ -952,7 +942,7 @@ impl Frame {
         };
         Frame {
             pos: cam.pos,
-            plan_yaw_deg: plan_yaw(cam.yaw),
+            yaw_deg: cam.yaw,
             pitch_deg: cam.pitch,
             fov_deg: cam.fov,
             width,
@@ -960,98 +950,31 @@ impl Frame {
             spp,
         }
     }
-}
 
-/// The Chunky scene of one frame of the assembled world under `sky`: the layout
-/// and whatever ground its horizon built as the loaded chunks, the ocean plane
-/// on an ocean horizon. [`crate::compiler::view::panorama`] emits through this
-/// too, so a solved camera and a stated one are one scene shape; the caller
-/// says which sky (spec-0079 §5).
-pub(crate) fn world_scene(
-    plan: &RenderPlan,
-    stem: &str,
-    frame: &Frame,
-    world_path: &str,
-    sky: SceneSky,
-) -> Result<ChunkyScene, Diagnostic> {
-    let (loaded_min, loaded_max) = scene::loaded_extent(&plan.layout_aabb, plan.horizon);
-    let o = chunky_orientation(frame.plan_yaw_deg, frame.pitch_deg);
-    Ok(ChunkyScene {
-        sdf_version: 9,
-        name: stem.to_string(),
-        width: frame.width,
-        height: frame.height,
-        y_clip_min: (loaded_min[1] - 8).max(-64),
-        y_clip_max: (loaded_max[1] + 16).min(320),
-        exposure: scene::EXPOSURE,
-        postprocess: scene::POSTPROCESS,
-        postprocess_settings: scene::tone_curve(),
-        output_mode: "PNG",
-        render_time: 0,
-        spp: 0,
-        spp_target: frame.spp,
-        ray_depth: 5,
-        path_trace: true,
-        dump_frequency: 500,
-        save_snapshots: false,
-        emitters_enabled: true,
-        emitter_intensity: scene::emitter_intensity(),
-        sun_enabled: true,
-        still_water: false,
-        water_world_enabled: None,
-        water_world_height: None,
-        water_world_height_offset_enabled: None,
-        water_world_clip_enabled: None,
-        sun: None,
-        sky: None,
-        fog: None,
-        // A showcase frame is the world as a player sees it under its sky; the
-        // night-vision review emulation never applies to it.
-        materials: None,
-        delvewright_review_policy: None,
-        delvewright_sky: None,
-        world: WorldRef {
-            path: world_path.to_string(),
-            dimension: 0,
-        },
-        camera: ChunkyCamera {
-            name: "camera 1",
-            position: Xyz {
-                x: round6(frame.pos[0]),
-                y: round6(frame.pos[1]),
-                z: round6(frame.pos[2]),
-            },
-            orientation: Orientation {
-                roll: round6(o.roll),
-                pitch: round6(o.pitch),
-                yaw: round6(o.yaw),
-            },
-            projection_mode: "PINHOLE",
-            fov: round6(frame.fov_deg),
-        },
-        chunk_list: scene::chunk_list(loaded_min, loaded_max),
+    /// The camera the renderer is handed.
+    pub fn view(&self) -> crate::compiler::framing::Camera {
+        crate::compiler::framing::Camera {
+            pos: self.pos,
+            yaw: self.yaw_deg,
+            pitch: self.pitch_deg,
+            fov: self.fov_deg,
+        }
     }
-    .under(scene::sky_of(sky))
-    .with_water_world(scene::water_world(plan.horizon)))
 }
 
-/// What one emission produced.
+/// One showcase frame a run draws: the camera it is of, the file stem, the
+/// frame and the sky it is taken under.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Emission {
-    /// `(file name, bytes)` per scene, in record order (stated camera, then its
-    /// candidates).
-    pub scenes: Vec<(String, Vec<u8>)>,
-    /// Every camera a scene was emitted for, in the same order — the candidates
-    /// file when bracketed.
-    pub cameras: Vec<Camera>,
+pub struct CameraFrame {
+    pub camera: Camera,
+    pub stem: String,
+    pub frame: Frame,
+    pub sky: SceneSky,
 }
 
-/// Options for [`emit`].
+/// Options for [`frames_of`].
 #[derive(Debug, Clone, Default)]
 pub struct EmitOptions {
-    /// Per camera name, the absolute path of the world its scene loads — the
-    /// world written for the configuration it stands in (spec-0089 §5.3).
-    pub world_paths: std::collections::BTreeMap<String, String>,
     /// Only these cameras, by name; empty = every camera.
     pub only: Vec<String>,
     pub bracket: Option<Bracket>,
@@ -1153,48 +1076,36 @@ pub fn selected(
     Ok(out)
 }
 
-/// Emit the scenes of a record against a build's `render-plan.json`, each under
-/// its camera's sky ([`resolve_sky`] over `rows`, the design record's).
-/// Byte-deterministic (ADR-0006): the same plan, record, rows and options give
-/// the same bytes.
-pub fn emit(
+/// The frames of a record against a build's `render-plan.json`, each under
+/// its camera's sky ([`resolve_sky`] over `rows`, the design record's), in
+/// record order (a stated camera, then its candidates). Deterministic
+/// (ADR-0006): the same plan, record, rows and options give the same frames.
+pub fn frames_of(
     plan_json: &[u8],
     sheet: &CameraSheet,
     rows: &[ApprovedRow],
     opts: &EmitOptions,
-) -> Result<Emission, Diagnostic> {
+) -> Result<Vec<CameraFrame>, Diagnostic> {
     let plan = scene::parse_plan(plan_json)?;
     // A camera's sky is its picture's, not the plan's — but a plan that states no
     // sky, or no weather, was written by an older engine, and is refused by name
-    // here as every scene builder refuses it.
+    // here as every frame of a plan refuses it.
     scene::plan_sky(&plan)?;
+    let world = plan
+        .sky
+        .as_ref()
+        .expect("plan_sky refuses a plan with no sky")
+        .world_time()?;
     let cameras = selected(&plan.campaign_id, sheet, &opts.only, opts.bracket.as_ref())?;
-    let mut out = Emission {
-        scenes: Vec::new(),
-        cameras: Vec::new(),
-    };
+    let mut out = Vec::new();
     for c in cameras {
         let sky = resolve_sky(&c, rows).map_err(|why| Diagnostic::error(DW_INPUT, why))?;
-        let stem = camera_stem(&plan.campaign_id, &c.name, opts.draft);
-        let world_path = opts.world_paths.get(&c.name).ok_or_else(|| {
-            Diagnostic::error(
-                DW_INPUT,
-                format!(
-                    "camera `{}` stands in no written world: every camera a run frames is asked \
-                     where it stands before a scene is emitted",
-                    c.name
-                ),
-            )
-        })?;
-        let scene = world_scene(
-            &plan,
-            &stem,
-            &Frame::of(&c, opts.draft),
-            world_path,
-            sky.sky.scene(),
-        )?;
-        out.scenes.push((format!("{stem}.json"), scene.to_bytes()?));
-        out.cameras.push(c);
+        out.push(CameraFrame {
+            stem: camera_stem(&plan.campaign_id, &c.name, opts.draft),
+            frame: Frame::of(&c, opts.draft),
+            sky: sky.sky.scene(world),
+            camera: c,
+        });
     }
     Ok(out)
 }
@@ -1418,7 +1329,7 @@ pub enum ShowcaseRefusal {
 
 /// **Every showcase camera photographs the scene** — the build's proof over
 /// `design/cameras.json`, asked of the final assembled world and of the plan
-/// the scenes are emitted from. Returns how many cameras it examined.
+/// the frames are drawn from. Returns how many cameras it examined.
 ///
 /// Two shapes of one rule:
 ///
@@ -1427,10 +1338,9 @@ pub enum ShowcaseRefusal {
 ///    where the person stood, an estimate is where the agent put it — so a
 ///    violation is a refusal naming the row.
 /// 2. **The frame holds the loaded world**: the lens lies within the world's
-///    build height, and the ray along its view meets the box the scene's chunk
-///    list is cut from ([`scene::loaded_extent`], widened to whole blocks). A
-///    camera looking away from everything the scene loads renders an empty sky
-///    at exit 0.
+///    build height, and the ray along its view meets the box the frame's chunk
+///    rectangle is cut from ([`scene::loaded_extent`], widened to whole blocks). A
+///    camera looking away from everything the frame loads draws an empty sky.
 ///
 /// 3. **The subject is served** (spec-0091, `DW0956`): the thing the camera is
 ///    aimed at — the first occupied cell on its central ray, else the point
@@ -1634,18 +1544,13 @@ mod tests {
             .collect()
     }
 
-    /// Emit with every framed camera standing in `/abs/world` unless the
-    /// options say otherwise: these tests are about the scene, not the world.
-    fn emit3(plan: &[u8], sheet: &CameraSheet, opts: &EmitOptions) -> Result<Emission, Diagnostic> {
-        let mut o = opts.clone();
-        if o.world_paths.is_empty() {
-            for c in
-                selected(&sheet.campaign_id, sheet, &o.only, o.bracket.as_ref()).unwrap_or_default()
-            {
-                o.world_paths.insert(c.name, "/abs/world".into());
-            }
-        }
-        emit(plan, sheet, &rows(), &o)
+    /// The frames of a record against `plan`, under the test rows.
+    fn emit3(
+        plan: &[u8],
+        sheet: &CameraSheet,
+        opts: &EmitOptions,
+    ) -> Result<Vec<CameraFrame>, Diagnostic> {
+        frames_of(plan, sheet, &rows(), opts)
     }
 
     fn place5(
@@ -1665,30 +1570,17 @@ mod tests {
         }
     }
 
-    /// The view direction Chunky computes from a stored orientation — the pinned
-    /// core's basis (see `scene`'s module docs), written out here rather than
-    /// taken from the emitter.
-    fn chunky_forward(v: &serde_json::Value) -> [f64; 3] {
-        let o = &v["camera"]["orientation"];
-        let (yaw, pitch) = (o["yaw"].as_f64().unwrap(), o["pitch"].as_f64().unwrap());
-        [
-            yaw.cos() * pitch.sin(),
-            -pitch.cos(),
-            -yaw.sin() * pitch.sin(),
-        ]
-    }
-
     /// Minecraft's own look vector for an entity rotation.
     fn minecraft_forward(yaw: f64, pitch: f64) -> [f64; 3] {
         let (y, p) = (yaw.to_radians(), pitch.to_radians());
         [-y.sin() * p.cos(), -p.sin(), y.cos() * p.cos()]
     }
 
-    /// **The record speaks Minecraft's rotation, and the scene looks where the
+    /// **The record speaks Minecraft's rotation, and the frame looks where the
     /// game would.** At the four cardinals, the four diagonals, an arbitrary
-    /// yaw, negative and past-360 yaws and several pitches, the direction Chunky
-    /// derives from the emitted orientation is the direction Minecraft derives
-    /// from the record's rotation.
+    /// yaw, negative and past-360 yaws and several pitches, the direction the
+    /// frame's camera looks along is the direction Minecraft derives from the
+    /// record's rotation.
     #[test]
     fn the_scene_looks_where_minecraft_would_look() {
         let mut judged = 0;
@@ -1702,12 +1594,12 @@ mod tests {
                 c.answers = "a".into();
                 let s = sheet("isle", vec![c]);
                 let e = emit3(OCEAN, &s, &EmitOptions::default()).unwrap();
-                let v: serde_json::Value = serde_json::from_slice(&e.scenes[0].1).unwrap();
-                let (got, want) = (chunky_forward(&v), minecraft_forward(yaw, pitch));
+                let (got, _, _) = e[0].frame.view().basis();
+                let want = minecraft_forward(yaw, pitch);
                 for k in 0..3 {
                     assert!(
                         (got[k] - want[k]).abs() < 1e-5,
-                        "yaw {yaw} pitch {pitch}: chunky {got:?} vs minecraft {want:?}"
+                        "yaw {yaw} pitch {pitch}: frame {got:?} vs minecraft {want:?}"
                     );
                 }
                 judged += 1;
@@ -1738,42 +1630,31 @@ mod tests {
     }
 
     #[test]
-    fn the_cardinals_are_the_games() {
-        // 0 south, 90 west, 180 north, 270 east — in the plan's convention
-        // (0 east, 90 north).
-        assert_eq!(plan_yaw(0.0), -90.0);
-        assert_eq!(plan_yaw(90.0), 180.0);
-        assert_eq!(plan_yaw(180.0), 90.0);
-        assert_eq!(plan_yaw(270.0), 0.0);
-        for y in [0.0, 37.5, 90.0, 213.25, 359.0] {
-            assert!((minecraft_yaw(plan_yaw(y)) - y).abs() < 1e-9, "{y}");
-        }
-    }
-
-    #[test]
     fn a_stated_camera_is_emitted_verbatim() {
         let s = sheet("isle", vec![cam("hero")]);
         let e = emit3(OCEAN, &s, &EmitOptions::default()).unwrap();
-        assert_eq!(e.scenes.len(), 1);
-        let (file, bytes) = &e.scenes[0];
-        assert_eq!(file, "isle_camera_hero.json");
-        let v: serde_json::Value = serde_json::from_slice(bytes).unwrap();
-        assert_eq!(v["name"], "isle_camera_hero");
-        assert_eq!(v["width"], 1600);
-        assert_eq!(v["height"], 900);
-        assert_eq!(v["sppTarget"], 300);
-        assert_eq!(v["camera"]["fov"], 50.0);
-        assert_eq!(v["camera"]["position"]["x"], 10.5);
-        assert_eq!(v["camera"]["position"]["y"], 70.0);
-        assert_eq!(v["camera"]["position"]["z"], -4.25);
-        assert_eq!(v["world"]["path"], "/abs/world");
-        // The ocean plane and the declared hour come from the build.
-        assert_eq!(v["waterWorldEnabled"], true);
-        assert!(v["sun"].is_object());
-        assert!(v.get("materials").is_none());
+        assert_eq!(e.len(), 1);
+        let f = &e[0];
+        assert_eq!(f.stem, "isle_camera_hero");
+        assert_eq!(
+            (f.frame.width, f.frame.height, f.frame.spp),
+            (1600, 900, 300)
+        );
+        assert_eq!(f.frame.fov_deg, 50.0);
+        assert_eq!(f.frame.pos, [10.5, 70.0, -4.25]);
+        assert_eq!((f.frame.yaw_deg, f.frame.pitch_deg), (30.0, 10.0));
+        // The row's sky.
+        assert_eq!(
+            f.sky,
+            SceneSky {
+                day: 0,
+                daytime_ticks: WorldTime::Day.daytime_ticks(),
+                weather: WorldWeather::Clear
+            }
+        );
     }
 
-    /// Every stated field reaches a byte: perturb one, and the scene moves.
+    /// Every stated field reaches the frame: perturb one, and the frame moves.
     #[test]
     fn every_stated_field_moves_the_scene() {
         let base = emit3(
@@ -1797,7 +1678,10 @@ mod tests {
             let mut c = cam("a");
             edit(&mut c);
             let moved = emit3(OCEAN, &sheet("isle", vec![c]), &EmitOptions::default()).unwrap();
-            assert_ne!(base.scenes, moved.scenes, "{what} did not reach the scene");
+            assert_ne!(
+                base[0].frame, moved[0].frame,
+                "{what} did not reach the frame"
+            );
         }
     }
 
@@ -1894,15 +1778,6 @@ mod tests {
                 assert!(err.message.contains(needle), "{needle}: {err:?}");
             }
         }
-        // The engine writes the derived exposure into every scene.
-        let out = emit3(
-            OCEAN,
-            &sheet("isle", vec![cam("a")]),
-            &EmitOptions::default(),
-        )
-        .unwrap();
-        let v: serde_json::Value = serde_json::from_slice(&out.scenes[0].1).unwrap();
-        assert_eq!(v["exposure"], scene::EXPOSURE);
     }
 
     #[test]
@@ -1942,9 +1817,9 @@ mod tests {
         assert!((dx - -6.0 * 30f64.to_radians().sin()).abs() < 1e-5, "{dx}");
         assert!((dz - 6.0 * 30f64.to_radians().cos()).abs() < 1e-5, "{dz}");
         assert_eq!(fwd.pos[1], c.pos[1]);
-        // Truck moves square to the heading, to the right on `+`: the camera's
-        // right is the snapshot rasteriser's `right` negated, i.e. the direction
-        // a frame's right edge lies in. Heading (dx, dz) turned to (-dz, dx).
+        // Truck moves square to the heading, to the right on `+`: the
+        // direction a frame's right edge lies in. Heading (dx, dz) turned to
+        // (-dz, dx).
         let side = named("hero.truck+2");
         let (sx, sz) = (side.pos[0] - c.pos[0], side.pos[2] - c.pos[2]);
         assert!(
@@ -1994,14 +1869,12 @@ mod tests {
             },
         )
         .unwrap();
-        let (file, bytes) = &draft.scenes[0];
-        assert_eq!(file, "isle_camera_a_draft.json");
-        let v: serde_json::Value = serde_json::from_slice(bytes).unwrap();
-        assert_eq!(v["width"], 400);
-        assert_eq!(v["height"], 225);
-        assert_eq!(v["sppTarget"], DRAFT_SPP);
+        let d = &draft[0];
+        assert_eq!(d.stem, "isle_camera_a_draft");
+        assert_eq!((d.frame.width, d.frame.height), (400, 225));
+        assert_eq!(d.frame.spp, DRAFT_SPP);
         // The candidates file keeps the stated frame, so a pick is copied verbatim.
-        assert_eq!(draft.cameras[0], cam("a"));
+        assert_eq!(d.camera, cam("a"));
     }
 
     #[test]
@@ -2016,8 +1889,8 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(e.cameras.len(), 1);
-        assert_eq!(e.cameras[0].name, "b");
+        assert_eq!(e.len(), 1);
+        assert_eq!(e[0].camera.name, "b");
         let err = emit3(
             MINI,
             &s,

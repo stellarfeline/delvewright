@@ -162,6 +162,7 @@ pub(super) fn emit_holder_packtests(plan: &Plan, out: &mut BuildOutput, holders:
 pub(super) fn holder_watch_claim(holders: &[OwnedHolder]) -> crate::compiler::watch::Claim {
     crate::compiler::watch::Claim {
         mechanic: "holder",
+        kind: crate::compiler::watch::ClaimKind::Body,
         families: vec!["holder_".to_string()],
         declared: holders
             .iter()

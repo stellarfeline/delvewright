@@ -8,6 +8,12 @@
         "prefab": "prefab/hello-room"
       }
     ],
+    "horizon": {
+      "attributes": {
+        "audio/background_music": {}
+      },
+      "base": "void"
+    },
     "premise": "A lethal volume fixture (spec-0031): one declared box that kills whatever enters it, so the generated PackTest template runs against a live server.",
     "seed": 20260729,
     "target_minutes": 5,
@@ -16,6 +22,6 @@
     "title": "The Drop",
     "weather": "clear"
   },
-  "dsl_version": "0.58.0",
+  "dsl_version": "0.61.0",
   "stage": "world"
 }

@@ -300,7 +300,7 @@ pub(super) fn emit_restore_function(plan: &Plan) -> Option<(String, String)> {
 }
 
 /// Each class's `class_apply_<c>`: reset the trigger, hand the kit, start the campaign's opening quests, teleport to the entry point.
-pub(super) fn class_apply_fns(plan: &Plan) -> Vec<(String, String)> {
+pub(super) fn class_apply_fns(plan: &Plan, guide: &guidance::Guide) -> Vec<(String, String)> {
     let c = plan.campaign;
     let mut fns: Vec<(String, String)> = Vec::new();
     let campaign_start = campaign_start_quests(c);
@@ -351,6 +351,9 @@ pub(super) fn class_apply_fns(plan: &Plan) -> Vec<(String, String)> {
                 quest_active_score(qid)
             ));
         }
+        // spec-0104 §6.2, §8.2: the compass and the journal come with the kit,
+        // aimed and written from the quest state just set.
+        body.extend(guidance::kit_lines(guide, &plan.namespace));
         // teleport to the first area's spawn anchor
         if let Some(pos) = campaign_spawn(plan) {
             body.push(format!("teleport @s {} {} {}", pos[0], pos[1], pos[2]));
