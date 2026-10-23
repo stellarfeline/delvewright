@@ -474,6 +474,9 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
                 "target_minutes": target_minutes,
                 "time": "noon",
                 "weather": "clear",
+                // spec-0109: the ground states its music — a gym is walked, not
+                // listened to, so a silence.
+                "horizon": { "base": "void", "attributes": { "audio/background_music": {} } },
                 "theme": "A gym of bays: the doorways, the climbs and the fall.",
                 "title": "The Metrics Gym",
             },
@@ -605,7 +608,7 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
                         "id": "obj/hear-the-brief",
                         "type": "talk-to",
                         "npc": "npc/invigilator",
-                        "title": "Hear the brief",
+                        "title": "Talk to the Invigilator",
                         "hint": "The Invigilator stands in the first bay.",
                         "happening": {
                             "subject": "npc/invigilator",
@@ -620,6 +623,7 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
                         "anchor": format!("anchor/node-{}", slug(&goal_node)),
                         "radius": 3,
                         "title": "Walk to the far end",
+                        "hint": "Down the bays to the last one.",
                         "happening": {
                             "verb": "arrives",
                             "text": "The party reaches the last bay.",

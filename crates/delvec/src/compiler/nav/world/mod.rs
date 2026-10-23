@@ -20,8 +20,8 @@ use std::collections::{BTreeMap, BTreeSet};
 ///
 /// The assembled model ([`crate::compiler::assembled`]) knows only cells a prefab, a socket
 /// seal or an edit wrote. Everything else is "absent", and what *absent* means is
-/// a property of the level generator, not of the content: under `horizon: void`
-/// an absent column is bottomless; under `horizon: ocean` it is the pinned
+/// a property of the level generator, not of the content: on a `void` base
+/// an absent column is bottomless; on an `ocean` base it is the pinned
 /// bedrock/stone/water superflat, so there is no void anywhere in the world and
 /// stepping off the land is swimming. Boundary safety ([`verify_boundary_safety`])
 /// is the one proof whose premise is exactly this, so the ambient rides on the
@@ -29,11 +29,11 @@ use std::collections::{BTreeMap, BTreeSet};
 /// `Void`) at the call site.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum Ambient {
-    /// `horizon: void` (default/absent) — an empty superflat layer list. Every
+    /// A `void` horizon base — an empty superflat layer list. Every
     /// column the content did not build is bottomless.
     #[default]
     Void,
-    /// `horizon: ocean` — the pinned bedrock/stone/water superflat ([`Sea`]).
+    /// An `ocean` horizon base — the pinned bedrock/stone/water superflat ([`Sea`]).
     Ocean(Sea),
 }
 
@@ -102,7 +102,7 @@ impl Ambient {
 /// ocean's `ambient_water`, and [`measure_fluid_escape`] — and it is a fact
 /// about the ASSEMBLED WORLD, not about the sea, which is why it lives on
 /// [`World`] rather than on [`Sea`]. It was a field of `Sea` first; a world
-/// under `horizon: void` therefore had no idea where its own content ended, and
+/// on a `void` base therefore had no idea where its own content ended, and
 /// water that ran off the last piece met nothing that could judge it.
 pub fn built_volume(plan: &Plan) -> Vec<BuiltPiece> {
     plan.areas

@@ -1,7 +1,7 @@
 # Step 11 — the branch chronicle
 
-
-Skip if it does not. If it does, this step is not optional and not delegable:
+Skip this step when the quest plan declares no `branch_points`. When it does,
+this step is not optional and not delegable:
 skip it and the campaign is not verified, however green the ladder is.
 
 The compiler has compiled your documents **back into natural language**.

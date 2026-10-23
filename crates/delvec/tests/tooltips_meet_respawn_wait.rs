@@ -226,8 +226,10 @@ fn bonfire_tooltips_and_the_wait_never_move_each_others_bytes() {
 /// How a root reaches a `dialog show`.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum Root {
-    /// An advancement whose every criterion is `player_interacted_with_entity`:
-    /// a spectator's use of an entity does not fire it.
+    /// An advancement whose every criterion is `player_interacted_with_entity`
+    /// or `using_item`: a spectator's use of an entity does not fire it, and a
+    /// spectator uses no item (`ServerPlayerGameMode#useItem` passes in
+    /// spectator mode, read from the pinned jar).
     Interaction(String),
     /// A tick line whose `as` selector is bound by a trigger objective's score:
     /// the answer to a dialog the player already has open.
@@ -354,9 +356,9 @@ fn dialog_roots(out: &BuildOutput) -> (usize, BTreeSet<Root>) {
         }
         for (adv, triggers) in advs.get(n).into_iter().flatten() {
             if !triggers.is_empty()
-                && triggers
-                    .iter()
-                    .all(|t| t == "minecraft:player_interacted_with_entity")
+                && triggers.iter().all(|t| {
+                    t == "minecraft:player_interacted_with_entity" || t == "minecraft:using_item"
+                })
             {
                 roots.insert(Root::Interaction(adv.clone()));
             } else {

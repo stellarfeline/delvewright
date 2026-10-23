@@ -324,8 +324,8 @@ fn atlas_png() -> Vec<u8> {
 /// caller may pass raw ids straight in.
 ///
 /// Exposed for the visual-authoring-loop label stamper
-/// ([`crate::compiler::snapshot`]/[`crate::compiler::blocking`]), which burns the *same* original
-/// bitmap font into draft renders that the shipped `delve:art` atlas uses. One
+/// ([`crate::compiler::view::frameset`]/[`crate::compiler::blocking`]), which burns the *same* original
+/// bitmap font into review frames that the shipped `delve:art` atlas uses. One
 /// glyph table, two consumers — a second hand-drawn font would be a second thing
 /// to keep in sync for no gain.
 pub fn glyph(ch: char) -> Option<&'static [&'static str; 7]> {

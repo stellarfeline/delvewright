@@ -119,7 +119,7 @@ fn every_verb_answers_the_census() {
         ),
         (
             "cutscene",
-            serde_json::json!({"type":"cutscene","path":[{"anchor":"anchor/hall"},{"anchor":"anchor/door"}],"seconds":4}),
+            serde_json::json!({"type":"cutscene","subject":"landscape","path":[{"anchor":"anchor/hall"},{"anchor":"anchor/door"}],"seconds":4}),
             None,
         ),
         (
@@ -136,6 +136,11 @@ fn every_verb_answers_the_census() {
             "play-sound",
             serde_json::json!({"type":"play-sound","sound":"minecraft:block.bell.use","at":{"at":"anchor","anchor":"anchor/bell"}}),
             Some("anchor/bell"),
+        ),
+        (
+            "stop-sound",
+            serde_json::json!({"type":"stop-sound","category":"music"}),
+            None,
         ),
         (
             "damage-players",
@@ -328,7 +333,7 @@ fn a_verb_whose_object_is_optional_answers_per_instance() {
         ),
         (
             "a cutscene whose path names one cell",
-            serde_json::json!({"type":"cutscene","path":[{"anchor":"anchor/hall"}],"seconds":4}),
+            serde_json::json!({"type":"cutscene","subject":"landscape","path":[{"anchor":"anchor/hall"}],"seconds":4}),
             Some("anchor/hall"),
         ),
     ] {

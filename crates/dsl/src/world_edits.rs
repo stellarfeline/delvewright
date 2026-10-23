@@ -342,7 +342,7 @@ pub enum EditFrame {
     /// the piece's placed rotation).
     PieceLocal {
         /// The piece's placement index in the area's solved layout (0-based,
-        /// entry piece first — the order `delvec snapshot`'s manifest lists).
+        /// entry piece first — the order a `delvec frames` manifest's `pieces` lists).
         piece: u32,
         /// The prefab the indexed piece must be (a drift guard: if a re-solve
         /// changed the layout, the mismatch is a loud compile error, never a

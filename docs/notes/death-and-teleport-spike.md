@@ -1,7 +1,8 @@
 # Death edge + mid-fall teleport — spike findings (Minecraft Java 1.21.11)
 
-Status: **spike note**, measured 2026-08-09. Nothing here is implemented; no
-engine, DSL or campaign file changed. Rig: `tools/spike-death-teleport/ at 84f364997d24`
+Status: **spike note**, measured 2026-08-09; the spike changed no engine, DSL or
+campaign file. Its findings are what the engine's `teleport` effect and
+`lethal_volumes[]` rest on (`docs/reference/compiler.md`). Rig: `tools/spike-death-teleport/ at 84f364997d24`
 (`EULA=TRUE tools/spike-death-teleport/run.sh at 84f364997d24`), raw per-sample observations
 committed beside it as `observations.json` (4140 kept samples), the gamerule
 identifier dump as `gamerules-1.21.11.txt`.
@@ -190,10 +191,10 @@ answer `Incorrect argument for command` and change nothing. Several were also
 reworded: `doMobSpawning` → `spawn_mobs`, `doDaylightCycle` → `advance_time`,
 `doWeatherCycle` → `advance_weather`, `naturalRegeneration` →
 `natural_health_regeneration`. The compiler already emits the new names
-(`crates/compiler/tests/emit.rs` asserts them). **Two places in this repo still
+(`crates/delvec/tests/emit.rs` asserts them). **Two places in this repo still
 emit the old ones and neither can notice:**
 
-- `crates/admit/src/gallery.rs` — the gallery's `load` function emits
+- `crates/delvec/src/admit/gallery.rs` — the gallery's `load` function emits
   `doDaylightCycle`, `doWeatherCycle`, `doMobSpawning`, `doImmediateRespawn`.
   All four are rejected at run time, so a gallery world cycles day and weather,
   spawns mobs, and does not immediate-respawn.

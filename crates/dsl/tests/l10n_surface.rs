@@ -179,6 +179,9 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ("ShopOffer", "tooltip", Inventoried),
     ("Stake", "collected_message", Inventoried),
     ("Stake", "marker_item", Reference),
+    // spec-0104 §8.1: the journal's manual, read in the book.
+    ("Manual", "title", Inventoried),
+    ("Manual", "pages", Inventoried),
     ("LootItem", "item", Reference),
     ("LootItem", "name", Inventoried),
     ("LootItem", "slot", Machine),
@@ -236,6 +239,7 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ("PotionContents", "potion", Reference),
     ("PotionEffect", "effect", Reference),
     ("Prop", "block", Reference),
+    ("PlaceSubject", "place", Reference),
     ("Pulse", "place", Reference),
     // spec-0105: the one player-facing line payload — `narrate` and
     // `containers.decoration_notice` — inventoried as `fx.….narrate` and

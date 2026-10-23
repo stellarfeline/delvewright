@@ -26,7 +26,8 @@ pub(super) struct WorldProofs {
     pub(super) lethal_gate: Option<crate::compiler::lethal::LethalGate>,
     pub(super) loop_gate: Option<crate::compiler::r#loop::LoopBinding>,
     pub(super) firework_gate: Option<crate::compiler::firework::FireworkGate>,
-    pub(super) cutscene_shots_judged: usize,
+    pub(super) shot_ledger: Option<crate::compiler::framing::ShotLedger>,
+    pub(super) cutscene_proof: crate::compiler::nav::CutsceneProof,
     pub(super) lightning_gate: Option<crate::compiler::lightning::LightningGate>,
     pub(super) stake_table: Option<crate::compiler::stake::StakeTable>,
     pub(super) death_plan: Option<Value>,
@@ -49,6 +50,7 @@ pub(super) fn prove_world(
     out: &mut BuildOutput,
     warnings: &mut Vec<delvewright_dsl::Diagnostic>,
     pacing: &mut Vec<delvewright_dsl::Diagnostic>,
+    frame_worlds: &crate::compiler::view::review::FrameWorlds,
 ) -> Result<WorldProofs, BuildFailure> {
     // Visual-tier player-POV shots (spec-0003): first-person cameras along the
     // proven critical-path routes. Filled inside the world block below (they need
@@ -118,8 +120,12 @@ pub(super) fn prove_world(
     // opted in; a ledger that exists and reports zero columns is a finding.
     let mut firework_gate: Option<crate::compiler::firework::FireworkGate> = None;
     // spec-0091: how many cutscene shots were judged against the served view
-    // distance, for the binding line printed beside the render plan.
-    let mut cutscene_shots_judged = 0usize;
+    // distance, for the binding line printed beside the render plan; and
+    // spec-0112 §7.2: the frames of every shot a critical step fires.
+    let mut cutscene_proof = crate::compiler::nav::CutsceneProof::default();
+    // spec-0110: what every cutscene shot frames, judged per tick. `None` for a
+    // campaign with no cutscene — no line, no ledger.
+    let mut shot_ledger: Option<crate::compiler::framing::ShotLedger> = None;
     // The strike proofs' binding ledger (`compiler::lightning`, spec-0092 §5),
     // filled beside the firework's: `None` for a campaign that declares no
     // strike, so nobody who has not opted in moves a byte.
@@ -211,8 +217,8 @@ pub(super) fn prove_world(
             //    counts a flooded cell as arrest, so a bottomless column with a
             //    waterfall running down it reads as supported — and the proof
             //    goes quiet on precisely the columns the water escaped through.
-            //    Measured on the shipped `island-beach-camp` piece placed under
-            //    `horizon: void`: 9792 escaped cells, and `DW0322` silent.
+            //    Measured on the shipped `island-beach-camp` piece placed on
+            //    a `void` base: 9792 escaped cells, and `DW0322` silent.
             //
             // So escaping fluid is a false premise of the proof that runs next,
             // exactly as an unsettled gravity block is a false premise of
@@ -353,14 +359,28 @@ pub(super) fn prove_world(
                 }
             }
 
-            crate::compiler::nav::verify_boundary_safety(
-                world,
-                &crate::compiler::edit::anchor_starts(plan),
-            )
-            .map_err(|e| BuildFailure::Diagnostic {
-                code: e.code,
-                message: e.message,
-            })?;
+            // `DW0322` floods from where a body can start a walk: every anchor
+            // but a station of a scenery place nobody is put in
+            // (`edit::body_starts`). The line states what it left out.
+            let body_starts = crate::compiler::edit::body_starts(plan);
+            eprintln!(
+                "boundary-safety binding: {} of {} anchor(s) root the walk region, {} \
+                 excluded as a station of a scenery place (`reached: false`) no body is put in{}",
+                body_starts.roots.len(),
+                body_starts.anchors,
+                body_starts.excluded.len(),
+                if body_starts.excluded.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ({})", body_starts.excluded.join(", "))
+                },
+            );
+            crate::compiler::nav::verify_boundary_safety(world, &body_starts.roots).map_err(
+                |e| BuildFailure::Diagnostic {
+                    code: e.code,
+                    message: e.message,
+                },
+            )?;
 
             // spec-0092 §10: the boundary and the world agree (`DW0960`) — every
             // place a body is put stands inside a region that returns, and a
@@ -555,8 +575,29 @@ pub(super) fn prove_world(
                 // move-actor (spec-0014): A* over the actor's footprint; DW0325 if
                 // unroutable. Planned alongside move-npc from the same occupancy model.
                 let am = crate::compiler::nav::plan_actor_moves(plan, world)?;
-                cutscene_shots_judged =
-                    crate::compiler::nav::check_cutscenes(plan, world, &m, &am)?;
+                cutscene_proof =
+                    crate::compiler::nav::check_cutscenes(plan, world, &m, &am, frame_worlds)?;
+                // spec-0110: a shot frames its subject (`DW1033`) and a body
+                // subject is there to be seen (`DW1034`) — after the clip, served
+                // distance and pan proofs, so a camera inside a wall is named for
+                // that first. The binding line prints before the verdict, for
+                // every build with a cutscene.
+                {
+                    let (ledger, verdict) = crate::compiler::framing::judge(plan, world, &m, &am);
+                    if !ledger.cutscenes.is_empty() {
+                        eprintln!("{}", ledger.line());
+                        shot_ledger = Some(ledger);
+                    }
+                    if let Some((first, rest)) = verdict.split_first() {
+                        for extra in rest {
+                            eprintln!("{} [error] build: {}", extra.code, extra.message);
+                        }
+                        return Err(BuildFailure::Diagnostic {
+                            code: first.code,
+                            message: first.message.clone(),
+                        });
+                    }
+                }
                 // spec-0031: the one lethal-volume obligation routing cannot see.
                 // A respawn SEAT inside a volume is reached by teleport and routes
                 // perfectly while killing the party on arrival, forever. The wave
@@ -724,14 +765,6 @@ pub(super) fn prove_world(
                         world.lethal_cells(),
                         lethal_seats,
                         crate::compiler::nav::critical_leg_count(plan),
-                        // One template per resolved volume, and a `_shut` one
-                        // more per staged volume (see `emit_lethal_packtests`).
-                        plan.lethal_volumes.len()
-                            + plan
-                                .lethal_volumes
-                                .iter()
-                                .filter(|v| v.staged.is_some())
-                                .count(),
                         danger,
                     ));
                     if let Some(g) = lethal_gate.as_mut() {
@@ -924,7 +957,7 @@ pub(super) fn prove_world(
                 // a render plan can be built (`PlannedShots::into_document`) —
                 // this used to be a POV-only check here, which is exactly why the
                 // identical defect on a seam camera was invisible.
-                pov_shots = crate::compiler::render_plan::pov_shots(plan, &routes);
+                pov_shots = crate::compiler::render_plan::pov_shots(plan, &routes, world);
                 // spec-0025 branch navigation, made first-class. The
                 // DW0311 proof above quantifies over the DEFAULT playthrough
                 // only, and the waypoint export followed it — so a branch run
@@ -1242,7 +1275,8 @@ pub(super) fn prove_world(
         lethal_gate,
         loop_gate,
         firework_gate,
-        cutscene_shots_judged,
+        shot_ledger,
+        cutscene_proof,
         lightning_gate,
         stake_table,
         death_plan,

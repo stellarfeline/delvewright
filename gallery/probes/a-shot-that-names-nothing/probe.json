@@ -1,0 +1,12 @@
+{
+  "code": "DW0199",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/quests/1/on_objective_complete/obj~1clear-the-muster/18/shots/0/subject"
+    }
+  ],
+  "units": [],
+  "why": "The parade's first shot with its `subject` deleted. Every shot says what it shows, a shot of the place the camera stands in says `\"landscape\"`, and the engine never infers it: the shape check names the shot."
+}

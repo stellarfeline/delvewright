@@ -226,6 +226,7 @@ pub(super) fn emit_class_apply_packtests(plan: &Plan, out: &mut BuildOutput) {
 pub(super) fn class_apply_watch_claim(plan: &Plan) -> crate::compiler::watch::Claim {
     crate::compiler::watch::Claim {
         mechanic: "class-apply",
+        kind: crate::compiler::watch::ClaimKind::Body,
         families: vec!["class_apply_".to_string()],
         declared: plan.classes.iter().map(|c| c.safe.clone()).collect(),
     }

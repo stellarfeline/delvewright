@@ -402,6 +402,9 @@ fn lighting_write_without_metadata_is_dw0753_and_writes_nothing() {
     assert_eq!(out.status.code(), Some(2), "{out:?}");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("DW0753"), "{stderr}");
+    // Every verb the remedy names is one the binary has.
+    assert!(stderr.contains("`delvec grammar expand`"), "{stderr}");
+    assert!(stderr.contains("`delvec prefab anchor`"), "{stderr}");
     assert!(
         !dir.join("piece.json").exists(),
         "no metadata may be invented"

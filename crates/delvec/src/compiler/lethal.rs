@@ -1406,7 +1406,6 @@ pub fn gate(
     cells: usize,
     seats: usize,
     legs: usize,
-    packtests: usize,
     visibility: DangerVisibility,
 ) -> LethalGate {
     LethalGate {
@@ -1415,7 +1414,8 @@ pub fn gate(
         cells,
         seats,
         legs,
-        packtests,
+        // Counted from the emission when the ledger is written.
+        packtests: 0,
         visibility,
         blind: crate::compiler::blind::BlindReach::default(),
     }

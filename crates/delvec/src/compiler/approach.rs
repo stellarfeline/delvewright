@@ -486,7 +486,7 @@ pub fn check_held(
                 .find(|(_, y)| judged.iter().all(|(_, b)| !off(*y, *b)));
             let arrange = match turn {
                 Some((name, _)) => format!(
-                    "Declare `{anchor}`'s facing `{name}` in its piece's metadata (`delvec admit \
+                    "Declare `{anchor}`'s facing `{name}` in its piece's metadata (`delvec prefab \
                      anchor <piece>.nbt --name {anchor} --pos <x,y,z> --facing {name}`), which \
                      faces every one of those cells"
                 ),

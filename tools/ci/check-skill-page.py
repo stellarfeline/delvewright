@@ -142,13 +142,12 @@ the tag, and THIS TREE's index while the tag is unborn, because the tag the pin
 names is the one this tree's own release will create (ADR-0029 §3).
 
 What that buys is the difference between a property being true and being held.
-`validation/chunky.sh` and `validation/chunky-install.sh` are the two paths that
-proved it: the page named them, the shipping tree carried them, and the tree at
-the old 40-hex `[engine].ref` did not, so a creator who followed the page to the
-Chunky step cloned an engine without them and no rule was red. Under this pin
-they are in both trees by construction — and by construction is not the same as
-by luck, so the property is tested by removing one of them from the tree and
-checking that the PIN arm reds, not only the shipping arm.
+A path the page names that the shipping tree carries and the pinned tree does
+not is a step a creator follows into an engine without it, with no rule red.
+Under this pin every named path is in both trees by construction — and by
+construction is not the same as by luck, so the property is tested by removing
+one named path from the tree and checking that the PIN arm reds, not only the
+shipping arm.
 
 The exclusion is build output and git judges it, never a list in this tool:
 `.gitignore` through `check-ignore`, each path put twice, bare and slashed. Two
@@ -179,7 +178,7 @@ only faithful reading of serde is the binary's own `delvec schema`.
 A fragment — one inline span, or one whole fence — is read as a campaign
 document when MORE THAN HALF of the keys it names are fields of some schema the
 release exports; only then does an unknown key red. The object decides the kind:
-a Chunky option, a skin palette or a text component names keys no schema
+a renderer option, a skin palette or a text component names keys no schema
 carries, and is printed as unread rather than refused. What that costs is
 stated: a fragment whose keys are mostly unknown to the pin is indistinguishable
 from a non-document, and a variant is checked only where EVERY field of that
@@ -1194,8 +1193,19 @@ def check(
         others = {
             f"references/{p.name}" for p in refs if p != path
         }
+        # A reference is reached as a bundled path (`references/x.md`) or, as a
+        # reader follows a link, as a markdown link resolved from the file's own
+        # directory (`](x.md#…)`): both are an onward pointer.
+        linked = set()
+        for m in LINK_RE.finditer(text):
+            target = m.group("target").split("#", 1)[0]
+            if not target or "://" in target:
+                continue
+            resolved = (path.parent / target).resolve()
+            if resolved.parent == path.parent.resolve():
+                linked.add(f"references/{resolved.name}")
         for other in sorted(others):
-            if other in text:
+            if other in text or other in linked:
                 rep.find(
                     f"{rel(path)} sends the reader on to `{other}`. "
                     f"File references are one level deep from `SKILL.md`: a chain "
@@ -1925,9 +1935,7 @@ def engine_paths_rule(rep: Report, rev: str, ref: str, tag_exists: bool) -> None
     the tree at `[engine].ref`, which is the engine Init I2 detaches at. Under
     ADR-0029 those two are one tree while the tag is unborn and one commit
     afterwards, so the second arm is what holds the property rather than merely
-    observing it: remove a path from this tree and BOTH arms red, which is what
-    `validation/chunky.sh` and `validation/chunky-install.sh` could not make
-    happen while the pin named an older revision.
+    observing it: remove a path from this tree and BOTH arms red.
     """
     named = engine_paths(shipped())
     unspelt = {

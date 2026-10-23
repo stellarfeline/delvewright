@@ -96,7 +96,7 @@ fn refusal(r: Result<BuildOutput, BuildFailure>) -> (String, String) {
 /// **The room nobody can get out of is examined and not judged.**
 ///
 /// Every one of its six sides is solid and every one of them has nothing in
-/// front of it: under `horizon: void` there is nothing outside the placed
+/// front of it: on a `void` base there is nothing outside the placed
 /// geometry at all. It is still not a finding, and this is the discrimination
 /// the whole check rests on — a side no body can be in front of is neither shown
 /// nor hidden, and demanding a declaration for it would make every sealed

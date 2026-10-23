@@ -8,11 +8,11 @@ this module declares. The catalog's shared rules are in [`compiler.md` §5](../.
 ### DW02xx — analysis (`compiler::analyze` reachability + `compiler::light` lighting; error; exit 2)
 
 `DW0210`/`DW0211` are emitted by the assembled-world light model
-(`crate::light`), surfaced through the build path but mapped to exit 2 (analysis
-tier) in `main`; `DW0201`–`DW0204` come from `compiler::analyze` over the
+(`compiler::light`), surfaced through the build path, where their `Analysis` exit
+tier ends the run at exit 2; `DW0201`–`DW0204` come from `compiler::analyze` over the
 branch-coherent flow model (`compiler::flow`).
 
-**The emitter table never overestimates (`crate::light::emission`).** Both gates
+**The emitter table never overestimates (`compiler::light::emission`).** Both gates
 are only sound if the modelled light is a *lower* bound on the game's — a block
 modelled brighter than vanilla lets a genuinely dark area ship unmitigated. The
 table is evaluated over each block's **actual blockstate** (the assembled map
@@ -66,14 +66,14 @@ in that set: its `onPlace` runs `checkAndFlip`, which returns without touching
 shipped lit in a room with no redstone stays lit.
 
 **Light passability and nav passability are one rule
-(`crate::light::passes_light`).** A block whose cell a body can occupy passes
+(`compiler::light::passes_light`).** A block whose cell a body can occupy passes
 light, and which cells those are is decided by the one collision table,
 `delvewright_dsl::blockshape::collision_class` — the answer
 `assembled::occupancy_of` builds the nav model from. `Air`, `Thin` (collision top
 below 8/16: trap triggers, carpets, `snow` at 1–4 layers, candles, flower pots,
 every no-collision plant, and every no-collision fixture — torches of every kind,
 signs, hanging signs, banners, buttons, levers, rails, `redstone_wire`, `light`,
-`structure_void`) and `FenceGate` pass light by construction, and so does a
+`structure_void`), `FenceGate` and `Climbable` (ladders, vines) pass light by construction, and so does a
 `Fluid` cell (water, lava, seagrass, kelp, bubble columns). A class the collision
 table gains is light-passing the day it is added. The rest of the opacity table is
 the light model's own: blocks a body cannot occupy that still pass light — glass
@@ -85,7 +85,7 @@ body walks through, measured at light 0 while the game lights it, is a `DW0210`
 no relighting can clear. Vanilla 1.21.11 agrees for the passable classes: every
 empty-collision and thin block has `filterLight = 0` (pinned `minecraft-data`
 `.../pc/1.21.9/blocks.json`: all 16 pressure plates, `tripwire`, `tripwire_hook`,
-all 20 carpets, `snow`, all 12 fence gates), against `filterLight = 15` for
+all 18 carpets, `snow`, all 12 fence gates), against `filterLight = 15` for
 `stone`/`dirt`/`oak_planks`/`cobblestone`/`deepslate`/`sand`/`gravel`/`obsidian`/
 `snow_block`. Blocks vanilla also calls transparent but the collision table calls
 **solid or tall** (fences, walls, slabs, stairs, doors, trapdoors, chests) stay
@@ -99,7 +99,7 @@ real classifier, and prints its binding count.
 | `DW0201` | Finale quest can never complete (unreachable finale). |
 | `DW0202` | Quest can never be triggered (dead quest — its trigger source never completes). |
 | `DW0203` | Objective can never be completed **in any branch** (deadlock: unsatisfiable `after` chain, an unproducible `requires_flags` gate, or a `talk-to` completing option unreachable through the trigger/`after`/dialogue graph). |
-| `DW0358` | A declared `min_players: n` (n ≥ 2) has **no n-agent division of labour** (spec-0018). Completability is proven with `min_players` agents: n = 1 is the unchanged single-agent proof, and n ≥ 2 additionally requires the proven playthrough to contain an AND-join with n arms that are *independently reachable at the join's frontier* — the replay state just before its earliest arm — with no arm waiting on a sibling, a flag a sibling sets, or a quest that is not active yet (`flow::Flow::divide`). Names the widest join and how many arms it actually offers, or says the campaign has no AND-join at all. Reported on `world`/`/content/min_players`, exit 2. Prescription: split one beat into n `after`-arms completable from the same frontier, or lower `min_players`. |
+| `DW0358` | A declared `min_players: n` (n ≥ 2) has **no n-agent division of labour** (spec-0018). Completability is proven with `min_players` agents: n = 1 is the single-agent proof, and n ≥ 2 additionally requires the proven playthrough to contain an AND-join with n arms that are *independently reachable at the join's frontier* — the replay state just before its earliest arm — with no arm waiting on a sibling, a flag a sibling sets, or a quest that is not active yet (`flow::Flow::divide`). Names the widest join and how many arms it actually offers, or says the campaign has no AND-join at all. Reported on `world`/`/content/min_players`, exit 2. Prescription: split one beat into n `after`-arms completable from the same frontier, or lower `min_players`. |
 
 **The branch-coherent flow model (`compiler::flow`).** Reachability is not one
 union fixpoint over "every `set-flag` anywhere". A **choice group** is a dialogue
@@ -121,10 +121,11 @@ A flag producer is conditional on its gating context:
 | `set-flag` in an environment trigger's `effects` | the trigger's `requires_flags` are satisfied — **ambient** (a `strike`/`use`/`approach` trigger is player-initiated and has no DAG position). The exported path still owes the act: `Flow::trigger_debts` replays the path with trigger producers withheld until performed, and every flag a step reads (its objective's `requires_flags`, a `talk-to`'s taken option's `requires`) that only a trigger supplies becomes a `trigger` step before that reader |
 | `set-flag` in a `traps[].payload` | the trap's `requires_flags` are satisfied (ambient, same reasoning — the party can always walk over and spring it) |
 | a trap's `disarm.sets_flag` | the trap's `requires_flags` are satisfied (ambient, same reasoning) |
+| a timed gate's `disarm.sets_flag` | always (ambient — the jam lever is an optional player action) |
 | `set-flag` in a `shortcuts[].on_unlock` | always (ambient, ungated — `DW0373` proves the far-side `unlock` is walkable while the gate is sealed) |
 | `set-flag` in a `shops[].offers[].effects` | always (ambient behind the effect's own flag gates; the offer's numeric price is a runtime balance no flag model dates) |
 | `set-flag` in an `on_respawn` / `on_caught` reaction bundle | **never** — reaction bundles fire at statically unknowable times, so nothing inside one is a producer (the conservative stance `compiler::continuity` takes) — whether the bundle is rooted in the quests stage or hung off a **dialogue option's** `set-checkpoint` |
-| `set-flag` in the campaign's `on_death` or a fight's `on_kill` | **never** — a death fires at a moment nothing names, and no kill is forced to be credited to a player |
+| `set-flag` in the campaign's `on_death`, an assembly's `on_land`, a loop's `on_cross`, or a fight's `on_kill` | **never** — a death, a landing or a crossing fires at a moment nothing names, and no kill is forced to be credited to a player (only a story world that performs the kill credits its `on_kill`) |
 
 Consequences worth stating plainly: a `set-flag` gated on the very flag it sets
 (the "re-affirm the branch" idiom) produces nothing; a flag produced only on the
@@ -150,13 +151,13 @@ carries forward a root some earlier quest already declared, which is already in
 the union. `Flow::scene_root` asks a narrower question — which ONE root a
 right-click opens at a given instant, where later declaration wins — because it
 models the emitted `dw.cast` dispatch; reachability is the union over the whole
-playthrough. The DSL half has always asked the wider question:
+playthrough. The DSL half asks the wider question:
 `NpcDialogue::reachable_from` is the one authority for "what can this tree show,
 entered here", and `DW0120`'s orphan walk and `DW0858` both seed it from a root
 SET.
 
 **Which effect lists those rows range over is not `flow`'s to decide.** Both
-halves of the model — the producer scan in `Flow::new` and the
+halves of the model — the producer table `delvewright_dsl::producers::flag_producers` that `Flow::new` reads, and the
 gate-flag inventory `flow::gate_flags`, which is what decides whether a choice
 group is enumerated as XOR worlds or left unconstrained — walk
 `plan::for_each_effect_root`, so the proof cannot believe in fewer firings than
@@ -199,7 +200,7 @@ the ending is walked before it. `compiler::plan`'s gate-aware reachability (`DW0
 sequence, so the static proofs and the exported bot contract agree by
 construction. When no world completes the finale the campaign is already
 `DW0201`; the model then degenerates to the whole closure so the geometry-only
-commands (`chart`, `snapshot`) still run on an unanalyzable campaign.
+commands (`blocking-chart`, `frames --campaign`) still run on an unanalyzable campaign.
 
 **Optional participation can never gate the mainline.** The contract is that
 *the mainline must be completable with zero optional participation*. Optionality
@@ -222,7 +223,7 @@ walk the party past a load-bearing beat is not drawn until that beat is done, an
 a press that arrives early completes nothing. The canonical instance — a button
 completing `obj/climb-out` (`after obj/surf`) beside one completing `obj/muster`
 (whose bundle spawns the drowned) from campaign start — cannot be emitted.
-`DW0191` is unchanged: it counts an author-written gate on the one completing
+`DW0191` counts an author-written gate on the one completing
 option, which could deadlock a beat; the engine's pending guard opens exactly
 when the objective activates and cannot.
 

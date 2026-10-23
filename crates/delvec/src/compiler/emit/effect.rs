@@ -448,10 +448,13 @@ pub(super) fn emit_quest_effect(
                 // A box is the bodies standing in it. A player watching a
                 // cutscene is a spectator whose camera may stand anywhere, so the
                 // box excludes the observation tag (`DW0926`) — save for a status
-                // effect, which `observer::ALLOWED` names as asking nothing of a
-                // watcher.
+                // effect and a sound cut (spec-0109), which `observer::ALLOWED`
+                // names as asking nothing of a watcher.
                 Some(sel)
-                    if !matches!(eff.verb, Verb::GiveEffect { .. } | Verb::ClearEffect { .. }) =>
+                    if !matches!(
+                        eff.verb,
+                        Verb::GiveEffect { .. } | Verb::ClearEffect { .. } | Verb::StopSound { .. }
+                    ) =>
                 {
                     unwatched(sel)
                 }
@@ -717,9 +720,22 @@ pub(super) fn emit_quest_effect(
             at,
             volume,
             pitch,
-            ..
+            category,
         } => {
-            emit_play_sound(plan, sound, at.as_ref(), *volume, *pitch, who, body);
+            emit_play_sound(
+                plan,
+                sound,
+                at.as_ref(),
+                *volume,
+                *pitch,
+                category.unwrap_or_default(),
+                who,
+                body,
+            );
+        }
+        // spec-0109 §4: one `stopsound` under the effect's audience.
+        Verb::StopSound { category, sound } => {
+            body.push(stop_sound_command(who, *category, sound.as_deref()));
         }
         Verb::DamagePlayers {
             amount,
@@ -974,16 +990,19 @@ pub(super) fn effect_give_command(
 /// own position (the world spawn, for a tick- or setup-run function).
 /// `at: actor` never reaches emission — no position resolves for a live actor,
 /// so it is rejected at validate-time (`DW0335`).
+#[allow(clippy::too_many_arguments)]
 pub(super) fn emit_play_sound(
     plan: &Plan,
     sound: &str,
     at: Option<&delvewright_dsl::SoundAt>,
     volume: Option<f64>,
     pitch: Option<f64>,
+    category: delvewright_dsl::SoundCategory,
     who: &str,
     body: &mut Vec<String>,
 ) {
     use delvewright_dsl::SoundAt;
+    let cat = category.token();
     // Canonicalize a bare id to the default namespace so the emitted command is
     // explicit (`playsound` accepts either form).
     let sound = if sound.contains(':') {
@@ -998,7 +1017,7 @@ pub(super) fn emit_play_sound(
         && *offset != [0, 0, 0]
     {
         let mut cmd = format!(
-            "execute as {who} at @s rotated ~ 0 positioned ^{} ^{} ^{} run playsound {sound} master @s ~ ~ ~",
+            "execute as {who} at @s rotated ~ 0 positioned ^{} ^{} ^{} run playsound {sound} {cat} @s ~ ~ ~",
             offset[0], offset[1], offset[2]
         );
         if volume.is_some() || pitch.is_some() {
@@ -1023,7 +1042,7 @@ pub(super) fn emit_play_sound(
     };
     let listener_relative = pos.is_none();
     let mut cmd = format!(
-        "playsound {sound} master {}",
+        "playsound {sound} {cat} {}",
         if listener_relative { "@s" } else { who }
     );
     if pos.is_some() || volume.is_some() || pitch.is_some() {
@@ -1043,6 +1062,30 @@ pub(super) fn emit_play_sound(
         cmd = format!("execute as {who} at @s run {cmd}");
     }
     body.push(cmd);
+}
+
+/// The one `stopsound` writer (spec-0109 §4): `stopsound <who> [<category>
+/// [<sound>]]`, with `*` for the category when a `sound` is named without one —
+/// the pinned tree's only spelling of that form. A bare id is written under
+/// `minecraft:`.
+pub(super) fn stop_sound_command(
+    who: &str,
+    category: Option<delvewright_dsl::SoundCategory>,
+    sound: Option<&str>,
+) -> String {
+    let sound = sound.map(|s| {
+        if s.contains(':') {
+            s.to_string()
+        } else {
+            format!("minecraft:{s}")
+        }
+    });
+    match (category, sound) {
+        (None, None) => format!("stopsound {who}"),
+        (Some(c), None) => format!("stopsound {who} {}", c.token()),
+        (Some(c), Some(s)) => format!("stopsound {who} {} {s}", c.token()),
+        (None, Some(s)) => format!("stopsound {who} * {s}"),
+    }
 }
 
 /// Emit a `particle` effect (spec-0085 §4.3): one vanilla `particle` command,

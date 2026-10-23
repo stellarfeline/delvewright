@@ -4,18 +4,12 @@
 
 - [The player's eye first](#the-players-eye-first)
 - [Read every frame against the approved image](#read-every-frame-against-the-approved-image)
-- [Saving the world, and installing Chunky](#saving-the-world-and-installing-chunky)
+- [Drawing the set](#drawing-the-set)
 - [What the set costs](#what-the-set-costs)
 - [Reading the set](#reading-the-set)
 
 
 Yours to do, not a checklist to hand off: judging a frame is the whole task.
-
-**Read this step's whole cost before you run its first command.** Rendering is
-the largest single bill on this page — hours, not minutes, and it scales with
-your campaign's scene count rather than with its size on disk. *What the set
-costs*, below, gives the rate and where to read the count, and it decides which
-frames you render rather than how fast you render them.
 
 ## The player's eye first
 
@@ -46,52 +40,41 @@ the page's own discipline everywhere else — *author from the image, judge
 against it, present every choice beside it*, the sentence step 4 wrote into
 `design/README.md` — and step 12 is where the two are finally in the same hand.
 Nothing upstream compares them: the gate confirms a design, the build assembles
-whatever the jigsaw seated from the pool, and until this step they have never
-been introduced. So for each POV frame, name the approved image it answers to
+the pieces the detail plan binds, and until this step they have never been
+introduced. So for each POV frame, name the approved image it answers to
 and write one of two things — *this is that place*, or a finding saying which
 element of the image is not there. A frame with no approved image to answer to
 is itself the finding: the design gate approved something the build does not
 contain.
 
 **Read the sky on the first frame, because it answers in one glance and it
-answers for the whole set.** Every scene carries a sun placed at the hour
-`world.json` declares — `render-plan.json` states it as `sky`, and `delvec
-scene` refuses a plan that does not, so no frame comes off a renderer's own
-default. `DW0890` has already held that hour equal to `design.json`'s rows at
-every `validate` since step 5. So a frame whose light disagrees with the row for
-the image it answers to is a row that states an hour the picture does not show —
-the one half of this no machine can check. It is a one-field edit and a rebuild,
-and it is cheap only if you catch it on the first frame instead of after reading
-the set: an hour that is wrong is wrong in every frame, and re-rendering the set
-costs what *What the set costs* says it costs.
+answers for the whole set.** Every frame is drawn under the sky its shot states:
+the hour and weather `world.json` declares, moved by every `set-time` and
+`set-weather` the critical path fires before that shot — so a frame of a leg
+after a cut to dusk is a frame at dusk, and its `sky.set_by` names the step that
+set it. `DW0890` has already held every hour the world reaches equal to
+`design.json`'s rows at every `validate` since step 5. So a frame whose light
+disagrees with the row for the image it answers to is a row that states an hour
+the picture does not show — the one half of this no machine can check. It is a
+one-field edit and a rebuild.
 
-**The frame carries the hour and the weather's light, and it carries the hour
-the delve STARTS at.** A `rain` or `thunder` frame is lit and skied as the game
-lights and skies that hour under that weather, but Chunky draws no rain, no
-clouds and no rain fog, so nothing falls and the distance is clearer than the
-game's; and if your story moves the clock with `set-time`, every frame is still
-of the hour `world.json` declares, because that is what the world save was
-written at. Say both in the review rather than reading a clear noon render as a
-contradiction of a row that belongs to a later beat.
-
-**A delve declared at `night` or `midnight` renders dark, and that is the
-frame.** The sun is below the horizon at those hours, exactly as it is in the
-game. A celestial `time` renders under the sun its position names. **No frame
-shows the moon**: the pinned renderer draws none, so a night frame says nothing
-about the phase, and every `sky:` line whose moon is up says *moon not drawn by
-the renderer*. A time is a keyword or a body, a position and a phase, and a
-keyword night is a full moon; the phase the brief asked for is confirmed in the
-game, never on a render. Declared-dark areas with a `night-vision` mitigation are the one thing the
-scene emitter makes legible, and it marks those frames as emulations; everything
-else you read as the player will see it. Never raise a budget or move an hour
-to make a picture come out, and never type a camera's exposure: the engine
-derives it. Every sky — clear, rain or thunder —
-is drawn as the game draws it at that hour under that weather, with the game's
-mid-tone, and its lanterns lit, on average, as bright as the game's, so a place
-that reads dark is dark in the game: light it where the room is designed
-([new-pieces.md](new-pieces.md#light-inside-a-cave-or-a-body)). Near a lantern a render is
-brighter than the game and far from it dimmer, so judge how a lit place reads in
-the game.
+**The frame carries the hour and the weather's light, not the weather in the
+air.** A `rain` or `thunder` frame is lit and skied as the game lights and skies
+that hour under that weather, but no rain falls and no cloud is drawn; each
+frame's `unchecked` list says so. A delve declared at `night` or `midnight` is
+drawn dark, and that is the frame: the sun is below the horizon, exactly as in
+the game. **A clear frame draws the moon at its day's phase**, the stars and the
+sunrise and sunset fan, as the client draws them at that clock; under rain or
+thunder the client draws no moon, and no frame does. Declared-dark areas with a
+`night-vision` mitigation are drawn without the effect and their `unchecked`
+names the lightmap: judge their legibility in the game. Never move an hour to
+make a picture come out, and never type a camera's exposure: the engine derives
+it. A place that reads dark in a quick frame is dark in the game — a quick frame
+is the lightmap the client draws from the light the world carries — so light it
+where the room is designed: natural sources set in the walls and the vault,
+artificial ones recessed behind a partial block of the surface's own family,
+staggered at uneven spacings and heights, each on a face that holds it
+(`DW1002`).
 
 **A change to how frames are rendered is judged on the standard level first:
 The Glasshouse** (content `demo/the-glasshouse`), its seven showcase cameras
@@ -106,135 +89,57 @@ program at step 9, or the plan. **No approved image shows the blockout** — ste
 4 says why — so the built map's own judgement is this POV review, read against
 the scene concept art.
 
-## Saving the world, and installing Chunky
+## Drawing the set
 
-**Save the world first — `delvec build` does not write one.** A delve's geometry
-is stamped by the datapack over the first ticks of a server boot, so a build tree
-carries no world save, and a Chunky scene names the world it loads. This boots
-the tree once, waits over rcon until the datapack reports it has finished
-placing, stops it, and writes `<build-dir>/world/`:
-
-```sh
-EULA=TRUE "$DELVEWRIGHT_ENGINE/validation/world-save.sh" \
-    "$DELVEWRIGHT_ENGINE/validation/delve-output" --project dw-<id>
-```
-
-Docker, as for every other boot. `--project` is required and has no default —
-it is the compose project this boot owns, so two of them run side by side
-instead of tearing each other's volumes down; `--timeout` is the wait on the
-datapack and defaults to 600 seconds. Nothing else in either repository produces
-a world save, and the world it writes is server-written and not byte-reproducible
-— which is why nothing hashes it and why re-running it is free.
-
-`render-shots.sh` refuses without it, by name, rather than emitting scenes over
-a world that is not there. That refusal is the whole reason this step is
-separate: Chunky renders a missing world as an empty sky at exit 0, with the
-reason buried in a Java stack trace, so the alternative is hundreds of plausible,
-identical pictures of nothing and every command in the recipe green.
+**One command draws the whole set**, in-process, from the worlds the build
+wrote — one per configuration its shots stand in, under
+`validation/worlds/<key>/` — with the textures of the client jar Init I5 put on
+this machine:
 
 ```sh
-"$DELVEWRIGHT_ENGINE/validation/render-shots.sh" "$DELVEWRIGHT_ENGINE/validation/delve-output"
+delvec --prefabs "$DELVEWRIGHT_PREFABS" frames "$DELVEWRIGHT_ENGINE/validation/delve-output"
 ```
 
-That writes **Chunky scenes, not images** — one per shot, plus the shot index.
-Turning them into pictures needs Chunky, and **this is the step that installs
-it**: Init named it and deliberately did not fetch it. Every scene is written for
-one core, the pin in the engine's `versions.toml`, and the install builds exactly
-that core from Chunky's source at the pinned revision — once per machine, with
-the network, in about a minute. Chunky's own build runs under the JDK
-`[render].chunky_build_java` names and no other, so find one first; none on the machine is a stop, and installing it is the
-user's action:
-
-```sh
-JDK17="$("$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/find-jdk.py" --major "$("$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_ENGINE/tools/lib/versions.py" render.chunky_build_java)" | cut -d' ' -f2-)"
-"$DELVEWRIGHT_ENGINE/validation/chunky-install.sh" --java-home "$JDK17"
-```
-
-It installs into the Chunky home Chunky itself reads — `.chunky` under your
-account's home, which is not necessarily what `$HOME` says — and it installs only
-a jar whose content is the pin's; it is a no-op on a machine that already holds
-it. Then it installs the denoise kit — the chunky-denoiser plugin and Open Image
-Denoise, each only when its download answers its pinned sha256 — because every
-render is denoised. On aarch64 Linux, where Open Image Denoise ships no
-archive, it builds it from source (about a minute); that needs a C and C++
-compiler on the machine, and without one it stops and names them. `render-shots.sh` has already printed the `chunky home:` line and whether that
-home holds the pin. If Chunky lives elsewhere on this machine, set
-`DELVEWRIGHT_CHUNKY_HOME` to it before both commands.
-
-Chunky reads the client jar placed at Init I5; it needs no Java 21 of its
-own. Then render through the engine's entry point, **never the launcher**: it
-checks the home holds the pin, refuses by name when it does not, and names the
-core on its first line, which is the line that says what the frames came off.
-One process per scene, in parallel:
-
-```sh
-"$DELVEWRIGHT_ENGINE/validation/chunky.sh" -scene-dir "$DELVEWRIGHT_ENGINE/validation/delve-output/shots/scenes" \
-    -render <scene-name> -f -threads <n>
-"$DELVEWRIGHT_ENGINE/validation/chunky.sh" -scene-dir "$DELVEWRIGHT_ENGINE/validation/delve-output/shots/scenes" \
-    -snapshot <scene-name> <out>.png
-```
-
-The `-render` ends by denoising the frame (albedo and normal passes, then Open
-Image Denoise), keeps the raw samples as `<scene-name>.dump.raw`, and the
-`-snapshot` prints the denoised frame; a second `-render` of the scene continues
-from the raw samples. `<scene-name>` is the file stem without `.json`. **`-target` is the sample
-budget** — how many samples per pixel the path tracer accumulates before it
-stops — and it is the one knob that trades render time against noise; it is not
-a lighting, framing or quality setting, and nothing about the picture's content
-changes with it. The command above passes none, so each scene renders to the
-budget `delvec scene` already wrote into it — `sppTarget: 500`, the review tier.
-`chunky.sh` hands that recorded budget to every render that names no `-target`,
-so a full pass after a 64 draft still reaches it.
-Add `-target <n>` only to go somewhere else on the ladder: ~64 for a draft you
-only need to judge framing on, ~300 for final art (`delvec --prefabs "$DELVEWRIGHT_PREFABS" panorama --spp`'s own
-default), 500 for a review frame. A POV frame you are reading as primary
-evidence is rendered at the scene's own number, and 64 is for deciding whether
-the camera is pointed at the right thing. Chunky's progress counter
-reads `(N of <image height>)` and counts scanlines rather than samples, so watch
-`spp` against the target and not that number. The core is CPU-only, so the way
-to go faster is one process per scene in parallel with `-threads <n>` each, never
-a smaller budget on the frame you are about to judge. This step does not skip —
-a visual channel that fails soft is a review that passed without looking.
+It writes `<stem>.png` and `<stem>.manifest.json` per shot and `shot-index.json`
+under `validation/delve-output/frames/`. **Quote its first line in the review**:
+`renderer: lumenwright <version>, backend <name> …` says what the frames came off,
+and whether a GPU drew them or the CPU did (`auto: fell back to cpu` with the
+reason). A shot naming a world the build directory does not hold is refused by
+name with the remedy, a rebuild, before anything is drawn; so is a plan an older
+engine wrote. `--shot <id>` draws one shot (repeatable), `--labels` stamps every
+target's outline and name on the frame, `--backend cpu` names the CPU. No
+server boot, no install, no other program: a frame is never drawn from a world
+the build did not write.
 
 ## What the set costs
 
-**What the set costs, before you start it rather than four hours into it.** The
-path tracer is CPU-bound, so the bill is a rate times a count and neither half is
-hidden from you. **The rate, measured**: one POV scene at the review tier the
-scene carries, `-threads 10` on a ten-core machine, took **299 s** — about five
-minutes of the whole machine for one frame — and a thirteen-frame POV sequence on
-that machine ran **82 minutes** end to end, so roughly 380 s a frame once a set
-is going. **The count is what `render-shots.sh` already printed**: its last line
-is `shot set ready: <N> Chunky scene(s) (incl. the whole-map panorama)`, and that
-`<N>` is the number to multiply — read it, do not assume a size, and do not carry
-a number off this page, because it is a property of your campaign. Even a
-two-scene delve's full set runs to hours on that machine.
+**Seconds to minutes for a whole set.** Measured on a ten-core development
+machine: a 24-view demo level's set in 9 s on the CPU and 4 s on the GPU (Metal), its 1600 × 900 panorama in 45 s and 2 s, a 200-frame set in 68 s and 40 s. The frames' own binding lines state the set's wall time,
+peak memory and per-frame times on every run — read them rather than carrying a
+number off this page. Every shot is drawn, in route order in the index; a set
+you did not draw is reported as not drawn, per shot.
 
-**Parallelism buys wall time, never total work.** One process per scene fills the
-cores you have and stops there; the core-hours are the same whatever the process
-layout, so the advice above is about where not to spend the budget rather than
-about making the bill smaller. So decide the reading order up front and say what
-you did: the POV sequence in route order is the primary evidence and is rendered
-at the scene's own budget; the interior, seam, NPC and spawn-orbit shots come
-after it. **A set you did not render is reported as not rendered**, per scene,
-never left in a report where it reads as a frame that passed.
-
-Every camera in `render-plan.json` is proven to stand in open air (`DW0724`);
-read `camera_eye_proof` for how many were examined and how many had to be pulled
-in off a stand-off that was inside geometry, and treat a shot carrying
+Every camera in `render-plan.json` is proven to stand in open air in the world
+its frame stands in (`DW0724`); read `camera_eye_proof` for how many were
+examined, how many had to be pulled in off a stand-off that was inside geometry
+or behind a wall, and in how many worlds, and treat a shot carrying
 `camera.requested_pos` as a hint about the build — the room is tighter than the
 shot wanted, which is worth a look while you are there.
 
 ## Reading the set
 
-Open the exterior/top/interior/anchor PNGs and check each against its `expect`
-line: marker visible? room not dark? NPC facing the camera with its name as text
-rather than JSON? seam clean? **Findings are document-level** — fix the campaign
-(a place's program, an anchor, NPC facing, a name string) and rebuild. Never
-hand-edit output. Declared-dark interiors render faithfully dark, and no render
-will tell you whether one is playable: that judgement belongs to the user's
-play, under the night-vision mitigation. Put it on the list step 13's report
-hands them. Never brighten a scene to make a review pass.
+**Read each frame's index entry before its picture**: `shows` (every target in
+frame, with its screen box, distance and whether a block hides it — the bodies
+the world holds among them, as kind `body`), `undrawn` (the bodies in frame the
+renderer did not draw — a kind it has no model for, a holder of an item it cannot
+draw — each with its reason
+and how to judge it instead; `DW1039` on stderr), and `unchecked` (what no frame
+can show). A frame whose `shows` holds no NPC where one should stand is a
+finding; an `undrawn` marker is not — it is real and the renderer has no model
+for it yet. Then open the picture and check it against its `expect` line: room
+not dark? NPC facing the camera? seam clean? **Findings are document-level** —
+fix the campaign (a place's program, an anchor, NPC facing, a name string) and
+rebuild. Never hand-edit output. Never brighten a scene to make a review pass.
 
 `delvec --prefabs "$DELVEWRIGHT_PREFABS" viewer <nbt|dir|manifest.json> -o <page.html>` is the CPU half of the
 same channel and needs no GPU. Read its fidelity list before handing the page to

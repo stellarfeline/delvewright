@@ -8,6 +8,12 @@
         "prefab": "prefab/hello-room"
       }
     ],
+    "horizon": {
+      "attributes": {
+        "audio/background_music": {}
+      },
+      "base": "void"
+    },
     "premise": "An economy fixture (spec-0032): a named per-player datum the player reads as a currency, a shop whose price is the shared numeric gate, a recovery stake left by on_death, and a lethal volume so the placement table has a death region to key on.",
     "seed": 20260729,
     "target_minutes": 5,

@@ -1419,7 +1419,7 @@ fn no_provenance_err(input: &Path, meta_path: &Path, json: bool) -> ExitCode {
             "there is no prefab metadata at {} to write the measurement into, and this tool will \
              not invent one: a skeleton it wrote would claim `source: unknown`, `spdx: UNKNOWN` \
              and no provenance row about a piece whose licence and origin it has not established. \
-             Create the metadata beside {} first (the generators and `delvec grammar export` write \
+             Create the metadata beside {} first (the generators and `delvec grammar expand` write \
              it; for an ingested piece, `delvec prefab anchor`/`socket` start one), then re-run with \
              --write. Without --write the measurement is still printed above.",
             meta_path.display(),

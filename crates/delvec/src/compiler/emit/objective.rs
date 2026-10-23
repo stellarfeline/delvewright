@@ -1,4 +1,4 @@
-//! Objectives: activation, completion cleanup, and the interact and reach tags.
+//! Objectives: activation, completion cleanup, and the interact tag.
 
 use super::*;
 
@@ -10,11 +10,6 @@ pub(super) fn safe_obj_fn(obj_id: &str) -> String {
 /// The entity tag on an `interact` objective's interaction hitbox.
 pub(super) fn interact_entity_tag(obj_id: &str) -> String {
     format!("dw_i_{}", plan::safe_local(obj_id))
-}
-
-/// The entity tag on a `reach-anchor` objective's visual marker display.
-pub(super) fn reach_marker_tag(obj_id: &str) -> String {
-    format!("dw_r_{}", plan::safe_local(obj_id))
 }
 
 /// Scoreboard (dummy, `dw.sys`) holder for the "already holding the item" per-tick
@@ -39,11 +34,43 @@ pub(super) fn has_collect_objective(c: &delvewright_dsl::Campaign) -> bool {
 }
 
 /// The world-placement commands run when an objective ACTIVATES (gap 13): a
-/// `collect` chest + item fill, an `interact` hitbox + glowing lantern marker, or a
-/// `reach` glowing end-rod marker. Empty for objectives with no prop (talk-to,
-/// kill) or an unresolvable anchor — both the `tick` activation driver and the
+/// `collect` chest + item fill, or an `interact`'s prop and hitbox. Empty for
+/// objectives that place nothing (`talk-to`, `kill`, `reach-anchor`) or an
+/// unresolvable anchor — both the `tick` activation driver and the
 /// `activate_<obj>` function key off this being non-empty, so they never diverge.
 pub(super) fn activation_commands(
+    plan: &Plan,
+    holders: &[crate::compiler::holders::OwnedHolder],
+    area: &str,
+    o: &Objective,
+) -> Vec<String> {
+    activation_lines(plan, holders, area, o)
+        .into_iter()
+        .map(|l| match activation_row(&l) {
+            Some(r) => r.command(),
+            None => {
+                assert!(
+                    l.starts_with("item replace entity ") || l.starts_with("data merge entity "),
+                    "an activation places blocks, items and bodies, or fills a holder: {l}"
+                );
+                l
+            }
+        })
+        .collect()
+}
+
+/// The ledger row one activation line states (spec-0112 §4): a block, a
+/// container item or a body, fired at setup here (the ledger re-reads the
+/// function at its own firing). `None` for a line that places nothing the
+/// ledger records — a holder entity's `item replace entity` fill and a
+/// frame's unfreezing (spec-0111 §3.4) — which is written as it was made.
+fn activation_row(line: &str) -> Option<crate::compiler::placed::Placed> {
+    let f = crate::compiler::placed::Firing::Setup;
+    crate::compiler::placed::Placed::of_summon(f.clone(), line)
+        .or_else(|| crate::compiler::placed::Placed::of_block_line(f, line))
+}
+
+fn activation_lines(
     plan: &Plan,
     holders: &[crate::compiler::holders::OwnedHolder],
     area: &str,
@@ -136,7 +163,6 @@ pub(super) fn activation_commands(
                     }
                     return cmds;
                 }
-                let e = ent_xyz(pos);
                 // The standard column, bracketing the prop's cell and the one above
                 // it: a full-cube prop flush with a `1.0`-wide box wins every click
                 // that reaches its faces ([`crate::compiler::clickbox`]).
@@ -150,73 +176,60 @@ pub(super) fn activation_commands(
                     // v0.4: the prop block IS the affordance (spec-0008 §2) — place
                     // it at the anchor. No hologram marker: the block is visible.
                     cmds.push(format!("setblock {} {} {} {block}", p[0], p[1], p[2]));
-                } else if o.marker_shown(&plan.campaign.quests.content.guidance) {
-                    // Visible, glowing, adventure-safe marker so a human can find the
-                    // interact target (M2 fix 3): an `item_display` has no collision,
-                    // so it obstructs neither movement nor the interaction hitbox.
-                    // Named from the objective `title`; an untitled objective gets a
-                    // nameless (but still glowing) marker rather than a raw-id label.
-                    // Summoned only for a MARKED objective (spec-0093): an objective
-                    // whose `marker` — or the campaign's `guidance.markers` — is
-                    // `hidden` keeps the hitbox and shows nothing.
-                    let name_fields = marker_name_fields(o.title());
-                    cmds.push(format!(
-                        "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[{FIXTURE_NBT}\"dw_marker\",\"{}\"],{}billboard:\"center\",item:{{id:\"minecraft:lantern\",count:1}}}}",
-                        e[0], e[1], e[2], interact_entity_tag(id.as_str()), name_fields
-                    ));
                 }
+                // A prop-less interact stands on a block the piece authored
+                // (`DW0963` refuses one on air, spec-0104 §7.6): the hitbox
+                // over it is the whole affordance.
             }
         }
-        Objective::ReachAnchor { id, anchor, .. } => {
-            let pos = match plan
-                .anchors
-                .get(&(area.to_string(), anchor.as_str().to_string()))
-            {
-                Some(ResolvedAnchor::Point { pos, .. }) => *pos,
-                Some(ResolvedAnchor::Gate { from, .. }) => *from,
-                None => return cmds,
-            };
-            // A distinct, thematically neutral `end_rod` (vs. the interact lantern)
-            // so a beacon-like light marks a reach destination. Named from the
-            // objective `title`; untitled → nameless glow, never a raw-id label.
-            // Summoned only for a MARKED objective (spec-0093); the completion
-            // volume is adjudicated either way.
-            if !o.marker_shown(&plan.campaign.quests.content.guidance) {
-                return cmds;
-            }
-            let name_fields = marker_name_fields(o.title());
-            let e = ent_xyz(pos);
-            cmds.push(format!(
-                "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[{FIXTURE_NBT}\"dw_marker\",\"{}\"],{}billboard:\"center\",item:{{id:\"minecraft:end_rod\",count:1}}}}",
-                e[0], e[1], e[2], reach_marker_tag(id.as_str()), name_fields
-            ));
-        }
-        Objective::TalkTo { .. } | Objective::Kill { .. } => {}
+        Objective::ReachAnchor { .. } | Objective::TalkTo { .. } | Objective::Kill { .. } => {}
     }
     cmds
 }
 
 /// The despawn commands run when an objective COMPLETES: remove every
 /// entity its [`activation_commands`] summoned. The objective-scoped tag
-/// (`dw_i_<obj>` on an interact's hitbox and its wayfinding marker, `dw_r_<obj>` on
-/// a reach marker) is deterministic and unique to the objective, so a single tight
-/// `kill @e[tag=…]` covers all of them without touching players (players never
-/// carry these tags) or any other objective's markers. Interact-with-prop summons
-/// only the hitbox (the prop is a block, not tagged); interact-without-prop and
-/// reach also summon a `dw_marker` item_display carrying the same objective tag.
+/// (`dw_i_<obj>` on an interact's hitbox) is deterministic and unique to the
+/// objective, so a single tight `kill @e[tag=…]` covers it without touching
+/// players (players never carry these tags) or any other objective's entities.
 /// Prop BLOCKS and collect chests are the affordance itself and intentionally
 /// persist as scenery — they are not entities and are not killed here. `collect`
-/// (chest block only), `talk-to` and `kill` summon no per-objective entity, so they
-/// contribute nothing.
+/// (chest block only), `talk-to`, `kill` and `reach-anchor` summon no
+/// per-objective entity, so they contribute nothing.
 pub(super) fn completion_cleanup(o: &Objective) -> Vec<String> {
+    completion_rows(o)
+        .iter()
+        .map(crate::compiler::placed::Placed::command)
+        .collect()
+}
+
+/// The ledger rows of [`completion_cleanup`]: one removal per objective tag.
+pub(super) fn completion_rows(o: &Objective) -> Vec<crate::compiler::placed::Placed> {
+    completion_lines(o)
+        .into_iter()
+        .map(|l| {
+            let tag = l
+                .trim_start_matches("kill @e[tag=")
+                .trim_end_matches(']')
+                .to_string();
+            crate::compiler::placed::Placed::removed(
+                crate::compiler::placed::Firing::Setup,
+                &tag,
+                &l,
+            )
+        })
+        .collect()
+}
+
+fn completion_lines(o: &Objective) -> Vec<String> {
     match o {
         Objective::Interact { id, .. } => {
             vec![format!("kill @e[tag={}]", interact_entity_tag(id.as_str()))]
         }
-        Objective::ReachAnchor { id, .. } => {
-            vec![format!("kill @e[tag={}]", reach_marker_tag(id.as_str()))]
-        }
-        Objective::Collect { .. } | Objective::TalkTo { .. } | Objective::Kill { .. } => Vec::new(),
+        Objective::ReachAnchor { .. }
+        | Objective::Collect { .. }
+        | Objective::TalkTo { .. }
+        | Objective::Kill { .. } => Vec::new(),
     }
 }
 

@@ -778,14 +778,14 @@ failing more than a third means it wears the costume without the grammar.
 | Ambush at a corner/doorway | `ambush{at,actors[],trigger,telegraph?}` over deferred NPCs/actors + `approach`/`strike` | ✅ |
 | Deterministic re-encounter | ADR-0006 determinism | ✅ |
 | Timed hazard with a readable window | `timed-gate{open_ticks,closed_ticks,phase?}`, ≥ 20% duty cycle | 🟡 — ratio is proven, **observability is not** (G1) |
-| Disable-able hazard | `traps[].disarm{via,sets_flag}` | ✅ for traps, ❌ for `timed-gate` (G2) |
-| Lethal parkour | jump edges, envelope = measured-max − 1, `parkour: true` (spec-0016 §5) | ✅ |
+| Disable-able hazard | `traps[].disarm{via,sets_flag}`, `timed_gates[].disarm{via,sets_flag}` | ✅ |
+| Lethal parkour | gap-jump edges in every player walk, over the measured arc (`dsl::metrics::jump_max_gap`, read by `compiler::nav::world::body`) | ✅ |
 | Routed-then-feral lane mobs | `wave.lane{waypoints[],aggro_radius}` over vanilla raider patrol | ✅ |
 | Optional elite with a bypass | optional-elite proof (a route avoiding its aggro radius) | 🟡 — proves existence, not **legibility** (G4) |
 | Elite that stays dead | absence of `respawns_on_rest` on that wave | ✅ |
 | Guarded visible reward | `collect` + `prop` chest at an ambush anchor | ✅ |
 | Toll-road attrition hazard | area `mitigation` + `damage-players{amount,in}` over a zone; dry path = ordinary geometry | ✅ |
-| Finite bonfire-refilled heal | — | ❌ **G3** |
+| Finite bonfire-refilled heal | a class kit entry's `flask: true`, replenished to its declared count at every `bonfire` rest (`DW0476` refuses a bonfire with no flask) | ✅ |
 | Boss fog gate as a mandatory marker | `close-gate` seals behind; nothing marks *ahead* | 🟡 (G5) |
 | Secret with an in-world cue | `set-block` / `play-sound` / lighting | ✅ (authoring discipline, not a primitive gap) |
 | Retry-cost budget | ≤ 60 s lint (spec-0016 §7) | 🟡 — **effectively inert at box-garden scale** (G6) |
@@ -803,15 +803,12 @@ failing more than a third means it wears the costume without the grammar.
   already have most of the machinery for (the cutscene clip check does line
   segments through the occupancy grid). If only one of the two proofs survives,
   it should be this one, not the 20%.
-- **G2 — `timed-gate` has no `disarm`.** `traps[]` reaches the third rung of the
-  readable → avoidable → disable-able ladder; timed gates stop at rung two.
-  Vanilla has the primitives (a lever interact setting a flag that suppresses
-  the clock), so this is a DSL surface gap, not a ceiling.
-- **G3 — no finite, bonfire-refilled heal.** The single most portable piece of
-  souls' combat economy, and we have no verb for it. `give-item` grants; nothing
-  *caps and refills at rest*. This is the highest-value addition the dossier
-  found. Reachable in vanilla (item counts + `on_rest[]`), so again a surface
-  gap, not a ceiling.
+- **G2 — closed.** `timed_gates[].disarm{via,sets_flag}` takes a timed gate to
+  the third rung of the readable → avoidable → disable-able ladder, as
+  `traps[].disarm` does for traps.
+- **G3 — closed.** A class kit entry declaring `flask: true` is the class's
+  recovery item, replenished to its declared count at every `bonfire` rest; a
+  campaign with a `bonfire` and no flask is `DW0476`.
 - **G4 — optional-elite bypass is proven but not legible.** §3.3 shows the real
   games spend three further signals on it. The cheapest to add is **dormancy**:
   an elite that is passive until provoked (the Heide Knight tell). We have no

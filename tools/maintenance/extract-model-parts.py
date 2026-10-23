@@ -12,7 +12,7 @@ against it (`DW0978`, `DW0979`); `delve_skin` composes on it.
 ## Inputs (never committed: Mojang EULA)
 
     --client-jar  the 1.21.11 client jar. REFUSED unless its sha256 is
-                  `versions.toml` `[render] textures_sha256` and its sha1 is
+                  `versions.toml` `[minecraft] client_jar_sha256` and its sha1 is
                   piston-meta's `downloads.client.sha1`.
     --work        a scratch directory; the mappings and the client's libraries
                   are fetched into it from piston-meta and verified by sha1.
@@ -459,9 +459,9 @@ def main() -> int:
     pin = versions.load()
     mc = pin["minecraft"]["version"]
     jar_sha256 = sha(a.client_jar, "sha256")
-    if jar_sha256 != pin["render"]["textures_sha256"]:
-        die(f"{a.client_jar} has sha256 {jar_sha256}; versions.toml [render] textures_sha256 is "
-            f"{pin['render']['textures_sha256']}")
+    if jar_sha256 != pin["minecraft"]["client_jar_sha256"]:
+        die(f"{a.client_jar} has sha256 {jar_sha256}; versions.toml [minecraft] client_jar_sha256 is "
+            f"{pin['minecraft']['client_jar_sha256']}")
     revision = instrument_revision()
     a.work.mkdir(parents=True, exist_ok=True)
 

@@ -5,7 +5,7 @@ and prove the result against the jar before it is committed.
 ## What the file is
 
 The colour, coverage and model bounds of every block the pinned Minecraft
-version has, at its default state. The CPU draft rasteriser (`delvec snapshot`,
+version has, at its default state. The blocking chart (`delvec blocking-chart`,
 `delvec cameras --preview`, `delvec edit preview`) paints from it, so a creator's
 draft shows the same materials the GPU render textures from the jar. See
 `crates/delvec/data/PROVENANCE.md`.

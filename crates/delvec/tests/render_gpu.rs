@@ -4,7 +4,7 @@
 //! (never committed — EULA). Run locally with the textures available:
 //!
 //! ```sh
-//! DELVEWRIGHT_CLIENT_JAR=~/.chunky/resources/minecraft.jar \
+//! DELVEWRIGHT_CLIENT_JAR=~/.delvewright/client/minecraft-1.21.11.jar \
 //!   cargo test -p delvec --test render_gpu -- --ignored --nocapture
 //! ```
 //!
@@ -36,7 +36,7 @@ fn textures() -> Option<String> {
         return Some(t);
     }
     if let Ok(home) = std::env::var("HOME") {
-        let d = format!("{home}/.chunky/resources/minecraft.jar");
+        let d = format!("{home}/.delvewright/client/minecraft-1.21.11.jar");
         if Path::new(&d).exists() {
             return Some(d);
         }

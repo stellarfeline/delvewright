@@ -89,7 +89,7 @@ fn build(cutscene: &str) -> BuildOutput {
     .expect("every emitted command validates")
 }
 
-const SHOT: &str = r#""seconds": 2,
+const SHOT: &str = r#""seconds": 2, "subject": "landscape",
              "path": [ { "anchor": "anchor/exit", "offset": [-2, 2, 0] },
                        { "anchor": "anchor/exit", "offset": [2, 2, 0] } ]"#;
 

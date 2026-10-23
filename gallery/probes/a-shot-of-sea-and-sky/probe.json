@@ -1,0 +1,20 @@
+{
+  "code": "DW1033",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/1/on_objective_complete/obj~1clear-the-muster/18/shots/0/look_at",
+      "value": {
+        "anchor": "anchor/muster",
+        "offset": [
+          0,
+          20,
+          0
+        ]
+      }
+    }
+  ],
+  "units": [],
+  "why": "The parade's first shot frames the muster from above it. Lift its `look_at` twenty blocks and the camera stares into the empty air over the hall: the muster leaves the action-safe frame at the first tick, and validation names the shot, the tick, the lens and its aim. The remedy is the aim, not the subject: point `look_at` back at what the shot is of."
+}

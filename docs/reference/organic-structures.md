@@ -5,7 +5,8 @@ question "how does the engine build a hill-sized creature skeleton that reads
 like its reference image", and the measured result of one spike
 ([`tools/spike-organic-voxel/ at d67aec1e34d6`]).
 Every claim is **cited** (a link) or **authored** (said so). Nothing here is a
-spec; the capability it sketches needs one before it is built.
+spec; the implicit-solid half of the capability it sketches is `delvec sculpt`
+(spec-0087).
 
 ## 1. Why the grammar route stops short
 
@@ -98,9 +99,9 @@ So the reference whale is **about 280–350 blocks long**. The study's 128 block
 is under half of that. Below about 220 blocks a 2.6-block rib cannot keep a
 3-block gap, and the cage closes into a wall (authored, from the fitted pitch).
 
-## 6. Where it would live (sketch, not built)
+## 6. Where it lives (the sketch, and what spec-0087 built of it)
 
-**A creator-facing verb, `delvec sculpt`** (ADR-0023: one binary). Authored sketch:
+**A creator-facing verb, `delvec sculpt`** (ADR-0023: one binary). It takes a form document of implicit solids (`delvec schema --stage sculpt-form`) and writes the piece's structure parts and metadata directly; it takes no mesh. Authored sketch:
 - **Input:** a mesh plus a provenance record, or an implicit program like `sdf_whale.py`'s, written as a schema-checked document rather than code.
 - **Licence check:** the provenance record is refused unless it names an ADR-0013 licence. The licence and checksum go into the piece's `license` block.
 - **Output:** structure parts and metadata directly, with no `.schem` detour.
@@ -117,20 +118,19 @@ is under half of that. Below about 220 blocks a 2.6-block rib cannot keep a
   - the stylised piece with `DW0886` (blocks on its box faces, no `shown_faces`, on a `void` horizon);
   - an earlier scan iteration with `DW0921` (157 soft-lock places a body can drop into and not leave).
 - **Light probe, stylised piece:** it does measure, but from whichever bone tip touches a side face: 1302 of 14566 standable cells.
-- **Size:** `delvec schem convert` refuses a schematic over 10,000,000 cells (`DW0710`). A hill-sized piece needs a writer that emits parts directly.
 - **What the instruments need (authored):** seed from the piece's declared entry anchor or socket when no side face carries grade. Then reachability, light, `walk_y` and enclosure measure the walk a body actually has.
 - **`DW0921`, `DW0322` and `DW0886` are correct, not defects.** A floating skeleton is a soft-lock and void-edge field. Two answers:
   - **Geometry:** catch surfaces and climbable routes, or move the bones.
   - **The return mechanic** for falls into the void (see `tools/spike-death-teleport/ at 84f364997d24`).
   - The owner's "danger is visible" ruling decides which falls are allowed.
 - **Cloud sea:** a cloud sea is a surround, not a prefab, and none exists.
-  - The pinned Chunky core's `Sky` carries `cloudsEnabled`, `cloudSize` and `cloudOffset` (strings in `Sky.class`), so Minecraft-style block clouds can be rendered.
+  
   - A `horizon: clouds` kind would have to be analytically known so that the proofs read it as void (§0's surround row).
   - Nothing in the engine emits these today.
 
 ## 7. Verdict (measured on the spike's path-traced frames)
 
-**No scale reaches the reference image. Both routes are far past the grammar study.** Read against the reference by eye, on frames from the pinned Chunky:
+**No scale reaches the reference image. Both routes are far past the grammar study.** Read against the reference by eye, on the spike's path-traced frames:
 
 - **The fitter works.** Curves come out smooth at 224, 320 and 448 blocks. Every piece passes `delvec prefab audit`, with stairs examined equal to stairs written. The pieces are deterministic: rebuilt and compared by hash.
 - **A faithful scan gives the wrong animal for this reference.**
@@ -144,7 +144,6 @@ is under half of that. Below about 220 blocks a 2.6-block rib cannot keep a
 - **Remaining engine gaps:**
   - instruments that seed from a declared entry instead of grade (§6);
   - a `clouds` surround;
-  - a part writer past the 10M-cell `.schem` limit;
   - the authored craft decisions behind `DW0322`, `DW0886` and `DW0921`: catch surfaces, a return mechanic for void falls, declared faces.
 
-**Recommended next step (authored):** a spec for `delvec sculpt` taking implicit-skeleton documents first and meshes second, plus a spec for entry-seeded piece instruments. The skull redesign and the temple are content work on top.
+**Next step (authored):** `delvec sculpt` takes implicit-skeleton documents; meshes and entry-seeded piece instruments each still need a spec. The skull redesign and the temple are content work on top.

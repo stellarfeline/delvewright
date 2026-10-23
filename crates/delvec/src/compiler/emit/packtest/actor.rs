@@ -119,6 +119,7 @@ fn emit_one_actor_equipment_packtest(
 pub(super) fn actor_watch_claim(plan: &Plan) -> crate::compiler::watch::Claim {
     crate::compiler::watch::Claim {
         mechanic: "actor",
+        kind: crate::compiler::watch::ClaimKind::Body,
         families: vec!["spawn_actor_".to_string(), "unleash_".to_string()],
         declared: plan
             .campaign

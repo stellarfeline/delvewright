@@ -1,12 +1,12 @@
-//! The CPU draft rasteriser paints every block the pinned version has.
+//! The flat colour table paints every block the pinned version has.
 //!
-//! `delvec cameras --preview`, `delvec snapshot` and `delvec edit preview` draw
-//! the assembled world with [`delvec::compiler::snapshot::block_color`]; the GPU
-//! path textures the same world from the pinned client jar. A block the CPU
-//! surface cannot colour comes out as the missing-texture magenta, so a creator
-//! placing a camera sees a frame that judges composition and lies about
-//! material — and the two surfaces disagree about a question that has one
-//! answer.
+//! `delvec blocking-chart` draws its cutaway floor plans with
+//! [`delvec::compiler::blocking::block_color`], and `delvec palette` prints the
+//! same vendored table; the frames texture the same world from the pinned
+//! client jar. A block the table cannot colour comes out as the
+//! missing-texture magenta, so a creator reading a floor plan sees a plan that
+//! lies about material — and the two surfaces disagree about a question that
+//! has one answer.
 //!
 //! The container is the pinned block registry, enumerated here rather than
 //! restated: every id 1.21.11 has, minus the states that are absence and the
@@ -14,7 +14,7 @@
 
 use std::collections::BTreeMap;
 
-use delvec::compiler::snapshot::{FALLBACK_COLOR, block_color};
+use delvec::compiler::blocking::{FALLBACK_COLOR, block_color};
 use delvec::compiler::view::blockcolor::{DEFAULT_BIOME, PaletteTable, is_air};
 use delvec::schem::blocks::MC_VERSION;
 
@@ -88,8 +88,8 @@ fn every_pinned_block_has_a_preview_colour() {
     assert_eq!(markers, AUTHORING_MARKERS.len());
     assert!(
         unpainted.is_empty(),
-        "{} of {} pinned block(s) fall to the missing-texture magenta in the CPU preview while \
-         the GPU render paints them: {:?}",
+        "{} of {} pinned block(s) fall to the missing-texture magenta in the colour table while \
+         the frames paint them: {:?}",
         unpainted.len(),
         painted + unpainted.len(),
         unpainted
@@ -195,178 +195,4 @@ fn the_vendored_table_is_what_the_pinned_jar_says() {
     assert_eq!(fresh.entries.len(), committed.entries.len());
     assert_eq!(fresh.unresolved, committed.unresolved);
     assert_eq!(fresh.mc_version, committed.mc_version);
-}
-
-/// The frame itself, not just the lookup: a room built of the stone the report
-/// named comes out with no missing-texture pixel in it.
-///
-/// This is the shape of what a creator saw — `delvec cameras --preview` draws
-/// through exactly this call — and the reason it is a frame and not a table
-/// lookup is that the fidelity gate judges pixels, so this is judged in the same
-/// medium (`delvec::render::detect::is_magenta`).
-#[test]
-fn a_room_of_deepslate_draws_with_no_missing_texture_pixel() {
-    use delvec::compiler::snapshot::{Camera, FrameOpts, VoxelGrid, render_frame};
-    use delvec::render::detect::is_magenta;
-    use std::collections::BTreeMap;
-
-    // Walls, floor and dressing, all from the ids the report named.
-    const WALL: &str = "minecraft:polished_deepslate";
-    const FLOOR: &str = "minecraft:deepslate_tiles";
-    const TRIM: &str = "minecraft:tuff_bricks";
-    const DRESS: &str = "minecraft:cracked_stone_bricks";
-    let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
-    for x in -8..=8 {
-        for z in -8..=8 {
-            blocks.insert([x, 63, z], FLOOR.to_string());
-            blocks.insert([x, 70, z], TRIM.to_string());
-            for y in 64..70 {
-                if x == -8 || x == 8 || z == -8 || z == 8 {
-                    blocks.insert([x, y, z], WALL.to_string());
-                }
-            }
-        }
-    }
-    for x in -3..=3 {
-        blocks.insert([x, 64, -7], DRESS.to_string());
-    }
-    let grid = VoxelGrid::build(&delvec::compiler::blockstate::interned(blocks.clone()));
-    assert!(
-        grid.unpainted().is_empty(),
-        "unpainted: {:?}",
-        grid.unpainted()
-    );
-
-    let frame = render_frame(
-        &grid,
-        &Camera {
-            pos: [0.5, 66.0, 6.5],
-            yaw: 180.0,
-            pitch: 0.0,
-            fov: 70.0,
-        },
-        &FrameOpts {
-            width: 320,
-            height: 180,
-            sea_level: None,
-            labels: false,
-        },
-    );
-    let px = &frame.canvas.rgba;
-    let total = (frame.width() as usize) * (frame.height() as usize);
-    let magenta = (0..total)
-        .filter(|i| is_magenta(px[i * 4], px[i * 4 + 1], px[i * 4 + 2]))
-        .count();
-    eprintln!("deepslate room binding: {total} pixel(s) drawn, {magenta} magenta");
-    assert!(total > 0);
-    assert_eq!(
-        magenta, 0,
-        "{magenta} of {total} pixels are the placeholder"
-    );
-}
-
-/// **A wall of one material is not a flat rectangle**, judged by the gate's own
-/// predicate — and a smooth material and a rubbly one do not look alike.
-///
-/// `tools/ci/check-gallery-render.py` calls a frame of four distinct colours or
-/// fewer FEATURELESS — "it shows no scene at all" — and the premise its own
-/// source states is that a block texture is noisy enough that real geometry
-/// clears the floor by orders of magnitude. The CPU draft rasteriser never had
-/// that noise: a flat mean colour, one face brightness and a binary edge relief
-/// give a wall two values, and it cleared the floor only while the colours were
-/// bright enough for the fog mix to round several ways. A correct near-black
-/// stone has no such headroom, so the same wall lands on two colours and a
-/// creator asked to judge the material is looking at a rectangle.
-///
-/// The grain is what carries the material, and its amplitude is the block's
-/// measured roughness — so this walks three walls, seen flat on at close range
-/// with every other source of variation held constant by construction: the
-/// polished blackstone the gallery's own critical-path shot faces, and a smooth
-/// block beside a rubbly one. A wall that reds the gate, and an ordering that
-/// says the amplitude is doing the work rather than merely clearing a floor.
-#[test]
-fn a_wall_shows_its_material_and_a_rough_one_from_a_smooth_one() {
-    use delvec::compiler::snapshot::{Camera, FrameOpts, VoxelGrid, block_roughness, render_frame};
-    use delvec::compiler::view::detect::{FEATURELESS_MAX_COLORS, is_featureless};
-    use std::collections::{BTreeMap, BTreeSet};
-
-    /// One wall of one block, seen flat on from just under half a block away:
-    /// one face orientation, no second material, a distance range too small for
-    /// the fog mix to round more than one way.
-    fn wall(block: &str) -> (usize, bool) {
-        let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
-        for y in 60..80 {
-            for z in -10..=10 {
-                blocks.insert([10, y, z], block.to_string());
-            }
-        }
-        let grid = VoxelGrid::build(&delvec::compiler::blockstate::interned(blocks.clone()));
-        let frame = render_frame(
-            &grid,
-            &Camera {
-                pos: [9.4, 70.0, 0.5],
-                yaw: -90.0, // east, onto the wall's −X faces
-                pitch: 0.0,
-                fov: 70.0,
-            },
-            &FrameOpts {
-                width: 320,
-                height: 180,
-                sea_level: None,
-                labels: false,
-            },
-        );
-        let px = &frame.canvas.rgba;
-        let total = (frame.width() as usize) * (frame.height() as usize);
-        let distinct: BTreeSet<[u8; 3]> = (0..total)
-            .map(|i| [px[i * 4], px[i * 4 + 1], px[i * 4 + 2]])
-            .collect();
-        let featureless = is_featureless(px, frame.width(), frame.height()).is_some();
-        eprintln!(
-            "wall binding: {} pixel(s) of `{block}` (roughness {}), {} distinct colour(s), \
-             floor {FEATURELESS_MAX_COLORS}",
-            total,
-            block_roughness(block),
-            distinct.len()
-        );
-        (distinct.len(), featureless)
-    }
-
-    const DARK: &str = "minecraft:polished_blackstone";
-    let (dark, featureless) = wall(DARK);
-    assert!(
-        !featureless,
-        "a wall of `{DARK}` renders as {dark} distinct colour(s), which the gallery render gate \
-         reads as a frame showing no scene at all"
-    );
-
-    const SMOOTH: &str = "minecraft:white_concrete";
-    const ROUGH: &str = "minecraft:cobblestone";
-    let (smooth, _) = wall(SMOOTH);
-    let (rough, _) = wall(ROUGH);
-    assert!(
-        rough > smooth,
-        "`{ROUGH}` (roughness {}) draws {rough} distinct colour(s) and `{SMOOTH}` (roughness {}) \
-         draws {smooth}: the amplitude is not the block's own",
-        block_roughness(ROUGH),
-        block_roughness(SMOOTH)
-    );
-    assert!(
-        block_roughness(SMOOTH) < block_roughness(ROUGH),
-        "the measurement itself has them the wrong way round"
-    );
-}
-
-/// A block the pinned version does not have is drawn flat, never invisible: its
-/// roughness is zero, so the fallback magenta is the magenta.
-#[test]
-fn a_block_outside_the_pin_is_drawn_smooth() {
-    use delvec::compiler::snapshot::block_roughness;
-
-    assert_eq!(block_roughness("minecraft:totally_made_up_block"), 0);
-    // And a block it does have varies, or the table is carrying nothing.
-    assert!(
-        block_roughness("minecraft:polished_blackstone") > 0,
-        "the pinned table records no roughness for polished blackstone"
-    );
 }

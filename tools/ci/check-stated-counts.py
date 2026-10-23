@@ -196,7 +196,7 @@ _COMPILER_MD = "docs/reference/compiler.md"
 # the module holding most of its rows (`compiler::analyze`).
 _ANALYZE_MD = "docs/reference/delvec/compiler/analyze.md"
 _DW02XX_SECTION = r"^### DW02xx "
-_SNAPSHOT_SECTION = r"^### `delvec snapshot`"
+_SNAPSHOT_SECTION = r"^### `delvec blocking-chart`"
 
 _PROGRAMS_RE = re.compile(
     r"pub const PROGRAMS: &\[LibraryProgram\] = &\[(?P<body>.*?)^\];", re.S | re.M

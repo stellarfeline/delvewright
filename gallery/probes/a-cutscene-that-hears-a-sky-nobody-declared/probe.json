@@ -1,0 +1,13 @@
+{
+  "code": "DW0112",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/1/on_objective_complete/obj~1clear-the-muster/17/hears",
+      "value": "atmosphere/nowhere"
+    }
+  ],
+  "units": [],
+  "why": "One edit: the muster's flyover declares it hears `atmosphere/nowhere`, which `world.atmospheres[]` does not declare. A dangling atmosphere reference is the ordinary `DW0112`, wherever it is written. It declares no unit."
+}

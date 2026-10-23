@@ -8,14 +8,14 @@
 # emit a world: a delve's geometry is stamped by the datapack's own `place_all`
 # over the first ticks of a server boot (compiler.md §"placement"), which is the
 # right design — the shipped image carries bytes we authored, never a world save.
-# The consequence is that every Chunky scene the build produces names a world
-# that does not exist until some server has booted the tree, and Chunky renders a
-# missing world as an empty sky at exit 0.
+# The engine writes its own model of each world a review frame stands in
+# (`validation/worlds/<key>/`); the server's world exists only once a server has
+# booted the tree.
 #
 # So this boots the delve ONCE, waits for the datapack to say it has finished
-# placing, stops it, and copies the world save into `<build-dir>/world/`. That is
-# the path `validation/render-shots.sh` points every scene at, and the path it
-# REFUSES to emit a scene set without. It is a derived artifact of the build in
+# placing, stops it, and copies the world save into `<build-dir>/world/` — the
+# save `tools/ci/check-written-world.py` compares the engine's written load
+# world with, cell by cell and object by object. It is a derived artifact of the build in
 # that directory (`delvec::outdir::DERIVED`): the next `delvec build` into the
 # directory removes it, because it is the previous build's geometry.
 #
@@ -247,4 +247,4 @@ region_bytes="$(find "$build_abs/world/region" -type f -name '*.mca' -exec cat {
 echo "world save binding: $regions region file(s), $region_bytes byte(s) -> $build_abs/world"
 echo "note: a world save is server-written and carries wall clock — it is NOT"
 echo "      byte-reproducible, and nothing in this repository hashes it."
-echo "next: validation/render-shots.sh $build_abs"
+echo "next: tools/ci/check-written-world.py $build_abs <written-world> $build_abs/world"
