@@ -516,7 +516,10 @@ fn a_crush_gate_enters_the_death_plan() {
         "a gate that does not crush puts nothing in a death plan this fixture otherwise lacks"
     );
     let v = plan_of(&on).expect("a crush gate makes a death plan");
-    assert_eq!(v["format_version"], serde_json::json!(5));
+    assert_eq!(
+        v["format_version"],
+        serde_json::json!(delvec::compiler::deathplan::DEATH_PLAN_FORMAT_VERSION)
+    );
     let gates = v["crush_gates"].as_array().expect("crush_gates");
     assert_eq!(gates.len(), 1, "{v:#}");
     let g = &gates[0];
