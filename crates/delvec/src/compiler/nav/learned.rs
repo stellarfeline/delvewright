@@ -697,18 +697,22 @@ fn eye_of(e: [i32; 3], eye_height: f64) -> [f64; 3] {
     [c[0], c[1] + eye_height, c[2]]
 }
 
-/// **The one eye walk** (`docs/reference/sight-through-blocks.md` §2): from
-/// `eye` to the centre of `target`, `nav::walk_cells`, stopped by the first
-/// cell that hides strictly before the target ([`World::hides`], and nothing
-/// else). `None` when the target is seen; the hiding cell met otherwise.
-/// Every sight question of this module asks it.
-pub(super) fn eye_meets(w: &World, eye: [f64; 3], target: [i32; 3]) -> Option<[i32; 3]> {
-    let t = [
-        f64::from(target[0]) + 0.5,
-        f64::from(target[1]) + 0.5,
-        f64::from(target[2]) + 0.5,
-    ];
-    walk_cells(eye, t, |cell| cell != target && w.hides(cell))
+/// Whether the player's eye at `eye` sees the cell `target`: the one sight
+/// rule ([`crate::compiler::framing`]'s `in_sight`, spec-0110 §5.5) asked of
+/// the cell's box — nine lines, its centre and eight inset corners, stopped
+/// only by a cell that hides what is behind it ([`World::hides`], the pinned
+/// occlusion table; `docs/reference/sight-through-blocks.md` §2). `None` when
+/// some line is clear; otherwise the first hiding cell on the centre line.
+/// Every sight question of this module asks it, and it walks no line of its
+/// own.
+pub(crate) fn eye_meets(w: &World, eye: [f64; 3], target: [i32; 3]) -> Option<[i32; 3]> {
+    use crate::compiler::framing::{CellBox, in_sight};
+    let lines = in_sight(w, eye, &CellBox::cell(target), &[]);
+    if lines.seen() {
+        None
+    } else {
+        lines.centre_block
+    }
 }
 
 /// From the player's eye at `j`, whether some cell of `region` is seen
