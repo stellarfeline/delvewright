@@ -1,6 +1,6 @@
 # ADR-0036: A Release's notes are a summary written before the release, never the list of merged pull requests
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-10-22
 - **Source**: the `delvec 1.14.0` Release body read through the API, twice
   (first as published by `engine-release.yml`, then as rewritten by hand); the
@@ -122,13 +122,12 @@ was evaluated against what a workflow can call on the date above.
   redistribution), and GitHub's Terms of Service §J make the account holder
   responsible for "reviewing, testing, and validating any Output before use".
 
-So the second route works mechanically, and this record does not take it, for
-reasons that stand whatever the model's quality:
+So the second route works mechanically, and it is not adopted, for reasons
+that stand whatever the model's quality:
 
 1. **It puts a person's credential into the repository's secrets**, readable
-   by every workflow on `main` and spending that person's monthly allowance.
-   The owner of the account, not this record, decides that, and the decision
-   is listed for her under *Consequences*.
+   by every workflow on `main` and spending that person's monthly allowance,
+   for a text one agent already writes at release preparation.
 2. **The text would publish with review only at the approval click** for
    `delvec` and the format crate, and with none for the plugin (whose dispatch
    is its approval, ADR-0028 §5); a re-run would write a different text. A
@@ -140,12 +139,11 @@ reasons that stand whatever the model's quality:
 4. **No cited practice does it**: the three tools above write the summary by
    hand into the tree.
 
-What is the same under either route — the shape the summary must have, the
-check that judges it, and the refusal of a release with none — is what this
-record decides. Who drafts the entry is not fixed by it: the agent that
-prepares the release writes it today, and a workflow that drafts the entry with
-the Copilot CLI and opens the release-preparing pull request would change
-nothing below (*Revisit triggers*).
+The decision is therefore: the agent that prepares the release writes
+`RELEASE-NOTES.md` in the release pull request, and no step of a release run
+drafts it. The shape the summary must have, the check that judges it, and the
+refusal of a release with none are the same under either route, so a drafting
+agent reconsidered later changes none of them (*Revisit triggers*).
 
 ## Decision
 
@@ -158,7 +156,9 @@ headed by the Release's title in ADR-0028 §1's grammar (`## delvec 1.15.0`,
 title the workflow derives, not a second spelling of it. The entry is written
 by the agent that prepares the release, in the pull request that names the tag
 (`docs/reference/skill-workflow.md`, step 1), from `git log <previous tag of
-the line>..HEAD`; that pull request replaces the file wholesale. It is part of
+the line>..HEAD`; that pull request replaces the file wholesale. No step of a
+release run drafts it: the hosted-model route is evaluated in §Context and not
+adopted. It is part of
 the approved tree the release is built from: nothing is added on top of the
 frozen tree, so the frozen-tree rule needs no exception and the release reads
 the entry at the released commit like every other value it reads.
@@ -268,13 +268,9 @@ longer calls the generate-notes endpoint. The same shape for all three lines.
   it is not the conflict class ADR-0034 removed; it is outside `docs/`, so
   `check-doc-dupes.py` (which refuses a repeated heading within a document) does
   not read it, and its repeated `### Highlights` headings are the format.
-- **What the owner is committed to** the first time it can bind: nothing new —
-  the entry is reviewed as part of a pull request she already reviews by
-  description. **What she decides, if she wants it**: a personal token with the
-  "Copilot Requests" permission in the repository's secrets, so that a workflow
-  may draft the entry with the Copilot CLI and open the release-preparing pull
-  request; that spends her account's monthly allowance and is her credential to
-  grant or withhold.
+- No credential enters the repository's secrets and no release run calls a
+  hosted model: the entry is reviewed as part of the release pull request, like
+  every other change that pull request carries.
 - Docs: `docs/reference/tools.md` rows for `release-notes.py`,
   `check-release-notes.py` and `release_notes.py`, and the removal of the `notes` row;
   `docs/reference/skill-workflow.md` step 1; `RELEASE-NOTES.md`'s header. The
@@ -282,12 +278,12 @@ longer calls the generate-notes endpoint. The same shape for all three lines.
 
 ## Revisit triggers
 
-- A drafting agent is adopted in CI: it writes the entry into the
-  release-preparing pull request, where the same check judges it; nothing in
-  §2–§4 changes. A variant that drafts at release time and publishes without a
-  pull request would replace "no entry: refuse" with "no entry: draft, judge,
-  show", which is a second hatch on the gate (`CLAUDE.md`, *Vacuity*), and is
-  not taken without re-deciding §1.
+- A drafting agent in CI is reconsidered: the admissible form writes the entry
+  into the release-preparing pull request, where the same check judges it, and
+  nothing in §2–§4 changes. A variant that drafts at release time and publishes
+  without a pull request would replace "no entry: refuse" with "no entry:
+  draft, judge, show", which is a second hatch on the gate (`CLAUDE.md`,
+  *Vacuity*), and is not taken without re-deciding §1.
 - The ceilings prove wrong in practice: they are constants in
   `tools/lib/release_notes.py`, an engine-internal number, moved with the entry
   that needed it and no re-decision.
