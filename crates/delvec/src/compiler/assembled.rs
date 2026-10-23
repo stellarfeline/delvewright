@@ -56,7 +56,7 @@ use delvewright_dsl::{DwCode, ExitTier};
 pub use delvewright_dsl::blockshape::{
     FULL_HEIGHT_16, THIN_HEIGHT_16, base_id, collision_top_16, is_air, is_fence_gate, is_fluid,
     is_no_collision_plant, is_partial_floor, is_passable_trap_trigger, is_tall_barrier,
-    is_thin_decoration, state_value,
+    is_thin_decoration, opens_by_hand, state_value,
 };
 
 /// Rewrite a blockstate's **orientation properties** for a piece placed with
@@ -935,7 +935,7 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
                         open_gates.remove(&cell);
                         continue;
                     }
-                    if is_fence_gate(&name) && open == Some(true) {
+                    if opens_by_hand(&name) && open == Some(true) {
                         open_gates.insert(cell);
                     } else {
                         open_gates.remove(&cell); // a later block overwrites the cell
@@ -1006,7 +1006,7 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
                         continue;
                     }
                     reached.mark(cell);
-                    if is_fence_gate(&name) && open == Some(true) {
+                    if opens_by_hand(&name) && open == Some(true) {
                         open_gates.insert(cell);
                     } else {
                         open_gates.remove(&cell);
@@ -1358,17 +1358,17 @@ const WATER_FLOW_RANGE: u8 = 7;
 /// |---|---|---|---|
 /// | `solid` | every other non-air block (full cube unless listed in `partial`) | no | yes |
 /// | `tall` | fences + walls ([`is_tall_barrier`], 1.5-tall) | no | **no** |
-/// | `use_gates` | closed fence gates ([`is_fence_gate`], 1.5-tall, openable) | player: yes, via right-click USE; NPC/actor/wave walkers: no | **no** |
+/// | `use_gates` | closed doors, trapdoors and fence gates a hand opens ([`opens_by_hand`], spec-0123 §3.1) | player: yes, via right-click USE; NPC/actor/wave walkers: no | **no** |
 /// | `flooded` | fluid reach — water and lava ([`is_fluid`]), conservative superset | no | no |
 /// | `partial` | a `solid` cell's true top-face height, in sixteenths, when < 16 | no | yes, **at that height** |
 ///
-/// **Modelled precisely**: fences, walls, fence gates (open = passable, closed =
-/// use-gate), pressure plates / tripwire and every other sub-auto-step decoration
+/// **Modelled precisely**: fences, walls, every door, trapdoor and fence gate a
+/// hand opens (open = passable, closed = use-gate), pressure plates / tripwire and every other sub-auto-step decoration
 /// (passable, [`is_thin_decoration`]), free fluid AND waterlogged blocks
 /// ([`is_waterlogged`]), and partial floor heights for slabs / snow layers /
 /// paths ([`collision_top_16`]). **Modelled conservatively** (treated as a full
-/// solid cube — may over-block a route, never over-prove one): stairs, doors,
-/// trapdoors, and every other partial-collision block whose pinned collision box
+/// solid cube — may over-block a route, never over-prove one): stairs,
+/// iron doors and iron trapdoors, and every other partial-collision block whose pinned collision box
 /// is not a floor at a measured height ([`collision_top_16`] reads the rest from
 /// the jar's own table).
 pub struct Occupancy {
@@ -1376,8 +1376,9 @@ pub struct Occupancy {
     pub solid: BTreeSet<[i32; 3]>,
     /// 1.5-tall barrier cells (fences/walls): block passage, never valid floor.
     pub tall: BTreeSet<[i32; 3]>,
-    /// Closed fence-gate cells: passable-with-use for the player (adventure-legal
-    /// right-click), impassable for walkers that cannot use gates; never floor.
+    /// Closed cells of a door, trapdoor or fence gate a hand opens: passable-with-use
+    /// for the player (adventure-legal right-click), impassable for walkers that
+    /// cannot use gates; never floor.
     pub use_gates: BTreeSet<[i32; 3]>,
     /// Fluid-flooded cells: impassable, never floor. Every cell a free
     /// fluid ([`is_fluid`]) occupies, plus the reach [`flood`] gives it. Disjoint
@@ -1739,7 +1740,7 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
             // (spec-0011), and so a corridor with a torch in it stays a corridor.
             // Air reaches this arm too, and its cell is likewise not a floor.
             Collision::Air | Collision::Thin(_) => {}
-            Collision::FenceGate => {
+            Collision::OpensByHand => {
                 barriers.insert(*cell);
                 if !open_gates.contains(cell) {
                     use_gates.insert(*cell); // closed: passable-with-use

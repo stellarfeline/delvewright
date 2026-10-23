@@ -42,7 +42,7 @@
 //! | [`Collision::PartialFloor`] (8..16) | no | yes | the measured top |
 //! | [`Collision::FullCube`] | no | yes | 16 |
 //! | [`Collision::TallBarrier`] (fence, wall) | no | **no** | — |
-//! | [`Collision::FenceGate`] | **yes** | no | — |
+//! | [`Collision::OpensByHand`] | **yes** | no | — |
 //! | [`Collision::Fluid`] | no | no | — |
 //! | [`Collision::Climbable`] (ladder, vines) | yes | no | — (what holds the body is the climb) |
 //!
@@ -52,9 +52,12 @@
 //! tuft or a `kelp` stem, whose vanilla block carries a water source in its own
 //! cell ([`is_submerged_by_nature`]). A **tall barrier** is 1.5 blocks on a 1-block
 //! cell: a body neither passes through it nor reaches its top face by jumping. A
-//! **fence gate** is the mirror: adventure mode permits the right-click that
-//! opens it, so a body gets through — and for a *closure* claim a gate was never
-//! a seal anyway, so reading it as a hole is the sound direction. A **fluid** is
+//! **door a hand opens** — a fence gate, a wooden or copper door or trapdoor
+//! ([`opens_by_hand`]) — is the mirror: adventure mode permits the right-click
+//! that opens it, so a body gets through in either state — and for a *closure*
+//! claim such a door was never a seal anyway, so reading it as a hole is the
+//! sound direction. An iron door or trapdoor is not one: it is what its collision
+//! box makes it. A **fluid** is
 //! neither, from the other side: spec-0038 forbids a route crediting water, and
 //! nothing stands on a surface.
 //!
@@ -261,16 +264,86 @@ pub fn is_fence_gate(name: &str) -> bool {
     bare_id(name).ends_with("_fence_gate")
 }
 
-/// Whether a player can open this block by hand, in adventure mode — every
-/// fence gate, door and trapdoor except the two iron ones, which open only to
-/// redstone. A player who opens one can leave it open, so a proof about where a
-/// mob can walk once the party has been through asks this (`DW0923`).
-pub fn is_player_openable(name: &str) -> bool {
-    let id = bare_id(name);
-    if id == "iron_door" || id == "iron_trapdoor" {
-        return false;
+/// The set types a hand does not open: a door or trapdoor of one of these
+/// materials moves only by redstone. `BlockSetType.IRON` is constructed with
+/// `canOpenByHand = false` in the pinned jar, and `GOLD`, the other, names no
+/// door (`docs/reference/doors-by-hand.md`, the read site and the reading).
+/// A fence gate consults no set type: every one opens by hand.
+const HELD_SET_TYPES: &[&str] = &["iron"];
+
+/// **The doors a hand opens**, derived from the pinned block-state registry
+/// (spec-0123 §3.1): every `*_door`, `*_trapdoor` and `*_fence_gate` id the
+/// registry names, split by its set type into the ones an adventure-mode body
+/// opens with an empty hand and the ones it does not. Never written by hand —
+/// the registry is the list, [`HELD_SET_TYPES`] the one fact read from the jar.
+#[derive(Debug)]
+pub struct DoorsByHand {
+    /// Bare ids a hand opens, sorted.
+    pub passable: Vec<String>,
+    /// Bare ids a hand does not open (`iron_door`, `iron_trapdoor`), sorted.
+    pub held: Vec<String>,
+}
+
+impl DoorsByHand {
+    /// The binding line every build prints:
+    /// `doors by hand: N block(s) passable, M held`.
+    pub fn line(&self) -> String {
+        format!(
+            "doors by hand: {} block(s) passable, {} held",
+            self.passable.len(),
+            self.held.len()
+        )
     }
-    is_fence_gate(name) || id.ends_with("_door") || id.ends_with("_trapdoor")
+}
+
+/// The door family a bare id belongs to, and its material: `oak_door` is
+/// `Some(("oak", "door"))`; anything else `None`.
+fn door_family(id: &str) -> Option<(&str, &str)> {
+    for kind in ["fence_gate", "trapdoor", "door"] {
+        if let Some(material) = id.strip_suffix(kind).and_then(|m| m.strip_suffix('_')) {
+            return Some((material, kind));
+        }
+    }
+    None
+}
+
+/// [`DoorsByHand`] over the pinned registry, computed once.
+pub fn doors_by_hand() -> &'static DoorsByHand {
+    static DOORS: std::sync::OnceLock<DoorsByHand> = std::sync::OnceLock::new();
+    DOORS.get_or_init(|| {
+        let mut passable = Vec::new();
+        let mut held = Vec::new();
+        for id in crate::blocks::BlockRegistry::v1_21_11().ids() {
+            let bare = bare_id(id);
+            let Some((material, kind)) = door_family(bare) else {
+                continue;
+            };
+            if kind != "fence_gate" && HELD_SET_TYPES.contains(&material) {
+                held.push(bare.to_string());
+            } else {
+                passable.push(bare.to_string());
+            }
+        }
+        passable.sort();
+        held.sort();
+        DoorsByHand { passable, held }
+    })
+}
+
+/// **Does a player open this block by hand, in adventure mode?** — the one
+/// predicate the walk, every route proof and the bar rule read (spec-0123
+/// §3.1): a door, trapdoor or fence gate in [`doors_by_hand`]'s passable set,
+/// in any state. An iron door or iron trapdoor is not; a body passes it only
+/// where it stands open. A player who opens one can leave it open, so a proof
+/// about where a mob can walk once the party has been through asks this too
+/// (`DW0923`).
+pub fn opens_by_hand(name: &str) -> bool {
+    let bare = bare_id(name);
+    door_family(bare).is_some()
+        && doors_by_hand()
+            .passable
+            .binary_search_by(|p| p.as_str().cmp(bare))
+            .is_ok()
 }
 
 /// Thin, walkable trap-trigger blocks (spec-0011) a player steps *onto* rather
@@ -1354,9 +1427,10 @@ pub enum Collision {
     /// A fence or a wall: 1.5 blocks tall on a 1-block cell, so a body neither
     /// passes through it nor reaches its top.
     TallBarrier,
-    /// A fence gate: a body opens it with the adventure-legal right-click and
-    /// walks through. Never a floor.
-    FenceGate,
+    /// A door, trapdoor or fence gate a hand opens ([`opens_by_hand`]): a body
+    /// opens it with the adventure-legal right-click and walks through, in
+    /// either state the block stands in. Never a floor.
+    OpensByHand,
     /// Water or lava filling the cell: a body swims, and stands on nothing.
     Fluid,
     /// A block a body **climbs** ([`climbable`], every member of
@@ -1373,7 +1447,7 @@ impl Collision {
     pub fn passes_body(self) -> bool {
         matches!(
             self,
-            Collision::Air | Collision::Thin(_) | Collision::FenceGate | Collision::Climbable
+            Collision::Air | Collision::Thin(_) | Collision::OpensByHand | Collision::Climbable
         )
     }
 
@@ -1423,8 +1497,8 @@ pub fn collision_class(name: &str) -> Collision {
     if top < THIN_HEIGHT_16 {
         return Collision::Thin(top);
     }
-    if is_fence_gate(name) {
-        return Collision::FenceGate;
+    if opens_by_hand(name) {
+        return Collision::OpensByHand;
     }
     if is_tall_barrier(name) {
         return Collision::TallBarrier;
@@ -1531,7 +1605,7 @@ mod tests {
             (Collision::PartialFloor(15), false, true, Some(15)),
             (Collision::FullCube, false, true, Some(16)),
             (Collision::TallBarrier, false, false, None),
-            (Collision::FenceGate, true, false, None),
+            (Collision::OpensByHand, true, false, None),
             (Collision::Fluid, false, false, None),
             (Collision::Climbable, true, false, None),
         ];
@@ -1634,7 +1708,8 @@ mod tests {
         for id in [
             "minecraft:stone",
             "minecraft:oak_stairs[facing=north]",
-            "minecraft:oak_door[half=lower]",
+            // A door a hand opens passes (spec-0123 §3.1); an iron one does not.
+            "minecraft:iron_door[half=lower]",
             "minecraft:chain",
             "minecraft:end_rod",
             "minecraft:iron_bars",
@@ -1754,7 +1829,7 @@ mod tests {
             "minecraft:oak_fence_gate",
             "minecraft:oak_fence_gate[open=false]",
         ] {
-            assert_eq!(collision_class(gate), Collision::FenceGate, "{gate}");
+            assert_eq!(collision_class(gate), Collision::OpensByHand, "{gate}");
             assert!(passes_body(gate) && !supports_body(gate), "{gate}");
         }
         for fluid in [
@@ -2208,7 +2283,7 @@ mod tests {
             "minecraft:dark_oak_trapdoor",
             "minecraft:waxed_copper_trapdoor",
         ] {
-            assert!(is_player_openable(id), "{id}");
+            assert!(opens_by_hand(id), "{id}");
         }
         for id in [
             "minecraft:iron_door",
@@ -2217,7 +2292,52 @@ mod tests {
             "minecraft:iron_bars",
             "minecraft:stone",
         ] {
-            assert!(!is_player_openable(id), "{id}");
+            assert!(!opens_by_hand(id), "{id}");
+        }
+    }
+
+    /// The passable set is the registry's door family minus the two iron ones,
+    /// counted from the registry itself rather than from a number written here
+    /// (spec-0123 criterion 17), and the binding line states it.
+    #[test]
+    fn doors_by_hand_is_the_registry_less_the_two_iron_ones() {
+        let family = crate::blocks::BlockRegistry::v1_21_11()
+            .ids()
+            .map(bare_id)
+            .filter(|id| {
+                id.ends_with("_door") || id.ends_with("_trapdoor") || id.ends_with("_fence_gate")
+            })
+            .count();
+        let doors = doors_by_hand();
+        assert!(
+            family > 2,
+            "the registry names {family} door-family block(s)"
+        );
+        assert_eq!(doors.passable.len(), family - 2);
+        assert_eq!(doors.held, vec!["iron_door", "iron_trapdoor"]);
+        assert_eq!(
+            doors.line(),
+            format!("doors by hand: {} block(s) passable, 2 held", family - 2)
+        );
+        for id in &doors.passable {
+            let closed = format!("minecraft:{id}[open=false]");
+            assert!(passes_body(&closed), "{closed} is passed by a body");
+        }
+        for id in [
+            "minecraft:iron_door",
+            "minecraft:iron_door[open=true]",
+            "minecraft:iron_trapdoor[half=top]",
+        ] {
+            assert!(!opens_by_hand(id), "{id}");
+            assert_ne!(collision_class(id), Collision::OpensByHand, "{id}");
+        }
+        for id in [
+            "minecraft:oak_door[half=lower,open=false]",
+            "minecraft:oak_door[half=upper,open=true]",
+            "minecraft:oak_trapdoor[half=top,open=false]",
+            "minecraft:oak_trapdoor[half=bottom,open=true]",
+        ] {
+            assert!(passes_body(id) && !supports_body(id), "{id}");
         }
     }
 

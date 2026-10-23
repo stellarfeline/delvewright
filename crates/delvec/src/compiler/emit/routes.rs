@@ -571,6 +571,10 @@ pub(super) fn prove_world(
                     });
                 }
             }
+            // spec-0123 §3.1: the doors the walk opens are derived from the
+            // pinned registry, never written by hand, and every build states
+            // the set its proofs read.
+            eprintln!("{}", delvewright_dsl::blockshape::doors_by_hand().line());
             // DW1057 (spec-0120): every way's declared clear width is clear
             // along the whole way, in every state its cells can take, and
             // nothing excuses a column that is not. It reads the plan, the blocks as shipped and the runtime

@@ -792,7 +792,7 @@ pub fn check(
     let open = world.without_exclusions();
     let openable: BTreeSet<[i32; 3]> = blocks
         .iter()
-        .filter(|(_, n)| delvewright_dsl::blockshape::is_player_openable(n.as_str()))
+        .filter(|(_, n)| delvewright_dsl::blockshape::opens_by_hand(n.as_str()))
         .map(|(c, _)| *c)
         .collect();
     let opened = if openable.is_empty() {

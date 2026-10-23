@@ -418,7 +418,7 @@ fn lit(name: &str, default_lit: &str, bright: u8) -> u8 {
 pub fn passes_light(name: &str) -> bool {
     use delvewright_dsl::blockshape::{Collision, collision_class, light_block};
     match collision_class(name) {
-        Collision::Air | Collision::Thin(_) | Collision::FenceGate | Collision::Fluid => true,
+        Collision::Air | Collision::Thin(_) | Collision::OpensByHand | Collision::Fluid => true,
         // A climbable is a cell a body is in (spec-0099), so it must pass light
         // or a player holding on a ladder is measured at light 0.
         Collision::Climbable => true,
