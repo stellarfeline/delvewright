@@ -1114,6 +1114,9 @@
             "answers": {
               "not_yet": "The hearth is cold; nothing has been lit here yet."
             },
+            "highlight": {
+              "within": 4
+            },
             "on_rest": [
               {
                 "style": "chat",
@@ -3760,6 +3763,9 @@
     "shops": [
       {
         "anchor": "anchor/counter",
+        "highlight": {
+          "within": 4
+        },
         "id": "shop/counter",
         "offers": [
           {
@@ -4116,6 +4122,9 @@
           "answers": {
             "done": "The portcullis is jammed open already."
           },
+          "highlight": {
+            "within": 4
+          },
           "prop": {
             "block": "minecraft:stone_button[face=floor,facing=north]"
           },
@@ -4132,12 +4141,13 @@
       {
         "at": "anchor/march",
         "disarm": {
-          "answers": {
-            "done": "The plate's lever is thrown; the plate is dead."
+          "highlight": {
+            "within": 4
           },
           "prop": {
             "block": "minecraft:lever[face=floor,facing=north,powered=false]"
           },
+          "release": true,
           "sets_flag": "flag/plate-disarmed",
           "via": "anchor/plate-lever"
         },

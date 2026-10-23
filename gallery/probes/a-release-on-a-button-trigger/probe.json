@@ -1,0 +1,15 @@
+{
+  "code": "DW1052",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/triggers/0/release",
+      "value": true
+    }
+  ],
+  "units": [
+    "EnvTrigger.release"
+  ],
+  "why": "`release: true` added to the label's button trigger. A button reports its own press, so no box ever stands over it to release; the field would do nothing. DW1052 refuses it naming the field. It discharges `EnvTrigger.release`: the gallery's lever triggers keep their boxes for their answers, and what the engine refuses is a release with no box to give up."
+}
