@@ -2261,6 +2261,45 @@ mod tests {
     use delvewright_dsl::EdgeId;
     use delvewright_dsl::siteplan::Face;
 
+    /// **spec-0123 criterion 18**: a bar a hand opens is `DW1063`, naming the
+    /// piece, the edge and the block; iron bars, an iron door, an iron
+    /// trapdoor and a solid are bars.
+    #[test]
+    fn a_bar_a_hand_opens_is_dw1063_and_iron_is_a_bar() {
+        for block in [
+            "minecraft:oak_door[facing=north,half=lower,hinge=left,open=false,powered=false]",
+            "minecraft:spruce_trapdoor[half=top,open=false]",
+            "minecraft:copper_door",
+            "minecraft:oak_fence_gate[open=false]",
+        ] {
+            let d = bar_a_hand_opens("prefab/p", "room", "exterior", block, STAGE, "/x".into())
+                .unwrap_or_else(|| panic!("{block} is opened by hand"));
+            assert_eq!(d.code, "DW1063", "{block}");
+            assert!(
+                d.message
+                    .contains("`prefab/p` edge `room`→`exterior`: the bar is"),
+                "{}",
+                d.message
+            );
+            assert!(d.message.contains(block), "{}", d.message);
+        }
+        for block in [
+            "minecraft:iron_bars[east=false,north=false,south=false,waterlogged=false,west=false]",
+            "minecraft:iron_door[facing=north,half=lower,hinge=left,open=false,powered=false]",
+            "minecraft:iron_trapdoor[half=top,open=false]",
+            "minecraft:stone_bricks",
+            delvewright_dsl::siteplan::SEAM_BAR,
+            delvewright_dsl::siteplan::SEAM_HATCH,
+            delvewright_dsl::siteplan::SEAM_COVER,
+        ] {
+            assert!(
+                bar_a_hand_opens("prefab/p", "room", "exterior", block, STAGE, "/x".into())
+                    .is_none(),
+                "{block} is a bar"
+            );
+        }
+    }
+
     fn a_box(node: &str, floor: i64) -> PlacedBox {
         PlacedBox {
             node: NodeId(node.into()),

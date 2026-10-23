@@ -1677,3 +1677,168 @@ fn after_a_frame_change_one_detail_all_passes_and_a_stale_sibling_it_leaves_is_r
     );
     assert!(t.contains("The piece is 9x6x6; the frame is 9x6x10"), "{t}");
 }
+
+// ---------------------------------------------------------------------------
+// spec-0123 §5.3–§5.4: an open side handed, and answered two ways
+// ---------------------------------------------------------------------------
+
+/// The blockout fixture with `node/exit`'s south side declared open (or not),
+/// and the exit's allocation.
+fn open_side_fixture(root: &Path, open: bool) -> (PathBuf, PathBuf, Allocation) {
+    let (campaign, prefabs) = fixture(root, &[]);
+    common::patch_file(&campaign.join("site-plan.json"), |v| {
+        // The fixture's commons is flat ground to the region's edge; an open
+        // side onto it lets a body walk there, so the region is closed by a
+        // field wall two courses high along its four edges.
+        let vols = v["content"]["volumes"].as_array_mut().unwrap();
+        for (id, min, extent) in [
+            ("west", [0, 64, 0], [1, 2, 64]),
+            ("east", [63, 64, 0], [1, 2, 64]),
+            ("north", [1, 64, 0], [62, 2, 1]),
+            ("south", [1, 64, 63], [62, 2, 1]),
+        ] {
+            vols.push(json!({
+                "id": format!("volume/field-wall-{id}"),
+                "block": "minecraft:stone_bricks",
+                "role": "massif",
+                "region": {"min": min, "extent": extent},
+            }));
+        }
+        if open {
+            let boxes = v["content"]["boxes"].as_array_mut().unwrap();
+            let exit = boxes.iter_mut().find(|b| b["node"] == "node/exit").unwrap();
+            exit["sides"] = json!({"south": "open"});
+        }
+    });
+    // The exit's reach objective takes radius 1: with the commons now walked,
+    // its default cube would reach floor outside the exit's walls (`DW0881`).
+    common::patch_file(&campaign.join("quests.json"), |v| {
+        v["content"]["quests"][0]["objectives"][2]["radius"] = json!(1);
+    });
+    let c = common::campaign_at(&campaign);
+    let a = detail::allocation(&c, &NodeId("node/exit".into())).unwrap();
+    (campaign, prefabs, a)
+}
+
+/// The exit's program answering its south side with an `exterior` `walk`
+/// edge whose `via` is the side's ring cells — a frontage a body crosses.
+fn frontage_program(a: &Allocation) -> Value {
+    let mut p = program_for(a, None, true);
+    p["rules"]["ring_south"] =
+        rule(json!({"op": "claim", "region": "frontage", "body": {"op": "void"}}));
+    p["contract"]["edges"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"a": "exterior", "b": "room", "class": "walk", "via": "frontage"}));
+    p
+}
+
+/// The exit's program answering its south side with a counter at the play
+/// space's south edge, inside, one block high under the room's air, and the
+/// ring before it left as open ground — a counter front a body does not cross.
+fn counter_program(a: &Allocation) -> Value {
+    let mut p = program_for(a, None, true);
+    let [slo, shi] = a.space;
+    let (rn, rs) = (slo[2], a.extent[2] - 1 - shi[2]);
+    p["rules"]["mid"] = rule(split(
+        "z",
+        vec![abs(int(rn)), rel(), abs(int(1)), abs(int(rs))],
+        vec![
+            call("ring_north"),
+            call("room"),
+            call("counter"),
+            call("ring_south"),
+        ],
+    ));
+    p["rules"]["counter"] = rule(split(
+        "y",
+        vec![abs(int(1)), rel()],
+        vec![
+            fill("wall"),
+            json!({"op": "claim", "region": "room", "body": {"op": "void"}}),
+        ],
+    ));
+    p["rules"]["ring_south"] = rule(json!({"op": "void"}));
+    p
+}
+
+/// **spec-0123 criterion 10**: the allocation hands the open side — its face,
+/// its ring run at the walk plane with the corners excluded (as long as the
+/// box's extent along the face), the walk plane — and no side where none is
+/// declared.
+#[test]
+fn the_allocation_hands_an_open_side_against_the_boxs_extent() {
+    let tmp = tempdir("open-side-handed");
+    let (_, _, a) = open_side_fixture(&tmp.join("open"), true);
+    assert_eq!(a.sides.len(), 1, "{:?}", a.sides);
+    let s = &a.sides[0];
+    assert_eq!(s.face, "south");
+    let [lo, hi] = s.cells;
+    let [slo, shi] = a.space;
+    assert_eq!(
+        (lo[0], hi[0]),
+        (slo[0], shi[0]),
+        "the run is the play space's x span"
+    );
+    assert_eq!(
+        lo[2],
+        shi[2] + 1,
+        "the run is the ring row south of the play space"
+    );
+    assert_eq!(lo[2], hi[2]);
+    assert_eq!((lo[1], hi[1], s.walk_y), (a.datum_y, a.datum_y, a.datum_y));
+    assert!(s.contacts.is_empty());
+    let (_, _, none) = open_side_fixture(&tmp.join("walled"), false);
+    assert!(none.sides.is_empty());
+}
+
+/// **spec-0123 criterion 13**: `contract-closure`, `contract-coverage` and
+/// `DW0844` admit a face opening whose cells are a handed open side's — a
+/// frontage answered with an `exterior` `walk` edge, and a counter front whose
+/// ring is open ground — and refuse both where the side is not declared open:
+/// the frontage's face is then a seam nobody allocated (`DW0844`) and the
+/// counter's room is not closed (`contract-closure`).
+#[test]
+fn an_open_side_is_answered_by_a_frontage_or_a_counter_and_nowhere_else() {
+    let tmp = tempdir("open-side-answered");
+    for (name, make) in [
+        ("frontage", frontage_program as fn(&Allocation) -> Value),
+        ("counter", counter_program),
+    ] {
+        let (campaign, prefabs, a) = open_side_fixture(&tmp.join(format!("{name}-open")), true);
+        write_program(&campaign, "node/exit", &make(&a));
+        let out = delvec(&[
+            "--prefabs",
+            prefabs.to_str().unwrap(),
+            "detail",
+            campaign.to_str().unwrap(),
+            "node/exit",
+        ]);
+        assert_eq!(code(&out), 0, "{name}: {}", text(&out));
+        if name == "frontage" {
+            assert!(
+                text(&out).contains("(1 answering an open side)"),
+                "{name}: {}",
+                text(&out)
+            );
+        }
+
+        let (campaign, prefabs, walled) =
+            open_side_fixture(&tmp.join(format!("{name}-walled")), false);
+        write_program(&campaign, "node/exit", &make(&walled));
+        let out = delvec(&[
+            "--prefabs",
+            prefabs.to_str().unwrap(),
+            "detail",
+            campaign.to_str().unwrap(),
+            "node/exit",
+        ]);
+        assert_ne!(code(&out), 0, "{name} on a walled side: {}", text(&out));
+        let t = text(&out);
+        if name == "frontage" {
+            assert!(t.contains("DW0844"), "{t}");
+        } else {
+            assert!(t.contains("contract-closure FAIL"), "{t}");
+        }
+    }
+}

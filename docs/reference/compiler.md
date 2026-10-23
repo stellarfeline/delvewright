@@ -676,7 +676,14 @@ through the other opening; either way the piece answers both exactly as
 allocated (`DW0844` compares cell for cell) and `contract-well-formed` takes a
 cell beside another of the space's exterior openings as touching the room
 (`compiler::detail` `two_contacts_at_a_corner_answer_whoever_owns_each_plane`).
-Which spaces are enclosed is the piece's own declaration, and the closure gate
+An open side the whole hands the place (spec-0123 §5.4, the allocation's
+`sides`) is handed into the expansion by `delvec detail`
+(`ExpandOptions::open_sides`): `contract-closure` takes its cells as a declared
+opening of the space behind them and `contract-coverage` as the place's open
+ground, so a frontage a body crosses is answered with an `exterior` edge whose
+`via` is the side's cells, and a counter front a body does not cross stands its
+counter at the play space's edge, the ring before it open ground. Which spaces
+are enclosed is the piece's own declaration, and the closure gate
 confirms exactly those; a piece declaring none — a street, a pavilion, a
 covered market — passes, its zero stated in the enumeration with the count of
 spaces.
@@ -838,10 +845,11 @@ it.
 |---------|----------|
 | `region` | `{min: [x,y,z], extent: [dx,dy,dz]}` in world coordinates — the whole map's one region, and the number the brief hands down. **Required, with no derived spelling**: there is no "compute this from the boxes", so extent-flows-up is unrepresentable rather than forbidden, and `DW0826` refuses a box that does not fit while naming the box. Extents are `NonZeroU32`, so a zero-volume region is a schema failure (`DW0100`) rather than a rule some check has to remember. The water plane is deliberately absent — an `ocean` base in the stage-1 world document's `horizon` already fixes sea level. |
 | `datums[]` | `{id: datum/<kebab>, y, note?}` — named ground planes. Ids are the ordinary `DW0110`/`DW0111`; a `floor` naming an undeclared one is the ordinary `DW0112`. |
-| `boxes[]` | `{node, extent: [dx,dz], floor, ceiling, base?, min?: [x,z], way?}` — **exactly one per graph node** (`DW0824`). **A box states what it is; where it stands is derived** (spec-0059). **A box is a cuboid** (spec-0098 §14, correction 3): its footprint is `min`/`extent` and its vertical extent three declared planes. `floor` is the one authority for the walk plane, `{"datum": <id>}` or `{"y": <n>}`. `ceiling` is `{"clearance": <cells>}` (a lid at `floor + cells`) or `{"open": <cells>}` (sky-open: exactly that many courses of air claimed, nothing above). `base` is `"ground"` (the default: the claim reaches down, column by column, to the lower of the terrain and the floor course, stopping one course over any place stacked under that column, and the whole hands that ground and fixes the ring) or `{"aloft": <n>}` (the place hangs: its claim stops `n` underside courses under the floor course everywhere, it is handed no ground and no fixed ring, and terrain reaching the claim is `DW0990`). The claim is the footprint grown by the one-cell ring, from that bottom to the open top, the lid or the roof zone; two places conflict only where their cuboids overlap (`DW0827`), and a cell no claim covers is the site's fill — on an `open` site, the commons under and between aloft places. `min` is a **pin**, optional: a creative choice of the corner, verified against the packing (`DW0883` when the two disagree); every connected component of the seam graph pins at least one box, or nothing places it (`DW0883`). Horizontal extents are any whole number of blocks; the packed box stands inside the region (`DW0826`, naming how its corner was obtained); boxes are disjoint (`DW0827`). A box's extent and headroom are the author's declaration, and no class refuses them. |
+| `boxes[]` | `{node, extent: [dx,dz], floor, ceiling, base?, min?: [x,z], way?, sides?}` — **exactly one per graph node** (`DW0824`). **A box states what it is; where it stands is derived** (spec-0059). **A box is a cuboid** (spec-0098 §14, correction 3): its footprint is `min`/`extent` and its vertical extent three declared planes. `floor` is the one authority for the walk plane, `{"datum": <id>}` or `{"y": <n>}`. `ceiling` is `{"clearance": <cells>}` (a lid at `floor + cells`) or `{"open": <cells>}` (sky-open: exactly that many courses of air claimed, nothing above). `base` is `"ground"` (the default: the claim reaches down, column by column, to the lower of the terrain and the floor course, stopping one course over any place stacked under that column, and the whole hands that ground and fixes the ring) or `{"aloft": <n>}` (the place hangs: its claim stops `n` underside courses under the floor course everywhere, it is handed no ground and no fixed ring, and terrain reaching the claim is `DW0990`). The claim is the footprint grown by the one-cell ring, from that bottom to the open top, the lid or the roof zone; two places conflict only where their cuboids overlap (`DW0827`), and a cell no claim covers is the site's fill — on an `open` site, the commons under and between aloft places. `min` is a **pin**, optional: a creative choice of the corner, verified against the packing (`DW0883` when the two disagree); every connected component of the seam graph pins at least one box, or nothing places it (`DW0883`). Horizontal extents are any whole number of blocks; the packed box stands inside the region (`DW0826`, naming how its corner was obtained); boxes are disjoint (`DW0827`). A box's extent and headroom are the author's declaration, and no class refuses them. |
 | `boxes[].atmosphere` | (spec-0080) The atmosphere this place stands under from the first tick, painted at world setup over the box's play space (`PlacedBox::space`) grown by the client's blend reach on every face (*The blend*, under *World / build output*) — `areas[].atmosphere`'s capability on a box. Two carried boxes whose own 4-cells meet under different atmospheres are `DW0929`: a box and its neighbour sit one cell apart, so neighbours carrying two skies must be a whole 4-cell apart. |
 | `boxes[].roof` | (spec-0098) `{courses, eaves}`, optional, on a roofed box: the roof zone the whole reserves — the shell footprint grown by `eaves` on every side, from the ceiling course up `courses` courses. Massed solid at stage 5 over a place no piece fills; drawn by the place's own piece once detailed. Refused on a sky-open box and where its courses rise into another place's play space or floor course (`DW0988`); an eave stops where a neighbour's shell begins. Both numbers are judgements the plan states against `docs/reference/roof-and-facade-craft.md`. |
 | `boxes[].way` | (spec-0120) `{axis, clear, at?}`, optional: **this place is a way** — a road, a street, a bridge, a causeway — whose run travels along `axis` (`x` or `z`) and is `clear` columns wide across it, the columns starting `at` cells from the box's low corner on the cross axis (omitted: centred, `max(0, (extent − clear) div 2)`, exactly as a seam's `at` defaults). The width is a number the author writes, never read from the box's extent or its label. The clear-width check judges its run column by column at every station along its whole length (`DW1057`, `docs/reference/delvec/compiler/nav/width.md`); a station cell a seam's approach covers is judged once, under the seam. A box without `way` is a room, which the check never enters. A way wider than its place, or an `at` that puts a column outside it, is `DW0826` (*a way leaves its place*). The columns of the box's extent that `clear` does not claim are the **verge**: a lamp post, a bollard, a bench stands there, outside the way. |
+| `boxes[].sides` | (spec-0123 §5.1) `{east?, west?, south?, north?}`, each `"wall"` or `"open"`, optional: **which of its four sides the place stands a wall on**; a key absent is `wall`, so a box with no `sides` is walled all round. `up` and `down` are not keys — a lid is `ceiling`, a floor is `floor` — and any other key or value is `DW0100`. An open side stands no wall: its ring cells along that face, from the walk plane to the top of the play space, hold nothing a body cannot be in; the place's ground runs across them at the walk plane; what lies beyond is the neighbour's or the commons'. It says nothing about traversal: whether a body crosses there is the connection's (a `contact`) and the whole's (`DW0838`). A portal cut in an open side is `DW1064`; the clear-width check judges every open side as a way (`DW1057` narrowed, `DW1065` built shut); the allocation hands each one (`sides`), and the piece's contract gates take its cells as a declared opening and as the place's open ground, and `DW0844` as answering a face. `delvec fmt` writes the object's keys in its one canonical order. |
 | `ceiling: {"open": n}` | A sky-open place — a courtyard, a shore, a summit, a bridge's deck. It claims exactly `n` courses of air over its walk plane and **nothing above them**, which is what makes a `clearance` volume over a courtyard the whole reserving sky rather than two authorities over one cell, and lets a place hung over the courtyard stand in its sky: a climb from the courtyard into a place above is a hole through that place's floor course, which the courtyard's headroom reaches when its top is one course under it (one short is `DW0828`, naming the gap). |
 | `base` | (spec-0098 §14, correction 3) `"ground"` (the default, not printed) or `{"aloft": n}`. A ground place stands on the site's ground and is handed it (§2c). An aloft place hangs: its claim's bottom is `floor − 1 − n`, it is handed no ground (`allocation`'s `ground.base` says which; `fixed` and `columns` are empty and no wall seam has a `ground_y`), its ring is never fixed, and the terrain is never consulted except to refuse terrain reaching into the claim (`DW0990`, third shape). The space under it is whoever claims it — a lower place's open headroom, a scenery box — else the site's fill: on `open`, the commons; on `solid`, rock up to its bottom. |
 | `seams[]` | `{edge, face, form, at?, meets?, opening? \| contact?, stair_in?}` — **exactly one per traversal edge** (`DW0824`). `face` is one of the engine's six face names (`east`/`west`/`up`/`down`/`south`/`north`), **of the edge's `a` box**. `at` is where the crossing sits on `a`'s face and `meets` where it sits on `b`'s, each an **offset from that box's own low corner**, never a world coordinate — one integer along a wall face (cells along `z` for east/west, `x` for north/south), `[dx, dz]` through a floor or ceiling — and each defaults to **centred**, `max(0, (extent − width) div 2)` by the standard's width (a contact's `extent`, or `0` for a contact with none). **The packing** (spec-0059 §3): the pinned boxes seed it; then `seams[]` in document order, repeatedly, a seam with exactly one end standing places the other **one cell beyond the named face** (`x0(b) = x0(a) + dx(a) + 1` across `east`, and so on) with `corner(b) = corner(a) + at − meets` along it, until a pass places nothing. A seam whose two ends both stand places nothing and is **checked**: the cells it names from `a` must be the cells it names from `b` (`DW0828`, the loop that does not close; `DW0883` when `b`'s corner is a pin). An offset off its own face, or of the wrong shape for the face, is `DW0828`. **The sill is not written**: it is `max(floor(a), floor(b))`. `delvec validate` prints every box's corner and the seam that placed it — the derivation handed back, never typed. A seam allocates **one of two kinds** of connection, and both or neither is `DW0876`. `stair_in` names which of the two boxes hosts the treads: required on a `stair` (`DW0830`) and refused on anything else (`DW0824`). |
@@ -1004,7 +1012,7 @@ about it is what it BUILDS, which is fixed:
 | Thing | What the derivation makes of it |
 |---------|---------|
 | the fill | The site's declared `fill`, over the whole region first: a `solid` site's block everywhere, or an `open` site's terrain — the `surface` block at each column's height, `below` under it — merged into rectangles of equal height (spec-0098 §2b). |
-| a box | **A stand-in, never shipped** (spec-0098 §8), and only for a place no piece fills: in the cells that place owns, a ring wall from the claim's bottom to the top of the play space, the floor course in the place's own **accent** (cycled deterministically over the plan's boxes, so the colour under a body's feet names the place), a lid unless sky-open, and a declared roof zone massed solid in the roof block. Nothing is written in the fixed ground, in a neighbour's cells or in a gap; a bound place's owned cells are written by its piece alone. |
+| a box | **A stand-in, never shipped** (spec-0098 §8), and only for a place no piece fills: in the cells that place owns, a ring wall from the claim's bottom to the top of the play space, the floor course in the place's own **accent** (cycled deterministically over the plan's boxes, so the colour under a body's feet names the place), a lid unless sky-open, and a declared roof zone massed solid in the roof block. On a side the plan declares open (spec-0123 §5.2) the ring wall stops under the floor course and nothing stands above it to the top of the play space; the floor course runs across the ring, so a body steps on and off level; a corner stands with the walled side beside it and opens only where both its sides are open; the lid and the roof zone are unchanged. A box with no open side derives byte for byte as before. Nothing is written in the fixed ground, in a neighbour's cells or in a gap; a bound place's owned cells are written by its piece alone. |
 | the ring's ground | For every place, bound or not, its fixed ground cells — the terrain continued to the plot's edge in the fill's `surface`/`below` (or `solid` block); at the columns of a seam at grade (its sill one course over the terrain or less) the ground is the sill minus one, flat across the opening; a seam aloft — a bridge's deck, a door high in a wall — fixes no earth under it, and the column between the terrain and the sill is the owner's. |
 | a seam | Where the place owning the seam's plane is a stand-in: a frame of contrasting wall around the opening, in that place's own cells, and the opening itself cut to air. Where a piece owns the plane, nothing: the piece cuts its own opening. The stand-in's frame and its runs are judged whole by the clear-width check like any piece's bytes (`DW1057`): a run laid for one seam that enters another seam's approach narrows that way. |
 | a shut seam | Every seam whose connection's `gating` names a term (spec-0107), **last** — after the treads, the ladder and the stairwell, every cut that can reach its cells: the seam's bar block in its bar cells (`siteplan::PlacedSeam::bar`, `PlacedSeam::bar_block`): `minecraft:iron_bars` (`SEAM_BAR`) in the opening of a wall; through a floor a block that holds the body standing on it — a closed iron trapdoor in the upper half of the hole's own cells for a drop or a stair (`SEAM_HATCH`, its top flush with the floor), and one in the lower half of the course above the hole, over its footprint, for a floor climb, whose hole keeps its rung (`SEAM_COVER`, lying on the upper floor) — *A floor holds a body by its footprint*, below, with `anchor/seam-<edge>` the gate region over them, which the world-load seal measures shut exactly as it measures a prefab-authored gate. Written where the place owning those cells is a stand-in — the plane's owner for a wall or a hole, the upper place for a cover; where a piece owns them, the piece ships the bar against the gate region it owes, and the allocation hands it the cells (`bar`). |
@@ -3048,14 +3056,16 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   gate's two mouths are force-kept, and a corner's commit cell that falls inside
   the gate is dropped, so a crush crossing is always one mouth-to-mouth hop and no
   waypoint asks the bot to stand where the fill closes. A leg
-  that walks through a closed fence gate carries a `use_gates` array:
-  the gate cells the player right-clicks open (an adventure-legal USE), each also
-  force-kept as an explicit waypoint (never thinned away mid-run); the field is
-  omitted for gate-free legs, so gate-free campaigns stay byte-identical. The
-  harness replays these as successive nearby pathfinder goals so no single distant
-  A* solve strands the bot on a large open cave (its pathfinder's `canOpenDoors`
-  performs the gate click, and the harness's fence-lip waypoint filter stands as
-  defence-in-depth). A leg whose route climbs (spec-0099) carries a `climbs`
+  that walks through a closed door, trapdoor or fence gate a hand opens carries a
+  `use_gates` array: the cells the player right-clicks open (an adventure-legal
+  USE), each also force-kept as an explicit waypoint (never thinned away mid-run);
+  the field is omitted for legs that cross none, so such campaigns stay
+  byte-identical. The harness replays these as successive nearby pathfinder goals
+  so no single distant A* solve strands the bot on a large open cave (its
+  pathfinder's `canOpenDoors` performs the click, and the harness's fence-lip
+  waypoint filter stands as defence-in-depth); a walk that walks the whole leg
+  asserts it stood in every `use_gates` cell, printing `[door] <leg>: N door(s) a
+  hand opens on the proven leg, N crossed` (spec-0123 §3.1). A leg whose route climbs (spec-0099) carries a `climbs`
   array, in route order: each `{from, to, bottom, top, block, facing?}` — where
   the body takes hold, where it lets go (both kept waypoints), the lowest and
   highest cell it holds in, the block, and a ladder's facing. The cells held
@@ -4277,8 +4287,8 @@ three answers a walk gets.
 |---|---|---|---|
 | solid | every other non-air block (full-cube, the conservative default) | no | yes |
 | tall barrier | `*_fence` (incl. `nether_brick_fence`), `*_wall` — 1.5-tall | no | **no** |
-| use-gate | closed `*_fence_gate` (1.5-tall, right-click-openable) | player: yes (USE); autonomous mobs: no | **no** |
-| passable | open `*_fence_gate` (block state `open=true`, read from the prefab palette **or written by a stage-7 edit** — see below), trap triggers, thin decoration (< 8/16 collision) | yes | no |
+| use-gate | a closed door, trapdoor or fence gate a hand opens (`blockshape::opens_by_hand`) | player: yes (USE); autonomous mobs: no | **no** |
+| passable | an open door, trapdoor or fence gate a hand opens (block state `open=true`, read from the prefab palette **or written by a stage-7 edit** — see below), trap triggers, thin decoration (< 8/16 collision) | yes | no |
 | flooded | fluid reach — `minecraft:water` / `minecraft:lava` (`is_fluid`), plus waterlogged sources | no | no |
 | partial | a solid cell's true top-face height in sixteenths, when < 16 | no | yes, **at that height** |
 
@@ -4309,8 +4319,25 @@ corridor with a carpet in it stays walkable). At 8/16–15/16 the cell blocks
 passage but its walkable face is recorded in `Occupancy::partial`, which is what
 makes the nav step rule physical rather than cell-counting — see below.
 
-Modelled **precisely**: fences, walls, fence gates (open vs closed), trap
-triggers, thin decoration, free fluid and waterlogging, and partial floor heights.
+Modelled **precisely**: fences, walls, every door, trapdoor and fence gate a
+hand opens (open vs closed), trap triggers, thin decoration, free fluid and
+waterlogging, and partial floor heights.
+
+**A door a hand opens is walked through** (spec-0123 §3.1). What the pinned
+game does is established once, with its read site, in
+[`doors-by-hand.md`](doors-by-hand.md): an adventure-mode body opens by hand
+every door, trapdoor and fence gate whose set type `canOpenByHand`, and not an
+iron door or an iron trapdoor. `blockshape::doors_by_hand` derives the set from
+the pinned block-state registry — every `*_door`, `*_trapdoor` and
+`*_fence_gate` id, less the ones whose set type is `iron` — and
+`blockshape::opens_by_hand` is the one predicate the occupancy model, the
+authored-open tracking, the route proofs, `DW0921`, `DW1011`, the clear-width
+columns, `DW0923` and the bar rule (`DW1063`) read. A closed one is a use-gate
+cell, an open one a passage; a closed bottom-half trapdoor is thin decoration,
+as its collision box makes it. An iron door or iron trapdoor keeps its
+collision box: a barrier closed, a passage open. Every build prints the set it
+derived before the clear-width line, never written by hand:
+`doors by hand: N block(s) passable, 2 held`.
 
 **A floor holds a body by its footprint.** A solid cell is a floor only when a
 body over it is held, and that is read from the collision **footprints** of its
@@ -4438,13 +4465,13 @@ the bot to assert. The written-world comparison (`DW0955`) is of the save at
 load, where every sculk block is at rest.
 
 Modelled **conservatively** — treated as a full solid cube, never as
-walkable-through: stairs, doors, trapdoors, and every other partial-collision
+walkable-through: stairs, iron doors and iron trapdoors, and every other partial-collision
 block whose box is not a floor at a measured height. The tall/gate classes keep the proof from standing a player ON TOP of a
 1.5-tall `oak_fence` (a "legal" +1 step no vanilla player or bot can perform),
 so a gateless fence ring around a required anchor fails `DW0311`. A tall/gate
 cell is never valid floor, which also
 models the barrier's upper half blocking same-level walk-overs for free. Closed
-fence gates are **use-gate** edges: walkable for the player (adventure-legal
+doors, trapdoors and fence gates a hand opens are **use-gate** edges: walkable for the player (adventure-legal
 right-click, the same action a human performs), exported first-class per leg (see
 `use_gates` above). They remain routable edges for scripted `move-npc`/`move-actor`
 tp polylines too — but routing a puppet over a player-only edge is a build
@@ -4457,7 +4484,8 @@ degenerating into an unroutable `DW0307`.
 set `occupancy_of` reads to tell a closed gate from an open one — is filled from
 the prefab palette, and `edit::write_cell` re-derives the marking from the
 blockstate it writes, so an edit writing `minecraft:oak_fence_gate[open=true]`
-is modelled open by every proof downstream (the authorable fix for `DW0452`).
+(or any door, trapdoor or gate a hand opens, `open=true`) is modelled open by
+every proof downstream (the authorable fix for `DW0452`).
 Autonomous placement (`spawn-wave`
 seating) uses the no-gate-use view (`World::without_gate_use`): a spawned mob is
 never seated in a gate threshold and the seating flood never spills through a

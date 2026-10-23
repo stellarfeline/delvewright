@@ -953,7 +953,7 @@ on a sightline is not writable in the first place:
 | `stair` | `rise`, **required** `via` — the treads belong to the edge, not to either end — optional `way` |
 | `climb` (`1.10.0`) | `rise`, **required** `via` — the ladder or vine and the hole it rises through belong to the edge — optional `way`; both ways. A two-level interior is two spaces (a space is one floor) and a `climb` between them |
 | `drop` | `rise`, optional `via`, optional `way`; directed `a` → `b` |
-| `barred` | `rise` (default 0), **required** `bar` (`{region, block}`), optional `via` |
+| `barred` | `rise` (default 0), **required** `bar` (`{region, block}`), optional `via`. The bar's block, resolved through the palette, is one a hand does not open — iron bars, an iron door, an iron trapdoor or a solid; a door, trapdoor or fence gate an adventure-mode body opens by hand is refused (`DW1063`, spec-0123 §3.1, `docs/reference/doors-by-hand.md`) |
 | `vision` | **required** `via`; no traversal claim, so no rise |
 
 A key the metadata's edge does not model — `narrowed` among them, the excuse surface spec-0120 withdrew — is kept on read and refused by name by `contract-well-formed` (*`<key>` is not a field of a contract edge*): a contract edge is a claim the engine proves, and a claim it cannot read is never carried through as proven. Nothing excuses a structure standing inside a piece way's region; a newel or a rail stands beside it, outside the `via`.
