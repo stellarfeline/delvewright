@@ -1842,3 +1842,31 @@ fn an_open_side_is_answered_by_a_frontage_or_a_counter_and_nowhere_else() {
         }
     }
 }
+
+/// **spec-0123 criterion 10, on the gallery**: the site-plan point's yard
+/// hands its three open sides and the causeway its two, each run as long as
+/// the box's extent along its face (corners excluded), at the walk plane.
+#[test]
+fn the_gallery_hands_the_yards_and_the_causeways_open_sides() {
+    let tmp = tempdir("gallery-sides");
+    let dir = gallery_site_plan(&tmp);
+    let c = common::campaign_at(&dir);
+    for (node, faces, along) in [
+        ("node/exit", vec!["east", "west", "south"], [8i64, 8, 8]),
+        ("node/causeway", vec!["east", "west"], [24, 24, 0]),
+    ] {
+        let a = detail::allocation(&c, &NodeId(node.into())).unwrap();
+        let got: Vec<&str> = a.sides.iter().map(|s| s.face.as_str()).collect();
+        assert_eq!(got, faces, "{node}");
+        for (s, want) in a.sides.iter().zip(along) {
+            let [lo, hi] = s.cells;
+            let run = if s.face == "east" || s.face == "west" {
+                hi[2] - lo[2] + 1
+            } else {
+                hi[0] - lo[0] + 1
+            };
+            assert_eq!(run, want, "{node} {}", s.face);
+            assert_eq!((lo[1], hi[1], s.walk_y), (a.datum_y, a.datum_y, a.datum_y));
+        }
+    }
+}
