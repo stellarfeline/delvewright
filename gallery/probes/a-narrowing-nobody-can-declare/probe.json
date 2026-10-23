@@ -1,0 +1,24 @@
+{
+  "code": "DW0100",
+  "patch": [
+    {
+      "doc": "site-plan.json",
+      "op": "add",
+      "path": "/content/seams/5/narrowed",
+      "value": [
+        {
+          "across": [
+            2,
+            2
+          ],
+          "block": "minecraft:stripped_dark_oak_log",
+          "side": "a",
+          "what": "a newel"
+        }
+      ]
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "A `narrowed` entry written on the loft stair's seam, in the shape the withdrawn excuse surface once took. A site plan's seam has no such key: a thing meant to stand beside a way stands outside its declared width, and no document says a structure inside it is meant. The stage refuses the key as one it does not have, before any world is judged. It declares no unit: what must not compile is an excuse for a narrowed way."
+}

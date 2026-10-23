@@ -82,6 +82,7 @@
     "floor": "minecraft:polished_andesite",
     "lamp": "minecraft:sea_lantern",
     "lid": "minecraft:spruce_planks",
+    "newel": "minecraft:stripped_dark_oak_log[axis=y]",
     "tread": "minecraft:polished_diorite",
     "wall": "minecraft:polished_blackstone_bricks"
   },
@@ -227,6 +228,17 @@
           },
           "op": "claim",
           "region": "loft-landing"
+        },
+        "weight": 1
+      }
+    ],
+    "newel": [
+      {
+        "body": {
+          "material": {
+            "role": "newel"
+          },
+          "op": "fill"
         },
         "weight": 1
       }
@@ -1553,6 +1565,154 @@
                           },
                           {
                             "op": "call",
+                            "symbol": "newel"
+                          },
+                          {
+                            "op": "call",
+                            "symbol": "room-air"
+                          },
+                          {
+                            "op": "call",
+                            "symbol": "wall"
+                          }
+                        ],
+                        "op": "split",
+                        "sizes": [
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 1
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 23
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 1
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 8
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "size": "relative",
+                            "weight": {
+                              "expr": "int",
+                              "value": 1
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "axis": "x",
+                        "children": [
+                          {
+                            "op": "call",
+                            "symbol": "wall"
+                          },
+                          {
+                            "op": "call",
+                            "symbol": "room-air"
+                          },
+                          {
+                            "op": "call",
+                            "symbol": "wall"
+                          }
+                        ],
+                        "op": "split",
+                        "sizes": [
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 1
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 32
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "size": "relative",
+                            "weight": {
+                              "expr": "int",
+                              "value": 1
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "op": "call",
+                        "symbol": "part-5"
+                      }
+                    ],
+                    "op": "split",
+                    "sizes": [
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 1
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 1
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 7
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "size": "relative",
+                        "weight": {
+                          "expr": "int",
+                          "value": 1
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "axis": "y",
+                    "children": [
+                      {
+                        "op": "call",
+                        "symbol": "part-6"
+                      },
+                      {
+                        "axis": "x",
+                        "children": [
+                          {
+                            "op": "call",
+                            "symbol": "wall"
+                          },
+                          {
+                            "op": "call",
+                            "symbol": "room-air"
+                          },
+                          {
+                            "op": "call",
                             "symbol": "wall"
                           }
                         ],
@@ -1874,7 +2034,14 @@
                   {
                     "blocks": {
                       "expr": "int",
-                      "value": 10
+                      "value": 1
+                    },
+                    "size": "absolute"
+                  },
+                  {
+                    "blocks": {
+                      "expr": "int",
+                      "value": 9
                     },
                     "size": "absolute"
                   },

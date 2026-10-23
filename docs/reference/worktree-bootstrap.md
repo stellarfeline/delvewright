@@ -126,3 +126,14 @@ piece of before/after evidence, not just the ones in a shared directory.
 
 `tools/planner/worktree-new.sh` makes §1's link. §2's copy and §3's scratch
 directory are made by hand, and this file is the checklist for them.
+
+## The remote build machine
+
+A round that runs heavy work on the remote build machine holds a third copy of
+its tree there, `~/dw/wt/<repo>/<tag>`, where `<tag>` is the local worktree's
+name without its `wt-` or `ct-`. `tools/planner/worktree-reclaim.py` reclaims it
+in the same run as the local tree, on the same pull-request evidence, and lists
+the machine again to prove it gone. A remote tree with no local worktree of that
+tag is reported as an orphan and is never deleted; an unreachable remote keeps
+everything. A compose project or image a round left there is not a tree and is
+torn down by the round itself.

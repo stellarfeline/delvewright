@@ -101,7 +101,12 @@
         "floor": {
           "datum": "datum/grade"
         },
-        "node": "node/causeway"
+        "node": "node/causeway",
+        "way": {
+          "at": 0,
+          "axis": "z",
+          "clear": 6
+        }
       },
       {
         "ceiling": {
@@ -506,6 +511,6 @@
       }
     ]
   },
-  "dsl_version": "0.56.0",
+  "dsl_version": "0.62.0",
   "stage": "site-plan"
 }

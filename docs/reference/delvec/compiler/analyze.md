@@ -75,22 +75,24 @@ every no-collision plant, and every no-collision fixture — torches of every ki
 signs, hanging signs, banners, buttons, levers, rails, `redstone_wire`, `light`,
 `structure_void`), `FenceGate` and `Climbable` (ladders, vines) pass light by construction, and so does a
 `Fluid` cell (water, lava, seagrass, kelp, bubble columns). A class the collision
-table gains is light-passing the day it is added. The rest of the opacity table is
-the light model's own: blocks a body cannot occupy that still pass light — glass
-and panes, `iron_bars`, chains, lanterns, campfires, `end_rod`, `ladder`,
-`scaffolding`, `pointed_dripstone`, `cobweb`, `lily_pad`, `sea_pickle`, `snow` at
-5–8 layers, and `oak_fence`. Anything else is **opaque**, which under-measures
-light and is the safe direction only for a block a walker cannot enter: a cell a
-body walks through, measured at light 0 while the game lights it, is a `DW0210`
-no relighting can clear. Vanilla 1.21.11 agrees for the passable classes: every
-empty-collision and thin block has `filterLight = 0` (pinned `minecraft-data`
-`.../pc/1.21.9/blocks.json`: all 16 pressure plates, `tripwire`, `tripwire_hook`,
-all 18 carpets, `snow`, all 12 fence gates), against `filterLight = 15` for
-`stone`/`dirt`/`oak_planks`/`cobblestone`/`deepslate`/`sand`/`gravel`/`obsidian`/
-`snow_block`. Blocks vanilla also calls transparent but the collision table calls
-**solid or tall** (fences, walls, slabs, stairs, doors, trapdoors, chests) stay
-opaque: no body occupies their cell, so their opacity can only make the gate
-stricter. `light::tests::every_nav_passable_block_passes_light` asserts the
+table gains is light-passing the day it is added. A block a body cannot occupy
+passes light exactly when the pinned game's light engine lets light through it as
+through air: `getLightBlock()` 0 (block light loses one a step and sky light falls
+through undiminished, as the model's sky column takes it) and no
+`useShapeForLightOcclusion()`, read from `crates/dsl/data/light-block-1.21.11.tsv`
+(`delvewright_dsl::blockshape::light_block`, measured inside the pinned server jar
+by `tools/maintenance/dump-block-light.py`). Glass and panes, `iron_bars`, chains,
+lanterns, fences, walls, doors and trapdoors pass; `tinted_glass` and every full
+opaque cube (`getLightBlock()` 15) stop light; so do, on the side that
+under-measures, leaves, ice and waterlogged blocks (`getLightBlock()` 1 dims the
+sky light the model's column would carry whole) and slabs, stairs and snow layers
+(their shape stops light at some faces, which a cell that passes or stops whole
+cannot say). A block the table does not hold stops light.
+Under-measuring is the safe direction only for a block a walker cannot enter: a
+cell a body walks through, measured at light 0 while the game lights it, is a
+`DW0210` no relighting can clear. `light::tests::every_light_passing_state_passes_light_in_the_pinned_jar`
+holds the other direction: no state the model passes is one the table stops or
+does not hold, over every state of the pinned registry. `light::tests::every_nav_passable_block_passes_light` asserts the
 implication over every state of every block in the pinned registry, through the
 real classifier, and prints its binding count.
 

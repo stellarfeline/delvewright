@@ -4,7 +4,9 @@ use super::*;
 
 impl<'a> Plan<'a> {
     /// **Every trigger this build emits**: the campaign's own, in declaration
-    /// order, then the compiler's press answers ([`PressAnswer`]).
+    /// order, then the compiler's press answers ([`PressAnswer`]), then every
+    /// body's declared answers ([`crate::compiler::bodies::BodyAnswer`],
+    /// spec-0119).
     ///
     /// This is the emission-side counterpart of `QuestsContent::all_triggers` (the
     /// authority an `ambush` desugars into), and it exists for the same reason:
@@ -28,6 +30,11 @@ impl<'a> Plan<'a> {
     pub fn emitted_triggers(&self, chrome: &delvewright_dsl::Chrome) -> Vec<EnvTrigger> {
         let mut out = self.campaign.quests.content.triggers.clone();
         out.extend(self.press_answers.iter().map(|p| p.trigger(chrome)));
+        out.extend(
+            crate::compiler::bodies::answers(self.campaign)
+                .iter()
+                .map(|a| a.trigger()),
+        );
         out
     }
 

@@ -157,13 +157,9 @@ pub struct Encounter {
     /// coordinate system, the one every `fire_step` and nav proof indexes.
     ///
     /// This is **not** the index the harness sees: the exported
-    /// `critical-path.json` additionally carries a spliced `rest` step after the
-    /// beat that arms each bonfire, so the two drift by one per bonfire.
-    /// [`Plan::exported_step`] is the translation for that path, and the emitted
-    /// combat plan states exported coordinates. (There is exactly one
-    /// `combat-plan.json`, over the main path — spec-0025's per-branch paths
-    /// resequence the same steps and need `emit::rest_step_index` instead, which
-    /// is why this never crosses into them.)
+    /// `critical-path.json` also carries the `rest` and `witness-strike` steps.
+    /// The emitted combat plan states exported coordinates, read from the main
+    /// path's [`crate::compiler::plan::Plan::exported_layout`].
     pub step: usize,
     /// What the content bills the fight as (`ordinary` unless declared).
     pub tier: EncounterTier,
@@ -640,7 +636,7 @@ pub struct PathLegs<'a> {
 ///
 /// Per path: for each `respawns_on_rest` wave cleared by a `kill` step `k`,
 /// for each bonfire whose rest the path performs at or after `k` (the rest is
-/// spliced after the beat that arms it, `emit::rest_step_index`), the FIRST
+/// performed where [`crate::compiler::plan::Plan::rest_after`] places it), the FIRST
 /// walked leg after that rest whose routed cells come within the wave's aggro
 /// radius (plus its reach margin) of any cell the wave occupies, in sight of it,
 /// is a run-back. Only the first: once fought, the wave stays down until the
@@ -685,17 +681,10 @@ pub fn run_backs(
                 continue;
             };
             for b in plan.bonfires() {
-                // Where this path performs the rest: after the beat that arms
-                // the fire, translated through that beat's objective.
-                let rest_at = match plan
-                    .critical_path
-                    .get(b.fire_step)
-                    .and_then(Step::objective)
-                {
-                    None => (b.fire_step < path.steps.len()).then_some(b.fire_step),
-                    Some(obj) => path.steps.iter().position(|s| s.objective() == Some(obj)),
+                // Where this path performs the rest (`Plan::rest_after`).
+                let Some(r) = plan.rest_after(path.steps, b) else {
+                    continue;
                 };
-                let Some(r) = rest_at else { continue };
                 if r < k {
                     continue;
                 }
@@ -1524,7 +1513,12 @@ pub fn non_combatants_json(c: &Campaign) -> Value {
 ///   is `floor_gate.not_covered` only), so `actors_gate.unbound`
 ///   does not by itself mean "no hostile actor in this campaign"; the reason
 ///   text says so and points at `floor_gate.not_covered`.
-pub fn combat_plan_json(plan: &Plan, encounters: &[Encounter], run_backs: &[RunBack]) -> Value {
+pub fn combat_plan_json(
+    plan: &Plan,
+    encounters: &[Encounter],
+    run_backs: &[RunBack],
+    layout: &crate::compiler::plan::ExportedLayout,
+) -> Value {
     let difficulty = effective_difficulty(plan.campaign);
     let items = ItemCombatRegistry::v1_21_11();
     let entries: Vec<Value> = encounters
@@ -1537,7 +1531,7 @@ pub fn combat_plan_json(plan: &Plan, encounters: &[Encounter], run_backs: &[RunB
                 // has in `critical-path.json`, rest splices included. The plan
                 // is a harness document, and every harness document speaks one
                 // coordinate system.
-                "step": plan.exported_step(e.step),
+                "step": layout.step(e.step),
                 "tier": e.tier.token(),
                 "pos": [e.pos[0], e.pos[1], e.pos[2]],
                 "count": e.count,
@@ -1720,6 +1714,7 @@ mod tests {
             climb: BTreeMap::new(),
             unheld_climb: BTreeMap::new(),
             footprints: Default::default(),
+            hiding: Default::default(),
         }
     }
 

@@ -477,8 +477,16 @@ pub fn check(areas: &[AreaPlacement], prefabs: &PrefabRegistry) -> Result<FaceBi
                     // the placement. A face contract read without the rotation
                     // would mate a west door to a west door.
                     let dir = rotate_dir(placement.rotation, local_dir);
-                    let a = world_cell(placement.rotation, placement.pos, face.opening.from);
-                    let b = world_cell(placement.rotation, placement.pos, face.opening.to);
+                    let a = crate::compiler::ways::world_cell(
+                        placement.rotation,
+                        placement.pos,
+                        face.opening.from,
+                    );
+                    let b = crate::compiler::ways::world_cell(
+                        placement.rotation,
+                        placement.pos,
+                        face.opening.to,
+                    );
                     faces.push(PlacedFace {
                         space: face.space.clone(),
                         class: Some(face.class.clone()),
@@ -755,12 +763,6 @@ fn plane_of(face: &PlacedFace, axis: usize) -> i32 {
     } else {
         face.min[axis]
     }
-}
-
-/// A local cell, placed and rotated.
-fn world_cell(rotation: Rotation, pos: [i32; 3], local: [i32; 3]) -> [i32; 3] {
-    let t = rotation.transform(local);
-    [pos[0] + t[0], pos[1] + t[1], pos[2] + t[2]]
 }
 
 /// A local outward direction, rotated. The pivot does not matter for a

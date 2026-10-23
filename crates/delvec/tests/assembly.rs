@@ -194,17 +194,38 @@ fn a_strike_reads_and_clears_the_hitbox_and_counts_in_order() {
     );
 }
 
-/// `audience: presser` on a left-click is `DW0427`; `at` on a
+/// `audience: presser` on a `strike-assembly` is admitted and dispatched as
+/// the striker by `minecraft:player_hurt_entity` on the assembly's own hitbox,
+/// with no tick poll and no `attack` clear (spec-0119); `at` on a
 /// `strike-assembly` is `DW0194`.
 #[test]
-fn presser_and_at_are_refused_on_a_strike_assembly() {
-    let q = quests_with(|q| trigger(q)["audience"] = json!("presser"));
+fn presser_on_a_strike_assembly_dispatches_as_the_striker_and_at_is_refused() {
+    let q = quests_with(|q| {
+        trigger(q)["audience"] = json!("presser");
+        trigger(q)["once"] = json!(false);
+    });
+    let codes = validation_codes(&q, rig());
+    assert!(!codes.iter().any(|(c, _, _)| c == "DW0427"), "{codes:?}");
+    let out = try_build(&campaign(&q), &prefabs_with(rig()))
+        .unwrap_or_else(|e| panic!("a presser blow on the limb builds: {e:?}"));
+    let adv: serde_json::Value = serde_json::from_slice(
+        out.get("datapack/data/hello-world/advancement/press_limb_struck.json")
+            .expect("the press advancement"),
+    )
+    .unwrap();
+    assert_eq!(
+        adv["criteria"]["interact"]["trigger"],
+        "minecraft:player_hurt_entity"
+    );
+    assert_eq!(
+        adv["criteria"]["interact"]["conditions"]["entity"]["nbt"],
+        "{Tags:[\"dw_asm_limb_hit\"]}"
+    );
+    let tick = function(&out, "tick");
     assert!(
-        validation_codes(&q, rig())
-            .iter()
-            .any(|(c, p, _)| c == "DW0427" && p.ends_with("/audience")),
-        "{:?}",
-        validation_codes(&q, rig())
+        !tick.contains("run function hello-world:trig_limb_struck")
+            && !tick.contains("run data remove entity @s attack"),
+        "a presser blow is neither polled nor cleared: {tick}"
     );
     let q = quests_with(|q| trigger(q)["at"] = json!("anchor/exit"));
     let codes = validation_codes(&q, rig());

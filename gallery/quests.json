@@ -189,6 +189,25 @@
         "facing": "north",
         "id": "actor/destrier",
         "tier": "elite"
+      },
+      {
+        "anchor": "anchor/usher",
+        "answers": {
+          "struck": "Iron over stone. The sentry does not stir.",
+          "touched": "Cold metal. It was set here to be looked at, not woken."
+        },
+        "entity": "minecraft:zombie",
+        "equipment": {
+          "chest": "minecraft:iron_chestplate",
+          "head": "minecraft:iron_helmet"
+        },
+        "facing": "south",
+        "id": "actor/hall-sentry",
+        "offset": [
+          2,
+          0,
+          0
+        ]
       }
     ],
     "ambushes": [
@@ -1706,6 +1725,20 @@
                       "happening": {
                         "subject": "actor/hall-page",
                         "text": "A page follows the usher out and takes the mark beside him, not the one he is standing on.",
+                        "verb": "arrives"
+                      },
+                      "type": "spawn-actor"
+                    }
+                  ]
+                },
+                {
+                  "at_ticks": 45,
+                  "effects": [
+                    {
+                      "actor": "actor/hall-sentry",
+                      "happening": {
+                        "subject": "actor/hall-sentry",
+                        "text": "An armoured figure is set on the speaking row between the usher and the page, a statue in iron that never moves.",
                         "verb": "arrives"
                       },
                       "type": "spawn-actor"
@@ -4845,6 +4878,6 @@
       }
     ]
   },
-  "dsl_version": "0.56.0",
+  "dsl_version": "0.62.0",
   "stage": "quests"
 }

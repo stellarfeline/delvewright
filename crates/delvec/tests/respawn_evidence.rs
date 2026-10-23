@@ -214,7 +214,7 @@ fn hostile_actor(quests: &mut serde_json::Value, id: &str, anchor: &str) {
         .or_insert_with(|| json!([]));
     actors.as_array_mut().unwrap().push(json!({
         "id": id,
-        "entity": "minecraft:husk",
+        "entity": "minecraft:husk", "answers": { "struck": "It does not stir.", "touched": "Cold, and still." },
         "anchor": anchor,
     }));
     let quest = &mut quests["content"]["quests"].as_array_mut().unwrap()[0];
@@ -459,7 +459,7 @@ fn bearer_removed_by_aside(dst: &Path, on_path: bool) {
         let content = q["content"].as_object_mut().unwrap();
         content.insert(
             "actors".to_string(),
-            json!([{ "id": "actor/warden", "entity": "minecraft:husk", "anchor": "anchor/exit" }]),
+            json!([{ "id": "actor/warden", "entity": "minecraft:husk", "answers": { "struck": "It does not stir.", "touched": "Cold, and still." }, "anchor": "anchor/exit" }]),
         );
         content
             .get_mut("triggers")

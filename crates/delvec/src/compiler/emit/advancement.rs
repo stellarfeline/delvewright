@@ -111,17 +111,22 @@ pub(super) fn emit_advancements(
             continue;
         }
         let id = plan::safe_local(t.id.as_str());
-        let criterion = match block {
-            Some((block, cell)) => block_use_criterion(&block, cell),
-            None => json!({
-                "trigger": "minecraft:player_interacted_with_entity",
+        // The press kind names its own criterion (`press_criterion`): a
+        // right-click `player_interacted_with_entity`, a left-click
+        // `player_hurt_entity` (spec-0119), each keyed on the interaction the
+        // press lands on (`trigger_carrier_tag`).
+        let criterion = match (block, press_criterion(&t.on)) {
+            (Some((block, cell)), _) => block_use_criterion(&block, cell),
+            (None, Some(trigger)) => json!({
+                "trigger": trigger,
                 "conditions": {
                     "entity": {
                         "type": "minecraft:interaction",
-                        "nbt": format!("{{Tags:[\"dw_trig_{id}\"]}}")
+                        "nbt": format!("{{Tags:[\"{}\"]}}", trigger_carrier_tag(t))
                     }
                 }
             }),
+            (None, None) => continue,
         };
         advs.push((
             format!("press_{id}"),

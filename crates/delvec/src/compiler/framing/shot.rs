@@ -22,8 +22,9 @@
 //!   plane and inside the action-safe rectangle, `|x|, |y| ≤` [`ACTION_SAFE`] in
 //!   normalised device coordinates (EBU R 95). `DW1033`.
 //! - **In sight** — of nine lines from the lens to the subject's sight box (its
-//!   centre and its eight corners inset), at least one crosses no cell
-//!   `World::blocks_camera` holds for, the subject's own box excluded. `DW1033`.
+//!   centre and its eight corners inset), at least one crosses no cell that
+//!   hides what is behind it (`World::hides`, the pinned occlusion table), the
+//!   subject's own box excluded: the one sight rule, [`in_sight`]. `DW1033`.
 //! - **Present** — a body subject is placed before the cutscene on every path
 //!   and not removed between: the one ordering rule,
 //!   [`delvewright_dsl::ordering::Order`]. `DW1034`.
@@ -42,7 +43,7 @@ use delvewright_dsl::ordering::{Beat, Order, Presence};
 use delvewright_dsl::{CameraSubject, DwCode, ExitTier};
 use serde_json::{Value, json};
 
-use super::{Camera, CellBox, Lines, in_sight};
+use super::{Camera, CellBox, Lines, Occupancy, in_sight};
 use crate::compiler::camera::{MoveCtx, SubjectGeom, expand_shot, resolve_subject};
 use crate::compiler::failure::Failure;
 use crate::compiler::nav::{ActorMovePlan, MovePlan, World};
@@ -118,8 +119,8 @@ pub struct Sight {
     /// The reference point lies in front of the near plane and inside the
     /// action-safe rectangle.
     pub in_frame: bool,
-    /// How many of the nine sight lines cross no camera-blocking cell outside
-    /// the subject's own box.
+    /// How many of the nine sight lines cross no hiding cell outside the
+    /// subject's own box.
     pub lines_clear: u8,
     /// The first blocking cell on the centre line, when it is blocked.
     pub centre_block: Option<[i32; 3]>,
@@ -136,7 +137,7 @@ impl Sight {
 /// action-safe rectangle of the picture a camera at `pose` takes with vertical
 /// field of view `fov_v` and aspect `aspect`, and how many of the nine lines
 /// from the lens to `sight_box` the one sight rule ([`in_sight`]) finds clear
-/// over `blocks`. Crate-private: outside `compiler::framing`, the one public
+/// over `world`. Crate-private: outside `compiler::framing`, the one public
 /// answer to "is this inside a camera's frame, and hidden there" is
 /// [`super::resolve_targets`].
 pub(crate) fn sight(
@@ -145,7 +146,7 @@ pub(crate) fn sight(
     aspect: f64,
     reference: [f64; 3],
     sight_box: &CellBox,
-    blocks: &dyn Fn([i32; 3]) -> bool,
+    world: &dyn Occupancy,
 ) -> Sight {
     let cam = Camera {
         pos: pose.pos,
@@ -158,7 +159,7 @@ pub(crate) fn sight(
     let Lines {
         clear: lines_clear,
         centre_block,
-    } = in_sight(pose.pos, sight_box, blocks);
+    } = in_sight(world, pose.pos, sight_box, &[]);
     Sight {
         in_frame,
         lines_clear,
@@ -725,7 +726,6 @@ pub fn judge(
     let served = delvewright_dsl::viewdistance::served_radius_blocks(
         delvewright_dsl::viewdistance::chunks(plan.campaign),
     );
-    let blocks = |c: [i32; 3]| world.blocks_camera(c);
     let mut ledger = ShotLedger::default();
     let mut failures: Vec<Failure> = Vec::new();
     for (eff, ctx) in crate::compiler::camera::cutscene_units(plan.campaign) {
@@ -784,7 +784,6 @@ pub fn judge(
                     subject,
                     &track,
                     served,
-                    &blocks,
                     &mut failures,
                 );
                 if let (CameraSubject::Assembly(s), Some(f)) = (subject, rec.farthest) {
@@ -821,7 +820,6 @@ fn judge_subject(
     subject: &CameraSubject,
     track: &Track,
     served: f64,
-    blocks: &dyn Fn([i32; 3]) -> bool,
     failures: &mut Vec<Failure>,
 ) -> SubjectRecord {
     let canon = subject.canon();
@@ -946,7 +944,7 @@ fn judge_subject(
         &track.reference,
         &track.boxes,
         &|c| world.is_flooded(c),
-        blocks,
+        world,
     );
     rec.in_frame = judged.in_frame;
     rec.lines_clear = judged.lines_clear;
@@ -976,13 +974,13 @@ pub struct FrameJudgement {
 /// pose (`poses`, `(lens, yaw, pitch)`), the subject's reference point and
 /// sight box at that tick (a one-entry slice holds still), judged against the
 /// proof frame — [`PROOF_FOV_DEG`], or [`PROOF_FOV_FLUID_DEG`] at a tick the
-/// lens's cell is `fluid` — over the cells `blocks` holds for.
+/// lens's cell is `fluid` — over the cells `world` hides at.
 pub fn frame_and_sight(
     poses: &[([f64; 3], f64, f64)],
     references: &[[f64; 3]],
     boxes: &[CellBox],
     fluid: &dyn Fn([i32; 3]) -> bool,
-    blocks: &dyn Fn([i32; 3]) -> bool,
+    world: &dyn Occupancy,
 ) -> FrameJudgement {
     let mut out = FrameJudgement {
         in_frame: Vec::new(),
@@ -1003,7 +1001,7 @@ pub fn frame_and_sight(
         };
         let reference = Track::at(references, t);
         let sbox = Track::at(boxes, t);
-        let s = sight(&pose, fov, PROOF_ASPECT, reference, &sbox, blocks);
+        let s = sight(&pose, fov, PROOF_ASPECT, reference, &sbox, world);
         out.in_frame.push(s.in_frame);
         out.lines_clear.push(s.lines_clear);
         if (!s.in_frame || s.occluded()) && out.first_failure.is_none() {
