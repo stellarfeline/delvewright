@@ -2491,7 +2491,7 @@ fn a_platform_of_the_entry_space_no_way_in_reaches_is_not_reached() {
     assert!(!g.passed(), "{}", g.detail);
     assert!(g.detail.contains("space deck: 15 cell(s)"), "{}", g.detail);
     assert!(
-        g.detail.contains("1 way(s) in (6 cell(s))"),
+        g.detail.contains("1 way(s) in (15 cell(s))"),
         "the walk names where it starts: {}",
         g.detail
     );

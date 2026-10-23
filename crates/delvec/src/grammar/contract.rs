@@ -2333,7 +2333,9 @@ pub(crate) fn reached_shut(
 ///
 /// A mouth is the edge's `via` when it declares one, its bar when it declares
 /// only that, and otherwise the entry space's cells on the model's outer layer
-/// (where [`exterior_faces`] reads the same edge's opening). Seeding from the
+/// (where [`exterior_faces`] reads the same edge's opening) — with the entry
+/// space's cells within one cell of it, where a body that comes through it
+/// first stands. Seeding from the
 /// mouths, not from every standable cell of the entry space, is what makes a
 /// part of the entry space no way in reaches a red: a space that held every
 /// platform of a course was otherwise reached by construction.
@@ -2375,6 +2377,24 @@ fn entry_seeds(ix: &Index, model: &VoxelModel) -> EntrySeeds {
     }
     if ways_in == 0 {
         mouths = ix.standable_in(entry);
+    } else {
+        // The floor beside a mouth is where a body that comes through it
+        // first stands: a doorway's own floor is often the neighbour's, so the
+        // opening's cells hold nothing to stand on.
+        let beside: Vec<[i32; 3]> = ix
+            .space(entry)
+            .iter()
+            .filter(|c| {
+                !mouths.contains(*c)
+                    && (-1..=1).any(|dx| {
+                        (-1..=1).any(|dy| {
+                            (-1..=1).any(|dz| mouths.contains(&[c[0] + dx, c[1] + dy, c[2] + dz]))
+                        })
+                    })
+            })
+            .copied()
+            .collect();
+        mouths.extend(beside);
     }
     EntrySeeds {
         cells: mouths,
