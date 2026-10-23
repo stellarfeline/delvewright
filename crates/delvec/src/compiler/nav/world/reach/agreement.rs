@@ -7,21 +7,30 @@
 //! flood (`DW0838`, [`crate::compiler::blockout::crossing_flood`]), the moves
 //! its contact and portal crossings step out of a wall by (`DW0877`, `DW0986`,
 //! [`crate::compiler::blockout::steps_out`]), its pacing legs (`DW0822`,
-//! [`crate::compiler::blockout::leg_routed`]) and the piece contract's
+//! [`crate::compiler::blockout::leg_routed`]), the piece contract's
 //! `contract-reachability` walk ([`crate::grammar::contract::reached_shut`]),
-//! seeded from the entry's mouth.
+//! seeded from the entry's mouth, its edge proof per class
+//! ([`crate::grammar::contract::class_proved`]: `walk`, `stair`, `drop` and
+//! `climb`), and the grammar gates `traversable`
+//! ([`crate::grammar::gates::traversal_passes`], with and without falls) and
+//! `reachable-floor` ([`crate::grammar::gates::floor_walked`] and the count
+//! [`crate::grammar::gates::reachability_from`] reports).
 //!
 //! The cases are parkour courses: platforms three wide along `x` with gaps of
 //! zero to four columns, rises of up to two courses either way, a low ceiling
 //! that forbids a jump, a pit under the gaps, and declared jumps across some
 //! gaps. The battery is asked over the world with its declared jumps; a piece
-//! contract has no declared-jump surface, so it is asked over the same blocks
-//! without them and compared with the graph over those blocks.
+//! contract and a grammar gate have no declared-jump surface, so they are
+//! asked over the same blocks without them and compared with the graph over
+//! those blocks. A `climb` proof needs a climbable to hold on, so it is asked
+//! over the same course with a ladder hung down the first platform's west face
+//! on a stone column, and compared with the graph over that piece's blocks.
 //!
 //! The test also reds when its cases are vacuous: when no case needs a jump of
 //! the launch set, or no case needs a declared jump, for the graph to reach
 //! more than the walk does, or no step-out closure or leg needs a jump or a
-//! fall.
+//! fall, or no grammar consumer's answer needs one, or no climb case reaches
+//! a held cell.
 
 use super::super::{Premises, World};
 use crate::grammar::block::BlockState;
@@ -129,6 +138,23 @@ fn model_of(case: &Case) -> VoxelModel {
     m
 }
 
+/// The course with a ladder hung down the first platform's west face, from the
+/// platform's own course to the bottom of the model, on a stone column under
+/// the platform's middle row: the cells a body holds in are the ladder's.
+fn laddered(case: &Case) -> (VoxelModel, BTreeSet<[i32; 3]>) {
+    let mut m = model_of(case);
+    let stone = BlockState::simple("minecraft:stone_bricks");
+    let ladder: BlockState = "minecraft:ladder[facing=west]".parse().expect("a ladder");
+    let top = case.root[1] - 1;
+    let mut rungs = BTreeSet::new();
+    for y in 1..=top {
+        m.set([1, y, 2], &stone).expect("one block");
+        m.set([0, y, 2], &ladder).expect("one block");
+        rungs.insert([0, y, 2]);
+    }
+    (m, rungs)
+}
+
 fn region(from: [i32; 3], to: [i32; 3]) -> Region {
     Region { from, to }
 }
@@ -192,6 +218,9 @@ fn every_consumer_reaches_what_the_reach_graph_reaches() {
     let mut declared = 0usize;
     let mut cells = 0usize;
     let mut legs = 0usize;
+    let mut grammar_pairs = 0usize;
+    let mut grammar_needed = 0usize;
+    let mut held_reached = 0usize;
     for seed in 0..CASES {
         let case = generate(seed);
         declared += case.jumps.len();
@@ -285,12 +314,118 @@ fn every_consumer_reaches_what_the_reach_graph_reaches() {
         if reached.len() > bare.walk_region(&starts).len() {
             contract_launch_needed += 1;
         }
+
+        // The grammar's own reach: `reachable-floor`'s walk and count, then
+        // `traversable` and the edge proof per class, from the root to every
+        // cell over a solid block and back.
+        let standable = crate::grammar::nav::standable_cells(&model);
+        let roots = BTreeSet::from([case.root]);
+        let from_root = bare.body_region(&[case.root]);
+        assert!(
+            from_root.is_subset(&standable),
+            "case {seed}: the graph stands a body where the grammar counts no floor"
+        );
+        let floor = crate::grammar::gates::floor_walked(&model, &standable, &roots);
+        assert_eq!(
+            floor, from_root,
+            "case {seed}: reachable-floor's walk differs from the reach graph's"
+        );
+        assert_eq!(
+            crate::grammar::gates::reachability_from(&model, &standable, &roots).reachable,
+            from_root.len(),
+            "case {seed}: reachable-floor's count differs from the reach graph's"
+        );
+        let walked_here = bare.walk_region(&[case.root]);
+        if from_root.len() > walked_here.len() {
+            grammar_needed += 1;
+        }
+        let (ladder_model, rungs) = laddered(&case);
+        let ladder_world = crate::grammar::contract::body_world(&ladder_model);
+        let ladder_standable = crate::grammar::nav::standable_cells(&ladder_model);
+        let ladder_cells: BTreeSet<[i32; 3]> = ladder_standable.union(&rungs).copied().collect();
+        let ladder_reach = |from: [i32; 3]| {
+            let states = ladder_world.body_reach(&[from]).cells();
+            assert!(
+                states.is_subset(&ladder_cells),
+                "case {seed}: a body rests outside the climb's cells: {:?}",
+                states.difference(&ladder_cells).collect::<Vec<_>>()
+            );
+            states
+        };
+        let ladder_root = ladder_reach(case.root);
+        if !ladder_root.is_disjoint(&rungs) {
+            held_reached += 1;
+        }
+        for c in &case.solid {
+            let z = [c[0], c[1] + 1, c[2]];
+            if !standable.contains(&z) {
+                continue;
+            }
+            grammar_pairs += 1;
+            let there = BTreeSet::from([z]);
+            let forward = from_root.contains(&z);
+            let back = bare.body_region(&[z]).contains(&case.root);
+            if (forward && !walked_here.contains(&z))
+                || (back && !bare.walk_region(&[z]).contains(&case.root))
+            {
+                grammar_needed += 1;
+            }
+            let ways = [roots.clone(), there.clone()];
+            assert_eq!(
+                crate::grammar::gates::traversal_passes(&model, &ways, false),
+                forward && back,
+                "case {seed}: traversable (no falls) judges the root and {z:?} differently \
+                 from the reach graph"
+            );
+            assert_eq!(
+                crate::grammar::gates::traversal_passes(&model, &ways, true),
+                forward || back,
+                "case {seed}: traversable (with falls) judges the root and {z:?} differently \
+                 from the reach graph"
+            );
+            for class in ["walk", "stair"] {
+                assert_eq!(
+                    crate::grammar::contract::class_proved(
+                        class, &model, &standable, &standable, &roots, &there
+                    ),
+                    forward && back,
+                    "case {seed}: the `{class}` edge proof judges the root and {z:?} \
+                     differently from the reach graph"
+                );
+            }
+            assert_eq!(
+                crate::grammar::contract::class_proved(
+                    "drop", &model, &standable, &standable, &roots, &there
+                ),
+                forward && !back,
+                "case {seed}: the `drop` edge proof judges the root and {z:?} differently \
+                 from the reach graph"
+            );
+            if ladder_standable.contains(&z) {
+                let climbed = ladder_root.contains(&z) && ladder_reach(z).contains(&case.root);
+                assert_eq!(
+                    crate::grammar::contract::class_proved(
+                        "climb",
+                        &ladder_model,
+                        &ladder_standable,
+                        &rungs,
+                        &roots,
+                        &there
+                    ),
+                    climbed,
+                    "case {seed}: the `climb` edge proof judges the root and {z:?} \
+                     differently from the reach graph"
+                );
+            }
+        }
     }
     eprintln!(
         "reach agreement: {CASES} case(s), {cells} reached cell(s), {declared} declared jump(s), \
          {legs} leg(s); {launch_needed} case(s) need a launch-set jump, {declared_needed} a \
          declared jump, {contract_launch_needed} of the contract's a launch-set jump, \
-         {steps_needed} of the step-out a jump or fall, {legs_needed} leg(s) a jump or fall"
+         {steps_needed} of the step-out a jump or fall, {legs_needed} leg(s) a jump or fall; \
+         {grammar_pairs} grammar pair(s), {grammar_needed} grammar answer(s) a jump or fall, \
+         {held_reached} climb case(s) reaching a held cell"
     );
     assert!(
         launch_needed > 0 && contract_launch_needed > 0,
@@ -303,5 +438,9 @@ fn every_consumer_reaches_what_the_reach_graph_reaches() {
     assert!(
         steps_needed > 0 && legs_needed > 0,
         "no step-out or leg needs more than the walk: the agreement is vacuous"
+    );
+    assert!(
+        grammar_needed > 0 && held_reached > 0,
+        "no grammar answer needs more than the walk, or no climb holds: the agreement is vacuous"
     );
 }

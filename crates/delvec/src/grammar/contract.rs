@@ -239,7 +239,7 @@ fn is_transit(edge: &crate::schem::prefab::ContractEdge) -> bool {
 /// by the climb's own moves ([`crate::compiler::nav::World::neighbors`]). A
 /// private climb rule here would be a second opinion two proofs could disagree
 /// about. Outside the model is air to this world, as it is to an assembled one.
-fn body_world(model: &VoxelModel) -> crate::compiler::nav::World {
+pub(crate) fn body_world(model: &VoxelModel) -> crate::compiler::nav::World {
     let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
     for pos in model.region().positions() {
         if let Some(b) = model.get(pos)
@@ -257,28 +257,30 @@ fn body_world(model: &VoxelModel) -> crate::compiler::nav::World {
     )
 }
 
+/// **Every cell a body reaches from `from`, moving only into `cells`**, by the
+/// reach graph's moves over `world` ([`body_world`]): the walk, the climb,
+/// every fall and every jump of the launch set
+/// ([`crate::compiler::nav::World::body_flood`]). A cell of `from` outside
+/// `cells` is no start. The edge proof's one walk: every class asks it, and a
+/// private step rule here would be a second answer to "can a body get there".
+pub(crate) fn body_reached(
+    world: &crate::compiler::nav::World,
+    cells: &BTreeSet<[i32; 3]>,
+    from: &BTreeSet<[i32; 3]>,
+) -> BTreeSet<[i32; 3]> {
+    let seeds: Vec<[i32; 3]> = from.intersection(cells).copied().collect();
+    world.body_flood(&seeds, &|_, next| cells.contains(&next))
+}
+
 /// Can a body get from any cell of `from` to any cell of `to`, moving only
-/// through `cells` and only by the body's own moves — the walk and the climb
-/// ([`body_world`])?
+/// through `cells` ([`body_reached`])?
 fn body_connected(
     world: &crate::compiler::nav::World,
     cells: &BTreeSet<[i32; 3]>,
     from: &BTreeSet<[i32; 3]>,
     to: &BTreeSet<[i32; 3]>,
 ) -> bool {
-    let mut seen: BTreeSet<[i32; 3]> = from.intersection(cells).copied().collect();
-    let mut queue: VecDeque<[i32; 3]> = seen.iter().copied().collect();
-    while let Some(cur) = queue.pop_front() {
-        if to.contains(&cur) {
-            return true;
-        }
-        for next in world.neighbors(cur) {
-            if cells.contains(&next) && seen.insert(next) {
-                queue.push_back(next);
-            }
-        }
-    }
-    false
+    !body_reached(world, cells, from).is_disjoint(to)
 }
 
 // ---------------------------------------------------------------------------
@@ -1412,13 +1414,21 @@ fn prove_class(
     b: &BTreeSet<[i32; 3]>,
     ends: (&str, &str),
 ) -> Result<(), String> {
+    // Every class is proved by the one walk over the reach graph
+    // ([`body_reached`]), confined to the edge's own cells: a jump the launch
+    // set clears joins two ends as a step does, and a drop a body can jump
+    // back up is not one-way.
+    let world = body_world(model);
+    let joined =
+        |cells: &BTreeSet<[i32; 3]>, from: &BTreeSet<[i32; 3]>, to: &BTreeSet<[i32; 3]>| {
+            body_connected(&world, cells, from, to)
+        };
     match class {
         "climb" => {
             // The cells a body HOLDS in are not standable, so the graph a walk
             // is proved over never holds them: the climb adds every cell of
             // its own volume a body can hold on in, and the body's own moves
             // decide the rest.
-            let world = body_world(model);
             let held: BTreeSet<[i32; 3]> = span
                 .iter()
                 .filter(|c| world.is_climb_cell(**c))
@@ -1431,7 +1441,7 @@ fn prove_class(
                      vine whose hold these blocks keep (spec-0099) is what a body climbs"
                         .to_string(),
                 )
-            } else if body_connected(&world, &cells, a, b) && body_connected(&world, &cells, b, a) {
+            } else if joined(&cells, a, b) && joined(&cells, b, a) {
                 Ok(())
             } else {
                 Err(
@@ -1442,7 +1452,7 @@ fn prove_class(
             }
         }
         "walk" => {
-            if nav::connected(model, graph, a, b) && nav::connected(model, graph, b, a) {
+            if joined(graph, a, b) && joined(graph, b, a) {
                 Ok(())
             } else {
                 Err("a walk connects both ways, and this one does not".to_string())
@@ -1455,18 +1465,18 @@ fn prove_class(
                      body climbs"
                         .to_string(),
                 )
-            } else if nav::connected(model, graph, a, b) && nav::connected(model, graph, b, a) {
+            } else if joined(graph, a, b) && joined(graph, b, a) {
                 Ok(())
             } else {
                 Err("the climb does not connect its two ends through its own treads".to_string())
             }
         }
         "drop" => {
-            if !nav::reachable_with_fall(model, graph, a, b) {
+            if !joined(graph, a, b) {
                 Err(format!("nothing falls from {} to {}", ends.0, ends.1))
-            } else if nav::connected(model, graph, b, a) {
+            } else if joined(graph, b, a) {
                 Err(format!(
-                    "a drop is one-way, and a body can walk back up from {} to {}",
+                    "a drop is one-way, and a body can get back up from {} to {}",
                     ends.1, ends.0
                 ))
             } else {
@@ -2332,6 +2342,22 @@ pub(crate) fn reached_shut(
     let ix = Index::new(model, contract);
     let start = entry_seeds(&ix, model).cells;
     build_confined(&ix).reach(model, &start, &BTreeSet::new())
+}
+
+/// The edge proof's verdict for `class` between `a` and `b` over `cells`, with
+/// `span` its transit volume: the class's own proof, for the agreement test
+/// that asks it and the reach graph the same cases
+/// (`compiler::nav::world::reach`).
+#[cfg(test)]
+pub(crate) fn class_proved(
+    class: &str,
+    model: &VoxelModel,
+    cells: &BTreeSet<[i32; 3]>,
+    span: &BTreeSet<[i32; 3]>,
+    a: &BTreeSet<[i32; 3]>,
+    b: &BTreeSet<[i32; 3]>,
+) -> bool {
+    prove_class(class, model, cells, cells, span, a, b, ("a", "b")).is_ok()
 }
 
 /// **Where the walk starts**: the mouth of every way into the entry space —
