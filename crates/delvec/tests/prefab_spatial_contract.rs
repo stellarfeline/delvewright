@@ -330,10 +330,13 @@ fn the_second_door_judges_a_laid_way_on_bytes_that_do_not_hold_it_yet() {
         stderr.contains("way \"deck\": laid over 3 cell(s)"),
         "the way is enumerated with its sign and binding count: {stderr}"
     );
+    // The far room is reached as shipped: a body jumps the one-cell gap the
+    // missing threshold leaves (the reach graph's launch set), so no space is
+    // reached only once the deck is laid. The way still opens the walk the
+    // edge declares, which the edge proof judges.
     assert!(
-        stderr.contains("reached only once deck is laid"),
-        "and the seam is named per space, which is what tells `reachable` from \
-         `reachable eventually`: {stderr}"
+        !stderr.contains("reached only once deck is laid"),
+        "a body jumps the missing threshold, so nothing waits on the deck: {stderr}"
     );
 
     // Lay the threshold in the bytes. The way now opens nothing.

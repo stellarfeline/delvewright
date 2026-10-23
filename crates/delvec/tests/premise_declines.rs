@@ -145,11 +145,6 @@ fn the_graph_declines_are_enumerated() {
     // (file under `src/`, the call, how many production sites) — each with
     // the question that keeps it off the graph.
     const EXPECTED: &[(&str, &str, usize)] = &[
-        // The stage-5 battery's "two places joined where no seam was
-        // allocated" (`DW0838`) reads cells of a box, not an assembled world:
-        // spec-0113 §5.1's third wave, not moved until the graph is built
-        // over a box.
-        ("compiler/blockout.rs", ".walk_region(", 1),
         // `DW0937`: the critical path performs the strike, so the question is
         // whether the party walks on cue to a cell it strikes from (§4.5);
         // and the bot's spared stand beside it, a cell it walks to on cue.

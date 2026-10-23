@@ -395,10 +395,13 @@ fn a_laid_way_is_judged_across_a_seam_and_refused_once_the_bytes_hold_it() {
         "the way is enumerated with its sign and binding count: {}",
         a.stderr
     );
+    // The far room is reached as shipped: a body jumps the one-cell gap the
+    // missing threshold leaves (the reach graph's launch set), so no space is
+    // reached only once the deck is laid. The way still opens the walk the
+    // edge declares, which the edge proof judges.
     assert!(
-        a.stderr.contains("reached only once deck is laid"),
-        "and the seam is named per space, which is what tells `reachable` from \
-         `reachable eventually`: {}",
+        !a.stderr.contains("reached only once deck is laid"),
+        "a body jumps the missing threshold, so nothing waits on the deck: {}",
         a.stderr
     );
 
