@@ -2832,7 +2832,10 @@ fn a_stand_in_is_not_judged_and_its_detail_is() {
     let s = String::from_utf8_lossy(&out.stderr).to_string();
     assert_eq!(out.status.code(), Some(0), "{s}");
     let (e, m) = standin_binding(&s);
-    assert!(e > 0, "the stand-in's interior is reachable and left out: {s}");
+    assert!(
+        e > 0,
+        "the stand-in's interior is reachable and left out: {s}"
+    );
     assert_eq!(m, 1, "{s}");
 
     let dark = DARK_STANDIN;

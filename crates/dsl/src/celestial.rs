@@ -783,7 +783,11 @@ fn world_phase_known(world: crate::WorldTime) -> bool {
 /// celestial statement's ([`shape_findings`]) or a clock statement's — the same
 /// phase rule (spec-0081 §6, spec-0122 §7.1) read at the tick. Empty for a
 /// keyword.
-pub fn time_findings(t: crate::WorldTime, site: CelestialSite, world: crate::WorldTime) -> Vec<String> {
+pub fn time_findings(
+    t: crate::WorldTime,
+    site: CelestialSite,
+    world: crate::WorldTime,
+) -> Vec<String> {
     match t {
         crate::WorldTime::Celestial(c) => shape_findings(c, site, world),
         crate::WorldTime::Daytime(c) => clock_findings(c, site, world),
@@ -846,15 +850,13 @@ pub(crate) fn check(c: &crate::envelope::Campaign, d: &mut Vec<crate::diagnostic
     use crate::diagnostic::{Diagnostic, codes};
     let world = c.world.content.time;
     let mut push = |stage: &str, path: String, t: crate::WorldTime, site: CelestialSite| {
-        {
-            for m in time_findings(t, site, world) {
-                d.push(Diagnostic::error(
-                    codes::CELESTIAL_TIME,
-                    stage,
-                    path.clone(),
-                    m,
-                ));
-            }
+        for m in time_findings(t, site, world) {
+            d.push(Diagnostic::error(
+                codes::CELESTIAL_TIME,
+                stage,
+                path.clone(),
+                m,
+            ));
         }
     };
     push("world", "/content/time".into(), world, CelestialSite::World);

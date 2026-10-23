@@ -132,7 +132,10 @@ fn the_handed_frame_draws_the_float_pose() {
 fn whole_number_views_keep_their_bytes() {
     let src = common::compiler_fixtures_dir().join("blockout/site-plan.json");
     let text = std::fs::read_to_string(&src).unwrap();
-    assert!(text.contains("\"eye\": [\n          32,"), "fixture as authored");
+    assert!(
+        text.contains("\"eye\": [\n          32,"),
+        "fixture as authored"
+    );
     // `delvec fmt --check` passes over it unchanged.
     let r = delvec(&["fmt", "--check", src.to_str().unwrap()]);
     assert_eq!(r.status.code(), Some(0), "{}", log(&r));
@@ -146,7 +149,10 @@ fn whole_number_views_keep_their_bytes() {
     let r = delvec(&["fmt", "--check", half.to_str().unwrap()]);
     assert_eq!(r.status.code(), Some(0), "{}", log(&r));
     let text = std::fs::read_to_string(&half).unwrap();
-    assert!(text.contains("54.5,\n          85.62,\n          101.5"), "{text}");
+    assert!(
+        text.contains("54.5,\n          85.62,\n          101.5"),
+        "{text}"
+    );
     let env: delvewright_dsl::Envelope<delvewright_dsl::siteplan::SitePlanContent> =
         serde_json::from_str(&text).unwrap();
     assert_eq!(delvewright_dsl::to_canonical_string(&env).unwrap(), text);

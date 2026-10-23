@@ -7,7 +7,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::serde_fields::default_true;
-use crate::{AreaId, AtmosphereId, CelestialTime, Clock, ClockStatement, MoonPhase, PoolId, PrefabId};
+use crate::{
+    AreaId, AtmosphereId, CelestialTime, Clock, ClockStatement, MoonPhase, PoolId, PrefabId,
+};
 
 #[cfg(doc)]
 use crate::Verb;

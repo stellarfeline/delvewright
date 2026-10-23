@@ -713,9 +713,12 @@ pub fn answered(c: &Campaign, files: &DesignFiles) -> Vec<Diagnostic> {
             crate::compiler::view::camera::DW_RECORD_AT_BUILD,
             "design",
             crate::compiler::view::camera::CAMERAS_FILE,
-            why.strip_prefix(&format!("{}: ", crate::compiler::view::camera::CAMERAS_FILE))
-                .unwrap_or(&why)
-                .to_string(),
+            why.strip_prefix(&format!(
+                "{}: ",
+                crate::compiler::view::camera::CAMERAS_FILE
+            ))
+            .unwrap_or(&why)
+            .to_string(),
         ));
         return d;
     }

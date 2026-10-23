@@ -42,16 +42,14 @@ fn late_afternoon_is_a_tick_on_day_zero() {
 fn a_visible_moon_owes_its_phase_and_the_phase_names_the_day() {
     let (_, codes) = with_time(json!({"daytime": 15000})).expect("parses");
     assert!(codes.contains(&"DW0931".to_string()), "{codes:?}");
-    let (t, codes) =
-        with_time(json!({"daytime": 15000, "phase": "new-moon"})).expect("parses");
+    let (t, codes) = with_time(json!({"daytime": 15000, "phase": "new-moon"})).expect("parses");
     assert!(!codes.contains(&"DW0931".to_string()), "{codes:?}");
     assert_eq!(token(t), "time set 111000");
 }
 
 #[test]
 fn a_phase_under_a_set_moon_is_refused() {
-    let (_, codes) =
-        with_time(json!({"daytime": 6000, "phase": "new-moon"})).expect("parses");
+    let (_, codes) = with_time(json!({"daytime": 6000, "phase": "new-moon"})).expect("parses");
     assert!(codes.contains(&"DW0931".to_string()), "{codes:?}");
 }
 
