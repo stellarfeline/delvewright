@@ -388,6 +388,28 @@ pub fn block_id(block: &str) -> &str {
     block.split('[').next().unwrap_or(block)
 }
 
+/// `DW1059` (d)'s message for a `use` or `strike` trigger anchored at a gate
+/// **region**, or `None` when it is not: a region is many cells, and a press
+/// lands on one real block. The one wording both the trigger-body ledger and
+/// [`check`] refuse with.
+pub fn region_anchor_refusal(plan: &Plan, t: &delvewright_dsl::EnvTrigger) -> Option<String> {
+    if !matches!(t.on, TriggerOn::Use | TriggerOn::Strike) {
+        return None;
+    }
+    let at = t.at_anchor()?;
+    if point_of(plan, at).is_some() || gate_region(plan, at).is_none() {
+        return None;
+    }
+    Some(format!(
+        "trigger `{}` is anchored at `{at}`, a gate **region** (arm d): a region is many cells, \
+         and a press lands on one real block. Prescription: anchor the trigger at a point anchor \
+         on the door's own cell — its body is then the gate's block there under a click box \
+         fitted to it — and give it `\"serves\": {{\"gate\": \"{at}\"}}` if it is the gate's \
+         answer",
+        t.id
+    ))
+}
+
 /// The gate region an anchor resolves to, if it names one.
 pub fn gate_region(plan: &Plan, anchor: &str) -> Option<([i32; 3], [i32; 3], String)> {
     plan.anchors.iter().find_map(|((_, n), r)| match r {
@@ -1310,21 +1332,8 @@ pub fn check(
         if matches!(t.on, TriggerOn::Strike) && npc_stands_at(plan, at) {
             continue;
         }
-        if point_of(plan, at).is_none() && gate_region(plan, at).is_some() {
-            return (
-                b,
-                fail(
-                    PRESS_TARGET_UNREAL,
-                    format!(
-                        "trigger `{}` is anchored at `{at}`, a gate **region** (arm d): a region is \
-                         many cells, and a press lands on one real block. Prescription: anchor the \
-                         trigger at a point anchor on the door's own cell — its body is then the \
-                         gate's block there under a click box fitted to it — and give it \
-                         `\"serves\": {{\"gate\": \"{at}\"}}` if it is the gate's answer",
-                        t.id
-                    ),
-                ),
-            );
+        if let Some(message) = region_anchor_refusal(plan, t) {
+            return (b, fail(PRESS_TARGET_UNREAL, message));
         }
         let Some(Serves::Gate(g)) = &t.serves else {
             continue;

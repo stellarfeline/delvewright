@@ -97,7 +97,6 @@ pub(super) fn campaign_captures_striker(c: &delvewright_dsl::Campaign) -> bool {
 pub(super) fn check_trigger_bodies(
     plan: &Plan,
 ) -> Result<crate::compiler::pressable::PressLedger, BuildFailure> {
-    use delvewright_dsl::TriggerOn;
     let mut ledger = crate::compiler::pressable::PressLedger {
         bodies: crate::compiler::pressable::PressLedger::bodies_of(plan),
         presses: Vec::new(),
@@ -157,7 +156,12 @@ pub(super) fn check_trigger_bodies(
         let Some(at) = t.at_anchor() else {
             continue;
         };
-        let _ = TriggerOn::Use;
+        if let Some(message) = crate::compiler::pressable::region_anchor_refusal(plan, t) {
+            return Err(BuildFailure::Diagnostic {
+                code: delvewright_dsl::PRESS_TARGET_UNREAL,
+                message,
+            });
+        }
         let body = crate::compiler::pressable::trigger_body(plan, t);
         if body != crate::compiler::pressable::Body::Nothing {
             ledger.push(

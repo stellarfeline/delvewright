@@ -30,11 +30,20 @@ What established practice, the pinned game and this engine's own record say abou
 ## 4. What this engine already holds
 
 - **Cited** (`crates/dsl/src/quest/verb.rs`, `NarrateStyle::Actionbar`): "This is the channel a *reply* uses: it does not interrupt, it does not stack, and it is overwritten by the next one. Every reply the compiler itself writes has always used it." `narrate` carries `style: actionbar` and an optional `sound`.
-- **Cited** (`docs/reference/compiler.md`, *The answer is not a mechanism — it is an ordinary trigger*): a press answer is an `EnvTrigger { on: use, audience: presser, once: false, effects: [narrate { style: actionbar, text }] }`, authored by the campaign or synthesized by the compiler for a sealed body from an authored `sealed_hint`; it is dispatched by a `player_interacted_with_entity` advancement whose reward revokes itself, so the object answers every press; it gates through `trigger_poll_guards`, the one authority the tick clauses read.
-- **Cited** (`crates/dsl/src/trigger.rs`, `DW0429`): a sealed body with no press answer is refused; "The compiler deliberately does **not** fill that silence. A baked default is the compiler making a design statement … on the author's behalf"; "One rule for the whole pressable class".
-- **Cited** (`crates/dsl/src/l10n.rs`, `TextKind::Refusal`): "A message shown when an action fails: says what is wrong and what fixes it" — the class `missing_item_hint`, `sealed_hint` and `world.boundary.message` already belong to.
+- **Cited** (`docs/reference/compiler.md`, *Press answers*, *An answer is an ordinary trigger*): a press answer is an `EnvTrigger { audience: presser, once: false, effects: [narrate { style: actionbar, text }] }`, synthesized from the pressable's declared `answers` line; it is dispatched by an advancement whose reward revokes itself, so the object answers every press; it gates through `trigger_poll_guards`, the one authority the tick clauses read.
+- **Cited** (`crates/dsl/src/trigger.rs`, `DW1051`): a pressable that would be silent in a state a player can press it in is refused; "The engine never writes the words." (`crates/delvec/src/compiler/plan/trigger.rs`, `DW0429`): a sealed gate with no answer trigger is refused.
+- **Cited** (`crates/dsl/src/l10n.rs`, `TextKind::Refusal`): "A message shown when an action fails: says what is wrong and what fixes it" — the class every `answers.*` line and `world.boundary.message` belong to.
 
 **Authored — the synthesis.** A refused press is answered on the action bar, to the presser, on every press, with a `Refusal` line the author wrote and a sound the engine plays; the wording is never baked by the engine, and a pressable that would be silent in a state a player can press it in is refused at build, as a sealed body is. The engine supplies the body, the dispatch, the state and the sound; the campaign supplies the words. Spec-0117 is where this binds.
+
+## 5. What the pinned game reports of a press on a block
+
+- **Cited** (the pinned 1.21.11 server jar, `ServerPlayerGameMode.useItemOn`): a right-click on a block runs the block's `useItemOn`, then, for an empty-hand result in the main hand, its `useWithoutItem`; only a result that consumes the action fires a criterion — `minecraft:default_block_use` for the empty-hand path. A press nothing consumes fires **no criterion at all**; a sneaking press with an item in hand and an off-hand press are never reported.
+- **Cited** (the same jar, `BlockBehaviour.useWithoutItem` / `useItemOn`): the defaults pass. A block that overrides neither — stone, iron bars, a campfire with an empty hand, an iron door or trapdoor (`BlockSetType.canOpenByHand()` false) — is reported for no press.
+- **Cited** (`BellBlock`, `ButtonBlock`, `LeverBlock`): a bell rings on a proper hit and writes no block state; a button's press is a pulse that reverts by itself (20 ticks stone, 30 wooden), a second press during it reported and doing nothing; a lever's press is a persistent state change.
+- **Cited** (`DoorBlock`, `TrapDoorBlock`, `FenceGateBlock`, `ChestBlock`): a wooden or copper door, every non-iron trapdoor and every fence gate opens on a press; a chest's press is reported and opens its screen whatever the menu does.
+
+**Authored.** Three forms follow, and the engine reads them in one place (`dsl::trigger::press_form`): a block whose press is reported and changes nothing the world keeps (a bell, a button) is pressed **on its own**; a block whose press acts on its own (a door, a gate, a lever, a container) and a block the game reports nothing of are **boxed** — an invisible click box fitted to the block intercepts the press, so the block neither acts before its turn nor stays silent. The engine answers the press either way.
 
 ## Sources
 
@@ -45,3 +54,4 @@ What established practice, the pinned game and this engine's own record say abou
 - Minecraft Wiki. *Data component format* (`minecraft:lock`); *Commands/title* (`actionbar`). minecraft.wiki.
 - `crates/delvec/data/sounds-1.21.11.json` and `crates/delvec/data/commands-1.21.11.json` (the pinned game's registries, provenance in `crates/delvec/data/PROVENANCE.md`).
 - `docs/reference/game-writing.md` F2 and F3, with the sources they list.
+- The pinned server jar and Mojang's published server mappings for 1.21.11 (the ground line of spec-0117 §2a).

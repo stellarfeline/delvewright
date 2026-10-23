@@ -8,8 +8,41 @@
       "value": {
         "block": "minecraft:stone_button[face=floor,facing=north]"
       }
+    },
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/triggers/15/answers",
+      "value": {
+        "not_yet": "The gate is up.",
+        "done": "The gate is open."
+      }
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "add",
+      "path": "/content/trigger.main-gate-answers.answers.not_yet",
+      "value": "闸门是开着的。"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "add",
+      "path": "/source/trigger.main-gate-answers.answers.not_yet",
+      "value": "The gate is up."
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "add",
+      "path": "/content/trigger.main-gate-answers.answers.done",
+      "value": "闸门已经开了。"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "add",
+      "path": "/source/trigger.main-gate-answers.answers.done",
+      "value": "The gate is open."
     }
   ],
   "units": [],
-  "why": "A prop added to the main gate's own answer. The gate already names the block at that cell (its bars); a second block declared for the same cell is one the world cannot hold. DW1052 refuses the field. It declares no unit: `EnvTrigger.prop` is bound on every other press."
+  "why": "A prop added to the main gate's own answer (with the lines a press with a block of its own would owe, and their Chinese rows, so the documents themselves are whole). The answer is anchored at a cell of the gate's own bars, and the gate already names the block there; a second block declared for the same cell is one the world cannot hold. DW1052 refuses the field where the cell resolves. It declares no unit: `EnvTrigger.prop` is bound on every other press."
 }

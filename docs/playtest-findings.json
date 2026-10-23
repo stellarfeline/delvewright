@@ -72,14 +72,15 @@
       },
       "campaign": "hollow-vigil",
       "carrier": {
-        "code": "DW0420",
+        "code": "DW1059",
         "kind": "dw"
       },
       "finding": "interact affordances were invisible points with no hardware a player could see or aim at",
-      "general_form": "a compiler-owned interact affordance has visible hardware at its cell",
+      "general_form": "every interaction point is a real block the world has, named in its prop, drawn and occluded like the world",
       "id": "hv-03",
       "round": 1,
-      "triage": "capability"
+      "triage": "capability",
+      "note": "Carried by `DW1059` (spec-0117 §3a): an interact, a press trigger, a shortcut unlock, a shop, a disarm and a bonfire each name the block a player presses in `prop`; with none, or a block with no outline, the campaign is refused. The compiler summons no visible stand-in."
     },
     {
       "applies_when": {
@@ -1243,13 +1244,13 @@
       },
       "campaign": "nobodys-cave-island",
       "carrier": {
-        "code": "DW0437",
+        "code": "DW1051",
         "kind": "dw"
       },
       "finding": "an item requirement was satisfied by carrying the item in a pocket rather than holding it, so a beat about brandishing something worked with it stowed",
       "general_form": "requires_item means held in the main hand, and an interaction that can refuse a click explains the refusal",
       "id": "isl-41",
-      "note": "`requires_item` is an interact-objective declaration, and the class is the interacts declaring it. The precondition is the item-gate class itself, counted by a second instrument that shares nothing with the binding: a datapack function testing `if items entity @s weapon.mainhand` is the server's own adjudication of a held-item gate, and the emitter writes one for every `requires_item` (`crates/delvec/tests/v07_held_item.rs` asserts the spelling, `tools/tests/test_staging_gate.py` holds this probe to it). An `interact` with no `requires_item` completes on any click, so it cannot carry an item-gate defect and is not counted. A held-item test in the build with no `requires_item` in the source = UNBOUND (an item gate the check does not read); neither = the class measures zero.",
+      "note": "`requires_item` is an interact-objective declaration, and the class is the interacts declaring it. The precondition is the item-gate class itself, counted by a second instrument that shares nothing with the binding: a datapack function testing `if items entity @s weapon.mainhand` is the server's own adjudication of a held-item gate, and the emitter writes one for every `requires_item` (`crates/delvec/tests/v07_held_item.rs` asserts the spelling, `tools/tests/test_staging_gate.py` holds this probe to it). The refusal half is carried by `DW1051` (spec-0117): an `interact` with `requires_item` owes `answers.missing_item`, the line a press with an empty hand gets. An `interact` with no `requires_item` completes on any click, so it cannot carry an item-gate defect and is not counted. A held-item test in the build with no `requires_item` in the source = UNBOUND (an item gate the check does not read); neither = the class measures zero.",
       "round": 12,
       "triage": "capability"
     },
@@ -1879,14 +1880,15 @@
       },
       "campaign": "the-drowned-bell",
       "carrier": {
-        "code": "DW0420",
+        "code": "DW1059",
         "kind": "dw"
       },
       "finding": "a shortcut's unlock affordance shipped as an invisible interaction body with no hardware, and the delve soft-locked with the gate sealed and nothing to press",
-      "general_form": "a compiler-owned interact affordance has visible hardware, and that hardware is retired only by the machinery that owns it",
+      "general_form": "a shortcut unlock, like every interaction point, is a real block the world has, standing for the whole delve",
       "id": "bell-07",
       "round": "2026-08-02",
-      "triage": "capability"
+      "triage": "capability",
+      "note": "Carried by `DW1059` (spec-0117 §3a): the shortcut names its unlock block in `prop`, placed at world load and never removed; a shortcut with none is refused."
     },
     {
       "applies_when": {
@@ -3503,13 +3505,13 @@
       },
       "campaign": "the-stranding",
       "carrier": {
-        "code": "DW0963",
+        "code": "DW1059",
         "kind": "dw"
       },
       "finding": "nothing taught the player that the world's blocks are right-clicked: a sign started a cutscene unannounced, and later props were not tried",
       "general_form": "a world block the party must act on is a visible block that reads as the thing, picked out on arrival by a highlight the author declares where it does not, and how the setting is operated where it contradicts vanilla is in the journal's manual, readable any time",
       "id": "str-07",
-      "note": "Carried by `DW0963` (spec-0104 §7.6): every `interact` and every `use`/`strike` trigger sits on a visible block — a prop or an authored block — with no marker hatch. Where the block does not read as the thing, the author declares `highlight {within}` (lit while a player is near and the act is armed; `DW1016` refuses one with nothing to light), and where the setting contradicts vanilla the author writes `guidance.manual` pages, which the journal in every hand holds with the open and done objectives. No check asks that an input be taught: a vanilla player right-clicks a lever without being told.",
+      "note": "Carried by `DW1059` (spec-0117 §3a): every `interact` and every `use`/`strike` trigger names the real block it is pressed on in `prop` — a press with none, or on a block with no outline, is refused. Where the block does not read as the thing, the author declares `highlight {within}` (lit while a player is near, on the side it is pressed from, and the act is open; `DW1016` refuses one with nothing to light), and where the setting contradicts vanilla the author writes `guidance.manual` pages. No check asks that an input be taught: a vanilla player right-clicks a lever without being told.",
       "round": 1,
       "triage": "capability"
     },
@@ -3652,6 +3654,78 @@
       "general_form": "a body of a kind the pinned game discards on peaceful, that cannot be harmed and does not fight, and that a walking player can strike at a station it is declared to stand on, carries a line the campaign writes for the blow (an actor also for the touch), shown to the player who struck it",
       "id": "str-17",
       "note": "Carried by DW1055 (spec-0119): every build reads every stage-2 NPC and stage-5 actor, and refuses an inert monster-kind body in reach that declares no `answers.struck` (an actor also `answers.touched`); DW1056 refuses a line no press of the body can show. The binding counts the bodies the check quantifies over: 12 npcs and 3 actors on the-stranding's source as committed on its campaign branch (15). The re-run on that campaign is not yet possible: its documents are written against an earlier surface and the current engine refuses them at the schema (DW0100, a layout-graph edge class) before the build reaches the bodies, so the general form is proven live on The Sentinels and the gallery instead.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "interact"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW1051",
+        "kind": "dw"
+      },
+      "finding": "a prop an objective would later open was pressed before its step and nothing happened and nothing was said",
+      "general_form": "every press on an interaction point answers in every state it can be pressed in: not yet before its step, done after it, and the missing item when the hand lacks it",
+      "id": "str-21",
+      "note": "Carried by `DW1051` (spec-0117 §6): every `interact` owes `answers.not_yet` and, unless released, `answers.done`, and with `requires_item` `answers.missing_item`; each is shown to the presser on the action bar with the refusal cue. The binding counts the interacts the check quantifies over: 16 on the-stranding's source as committed on its campaign branch. The re-run on that campaign waits on its redo (its documents are written against an earlier surface); the general form is proven live on the gallery and the demo level Three Buttons and a Bell.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "on": "use"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW1051",
+        "kind": "dw"
+      },
+      "finding": "a puzzle solved by several presses went on accepting presses after it was solved, and a press after the solve undid part of it",
+      "general_form": "a repeatable press that counts toward an objective stands down when the objective settles, and a press after it is answered, not acted on",
+      "id": "str-22",
+      "note": "Carried by `DW1051` (spec-0117 §6) through `serves`: a `use` trigger that declares `serves: {objective}` is open only while that objective is pending and owes `answers.not_yet` and `answers.done`, so the press after the solve says so and writes nothing. The remedy is `serves`; the check cannot infer that a trigger feeds an objective, so it judges what the trigger declares. The binding counts the `use` triggers on the-stranding (14). The instance is fixed on the branch that redoes that campaign (`campaign/stranding`).",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "shortcut/"
+          }
+        }
+      },
+      "campaign": "three-ways-shut",
+      "carrier": {
+        "code": "DW1059",
+        "kind": "dw"
+      },
+      "finding": "a shortcut's far-side unlock glowed through the shut door and the wall and was seen from the wrong side, giving the shortcut away",
+      "general_form": "an interaction point is drawn the way the world draws a thing, occluded by walls, and is lit only by a declared highlight, only near, and only from the side it is pressed from",
+      "id": "tws-01",
+      "note": "Carried by `DW1059` (spec-0117 §3a, §3b): a shortcut's unlock is a real block named in `prop` and the compiler summons no glowing icon; the one glow is `highlight {within}`, lit only for a player standing in the unlock's lit set on its far side. The binding counts the shortcuts on the demo level it was found on (1). Closed by the re-run of that level on this engine.",
       "round": 1,
       "triage": "capability"
     }

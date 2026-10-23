@@ -256,7 +256,13 @@
                   "type": "set-flag"
                 }
               ],
-              "type": "bonfire"
+              "type": "bonfire",
+              "prop": {
+                "block": "minecraft:candle[candles=4,lit=false]"
+              },
+              "answers": {
+                "not_yet": "Not yet."
+              }
             },
             {
               "style": "chat",
@@ -284,19 +290,7 @@
                 }
               ]
             }
-          ],
-          "obj": {
-            "slay": {
-              "4": {
-                "prop": {
-                  "block": "minecraft:candle[candles=4,lit=false]"
-                },
-                "answers": {
-                  "not_yet": "Not yet."
-                }
-              }
-            }
-          }
+          ]
         },
         "trigger": {
           "quest": "quest/greet",

@@ -29,7 +29,7 @@ while gating the offer at 15 and charging 16 is refused.
 |------|---------|
 | `DW0901` | **A purchase whose literals do not add up** (spec-0071 §2). `dsl::economy::purchase_checks`, called from the one validation funnel, **validation tier (exit 1)**; the `DwCode` declares build tier, which is what happens if the rule refuses with a build under way. One code, three shapes, one rule — *a charge and the gate beside it are one price*. **A charge deeper than its floor**: an effect charges `n` of a datum while the floor its own `when` and its list's enclosing gate leave open is `m < n`, so at a balance of `m` the charge leaves the datum at `m − n` — below what the creator gated on. The message names `n`, `m`, the datum and the balance it lands on, and names the enclosing gate when one is read. **A charge nothing floors, in a list that prices the same datum elsewhere**: the copy is missing rather than wrong, and it fires at any balance including one that cannot pay. A list that says nothing else about the datum it moves is a design, not a purchase, and is not judged — a campaign may mean a datum to go below zero. **A refusal arm that does not meet the sale**: an effect gated `at-most k` on the datum and nothing else on it is the arm that plays when the player cannot pay, so `k` must be `m − 1`; a lower `k` leaves a **gap** (`k+1..m−1`, balances at which the button does nothing at all) and a `k` at or above `m` leaves an **overlap** (`m..k`, balances at which the player is charged *and* told they cannot afford it). An effect declaring both a floor and a ceiling wrote an interval and is left alone. **The arithmetic is the gate's own** (`gate::DatumSet::min`/`max`), the same interval-with-holes the satisfiability verdict is taken from, so the two cannot disagree about what a term means. **Its neighbour is `DW0527`**, which catches the same overlap arising from ORDER — an apology whose gate is read after the debit that moved it — where this one catches it arising from the literals; both prescribe moving something the author wrote, and neither prescribes a field. **Prescription**: raise the gate to the charge, lower the charge to the gate, or set the answering arm's ceiling one below the sale. There is no `price` field to add, and adding one would be a second comparison surface for one meaning. **Binding**: `purchase binding: C charge(s) over D datum(s) bind P (list, datum) pair(s) of L effect list(s) walked, G of them behind a numeric gate, R refused (DW0901).` on every validation run, zeroes included. Gallery probe: `a-key-that-charges-more-than-it-asks`. |
 
-### DW0520–DW0527, DW0880 — trade and the recovery stake (`dsl::validate` / `compiler::stake`; spec-0032)
+### DW0520–DW0527 — trade and the recovery stake (`dsl::validate` / `compiler::stake`; spec-0032)
 
 **There is no price diagnostic here, and its absence is the design.** A price is a
 [`Gate`] term — the numeric comparison spec-0031 put in the shared gate rather than
@@ -47,14 +47,13 @@ schema and `crates/delvec/tests/v10_economy.rs` the negative half (no `price`,
 `DW0520`–`DW0524` and `DW0527` are declaration and authoring rules: the first five live in `dsl::economy`, `DW0527` in `dsl::state`. `DW0525` and
 `DW0526` are the **placement table's** proofs and live in `compiler::stake`,
 because where a stake lands is a question about the solved layout — the same split
-a lethal volume's `DW0512` and `DW0510`/`DW0511` make. `DW0880` lives there too,
-and is about the marker rather than the anchor.
+a lethal volume's `DW0512` and `DW0510`/`DW0511` make.
 
 #### A marker is a PLACE, and a death leaves one place
 
 The hardware is one class for the campaign — the `minecraft:interaction` box
-tagged `dw_stk` and the glowing `minecraft:item_display` beside it, both summoned
-by `stk_place` — and there is one of it at a place however many datums a death
+tagged `dw_stk` and the `minecraft:item_display` beside it showing the engine's one
+marker item (`STAKE_MARKER_ITEM`), both summoned by `stk_place` — and there is one of it at a place however many datums a death
 forfeited there. That is forced rather than chosen. The placement table is keyed
 on (respawn seat, death region) and never on the stake, so every stake one death
 drops resolves to one anchor; and the rule degenerates to *leave it where the
@@ -76,12 +75,12 @@ offer the wagers at whatever place stood closest, so a player reaching past one
 stake to click another would collect the near one (under `collect_by: anyone`,
 another player's purse) and leave their own standing. `stk_ref` counts live wagers at
 that position across every stake, and `stk_gc` — the one function permitted to
-retire the hardware (`DW0421`) — deletes a place nobody has a wager at. Each
+retire the hardware — deletes a place nobody has a wager at. Each
 stake keeps its own forfeit rule, retention policy, collect rule, slots and
 message: those are properties of a wager, not of a place.
 
-What a place cannot hold is two answers to what it looks like, and that is
-`DW0880`.
+No stake declares a face of its own, so a place has one look by construction. A
+stake may carry a `highlight` (spec-0117 §3b), lit near the place.
 
 #### The placement rule, and why it is a table rather than a search
 

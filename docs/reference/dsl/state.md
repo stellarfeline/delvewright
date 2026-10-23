@@ -89,9 +89,9 @@ other half and asks a different question: whether the datum is driven at all.
 |------|---------|
 | `DW0847` | **A gate contradicts itself, so it can never open.** A flag on both `requires_flags` and `forbids_flags`, or `requires_state` terms on one datum that no integer satisfies (`at-least 5` with `at-most 3`, two different `equals`, a `not-equals` punching out the only pinned value). The thing carrying it — objective, effect, trigger, trap, dialogue option, cast placement, shop offer, loop, lethal volume, pulse — is authored content that provably never happens. One rule over the whole closed consumer set (`dsl::gate::for_each_gate`), because satisfiability is a property of the **gate**, never of the verb that first needed the question answered — the first asker was the cast ladder's per-clause solver (`DW0846`), and a check written beside it would have left the other nine classes with no surface. The arithmetic is `dsl::gate::DatumSet` (interval-with-holes intersection, exact emptiness), the same value-picker the solver drives generated `cast_ladder_*` phases from, so "can this open" and "at what value" have one authority. Validation tier (exit 1) — it judges an authored contradiction, a fact of the campaign alone. Distinct from `DW0501` (a satisfiable comparison whose datum nothing writes) and from the flow proofs' flag reachability: this is emptiness of the gate itself, before any question about what the campaign does at runtime. Prescription: fix the gate, or delete the thing it makes unreachable. |
 
-### DW0520–DW0527, DW0880 — trade and the recovery stake (`dsl::validate` / `compiler::stake`; spec-0032)
+### DW0520–DW0527 — trade and the recovery stake (`dsl::validate` / `compiler::stake`; spec-0032)
 
-This module's rows of a section whose prose is on the [`delvewright_dsl::economy` page](economy.md#dw0520dw0527-dw0880--trade-and-the-recovery-stake-dslvalidate--compilerstake-spec-0032).
+This module's rows of a section whose prose is on the [`delvewright_dsl::economy` page](economy.md#dw0520dw0527--trade-and-the-recovery-stake-dslvalidate--compilerstake-spec-0032).
 
 | Code | Meaning |
 |------|---------|

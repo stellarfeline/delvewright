@@ -122,9 +122,9 @@
             "title": "Open the Inner Door",
             "type": "interact",
             "answers": {
-              "not_yet": "Not yet.",
-              "missing_item": "Your hand is empty of what this takes.",
-              "done": "Already done."
+              "not_yet": "The door is barred. The hall's guard keeps its key.",
+              "missing_item": "The door takes the old key, held in hand.",
+              "done": "The inner door stands open."
             }
           },
           {

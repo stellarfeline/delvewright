@@ -549,7 +549,7 @@ fn row_of_line(fired: &Firing, line: &str) -> Option<(String, Placed)> {
 }
 
 /// Which functions the ledger reads, and how each one fires: `setup_finish`,
-/// `ws_arm_` and a holder's `holder_<id>` at setup; `activate_<obj>` at the step
+/// a shortcut gate's `seal_arm_` and a holder's `holder_<id>` at setup; `activate_<obj>` at the step
 /// its objective activates on; a
 /// `complete_<obj>` at its objective's step and a `complete_q_<quest>` at its
 /// last objective's; a `trig_<trigger>` at the trigger's own step; a `trap_`
@@ -632,10 +632,21 @@ fn firings_of(plan: &crate::compiler::plan::Plan, name: &str) -> Option<Vec<Firi
             )),
         }]);
     }
-    if name.starts_with("ws_arm_") {
-        // A shortcut gate's wrong-side hitboxes: armed at world init, its one
-        // call site `setup_finish` (`emit::shortcut`).
-        return Some(vec![Firing::Setup]);
+    if let Some(safe) = name.strip_prefix("seal_arm_") {
+        // A sealed gate's own answer box (spec-0117 §3a): a shortcut gate's is
+        // armed at world init (`setup_finish`, `emit::shortcut`); a
+        // `close-gate` target's when a beat seals it, which no configuration
+        // is held to lay.
+        if plan
+            .shortcuts
+            .iter()
+            .any(|s| safe_local(&s.gate_anchor) == safe)
+        {
+            return Some(vec![Firing::Setup]);
+        }
+        return Some(vec![Firing::Unforced(format!(
+            "the answer box of gate `{safe}`, armed when a beat seals it"
+        ))]);
     }
     if name.starts_with("holder_") {
         // An item holder's body (spec-0111 §4.1): summoned at world init, its
