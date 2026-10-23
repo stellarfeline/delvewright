@@ -150,7 +150,7 @@ fn time_refs(v: &serde_json::Value) -> usize {
 }
 
 #[test]
-fn every_site_exports_the_keyword_or_the_celestial_object() {
+fn every_site_exports_the_keyword_the_celestial_object_or_the_clock() {
     let world = stage_schema(Stage::World);
     let d = defs(&world);
     let wt = &d["WorldTime"];
@@ -160,7 +160,14 @@ fn every_site_exports_the_keyword_or_the_celestial_object() {
         .iter()
         .map(|b| b["$ref"].as_str().unwrap())
         .collect();
-    assert_eq!(any, ["#/$defs/TimeKeyword", "#/$defs/CelestialTime"]);
+    assert_eq!(
+        any,
+        [
+            "#/$defs/TimeKeyword",
+            "#/$defs/CelestialTime",
+            "#/$defs/ClockStatement"
+        ]
+    );
     let kw: Vec<String> = serde_json::to_string(&d["TimeKeyword"])
         .unwrap()
         .split('"')
