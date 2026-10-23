@@ -95,7 +95,9 @@ form and the commands are in *Reference: drawing the map's reference*.
      stair or a slab is looked through or past in the game; a hearth's back, a
      bookcase, a plug of the wall's own stone is not. The shutter of a hidden
      way is a block the game draws as a full opaque cube, and nothing the
-     player can stand on has a line past it into the place behind. The beat
+     player can stand on has a line past it into the place behind. The bars
+     the engine stands in a plain seam are looked through, so a hidden way's
+     mouth belongs to a piece that shuts it in a block that hides. The beat
      that opens it carries the close-up shot of the opened mouth: the shot is
      what tells the player. The text before the shot keeps the secret too —
      *Step 5 — quests and dialogue* says how.
