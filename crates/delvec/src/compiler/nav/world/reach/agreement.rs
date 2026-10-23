@@ -14,7 +14,13 @@
 //! `climb`), and the grammar gates `traversable`
 //! ([`crate::grammar::gates::traversal_passes`], with and without falls) and
 //! `reachable-floor` ([`crate::grammar::gates::floor_walked`] and the count
-//! [`crate::grammar::gates::reachability_from`] reports).
+//! [`crate::grammar::gates::reachability_from`] reports), and the per-piece
+//! floor readers: the light probe's measured floor
+//! ([`crate::admit::light::floor_measured`], from the ground entry and from a
+//! door), the sculpt's walk from grade ([`crate::sculpt::entry_walked`]) and
+//! the enclosure survey's reached floor (`DW0895`,
+//! [`crate::compiler::view::showing::floor_reached`] and the count
+//! [`crate::compiler::view::showing::survey`] reports).
 //!
 //! The cases are parkour courses: platforms three wide along `x` with gaps of
 //! zero to four columns, rises of up to two courses either way, a low ceiling
@@ -26,11 +32,16 @@
 //! over the same course with a ladder hung down the first platform's west face
 //! on a stone column, and compared with the graph over that piece's blocks.
 //!
+//! The per-piece readers start from the piece's ground entry, which needs
+//! floor on a vertical face of the box: they are asked over the same course
+//! with its first platform widened to the box's `z` faces, and compared with the
+//! graph over those blocks from the same entry.
+//!
 //! The test also reds when its cases are vacuous: when no case needs a jump of
 //! the launch set, or no case needs a declared jump, for the graph to reach
 //! more than the walk does, or no step-out closure or leg needs a jump or a
 //! fall, or no grammar consumer's answer needs one, or no climb case reaches
-//! a held cell.
+//! a held cell, or no per-piece reader's floor needs a jump or a fall.
 
 use super::super::{Premises, World};
 use crate::grammar::block::BlockState;
@@ -155,6 +166,57 @@ fn laddered(case: &Case) -> (VoxelModel, BTreeSet<[i32; 3]>) {
     (m, rungs)
 }
 
+/// The course with its first platform widened to the box's `z` faces (`z = 0`
+/// and `z = 4`), so a ground entry exists there and nowhere else: the rest of
+/// the course is floor a body gets to only by crossing from it. The solid
+/// cells and the model.
+fn faced(case: &Case) -> (BTreeSet<[i32; 3]>, VoxelModel) {
+    let y = case.root[1] - 1;
+    let mut end = case.root[0];
+    while case.solid.contains(&[end, y, 1]) {
+        end += 1;
+    }
+    let mut solid = case.solid.clone();
+    for x in case.root[0]..end {
+        solid.insert([x, y, 0]);
+        solid.insert([x, y, 4]);
+    }
+    let wide = Case {
+        solid: solid.clone(),
+        root: case.root,
+        jumps: Vec::new(),
+        size: case.size,
+    };
+    (solid, model_of(&wide))
+}
+
+/// The model as the renderer's parsed structure, for the enclosure survey.
+fn structure_of(model: &VoxelModel) -> crate::compiler::view::nbt::Structure {
+    let size = model.region().size.map(|n| n as i32);
+    let mut palette: Vec<String> = Vec::new();
+    let mut blocks = Vec::new();
+    for pos in model.region().positions() {
+        if let Some(b) = model.get(pos)
+            && !b.is_air()
+        {
+            let name = b.to_string();
+            let i = match palette.iter().position(|p| *p == name) {
+                Some(i) => i,
+                None => {
+                    palette.push(name);
+                    palette.len() - 1
+                }
+            };
+            blocks.push((pos, i));
+        }
+    }
+    crate::compiler::view::nbt::Structure {
+        size,
+        palette,
+        blocks,
+    }
+}
+
 fn region(from: [i32; 3], to: [i32; 3]) -> Region {
     Region { from, to }
 }
@@ -221,6 +283,8 @@ fn every_consumer_reaches_what_the_reach_graph_reaches() {
     let mut grammar_pairs = 0usize;
     let mut grammar_needed = 0usize;
     let mut held_reached = 0usize;
+    let mut entries = 0usize;
+    let mut floor_needed = 0usize;
     for seed in 0..CASES {
         let case = generate(seed);
         declared += case.jumps.len();
@@ -339,6 +403,61 @@ fn every_consumer_reaches_what_the_reach_graph_reaches() {
         if from_root.len() > walked_here.len() {
             grammar_needed += 1;
         }
+
+        // The per-piece floor readers, over the course widened to its faces,
+        // from its ground entry; and the light probe from a door at the root.
+        let (wide_solid, wide) = faced(&case);
+        let wide_world = World::from_solid_cells(wide_solid);
+        let wide_standable = crate::grammar::nav::standable_cells(&wide);
+        let entry = crate::grammar::nav::ground_entry(&wide);
+        entries += entry.len();
+        let seeds: Vec<[i32; 3]> = entry.iter().copied().collect();
+        let graph_floor: BTreeSet<[i32; 3]> = wide_world
+            .body_reach(&seeds)
+            .cells()
+            .intersection(&wide_standable)
+            .copied()
+            .collect();
+        let (_, light_entry, light) = crate::admit::light::floor_measured(&wide, &BTreeSet::new());
+        assert_eq!(light_entry, entry, "case {seed}: the probe's entry");
+        assert_eq!(
+            light, graph_floor,
+            "case {seed}: the light probe's measured floor differs from the reach graph's"
+        );
+        let sculpted = crate::sculpt::entry_walked(
+            &crate::grammar::nav::body_world(&wide),
+            &wide_standable,
+            &entry,
+        );
+        assert_eq!(
+            sculpted, graph_floor,
+            "case {seed}: the sculpt's walk from grade differs from the reach graph's"
+        );
+        let st = structure_of(&wide);
+        let st_cells = crate::compiler::view::showing::Cells::of(&st);
+        let (_, _, surveyed) = crate::compiler::view::showing::floor_reached(&st, &st_cells);
+        assert_eq!(
+            surveyed, graph_floor,
+            "case {seed}: the enclosure survey's reached floor differs from the reach graph's"
+        );
+        assert_eq!(
+            crate::compiler::view::showing::survey(&st).reached,
+            graph_floor.len(),
+            "case {seed}: DW0895's reached count differs from the reach graph's"
+        );
+        let walked_floor: BTreeSet<[i32; 3]> = wide_world
+            .walk_region(&seeds)
+            .intersection(&wide_standable)
+            .copied()
+            .collect();
+        if !entry.is_empty() && graph_floor.len() > walked_floor.len() {
+            floor_needed += 1;
+        }
+        let (_, _, doored) = crate::admit::light::floor_measured(&model, &roots);
+        assert_eq!(
+            doored, from_root,
+            "case {seed}: the light probe's floor from a door differs from the reach graph's"
+        );
         let (ladder_model, rungs) = laddered(&case);
         let ladder_world = crate::grammar::contract::body_world(&ladder_model);
         let ladder_standable = crate::grammar::nav::standable_cells(&ladder_model);
@@ -425,7 +544,8 @@ fn every_consumer_reaches_what_the_reach_graph_reaches() {
          declared jump, {contract_launch_needed} of the contract's a launch-set jump, \
          {steps_needed} of the step-out a jump or fall, {legs_needed} leg(s) a jump or fall; \
          {grammar_pairs} grammar pair(s), {grammar_needed} grammar answer(s) a jump or fall, \
-         {held_reached} climb case(s) reaching a held cell"
+         {held_reached} climb case(s) reaching a held cell; {entries} ground-entry cell(s), \
+         {floor_needed} per-piece floor(s) a jump or fall"
     );
     assert!(
         launch_needed > 0 && contract_launch_needed > 0,
@@ -442,5 +562,9 @@ fn every_consumer_reaches_what_the_reach_graph_reaches() {
     assert!(
         grammar_needed > 0 && held_reached > 0,
         "no grammar answer needs more than the walk, or no climb holds: the agreement is vacuous"
+    );
+    assert!(
+        entries > 0 && floor_needed > 0,
+        "no ground entry, or no per-piece floor needs more than the walk: the agreement is vacuous"
     );
 }

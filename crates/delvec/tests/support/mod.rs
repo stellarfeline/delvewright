@@ -23,7 +23,9 @@ pub fn expand_at(program: &Program, region: Box3, seed: u64) -> Expansion {
         .unwrap_or_else(|e| panic!("{}: {e}", program.name))
 }
 
-pub use delvec::grammar::nav::{ends, passable, reaches, solid, standable, standable_cells};
+pub use delvec::grammar::nav::{
+    ends, passable, reaches, reaches_walled, solid, standable, standable_cells,
+};
 
 /// Whether an observer standing on `watch` can see the space a body standing on
 /// `target` occupies. Both endpoint cells are exempt: the observer's own head,

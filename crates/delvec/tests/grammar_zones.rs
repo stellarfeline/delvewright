@@ -39,7 +39,8 @@ use delvec::grammar::library::{
 use delvec::grammar::{Box3, ExpandOptions, Expansion, VoxelModel, expand};
 
 use support::{
-    ends, expand_at, indexed, passable, reaches, sees, solid, standable, standable_cells,
+    ends, expand_at, indexed, passable, reaches, reaches_walled, sees, solid, standable,
+    standable_cells,
 };
 
 /// **Z0.** Barrow Shore: one open arena, in a box the campaign's size rather
@@ -922,7 +923,7 @@ fn the_drowned_wards_shortcut_is_sealed_and_reached_through_one_doorway() {
         "exactly the doorway was cut"
     );
     assert!(
-        !reaches(&opened.model, &cut, &open_entry, &open_unlock),
+        !reaches_walled(&opened.model, &cut, &open_entry, &open_unlock),
         "with the junction's doorway plugged the unbarred branch is still reachable"
     );
 
@@ -1171,7 +1172,7 @@ fn the_switchback_runs_in_on_one_leg_and_out_on_the_other() {
             .filter(|c| !on_lane.contains(c))
             .collect();
         assert!(
-            !reaches(&out.model, &cut, &enter, &leave),
+            !reaches_walled(&out.model, &cut, &enter, &leave),
             "with the {what} ledge deleted the switchback still runs end to end — \
              the crag left a bypass, so that leg's niches are decoration beside a \
              safe road"
@@ -1566,7 +1567,7 @@ fn the_hazard_span_cannot_be_walked_round() {
         .collect();
     assert_eq!(cut.len(), 634, "the span, and only it, was cut");
     assert!(
-        !reaches(&out.model, &cut, &entry, &exit),
+        !reaches_walled(&out.model, &cut, &entry, &exit),
         "with the portcullis span closed the gatehouse still connects end to end — \
          there is a way round the hazard, so nothing about its timing matters"
     );
@@ -1867,7 +1868,7 @@ fn the_gatehouses_sally_port_is_sealed_and_reached_through_one_doorway() {
         "exactly the doorway was cut"
     );
     assert!(
-        !reaches(&opened.model, &cut, &open_entry, &open_unlock),
+        !reaches_walled(&opened.model, &cut, &open_entry, &open_unlock),
         "with the junction's doorway plugged the unbarred branch is still reachable"
     );
 
@@ -1929,12 +1930,12 @@ fn the_doorway_is_the_only_route_from_hall_to_stores() {
         .filter(|c| c[0] != threshold[0] || c[2] != threshold[2])
         .collect();
     assert!(
-        !reaches(&out.model, &cut, &approach, &inside),
+        !reaches_walled(&out.model, &cut, &approach, &inside),
         "with the doorway plugged the keep still lets a walker through — there is a \
          second way into the stores, so passing the alcove is optional"
     );
     assert!(
-        !reaches(&out.model, &cut, &approach, &inside),
+        !reaches_walled(&out.model, &cut, &approach, &inside),
         "the doorway is the only route on foot, but a fall carries a player past it"
     );
 }
@@ -2304,7 +2305,7 @@ fn the_volley_span_cannot_be_walked_round_or_fallen_past() {
         .filter(|c| (c[2] - gate[2]).abs() > 1)
         .collect();
     assert!(
-        !reaches(&out.model, &cut, &ledge, &floor),
+        !reaches_walled(&out.model, &cut, &ledge, &floor),
         "with the volley span closed the cistern still reaches its own floor — the \
          hazard is beside the route rather than on it, or the drop lands past it"
     );
@@ -2420,7 +2421,7 @@ fn the_cistern_sally_port_is_sealed_and_opens_only_from_its_far_side() {
         "exactly the doorway column was cut"
     );
     assert!(
-        !reaches(&opened.model, &cut, &open_floor, &open_unlock),
+        !reaches_walled(&opened.model, &cut, &open_floor, &open_unlock),
         "with the junction's doorway plugged the unbarred branch is still reachable \
          — the way in is a seam that never closed, not the doorway the tee declares"
     );
@@ -2576,7 +2577,7 @@ fn the_hubs_shortcut_is_sealed_and_reached_through_one_doorway() {
         "exactly the doorway was cut"
     );
     assert!(
-        !reaches(&opened.model, &cut, &open_ledge, &open_unlock),
+        !reaches_walled(&opened.model, &cut, &open_ledge, &open_unlock),
         "with the junction's doorway plugged the unbarred branch is still reachable"
     );
 
@@ -2906,7 +2907,7 @@ fn no_route_reaches_the_bellkeeper_without_crossing_the_threshold() {
     let cut: BTreeSet<[i32; 3]> = cells.difference(&doorband).copied().collect();
     assert_eq!(cut.len(), cells.len() - 17);
     assert!(
-        !reaches(&out.model, &cut, &entry, &elite),
+        !reaches_walled(&out.model, &cut, &entry, &elite),
         "with the boss threshold cut out the ring is still reachable — there is a \
          way to the Bellkeeper that never crosses the marker"
     );
@@ -2926,7 +2927,7 @@ fn no_route_reaches_the_bellkeeper_without_crossing_the_threshold() {
     assert_eq!((ring_side.len(), tower_side.len()), (532, 1623));
     let loft_door: BTreeSet<[i32; 3]> = [out.anchors["anchor/hall-door"].pos].into_iter().collect();
     assert!(
-        reaches(&out.model, &cut, &entry, &loft_door),
+        reaches_walled(&out.model, &cut, &entry, &loft_door),
         "the cut also severed the loft from the entry, so the red above is not \
          about the threshold"
     );
@@ -3927,7 +3928,7 @@ fn a_barred_door_on_the_route_seals_the_chain() {
         "exactly the doorway was cut"
     );
     assert!(
-        !reaches(&opened.model, &cut, &open_entry, &unlock),
+        !reaches_walled(&opened.model, &cut, &open_entry, &unlock),
         "with the tee's doorway plugged the unbarred branch is still reachable — the \
          way in is a seam that never closed, not the doorway this rule declares"
     );

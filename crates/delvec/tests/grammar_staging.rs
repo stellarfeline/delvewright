@@ -190,7 +190,7 @@ const ARENA_SEED: u64 = 1;
 //   fixture must not leave one: keep the separation wider than a jump, or solid.
 // * `elite_ground` — safe. A jump can only *add* flank routes, and the gate
 //   cares about there being enough, not few.
-use delvec::grammar::nav::{passable, reaches, solid, standable, standable_cells};
+use delvec::grammar::nav::{passable, reaches, reaches_walled, solid, standable, standable_cells};
 
 // ---------------------------------------------------------------------------
 // Sightline — the same walk `DW0388` uses
@@ -377,7 +377,7 @@ fn the_ledge_lane_is_the_only_route_past_the_niches() {
 
     let cut: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[0] != 0).collect();
     assert!(
-        !reaches(model, &cut, &entry, &exit),
+        !reaches_walled(model, &cut, &entry, &exit),
         "with the ledge lane removed the path still connects end to end — the \
          niches are decoration beside a walkable bypass, not a knockback test"
     );
@@ -1184,7 +1184,7 @@ fn the_doorway_is_the_only_route_through_the_wall() {
         .filter(|c| c[0] != threshold[0] || c[2] != wall)
         .collect();
     assert!(
-        !reaches(&out.model, &cut, &approach, &inside),
+        !reaches_walled(&out.model, &cut, &approach, &inside),
         "with the doorway plugged the wall still lets a walker through — there is \
          a second way round, so passing the alcove is optional"
     );
@@ -1373,7 +1373,7 @@ fn the_hazard_lane_is_the_only_continuous_route() {
     let pocket_x = indexed(&out.anchors, "pocket")[0][0];
     let cut: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[0] == pocket_x).collect();
     assert!(
-        !reaches(&out.model, &cut, &entry, &exit),
+        !reaches_walled(&out.model, &cut, &entry, &exit),
         "the pocket band alone connects the box end to end — it is a parallel \
          bypass, not a side dodge off a lane the player has to take"
     );
@@ -2524,9 +2524,13 @@ fn a_single_raised_tread_strands_the_head_landing() {
         "a tread was raised a whole block and the climb still gets through — \
          the both-ways gate cannot see a step nobody can make"
     );
+    // Down is another matter: a body steps off the raised tread and falls the
+    // two blocks to the next, so the break strands the head landing for the
+    // climb and nobody coming down.
     assert!(
-        !reaches(&out.model, &cells, &head, &foot),
-        "the descent is unaffected, so the break is not on the route"
+        reaches(&out.model, &cells, &head, &foot),
+        "the descent off the raised tread is a two-block fall a body takes, and \
+         it no longer gets down"
     );
 
     // ...and what was caught is a step, not a demolition. Exactly one riser is
@@ -2632,7 +2636,7 @@ fn the_run_is_the_only_way_between_the_landings() {
         "the cut removed the wrong number of cells"
     );
     assert!(
-        !reaches(model, &cut, &foot, &head),
+        !reaches_walled(model, &cut, &foot, &head),
         "the landings are still joined with a slice of the run deleted, so the \
          run is not the route"
     );
@@ -2852,7 +2856,7 @@ fn the_tee_passages_doorway_is_beside_the_route_not_on_it() {
         "exactly the doorway was removed"
     );
     assert!(
-        reaches(&out.model, &cut, &entry, &exit),
+        reaches_walled(&out.model, &cut, &entry, &exit),
         "plugging the branch doorway severed the lane — the tee put its opening on \
          the route, which is a `far_side_bar` and not a junction"
     );
@@ -2875,7 +2879,7 @@ fn the_tee_passages_doorway_is_beside_the_route_not_on_it() {
         .filter(|c| c[2] != gate[2])
         .collect();
     assert!(
-        !reaches(&bar.model, &bar_cut, &bar_entry, &bar_exit),
+        !reaches_walled(&bar.model, &bar_cut, &bar_entry, &bar_exit),
         "plugging the bar's own opening left the box connected — this cut cannot \
          sever anything, so the tee passing it means nothing"
     );

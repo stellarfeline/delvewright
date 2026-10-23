@@ -200,19 +200,64 @@ pub fn body_world(model: &VoxelModel) -> crate::compiler::nav::World {
     crate::compiler::nav::World::of_piece(blocks)
 }
 
-/// **Can a body get from any cell of `from` to any cell of `to`, moving only
-/// into `cells`**, by the reach graph's moves over the model's blocks
-/// ([`body_world`], [`crate::compiler::nav::World::body_flood`])? A cell of
-/// `from` outside `cells` is no start. The edge proof's walk
-/// ([`crate::grammar::contract`]), offered to a reader holding a model; a
-/// `cells` that leaves some floor out proves a route is the only one.
+/// **Can a body get from any cell of `from` to any cell of `to`, standing only
+/// on the floor `cells` names**, by the reach graph's moves over the model's
+/// blocks ([`body_world`], [`crate::compiler::nav::World::body_flood`])? A
+/// move onto a standable cell of the model is taken only when `cells` holds
+/// it; a move into a cell that is no floor of the model — water a body swims
+/// in, a ladder it holds, the air of a jump's landing beside a ledge — is
+/// not confined, because no fixture names those. A move out of the model's
+/// region is never taken: a body that has left the box has left the thing
+/// being measured (the piece's water spills into the air this world puts
+/// round it, and a swim through that spill is no route of the piece's). A
+/// cell of `from` outside
+/// `cells` is no start. A `cells` that leaves some floor out keeps a body to
+/// a band of it; to prove a route is the only one, wall the rest up
+/// ([`reaches_walled`]).
 pub fn reaches(
     model: &VoxelModel,
     cells: &BTreeSet<[i32; 3]>,
     from: &BTreeSet<[i32; 3]>,
     to: &BTreeSet<[i32; 3]>,
 ) -> bool {
-    !crate::grammar::contract::body_reached(&body_world(model), cells, from).is_disjoint(to)
+    let seeds: Vec<[i32; 3]> = from.intersection(cells).copied().collect();
+    !body_world(model)
+        .body_flood(&seeds, &|_, next| {
+            Voxels::contains(model, next) && (cells.contains(&next) || !standable(model, next))
+        })
+        .is_disjoint(to)
+}
+
+/// **Can a body get from `from` to `to` with every standable cell outside
+/// `kept` walled up?** Each removed cell, and the two cells over it, is filled
+/// with stone where a body could pass, and the question is [`reaches`] over
+/// the walled model's own floor.
+///
+/// What a proof that a route is the **only** route asks. Leaving a doorway's
+/// cells out of the set a walk may enter is not the same claim for a body
+/// that jumps: a jump that lands past the doorway flies through its cells
+/// without standing in them, so a cut made by confinement is crossed in the
+/// air. A wall is not.
+pub fn reaches_walled(
+    model: &VoxelModel,
+    kept: &BTreeSet<[i32; 3]>,
+    from: &BTreeSet<[i32; 3]>,
+    to: &BTreeSet<[i32; 3]>,
+) -> bool {
+    let mut walled = model.clone();
+    let stone = crate::grammar::block::BlockState::simple("minecraft:stone_bricks");
+    for c in standable_cells(model).difference(kept) {
+        for dy in 0..3 {
+            let p = [c[0], c[1] + dy, c[2]];
+            if passable(model, p) {
+                walled
+                    .set(p, &stone)
+                    .expect("the palette has room for the wall");
+            }
+        }
+    }
+    let cells = standable_cells(&walled);
+    reaches(&walled, &cells, from, to)
 }
 
 /// Where a body walks in: the standable cells on the region's four **vertical**
