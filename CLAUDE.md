@@ -4,6 +4,8 @@ Delvewright is an automated production line that outputs **self-contained Minecr
 
 The creator is an agent (ADR-0012): the LLM writes the DSL, the human gives ideas and plays the result. Every authoring surface — DSL, CLI, skill — is agent-facing. Every input to a surface is either a creative judgement (the agent's argument) or a procedural derivation (handed by the tool, never typed); an error is refused where it is entered, not at the end.
 
+**A question to the user is a design question**: it asks for a creative judgement that needs a person's attention, in words a player with no engine knowledge can answer. Anything technical is decided by the agent or fixed in the engine, never asked; with the debug flag set, the agent also records each technical decision and engine limit it met in the run's final report, without stopping. The released default has the flag off.
+
 Founding decisions live in `docs/adr/`. Read the ADR index before proposing architecture.
 
 ## This file is half of the constitution
