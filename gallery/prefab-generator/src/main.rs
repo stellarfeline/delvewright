@@ -717,7 +717,7 @@ const ANCHORS: &[Anchor] = &[
     // released to the hand once unbarred, and a chest that answers once taken.
     Anchor {
         name: "anchor/bay-knock",
-        pos: [29, 1, 24],
+        pos: [29, 1, 21],
         facing: Some("west"),
         trigger_block: None,
         note: "the bay's knocker, a button on the floor: two knocks unbar the bay door",

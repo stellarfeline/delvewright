@@ -4790,13 +4790,23 @@ trigger open only while the objective is pending — without the objective's own
 gate, since a press that feeds the gate could otherwise never be made — and
 settled once it completes, so the fourth press on a solved puzzle is answered
 `done` and writes nothing. `serves: {gate}` holds it open while the gate is
-sealed (`#gseal_<gate>` for a `close-gate`, `#sc_<id>` unset for a shortcut).
+sealed (`#gseal_<gate>` for a `close-gate` or for a gate sealed from load that
+an `open-gate` opens, `#sc_<id>` unset for a shortcut). It reaches every gate the
+world holds sealed: a `close-gate` target, a shortcut's gate, and a gate sealed
+from world load (a shut seam's bar, a prefab's door) that an `open-gate` opens —
+`pressable::load_sealed_served_gates` names the last kind, `setup_finish` writes
+its `#gseal`/`#gsealed` state and arms its own answer's boxes, and its
+`open-gate` takes both down; the press proof refuses one the world-load seal
+measurement does not hold shut (`DW1052`).
 `trigger_poll_guards` carries the terms, so every dispatch route gates
 identically; `path_triggers` performs a `serves` trigger only while its referent
 is pending or sealed.
 
 **A sealed gate speaks for itself.** Every `close-gate` target and every
-shortcut gate owes an answer trigger (`DW0429`): a `use` trigger with
+shortcut gate owes an answer trigger (`DW0429`), and a way declared `told`
+owes one on its seam's gate (`DW1054`) — both read one predicate,
+`QuestsContent::gate_answers`, and carry one remedy,
+`dsl::trigger::press_answer_prescription`: a `use` trigger with
 `serves: {gate}` anchored at a cell of the door that holds its block — the gate's
 own answer: its body is the gate's block under a fitted box, summoned by
 `seal_arm_<gate>` when the gate seals and killed in the same function that opens
@@ -4955,7 +4965,7 @@ finishable the long way). A later `open-gate` from a forced root still wins the
 region, so the widening reads as a seal the proof must survive, never as a veto.
 
 The gate's own answer box is armed by `seal_arm_<gate>` at every site that
-fills the gate (and, for a shortcut, at world-load) under an
+fills the gate (and, for a shortcut's gate and a served gate sealed from load, at world-load) under an
 `unless entity @e[tag=dw_gate_<gate>]` guard, so a re-fired beat never stacks a
 second box; the opening kills `dw_gate_<gate>`. Each answer's generated
 `env_trigger_dw_answer_<owner>_<state>` template drives it in its state and
@@ -6261,7 +6271,7 @@ configuration's block map, which `DW0891` reads too — laid over **the world as
 shipped** (`view::beat::picture_base`): the assembly, every gate the placed
 world authors shut written back with its anchor's block (the assembly clears a
 gate's region; the datapack's setup holds it), the relight fixtures and then every trigger's `prop`
-(`pressable::trigger_props`, the list `setup_finish` writes them from) in the
+(`pressable::props`, every pressable's block, the list `setup_finish` writes them from) in the
 order `setup_finish` sets them (`assembled::shipped_blocks`, which the loop's
 tiling reads too), and every gated trap's trigger removed whose gate is shut at load (a
 `requires_flags`, or a `requires_state` term its datum's `initial` fails). An

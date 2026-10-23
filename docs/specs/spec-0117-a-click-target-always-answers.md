@@ -333,6 +333,7 @@ Each departure from the text above, with its reason, and each criterion the tree
 - **The gallery**: the ferry tiller and the strike-assembly carry `not_yet` (each is gated in the tree, against §7's reading); the reliquary quest gains the door and chest objectives; the knocker is `trigger/knock-the-bay`.
 - **`structure_void` has an outline** in the pinned jar, against §2b's list; the table records the measurement.
 - **A spectator's use of a block** fires no `default_block_use` (§2a), so a button that opens a dialog is no root a waiting player stands in.
+- **`serves: {gate}` reaches every gate the world holds sealed**, not only a `close-gate` target or a shortcut's gate: a gate sealed from world load that an `open-gate` opens (a site plan's shut seam, a prefab's door) is admitted, has no shut state, holds `#gseal`/`#gsealed` from `setup_finish` with its own answer's boxes armed there, and is taken down by its `open-gate`; the press proof refuses one the world-load seal measurement does not hold shut (`DW1052`). spec-0118's `told` reads the same answer: `QuestsContent::gate_answers` is the one predicate `DW0429` and `DW1054` read, and `dsl::trigger::press_answer_prescription` the one remedy both carry.
 
 **Recorded debts** (criterion: what is not yet asserted).
 - 2: the PackTest that asserts the block present before the quest is armed and after completion, and that two `interact` objectives on one cell with one block complete on one granted press.
@@ -344,7 +345,7 @@ Each departure from the text above, with its reason, and each criterion the tree
 - 18: the reconciliation-pair PackTest over the real `tick`, and the box-dimension read from `validation/press-bodies.json`.
 - 20: the PackTest granting the boulder's advancements to a dummy; the Rust half is asserted on the gallery.
 - 11: the skill page lands at the re-pin, as §9 says.
-- A place that is still a stand-in cannot carry its gate's own answer: the answer is anchored at a mark only the place's program writes. A seam-derived cell of the door's bar would let the answer be stated before the place is detailed; not done here.
+- A place that is still a stand-in cannot carry its gate's own answer: the answer is anchored at a mark only the place's program writes. A seam-derived cell of the door's bar would let the answer be stated before the place is detailed; not done here. A way declared `told` (spec-0118) meets the same limit: in a stand-in place it is answered only by a knocker at a cell the derivation names beside the bar (`anchor/unlock-<edge>`, a one-sided seam's), and a two-sided seam's has none.
 - A doorway's transit cell refuses an `interact`'s prop (`DW0845`): a released door cannot stand in its own doorway and stands just inside it on the demo level.
 
 ## Acceptance criteria
