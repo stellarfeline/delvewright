@@ -207,7 +207,13 @@ diagnostic that applies them, and restated nowhere.
 ### 3. What a Release publishes
 
 `tools/ci/release-notes.py <line> --commit REV --repository OWNER/NAME` prints
-the opening ADR-0028 §2 defines, unchanged; then the entry's body as written;
+the opening ADR-0028 §2 defines, with one correction to the plugin's: the
+command that holds a fixed page pins the marketplace to the engine release tag
+as `/plugin marketplace add stellarfeline/delvewright#<tag>` — Claude Code pins
+a GitHub marketplace to a branch or tag with `#ref`, and the `@ref` form
+ADR-0028 §3 wrote is not one it reads — and tells a creator who already holds
+the marketplace to `/plugin marketplace update delvewright` instead, because
+the same name from another source is refused. Then the entry's body as written;
 then one derived line — everything merged since the previous release of the
 line, as `https://github.com/<repository>/compare/<previous>...<tag>` (for a
 line's first release, a sentence saying there is nothing to compare with). No

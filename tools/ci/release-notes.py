@@ -159,7 +159,10 @@ def opening(line: str, repo: pathlib.Path, sha: str) -> tuple[str, str]:
             f"- that engine speaks `dsl_version` {speaks}\n"
             f"- plugin root tree `{tree}`, tagged at `{sha}`\n"
             f"- to hold a fixed page, add the marketplace at the ENGINE release it ships at: "
-            f"`/plugin marketplace add {REPOSITORY}@{pin['ref']}`\n"
+            f"`/plugin marketplace add {REPOSITORY}#{pin['ref']}` (Claude Code pins a GitHub marketplace to a "
+            f"branch or tag with `#ref`); a creator who already has the `delvewright` marketplace registered "
+            f"refreshes it with `/plugin marketplace update delvewright` instead, because the same name from "
+            f"another source is refused\n"
         )
     raise Missing(f"{line!r} is not a released line")
 

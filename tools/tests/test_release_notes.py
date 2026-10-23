@@ -300,6 +300,18 @@ def test_the_plugin_notes_read_the_pin_and_the_entry(repo):
     assert "first release of its line" in result.stdout  # no `delvewright--v*` tag in this repository
 
 
+def test_the_plugin_notes_pin_the_marketplace_with_a_hash_ref(repo):
+    """Claude Code pins a GitHub marketplace to a branch or tag as `owner/repo#ref`;
+    `owner/repo@ref` is not a form it reads. A creator who already holds the
+    marketplace is told to update it, since the same name from another source is refused."""
+    _with_changelog(repo, GOOD_ENTRY.replace("## delvec 1.15.0", "## delvewright 1.15.0"))
+    result = _notes(repo, "delvewright")
+    assert result.returncode == 0, result.stderr
+    assert "`/plugin marketplace add stellarfeline/delvewright#delvec--v1.15.0`" in result.stdout
+    assert "marketplace add stellarfeline/delvewright@" not in result.stdout
+    assert "`/plugin marketplace update delvewright`" in result.stdout
+
+
 # ------------------------------------------------------------ check-changelog --
 def test_check_passes_a_clean_changelog_and_states_what_it_compared(repo):
     _with_changelog(repo, GOOD_ENTRY)
