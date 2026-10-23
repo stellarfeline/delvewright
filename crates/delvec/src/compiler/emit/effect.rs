@@ -493,7 +493,7 @@ pub(super) fn emit_quest_effect(
                     // …and take the gate's own answer down with the seal
                     // (spec-0117): its block is air now, and a box left standing
                     // in a doorway swallows presses aimed through it.
-                    if seal_hint_for(plan, anchor.as_str()).is_some() {
+                    if super::press::gate_has_seal_state(plan, anchor.as_str()) {
                         let safe = plan::safe_local(anchor.as_str());
                         body.push(format!("scoreboard players set #gseal_{safe} dw.sys 0"));
                         if super::press::gate_has_answer_box(plan, anchor.as_str()) {

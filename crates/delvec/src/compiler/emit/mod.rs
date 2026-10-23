@@ -824,7 +824,8 @@ pub fn build_with_warnings(
     // answer (DW1052), every sealed gate answered (DW0429), one cell one block
     // (DW0896). The binding is printed whichever way it goes.
     {
-        let (proof, verdict) = crate::compiler::pressable::check(plan, &assembled.blocks);
+        let (proof, verdict) =
+            crate::compiler::pressable::check(plan, &assembled.blocks, &assembled.gate_seals);
         eprintln!("{}", proof.line());
         put_json(&mut out, "validation/press-proof.json", &proof.to_json());
         if let Err(f) = verdict {

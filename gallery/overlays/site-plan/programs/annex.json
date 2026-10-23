@@ -176,13 +176,20 @@
             },
             {
               "body": {
-                "material": {
-                  "role": "bar"
+                "body": {
+                  "material": {
+                    "role": "bar"
+                  },
+                  "op": "fill"
                 },
-                "op": "fill"
+                "op": "claim",
+                "region": "seam-annex-chute"
               },
-              "op": "claim",
-              "region": "seam-annex-chute"
+              "mark": {
+                "anchor": "annex-chute-leaf",
+                "at": "floor_center"
+              },
+              "op": "mark"
             },
             {
               "material": {

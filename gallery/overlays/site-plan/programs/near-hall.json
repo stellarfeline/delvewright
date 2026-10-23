@@ -808,8 +808,15 @@
                               "symbol": "floor"
                             },
                             {
-                              "op": "call",
-                              "symbol": "seam-undercroft-shaft-bar"
+                              "body": {
+                                "op": "call",
+                                "symbol": "seam-undercroft-shaft-bar"
+                              },
+                              "mark": {
+                                "anchor": "undercroft-shaft-leaf",
+                                "at": "floor_center"
+                              },
+                              "op": "mark"
                             },
                             {
                               "op": "call",
@@ -1190,8 +1197,103 @@
                           ]
                         },
                         {
-                          "op": "call",
-                          "symbol": "part-6"
+                          "axis": "x",
+                          "children": [
+                            {
+                              "op": "call",
+                              "symbol": "wall"
+                            },
+                            {
+                              "body": {
+                                "op": "call",
+                                "symbol": "seam-west-door-bar"
+                              },
+                              "mark": {
+                                "anchor": "west-door-leaf",
+                                "at": "floor_center"
+                              },
+                              "op": "mark"
+                            },
+                            {
+                              "op": "call",
+                              "symbol": "wall"
+                            },
+                            {
+                              "body": {
+                                "op": "call",
+                                "symbol": "seam-centre-door-bar"
+                              },
+                              "mark": {
+                                "anchor": "centre-door-leaf",
+                                "at": "floor_center"
+                              },
+                              "op": "mark"
+                            },
+                            {
+                              "op": "call",
+                              "symbol": "wall"
+                            },
+                            {
+                              "op": "call",
+                              "symbol": "seam-east-door-bar"
+                            },
+                            {
+                              "op": "call",
+                              "symbol": "wall"
+                            }
+                          ],
+                          "op": "split",
+                          "sizes": [
+                            {
+                              "blocks": {
+                                "expr": "int",
+                                "value": 3
+                              },
+                              "size": "absolute"
+                            },
+                            {
+                              "blocks": {
+                                "expr": "int",
+                                "value": 1
+                              },
+                              "size": "absolute"
+                            },
+                            {
+                              "blocks": {
+                                "expr": "int",
+                                "value": 6
+                              },
+                              "size": "absolute"
+                            },
+                            {
+                              "blocks": {
+                                "expr": "int",
+                                "value": 1
+                              },
+                              "size": "absolute"
+                            },
+                            {
+                              "blocks": {
+                                "expr": "int",
+                                "value": 2
+                              },
+                              "size": "absolute"
+                            },
+                            {
+                              "blocks": {
+                                "expr": "int",
+                                "value": 2
+                              },
+                              "size": "absolute"
+                            },
+                            {
+                              "size": "relative",
+                              "weight": {
+                                "expr": "int",
+                                "value": 1
+                              }
+                            }
+                          ]
                         }
                       ],
                       "op": "split",

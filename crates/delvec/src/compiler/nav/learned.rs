@@ -35,7 +35,7 @@ delvewright_dsl::dw_code! {
 delvewright_dsl::dw_code! {
     /// `DW1054`: **a declaration the world does not confirm** (spec-0118 §6.2):
     /// `seen`, but from the junction the eye meets a hiding cell before the
-    /// bar; `told`, but nothing answers a press at the seam; `rewarded`, but no
+    /// bar; `told`, but no `use` trigger serves the seam; `rewarded`, but no
     /// pickup, interaction or fight stands on the branch's ground; `hidden`,
     /// but an eye in the reach sees the way or its far side, or the beat that
     /// opens it carries no shot of its seam. As a warning, a word on a
@@ -500,7 +500,10 @@ pub fn check_shut_ways_learned(
             if a_low { (a, b) } else { (b, a) }
         });
         // The press answer is the predicate `DW0429` reads (spec-0117 §6).
-        let answered_by = q.gate_answers(&seal.anchor).next().map(|t| t.id.to_string());
+        let answered_by = q
+            .gate_answers(&seal.anchor)
+            .next()
+            .map(|t| t.id.to_string());
         let far = sides
             .as_ref()
             .and_then(|(lo, hi)| Some((space_of(plan, lo)?, space_of(plan, hi)?)));
@@ -1258,8 +1261,8 @@ fn seen_words(m: &Met) -> String {
 
 fn told_words(way: &ShutWay) -> String {
     match &way.answered_by {
-        Some(t) => format!("`{t}` answers a press at `{}`", way.seam),
-        None => format!("nothing answers a press at `{}`", way.seam),
+        Some(t) => format!("`{t}` answers a press on `{}`", way.seam),
+        None => format!("no `use` trigger serves `{}`", way.seam),
     }
 }
 
@@ -1400,8 +1403,10 @@ fn unconfirmed_words(way: &ShutWay, m: &Met, configs: &[SeparationConfig<'_>]) -
             seen_words(m)
         ),
         Some(Learned::Told) => format!(
-            "{place}; declared `told`, but nothing answers a press at `{}`. Anchor a trigger on \
-             the seam — {}",
+            "{place}; declared `told`, but no `use` trigger serves `{}`. Anchor a trigger on \
+             the seam — {} — whose body is the gate's own block; or, where no anchor names a cell \
+             of the gate, a knocker (a bell or a button with its `prop`, and its `answers.done`) \
+             face-adjacent to it",
             way.seam,
             delvewright_dsl::trigger::press_answer_prescription(&way.seam, "the way")
         ),

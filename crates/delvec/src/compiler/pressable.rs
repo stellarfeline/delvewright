@@ -1250,8 +1250,8 @@ mod tests {
 pub struct PressProof {
     /// Interaction points placed, by form.
     pub forms: BTreeMap<Form, usize>,
-    /// Sealed gates (`close-gate` targets and shortcut gates) judged by
-    /// `DW0429`.
+    /// Sealed gates judged by `DW0429`: `close-gate` targets and shortcut
+    /// gates, owed an answer, and gates sealed from load that a press serves.
     pub gates: usize,
     /// Of their answers, the gate's own (a box over its block).
     pub own_answers: usize,
@@ -1307,10 +1307,12 @@ impl PressProof {
 /// the sealed side; and two pressables on one cell agreeing about the block,
 /// with at most one of them boxed (`DW0896`, re-stated over blocks). `blocks`
 /// is the assembled world, read for the block a shortcut's door holds at an
-/// answer's cell.
+/// answer's cell; `seals` the world-load seals measured from it, read for
+/// whether a gate only the story opens is shut at load.
 pub fn check(
     plan: &Plan,
     blocks: &crate::compiler::blockstate::BlockMap,
+    seals: &[crate::compiler::assembled::GateSeal],
 ) -> (PressProof, Result<(), crate::compiler::failure::Failure>) {
     use crate::compiler::failure::Failure;
     use delvewright_dsl::{PRESS_ANSWER_INERT, PRESS_TARGET_UNREAL};
@@ -1376,20 +1378,45 @@ pub fn check(
         }
     }
     // --- DW0429: every sealed gate answered ---
-    let mut gates: Vec<(String, bool)> = Vec::new();
+    // Each gate with how it is sealed: by a `close-gate`, as a shortcut's
+    // (from load, owed an answer), or from load and opened by the story (owed
+    // nothing here, judged only where a press serves it).
+    let mut gates: Vec<(String, Sealed)> = Vec::new();
     for s in &plan.seal_hints {
-        gates.push((s.anchor.clone(), false));
+        gates.push((s.anchor.clone(), Sealed::Close));
     }
     for sc in &plan.shortcuts {
         if !gates.iter().any(|(g, _)| g == &sc.gate_anchor) {
-            gates.push((sc.gate_anchor.clone(), true));
+            gates.push((sc.gate_anchor.clone(), Sealed::Shortcut));
         }
     }
+    for g in load_sealed_served_gates(plan) {
+        gates.push((g, Sealed::Load));
+    }
     b.gates = gates.len();
-    for (gate, shortcut) in &gates {
+    for (gate, sealed) in &gates {
+        let shortcut = matches!(sealed, Sealed::Shortcut);
         let Some((from, to, _)) = gate_region(plan, gate) else {
             continue;
         };
+        // A gate only the story opens is sealed by the world at load (its
+        // world-load seal, measured from the bytes), or a press serving it
+        // serves nothing.
+        if matches!(sealed, Sealed::Load) && !seals.iter().any(|s| s.anchor == *gate && s.sealed())
+        {
+            return (
+                b,
+                fail(
+                    PRESS_ANSWER_INERT,
+                    format!(
+                        "`{gate}` is opened by an `open-gate` and sealed by no `close-gate`, and \
+                         the world holds no block in it at load (cells {from:?}..{to:?}): a press \
+                         that `serves` it serves a gate that is never shut. Prescription: drop \
+                         `serves`, or seal the gate"
+                    ),
+                ),
+            );
+        }
         let answers: Vec<&EnvTrigger> = quests.gate_answers(gate).collect();
         let mut own = 0usize;
         let mut knock = 0usize;
@@ -1399,12 +1426,12 @@ pub fn check(
             };
             if in_region(cell, (from, to)) {
                 // The cell must hold a block while sealed: a `close-gate` fills
-                // its region with the gate's block; a shortcut's door is the
-                // prefab's.
-                if *shortcut {
-                    // The shortcut's gate is sealed from load: the shipped world
-                    // holds the gate's declared block over its whole region (the
-                    // world-load seal, `assembled::shipped_blocks`), whatever the
+                // its region with the gate's block; a shortcut's door and a
+                // gate sealed from load are the prefab's.
+                if shortcut || matches!(sealed, Sealed::Load) {
+                    // Sealed from load: the shipped world holds the gate's
+                    // declared block over its whole region (the world-load
+                    // seal, `assembled::shipped_blocks`), whatever the
                     // template's bytes say there.
                     let sealed_with = gate_region(plan, gate)
                         .map(|(_, _, b)| b)
@@ -1430,7 +1457,7 @@ pub fn check(
                             ),
                         );
                     }
-                    if !t.addresses_presser() {
+                    if shortcut && !t.addresses_presser() {
                         return (
                             b,
                             fail(
@@ -1448,7 +1475,7 @@ pub fn check(
                 }
                 own += 1;
             } else if face_adjacent(cell, (from, to))
-                && (!*shortcut || on_sealed_side(plan, gate, cell))
+                && (!shortcut || on_sealed_side(plan, gate, cell))
             {
                 knock += 1;
             } else {
@@ -1462,12 +1489,12 @@ pub fn check(
                              face-adjacent to it{}. Prescription: anchor it at the door's own \
                              cell, or beside the door on the side that owes the line",
                             t.id,
-                            if *shortcut && face_adjacent(cell, (from, to)) {
+                            if shortcut && face_adjacent(cell, (from, to)) {
                                 "beside the shortcut's door on its far side"
                             } else {
                                 "neither inside the region nor face-adjacent to it"
                             },
-                            if *shortcut {
+                            if shortcut {
                                 " on the sealed side, where the party meets the barred door"
                             } else {
                                 ""
@@ -1480,13 +1507,18 @@ pub fn check(
         b.own_answers += own;
         b.knockers += knock;
         if own + knock == 0 {
-            let what = if *shortcut {
-                format!(
+            let what = match sealed {
+                Sealed::Shortcut => format!(
                     "the shortcut gate `{gate}` is barred from world-load and the party is led to \
                      its wrong side first"
-                )
-            } else {
-                format!("a `close-gate` seals `{gate}`, a wall the party walks back to")
+                ),
+                Sealed::Close => {
+                    format!("a `close-gate` seals `{gate}`, a wall the party walks back to")
+                }
+                Sealed::Load => format!(
+                    "`{gate}` is sealed from world-load, and the trigger that serves it stands at \
+                     no cell"
+                ),
             };
             return (
                 b,
@@ -1498,7 +1530,7 @@ pub fn check(
                          word it for you. Prescription: anchor a trigger at a point on the door's \
                          own cell — {} — whose body is the gate's own block{}",
                         delvewright_dsl::trigger::press_answer_prescription(gate, "the door"),
-                        if *shortcut {
+                        if shortcut {
                             ""
                         } else {
                             "; or, where nothing reads as the way through, a knocker (a bell or a \
@@ -1548,6 +1580,44 @@ pub fn check(
         }
     }
     (b, Ok(()))
+}
+
+/// How a gate `DW0429` judges is held sealed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Sealed {
+    /// A `close-gate` seals it.
+    Close,
+    /// A shortcut's, sealed from world load.
+    Shortcut,
+    /// Sealed from world load by its piece and opened by an `open-gate`.
+    Load,
+}
+
+/// **The gates sealed from world load that a press serves** (spec-0117 §5.3
+/// over every gate the world holds sealed): every gate a `use` trigger's
+/// `serves: {gate}` names that no `close-gate` seals and that is no shortcut's
+/// — a shut seam's bar or a prefab's door, opened by an `open-gate` — in
+/// trigger declaration order. Its seal state is written at load and its own
+/// answer's boxes go up there (`emit::press`), and its `open-gate` takes both
+/// down; [`check`] confirms the world holds it sealed.
+pub fn load_sealed_served_gates(plan: &Plan) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for t in &plan.campaign.quests.content.triggers {
+        let Some(Serves::Gate(g)) = &t.serves else {
+            continue;
+        };
+        let g = g.as_str();
+        if !matches!(t.on, TriggerOn::Use)
+            || plan.seal_hints.iter().any(|s| s.anchor == g)
+            || plan.shortcuts.iter().any(|s| s.gate_anchor == g)
+            || out.iter().any(|x| x == g)
+            || gate_region(plan, g).is_none()
+        {
+            continue;
+        }
+        out.push(g.to_string());
+    }
+    out
 }
 
 /// Whether `cell` lies on shortcut gate `gate`'s sealed side

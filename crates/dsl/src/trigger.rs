@@ -421,8 +421,9 @@ pub enum Serves {
     /// An objective: the press is open only while it is pending, settled once
     /// it is complete.
     Objective(crate::ObjectiveId),
-    /// A gate a `close-gate` or a `shortcut` seals: the press is open only while
-    /// it is sealed, settled once it is open.
+    /// A gate the world holds sealed — one a `close-gate` seals, a `shortcut`'s,
+    /// or one sealed from world load that an `open-gate` opens: the press is open
+    /// only while it is sealed, settled once it is open.
     Gate(AnchorId),
 }
 
@@ -1165,6 +1166,22 @@ pub(crate) fn close_gate_anchors(c: &Campaign) -> BTreeSet<String> {
     out
 }
 
+/// The gate anchors the story seals and opens, anywhere in the campaign: every
+/// one a `close-gate` seals, and every one an `open-gate` opens — a gate an
+/// `open-gate` opens is held sealed until then, from world load (a shut seam's
+/// bar, a prefab's door) or by a `close-gate`. Whether a gate only an
+/// `open-gate` names is sealed at load is the world's to say, and the build
+/// confirms it (`compiler::pressable::check`, `DW1052`).
+pub(crate) fn story_gate_anchors(c: &Campaign) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    crate::for_each_campaign_effect(c, &mut |_path, _site, eff| {
+        if let Some(a) = eff.close_gate_anchor().or_else(|| eff.open_gate_anchor()) {
+            out.insert(a.as_str().to_string());
+        }
+    });
+    out
+}
+
 /// The interaction point `id` names (an objective, a trigger, a shortcut, a
 /// trap, a timed gate, a shop or a bonfire's anchor), if the document declares
 /// one.
@@ -1214,7 +1231,7 @@ pub fn answers_mut(
 /// one fixed walk per section (ADR-0006).
 pub fn press_sites(c: &Campaign) -> Vec<PressSite<'_>> {
     let quests = &c.quests.content;
-    let sc_gates = shortcut_gates(c);
+    let closed_by_story = close_gate_anchors(c);
     let npc_stands: BTreeSet<&str> = c
         .npcs
         .content
@@ -1266,8 +1283,10 @@ pub fn press_sites(c: &Campaign) -> Vec<PressSite<'_>> {
         let (serves_shut, serves_settled) = match &t.serves {
             None => (false, false),
             Some(Serves::Objective(_)) => (true, true),
-            // A shortcut's gate is sealed from load: no shut state.
-            Some(Serves::Gate(g)) => (!sc_gates.contains(g.as_str()), true),
+            // A gate is open before a `close-gate` seals it: the press has a
+            // shut state there. A shortcut's gate, and a gate only an
+            // `open-gate` names, are sealed from load: no shut state.
+            Some(Serves::Gate(g)) => (closed_by_story.contains(g.as_str()), true),
         };
         let gate_answer = matches!(t.serves, Some(Serves::Gate(_)))
             && t.prop.is_none()
@@ -1500,7 +1519,7 @@ pub fn press_checks(c: &Campaign) -> (Vec<Diagnostic>, PressBinding) {
             )
         })
         .collect();
-    let sealed_by_close = close_gate_anchors(c);
+    let story_gates = story_gate_anchors(c);
     let sc_gates = shortcut_gates(c);
     for site in press_sites(c) {
         if site.kind != PressKind::Step {
@@ -1699,15 +1718,15 @@ pub fn press_checks(c: &Campaign) -> (Vec<Diagnostic>, PressBinding) {
                 .iter()
                 .find(|t| t.id.as_str() == site.id)
                 .and_then(|t| t.serves.as_ref())
-            && !sealed_by_close.contains(g.as_str())
+            && !story_gates.contains(g.as_str())
             && !sc_gates.contains(g.as_str())
         {
             refused_here += 1;
             inert(
                 "serves/gate",
                 format!(
-                    "`{g}` is sealed by no `close-gate` and is no shortcut's gate, so the press \
-                     serves nothing"
+                    "`{g}` is sealed by no `close-gate`, opened by no `open-gate` and is no \
+                     shortcut's gate, so the press serves nothing"
                 ),
             );
         }

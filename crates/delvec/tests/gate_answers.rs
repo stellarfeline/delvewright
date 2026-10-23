@@ -139,6 +139,14 @@ fn a_sealed_gate_with_no_answer_is_dw0429() {
     let (code, message) = refusal(&c);
     assert_eq!(code, "DW0429", "{message}");
     assert!(message.contains("anchor/door"), "{message}");
+    // The one remedy `DW1054` repeats for a way declared `told`.
+    assert!(
+        message.contains(&delvewright_dsl::trigger::press_answer_prescription(
+            "anchor/door",
+            "the door"
+        )),
+        "{message}"
+    );
 }
 
 #[test]

@@ -319,7 +319,7 @@
         }
       },
       {
-        "at": "anchor/seam-annex-chute",
+        "at": "anchor/annex-chute-leaf",
         "audience": "presser",
         "effects": [
           {
@@ -332,10 +332,13 @@
         "on": {
           "on": "use"
         },
-        "once": false
+        "once": false,
+        "serves": {
+          "gate": "anchor/seam-annex-chute"
+        }
       },
       {
-        "at": "anchor/seam-west-door",
+        "at": "anchor/west-door-leaf",
         "audience": "presser",
         "effects": [
           {
@@ -348,10 +351,13 @@
         "on": {
           "on": "use"
         },
-        "once": false
+        "once": false,
+        "serves": {
+          "gate": "anchor/seam-west-door"
+        }
       },
       {
-        "at": "anchor/seam-centre-door",
+        "at": "anchor/centre-door-leaf",
         "audience": "presser",
         "effects": [
           {
@@ -364,10 +370,13 @@
         "on": {
           "on": "use"
         },
-        "once": false
+        "once": false,
+        "serves": {
+          "gate": "anchor/seam-centre-door"
+        }
       },
       {
-        "at": "anchor/seam-undercroft-shaft",
+        "at": "anchor/undercroft-shaft-leaf",
         "audience": "presser",
         "effects": [
           {
@@ -380,10 +389,13 @@
         "on": {
           "on": "use"
         },
-        "once": false
+        "once": false,
+        "serves": {
+          "gate": "anchor/seam-undercroft-shaft"
+        }
       },
       {
-        "at": "anchor/seam-undercroft-crawl",
+        "at": "anchor/undercroft-crawl-leaf",
         "audience": "presser",
         "effects": [
           {
@@ -396,10 +408,13 @@
         "on": {
           "on": "use"
         },
-        "once": false
+        "once": false,
+        "serves": {
+          "gate": "anchor/seam-undercroft-crawl"
+        }
       },
       {
-        "at": "anchor/seam-loft-stair",
+        "at": "anchor/loft-stair-leaf",
         "audience": "presser",
         "effects": [
           {
@@ -412,7 +427,10 @@
         "on": {
           "on": "use"
         },
-        "once": false
+        "once": false,
+        "serves": {
+          "gate": "anchor/seam-loft-stair"
+        }
       }
     ],
     "waves": [

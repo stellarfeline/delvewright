@@ -795,6 +795,9 @@ pub(super) fn emit_functions(
     // spec-0016 §2, spec-0117: a shortcut's gate is sealed from world-load by the
     // prefab, so its own answer's boxes go up here, over the door's block.
     setup.extend(shortcut_setup(plan));
+    // spec-0117 §5.3: a gate sealed from load that a press serves holds its
+    // seal state, and its own answer's boxes, from load too.
+    setup.extend(load_seal_setup(plan));
     // spec-0016 §4: start each timed gate's clock. The gate is sealed from
     // world-load by the prefab, so the clock's first act is always an OPEN.
     setup.extend(timed_gate_setup(plan));

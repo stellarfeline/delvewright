@@ -492,6 +492,38 @@ pub(super) fn gate_arm_fns(plan: &Plan) -> Vec<(String, String)> {
     out
 }
 
+/// `setup_finish` for the gates sealed from world load that a press serves
+/// ([`crate::compiler::pressable::load_sealed_served_gates`]): the seal state a
+/// `serves: {gate}` press reads (`#gseal_<safe>`, with `#gsealed_<safe>` saying
+/// it has been sealed), and the gate's own answer's boxes over its block — as
+/// a shortcut's gate has from load. Its `open-gate` takes both down. Empty for
+/// a campaign whose presses serve no such gate.
+pub(super) fn load_seal_setup(plan: &Plan) -> Vec<String> {
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    for g in crate::compiler::pressable::load_sealed_served_gates(plan) {
+        let safe = plan::safe_local(&g);
+        out.push(format!("scoreboard players set #gseal_{safe} dw.sys 1"));
+        out.push(format!("scoreboard players set #gsealed_{safe} dw.sys 1"));
+        if gate_has_answer_box(plan, &g) {
+            out.push(format!(
+                "execute unless entity @e[tag=dw_gate_{safe}] run function {ns}:{}",
+                gate_arm_fn(&safe)
+            ));
+        }
+    }
+    out
+}
+
+/// Whether gate `anchor` carries a seal state a press reads: a `close-gate`
+/// seals it, or it is sealed from load and a press serves it.
+pub(super) fn gate_has_seal_state(plan: &Plan, anchor: &str) -> bool {
+    super::seal_hint_for(plan, anchor).is_some()
+        || crate::compiler::pressable::load_sealed_served_gates(plan)
+            .iter()
+            .any(|g| g == anchor)
+}
+
 /// The name of a gate's arming function.
 pub(super) fn gate_arm_fn(safe: &str) -> String {
     format!("seal_arm_{safe}")
