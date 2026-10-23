@@ -1596,10 +1596,11 @@ mod tests {
     fn cam(name: &str) -> Camera {
         Camera {
             after: None,
-            answers: "concept/quay".to_string(),
+            answers: Some("concept/quay".to_string()),
             fov: 50.0,
             height: 900,
             name: name.to_string(),
+            note: None,
             pitch: 10.0,
             pos: [10.5, 70.0, -4.25],
             sky: None,
@@ -1673,7 +1674,7 @@ mod tests {
                 let mut c = cam("x");
                 c.yaw = yaw;
                 c.pitch = pitch;
-                c.answers = "a".into();
+                c.answers = Some("a".into());
                 let s = sheet("isle", vec![c]);
                 let e = emit3(OCEAN, &s, &EmitOptions::default()).unwrap();
                 let (got, _, _) = e[0].frame.view().basis();
@@ -1872,7 +1873,7 @@ mod tests {
         let unanswered = bind_answers(&sheet("c", vec![cam("a")]), &rows).unwrap();
         assert_eq!(unanswered, vec!["concept/hall".to_string()]);
         let mut stray = cam("a");
-        stray.answers = "concept/cellar".into();
+        stray.answers = Some("concept/cellar".into());
         let err = bind_answers(&sheet("c", vec![stray]), &rows).unwrap_err();
         assert_eq!(err.code, DW_INPUT);
         assert!(err.message.contains("concept/hall"), "{err:?}");

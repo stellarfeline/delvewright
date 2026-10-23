@@ -500,10 +500,11 @@ fn a_celestial_camera_renders_its_positions_sun_and_its_days_moon() {
     };
     let cam = Camera {
         after: None,
-        answers: "concept/quay".into(),
+        answers: Some("concept/quay".into()),
         fov: 60.0,
         height: 90,
         name: "moonrise".into(),
+        note: None,
         pitch: 10.0,
         pos: [10.5, 70.0, -4.25],
         sky: Some(sky),

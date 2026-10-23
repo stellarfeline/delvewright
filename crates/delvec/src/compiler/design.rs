@@ -915,6 +915,7 @@ mod tests {
                 answered: vec!["concept/shore-far".to_string()],
                 unanswered: vec!["concept/tower-far".to_string()],
                 stray: Vec::new(),
+                unbound: Vec::new(),
             }),
         };
         let line = b.line();
