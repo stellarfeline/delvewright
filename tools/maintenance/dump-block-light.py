@@ -1,13 +1,25 @@
 #!/usr/bin/env python3
-"""Regenerate the block-light fixture from the PINNED Minecraft server jar.
+"""Regenerate the block-light tables from the PINNED Minecraft server jar.
 
-The fixture `crates/delvec/tests/fixtures/light/emission-<version>.tsv` is what
-`crates/delvec/tests/emission_table.rs` measures `light::emission()` against.
-It is a measurement, not a table somebody typed: every value comes from calling
-the game's own `BlockState.getLightEmission()` inside the pinned server jar.
+Two tables, two questions asked of one booted jar:
 
-    tools/maintenance/dump-block-light.py            # rewrite the fixture
-    tools/maintenance/dump-block-light.py --check    # regenerate into a temp dir and diff
+- **What a block emits.** The fixture
+  `crates/delvec/tests/fixtures/light/emission-<version>.tsv` is what
+  `crates/delvec/tests/emission_table.rs` measures `light::emission()` against:
+  the game's own `BlockState.getLightEmission()`.
+- **What a block hides from the eye.** `crates/dsl/data/occlusion-<version>.tsv`
+  is what `World::hides` reads (`delvewright_dsl::blockshape::hides`): per
+  blockstate, the game's own `canOcclude()`, whether `getOcclusionShape()` fills
+  the cell (`Block.isShapeFullBlock`), and the cached `isSolidRender()` — the
+  renderer culls the face behind a block exactly when it occludes with a full
+  shape (`docs/reference/sight-through-blocks.md`). It is runtime data, so it
+  lives in the DSL crate's `data/` beside the collision tables, never under a
+  test directory the published crate leaves out.
+
+Each is a measurement, not a table somebody typed.
+
+    tools/maintenance/dump-block-light.py            # rewrite both tables
+    tools/maintenance/dump-block-light.py --check    # regenerate into a temp dir and diff both
 
 The jar is identified by `versions.toml` and refused unless its sha256 matches
 the pin, so the fixture cannot silently be taken against a different game. The
@@ -25,6 +37,7 @@ from __future__ import annotations
 import argparse
 import collections
 import hashlib
+import importlib.util
 import json
 import pathlib
 import re
@@ -37,7 +50,9 @@ import urllib.request
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 VERSIONS_TOML = ROOT / "versions.toml"
 JAVA_SRC = ROOT / "tools" / "maintenance" / "blocklight" / "BlockLightDump.java"
+OCCLUSION_SRC = ROOT / "tools" / "maintenance" / "blocklight" / "OcclusionDump.java"
 FIXTURE_DIR = ROOT / "crates" / "delvec" / "tests" / "fixtures" / "light"
+DATA_DIR = ROOT / "crates" / "dsl" / "data"
 MANIFEST = "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json"
 
 # The DEOBFUSCATED names the dumper needs, in the order BlockLightDump.java
@@ -48,6 +63,7 @@ CLASS_BLOCK = "net.minecraft.world.level.block.Block"
 CLASS_STATE_BASE = "net.minecraft.world.level.block.state.BlockBehaviour$BlockStateBase"
 CLASS_BUILTIN = "net.minecraft.core.registries.BuiltInRegistries"
 CLASS_REGISTRY = "net.minecraft.core.Registry"
+CLASS_VOXEL = "net.minecraft.world.phys.shapes.VoxelShape"
 
 STATE_RE = re.compile(r"^Block\{minecraft:([a-z0-9_]+)\}(?:\[(.*)\])?$")
 
@@ -292,7 +308,89 @@ def generate(work: pathlib.Path) -> tuple[str, str]:
         "# blockstate<TAB>light<TAB>states-this-row-stands-for",
     ]
     body = "\n".join(f"{n}\t{l}\t{c}" for n, l, c in rows)
-    return version, "\n".join(head) + "\n" + body + "\n"
+    emission = "\n".join(head) + "\n" + body + "\n"
+    occlusion = generate_occlusion(work, version, jar, mappings, classpath, classes, maps)
+    return version, emission, occlusion
+
+
+def generate_occlusion(work, version, jar, mappings, classpath, classes, maps) -> str:
+    """The occlusion table: the dumper's per-state answers, collapsed by the one
+    collapse every per-blockstate table under `tools/maintenance/` is made with
+    (`dump-collision-tops.py`'s `collapse_values`), written in the four-column
+    shape `delvewright_dsl::blockshape::pinned_rows` reads."""
+    spec = importlib.util.spec_from_file_location(
+        "dump_collision_tops", ROOT / "tools" / "maintenance" / "dump-collision-tops.py"
+    )
+    tops = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(tops)
+
+    args = []
+    args += resolve(maps, CLASS_SHARED, methods=["tryDetectVersion"])
+    args += resolve(maps, CLASS_BOOTSTRAP, methods=["bootStrap"])
+    args += resolve(maps, CLASS_BLOCK, fields=["BLOCK_STATE_REGISTRY"], methods=["isShapeFullBlock"])
+    args += resolve(maps, CLASS_STATE_BASE, methods=["canOcclude", "getOcclusionShape", "isSolidRender"])
+    args += resolve(maps, CLASS_VOXEL)
+    sys.stderr.write(f"  occlusion, resolved from the pinned mappings: {' '.join(args)}\n")
+    subprocess.run(
+        ["javac", "-nowarn", "-cp", classpath, "-d", str(classes), str(OCCLUSION_SRC)], check=True
+    )
+    states_tsv = work / "occlusion-states.tsv"
+    proc = subprocess.run(
+        ["java", "-Xmx3g", "-cp", f"{classpath}:{classes}", "dw.OcclusionDump", str(states_tsv), *args],
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=work,
+    )
+    counted = re.search(r"DUMPED states=(\d+) hiding=(\d+)", proc.stdout)
+    if not counted or int(counted.group(1)) == 0 or int(counted.group(2)) == 0:
+        fail(f"the occlusion dumper reported nothing to count: {proc.stdout.strip()!r}")
+    sys.stderr.write(f"  occlusion dumper: {counted.group(0)}\n")
+
+    per = tops.read_states(states_tsv, 3)
+    disagree = []
+    for block, states in per.items():
+        out = []
+        for props, (occ, full, solid) in states:
+            hides = occ == "true" and full == "true"
+            if hides != (solid == "true"):
+                disagree.append(block)
+            out.append((props, ("true" if hides else "false", solid)))
+        per[block] = out
+    if disagree:
+        fail(
+            f"{len(disagree)} state(s) where canOcclude && a full occlusion shape disagrees with "
+            f"isSolidRender (first: {disagree[0]}) — the two readings of one question part, and "
+            "the table would have to choose; refusing"
+        )
+    rows, covered = tops.collapse_values(per)
+    if covered != int(counted.group(1)):
+        fail(f"occlusion collapse covered {covered} states, the dumper produced {counted.group(1)}")
+    hiding = sum(c for _, (h, _), c in rows if h == "true")
+    if hiding != int(counted.group(2)):
+        fail(f"occlusion rows hold {hiding} hiding states, the dumper counted {counted.group(2)}")
+
+    jar_sha = hashlib.sha256(jar.read_bytes()).hexdigest()
+    map_sha = hashlib.sha1(mappings.read_bytes()).hexdigest()
+    head = [
+        f"# What every blockstate of Minecraft Java {version} hides from the eye.",
+        "#",
+        "# MEASURED, not written: `hides` is the game's own BlockState.canOcclude()",
+        "# together with Block.isShapeFullBlock(BlockState.getOcclusionShape()) inside",
+        "# the pinned server jar — the renderer culls the face behind a block exactly",
+        "# then — and `solid_render` the cached BlockState.isSolidRender(), which the",
+        "# dumper asserts agrees with `hides` on every state.",
+        f"#   server jar sha256 {jar_sha}",
+        f"#   server mappings sha1 {map_sha}",
+        "# Regenerate with tools/maintenance/dump-block-light.py; --check diffs against this file.",
+        "#",
+        f"# {len(rows)} rows collapse the game's {covered} blockstates onto the properties",
+        f"# that move the answer; a row names only those properties. {hiding} states hide.",
+        "#",
+        "# block[relevant-properties]<TAB>hides<TAB>solid_render<TAB>states-this-row-stands-for",
+    ]
+    body = "\n".join(f"{n}\t{h}\t{s}\t{c}" for n, (h, s), c in rows)
+    return "\n".join(head) + "\n" + body + "\n"
 
 
 def main() -> None:
@@ -307,20 +405,31 @@ def main() -> None:
         if args.work
         else pathlib.Path(tempfile.mkdtemp(prefix="dwlight-"))
     )
-    version, text = generate(work)
-    target = FIXTURE_DIR / f"emission-{version}.tsv"
+    version, emission, occlusion = generate(work)
+    tables = [
+        (FIXTURE_DIR / f"emission-{version}.tsv", emission),
+        (DATA_DIR / f"occlusion-{version}.tsv", occlusion),
+    ]
 
     if args.check:
-        if not target.exists():
-            fail(f"{target} does not exist")
-        if target.read_text(encoding="utf8") == text:
-            print(f"dump-block-light: {target.relative_to(ROOT)} matches the pinned jar")
-            return
-        sys.exit(f"dump-block-light: {target.relative_to(ROOT)} DISAGREES with the pinned jar")
+        bad = 0
+        for target, text in tables:
+            if not target.exists():
+                fail(f"{target} does not exist")
+            if target.read_text(encoding="utf8") == text:
+                print(f"dump-block-light: {target.relative_to(ROOT)} matches the pinned jar")
+            else:
+                print(f"dump-block-light: {target.relative_to(ROOT)} DISAGREES with the pinned jar")
+                bad += 1
+        print(f"dump-block-light: {len(tables)} table(s) compared, {bad} disagree")
+        if bad:
+            sys.exit(1)
+        return
 
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(text, encoding="utf8")
-    print(f"dump-block-light: wrote {target.relative_to(ROOT)}")
+    for target, text in tables:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf8")
+        print(f"dump-block-light: wrote {target.relative_to(ROOT)}")
 
 
 if __name__ == "__main__":

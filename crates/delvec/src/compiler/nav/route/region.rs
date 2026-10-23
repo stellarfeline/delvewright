@@ -80,7 +80,16 @@ pub(in crate::compiler::nav) struct RegionState {
     /// Absent = a full cube, as every fill was before footprints were read.
     pub(in crate::compiler::nav) fill_footprints:
         BTreeMap<[i32; 3], delvewright_dsl::blockshape::Footprint16>,
+    /// The cells in `solid` whose fill block **hides** what stands behind it
+    /// from the eye ([`delvewright_dsl::blockshape::hides`]): the block the
+    /// command lays, or — for a world-load seal — the bytes' own
+    /// ([`crate::compiler::assembled::GateSeal::hiding`]). A fill of iron bars
+    /// is solid to a body and looked through by an eye.
+    pub(in crate::compiler::nav) fill_hides: BTreeSet<[i32; 3]>,
 }
+
+/// A region's inclusive corners.
+type Bbox = ([i32; 3], [i32; 3]);
 
 /// One cell and the server footprint of the block it holds.
 type CellFootprint = ([i32; 3], delvewright_dsl::blockshape::Footprint16);
@@ -120,6 +129,7 @@ impl RegionState {
         st.solid.retain(|c| !cells.contains(c));
         st.unforced.retain(|c| !cells.contains(c));
         st.fill_footprints.retain(|c, _| !cells.contains(c));
+        st.fill_hides.retain(|c| !cells.contains(c));
         st.cleared.extend(cells.iter().copied());
         st
     }
@@ -324,6 +334,10 @@ impl World {
             .modelled_seals()
             .map(|s| (s.region, s.open_footprints.as_slice()))
             .collect();
+        let seal_hides: BTreeMap<Bbox, &[[i32; 3]]> = self
+            .modelled_seals()
+            .map(|s| (s.region, s.hiding.as_slice()))
+            .collect();
         // The regions the walk has opened by the path's own order (see above).
         let path_ordered: BTreeSet<([i32; 3], [i32; 3])> = performed
             .map(|last| {
@@ -394,11 +408,19 @@ impl World {
                                 st.fill_footprints.insert(c, fp);
                             }
                         }
+                        if delvewright_dsl::blockshape::hides(b) {
+                            st.fill_hides
+                                .extend(crate::compiler::assembled::region_cells(
+                                    region.0, region.1,
+                                ));
+                        }
                     }
                     None => {
                         for (c, fp) in seal_footprints.get(&region).copied().unwrap_or_default() {
                             st.fill_footprints.insert(*c, *fp);
                         }
+                        st.fill_hides
+                            .extend(seal_hides.get(&region).copied().unwrap_or_default());
                     }
                 }
             }

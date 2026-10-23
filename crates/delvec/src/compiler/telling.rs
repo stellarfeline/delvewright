@@ -1,7 +1,8 @@
 //! What the text tells the player: a question gets an answer (`DW0981`), a
 //! name reaches a line only after the player has been told it (`DW0982`), a
-//! name tag marks a person, never one of a crowd (`DW0983`), and an objective's
-//! title says the act that completes it (`DW1045`, spec-0114).
+//! name tag marks a person, never one of a crowd (`DW0983`), an objective's
+//! title says the act that completes it (`DW1045`, spec-0114), and a hidden
+//! way's secret is kept until the shot that shows it (`DW1060`, spec-0118).
 //!
 //! Both are `docs/reference/game-writing.md` rules made mechanical: §2 S1/S5 (the
 //! critical path is plain) for the first, §3 N1/N3 (introduce a name before you
@@ -355,6 +356,16 @@ fn core_of(name: &str) -> String {
     t.to_string()
 }
 
+/// Whether a character continues a word for [`occurrences`]' boundaries: a
+/// letter or a digit of a script that spaces its words. A Han, kana or Hangul
+/// character is a word of its own, so a word written in one is found inside
+/// the unspaced sentence around it.
+fn is_word_char(c: char) -> bool {
+    c.is_alphanumeric()
+        && !matches!(c as u32,
+            0x3040..=0x30FF | 0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xAC00..=0xD7AF | 0xF900..=0xFAFF)
+}
+
 /// Every occurrence of `core` in `text` on word boundaries, ASCII
 /// case-insensitive, as byte spans.
 fn occurrences(text: &str, core: &str) -> Vec<(usize, usize)> {
@@ -370,7 +381,7 @@ fn occurrences(text: &str, core: &str) -> Vec<(usize, usize)> {
         let e = s + needle.len();
         let before = hay[..s].chars().next_back();
         let after = hay[e..].chars().next();
-        let word = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric());
+        let word = |c: Option<char>| c.is_some_and(is_word_char);
         if !word(before) && !word(after) {
             out.push((s, e));
         }
@@ -643,13 +654,7 @@ pub fn check_names_told_bound(c: &Campaign) -> (Vec<Diagnostic>, NameBinding) {
     // what the documents declare it to be, its markup dropped (`visible`): an
     // obfuscated name is still that name when a legible line uses it.
     let raw = inventory(c);
-    let inv: BTreeMap<String, String> = raw
-        .iter()
-        .map(|(k, v)| {
-            let read = delvewright_dsl::textstyle::legible(v).into_owned();
-            (k.clone(), read)
-        })
-        .collect();
+    let inv = read_inventory(c);
     let declared: BTreeMap<String, String> = raw
         .iter()
         .map(|(k, v)| {
@@ -670,103 +675,21 @@ pub fn check_names_told_bound(c: &Campaign) -> (Vec<Diagnostic>, NameBinding) {
     names.sort_by(|a, b| a.key.cmp(&b.key));
     bind.names = names.len();
 
-    let flow = Flow::new(c);
-    let casts = crate::compiler::cast::npc_casts(c);
-    let mut walks: Vec<(String, crate::compiler::flow::Playthrough)> = Vec::new();
-    let main = flow.playthrough();
-    if main.degenerate || main.cyclic {
+    let Some(placed) = placements(c, &inv) else {
         return (Vec::new(), bind); // DW0201/DW0130 own a campaign with no play order
-    }
-    walks.push(("the critical path".to_string(), main));
-    for r in crate::compiler::branch::realize(c) {
-        if let Some(w) = r.world {
-            walks.push((
-                format!("branch `{}`", r.branch.id),
-                flow.story_playthrough(w),
-            ));
-        }
-    }
+    };
+    let Sites { dlg, npc_local, .. } = &placed.sites;
 
-    // Effect strings by key base, and the pointer the replay records them under.
-    let sites: BTreeMap<String, String> = effect_string_sites(c)
-        .into_iter()
-        .map(|(_, path, kb)| (kb, path))
-        .collect();
-    // Objectives and quests by the local ids their keys carry.
-    let mut objectives: BTreeMap<(String, String), (String, String, Vec<String>)> = BTreeMap::new();
-    let mut quests: BTreeMap<String, String> = BTreeMap::new();
-    for q in &c.quests.content.quests {
-        let ql = local_id(q.id.as_str()).to_string();
-        quests.insert(ql.clone(), q.id.as_str().to_string());
-        for o in &q.objectives {
-            objectives.insert(
-                (ql.clone(), local_id(o.id().as_str()).to_string()),
-                (
-                    q.id.as_str().to_string(),
-                    o.id().as_str().to_string(),
-                    o.after().iter().map(|a| a.as_str().to_string()).collect(),
-                ),
-            );
-        }
-    }
-    // Dialogue keys → (npc id, node id, Some(option index)) and their pointers.
-    let mut dlg: BTreeMap<String, (String, String, Option<usize>, String)> = BTreeMap::new();
-    for (ti, tree) in c.dialogue.content.dialogues.iter().enumerate() {
-        let np = local_id(tree.npc.as_str());
-        for (ni, node) in tree.nodes.iter().enumerate() {
-            let nd = local_id(node.id.as_str());
-            let base = format!("/content/dialogues/{ti}/nodes/{ni}");
-            dlg.insert(
-                format!("dlg.{np}.{nd}.text"),
-                (
-                    tree.npc.as_str().to_string(),
-                    node.id.as_str().to_string(),
-                    None,
-                    format!("{base}/text"),
-                ),
-            );
-            for (oi, _) in node.options.iter().enumerate() {
-                for f in ["label", "tooltip"] {
-                    dlg.insert(
-                        format!("dlg.{np}.{nd}.opt.{oi}.{f}"),
-                        (
-                            tree.npc.as_str().to_string(),
-                            node.id.as_str().to_string(),
-                            Some(oi),
-                            format!("{base}/options/{oi}/{f}"),
-                        ),
-                    );
-                }
-            }
-        }
-    }
-    let npc_local: BTreeMap<String, String> = c
-        .npcs
-        .content
-        .npcs
-        .iter()
-        .map(|n| {
-            (
-                local_id(n.id.as_str()).to_string(),
-                n.id.as_str().to_string(),
-            )
-        })
-        .collect();
-
-    bind.walks = walks.len();
+    bind.walks = placed.walks.len();
     bind.dialogue_declared = dlg.keys().filter(|k| inv.contains_key(*k)).count();
     let mut read_dialogue: BTreeSet<String> = BTreeSet::new();
     let mut all_uses: BTreeSet<(String, usize)> = BTreeSet::new();
     let mut worst: BTreeMap<(String, usize), Untold> = BTreeMap::new();
-    for (label, pt) in &walks {
-        let journal_states = states_of(&flow, pt, &casts);
-        // When each key is first readable on this walk.
-        let mut first: BTreeMap<&str, At> = BTreeMap::new();
-        for (at, st) in journal_states.iter().enumerate() {
-            for key in readable(&inv, st, &sites, &objectives, &quests, &dlg) {
-                first.entry(key).or_insert(at);
-            }
-        }
+    for walk in &placed.walks {
+        let label = &walk.label;
+        let journal_states = &walk.states;
+        let first: BTreeMap<&str, At> =
+            walk.first.iter().map(|(k, p)| (k.as_str(), p.at)).collect();
         // When each name is told.
         let mut told: Vec<Option<At>> = vec![None; names.len()];
         let mut shown: Vec<Vec<(At, Shown)>> = vec![Vec::new(); names.len()];
@@ -906,6 +829,210 @@ pub fn check_names_told_bound(c: &Campaign) -> (Vec<Diagnostic>, NameBinding) {
     (d, bind)
 }
 
+/// Every inventoried string as the player reads it (spec-0096): a styled span
+/// is its own text, an obfuscated span is drawn as noise and reads as nothing
+/// (`textstyle::legible`). The one reading both `DW0982` and `DW1060` place.
+pub(crate) fn read_inventory(c: &Campaign) -> BTreeMap<String, String> {
+    inventory(c)
+        .iter()
+        .map(|(k, v)| {
+            (
+                k.clone(),
+                delvewright_dsl::textstyle::legible(v).into_owned(),
+            )
+        })
+        .collect()
+}
+
+/// What a string's key is tied to in the documents, for placing it on a walk:
+/// an effect's string by its pointer, an objective's and a quest's by their
+/// ids, a dialogue string by its tree, node and option.
+pub(crate) struct Sites {
+    /// Effect string key base → the pointer of the effect that carries it.
+    pub(crate) fx: BTreeMap<String, String>,
+    /// `(quest local id, objective local id)` → `(quest id, objective id, after)`.
+    objectives: BTreeMap<(String, String), (String, String, Vec<String>)>,
+    /// Quest local id → quest id.
+    quests: BTreeMap<String, String>,
+    /// Dialogue key → `(npc id, node id, option index, pointer)`.
+    dlg: BTreeMap<String, (String, String, Option<usize>, String)>,
+    /// NPC local id → NPC id.
+    npc_local: BTreeMap<String, String>,
+}
+
+impl Sites {
+    fn of(c: &Campaign) -> Sites {
+        // Effect strings by key base, and the pointer the replay records them under.
+        let fx: BTreeMap<String, String> = effect_string_sites(c)
+            .into_iter()
+            .map(|(_, path, kb)| (kb, path))
+            .collect();
+        // Objectives and quests by the local ids their keys carry.
+        let mut objectives: BTreeMap<(String, String), (String, String, Vec<String>)> =
+            BTreeMap::new();
+        let mut quests: BTreeMap<String, String> = BTreeMap::new();
+        for q in &c.quests.content.quests {
+            let ql = local_id(q.id.as_str()).to_string();
+            quests.insert(ql.clone(), q.id.as_str().to_string());
+            for o in &q.objectives {
+                objectives.insert(
+                    (ql.clone(), local_id(o.id().as_str()).to_string()),
+                    (
+                        q.id.as_str().to_string(),
+                        o.id().as_str().to_string(),
+                        o.after().iter().map(|a| a.as_str().to_string()).collect(),
+                    ),
+                );
+            }
+        }
+        // Dialogue keys → (npc id, node id, Some(option index)) and their pointers.
+        let mut dlg: BTreeMap<String, (String, String, Option<usize>, String)> = BTreeMap::new();
+        for (ti, tree) in c.dialogue.content.dialogues.iter().enumerate() {
+            let np = local_id(tree.npc.as_str());
+            for (ni, node) in tree.nodes.iter().enumerate() {
+                let nd = local_id(node.id.as_str());
+                let base = format!("/content/dialogues/{ti}/nodes/{ni}");
+                dlg.insert(
+                    format!("dlg.{np}.{nd}.text"),
+                    (
+                        tree.npc.as_str().to_string(),
+                        node.id.as_str().to_string(),
+                        None,
+                        format!("{base}/text"),
+                    ),
+                );
+                for (oi, _) in node.options.iter().enumerate() {
+                    for f in ["label", "tooltip"] {
+                        dlg.insert(
+                            format!("dlg.{np}.{nd}.opt.{oi}.{f}"),
+                            (
+                                tree.npc.as_str().to_string(),
+                                node.id.as_str().to_string(),
+                                Some(oi),
+                                format!("{base}/options/{oi}/{f}"),
+                            ),
+                        );
+                    }
+                }
+            }
+        }
+        let npc_local: BTreeMap<String, String> = c
+            .npcs
+            .content
+            .npcs
+            .iter()
+            .map(|n| {
+                (
+                    local_id(n.id.as_str()).to_string(),
+                    n.id.as_str().to_string(),
+                )
+            })
+            .collect();
+        Sites {
+            fx,
+            objectives,
+            quests,
+            dlg,
+            npc_local,
+        }
+    }
+}
+
+/// Where one string first reaches the player on one walk: the state index,
+/// and whether the walk dates it at all. An undated string (an environment
+/// trigger, a refusal, a reaction bundle, loot, a name or a label) is placed
+/// at the start.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Placement {
+    /// The state index: `0` before the first step, `k` after the `k`-th.
+    pub(crate) at: At,
+    /// Whether the walk dates it; `false` is placed at the start.
+    pub(crate) dated: bool,
+}
+
+/// One walk of the play order, every inventoried string placed on it.
+pub(crate) struct PlacedWalk {
+    /// The walk in words (`the critical path`, ``branch `…` ``).
+    pub(crate) label: String,
+    /// The walk's states, before the first step and after each.
+    states: Vec<State>,
+    /// Every readable key, at the first state it can be read.
+    pub(crate) first: BTreeMap<String, Placement>,
+}
+
+impl PlacedWalk {
+    /// The first state at which the effect at `pointer` has fired on this
+    /// walk — the rule an effect string is dated by ([`fired_covers`]) — or
+    /// `None` when the walk never fires it.
+    pub(crate) fn fires_at(&self, pointer: &str) -> Option<At> {
+        self.states
+            .iter()
+            .position(|st| fired_covers(&st.fired, pointer))
+    }
+}
+
+/// Every walk's string placements, with the sites they were read against.
+pub(crate) struct Placements {
+    /// The critical path, then every realised branch.
+    pub(crate) walks: Vec<PlacedWalk>,
+    /// What the keys are tied to.
+    pub(crate) sites: Sites,
+}
+
+/// **The one placement of every string on the play order** — the walk
+/// [`Flow::journal`] takes along the exported critical path and every realised
+/// branch, and the first state at which the player can read each inventoried
+/// key ([`when_readable`]). `DW0982` (a name told before it is used) and
+/// `DW1060` (a secret kept until its shot) both read their strings' steps
+/// from here and from no copy. `None` for a campaign with no play order.
+pub(crate) fn placements(c: &Campaign, inv: &BTreeMap<String, String>) -> Option<Placements> {
+    let flow = Flow::new(c);
+    let casts = crate::compiler::cast::npc_casts(c);
+    let mut walks: Vec<(String, crate::compiler::flow::Playthrough)> = Vec::new();
+    let main = flow.playthrough();
+    if main.degenerate || main.cyclic {
+        return None;
+    }
+    walks.push(("the critical path".to_string(), main));
+    for r in crate::compiler::branch::realize(c) {
+        if let Some(w) = r.world {
+            walks.push((
+                format!("branch `{}`", r.branch.id),
+                flow.story_playthrough(w),
+            ));
+        }
+    }
+    let sites = Sites::of(c);
+    let walks = walks
+        .into_iter()
+        .map(|(label, pt)| {
+            let states = states_of(&flow, &pt, &casts);
+            let mut first: BTreeMap<String, Placement> = BTreeMap::new();
+            for (at, st) in states.iter().enumerate() {
+                for key in inv.keys() {
+                    if first.contains_key(key) {
+                        continue;
+                    }
+                    let placed = match when_readable(key, st, &sites) {
+                        Readable::Undated => Some(Placement { at, dated: false }),
+                        Readable::Dated(true) => Some(Placement { at, dated: true }),
+                        Readable::Dated(false) => None,
+                    };
+                    if let Some(p) = placed {
+                        first.insert(key.clone(), p);
+                    }
+                }
+            }
+            PlacedWalk {
+                label,
+                states,
+                first,
+            }
+        })
+        .collect();
+    Some(Placements { walks, sites })
+}
+
 /// One walk state: the dialogue on screen and the walk's own progress, with the
 /// keys of the effects that fired to reach it.
 struct State {
@@ -948,63 +1075,390 @@ fn states_of(
     out
 }
 
-/// The inventory keys the player can read at `st`.
-fn readable<'k>(
-    inv: &'k BTreeMap<String, String>,
-    st: &State,
-    sites: &BTreeMap<String, String>,
-    objectives: &BTreeMap<(String, String), (String, String, Vec<String>)>,
-    quests: &BTreeMap<String, String>,
-    dlg: &BTreeMap<String, (String, String, Option<usize>, String)>,
-) -> Vec<&'k str> {
-    let mut out = Vec::new();
-    for key in inv.keys() {
-        let segs: Vec<&str> = key.split('.').collect();
-        let now = match segs[0] {
-            "dlg" => match dlg.get(key) {
-                Some((npc, node, None, _)) => {
-                    st.screen.nodes.contains(&(npc.clone(), node.clone()))
-                }
-                Some((npc, node, Some(o), _)) => {
-                    st.screen.options.contains(&(npc.clone(), node.clone(), *o))
+/// Whether the effect at `pointer` has fired by a state whose fired lists
+/// are `fired`: the list itself, or one that holds it.
+fn fired_covers(fired: &BTreeSet<String>, pointer: &str) -> bool {
+    fired.contains(pointer) || fired.iter().any(|f| pointer.starts_with(&format!("{f}/")))
+}
+
+/// Whether the player can read a key at a state, or whether the walk dates
+/// the key at all.
+enum Readable {
+    /// The walk does not date the key: readable from the start.
+    Undated,
+    /// The walk dates the key, and it is readable at this state or not.
+    Dated(bool),
+}
+
+/// **The one rule a key is dated by** on a walk: a dialogue string while its
+/// node or option is on screen, an objective's title and hint once its `after`
+/// is done (its item name once it is done), a quest's goal and cast while it
+/// runs, an effect's strings once the effect fires. Names, labels, refusals
+/// and the world's own text — and an effect outside the quests — are not
+/// dated.
+fn when_readable(key: &str, st: &State, sites: &Sites) -> Readable {
+    let segs: Vec<&str> = key.split('.').collect();
+    match segs[0] {
+        "dlg" => Readable::Dated(match sites.dlg.get(key) {
+            Some((npc, node, None, _)) => st.screen.nodes.contains(&(npc.clone(), node.clone())),
+            Some((npc, node, Some(o), _)) => {
+                st.screen.options.contains(&(npc.clone(), node.clone(), *o))
+            }
+            None => false,
+        }),
+        "obj" if segs.len() == 4 => Readable::Dated(
+            match sites
+                .objectives
+                .get(&(segs[1].to_string(), segs[2].to_string()))
+            {
+                Some((q, o, after)) => {
+                    if segs[3] == "item_name" {
+                        st.done.contains(o)
+                    } else {
+                        st.active.contains(q) && after.iter().all(|a| st.done.contains(a))
+                            || st.done.contains(o)
+                    }
                 }
                 None => false,
             },
-            "obj" if segs.len() == 4 => {
-                match objectives.get(&(segs[1].to_string(), segs[2].to_string())) {
-                    Some((q, o, after)) => {
-                        if segs[3] == "item_name" {
-                            st.done.contains(o)
-                        } else {
-                            st.active.contains(q) && after.iter().all(|a| st.done.contains(a))
-                                || st.done.contains(o)
-                        }
-                    }
-                    None => false,
-                }
-            }
-            "quest" | "cast" => quests
+        ),
+        "quest" | "cast" => Readable::Dated(
+            sites
+                .quests
                 .get(segs.get(1).copied().unwrap_or(""))
                 .is_some_and(|q| st.active.contains(q)),
-            "fx" => {
-                let base = &key[..key.rfind('.').unwrap_or(key.len())];
-                match sites.get(base) {
-                    Some(path) if path.starts_with("/content/quests/") => {
-                        st.fired.contains(path)
-                            || st.fired.iter().any(|f| path.starts_with(&format!("{f}/")))
-                    }
-                    // Not dated by the walk: readable from the start.
-                    _ => true,
+        ),
+        "fx" => {
+            let base = &key[..key.rfind('.').unwrap_or(key.len())];
+            match sites.fx.get(base) {
+                Some(path) if path.starts_with("/content/quests/") => {
+                    Readable::Dated(fired_covers(&st.fired, path))
                 }
+                // Not dated by the walk: readable from the start.
+                _ => Readable::Undated,
             }
-            // Names, labels, refusals and the world's own text: from the start.
-            _ => true,
-        };
-        if now {
-            out.push(key.as_str());
+        }
+        // Names, labels, refusals and the world's own text: from the start.
+        _ => Readable::Undated,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DW1060 — a secret is kept until the shot that shows it (spec-0118 §6.4)
+// ---------------------------------------------------------------------------
+
+delvewright_dsl::dw_code! {
+    /// `DW1060`: a word of a hidden way's `secret` is mentioned by a
+    /// player-facing string the play order places before the shot that shows
+    /// the way, or is mentioned by no string at or after it.
+    pub const DW_SECRET_TOLD: DwCode = DwCode::new("DW1060", ExitTier::Build);
+}
+
+/// Where a mention of a secret word stands: the string, its language, and
+/// where the walk reads it against the shot.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Mention {
+    /// The inventory key.
+    key: String,
+    /// `en`, or the sidecar's language.
+    lang: String,
+    /// The walk it is read on.
+    walk: String,
+    /// When it is read: `None` when the walk does not date it.
+    at: Option<At>,
+}
+
+/// **The spans of a secret word in a text** — `DW0982`'s matcher, shared:
+/// the word's article-free core ([`core_of`]), on word boundaries,
+/// case-insensitive ([`occurrences`]). A definite reference (`the passage`) is
+/// an occurrence of the core.
+fn secret_spans(text: &str, word: &str) -> Vec<(usize, usize)> {
+    occurrences(text, &core_of(word))
+}
+
+/// What `DW1060` examined, zeroes included.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SecretBinding {
+    /// Hidden ways (`learned: hidden` on a connection the world builds shut).
+    pub hidden_ways: usize,
+    /// Secret words across them.
+    pub words: usize,
+    /// Hidden ways with no shot to read against (`DW1054`'s, at the build).
+    pub no_shot: usize,
+    /// Distinct `(string, language)` pairs some walk places before a shot.
+    pub read_before: usize,
+    /// Mentions refused: `(way, word)` told early, plus words never told.
+    pub refused: usize,
+    /// Words some string at or after the shot mentions, on every walk the shot
+    /// fires on.
+    pub told_after: usize,
+}
+
+impl SecretBinding {
+    /// The binding line `delvec validate` prints.
+    pub fn line(&self) -> String {
+        format!(
+            "secrets (DW1060): {} hidden way(s), {} secret word(s); {} string(s) read before the \
+             shot(s), {} mention(s) refused; {} word(s) told after; {} hidden way(s) with no shot \
+             to read against",
+            self.hidden_ways,
+            self.words,
+            self.read_before,
+            self.refused,
+            self.told_after,
+            self.no_shot,
+        )
+    }
+}
+
+/// One hidden way's text, judged: per secret word, the first mention before
+/// the shot and whether some string at or after it tells the word.
+struct SecretFinding {
+    way: crate::compiler::nav::HiddenWay,
+    /// The shot's list and index, or `None` when nothing shows the way.
+    shot: Option<(String, usize)>,
+    /// Per word: the first early mention, by walk order then step then key.
+    early: Vec<Option<Mention>>,
+    /// Per word: told at or after the shot on every walk the shot fires on.
+    told: Vec<bool>,
+    /// `(key, language)` pairs read before the shot on some walk.
+    read_before: BTreeSet<(String, String)>,
+}
+
+/// Whether the effect string `key` is a string of the shot's own list placed
+/// before the shot in it (`{list}/{j}` with `j` < the shot's index).
+fn before_in_list(sites: &Sites, key: &str, list: &str, shot: usize) -> bool {
+    let Some(base) = key.rfind('.').map(|i| &key[..i]) else {
+        return false;
+    };
+    let Some(path) = sites.fx.get(base) else {
+        return false;
+    };
+    path.strip_prefix(&format!("{list}/"))
+        .and_then(|rest| rest.split('/').next())
+        .and_then(|j| j.parse::<usize>().ok())
+        .is_some_and(|j| j < shot)
+}
+
+/// Judge every hidden way's secret against the play order (spec-0118 §6.4).
+fn judge_secrets(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -> Option<Vec<SecretFinding>> {
+    let ways = crate::compiler::nav::hidden_ways(c);
+    if ways.is_empty() {
+        return Some(Vec::new());
+    }
+    let inv = read_inventory(c);
+    let placed = placements(c, &inv)?;
+    let mut langs: Vec<(&str, &L10nDoc)> = Vec::new();
+    for lang in &c.world.content.languages {
+        if let Some(doc) = sidecars.get(lang) {
+            langs.push((lang.as_str(), doc));
         }
     }
-    out
+    // Every rendition of a key: the English source, then each sidecar's.
+    let texts = |key: &str| -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        if let Some(t) = inv.get(key) {
+            out.push(("en".to_string(), t.clone()));
+        }
+        for (lang, doc) in &langs {
+            if let Some(t) = doc.content.get(key) {
+                out.push((
+                    (*lang).to_string(),
+                    delvewright_dsl::textstyle::legible(t).into_owned(),
+                ));
+            }
+        }
+        out
+    };
+    let mut out = Vec::new();
+    for way in ways {
+        let shot = crate::compiler::nav::opening_lists(c, &way.seam)
+            .into_iter()
+            .find_map(|l| l.shot.map(|i| (l.list, i)));
+        let n = way.secret.len();
+        let mut f = SecretFinding {
+            way,
+            shot: shot.clone(),
+            early: vec![None; n],
+            told: vec![false; n],
+            read_before: BTreeSet::new(),
+        };
+        let Some((list, idx)) = shot else {
+            out.push(f);
+            continue;
+        };
+        let pointer = format!("{list}/{idx}");
+        let mut told_on_every: Vec<Option<bool>> = vec![None; n];
+        for walk in &placed.walks {
+            let shot_at = walk.fires_at(&pointer);
+            let mut told_here = vec![false; n];
+            for (key, p) in &walk.first {
+                let before = !p.dated
+                    || shot_at.is_none_or(|s| p.at < s)
+                    || (Some(p.at) == shot_at && before_in_list(&placed.sites, key, &list, idx));
+                for (lang, text) in texts(key) {
+                    if before {
+                        f.read_before.insert((key.clone(), lang.clone()));
+                    }
+                    for (k, word) in f.way.secret.iter().enumerate() {
+                        if secret_spans(&text, word).is_empty() {
+                            continue;
+                        }
+                        if before {
+                            let m = Mention {
+                                key: key.clone(),
+                                lang: lang.clone(),
+                                walk: walk.label.clone(),
+                                at: p.dated.then_some(p.at),
+                            };
+                            if f.early[k].is_none() {
+                                f.early[k] = Some(m);
+                            }
+                        } else {
+                            told_here[k] = true;
+                        }
+                    }
+                }
+            }
+            if shot_at.is_some() {
+                for k in 0..n {
+                    let prev = told_on_every[k].unwrap_or(true);
+                    told_on_every[k] = Some(prev && told_here[k]);
+                }
+            }
+        }
+        f.told = told_on_every
+            .into_iter()
+            .map(|t| t.unwrap_or(false))
+            .collect();
+        out.push(f);
+    }
+    Some(out)
+}
+
+/// `DW1060` over every hidden way's secret, in English and every sidecar, with
+/// what it examined. A hidden way with no shot is counted and judged no
+/// further: `DW1054` refuses it at the build.
+pub fn check_secrets(
+    c: &Campaign,
+    sidecars: &BTreeMap<String, L10nDoc>,
+) -> (Vec<Diagnostic>, SecretBinding) {
+    let mut bind = SecretBinding::default();
+    let Some(findings) = judge_secrets(c, sidecars) else {
+        return (Vec::new(), bind); // DW0201/DW0130 own a campaign with no play order
+    };
+    let mut read_before: BTreeSet<(String, String)> = BTreeSet::new();
+    let mut d = Vec::new();
+    for f in &findings {
+        bind.hidden_ways += 1;
+        bind.words += f.way.secret.len();
+        let Some((list, idx)) = &f.shot else {
+            bind.no_shot += 1;
+            continue;
+        };
+        read_before.extend(f.read_before.iter().cloned());
+        for (k, word) in f.way.secret.iter().enumerate() {
+            let at = format!("/content/edges/{}/gating/secret/{k}", f.way.index);
+            if let Some(m) = &f.early[k] {
+                bind.refused += 1;
+                let when = match m.at {
+                    None => "before the shot (undated, read as the start)".to_string(),
+                    Some(0) => format!("before the shot, from the start of {}", m.walk),
+                    Some(s) => format!("before the shot, after step {s} of {}", m.walk),
+                };
+                let lang = if m.lang == "en" {
+                    "in English".to_string()
+                } else {
+                    format!("in the `{}` sidecar", m.lang)
+                };
+                d.push(Diagnostic::error(
+                    DW_SECRET_TOLD,
+                    "layout-graph",
+                    at.clone(),
+                    format!(
+                        "`{edge}` is declared `learned: hidden`, and its secret word `{word}` is \
+                         mentioned by `{key}` {lang}, which the player reads {when}; the shot \
+                         that shows the way is the `cutscene` at `{list}/{idx}`. A way the level \
+                         reveals is told by that shot and by nothing before it \
+                         (game-writing.md §8 L4). Cut the word from the string, or move the \
+                         string after the shot.",
+                        edge = f.way.edge,
+                        key = m.key,
+                    ),
+                ));
+            }
+            if f.told[k] {
+                bind.told_after += 1;
+            } else {
+                bind.refused += 1;
+                d.push(Diagnostic::error(
+                    DW_SECRET_TOLD,
+                    "layout-graph",
+                    at,
+                    format!(
+                        "`{edge}` keeps the secret word `{word}`, and no string the player reads \
+                         at or after the shot that shows the way (`{list}/{idx}`) mentions it. A \
+                         secret nobody ever tells keeps nothing: tell it after the shot — a line \
+                         in the shot's own beat, after the `cutscene` — or remove the word.",
+                        edge = f.way.edge,
+                    ),
+                ));
+            }
+        }
+    }
+    bind.read_before = read_before.len();
+    (d, bind)
+}
+
+/// Each hidden way's text verdict, by connection, as the shut-way ledger
+/// carries it beside the eye (`validation/shut-ways.json`): the shot, the
+/// strings read before it, the first early mention per word, and the words
+/// told after. The same judgement [`check_secrets`] refuses on.
+pub(crate) fn secret_verdicts(
+    c: &Campaign,
+    sidecars: &BTreeMap<String, L10nDoc>,
+) -> BTreeMap<String, serde_json::Value> {
+    let Some(findings) = judge_secrets(c, sidecars) else {
+        return BTreeMap::new();
+    };
+    let mut langs: Vec<String> = vec!["en".to_string()];
+    langs.extend(
+        c.world
+            .content
+            .languages
+            .iter()
+            .filter(|l| sidecars.contains_key(*l))
+            .cloned(),
+    );
+    findings
+        .into_iter()
+        .map(|f| {
+            let words: Vec<serde_json::Value> = f
+                .way
+                .secret
+                .iter()
+                .enumerate()
+                .map(|(k, w)| {
+                    serde_json::json!({
+                        "word": w,
+                        "told_before": f.early[k].as_ref().map(|m| serde_json::json!({
+                            "key": m.key, "language": m.lang, "walk": m.walk, "step": m.at,
+                        })),
+                        "told_after": f.told[k],
+                    })
+                })
+                .collect();
+            (
+                f.way.edge.clone(),
+                serde_json::json!({
+                    "shot": f.shot.as_ref().map(|(l, i)| format!("{l}/{i}")),
+                    "languages": langs,
+                    "strings_read_before": f.read_before.len(),
+                    "words": words,
+                }),
+            )
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -1070,6 +1524,161 @@ mod tests {
         let t = "You pulled the lever at my stand.";
         let (s, e) = occurrences(t, "Stand")[0];
         assert!(is_use(t, "Stand", true, s, e));
+    }
+
+    /// A small deterministic generator (ADR-0006): no RNG crate, a fixed LCG.
+    struct Lcg(u64);
+    impl Lcg {
+        fn next(&mut self, n: u64) -> u64 {
+            self.0 = self
+                .0
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (self.0 >> 33) % n
+        }
+    }
+
+    /// spec-0118 acceptance 20: `DW1060`'s matcher is `DW0982`'s — over
+    /// generated strings and words, the spans a secret word finds are the
+    /// spans the name matcher finds for a name of that text.
+    #[test]
+    fn the_secret_matcher_is_the_name_matcher() {
+        let vocab = [
+            "the",
+            "passage",
+            "Passage",
+            "hearth",
+            "behind",
+            "a",
+            "records",
+            "sluice",
+            "passages",
+            "the records",
+            "密道",
+            "火炉",
+            "后面",
+            ",",
+            ".",
+            "an",
+            "flue",
+        ];
+        let words = [
+            "passage",
+            "the records",
+            "behind the hearth",
+            "密道",
+            "flue",
+        ];
+        let mut r = Lcg(7);
+        let mut compared = 0usize;
+        for _ in 0..400 {
+            let n = 1 + r.next(9) as usize;
+            let mut text = String::new();
+            for i in 0..n {
+                let w = vocab[r.next(vocab.len() as u64) as usize];
+                if i > 0 && !w.chars().all(|c| c as u32 > 0x2E80) && r.next(4) > 0 {
+                    text.push(' ');
+                }
+                text.push_str(w);
+            }
+            for w in words {
+                let name = [Name {
+                    text: w.to_string(),
+                    key: "k".to_string(),
+                    core: core_of(w),
+                }];
+                let by_name: Vec<(usize, usize)> = mentions(&text, &name)
+                    .into_iter()
+                    .map(|(_, s, e)| (s, e))
+                    .collect();
+                assert_eq!(secret_spans(&text, w), by_name, "{text:?} / {w:?}");
+                compared += 1;
+            }
+        }
+        assert_eq!(compared, 2000);
+    }
+
+    /// A word in a script that does not space its words is found inside the
+    /// sentence around it; an English word is held to word boundaries.
+    #[test]
+    fn a_han_word_is_found_inside_its_sentence() {
+        assert_eq!(secret_spans("火炉后面有一条密道。", "密道").len(), 1);
+        assert!(secret_spans("passages", "passage").is_empty());
+        assert_eq!(secret_spans("The passage, behind.", "the passage").len(), 1);
+    }
+
+    fn blockout(hidden: bool) -> Campaign {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/blockout");
+        let mut loaded = crate::compiler::load::load_campaign_dir(&dir).expect("readable");
+        if hidden {
+            let mut graph: serde_json::Value =
+                serde_json::from_str(loaded.raw.layout_graph.as_deref().unwrap()).unwrap();
+            for e in graph["content"]["edges"].as_array_mut().unwrap() {
+                if e["id"] == "edge/hall-cell" {
+                    e["gating"]["learned"] = serde_json::json!("hidden");
+                    e["gating"]["secret"] = serde_json::json!(["vault"]);
+                }
+            }
+            loaded.raw.layout_graph = Some(graph.to_string());
+            let mut q: serde_json::Value = serde_json::from_str(&loaded.raw.quests).unwrap();
+            q["content"]["quests"][0]["on_objective_complete"]["obj/ask"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({
+                    "type": "cutscene", "seconds": 3,
+                    "path": [{"anchor": "anchor/node-hall"}],
+                    "look_at": {"anchor": "anchor/seam-hall-cell"},
+                }));
+            loaded.raw.quests = q.to_string();
+        }
+        delvewright_dsl::parse_campaign(&loaded.raw).expect("parses")
+    }
+
+    /// spec-0118 acceptance 21, **one walk**: `DW0982` and `DW1060` read the
+    /// step of every string from the one placement — the undated strings
+    /// included — and neither keeps a placement of its own: the names check's
+    /// walk and on-screen counts, and the secrets check's strings read before
+    /// the shot, are each re-derived here from [`placements`] alone.
+    #[test]
+    fn both_checks_place_every_string_by_one_walk() {
+        let c = blockout(true);
+        let inv = read_inventory(&c);
+        let placed = placements(&c, &inv).expect("a play order");
+        let (_, names) = check_names_told_bound(&c);
+        assert_eq!(names.walks, placed.walks.len());
+        let on_screen: BTreeSet<&str> = placed
+            .walks
+            .iter()
+            .flat_map(|w| w.first.keys())
+            .filter(|k| placed.sites.dlg.contains_key(k.as_str()))
+            .map(String::as_str)
+            .collect();
+        assert_eq!(names.dialogue_read, on_screen.len());
+        assert!(
+            placed.walks[0].first.values().any(|p| !p.dated),
+            "the undated case is exercised"
+        );
+
+        let list = "/content/quests/0/on_objective_complete/obj/ask";
+        let shot = crate::compiler::nav::opening_lists(&c, "anchor/seam-hall-cell");
+        assert_eq!(shot.len(), 1);
+        assert_eq!(shot[0].list, list);
+        let pointer = shot[0].shot_pointer().expect("the shot");
+        let mut before: BTreeSet<&str> = BTreeSet::new();
+        for w in &placed.walks {
+            let at = w.fires_at(&pointer);
+            for (k, p) in &w.first {
+                if !p.dated
+                    || at.is_none_or(|s| p.at < s)
+                    || (Some(p.at) == at
+                        && before_in_list(&placed.sites, k, list, shot[0].shot.unwrap()))
+                {
+                    before.insert(k.as_str());
+                }
+            }
+        }
+        let (_, secrets) = check_secrets(&c, &BTreeMap::new());
+        assert_eq!(secrets.read_before, before.len(), "{}", secrets.line());
     }
 
     #[test]

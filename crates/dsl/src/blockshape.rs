@@ -1085,6 +1085,56 @@ pub fn body_falls_through(layer: &[[Footprint16; 3]; 3], under: &[[Footprint16; 
 }
 
 // ---------------------------------------------------------------------------
+// What a block hides from the eye (spec-0118 §0.2, sight-through-blocks.md)
+// ---------------------------------------------------------------------------
+
+/// The pinned jar's occlusion table: `crates/dsl/data/occlusion-1.21.11.tsv`,
+/// written by `tools/maintenance/dump-block-light.py` (with
+/// `tools/maintenance/blocklight/OcclusionDump.java`) from the game's own
+/// `BlockState.canOcclude()`, `Block.isShapeFullBlock(getOcclusionShape())` and
+/// `isSolidRender()` inside the pinned server jar (provenance in
+/// `crates/delvec/data/PROVENANCE.md`).
+const OCCLUSION_TSV: &str = include_str!("../data/occlusion-1.21.11.tsv");
+
+fn occlusion_rows() -> &'static PinnedRows<bool> {
+    static ROWS: std::sync::OnceLock<PinnedRows<bool>> = std::sync::OnceLock::new();
+    ROWS.get_or_init(|| {
+        pinned_rows(OCCLUSION_TSV, "occlusion", |hides, solid| {
+            let flag = |s: &str| match s {
+                "true" => true,
+                "false" => false,
+                _ => panic!("occlusion table flag is neither true nor false: {s:?}"),
+            };
+            let (h, s) = (flag(hides), flag(solid));
+            assert_eq!(h, s, "the occlusion table's two readings part");
+            h
+        })
+    })
+}
+
+/// **Whether a block state hides what stands behind it from the eye** — the
+/// one sight predicate (`docs/reference/sight-through-blocks.md` §2): the
+/// pinned game draws it as a full opaque cube and culls the face behind it.
+/// Read from the pinned jar's occlusion table and never from the collision
+/// class: iron bars, glass, a pane, a fence, a wall, a stair, a slab, a door,
+/// a trapdoor, leaves and a campfire collide and are looked through. Air, and
+/// a block the table does not hold, hide nothing — the direction a proof that
+/// a thing is *hidden* may err in.
+#[must_use]
+pub fn hides(name: &str) -> bool {
+    if is_air(name) {
+        return false;
+    }
+    pinned_row(occlusion_rows(), name).copied().unwrap_or(false)
+}
+
+/// How many rows the occlusion table holds — the binding count a test states.
+#[must_use]
+pub fn occlusion_row_count() -> usize {
+    occlusion_rows().values().map(Vec::len).sum()
+}
+
+// ---------------------------------------------------------------------------
 // What redstone does to a block (spec-0100 §4.2)
 // ---------------------------------------------------------------------------
 

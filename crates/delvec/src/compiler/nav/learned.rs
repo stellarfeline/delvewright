@@ -1,13 +1,18 @@
 //! **A shut way declares how it is learned** (spec-0118): every gated
-//! connection a body meets shut says whether the player sees it from the
-//! junction where its branch leaves the open route (`seen`), is told at its
-//! face by a pressable answer (`told`), or is paid for the walk by a pickup,
-//! interaction or fight on the branch (`rewarded`) — and the engine confirms
-//! the word it is given.
+//! connection a body meets shut, or an eye sees shut, says whether the player
+//! sees it from the junction where its branch leaves the open route (`seen`),
+//! is told at its face by a pressable answer (`told`), is paid for the walk by
+//! a pickup, interaction or fight on the branch (`rewarded`), or does not learn
+//! of it at all until the shot that opens it shows it (`hidden`) — and the
+//! engine confirms the word it is given.
 //!
 //! An undeclared shut way the party meets is `DW1053`; a declaration the world
 //! does not confirm is `DW1054`. Judged over the configurations, faces and
-//! reach of [`super::shutmodel`], the one model `DW1011` reads too.
+//! reach of [`super::shutmodel`], the one model `DW1011` reads too, and with the
+//! one eye: every sight walk here is stopped by [`World::hides`] — occlusion in
+//! the pinned jar — and by nothing else (`docs/reference/sight-through-blocks.md`).
+//! The text a hidden way keeps is `DW1060`'s ([`crate::compiler::telling`]),
+//! which reads the shot this module finds ([`opening_lists`]).
 
 use super::shutmodel::{
     Configurations, GateUnderTest, SeparationConfig, faces_of, gated_connections, gated_gate, meet,
@@ -21,23 +26,136 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 delvewright_dsl::dw_code! {
     /// `DW1053`: **a shut way the party meets, learned by no declared means**
     /// (spec-0118 §6.1). A gated connection is shut in a configuration the
-    /// critical path passes through, the party's reach holds one of its faces,
-    /// and its `gating` names no `learned`: nothing says how the player is to
-    /// learn the way is shut, so nothing can be confirmed.
+    /// critical path passes through, the party's reach holds one of its faces
+    /// or an eye in the reach sees it, and its `gating` names no `learned`:
+    /// nothing says how the player is to learn the way is shut, so nothing can
+    /// be confirmed.
     pub const DW_SHUT_WAY_UNLEARNED: DwCode = DwCode::new("DW1053", ExitTier::Build);
 }
 delvewright_dsl::dw_code! {
     /// `DW1054`: **a declaration the world does not confirm** (spec-0118 §6.2):
-    /// `seen`, but from the junction the eye meets another cell before the
+    /// `seen`, but from the junction the eye meets a hiding cell before the
     /// bar; `told`, but nothing answers a press at the seam; `rewarded`, but no
-    /// pickup, interaction or fight stands on the branch's ground. As a
-    /// warning, a `learned` on a connection never met shut in any judged
-    /// configuration (§6.3).
+    /// pickup, interaction or fight stands on the branch's ground; `hidden`,
+    /// but an eye in the reach sees the way or its far side, or the beat that
+    /// opens it carries no shot of its seam. As a warning, a word on a
+    /// connection never met shut in any judged configuration (§6.3).
     pub const DW_SHUT_WAY_UNCONFIRMED: DwCode = DwCode::new("DW1054", ExitTier::Build);
 }
 
 /// How many failing connections a refusal names before summarising the rest.
 const LIST_LIMIT: usize = 6;
+
+/// An inclusive box of world cells.
+type Bx = ([i32; 3], [i32; 3]);
+
+/// Each cell's predecessor on the breadth-first tree of body moves.
+type Tree = BTreeMap<[i32; 3], Option<[i32; 3]>>;
+
+/// One effect list that opens a gated connection's seam gate, and the
+/// `cutscene` in it whose `look_at`, `path` or shot names that seam, if one
+/// does (spec-0118 §5.3 b).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct OpeningList {
+    /// The list's pointer (`/content/quests/0/objectives/2/on_complete`).
+    pub(crate) list: String,
+    /// The index in the list of the `cutscene` that shows the seam.
+    pub(crate) shot: Option<usize>,
+}
+
+impl OpeningList {
+    /// The pointer of the shot's own effect, when there is one.
+    pub(crate) fn shot_pointer(&self) -> Option<String> {
+        self.shot.map(|i| format!("{}/{i}", self.list))
+    }
+}
+
+/// Whether a `cutscene` effect looks at `anchor`: its single shot's `look_at`
+/// or a `path` waypoint, or any multi-shot shot's `look_at`, `path` or
+/// `subject` names it.
+fn shows(e: &delvewright_dsl::QuestEffect, anchor: &str) -> bool {
+    let delvewright_dsl::Verb::Cutscene {
+        shots,
+        path,
+        look_at,
+        ..
+    } = &e.verb
+    else {
+        return false;
+    };
+    let named = |m: &delvewright_dsl::Mark| m.anchor.as_str() == anchor;
+    look_at.as_ref().is_some_and(named)
+        || path.iter().any(named)
+        || shots.iter().any(|s| {
+            s.look_at.as_ref().is_some_and(named)
+                || s.path.iter().any(named)
+                || matches!(&s.subject, Some(delvewright_dsl::CameraSubject::Anchor(m)) if named(m))
+        })
+}
+
+/// **The effect lists that open a seam gate, each with its shot** — the one
+/// answer to *does the beat that opens this way show it*, which `DW1054`
+/// (`hidden`'s shot) and `DW1060` (the step the text is read against) both
+/// read. A document fact: no world is needed. Lists in pointer order (ADR-0006).
+pub(crate) fn opening_lists(c: &delvewright_dsl::Campaign, anchor: &str) -> Vec<OpeningList> {
+    let mut lists: BTreeMap<String, Vec<(usize, &delvewright_dsl::QuestEffect)>> = BTreeMap::new();
+    crate::compiler::plan::for_each_gate_effect(c, &mut |site, e| {
+        if let Some((list, i)) = site.path.rsplit_once('/')
+            && let Ok(i) = i.parse::<usize>()
+        {
+            lists.entry(list.to_string()).or_default().push((i, e));
+        }
+    });
+    lists
+        .into_iter()
+        .filter(|(_, effs)| {
+            effs.iter().any(
+                |(_, e)| matches!(e.gate_region_write(), Some((a, false)) if a.as_str() == anchor),
+            )
+        })
+        .map(|(list, effs)| OpeningList {
+            shot: effs
+                .iter()
+                .filter(|(_, e)| shows(e, anchor))
+                .map(|(i, _)| *i)
+                .min(),
+            list,
+        })
+        .collect()
+}
+
+/// One gated connection declared `learned: hidden`, as the text check reads
+/// it: the edge, its index in the layout graph, its seam anchor and its secret.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct HiddenWay {
+    /// The connection's id.
+    pub(crate) edge: String,
+    /// Its index in `edges[]`.
+    pub(crate) index: usize,
+    /// `anchor/seam-<edge>`.
+    pub(crate) seam: String,
+    /// The words it keeps.
+    pub(crate) secret: Vec<String>,
+}
+
+/// Every connection the world builds shut and declares `learned: hidden`.
+pub(crate) fn hidden_ways(c: &delvewright_dsl::Campaign) -> Vec<HiddenWay> {
+    let Some(g) = c.layout_graph.as_ref() else {
+        return Vec::new();
+    };
+    g.content
+        .edges
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e.shuts() && e.learned() == Some(Learned::Hidden))
+        .map(|(i, e)| HiddenWay {
+            edge: e.id().to_string(),
+            index: i,
+            seam: delvewright_dsl::siteplan::seam_anchor(e.id()),
+            secret: e.secret().to_vec(),
+        })
+        .collect()
+}
 
 /// One gated connection as this check judges it.
 #[derive(Debug, Clone)]
@@ -57,6 +175,14 @@ pub(super) struct ShutWay {
     /// The `use` trigger that answers a press at the seam, if one does
     /// ([`delvewright_dsl::QuestsContent::answers_press_at`]).
     pub answered_by: Option<String>,
+    /// The block the gate is shut with, as the anchor declares it — named
+    /// when an eye looks through it.
+    pub bar_block: String,
+    /// The play spaces of the places on its low and high faces, where the seam
+    /// says: what `hidden` holds the eye out of.
+    pub far: Option<(Bx, Bx)>,
+    /// The effect lists that open it, each with its shot ([`opening_lists`]).
+    pub shots: Vec<OpeningList>,
 }
 
 /// A pickup, interaction or fight the campaign binds to a cell.
@@ -73,9 +199,9 @@ pub(super) struct Reward {
 /// What the sight walk from the junction found.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum SeenFinding {
-    /// The first cell met on the walk to some region cell is the bar.
+    /// The eye reaches this cell of the bar through nothing that hides.
     Seen([i32; 3]),
-    /// Every walk met another cell first: `(region cell, blocking cell)`.
+    /// Every walk met a hiding cell first: `(region cell, blocking cell)`.
     Hidden(Vec<([i32; 3], [i32; 3])>),
 }
 
@@ -88,12 +214,24 @@ enum RewardFinding {
     Bare(usize, Option<(String, i32)>),
 }
 
-/// One shut way met: a connection, a configuration and a face the party is at.
+/// How a shut way is met (spec-0118 §5.1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum How {
+    /// The party's reach holds a cell of the face.
+    Face,
+    /// No reach cell is at the face, and an eye at this reach cell on the
+    /// face's side sees the gate.
+    Eye([i32; 3]),
+}
+
+/// One shut way met: a connection, a configuration and a face the party is
+/// at, or sees from.
 #[derive(Debug, Clone)]
 struct Met {
     way: usize,
     config: usize,
     high: bool,
+    how: How,
     openable: Option<bool>,
     junction: [i32; 3],
     length: usize,
@@ -119,6 +257,34 @@ enum Cut {
     },
 }
 
+/// A line of sight from an eye to a cell that meets no hiding cell first.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct EyeLine {
+    /// The reach cell whose eye looks.
+    eye: [i32; 3],
+    /// The cell it reaches.
+    target: [i32; 3],
+    /// What the target is, in words: the gate's block, or a place.
+    what: String,
+    /// Whether the target is a cell of the gate itself.
+    shutter: bool,
+}
+
+/// `hidden`'s eye over one configuration the way is shut in (spec-0118 §5.3).
+#[derive(Debug, Clone)]
+struct HiddenFinding {
+    way: usize,
+    config: usize,
+    /// Reach cells in the configuration.
+    reach: usize,
+    /// Distinct targets the eye was tried against.
+    targets: usize,
+    /// Sight lines walked.
+    lines: usize,
+    /// The first line that sees, by moves from the route then by cell.
+    seen: Option<EyeLine>,
+}
+
 /// What [`check_shut_ways_learned`] measured, whether or not it refused.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ShutWayBinding {
@@ -129,8 +295,12 @@ pub struct ShutWayBinding {
     pub resolved: usize,
     /// Distinct quest configurations judged.
     pub configurations: usize,
-    /// Shut ways met at a face: `(connection, configuration, face)` triples.
+    /// Shut ways met: `(connection, configuration, face)` triples.
     pub met: usize,
+    /// Of them, met at a face the party's reach holds.
+    pub at_face: usize,
+    /// Of them, met by the eye alone.
+    pub by_eye: usize,
     /// Of them, triples whose connection declares `learned`.
     pub declared: usize,
     /// Of the declared, by word.
@@ -139,38 +309,58 @@ pub struct ShutWayBinding {
     pub told: usize,
     /// Of the declared, by word.
     pub rewarded: usize,
+    /// Of the declared, by word.
+    pub hidden: usize,
     /// Triples whose connection declares nothing.
     pub undeclared: usize,
-    /// Declared triples the world does not confirm.
+    /// Declarations the world does not confirm: declared triples, and a hidden
+    /// way's configurations where no triple carries the refusal.
     pub unconfirmed: usize,
-    /// Connections that declare `learned` and are never met shut.
+    /// Connections whose word is never met shut (a `hidden` one: never shut).
     pub inert: usize,
+    /// Hidden ways judged.
+    pub hidden_ways: usize,
+    /// (Hidden way, configuration it is shut in) pairs judged.
+    pub hidden_configurations: usize,
+    /// Sight lines walked for the hidden ways.
+    pub eye_lines: usize,
     /// The ledger rows, one per triple.
     pub rows: Vec<serde_json::Value>,
+    /// The hidden ways' rows, one per configuration each is shut in.
+    pub hidden_rows: Vec<serde_json::Value>,
     /// The inert connections by id.
     pub inert_ways: Vec<String>,
-    /// The triples met, for the agreement with `DW1011` (spec-0118 §5).
+    /// The triples met at a face, for the agreement with `DW1011` (spec-0118 §5).
     pub(super) met_triples: BTreeSet<(usize, usize, bool)>,
+    /// The triples met by the eye alone.
+    pub(super) eye_triples: BTreeSet<(usize, usize, bool)>,
 }
 
 impl ShutWayBinding {
     /// The one line a build prints about this check.
     pub fn line(&self) -> String {
         format!(
-            "shut ways (DW1053/DW1054): {} gated connection(s) ({} with a seam gate the world \
-             resolves); over {} configuration(s), {} shut way(s) met at a face — {} declared ({} seen, {} told, {} rewarded), {} undeclared, \
-             {} declaration(s) not confirmed; {} declared and never met shut",
+            "shut ways (DW1053/DW1054): {} gated connection(s); over {} configuration(s), {} \
+             shut way(s) met — {} at a face, {} by the eye alone — {} declared ({} seen, {} told, \
+             {} rewarded, {} hidden), {} undeclared, {} declaration(s) not confirmed; {} declared \
+             and never met shut; {} hidden way(s) judged over {} configuration(s), {} eye line(s) \
+             examined",
             self.gated,
-            self.resolved,
             self.configurations,
             self.met,
+            self.at_face,
+            self.by_eye,
             self.declared,
             self.seen,
             self.told,
             self.rewarded,
+            self.hidden,
             self.undeclared,
             self.unconfirmed,
             self.inert,
+            self.hidden_ways,
+            self.hidden_configurations,
+            self.eye_lines,
         )
     }
 
@@ -178,24 +368,32 @@ impl ShutWayBinding {
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
             "codes": [DW_SHUT_WAY_UNLEARNED.id(), DW_SHUT_WAY_UNCONFIRMED.id()],
+            "line": self.line(),
             "gated": self.gated,
             "resolved": self.resolved,
             "configurations": self.configurations,
             "met": self.met,
+            "at_face": self.at_face,
+            "by_eye": self.by_eye,
             "declared": self.declared,
             "seen": self.seen,
             "told": self.told,
             "rewarded": self.rewarded,
+            "hidden": self.hidden,
             "undeclared": self.undeclared,
             "unconfirmed": self.unconfirmed,
             "inert": self.inert,
+            "hidden_ways": self.hidden_ways,
+            "hidden_configurations": self.hidden_configurations,
+            "eye_lines": self.eye_lines,
             "inert_ways": self.inert_ways,
             "rows": self.rows,
+            "hidden_rows": self.hidden_rows,
         })
     }
 
-    /// The warnings this check raises: a `learned` on a connection never met
-    /// shut (§6.3), counted and named, never refused.
+    /// The warnings this check raises: a word on a connection never met shut
+    /// (§6.3), counted and named, never refused.
     pub fn findings(&self) -> Vec<delvewright_dsl::Diagnostic> {
         self.inert_ways
             .iter()
@@ -206,10 +404,11 @@ impl ShutWayBinding {
                     "shut-way binding",
                     format!(
                         "`{edge}` declares how the player learns it is shut (`gating.learned`), \
-                         and no configuration the critical path passes through meets it shut at \
-                         a face, so the word is confirmed by nothing. The judged configurations \
-                         are the critical path's; a way met shut only on a branch's own path is \
-                         not in them. The word is kept and counted; nothing is refused."
+                         and no configuration the critical path passes through meets it shut — \
+                         a `hidden` way: holds it shut at all — so the word is confirmed by \
+                         nothing. The judged configurations are the critical path's; a way met \
+                         shut only on a branch's own path is not in them. The word is kept and \
+                         counted; nothing is refused."
                     ),
                 )
             })
@@ -268,6 +467,18 @@ fn rewards(plan: &Plan) -> Vec<Reward> {
     out
 }
 
+/// The play space of the place `node` as the plan placed it, if it did.
+fn space_of(plan: &Plan, node: &str) -> Option<Bx> {
+    let b = plan.blockout.as_ref()?;
+    let pb = b.boxes.iter().find(|x| x.node.0 == node)?;
+    let (lo, hi) = pb.space();
+    let n = |v: i64| i32::try_from(v).ok();
+    Some((
+        [n(lo[0])?, n(lo[1])?, n(lo[2])?],
+        [n(hi[0])?, n(hi[1])?, n(hi[2])?],
+    ))
+}
+
 /// `DW1053` and `DW1054` over a campaign's gated connections, judged once per
 /// quest configuration the critical path passes through. Returns the binding
 /// beside the verdict so the caller can print it whichever way it went.
@@ -301,6 +512,12 @@ pub fn check_shut_ways_learned(
             q.answers_press_at(&seal.anchor),
             "the press answer is the predicate DW0429 reads"
         );
+        let far = sides
+            .as_ref()
+            .and_then(|(lo, hi)| Some((space_of(plan, lo)?, space_of(plan, hi)?)));
+        let bar_block = crate::compiler::plan::gate_region_block_any(&plan.anchors, &seal.anchor)
+            .map(|(_, _, b)| b)
+            .unwrap_or_default();
         ways.push(ShutWay {
             gate: gated_gate(plan, g, seal),
             edge: e.id().to_string(),
@@ -314,6 +531,9 @@ pub fn check_shut_ways_learned(
             learned: e.learned(),
             seam: seal.anchor.clone(),
             answered_by,
+            bar_block,
+            far,
+            shots: opening_lists(plan.campaign, &seal.anchor),
         });
     }
     let configurations = Configurations::of(plan, world);
@@ -322,32 +542,49 @@ pub fn check_shut_ways_learned(
     let sections = super::width::plan_cross_sections(plan, prefabs);
     let (mut binding, verdict) = verify_shut_ways(&ways, world, &judged, &rewards(plan), &sections);
     binding.gated = gated.len();
+    // The text a hidden way keeps is DW1060's, judged at validation over every
+    // language; the ledger carries its English reading beside the eye.
+    let text = crate::compiler::telling::secret_verdicts(plan.campaign, &BTreeMap::new());
+    for row in &mut binding.hidden_rows {
+        if let Some(edge) = row["connection"].as_str()
+            && let Some(v) = text.get(edge)
+        {
+            row["text"] = v.clone();
+        }
+    }
     (binding, verdict)
 }
 
 /// The breadth-first tree of body moves from the route cells: each cell's
-/// predecessor, in visit order.
-fn route_tree(w: &World, route: &[[i32; 3]]) -> BTreeMap<[i32; 3], Option<[i32; 3]>> {
+/// predecessor, and every cell in order of moves from the route, ties broken
+/// by the cell (ADR-0006).
+fn route_tree(w: &World, route: &[[i32; 3]]) -> (Tree, Vec<[i32; 3]>) {
     let mut pred: BTreeMap<[i32; 3], Option<[i32; 3]>> = BTreeMap::new();
+    let mut dist: BTreeMap<[i32; 3], usize> = BTreeMap::new();
     let mut queue: VecDeque<[i32; 3]> = VecDeque::new();
     for c in route {
         if pred.insert(*c, None).is_none() {
+            dist.insert(*c, 0);
             queue.push_back(*c);
         }
     }
     while let Some(cur) = queue.pop_front() {
+        let d = dist[&cur] + 1;
         for n in w.body_moves(cur) {
             if let std::collections::btree_map::Entry::Vacant(v) = pred.entry(n) {
                 v.insert(Some(cur));
+                dist.insert(n, d);
                 queue.push_back(n);
             }
         }
     }
-    pred
+    let mut order: Vec<[i32; 3]> = dist.keys().copied().collect();
+    order.sort_by_key(|c| (dist[c], *c));
+    (pred, order)
 }
 
 /// The path from the route to `target` over the tree, route end first.
-fn path_to(tree: &BTreeMap<[i32; 3], Option<[i32; 3]>>, target: [i32; 3]) -> Vec<[i32; 3]> {
+fn path_to(tree: &Tree, target: [i32; 3]) -> Vec<[i32; 3]> {
     let mut path = vec![target];
     let mut at = target;
     while let Some(Some(p)) = tree.get(&at) {
@@ -454,30 +691,183 @@ fn branch_ground(
         .collect()
 }
 
-/// From the player's eye at `j`, whether the bar of `region` is the first
-/// thing the eye meets (spec-0118 §5.3): `nav::walk_cells` to each region
-/// cell's centre, stopped by [`World::blocks_camera`].
-fn sight(w: &World, j: [i32; 3], region: ([i32; 3], [i32; 3]), eye_height: f64) -> SeenFinding {
-    let c = cell_center(j);
-    let eye = [c[0], c[1] + eye_height, c[2]];
+/// The player's eye standing in `e`: the cell's centre raised by `eye_height`.
+fn eye_of(e: [i32; 3], eye_height: f64) -> [f64; 3] {
+    let c = cell_center(e);
+    [c[0], c[1] + eye_height, c[2]]
+}
+
+/// **The one eye walk** (`docs/reference/sight-through-blocks.md` §2): from
+/// `eye` to the centre of `target`, `nav::walk_cells`, stopped by the first
+/// cell that hides strictly before the target ([`World::hides`], and nothing
+/// else). `None` when the target is seen; the hiding cell met otherwise.
+/// Every sight question of this module asks it.
+pub(super) fn eye_meets(w: &World, eye: [f64; 3], target: [i32; 3]) -> Option<[i32; 3]> {
+    let t = [
+        f64::from(target[0]) + 0.5,
+        f64::from(target[1]) + 0.5,
+        f64::from(target[2]) + 0.5,
+    ];
+    walk_cells(eye, t, |cell| cell != target && w.hides(cell))
+}
+
+/// From the player's eye at `j`, whether some cell of `region` is seen
+/// (spec-0118 §5.3, `seen`): reached through nothing that hides. A bar seen
+/// through a grille, a fence or a pane is seen.
+fn sight(w: &World, j: [i32; 3], region: Bx, eye_height: f64) -> SeenFinding {
+    let eye = eye_of(j, eye_height);
     let (a, b) = region;
-    let inside = |c: &[i32; 3]| (0..3).all(|i| a[i].min(b[i]) <= c[i] && c[i] <= a[i].max(b[i]));
     let mut hidden: Vec<([i32; 3], [i32; 3])> = Vec::new();
     for r in crate::compiler::assembled::region_cells(a, b) {
-        let t = [
-            f64::from(r[0]) + 0.5,
-            f64::from(r[1]) + 0.5,
-            f64::from(r[2]) + 0.5,
-        ];
-        match walk_cells(eye, t, |cell| w.blocks_camera(cell)) {
-            Some(hit) if inside(&hit) => return SeenFinding::Seen(r),
+        match eye_meets(w, eye, r) {
+            None => return SeenFinding::Seen(r),
             Some(hit) => hidden.push((r, hit)),
-            // A region cell the model does not hold camera-blocking is not a
-            // bar to be seen; the walk reached it through nothing.
-            None => hidden.push((r, r)),
         }
     }
     SeenFinding::Hidden(hidden)
+}
+
+/// Which side of a gate's thin axis a cell stands on: `Some(false)` low,
+/// `Some(true)` high, `None` in the gate's own slab.
+fn side_of(c: [i32; 3], region: Bx, axis: usize) -> Option<bool> {
+    let (a, b) = region;
+    if c[axis] < a[axis].min(b[axis]) {
+        Some(false)
+    } else if c[axis] > a[axis].max(b[axis]) {
+        Some(true)
+    } else {
+        None
+    }
+}
+
+/// **The eye's population** (spec-0118 §5.1): the nearest reach cell, by moves
+/// from the route then by cell, on the `high` side of the gate's axis whose
+/// eye sees a cell of the gate region that does not itself hide — a grille, a
+/// pane, a door, a trapdoor, which the eye looks through; `None` when no eye
+/// there does. A shutter that hides reads as the wall it stands in.
+fn seen_from_side(
+    w: &World,
+    order: &[[i32; 3]],
+    region: Bx,
+    axis: usize,
+    high: bool,
+    eye_height: f64,
+) -> Option<[i32; 3]> {
+    // A gate cell that hides is a wall the player sees, not a way: looking at
+    // it is not looking through it (spec-0118 criterion 3).
+    let cells: Vec<[i32; 3]> = crate::compiler::assembled::region_cells(region.0, region.1)
+        .filter(|c| !w.hides(*c))
+        .collect();
+    order.iter().copied().find(|e| {
+        side_of(*e, region, axis) == Some(high)
+            && cells
+                .iter()
+                .any(|r| eye_meets(w, eye_of(*e, eye_height), *r).is_none())
+    })
+}
+
+/// **`hidden`'s eye in one configuration** (spec-0118 §5.3 a): for every reach
+/// cell, in order of moves from the route, every target — the gate's cells
+/// that do not themselves hide, and every cell a body can be in inside the
+/// place on the far side of the gate from that eye — and the first line that
+/// meets no hiding cell before its target.
+///
+/// **The far side from an eye** (authored): an eye in one of the way's two
+/// places looks for the other. An eye in a third place looks for the side the
+/// party does not reach in this configuration — the place behind the way —
+/// and, where the reach holds both sides or neither, for the side across the
+/// gate's axis from it, both sides for an eye in the gate's own slab.
+fn judge_hidden(
+    w: &World,
+    way: &ShutWay,
+    axis: usize,
+    order: &[[i32; 3]],
+    eye_height: f64,
+) -> (usize, usize, Option<EyeLine>) {
+    let region = way.gate.region;
+    let gate: Vec<[i32; 3]> = crate::compiler::assembled::region_cells(region.0, region.1)
+        .filter(|c| !w.hides(*c))
+        .collect();
+    let body = |b: Option<Bx>| -> Vec<[i32; 3]> {
+        let Some((lo, hi)) = b else {
+            return Vec::new();
+        };
+        crate::compiler::assembled::region_cells(lo, hi)
+            .filter(|c| super::shutmodel::can_be(w, *c))
+            .collect()
+    };
+    let (low_box, high_box) = (way.far.map(|f| f.0), way.far.map(|f| f.1));
+    let low_cells = body(low_box);
+    let high_cells = body(high_box);
+    let place = |high: bool| -> String {
+        match &way.sides {
+            Some((lo, hi)) => format!(
+                "a cell a body can be in in `{}`",
+                if high { hi } else { lo }
+            ),
+            None => "a cell a body can be in beyond it".to_string(),
+        }
+    };
+    let targets = gate.len() + low_cells.len() + high_cells.len();
+    let inside = |b: Option<Bx>, c: &[i32; 3]| {
+        b.is_some_and(|(lo, hi)| (0..3).all(|i| lo[i] <= c[i] && c[i] <= hi[i]))
+    };
+    let reached_low = order.iter().any(|c| inside(low_box, c));
+    let reached_high = order.iter().any(|c| inside(high_box, c));
+    let mut lines = 0usize;
+    for e in order {
+        let eye = eye_of(*e, eye_height);
+        // `Some(true)`: the eye looks for the high side's place.
+        let looks_high: Option<bool> = if inside(low_box, e) {
+            Some(true)
+        } else if inside(high_box, e) {
+            Some(false)
+        } else if reached_low != reached_high {
+            Some(reached_low)
+        } else {
+            side_of(*e, region, axis).map(|high| !high)
+        };
+        let far: Vec<(&[i32; 3], bool)> = match looks_high {
+            Some(true) => high_cells.iter().map(|c| (c, true)).collect(),
+            Some(false) => low_cells.iter().map(|c| (c, false)).collect(),
+            None => low_cells
+                .iter()
+                .map(|c| (c, false))
+                .chain(high_cells.iter().map(|c| (c, true)))
+                .collect(),
+        };
+        for t in &gate {
+            lines += 1;
+            if eye_meets(w, eye, *t).is_none() {
+                return (
+                    targets,
+                    lines,
+                    Some(EyeLine {
+                        eye: *e,
+                        target: *t,
+                        what: format!("`{}`", way.bar_block),
+                        shutter: true,
+                    }),
+                );
+            }
+        }
+        for (t, high) in far {
+            lines += 1;
+            if eye_meets(w, eye, *t).is_none() {
+                return (
+                    targets,
+                    lines,
+                    Some(EyeLine {
+                        eye: *e,
+                        target: *t,
+                        what: place(high),
+                        shutter: false,
+                    }),
+                );
+            }
+        }
+    }
+    (targets, lines, None)
 }
 
 fn manhattan(a: [i32; 3], b: [i32; 3]) -> i32 {
@@ -517,6 +907,12 @@ fn reward_on(ground: &BTreeSet<[i32; 3]>, rewards: &[Reward]) -> RewardFinding {
     RewardFinding::Bare(ground.len(), nearest)
 }
 
+/// Whether the beat that opens a way shows it: some list opens it, and every
+/// list that opens it carries the shot.
+fn shot_ok(way: &ShutWay) -> bool {
+    !way.shots.is_empty() && way.shots.iter().all(|s| s.shot.is_some())
+}
+
 /// The pure core of [`check_shut_ways_learned`]: the ways, the world with every
 /// gate open (`base`, where faces are found), one configuration per judged
 /// quest state, and the reward anchors. Split out so it is unit-testable over
@@ -538,6 +934,11 @@ pub(super) fn verify_shut_ways(
     )
 }
 
+/// What one configuration yields: the shut ways met in it, and the hidden
+/// eye over each way shut in it that owes one.
+type ConfigFindings = (Vec<Met>, Vec<HiddenFinding>);
+
+#[allow(clippy::too_many_lines)]
 fn verify_with_eye(
     ways: &[ShutWay],
     base: &World,
@@ -561,34 +962,60 @@ fn verify_with_eye(
         .zip(&faces)
         .map(|(w, f)| opens_low(&w.gate, f.as_ref()))
         .collect();
-    let per_config: Vec<Vec<Met>> = crate::par::map(
+    let per_config: Vec<ConfigFindings> = crate::par::map(
         &configs.iter().enumerate().collect::<Vec<_>>(),
         |(ci, (w, _, route, shut))| {
             let (seeds, reach) = party_reach(w, route);
             let route_set: BTreeSet<[i32; 3]> = seeds.iter().copied().collect();
-            let mut tree: Option<BTreeMap<[i32; 3], Option<[i32; 3]>>> = None;
+            let (tree, order) = route_tree(w, &seeds);
             let mut out: Vec<Met> = Vec::new();
+            let mut hidden: Vec<HiddenFinding> = Vec::new();
             for &gi in shut {
                 let Some(f) = faces[gi].as_ref() else {
                     continue;
                 };
+                let region = ways[gi].gate.region;
+                // A hidden way owes its eye in every configuration it is shut
+                // in, met or not; an undeclared one is judged for its message.
+                if matches!(ways[gi].learned, Some(Learned::Hidden) | None) {
+                    let (targets, lines, seen) =
+                        judge_hidden(w, &ways[gi], f.axis, &order, eye_height);
+                    hidden.push(HiddenFinding {
+                        way: gi,
+                        config: *ci,
+                        reach: reach.len(),
+                        targets,
+                        lines,
+                        seen,
+                    });
+                }
                 let m = meet(w, f, &reach);
-                for high in m.met() {
-                    let tree = tree.get_or_insert_with(|| route_tree(w, &seeds));
-                    let face: Vec<[i32; 3]> = m
-                        .face(high)
-                        .iter()
-                        .copied()
-                        .filter(|c| reach.contains(c))
-                        .collect();
-                    // The nearest face cell by moves from the route, ties
-                    // broken by the cell (ADR-0006).
-                    let target = face
-                        .iter()
-                        .copied()
-                        .min_by_key(|c| (path_to(tree, *c).len(), *c))
-                        .expect("a met face holds a reached cell");
-                    let path = path_to(tree, target);
+                let held = m.met();
+                for high in [false, true] {
+                    let (how, target, face): (How, [i32; 3], Vec<[i32; 3]>) =
+                        if held.contains(&high) {
+                            let face: Vec<[i32; 3]> = m
+                                .face(high)
+                                .iter()
+                                .copied()
+                                .filter(|c| reach.contains(c))
+                                .collect();
+                            // The nearest face cell by moves from the route, ties
+                            // broken by the cell (ADR-0006).
+                            let target = face
+                                .iter()
+                                .copied()
+                                .min_by_key(|c| (path_to(&tree, *c).len(), *c))
+                                .expect("a met face holds a reached cell");
+                            (How::Face, target, face)
+                        } else if let Some(e) =
+                            seen_from_side(w, &order, region, f.axis, high, eye_height)
+                        {
+                            (How::Eye(e), e, Vec::new())
+                        } else {
+                            continue;
+                        };
+                    let path = path_to(&tree, target);
                     let ji = path
                         .iter()
                         .rposition(|c| route_set.contains(c))
@@ -600,34 +1027,66 @@ fn verify_with_eye(
                         .map(|c| c[1])
                         .max()
                         .map_or(0, |y| y - junction[1]);
-                    let (ground, cut) =
-                        cut_branch(w, &face, &route_set, junction, branch, sections);
+                    // A way met by the eye alone pays for no walk: its ground
+                    // is empty.
+                    let (ground, cut) = if how == How::Face {
+                        cut_branch(w, &face, &route_set, junction, branch, sections)
+                    } else {
+                        (BTreeSet::new(), Cut::Path)
+                    };
                     out.push(Met {
                         way: gi,
                         config: *ci,
                         high,
+                        how,
                         openable: opens[gi].map(|low_opens| low_opens != high),
                         junction,
                         length: branch.len(),
                         rise,
-                        seen: sight(w, junction, ways[gi].gate.region, eye_height),
+                        seen: sight(w, junction, region, eye_height),
                         reward: reward_on(&ground, rewards),
                         cut,
                     });
                 }
             }
-            out
+            (out, hidden)
         },
     );
-    let met: Vec<Met> = per_config.into_iter().flatten().collect();
+    let mut met: Vec<Met> = Vec::new();
+    let mut hidden: Vec<HiddenFinding> = Vec::new();
+    for (m, h) in per_config {
+        met.extend(m);
+        hidden.extend(h);
+    }
+    // A hidden way is confirmed when no configuration it is shut in has an
+    // eye that sees it, and the beat that opens it shows it.
+    let hidden_seen: BTreeMap<usize, &HiddenFinding> = {
+        let mut first: BTreeMap<usize, &HiddenFinding> = BTreeMap::new();
+        for h in &hidden {
+            if h.seen.is_some() {
+                first.entry(h.way).or_insert(h);
+            }
+        }
+        first
+    };
+    let hidden_ok = |gi: usize| !hidden_seen.contains_key(&gi) && shot_ok(&ways[gi]);
     let mut met_ways: BTreeSet<usize> = BTreeSet::new();
     // The first failing triple per connection, in (configuration, face) order.
     let mut unlearned: BTreeMap<usize, &Met> = BTreeMap::new();
-    let mut unconfirmed: BTreeMap<usize, (&Met, usize)> = BTreeMap::new();
+    let mut unconfirmed: BTreeMap<usize, (Option<&Met>, usize)> = BTreeMap::new();
     for m in &met {
         let way = &ways[m.way];
         met_ways.insert(m.way);
-        binding.met_triples.insert((m.way, m.config, m.high));
+        match m.how {
+            How::Face => {
+                binding.met_triples.insert((m.way, m.config, m.high));
+                binding.at_face += 1;
+            }
+            How::Eye(_) => {
+                binding.eye_triples.insert((m.way, m.config, m.high));
+                binding.by_eye += 1;
+            }
+        }
         binding.met += 1;
         let confirmed = match way.learned {
             None => {
@@ -650,18 +1109,46 @@ fn verify_with_eye(
                         binding.rewarded += 1;
                         matches!(m.reward, RewardFinding::Rewarded(..))
                     }
+                    Learned::Hidden => {
+                        binding.hidden += 1;
+                        hidden_ok(m.way)
+                    }
                 };
                 if !ok {
                     binding.unconfirmed += 1;
-                    unconfirmed.entry(m.way).or_insert((m, 0)).1 += 1;
+                    let e = unconfirmed.entry(m.way).or_insert((Some(m), 0));
+                    e.1 += 1;
                 }
                 Some(ok)
             }
         };
         binding.rows.push(row(way, m, configs, confirmed));
     }
+    // The hidden ways: every configuration each is shut in, met or not.
+    let mut shut_hidden: BTreeSet<usize> = BTreeSet::new();
+    for h in hidden
+        .iter()
+        .filter(|h| ways[h.way].learned == Some(Learned::Hidden))
+    {
+        shut_hidden.insert(h.way);
+        binding.hidden_configurations += 1;
+        binding.eye_lines += h.lines;
+        if !met_ways.contains(&h.way) && (h.seen.is_some() || !shot_ok(&ways[h.way])) {
+            binding.unconfirmed += 1;
+            unconfirmed.entry(h.way).or_insert((None, 0)).1 += 1;
+        }
+        binding
+            .hidden_rows
+            .push(hidden_row(&ways[h.way], h, configs));
+    }
+    binding.hidden_ways = shut_hidden.len();
     for (i, w) in ways.iter().enumerate() {
-        if w.learned.is_some() && !met_ways.contains(&i) {
+        let inert = match w.learned {
+            Some(Learned::Hidden) => !shut_hidden.contains(&i),
+            Some(_) => !met_ways.contains(&i),
+            None => false,
+        };
+        if inert {
             binding.inert += 1;
             binding.inert_ways.push(w.edge.clone());
         }
@@ -670,7 +1157,12 @@ fn verify_with_eye(
         let named: Vec<String> = unlearned
             .values()
             .take(LIST_LIMIT)
-            .map(|m| unlearned_words(&ways[m.way], m, configs))
+            .map(|m| {
+                let h = hidden
+                    .iter()
+                    .find(|h| h.way == m.way && h.config == m.config);
+                unlearned_words(&ways[m.way], m, configs, h)
+            })
             .collect();
         let more = unlearned.len().saturating_sub(named.len());
         let tail = if more > 0 {
@@ -686,9 +1178,11 @@ fn verify_with_eye(
                     "{} story-shut way(s) the party meets say nothing about how the player learns \
                      they are shut: {}{tail}. A player who walks a branch to a shut way and finds \
                      it shut at the end has been cheated of the walk unless they could see it \
-                     from where they turned off, are told at its face, or are paid for the walk. \
-                     Write the word that is true in the connection's `gating.learned` — `seen`, \
-                     `told` or `rewarded` — or make one true and write it.",
+                     from where they turned off, are told at its face, or are paid for the walk; \
+                     a player who sees a shut way and is never told of it has been shown a secret \
+                     nobody kept. Write the word that is true in the connection's \
+                     `gating.learned` — `seen`, `told`, `rewarded` or `hidden` — or make one \
+                     true and write it.",
                     unlearned.len(),
                     named.join("; ")
                 ),
@@ -697,12 +1191,17 @@ fn verify_with_eye(
     }
     if !unconfirmed.is_empty() {
         let named: Vec<String> = unconfirmed
-            .values()
+            .iter()
             .take(LIST_LIMIT)
-            .map(|(m, n)| {
-                let mut s = unconfirmed_words(&ways[m.way], m, configs);
+            .map(|(gi, (m, n))| {
+                let way = &ways[*gi];
+                let mut s = if way.learned == Some(Learned::Hidden) {
+                    hidden_unconfirmed_words(way, hidden_seen.get(gi).copied(), configs)
+                } else {
+                    m.map_or_else(String::new, |m| unconfirmed_words(way, m, configs))
+                };
                 if *n > 1 {
-                    s.push_str(&format!(" (not confirmed at {n} face(s) met)"));
+                    s.push_str(&format!(" (not confirmed {n} time(s))"));
                 }
                 s
             })
@@ -720,8 +1219,9 @@ fn verify_with_eye(
                 message: format!(
                     "{} shut way(s) declare how the player learns they are shut, and the world \
                      does not confirm it: {}{tail}. Make the world true to the word — open the \
-                     geometry so the bar is seen, write the trigger, place the reward — or change \
-                     the word to the one that is true.",
+                     geometry so the bar is seen, write the trigger, place the reward, make the \
+                     shutter hide, wall the line of sight, add the shot to the opening beat — or \
+                     change the word to the one that is true.",
                     unconfirmed.len(),
                     named.join("; ")
                 ),
@@ -786,6 +1286,59 @@ fn reward_words(m: &Met) -> String {
     }
 }
 
+/// The eye line in words: where it stands, what it reaches, and why that
+/// target is not hidden.
+fn eye_words(l: &EyeLine) -> String {
+    let mut s = format!(
+        "the way is seen from {:?}: the eye reaches {:?} ({}) through nothing that hides",
+        l.eye, l.target, l.what
+    );
+    if l.shutter {
+        s.push_str(&format!(
+            " — {} is looked through; a shutter that hides is a block the pinned game draws as a \
+             full opaque cube",
+            l.what
+        ));
+    }
+    s
+}
+
+/// The shot in words: the effect lists that open the way and whether each
+/// shows its seam.
+fn shot_words(way: &ShutWay) -> String {
+    if way.shots.is_empty() {
+        return format!(
+            "no effect list opens `{}` (an `open-gate` of it), so no beat can show it",
+            way.seam
+        );
+    }
+    let missing: Vec<String> = way
+        .shots
+        .iter()
+        .filter(|s| s.shot.is_none())
+        .map(|s| format!("`{}`", s.list))
+        .collect();
+    if missing.is_empty() {
+        format!("the opening beat carries a shot of `{}`", way.seam)
+    } else {
+        format!(
+            "the beat that opens it carries no shot of `{}`: {} open(s) it with no `cutscene` \
+             whose `look_at` or `path` is `{}`",
+            way.seam,
+            missing.join(", "),
+            way.seam
+        )
+    }
+}
+
+fn hidden_words(way: &ShutWay, h: Option<&HiddenFinding>) -> String {
+    let eye = match h.and_then(|h| h.seen.as_ref()) {
+        Some(l) => format!("{}, so it cannot be hidden as built", eye_words(l)),
+        None => "nothing in the reach sees it".to_string(),
+    };
+    format!("{eye}; {}", shot_words(way))
+}
+
 /// The cut in words: where the branch ground is cut off the open route.
 fn cut_words(cut: &Cut) -> String {
     match cut {
@@ -810,25 +1363,37 @@ fn cut_json(cut: &Cut) -> serde_json::Value {
 }
 
 fn place_words(way: &ShutWay, m: &Met, configs: &[SeparationConfig<'_>]) -> String {
+    let met = match m.how {
+        How::Face => format!("the party meets it at {}", face_words(way, m)),
+        How::Eye(e) => format!(
+            "the party sees it from {e:?}, on {}, and stands at no face of it",
+            face_words(way, m)
+        ),
+    };
     format!(
-        "{} is shut {} and the party meets it at {}; the branch leaves the route at {:?}, \
-         {} move(s) long, rising {}",
+        "{} is shut {} and {met}; the branch leaves the route at {:?}, {} move(s) long, \
+         rising {}",
         way.words,
         when(configs, m.config),
-        face_words(way, m),
         m.junction,
         m.length,
         m.rise
     )
 }
 
-fn unlearned_words(way: &ShutWay, m: &Met, configs: &[SeparationConfig<'_>]) -> String {
+fn unlearned_words(
+    way: &ShutWay,
+    m: &Met,
+    configs: &[SeparationConfig<'_>],
+    h: Option<&HiddenFinding>,
+) -> String {
     format!(
-        "{}. `seen` — {}; `told` — {}; `rewarded` — {}",
+        "{}. `seen` — {}; `told` — {}; `rewarded` — {}; `hidden` — {}",
         place_words(way, m, configs),
         seen_words(m),
         told_words(way),
-        reward_words(m)
+        reward_words(m),
+        hidden_words(way, h)
     )
 }
 
@@ -836,7 +1401,8 @@ fn unconfirmed_words(way: &ShutWay, m: &Met, configs: &[SeparationConfig<'_>]) -
     let place = place_words(way, m, configs);
     match way.learned {
         Some(Learned::Seen) => format!(
-            "{place}; declared `seen`, but from {:?} the eye meets another cell before the bar: {}",
+            "{place}; declared `seen`, but from {:?} the eye meets a cell that hides before the \
+             bar: {}",
             m.junction,
             seen_words(m)
         ),
@@ -847,7 +1413,27 @@ fn unconfirmed_words(way: &ShutWay, m: &Met, configs: &[SeparationConfig<'_>]) -
             delvewright_dsl::trigger::press_answer_prescription(&way.seam, "the way")
         ),
         Some(Learned::Rewarded) => format!("{place}; declared `rewarded`, but {}", reward_words(m)),
-        None => place,
+        Some(Learned::Hidden) | None => place,
+    }
+}
+
+fn hidden_unconfirmed_words(
+    way: &ShutWay,
+    seen: Option<&HiddenFinding>,
+    configs: &[SeparationConfig<'_>],
+) -> String {
+    match seen.and_then(|h| h.seen.as_ref().map(|l| (h, l))) {
+        Some((h, l)) => format!(
+            "{} is declared `hidden`, but {}: {}",
+            way.words,
+            when(configs, h.config),
+            eye_words(l)
+        ),
+        None => format!(
+            "{} is declared `hidden`, but {}",
+            way.words,
+            shot_words(way)
+        ),
     }
 }
 
@@ -876,6 +1462,10 @@ fn row(
             "nearest": nearest.as_ref().map(|(a, d)| serde_json::json!({ "anchor": a, "distance": d })),
         }),
     };
+    let met = match m.how {
+        How::Face => serde_json::json!("at a face"),
+        How::Eye(e) => serde_json::json!({ "by_the_eye_from": e }),
+    };
     serde_json::json!({
         "connection": way.edge,
         "gating": way.words,
@@ -885,6 +1475,7 @@ fn row(
             None => if m.high { "high".to_string() } else { "low".to_string() },
         },
         "openable": m.openable,
+        "met": met,
         "junction": m.junction,
         "branch_length": m.length,
         "branch_rise": m.rise,
@@ -894,6 +1485,36 @@ fn row(
         "seen": seen,
         "told": told,
         "rewarded": reward,
+    })
+}
+
+fn hidden_row(
+    way: &ShutWay,
+    h: &HiddenFinding,
+    configs: &[SeparationConfig<'_>],
+) -> serde_json::Value {
+    let eye = match &h.seen {
+        Some(l) => serde_json::json!({
+            "seen_from": l.eye,
+            "reaches": l.target,
+            "what": l.what,
+        }),
+        None => serde_json::json!("hidden"),
+    };
+    let shots: Vec<serde_json::Value> = way
+        .shots
+        .iter()
+        .map(|s| serde_json::json!({ "list": s.list, "shot": s.shot_pointer() }))
+        .collect();
+    serde_json::json!({
+        "connection": way.edge,
+        "configuration": when(configs, h.config),
+        "reach": h.reach,
+        "targets": h.targets,
+        "eye_lines": h.lines,
+        "eye": eye,
+        "shots": shots,
+        "text": null,
     })
 }
 
@@ -941,6 +1562,9 @@ mod learned_tests {
             learned,
             seam: "anchor/seam-test".to_string(),
             answered_by: None,
+            bar_block: "minecraft:stone".to_string(),
+            far: None,
+            shots: Vec::new(),
         }
     }
 
@@ -1609,12 +2233,341 @@ mod learned_tests {
         let b = ShutWayBinding::default();
         assert_eq!(
             b.line(),
-            "shut ways (DW1053/DW1054): 0 gated connection(s) (0 with a seam gate the world \
-             resolves); over 0 configuration(s), 0 shut way(s) met at a face — 0 declared (0 \
-             seen, 0 told, 0 rewarded), 0 undeclared, 0 declaration(s) not confirmed; 0 declared \
-             and never met shut"
+            "shut ways (DW1053/DW1054): 0 gated connection(s); over 0 configuration(s), 0 shut \
+             way(s) met — 0 at a face, 0 by the eye alone — 0 declared (0 seen, 0 told, 0 \
+             rewarded, 0 hidden), 0 undeclared, 0 declaration(s) not confirmed; 0 declared and \
+             never met shut; 0 hidden way(s) judged over 0 configuration(s), 0 eye line(s) \
+             examined"
         );
         assert_eq!(b.to_json()["met"], 0);
+        assert_eq!(b.to_json()["hidden_rows"], serde_json::json!([]));
+    }
+
+    /// A world of named blocks: every cell of `solid` stone, `named` laid over
+    /// it (air removes a cell), classified by the one occupancy model — so
+    /// what hides is the pinned jar's occlusion table.
+    fn named(solid: &BTreeSet<[i32; 3]>, named: &[([i32; 3], &str)]) -> World {
+        let mut map: BTreeMap<[i32; 3], String> = solid
+            .iter()
+            .map(|c| (*c, "minecraft:stone".to_string()))
+            .collect();
+        for (c, b) in named {
+            if *b == "minecraft:air" {
+                map.remove(c);
+            } else {
+                map.insert(*c, (*b).to_string());
+            }
+        }
+        World::from_occupancy(
+            crate::compiler::assembled::occupancy_of(map, &BTreeSet::new()),
+            Premises::geometry_only(),
+        )
+    }
+
+    /// [`branch`]'s cells as a named world, `extra` laid over them.
+    fn branch_named(len: i32, top: i32, shut: bool, extra: &[([i32; 3], &str)]) -> World {
+        let mut open = BTreeSet::new();
+        for x in 0..=10 {
+            open.insert([x, 0]);
+        }
+        open.insert([5, 1]);
+        for z in 2..=len {
+            for x in 4..=6 {
+                open.insert([x, z]);
+            }
+        }
+        for z in len + 2..=len + 4 {
+            for x in 4..=6 {
+                open.insert([x, z]);
+            }
+        }
+        open.insert([5, len + 1]);
+        let mut solid = BTreeSet::new();
+        for x in -1..=11 {
+            for z in -1..=len + 5 {
+                solid.insert([x, 0, z]);
+                if !open.contains(&[x, z]) {
+                    for y in 1..=WALL {
+                        solid.insert([x, y, z]);
+                    }
+                }
+            }
+        }
+        for y in top + 1..=WALL {
+            solid.insert([5, y, len + 1]);
+        }
+        if shut {
+            for y in 1..=top {
+                solid.insert([5, y, len + 1]);
+            }
+        }
+        named(&solid, extra)
+    }
+
+    /// Acceptance 2, **one eye**: every sight walk here is stopped by
+    /// `World::hides` and by nothing else — a grille on the line is looked
+    /// through and a wall is not, where the collision walk stopped at both.
+    #[test]
+    fn the_eye_looks_through_a_grille_and_not_through_a_wall() {
+        let region = ([5, 1, 8], [5, 2, 8]);
+        let ways = [way(region, 2, Some(Learned::Seen))];
+        let on_line = [5, 2, 4];
+        for (block, seen) in [
+            ("minecraft:iron_bars", true),
+            ("minecraft:stone_bricks", false),
+        ] {
+            let (base, shut) = (
+                branch_named(7, 2, false, &[(on_line, block)]),
+                branch_named(7, 2, true, &[(on_line, block)]),
+            );
+            assert!(shut.blocks_camera(on_line), "{block} collides");
+            assert_eq!(shut.hides(on_line), !seen, "{block}");
+            let (_, verdict) = judge(&shut, &base, &ways, &[], PLAYER_EYE);
+            assert_eq!(verdict.is_ok(), seen, "{block}: {verdict:?}");
+        }
+    }
+
+    /// Acceptance 4, **the declared loosening**: a fence post, then a glass
+    /// pane, standing on the line of sight leaves the bar `seen`.
+    #[test]
+    fn a_bar_behind_a_fence_or_a_pane_is_seen() {
+        let region = ([5, 1, 8], [5, 2, 8]);
+        let ways = [way(region, 2, Some(Learned::Seen))];
+        for block in ["minecraft:oak_fence", "minecraft:glass_pane"] {
+            let on_line = [5, 2, 4];
+            let (base, shut) = (
+                branch_named(7, 2, false, &[(on_line, block)]),
+                branch_named(7, 2, true, &[(on_line, block)]),
+            );
+            let (b, verdict) = judge(&shut, &base, &ways, &[], PLAYER_EYE);
+            assert!(verdict.is_ok(), "{block}: {verdict:?}");
+            assert_eq!(b.seen, 1, "{block}: {}", b.line());
+        }
+    }
+
+    /// The hearth: a hall (x 0..=10, z 0..=6) whose shut way is a one-wide
+    /// shutter at `[5, 1..=2, 7]` into a passage (x 3..=7, z 8..=12), with a
+    /// row of campfires at `[4..=6, 1, 6]` in its approach — a second gate,
+    /// solid to a body, looked through by an eye — under a mantel at y 3..=4.
+    /// `window` is laid at `[3, 2, 7]` in the passage's wall.
+    fn hearth(shutter: &str, window: Option<&str>, shut: bool) -> World {
+        let mut solid = BTreeSet::new();
+        let open = |x: i32, z: i32| {
+            ((0..=10).contains(&x) && (0..=6).contains(&z))
+                || ((3..=7).contains(&x) && (8..=12).contains(&z))
+        };
+        for x in -1..=11 {
+            for z in -1..=13 {
+                solid.insert([x, 0, z]);
+                if !open(x, z) {
+                    for y in 1..=WALL {
+                        solid.insert([x, y, z]);
+                    }
+                }
+            }
+        }
+        let mut blocks: Vec<([i32; 3], &str)> = Vec::new();
+        for x in 4..=6 {
+            blocks.push(([x, 1, 6], "minecraft:campfire"));
+            for y in 3..=WALL {
+                blocks.push(([x, y, 6], "minecraft:stone_bricks"));
+            }
+        }
+        for y in 1..=2 {
+            blocks.push(([5, y, 7], if shut { shutter } else { "minecraft:air" }));
+        }
+        if let Some(w) = window {
+            blocks.push(([3, 2, 7], w));
+        }
+        named(&solid, &blocks)
+    }
+
+    fn hearth_way(learned: Option<Learned>, shutter: &str, shot: Option<usize>) -> ShutWay {
+        ShutWay {
+            bar_block: shutter.to_string(),
+            far: Some((([0, 1, 0], [10, 2, 6]), ([3, 1, 8], [7, 2, 12]))),
+            shots: vec![OpeningList {
+                list: "/content/quests/0/objectives/1/on_complete".to_string(),
+                shot,
+            }],
+            ..way(([5, 1, 7], [5, 2, 7]), 2, learned)
+        }
+    }
+
+    fn judge_hearth(
+        shut: &World,
+        base: &World,
+        ways: &[ShutWay],
+    ) -> (ShutWayBinding, Result<(), Failure>) {
+        judge(shut, base, ways, &[], PLAYER_EYE)
+    }
+
+    /// Acceptance 3, **met by the eye**: the shutter's approach is held by a
+    /// second gate, so no reach cell stands at its face; a grille is seen from
+    /// the hall and, with no `learned`, refused `DW1053` with `E` at 1 and `A`
+    /// at 0. The same shutter a full opaque cube is a wall, not met, and
+    /// passes with `M` at 0.
+    #[test]
+    fn a_grille_behind_a_fire_is_met_by_the_eye() {
+        let base = hearth("minecraft:air", None, false);
+        let bars = "minecraft:iron_bars[east=true,west=true]";
+        let shut = hearth(bars, None, true);
+        let ways = [hearth_way(None, bars, Some(1))];
+        let (b, verdict) = judge_hearth(&shut, &base, &ways);
+        let err = verdict.expect_err("a grille in view owes its word");
+        assert_eq!(err.code.id(), "DW1053", "{}", err.message);
+        assert!(
+            err.message.contains("the party sees it from"),
+            "{}",
+            err.message
+        );
+        assert!(err.message.contains("`hidden` —"), "{}", err.message);
+        assert_eq!((b.met, b.at_face, b.by_eye), (1, 0, 1), "{}", b.line());
+        assert!(
+            b.rows[0]["met"]["by_the_eye_from"].is_array(),
+            "{:?}",
+            b.rows
+        );
+
+        let stone = "minecraft:polished_deepslate";
+        let shut = hearth(stone, None, true);
+        let ways = [hearth_way(None, stone, Some(1))];
+        let (b, verdict) = judge_hearth(&shut, &base, &ways);
+        assert!(verdict.is_ok(), "{verdict:?}");
+        assert_eq!(b.met, 0, "{}", b.line());
+    }
+
+    /// Acceptance 18, **`hidden`, the eye**: an opaque shutter with a second
+    /// gate in its approach and no line from the hall into the passage is
+    /// hidden; the shutter iron bars is refused naming the eye cell and the bar
+    /// and saying it is looked through; a window in the passage's wall is
+    /// refused naming the far cell, glazed with glass still refused, walled
+    /// with stone green.
+    #[test]
+    fn a_hidden_way_is_held_to_the_eye() {
+        let base = hearth("minecraft:air", None, false);
+        let stone = "minecraft:polished_deepslate";
+        let ways = [hearth_way(Some(Learned::Hidden), stone, Some(1))];
+        let (b, verdict) = judge_hearth(&hearth(stone, None, true), &base, &ways);
+        assert!(verdict.is_ok(), "{verdict:?}");
+        assert_eq!(
+            (b.hidden_ways, b.hidden_configurations),
+            (1, 1),
+            "{}",
+            b.line()
+        );
+        assert!(b.eye_lines > 0, "{}", b.line());
+        assert_eq!(b.hidden_rows[0]["eye"], "hidden", "{:?}", b.hidden_rows);
+
+        let bars = "minecraft:iron_bars[east=true,west=true]";
+        let ways = [hearth_way(Some(Learned::Hidden), bars, Some(1))];
+        let (_, verdict) = judge_hearth(&hearth(bars, None, true), &base, &ways);
+        let err = verdict.expect_err("a grille hides nothing");
+        assert_eq!(err.code.id(), "DW1054", "{}", err.message);
+        assert!(err.message.contains("declared `hidden`"), "{}", err.message);
+        assert!(err.message.contains("is looked through"), "{}", err.message);
+        assert!(
+            err.message.contains("[5, 1, 7]") || err.message.contains("[5, 2, 7]"),
+            "{}",
+            err.message
+        );
+
+        let ways = [hearth_way(Some(Learned::Hidden), stone, Some(1))];
+        for (window, refused) in [
+            ("minecraft:air", true),
+            ("minecraft:glass", true),
+            ("minecraft:stone", false),
+        ] {
+            let shut = hearth(stone, Some(window), true);
+            let base = hearth("minecraft:air", Some(window), false);
+            let (_, verdict) = judge_hearth(&shut, &base, &ways);
+            assert_eq!(verdict.is_err(), refused, "{window}: {verdict:?}");
+            if refused {
+                let m = verdict.unwrap_err().message;
+                assert!(
+                    m.contains("a cell a body can be in in `node/far`"),
+                    "{window}: {m}"
+                );
+            }
+        }
+    }
+
+    /// Acceptance 19, **`hidden`, the shot**: the hidden hearth with no shot of
+    /// its seam in the beat that opens it is refused naming the effect list.
+    #[test]
+    fn a_hidden_way_with_no_shot_is_refused_naming_the_list() {
+        let base = hearth("minecraft:air", None, false);
+        let stone = "minecraft:polished_deepslate";
+        let ways = [hearth_way(Some(Learned::Hidden), stone, None)];
+        let (_, verdict) = judge_hearth(&hearth(stone, None, true), &base, &ways);
+        let err = verdict.expect_err("no shot");
+        assert_eq!(err.code.id(), "DW1054", "{}", err.message);
+        assert!(
+            err.message
+                .contains("carries no shot of `anchor/seam-test`"),
+            "{}",
+            err.message
+        );
+        assert!(
+            err.message
+                .contains("/content/quests/0/objectives/1/on_complete"),
+            "{}",
+            err.message
+        );
+    }
+
+    /// Acceptance 19: a `cutscene` shows a seam when its `look_at` or a `path`
+    /// waypoint names it; one looking at another anchor does not.
+    #[test]
+    fn a_shot_shows_the_seam_it_looks_at_or_flies_through() {
+        let eff = |v: serde_json::Value| -> delvewright_dsl::QuestEffect {
+            serde_json::from_value(v).expect("an effect")
+        };
+        let seam = "anchor/seam-hearth-door";
+        let looks = eff(serde_json::json!({
+            "type": "cutscene", "seconds": 3,
+            "path": [{"anchor": "anchor/hall-eye"}],
+            "look_at": {"anchor": seam},
+        }));
+        let flies = eff(serde_json::json!({
+            "type": "cutscene", "seconds": 3,
+            "path": [{"anchor": "anchor/hall-eye"}, {"anchor": seam}],
+        }));
+        let elsewhere = eff(serde_json::json!({
+            "type": "cutscene", "seconds": 3,
+            "path": [{"anchor": "anchor/hall-eye"}],
+            "look_at": {"anchor": "anchor/hearth-fire"},
+        }));
+        assert!(shows(&looks, seam));
+        assert!(shows(&flies, seam));
+        assert!(!shows(&elsewhere, seam));
+    }
+
+    /// Acceptance 8: a `hidden` way never shut in any judged configuration is
+    /// counted inert and warned, not refused.
+    #[test]
+    fn a_hidden_way_never_shut_is_inert() {
+        let base = hearth("minecraft:air", None, false);
+        let stone = "minecraft:polished_deepslate";
+        let ways = [hearth_way(Some(Learned::Hidden), stone, Some(1))];
+        let (b, verdict) = verify_with_eye(
+            &ways,
+            &base,
+            &[(
+                &base,
+                "while `obj/test` is next".to_string(),
+                route(),
+                Vec::new(),
+            )],
+            &[],
+            &[],
+            PLAYER_EYE,
+        );
+        assert!(verdict.is_ok(), "{verdict:?}");
+        assert_eq!((b.inert, b.hidden_ways), (1, 0), "{}", b.line());
+        let w = b.findings();
+        assert_eq!(w.len(), 1);
+        assert_eq!(w[0].code, "DW1054");
     }
 
     /// A small deterministic generator (ADR-0006): no RNG crate, a fixed LCG.

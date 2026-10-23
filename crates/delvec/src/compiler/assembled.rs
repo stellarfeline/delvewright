@@ -599,6 +599,11 @@ pub struct GateSeal {
     /// read as the posts a body falls between, never as a full cube. Empty for
     /// a seal of blocks that cover their cells.
     pub open_footprints: Vec<([i32; 3], delvewright_dsl::blockshape::Footprint16)>,
+    /// Every blocked cell whose block **hides** what stands behind it from the
+    /// eye ([`delvewright_dsl::blockshape::hides`]). Measured from the bytes,
+    /// so a shut way's sight is the block the world holds: a grille of iron
+    /// bars is looked through, a hearth's stone back is not.
+    pub hiding: Vec<[i32; 3]>,
     /// **Where a body stands on this gate while it is shut**, when it is a
     /// floor: a region one course thick whose every cell holds a block at
     /// world-load with nothing over it — a hatch, the cover over a ladder's
@@ -703,6 +708,7 @@ pub(crate) fn measure_gate_seals(
         let declared = base_id(block);
         let (mut cells, mut blocked, mut foreign) = (0usize, 0usize, 0usize);
         let mut open_footprints = Vec::new();
+        let mut hiding = Vec::new();
         let (lo, hi) = (
             [from[0].min(to[0]), from[1].min(to[1]), from[2].min(to[2])],
             [from[0].max(to[0]), from[1].max(to[1]), from[2].max(to[2])],
@@ -741,6 +747,9 @@ pub(crate) fn measure_gate_seals(
             if fp != delvewright_dsl::blockshape::FULL_FOOTPRINT {
                 open_footprints.push((cell, fp));
             }
+            if delvewright_dsl::blockshape::hides(name) {
+                hiding.push(cell);
+            }
         }
         out.push(GateSeal {
             area: area.clone(),
@@ -750,6 +759,7 @@ pub(crate) fn measure_gate_seals(
             blocked,
             foreign,
             open_footprints,
+            hiding,
             stand: floor.then(|| gate_stand(lo, hi, top_16)),
         });
     }
@@ -1347,6 +1357,13 @@ pub struct Occupancy {
     /// whether a body over it is held or falls between its boxes is the nav
     /// model's to judge from these and the cells around them.
     pub footprints: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Footprint16>,
+    /// Cells whose block **hides** what stands behind it from the eye
+    /// ([`delvewright_dsl::blockshape::hides`], the pinned jar's occlusion
+    /// table). Not a collision class and not disjoint from them: a second
+    /// question about the same cells, asked by every sight walk
+    /// ([`crate::compiler::nav::World::hides`]). Iron bars are `solid` and not
+    /// here; a stone wall is both.
+    pub hiding: BTreeSet<[i32; 3]>,
 }
 
 /// **What keeps one climbable where it is** (spec-0099 §3.2), as the cells its
@@ -1607,7 +1624,16 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
     // One footprint lookup per distinct block state, not per cell.
     let mut footprint_of: BTreeMap<String, Option<delvewright_dsl::blockshape::Footprint16>> =
         BTreeMap::new();
+    let mut hiding: BTreeSet<[i32; 3]> = BTreeSet::new();
+    // One occlusion lookup per distinct block state, not per cell.
+    let mut hides_of: BTreeMap<String, bool> = BTreeMap::new();
     for (cell, name) in blocks {
+        if *hides_of
+            .entry(name.to_string())
+            .or_insert_with(|| delvewright_dsl::blockshape::hides(name))
+        {
+            hiding.insert(*cell);
+        }
         if is_waterloggable(name) {
             waterloggable.insert(*cell);
         }
@@ -1702,6 +1728,7 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
         climb,
         unheld_climb,
         footprints,
+        hiding,
     }
 }
 

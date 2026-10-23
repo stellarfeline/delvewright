@@ -562,6 +562,15 @@ pub(super) fn validate_loaded(
                 examined.push(nbind.line());
                 diags.extend(nd);
             }
+            // DW1060 (spec-0118 §6.4): a hidden way's secret is told by the
+            // shot that shows it and by no string before it, in English and
+            // every sidecar — over the same walk and the same placement
+            // DW0982 just read, with what it examined.
+            {
+                let (sd, sbind) = delvec::compiler::telling::check_secrets(&campaign, &sidecars);
+                examined.push(sbind.line());
+                diags.extend(sd);
+            }
             // DW1026: one named character is one body — no story state of any
             // configuration leaves two declarations that carry one name in the
             // world at once. The same journal the replay proves, bound here for

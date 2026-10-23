@@ -5096,7 +5096,10 @@ fn dw1053_writing_seen_where_the_bar_is_seen_builds() {
     let camp = learned_fixture("dw1053-seen", Some("seen"), |_| {});
     let (code, after) = build("dw1053-seen", &camp, &common::prefabs_dir());
     assert_eq!(code, 0, "{after}");
-    assert!(after.contains("(1 seen, 0 told, 0 rewarded)"), "{after}");
+    assert!(
+        after.contains("(1 seen, 0 told, 0 rewarded, 0 hidden)"),
+        "{after}"
+    );
 }
 
 /// The trigger a `DW1054` `told` refusal prescribes, parsed out of its message
@@ -5132,7 +5135,10 @@ fn dw1054_writing_the_prescribed_trigger_clears_both_codes() {
     });
     let (code, after) = build("dw1054-told-green", &camp, &common::prefabs_dir());
     assert_eq!(code, 0, "{after}");
-    assert!(after.contains("(0 seen, 1 told, 0 rewarded)"), "{after}");
+    assert!(
+        after.contains("(0 seen, 1 told, 0 rewarded, 0 hidden)"),
+        "{after}"
+    );
 
     // The door as a shortcut whose wrong side nothing answers: `DW0429`.
     let shortcut = |q: &mut serde_json::Value| {
@@ -5390,7 +5396,10 @@ fn a_shut_way_that_opens_leaves_its_whole_way_clear() {
     let camp = narrowed_by_the_run("pair-shut-whole-green", 13, None);
     let (code, text) = build("pair-shut-whole-green", &camp, &prefabs);
     assert_eq!(code, 0, "{text}");
-    assert!(text.contains("(1 seen, 0 told, 0 rewarded)"), "{text}");
+    assert!(
+        text.contains("(1 seen, 0 told, 0 rewarded, 0 hidden)"),
+        "{text}"
+    );
     let ledger: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(
             Path::new(env!("CARGO_TARGET_TMPDIR"))

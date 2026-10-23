@@ -217,6 +217,36 @@ not third-party reconstructions.
   `tools/maintenance/collision/FaceDump.java` names no obfuscated member; the
   dumper's state count must equal the rows' coverage.
 
+- **`occlusion-1.21.11.tsv`** (in `crates/dsl/data/`) — what every 1.21.11
+  blockstate **hides** from the eye, asked inside the pinned server jar (same jar
+  sha256 and mappings sha1 as the collision table, both recorded in the file's
+  header): `hides` is the game's own `BlockState.canOcclude()` together with
+  `Block.isShapeFullBlock(BlockState.getOcclusionShape())` — the renderer culls
+  the face behind a block exactly then — and `solid_render` the cached
+  `BlockState.isSolidRender()`, which the dumper asserts agrees with `hides` on
+  every state. 29,671 states collapse onto the properties that move the answer:
+  1,299 rows; 2,558 states hide.
+  **Why it exists**: whether a player sees a thing is the sight question, and the
+  collision class answers a different one — a grille, a pane, a fence, a wall, a
+  stair, a slab, a door, a trapdoor, leaves and a campfire collide and are
+  looked through (`docs/reference/sight-through-blocks.md`). Consumed by
+  `delvewright_dsl::blockshape::hides`, which the nav model's `World::hides` —
+  the one sight predicate of the shut-way check (spec-0118) — reads.
+  **Cross-checked** against the vendored minecraft-data 3.112.0
+  `data/pc/1.21.9/blocks.json` (sha256
+  `d4d6a015dffbae016c126af73efa1e4604c81532a5e2e68ab9f88db2dadb3a78`): of the
+  1,166 block ids both hold, the 1,101 whose every state answers alike agree
+  with "light-opaque (`filterLight` 15) and not `transparent`" on every one, 0
+  disagree; the 65 whose answer moves with a property (the slabs, the pistons,
+  snow) are not compared by id.
+  **Reproduce it**: `python3 tools/maintenance/dump-block-light.py [--check]
+  [--work DIR]` (JDK ≥ 21 on `PATH`, network for the mappings), which writes the
+  emission fixture and this table from one booted jar;
+  `tools/maintenance/blocklight/OcclusionDump.java` names no obfuscated member;
+  the collapse is `dump-collision-tops.py`'s own, imported; the dumper's state
+  and hiding counts must equal the rows' coverage. Two runs of one jar give the
+  same bytes.
+
 - **`redstone-1.21.11.tsv`** (in `crates/dsl/data/`) — three redstone facts of
   every 1.21.11 block, one row per block id (1,166 rows over 29,671 states; same
   jar sha256 and mappings sha1 as the collision table, both recorded in the
@@ -662,6 +692,7 @@ What it establishes, all verified against 1.21.11 client bytecode rather than as
 | `block-classification-1.21.11.json` | `58f80ca8bee1ed84e4cc64c3f4fda9d26cfba5f993c015489f3352c824a0e13d` |
 | `collision-tops-1.21.11.tsv` | `f4ea1e01f4463272ef527bafcbb36dbe4d8669e58fabfda5ec54c307469196bc` |
 | `faces-1.21.11.tsv` | `ba718f855a73609ebd15f9ede83b43fec9f2bc1db2f53de0ba10ad8289ce8ad4` |
+| `occlusion-1.21.11.tsv` | `a867d92c5144be884c17c4627735e691fb395b6ab5f0c302cd99e188447c3cc7` |
 | `redstone-1.21.11.tsv` | `8a2ca8673d01d420125e1bb0b288533d72d5847d0f69a7f51286593f6bc6d496` |
 | `support-1.21.11.tsv` | `c70c0fab67a9c236b7df85f7107a667f4c56f9142f3c1300f7ead807ca45cd4b` |
 | `support-bases-1.21.11.tsv` | `c6769b88424488fe1b82888989f4d291890efe786381571eec406afc576a53d4` |

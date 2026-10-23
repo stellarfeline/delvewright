@@ -1720,6 +1720,7 @@ mod tests {
             climb: BTreeMap::new(),
             unheld_climb: BTreeMap::new(),
             footprints: Default::default(),
+            hiding: Default::default(),
         }
     }
 
