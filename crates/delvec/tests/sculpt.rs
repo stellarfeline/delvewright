@@ -496,7 +496,7 @@ fn the_entry_is_in_the_walk_from_grade() {
     let s = sculpt::sculpt(&form, 0, None).unwrap();
     let standable = delvec::schem::nav::standable_cells(&s.model);
     let grade = delvec::schem::nav::ground_entry(&s.model);
-    let walked = delvec::schem::nav::reachable_from(&s.model, &standable, &grade);
+    let walked = delvec::grammar::nav::body_world(&s.model).floor_reached(&standable, &grade);
     let entry = form
         .anchors
         .values()
