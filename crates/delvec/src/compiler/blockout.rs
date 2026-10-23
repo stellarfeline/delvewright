@@ -2012,9 +2012,13 @@ pub fn check(
     // as the plan sealed it. The base assembled model deliberately holds gate
     // regions open (`crate::compiler::assembled`), so a reachability proof taken over it
     // would walk through a door nothing in the campaign ever unlocks.
+    //
+    // It carries the BODY's premises (`Premises::with_body_of`): the declared
+    // jumps and the fall the kit survives are facts about the player, not the
+    // world, and `DW0837` asks where that player can be.
     let sealed = crate::compiler::nav::World::from_occupancy(
         crate::compiler::assembled::occupancy_over(&seal_unopened(c, b, blocks), &BTreeSet::new()),
-        crate::compiler::nav::Premises::geometry_only(),
+        crate::compiler::nav::Premises::geometry_only().with_body_of(plan),
     );
 
     seams_built(b, &open, &mut binding, &mut findings);
@@ -2697,23 +2701,18 @@ fn owned_by_other(boxes: &[PlacedBox], me: &PlacedBox, cell: [i64; 3]) -> bool {
 /// `DW0837`: every place the graph declares has a floor a body can reach.
 ///
 /// The graph's `DW0816` proved this over topology, before any coordinate
-/// existed. This proves the derivation preserved it in blocks — over the
-/// compiler's own step rule, from the cell the campaign really spawns a body in,
-/// through openings really cut, with every way the campaign never opens really
-/// shut.
+/// existed. This proves the derivation preserved it in blocks — over the reach
+/// graph ([`reached_from`]), from the cell the campaign really spawns a body
+/// in, through openings really cut, with every way the campaign never opens
+/// really shut.
 ///
-/// # The declared fall, and why it is seeded rather than walked
-///
-/// The step rule is a WALK: cardinal, one cell of rise or fall, gated on the
-/// physical rise between two standing surfaces. It models no free fall, and
-/// deliberately — a router that could fall would prove routes a body cannot
-/// come back from. A `drop` seam is exactly such a fall, and it is *designed*:
-/// the plan allocated it, `DW0831` held its depth under the survivable fall, and
-/// `DW0836` has just proved the hole is where the plan cut it. So the closure
-/// below seeds the far side of a drop whose near side is already reached, and
-/// iterates. That is the graph's own declaration carried into the bytes, the
-/// same way the gating closure is — never a widening of the step rule, which
-/// stays exactly what every other proof in this compiler is taken under.
+/// The reach graph is the body: the walk, every fall it survives, every jump of
+/// the launch set and every declared jump (spec-0113 §4, §6). A `drop` seam is
+/// one of its falls and a parkour course one of its runs of jumps, so neither is
+/// seeded here. A declared **carry** (spec-0083 §7) is not a body move — the
+/// link that realises it is the route proof's (`DW0932`) — so its far side is
+/// seeded once its near side is stood in and its gating granted, and the
+/// closure iterates.
 fn nodes_reached(
     c: &Campaign,
     b: &Blockout,
@@ -2744,41 +2743,10 @@ fn nodes_reached(
     loop {
         let before = reached.len();
         let seeded = seeds.len();
-        reached.extend(world.walk_region(&seeds));
-        // Every declared fall whose near side is now stood in hands the far side
-        // a starting cell.
-        for s in &b.seams {
-            if s.class != "drop" {
-                continue;
-            }
-            let Some(edge) = graph.edges.iter().find(|e| e.id() == &s.edge) else {
-                continue;
-            };
-            let falls = match edge {
-                delvewright_dsl::layout::Edge::Drop { falls, .. } => *falls,
-                _ => continue,
-            };
-            let (from, to) = match falls {
-                delvewright_dsl::layout::Direction::AToB => (&s.a, &s.b),
-                delvewright_dsl::layout::Direction::BToA => (&s.b, &s.a),
-            };
-            let (Some(from), Some(to)) = (
-                by_node.get(from.0.as_str()).copied(),
-                by_node.get(to.0.as_str()).copied(),
-            ) else {
-                continue;
-            };
-            if !stands_in(from, &b.boxes, world, &reached) {
-                continue;
-            }
-            let landing = seat(to);
-            if !reached.contains(&landing) && !seeds.contains(&landing) {
-                seeds.push(landing);
-            }
-        }
+        reached.extend(reached_from(world, &seeds));
         // Every declared carry (spec-0083 §7) whose near side is stood in, and
         // whose gating the graph's own closure grants, hands the far side a
-        // starting cell — the same seeding a declared fall gets. A carry has
+        // starting cell. A carry has
         // no geometry for this battery to judge: the link that realises it is
         // the route proof's (`DW0932`), and that the graph and the links agree
         // is `DW0934`'s.
@@ -2813,7 +2781,7 @@ fn nodes_reached(
             }
         }
         if reached.len() == before && seeds.len() == seeded {
-            break; // fixpoint: no walk, no declared fall and no carry added anything.
+            break; // fixpoint: no body move and no carry added anything.
         }
     }
 
@@ -2847,8 +2815,9 @@ fn nodes_reached(
                     format!(
                         "`{node}` is declared `reached: false` — scenery, built to be seen and \
                          never entered — and a body reaches {witness} inside it in the built \
-                         world, from the campaign's entry over the step rule. Close the way in \
-                         (the place's own walls, or the edge of whatever a body walks from), \
+                         world, from the campaign's entry by a walk, fall, climb or jump. Close the \
+                         way in (the place's own walls, or the edge of whatever a body walks, \
+                         falls or jumps from), \
                          or take `reached: false` off and make it a place a body visits.",
                         node = x.node,
                     ),
@@ -2873,7 +2842,8 @@ fn nodes_reached(
                 format!(
                     "no body can reach `{node}` in the built world. The place offers {footing} \
                  standable cell(s) inside x {x0}..{x1} y {y0}..{y1} z {z0}..{z1}, and none of \
-                 them is reachable from the campaign's entry over the step rule, with every way \
+                 them is reachable from the campaign's entry by a walk, fall, climb or jump, a \
+                 declared jump included, with every way \
                  the campaign's own gating never opens shut. The layout graph proved this place \
                  reachable over topology before any coordinate existed, so what has failed is the \
                  embedding or the massing, not the design: either a seam onto it was cut \
@@ -2896,6 +2866,17 @@ fn nodes_reached(
             ),
         );
     }
+}
+
+/// **Every cell a body stands in from `seeds`**, as `DW0837` counts them: the
+/// standing states of the reach graph ([`crate::compiler::nav::World::body_region`]),
+/// and nothing of this battery's own — the agreement test asks it and the
+/// graph the same cases.
+pub(crate) fn reached_from(
+    world: &crate::compiler::nav::World,
+    seeds: &[[i32; 3]],
+) -> BTreeSet<[i32; 3]> {
+    world.body_region(seeds)
 }
 
 /// **Where a body stands in this place, as the BUILT world has it.**

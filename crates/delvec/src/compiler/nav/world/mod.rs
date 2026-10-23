@@ -635,9 +635,23 @@ impl Premises {
                 .iter()
                 .filter_map(|s| Some((s.objective()?.to_string(), s.pos()?)))
                 .collect(),
-            unbounded_fall: plan.movement.unbounded_fall(),
-            declared_jumps: plan.jumps.iter().map(|j| (j.from, j.to)).collect(),
+            unbounded_fall: false,
+            declared_jumps: Vec::new(),
         }
+        .with_body_of(plan)
+    }
+
+    /// These premises with **the body's own** taken from `plan`: its declared
+    /// jumps (spec-0113 §6) and whether its kit makes every fall survivable
+    /// (§4.2). They are facts about the player, not about the world it is
+    /// in, so a world that declines the campaign's premises
+    /// ([`Premises::geometry_only`]) still carries them when the question
+    /// asked of it is where a body can be.
+    #[must_use]
+    pub fn with_body_of(mut self, plan: &Plan) -> Self {
+        self.unbounded_fall = plan.movement.unbounded_fall();
+        self.declared_jumps = plan.jumps.iter().map(|j| (j.from, j.to)).collect();
+        self
     }
 
     /// A world that is **geometry alone**: no ambient beyond [`Ambient::Void`],

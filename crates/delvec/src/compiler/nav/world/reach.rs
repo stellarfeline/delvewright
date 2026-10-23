@@ -1908,6 +1908,18 @@ impl World {
             }
             h.update(self.ambient.name().as_bytes());
             h.update([u8::from(self.unbounded_fall)]);
+            // The declared jumps are moves of the graph's cell relation: two
+            // worlds that differ only in them are two graphs, and sharing one
+            // memo answered a world without a jump with the closure of the
+            // world that had it. A world with none hashes as it did before.
+            if !self.declared_jumps.is_empty() {
+                h.update(b"declared-jumps");
+                for (from, to) in &self.declared_jumps {
+                    for x in from.iter().chain(to) {
+                        h.update(x.to_le_bytes());
+                    }
+                }
+            }
             h.finalize().into()
         })
     }
@@ -1923,8 +1935,14 @@ impl World {
             return Arc::clone(g);
         }
         let mut dense = Dense::of(self);
-        let premise_cells: BTreeSet<[i32; 3]> =
-            self.lethal.iter().chain(self.furniture.iter()).collect();
+        // A declared jump's launch cell is a premise cell too: a node whose
+        // jumps differ from the lineage's is not the lineage's node.
+        let premise_cells: BTreeSet<[i32; 3]> = self
+            .lethal
+            .iter()
+            .chain(self.furniture.iter())
+            .chain(self.declared_jumps.iter().map(|(from, _)| *from))
+            .collect();
         // The lineage: the first graph over a world with this window, ambient
         // and launch set.
         static SEEDS: OnceLock<Mutex<HashMap<String, Arc<GraphMemo>>>> = OnceLock::new();
@@ -3466,3 +3484,6 @@ mod persist;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod agreement;

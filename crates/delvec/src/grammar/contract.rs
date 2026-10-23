@@ -2283,85 +2283,57 @@ impl Confined {
                     .copied(),
             );
         }
-        let targets = &targets;
-        let open_bars = open;
-        // **The climb**: where the contract declares one, the body's own
-        // moves over this state's blocks, and the cells of a climb volume a
-        // body holds in. Those are passed through, never owed: a target is a
-        // cell a body stands in.
-        let climb = (!self.climbs.is_empty()).then(|| {
-            let world = body_world(model);
-            let held: BTreeSet<[i32; 3]> = self
-                .climbs
-                .iter()
-                .flat_map(|&e| self.elements[e].cells.iter().copied())
-                .filter(|c| world.is_climb_cell(*c))
-                .collect();
-            (world, held)
-        });
+        // **The body's own moves, from the reach graph** (spec-0113 §4): every
+        // edge [`crate::compiler::nav::World::body_edges`] flies out of a cell —
+        // the walk, the climb, every fall and every jump of the launch set —
+        // over this state's blocks. The contract adds only its confinement: a
+        // move that crosses from one element to another must be a relation a
+        // declared edge licenses, and a move that drops more than one course
+        // across elements must be a `drop`'s. A private step rule here would be a
+        // second answer to "can a body get there", and it was one: it stepped a
+        // full block up under any ceiling and crossed no gap a jump clears.
+        let world = body_world(model);
+        // The cells of a climb volume a body holds in: passed through, never
+        // owed — a target is a cell a body stands in.
+        let held: BTreeSet<[i32; 3]> = self
+            .climbs
+            .iter()
+            .flat_map(|&e| self.elements[e].cells.iter().copied())
+            .filter(|c| world.is_climb_cell(*c))
+            .collect();
         let mut seen: BTreeSet<[i32; 3]> = start
             .iter()
             .filter(|c| targets.contains(*c))
             .copied()
             .collect();
         let mut queue: VecDeque<[i32; 3]> = seen.iter().copied().collect();
-        while let Some([x, y, z]) = queue.pop_front() {
-            if let Some((world, held)) = &climb {
-                for next in world.neighbors([x, y, z]) {
-                    if (targets.contains(&next) || held.contains(&next))
-                        && !seen.contains(&next)
-                        && self.hop(open_bars, [x, y, z], next, false)
-                    {
-                        seen.insert(next);
-                        queue.push_back(next);
-                    }
-                }
-                // A body holding on in mid-air walks nowhere and falls only
-                // by letting go, which the climb's moves already say.
-                if held.contains(&[x, y, z]) && !free.contains(&[x, y, z]) {
+        while let Some(cur) = queue.pop_front() {
+            for edge in world.body_edges(cur) {
+                let next = edge.to;
+                if seen.contains(&next) || !(targets.contains(&next) || held.contains(&next)) {
                     continue;
                 }
-            }
-            for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-                for dy in [0, 1, -1] {
-                    let next = [x + dx, y + dy, z + dz];
-                    if targets.contains(&next)
-                        && !seen.contains(&next)
-                        && self.hop(open_bars, [x, y, z], next, false)
-                    {
-                        seen.insert(next);
-                        queue.push_back(next);
-                    }
-                }
-                // A drop edge is walked off, not stepped down: land on the first
-                // floor below, however far that is.
-                let mut fy = y;
-                loop {
-                    fy -= 1;
-                    if y - fy > 64 {
-                        break;
-                    }
-                    let below = [x + dx, fy, z + dz];
-                    match model.get(below) {
-                        None => break,
-                        Some(_) if nav::solid(model, below) => {
-                            let landing = [x + dx, fy + 1, z + dz];
-                            if targets.contains(&landing)
-                                && !seen.contains(&landing)
-                                && self.hop(open_bars, [x, y, z], landing, true)
-                            {
-                                seen.insert(landing);
-                                queue.push_back(landing);
-                            }
-                            break;
-                        }
-                        _ => continue,
-                    }
+                if self.hop(open, cur, next, cur[1] - next[1] > 1) {
+                    seen.insert(next);
+                    queue.push_back(next);
                 }
             }
         }
-        (targets.clone(), seen)
+        (targets, seen)
     }
+}
+
+/// The cells `contract-reachability` counts and the cells it reaches, with
+/// every way shut: the gate's own walk, for the agreement test that asks it
+/// and the reach graph the same cases (`compiler::nav::world::reach`).
+#[cfg(test)]
+pub(crate) fn reached_shut(
+    model: &VoxelModel,
+    contract: &SpatialContract,
+) -> (BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>) {
+    let ix = Index::new(model, contract);
+    let start = ix.standable_in(&ix.contract.entry);
+    build_confined(&ix).reach(model, &start, &BTreeSet::new())
 }
 
 fn reachability(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> Gate {
