@@ -64,6 +64,9 @@ Two library modules exist for the tool and are public for it:
   a second rule: `reachable_with_fall` remains
   deliberately more permissive than the plain walk: it adds a one-way fall edge,
   which is why a forward-arrival claim may use it and a no-way-back claim may not.
+  No gate of this module judges with `connected` or `reachable_with_fall`:
+  `traversable`, `reachable-floor` and `contract-edge-proof` ask the reach graph
+  over the piece's own blocks (§4c, §4d, §2d).
 - [`gates`] — `judge(&Expansion, Options) -> Report`, and the distinction the
   module is built around: a **gate** has a verdict and a binding count, a
   **measurement** is a number with no threshold, and the two are never mixed.
@@ -1052,7 +1055,7 @@ contract; there is no flag.
 | `contract-well-formed` | entry carries an exterior traversal edge; no two spaces overlap; each space is one floor (standable span ≤ 2 levels, out-of-walk cells excluded); each out-of-walk region nests wholly in one space or none; each opening lies on the boundary its endpoints share; each transit volume is disjoint from every space and touches both ends; `rise` present, absent and signed per class | spaces + regions + edges |
 | `contract-coverage` | every standable cell lies in a declared space, an out-of-walk region, or a traversal edge's transit volume. A `structure_void` cell is not the piece's (spec-0098 §2 — a neighbour's, the ring's fixed ground, nobody's) and is not floor the contract owes | standable cells |
 | `contract-closure` | **the author declares the enclosed spaces, and this gate confirms exactly those** (spec-0098 §14): every boundary cell of a space declared `enclosed` (and the side faces of one declared `open_top`) is non-passable, except a declared opening, an abutting space, or an abutting out-of-walk region. A space declared `open` under the piece's own blocks is a covered space — a pavilion, a covered market — taken as declared, its covered cells stated in the enumeration. A passable boundary cell that is a `structure_void` is the whole's to judge over the assembled world (`DW0836`, `DW0838`) and is counted in the enumeration rather than refused | boundary cells examined |
-| `contract-edge-proof` | per class: `walk` connects both ways; `stair` connects through its own treads; `climb` connects both ways through the cells of its own volume a body holds on in, over the body's own walk and climb moves — the compiler's nav model built from the piece's blocks (spec-0099), so a climbable counts only where its hold is kept; `drop` falls forward and does not walk back. On a contingent edge — a declared `way`, or a `barred` edge normalised into one — the class's proof must **fail on the bytes as shipped** (a way that opens nothing is a beat that is not real) and **hold on a copy with its single delta applied** (laid: the region filled with its block; cleared: the region voided). In every class the declared `rise` equals `min_y(b) − min_y(a)` over the resolved boxes | interior edges |
+| `contract-edge-proof` | per class, every connection by the reach graph's moves (the walk, the climb, every fall and every jump of the launch set) over the compiler's nav model built from the piece's blocks (`contract::body_reached`, `World::body_flood` confined to the edge's cells): `walk` connects both ways; `stair` connects through its own treads; `climb` connects both ways through the cells of its own volume a body holds on in (spec-0099), so a climbable counts only where its hold is kept; `drop` gets forward and a body cannot get back by any move. On a contingent edge — a declared `way`, or a `barred` edge normalised into one — the class's proof must **fail on the bytes as shipped** (a way that opens nothing is a beat that is not real) and **hold on a copy with its single delta applied** (laid: the region filled with its block; cleared: the region voided). In every class the declared `rise` equals `min_y(b) − min_y(a)` over the resolved boxes | interior edges |
 | `contract-no-body` | every standable cell of every out-of-walk region earns a **computed** kind, strongest first — `sealed` (the cell's whole passable component lies inside the declared out-of-walk cells and touches no cell of the model's outer layer, so what closes it is this piece's blocks and never the edge of the world), `posted` (within Chebyshev 2 of an anchor declared inside the cell's own region), `facade` (the air outside the piece reaches the cell, and the cell lies inside no declared space). A cell earning none reds its region, naming the cells and the clause each demand refused them with; a region holding no standable cell is red too. The enumeration reports the per-region breakdown by cell count | regions |
 | `contract-reachability` | every standable cell of every space, minus nested out-of-walk cells, plus every standable cell of a transit volume — standable by the voxel rule and a standing state of the reach graph, so a cell over a sieve (bars laid flat) that holds no body is not owed — is reached from the entry space by the body's own moves — every edge the reach graph flies out of a cell over the piece's blocks (`World::body_edges`: the walk, every fall it survives, every climb, every jump of the launch set) — **confined to declared spaces and crossing only through declared edges**: a move between two elements needs a declared edge's relation, a fall of more than one course between two elements a `drop`'s (forward only); ways shut; every element's climbable cells (a `climb` volume's, or a ladder inside a space) are held in without being owed. A piece declares no jump: a gap a jump of the launch set clears is crossed, and a step a body cannot jump (a full block up under a ceiling over its two cells) is not. The walk is seeded from the **mouth** of every way in — each traversal edge between the entry space and `exterior`, at its `via` (its bar when it declares only that, otherwise the entry space's cells on the model's outer layer), with the entry space's cells within one cell of it, where a body that comes through it first stands; a mouth cell a body neither stands nor holds in hands on where a body let go there comes to rest (`World::released_at`: a shaft a body drops through seeds the floor under it) — so a part of the entry space no way in reaches is red. An entry space that declares no way in is seeded from all its standable cells, and the detail says so (`contract-well-formed` refuses that shape on a seated, reached piece). The moves are one confined walk, `World::body_flood`. The walk then re-runs with the ways opened **cumulatively by name**, and what is proved is the **union** over those states: a cell is red only when no opening state reaches it. Each state's target set is recomputed over its own blocks, because a laid way's whole point is that the cells a body stands on did not exist before it was laid. Every space reached only under an opening is named with what opens it — *reached only once `<way>` is laid* | target cells |
 | `contract-anchors` | every declared anchor lands in a contract element, and the element is written into the metadata as the anchor's `resolves_to` | anchors |
@@ -1491,7 +1494,10 @@ engine's copy behind is caught.
 Three gates run only when the author says the piece makes their claim, because
 each is a claim about a *kind* of piece rather than about every piece.
 
-- **`traversable`** — a walk joins every pair of the piece's ways in and out.
+- **`traversable`** — a body gets between every pair of the piece's ways in
+  and out, by the reach graph's moves over the piece's own blocks (the walk,
+  the climb, every fall and every jump of the launch set; outside the piece is
+  air with nothing to stand on).
   Where the piece declares a spatial contract those are its **declared** ways:
   its `exterior` edges, read as the face contract (§2d), on any of the six
   sides, and the binding count is doors. Where it declares none there is nothing
@@ -1501,8 +1507,8 @@ each is a claim about a *kind* of piece rather than about every piece.
   a door — declaring `exterior` edges is what turns the count into ways in, and
   the standable-cell reading is the one that reports 47 approaches where three
   are doors. Either way it is one walk over one set of ways in and out.
-  `allow_falls` adds a one-way fall edge, for a piece entered by stepping off a
-  ledge. A piece with fewer than two ways out has nothing to walk *through* and
+  Without `allow_falls` a pair owes a route both ways; `allow_falls` lets one
+  way do, for a piece entered by stepping off a ledge. A piece with fewer than two ways out has nothing to walk *through* and
   the gate says so rather than passing, naming both repairs: open or declare the
   second one, or stop claiming the piece is a route. A room with one door would
   fail this correctly and uselessly, which is why it is opt-in.
@@ -1522,8 +1528,8 @@ each is a claim about a *kind* of piece rather than about every piece.
   mirror plane really asserts. An odd extent leaves the centre plane paired with
   itself and it is not counted; a one-cell axis therefore binds to nothing, which
   is reported as a finding rather than folded into a pass.
-- **`reachable-floor`** — every standable cell with something solid overhead can
-  be walked to from the grade entrance. The reachability measurement behind it
+- **`reachable-floor`** — every standable cell with something solid overhead is
+  reached from the grade entrance, by the reach graph's moves. The reachability measurement behind it
   runs on every expansion either way (§4d); this flag is only what turns its
   sheltered half into a verdict, for a piece that claims a body can get
   everywhere indoors. It is opt-in for the same reason `traversable` is and more
@@ -1562,8 +1568,7 @@ delvec grammar expand --program idiom-mirror --region 15x11x2 --seed 1 \
 
 ## 4d. Reachability — how much of the floor a body can get to
 
-`traversable` proves one thing: a walk joins the piece's ways in and out to each
-other. They are at ground level, so a piece passes it with every storey above the
+`traversable` proves one thing: a body gets between the piece's ways in and out. They are at ground level, so a piece passes it with every storey above the
 floor stranded. The Notre-Dame zone of `docs/trials/trial-0001-notre-dame.md`
 passes it at 31 × 64 × 93 with **2267 of 4982** standable cells reachable and
 **zero** reachable above the ground band: five levels of aisle, gallery, belfry
@@ -1571,21 +1576,21 @@ and tower deck that no body can walk to.
 
 So every expansion also carries a **reachability measurement**, printed by
 `delvec grammar expand` and written into `<id>.report.json` whether or not any
-optional gate was asked for. It walks `nav::reachable_from` over the standable
-cells, seeded from `nav::ground_entry`, and groups what the walk did not reach
-into pockets with `nav::components`. The two are different questions and the
-report asks each of the right one: **what a body reaches is walked**, because the
-step relation is directed — a body rises a full block only where it has room over
-its head, and comes back down asking nothing — while a **pocket is a lump of
-floor**, which is a grouping and needs the undirected relation to be a partition
-at all. Taking the pocket that happens to contain an entrance was the same answer
-only while the relation was symmetric. It reports:
+optional gate was asked for. What a body reaches is the reach graph's closure over
+the piece's own blocks (`gates::floor_walked`: `World::body_flood` over
+`contract::body_world`, seeded from `nav::ground_entry`), intersected with the
+standable cells; what it did not reach is grouped into pockets with
+`nav::components`. The two are different questions and the report asks each of
+the right one: **what a body reaches is the graph's**, because reach is directed
+— a body falls where it cannot climb back, and rises a full block only where it
+has room over its head — while a **pocket is a lump of floor**, which is a
+grouping and needs the undirected relation to be a partition at all. It reports:
 
 | Number | Meaning |
 |---|---|
 | `standable` | cells examined — the measurement's binding count. Zero is a finding |
 | `entry_cells` | standable cells on a **side face at grade**, where a body walks in. Zero is a finding, never a reachability of zero |
-| `reachable` / `reachable_share` | what the walk covers |
+| `reachable` / `reachable_share` | what the graph reaches |
 | `sheltered` | standable cells with something solid overhead |
 | `unreachable_sheltered` | floor under a roof with no route to it — **a room with no way in** |
 | `unreachable_open` | unreachable floor open to the sky |
@@ -1611,14 +1616,18 @@ it every time is the nag that costs the other finding its reader.
 
 **A one-way descent is stated in the spatial contract, and this gate cannot be
 told about it.** A contract `drop` edge (§2d) declares "a body gets down there
-but not back up", and `contract-edge-proof` proves it falls forward and does not
-walk back; `--allow-falls` adds a fall edge to `traversable` alone. Neither
-reaches `--reachable-floor`, so on a piece whose design *is* a one-way drop it is
-not a gate to satisfy but one to leave off: `drop-shaft` at 9×12×9 seed 1 fails it with 28 of 63 roofed cells
+but not back up", and `contract-edge-proof` proves it gets forward and cannot get
+back; `--allow-falls` lets `traversable` count a one-way route. Neither reaches
+`--reachable-floor`, which counts falls but is seeded from the grade entrance
+alone, so floor a body only leaves by a one-way move and never reaches from the
+grade is stranded.
+On a piece whose design *is* a one-way drop it is not a gate to satisfy but one
+to leave off: `drop-shaft` at 9×12×9 seed 1 fails it with 28 of 63 roofed cells
 unreached, and a red gate writes **no** `.nbt` (exit 4), so passing the flag does
 not ship a piece with a red — it ships nothing. What to do instead: expand
 without the flag and read the always-on reachability line, where the stranded
-lower level appears as an `unreachable_sheltered` pocket with its bounding box.
+floor (x 5..8, y 5, z 1..7) appears as an `unreachable_sheltered` pocket with its
+bounding box.
 That pocket is the design, and the engine cannot tell it from a room with no way
 in. The verdict is bounded by the instrument, and this is where it says so.
 
