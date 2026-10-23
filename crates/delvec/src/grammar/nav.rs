@@ -571,13 +571,17 @@ mod tests {
             );
             assert!(standable_cells(&m).is_empty(), "{barrier}");
         }
-        // And a closed door stays a door: unrecognised means full cube, which
-        // can only refuse a route, never invent one.
-        let door = BlockState::with(
-            "minecraft:oak_door",
-            [("half", "lower"), ("facing", "north"), ("open", "false")],
-        );
-        assert!(!passable(&basin(door), [1, 1, 1]));
+        // A closed iron door stays a door: only redstone opens it. A closed
+        // oak door is a door a hand opens, and the walk passes it (spec-0123
+        // §3.1).
+        let door = |id: &str| {
+            BlockState::with(
+                id,
+                [("half", "lower"), ("facing", "north"), ("open", "false")],
+            )
+        };
+        assert!(!passable(&basin(door("minecraft:iron_door")), [1, 1, 1]));
+        assert!(passable(&basin(door("minecraft:oak_door")), [1, 1, 1]));
     }
 
     /// The shape the campaign actually ships, and the one a synthetic room

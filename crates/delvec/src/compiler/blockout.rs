@@ -725,17 +725,62 @@ pub fn derive_with(
             slo[1]
         };
         let slo = [slo[0], wall_bottom, slo[2]];
-        for (a, c) in [
-            ([x0, slo[1], z0], [x0, wall_top, z1]),
-            ([x1, slo[1], z0], [x1, wall_top, z1]),
-            ([x0 + 1, slo[1], z0], [x1 - 1, wall_top, z0]),
-            ([x0 + 1, slo[1], z1], [x1 - 1, wall_top, z1]),
+        let fy = b.floor_course_y();
+        // An open side (spec-0123 §5.2) raises no wall above the floor course:
+        // its run stops at the floor course, and the cells over it are cleared
+        // to the top of the play space. A corner stands with the walled side
+        // beside it, and opens only where both its sides are open.
+        use delvewright_dsl::siteplan::Face;
+        let open = |f: Face| b.side_open(f);
+        let corner_open = |f: Face, g: Face| open(f) && open(g);
+        let mut open_runs: Vec<([i64; 3], [i64; 3])> = Vec::new();
+        for (face, a, c) in [
+            (Face::West, [x0, slo[1], z0], [x0, wall_top, z1]),
+            (Face::East, [x1, slo[1], z0], [x1, wall_top, z1]),
+            (Face::North, [x0 + 1, slo[1], z0], [x1 - 1, wall_top, z0]),
+            (Face::South, [x0 + 1, slo[1], z1], [x1 - 1, wall_top, z1]),
         ] {
-            mass.write_within(down(a), [c[0], c[1], c[2]], palette::WALL, mask, sink);
+            if !open(face) {
+                mass.write_within(down(a), [c[0], c[1], c[2]], palette::WALL, mask, sink);
+                continue;
+            }
+            // The run below the floor course is the place's foundation, as on
+            // a walled side; above it, nothing.
+            if a[1] < fy {
+                mass.write_within(down(a), [c[0], fy - 1, c[2]], palette::WALL, mask, sink);
+            }
+            let (mut lo, mut hi) = ([a[0], fy + 1, a[2]], [c[0], c[1], c[2]]);
+            // The two corners of an x-run belong to it; each stays a wall
+            // unless the side across the corner is open too.
+            if matches!(face, Face::West | Face::East) {
+                if !corner_open(face, Face::North) {
+                    lo[2] += 1;
+                }
+                if !corner_open(face, Face::South) {
+                    hi[2] -= 1;
+                }
+                for (corner, other) in [(z0, Face::North), (z1, Face::South)] {
+                    if !corner_open(face, other) {
+                        mass.write_within(
+                            down([a[0], fy + 1, corner]),
+                            [a[0], c[1], corner],
+                            palette::WALL,
+                            mask,
+                            sink,
+                        );
+                    }
+                }
+            }
+            if lo[0] <= hi[0] && lo[2] <= hi[2] && lo[1] <= hi[1] {
+                open_runs.push((lo, hi));
+            }
+        }
+        for (lo, hi) in &open_runs {
+            mass.write_within(down(*lo), *hi, palette::AIR, mask, sink);
         }
         // Floor course: the accent, so the colour under a body's feet names the
-        // place it is standing in.
-        let fy = b.floor_course_y();
+        // place it is standing in. It runs across an open side's ring, so a
+        // body steps on and off level.
         mass.write_within(
             down([x0, fy, z0]),
             down([x1, fy, z1]),

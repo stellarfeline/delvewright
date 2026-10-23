@@ -1984,6 +1984,7 @@ fn the_ownership_rule_is_exhaustive_and_one_owner() {
             open: false,
             base: delvewright_dsl::siteplan::Base::Ground,
             roof: None,
+            sides: Default::default(),
         },
         delvewright_dsl::siteplan::PlacedBox {
             node: delvewright_dsl::NodeId("node/b".into()),
@@ -1993,6 +1994,7 @@ fn the_ownership_rule_is_exhaustive_and_one_owner() {
             open: false,
             base: delvewright_dsl::siteplan::Base::Ground,
             roof: None,
+            sides: Default::default(),
         },
     ];
     let site = delvewright_dsl::siteplan::Site::new(&pair, &[], &g);
@@ -2767,4 +2769,109 @@ fn the_mass_is_written_before_any_template() {
         mass.iter().all(|m| !build.contains(m.as_str())),
         "the world build writes none of the mass"
     );
+}
+
+/// **spec-0123 criterion 11: an open side raises no wall above the floor
+/// course.** The fixture's landing stands massed over the sloped terrain, which
+/// falls below its floor course all round its plot, so its ring's floor course
+/// is the stand-in's own and not the fixed ground; its north side faces the
+/// commons. Declared open, the ring run along that side — the corners stay
+/// with the walled sides beside them — holds nothing from the course over the
+/// floor course to the top of the play space, the floor course runs across it
+/// in the landing's accent, and every other cell the derivation writes is the
+/// cell it writes undeclared. Declaring all four sides `wall` derives the
+/// undeclared map byte for byte.
+#[test]
+fn an_open_side_raises_no_wall_above_the_floor_course() {
+    let undeclared = common::campaign_at(&variant("sides-none", |_| {}, Some(&slope)));
+    let landing_index = |v: &serde_json::Value| {
+        v["content"]["boxes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|b| b["node"] == "node/landing")
+            .unwrap()
+    };
+    let open = common::campaign_at(&variant(
+        "sides-north",
+        |v| {
+            let i = landing_index(v);
+            v["content"]["boxes"][i]["sides"] = serde_json::json!({"north": "open"});
+        },
+        Some(&slope),
+    ));
+    let walled = common::campaign_at(&variant(
+        "sides-walled",
+        |v| {
+            let i = landing_index(v);
+            v["content"]["boxes"][i]["sides"] = serde_json::json!({
+                "east": "wall", "west": "wall", "south": "wall", "north": "wall"
+            });
+        },
+        Some(&slope),
+    ));
+    let before = mass_map(&undeclared);
+    let after = mass_map(&open);
+    assert_eq!(
+        mass_map(&walled),
+        before,
+        "four walls are the undeclared box"
+    );
+
+    let plan = SitePlan::of(&open);
+    let i = plan
+        .site()
+        .index_of(&delvewright_dsl::NodeId("node/landing".into()))
+        .unwrap();
+    let b = &plan.boxes[i];
+    let [x0, x1, z0, _] = b.foot;
+    let (fy, top) = (b.floor_course_y(), b.space().1[1]);
+    let ring_z = z0 - 1;
+    let mut opened = std::collections::BTreeSet::new();
+    for x in x0..=x1 {
+        assert_eq!(
+            after.get(&[x, fy, ring_z]).map(String::as_str),
+            Some(blockout::palette::accent(i)),
+            "the floor course runs across the open side at x {x}"
+        );
+        for y in fy + 1..=top {
+            assert_eq!(
+                before.get(&[x, y, ring_z]).map(String::as_str),
+                Some(blockout::palette::WALL),
+                "undeclared, the north run stands a wall at {:?}",
+                [x, y, ring_z]
+            );
+            assert_eq!(
+                after.get(&[x, y, ring_z]),
+                None,
+                "open at {:?}",
+                [x, y, ring_z]
+            );
+            opened.insert([x, y, ring_z]);
+        }
+    }
+    // The corners stand with the walled east and west runs.
+    for x in [x0 - 1, x1 + 1] {
+        for y in fy + 1..=top {
+            assert_eq!(
+                after.get(&[x, y, ring_z]).map(String::as_str),
+                Some(blockout::palette::WALL),
+                "corner {:?}",
+                [x, y, ring_z]
+            );
+        }
+    }
+    // Nothing else moved: the other three runs, the lid, the floor, every
+    // neighbour and the whole.
+    let moved: Vec<[i64; 3]> = before
+        .keys()
+        .chain(after.keys())
+        .filter(|c| before.get(*c) != after.get(*c))
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    assert_eq!(moved.len(), opened.len(), "{moved:?}");
+    assert!(moved.iter().all(|c| opened.contains(c)), "{moved:?}");
+    assert!(!opened.is_empty());
 }

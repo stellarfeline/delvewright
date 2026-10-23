@@ -421,6 +421,9 @@ struct Index<'a> {
     all_no_body_cells: BTreeSet<[i32; 3]>,
     /// Standable cells of the model.
     standable: BTreeSet<[i32; 3]>,
+    /// The cells of every side the place declares open (spec-0123 §5.4),
+    /// handed by `delvec detail`: declared openings of the space behind them.
+    open_sides: BTreeSet<[i32; 3]>,
 }
 
 impl<'a> Index<'a> {
@@ -465,6 +468,7 @@ impl<'a> Index<'a> {
                         .is_some_and(|b| b.name == "minecraft:structure_void")
                 })
                 .collect(),
+            open_sides: BTreeSet::new(),
         }
     }
 
@@ -655,7 +659,31 @@ pub fn check_at(
     anchors: &BTreeMap<String, [i32; 3]>,
     place: Place,
 ) -> ContractReport {
+    check_handed(model, contract, anchors, place, &[])
+}
+
+/// [`check_at`] for a piece whose place declares open sides (spec-0123
+/// §5.4): `open_sides` are the handout's open-side cells, piece-local
+/// inclusive corners, and closure takes each as a declared opening of the
+/// space behind it. A face answering neither a seam nor an open side stays
+/// the discovered seam (`DW0844`); that is the assembly's to judge.
+pub fn check_handed(
+    model: &VoxelModel,
+    contract: &SpatialContract,
+    anchors: &BTreeMap<String, [i32; 3]>,
+    place: Place,
+    open_sides: &[([i32; 3], [i32; 3])],
+) -> ContractReport {
     let mut ix = Index::new(model, contract);
+    ix.open_sides = open_sides
+        .iter()
+        .flat_map(|(lo, hi)| {
+            let (lo, hi) = (*lo, *hi);
+            (lo[0]..=hi[0]).flat_map(move |x| {
+                (lo[1]..=hi[1]).flat_map(move |y| (lo[2]..=hi[2]).map(move |z| [x, y, z]))
+            })
+        })
+        .collect();
     ix.sealed = place == Place::Scenery;
     ix.unseated = place == Place::Unseated;
     let mut gates = Vec::new();
@@ -1211,6 +1239,9 @@ fn way_well_formed(
 fn uncovered_standable(ix: &Index) -> BTreeSet<[i32; 3]> {
     let mut covered: BTreeSet<[i32; 3]> = ix.all_space_cells.clone();
     covered.extend(ix.all_no_body_cells.iter().copied());
+    // A handed open side is the place's open ground (spec-0123 §5.4): the
+    // whole's proofs judge a body there over the assembled world.
+    covered.extend(ix.open_sides.iter().copied());
     for (i, edge) in ix.contract.edges.iter().enumerate() {
         if is_traversal(&edge.class) {
             covered.extend(ix.via_cells[i].iter().copied());
@@ -1320,6 +1351,10 @@ fn closure(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> Gat
             }
         }
         excused.extend(ix.all_no_body_cells.iter().copied());
+        // An open side the whole hands this place is an opening the plan
+        // declared (spec-0123 §5.4): its cells stand nothing a body cannot be
+        // in, and the space behind it is open across them.
+        excused.extend(ix.open_sides.iter().copied());
 
         let mut open: BTreeSet<[i32; 3]> = BTreeSet::new();
         let mut seen: BTreeSet<[i32; 3]> = BTreeSet::new();

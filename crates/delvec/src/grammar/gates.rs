@@ -731,7 +731,18 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
             .iter()
             .map(|(name, a)| (name.clone(), a.pos))
             .collect();
-        let checked = contract::check_sealed(model, resolved, &anchor_positions, expansion.sealed);
+        let place = if expansion.sealed {
+            contract::Place::Scenery
+        } else {
+            contract::Place::Reached
+        };
+        let checked = contract::check_handed(
+            model,
+            resolved,
+            &anchor_positions,
+            place,
+            &expansion.open_sides,
+        );
         gates.extend(checked.gates);
         findings.extend(checked.findings);
         enumeration = checked.enumeration;
@@ -1948,6 +1959,7 @@ mod tests {
             stats: Default::default(),
             oriented: Default::default(),
             sealed: false,
+            open_sides: Vec::new(),
         }
     }
 
@@ -2110,6 +2122,7 @@ mod tests {
             stats: Default::default(),
             oriented: Default::default(),
             sealed: false,
+            open_sides: Vec::new(),
         };
         assert!(
             nav::standable_cells(&expansion.model).contains(&[5, 1, 2]),
