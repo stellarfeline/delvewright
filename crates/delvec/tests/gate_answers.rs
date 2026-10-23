@@ -218,3 +218,22 @@ fn the_unlock_is_lit_only_from_its_far_side() {
     }
     assert!(boxes > 0, "the lit set is not empty: {poll}");
 }
+
+/// A door answers on every cell of its block: one answer per cell, side by
+/// side, is one body (each box fitted inside its own cell), not a contest.
+#[test]
+fn every_cell_of_the_door_can_answer() {
+    let mut c = fixture();
+    c.quests.content.triggers.push(trigger(
+        r#"{ "id": "trigger/door-barred-east", "at": "anchor/door-leaf-east", "on": { "on": "use" },
+             "audience": "presser", "serves": { "gate": "anchor/door" },
+             "effects": [ { "type": "narrate", "style": "actionbar", "text": "Barred." } ] }"#,
+    ));
+    let out = try_build(&c).expect("two cells of one door both answer");
+    let arm = function(&out, "seal_arm_door");
+    assert_eq!(
+        arm.matches("summon minecraft:interaction").count(),
+        2,
+        "one box per answering cell: {arm}"
+    );
+}

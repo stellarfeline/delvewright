@@ -329,7 +329,11 @@ impl Affordance {
 
     /// Whether this is a standard press body rather than a sized hitbox.
     fn is_standard(&self) -> bool {
-        self.size == AFFORDANCE_SIZE
+        // A press's box is fitted inside its own cell(s) expanded by one click
+        // margin (spec-0117 §3a, `DW1013`): two such boxes contest only on one
+        // cell, never across a shared face's centimetre. Only an assembly's
+        // declared hitbox is judged by the box it spans.
+        self.size == AFFORDANCE_SIZE || self.kind != "assembly hitbox"
     }
 }
 

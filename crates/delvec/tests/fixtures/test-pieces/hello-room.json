@@ -31,6 +31,14 @@
         6
       ]
     },
+    "anchor/door-leaf-east": {
+      "note": "the door's other lower cell of bars: a second cell its own answer can stand on",
+      "pos": [
+        5,
+        1,
+        6
+      ]
+    },
     "anchor/exit": {
       "pos": [
         5,
