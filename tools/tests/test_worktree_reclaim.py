@@ -120,7 +120,7 @@ class Fixture:
 
     def __init__(self, tmp_path):
         self.root = tmp_path
-        self.origin = tmp_path / "owner" / "repo.git"
+        self.origin = tmp_path / "owner" / "delvewright.git"
         self.origin.parent.mkdir(parents=True, exist_ok=True)
         subprocess.run(
             ["git", "init", "--bare", "-b", "main", str(self.origin)],
@@ -154,6 +154,13 @@ class Fixture:
 @pytest.fixture
 def fx(tmp_path):
     return Fixture(tmp_path)
+
+
+@pytest.fixture(autouse=True)
+def no_real_remote(monkeypatch):
+    """No test here may reach the real remote build machine: the class is switched off
+    unless a test names a fake helper."""
+    monkeypatch.setenv("DW_REMOTE_SSH", "")
 
 
 def sweep(fx, bindir, *extra):
@@ -1386,3 +1393,178 @@ def test_a_checked_out_harness_branch_is_not_listed(fx, tmp_path):
     fx.worktree("wt-agent", "worktree-agent-live")
     out = sweep(fx, fake_gh(tmp_path, []))
     assert "harness throwaway" not in out
+
+
+# ---------------------------------------------------------------------------
+# the remote build machine
+# ---------------------------------------------------------------------------
+
+
+def fake_remote(fx, *, reachable=True):
+    """A `remote-ssh.sh` whose "remote" is a directory of this test.
+
+    `--probe` answers per `reachable`; any other call runs its command string in
+    a local bash with `HOME` set to the fake machine's home, which is a real
+    clone holding real worktrees under `dw/wt/<repo>/<tag>` — so the removal
+    script under test is the real one, run against a real `git worktree`.
+    """
+    home = fx.root / "remote-home"
+    (home / "dw" / "wt" / "delvewright").mkdir(parents=True, exist_ok=True)
+    if not (home / "dw" / "delvewright").exists():
+        subprocess.run(
+            ["git", "clone", "-q", str(fx.origin), str(home / "dw" / "delvewright")],
+            capture_output=True,
+            check=True,
+        )
+    helper = fx.root / "remote-ssh.sh"
+    probe = "exit 0" if reachable else 'echo "remote-ssh: remote machine unreachable" >&2; exit 75'
+    helper.write_text(
+        "#!/usr/bin/env bash\n"
+        f'export HOME="{home}"\n'
+        f'if [ "${{1:-}}" = "--probe" ]; then {probe}; fi\n'
+        'exec bash -c "$1"\n',
+        encoding="utf-8",
+    )
+    helper.chmod(0o755)
+    return helper, home
+
+
+def remote_tree(home, tag, *, build=True):
+    path = home / "dw" / "wt" / "delvewright" / tag
+    git(home / "dw" / "delvewright", "worktree", "add", "-q", "--detach", str(path), "HEAD")
+    if build:
+        (path / "target" / "debug").mkdir(parents=True)
+        (path / "target" / "debug" / "blob").write_text("x" * 4096, encoding="utf-8")
+    return path
+
+
+def remote_sweep(fx, bindir, helper, *extra):
+    env = dict(os.environ)
+    env["PATH"] = f"{bindir}{os.pathsep}{env['PATH']}"
+    env["DW_REMOTE_SSH"] = str(helper)
+    p = subprocess.run(
+        ["python3", str(TOOL), "--repo", str(fx.repo), *extra],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=str(fx.root),
+    )
+    assert p.returncode == 0, p.stderr
+    return p.stdout
+
+
+def test_a_merged_round_loses_its_remote_tree_and_is_proved_gone(fx, tmp_path):
+    local = fx.worktree("wt-landed", "landed")
+    helper, home = fake_remote(fx)
+    remote = remote_tree(home, "landed")
+    bindir = fake_gh(tmp_path, MERGED)
+
+    out = remote_sweep(fx, bindir, helper)
+    assert "RECLAIM" in out and "~/dw/wt/delvewright/landed" in out
+    assert remote.exists() and local.exists(), "a dry run deletes nothing, here or there"
+
+    out = remote_sweep(fx, bindir, helper, "--apply")
+    assert not local.exists()
+    assert not remote.exists()
+    assert "proved gone by listing: 1 of 1" in out
+    assert str(remote) not in git(home / "dw" / "delvewright", "worktree", "list")
+
+
+def test_a_content_round_is_mapped_to_the_content_repository_name(fx, tmp_path):
+    helper, home = fake_remote(fx)
+    other = home / "dw" / "wt" / "delvewright-campaigns" / "landed"
+    other.mkdir(parents=True)
+    fx.worktree("wt-landed", "landed")
+    bindir = fake_gh(tmp_path, MERGED)
+    remote_sweep(fx, bindir, helper, "--apply")
+    assert other.exists(), "the tag landed in this repository's own namespace, not another's"
+
+
+def test_an_open_round_keeps_its_remote_tree(fx, tmp_path):
+    local = fx.worktree("wt-live", "live")
+    helper, home = fake_remote(fx)
+    remote = remote_tree(home, "live")
+    bindir = fake_gh(
+        tmp_path, [{"number": 5, "state": "OPEN", "headRefName": "live", "title": "t"}]
+    )
+
+    out = remote_sweep(fx, bindir, helper, "--apply")
+    assert local.exists() and remote.exists()
+    assert "0 reclaimable" in out
+    assert "orphan" in out and "0 orphan(s)" in out
+
+
+def test_a_dirty_local_tree_keeps_its_remote_tree(fx, tmp_path):
+    local = fx.worktree("wt-landed", "landed")
+    (local / "work.txt").write_text("unsaved\n", encoding="utf-8")
+    helper, home = fake_remote(fx)
+    remote = remote_tree(home, "landed")
+    remote_sweep(fx, fake_gh(tmp_path, MERGED), helper, "--apply")
+    assert local.exists() and remote.exists()
+
+
+def test_an_unreachable_remote_is_kept_with_its_reason_and_the_local_tree_still_goes(fx, tmp_path):
+    local = fx.worktree("wt-landed", "landed")
+    helper, home = fake_remote(fx, reachable=False)
+    remote = remote_tree(home, "landed")
+
+    out = remote_sweep(fx, fake_gh(tmp_path, MERGED), helper, "--apply")
+    assert remote.exists()
+    assert not local.exists(), "the local decision does not wait on the remote"
+    assert "KEEP    every remote tree" in out
+    assert "unreachable" in out
+    assert "never permission" in out
+
+
+def test_a_remote_that_is_not_configured_says_so(fx, tmp_path):
+    fx.worktree("wt-landed", "landed")
+    out = sweep(fx, fake_gh(tmp_path, MERGED))
+    assert "NOT CONFIGURED" in out
+
+
+def test_an_orphan_is_reported_and_never_deleted(fx, tmp_path):
+    fx.worktree("wt-landed", "landed")
+    helper, home = fake_remote(fx)
+    orphan = remote_tree(home, "nobody-owns-this")
+    stray = home / "dw" / "wt" / "lumenwright" / "elsewhere"
+    stray.mkdir(parents=True)
+
+    out = remote_sweep(fx, fake_gh(tmp_path, MERGED), helper, "--apply")
+    assert orphan.exists() and stray.exists()
+    assert "2 ORPHAN" in out
+    assert "~/dw/wt/delvewright/nobody-owns-this" in out
+    assert "~/dw/wt/lumenwright/elsewhere  (repository not swept this run)" in out
+
+
+def test_a_build_holding_the_cargo_lock_refuses_the_removal(fx, tmp_path):
+    local = fx.worktree("wt-landed", "landed")
+    helper, home = fake_remote(fx)
+    remote = remote_tree(home, "landed")
+    lock = remote / "target" / "debug" / ".cargo-lock"
+    lock.write_text("", encoding="utf-8")
+    holder = subprocess.Popen(
+        ["python3", "-c",
+         "import fcntl,sys,time;f=open(sys.argv[1]);fcntl.flock(f,fcntl.LOCK_EX);"
+         "print('held',flush=True);time.sleep(30)", str(lock)],
+        stdout=subprocess.PIPE, text=True,
+    )
+    try:
+        assert holder.stdout.readline().strip() == "held"
+        out = remote_sweep(fx, fake_gh(tmp_path, MERGED), helper, "--apply")
+    finally:
+        holder.kill()
+    assert remote.exists()
+    assert "BUSY" in out
+
+
+def test_after_merge_reclaims_the_remote_tree_of_that_round_only(fx, tmp_path):
+    fx.worktree("wt-landed", "landed")
+    fx.worktree("wt-other", "inflight")
+    helper, home = fake_remote(fx)
+    mine = remote_tree(home, "landed")
+    theirs = remote_tree(home, "other")
+    bindir = fake_gh(tmp_path, MERGED)
+    out = remote_sweep(fx, bindir, helper, "--after-merge", "landed", "--apply")
+    assert not mine.exists()
+    assert theirs.exists()
+    assert "proved gone by listing: 1 of 1" in out
