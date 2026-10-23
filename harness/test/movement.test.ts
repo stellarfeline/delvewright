@@ -9,6 +9,7 @@ import {
   type ControlBot,
   type LegMovements,
   type Neighbour,
+  isDoorByHand,
 } from "../src/movement.ts";
 
 // A fake bot that records the sneak control-state toggles it is asked to make.
@@ -151,4 +152,13 @@ test("the stuck report says so when nothing is near, and when nothing classified
   const line = describeStuckNeighbours(MUSTER_CROWD, undefined);
   assert.match(line, /7 entities within 12 blocks, unclassified/);
   assert.doesNotMatch(line, /Routed AROUND/);
+});
+
+// spec-0123 §3.1: a door a hand opens is every `*_door` but the iron one.
+test("isDoorByHand is every door but the iron one", () => {
+  assert.equal(isDoorByHand("oak_door"), true);
+  assert.equal(isDoorByHand("copper_door"), true);
+  assert.equal(isDoorByHand("iron_door"), false);
+  assert.equal(isDoorByHand("iron_trapdoor"), false);
+  assert.equal(isDoorByHand("oak_fence_gate"), false);
 });

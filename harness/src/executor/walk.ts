@@ -8,7 +8,12 @@ import type { ReachStep, Transport, Vec3Tuple } from "../critical-path.ts";
 import { insideCompletion, reachGoal } from "../critical-path.ts";
 import { BotDeathError } from "../death.ts";
 import { lethalStepCost, sameBox, spanStepCost } from "../death-loop.ts";
-import { allowNonCollidingEntities, configureLeg, describeStuckNeighbours } from "../movement.ts";
+import {
+  allowNonCollidingEntities,
+  configureLeg,
+  describeStuckNeighbours,
+  isDoorByHand,
+} from "../movement.ts";
 import {
   doorsCrossed,
   nextLegWaypoints,
@@ -805,6 +810,12 @@ export const methods = {
         // watching body in reach must face the bot. The judgement records,
         // never throws, so the walk's recovery never reads it as a stall.
         async (spec, glabel) => {
+          const door = legDoors.find(
+            (d) => d[0] === Math.floor(spec.x) && d[1] === Math.floor(spec.y) && d[2] === Math.floor(spec.z),
+          );
+          if (door !== undefined && !spec.climb) {
+            await this.openDoorBefore(door, spec, glabel, sneak);
+          }
           await (spec.climb
             ? this.raceDeath(() => this.climbHop(spec, glabel))
             : this.gotoStaged(spec, glabel, sneak));
@@ -852,6 +863,81 @@ export const methods = {
     } finally {
       this.walkSettled = outerSettled;
       restoreControls();
+    }
+  },
+
+  /**
+   * spec-0123 §3.1: open the door a hand opens at `cell` before the hop that
+   * walks through it, as a player does — walk within reach, right-click the
+   * door if it stands closed, and wait for the server to say it is open. A
+   * fence gate is the pathfinder's own to open, and a block that is no door a
+   * hand opens is left alone. Asserts nothing about the door; the crossing is
+   * asserted after the leg.
+   */
+  async openDoorBefore(
+    this: MineflayerExecutor,
+    cell: Vec3Tuple,
+    spec: GoalSpec,
+    label: string,
+    sneak: boolean,
+  ): Promise<void> {
+    const bot = this.requireBot();
+    const block = () => {
+      const p = bot.entity.position;
+      return bot.blockAt(p.offset(cell[0] - p.x, cell[1] - p.y, cell[2] - p.z), false);
+    };
+    const props = (b: { getProperties(): unknown }) => b.getProperties() as Record<string, unknown>;
+    const door = block();
+    if (!door || !isDoorByHand(door.name)) return;
+    // Within reach, on the side the route comes from.
+    await this.gotoStaged({ ...spec, range: 2 }, `${label} (to the door)`, sneak);
+    const shut = block();
+    if (!shut) return;
+    if (props(shut)["open"] !== true) {
+      await bot.lookAt(shut.position.offset(0.5, 0.5, 0.5), true);
+      await bot.activateBlock(shut);
+      const deadline = Date.now() + 2000;
+      while (Date.now() < deadline) {
+        const now = block();
+        if (now && props(now)["open"] === true) break;
+        await delay(50);
+      }
+      process.stderr.write(`[door] ${label}: opened the ${shut.name} at [${cell.join(", ")}]\n`);
+    }
+    // Through it, on foot: mineflayer-pathfinder 2.4.5 has no door in its
+    // vocabulary and plans no step into a door's cell, so the walk takes the
+    // step itself — across the door's cell along the axis the door spans, from
+    // the side the bot stands on to the cell beyond — and the pathfinder goes
+    // on from there.
+    const facing = String(props(shut)["facing"] ?? "north");
+    const axis = facing === "east" || facing === "west" ? 0 : 2;
+    const here = bot.entity.position;
+    const side = (axis === 0 ? here.x : here.z) < cell[axis]! + 0.5 ? 1 : -1;
+    const beyond: Vec3Tuple =
+      axis === 0 ? [cell[0] + side, cell[1], cell[2]] : [cell[0], cell[1], cell[2] + side];
+    const tx = beyond[0] + 0.5;
+    const tz = beyond[2] + 0.5;
+    const horiz = () => {
+      const p = bot.entity.position;
+      return Math.hypot(p.x - tx, p.z - tz);
+    };
+    const deadline = Date.now() + 4000;
+    try {
+      bot.clearControlStates();
+      while (horiz() > 0.35) {
+        if (Date.now() > deadline) {
+          throw new Error(
+            `${label}: did not walk through the door at [${cell.join(", ")}] to ` +
+              `[${beyond.join(", ")}]; the bot is at ${fmt(bot.entity.position)}`,
+          );
+        }
+        const p = bot.entity.position;
+        await bot.lookAt(p.offset(tx - p.x, 0, tz - p.z).offset(0, 1.6, 0), true);
+        bot.setControlState("forward", true);
+        await delay(50);
+      }
+    } finally {
+      bot.clearControlStates();
     }
   },
 
