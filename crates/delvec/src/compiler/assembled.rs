@@ -1282,15 +1282,16 @@ pub fn shipped_blocks(
         if let Some((from, to, block)) =
             crate::compiler::plan::gate_region_block_any(&plan.anchors, &s.anchor)
         {
-            let state = BlockState::new(&block);
-            for c in region_cells(from, to) {
+            // Cell by cell from the declared block (`region_fill`): a door
+            // stands its lower half under its upper.
+            for (c, state) in crate::compiler::region_fill::cells((from, to), &block) {
                 if !inside(c) {
                     continue;
                 }
-                if is_air(&block) {
+                if is_air(&state) {
                     m.remove(&c);
                 } else {
-                    m.insert(c, state);
+                    m.insert(c, BlockState::new(&state));
                 }
             }
         }

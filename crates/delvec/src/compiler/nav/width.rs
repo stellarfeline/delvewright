@@ -576,9 +576,21 @@ pub fn judge(way: Way, ground: &Ground<'_>) -> WayRecord {
             continue;
         }
         let mut m = base.clone();
-        for c in crate::compiler::assembled::region_cells(w.region.0, w.region.1) {
-            if inside(&c) {
-                set(&mut m, c, w.block.as_deref());
+        match w.block.as_deref() {
+            // Cell by cell from the write's block (`region_fill`).
+            Some(b) => {
+                for (c, s) in crate::compiler::region_fill::cells(w.region, b) {
+                    if inside(&c) {
+                        set(&mut m, c, Some(&s));
+                    }
+                }
+            }
+            None => {
+                for c in crate::compiler::assembled::region_cells(w.region.0, w.region.1) {
+                    if inside(&c) {
+                        set(&mut m, c, None);
+                    }
+                }
             }
         }
         own_open(&mut m);
@@ -875,7 +887,11 @@ fn opened_with(plan: &Plan, anchor: &str) -> BTreeSet<String> {
 
 fn gate_cells(plan: &Plan, anchor: &str) -> Vec<[i32; 3]> {
     crate::compiler::plan::gate_region_block_any(&plan.anchors, anchor)
-        .map(|(a, b, _)| crate::compiler::assembled::region_cells(a, b).collect())
+        .map(|(a, b, block)| {
+            crate::compiler::region_fill::cells((a, b), &block)
+                .map(|(c, _)| c)
+                .collect()
+        })
         .unwrap_or_default()
 }
 

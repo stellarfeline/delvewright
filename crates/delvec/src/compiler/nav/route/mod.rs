@@ -539,18 +539,28 @@ impl Configuration {
     pub fn moved_from(&self, load: &crate::compiler::blockstate::BlockMap) -> usize {
         self.laid()
             .iter()
-            .filter(|(c, b)| load.get(*c).map(|s| s.as_str()) != **b)
+            .filter(|(c, b)| load.get(*c).map(|s| s.as_str()) != b.as_deref())
             .count()
     }
 
     /// **The cells this configuration's laid writes reach**, each with the block
     /// the last write on it lays (`None`: air) — the only cells
     /// [`Configuration::blocks`] can move from its base.
-    pub fn laid(&self) -> BTreeMap<[i32; 3], Option<&str>> {
-        let mut over: BTreeMap<[i32; 3], Option<&str>> = BTreeMap::new();
+    pub fn laid(&self) -> BTreeMap<[i32; 3], Option<String>> {
+        let mut over: BTreeMap<[i32; 3], Option<String>> = BTreeMap::new();
         for ((lo, hi), block) in &self.state.laid {
-            for c in crate::compiler::assembled::region_cells(*lo, *hi) {
-                over.insert(c, block.as_deref());
+            match block {
+                // Cell by cell from the write's block (`region_fill`).
+                Some(b) => {
+                    for (c, s) in crate::compiler::region_fill::cells((*lo, *hi), b) {
+                        over.insert(c, Some(s.into_owned()));
+                    }
+                }
+                None => {
+                    for c in crate::compiler::assembled::region_cells(*lo, *hi) {
+                        over.insert(c, None);
+                    }
+                }
             }
         }
         over

@@ -87,6 +87,7 @@
 //! - [`pulse`]: a sound that beats over a place — its derived range and listening stations (`DW0994`, `DW0995`).
 //! - [`raster`]: the shared RGBA canvas and bitmap-text primitives the blocking chart, the contact sheet and a labelled frame draw on.
 //! - [`reach`]: what completes a `reach` — the one authority for the volume a body has to be in.
+//! - [`region_fill`]: what one region write of a block leaves in each cell — a two-high block's halves by course.
 //! - [`registry`]: the full pinned-MC item registry and the prefab/anchor metadata.
 //! - [`rehearsal`]: the compile-time inventory of every rehearsable cutscene beat and every shot inside it.
 //! - [`render_plan`]: `render-plan.json` emission.
@@ -200,6 +201,7 @@ pub mod promise;
 pub mod pulse;
 pub mod raster;
 pub mod reach;
+pub mod region_fill;
 pub mod registry;
 pub mod rehearsal;
 pub mod render_plan;

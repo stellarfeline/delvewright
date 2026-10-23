@@ -160,12 +160,15 @@ impl RegionState {
     ) -> crate::compiler::blockstate::BlockMap {
         let mut out = base.clone();
         for ((lo, hi), block) in &self.laid {
-            for c in crate::compiler::assembled::region_cells(*lo, *hi) {
-                match block {
-                    Some(b) => {
-                        out.insert(c, crate::compiler::blockstate::BlockState::new(b));
+            match block {
+                // Cell by cell from the write's block (`region_fill`).
+                Some(b) => {
+                    for (c, s) in crate::compiler::region_fill::cells((*lo, *hi), b) {
+                        out.insert(c, crate::compiler::blockstate::BlockState::new(&s));
                     }
-                    None => {
+                }
+                None => {
+                    for c in crate::compiler::assembled::region_cells(*lo, *hi) {
                         out.remove(&c);
                     }
                 }
@@ -402,17 +405,15 @@ impl World {
                 // world-load seal, whose block the bytes hold — the bytes'.
                 match block.as_deref() {
                     Some(b) => {
-                        let fp = delvewright_dsl::blockshape::server_footprint(b);
-                        if fp != delvewright_dsl::blockshape::FULL_FOOTPRINT {
-                            for c in crate::compiler::assembled::region_cells(region.0, region.1) {
+                        // Each cell's own block (`region_fill`).
+                        for (c, s) in crate::compiler::region_fill::cells(region, b) {
+                            let fp = delvewright_dsl::blockshape::server_footprint(&s);
+                            if fp != delvewright_dsl::blockshape::FULL_FOOTPRINT {
                                 st.fill_footprints.insert(c, fp);
                             }
-                        }
-                        if delvewright_dsl::blockshape::hides(b) {
-                            st.fill_hides
-                                .extend(crate::compiler::assembled::region_cells(
-                                    region.0, region.1,
-                                ));
+                            if delvewright_dsl::blockshape::hides(&s) {
+                                st.fill_hides.insert(c);
+                            }
                         }
                     }
                     None => {

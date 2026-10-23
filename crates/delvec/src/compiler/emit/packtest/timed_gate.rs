@@ -76,10 +76,7 @@ fn emit_one_timed_gate_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &mut 
     b.push(format!("function {ns}:setup"));
     // Seal first: `setup` may have already run the clock's opening move, and a
     // sibling template shares this server.
-    b.push(format!(
-        "fill {} {} {} {} {} {} {}",
-        from[0], from[1], from[2], to[0], to[1], to[2], g.gate_block
-    ));
+    b.extend(lay_region_commands((from, to), &g.gate_block));
     // …and un-jam, for the same reason the fill exists. `souls_timed_gate_disarm`
     // ends with the gate DISARMED and never restores it, `#tgdis_<id>` persists on
     // the shared server, and PackTest does not order siblings — so whenever disarm
@@ -89,7 +86,10 @@ fn emit_one_timed_gate_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &mut 
     pin_tgdis(&mut b, g);
     b.push(format!(
         "execute store success score #tg_sealed_{id} dw.sys if block {} {} {} {}",
-        probe[0], probe[1], probe[2], g.gate_block
+        probe[0],
+        probe[1],
+        probe[2],
+        crate::compiler::region_fill::state_at((from, to), &g.gate_block, probe)
     ));
     b.push(format!("assert score #tg_sealed_{id} dw.sys matches 1"));
     b.push(format!("function {ns}:tgate_open_{id}"));
@@ -101,7 +101,10 @@ fn emit_one_timed_gate_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &mut 
     b.push(format!("function {ns}:tgate_close_{id}"));
     b.push(format!(
         "execute store success score #tg_shut_{id} dw.sys if block {} {} {} {}",
-        probe[0], probe[1], probe[2], g.gate_block
+        probe[0],
+        probe[1],
+        probe[2],
+        crate::compiler::region_fill::state_at((from, to), &g.gate_block, probe)
     ));
     b.push(format!("assert score #tg_shut_{id} dw.sys matches 1"));
     out.insert(
@@ -144,16 +147,16 @@ fn emit_timed_gate_disarm_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &m
     // A sibling template shares this world: re-arm and re-seal so the fixture
     // starts from a running, shut clock whatever ran before it.
     b.push(format!("scoreboard players set #tgdis_{id} dw.sys 0"));
-    b.push(format!(
-        "fill {} {} {} {} {} {} {}",
-        from[0], from[1], from[2], to[0], to[1], to[2], g.gate_block
-    ));
+    b.extend(lay_region_commands((from, to), &g.gate_block));
     // The clock is still live: a close really does seal.
     b.push(format!("function {ns}:tgate_open_{id}"));
     b.push(format!("function {ns}:tgate_close_{id}"));
     b.push(format!(
         "execute store success score #tgd_armed_{id} dw.sys if block {} {} {} {}",
-        probe[0], probe[1], probe[2], g.gate_block
+        probe[0],
+        probe[1],
+        probe[2],
+        crate::compiler::region_fill::state_at((from, to), &g.gate_block, probe)
     ));
     b.push(format!("assert score #tgd_armed_{id} dw.sys matches 1"));
     // Pull the lever: the span clears and the sentinel latches.

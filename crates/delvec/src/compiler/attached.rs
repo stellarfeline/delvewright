@@ -1034,9 +1034,11 @@ fn judge_runtime(
     r.cells = may.len();
     // Every state a cell may hold, from `start`: each a write leaves where its
     // filter admits a state the cell may already hold, until none is added.
+    // `skip` is the writes not to take: the one whose block is being judged,
+    // and every write that ends that block's standing.
     let admitted = |c: [i32; 3],
                     mut v: Vec<(&'static str, Option<usize>)>,
-                    skip: Option<usize>|
+                    skip: &BTreeSet<usize>|
      -> Vec<(&'static str, Option<usize>)> {
         let Some(e) = may.get(&c) else {
             return v;
@@ -1044,7 +1046,7 @@ fn judge_runtime(
         loop {
             let mut grew = false;
             for (st, k, filter) in e {
-                if Some(*k) == skip || v.iter().any(|(_, o)| *o == Some(*k)) {
+                if skip.contains(k) || v.iter().any(|(_, o)| *o == Some(*k)) {
                     continue;
                 }
                 if v.iter().any(|(x, _)| filter.lays_over(x)) {
@@ -1057,12 +1059,17 @@ fn judge_runtime(
             }
         }
     };
-    // From its loaded block.
-    let states = |c: [i32; 3]| admitted(c, vec![(loaded.at(c), None)], None);
+    // From its loaded block, taking every write but `skip`.
+    let states_but =
+        |c: [i32; 3], skip: &BTreeSet<usize>| admitted(c, vec![(loaded.at(c), None)], skip);
+    let states = |c: [i32; 3]| states_but(c, &BTreeSet::new());
     // While a block write `origin` left beside it stands: where that one
     // command also wrote this cell, from what it wrote there — never what
-    // stood before it.
-    let beside_states = |c: [i32; 3], origin: Option<usize>| {
+    // stood before it. `ends` are the writes that end that block's standing
+    // (below): what they leave is never beside it.
+    let beside_states = |c: [i32; 3], origin: Option<usize>, ends: &BTreeSet<usize>| {
+        let mut skip = ends.clone();
+        skip.extend(origin);
         let own = origin.and_then(|k| {
             may.get(&c)?
                 .iter()
@@ -1070,8 +1077,8 @@ fn judge_runtime(
                 .map(|(st, _, _)| (st.as_str(), Some(k)))
         });
         match own {
-            Some(first) => admitted(c, vec![first], origin),
-            None => states(c),
+            Some(first) => admitted(c, vec![first], &skip),
+            None => states_but(c, ends),
         }
     };
     let by = |k: Option<usize>| -> String {
@@ -1092,21 +1099,34 @@ fn judge_runtime(
                 continue;
             }
             r.pairs += 1;
+            // **The writes that end this block's standing**: each writes this
+            // cell over it, so what it leaves beside is never beside this
+            // block — one command that clears a door takes both its halves.
+            // A write that lays this block again is judged as its own origin.
+            let ends: BTreeSet<usize> = may
+                .get(&cell)
+                .into_iter()
+                .flatten()
+                .filter(|(_, k, filter)| Some(*k) != origin && filter.lays_over(name))
+                .map(|(_, k, _)| *k)
+                .collect();
             let mut why: Option<String> = None;
             // `canSurvive` is asked only when a write changes a cell the rule
             // reads (a `fill` or `setblock` keeps the block it places): a block
             // whose rule cells no other write touches is never asked again.
             let asked = |rules: &[delvewright_dsl::support::Rule]| {
                 rules.iter().any(|r| {
-                    may.get(&step(cell, r.cell))
-                        .is_some_and(|e| e.iter().any(|(_, k, _)| Some(*k) != origin))
+                    may.get(&step(cell, r.cell)).is_some_and(|e| {
+                        e.iter()
+                            .any(|(_, k, _)| Some(*k) != origin && !ends.contains(k))
+                    })
                 })
             };
             if let Some(Needs::Support(rules)) = needs(name)
                 && asked(rules)
             {
                 let held = rules.iter().any(|rule| {
-                    beside_states(step(cell, rule.cell), origin)
+                    beside_states(step(cell, rule.cell), origin, &ends)
                         .iter()
                         .all(|(n, _)| rule.holds(n))
                 });
@@ -1117,7 +1137,7 @@ fn judge_runtime(
                             .map(|rule| {
                                 let n = step(cell, rule.cell);
                                 let [nx, ny, nz] = n;
-                                let failing = beside_states(n, origin)
+                                let failing = beside_states(n, origin, &ends)
                                     .into_iter()
                                     .filter(|(s, _)| !rule.holds(s))
                                     .map(|(s, k)| format!("`{s}` {}", by(k)))
@@ -1137,14 +1157,15 @@ fn judge_runtime(
             }
             // A falling block a runtime write places asks the cell below as it
             // lands; one that stood at load, only once a write changes it.
-            let below_written = may
-                .get(&step(cell, Face::Down))
-                .is_some_and(|e| e.iter().any(|(_, k, _)| Some(*k) != origin));
+            let below_written = may.get(&step(cell, Face::Down)).is_some_and(|e| {
+                e.iter()
+                    .any(|(_, k, _)| Some(*k) != origin && !ends.contains(k))
+            });
             if crate::compiler::assembled::is_falling_block(name)
                 && (origin.is_some() || below_written)
             {
                 let below = step(cell, Face::Down);
-                let free: Vec<String> = beside_states(below, origin)
+                let free: Vec<String> = beside_states(below, origin, &ends)
                     .into_iter()
                     .filter(|(s, _)| delvewright_dsl::support::falls_into(s) != Some(false))
                     .map(|(s, k)| format!("`{s}` {}", by(k)))

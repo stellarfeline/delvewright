@@ -153,10 +153,9 @@ pub(super) fn emit_timed_gate_functions(plan: &Plan) -> Vec<(String, String)> {
                 &format!("damage @s {CRUSH_DAMAGE} minecraft:generic"),
             ));
         }
-        close.push(guarded(format!(
-            "fill {} {} {} {} {} {} {}",
-            from[0], from[1], from[2], to[0], to[1], to[2], g.gate_block
-        )));
+        for line in lay_region_commands((from, to), &g.gate_block) {
+            close.push(guarded(line));
+        }
         close.push(guarded(format!(
             "schedule function {ns}:tgate_open_{id} {}t",
             g.closed_ticks

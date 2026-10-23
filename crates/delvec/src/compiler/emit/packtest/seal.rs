@@ -49,10 +49,7 @@ pub(super) fn emit_seal_packtest(plan: &Plan, out: &mut BuildOutput) {
     b.push("# An open gate is nothing to press: nothing armed.".to_string());
     b.push(count("seal_before"));
     b.push("assert score #seal_before dw.sys matches 0".to_string());
-    b.push(format!(
-        "fill {} {} {} {} {} {} {}",
-        from[0], from[1], from[2], to[0], to[1], to[2], s.block
-    ));
+    b.extend(lay_region_commands((from, to), &s.block));
     b.push(format!(
         "execute unless entity @e[tag={tag}] run function {ns}:{}",
         seal_arm_fn(&s.safe)

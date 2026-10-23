@@ -248,6 +248,19 @@ fn templates_and_unproven(plan: &Plan) -> (Vec<EndingTemplate>, Vec<String>) {
                         } else {
                             "minecraft:bedrock"
                         };
+                        // The region the observation spans, so each corner is
+                        // asserted at the block the write leaves there
+                        // (`region_fill`): a door's upper half over its lower.
+                        let corner = |at: &str| -> Option<[i32; 3]> {
+                            let a = obs[at].as_array()?;
+                            let v: Vec<i32> = a
+                                .iter()
+                                .filter_map(Value::as_i64)
+                                .filter_map(|n| i32::try_from(n).ok())
+                                .collect();
+                            <[i32; 3]>::try_from(v).ok()
+                        };
+                        let span = corner("first").zip(corner("last"));
                         let mut cells: Vec<Vec<i64>> = Vec::new();
                         for at in ["first", "last"] {
                             let p: Vec<i64> = obs[at]
@@ -259,8 +272,16 @@ fn templates_and_unproven(plan: &Plan) -> (Vec<EndingTemplate>, Vec<String>) {
                             }
                             cells.push(p.clone());
                             t.push(format!("setblock {} {} {} {sentinel}", p[0], p[1], p[2]));
-                            asserts
-                                .push(format!("assert block {} {} {} {block}", p[0], p[1], p[2]));
+                            let here = match span {
+                                Some(region) => crate::compiler::region_fill::state_at(
+                                    region,
+                                    &block,
+                                    [p[0] as i32, p[1] as i32, p[2] as i32],
+                                )
+                                .into_owned(),
+                                None => block.clone(),
+                            };
+                            asserts.push(format!("assert block {} {} {} {here}", p[0], p[1], p[2]));
                         }
                     }
                     Some("position") => {
