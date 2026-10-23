@@ -3267,10 +3267,16 @@ mod tests {
             "minecraft:pale_moss_carpet[bottom=true]",
             "minecraft:snow",
             "minecraft:snow[layers=1]",
-            "minecraft:snow[layers=8]",
         ] {
             assert!(passes_light(id), "{id} is filterLight=0 in vanilla");
         }
+        // A full snow layer is a solid-render cube: `getLightBlock()` 15 in the
+        // pinned jar's light-block table (minecraft-data's per-block
+        // `filterLight` 0 is the default state's, one layer).
+        assert!(
+            !passes_light("minecraft:snow[layers=8]"),
+            "snow at 8 layers stops light in the pinned jar"
+        );
         // No-collision vegetation: nav-passable feet cells, all
         // filterLight=0 in vanilla — the class, not a per-generator id list.
         for id in [
