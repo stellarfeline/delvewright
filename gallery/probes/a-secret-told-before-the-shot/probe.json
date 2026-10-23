@@ -1,0 +1,86 @@
+{
+  "code": "DW1060",
+  "patch": [
+    {
+      "doc": "layout-graph.json",
+      "op": "replace",
+      "path": "/content/edges/2/gating/learned",
+      "value": "hidden"
+    },
+    {
+      "doc": "layout-graph.json",
+      "op": "add",
+      "path": "/content/edges/2/gating/secret",
+      "value": [
+        "undershelf"
+      ]
+    },
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/0/on_complete/-",
+      "value": {
+        "look_at": {
+          "anchor": "anchor/seam-west-door"
+        },
+        "path": [
+          {
+            "anchor": "anchor/seam-west-door",
+            "offset": [
+              0,
+              2,
+              -4
+            ]
+          }
+        ],
+        "seconds": 3,
+        "type": "cutscene"
+      }
+    },
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/0/on_complete/-",
+      "value": {
+        "style": "chat",
+        "text": "Beyond that door, the undershelf: the far hall's lowest shelf of stone.",
+        "type": "narrate"
+      }
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "add",
+      "path": "/content/fx.near-hall.done.6.narrate",
+      "value": "那道门后是下架：远厅最低的一层石架。"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "add",
+      "path": "/source/fx.near-hall.done.6.narrate",
+      "value": "Beyond that door, the undershelf: the far hall's lowest shelf of stone."
+    },
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/triggers/2/effects/0/text",
+      "value": "The bars will not lift until the near hall's work is done; the undershelf waits behind them."
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "replace",
+      "path": "/content/fx.trig.west-door-shut.0.narrate",
+      "value": "近厅的事未了，铁栅不会升起；下架就在后面。"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "replace",
+      "path": "/source/fx.trig.west-door-shut.0.narrate",
+      "value": "The bars will not lift until the near hall's work is done; the undershelf waits behind them."
+    }
+  ],
+  "point": "site-plan",
+  "units": [
+    "EdgeGating.secret"
+  ],
+  "why": "The west door declared `learned: hidden` with its secret `undershelf`, its shot in the opening beat and the word told after it — and the word written into the press answer at the door, `trigger/west-door-shut`, which the player reads before the beat. A string the walk does not date is read as the start, so it tells the secret before the shot. Validation refuses it `DW1060`, naming the string's key, the word and that it is read before the shot. It declares `EdgeGating.secret`."
+}

@@ -1,0 +1,69 @@
+{
+  "code": "DW1060",
+  "patch": [
+    {
+      "doc": "layout-graph.json",
+      "op": "replace",
+      "path": "/content/edges/2/gating/learned",
+      "value": "hidden"
+    },
+    {
+      "doc": "layout-graph.json",
+      "op": "add",
+      "path": "/content/edges/2/gating/secret",
+      "value": [
+        "undershelf",
+        "flue-stone"
+      ]
+    },
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/0/on_complete/-",
+      "value": {
+        "look_at": {
+          "anchor": "anchor/seam-west-door"
+        },
+        "path": [
+          {
+            "anchor": "anchor/seam-west-door",
+            "offset": [
+              0,
+              2,
+              -4
+            ]
+          }
+        ],
+        "seconds": 3,
+        "type": "cutscene"
+      }
+    },
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/0/on_complete/-",
+      "value": {
+        "style": "chat",
+        "text": "Beyond that door, the undershelf: the far hall's lowest shelf of stone.",
+        "type": "narrate"
+      }
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "add",
+      "path": "/content/fx.near-hall.done.6.narrate",
+      "value": "那道门后是下架：远厅最低的一层石架。"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "add",
+      "path": "/source/fx.near-hall.done.6.narrate",
+      "value": "Beyond that door, the undershelf: the far hall's lowest shelf of stone."
+    }
+  ],
+  "point": "site-plan",
+  "units": [
+    "EdgeGating.secret"
+  ],
+  "why": "The west door declared `learned: hidden` with its shot and two secret words, `undershelf`, told after the shot, and `flue-stone`, which no string anywhere mentions. A secret nobody ever tells keeps nothing — the word is a dummy, which a defect could supply as readily as an author. Validation refuses the second word `DW1060` as never told. It declares `EdgeGating.secret`."
+}

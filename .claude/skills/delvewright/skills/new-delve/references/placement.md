@@ -57,6 +57,9 @@ form and the commands are in *Reference: drawing the map's reference*.
    stair or a road beside it** — a fireplace that hides a passage is built round
    the passage's opening, its cheeks beside it and its mantel above, and what
    stands inside the opening is the way's own gate, cleared when the way opens.
+   **A thing meant to stand beside a way stands outside its declared width**:
+   a newel stands on the floor beside the bottom tread, a lamp post on the
+   verge of a street — never in a column of the width the way was declared.
    Plus `entry`,
    `goal`, an authored `critical_path[]`, and `beats[]` binding every
    place-bound quest beat to the node it happens in.
@@ -87,6 +90,15 @@ form and the commands are in *Reference: drawing the map's reference*.
      opens, show the opened place: a short close-up shot of the changed mouth
      tells the player the way is open better than a line does. Advice, never a
      check.
+   - **A way the player is not meant to know of hides behind something the eye
+     cannot see through.** A grille, a pane, a fence, a door, a trapdoor, a
+     stair or a slab is looked through or past in the game; a hearth's back, a
+     bookcase, a plug of the wall's own stone is not. The shutter of a hidden
+     way is a block the game draws as a full opaque cube, and nothing the
+     player can stand on has a line past it into the place behind. The beat
+     that opens it carries the close-up shot of the opened mouth: the shot is
+     what tells the player. The text before the shot keeps the secret too —
+     *Step 5 — quests and dialogue* says how.
    - Every seam `opening` that names a standard names an entry in the **metrics
      table**. `delvec metrics` prints it — 223 lines of JSON on stdout, and a
      summary plus its binding counts on stderr, so read them separately:

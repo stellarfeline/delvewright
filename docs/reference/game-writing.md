@@ -336,6 +336,15 @@ How a quest plan is shaped as a web rather than a chain, how an ending reads the
   (`what is left in its barrels is salt and dust`), never the mechanism (`the
   barrels are decoration`). The engine proves the line is shown first and is
   true (spec-0105). **Authored**, from a playtest, on the two citations.
+- **L4 — A secret the level shows is not told by text before it is shown.** A
+  reveal the design stages — a passage behind a fireplace opened by a beat and
+  shown by a close-up shot — is told to the player by that shot and by nothing
+  before it: no arrival line, hint, title, goal or tooltip names the hidden
+  thing or says where it is. Text before the reveal describes what is in view
+  and what is to be done; text after it may name what was shown. The engine
+  holds the declared words of the secret to the play order (`DW1060`); the rest
+  of the sentence is the author's. **Authored**, from a playtest, on L1's
+  pattern.
 
 ## Sources
 

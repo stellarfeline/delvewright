@@ -27,6 +27,8 @@ Then `dialogue.json`. Three rules that are not style preferences:
 
 **A line names a thing as the player sees it.** Every title, hint, notice and dialogue line calls a built object by the word a player would use for the block or build in front of them: a vanilla sign is a sign or a notice, never a slate. Where the story needs a noun the vanilla block does not read as, build the thing out of blocks so it reads as that noun, or change the noun. This rule is authored, not cited; the engine does not check it and the playtest judges it.
 
+**A secret the level shows is not told by the text first.** Where a shot reveals a way, a room or a thing, no line the player reads before that shot — a narrate on arrival, an objective's title or hint, a quest's goal, a line of dialogue, a tooltip, in any language — names it or says where it is. The text before the shot says what the player can see and what they are to do (*the hearth burns; the sluice is at the lane's end*), never what the shot will show (*the records are kept behind it*). The reveal is the shot's; the text after it may say anything.
+
 Loop `delvec --prefabs "$DELVEWRIGHT_PREFABS" validate <campaign-dir>` until clean after each.
 **This is the step where clean is reachable**, and it is where the codes step 3
 ended holding go away: writing `quests.json` clears `DW0150` for every quest at

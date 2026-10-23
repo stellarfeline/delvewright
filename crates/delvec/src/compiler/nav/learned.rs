@@ -1422,19 +1422,14 @@ fn hidden_unconfirmed_words(
     seen: Option<&HiddenFinding>,
     configs: &[SeparationConfig<'_>],
 ) -> String {
-    match seen.and_then(|h| h.seen.as_ref().map(|l| (h, l))) {
-        Some((h, l)) => format!(
-            "{} is declared `hidden`, but {}: {}",
-            way.words,
-            when(configs, h.config),
-            eye_words(l)
-        ),
-        None => format!(
-            "{} is declared `hidden`, but {}",
-            way.words,
-            shot_words(way)
-        ),
+    let mut fails: Vec<String> = Vec::new();
+    if let Some((h, l)) = seen.and_then(|h| h.seen.as_ref().map(|l| (h, l))) {
+        fails.push(format!("{}: {}", when(configs, h.config), eye_words(l)));
     }
+    if !shot_ok(way) {
+        fails.push(shot_words(way));
+    }
+    format!("{} is declared `hidden`, but {}", way.words, fails.join("; and "))
 }
 
 fn row(

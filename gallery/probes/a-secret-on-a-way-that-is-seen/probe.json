@@ -1,0 +1,18 @@
+{
+  "code": "DW0818",
+  "patch": [
+    {
+      "doc": "layout-graph.json",
+      "op": "add",
+      "path": "/content/edges/5/gating/secret",
+      "value": [
+        "bar"
+      ]
+    }
+  ],
+  "point": "site-plan",
+  "units": [
+    "EdgeGating.secret"
+  ],
+  "why": "`secret: [\"bar\"]` written on the loft stair's gating beside `learned: seen`. A secret is the words only a hidden way keeps until the shot that opens it; a way the player sees from the junction has nothing to keep. `DW0818` refuses the secret where it is written, naming the word beside it. It declares `EdgeGating.secret`."
+}

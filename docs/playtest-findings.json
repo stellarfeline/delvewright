@@ -3503,6 +3503,105 @@
       "note": "Carried by DW1057 (compiler::nav::width, build tier), with DW1058 holding every declared narrowing to the bytes (spec-0120). The binding counts the site plan's portal seams — every seam with an `opening`, a stair's among them — which is the class whose approaches and runs the check judges; the precondition is the plan's seams themselves (`edge/` ids). The re-run that closes the row is on the demo re-detailed in the shape spec-0120 §8 gives it — its mouth a fireplace that hides the passage, with its opening as wide as the stair — built on the integration that carries spec-0118 too: on the demo as found the stair is refused at its foot's approach, 1 of 3 columns clear as built and 2 of 3 once the barricade opens, and on the re-detailed demo every one of its 8 ways is whole. The measured binding lines, before and after, are in the commit body that lands the re-run.",
       "round": 1,
       "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "site-plan.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "edge": "edge/"
+          }
+        }
+      },
+      "binding": {
+        "files": [
+          "site-plan.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "opening"
+          ]
+        }
+      },
+      "campaign": "the-hearth-door",
+      "carrier": {
+        "code": "DW1057",
+        "kind": "dw"
+      },
+      "finding": "a stone stair three wide with a post standing in one of its three columns at its foot read as a blocked stair, although the documents declared the post meant and the check confirmed the declaration",
+      "general_form": "a declared way's clear width is clear: nothing standing inside it is excused by any declaration, and a thing meant to stand beside a way stands outside its declared width",
+      "id": "thd-01",
+      "note": "Carried by DW1057 (compiler::nav::width, build tier, spec-0120 as amended): the declaration that once excused a column is withdrawn, so a structure in any way's width is refused whatever the documents say. The binding counts the site plan's portal seams, as tws-01's does. Closed by the re-run on the rebuilt level: on the content as found, its two excuse entries removed, the stair is refused at its foot (2 of 3 columns clear, the newel at [14, 64, 22]) and the lane at its station 8 cells along (3 of 4, the lamp post at [26, 69, 28]); rebuilt with the newel beside the bottom tread and the lamp post on the verge, every one of its 5 ways is whole.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "layout-graph.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "learned": "hidden"
+          }
+        }
+      },
+      "binding": {
+        "file": "shut-ways.json",
+        "kind": "artifact",
+        "path": "hidden_ways"
+      },
+      "campaign": "the-hearth-door",
+      "carrier": {
+        "code": "DW1054",
+        "kind": "dw"
+      },
+      "finding": "a passage the story opens later was seen through the iron bars at the back of a fireplace before the beat that was to reveal it",
+      "general_form": "a way the player is not meant to know of is hidden from every eye in the party's reach while it is shut, in every configuration it is shut in — the eye looking through every block the pinned game draws as not occluding — and the beat that opens it carries the close-up shot of its mouth",
+      "id": "thd-02",
+      "note": "Carried by DW1054 (compiler::nav::learned, spec-0118 as amended): a connection declared `learned: hidden` is held to the eye over `World::hides` (the pinned jar's occlusion table) and to the shot of its seam in the beat that opens it; a grille, a pane or a fence is looked through. The binding counts the hidden ways the build judged (`shut-ways.json` `hidden_ways`); it applies where a connection declares `learned: hidden`. Closed by the re-run on the rebuilt level: the hearth's grate back is refused, `DW1054` naming the eye cell [13, 64, 22] and the bar [10, 64, 19] as looked through; with the firebox's brick back the way is hidden over every configuration it is shut in.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "layout-graph.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "learned": "hidden"
+          }
+        }
+      },
+      "binding": {
+        "files": [
+          "layout-graph.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "secret"
+          ]
+        }
+      },
+      "campaign": "the-hearth-door",
+      "carrier": {
+        "code": "DW1060",
+        "kind": "dw"
+      },
+      "finding": "the text the player read before the reveal said what lay behind the fireplace, so the shot that opened it told nothing new",
+      "general_form": "a secret the level shows is told by the shot that shows it and by no player-facing string the play order places before it, in any language, and is told by some string at or after it",
+      "id": "thd-03",
+      "note": "Carried by DW1060 (compiler::telling, validation tier, spec-0118 §6.4): the hidden way's declared `secret[]` words are matched by DW0982's matcher in every inventoried string, English and every sidecar, against the one placement of strings on the play order DW0982 reads. The binding counts the gatings that keep a secret. Closed by the re-run on the rebuilt level: on the content as found, declared hidden, the outro is refused for `passage` and the class blurb for `behind the hearth` and `records`; rebuilt, the 20 strings read before the shot mention none of the three words and the line after the shot tells each.",
+      "round": 1,
+      "triage": "capability"
     }
   ],
   "ledger_version": "2026-08-11"
