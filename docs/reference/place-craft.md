@@ -21,7 +21,7 @@ Reader: the agent writing one place's program at step 9, and the engine work tha
 
 **[cited]** A village's buildings each connect to the street and not usually to each other; a town has larger open centres and denser structures; a settlement reads as genuine when it has a market place or, failing that, small trade shops. (Settlement guide.) A yard — a square space out back for vegetables, washing, animals or storage — is part of a house where the plot allows. (WesterosCraft.)
 
-**[ruling]** A building's play space is **about twice** what the first cut gave it, so its author has room for rooms. The first cut's trade buildings stood on 7 × 11 to 11 × 11 cells of play space; the rule puts a trade building at about 130 to 240 cells.
+**[ruling]** A building's play space is **about twice** what the first cut gave it, so its author has room for rooms. The first cut's trade buildings stood on 64 to 121 cells of play space (8 × 8 to 11 × 11, read from its site plan); the rule puts a trade building at about 130 to 240 cells.
 
 **[authored]** From the ruling and §3's room rule: a trade building's play space is at least **12 × 12**, and at least **14 × 14** where a workshop and a shop front both stand; a one-room house may stay smaller. These are the numbers a geometry brief states per trade and a site plan binds with `identities[]` (`box-extent`, `ge`), so the size is a declaration the plan is held to and never a class the engine infers.
 
