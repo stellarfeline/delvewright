@@ -927,21 +927,33 @@ fn a_gate_report_beside_a_piece_is_skipped_by_name_and_a_malformed_metadata_file
 /// east door is a shortcut whose own answer is anchored at a cell of its bar,
 /// a mark only the hall's program writes (spec-0117), so the hall stays
 /// detailed while the test re-cuts the rest.
-fn only_the_near_hall(v: &mut Value) {
-    v["content"]["details"]
-        .as_array_mut()
-        .unwrap()
-        .retain(|d| d["place"] == "node/near-hall");
-    assert_eq!(v["content"]["details"].as_array().unwrap().len(), 1);
+/// The places whose pieces carry a sealed gate's own answer: the near hall
+/// (the east door and three told ways), the annex (its chute) and the far hall
+/// (the loft stair). A gate's own answer stands on a mark only the place's
+/// program writes, so a test that leaves the rest as stand-ins keeps these.
+const ANSWERING_PLACES: [&str; 3] = ["near-hall", "annex", "far-hall"];
+
+fn only_the_answering_places(v: &mut Value) {
+    v["content"]["details"].as_array_mut().unwrap().retain(|d| {
+        ANSWERING_PLACES
+            .iter()
+            .any(|p| d["place"] == format!("node/{p}"))
+    });
+    assert_eq!(
+        v["content"]["details"].as_array().unwrap().len(),
+        ANSWERING_PLACES.len()
+    );
 }
 
-/// The near hall's program, written back after a test empties `programs/`.
-fn keep_the_near_hall_program(programs: &Path) {
-    std::fs::copy(
-        common::repo_root().join("gallery/overlays/site-plan/programs/near-hall.json"),
-        programs.join("near-hall.json"),
-    )
-    .unwrap();
+/// Those places' programs, written back after a test empties `programs/`.
+fn keep_the_answering_programs(programs: &Path) {
+    for p in ANSWERING_PLACES {
+        std::fs::copy(
+            common::repo_root().join(format!("gallery/overlays/site-plan/programs/{p}.json")),
+            programs.join(format!("{p}.json")),
+        )
+        .unwrap();
+    }
 }
 
 fn gallery_site_plan(root: &Path) -> PathBuf {
@@ -1187,12 +1199,12 @@ fn a_climb_inside_a_hung_place_proves_and_hung_scenery_states_its_zero() {
         }
     });
     common::patch_file(&dir.join("detail-plan.json"), |v| {
-        only_the_near_hall(v);
+        only_the_answering_places(v);
     });
     let programs = dir.join("programs");
     std::fs::remove_dir_all(&programs).unwrap();
     std::fs::create_dir_all(&programs).unwrap();
-    keep_the_near_hall_program(&programs);
+    keep_the_answering_programs(&programs);
     for (name, hollow) in [("causeway", None), ("beacon", Some(1))] {
         std::fs::write(
             programs.join(format!("{name}.json")),
@@ -1211,8 +1223,9 @@ fn a_climb_inside_a_hung_place_proves_and_hung_scenery_states_its_zero() {
     ]);
     let t = text(&out);
     assert_eq!(code(&out), 0, "{t}");
-    // The causeway and the beacon, and the near hall kept for its door.
-    assert!(t.contains("detail: 3 place(s) detailed of 3 named"), "{t}");
+    // The causeway and the beacon, and the three places kept for their gates'
+    // own answers.
+    assert!(t.contains("detail: 5 place(s) detailed of 5 named"), "{t}");
     assert!(
         t.contains("detail: the whole builds with the piece(s) this run wrote."),
         "{t}"
@@ -1355,12 +1368,12 @@ fn a_leafy_scenery_crown_owes_no_floor_and_no_light_and_a_reached_one_is_judged(
     let tmp = tempdir("leafy-crown");
     let dir = gallery_site_plan(&tmp);
     common::patch_file(&dir.join("detail-plan.json"), |v| {
-        only_the_near_hall(v);
+        only_the_answering_places(v);
     });
     let programs = dir.join("programs");
     std::fs::remove_dir_all(&programs).unwrap();
     std::fs::create_dir_all(&programs).unwrap();
-    keep_the_near_hall_program(&programs);
+    keep_the_answering_programs(&programs);
     std::fs::write(
         programs.join("beacon.json"),
         serde_json::to_string_pretty(&leafy_beacon()).unwrap(),
@@ -1450,7 +1463,7 @@ fn an_unlit_leafy_scenery_room_is_never_surveyed_for_light() {
     let tmp = tempdir("unlit-scenery");
     let dir = gallery_site_plan(&tmp);
     common::patch_file(&dir.join("detail-plan.json"), |v| {
-        only_the_near_hall(v);
+        only_the_answering_places(v);
     });
     common::patch_file(&dir.join("programs/beacon.json"), |v| {
         v["palette"]["lamp"] =
@@ -1465,23 +1478,23 @@ fn an_unlit_leafy_scenery_room_is_never_surveyed_for_light() {
         delvewright_dsl::synthesized_anchors(&c).contains("anchor/node-annex"),
         "a reached place keeps its own"
     );
+    // The beacon, with the places whose pieces carry the sealed gates' own
+    // answers: one run details them all, because each whole it builds needs
+    // every answer's piece.
+    let programs = dir.join("programs");
+    let beacon = std::fs::read(programs.join("beacon.json")).unwrap();
+    std::fs::remove_dir_all(&programs).unwrap();
+    std::fs::create_dir_all(&programs).unwrap();
+    keep_the_answering_programs(&programs);
+    std::fs::write(programs.join("beacon.json"), beacon).unwrap();
     let prefabs = tmp.join("prefabs");
     std::fs::create_dir_all(&prefabs).unwrap();
-    // The near hall first: its piece carries the east door's own answer.
-    let hall = delvec(&[
-        "--prefabs",
-        prefabs.to_str().unwrap(),
-        "detail",
-        dir.to_str().unwrap(),
-        "node/near-hall",
-    ]);
-    assert_eq!(code(&hall), 0, "{}", text(&hall));
     let out = delvec(&[
         "--prefabs",
         prefabs.to_str().unwrap(),
         "detail",
         dir.to_str().unwrap(),
-        "node/beacon",
+        "--all",
     ]);
     let t = text(&out);
     assert_eq!(code(&out), 0, "{t}");
@@ -1519,12 +1532,12 @@ fn the_audit_judges_a_scenery_piece_as_its_writer_did_and_no_piece_vouches_for_i
     std::fs::create_dir_all(&campaigns).unwrap();
     let dir = gallery_site_plan(&campaigns);
     common::patch_file(&dir.join("detail-plan.json"), |v| {
-        only_the_near_hall(v);
+        only_the_answering_places(v);
     });
     let programs = dir.join("programs");
     std::fs::remove_dir_all(&programs).unwrap();
     std::fs::create_dir_all(&programs).unwrap();
-    keep_the_near_hall_program(&programs);
+    keep_the_answering_programs(&programs);
     std::fs::write(
         programs.join("beacon.json"),
         serde_json::to_string_pretty(&leafy_beacon()).unwrap(),
