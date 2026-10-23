@@ -3452,7 +3452,7 @@
       "finding": "objectives carried no hint, so the player did not know a step existed or where it was",
       "general_form": "every objective owes a hint that names the action as the player performs it and a place or landmark the player can find",
       "id": "str-04",
-      "note": "Carried by `DW0863` as spec-0104 §3 widens it to every act on every walked path: an objective is announced with a `hint`, or it is in sight (a clear line by `walk_cells` over `blocks_camera`, within 64 blocks) from the cell the party stands on before it, in the configuration that walk holds there. That is the machine half of the general form: the act can be found. Whether the hint names a place the player can find is prose, and stays QC (spec-0104 §2.4, §12).",
+      "note": "Carried by `DW0863` as spec-0104 §3 widens it to every act on every walked path: an objective is announced with a `hint`, or it is in sight (one of nine lines clear by the one sight rule, `framing::in_sight`, stopped only by a block that hides what is behind it, within 64 blocks) from the cell the party stands on before it, in the configuration that walk holds there. That is the machine half of the general form: the act can be found. Whether the hint names a place the player can find is prose, and stays QC (spec-0104 §2.4, §12).",
       "round": 1,
       "triage": "capability"
     },

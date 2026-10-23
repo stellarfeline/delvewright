@@ -1672,34 +1672,36 @@ mod learned_tests {
     const PLAYER_EYE: f64 = delvewright_dsl::metrics::PLAYER_EYE_HEIGHT;
 
     /// Acceptance 4: the eye is the player's, 1.62 above the junction's floor,
-    /// not the mob's 1.5. A one-high bar ten cells down the branch; a block on
-    /// the 1.5 line and off the 1.62 line, chosen by walking both.
+    /// not the mob's 1.5. A one-high bar ten cells down the branch, and
+    /// blockers across the branch that stop every one of the nine lines from
+    /// the 1.5 eye and leave one from the 1.62 eye clear — found by asking the
+    /// check itself at both heights over rows of blockers, never placed by
+    /// hand.
     #[test]
     fn the_eye_is_the_players_not_the_mobs() {
         let region = ([5, 1, 10], [5, 1, 10]);
-        let target = [5.5, 1.5, 10.5];
-        let eye = |h: f64| [5.5, 1.0 + h, 0.5];
-        let walked = |h: f64| {
-            let mut cells = BTreeSet::new();
-            walk_cells(eye(h), target, |c| {
-                cells.insert(c);
-                false
-            });
-            cells
-        };
-        let low = walked(1.5);
-        let high = walked(PLAYER_EYE);
-        let blocker = [5, 1, 5];
-        assert!(low.contains(&blocker) && !high.contains(&blocker));
-        let (base, shut) = (
-            branch(9, 1, false, &[blocker]),
-            branch(9, 1, true, &[blocker]),
-        );
         let ways = [way(region, 2, Some(Learned::Seen))];
-        let (_, at_player) = judge(&shut, &base, &ways, &[], PLAYER_EYE);
-        assert!(at_player.is_ok(), "{at_player:?}");
-        let (_, at_mob) = judge(&shut, &base, &ways, &[], 1.5);
-        assert_eq!(at_mob.expect_err("1.5 meets the block").code.id(), "DW1054");
+        let rows: Vec<Vec<[i32; 3]>> = (2..=9)
+            .flat_map(|z| (1..=2).map(move |y| (4..=6).map(|x| [x, y, z]).collect()))
+            .collect();
+        let mut found = None;
+        'search: for (i, a) in rows.iter().enumerate() {
+            for b in rows.iter().skip(i) {
+                let blockers: Vec<[i32; 3]> = a.iter().chain(b.iter()).copied().collect();
+                let (base, shut) = (
+                    branch(9, 1, false, &blockers),
+                    branch(9, 1, true, &blockers),
+                );
+                let (_, at_player) = judge(&shut, &base, &ways, &[], PLAYER_EYE);
+                let (_, at_mob) = judge(&shut, &base, &ways, &[], 1.5);
+                if at_player.is_ok() && at_mob.is_err() {
+                    assert_eq!(at_mob.unwrap_err().code.id(), "DW1054");
+                    found = Some((base, shut));
+                    break 'search;
+                }
+            }
+        }
+        let (base, shut) = found.expect("some blockers stop the 1.5 eye and not the 1.62 one");
         // The core every caller reaches is the player's eye.
         let (_, core) = verify_shut_ways(
             &ways,
