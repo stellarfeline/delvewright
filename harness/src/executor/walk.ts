@@ -790,9 +790,13 @@ export const methods = {
         );
       }
       const visited: Vec3Tuple[] = [];
+      // The column and the course the feet are in: a body on a path block or
+      // a slab stands a sixteenth or a half under its cell, so the course is
+      // the nearest whole one, not the floor of the position.
       const onMove = (): void => {
-        const feet = this.feetCell();
-        if (feet && legDoors.some((d) => d[0] === feet[0] && d[1] === feet[1] && d[2] === feet[2])) {
+        const p = bot.entity.position;
+        const feet: Vec3Tuple = [Math.floor(p.x), Math.round(p.y), Math.floor(p.z)];
+        if (legDoors.some((d) => d[0] === feet[0] && d[1] === feet[1] && d[2] === feet[2])) {
           visited.push(feet);
         }
       };
@@ -894,15 +898,41 @@ export const methods = {
     const shut = block();
     if (!shut) return;
     if (props(shut)["open"] !== true) {
-      await bot.lookAt(shut.position.offset(0.5, 0.5, 0.5), true);
-      await bot.activateBlock(shut);
-      const deadline = Date.now() + 2000;
-      while (Date.now() < deadline) {
-        const now = block();
-        if (now && props(now)["open"] === true) break;
-        await delay(50);
+      // Right-click the face of the door the bot stands before, at its middle.
+      const facingNow = String(props(shut)["facing"] ?? "north");
+      const ax = facingNow === "east" || facingNow === "west" ? 0 : 2;
+      const pos = bot.entity.position;
+      const toward = (ax === 0 ? pos.x : pos.z) < cell[ax]! + 0.5 ? -1 : 1;
+      const face = shut.position.offset(0, 0, 0).minus(shut.position).offset(
+        ax === 0 ? toward : 0,
+        0,
+        ax === 2 ? toward : 0,
+      );
+      const cursor = face.offset(0, 0, 0).scaled(0.5).offset(0.5, 0.5, 0.5);
+      let opened = false;
+      for (let attempt = 0; attempt < 3 && !opened; attempt++) {
+        await bot.lookAt(shut.position.offset(cursor.x, cursor.y, cursor.z), true);
+        await bot.activateBlock(shut, face, cursor);
+        const deadline = Date.now() + 1500;
+        while (Date.now() < deadline) {
+          const now = block();
+          if (now && props(now)["open"] === true) {
+            opened = true;
+            break;
+          }
+          await delay(50);
+        }
       }
-      process.stderr.write(`[door] ${label}: opened the ${shut.name} at [${cell.join(", ")}]\n`);
+      const p = bot.entity.position;
+      if (!opened) {
+        throw new Error(
+          `${label}: the ${shut.name} at [${cell.join(", ")}] did not open to three right-clicks ` +
+            `from ${fmt(p)}; its state reads ${JSON.stringify(props(block() ?? shut))}`,
+        );
+      }
+      process.stderr.write(
+        `[door] ${label}: opened the ${shut.name} at [${cell.join(", ")}] from ${fmt(p)}\n`,
+      );
     }
     // Through it, on foot: mineflayer-pathfinder 2.4.5 has no door in its
     // vocabulary and plans no step into a door's cell, so the walk takes the
@@ -911,30 +941,54 @@ export const methods = {
     // on from there.
     const facing = String(props(shut)["facing"] ?? "north");
     const axis = facing === "east" || facing === "west" ? 0 : 2;
+    const across = axis === 0 ? 2 : 0;
     const here = bot.entity.position;
     const side = (axis === 0 ? here.x : here.z) < cell[axis]! + 0.5 ? 1 : -1;
+    // The line the body walks: across the door's cell at the middle of the
+    // part its open leaf leaves free, read from the leaf's own collision box —
+    // a body 0.6 wide clears a leaf 3/16 thick by a hair on the cell's
+    // centre line, and grazes it.
+    const open = block() ?? shut;
+    let lo = 0;
+    let hi = 1;
+    for (const box of (open as unknown as { shapes: number[][] }).shapes ?? []) {
+      const a = box[across]!;
+      const b = box[across + 3]!;
+      if (a <= 0.01) lo = Math.max(lo, b);
+      else if (b >= 0.99) hi = Math.min(hi, a);
+    }
+    const line = cell[across]! + (lo + hi) / 2;
+    const point = (along: number): [number, number] =>
+      axis === 0 ? [along, line] : [line, along];
+    const before = point(cell[axis]! - side + 0.5);
+    const beyondCell = cell[axis]! + side;
+    const after = point(beyondCell + 0.5);
     const beyond: Vec3Tuple =
-      axis === 0 ? [cell[0] + side, cell[1], cell[2]] : [cell[0], cell[1], cell[2] + side];
-    const tx = beyond[0] + 0.5;
-    const tz = beyond[2] + 0.5;
-    const horiz = () => {
-      const p = bot.entity.position;
-      return Math.hypot(p.x - tx, p.z - tz);
-    };
-    const deadline = Date.now() + 4000;
+      axis === 0 ? [beyondCell, cell[1], cell[2]] : [cell[0], cell[1], beyondCell];
+    const deadline = Date.now() + 6000;
     try {
-      bot.clearControlStates();
-      while (horiz() > 0.35) {
-        if (Date.now() > deadline) {
-          throw new Error(
-            `${label}: did not walk through the door at [${cell.join(", ")}] to ` +
-              `[${beyond.join(", ")}]; the bot is at ${fmt(bot.entity.position)}`,
-          );
+      for (const [tx, tz] of [before, after]) {
+        bot.clearControlStates();
+        let last = bot.entity.position.clone();
+        let still = 0;
+        for (;;) {
+          const p = bot.entity.position;
+          if (Math.hypot(p.x - tx, p.z - tz) <= 0.2) break;
+          // A lip under the threshold (a path block's sixteenth) can hold a
+          // walking body at the door's edge; a body held still hops it.
+          still = p.distanceTo(last) < 0.02 ? still + 1 : 0;
+          last = p.clone();
+          bot.setControlState("jump", still >= 4);
+          if (Date.now() > deadline) {
+            throw new Error(
+              `${label}: did not walk through the door at [${cell.join(", ")}] to ` +
+                `[${beyond.join(", ")}]; the bot is at ${fmt(p)}`,
+            );
+          }
+          await bot.lookAt(p.offset(tx - p.x, 1.6, tz - p.z), true);
+          bot.setControlState("forward", true);
+          await delay(50);
         }
-        const p = bot.entity.position;
-        await bot.lookAt(p.offset(tx - p.x, 0, tz - p.z).offset(0, 1.6, 0), true);
-        bot.setControlState("forward", true);
-        await delay(50);
       }
     } finally {
       bot.clearControlStates();
