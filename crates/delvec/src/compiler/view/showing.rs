@@ -170,7 +170,8 @@ pub(crate) fn floor_reached(st: &Structure, v: &Cells<'_>) -> nav::EnteredFloor 
         .filter(|(pos, _)| (0..3).all(|a| pos[a] >= 0 && pos[a] < st.size[a]))
         .filter_map(|(pos, i)| Some((*pos, st.palette.get(*i)?.clone())))
         .collect();
-    let reached = crate::compiler::nav::World::of_piece(blocks).floor_reached(&standable, &entry);
+    let reached = crate::compiler::nav::World::of_piece(blocks, [0, 0, 0], st.size)
+        .floor_reached(&standable, &entry);
     nav::EnteredFloor {
         standable,
         entry,

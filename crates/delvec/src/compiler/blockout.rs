@@ -3116,19 +3116,17 @@ fn crossings(
     // with the derivation's own wall block. Deleting the openings from the walk's
     // cells is not enough once the walk is a body's: a jump carries a body
     // through a doorway without standing in it.
-    let deleted = {
-        let mut walled = blocks.clone();
-        for cell in &seam {
-            walled.insert(
-                *cell,
-                crate::compiler::blockstate::BlockState::new(palette::WALL),
-            );
-        }
-        crate::compiler::nav::World::from_occupancy(
-            crate::compiler::assembled::occupancy_over(&walled, &BTreeSet::new()),
-            crate::compiler::nav::Premises::geometry_only().with_body_of(plan),
-        )
-    };
+    let mut walled = blocks.clone();
+    for cell in &seam {
+        walled.insert(
+            *cell,
+            crate::compiler::blockstate::BlockState::new(palette::WALL),
+        );
+    }
+    let deleted = crate::compiler::nav::World::from_occupancy(
+        crate::compiler::assembled::occupancy_over(&walled, &BTreeSet::new()),
+        crate::compiler::nav::Premises::geometry_only().with_body_of(plan),
+    );
     let in_region = |cell: [i32; 3]| {
         (0..3).all(|a| i64::from(cell[a]) >= rlo[a] && i64::from(cell[a]) <= rhi[a])
     };
@@ -3167,8 +3165,30 @@ fn crossings(
     let commons: &BTreeSet<[i32; 3]> = &unclaimed;
     let massed: BTreeSet<&str> = b.massed.iter().map(String::as_str).collect();
     let mut outside_reported = false;
+    // **The world without the commons**: the same world with the commons'
+    // floor walled up too ([`crate::compiler::nav::World::walls_over`]), so
+    // a body that does not cross the commons cannot cross it in the air
+    // either — a jump that lands in another place over the commons' ground
+    // crosses the commons, and is counted where the commons is.
+    let without_commons = (binding.commons && !commons.is_empty()).then(|| {
+        let mut shut = walled.clone();
+        for cell in crate::compiler::nav::World::walls_over(commons, &|p| !deleted.solid_at(p)) {
+            shut.insert(
+                cell,
+                crate::compiler::blockstate::BlockState::new(palette::WALL),
+            );
+        }
+        crate::compiler::nav::World::from_occupancy(
+            crate::compiler::assembled::occupancy_over(&shut, &BTreeSet::new()),
+            crate::compiler::nav::Premises::geometry_only().with_body_of(plan),
+        )
+    });
     let flood = |starts: &[[i32; 3]], through_commons: bool| -> BTreeSet<[i32; 3]> {
-        crossing_flood(&deleted, starts, &|next| {
+        let world = match (&without_commons, through_commons) {
+            (Some(shut), false) => shut,
+            _ => &deleted,
+        };
+        crossing_flood(world, starts, &|next| {
             in_region(next) && (through_commons || !commons.contains(&next))
         })
     };

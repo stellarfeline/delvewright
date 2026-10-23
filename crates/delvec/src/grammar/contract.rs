@@ -1399,11 +1399,14 @@ fn prove_class(
     // Every class is proved by the one walk over the reach graph
     // ([`body_reached`]), confined to the edge's own cells: a jump the launch
     // set clears joins two ends as a step does, and a drop a body can jump
-    // back up is not one-way.
+    // back up is not one-way. The confinement is a wall, not an omission
+    // ([`nav::walled`]): every standable cell of the piece outside the
+    // edge's cells is walled up first, so an arc that lands on the edge's
+    // floor cannot fly over floor the edge was not given.
     let world = body_world(model);
     let joined =
         |cells: &BTreeSet<[i32; 3]>, from: &BTreeSet<[i32; 3]>, to: &BTreeSet<[i32; 3]>| {
-            body_connected(&world, cells, from, to)
+            body_connected(&body_world(&nav::walled(model, cells)), cells, from, to)
         };
     match class {
         "climb" => {
@@ -3022,5 +3025,50 @@ fn no_body_majority(ix: &Index, kinds: &CellKinds) -> Gate {
                 total
             )
         },
+    }
+}
+
+#[cfg(test)]
+mod walled_confinement {
+    use super::*;
+    use crate::grammar::block::BlockState;
+    use crate::grammar::geom::Box3;
+
+    /// **An arc over floor the edge was not given does not prove the edge.**
+    /// A one-wide corridor of floor, its two ends the edge's cells and the
+    /// cell between them left out: a body jumps from one end over the middle
+    /// cell to the other without standing in it. Confined by omission, the
+    /// jump joins the ends and the `walk` proof passes; with the left-out floor
+    /// walled up ([`nav::walled`]), it does not.
+    #[test]
+    fn a_jump_over_left_out_floor_does_not_prove_a_walk() {
+        let mut m = VoxelModel::new(Box3::at_origin([5, 5, 1]));
+        let stone = BlockState::simple("minecraft:stone_bricks");
+        for x in 0..5 {
+            m.set([x, 0, 0], &stone).expect("one block");
+        }
+        let a: BTreeSet<[i32; 3]> = BTreeSet::from([[0, 1, 0], [1, 1, 0]]);
+        let b: BTreeSet<[i32; 3]> = BTreeSet::from([[3, 1, 0], [4, 1, 0]]);
+        let cells: BTreeSet<[i32; 3]> = a.union(&b).copied().collect();
+        assert!(nav::standable(&m, [2, 1, 0]), "the left-out cell is floor");
+
+        // The plant binds: confined only by omission, the jump crosses.
+        let omitted = body_reached(&body_world(&m), &cells, &a);
+        assert!(
+            !omitted.is_disjoint(&b),
+            "no jump crosses the left-out cell, so the plant binds nothing"
+        );
+        assert!(
+            !omitted.contains(&[2, 1, 0]),
+            "the body stood in the left-out cell"
+        );
+
+        assert!(
+            !class_proved("walk", &m, &cells, &cells, &a, &b),
+            "the `walk` proof joins its ends through floor it was not given"
+        );
+        // ...and the control: given the middle cell, the walk holds.
+        let whole: BTreeSet<[i32; 3]> = nav::standable_cells(&m);
+        assert!(class_proved("walk", &m, &whole, &whole, &a, &b));
     }
 }

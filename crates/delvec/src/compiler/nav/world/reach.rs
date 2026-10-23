@@ -2642,6 +2642,9 @@ impl World {
     /// ways a plan cut) states it as `admit` and keeps no walk of its own.
     /// With every move admitted it reaches exactly the states
     /// [`World::body_reach`] does (`compiler::nav::world::reach::agreement`).
+    /// Over a world of one piece ([`World::of_piece`]) no move leads out of
+    /// the piece's box, whatever `admit` says: the one confinement every
+    /// per-piece reader shares, so none can forget it.
     pub fn body_flood(
         &self,
         seeds: &[[i32; 3]],
@@ -2651,7 +2654,7 @@ impl World {
         let mut queue: std::collections::VecDeque<[i32; 3]> = seen.iter().copied().collect();
         while let Some(cur) = queue.pop_front() {
             for edge in self.body_edges(cur) {
-                if !seen.contains(&edge.to) && admit(cur, edge.to) {
+                if !seen.contains(&edge.to) && self.in_piece(edge.to) && admit(cur, edge.to) {
                     seen.insert(edge.to);
                     queue.push_back(edge.to);
                 }

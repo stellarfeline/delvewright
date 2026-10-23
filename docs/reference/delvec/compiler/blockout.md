@@ -129,7 +129,9 @@ Every question here of where a body's moves take it is the reach graph's, over
 worlds that carry the body's premises (`Premises::with_body_of`: declared jumps
 and the kit's fall): `DW0837` takes its closure (`blockout::reached_from`),
 `DW0838` floods it under a confinement (`blockout::crossing_flood`, over
-`World::body_flood`), `DW0877` and `DW0986` step out of a wall by its edges
+`World::body_flood`, in a world with every allocated opening walled and, for
+the flood that does not cross the commons, the commons' floor walled too —
+`World::walls_over`, so a jump cannot cross left-out ground in the air), `DW0877` and `DW0986` step out of a wall by its edges
 (`blockout::steps_out`, `World::body_edges`), and `DW0822` asks it whether a leg
 routes (`blockout::leg_routed`). No step rule of this battery's own exists; a
 second one would make this the one proof in the compiler taken under different

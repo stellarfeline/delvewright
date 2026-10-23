@@ -295,6 +295,13 @@ use crate::compiler::plan::FurnitureRegion;
 pub type BuiltPiece = (String, ([i32; 3], [i32; 3]));
 
 pub struct World {
+    /// **The box of the one piece this world is**, `[lo, hi)`, when it was
+    /// built by [`World::of_piece`]; `None` for every other world. A body
+    /// that leaves the box has left the thing being measured, so no move of
+    /// [`World::body_flood`] — the one confined walk every per-piece reader
+    /// takes — leads out of it, while the blocks, the water and its spill
+    /// beyond the box stay what they are.
+    pub(in crate::compiler::nav) piece: Option<([i32; 3], [i32; 3])>,
     pub(in crate::compiler::nav) solid: CellSet,
     pub(in crate::compiler::nav) tall: CellSet,
     pub(in crate::compiler::nav) use_gates: CellSet,
@@ -829,6 +836,7 @@ impl World {
     /// A field-for-field copy, for the counterfactuals that change one premise.
     pub(in crate::compiler::nav) fn clone_world(&self) -> World {
         World {
+            piece: self.piece,
             solid: self.solid.clone(),
             tall: self.tall.clone(),
             use_gates: self.use_gates.clone(),
@@ -1143,7 +1151,7 @@ impl World {
     /// The cells are shared, not copied; anything a proof has derived on top
     /// of this world (pinned cells, runtime floods) is not carried.
     pub fn with_premises(&self, premises: Premises) -> World {
-        Self::from_cells(
+        let mut w = Self::from_cells(
             Cells {
                 solid: self.solid.clone(),
                 tall: self.tall.clone(),
@@ -1158,7 +1166,9 @@ impl World {
                 footprints: self.floors.footprints.clone(),
             },
             premises,
-        )
+        );
+        w.piece = self.piece;
+        w
     }
 
     /// This world with `extra` cells added to its solid set, as full cubes — a
@@ -1237,6 +1247,7 @@ impl World {
             sieve: BTreeSet::new(),
         };
         World {
+            piece: None,
             solid: cells.solid,
             tall: cells.tall,
             use_gates: cells.use_gates,
@@ -1386,6 +1397,7 @@ impl World {
         let mut pinned = self.pinned.clone();
         pinned.extend(extra.iter().copied());
         let mut w = World {
+            piece: self.piece,
             solid,
             tall: self.tall.clone(),
             use_gates: self.use_gates.clone(),
@@ -1448,6 +1460,7 @@ impl World {
     /// than left to be discovered.
     pub(in crate::compiler::nav) fn with_cleared(&self, extra: &BTreeSet<[i32; 3]>) -> World {
         let mut w = World {
+            piece: self.piece,
             solid: self.solid.clone(),
             tall: self.tall.clone(),
             use_gates: self.use_gates.clone(),
@@ -1517,6 +1530,7 @@ impl World {
     /// a later `clear-region` laid over them may not quietly delete the water.
     fn with_flooded(&self, extra: &BTreeSet<[i32; 3]>, regions: &[([i32; 3], [i32; 3])]) -> World {
         let mut w = World {
+            piece: self.piece,
             solid: self.solid.clone(),
             tall: self.tall.clone(),
             use_gates: self.use_gates.clone(),
@@ -1584,6 +1598,7 @@ impl World {
     /// to re-surfacing existing floor, which is decoration.
     fn with_unforced(&self, extra: &BTreeSet<[i32; 3]>) -> World {
         let mut w = World {
+            piece: self.piece,
             solid: self.solid.clone(),
             tall: self.tall.clone(),
             use_gates: self.use_gates.clone(),
@@ -1707,6 +1722,7 @@ impl World {
     /// report that sends someone to fix a prefab that was never wrong.
     pub(in crate::compiler::nav) fn without_runtime_flood(&self) -> World {
         let mut w = World {
+            piece: self.piece,
             solid: self.solid.clone(),
             tall: self.tall.clone(),
             use_gates: self.use_gates.clone(),
@@ -1793,6 +1809,7 @@ impl World {
         let mut tall = self.tall.clone();
         tall.extend(self.use_gates.iter());
         World {
+            piece: self.piece,
             solid: self.solid.clone(),
             tall,
             use_gates: CellSet::new(),
@@ -1841,8 +1858,11 @@ impl World {
     }
 
     /// **One piece alone, as a body meets it**: the world of `blocks` (a cell
-    /// to block-state map; air spellings are dropped) with nothing outside them
-    /// — outside is air, with nothing to stand on. What every reader that asks
+    /// to block-state map; air spellings are dropped) inside the box
+    /// `[lo, hi)`, with nothing outside it — outside is air, with nothing to
+    /// stand on. Water may spill into that air; no move of
+    /// [`World::body_flood`] follows it out of the box, because a body that
+    /// has left the box has left the piece. What every reader that asks
     /// "can a body reach this cell" of one piece before any campaign places it
     /// builds its reach graph over: the grammar's gates and edge proofs, the
     /// sculpt, the light probe and the enclosure survey.
@@ -1850,15 +1870,53 @@ impl World {
     /// A piece is judged before a campaign states anything about the world it
     /// sits in, so there is no horizon, volume or gate to declare:
     /// [`Premises::geometry_only`], said by name.
-    pub fn of_piece(blocks: BTreeMap<[i32; 3], String>) -> Self {
+    pub fn of_piece(blocks: BTreeMap<[i32; 3], String>, lo: [i32; 3], hi: [i32; 3]) -> Self {
         let blocks: BTreeMap<[i32; 3], String> = blocks
             .into_iter()
             .filter(|(_, name)| !delvewright_dsl::blockshape::is_air(name))
             .collect();
-        Self::from_occupancy(
+        let mut w = Self::from_occupancy(
             crate::compiler::assembled::occupancy_of(blocks, &BTreeSet::new()),
             Premises::geometry_only(),
-        )
+        );
+        w.piece = Some((lo, hi));
+        w
+    }
+
+    /// **The cells that wall up `floor`**: each cell of it and the two over it
+    /// that `open` says a body could be in. The one rule every confined walk
+    /// over the reach graph uses to take floor out of a body's reach — the
+    /// fixtures' `reaches_walled`, the edge proof's confinement to an edge's
+    /// cells, `DW0838`'s flood without the commons. Leaving cells out of the
+    /// set a walk may enter is not the same claim for a body that jumps: an arc
+    /// that lands on kept floor flies through the left-out cells without
+    /// standing in them. A wall stops it; the caller lays one block in every
+    /// cell this returns and builds the world from those blocks.
+    ///
+    /// The wall never takes a kept standable cell or its headroom: a cell two
+    /// over removed floor is open only when the cell under it is, so no kept
+    /// floor stands on it.
+    pub fn walls_over(
+        floor: &BTreeSet<[i32; 3]>,
+        open: &dyn Fn([i32; 3]) -> bool,
+    ) -> BTreeSet<[i32; 3]> {
+        let mut out = BTreeSet::new();
+        for c in floor {
+            for dy in 0..3 {
+                let p = [c[0], c[1] + dy, c[2]];
+                if open(p) {
+                    out.insert(p);
+                }
+            }
+        }
+        out
+    }
+
+    /// Whether `c` lies inside this world's piece box — every cell of a world
+    /// that is no one piece.
+    pub fn in_piece(&self, c: [i32; 3]) -> bool {
+        self.piece
+            .is_none_or(|(lo, hi)| (0..3).all(|a| c[a] >= lo[a] && c[a] < hi[a]))
     }
 
     /// Build a [`World`] directly from a set of solid cells, with no water (test /

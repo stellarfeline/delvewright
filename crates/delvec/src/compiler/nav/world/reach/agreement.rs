@@ -572,3 +572,101 @@ fn every_consumer_reaches_what_the_reach_graph_reaches() {
         "no ground entry, or no per-piece floor needs more than the walk: the agreement is vacuous"
     );
 }
+
+/// **Water at a box edge**: one piece's water spills into the air round it,
+/// and a body that swam that spill would leave the piece and come back in
+/// past a wall the piece closes. Every per-piece reader asks the same
+/// confinement ([`World::of_piece`]'s box, kept by
+/// [`World::body_flood`]): the light probe's floor
+/// ([`crate::admit::light::floor_measured`]) and the fixtures' walk
+/// ([`crate::grammar::nav::reaches`]) agree that the far side is not
+/// reached, and the unconfined closure shows the spill was a way round, so
+/// the agreement is not vacuous.
+#[test]
+fn water_at_a_box_edge_leaves_no_way_round_the_piece() {
+    // x 0..9, y 0..6, z 0..4: a floor at y = 0, a wall at x = 4 from floor to
+    // roof across the whole depth, and a pool of water at y = 1 along the
+    // z = 0 face on both sides of the wall — water a body swims, at the face,
+    // and spills out of it.
+    let mut m = VoxelModel::new(Box3 {
+        origin: [0, 0, 0],
+        size: [9, 6, 4],
+    });
+    let stone = BlockState::simple("minecraft:stone_bricks");
+    let water: BlockState = "minecraft:water[level=0]".parse().expect("water");
+    for x in 0..9 {
+        for z in 0..4 {
+            m.set([x, 0, z], &stone).expect("one block");
+        }
+    }
+    // The wall, and the shell on every other side: the box's ends (x = 0,
+    // x = 8) and its back (z = 3), so the only face open is the pool's and no
+    // floor stands on a face to be walked in from.
+    for y in 1..6 {
+        for z in 0..4 {
+            for x in [0, 4, 8] {
+                m.set([x, y, z], &stone).expect("one block");
+            }
+        }
+        for x in 0..9 {
+            m.set([x, y, 3], &stone).expect("one block");
+        }
+    }
+    // The pool is dammed off the floor by a one-course lip at z = 1, so the
+    // floor at z = 2 stays dry and only the face row holds water.
+    for x in 0..9 {
+        m.set([x, 1, 1], &stone).expect("one block");
+    }
+    for x in [1, 2, 3, 5, 6, 7] {
+        m.set([x, 1, 0], &water).expect("one block");
+    }
+    let near: BTreeSet<[i32; 3]> = BTreeSet::from([[1, 1, 2]]);
+    let far: BTreeSet<[i32; 3]> = BTreeSet::from([[7, 1, 2]]);
+    let standable = crate::grammar::nav::standable_cells(&m);
+    assert!(standable.contains(&[1, 1, 2]) && standable.contains(&[7, 1, 2]));
+
+    // The spill is a way round when nothing keeps a body in the box.
+    let mut blocks = std::collections::BTreeMap::new();
+    for pos in m.region().positions() {
+        if let Some(b) = m.get(pos) {
+            blocks.insert(pos, b.to_string());
+        }
+    }
+    let unboxed = World::of_piece(blocks, [i32::MIN; 3], [i32::MAX; 3]);
+    let round = unboxed.body_flood(&[[1, 1, 2]], &|_, _| true);
+    let outside = round
+        .iter()
+        .filter(|c| (0..3).any(|a| c[a] < 0 || c[a] >= [9, 6, 4][a]))
+        .count();
+    eprintln!(
+        "water at a box edge: {} state(s) unboxed, {outside} outside the box; far side reached \
+         unboxed: {}",
+        round.len(),
+        round.contains(&[7, 1, 2])
+    );
+    assert!(
+        round.contains(&[7, 1, 2]) && outside > 0,
+        "the spill is no way round, so the case binds nothing"
+    );
+
+    let probed = crate::admit::light::floor_measured(&m, &near);
+    assert_eq!(
+        probed.entry, near,
+        "the probe is walked in from the door alone"
+    );
+    let light = probed.reached;
+    let walked = crate::grammar::nav::reaches(&m, &standable, &near, &far);
+    assert!(
+        !light.contains(&[7, 1, 2]),
+        "the light probe's floor swims out of the box and back in"
+    );
+    assert!(
+        !walked,
+        "the fixtures' walk swims out of the box and back in"
+    );
+    assert_eq!(
+        light,
+        crate::grammar::nav::body_world(&m).floor_reached(&standable, &near),
+        "the light probe's floor and the piece's own world disagree"
+    );
+}

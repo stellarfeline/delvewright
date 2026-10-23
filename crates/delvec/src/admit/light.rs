@@ -575,7 +575,8 @@ pub(crate) fn floor_measured<V: BlockCells + ?Sized>(
     let blocks: BTreeMap<[i32; 3], String> = nav::positions(zone.origin(), zone.size())
         .filter_map(|pos| Some((pos, zone.block_state(pos)?.into_owned())))
         .collect();
-    let measured = crate::compiler::nav::World::of_piece(blocks).floor_reached(&standable, &entry);
+    let measured = crate::compiler::nav::World::of_piece(blocks, zone.origin(), zone.maximum())
+        .floor_reached(&standable, &entry);
     nav::EnteredFloor {
         standable,
         entry,
