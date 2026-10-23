@@ -38,16 +38,13 @@ fn premise_declines_are_enumerated() {
         ("compiler/light.rs", 1),
         // `compiler/nav/world/mod.rs`: the synthetic constructors' own door
         // (`from_solid_and_flooded`), which every unit-test world goes
-        // through.
-        ("compiler/nav/world/mod.rs", 1),
-        // `grammar/contract.rs`: the climb edge's proof over ONE piece's own
-        // blocks (`body_world`), judged before any campaign places it — no
-        // horizon, no volume, no gate; the piece's ladder is the question.
-        ("grammar/contract.rs", 1),
-        // `sculpt/mod.rs`: the pocket proof over a sculpted piece ALONE,
-        // before any campaign exists to state a premise (spec-0087 §3.4) — no
-        // horizon, no volume, no gate; the piece's own blocks are the question.
-        ("sculpt/mod.rs", 1),
+        // through; and `World::of_piece`, ONE piece's own blocks judged before
+        // any campaign places it — no horizon, no volume, no gate; the piece's
+        // blocks are the question. Every per-piece reader goes through it: the
+        // grammar's gates and edge proofs (`grammar::nav::body_world`), the
+        // sculpt's pocket proof and entry walk, the light probe and the
+        // enclosure survey.
+        ("compiler/nav/world/mod.rs", 2),
     ];
 
     let src = common::repo_root().join("crates/delvec/src");
