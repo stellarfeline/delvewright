@@ -142,7 +142,9 @@ a crack and this engine refuses one.
 ## 8. The gap this record leaves
 
 No source read here states a rule for **window spacing** or for a facade's
-**base / body / top** proportion; both were searched for and not found in a
-source the project may read. They are recorded as open rather than invented. A
-creator wanting them researches again or decides by eye at playable scale
-(`CLAUDE.md`: buildings are judged at playable scale).
+**base / body / top** proportion. Both are answered in `place-craft.md` §7 from
+sources read later: the windows of one storey all alike and the relation of an
+opening's width to the wall between openings (Palladio; Brief 17), and the
+shopfront's stallriser, window and fascia-under-cornice as a front's base, body
+and top, each answering the others and the storeys above (Brief 11; the
+Canterbury guidance). What stays by eye at playable scale is stated there.
