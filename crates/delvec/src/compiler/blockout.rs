@@ -2111,14 +2111,99 @@ pub fn check(
         crate::compiler::nav::Premises::geometry_only(),
     );
 
-    seams_built(b, &open, &mut binding, &mut findings);
-    nodes_reached(c, b, &sealed, &mut binding, &mut findings);
-    crossings(c, b, &open, &mut binding, &mut findings);
-    stitches(b, &open, &mut binding, &mut findings);
-    sightlines(c, b, &open, &mut binding, &mut findings);
-    identities(c, b, &open, &mut binding, &mut findings);
-    pacing(c, b, &open, &mut binding, &mut findings);
+    let run = |open: &crate::compiler::nav::World,
+               sealed: &crate::compiler::nav::World,
+               binding: &mut BatteryBinding,
+               findings: &mut Vec<(DwCode, Diagnostic)>| {
+        seams_built(b, open, binding, findings);
+        nodes_reached(c, b, sealed, binding, findings);
+        crossings(c, b, open, binding, findings);
+        stitches(b, open, binding, findings);
+        sightlines(c, b, open, binding, findings);
+        identities(c, b, open, binding, findings);
+        pacing(c, b, open, binding, findings);
+    };
+    run(&open, &sealed, &mut binding, &mut findings);
+    hatch_refusals(&open, &sealed, run, &mut findings);
     Some(Battery { findings, binding })
+}
+
+/// **`DW1066` over the battery**: a refusal the battery raises only because a
+/// trapdoor's shape stops a body — the same battery, run again over the same
+/// two worlds with every trapdoor's shape lifted
+/// ([`crate::compiler::nav::World::without_hatches`]), does not raise it.
+/// Every such refusal is replaced by one `DW1066` naming each trapdoor that
+/// stops a step and the face it stops, because a remedy about seams and
+/// massing sends the author to move what is not wrong. A refusal the lifted
+/// run also raises stands as it is. A world with no trapdoor, or a battery
+/// with no refusal, is not run twice.
+fn hatch_refusals(
+    open: &crate::compiler::nav::World,
+    sealed: &crate::compiler::nav::World,
+    run: impl Fn(
+        &crate::compiler::nav::World,
+        &crate::compiler::nav::World,
+        &mut BatteryBinding,
+        &mut Vec<(DwCode, Diagnostic)>,
+    ),
+    findings: &mut Vec<(DwCode, Diagnostic)>,
+) {
+    let refusing = |f: &(DwCode, Diagnostic)| f.1.severity == delvewright_dsl::Severity::Error;
+    if !open.has_hatches() || !findings.iter().any(refusing) {
+        return;
+    }
+    let mut lifted = Vec::new();
+    run(
+        &open.without_hatches(),
+        &sealed.without_hatches(),
+        &mut BatteryBinding::default(),
+        &mut lifted,
+    );
+    let stands: BTreeSet<(&str, &str)> = lifted
+        .iter()
+        .filter(|f| refusing(f))
+        .map(|(code, d)| (code.id(), d.path.as_str()))
+        .collect();
+    let (theirs, rest): (Vec<_>, Vec<_>) = std::mem::take(findings)
+        .into_iter()
+        .partition(|f| refusing(f) && !stands.contains(&(f.0.id(), f.1.path.as_str())));
+    *findings = rest;
+    if theirs.is_empty() {
+        return;
+    }
+    let stops = open.hatch_stops(open.cells_beside_hatches());
+    let named = if stops.is_empty() {
+        "No single step beside a trapdoor is stopped by one: the ways are stopped by several \
+         together"
+            .to_string()
+    } else {
+        open.hatch_stops_words(&stops)
+    };
+    let codes: Vec<&str> = theirs.iter().map(|(code, _)| code.id()).collect();
+    let code = crate::compiler::nav::DW_HATCH_SHUTS_IN;
+    findings.insert(
+        0,
+        (
+            code,
+            Diagnostic::error(
+                code,
+                "build",
+                "/content/seams".to_string(),
+                format!(
+                    "a trapdoor stops a way the site plan declares: {} would refuse this world \
+                     ({}), and none of them does once the trapdoors' shapes are lifted: {}. {}",
+                    codes.join(", "),
+                    theirs
+                        .iter()
+                        .map(|(_, d)| d.path.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    named,
+                    crate::compiler::nav::HATCH_REMEDY
+                ),
+            ),
+        ),
+    );
 }
 
 /// The assembled blocks with every shut seam the graph's closure never opens
@@ -4305,5 +4390,71 @@ impl clap::ValueEnum for Knob {
                 ""
             }
         )))
+    }
+}
+
+#[cfg(test)]
+mod hatch_refusal_tests {
+    use super::*;
+    use crate::compiler::nav::{Premises, World};
+
+    /// A floor with one top-half trapdoor standing on it, where a body's feet go.
+    fn hatched(facing: &str) -> World {
+        let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
+        for x in 0..=2 {
+            for z in 0..=2 {
+                blocks.insert([x, 0, z], "minecraft:stone".to_string());
+            }
+        }
+        blocks.insert(
+            [1, 1, 1],
+            format!("minecraft:oak_trapdoor[facing={facing},half=top,open=true]"),
+        );
+        World::from_occupancy(
+            crate::compiler::assembled::occupancy_of(blocks, &BTreeSet::new()),
+            Premises::geometry_only(),
+        )
+    }
+
+    fn refusal(code: DwCode, path: &str) -> (DwCode, Diagnostic) {
+        (code, Diagnostic::error(code, "build", path, "refused"))
+    }
+
+    /// **The battery's `DW1066` arm**: a refusal the lifted world does not
+    /// raise is the trapdoors' doing and becomes one `DW1066`, first, naming
+    /// the trapdoor; a refusal the lifted world raises too stands as it is; an
+    /// advisory is kept; a world with no trapdoor is not run twice.
+    #[test]
+    fn a_refusal_only_a_trapdoor_raises_is_named_as_the_trapdoors_dw1066() {
+        let w = hatched("north");
+        let run =
+            |open: &World, _: &World, _: &mut BatteryBinding, f: &mut Vec<(DwCode, Diagnostic)>| {
+                if open.has_hatches() {
+                    f.push(refusal(DW_PORTAL_UNCROSSABLE, "/content/seams[edge/a]"));
+                }
+                f.push(refusal(DW_SEAM_BUILT, "/content/seams[edge/b]"));
+            };
+        let mut findings = Vec::new();
+        run(&w, &w, &mut BatteryBinding::default(), &mut findings);
+        hatch_refusals(&w, &w, run, &mut findings);
+        let codes: Vec<&str> = findings.iter().map(|(c, _)| c.id()).collect();
+        assert_eq!(codes, ["DW1066", DW_SEAM_BUILT.id()]);
+        let msg = &findings[0].1.message;
+        assert!(msg.contains("DW0986 would refuse"), "{msg}");
+        assert!(
+            msg.contains("the trapdoor at [1, 1, 1] stops the way across its south face"),
+            "{msg}"
+        );
+
+        let bare = World::from_solid_cells(BTreeSet::from([[0, 0, 0]]));
+        let mut kept = vec![refusal(DW_PORTAL_UNCROSSABLE, "/content/seams[edge/a]")];
+        hatch_refusals(
+            &bare,
+            &bare,
+            |_, _, _, _| unreachable!("run twice"),
+            &mut kept,
+        );
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].0.id(), DW_PORTAL_UNCROSSABLE.id());
     }
 }

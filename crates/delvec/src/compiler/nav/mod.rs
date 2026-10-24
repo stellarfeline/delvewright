@@ -471,6 +471,22 @@ delvewright_dsl::dw_code! {
 }
 
 delvewright_dsl::dw_code! {
+    /// `DW1066`: **a trapdoor that shuts a body in.** A place `DW0921` would
+    /// refuse — a body gets in and cannot get back to the route — that a body
+    /// leaves once the trapdoors' shapes are lifted from the crossing rule
+    /// ([`World::hatch_stopping`]): the way out crosses a face a trapdoor
+    /// stops in every state the body can set it to. The open panel of a hatch
+    /// turned across a stair stands on the face the climb crosses, and its
+    /// closed plate is over the top tread (`docs/reference/doors-by-hand.md`,
+    /// *A trapdoor over a stair*).
+    ///
+    /// The refusal names each trapdoor and the face it stops, and the remedy
+    /// the record gives: turn it so its open panel stands along the climb. It
+    /// never marks the ground under it unwalkable.
+    pub const DW_HATCH_SHUTS_IN: DwCode = DwCode::new("DW1066", ExitTier::Build);
+}
+
+delvewright_dsl::dw_code! {
     /// `DW1011`: **a shut gate its two sides are joined round.** While a gate is
     /// shut — a gated connection's seam gate (spec-0107), or any gate anchor, as the quest
     /// configuration leaves it — a body standing at its near face reaches its far

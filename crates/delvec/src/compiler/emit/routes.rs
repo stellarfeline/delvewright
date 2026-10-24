@@ -752,6 +752,7 @@ pub(super) fn prove_world(
                     playable_region(plan).map(|r| (r.min, r.max)),
                 );
                 eprintln!("{}", leave_binding.line());
+                eprintln!("{}", leave_binding.hatch_line());
                 leave_verdict?;
                 put_json(out, "validation/leave-proof.json", &leave_binding.to_json());
                 // DW1011: a shut gate separates its two sides — no walk, fall,
