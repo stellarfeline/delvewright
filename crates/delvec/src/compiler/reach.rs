@@ -59,7 +59,7 @@
 //! anchor land on*. Every reader takes the whole value: the emitter **formats**
 //! its selector from it rather than restating an extent beside it, so a change
 //! to the rule cannot leave a stale number behind in a `format!`.
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::compiler::failure::Failure;
 use crate::compiler::nav::{LegRoute, SNAP_RADIUS, World};
@@ -776,46 +776,27 @@ fn anchor_footing(pos: [i32; 3], cells: &BTreeSet<[i32; 3]>) -> Option<BTreeSet<
     Some(cells.iter().copied().filter(|c| d2(c) == nearest).collect())
 }
 
-/// The cells of `cells` from which a body can walk to **some** cell of `footing`
-/// without ever leaving `cells`.
+/// The cells of `cells` from which a body can get to **some** cell of `footing`
+/// without ever coming to rest outside `cells`.
 ///
-/// Run BACKWARDS: the forward step graph is built over the footprint with
-/// [`World::neighbors`] — the engine's one step rule, so this walk and every
-/// routed leg agree about what a body can do — and then inverted, so the flood
-/// from the footing collects everything that can reach IT. Forwards would answer a
-/// different question (what the anchor can get to), and a one-way drop off the
-/// loft into the hall would then excuse the hall floor.
+/// Asked of the reach graph ([`World::cells_reaching`]: the graph's one
+/// confined walk from each cell, kept to `cells`), because arriving at the
+/// anchor is where a body can get to — the walk, the climb, a fall and a jump
+/// of the launch set. Asked from each cell toward the footing: from the
+/// footing outward would answer a different question (what the anchor can get
+/// to), and a one-way drop off the loft into the hall would then excuse the
+/// hall floor.
 ///
 /// `footing` is a set rather than a cell for the reason [`anchor_footing`] gives:
 /// where the anchor is not itself standable there is no ONE cell that is its
 /// footing, and the demand is arriving at the anchor, not at whichever of its
 /// lips a tie-break named.
-///
-/// Deterministic: `BTreeMap`/`BTreeSet` throughout and `neighbors`' own fixed
-/// order (ADR-0006).
-fn cells_that_reach(
+pub(crate) fn cells_that_reach(
     world: &World,
     cells: &BTreeSet<[i32; 3]>,
     footing: &BTreeSet<[i32; 3]>,
 ) -> BTreeSet<[i32; 3]> {
-    let mut pred: BTreeMap<[i32; 3], Vec<[i32; 3]>> = BTreeMap::new();
-    for &from in cells {
-        for to in world.neighbors(from) {
-            if cells.contains(&to) {
-                pred.entry(to).or_default().push(from);
-            }
-        }
-    }
-    let mut seen: BTreeSet<[i32; 3]> = footing.clone();
-    let mut queue: VecDeque<[i32; 3]> = footing.iter().copied().collect();
-    while let Some(c) = queue.pop_front() {
-        for &p in pred.get(&c).map(Vec::as_slice).unwrap_or(&[]) {
-            if seen.insert(p) {
-                queue.push_back(p);
-            }
-        }
-    }
-    seen
+    world.cells_reaching(cells, footing)
 }
 
 /// `DW0881`: **everywhere a `reach` completes from is somewhere a body arrived

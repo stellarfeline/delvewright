@@ -111,6 +111,10 @@ pub(in crate::compiler::nav) fn judge_jumps(
             });
             continue;
         }
+        // The walk relation, not the reach graph: the question is whether the
+        // route relation already has this edge (spec-0113 §5.2), which only a
+        // declaration adds. A gap the launch set clears is still one the walk
+        // does not, and declaring it is what lets a route take it.
         if walk.walk_region(&[j.from]).contains(&j.to) {
             b.refused += 1;
             b.not_a_jump += 1;

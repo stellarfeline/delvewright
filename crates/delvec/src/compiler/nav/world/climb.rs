@@ -321,6 +321,10 @@ impl World {
     /// it has held on. Empty for a route that climbs nothing — every route in a
     /// world without a climbable.
     ///
+    /// A question about single steps of the route the bot is driven along, not
+    /// about where a body can be: each step is classified by the walk and climb
+    /// moves the harness drives, so the reach graph has nothing to add here.
+    ///
     /// **A run is one column.** A climb move never crosses columns while the
     /// body holds on; it changes column only by letting go onto a standable cell
     /// (off the side, over the top) and taking hold again. So a stretch that

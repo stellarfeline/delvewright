@@ -242,13 +242,16 @@ fn trigger_root_step(
 /// configuration (in `first` order) whose walkable flood from its route cells,
 /// over its own world, meets one of `fire_cells`; `None` when no configuration
 /// reaches them. Split out so it is unit-testable over synthetic [`World`]s.
-fn earliest_reaching_config(
+pub(crate) fn earliest_reaching_config(
     configs: &[TriggerRootConfig],
     world: &World,
     fire_cells: &BTreeSet<[i32; 3]>,
 ) -> Option<usize> {
     configs.iter().find_map(|(w, first, cells)| {
-        let reached = w.as_ref().unwrap_or(world).walk_region(cells);
+        // Where a player's body can be (spec-0113 §5.1): a trigger the path
+        // does not perform is fired by whoever gets into its range first, on
+        // foot or by a jump, so the reach graph roots it.
+        let reached = w.as_ref().unwrap_or(world).body_region(cells);
         reached
             .iter()
             .any(|c| fire_cells.contains(c))

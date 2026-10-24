@@ -130,6 +130,18 @@ fn an_out_of_line_test_module_is_not_production() {
 /// relation (§4.5); a mob's moves are not a player's (§4.6); every other
 /// "where can a body be" question reads the graph. A new call reds this test
 /// until it is listed here, with its reason at the call site.
+/// The question a reader that keeps off the reach graph answers instead —
+/// each one a question that is not "can the player's body reach this cell".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Question {
+    /// The route the bot is driven along on cue: a leg the critical path
+    /// performs, or one the harness walks (§4.5).
+    BotRoute,
+    /// Whether one move is the walk relation's, or the relation's own
+    /// definition and a mob's moves over it (§4.6).
+    StepLegality,
+}
+
 #[test]
 fn the_graph_declines_are_enumerated() {
     let src = common::repo_root().join("crates/delvec/src");
@@ -146,46 +158,97 @@ fn the_graph_declines_are_enumerated() {
     found.sort();
     // (file under `src/`, the call, how many production sites) — each with
     // the question that keeps it off the graph.
-    const EXPECTED: &[(&str, &str, usize)] = &[
-        // `DW0937`: the critical path performs the strike, so the question is
-        // whether the party walks on cue to a cell it strikes from (§4.5);
-        // and the bot's spared stand beside it, a cell it walks to on cue.
-        ("compiler/emit/proofs.rs", ".walk_region(", 2),
-        // `DW0920`: where the party is walked to engage a fight in water.
-        ("compiler/engage.rs", ".walk_region(", 1),
-        // `holders::walk_world`: the stance a holder `collect` is taken
-        // from, where the critical path's leg ends (spec-0111 §5.2).
-        ("compiler/holders.rs", ".walk_region_rooted(", 1),
-        // `DW0315`/`DW0316`: checkpoints and respawns (§4.5).
-        ("compiler/nav/checkpoint.rs", ".walk_region(", 1),
-        // A timed hazard's pre-commitment ground: where the party walks
-        // before it commits to the span, on cue.
-        ("compiler/nav/hazard.rs", ".walk_region(", 1),
-        // `DW1041`'s `not a jump`: whether the walk already joins the two
-        // cells of a declared jump.
-        ("compiler/nav/jump.rs", ".walk_region(", 1),
-        // `reach_into_volumes`' player arm, the vacuity half of `DW0891`
-        // ("a volume no modelled body reaches"): the cell relation, not yet
-        // the graph — recorded debt. Its direction: it can only under-count
-        // the volumes a body reaches, which adds a zero-binding warning and
-        // never lets a hazard ship unjudged.
-        ("compiler/nav/lethal.rs", "moves_of(", 1),
-        // The route proofs' own region model (`DW0311` and family, §4.5).
-        ("compiler/nav/route/region.rs", ".walk_region(", 2),
-        // `DW0327`/`DW0355`: the stealth zone and its onset sprint (§4.5).
-        ("compiler/nav/stealth.rs", ".walk_region(", 1),
-        // The cell relation's definition, and the mob relation over it
-        // (§4.6).
-        ("compiler/nav/world/body.rs", "moves_of(", 2),
-        // The reach graph's own cheap edges, taken before it flies.
-        ("compiler/nav/world/reach.rs", "moves_of(", 1),
-        // A stake's way home: the route the party walks back on cue.
-        ("compiler/stake.rs", ".walk_region(", 1),
+    const EXPECTED: &[(&str, &str, usize, Question)] = &[
+        // The bot's own route. `DW0937`: the critical path performs the
+        // strike, so the question is whether the party walks on cue to a cell
+        // it strikes from (§4.5); and the bot's spared stand beside it, a cell
+        // the bot is walked to on cue.
+        (
+            "compiler/emit/proofs.rs",
+            ".walk_region(",
+            2,
+            Question::BotRoute,
+        ),
+        // The bot's own route. `DW0920`: the fight is a `kill` the critical
+        // path performs, so the question is whether the party, walked on cue
+        // to where the wave is seated, gets its feet wet there.
+        ("compiler/engage.rs", ".walk_region(", 1, Question::BotRoute),
+        // The bot's own route. `holders::walk_world`: the stance a holder
+        // `collect` is taken from, where the critical path's leg ends and the
+        // bot takes the item (spec-0111 §5.2).
+        (
+            "compiler/holders.rs",
+            ".walk_region_rooted(",
+            1,
+            Question::BotRoute,
+        ),
+        // A single step's legality. `DW1041`'s `not a jump`: whether the
+        // route relation already holds the edge a declared jump adds
+        // (§5.2), which the launch set never answers.
+        (
+            "compiler/nav/jump.rs",
+            ".walk_region(",
+            1,
+            Question::StepLegality,
+        ),
+        // The bot's own route. The recovery stake's way home
+        // (`reachable_under_every_quest_state` and `seat_reach`, whose one
+        // reader is `compiler/stake.rs`): the route the party walks back on
+        // cue to its stake.
+        (
+            "compiler/nav/route/region.rs",
+            ".walk_region(",
+            2,
+            Question::BotRoute,
+        ),
+        // The bot's own route. `DW0327`: the party is walked to cover on the
+        // stealth beat's sneak leg, and `DW0355` times that same walk (§4.5),
+        // so the pair reads one relation.
+        (
+            "compiler/nav/stealth.rs",
+            ".walk_region(",
+            1,
+            Question::BotRoute,
+        ),
+        // A single step's legality: the cell relation's definition, and a
+        // mob's movement over it (§4.6).
+        (
+            "compiler/nav/world/body.rs",
+            "moves_of(",
+            2,
+            Question::StepLegality,
+        ),
+        // A single step's legality: the reach graph's own cheap edges, taken
+        // before it flies.
+        (
+            "compiler/nav/world/reach.rs",
+            "moves_of(",
+            1,
+            Question::StepLegality,
+        ),
+        // The bot's own route. A stake's way home, from a seat that is not the
+        // entry: the route the party walks back on cue, the domain read by the
+        // same relation.
+        ("compiler/stake.rs", ".walk_region(", 1, Question::BotRoute),
     ];
     let expected: Vec<(String, &str, usize)> = EXPECTED
         .iter()
-        .map(|(f, p, n)| ((*f).to_string(), *p, *n))
+        .map(|(f, p, n, _)| ((*f).to_string(), *p, *n))
         .collect();
+    let of = |q: Question| {
+        EXPECTED
+            .iter()
+            .filter(|e| e.3 == q)
+            .map(|e| e.2)
+            .sum::<usize>()
+    };
+    eprintln!(
+        "graph declines: {} production site(s) off the reach graph, {} on the bot's own route, \
+         {} a single step's legality",
+        EXPECTED.iter().map(|e| e.2).sum::<usize>(),
+        of(Question::BotRoute),
+        of(Question::StepLegality)
+    );
     assert_eq!(
         found,
         expected,

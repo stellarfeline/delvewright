@@ -110,6 +110,10 @@ fn verify_traps(
 /// the walkable world **without ever stepping on the trap cell** — i.e. the party
 /// can reach and use the disarm before being forced onto the trap. A BFS over
 /// standable cells with `trap_cell` removed from the walkable set.
+///
+/// The walk relation, not the reach graph (spec-0113 §4.5): the critical path
+/// performs the disarm (`trap-disarm`), so the question is whether the party
+/// walks on cue to the affordance before the trap is forced.
 fn disarm_reachable_before(
     world: &World,
     starts: &[[i32; 3]],

@@ -20,7 +20,15 @@
 //! door), the sculpt's walk from grade ([`crate::sculpt::entry_walked`]) and
 //! the enclosure survey's reached floor (`DW0895`,
 //! [`crate::compiler::view::showing::floor_reached`] and the count
-//! [`crate::compiler::view::showing::survey`] reports).
+//! [`crate::compiler::view::showing::survey`] reports), and the nav-side
+//! readers of where a body can be: `DW0891`'s player arm
+//! ([`crate::compiler::nav::World::reach_into_volumes`]), a timed hazard's
+//! pre-commitment ground (`DW0388`,
+//! [`crate::compiler::nav::hazard::pre_commit_ground`], over the course with
+//! its last platform walled up), a trigger-set checkpoint's root (`DW0315`,
+//! [`crate::compiler::nav::checkpoint::earliest_reaching_config`]) and a
+//! `reach` objective's arriving cells (`DW0881`,
+//! [`crate::compiler::reach::cells_that_reach`]).
 //!
 //! The cases are parkour courses: platforms three wide along `x` with gaps of
 //! zero to four columns, rises of up to two courses either way, a low ceiling
@@ -41,7 +49,8 @@
 //! the launch set, or no case needs a declared jump, for the graph to reach
 //! more than the walk does, or no step-out closure or leg needs a jump or a
 //! fall, or no grammar consumer's answer needs one, or no climb case reaches
-//! a held cell, or no per-piece reader's floor needs a jump or a fall.
+//! a held cell, or no per-piece reader's floor needs a jump or a fall, or no
+//! nav-side reader's answer does.
 
 use super::super::{Premises, World};
 use crate::grammar::block::BlockState;
@@ -285,6 +294,10 @@ fn every_consumer_reaches_what_the_reach_graph_reaches() {
     let mut held_reached = 0usize;
     let mut entries = 0usize;
     let mut floor_needed = 0usize;
+    let mut volume_needed = 0usize;
+    let mut watch_needed = 0usize;
+    let mut root_needed = 0usize;
+    let mut arriving_needed = 0usize;
     for seed in 0..CASES {
         let case = generate(seed);
         declared += case.jumps.len();
@@ -356,6 +369,95 @@ fn every_consumer_reaches_what_the_reach_graph_reaches() {
             );
             if routed && !walk.contains(&z) {
                 legs_needed += 1;
+            }
+        }
+
+        // The nav-side readers of where a body can be, over the world with its
+        // declared jumps. `DW0891`'s player arm: the cells it floods into
+        // are the graph's states.
+        let volume = jumping.reach_into_volumes(
+            &[case.root],
+            &crate::compiler::nav::Footprint::player(),
+            false,
+            None,
+            &[],
+        );
+        assert_eq!(
+            volume.reached, states,
+            "case {seed}: DW0891's player arm reaches cells the reach graph does not, or misses some"
+        );
+        let mut cell_flood: BTreeSet<[i32; 3]> = BTreeSet::from([case.root]);
+        let mut frontier = vec![case.root];
+        let fp = crate::compiler::nav::Footprint::player();
+        while let Some(c) = frontier.pop() {
+            for n in jumping.moves_of(c, &fp) {
+                if cell_flood.insert(n) {
+                    frontier.push(n);
+                }
+            }
+        }
+        if volume.reached.len() > cell_flood.len() {
+            volume_needed += 1;
+        }
+        // A timed hazard's pre-commitment ground (`DW0388`'s watch bay): the
+        // graph's standing states over the course with the hazard's span — the
+        // last platform's feet cells — walled up, built here from the blocks.
+        let last_x = case.solid.iter().map(|c| c[0]).max().expect("a course");
+        let span: BTreeSet<[i32; 3]> = case
+            .solid
+            .iter()
+            .filter(|c| c[0] == last_x)
+            .map(|c| [c[0], c[1] + 1, c[2]])
+            .collect();
+        let mut walled_solid = case.solid.clone();
+        walled_solid.extend(span.iter().copied());
+        let mut wp = Premises::geometry_only();
+        wp.declared_jumps = case.jumps.clone();
+        let walled = World::from_solid_cells(walled_solid).with_premises(wp);
+        let watch = crate::compiler::nav::hazard::pre_commit_ground(&jumping, &span, case.root);
+        let walled_graph = walled.body_region(&[case.root]);
+        assert_eq!(
+            watch, walled_graph,
+            "case {seed}: the hazard's pre-commitment ground differs from the reach graph's"
+        );
+        if watch.len() > walled.walk_region(&[case.root]).len() {
+            watch_needed += 1;
+        }
+        // `DW0315`'s trigger root and `DW0881`'s arriving cells, toward every
+        // cell over a solid block.
+        let configs = vec![(None, 0usize, vec![case.root])];
+        let region = jumping.body_reach(&[case.root]).cells();
+        let arriving = crate::compiler::reach::cells_that_reach(
+            &jumping,
+            &region,
+            &BTreeSet::from([case.root]),
+        );
+        for c in &case.solid {
+            let z = [c[0], c[1] + 1, c[2]];
+            let rooted = crate::compiler::nav::checkpoint::earliest_reaching_config(
+                &configs,
+                &jumping,
+                &BTreeSet::from([z]),
+            );
+            assert_eq!(
+                rooted,
+                graph.contains(&z).then_some(0),
+                "case {seed}: DW0315 roots a trigger at {z:?} differently from the reach graph"
+            );
+            if rooted.is_some() && !walk.contains(&z) {
+                root_needed += 1;
+            }
+            if !region.contains(&z) {
+                continue;
+            }
+            let back = jumping.body_reach(&[z]).cells().contains(&case.root);
+            assert_eq!(
+                arriving.contains(&z),
+                back,
+                "case {seed}: DW0881 judges {z:?} arriving differently from the reach graph"
+            );
+            if back && !jumping.walk_region(&[z]).contains(&case.root) {
+                arriving_needed += 1;
             }
         }
 
@@ -549,7 +651,9 @@ fn every_consumer_reaches_what_the_reach_graph_reaches() {
          {steps_needed} of the step-out a jump or fall, {legs_needed} leg(s) a jump or fall; \
          {grammar_pairs} grammar pair(s), {grammar_needed} grammar answer(s) a jump or fall, \
          {held_reached} climb case(s) reaching a held cell; {entries} ground-entry cell(s), \
-         {floor_needed} per-piece floor(s) a jump or fall"
+         {floor_needed} per-piece floor(s) a jump or fall; {volume_needed} DW0891 flood(s) \
+         past the cell relation, {watch_needed} watch bay(s) past the walk, {root_needed} \
+         trigger root(s) and {arriving_needed} arriving cell(s) a jump or fall"
     );
     assert!(
         launch_needed > 0 && contract_launch_needed > 0,
@@ -570,6 +674,11 @@ fn every_consumer_reaches_what_the_reach_graph_reaches() {
     assert!(
         entries > 0 && floor_needed > 0,
         "no ground entry, or no per-piece floor needs more than the walk: the agreement is vacuous"
+    );
+    assert!(
+        volume_needed > 0 && watch_needed > 0 && root_needed > 0 && arriving_needed > 0,
+        "no DW0891 flood, watch bay, trigger root or arriving cell needs more than the walk: \
+         the agreement is vacuous"
     );
 }
 

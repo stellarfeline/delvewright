@@ -48,9 +48,11 @@ impl World {
 
     /// **Can a body moving from `roots` get its hitbox into any of `volumes`?**
     ///
-    /// Floods the body's own movement — [`World::mob_moves`] when `mob`, the
-    /// cell relation [`World::moves_of`] otherwise, from roots a caller takes
-    /// off the reach graph (spec-0113) — from `roots`, and asks of every place it
+    /// Floods the body's own movement from `roots` — [`World::mob_moves`] when
+    /// `mob`; otherwise the reach graph's edges ([`World::body_reach`]: the
+    /// walk, the climb, every fall, swim and dive, and every jump of the launch
+    /// set), because whether a player's body gets into a volume is where a
+    /// player can be (spec-0113 §5.1) — and asks of every place it
     /// reaches whether its hitbox meets a volume there
     /// ([`delvewright_dsl::metrics::cell_can_meet_volume`], the test the router's
     /// keep-out is written against). Two ways in a flood of standing places cannot
@@ -65,8 +67,12 @@ impl World {
     ///   every cell of that water: the undead sink and walk the bottom, and a
     ///   drowned swims down. Not every mob sinks, so for the ones that float this
     ///   is wider than the truth; it can only refuse a wave, never pass one. A
-    ///   player body does not dive here: the reach graph is where a player's
-    ///   dive is taken.
+    ///   player's dive is the reach graph's own edge.
+    ///
+    /// A player's arc through a volume it lands beyond is not asked: the graph
+    /// names where a launch comes to rest, not the cells it flies through, so
+    /// such a volume is reached only when some rest state or straight fall
+    /// meets it.
     ///
     /// `radius`, when given, bounds the flood: a reached place lies within that
     /// many blocks of some root. Asked of a world with no lethal exclusion
@@ -124,6 +130,8 @@ impl World {
         let mut found: Vec<(usize, Vec<[i32; 3]>, &'static str)> = Vec::new();
         let mut queue: std::collections::VecDeque<[i32; 3]> = roots.iter().copied().collect();
         let clear = |c: [i32; 3]| !self.is_occupied(c);
+        // A player's moves are the reach graph's, closed once from the roots.
+        let graph = (!mob).then(|| self.body_reach(roots));
         while let Some(cur) = queue.pop_front() {
             let afloat = self.is_water_surface(cur);
             if let Some(v) = meets(cur) {
@@ -215,10 +223,9 @@ impl World {
                 path.reverse();
                 out.hits[v] = Some(VolumeHit { path, way_in, how });
             }
-            let next = if mob {
-                self.mob_moves(cur, fp)
-            } else {
-                self.moves_of(cur, fp)
+            let next: Vec<[i32; 3]> = match &graph {
+                None => self.mob_moves(cur, fp),
+                Some(g) => g.next(cur).collect(),
             };
             for n in next {
                 if within(n) && out.reached.insert(n) {

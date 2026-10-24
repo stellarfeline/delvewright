@@ -73,7 +73,11 @@ fn verify_stealth(
                 });
             }
             // One reachability flood from the player's position (not one A* per zone
-            // cell): the question is set membership, not a route.
+            // cell): the question is set membership, not a route. The walk
+            // relation, not the reach graph (spec-0113 §4.5): the party is
+            // walked to cover on the beat's sneak leg, and `DW0355` times that
+            // same walk — one relation for the pair, so a zone this calls
+            // reachable is one the onset proof can time.
             let start = player_pos.and_then(|p| world.snap_standable(p, SNAP_RADIUS));
             if let Some(start) = start
                 && {

@@ -172,10 +172,12 @@ fn verify_hazard_observability(
         if samples.is_empty() {
             continue; // an unusable region is DW0444 / DW0311's business
         }
-        // Pre-commitment ground: everywhere the player can walk from the entry
-        // WITHOUT entering the span.
-        let sealed = world.with_sealed(&span);
-        let pre_commit = sealed.walk_region(&[entry]);
+        // Pre-commitment ground: everywhere a player's body can stand from the
+        // entry WITHOUT entering the span — the reach graph's standing states
+        // (spec-0113 §5.1) over the world with the span walled up, so a jump
+        // that would cross the span is stopped by it. A watch bay is where a
+        // player stands to look, not a leg the party is walked on cue.
+        let pre_commit = pre_commit_ground(world, &span, entry);
         // Nearest candidate first — a real watch bay is close, so the passing case
         // costs a handful of sightlines. Ties break on cell order (ADR-0006).
         let mut candidates: Vec<(i32, [i32; 3])> = pre_commit
@@ -217,6 +219,18 @@ fn verify_hazard_observability(
         ));
     }
     out
+}
+
+/// **Where a body can stand before it commits to a hazard's span**: the
+/// standing states of the reach graph from `entry` over `world` with every
+/// cell of `span` walled up ([`World::with_sealed`]) — a wall, not an
+/// omission, because an arc that lands past the span flies through it.
+pub(crate) fn pre_commit_ground(
+    world: &World,
+    span: &BTreeSet<[i32; 3]>,
+    entry: [i32; 3],
+) -> BTreeSet<[i32; 3]> {
+    world.with_sealed(span).body_region(&[entry])
 }
 
 /// Chebyshev distance from a cell to a box, in blocks — `0` inside the box.

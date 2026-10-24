@@ -236,6 +236,10 @@ fn wet_footing_within_reach(
             best = Some((d, cell));
         }
     };
+    // The walk relation, not the reach graph (spec-0113 §4.5): the fight is a
+    // `kill` the critical path performs, so the question is whether the party,
+    // walked on cue to where the wave is seated, can get its feet wet there —
+    // water only a leap reaches is water the bot is never sent into.
     for cell in world.walk_region(from) {
         if stands_in_water(world, blocks, cell) {
             consider(cell);
