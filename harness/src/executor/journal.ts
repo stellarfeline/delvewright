@@ -68,8 +68,8 @@ export const methods = {
           outcome,
           detail:
             outcome === "missing"
-              ? `owed "${t.hint}" (${t.hintKey}); the journal read ${pages.length === 0 ? "nothing" : `"${pages.join(" ").slice(0, 600)}"`}`
-              : `"${t.hint}"`,
+              ? `owed the hint ${t.hintKey}; the journal read ${pages.length === 0 ? "nothing" : `"${pages.join(" ").slice(0, 600)}"`}`
+              : t.hintKey,
         });
       }
     }

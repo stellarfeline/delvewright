@@ -36,8 +36,6 @@ export interface JournalTold {
   readonly done: string;
   /** The translation key of its hint, as the page carries it. */
   readonly hintKey: string;
-  /** The English hint, for the report. */
-  readonly hint: string;
 }
 
 /** One quest's start. */
@@ -98,7 +96,6 @@ export function parseJournalLedger(raw: unknown): JournalLedger {
           objective: str(r["objective"], `${tat}/objective`),
           done: str(r["done"], `${tat}/done`),
           hintKey: str(r["hint_key"], `${tat}/hint_key`),
-          hint: str(r["hint"], `${tat}/hint`),
         };
       }),
       gated: gated as string[],

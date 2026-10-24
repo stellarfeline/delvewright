@@ -1352,7 +1352,10 @@ fn the_journal_ledger_owes_each_quest_start_its_first_pages() {
         .collect();
     assert_eq!(told, ["obj/talk"], "only the objective with no `after`");
     assert_eq!(q0["told"][0]["done"], "dw.o_talk");
-    assert_eq!(q0["told"][0]["hint"], "He stands by the door.");
+    assert!(
+        q0["told"][0].get("hint").is_none(),
+        "no player-facing string"
+    );
     assert!(
         q0["told"][0]["hint_key"]
             .as_str()

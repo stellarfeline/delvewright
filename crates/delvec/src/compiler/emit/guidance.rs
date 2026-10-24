@@ -1687,8 +1687,10 @@ pub(super) fn item_modifiers(
 /// page is owed while they are open. An objective with no `after` behind a gate
 /// nothing serves is a thread not yet unlocked (spec-0104 §8): it is owed no
 /// page and is listed under `gated`, counted, never judged. `active` is the
-/// quest's activation score and each objective's `done` its completion score,
-/// so the bot reads both and derives nothing.
+/// quest's activation score, each objective's `done` its completion score and
+/// `hint_key` the translation key its page carries the hint under, so the bot
+/// reads them and derives nothing. No player-facing string is written here: a
+/// `--lang` bake writes the same bytes.
 pub(super) fn journal_ledger(plan: &Plan, g: &Guide) -> Option<Value> {
     if !g.journal {
         return None;
@@ -1710,15 +1712,11 @@ pub(super) fn journal_ledger(plan: &Plan, g: &Guide) -> Option<Value> {
                 let key = delvewright_dsl::l10n::untag(hint)
                     .map(|(k, _)| k.to_string())
                     .unwrap_or_default();
-                let english = delvewright_dsl::l10n::untag(hint)
-                    .map(|(_, e)| e.to_string())
-                    .unwrap_or_else(|| hint.to_string());
                 if gate_cond(plan, o.gate()).is_empty() || is_served(plan, o) {
                     told.push(json!({
                         "objective": o.id().as_str(),
                         "done": obj_score(o.id().as_str()),
                         "hint_key": key,
-                        "hint": english,
                     }));
                 } else {
                     gated.push(json!(o.id().as_str()));
