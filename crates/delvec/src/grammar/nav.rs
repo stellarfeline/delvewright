@@ -212,9 +212,12 @@ pub fn reaches(
 ) -> bool {
     let seeds: Vec<[i32; 3]> = from.intersection(cells).copied().collect();
     !body_world(model)
-        .body_flood(&seeds, &|_, next| {
-            cells.contains(&next) || !standable(model, next)
-        })
+        .body_flood(
+            &seeds,
+            &crate::compiler::nav::Confinement::cells(&|next| {
+                cells.contains(&next) || !standable(model, next)
+            }),
+        )
         .is_disjoint(to)
 }
 

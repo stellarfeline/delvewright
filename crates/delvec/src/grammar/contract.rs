@@ -251,7 +251,10 @@ pub(crate) fn body_reached(
     from: &BTreeSet<[i32; 3]>,
 ) -> BTreeSet<[i32; 3]> {
     let seeds: Vec<[i32; 3]> = from.intersection(cells).copied().collect();
-    world.body_flood(&seeds, &|_, next| cells.contains(&next))
+    world.body_flood(
+        &seeds,
+        &crate::compiler::nav::Confinement::cells(&|next| cells.contains(&next)),
+    )
 }
 
 /// Can a body get from any cell of `from` to any cell of `to`, moving only
@@ -2047,8 +2050,6 @@ fn no_body_gate(ix: &Index, kinds: &CellKinds) -> Gate {
 struct Confined {
     /// Every element, in a fixed order.
     elements: Vec<Element>,
-    /// Cell → the elements holding it.
-    of_cell: BTreeMap<[i32; 3], Vec<usize>>,
     /// Directed step relations between elements, `(from, to)`.
     walk: BTreeSet<(usize, usize)>,
     /// Directed fall relations — a `drop` edge, and only forward.
@@ -2184,15 +2185,8 @@ fn build_confined(ix: &Index) -> Confined {
         walk.extend(relations);
     }
 
-    let mut of_cell: BTreeMap<[i32; 3], Vec<usize>> = BTreeMap::new();
-    for (id, element) in elements.iter().enumerate() {
-        for &cell in &element.cells {
-            of_cell.entry(cell).or_default().push(id);
-        }
-    }
     Confined {
         elements,
-        of_cell,
         walk,
         fall,
         ways,
@@ -2201,26 +2195,30 @@ fn build_confined(ix: &Index) -> Confined {
 }
 
 impl Confined {
-    fn allowed(&self, open: &BTreeSet<&str>, from: usize, to: usize, falling: bool) -> bool {
-        if from == to {
-            return true;
-        }
-        let base = if falling { &self.fall } else { &self.walk };
-        if base.contains(&(from, to)) {
-            return true;
-        }
-        self.ways.iter().any(|(name, gate)| {
-            open.contains(name.as_str())
-                && if falling { &gate.fall } else { &gate.relations }.contains(&(from, to))
-        })
-    }
-
-    fn hop(&self, open: &BTreeSet<&str>, c: [i32; 3], d: [i32; 3], falling: bool) -> bool {
-        let (Some(from), Some(to)) = (self.of_cell.get(&c), self.of_cell.get(&d)) else {
-            return false;
-        };
-        from.iter()
-            .any(|&f| to.iter().any(|&t| self.allowed(open, f, t, falling)))
+    /// **The declared relations in one opening state**, as the shared
+    /// confinement's licence ([`crate::compiler::nav::Licence`]): the elements
+    /// are its regions, every traversal edge licenses a walk between the
+    /// elements it chains (both ways, a `drop` forward only) and a `drop` a
+    /// fall, and a named way adds its relations only while it is open.
+    fn licence(&self, open: &BTreeSet<&str>) -> crate::compiler::nav::Licence {
+        let regions: Vec<&BTreeSet<[i32; 3]>> = self.elements.iter().map(|e| &e.cells).collect();
+        let opened: Vec<&WayGate> = self
+            .ways
+            .iter()
+            .filter(|(name, _)| open.contains(name.as_str()))
+            .map(|(_, gate)| gate)
+            .collect();
+        crate::compiler::nav::Licence::new(
+            &regions,
+            self.walk
+                .iter()
+                .copied()
+                .chain(opened.iter().flat_map(|g| g.relations.iter().copied())),
+            self.fall
+                .iter()
+                .copied()
+                .chain(opened.iter().flat_map(|g| g.fall.iter().copied())),
+        )
     }
 
     /// **The walk in one opening state**: the cells it counts, and the cells it
@@ -2282,8 +2280,9 @@ impl Confined {
         // **The body's own moves, from the reach graph** (spec-0113 §4): every
         // edge [`crate::compiler::nav::World::body_edges`] flies out of a cell —
         // the walk, the climb, every fall and every jump of the launch set —
-        // over this state's blocks. The contract adds only its confinement: a
-        // move that crosses from one element to another must be a relation a
+        // over this state's blocks. The contract adds only its confinement, in
+        // the shared confinement's own shape ([`Confined::licence`]): a move
+        // that crosses from one element to another must be a relation a
         // declared edge licenses, and a move that drops more than one course
         // across elements must be a `drop`'s. A private step rule here would be a
         // second answer to "can a body get there", and it was one: it stepped a
@@ -2307,10 +2306,12 @@ impl Confined {
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect();
-        let seen = world.body_flood(&seeds, &|cur, next| {
-            (targets.contains(&next) || held.contains(&next))
-                && self.hop(open, cur, next, cur[1] - next[1] > 1)
-        });
+        let licence = self.licence(open);
+        let keep = |next: [i32; 3]| targets.contains(&next) || held.contains(&next);
+        let seen = world.body_flood(
+            &seeds,
+            &crate::compiler::nav::Confinement::licensed(&keep, &licence),
+        );
         (targets, seen)
     }
 }

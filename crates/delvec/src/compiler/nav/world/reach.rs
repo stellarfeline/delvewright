@@ -2633,28 +2633,33 @@ impl World {
     }
 
     /// **Every rest state a body reaches from `seeds` by the reach graph's
-    /// moves, confined by `admit`**: the closure of [`World::body_edges`] in
-    /// which a move from `from` to `to` is taken only when `admit(from, to)`.
-    /// A seed that is no rest state is kept and moves nowhere.
+    /// moves, confined by `confinement`**: the closure of [`World::body_edges`]
+    /// in which a move is taken only where the confinement admits it — the
+    /// cells a body may rest in, and a licence between declared regions
+    /// ([`super::Confinement`]). A seed that is no rest state is kept and moves
+    /// nowhere.
     ///
     /// The one confined walk over the graph: a consumer that adds a
     /// confinement of its own (a declared edge's licence, a wall's plane, the
-    /// ways a plan cut) states it as `admit` and keeps no walk of its own.
-    /// With every move admitted it reaches exactly the states
+    /// ways a plan cut) states it as one of the shared shapes and keeps no walk
+    /// or admission of its own. Unconfined it reaches exactly the states
     /// [`World::body_reach`] does (`compiler::nav::world::reach::agreement`).
     /// Over a world of one piece ([`World::of_piece`]) no move leads out of
-    /// the piece's box, whatever `admit` says: the one confinement every
+    /// the piece's box, whatever the confinement says: the one confinement every
     /// per-piece reader shares, so none can forget it.
     pub fn body_flood(
         &self,
         seeds: &[[i32; 3]],
-        admit: &dyn Fn([i32; 3], [i32; 3]) -> bool,
+        confinement: &super::Confinement<'_>,
     ) -> BTreeSet<[i32; 3]> {
         let mut seen: BTreeSet<[i32; 3]> = seeds.iter().copied().collect();
         let mut queue: std::collections::VecDeque<[i32; 3]> = seen.iter().copied().collect();
         while let Some(cur) = queue.pop_front() {
             for edge in self.body_edges(cur) {
-                if !seen.contains(&edge.to) && self.in_piece(edge.to) && admit(cur, edge.to) {
+                if !seen.contains(&edge.to)
+                    && self.in_piece(edge.to)
+                    && confinement.admits(cur, edge.to)
+                {
                     seen.insert(edge.to);
                     queue.push_back(edge.to);
                 }
@@ -2679,7 +2684,7 @@ impl World {
         entry: &BTreeSet<[i32; 3]>,
     ) -> BTreeSet<[i32; 3]> {
         let seeds: Vec<[i32; 3]> = entry.iter().copied().collect();
-        self.body_flood(&seeds, &|_, _| true)
+        self.body_flood(&seeds, &super::Confinement::none())
             .intersection(standable)
             .copied()
             .collect()

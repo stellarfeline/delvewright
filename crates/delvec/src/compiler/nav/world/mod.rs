@@ -8,6 +8,8 @@ pub(in crate::compiler::nav) mod body;
 pub use body::*;
 pub(in crate::compiler::nav) mod climb;
 pub use climb::*;
+pub(in crate::compiler::nav) mod confine;
+pub use confine::*;
 pub(in crate::compiler::nav) mod reach;
 pub use reach::*;
 

@@ -2478,7 +2478,7 @@ fn portal_crossing(
         .map(narrow)
         .filter(|c| world.is_standable(*c) || (climb && world.holds_body(*c)))
         .collect();
-    let floor = world.body_flood(&seeds, &|_, n| in_wall(n));
+    let floor = world.body_flood(&seeds, &crate::compiler::nav::Confinement::cells(&in_wall));
     let (mut onto_a, mut onto_b) = (0usize, 0usize);
     for c in &floor {
         let n = steps_out(world, *c);
@@ -2934,7 +2934,7 @@ pub(crate) fn crossing_flood(
     starts: &[[i32; 3]],
     keep: &dyn Fn([i32; 3]) -> bool,
 ) -> BTreeSet<[i32; 3]> {
-    world.body_flood(starts, &|_, next| keep(next))
+    world.body_flood(starts, &crate::compiler::nav::Confinement::cells(keep))
 }
 
 /// **Whether a body standing at `from` reaches `to`**, as the pacing legs

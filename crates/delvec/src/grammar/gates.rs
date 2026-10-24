@@ -397,7 +397,7 @@ fn piece_reached(
     from: &BTreeSet<[i32; 3]>,
 ) -> BTreeSet<[i32; 3]> {
     let seeds: Vec<[i32; 3]> = from.iter().copied().collect();
-    world.body_flood(&seeds, &|_, _| true)
+    world.body_flood(&seeds, &crate::compiler::nav::Confinement::none())
 }
 
 /// The cells of `standable` a body reaches from `entry`

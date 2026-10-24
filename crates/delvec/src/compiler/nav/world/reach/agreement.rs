@@ -633,7 +633,7 @@ fn water_at_a_box_edge_leaves_no_way_round_the_piece() {
         }
     }
     let unboxed = World::of_piece(blocks, [i32::MIN; 3], [i32::MAX; 3]);
-    let round = unboxed.body_flood(&[[1, 1, 2]], &|_, _| true);
+    let round = unboxed.body_flood(&[[1, 1, 2]], &super::super::Confinement::none());
     let outside = round
         .iter()
         .filter(|c| (0..3).any(|a| c[a] < 0 || c[a] >= [9, 6, 4][a]))
