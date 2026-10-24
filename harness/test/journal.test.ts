@@ -51,6 +51,20 @@ test("the ledger parses strictly", () => {
   assert.equal(l.quests.length, 2);
   assert.equal(l.quests[1]!.told[0]!.hintKey, "delve.x.obj.the-boat.bolt.hint");
   assert.throws(() => parseJournalLedger({ ...raw, quests: {} }), JournalLedgerParseError);
+  // A bake's page carries no key: `null`, never an empty string.
+  const baked = parseJournalLedger({
+    party: "#party",
+    quests: [{ ...raw.quests[0], told: [{ objective: "obj/a", done: "dw.o_a", hint_key: null }] }],
+  });
+  assert.equal(baked.quests[0]!.told[0]!.hintKey, null);
+  assert.throws(
+    () =>
+      parseJournalLedger({
+        party: "#party",
+        quests: [{ ...raw.quests[0], told: [{ objective: "obj/a", done: "dw.o_a", hint_key: "" }] }],
+      }),
+    JournalLedgerParseError,
+  );
   assert.throws(
     () => parseJournalLedger({ party: "#party", quests: [{ ...raw.quests[0], told: [{ objective: "obj/a" }] }] }),
     JournalLedgerParseError,

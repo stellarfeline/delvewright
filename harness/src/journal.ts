@@ -34,8 +34,9 @@ export interface JournalTold {
   readonly objective: string;
   /** The objective's completion score on the party holder. */
   readonly done: string;
-  /** The translation key of its hint, as the page carries it. */
-  readonly hintKey: string;
+  /** The translation key of its hint, as the page carries it; `null` in a
+   * `--lang` bake, whose pages carry the hint as text with no key. */
+  readonly hintKey: string | null;
 }
 
 /** One quest's start. */
@@ -95,7 +96,7 @@ export function parseJournalLedger(raw: unknown): JournalLedger {
         return {
           objective: str(r["objective"], `${tat}/objective`),
           done: str(r["done"], `${tat}/done`),
-          hintKey: str(r["hint_key"], `${tat}/hint_key`),
+          hintKey: r["hint_key"] === null ? null : str(r["hint_key"], `${tat}/hint_key`),
         };
       }),
       gated: gated as string[],
@@ -163,7 +164,7 @@ export interface JournalVerdict {
   readonly objective: string;
   /** The step boundary the quest was first seen active at. */
   readonly step: number;
-  readonly outcome: "shown" | "missing" | "done-before-read";
+  readonly outcome: "shown" | "missing" | "done-before-read" | "baked";
   readonly detail: string;
 }
 
@@ -179,6 +180,8 @@ export interface JournalBinding {
   readonly shown: number;
   readonly missing: number;
   readonly doneBeforeRead: number;
+  /** Owed pages a `--lang` bake carries with no key to read them by: unjudged. */
+  readonly baked: number;
   /** Objectives owed no page by the ledger (gated, nothing serves them). */
   readonly gated: number;
 }
@@ -198,6 +201,7 @@ export function journalBinding(
     shown: n("shown"),
     missing: n("missing"),
     doneBeforeRead: n("done-before-read"),
+    baked: n("baked"),
     gated: ledger.quests.reduce((a, q) => a + q.gated.length, 0),
   };
 }
@@ -208,7 +212,7 @@ export function journalBindingLine(b: JournalBinding): string {
     `journal binding: ${b.shown} of ${b.judged} owed page(s) shown at their quest's start, ` +
     `${b.missing} missing; ${b.started} of ${b.quests} quest(s) seen to start ` +
     `(${b.owing} owe a page), ${b.doneBeforeRead} owed objective(s) already complete when read, ` +
-    `${b.gated} gated objective(s) owed no page` +
+    `${b.baked} unjudged in a --lang bake, ${b.gated} gated objective(s) owed no page` +
     (b.judged === 0 ? " — UNBOUND: no quest start the run saw owed a page" : "")
   );
 }

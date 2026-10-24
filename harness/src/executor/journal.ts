@@ -50,13 +50,17 @@ export const methods = {
         );
         const last = replies[replies.length - 1]!;
         pages = last.answered ? last.lines : [];
-        shown = new Set(q.told.filter((t) => pagesShow(pages, t.hintKey)).map((t) => t.objective));
-        if (q.told.every((t) => done.has(t.objective) || shown.has(t.objective))) break;
+        shown = new Set(
+          q.told.filter((t) => t.hintKey !== null && pagesShow(pages, t.hintKey)).map((t) => t.objective),
+        );
+        if (q.told.every((t) => t.hintKey === null || done.has(t.objective) || shown.has(t.objective))) break;
         if (Date.now() >= deadline) break;
         await delay(JOURNAL_POLL_MS);
       }
       for (const t of q.told) {
-        const outcome = done.has(t.objective) && !shown.has(t.objective)
+        const outcome = t.hintKey === null
+          ? "baked"
+          : done.has(t.objective) && !shown.has(t.objective)
           ? "done-before-read"
           : shown.has(t.objective)
             ? "shown"
@@ -69,7 +73,7 @@ export const methods = {
           detail:
             outcome === "missing"
               ? `owed the hint ${t.hintKey}; the journal read ${pages.length === 0 ? "nothing" : `"${pages.join(" ").slice(0, 600)}"`}`
-              : t.hintKey,
+              : (t.hintKey ?? "no key: a --lang bake"),
         });
       }
     }

@@ -1689,8 +1689,9 @@ pub(super) fn item_modifiers(
 /// page and is listed under `gated`, counted, never judged. `active` is the
 /// quest's activation score, each objective's `done` its completion score and
 /// `hint_key` the translation key its page carries the hint under, so the bot
-/// reads them and derives nothing. No player-facing string is written here: a
-/// `--lang` bake writes the same bytes.
+/// reads them and derives nothing. No player-facing string is written here. A
+/// `--lang` bake writes its hints as text with no key, so its `hint_key` is
+/// `null` and the bot counts the page unjudged.
 pub(super) fn journal_ledger(plan: &Plan, g: &Guide) -> Option<Value> {
     if !g.journal {
         return None;
@@ -1709,9 +1710,9 @@ pub(super) fn journal_ledger(plan: &Plan, g: &Guide) -> Option<Value> {
                 let Some(hint) = o.hint().filter(|_| o.announced(guidance)) else {
                     continue;
                 };
-                let key = delvewright_dsl::l10n::untag(hint)
-                    .map(|(k, _)| k.to_string())
-                    .unwrap_or_default();
+                // A `--lang` bake writes the hint as its text, with no key:
+                // the page carries nothing language-neutral to read it by.
+                let key = delvewright_dsl::l10n::untag(hint).map(|(k, _)| k.to_string());
                 if gate_cond(plan, o.gate()).is_empty() || is_served(plan, o) {
                     told.push(json!({
                         "objective": o.id().as_str(),
