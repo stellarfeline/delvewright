@@ -269,7 +269,7 @@ export interface GateApproach {
 }
 
 /**
- * **A `crush: true` timed gate** (format 5): a place whose closing edge kills a
+ * **A `crush: true` timed gate**: a place whose closing edge kills a
  * body standing in it. The region is the one the closing tick's selector judges.
  */
 export interface CrushGate {

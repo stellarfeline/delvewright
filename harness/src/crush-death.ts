@@ -1,12 +1,13 @@
 // The crush death, as the bot tier walks it (spec-0016 §4 addendum).
 //
 // A `crush: true` timed gate kills a body standing in its region on the closing
-// tick. The build's death plan (`validation/death-plan.json`, format 5) lists
+// tick. The build's death plan (`validation/death-plan.json`, format 6) lists
 // every such gate with its clock, the sides a body can step in from, and the
-// exported step whose proven leg first crosses it; every respawn seat carries
-// the step after which it is the seat a death returns to. The bot stands in each
-// gate's closing cells once, dies there, and comes back at the seat that governs
-// a death at that point of the run.
+// exported step after which its death is walked with the mouth walked to
+// (`trial_at`, `trial_mouth`); every respawn seat carries the step after which
+// it is the seat a death returns to. The bot stands in each gate's closing
+// cells once, at that boundary, dies there, and comes back at the seat that
+// governs a death at that point of the run.
 //
 // Everything here is pure: types, the governing-seat rule, verdicts and the
 // stage row. The executor supplies only observations.
