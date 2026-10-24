@@ -449,8 +449,8 @@ impl Hatch {
     /// centred in the column on each side, as every body in the nav model is.
     ///
     /// The open panel spans the whole cell on `panel`; a body centred in its
-    /// column clears a panel on any other face (13/16 of free width against a
-    /// body 0.6 across). The closed plate spans every face at its own height;
+    /// column clears a panel on any other face (its box spans 0.2..0.8 of the
+    /// cell, a side panel starts at 0.8125). The closed plate spans every face at its own height;
     /// a closed bottom plate is stepped over (3/16 is under the auto-step), so
     /// it stops nothing. Where the mover may use it (`may_use`) a trapdoor a
     /// hand opens stops the crossing only when BOTH states do — the body sets

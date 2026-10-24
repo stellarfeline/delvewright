@@ -517,7 +517,7 @@ impl World {
     /// shape the pinned jar gives each state
     /// ([`delvewright_dsl::blockshape::Hatch::stops_crossing`]). A trapdoor in
     /// either column is asked about the face between them, at every course the
-    /// band reaches. A body wider than the free width a panel leaves (13/16)
+    /// band reaches. A body wider than 10/16 (what a centred box may be and clear a side panel)
     /// meets a panel on any face of a column it enters or leaves. Empty for a
     /// world with no trapdoor, which keeps every proof over it byte-identical.
     pub(in crate::compiler::nav) fn hatch_stopping(
