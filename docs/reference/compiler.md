@@ -3329,7 +3329,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
     excludes a staged volume from a walk leg only while its gate reads open
     (asked before each leg; an unanswered term excludes it), enters it in the
     death loop only when it reads open, and refuses a row with no `gate`.
-    `format_version` is `DEATH_PLAN_FORMAT_VERSION`, 5.
+    `format_version` is `DEATH_PLAN_FORMAT_VERSION`, 6.
   - `crush_gates[]` — every `crush: true` timed gate, in
     declaration order: `id`, the normalized `region` the closing tick's
     selector judges, `open_ticks`/`closed_ticks`/`phase`, `approaches[]` (per
@@ -3337,12 +3337,20 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
     sealed and the region cell beside it, `stand`, standable with the gate
     open — `nav::gate_approaches`), `crossed_at` (the exported index of the
     first critical-path step whose proven leg crosses the gate, `null` when no
-    proven leg does), and `gate.terms` (a disarmable gate is live while its
+    proven leg does), `trial_at` and `trial_mouth` (the exported index of the
+    step after which the gate's death is walked, and the mouth walked to:
+    `nav::first_mouth_reach`, the first walked leg, in path order, from whose
+    start a mouth is reachable over the world that leg was proven in, never
+    through the gate's own span and keeping a body out of every other crush
+    gate, every non-crush timed gate read open; the leg's `from_step` through
+    `Plan::exported_layout`; both `null` when no leg start reaches a mouth),
+    and `gate.terms` (a disarmable gate is live while its
     disarm flag is unset: `{objective: dw.f_<flag>, holder: "#party", min: 1,
     max: null, negate: true}`; empty otherwise). A plan is emitted for a
     campaign whose only death is a crush gate. The bot's `crush-death` stage
     stands in each gate's closing cells once — at the boundary after step
-    `crossed_at − 1`, or the first boundary a mouth is reachable from — and
+    `trial_at`, walking to `trial_mouth`, and at no other boundary (a trial
+    run elsewhere is red); after the path when `trial_at` is `null` — and
     asserts the death is the gate's and the respawn is at the governing seat.
   - every `placement.seats[]` row carries `in_force_after`: the
     exported step after which the seat is where a death returns the party —

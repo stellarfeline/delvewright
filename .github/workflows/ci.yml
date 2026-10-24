@@ -1721,6 +1721,31 @@ jobs:
           if b["asserted"] != b["within_reach"]:
               sys.exit("a watcher the path reached was not asserted")
           PY
+      # A crush gate's death is walked at the one boundary the build names
+      # (`death-plan.json` `trial_at`), never at one the run's pathfinder found:
+      # the seat a death returns to is judged at that boundary, so a run that
+      # chose its own would judge a different seat from run to run.
+      - name: the gallery's crush deaths are walked at the boundary the build names
+        run: |
+          python3 - <<'PY'
+          import json
+          import sys
+          sys.stdout.reconfigure(newline="\n")
+          plan = json.load(open("validation/delve-output-gallery-primary/validation/death-plan.json"))
+          r = json.load(open("validation/run-out/dw-ci-gallery-bot/run-report.json"))
+          named = {g["id"]: g["trial_at"] for g in plan["crush_gates"] if g["trial_at"] is not None}
+          trials = {t["gate"]: t for t in r["crush_deaths"]["trials"]}
+          print(f"crush gates the build names a boundary for: {len(named)} of {len(plan['crush_gates'])}; "
+                f"trials: {json.dumps({k: (t['boundary'], t['named_boundary']) for k, t in trials.items()})}")
+          if not named:
+              sys.exit("the build names a boundary for no crush gate: the judgement binds nothing")
+          bad = [f"{g}: walked at {trials[g]['boundary'] if g in trials else 'no boundary'}, named {at}"
+                 for g, at in named.items()
+                 if g not in trials or trials[g]["boundary"] != at or trials[g]["named_boundary"] != at
+                 or not trials[g]["died"]]
+          if bad:
+              sys.exit("a crush death was not walked at the boundary the build names: " + "; ".join(bad))
+          PY
       # The engine's quest cues arrive where the player stands: every cue an
       # observed marker owed arrived at the bot, and at least one was judged
       # with the bot beyond the cue's range of the world spawn, where a cue
