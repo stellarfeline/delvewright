@@ -3236,7 +3236,8 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   volume, `declarations.examined` vs `declarations.borne_out`, and one row per
   volume carrying its `keep_out` box, its `caught` count and cells, its `shown`
   count and its `shown_by` as declared, and `reached_by`: the first body the
-  engine models that gets its hitbox into the volume, in words, or `null` when
+  engine models that gets its hitbox into the volume, in words (a player by
+  the reach graph's moves from the population, or a wave's member by a mob's), or `null` when
   none does (then counted in `unreached`, and warned as `DW0891`). **A volume
   that catches nothing prints its zero beside the population**, so a pit whose
   keep-out lies under the rim reads as *checked and clear* rather than as
