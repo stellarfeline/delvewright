@@ -180,6 +180,12 @@ export class RunReport {
         verdicts: readonly import("./cues.ts").CueVerdict[];
       })
     | undefined;
+  private journalBinding:
+    | (import("./journal.ts").JournalBinding & {
+        line: string;
+        verdicts: readonly import("./journal.ts").JournalVerdict[];
+      })
+    | undefined;
   private watchBinding:
     | { inRecord: number; withinReach: number; asserted: number; judgements: number; line: string }
     | undefined;
@@ -370,6 +376,16 @@ export class RunReport {
     },
   ): void {
     this.cueBinding = binding;
+  }
+
+  /** What the journal showed at every quest start, judged against the build's ledger. */
+  recordJournal(
+    binding: import("./journal.ts").JournalBinding & {
+      line: string;
+      verdicts: readonly import("./journal.ts").JournalVerdict[];
+    },
+  ): void {
+    this.journalBinding = binding;
   }
 
   /** The resource pack the client was sent, judged against the build's manifest. */
@@ -740,6 +756,22 @@ export class RunReport {
                 ok: v.ok,
                 detail: v.detail,
               })),
+            },
+      journal_binding:
+        this.journalBinding === undefined
+          ? null
+          : {
+              quests: this.journalBinding.quests,
+              owing: this.journalBinding.owing,
+              started: this.journalBinding.started,
+              judged: this.journalBinding.judged,
+              shown: this.journalBinding.shown,
+              missing: this.journalBinding.missing,
+              done_before_read: this.journalBinding.doneBeforeRead,
+              baked: this.journalBinding.baked,
+              gated: this.journalBinding.gated,
+              line: this.journalBinding.line,
+              verdicts: this.journalBinding.verdicts.map((v) => ({ ...v })),
             },
       die_retry_binding:
         this.dieRetryBinding === undefined

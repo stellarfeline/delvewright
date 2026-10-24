@@ -6,7 +6,7 @@
 //! tracked, which are announced, or what a highlight lights.
 //!
 //! **When anything is rewritten.** The tick keeps one state per guided
-//! objective — `0` closed, `1` pending (its `pending_guard` holds), `2`
+//! objective — `0` closed, `1` open (its `told_guard` holds), `2`
 //! complete — and moves the campaign's guidance epoch when any of them changes:
 //! that is exactly an objective or a quest activating or completing, or a gate
 //! opening or closing. A classed player whose last refresh is older than the
@@ -76,7 +76,8 @@ pub(super) struct Watched {
     pub id: String,
     /// `safe_local` of the id.
     pub safe: String,
-    /// Its `pending_guard`, a run of ` if …`/` unless …` clauses.
+    /// Its `told_guard` — the window the party is told of it in — a run of
+    /// ` if …`/` unless …` clauses.
     pub guard: String,
     /// Announced: listed in the journal.
     pub announced: bool,
@@ -286,7 +287,7 @@ pub(super) fn guide(
                 objective: oi,
                 id: o.id().as_str().to_string(),
                 safe: plan::safe_local(o.id().as_str()),
-                guard: pending_guard(plan, o, &qa),
+                guard: told_guard(plan, o, &qa),
                 announced,
                 ordinal: ord,
                 target,
@@ -1671,6 +1672,62 @@ pub(super) fn item_modifiers(
         ));
     }
     out
+}
+
+/// `validation/journal-starts.json`: what the journal owes at every quest
+/// start, for the bot to read off the book it holds (spec-0104 §8).
+///
+/// For each quest, the objectives the party is told of the moment it starts:
+/// every announced objective with a hint and no `after`, whose gate is empty or
+/// that a press `serves` (spec-0117 §4) — the presses are its first act, so its
+/// page is owed while they are open. An objective with no `after` behind a gate
+/// nothing serves is a thread not yet unlocked (spec-0104 §8): it is owed no
+/// page and is listed under `gated`, counted, never judged. `active` is the
+/// quest's activation score, each objective's `done` its completion score and
+/// `hint_key` the translation key its page carries the hint under, so the bot
+/// reads them and derives nothing. No player-facing string is written here. A
+/// `--lang` bake writes its hints as text with no key, so its `hint_key` is
+/// `null` and the bot counts the page unjudged.
+pub(super) fn journal_ledger(plan: &Plan, g: &Guide) -> Option<Value> {
+    if !g.journal {
+        return None;
+    }
+    let c = plan.campaign;
+    let guidance = &c.quests.content.guidance;
+    let quests: Vec<Value> = c
+        .quests
+        .content
+        .quests
+        .iter()
+        .map(|q| {
+            let mut told = Vec::new();
+            let mut gated = Vec::new();
+            for o in q.objectives.iter().filter(|o| o.after().is_empty()) {
+                let Some(hint) = o.hint().filter(|_| o.announced(guidance)) else {
+                    continue;
+                };
+                // A `--lang` bake writes the hint as its text, with no key:
+                // the page carries nothing language-neutral to read it by.
+                let key = delvewright_dsl::l10n::untag(hint).map(|(k, _)| k.to_string());
+                if gate_cond(plan, o.gate()).is_empty() || is_served(plan, o) {
+                    told.push(json!({
+                        "objective": o.id().as_str(),
+                        "done": obj_score(o.id().as_str()),
+                        "hint_key": key,
+                    }));
+                } else {
+                    gated.push(json!(o.id().as_str()));
+                }
+            }
+            json!({
+                "quest": q.id.as_str(),
+                "active": quest_active_score(q.id.as_str()),
+                "told": told,
+                "gated": gated,
+            })
+        })
+        .collect();
+    Some(json!({ "party": plan::PARTY, "quests": quests }))
 }
 
 #[cfg(test)]
