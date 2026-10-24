@@ -870,6 +870,16 @@ pub(super) fn emit_highlight_spent_packtests(plan: &Plan, out: &mut BuildOutput,
                 b.push(format!("function {ns}:hl_poll_{s}"));
                 lit_check(&mut b, "t", "0".to_string());
                 b.push(format!("function {ns}:hl_off_{s}"));
+                // The world as it was: the completion's own effects may write
+                // the highlighted cells (a case that lights when it is
+                // pressed), and every template in the batch shares this world —
+                // a sibling reading the pressable's block from load, or its
+                // highlight, would otherwise read what this one left.
+                for ([x, y, z], state) in cells {
+                    b.push(format!(
+                        "execute unless block {x} {y} {z} {state} run setblock {x} {y} {z} {state}"
+                    ));
+                }
                 b.extend(d.close());
                 b.push(format!("function {ns}:guide_scan"));
             }

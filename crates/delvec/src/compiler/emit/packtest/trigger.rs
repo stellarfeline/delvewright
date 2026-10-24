@@ -127,6 +127,13 @@ pub(super) fn emit_env_trigger_packtests(plan: &Plan, out: &mut BuildOutput) {
         // Cleared again before the dispatch half, or that half's identical
         // assert would read the value THIS half just wrote and prove nothing.
         b.push(format!("scoreboard players set #trig_{id} dw.sys 0"));
+        // The bundle half ran the trigger's own effects, and those may write
+        // the very terms its gate reads (a ride that marks itself in progress
+        // shuts its own call): the dispatch half re-drives the open window
+        // the press is made in, through the same helpers, rather than inherit
+        // whatever the first half left.
+        b.extend(packtest_gate_drive(plan, t.gate(), true));
+        b.extend(serves_drive(plan, &t, &sel));
         b.push("# Grant the interaction advancement, exactly as a right-click".to_string());
         b.push("# on the trigger's hitbox does: the record is written.".to_string());
         // spec-0117 §5.2: an answer dispatches only in the state it answers,
