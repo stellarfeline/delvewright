@@ -640,14 +640,18 @@ fn firings_of(plan: &crate::compiler::plan::Plan, name: &str) -> Option<Vec<Firi
         }]);
     }
     if let Some(safe) = name.strip_prefix("seal_arm_") {
-        // A sealed gate's own answer box (spec-0117 §3a): a shortcut gate's is
-        // armed at world init (`setup_finish`, `emit::shortcut`); a
-        // `close-gate` target's when a beat seals it, which no configuration
-        // is held to lay.
+        // A sealed gate's own answer box (spec-0117 §3a): a shortcut gate's,
+        // and a served gate's sealed from load, is armed at world init
+        // (`setup_finish`, `emit::shortcut`, `emit::press::load_seal_setup`);
+        // a `close-gate` target's when a beat seals it, which no
+        // configuration is held to lay.
         if plan
             .shortcuts
             .iter()
             .any(|s| safe_local(&s.gate_anchor) == safe)
+            || crate::compiler::pressable::load_sealed_served_gates(plan)
+                .iter()
+                .any(|g| safe_local(g) == safe)
         {
             return Some(vec![Firing::Setup]);
         }
