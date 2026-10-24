@@ -958,8 +958,9 @@ pub(super) fn emit_functions(
         }
     }
     // v0.3 objective-activation feedback (M2 fix 4): announce a titled objective
-    // the tick it becomes active (quest active, `after`/flags satisfied, not yet
-    // complete) and has not been announced. Runs before the completion checks so
+    // the tick the party can first work at it (`told_guard`: quest active, `after`
+    // satisfied, its gate too unless a press serves it, not yet complete) and has
+    // not been announced. Runs before the completion checks so
     // "new objective" precedes any same-tick "complete". Empty for v0.2.
     //
     // spec-0018: the whole predicate is party state now — the guard and the
@@ -971,7 +972,7 @@ pub(super) fn emit_functions(
             if o.announced(&c.quests.content.guidance) {
                 tick.push(format!(
                     "execute{} unless score {} {} matches 1 run function {ns}:announce_{}",
-                    pending_guard(plan, o, &qa),
+                    told_guard(plan, o, &qa),
                     plan::PARTY,
                     announce_score(o.id().as_str()),
                     safe_obj_fn(o.id().as_str())

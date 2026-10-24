@@ -6,7 +6,7 @@
 //! tracked, which are announced, or what a highlight lights.
 //!
 //! **When anything is rewritten.** The tick keeps one state per guided
-//! objective — `0` closed, `1` pending (its `pending_guard` holds), `2`
+//! objective — `0` closed, `1` open (its `told_guard` holds), `2`
 //! complete — and moves the campaign's guidance epoch when any of them changes:
 //! that is exactly an objective or a quest activating or completing, or a gate
 //! opening or closing. A classed player whose last refresh is older than the
@@ -76,7 +76,8 @@ pub(super) struct Watched {
     pub id: String,
     /// `safe_local` of the id.
     pub safe: String,
-    /// Its `pending_guard`, a run of ` if …`/` unless …` clauses.
+    /// Its `told_guard` — the window the party is told of it in — a run of
+    /// ` if …`/` unless …` clauses.
     pub guard: String,
     /// Announced: listed in the journal.
     pub announced: bool,
@@ -286,7 +287,7 @@ pub(super) fn guide(
                 objective: oi,
                 id: o.id().as_str().to_string(),
                 safe: plan::safe_local(o.id().as_str()),
-                guard: pending_guard(plan, o, &qa),
+                guard: told_guard(plan, o, &qa),
                 announced,
                 ordinal: ord,
                 target,

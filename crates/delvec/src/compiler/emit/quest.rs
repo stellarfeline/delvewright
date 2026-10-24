@@ -213,6 +213,20 @@ pub(super) fn is_served(plan: &Plan, o: &Objective) -> bool {
     })
 }
 
+/// The guard the party is **told** of objective `o` under — its announcement,
+/// its journal page, the compass following it (spec-0104 §5, §6, §8): the
+/// window in which the party can work at it. An objective a press `serves` is
+/// worked at from the moment its presses open, before its own gate holds —
+/// the presses are what open that gate — so it is told under the presses'
+/// [`serving_guard`]; any other objective under its [`pending_guard`].
+pub(super) fn told_guard(plan: &Plan, o: &Objective, quest_active: &str) -> String {
+    if is_served(plan, o) {
+        serving_guard(o, quest_active)
+    } else {
+        pending_guard(plan, o, quest_active)
+    }
+}
+
 pub(super) fn pending_guard(plan: &Plan, o: &Objective, quest_active: &str) -> String {
     let p = plan::PARTY;
     let mut g = format!(" if score {p} {quest_active} matches 1");
