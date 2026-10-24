@@ -263,6 +263,7 @@ mod mob_reach_tests {
                 climb: Default::default(),
                 unheld_climb: Default::default(),
                 footprints: Default::default(),
+                hatches: Default::default(),
                 hiding: Default::default(),
             },
             Premises::geometry_only(),

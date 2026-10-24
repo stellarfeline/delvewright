@@ -346,6 +346,132 @@ pub fn opens_by_hand(name: &str) -> bool {
             .is_ok()
 }
 
+/// **A trapdoor's collision shape, per state** (`docs/reference/doors-by-hand.md`,
+/// *A trapdoor's shape*): measured from the pinned jar, where every one of the
+/// 21 trapdoor ids takes the same box for the same `facing`, `half` and `open`.
+///
+/// - **Closed**: a full-width plate 3/16 thick — at the top of the cell
+///   (13..16) for `half=top`, at the bottom (0..3) for `half=bottom`.
+/// - **Open**: a full-height panel 3/16 thick standing against ONE side of the
+///   cell — the side opposite `facing` ([`Hatch::panel`]): `facing=north`
+///   stands the panel against the cell's south face.
+///
+/// What the shape does to a body is [`Hatch::stops_crossing`], the one rule
+/// the nav model asks of every horizontal movement past a trapdoor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Hatch {
+    /// The face of its own cell the open panel stands against.
+    pub panel: Face,
+    /// Whether the closed plate is the top one (`half=top`).
+    pub top: bool,
+    /// Whether the block stands open.
+    pub open: bool,
+    /// Whether a hand toggles it ([`opens_by_hand`]): a body may set it to
+    /// either state before it moves.
+    pub by_hand: bool,
+}
+
+/// A trapdoor's thickness, open or closed, in sixteenths (measured: every
+/// trapdoor box is 3/16 across its thin axis).
+pub const HATCH_THICKNESS_16: i64 = 3;
+
+/// [`Hatch`] for a trapdoor block state, or `None` for any other block. A
+/// property the name leaves out is read at the block's pinned default.
+///
+/// Read from the pinned jar's own tables, never from a rule written here: the
+/// panel's face is where the OPEN state's collision footprint lies
+/// (`collision-footprints-1.21.11.tsv`), and the plate's height is the CLOSED
+/// state's vertical extent (`collision-tops-1.21.11.tsv`). A trapdoor whose
+/// tables say anything else answers `None`, and the nav model then reads it by
+/// its collision class alone.
+pub fn hatch(name: &str) -> Option<Hatch> {
+    let bare = bare_id(name);
+    if !matches!(door_family(bare), Some((_, "trapdoor"))) {
+        return None;
+    }
+    let id = namespaced_id(name);
+    let defaults = crate::blocks::BlockRegistry::v1_21_11().default_state(&id);
+    let prop = |k: &str| {
+        state_value(name, k)
+            .map(str::to_string)
+            .or_else(|| defaults.and_then(|d| d.get(k)).cloned())
+    };
+    let (facing, half) = (prop("facing")?, prop("half")?);
+    let state = |open: bool| format!("{id}[facing={facing},half={half},open={open}]");
+    let panel = edge_band(&server_footprint(&state(true)))?;
+    let (lo, hi) = measured_collision(&state(false))?.span?;
+    let plate = (i64::from(lo.whole()?), i64::from(hi.whole()?));
+    let full = i64::from(FULL_HEIGHT_16);
+    let top = match plate {
+        (a, b) if b == full && a == full - HATCH_THICKNESS_16 => true,
+        (0, HATCH_THICKNESS_16) => false,
+        _ => return None,
+    };
+    Some(Hatch {
+        panel,
+        top,
+        open: prop("open").as_deref() == Some("true"),
+        by_hand: opens_by_hand(name),
+    })
+}
+
+/// The horizontal face a footprint stands against when it is exactly a band
+/// [`HATCH_THICKNESS_16`] deep along one whole side of the cell, or `None`.
+fn edge_band(fp: &Footprint16) -> Option<Face> {
+    let t = HATCH_THICKNESS_16 as usize;
+    let band = |covered: &dyn Fn(usize, usize) -> bool| {
+        (0..16).all(|z| (0..16).all(|x| (fp[z] >> x & 1 == 1) == covered(x, z)))
+    };
+    Face::HORIZONTAL.into_iter().find(|f| match f {
+        Face::North => band(&|_, z| z < t),
+        Face::South => band(&|_, z| z >= 16 - t),
+        Face::West => band(&|x, _| x < t),
+        Face::East => band(&|x, _| x >= 16 - t),
+        _ => false,
+    })
+}
+
+impl Hatch {
+    /// The vertical band its closed plate fills, in sixteenths above its cell
+    /// floor.
+    pub fn plate_16(self) -> (i64, i64) {
+        let full = i64::from(FULL_HEIGHT_16);
+        if self.top {
+            (full - HATCH_THICKNESS_16, full)
+        } else {
+            (0, HATCH_THICKNESS_16)
+        }
+    }
+
+    /// **Does this trapdoor stop a body crossing `face` of its own cell?** The
+    /// body sweeps the vertical band `lo_80..hi_80`, measured from this cell's
+    /// floor in eightieths of a block (the unit a body's 1.8 is whole in),
+    /// centred in the column on each side, as every body in the nav model is.
+    ///
+    /// The open panel spans the whole cell on `panel`; a body centred in its
+    /// column clears a panel on any other face (its box spans 0.2..0.8 of the
+    /// cell, a side panel starts at 0.8125). The closed plate spans every face at its own height;
+    /// a closed bottom plate is stepped over (3/16 is under the auto-step), so
+    /// it stops nothing. Where the mover may use it (`may_use`) a trapdoor a
+    /// hand opens stops the crossing only when BOTH states do — the body sets
+    /// it before it moves; otherwise it is judged in the state it stands in.
+    pub fn stops_crossing(self, face: Face, lo_80: i64, hi_80: i64, may_use: bool) -> bool {
+        let meets = |a: i64, b: i64| lo_80 < b * 5 && hi_80 > a * 5;
+        let open_stops = face == self.panel && meets(0, i64::from(FULL_HEIGHT_16));
+        let closed_stops = self.top && {
+            let (a, b) = self.plate_16();
+            meets(a, b)
+        };
+        if may_use && self.by_hand {
+            open_stops && closed_stops
+        } else if self.open {
+            open_stops
+        } else {
+            closed_stops
+        }
+    }
+}
+
 /// Thin, walkable trap-trigger blocks (spec-0011) a player steps *onto* rather
 /// than being blocked by: pressure plates and tripwire.
 ///
@@ -2427,5 +2553,69 @@ mod tests {
             [stone; 3],
         ];
         assert!(body_falls_through(&edge, &pit));
+    }
+
+    /// **A trapdoor's shape is the jar's, per state.** Every trapdoor the pinned
+    /// registry holds, in every `facing`, `half` and `open`, reads a [`Hatch`]
+    /// out of the two measured tables, and what they say is one rule: the open
+    /// panel stands against the face opposite `facing`, the closed plate is at
+    /// the top for `half=top` and at the bottom otherwise. Stated with its
+    /// denominator, so a table that lost a row reds here.
+    #[test]
+    fn a_trapdoor_reads_its_shape_from_the_jar() {
+        let ids: Vec<&str> = crate::blocks::BlockRegistry::v1_21_11()
+            .ids()
+            .filter(|id| bare_id(id).ends_with("_trapdoor"))
+            .collect();
+        assert_eq!(ids.len(), 21, "the pinned registry's trapdoors");
+        let mut read = 0;
+        for id in &ids {
+            for facing in Face::HORIZONTAL {
+                for half in ["top", "bottom"] {
+                    for open in [false, true] {
+                        let name =
+                            format!("{id}[facing={},half={half},open={open}]", facing.name());
+                        let h = hatch(&name).unwrap_or_else(|| panic!("{name}: no hatch"));
+                        assert_eq!(h.panel, facing.opposite(), "{name}");
+                        assert_eq!(h.top, half == "top", "{name}");
+                        assert_eq!(h.open, open, "{name}");
+                        assert_eq!(h.by_hand, opens_by_hand(id), "{name}");
+                        read += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(read, 21 * 16);
+        assert_eq!(hatch("minecraft:oak_door"), None);
+        assert_eq!(hatch("minecraft:stone"), None);
+    }
+
+    /// **Both states of a hatch over a stair stop the climb** — the shape of
+    /// the trap, in eightieths of the hatch cell's floor. A body on the tread
+    /// one course under the hatch (feet at -80) stepping up under it onto the
+    /// top tread (feet at 0) sweeps -80..144: the open panel of a hatch turned
+    /// ACROSS the climb stands on the face it crosses, and the closed top plate
+    /// (65..80) is in the band. Turned ALONG the climb, the open panel is on a
+    /// side face and the body opens it and passes. A body whose head only
+    /// reaches into the cell (feet at -80, head at 64) passes under the closed
+    /// plate, which is the 1/80 the pinned shapes leave.
+    #[test]
+    fn a_hatch_turned_across_the_climb_shuts_it_in_both_states() {
+        let across = hatch("minecraft:oak_trapdoor[facing=north,half=top,open=false]").unwrap();
+        assert!(across.stops_crossing(Face::South, -80, 144, true));
+        let along = hatch("minecraft:oak_trapdoor[facing=east,half=top,open=false]").unwrap();
+        assert!(!along.stops_crossing(Face::South, -80, 144, true));
+        assert!(along.stops_crossing(Face::West, -80, 144, true));
+        // Under the closed plate, a body standing below passes.
+        assert!(!across.stops_crossing(Face::South, -80, 64, true));
+        // A hatch nobody may use is judged in its own state.
+        assert!(across.stops_crossing(Face::South, -80, 144, false));
+        assert!(!across.stops_crossing(Face::South, -80, 64, false));
+        let open_iron = hatch("minecraft:iron_trapdoor[facing=north,half=top,open=true]").unwrap();
+        assert!(open_iron.stops_crossing(Face::South, 0, 144, true));
+        assert!(!open_iron.stops_crossing(Face::North, 0, 144, true));
+        // A closed bottom plate is stepped over.
+        let low = hatch("minecraft:oak_trapdoor[facing=north,half=bottom,open=false]").unwrap();
+        assert!(!low.stops_crossing(Face::North, 0, 144, false));
     }
 }
