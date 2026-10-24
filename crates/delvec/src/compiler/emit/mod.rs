@@ -1671,6 +1671,11 @@ pub fn build_with_warnings(
     // judges where each one arrives. Every build plays the campaign cue, so
     // every build writes the file.
     put_json(&mut out, "validation/cues.json", &cue_ledger(plan));
+    // What the journal owes at every quest start, read by the bot off the
+    // book it holds. Written exactly when the campaign carries a journal.
+    if let Some(j) = guidance::journal_ledger(plan, &guide) {
+        put_json(&mut out, "validation/journal-starts.json", &j);
+    }
     if let Some(gate) = firework_gate.as_ref().filter(|g| g.declared > 0) {
         put_json(&mut out, "validation/firework-gate.json", &gate.to_json());
     }

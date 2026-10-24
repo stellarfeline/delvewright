@@ -60,6 +60,7 @@ import { methods as sustainMethods } from "./executor/sustain.ts";
 import { methods as deathMethods } from "./executor/death.ts";
 import { methods as pulseMethods } from "./executor/pulse.ts";
 import { methods as cueMethods } from "./executor/cue.ts";
+import { methods as journalMethods } from "./executor/journal.ts";
 import { methods as scoreMethods } from "./executor/score.ts";
 import { methods as lethalMethods } from "./executor/lethal.ts";
 import { methods as crushMethods } from "./executor/crush.ts";
@@ -137,6 +138,11 @@ export class MineflayerExecutor implements StepExecutor {
   cueLedger: CueLedger | undefined;
   /** Every cue packet and completion marker, in arrival order, from connect. */
   readonly cueLog: CueEvent[] = [];
+  /** What the journal owes at every quest start, from the build. */
+  journalLedger: import("./journal.ts").JournalLedger | undefined;
+  /** The quests seen to start, and the verdict on every page they owed. */
+  readonly journalStarted = new Set<string>();
+  readonly journalVerdicts: import("./journal.ts").JournalVerdict[] = [];
   /** The framed bodies watched through every cutscene (spec-0110 §7), when the
    * build has a cutscene that frames one. Fed from connect, on the server's
    * clock: game-time readings, gamemode changes, lens packets, entity churn. */
@@ -636,6 +642,7 @@ type Methods = typeof connectionMethods &
   typeof deathMethods &
   typeof pulseMethods &
   typeof cueMethods &
+  typeof journalMethods &
   typeof scoreMethods &
   typeof lethalMethods &
   typeof crushMethods &
@@ -653,4 +660,4 @@ type Methods = typeof connectionMethods &
   typeof placementMethods &
   typeof clockMethods;
 export interface MineflayerExecutor extends Methods {}
-for (const methods of [connectionMethods, chatMethods, objectiveMethods, triggerMethods, interactMethods, classMethods, talkMethods, walkMethods, timedGateMethods, climbMethods, cutsceneMethods, transportMethods, loopMethods, mockMethods, sustainMethods, deathMethods, pulseMethods, cueMethods, scoreMethods, lethalMethods, crushMethods, stakeMethods, waveMethods, dieRetryMethods, stagingMethods, musterMethods, restMethods, witnessMethods, watchMethods, crosshairMethods, collectMethods, settleMethods, placementMethods, clockMethods]) Object.assign(MineflayerExecutor.prototype, methods);
+for (const methods of [connectionMethods, chatMethods, objectiveMethods, triggerMethods, interactMethods, classMethods, talkMethods, walkMethods, timedGateMethods, climbMethods, cutsceneMethods, transportMethods, loopMethods, mockMethods, sustainMethods, deathMethods, pulseMethods, cueMethods, journalMethods, scoreMethods, lethalMethods, crushMethods, stakeMethods, waveMethods, dieRetryMethods, stagingMethods, musterMethods, restMethods, witnessMethods, watchMethods, crosshairMethods, collectMethods, settleMethods, placementMethods, clockMethods]) Object.assign(MineflayerExecutor.prototype, methods);

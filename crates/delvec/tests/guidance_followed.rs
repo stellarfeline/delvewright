@@ -1325,3 +1325,73 @@ fn a_compass_following_a_kill_points_at_the_nearest_living_body() {
         "{pt}"
     );
 }
+
+/// `validation/journal-starts.json` owes, per quest, a page for every
+/// announced, hinted objective with no `after` whose gate is empty or that a
+/// press serves; one behind a gate nothing serves is listed under `gated`.
+#[test]
+fn the_journal_ledger_owes_each_quest_start_its_first_pages() {
+    let ledger = |q: Value, name: &str| -> Value {
+        let out = try_build(&variant(name, q, dialogue(GREETING))).expect("builds");
+        serde_json::from_slice(
+            out.get("validation/journal-starts.json")
+                .expect("a campaign with a journal writes the ledger"),
+        )
+        .unwrap()
+    };
+    let l = ledger(quests(nulls()), "jledger");
+    assert_eq!(l["party"], "#party");
+    let q0 = &l["quests"][0];
+    assert_eq!(q0["quest"], "quest/open-the-door");
+    assert_eq!(q0["active"], "dw.qa_open_the_door");
+    let told: Vec<&str> = q0["told"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["objective"].as_str().unwrap())
+        .collect();
+    assert_eq!(told, ["obj/talk"], "only the objective with no `after`");
+    assert_eq!(q0["told"][0]["done"], "dw.o_talk");
+    assert_eq!(q0["told"][0]["hint"], "He stands by the door.");
+    assert!(
+        q0["told"][0]["hint_key"]
+            .as_str()
+            .unwrap()
+            .ends_with(".hint")
+    );
+
+    // Gated and served: owed. Gated and unserved: counted under `gated`.
+    let gated = |serves: bool| {
+        let mut q = quests(nulls());
+        let c = &mut q["content"];
+        c["state"] = json!([{ "id": "state/turns", "initial": 0, "name": "Turns",
+                              "scope": "party", "note": "How far the crank is wound." }]);
+        let objs = c["quests"][0]["objectives"].as_array_mut().unwrap();
+        objs.truncate(2);
+        objs[1].as_object_mut().unwrap().remove("after");
+        objs[1]["requires_state"] =
+            json!([{ "state": "state/turns", "op": "at-least", "value": 2 }]);
+        let mut t = json!({
+            "id": "trigger/crank", "at": "anchor/latch", "on": { "on": "use" },
+            "once": false,
+            "prop": { "block": "minecraft:stone_button[face=floor,facing=north]" },
+            "effects": [{ "type": "add-state", "state": "state/turns", "amount": 1 }]
+        });
+        if serves {
+            t["serves"] = json!({ "objective": "obj/pull" });
+        }
+        c["triggers"] = json!([t]);
+        q
+    };
+    let l = ledger(gated(true), "jledger-served");
+    let told: Vec<&str> = l["quests"][0]["told"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["objective"].as_str().unwrap())
+        .collect();
+    assert_eq!(told, ["obj/talk", "obj/pull"]);
+    assert_eq!(l["quests"][0]["gated"], json!([]));
+    let l = ledger(gated(false), "jledger-unserved");
+    assert_eq!(l["quests"][0]["gated"], json!(["obj/pull"]));
+}

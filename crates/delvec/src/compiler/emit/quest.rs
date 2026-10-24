@@ -205,6 +205,14 @@ pub(super) fn serving_guard(o: &Objective, quest_active: &str) -> String {
     g
 }
 
+/// Whether a trigger declares `serves: {objective: o}` (spec-0117 §4): the
+/// presses it makes are part of `o`.
+pub(super) fn is_served(plan: &Plan, o: &Objective) -> bool {
+    plan.campaign.quests.content.triggers.iter().any(|t| {
+        matches!(&t.serves, Some(delvewright_dsl::Serves::Objective(s)) if s.as_str() == o.id().as_str())
+    })
+}
+
 pub(super) fn pending_guard(plan: &Plan, o: &Objective, quest_active: &str) -> String {
     let p = plan::PARTY;
     let mut g = format!(" if score {p} {quest_active} matches 1");
