@@ -9,7 +9,8 @@
 
 use super::*;
 use crate::compiler::emit::guidance::{
-    COMPASS_DATA, GUIDE, Guide, HlBody, JOURNAL_DATA, PICK, TRACK, Target, Watched, display_entity,
+    COMPASS_DATA, GUIDE, Guide, HlAct, HlBody, JOURNAL_DATA, PICK, TRACK, Target, Watched,
+    display_entity,
 };
 
 /// Save, drive and restore `#party` scores for one template.
@@ -642,20 +643,10 @@ pub(super) fn emit_highlight_packtests(plan: &Plan, out: &mut BuildOutput, g: &G
         }
         b.extend(d.open());
         stage_cells(&h.body, &mut b);
-        let near = i32::from(h.within) - 1;
         let far = i32::from(h.within) + 2;
         let pos = |dx: i32| format!("{} {} {}", center(at[0] + dx), corner(at[1]), center(at[2]));
-        // spec-0117 §3b: a pressable's highlight is lit from its lit set; the
-        // dummy stands in its first cell to be near. An empty set lights from
-        // nowhere, and there is nothing to stand in.
-        let near_pos = match &h.body {
-            HlBody::Blocks {
-                lit: Some(boxes), ..
-            } => match boxes.first() {
-                Some((lo, _)) => format!("{} {} {}", center(lo[0]), corner(lo[1]), center(lo[2])),
-                None => continue,
-            },
-            _ => pos(near),
+        let Some(near_pos) = near_stand(h, at) else {
+            continue;
         };
         // Start dark, whatever a sibling or the tick left lit.
         b.push(format!("scoreboard players set {hl} {GUIDE} 1"));
@@ -812,6 +803,28 @@ fn pressed_state(state: &str) -> Option<String> {
     hit.then(|| format!("{name}[{}]", kv.join(",")))
 }
 
+/// **Where a template's dummy stands to be near a highlight** — the one
+/// answer both highlight templates read. spec-0117 §3b: a pressable's
+/// highlight is lit from its lit set, so the dummy stands in its first cell;
+/// an empty set lights from nowhere, and there is nothing to stand in
+/// (`None`). Any other body is lit within range, so the dummy stands one cell
+/// inside it, along x from `at`.
+fn near_stand(h: &HlAct, at: [i32; 3]) -> Option<String> {
+    match &h.body {
+        HlBody::Blocks {
+            lit: Some(boxes), ..
+        } => boxes
+            .first()
+            .map(|(lo, _)| format!("{} {} {}", center(lo[0]), corner(lo[1]), center(lo[2]))),
+        _ => Some(format!(
+            "{} {} {}",
+            center(at[0] + i32::from(h.within) - 1),
+            corner(at[1]),
+            center(at[2])
+        )),
+    }
+}
+
 /// A block highlight leaves the world once its act is spent (spec-0104 §7.3):
 /// no display of it exists after a trigger fires — its `once` latch written
 /// and its pressed block pressed, the two writes a press makes before
@@ -837,12 +850,10 @@ pub(super) fn emit_highlight_spent_packtests(plan: &Plan, out: &mut BuildOutput,
             ));
             b.push(format!("assert score #{s}_s{k} {GUIDE} matches {want}"));
         };
-        let near = format!(
-            "tp {me} {} {} {}",
-            center(at[0] + i32::from(h.within) - 1),
-            corner(at[1]),
-            center(at[2])
-        );
+        let Some(near) = near_stand(h, *at) else {
+            continue;
+        };
+        let near = format!("tp {me} {near}");
         match (&h.objective, &h.trigger) {
             (Some(oid), _) => {
                 let st = Guide::state_holder(&plan::safe_local(oid));
@@ -870,16 +881,6 @@ pub(super) fn emit_highlight_spent_packtests(plan: &Plan, out: &mut BuildOutput,
                 b.push(format!("function {ns}:hl_poll_{s}"));
                 lit_check(&mut b, "t", "0".to_string());
                 b.push(format!("function {ns}:hl_off_{s}"));
-                // The world as it was: the completion's own effects may write
-                // the highlighted cells (a case that lights when it is
-                // pressed), and every template in the batch shares this world —
-                // a sibling reading the pressable's block from load, or its
-                // highlight, would otherwise read what this one left.
-                for ([x, y, z], state) in cells {
-                    b.push(format!(
-                        "execute unless block {x} {y} {z} {state} run setblock {x} {y} {z} {state}"
-                    ));
-                }
                 b.extend(d.close());
                 b.push(format!("function {ns}:guide_scan"));
             }

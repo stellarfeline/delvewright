@@ -1361,6 +1361,23 @@ pub fn build_with_warnings(
     let solo = crate::compiler::solo::isolate(&plan.namespace, &mut out);
     eprintln!("{}", solo.line());
     put_json(&mut out, "validation/packtest-solo.json", &solo.to_json());
+    // ---- a template that writes a pressable's cell lays it back ----
+    // The world is shared by every batch; a pressable's block is what
+    // siblings read from load (`crate::compiler::handback`).
+    let handback = crate::compiler::handback::hand_back(
+        &plan.namespace,
+        &crate::compiler::pressable::props(plan)
+            .into_iter()
+            .map(|(_, p)| p)
+            .collect::<Vec<_>>(),
+        &mut out,
+    );
+    eprintln!("{}", handback.line());
+    put_json(
+        &mut out,
+        "validation/packtest-handback.json",
+        &handback.to_json(),
+    );
 
     // ---- the checks read off the finished tree ----
     check_finished_tree(

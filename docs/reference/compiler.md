@@ -1975,6 +1975,19 @@ CI-enforced over every fixture family by `tests/packtest_batch.rs`):
   test environment` and writes `validation/packtest-solo.json` (`templates`,
   `solo_count`, and per solo template the function and line that took the
   bodies). Gallery primary: 30 of 219.
+- **Own pressables, handed back (`compiler::handback`).** Every batch shares
+  one world, and a pressable's block is what siblings read from load
+  (`v04_prop`; a highlight's hold, which kills its display when the block it
+  watches is gone). A campaign effect may replace it — the gallery's case turns
+  into a sea lantern when its objective completes. After every emitter and
+  `compiler::solo`, the build reads each template's body and every function it
+  dispatches, transitively (`schedule` included, and `tick` when the template
+  `await`s), for a `setblock` or `fill` at absolute coordinates over a cell of
+  `pressable::props`; a template that reaches one ends with each such
+  pressable's block laid back (`setblock`, the block `setup_finish` lays),
+  after every assertion and `await`. The build prints `packtest hand-back
+  binding: H of T template(s) write one of C pressable cell(s) and lay it back
+  when they end` and writes `validation/packtest-handback.json`.
 - **Own members (spec-0018).** A division-of-labour template needs more than one
   player, and `# @dummy` gives exactly one. It spawns the rest itself
   (`/dummy <name> spawn`, PackTest's own command), addresses them by
@@ -4827,7 +4840,9 @@ space-terminated. An advancement observes without consuming, so a press answer
 never eats another consumer's click, and a `presser` trigger emits no tick
 clause. The generated `env_trigger_<id>` template drives `trig_<id>` direct, then
 `press_<id>` through a granted advancement, asserting the dispatch reached the
-bundle and the grant was revoked. `DW0811`'s `press-answer` claim covers every
+bundle and the grant was revoked. The bundle's own effects may write the terms
+its gate reads (a ride that marks itself in progress shuts its own call), so the
+dispatch half drives the gate and the `serves` window again before the press. `DW0811`'s `press-answer` claim covers every
 synthesized answer.
 
 **A blow names its striker.** A left-click on a `minecraft:interaction` fires
