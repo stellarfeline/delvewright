@@ -138,7 +138,13 @@ impl World {
                 found.push((
                     v,
                     vec![cur],
-                    if afloat { "floating in" } else { "walking in" },
+                    if afloat {
+                        "floating in"
+                    } else if self.is_water(cur) {
+                        "swimming in"
+                    } else {
+                        "walking in"
+                    },
                 ));
             }
             // Every water cell this one opens onto, for a body that sinks.
@@ -340,10 +346,10 @@ mod mob_reach_tests {
         assert_eq!(hit.way_in.last(), Some(&[2, -30, 1]));
     }
 
-    /// Water over a volume: a mob sinks to it, a player body (which does not
-    /// dive) does not — the zero-binding shape `DW0891` reports.
+    /// Water over a volume: a mob sinks to it, and a player body dives to it
+    /// by the reach graph's own edge, so `DW0891` reports it reached.
     #[test]
-    fn a_mob_sinks_to_a_volume_under_water_and_a_player_does_not() {
+    fn a_mob_sinks_to_a_volume_under_water_and_a_player_dives_to_it() {
         let mut solid = yard(5, 3);
         let mut flooded = BTreeSet::new();
         for y in -4..=0 {
@@ -366,7 +372,12 @@ mod mob_reach_tests {
             Some("sinking in water")
         );
         let player = w.reach_into_volumes(&[[0, 1, 1]], &Footprint::player(), false, None, &[vol]);
-        assert!(player.hits[0].is_none(), "{:?}", player.hits[0]);
+        assert_eq!(
+            player.hits[0].as_ref().map(|h| h.how),
+            Some("swimming in"),
+            "{:?}",
+            player.hits[0]
+        );
     }
 
     /// The follow range bounds the flood: a volume one cell past it is not
