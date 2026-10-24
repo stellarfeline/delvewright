@@ -250,7 +250,11 @@ fn verify_bodies_can_leave(
         // The ways out: the route itself and every reached stand cell of a live
         // link (spec-0083 §3.9), through the one leave relation (spec-0087).
         let ways_out: BTreeSet<[i32; 3]> = seed_set.union(exits).copied().collect();
-        let judge = |ways: &BTreeSet<[i32; 3]>| w.trapped_places(&seeds, ways, returned);
+        // The one leave relation, asked of this configuration's world and of
+        // the same world with trapdoor shapes lifted (`DW1066`).
+        let judge_in =
+            |world: &World, ways: &BTreeSet<[i32; 3]>| world.trapped_places(&seeds, ways, returned);
+        let judge = |ways: &BTreeSet<[i32; 3]>| judge_in(w, ways);
         let judged = judge(&ways_out);
         // A stand cell SERVES as a way out where, without the links, a body
         // standing in it could not get back — counted against the same closure
@@ -288,8 +292,11 @@ fn verify_bodies_can_leave(
             BTreeSet::new()
         } else {
             let blind = w.without_hatches();
-            let b = blind.trapped_places(&seeds, &ways_out, returned);
-            b.pockets.into_iter().flatten().collect()
+            judge_in(&blind, &ways_out)
+                .pockets
+                .into_iter()
+                .flatten()
+                .collect()
         };
         let mut hatch_described: Vec<String> = Vec::new();
         let kept: Vec<Vec<[i32; 3]>> = if w.has_hatches() && !kept.is_empty() {
