@@ -349,6 +349,8 @@ fn crush_false_is_inert() {
         "validation/party-division.json".to_string(),
         // The solo binding counts the templates it examined, the crush one among them.
         "validation/packtest-solo.json".to_string(),
+        // So does the hand-back binding.
+        "validation/packtest-handback.json".to_string(),
         "manifest.json".to_string(),
     ];
     for path in &differing {

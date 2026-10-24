@@ -58,6 +58,7 @@
 //! - [`gatesignal`]: no redstone signal opens a shut gate — a source powering a shut seam's trapdoor is refused (`DW1047`).
 //! - [`guarantee`]: which anchors an area's binding guarantees, answered before anything is placed (`DW0889`).
 //! - [`gym`]: the metrics gym — a site-plan campaign generated from the metrics table.
+//! - [`handback`]: a generated PackTest template that writes a pressable's cell lays its block back when it ends.
 //! - [`healthbar`]: a fight's health bar — its emission, and the colour/style vocabulary read from the pinned command tree (`DW0911`).
 //! - [`hold`]: how long a cutscene holds the party, per critical-path step — what a step's completion schedules and what its walk passes.
 //! - [`holders`]: the holder census — every container and holder entity is loot, a collect, a device, scenery or exempt (`DW1018`, `DW1024`) — and the holder entities a piece carries, owned, summoned and proven takeable (`DW1037`, `DW1038`).
