@@ -76,7 +76,12 @@ use crate::compiler::stake::StakeTable;
 /// `in_force_after`, the exported step after which it is the seat a death
 /// returns to. A v4 bot reading a v5 plan would walk none of the crush deaths
 /// the plan promises, and report the respawn half as unexamined in silence.
-pub const DEATH_PLAN_FORMAT_VERSION: u32 = 5;
+///
+/// Version 6 gives every crush gate `trial_at` and `trial_mouth`: the one
+/// boundary its death is walked at and the mouth walked to. A v5 bot reading a
+/// v6 plan would pick the boundary by what its pathfinder found live, which
+/// differs from run to run.
+pub const DEATH_PLAN_FORMAT_VERSION: u32 = 6;
 
 /// What the bot tier will be able to examine — counted at build time, so a reader
 /// of the artifact alone can tell an empty contract from a proven one.
@@ -311,7 +316,10 @@ fn in_force_after(plan: &Plan, cp: i32, layout: &crate::compiler::plan::Exported
 /// body can be caught from ([`crate::compiler::nav::gate_approaches`]), the gate
 /// that keeps the closing edge live (a disarm's flag, unset), and `crossed_at`:
 /// the exported index of the first critical-path step whose proven leg crosses
-/// the gate, `null` when no proven leg does. Declaration order (ADR-0006).
+/// the gate, `null` when no proven leg does; `trial_at` and `trial_mouth`: the
+/// exported boundary after which the bot tier walks this gate's death and the
+/// mouth it walks to ([`crate::compiler::nav::first_mouth_reach`]), both `null`
+/// when no leg start reaches a mouth. Declaration order (ADR-0006).
 fn crush_gates(
     plan: &Plan,
     world: &World,
@@ -331,6 +339,26 @@ fn crush_gates(
                 .iter()
                 .find(|leg| crate::compiler::waypoints::leg_crosses_gate(&leg.cells, region))
                 .map(|leg| layout.step(leg.to_step));
+            // The one boundary the bot tier walks this death at, and the mouth it
+            // walks to: decided here, over the proven legs, so a run never picks
+            // its boundary by what its own pathfinder happens to find live.
+            let kept: Vec<([i32; 3], [i32; 3])> = plan
+                .timed_gates
+                .iter()
+                .filter(|o| o.crush && o.id != g.id)
+                .map(|o| crate::compiler::waypoints::normalized_region(o.gate_region))
+                .collect();
+            let trial = crate::compiler::nav::first_mouth_reach(
+                world,
+                routes,
+                region,
+                &crate::compiler::nav::gate_approaches(world, region),
+                &kept,
+            );
+            let (trial_at, trial_mouth) = match trial {
+                Some((from_step, a)) => (json!(layout.step(from_step)), json!(a.mouth)),
+                None => (Value::Null, Value::Null),
+            };
             // A disarm stops the clock for good, so the closing edge is live only
             // while the disarm's flag is unset — the declaration, never the
             // engine's jam bookkeeping.
@@ -355,6 +383,8 @@ fn crush_gates(
                 "phase": g.phase,
                 "approaches": approaches,
                 "crossed_at": crossed_at,
+                "trial_at": trial_at,
+                "trial_mouth": trial_mouth,
                 "gate": { "terms": terms },
             })
         })
