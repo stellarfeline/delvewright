@@ -1449,7 +1449,9 @@ fn an_unlit_leafy_scenery_room_is_never_surveyed_for_light() {
     ]);
     let t = text(&out);
     assert_eq!(code(&out), 0, "{t}");
-    assert!(!t.contains("DW0210"), "{t}");
+    // The binding line names the code on every build; the refusal is the
+    // diagnostic.
+    assert!(!t.contains("DW0210 [error]"), "{t}");
     assert!(
         t.contains("detail: the whole builds with the piece(s) this run wrote."),
         "{t}"

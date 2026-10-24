@@ -43,7 +43,7 @@ The full inventory — every binary, script and flag that exists — is
   that command again; `owner-play.yaml` publishes `localhost:25565` and nothing
   else does. **(2)** Tell them the two triggers: `/trigger dw.free` to fly and to
   come back, and `/trigger dw.cam set <n>` when the frame is right, `<n>` the
-  slot you give them in chat. FOV Effects off; ask their FOV slider's number. **(3)**
+  slot you give them in chat. FOV Effects off; the field of view is **70**, the game's default, unless they volunteer their slider's number. **(3)**
   Read the log before `down`: `docker logs dw-playtest > <file>` on the
   `$DELVEWRIGHT_ENGINE/tools/creator/playtest-server.sh` path, or `docker compose …
   --profile playtest logs --no-color > <file>` on the compose path. **(4)**
@@ -51,10 +51,10 @@ The full inventory — every binary, script and flag that exists — is
   <out>/creator-datapack/layout.json --camera-out camera-report.json`, `<out>`
   the build the server runs. **(5)** Write the row with `delvec --prefabs
   "$DELVEWRIGHT_PREFABS" place-camera <campaign-dir> --name <row> --report
-  camera-report.json --slot <n> --fov <their slider>`, show them the draft
+  camera-report.json --slot <n> --fov 70` (or the number they gave), show them the draft
   (`cameras --draft`) and render that one scene (`cameras --only <row>`). A hand pose replaces the estimate in its own row and
-  the writer refuses to put an estimate back over it; deleting the row is the
-  user's call, asked in chat. Human-in-the-loop, at step 12 and at step 13; the full
+  the writer refuses to put an estimate back over it; the row is deleted only when
+  the user says so. Human-in-the-loop, at step 12 and at step 13; the full
   procedure is `$DELVEWRIGHT_ENGINE/docs/reference/tools.md` §4a.
 - **NPCs never spawn, or a large build dies partway**: an OOM, not a content bug — `up` checks and says so; raise `--memory` past the default heap ceiling `up` prints.
 - **Handing a build to a playtester**: the playtest note flow — `/trigger dw.note`

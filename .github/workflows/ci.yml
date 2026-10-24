@@ -876,6 +876,15 @@ jobs:
       # Deterministic, offline, stdlib-only python3.
       - name: a change that adds author-facing surface adds its demo row
         run: python3 tools/ci/check-demo-levels.py
+      # Every `campaigns/<id>` a demo-queue Status cell names is a directory the
+      # content pin carries (spec-0122 §7.2): nothing a creator runs reads the
+      # queue, so whether its addresses are real is this repository's concern.
+      # Read out of the content repository's object store at the pin, so the
+      # checkout needs no LFS payloads. Deterministic, stdlib-only python3.
+      - uses: ./.github/actions/checkout-content
+        with: { lfs: "false" }
+      - name: every level the demo queue names is a directory the content pin carries
+        run: python3 tools/ci/check-demo-queue.py
       # Isolation by construction (validation/README.md): container
       # names and host ports are Docker-GLOBAL — the only two things `docker
       # compose -p <project>` does not isolate — so validation/compose.yaml

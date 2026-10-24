@@ -75,14 +75,11 @@ REPO = Path(__file__).resolve().parents[2]
 GALLERY_BUILD = REPO / "tools" / "ci" / "gallery-build.py"
 STAGING_GATE = REPO / "tools" / "creator" / "staging-gate.py"
 PRIMARY = "primary"
-# The one point that is judged to be red, and exactly how. The `demo-level`
-# overlay declares `demo_level: true` and the gallery is not a queued demo
-# (`docs/demo-levels.md` names campaigns, and the gallery is none), so the
-# gate reads that declaration as one `DEMO-UNQUEUED` row. The point is bound
-# only when its reds are EXACTLY these: the declaration removed (no red), or
-# any other red beside it, is a refusal, so the element stays bound and the
-# expectation can never absorb a second finding.
-EXPECTED_REDS = {"demo-level.en": ["demo-declaration DEMO-UNQUEUED"]}
+# The points judged to be red, each with exactly its reds. None today: every
+# point of the gallery stages green. A point listed here is bound only when its
+# reds are EXACTLY these: the red gone, or any other red beside it, is a
+# refusal, so an expectation can never absorb a second finding.
+EXPECTED_REDS: dict[str, list[str]] = {}
 ADMISSION = "staging-admission.json"
 
 

@@ -87,11 +87,17 @@ this needs are subcommands of the one binary Init I3 installed.
    place**: write it by hand, or write a script (any language) that computes it
    and emits the JSON — a loop for a colonnade, a table for a stair's treads. The
    emitted Program is the artifact of record: it is what is checked in and what
-   `grammar expand` and `delvec detail` judge. Check the script in beside it as
+   `grammar expand` and `detail --check` judge. Check the script in beside it as
    provenance (`design/generator/` in the campaign); it has no standing over the
    Program and nothing re-runs it. A script computes geometry and never a
    judgement the engine makes: walkability, falls, reach and a seam's cells are
-   read from the gate and from `delvec allocation`, never recomputed. Never
+   read from the gate and from `delvec allocation`, never recomputed. The shape
+   to start from is the engine's runnable example,
+   `$DELVEWRIGHT_ENGINE/gallery/overlays/site-plan/design/generator/annex.py`
+   (`$DELVEWRIGHT_ENGINE/docs/reference/grammar.md` §2c, *A place from its
+   allocation*): it reads the allocation from a file the caller saved, runs no
+   binary, names no path, and declares every handed value as a `handed/…`
+   parameter rather than copying it. Never
    done: a new piece made by extending the engine's Rust (`crates/`) or a
    tileset generator the content repository keeps as a provenance record, and
    blocks placed outside a Program (a fill

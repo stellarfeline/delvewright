@@ -37,3 +37,11 @@ rewrite, and the reader says what it saw.
 | Code | Meaning |
 |------|---------|
 | `DW0543` | **A prefab metadata file carries a key this delvec does not model.** Warning, `compiler::registry::PrefabRegistry::load_dir`, reported per file at every `validate`/`analyze`/`build`. The message names every unknown key, at the document root and per anchor, and states the two things it can be: a library newer than this engine (upgrade `delvec` to consume the key), or a misspelling of a key the document does define, in which case whatever it was meant to say is not being said. The prefab **loads** — it is not skipped, and this is not `DW0346`. Binding: the pinned content library must produce zero of these, which is what makes it a tripwire rather than noise (`tests/registry_load.rs`). |
+
+### DW1062 — the prefab library a verb reads is not there (`compiler::registry`)
+
+Every compiler verb that reads pieces (`validate` and everything built on it, `detail` commit and `--check`, `rig describe`) refuses a `--prefabs` path that does not exist, at exit 1, with `missing_library`'s one sentence. The admission verbs that read a whole library carry the same sentence inside their own input diagnostic (`DW0732`).
+
+| Code | Meaning |
+|------|---------|
+| `DW1062` | **The prefab library the verb was pointed at does not exist** (spec-0122 §7.5). `--prefabs` names a path that is not there, which is the ordinary state of a creator's working directory, where the default `campaigns/prefabs` exists only in an engine checkout. Printed with stage `prefabs` and the path, naming `--prefabs` and `DELVEWRIGHT_PREFABS`; a directory that exists and cannot be read is an internal fault, never this. Prescription: pass `--prefabs "$DELVEWRIGHT_PREFABS"`. |
