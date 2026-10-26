@@ -968,7 +968,7 @@ mod tests {
                 climb: BTreeMap::new(),
                 unheld_climb: BTreeMap::new(),
                 footprints: Default::default(),
-                hatches: Default::default(),
+                leaves: Default::default(),
                 hiding: Default::default(),
             },
             crate::compiler::nav::Premises::geometry_only(),
@@ -1174,7 +1174,7 @@ mod tests {
             climb: BTreeMap::new(),
             unheld_climb: BTreeMap::new(),
             footprints: Default::default(),
-            hatches: Default::default(),
+            leaves: Default::default(),
             hiding: Default::default(),
         };
         occ.partial.insert([4, 63, 3], 8);

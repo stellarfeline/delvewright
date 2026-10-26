@@ -35,7 +35,7 @@ fn floored_with_furniture(
             climb: Default::default(),
             unheld_climb: Default::default(),
             footprints: Default::default(),
-            hatches: Default::default(),
+            leaves: Default::default(),
             hiding: Default::default(),
         },
         Premises {

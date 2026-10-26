@@ -475,7 +475,7 @@ delvewright_dsl::dw_code! {
     /// `DW1066`: **a trapdoor that shuts a body in.** A place `DW0921` would
     /// refuse — a body gets in and cannot get back to the route — that a body
     /// leaves once the trapdoors' shapes are lifted from the crossing rule
-    /// ([`World::hatch_stopping`]): the way out crosses a face a trapdoor
+    /// ([`World::leaf_stopping`]): the way out crosses a face a trapdoor
     /// stops in every state the body can set it to. The open panel of a hatch
     /// turned across a stair stands on the face the climb crosses, and its
     /// closed plate is over the top tread (`docs/reference/doors-by-hand.md`,

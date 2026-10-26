@@ -2131,7 +2131,7 @@ pub fn check(
 /// **`DW1066` over the battery**: a refusal the battery raises only because a
 /// trapdoor's shape stops a body — the same battery, run again over the same
 /// two worlds with every trapdoor's shape lifted
-/// ([`crate::compiler::nav::World::without_hatches`]), does not raise it.
+/// ([`crate::compiler::nav::World::without_leaves`]), does not raise it.
 /// Every such refusal is replaced by one `DW1066` naming each trapdoor that
 /// stops a step and the face it stops, because a remedy about seams and
 /// massing sends the author to move what is not wrong. A refusal the lifted
@@ -2149,13 +2149,13 @@ fn hatch_refusals(
     findings: &mut Vec<(DwCode, Diagnostic)>,
 ) {
     let refusing = |f: &(DwCode, Diagnostic)| f.1.severity == delvewright_dsl::Severity::Error;
-    if !open.has_hatches() || !findings.iter().any(refusing) {
+    if !open.has_leaves() || !findings.iter().any(refusing) {
         return;
     }
     let mut lifted = Vec::new();
     run(
-        &open.without_hatches(),
-        &sealed.without_hatches(),
+        &open.without_leaves(),
+        &sealed.without_leaves(),
         &mut BatteryBinding::default(),
         &mut lifted,
     );
@@ -4429,7 +4429,7 @@ mod hatch_refusal_tests {
         let w = hatched("north");
         let run =
             |open: &World, _: &World, _: &mut BatteryBinding, f: &mut Vec<(DwCode, Diagnostic)>| {
-                if open.has_hatches() {
+                if open.has_leaves() {
                     f.push(refusal(DW_PORTAL_UNCROSSABLE, "/content/seams[edge/a]"));
                 }
                 f.push(refusal(DW_SEAM_BUILT, "/content/seams[edge/b]"));

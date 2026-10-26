@@ -288,10 +288,10 @@ fn verify_bodies_can_leave(
         let trapped: BTreeSet<[i32; 3]> = kept.iter().flatten().copied().collect();
         // DW1066: a pocket a body leaves in the same world with the trapdoors'
         // shapes lifted is the trapdoors' doing, and is named as theirs.
-        let blind_trapped: BTreeSet<[i32; 3]> = if kept.is_empty() || !w.has_hatches() {
+        let blind_trapped: BTreeSet<[i32; 3]> = if kept.is_empty() || !w.has_leaves() {
             BTreeSet::new()
         } else {
-            let blind = w.without_hatches();
+            let blind = w.without_leaves();
             judge_in(&blind, &ways_out)
                 .pockets
                 .into_iter()
@@ -299,7 +299,7 @@ fn verify_bodies_can_leave(
                 .collect()
         };
         let mut hatch_described: Vec<String> = Vec::new();
-        let kept: Vec<Vec<[i32; 3]>> = if w.has_hatches() && !kept.is_empty() {
+        let kept: Vec<Vec<[i32; 3]>> = if w.has_leaves() && !kept.is_empty() {
             let mut rest = Vec::new();
             for pocket in kept {
                 if pocket.iter().any(|c| blind_trapped.contains(c)) {
@@ -530,8 +530,8 @@ impl World {
 
     /// **Which trapdoor stops which movement**, over the body cells `cells`:
     /// each movement a body makes from one of them once trapdoor shapes are
-    /// lifted ([`World::without_hatches`]) and does not make with them, by the
-    /// trapdoor that stops it ([`World::hatch_stopping`]) and the face of its
+    /// lifted ([`World::without_leaves`]) and does not make with them, by the
+    /// trapdoor that stops it ([`World::leaf_stopping`]) and the face of its
     /// cell it stops. The one attribution both `DW1066` arms report through.
     pub fn hatch_stops(
         &self,
@@ -539,11 +539,11 @@ impl World {
     ) -> BTreeMap<[i32; 3], BTreeSet<delvewright_dsl::blockshape::Face>> {
         use delvewright_dsl::blockshape::Face;
         let mut stops: BTreeMap<[i32; 3], BTreeSet<Face>> = BTreeMap::new();
-        if !self.has_hatches() {
+        if !self.has_leaves() {
             return stops;
         }
         let fp = Footprint::player();
-        let blind = self.without_hatches();
+        let blind = self.without_leaves();
         for p in cells {
             let with: BTreeSet<[i32; 3]> = self.body_moves(p).into_iter().collect();
             for n in blind.body_moves(p) {
@@ -565,7 +565,7 @@ impl World {
                 let step_move =
                     (n[0] - p[0]).abs() + (n[2] - p[2]).abs() == 1 && (n[1] - p[1]).abs() <= 1;
                 let lo = if step_move { here.min(there) } else { here };
-                let Some(cell) = self.hatch_stopping(p, step, lo, here.max(there), &fp) else {
+                let Some(cell) = self.leaf_stopping(p, step, lo, here.max(there), &fp) else {
                     continue;
                 };
                 let toward = [step[0] - p[0], step[2] - p[2]];
@@ -593,8 +593,8 @@ impl World {
             .iter()
             .map(|(cell, faces)| {
                 let names: Vec<&str> = faces.iter().map(|f| f.name()).collect();
-                let state = match self.floors.hatches.get(cell) {
-                    Some(h) if h.by_hand && self.floors.hatch_use => {
+                let state = match self.floors.leaves.get(cell) {
+                    Some(h) if h.by_hand && self.floors.leaf_use => {
                         "in both states a hand sets it to"
                     }
                     Some(h) if h.open => "standing open",
@@ -921,7 +921,7 @@ mod leave_tests {
             climb: Default::default(),
             unheld_climb: Default::default(),
             footprints: Default::default(),
-            hatches: Default::default(),
+            leaves: Default::default(),
             hiding: Default::default(),
         };
         let w = World::from_occupancy(occ, Premises::geometry_only());
@@ -947,7 +947,7 @@ mod leave_tests {
             climb: Default::default(),
             unheld_climb: Default::default(),
             footprints: Default::default(),
-            hatches: Default::default(),
+            leaves: Default::default(),
             hiding: Default::default(),
         };
         let w = World::from_occupancy(occ, Premises::geometry_only());
@@ -1075,7 +1075,7 @@ mod leave_tests {
         // The climb onto the top tread, and the way off it to the floor beside.
         assert!(!across.neighbors([2, 2, 2]).contains(&[2, 3, 1]));
         assert_eq!(
-            across.hatch_stopping([2, 2, 2], [2, 3, 1], 32, 48, &Footprint::player()),
+            across.leaf_stopping([2, 2, 2], [2, 3, 1], 32, 48, &Footprint::player()),
             Some([2, 3, 1])
         );
         // Under the middle trapdoor shut, the body climbs: its head clears the
@@ -1114,7 +1114,7 @@ mod leave_tests {
         );
         // And the same world with the trapdoors' shapes lifted is the world
         // DW1066 compares against: there the planted cellar is no pocket.
-        let (_, lifted) = judge(&across.without_hatches(), &[[0, 4, 5]]);
+        let (_, lifted) = judge(&across.without_leaves(), &[[0, 4, 5]]);
         lifted.expect("with no trapdoor shapes the stair is a stair");
     }
 }

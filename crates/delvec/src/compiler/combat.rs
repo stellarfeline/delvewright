@@ -1714,7 +1714,7 @@ mod tests {
             climb: BTreeMap::new(),
             unheld_climb: BTreeMap::new(),
             footprints: Default::default(),
-            hatches: Default::default(),
+            leaves: Default::default(),
             hiding: Default::default(),
         }
     }

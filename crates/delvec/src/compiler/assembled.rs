@@ -1428,12 +1428,12 @@ pub struct Occupancy {
     /// ([`crate::compiler::nav::World::hides`]). Iron bars are `solid` and not
     /// here; a stone wall is both.
     pub hiding: BTreeSet<[i32; 3]>,
-    /// Every trapdoor cell, with the shape its block takes per state
-    /// ([`delvewright_dsl::blockshape::hatch`]). Not a collision class and not
+    /// Every door and trapdoor cell, with the shape its leaf takes per state
+    /// ([`delvewright_dsl::blockshape::leaf`]). Not a collision class and not
     /// disjoint from them: the cell's class says whether a body may be in it,
     /// and this says which of its faces a body may cross, and at what height
-    /// ([`delvewright_dsl::blockshape::Hatch::stops_crossing`]).
-    pub hatches: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Hatch>,
+    /// ([`delvewright_dsl::blockshape::Leaf::stops_crossing`]).
+    pub leaves: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Leaf>,
 }
 
 /// **What keeps one climbable where it is** (spec-0099 §3.2), as the cells its
@@ -1697,21 +1697,21 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
     let mut hiding: BTreeSet<[i32; 3]> = BTreeSet::new();
     // One occlusion lookup per distinct block state, not per cell.
     let mut hides_of: BTreeMap<String, bool> = BTreeMap::new();
-    let mut hatches: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Hatch> = BTreeMap::new();
-    let mut hatch_of: BTreeMap<String, Option<delvewright_dsl::blockshape::Hatch>> =
-        BTreeMap::new();
+    let mut leaves: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Leaf> = BTreeMap::new();
+    let mut leaf_of: BTreeMap<String, Option<delvewright_dsl::blockshape::Leaf>> = BTreeMap::new();
     for (cell, name) in blocks {
-        // A trapdoor's shape per state (`blockshape::hatch`): what its panel
-        // and its plate do to a body crossing its cell's faces. Whether a hand
-        // one stands open is the gate model's own reading, as for any door.
-        if let Some(mut h) = *hatch_of
+        // A door's or a trapdoor's leaf per state (`blockshape::leaf`): what
+        // its panels and its plate do to a body crossing its cell's faces.
+        // Whether a hand one stands open is the gate model's own reading, as
+        // for any door.
+        if let Some(mut h) = *leaf_of
             .entry(name.to_string())
-            .or_insert_with(|| delvewright_dsl::blockshape::hatch(name))
+            .or_insert_with(|| delvewright_dsl::blockshape::leaf(name))
         {
             if h.by_hand {
                 h.open = open_gates.contains(cell);
             }
-            hatches.insert(*cell, h);
+            leaves.insert(*cell, h);
         }
         if *hides_of
             .entry(name.to_string())
@@ -1814,7 +1814,7 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
         unheld_climb,
         footprints,
         hiding,
-        hatches,
+        leaves,
     }
 }
 

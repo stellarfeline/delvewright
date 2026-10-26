@@ -278,7 +278,7 @@ impl World {
         }
         // A move off the climb sideways, or onto it from beside, crosses the
         // face between two columns: a trapdoor there is asked
-        // (`World::hatch_stopping`), at the courses the body spans either side.
+        // (`World::leaf_stopping`), at the courses the body spans either side.
         out.retain(|n| {
             (n[0] == c[0] && n[2] == c[2]) || {
                 let (lo, hi) = (c[1].min(n[1]), c[1].max(n[1]));
