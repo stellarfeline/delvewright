@@ -3852,8 +3852,11 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   plane (in the neighbour's first row where a contact covers the side: a front
   onto a street is seen from the street). Each stands in the configuration of the critical path's
   first arrival at a beat of its place, else at load, and goes through the one
-  door every camera does (`DW0724`, a stand-off kind: pulled in off a blocked
-  eye and saying so). `expect` reads *the place reads as its intent:
+  door every camera does (`DW0724`). It is the body's own view, so a block on
+  its sight line never moves it — what stands between the eye and the room is
+  what the frame shows; only a block in its own cell (a shut way's bar) does,
+  and then it stands one cell further out along its normal, before the bar,
+  saying so (`camera.requested_pos`). `expect` reads *the place reads as its intent:
   <intent>*; the shot carries `node` and `edge` or `side`. The plan states
   `threshold_shots: {shots, places, doors, open_sides}` and the build prints
   `threshold shots: T over P place(s), D door(s), O open side(s)`; a plan with

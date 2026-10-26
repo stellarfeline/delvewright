@@ -87,7 +87,9 @@
 //! a vertical face of every box, the eye on the opening's sill at
 //! [`EYE_HEIGHT`] in its middle column, looking along the face's inward normal
 //! at the play space's centre; and one per open side, the eye in the outside
-//! approach cell at the side's middle. The review reads each frame
+//! approach cell at the side's middle. Like a `pov` eye it is the body's own,
+//! so a block on its sight line never moves it; a block in its cell (a shut
+//! way's bar) stands it one cell further out. The review reads each frame
 //! blind — the trade, the front, the thing — before it opens the `expect`.
 //! The plan states the count as `threshold_shots` and the build prints
 //! `threshold shots: T over P place(s), D door(s), O open side(s)`, zeroes
@@ -767,6 +769,9 @@ struct Shot {
     /// A stated rotation (Minecraft yaw, pitch), for a camera whose pose is
     /// given rather than aimed at a point: a cutscene keyframe.
     aim: Option<(f64, f64)>,
+    /// A `threshold` eye's second stand: one cell further out along its
+    /// normal, taken when the first holds a block (a shut way's bar).
+    fallback: Option<[f64; 3]>,
 }
 
 /// The shot list under construction, the eye cells the clear-eye proof owes a
@@ -828,6 +833,12 @@ impl<'c> Shots<'c> {
         // A `cutscene` camera is a keyframe the datapack flies: never moved,
         // like a POV eye — a keyframe inside a block is `DW0724` against it.
         let pov = shot.kind == "pov" || shot.kind == "cutscene";
+        // A `threshold` eye is the body's own view of a place from its door
+        // or its open side: what stands between it and the room is what the
+        // frame exists to show, so a block on its sight line never moves it.
+        // Only a block in its own cell does — a shut way's bar — and then it
+        // stands one cell further out, before the bar.
+        let threshold = shot.kind == "threshold";
         let world = self.nav(shot.world);
         // A stand-off whose sight line to its subject crosses a block draws the
         // block, not the subject — a spawn camera outside the hall draws the
@@ -848,7 +859,15 @@ impl<'c> Shots<'c> {
                 past_subject && blocked && c != subject
             })
             .is_some();
-        let eye = if pov || (world.is_clear(eye_cell(requested)) && !sight_blocked) {
+        let fallback = shot.fallback.filter(|f| {
+            threshold && !world.is_clear(eye_cell(requested)) && world.is_clear(eye_cell(*f))
+        });
+        let eye = if let Some(f) = fallback {
+            f
+        } else if pov
+            || (threshold && world.is_clear(eye_cell(requested)))
+            || (world.is_clear(eye_cell(requested)) && !sight_blocked)
+        {
             // The requested stand-off is honoured wherever it sees its subject.
             // It yields to two facts of the world the frame stands in: the cell
             // it names holds a block, or a block stands between it and the
@@ -1116,6 +1135,7 @@ pub fn render_plan(
             ],
             stamped: false,
             aim: None,
+            fallback: None,
             world: at_load,
         });
     }
@@ -1179,6 +1199,7 @@ pub fn render_plan(
                 expect,
                 stamped: true,
                 aim: None,
+                fallback: None,
                 world: at_load,
             });
         }
@@ -1207,6 +1228,7 @@ pub fn render_plan(
                 ],
                 stamped: false,
                 aim: None,
+                fallback: None,
                 world: at_load,
             });
         }
@@ -1261,6 +1283,7 @@ pub fn render_plan(
             ],
             stamped: false,
             aim: None,
+            fallback: None,
             world: at_load,
         });
     }
@@ -1298,6 +1321,7 @@ pub fn render_plan(
             expect,
             stamped: false,
             aim: None,
+            fallback: None,
             world,
         });
     }
@@ -1351,6 +1375,7 @@ pub fn render_plan(
                 ],
                 stamped: false,
                 aim: None,
+                fallback: None,
                 world: at_load,
             });
         }
@@ -1384,6 +1409,7 @@ pub fn render_plan(
             expect,
             stamped: true,
             aim: None,
+            fallback: None,
             world: pov_stand(frames, shot),
         });
     }
@@ -1446,6 +1472,7 @@ pub fn render_plan(
                 stamped: false,
                 world: arrival,
                 aim: Some((f.yaw, f.pitch)),
+                fallback: None,
             });
         }
     }
@@ -1574,6 +1601,13 @@ impl ThresholdCount {
     }
 }
 
+/// One cell further from `centre` than `eye`, along `axis`.
+fn out_of(eye: [f64; 3], centre: [f64; 3], axis: usize) -> [f64; 3] {
+    let mut e = eye;
+    e[axis] += if eye[axis] < centre[axis] { -1.0 } else { 1.0 };
+    e
+}
+
 struct Thresholds {
     shots: Vec<Shot>,
     count: ThresholdCount,
@@ -1658,6 +1692,7 @@ fn threshold_shots(plan: &Plan, frames: &FrameWorlds) -> Thresholds {
                 expect: expect(format!("the sill of `{}`", s.edge.0)),
                 stamped: false,
                 aim: None,
+                fallback: Some(out_of(eye, centre, s.normal_axis)),
                 world,
             });
         }
@@ -1683,6 +1718,7 @@ fn threshold_shots(plan: &Plan, frames: &FrameWorlds) -> Thresholds {
                 expect: expect(format!("outside its open {} side", side.face.as_str())),
                 stamped: false,
                 aim: None,
+                fallback: Some(out_of(eye, centre, n)),
                 world,
             });
         }
