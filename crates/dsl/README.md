@@ -21,7 +21,7 @@ authored against and the parser that reads it cannot disagree.
 
 ```toml
 [dependencies]
-delvewright-dsl = "0.65"
+delvewright-dsl = "0.66"
 ```
 
 ```rust
@@ -72,7 +72,7 @@ wall-clock time, or absolute paths.
 
 ## Compatibility
 
-- **Campaign format**: `dsl_version` `0.65.0`, the one number this crate accepts;
+- **Campaign format**: `dsl_version` `0.66.0`, the one number this crate accepts;
   any other is refused at the envelope.
 - **Minecraft**: Java Edition 1.21.11.
 - **Rust**: 1.97.1 or newer.
