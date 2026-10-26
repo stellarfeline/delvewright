@@ -33,6 +33,7 @@ pub use world::*;
 
 mod actor;
 mod ambush;
+pub mod census;
 mod checkpoint;
 mod cutscene;
 mod furniture;

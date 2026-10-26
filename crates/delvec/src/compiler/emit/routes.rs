@@ -589,6 +589,11 @@ pub(super) fn prove_world(
                 );
                 eprintln!("{}", binding.line());
                 put_json(out, "validation/clear-width.json", &binding.to_json());
+                // spec-0123 §3.5: the piece census, beside the clear-width
+                // ledger — a measurement the review reads, never a refusal.
+                let census = crate::compiler::nav::census::census(plan, prefabs, &assembled.blocks);
+                eprintln!("{}", census.line());
+                put_json(out, "validation/piece-census.json", &census.to_json());
                 if let Some((first, rest)) = refused.split_first() {
                     for extra in rest {
                         eprintln!("{} [error] build: {}", extra.code, extra.message);

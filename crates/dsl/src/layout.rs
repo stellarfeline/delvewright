@@ -1359,9 +1359,10 @@ fn references(graph: &LayoutGraphContent, d: &mut Vec<Diagnostic>) {
     for (i, n) in graph.nodes.iter().enumerate() {
         for (j, r) in n.references.iter().enumerate() {
             let path = format!("/content/nodes/{i}/references/{j}");
-            let url_ok = r.url.strip_prefix("https://").is_some_and(|rest| {
-                !rest.is_empty() && !rest.chars().any(char::is_whitespace)
-            });
+            let url_ok = r
+                .url
+                .strip_prefix("https://")
+                .is_some_and(|rest| !rest.is_empty() && !rest.chars().any(char::is_whitespace));
             if !url_ok {
                 d.push(Diagnostic::error(
                     crate::codes::SCHEMA,
