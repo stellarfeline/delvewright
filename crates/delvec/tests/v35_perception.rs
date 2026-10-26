@@ -882,6 +882,8 @@ fn with_lethal_fixture<R>(
         delvec::compiler::nav::Premises::of_plan(&base_plan, replay.assembled.gate_seals.clone()),
     );
     let plan = Plan::build(&c, &prefabs).expect("plan builds");
+    // The respawn seats a build derives over its world before any proof reads one.
+    let world = world.with_rest_seats(&plan);
     f(&plan, &world)
 }
 
@@ -942,7 +944,8 @@ fn a_blinding_far_from_any_hazard_is_green_and_bound() {
     )]);
     let prefabs = prefabs();
     let plan = Plan::build(&c, &prefabs).expect("plan builds");
-    let world = delvec::compiler::nav::World::from_plan(&plan, &structures(&plan));
+    let world =
+        delvec::compiler::nav::World::from_plan(&plan, &structures(&plan)).with_rest_seats(&plan);
     let (b, v) =
         delvec::compiler::blind::check(&plan, &world, plan.campaign_start().map(|(_, p)| p));
     assert!(v.is_ok(), "{:?}", v.err());

@@ -744,7 +744,9 @@ fn with_fixture_in<R>(
     let world = delvec::compiler::nav::World::from_occupancy(
         occ,
         delvec::compiler::nav::Premises::of_plan(&plan, replay.assembled.gate_seals.clone()),
-    );
+    )
+    // The respawn seats a build derives over its world before any proof reads one.
+    .with_rest_seats(&plan);
     let blocks = replay.assembled.blocks.clone();
     f(&plan, &world, &blocks)
 }
