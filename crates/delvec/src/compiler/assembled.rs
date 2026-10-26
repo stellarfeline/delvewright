@@ -1426,6 +1426,13 @@ pub struct Occupancy {
     /// ([`crate::compiler::nav::World::hides`]). Iron bars are `solid` and not
     /// here; a stone wall is both.
     pub hiding: BTreeSet<[i32; 3]>,
+    /// Cells whose block **hurts a body that meets it**
+    /// ([`delvewright_dsl::blockshape::hurts_body`]: a campfire, magma, a
+    /// cactus, fire, a berry bush). Not a collision class and not disjoint from
+    /// them: a campfire is a partial floor and hurts. Read by one question, where
+    /// a body may be put down by declaration
+    /// ([`crate::compiler::nav::World::is_safe_seat`]); routing never reads it.
+    pub hurting: BTreeSet<[i32; 3]>,
 }
 
 /// **What keeps one climbable where it is** (spec-0099 §3.2), as the cells its
@@ -1689,7 +1696,11 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
     let mut hiding: BTreeSet<[i32; 3]> = BTreeSet::new();
     // One occlusion lookup per distinct block state, not per cell.
     let mut hides_of: BTreeMap<String, bool> = BTreeMap::new();
+    let mut hurting: BTreeSet<[i32; 3]> = BTreeSet::new();
     for (cell, name) in blocks {
+        if delvewright_dsl::blockshape::hurts_body(name) {
+            hurting.insert(*cell);
+        }
         if *hides_of
             .entry(name.to_string())
             .or_insert_with(|| delvewright_dsl::blockshape::hides(name))
@@ -1791,6 +1802,7 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
         unheld_climb,
         footprints,
         hiding,
+        hurting,
     }
 }
 

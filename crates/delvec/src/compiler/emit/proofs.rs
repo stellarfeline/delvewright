@@ -18,7 +18,7 @@ pub(super) fn prove_assemblies(
     population: &std::collections::BTreeSet<[i32; 3]>,
 ) -> Result<crate::compiler::assembly::AssemblyBinding, BuildFailure> {
     let entry = campaign_spawn(plan);
-    let roots = crate::compiler::lethal::stands_at_roots(plan, entry);
+    let roots = crate::compiler::lethal::stands_at_roots(plan, world, entry);
     let returned = playable_region(plan).map(|r| (r.min, r.max));
     // Where the party can walk while each performed trigger is the next
     // beat — `DW0924`'s reading: a gate a later beat opens is shut. A

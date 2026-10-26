@@ -785,11 +785,11 @@ pub(super) fn emit_quest_effect(
             // reached twice is idempotent). Nothing else happens here — the
             // checkpoint moves when the party REST, not when the beat fires.
             if let Some(bf) = plan.bonfire_for(anchor.as_str(), on_rest) {
-                let v = ent_xyz(bf.pos);
+                let v = ent_xyz(bf.at);
                 let i = bf.index;
                 body.push(format!(
                     "execute unless entity @e[tag=dw_bonfire_{i}] run {}",
-                    crate::compiler::clickbox::ClickBox::column(bf.pos, 2).summon(&format!(
+                    crate::compiler::clickbox::ClickBox::column(bf.at, 2).summon(&format!(
                         "response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"dw_bonfire_{i}\"]"
                     ))
                 ));

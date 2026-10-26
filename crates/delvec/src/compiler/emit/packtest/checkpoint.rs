@@ -7,7 +7,7 @@ pub(super) fn emit_bonfire_packtests(plan: &Plan, out: &mut BuildOutput) {
         return;
     };
     let i = bf.index;
-    let [x, y, z] = bf.pos;
+    let [x, y, z] = plan.seat(bf);
 
     // --- rest moves the party checkpoint ---
     let mut b = packtest_header(&format!(
@@ -768,7 +768,10 @@ pub(super) fn emit_bonfire_option_packtest(plan: &Plan, out: &mut BuildOutput) {
     b.push(
         "execute store result score #bo_cp dw.sys run data get storage dw:cp pos[0]".to_string(),
     );
-    b.push(format!("assert score #bo_cp dw.sys matches {}", bf.pos[0]));
+    b.push(format!(
+        "assert score #bo_cp dw.sys matches {}",
+        plan.seat(bf)[0]
+    ));
 
     // --- rest and save: the flask is replenished to its declared count ---
     b.push(format!(
@@ -974,7 +977,7 @@ pub(super) fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
     let title = artifact_title(plan.campaign);
 
     if let Some(cp) = plan.checkpoints.first() {
-        let [x, y, z] = cp.pos;
+        let [x, y, z] = plan.seat(cp);
         let (pin, sel) = pin_dummy("dw_t_cpr");
         let mut t = packtest_header(&format!(
             "{title}: checkpoint mirrors its cell into dw:cp (spec-0012)"
@@ -1065,15 +1068,15 @@ pub(super) fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
             }
             t.push(format!(
                 "assert score #x_cpseat dw.sys matches {}",
-                cp.pos[0] * 100 + 50
+                plan.seat(cp)[0] * 100 + 50
             ));
             t.push(format!(
                 "assert score #y_cpseat dw.sys matches {}",
-                cp.pos[1] * 100
+                plan.seat(cp)[1] * 100
             ));
             t.push(format!(
                 "assert score #z_cpseat dw.sys matches {}",
-                cp.pos[2] * 100 + 50
+                plan.seat(cp)[2] * 100 + 50
             ));
             t.push(format!("assert score {sel} dw.death_ack matches 1"));
             // …and no second re-seat without a second death.
@@ -1158,11 +1161,11 @@ pub(super) fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
                 }
                 t.push(format!(
                     "assert score #xs_cpwait dw.sys matches {}",
-                    cp.pos[0] * 100 + 50
+                    plan.seat(cp)[0] * 100 + 50
                 ));
                 t.push(format!(
                     "assert score #zs_cpwait dw.sys matches {}",
-                    cp.pos[2] * 100 + 50
+                    plan.seat(cp)[2] * 100 + 50
                 ));
                 out.insert(
                     format!("packtest-datapack/data/{ns}/test/v06_checkpoint_wait.mcfunction"),

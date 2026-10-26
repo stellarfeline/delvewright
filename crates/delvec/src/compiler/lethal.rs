@@ -501,10 +501,18 @@ fn cell_shows(
 ///
 /// Deterministic: entry, then checkpoints in content order, then crossings in
 /// objective order, then links and gathers in declaration order (ADR-0006).
-pub fn put_at_roots(plan: &Plan, entry: Option<[i32; 3]>) -> Vec<[i32; 3]> {
+pub fn put_at_roots(
+    plan: &Plan,
+    world: &crate::compiler::nav::World,
+    entry: Option<[i32; 3]>,
+) -> Vec<[i32; 3]> {
     let mut out: Vec<[i32; 3]> = Vec::new();
     out.extend(entry);
-    out.extend(plan.checkpoints.iter().map(|cp| cp.pos));
+    out.extend(
+        plan.checkpoints
+            .iter()
+            .filter_map(|cp| world.rest_seat_of(cp)),
+    );
     out.extend(plan.transport.values().copied());
     out.extend(plan.links.iter().map(|l| l.to));
     out.extend(plan.gathers.iter().map(|g| g.to));
@@ -522,10 +530,18 @@ pub fn put_at_roots(plan: &Plan, entry: Option<[i32; 3]>) -> Vec<[i32; 3]> {
 /// the rest of a loop's landing slab, where a body is put only if it crosses
 /// there. It roots `DW0924`'s party cells and `DW0881`'s population, where a
 /// wider population would hide a finding.
-pub fn stands_at_roots(plan: &Plan, entry: Option<[i32; 3]>) -> Vec<[i32; 3]> {
+pub fn stands_at_roots(
+    plan: &Plan,
+    world: &crate::compiler::nav::World,
+    entry: Option<[i32; 3]>,
+) -> Vec<[i32; 3]> {
     let mut out: Vec<[i32; 3]> = Vec::new();
     out.extend(entry);
-    out.extend(plan.checkpoints.iter().map(|cp| cp.pos));
+    out.extend(
+        plan.checkpoints
+            .iter()
+            .filter_map(|cp| world.rest_seat_of(cp)),
+    );
     out.extend(plan.transport.values().copied());
     out.extend(plan.links.iter().map(|l| l.to));
     out.extend(loop_exercise_landings(plan));
@@ -573,7 +589,7 @@ pub(crate) fn walked_population(
     open: &crate::compiler::nav::World,
     entry: Option<[i32; 3]>,
 ) -> std::collections::BTreeSet<[i32; 3]> {
-    open.reachable_walkable(&put_at_roots(plan, entry))
+    open.reachable_walkable(&put_at_roots(plan, open, entry))
 }
 
 /// `DW0891`: **prove no killing volume reaches a cell the player would read as
@@ -639,7 +655,7 @@ pub fn check_danger_is_visible(
     if plan.lethal_volumes.is_empty() {
         return (binding, Ok(()));
     }
-    let roots = put_at_roots(plan, entry);
+    let roots = put_at_roots(plan, world, entry);
     // The counterfactual, not the world the router walks. See the note above.
     let open = world.without_exclusions();
     binding.roots = roots.len();
@@ -1178,6 +1194,7 @@ fn npc_body(n: &delvewright_dsl::Npc) -> delvewright_dsl::metrics::Body {
 /// is why the caller's ledger counts what it examined.
 pub fn posted_places(
     plan: &Plan,
+    world: &crate::compiler::nav::World,
     entry: Option<[i32; 3]>,
     wave_seats: &std::collections::BTreeMap<String, Vec<[i32; 3]>>,
 ) -> Vec<PostedPlace> {
@@ -1205,14 +1222,18 @@ pub fn posted_places(
             player,
         );
     }
+    // The seat a respawn puts the body on, not the rest object; a checkpoint
+    // with none is `DW0316`'s.
     for cp in &plan.checkpoints {
         let kind = if cp.rest { "bonfire" } else { "checkpoint" };
-        push(
-            &mut out,
-            format!("{kind} anchor `{}`", cp.anchor),
-            cp.pos,
-            player,
-        );
+        if let Some(seat) = world.rest_seat_of(cp) {
+            push(
+                &mut out,
+                format!("{kind} `{}`'s seat", cp.anchor),
+                seat,
+                player,
+            );
+        }
     }
     let c = plan.campaign;
     for npc in &c.npcs.content.npcs {
@@ -1298,10 +1319,11 @@ pub fn posted_places(
 /// count rather than a number derived a second time.
 pub fn check_respawn_seats(
     plan: &Plan,
+    world: &crate::compiler::nav::World,
     entry: Option<[i32; 3]>,
     wave_seats: &std::collections::BTreeMap<String, Vec<[i32; 3]>>,
 ) -> Result<usize, Failure> {
-    let seats = posted_places(plan, entry, wave_seats);
+    let seats = posted_places(plan, world, entry, wave_seats);
     if plan.lethal_volumes.is_empty() {
         return Ok(seats.len());
     }

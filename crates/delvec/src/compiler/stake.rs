@@ -617,9 +617,10 @@ pub fn seats(plan: &Plan, world: &World, entry: Option<[i32; 3]>) -> Vec<Seat> {
         });
     }
     for cp in &plan.checkpoints {
-        let Some(cell) = world.snap(cp.pos, crate::compiler::nav::SNAP_RADIUS) else {
-            // A checkpoint with no standable seat is already `DW0316`; this table
-            // is not the place to re-report it.
+        // The seat a respawn puts the body on ([`World::rest_seat_of`]), the
+        // cell the emitter re-seats onto. A checkpoint with none is already
+        // `DW0316`; this table is not the place to re-report it.
+        let Some(cell) = world.rest_seat_of(cp) else {
             continue;
         };
         out.push(Seat {

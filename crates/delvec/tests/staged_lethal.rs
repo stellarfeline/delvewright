@@ -899,14 +899,16 @@ fn the_population_is_the_lethality_free_one_in_the_live_configuration() {
     let c = campaign(&dir);
     let prefabs = PrefabRegistry::load_dir(&lib).unwrap();
     let plan = Plan::build(&c, &prefabs).unwrap();
-    let world = delvec::compiler::nav::World::from_plan(&plan, &structures(&plan, &lib));
+    let world = delvec::compiler::nav::World::from_plan(&plan, &structures(&plan, &lib))
+        .with_rest_seats(&plan);
     let (configs, _) = delvec::compiler::nav::path_configurations(&plan, &world);
     let live = configs
         .iter()
         .find(|c| c.live.first().is_some_and(|l| l.may))
         .expect("a live configuration");
     let applied = live.world(&world).expect("the live configuration writes");
-    let roots = delvec::compiler::lethal::put_at_roots(&plan, plan.entry_point("area/keep"));
+    let roots =
+        delvec::compiler::lethal::put_at_roots(&plan, &world, plan.entry_point("area/keep"));
     let (klo, khi) = delvewright_dsl::metrics::keep_out_box(
         delvewright_dsl::metrics::Body::PLAYER,
         plan.lethal_volumes[0].region.0,

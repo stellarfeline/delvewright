@@ -904,7 +904,7 @@ mod tests {
             index: 0,
             trigger: None,
             anchor: "anchor/alcove".into(),
-            pos: [0, 64, 0],
+            at: [0, 64, 0],
             on_respawn,
             fire_step: 3,
             rest: false,
