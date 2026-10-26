@@ -20,7 +20,8 @@ const SEATS: Seat[] = [
   { cp: 1, label: "pound-2", cell: [0, 64, 20], inForceAfter: 2 },
 ];
 
-function gate(id: string, crossedAt: number | undefined): CrushGate {
+/** A gate whose death the build names the boundary after step `trialAt` for. */
+function gate(id: string, trialAt: number | undefined): CrushGate {
   return {
     id,
     region: { lo: [0, 64, 33], hi: [2, 66, 33] },
@@ -28,7 +29,9 @@ function gate(id: string, crossedAt: number | undefined): CrushGate {
     closedTicks: 40,
     phase: 0,
     approaches: [{ mouth: [0, 64, 32], stand: [0, 64, 33] }],
-    crossedAt,
+    crossedAt: undefined,
+    trialAt,
+    trialMouth: trialAt === undefined ? undefined : [0, 64, 32],
     gate: { terms: [] },
   };
 }
@@ -36,7 +39,7 @@ function gate(id: string, crossedAt: number | undefined): CrushGate {
 function plan(gates: CrushGate[]): DeathPlan {
   return {
     version: "fixture",
-    formatVersion: 5,
+    formatVersion: 6,
     campaignId: "t",
     volumes: [],
     onDeathEffects: 0,
@@ -84,31 +87,48 @@ test("a respawn is at a seat within vanilla's offset, and not a block away", () 
   assert.equal(atSeat([0.5, 64, 31.5], SEATS[1]!), false);
 });
 
-test("a gate a leg crosses is due at the boundary before that step, never earlier", () => {
+test("a gate is due at exactly the boundary the build names, and at no other", () => {
   const g = gate("timed-gate/second", 2);
-  assert.equal(crushDueAt(g, 0), false, "its mouth is past the first gate");
-  assert.equal(crushDueAt(g, 1), true);
-  assert.equal(crushDueAt(g, 3), true);
-  assert.equal(crushDueAt(gate("timed-gate/off-route", undefined), 0), true);
+  assert.equal(crushDueAt(g, 1), false, "never before the boundary the build names");
+  assert.equal(crushDueAt(g, 2), true);
+  assert.equal(crushDueAt(g, 3), false, "never after it either: the seat judged moves with it");
+  assert.equal(
+    crushDueAt(gate("timed-gate/off-route", undefined), 0),
+    false,
+    "a gate the build names no boundary for is walked after the path, never at a step",
+  );
+});
+
+test("a trial walked at a boundary other than the one the build names is red", () => {
+  const t = walked(gate("g", 18), 17, true);
+  const f = crushTrialFailures(t);
+  assert.equal(f.length, 1, JSON.stringify(f));
+  assert.match(f[0]!, /boundary 17\), and the build names the boundary after step 18/);
+  assert.deepEqual(crushTrialFailures(walked(gate("g", 18), 18, true)), []);
+  assert.deepEqual(
+    crushTrialFailures(walked(gate("g", undefined), 30, true)),
+    [],
+    "a gate the build names no boundary for is judged wherever the after-path walk took it",
+  );
 });
 
 test("a crush that did not kill a body standing in it is red", () => {
-  const t = openCrushTrial(gate("g", 1), 0, "after step 0");
+  const t = openCrushTrial(gate("g", 0), 0, "after step 0");
   t.enteredRegion = true;
   assert.match(crushTrialFailures(t)[0]!, /did NOT die/);
-  const never = openCrushTrial(gate("g", 1), 0, "after step 0");
+  const never = openCrushTrial(gate("g", 0), 0, "after step 0");
   assert.match(crushTrialFailures(never)[0]!, /never got its feet/);
 });
 
 test("a respawn away from the governing seat is red, and names the seat", () => {
-  const t = walked(gate("g", 1), 0, false);
+  const t = walked(gate("g", 0), 0, false);
   t.expectedSeats = ["entry [0, 64, 40]"];
   assert.match(crushTrialFailures(t)[0]!, /not at the seat that governs.*entry/);
-  assert.deepEqual(crushTrialFailures(walked(gate("g", 1), 0, true)), []);
+  assert.deepEqual(crushTrialFailures(walked(gate("g", 0), 0, true)), []);
 });
 
 test("the stage counts crush deaths walked over the declared gates", () => {
-  const gs = [gate("a", 1), gate("b", 2)];
+  const gs = [gate("a", 0), gate("b", 1)];
   const trials = [walked(gs[0]!, 0, true), walked(gs[1]!, 1, true)];
   assert.deepEqual(crushBinding(plan(gs), trials), {
     declared: 2,
@@ -145,7 +165,7 @@ test("a declared crush gate no trial walked is red, and so is an empty walk", ()
 });
 
 test("a crush trial taken before the path failed is still judged", () => {
-  const gs = [gate("a", 1), gate("b", 2)];
+  const gs = [gate("a", 0), gate("b", 1)];
   const spared = openCrushTrial(gs[0]!, 0, "after step 0");
   spared.enteredRegion = true;
   const row = crushStage({

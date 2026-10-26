@@ -1322,16 +1322,37 @@ pub struct Sightline {
 }
 
 /// A named exterior vantage the walk judges the silhouette from.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct View {
     /// View id (`view/<kebab>`), unique within the plan.
     pub id: ViewId,
-    /// Where the eye stands, in world coordinates.
-    pub eye: [i64; 3],
+    /// Where the eye stands, in world coordinates — where a body's eye stands,
+    /// so a half block and the 1.62 above the feet are spellable (spec-0122
+    /// §7.3).
+    #[serde(serialize_with = "whole_as_integer")]
+    pub eye: [f64; 3],
     /// What it looks at.
-    pub look_at: [i64; 3],
+    #[serde(serialize_with = "whole_as_integer")]
+    pub look_at: [f64; 3],
     /// What this view is for.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+}
+
+/// A point written with its whole coordinates as JSON integers and the rest in
+/// the shortest round-trip spelling, so a view authored `[54, 85, 101]` keeps
+/// those bytes through every typed writer (`54.0` would be a different
+/// document) and `[54.5, 85.62, 101.5]` keeps its own.
+fn whole_as_integer<S: serde::Serializer>(p: &[f64; 3], s: S) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeTuple;
+    let mut t = s.serialize_tuple(3)?;
+    for v in p {
+        if v.fract() == 0.0 && v.abs() < 9.0e15 {
+            t.serialize_element(&(*v as i64))?;
+        } else {
+            t.serialize_element(v)?;
+        }
+    }
+    t.end()
 }

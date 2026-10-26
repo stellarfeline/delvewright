@@ -622,10 +622,11 @@ pub fn panorama_from_plan(
         span,
         record: camera::Camera {
             after: None,
-            answers: String::new(),
+            answers: Some(String::new()),
             fov: cam.fov_deg,
             height: opts.height,
             name: shot.replace('_', "-"),
+            note: None,
             pitch: cam.pitch_deg,
             pos: cam.pos,
             // The record a panorama prints answers the row a creator names, and

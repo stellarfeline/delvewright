@@ -888,6 +888,30 @@ the bays are meant to be empty, which is what `void` says — and neither is idi
 10: every bay is the same bay, so its recursion is stated once and called with
 nothing.
 
+### A place from its allocation
+
+`gallery/overlays/site-plan/design/generator/annex.py` is the worked example of
+a **generator** — a script that emits one site-plan place's program rather than
+a program written by hand (spec-0122 §8). It is standard-library Python, run as
+`python3 annex.py --allocation <file>`, where the file is what `delvec
+allocation gallery/overlays/site-plan node/annex` printed, saved by the caller:
+the script runs no binary and names no path, reads JSON and writes JSON. It
+emits `programs/annex.json` for the gallery's `node/annex` — a roofed box with
+an arch seam, a barred chute seam and a `mark` for its owed name — and declares
+every handed value it uses as a `handed/…` parameter with the allocation's
+value as its default, retyping none, so the program it writes still binds when
+the plan moves. Each step is commented with the obligation of the program's
+contract it meets.
+
+`crates/delvec/tests/place_generator.rs` holds it to that with the built
+binary: `delvec allocation` → the script → the emitted document, after `delvec
+fmt`, equals the committed `programs/annex.json` byte for byte, and `delvec
+detail --check` on it exits 0. A committed program that stops being the
+script's output reds; a script whose output stops passing the check reds. It is
+a subsection and not a row of the index table above: that table's rows are bound
+to the library's `idiom-*` programs by identity, and a script is not a library
+program.
+
 ## 2d. The spatial contract — `claim`, and what a program says about a body
 
 A program can state where a body goes. The statement has two halves, and they

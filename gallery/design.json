@@ -38,8 +38,8 @@
         "name": "concept/midnight-crypt",
         "shows": "the crypt stair at the darkest hour, lightning behind the grate",
         "time": {
-          "phase": "waxing-crescent",
-          "sun": "just-set"
+          "daytime": 13047,
+          "phase": "waxing-crescent"
         },
         "weather": "thunder"
       },

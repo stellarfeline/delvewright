@@ -45,34 +45,19 @@ documents — never by weakening the campaign. A dead quest is a design bug.
 
 
 ```sh
-delvec --prefabs "$DELVEWRIGHT_PREFABS" build campaigns/<id> \
-    -o "$DELVEWRIGHT_ENGINE/validation/delve-output"
-```
-
-Must exit 0. `$DELVEWRIGHT_ENGINE/validation/delve-output` is the
-**zero-configuration** tree: every later step on this page boots it with no
-variables set, which is why the command above names it.
-
-**It is not the only place the tree may live.** `packtest-run.sh`,
-`bot-run.sh`, `branch-runs.sh` and the play server all boot a tree anywhere,
-including one inside your own working directory.
-
-**If you put the tree in your own repository, TWO variables travel together.**
-`dockerfile` is resolved relative to the build CONTEXT, so moving the context
-without moving the dockerfile gives `failed to read dockerfile`, which reads as
-a broken harness and is not one — it is the tree being somewhere the dockerfile
-is not. The entry scripts export both for you; a hand-written
-`docker compose … --profile play` does not:
-
-```sh
-export DELVE_OUTPUT="$PWD/.out/delve"                       # absolute
-export DELVE_DOCKERFILE="$DELVEWRIGHT_ENGINE/validation/Dockerfile.delve"
 delvec --prefabs "$DELVEWRIGHT_PREFABS" build campaigns/<id> -o "$DELVE_OUTPUT"
 ```
 
-Compose cannot compute an absolute default, so this is a real pair and not
-something a better default removes. Set neither and everything above is
-unchanged.
+Must exit 0. **`$DELVE_OUTPUT` is this session's build tree**, `.out/delve`
+under the working directory, and every later step boots it. I4 writes it into
+`.out/env.sh` together with `DELVE_DOCKERFILE`, the engine's
+`validation/Dockerfile.delve`, because the two travel together: `dockerfile` is
+resolved relative to the build CONTEXT, so a tree moved without its dockerfile
+gives `failed to read dockerfile`, which reads as a broken harness and is not
+one. `packtest-run.sh`, `bot-run.sh`, `branch-runs.sh`, `world-save.sh`, the
+play server and a hand-written `docker compose … --profile play` all read the
+pair; each working directory builds into its own tree, so two sessions on one
+machine never boot each other's build.
 
 The build writes more than a datapack. Four things to read, on every build:
 
@@ -136,7 +121,13 @@ where it was allocated (`DW0836`), every place reached from the entry
 along a plot's edge, no aloft place standing in the earth (`DW0990`).
 A stair whose run no standard pitch fits is `DW0830` as a warning: the
 stand-in lays no treads, and the place above stays unreached (`DW0837`) until
-the host is detailed with its own stair at step 9.
+the host is detailed with its own stair at step 9. **A stand-in is not judged
+for light**: nobody has placed its light yet, so the whole's `DW0210` gate
+leaves out every cell inside a massed place's frame and says how many on its
+binding line (`… E cell(s) under M stand-in(s) not judged`). A place's light is
+judged when it is detailed, by its own piece's probe and then by the whole's
+gate, so step 8 exits 0 over unlit stand-ins and the battery, the exposure gate
+and the leave proof report here rather than places later.
 
 **`--perturb <knob>` asks the derivation for a named defect and shows you the
 observer catching it** — `slide-openings`, `sink`, `short-walls`, `brick-up`,

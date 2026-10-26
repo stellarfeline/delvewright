@@ -36,7 +36,7 @@ const DEATH_PLAN_SUBPATH = ["validation", "death-plan.json"] as const;
  * one is REFUSED rather than half-read: a bot that silently ignores a field it
  * does not know reports a green over assertions it never made.
  */
-export const SUPPORTED_DEATH_PLAN_FORMAT = 5;
+export const SUPPORTED_DEATH_PLAN_FORMAT = 6;
 
 /** An inclusive world-space box. */
 export interface Box {
@@ -257,6 +257,11 @@ export interface Seat {
   readonly inForceAfter: number | null;
 }
 
+/** Whether two cells are the same cell. */
+export function sameCell(a: Vec3Tuple, b: Vec3Tuple): boolean {
+  return a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
+}
+
 /** One side a body can be caught from: wait at `mouth`, stand in `stand`. */
 export interface GateApproach {
   readonly mouth: Vec3Tuple;
@@ -264,7 +269,7 @@ export interface GateApproach {
 }
 
 /**
- * **A `crush: true` timed gate** (format 5): a place whose closing edge kills a
+ * **A `crush: true` timed gate**: a place whose closing edge kills a
  * body standing in it. The region is the one the closing tick's selector judges.
  */
 export interface CrushGate {
@@ -277,6 +282,14 @@ export interface CrushGate {
   readonly approaches: readonly GateApproach[];
   /** The exported step whose proven leg first crosses the gate, if one does. */
   readonly crossedAt: number | undefined;
+  /**
+   * The exported step after which the gate's death is walked, and the mouth
+   * walked to: the compiler's answer, never this run's pathfinder's. Undefined
+   * when no proven leg's start reaches a mouth; the death is then walked after
+   * the path.
+   */
+  readonly trialAt: number | undefined;
+  readonly trialMouth: Vec3Tuple | undefined;
   /** What keeps the closing edge live (a disarm's flag, unset); empty = always. */
   readonly gate: StakeGate;
 }
@@ -683,21 +696,39 @@ export function parseDeathPlan(raw: unknown): DeathPlan {
     if (crossed !== null && !Number.isInteger(crossed)) {
       throw new DeathPlanParseError(`${p}/crossed_at`, "expected an integer step index or null");
     }
+    const trialAt = g["trial_at"];
+    if (trialAt !== null && !Number.isInteger(trialAt)) {
+      throw new DeathPlanParseError(`${p}/trial_at`, "expected an integer step index or null");
+    }
+    const trialMouth =
+      g["trial_mouth"] === null ? undefined : requireCell(g["trial_mouth"], `${p}/trial_mouth`);
+    if ((trialAt === null) !== (trialMouth === undefined)) {
+      throw new DeathPlanParseError(
+        `${p}/trial_mouth`,
+        "a trial boundary and its mouth are given together or not at all",
+      );
+    }
+    const approaches = approachesRaw.map((a, k): GateApproach => {
+      const ap = `${p}/approaches/${k}`;
+      if (!isRecord(a)) throw new DeathPlanParseError(ap, "expected an object");
+      return {
+        mouth: requireCell(a["mouth"], `${ap}/mouth`),
+        stand: requireCell(a["stand"], `${ap}/stand`),
+      };
+    });
+    if (trialMouth !== undefined && !approaches.some((a) => sameCell(a.mouth, trialMouth))) {
+      throw new DeathPlanParseError(`${p}/trial_mouth`, "names no mouth of the gate's approaches");
+    }
     return {
       id: requireString(g["id"], `${p}/id`),
       region: requireBox(g["region"], `${p}/region`),
       openTicks: requireInteger(g["open_ticks"], `${p}/open_ticks`),
       closedTicks: requireInteger(g["closed_ticks"], `${p}/closed_ticks`),
       phase: requireInteger(g["phase"], `${p}/phase`),
-      approaches: approachesRaw.map((a, k): GateApproach => {
-        const ap = `${p}/approaches/${k}`;
-        if (!isRecord(a)) throw new DeathPlanParseError(ap, "expected an object");
-        return {
-          mouth: requireCell(a["mouth"], `${ap}/mouth`),
-          stand: requireCell(a["stand"], `${ap}/stand`),
-        };
-      }),
+      approaches,
       crossedAt: crossed === null ? undefined : (crossed as number),
+      trialAt: trialAt === null ? undefined : (trialAt as number),
+      trialMouth,
       gate: parseVolumeGate(g["gate"], `${p}/gate`),
     };
   });

@@ -126,9 +126,20 @@ fn the_handout_carries_the_place_s_allocation_verbatim() {
     // The frame and the check command name this binary by its absolute path.
     assert!(handout.contains("extent **14×10×18**"), "{handout}");
     assert!(handout.contains(&format!(
-        "\"{BIN}\" --prefabs \"{}\" detail",
+        "\"{BIN}\" --prefabs \"{}\" detail --check",
         prefabs.display()
     )));
+    // The wave bound is this binary's own line, quoted (spec-0122 §6.2).
+    let all = Command::new(BIN)
+        .args(["allocation", campaign.to_str().unwrap(), "--all"])
+        .output()
+        .expect("run delvec");
+    let bound = String::from_utf8_lossy(&all.stderr)
+        .lines()
+        .find(|l| l.starts_with("concurrency: "))
+        .expect("`allocation --all` states the wave bound on stderr")
+        .to_string();
+    assert!(handout.contains(&format!("`{bound}`")), "{handout}");
     // The Agent prompt is the second stdout line.
     assert_eq!(
         stdout.lines().nth(1),

@@ -73,6 +73,37 @@ pub struct Relight {
     /// Gate diagnostics (`DW0210`/`DW0211`); non-empty means the build fails
     /// (exit 2). Sorted by `(code, message)`.
     pub diagnostics: Vec<Failure>,
+    /// What the `DW0210` gate judged and what it left to a stand-in.
+    pub binding: DarkBinding,
+}
+
+/// **What the `DW0210` gate examined**, stated on every build (spec-0122 §7.4):
+/// the reachable cells it judged and how many measured dark, and the cells it
+/// did not judge because they stand inside a stand-in — a massed place nobody
+/// has designed yet, whose interior is dark because nobody has placed its
+/// light. A fully detailed build excludes zero and says `0 under 0`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DarkBinding {
+    /// Reachable cells the gate measured.
+    pub judged: usize,
+    /// Of those, the cells below light 3.
+    pub dark: usize,
+    /// Reachable cells inside a stand-in's frame, not judged.
+    pub excluded: usize,
+    /// The stand-ins: places the plan masses, with no detail row.
+    pub standins: usize,
+}
+
+impl DarkBinding {
+    /// `DW0210 binding: N reachable cell(s) judged, D dark; E cell(s) under M
+    /// stand-in(s) not judged`.
+    pub fn line(&self) -> String {
+        format!(
+            "DW0210 binding: {} reachable cell(s) judged, {} dark; {} cell(s) under {} \
+             stand-in(s) not judged",
+            self.judged, self.dark, self.excluded, self.standins
+        )
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1424,6 +1455,37 @@ pub fn relight_with(
         let detailed: BTreeSet<[i32; 3]> = detailed_by_place.values().flatten().copied().collect();
         let reachable: BTreeSet<[i32; 3]> = reachable.difference(&detailed).copied().collect();
 
+        // **A stand-in is not judged** (spec-0122 §7.4). A massed place — one
+        // the plan allocates a box and no `details[]` row binds — is the
+        // derivation's placeholder for a room nobody has designed yet; its
+        // interior is dark because nobody has placed its light, and the light
+        // is placed while the room is designed. Its cells leave the `DW0210`
+        // survey, counted on the binding line; a declared `lighting` still
+        // relights them, as it relights every cell the whole owns.
+        let standins: Vec<Vec<delvewright_dsl::siteplan::Aabb>> =
+            if area.area_id == delvewright_dsl::SITE_AREA {
+                delvewright_dsl::Frame::all(c)
+                    .into_iter()
+                    .filter(|(_, b)| {
+                        c.detail_plan
+                            .as_ref()
+                            .and_then(|e| e.content.detail_of(&b.node))
+                            .is_none()
+                    })
+                    .map(|(f, _)| f.owned.clone())
+                    .collect()
+            } else {
+                Vec::new()
+            };
+        out.binding.standins += standins.len();
+        let under_standin = |cell: &[i32; 3]| {
+            standins.iter().any(|owned| {
+                owned.iter().any(|(lo, hi)| {
+                    (0..3).all(|i| i64::from(cell[i]) >= lo[i] && i64::from(cell[i]) <= hi[i])
+                })
+            })
+        };
+
         if !reachable.is_empty() {
             match lighting {
                 Some(spec) => {
@@ -1442,9 +1504,13 @@ pub fn relight_with(
                     );
                 }
                 None => {
-                    // Measured-darkness gate over the assembled reachable walkable cells.
+                    // Measured-darkness gate over the assembled reachable walkable
+                    // cells the whole owns — every stand-in's left out, counted.
+                    let (excluded, judged): (BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>) =
+                        reachable.iter().copied().partition(|c| under_standin(c));
+                    out.binding.excluded += excluded.len();
                     let night_vision = dsl_area.is_some_and(area_night_vision);
-                    let s = survey_undeclared(&model, &reachable, sky, night_vision);
+                    let s = survey_undeclared(&model, &judged, sky, night_vision);
                     dark.entry(DarkSite {
                         area: area.area_id.clone(),
                         owner: DarkOwner::Whole,
@@ -1480,6 +1546,8 @@ pub fn relight_with(
         }
     }
 
+    out.binding.judged = dark.values().map(|s| s.examined).sum();
+    out.binding.dark = dark.values().map(|s| s.dark.len()).sum();
     if let Some(diag) = dark_diagnostic(&dark, nav, sky, placement) {
         out.diagnostics.push(diag);
     }
