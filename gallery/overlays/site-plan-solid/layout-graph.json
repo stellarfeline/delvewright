@@ -119,7 +119,8 @@
         "gating": {
           "flags": [
             "flag/muster-cleared"
-          ]
+          ],
+          "learned": "seen"
         },
         "id": "edge/loft-drop",
         "shortcut": true
