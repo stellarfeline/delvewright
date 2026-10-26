@@ -906,7 +906,8 @@ fn a_signal_on_a_volume_that_catches_nothing_is_dw0891() {
         let empty = delvec::compiler::nav::World::from_solid_and_flooded(
             std::collections::BTreeSet::new(),
             std::collections::BTreeSet::new(),
-        );
+        )
+        .with_rest_seats(plan);
         let (bound, verdict) =
             delvec::compiler::lethal::check_danger_is_visible(plan, &empty, blocks, None);
         assert_eq!(bound.population, 0, "no floor, no population: {bound:?}");
