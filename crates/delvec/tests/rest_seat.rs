@@ -18,6 +18,12 @@
 //!   anchor's own cell; that shape is the gallery's hearth);
 //! * the same, with the cell that seat stood on walled — the seat moves to
 //!   another side, and every reader moves with it.
+//!
+//! And on the `souls-bonfire` fixture, the rest object a pressable lays
+//! (spec-0117): a bonfire whose `prop` is a lit campfire stands the fire on
+//! the anchor's own cell at load, a region write the seat is derived over —
+//! the seat is beside the fire, and the save, the re-seat and the safe zone
+//! read it.
 
 mod common;
 
@@ -293,4 +299,116 @@ fn every_reader_of_a_respawn_reads_one_seat() {
     let moved = agreed(&out);
     assert_ne!(moved, beside, "the seat leaves the walled cell");
     assert_ne!(moved, anchor, "and never lands on the fire");
+}
+
+/// The souls-bonfire fixture's rest point, as the fixture declares it.
+const CANDLE: &str = "\"block\": \"minecraft:candle[candles=4,lit=false]\"";
+/// The same rest point as a lit campfire.
+const FIRE: &str =
+    "\"block\": \"minecraft:campfire[facing=north,lit=true,signal_fire=false,waterlogged=false]\"";
+
+#[test]
+fn a_campfire_a_bonfire_lays_on_its_own_cell_seats_the_body_beside_it() {
+    use delvec::compiler::load::load_campaign_dir;
+    const BF: &str = "souls-bonfire";
+    let dir = common::compiler_fixtures_dir().join(BF);
+    let mut loaded = load_campaign_dir(&dir).unwrap();
+    assert_eq!(
+        loaded.raw.quests.matches(CANDLE).count(),
+        1,
+        "the fixture's one rest point"
+    );
+    loaded.raw.quests = loaded.raw.quests.replace(CANDLE, FIRE);
+    let c = parse_campaign(&loaded.raw).expect("the campfire variant parses");
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&c, &prefabs).expect("plan builds");
+    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for area in &plan.areas {
+        for piece in &area.pieces {
+            for t in &piece.templates {
+                let bytes = std::fs::read(common::prefabs_dir().join(&t.structure_file)).unwrap();
+                structures.insert(t.structure_file.clone(), bytes);
+            }
+        }
+    }
+    let mut skins: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for npc in &c.npcs.content.npcs {
+        if let Some(skin) = &npc.skin {
+            let png = std::fs::read(dir.join("skins").join(format!("{}.png", skin.texture_id)))
+                .expect("skin png present");
+            skins.insert(skin.texture_id.clone(), png);
+        }
+    }
+    let out = emit::build(
+        &plan,
+        &loaded.inputs,
+        &structures,
+        &CommandTree::v1_21_11(),
+        &prefabs,
+        None,
+        &skins,
+    )
+    .unwrap_or_else(|e| panic!("a campfire rest point builds (DW0315/DW0316 hold): {e:?}"));
+
+    let cp = plan
+        .checkpoints
+        .iter()
+        .find(|c| c.rest)
+        .expect("the bonfire is a checkpoint");
+    let at = cp.at;
+    let f = |name: &str| {
+        text(
+            &out,
+            &format!("datapack/data/{BF}/function/{name}.mcfunction"),
+        )
+    };
+    // The fire stands on the rest object's own cell from load.
+    let laid = format!(
+        "setblock {} {} {} minecraft:campfire[facing=north,lit=true",
+        at[0], at[1], at[2]
+    );
+    assert!(
+        out.iter()
+            .any(|(p, b)| p.ends_with(".mcfunction")
+                && std::str::from_utf8(b).unwrap().contains(&laid)),
+        "the bonfire's prop lays the campfire on {at:?}"
+    );
+    let save = f(&format!("bonfire_save_{}", cp.index));
+    let spawn = save
+        .lines()
+        .find_map(|l| l.strip_prefix("spawnpoint @a "))
+        .map(|s| cell(&ints(s)))
+        .expect("the save sets the spawnpoint");
+    let mirror = save
+        .lines()
+        .find_map(|l| l.strip_prefix("data modify storage dw:cp pos set value "))
+        .map(|m| cell(&ints(m)))
+        .expect("the save writes the dw:cp mirror");
+    let tp = f(&format!("cp_seat_{}", cp.index));
+    let reseat = cell(&ints(tp.trim().strip_prefix("tp @s ").expect("a re-seat")));
+    let safety = json(&out, "validation/respawn-safety.json");
+    let rest = safety["rest_points"]
+        .as_array()
+        .unwrap_or_else(|| panic!("rest points listed: {safety}"))
+        .iter()
+        .find(|p| p["anchor"] == cp.anchor.as_str())
+        .unwrap_or_else(|| panic!("the bonfire is a rest point: {safety}"));
+    let zone: Vec<f64> = rest["pos"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x.as_f64().unwrap())
+        .collect();
+    let readings = [
+        ("the save's spawnpoint", spawn),
+        ("the save's dw:cp mirror", mirror),
+        ("the re-seat teleport", reseat),
+        ("the respawn safe zone (DW0478)", cell(&zone)),
+    ];
+    for (who, c) in readings {
+        assert_eq!(c, spawn, "{who} reads {c:?}: {readings:?}");
+    }
+    assert_ne!(spawn, at, "never in the fire");
+    let ring = (0..3).map(|i| (spawn[i] - at[i]).abs()).max().unwrap();
+    assert_eq!(ring, 1, "the seat is beside the fire: {spawn:?} by {at:?}");
 }

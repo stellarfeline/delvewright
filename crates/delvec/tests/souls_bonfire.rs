@@ -282,14 +282,16 @@ fn save_only_is_the_checkpoint_and_nothing_else() {
     let out = build_fixture();
     let save = fn_body(&out, "bonfire_save_0");
     let rest = fn_body(&out, "bonfire_rest_0");
-    // The fire's seat, not its anchor: `anchor/objective` [44, 65, 2] is a
-    // cell a block fills, so a respawn is seated on the floor beside it
-    // (`nav::World::rest_seat`), the cell the rest step's walk reaches first.
+    // The fire's seat over the world as the arming beat finds it
+    // (`nav::World::rest_seat`): the piece's block on `anchor/objective`
+    // [44, 65, 2] is replaced at load by the bonfire's `prop`, four candles,
+    // which hurt nothing and leave room for a body, so the anchor is its own
+    // seat.
     assert_eq!(
         save.lines().collect::<Vec<_>>(),
         vec![
-            "spawnpoint @a 43 65 3",
-            "data modify storage dw:cp pos set value [43, 65, 3]",
+            "spawnpoint @a 44 65 2",
+            "data modify storage dw:cp pos set value [44, 65, 2]",
             "scoreboard players set #cp dw.sys 0",
         ],
         "save-only is exactly the three checkpoint lines: {save}"
@@ -856,7 +858,7 @@ fn the_two_options_are_packtested_apart() {
     );
     // … and still moves the checkpoint …
     assert!(
-        t.contains("assert score #bo_cp dw.sys matches 43"),
+        t.contains("assert score #bo_cp dw.sys matches 44"),
         "save-only still saves: {t}"
     );
     // … while the rest brings it back to the declared count.

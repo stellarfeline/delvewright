@@ -115,16 +115,47 @@ impl World {
         None
     }
 
+    /// **The world a seat is derived and judged over**: this world as
+    /// checkpoint firing step `step` finds it ([`World::region_state_at`]),
+    /// every region write landed by then standing in it — the blocks the
+    /// pressables lay at load among them ([`Plan::load_prop_events`]). The
+    /// derivation ([`World::with_rest_seats`]) and the placement proof
+    /// (`DW0316`) both read it, so a seat is never derived over one world and
+    /// judged over another. `None` when nothing is written by then, so the
+    /// caller keeps this world.
+    pub(in crate::compiler::nav) fn seating_world(
+        &self,
+        region_events: &crate::compiler::plan::RegionEvents,
+        step: usize,
+        ancestor: &dyn Fn(usize, usize) -> bool,
+    ) -> Option<World> {
+        let st = self.region_state_at(region_events, step, ancestor);
+        (!(st.is_empty() && st.laid.is_empty())).then(|| self.with_region_state(&st))
+    }
+
     /// This world with every checkpoint's seat derived over it
     /// ([`World::rest_seat`], from [`approach_origin`]). Every world a proof
     /// about a respawn walks takes its seats here: the build's final world,
     /// once the plan its proofs read is settled (`emit::build`, after links are
     /// taken), and each edit batch's (`edit::replay`).
+    ///
+    /// Each seat is derived over the world as the checkpoint's firing step
+    /// finds it ([`World::region_state_at`]): every region write that has
+    /// landed by then stands in it, the blocks the pressables lay at load
+    /// among them ([`Plan::load_prop_events`]), so a campfire a bonfire's
+    /// `prop` lays on the rest object's own cell is a fire the seat is put
+    /// beside, as the no-stranding proof that walks from the seat reads it.
     pub fn with_rest_seats(mut self, plan: &Plan) -> World {
+        let ancestor = |g: usize, s: usize| plan.gate_fired_before(g, s);
         let seats: Vec<Option<[i32; 3]>> = plan
             .checkpoints
             .iter()
-            .map(|cp| self.rest_seat(cp.at, approach_origin(plan, cp)))
+            .map(|cp| {
+                self.seating_world(&plan.region_events, cp.fire_step, &ancestor)
+                    .as_ref()
+                    .unwrap_or(&self)
+                    .rest_seat(cp.at, approach_origin(plan, cp))
+            })
             .collect();
         self.seating.seats = std::sync::Arc::new(seats);
         self.seating.derived = true;
@@ -221,6 +252,37 @@ mod tests {
     fn a_safe_anchor_is_its_own_seat() {
         let w = hearth("minecraft:campfire[lit=true]");
         assert_eq!(w.rest_seat([0, 65, 0], Some([4, 65, 4])), Some([0, 65, 0]));
+    }
+
+    /// A block a region write lays is judged as a block a piece placed: a
+    /// campfire laid at load (a pressable's `prop`) hurts, so neither its cell
+    /// nor the cell over it is a seat; air laid over a placed campfire takes
+    /// the fire away.
+    #[test]
+    fn a_laid_block_hurts_as_a_placed_one() {
+        use crate::compiler::nav::route::region::RegionState;
+        let c = [2, 65, 2];
+        let laid = |block: Option<&str>| vec![((c, c), block.map(str::to_string))];
+        let bare = hearth("minecraft:air");
+        assert!(bare.is_safe_seat(c), "open floor before the write");
+        let st = RegionState {
+            solid: [c].into_iter().collect(),
+            laid: laid(Some("minecraft:campfire[lit=true]")),
+            ..RegionState::default()
+        };
+        let fired = bare.with_region_state(&st);
+        assert!(!fired.is_safe_seat(c), "the laid fire's own cell");
+        assert!(
+            !fired.is_safe_seat([2, 66, 2]),
+            "on top of the laid fire: its feet are in it"
+        );
+        let st = RegionState {
+            cleared: [c].into_iter().collect(),
+            laid: laid(None),
+            ..RegionState::default()
+        };
+        let put_out = hearth("minecraft:campfire[lit=true]").with_region_state(&st);
+        assert!(put_out.is_safe_seat(c), "the fire cleared by a write");
     }
 
     /// A rest object with no safe cell within the radius has no seat.

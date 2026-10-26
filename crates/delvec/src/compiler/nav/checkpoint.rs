@@ -334,7 +334,9 @@ fn verify_checkpoints(
         fire_step,
     } in checkpoints
     {
-        let Some(cell) = seat.filter(|c| world.is_safe_seat(*c)) else {
+        let seating = world.seating_world(region_events, *fire_step, ancestor);
+        let seating = seating.as_ref().unwrap_or(world);
+        let Some(cell) = seat.filter(|c| seating.is_safe_seat(*c)) else {
             return Err(unseated(anchor, *at, *seat));
         };
         // The first walked critical position strictly after the checkpoint fires.
