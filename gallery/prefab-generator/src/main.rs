@@ -3524,7 +3524,7 @@ const YARD_WAY: ([i32; 3], [i32; 3]) = ([3, 5, 0], [4, 7, 0]);
 
 /// Where a body stands when a quest seats it here — `anchor/node-exit` after the
 /// re-binding. Open paving, clear of the plinth.
-const YARD_SEAT: [i32; 3] = [2, 5, 4];
+const YARD_SEAT: [i32; 3] = [6, 5, 1];
 
 /// **The climb up to the gantry** (spec-0099): the seam the plan cut through
 /// the gantry's deck, answered on the yard's top course under it, as
@@ -3536,6 +3536,41 @@ const YARD_CLIMB: ([i32; 3], [i32; 3]) = ([4, 8, 5], [4, 8, 6]);
 /// The post the ladder hangs on, and the ladder's column beside it.
 const YARD_POST: [i32; 2] = [4, 4];
 const YARD_LADDER: [i32; 2] = [4, 5];
+
+/// **The cellar under the yard, and the hatch over its stair** (spec-0123,
+/// `docs/reference/doors-by-hand.md` *A trapdoor over a stair*): a room three
+/// wide and two deep sunk in the plinth at the yard's south end, its floor on
+/// the plinth's bottom course, and a one-wide stair shaft climbing north out of
+/// it to the paving between walls of plinth, under three oak trapdoors laid
+/// top-half in the paving course over the treads. The hatches are hinged on a
+/// long side of the hole — `facing=east`, the open panel against each cell's
+/// west face — so the panel stands along the climb and a body comes up onto
+/// the top tread and steps off onto the paving. Turned across the climb
+/// (`facing=north`), the north hatch stops the way up in both states and shuts
+/// a body in: `DW1066`, which `gallery/probes/a-hatch-across-the-cellar-stair`
+/// pins.
+const CELLAR_LO: [i32; 3] = [6, 1, 6];
+const CELLAR_HI: [i32; 3] = [8, 3, 7];
+/// The stair's column, and its treads: `(z, top course)`, the top tread first;
+/// the shaft is the column from the cellar floor to the hatch.
+const CELLAR_STAIR_X: i32 = 7;
+const CELLAR_TREADS: [(i32, i32); 3] = [(3, 3), (4, 2), (5, 1)];
+const CELLAR_SHAFT: ([i32; 3], [i32; 3]) = ([7, 1, 3], [7, 3, 5]);
+const CELLAR_HATCH: &str = "minecraft:oak_trapdoor";
+/// The lamps in the cellar's walls: the light probe judges every cell a body
+/// reaches, and a body reaches the cellar.
+const CELLAR_LAMPS: [[i32; 3]; 2] = [[5, 2, 7], [8, 2, 5]];
+
+/// **The court's water** (spec-0123 §3.5's census element): a trough sunk in
+/// the paving, two sources at the floor course with paving round them and
+/// the plinth under them, so the census states water standing one course
+/// below the walk plane. It stands clear of the seat, the ladder and the way
+/// in, so a rim raised round it closes on nothing a body needs.
+const YARD_BASIN: ([i32; 3], [i32; 3]) = ([2, 4, 5], [2, 4, 6]);
+
+fn in_box(p: [i32; 3], (lo, hi): ([i32; 3], [i32; 3])) -> bool {
+    (0..3).all(|i| p[i] >= lo[i] && p[i] <= hi[i])
+}
 
 fn yard_void(p: [i32; 3]) -> bool {
     YARD_VOIDS
@@ -3550,6 +3585,16 @@ fn yard_void(p: [i32; 3]) -> bool {
 /// the plan raises beyond; nothing stands above the paving, so a body steps
 /// off the yard onto the green. The ring's ground is the whole's.
 fn build_yard() -> Structure {
+    build_yard_with_hatch("east")
+}
+
+/// The probe-only yard whose cellar hatch is turned across the climb
+/// (`gallery/probes/a-hatch-across-the-cellar-stair`, `DW1066`): every byte
+/// the yard's but the three trapdoors' `facing`.
+const YARD_HATCH_ACROSS_ID: &str = "gallery-yard-hatch-across";
+
+/// The yard, its cellar hatch facing `hatch`.
+fn build_yard_with_hatch(hatch: &str) -> Structure {
     let mut palette = Palette::new();
     let mut blocks = Vec::new();
     let [sx, sy, sz] = YARD_SIZE;
@@ -3572,6 +3617,43 @@ fn build_yard() -> Structure {
                     } else {
                         "minecraft:air"
                     }
+                } else if x == CELLAR_STAIR_X
+                    && y == YARD_FLOOR - 1
+                    && CELLAR_TREADS.iter().any(|(tz, _)| *tz == z)
+                {
+                    // The hatch over the stair, flush with the paving.
+                    blocks.push(BlockEntry {
+                        pos: [x, y, z],
+                        state: palette.idx(
+                            CELLAR_HATCH,
+                            Some(&[
+                                ("facing", hatch),
+                                ("half", "top"),
+                                ("open", "false"),
+                                ("powered", "false"),
+                                ("waterlogged", "false"),
+                            ]),
+                        ),
+                    });
+                    continue;
+                } else if x == CELLAR_STAIR_X
+                    && CELLAR_TREADS
+                        .iter()
+                        .any(|(tz, top)| *tz == z && (1..=*top).contains(&y))
+                {
+                    "minecraft:stone_bricks"
+                } else if in_box([x, y, z], (CELLAR_LO, CELLAR_HI))
+                    || in_box([x, y, z], CELLAR_SHAFT)
+                {
+                    "minecraft:air"
+                } else if CELLAR_LAMPS.contains(&[x, y, z]) {
+                    "minecraft:sea_lantern"
+                } else if in_box([x, y, z], YARD_BASIN) {
+                    blocks.push(BlockEntry {
+                        pos: [x, y, z],
+                        state: palette.idx("minecraft:water", Some(&[("level", "0")])),
+                    });
+                    continue;
                 } else if y < YARD_FLOOR - 1 {
                     // The plinth, faced down to the terrain.
                     "minecraft:stone_bricks"
@@ -3625,13 +3707,17 @@ fn build_yard() -> Structure {
 /// observers are deliberately redundant: a piece that lies here passes the first
 /// and reds on the second.
 fn yard_metadata() -> serde_json::Value {
+    yard_metadata_as(YARD_ID)
+}
+
+fn yard_metadata_as(id: &str) -> serde_json::Value {
     let (wl, wh) = YARD_WAY;
     let (cl, ch) = YARD_CLIMB;
     serde_json::json!({
-        "prefab_id": format!("prefab/{YARD_ID}"),
+        "prefab_id": format!("prefab/{id}"),
         "structure": {
-            "file": format!("{YARD_ID}.nbt"),
-            "id": YARD_ID,
+            "file": format!("{id}.nbt"),
+            "id": id,
             "size": YARD_SIZE,
             "data_version": DATA_VERSION,
             "generator": "gallery/prefab-generator (gallery-prefab-gen)"
@@ -3667,6 +3753,10 @@ fn yard_metadata() -> serde_json::Value {
                 "yard": {
                     "envelope": "open_top",
                     "boxes": [region([1, YARD_FLOOR, 0], [YARD_SIZE[0] - 2, YARD_SIZE[1] - 1, YARD_SIZE[2] - 2])]
+                },
+                "cellar": {
+                    "envelope": "enclosed",
+                    "boxes": [region(CELLAR_LO, CELLAR_HI)]
                 }
             },
             "no_body": {},
@@ -3682,6 +3772,19 @@ fn yard_metadata() -> serde_json::Value {
                     "b": "exterior",
                     "class": "walk",
                     "via": { "region": "yard-climb", "boxes": [region(cl, ch)] }
+                },
+                {
+                    "a": "cellar",
+                    "b": "yard",
+                    "class": "stair",
+                    "rise": YARD_FLOOR - CELLAR_LO[1],
+                    "via": {
+                        "region": "cellar-stair",
+                        "boxes": [region(
+                            CELLAR_SHAFT.0,
+                            [CELLAR_STAIR_X, YARD_FLOOR - 1, CELLAR_TREADS[2].0]
+                        )]
+                    }
                 }
             ],
             "faces": [
@@ -3755,6 +3858,19 @@ fn write_yard(out: &Path) {
     let mut yard = yard_metadata();
     declare_walk_y(YARD_ID, &s, &mut yard);
     document::write_preserving(&out.join(format!("{YARD_ID}.json")), &yard);
+    // The probe-only variant: the same yard, its hatch turned across the climb.
+    let across = build_yard_with_hatch("north");
+    let nbt = fastnbt::to_bytes(&across).expect("structure serializes to NBT");
+    let mut gz = GzBuilder::new()
+        .mtime(0)
+        .write(Vec::new(), Compression::new(6));
+    gz.write_all(&nbt).expect("gzip write");
+    let framed = gz.finish().expect("gzip finish");
+    std::fs::write(out.join(format!("{YARD_HATCH_ACROSS_ID}.nbt")), &framed)
+        .expect("write the across-hatch yard nbt");
+    let mut meta = yard_metadata_as(YARD_HATCH_ACROSS_ID);
+    declare_walk_y(YARD_HATCH_ACROSS_ID, &across, &mut meta);
+    document::write_preserving(&out.join(format!("{YARD_HATCH_ACROSS_ID}.json")), &meta);
     println!(
         "{YARD_ID}: detail piece written — {}x{}x{} to fill the exit box's frame exactly",
         YARD_SIZE[0], YARD_SIZE[1], YARD_SIZE[2]

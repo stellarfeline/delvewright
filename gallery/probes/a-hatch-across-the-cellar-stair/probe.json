@@ -1,0 +1,14 @@
+{
+  "code": "DW1066",
+  "patch": [
+    {
+      "doc": "detail-plan.json",
+      "op": "replace",
+      "path": "/content/details/0/piece",
+      "value": "prefab/gallery-yard-hatch-across"
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The yard with its cellar hatch turned across the climb: the generator's `gallery-yard-hatch-across`, every byte the yard's but the three oak trapdoors' `facing=north`. The north trapdoor's open panel then stands on its south face, the face a body crosses climbing onto the top tread, and closed its plate is where the body's head goes on that tread, so a body that drops into the cellar through the open hatch cannot climb out in either state. The pocket is the trapdoors' doing — with their shapes lifted the cellar is left by its stair — and the build refuses it as `DW1066`, naming the trapdoor and the face it stops and telling the author to hinge the hatch on a long side of the hole. The yard as committed turns the same three hatches `facing=east`, the panel along the climb, and the binding line counts their cells. It declares no unit: what must not build is a hatch that shuts a body in."
+}

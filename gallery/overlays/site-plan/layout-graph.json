@@ -198,6 +198,13 @@
         "id": "node/near-hall",
         "intent": "hub",
         "note": "Everything the delve opens with stands here: the Curator, the case, the stall counter. It is the one place a body returns to.",
+        "references": [
+          {
+            "shows": "Furniture and depth for a large room: take the hall's furniture grouped by use and the worn floor where feet pass.",
+            "terms": "CC BY-NC-SA 3.0",
+            "url": "https://minecraft.wiki/w/Tutorial:Adding_beauty_to_constructions"
+          }
+        ],
         "stations": [
           {
             "anchor": "anchor/reading-desk",
@@ -214,6 +221,18 @@
         "id": "node/annex",
         "intent": "side-gallery",
         "note": "The three-tile chain drawn from `pool/gallery-annex`, off the near hall and back into the far one.",
+        "references": [
+          {
+            "shows": "How a settlement's shops meet the street: take the front that says the trade before its door is opened, and the shop as its own building on the street rather than a room of a neighbour.",
+            "terms": "CC BY-NC-SA 3.0",
+            "url": "https://minecraft.wiki/w/Tutorial:Settlement_guide"
+          },
+          {
+            "shows": "A build team's rule for interiors: take the rooms divided by purpose before a wall goes up, and the working object stood where it is used rather than stored.",
+            "terms": "none stated",
+            "url": "https://westeroscraft.com/docs/building/fundamentals/interiors"
+          }
+        ],
         "stations": [
           {
             "anchor": "anchor/annex-bench",
