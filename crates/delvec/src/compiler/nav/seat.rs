@@ -115,22 +115,26 @@ impl World {
         None
     }
 
-    /// **The world a seat is derived and judged over**: this world as
-    /// checkpoint firing step `step` finds it ([`World::region_state_at`]),
-    /// every region write landed by then standing in it — the blocks the
-    /// pressables lay at load among them ([`Plan::load_prop_events`]). The
-    /// derivation ([`World::with_rest_seats`]) and the placement proof
-    /// (`DW0316`) both read it, so a seat is never derived over one world and
-    /// judged over another. `None` when nothing is written by then, so the
-    /// caller keeps this world.
-    pub(in crate::compiler::nav) fn seating_world(
-        &self,
-        region_events: &crate::compiler::plan::RegionEvents,
-        step: usize,
-        ancestor: &dyn Fn(usize, usize) -> bool,
-    ) -> Option<World> {
-        let st = self.region_state_at(region_events, step, ancestor);
-        (!(st.is_empty() && st.laid.is_empty())).then(|| self.with_region_state(&st))
+    /// **The world a seat is derived and judged over: the world as shipped**
+    /// — this world with the blocks every pressable lays at load standing in
+    /// it ([`Plan::load_prop_events`], the list `setup_finish` writes and the
+    /// shipped world lays), so a campfire a bonfire's `prop` lays on its own
+    /// cell hurts as one a piece placed, and a `prop` laid over a piece's
+    /// block replaces it. No beat's write is in it: a respawn bundle runs
+    /// after the body is seated, and a later beat's write is judged by the
+    /// proofs that walk from the seat. The derivation
+    /// ([`World::with_rest_seats`]) and the placement proof (`DW0316`) both
+    /// read it, so a seat is never derived over one world and judged over
+    /// another. `None` when no pressable lays a block, so the caller keeps this
+    /// world.
+    pub(in crate::compiler::nav) fn seating_world(&self, plan: &Plan) -> Option<World> {
+        let props: crate::compiler::plan::RegionEvents = plan.load_prop_events().into();
+        if props.is_empty() {
+            return None;
+        }
+        let ancestor = |g: usize, s: usize| plan.gate_fired_before(g, s);
+        let st = self.region_state_at(&props, 0, &ancestor);
+        Some(self.with_region_state(&st))
     }
 
     /// This world with every checkpoint's seat derived over it
@@ -139,23 +143,15 @@ impl World {
     /// once the plan its proofs read is settled (`emit::build`, after links are
     /// taken), and each edit batch's (`edit::replay`).
     ///
-    /// Each seat is derived over the world as the checkpoint's firing step
-    /// finds it ([`World::region_state_at`]): every region write that has
-    /// landed by then stands in it, the blocks the pressables lay at load
-    /// among them ([`Plan::load_prop_events`]), so a campfire a bonfire's
-    /// `prop` lays on the rest object's own cell is a fire the seat is put
-    /// beside, as the no-stranding proof that walks from the seat reads it.
+    /// Each seat is derived over the world as shipped
+    /// ([`World::seating_world`]).
     pub fn with_rest_seats(mut self, plan: &Plan) -> World {
-        let ancestor = |g: usize, s: usize| plan.gate_fired_before(g, s);
+        let shipped = self.seating_world(plan);
+        let seating = shipped.as_ref().unwrap_or(&self);
         let seats: Vec<Option<[i32; 3]>> = plan
             .checkpoints
             .iter()
-            .map(|cp| {
-                self.seating_world(&plan.region_events, cp.fire_step, &ancestor)
-                    .as_ref()
-                    .unwrap_or(&self)
-                    .rest_seat(cp.at, approach_origin(plan, cp))
-            })
+            .map(|cp| seating.rest_seat(cp.at, approach_origin(plan, cp)))
             .collect();
         self.seating.seats = std::sync::Arc::new(seats);
         self.seating.derived = true;

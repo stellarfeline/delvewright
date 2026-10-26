@@ -193,7 +193,9 @@ def rules() -> dict:
         # Contract: *a gated seam whose bar this place owns* gets *a `barred`
         # contract edge whose `bar` is over exactly those cells, filled with a
         # palette role of that block, its region named by the same stem* — the
-        # chute is the `seam-annex-chute` region, filled with the `bar` role.
+        # chute is the `seam-annex-chute` region, filled with the `bar` role,
+        # and its leaf is marked `anchor/annex-chute-leaf`, where the gate's
+        # own answer is pressed (spec-0117).
         "party": [
             rule(
                 split(
@@ -212,7 +214,15 @@ def rules() -> dict:
                         blocks(span(CHUTE, "y")),
                         rel(),
                     ],
-                    [fill("wall"), claim(f"seam-{CHUTE}", fill("bar")), fill("wall")],
+                    [
+                        fill("wall"),
+                        {
+                            "body": claim(f"seam-{CHUTE}", fill("bar")),
+                            "mark": {"anchor": "annex-chute-leaf", "at": "floor_center"},
+                            "op": "mark",
+                        },
+                        fill("wall"),
+                    ],
                 )
             )
         ],
