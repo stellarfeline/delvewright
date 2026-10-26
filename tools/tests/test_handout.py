@@ -342,3 +342,111 @@ def test_the_stub_answers_with_the_allocation_struct_s_own_fields():
     for a in recorded:
         assert set(a) <= fields, set(a) - fields
         assert fields - set(a) <= optional, fields - set(a) - optional
+
+
+# ---------------------------------------------------------------------------
+# spec-0123 §3.3, §3.5, §5.3: what the place is, and the side that stands no wall
+# ---------------------------------------------------------------------------
+
+FRAME_SENTENCE = (
+    "your open side stands no wall; build the frame the wall would have been one cell inside the ring, "
+    "and stand what you open there in it"
+)
+
+
+def section(text: str, heading: str) -> str:
+    """The body of one `## ` section of a handout."""
+    start = text.index(f"## {heading}")
+    end = text.find("\n## ", start + 3)
+    return text[start : end if end != -1 else len(text)]
+
+
+def test_the_place_section_carries_every_reference_the_trade_rule_and_the_style_rule(rig: Rig):
+    # One reference fetched as a picture, the other recorded as a page.
+    refs = rig.campaign / ".out" / "references" / "hall"
+    refs.mkdir(parents=True)
+    (refs / "1.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    (refs / "index.json").write_text(
+        json.dumps(
+            {
+                "place": "node/hall",
+                "rows": [
+                    {"n": 1, "url": "https://example.org/keepers-hall.png", "kind": "image", "file": ".out/references/hall/1.png"},
+                    {"n": 2, "url": "https://example.org/timber-ceilings", "kind": "page", "file": None},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    out = rig.run()
+    assert out.returncode == 0, out.stderr
+    text = rig.handouts("hall")[0].read_text(encoding="utf-8")
+    body = section(text, "What this place is, and what it is built from")
+    # The section stands after the campaign's breath and before the design rows.
+    assert text.index("## The campaign, in one breath") < text.index("## What this place is") < text.index("## This place's rows")
+    assert "- intent: `hub`; note: The keeper's hall" in body
+    assert "2 human-built reference(s) to work from. Looked at, never copied: an unlicensed or non-commercial source is ideas only." in body
+    assert "<https://example.org/keepers-hall.png> — A keeper's hall with the desk facing the door: take where the keeper stands. Terms: CC BY 4.0." in body
+    assert f"Fetched: `{refs / '1.png'}`" in body
+    assert "<https://example.org/timber-ceilings> — A page of timber ceilings over stone rooms: take the beam spacing. Terms: none stated. Not fetched as a picture" in body
+    # A roofed place takes the trade rule and its threshold test, then the style rule.
+    assert "**This place reads as what it is when four things hold at once.**" in body
+    assert "**The test**: stand in the door and name what the place is with no sign read." in body
+    assert "**This place is outside" not in body
+    assert body.index("four things hold at once") < body.index("**Build it in one style**")
+    for part in ("**One module**", "**Openings follow construction**", "**Lines run through**", "**A landmark reads by its silhouette from the approach**"):
+        assert part in body, part
+    assert "No door is named per kind of building" in body
+    assert "open sides 0; references 2" in out.stderr
+
+
+def test_a_place_with_no_reference_says_so_and_still_carries_the_rules(rig: Rig):
+    out = rig.run(place="node/landing")
+    assert out.returncode == 0, out.stderr
+    body = section(rig.handouts("landing")[0].read_text(encoding="utf-8"), "What this place is, and what it is built from")
+    assert "- no reference is recorded for this place." in body
+    assert "four things hold at once" in body and "**Build it in one style**" in body
+    assert "references 0" in out.stderr
+
+
+def test_an_open_side_is_stated_with_its_cells_and_the_frame_sentence(rig: Rig):
+    out = rig.run(place="node/yard")
+    assert out.returncode == 0, out.stderr
+    text = rig.handouts("yard")[0].read_text(encoding="utf-8")
+    side = next(s for s in allocation("node/yard")["sides"] if s["face"] == "south")
+    lo, hi = side["cells"]
+    assert (
+        f"- your **south** side is open: cells [{lo[0]},{lo[1]},{lo[2]}]..[{hi[0]},{hi[1]},{hi[2]}], "
+        f"nothing stands in them from the walk plane (y {side['walk_y']}) to the top of the play space, your ground runs across them."
+    ) in text
+    assert FRAME_SENTENCE[0].upper() + FRAME_SENTENCE[1:] + "." in text
+    # A place open to the sky takes the outside paragraph, not the trade rule.
+    body = section(text, "What this place is, and what it is built from")
+    assert "**This place is outside" in body and "four things hold at once" not in body
+    assert "**Build it in one style**" in body
+    assert "open sides 1" in out.stderr
+
+
+def test_a_place_with_no_open_side_carries_no_frame_sentence(rig: Rig):
+    out = rig.run()
+    assert out.returncode == 0, out.stderr
+    text = rig.handouts("hall")[0].read_text(encoding="utf-8")
+    assert "### Open sides (0)" in text
+    assert "none: every side of this place is a wall." in text
+    assert FRAME_SENTENCE[0].upper() + FRAME_SENTENCE[1:] not in text
+    assert FRAME_SENTENCE not in text
+
+
+def test_a_neighbour_s_open_side_toward_the_place_is_named(rig: Rig):
+    recorded = json.loads((rig.bin / "allocations.json").read_text(encoding="utf-8"))
+    hall = next(a for a in recorded if a["place"] == "node/hall")
+    yard = next(n for n in hall["neighbours"] if n["place"] == "node/yard")
+    yard["open_toward"] = True
+    (rig.bin / "allocations.json").write_text(json.dumps(recorded), encoding="utf-8")
+    out = rig.run()
+    assert out.returncode == 0, out.stderr
+    text = rig.handouts("hall")[0].read_text(encoding="utf-8")
+    nb = text[text.index("### node/yard") :]
+    nb = nb[: nb.find("\n### ") if "\n### " in nb else len(nb)]
+    assert "its side toward you is open" in nb
+    assert text.count("its side toward you is open") == 1, "only the yard declares one"

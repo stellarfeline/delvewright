@@ -43,7 +43,10 @@
         "floor": {
           "datum": "datum/grade"
         },
-        "node": "node/yard"
+        "node": "node/yard",
+        "sides": {
+          "south": "open"
+        }
       }
     ],
     "datums": [

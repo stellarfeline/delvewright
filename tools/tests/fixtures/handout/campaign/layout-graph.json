@@ -49,7 +49,19 @@
       {
         "id": "node/hall",
         "intent": "hub",
-        "note": "The keeper's hall: a tall stone room with a timber ceiling, the keeper standing in the middle with his back to the barred south arch. The landing opens in from the west; the yard lies beyond the bars."
+        "note": "The keeper's hall: a tall stone room with a timber ceiling, the keeper standing in the middle with his back to the barred south arch. The landing opens in from the west; the yard lies beyond the bars.",
+        "references": [
+          {
+            "shows": "A keeper's hall with the desk facing the door: take where the keeper stands.",
+            "terms": "CC BY 4.0",
+            "url": "https://example.org/keepers-hall.png"
+          },
+          {
+            "shows": "A page of timber ceilings over stone rooms: take the beam spacing.",
+            "terms": "none stated",
+            "url": "https://example.org/timber-ceilings"
+          }
+        ]
       },
       {
         "id": "node/yard",
