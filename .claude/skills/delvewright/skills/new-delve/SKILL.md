@@ -392,7 +392,9 @@ critical-path order then allocation order, scenery last. Each author checks
 with `detail --check`, which writes nothing; on each return **you commit,
 one at a time**, with `delvec --prefabs "$DELVEWRIGHT_PREFABS" detail <campaign> <place>`, and launch the next.
 A commit that refuses goes back into a fresh agent's handout, never into your
-own edit. **Read**:
+own edit. **Before the first handout**, record at least two human-built
+references for every building in its node's `references[]` and fetch them
+with `scripts/references.py`. **Read**:
 `references/detail.md`; a piece the library does not have is
 `references/new-pieces.md`; a row that binds a piece the shipped library holds
 takes the library through `references/the-shipped-library.md`.
@@ -420,7 +422,7 @@ skip it and the campaign is not verified, however green the ladder is.
 
 **Needs**: step 10 green. **Produces**: your judgement of the POV sequence in
 route order, read against `campaigns/<id>/design/concept/`, scene by scene.
-Yours to do, not a checklist to hand off: judging a frame is the whole task. `delvec --prefabs "$DELVEWRIGHT_PREFABS" frames` draws the whole set from the worlds the build wrote; quote its first line. **Read**: `references/visual-review.md`. **A POV frame that is the wrong picture** is a camera question,
+Yours to do, not a checklist to hand off: judging a frame is the whole task. `delvec --prefabs "$DELVEWRIGHT_PREFABS" frames` draws the whole set from the worlds the build wrote; quote its first line. Then the threshold frames, blind: three lines under each — the trade, the front, the thing — with the place's `validation/piece-census.json` entry beside it, and the `threshold read:` line. **Read**: `references/visual-review.md`. **A POV frame that is the wrong picture** is a camera question,
 not a render one: place that one by hand in the running game
 (`references/tools-by-symptom.md`, *a render camera nobody is satisfied with*).
 
@@ -471,7 +473,7 @@ reference means the file listed here.
 | `references/build.md` | `fmt`, `analyze`, `build`, and what the build writes | steps 6-8 |
 | `references/ladder.md` | PackTest, the bot, branch runs, and how to triage a red | step 10 |
 | `references/chronicle.md` | reading a branch's chronicle against the design | step 11 |
-| `references/visual-review.md` | the POV sequence, `delvec --prefabs "$DELVEWRIGHT_PREFABS" frames`, and what the set costs | step 12 |
+| `references/visual-review.md` | the POV sequence, the threshold frames read blind, `delvec --prefabs "$DELVEWRIGHT_PREFABS" frames`, and what the set costs | step 12 |
 | `references/detail.md` | `detail-plan.json`, one place at a time, each by its own fresh agent | step 9 |
 | `references/new-pieces.md` | making a piece the library does not have | step 9 |
 | `references/hand-over.md` | the storybook, its marker, the play server, the staging gate, and the report | step 13 |
@@ -484,6 +486,7 @@ reference means the file listed here.
 | `scripts/find-jdk.py` | run at I1: the newest JDK 21+ already on this machine | I1 |
 | `scripts/fetch-client-jar.py` | run at I5, on the download path | I5 |
 | `scripts/handout.py` | run at step 9, once per place per attempt: the handout a fresh agent authors that place's program from | step 9 |
+| `scripts/references.py` | run at step 9 before the first handout: fetches every place's `references[]` into `.out/references/`, so its author reads the pictures | step 9 |
 | `scripts/starter.py` | copied beside every handout by `handout.py`, run by the place's author at step 9: an empty-but-correct program for that place, read off its allocation, that passes `detail --check` as it stands | step 9 |
 | `scripts/debug-note.py` | run wherever a default is taken or a refusal, limit, workaround or departure is met: one row of `.out/technical.jsonl`, written only under `DELVEWRIGHT_DEBUG` | any step |
 | `scripts/debug-report.py` | run at step 13: the *Technical decisions and engine limits* section, rendered and appended to `GENERATION.md`, only under `DELVEWRIGHT_DEBUG` | step 13 |

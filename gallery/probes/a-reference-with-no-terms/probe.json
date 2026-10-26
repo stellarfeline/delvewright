@@ -7,8 +7,8 @@
       "path": "/content/nodes/1/references",
       "value": [
         {
-          "url": "https://minecraft.wiki/w/Tutorial:Settlement_guide",
-          "shows": "How a settlement's shops meet the street: take the front that says the trade before its door is opened."
+          "shows": "How a settlement's shops meet the street: take the front that says the trade before its door is opened.",
+          "url": "https://minecraft.wiki/w/Tutorial:Settlement_guide"
         }
       ]
     }

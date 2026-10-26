@@ -44,7 +44,8 @@ form and the commands are in *Reference: drawing the map's reference*.
    authority: an identity binds to a number, never to a picture.
 
 2. **`layout-graph.json`** — the space as a graph, **before any coordinate
-   exists**. `nodes[]` are places (`{id, intent, stations?, note?, reached?}`);
+   exists**. `nodes[]` are places (`{id, intent, stations?, note?, reached?,
+   references?}`);
    `edges[]` are connections (`walk | stair | climb | drop | carry | vision`,
    with `gating`, `one_way`, `shortcut`). **A connection the story shuts
    carries `gating`** — `{flags?, quest?, opens_from?}`, naming what opens it
@@ -119,6 +120,15 @@ form and the commands are in *Reference: drawing the map's reference*.
      critical path actually a quest-legal path (`DW0817`), no one-way edge that
      strands a body (`DW0819`), no "shortcut" that closes no loop (`DW0820`).
    - `intent` is a free label no check keys on — write what the place is *for*.
+   - **`references` is the place's human-built references**, `[{url, shows,
+     terms}]`: an `https://` URL to a picture or a page of a real build of the
+     same kind of place, one sentence saying what it shows and what to take
+     from it, and the terms its source states (`"CC BY-SA 4.0"`, `"none
+     stated"`). They are written at step 9, before the first handout, and the
+     handout carries them; a node with none is legitimate and validation
+     prints `references binding: R reference(s) over N of M node(s)`. A
+     reference is looked at, never copied: an unlicensed or non-commercial
+     source is ideas only.
 
 3. **`site-plan.json`** — the geometric embedding of that graph. `region` (the
    whole map's one box, in world coordinates), `datums` (named ground planes),
@@ -142,9 +152,22 @@ form and the commands are in *Reference: drawing the map's reference*.
      A plan without `fill` does not parse (`DW0100`); a heightmap of the wrong
      size or outside the region is `DW0826`. On an `open` site, ground no
      place claims is walkable commons.
+   - **Cut the site with one box per building or connector.** A building is a
+     place; a road, a flight of steps and a bridge are each a place; and so are
+     a yard, a garden strip and a square's centrepiece, each an open-sided place
+     (`sides`, below). A town's cut includes its yards. Never cut two buildings
+     into one box, nor a terrace of buildings into one place.
+   - **Give a building room for rooms.** A building of a trade — a forge, a
+     shop, a workshop — stands on at least **12 × 12** of play space, and on at
+     least **14 × 14** where a workroom and a shop front both stand; a
+     one-room house may be smaller. State the figure as a fact in the geometry
+     brief and bind the box to it with an `identities[]` row — `{"fact": …,
+     "cmp": "ge", "measure": {"of": "box-extent", "node": …, "axis": "x"}}`
+     and the same on `z` — so the size is a declaration the plan is held to
+     (`DW0833`), never a class the engine infers.
    - **A box says what it is; a seam says where two boxes meet; the engine
      derives where it stands.** A box is a cuboid,
-     `{node, extent: [dx, dz], floor, ceiling, base?, roof?, min?}`. `extent`
+     `{node, extent: [dx, dz], floor, ceiling, base?, roof?, sides?, min?}`. `extent`
      is the play space a body stands in, any whole number of blocks; `floor`
      is `{"datum": …}` or `{"y": …}`; `ceiling` is `{"clearance": n}` (a lid
      `n` over the floor) or `{"open": n}` (sky-open: exactly `n` courses of air
@@ -165,6 +188,17 @@ form and the commands are in *Reference: drawing the map's reference*.
      in its sky: a climb up into it is a hole through its floor course, which
      the lower place's headroom reaches when its top is one course under it
      (one short is `DW0828`, naming the gap).
+   - **`sides` says which of a box's four sides stand a wall**: `{"south":
+     "open"}`, each of `north`, `south`, `east`, `west` either `"wall"` (the
+     default) or `"open"`. An open side stands no wall: its ring cells, from the
+     floor course to the top of the play space, hold nothing a body cannot be
+     in, and the place's ground runs across them. A shop front open to the
+     street, a covered market on posts, a fountain court open on all four sides
+     are each this one declaration. It says nothing about crossing — that is
+     the seam's: a frontage onto a street is a `contact` seam, and an open side
+     onto the commons needs none. A portal seam in an open face is `DW1064`;
+     an open side the built piece walls across is `DW1065`, one column taken
+     is `DW1057`.
    - **`roof: {courses, eaves}`** on a roofed box reserves the roof zone the
      place's piece draws: the shell footprint grown by `eaves`, from the
      ceiling course up `courses` courses. A roof on an `open` box, or one
