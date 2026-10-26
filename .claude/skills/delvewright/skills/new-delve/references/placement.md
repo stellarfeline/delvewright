@@ -163,8 +163,11 @@ form and the commands are in *Reference: drawing the map's reference*.
      one-room house may be smaller. State the figure as a fact in the geometry
      brief and bind the box to it with an `identities[]` row — `{"fact": …,
      "cmp": "ge", "measure": {"of": "box-extent", "node": …, "axis": "x"}}`
-     and the same on `z` — so the size is a declaration the plan is held to
-     (`DW0833`), never a class the engine infers.
+     — so the size is a declaration the plan is held to (`DW0833`), never a
+     class the engine infers. Bind it on an axis no wall between rooms
+     crosses: the built world measures a box's extent as the clear run through
+     its middle under the ceiling, so a wall dividing the rooms across `z`
+     measures one room on `z`, and the building is bound on `x`.
    - **A box says what it is; a seam says where two boxes meet; the engine
      derives where it stands.** A box is a cuboid,
      `{node, extent: [dx, dz], floor, ceiling, base?, roof?, sides?, min?}`. `extent`
