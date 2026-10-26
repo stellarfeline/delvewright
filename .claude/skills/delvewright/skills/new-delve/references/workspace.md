@@ -282,6 +282,15 @@ last player-visible sentence of the run, absent = the finale quest's `goal`.
   (`DW0925`, as it does `seconds` outside 1–120), so
   decide it with the quest plan's checkpoints in front of you. `alone: true`
   makes a party of one wait too.
+- **`jumps`.** Absent = the route jumps nowhere. Each entry `{ "id":
+  "jump/<name>", "from": "anchor/…", "to": "anchor/…", "sprint": true }`
+  says a gap is meant to be jumped: two anchors a body stands at, one jump
+  apart. The build flies the jump as a player on cue makes it and refuses one
+  that misses, an anchor no body stands at, or a gap the walk already crosses
+  (`DW1041`); a proven jump is a move of the critical path and the bot makes
+  it. A gap nobody declares is judged only by where a body can be, never as a
+  way the story goes, so declare every gap the critical path is meant to
+  cross, once its two anchors exist.
 - **`view_distance`.** Absent = 10 chunks (160 blocks), the engine's floor.
   Declare it — in chunks, `10..=32` — when a thing is meant to be seen from
   farther than that: a tower across the water, a hill-sized body on the
