@@ -94,6 +94,9 @@ fn layout_binding_lines(campaign: &delvewright_dsl::Campaign, out: &mut Vec<Stri
     }
     let b = delvewright_dsl::LayoutBinding::of(campaign);
     out.push(b.line());
+    if campaign.layout_graph.is_some() {
+        out.push(b.references_line());
+    }
     if campaign.site_plan.is_some() {
         out.push(b.plan_line());
         // The derivation, handed back: every box's corner and how it was
