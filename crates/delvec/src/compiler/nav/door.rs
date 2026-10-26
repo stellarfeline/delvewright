@@ -314,6 +314,7 @@ mod tests {
     /// the north face, along the way.
     #[test]
     fn a_door_open_across_the_way_refuses_a_body_that_opens_nothing_dw1068() {
+        assert_eq!(DW_WAY_ACROSS_A_LEAF.id(), "DW1068");
         let cells = walk();
         let across = corridor("facing=north,hinge=left", true);
         assert_eq!(across.door_leaf_cells().len(), 2);
