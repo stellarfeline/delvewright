@@ -119,11 +119,7 @@ fn build(c: &Campaign) -> (Plan<'_>, BuildOutput) {
 }
 
 fn text<'a>(out: &'a BuildOutput, path: &str) -> &'a str {
-    std::str::from_utf8(
-        out.get(path)
-            .unwrap_or_else(|| panic!("{path} is emitted")),
-    )
-    .unwrap()
+    std::str::from_utf8(out.get(path).unwrap_or_else(|| panic!("{path} is emitted"))).unwrap()
 }
 
 fn json(out: &BuildOutput, path: &str) -> Value {
@@ -138,14 +134,24 @@ fn ints(s: &str) -> Vec<f64> {
 }
 
 fn cell(v: &[f64]) -> [i32; 3] {
-    [v[0].floor() as i32, v[1].floor() as i32, v[2].floor() as i32]
+    [
+        v[0].floor() as i32,
+        v[1].floor() as i32,
+        v[2].floor() as i32,
+    ]
 }
 
 /// Every reader's answer, named.
 fn readings(out: &BuildOutput) -> Vec<(&'static str, [i32; 3])> {
     let mut r = Vec::new();
-    let seat_fn = text(out, &format!("datapack/data/{NS}/function/cp_seat_0.mcfunction"));
-    let tp = seat_fn.trim().strip_prefix("tp @s ").expect("a re-seat teleport");
+    let seat_fn = text(
+        out,
+        &format!("datapack/data/{NS}/function/cp_seat_0.mcfunction"),
+    );
+    let tp = seat_fn
+        .trim()
+        .strip_prefix("tp @s ")
+        .expect("a re-seat teleport");
     r.push(("the re-seat teleport (cp_seat_0)", cell(&ints(tp))));
     // The beat that sets the checkpoint writes both lines in one function
     // (the setup seeds `dw:cp` with the entry spawn, which is not this seat).
@@ -187,11 +193,20 @@ fn readings(out: &BuildOutput) -> Vec<(&'static str, [i32; 3])> {
         .iter()
         .filter_map(|e| e.get("checkpoint"))
         .map(|c| {
-            let v: Vec<f64> = c.as_array().unwrap().iter().map(|x| x.as_f64().unwrap()).collect();
+            let v: Vec<f64> = c
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|x| x.as_f64().unwrap())
+                .collect();
             cell(&v)
         })
         .collect();
-    assert_eq!(governing.len(), 1, "one encounter, governed by the checkpoint");
+    assert_eq!(
+        governing.len(),
+        1,
+        "one encounter, governed by the checkpoint"
+    );
     r.push(("the combat plan's governing checkpoint", governing[0]));
     let safety = json(out, "validation/respawn-safety.json");
     let rest = safety["rest_points"]
@@ -231,7 +246,10 @@ fn agreed(out: &BuildOutput) -> [i32; 3] {
     let r = readings(out);
     let seat = r[0].1;
     for (who, at) in &r {
-        assert_eq!(*at, seat, "{who} reads {at:?}, the re-seat reads {seat:?}: {r:?}");
+        assert_eq!(
+            *at, seat,
+            "{who} reads {at:?}, the re-seat reads {seat:?}: {r:?}"
+        );
     }
     seat
 }
@@ -247,15 +265,25 @@ fn every_reader_of_a_respawn_reads_one_seat() {
     // A campfire under the anchor: the seat is beside the rest object.
     let fire = campaign(Some(edits(&[([0, -1, 0], "minecraft:campfire[lit=true]")])));
     let (plan, out) = build(&fire);
-    assert_eq!(plan.checkpoints[0].at, anchor, "the rest object does not move");
+    assert_eq!(
+        plan.checkpoints[0].at, anchor,
+        "the rest object does not move"
+    );
     let beside = agreed(&out);
     assert_ne!(beside, anchor, "never over the campfire");
     let ring = (0..3).map(|i| (beside[i] - anchor[i]).abs()).max().unwrap();
-    assert_eq!(ring, 1, "the seat is next to the rest object: {beside:?} by {anchor:?}");
+    assert_eq!(
+        ring, 1,
+        "the seat is next to the rest object: {beside:?} by {anchor:?}"
+    );
 
     // Wall the cell that seat stood on: the seat moves to another side, and
     // every reader moves with it.
-    let off = [beside[0] - anchor[0], beside[1] - anchor[1], beside[2] - anchor[2]];
+    let off = [
+        beside[0] - anchor[0],
+        beside[1] - anchor[1],
+        beside[2] - anchor[2],
+    ];
     let walled = campaign(Some(edits(&[
         ([0, -1, 0], "minecraft:campfire[lit=true]"),
         (off, "minecraft:stone_bricks"),
