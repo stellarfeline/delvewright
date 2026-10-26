@@ -153,7 +153,7 @@ fn the_census_states_the_annex_front_the_doors_and_the_court_water() {
     let p = point("census");
     assert!(
         p.stderr.contains(
-            "piece census: 10 piece(s), 30 face(s), 24 opening(s), 2 water cell(s); doors framed: 2 of 2"
+            "piece census: 10 piece(s), 30 face(s), 19 opening(s), 2 water cell(s); doors framed: 2 of 2"
         ),
         "{}",
         p.stderr

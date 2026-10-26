@@ -13,7 +13,9 @@
 //! # What is entered, per bound piece
 //!
 //! A bound piece is one the detail plan binds to a site-plan place: the
-//! placed piece of that row whose frame holds the place's play space.
+//! placed piece of that row whose frame holds the place's play space. A cell
+//! its templates hold as `structure_void` is not entered — a neighbour's wall
+//! in its frame is the neighbour's.
 //!
 //! 1. **Doors and gates, and their framing.** Every `*_door` lower half: its
 //!    two jambs — the cells beside it perpendicular to its `facing`, at both of
@@ -253,10 +255,15 @@ impl Census {
     }
 }
 
-/// The blocks and the body model one piece is read in.
+/// The blocks and the body model one piece is read in, and the cells the
+/// piece owns.
 pub struct Reading<'a> {
     blocks: &'a BlockMap,
     world: World,
+    /// The cells of the piece's frame its templates hold as `structure_void`:
+    /// a cell another place owns — a neighbour's wall drawn into this frame,
+    /// the whole's fixed ground — is not this piece's to enter.
+    voids: BTreeSet<[i32; 3]>,
 }
 
 impl<'a> Reading<'a> {
@@ -270,7 +277,22 @@ impl<'a> Reading<'a> {
             crate::compiler::assembled::occupancy_over(blocks, &BTreeSet::new()),
             super::Premises::geometry_only(),
         );
-        Reading { blocks, world }
+        Reading {
+            blocks,
+            world,
+            voids: BTreeSet::new(),
+        }
+    }
+
+    /// The same reading, every cell of `voids` someone else's.
+    #[must_use]
+    pub fn voiding(mut self, voids: BTreeSet<[i32; 3]>) -> Self {
+        self.voids = voids;
+        self
+    }
+
+    fn owns(&self, c: [i32; 3]) -> bool {
+        !self.voids.contains(&c)
     }
 
     fn id(&self, c: [i32; 3]) -> Option<&'static str> {
@@ -325,6 +347,9 @@ pub fn doors(r: &Reading<'_>, lo: [i32; 3], hi: [i32; 3]) -> Vec<DoorEntry> {
             || !(lo[1]..=hi[1]).contains(&c[1])
             || !(lo[2]..=hi[2]).contains(&c[2])
         {
+            continue;
+        }
+        if !r.owns(c) {
             continue;
         }
         let name = b.as_str();
@@ -428,6 +453,9 @@ pub fn face(r: &Reading<'_>, l: &Layer) -> FaceEntry {
     for u in l.a0..=l.a1 {
         for y in l.y0..=l.y1 {
             let c = l.cell(u, y);
+            if !r.owns(c) {
+                continue;
+            }
             if r.opening(c) {
                 open.insert((u, y));
             }
@@ -471,7 +499,10 @@ pub fn face(r: &Reading<'_>, l: &Layer) -> FaceEntry {
     let kinds = kinds
         .into_iter()
         .map(|(block, cells)| {
-            let same = |u: i32, y: i32| r.id(l.cell(u, y)).is_some_and(|b| bare_id(b) == block);
+            let same = |u: i32, y: i32| {
+                let c = l.cell(u, y);
+                r.owns(c) && r.id(c).is_some_and(|b| bare_id(b) == block)
+            };
             let mut longest = 0usize;
             for y in l.y0..=l.y1 {
                 let mut run = 0usize;
@@ -513,6 +544,9 @@ pub fn water(r: &Reading<'_>, lo: [i32; 3], hi: [i32; 3], walk_y: i32) -> Water 
         {
             continue;
         }
+        if !r.owns(c) {
+            continue;
+        }
         let name = b.as_str();
         let wet = matches!(bare_id(name), "water" | "bubble_column")
             || state_value(name, "waterlogged") == Some("true");
@@ -526,6 +560,28 @@ pub fn water(r: &Reading<'_>, lo: [i32; 3], hi: [i32; 3], walk_y: i32) -> Water 
     w
 }
 
+/// The world cells a placed piece's templates hold as `structure_void`: the
+/// cells of its frame another place owns.
+fn void_cells(
+    p: &crate::compiler::plan::PiecePlacement,
+    structures: &BTreeMap<String, Vec<u8>>,
+) -> BTreeSet<[i32; 3]> {
+    let mut out = BTreeSet::new();
+    for t in &p.templates {
+        let Some(bytes) = structures.get(&t.structure_file) else {
+            continue;
+        };
+        for (local, name) in crate::compiler::assembled::structure_named_cells(bytes) {
+            if bare_id(&name) != "structure_void" {
+                continue;
+            }
+            let r = p.rotation.transform(local);
+            out.insert([t.pos[0] + r[0], t.pos[1] + r[1], t.pos[2] + r[2]]);
+        }
+    }
+    out
+}
+
 fn narrow(v: i64) -> i32 {
     i32::try_from(v).unwrap_or(if v < 0 { i32::MIN } else { i32::MAX })
 }
@@ -533,7 +589,12 @@ fn narrow(v: i64) -> i32 {
 /// **The census over a built world** — every bound piece of the plan, read in
 /// the blocks as shipped.
 #[must_use]
-pub fn census(plan: &Plan, prefabs: &PrefabRegistry, blocks: &BlockMap) -> Census {
+pub fn census(
+    plan: &Plan,
+    prefabs: &PrefabRegistry,
+    blocks: &BlockMap,
+    structures: &BTreeMap<String, Vec<u8>>,
+) -> Census {
     let mut out = Census::default();
     let Some(b) = plan.blockout.as_ref() else {
         return out;
@@ -575,7 +636,7 @@ pub fn census(plan: &Plan, prefabs: &PrefabRegistry, blocks: &BlockMap) -> Censu
             })
             .map(|(c, s)| (*c, *s))
             .collect();
-        let r = Reading::new(&window);
+        let r = Reading::new(&window).voiding(void_cells(p, structures));
         let walk_y = narrow(pb.floor);
         let shown: Vec<&'static str> = prefabs
             .get(&p.prefab_id)
@@ -759,6 +820,18 @@ mod tests {
                 .iter()
                 .any(|k| k.block == "stone" && k.longest_run == 9)
         );
+    }
+
+    /// A neighbour's door drawn into this frame is a void to this piece and
+    /// is not entered; its water is not counted either.
+    #[test]
+    fn a_cell_the_piece_holds_as_void_is_not_entered() {
+        let mut m = smithy();
+        m.insert([1, 1, 1], BlockState::new("minecraft:water[level=0]"));
+        let voids: BTreeSet<[i32; 3]> = [[5, 1, 5], [5, 2, 5], [1, 1, 1]].into_iter().collect();
+        let r = Reading::new(&m).voiding(voids);
+        assert!(doors(&r, [0, 0, 0], [8, 6, 8]).is_empty());
+        assert_eq!(water(&r, [0, 0, 0], [8, 6, 8], 1).cells, 0);
     }
 
     #[test]
