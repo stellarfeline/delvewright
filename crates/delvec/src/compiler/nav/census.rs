@@ -260,7 +260,10 @@ pub struct Reading<'a> {
 }
 
 impl<'a> Reading<'a> {
-    /// The body model over `blocks`, geometry only.
+    /// The body model over `blocks`, geometry only: whether a body can be in
+    /// a cell beside a door, and what a face is made of, are facts of the
+    /// blocks — a measurement for the review that refuses nothing — and no
+    /// premise of the campaign (horizon, volume, gate) changes them.
     #[must_use]
     pub fn new(blocks: &'a BlockMap) -> Self {
         let world = World::from_occupancy(
