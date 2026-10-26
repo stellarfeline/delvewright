@@ -166,6 +166,16 @@ fn run(
         );
         return Ok(());
     }
+    // The commit states the judge's binding before it writes, as `--check`
+    // states it: the two runs say the same thing up to the write.
+    eprintln!(
+        "detail: {places} judged against the whole as it stands. {binding}",
+        places = prepared
+            .iter()
+            .map(|p| format!("`{}`", p.place))
+            .collect::<Vec<_>>()
+            .join(", "),
+    );
     let mut done: Vec<String> = Vec::new();
     for p in &prepared {
         done.push(write_one(campaign_dir, &campaign, prefabs_dir, p, json)?);
