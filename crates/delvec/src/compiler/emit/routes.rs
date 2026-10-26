@@ -920,6 +920,58 @@ pub(super) fn prove_world(
                     crate::compiler::nav::furniture_binding(plan, world, &routes, &m, &am);
                 eprintln!("{}", furniture.line());
                 put_json(out, "validation/furniture-gate.json", &furniture.to_json());
+                // `DW1068`: a walked way that exists only across a leaf its
+                // mover cannot set — over the same world and the same legs the
+                // proofs above walked, each mover with its own use of a leaf a
+                // hand opens (the party sets one; a scripted body opens
+                // nothing). The binding prints before the verdict, zeroes
+                // included.
+                {
+                    let scripted = crate::compiler::traversal::legs(plan, &m, &am);
+                    let mut walked: Vec<crate::compiler::nav::WalkedLeg<'_>> = routes
+                        .iter()
+                        .map(|r| crate::compiler::nav::WalkedLeg {
+                            label: format!(
+                                "the critical path's leg to step {} ({:?})",
+                                r.to_step, r.to
+                            ),
+                            cells: &r.cells,
+                            fp: crate::compiler::nav::Footprint::player(),
+                            may_use: true,
+                            body: "the party sets it before it moves".to_string(),
+                        })
+                        .collect();
+                    walked.extend(scripted.iter().map(|l| crate::compiler::nav::WalkedLeg {
+                        label: format!("`{}` `{}` → `{}`", l.verb, l.id, l.to_anchor),
+                        cells: l.cells,
+                        fp: if l.verb == "move-actor" {
+                            crate::compiler::nav::entity_footprint(&l.entity)
+                        } else {
+                            crate::compiler::nav::Footprint::player()
+                        },
+                        may_use: false,
+                        body: format!("a `{}` body opens no door or trapdoor", l.entity),
+                    }));
+                    let (leaves, refusals) = crate::compiler::nav::check_leaves(world, &walked);
+                    eprintln!("{}", leaves.line());
+                    put_json(out, "validation/door-leaves.json", &leaves.to_json());
+                    if let Some((first, rest)) = refusals.split_first() {
+                        let mut message = first.clone();
+                        if !rest.is_empty() {
+                            message.push_str(&format!(
+                                " {} further way(s) across a leaf in this build:",
+                                rest.len()
+                            ));
+                            for r in rest {
+                                message.push_str(&format!(" {r};"));
+                            }
+                        }
+                        return Err(BuildFailure::Diagnostic {
+                            code: crate::compiler::nav::DW_WAY_ACROSS_A_LEAF,
+                            message,
+                        });
+                    }
+                }
                 // `DW0850`: the volume that completes a `reach` and the footing
                 // a body can reach it from are the same place. Bound HERE, to
                 // the same build event and the same final world the waypoint
