@@ -264,6 +264,7 @@ mod mob_reach_tests {
                 unheld_climb: Default::default(),
                 footprints: Default::default(),
                 hiding: Default::default(),
+                hurting: Default::default(),
             },
             Premises::geometry_only(),
         )

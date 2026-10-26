@@ -2284,13 +2284,13 @@ fn a_scenery_station_is_not_a_start_of_the_boundary_proof() {
     let c = crown_with_station("bare", false);
     let plan = Plan::build(&c, &reg).expect("the crown fixture plans");
     let all = delvec::compiler::edit::anchor_starts(&plan);
-    let starts = delvec::compiler::edit::body_starts(&plan);
+    let structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    let world = delvec::compiler::nav::World::from_plan(&plan, &structures).with_rest_seats(&plan);
+    let starts = delvec::compiler::edit::body_starts(&plan, &world);
     assert_eq!(starts.anchors, all.len());
     assert_eq!(starts.excluded, vec!["anchor/crown-top".to_string()]);
     assert_eq!(starts.roots.len(), all.len() - 1);
 
-    let structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
-    let world = delvec::compiler::nav::World::from_plan(&plan, &structures);
     let every = world.reachable_walkable_rooted(&all);
     let bodies = world.reachable_walkable_rooted(&starts.roots);
     let crown = box_of(&plan.blockout.as_ref().unwrap().boxes, "node/crown").space();
@@ -2313,7 +2313,8 @@ fn a_scenery_station_is_not_a_start_of_the_boundary_proof() {
 
     let c = crown_with_station("teleported", true);
     let plan = Plan::build(&c, &reg).expect("the teleporting crown fixture plans");
-    let starts = delvec::compiler::edit::body_starts(&plan);
+    let world = delvec::compiler::nav::World::from_plan(&plan, &structures).with_rest_seats(&plan);
+    let starts = delvec::compiler::edit::body_starts(&plan, &world);
     assert!(
         starts.excluded.is_empty(),
         "a scenery place a body is put in keeps its station: {:?}",

@@ -173,7 +173,7 @@ fn laid_out(
                     "action": "rest",
                     "bonfire": bf.index,
                     "anchor": bf.anchor,
-                    "pos": bf.pos,
+                    "pos": bf.at,
                     "command": "/trigger dw.rest set 2"
                 });
                 // A rest plays the bonfire's `on_rest`: every cutscene on its

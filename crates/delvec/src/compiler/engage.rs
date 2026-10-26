@@ -400,6 +400,7 @@ mod tests {
             hiding: Default::default(),
             partial: BTreeMap::new(),
             waterloggable: std::collections::BTreeSet::new(),
+            hurting: Default::default(),
         };
         let mut blocks = BTreeMap::new();
         for x in 0..9 {

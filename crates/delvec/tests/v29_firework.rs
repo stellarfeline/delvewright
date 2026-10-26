@@ -501,8 +501,10 @@ fn the_posts_are_dw0511s_own_enumeration() {
         let blocks = delvec::compiler::assembled::assembled_blocks(&plan, &structures);
         let entry = plan.campaign_start().map(|(_, pos)| pos);
         let seats = BTreeMap::new();
-        let dw0511 = posted_places(&plan, entry, &seats).len();
-        let (gate, _) = delvec::compiler::firework::check(&plan, &blocks, entry, &seats);
+        let world =
+            delvec::compiler::nav::World::from_plan(&plan, &structures).with_rest_seats(&plan);
+        let dw0511 = posted_places(&plan, &world, entry, &seats).len();
+        let (gate, _) = delvec::compiler::firework::check(&plan, &world, &blocks, entry, &seats);
         assert_eq!(gate.rows.len(), 1, "one firework resolved");
         (dw0511, gate.posts)
     };

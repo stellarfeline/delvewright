@@ -36,6 +36,7 @@ fn floored_with_furniture(
             unheld_climb: Default::default(),
             footprints: Default::default(),
             hiding: Default::default(),
+            hurting: Default::default(),
         },
         Premises {
             ambient: Ambient::Void,

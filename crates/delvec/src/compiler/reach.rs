@@ -870,7 +870,9 @@ pub fn check_reach_footprint(
     // and from every link's `to` — so an anchor in an area only a carry reaches
     // is judged too.
     let standing = match entry {
-        Some(_) => world.reachable_walkable(&crate::compiler::lethal::stands_at_roots(plan, entry)),
+        Some(_) => world.reachable_walkable(&crate::compiler::lethal::stands_at_roots(
+            plan, world, entry,
+        )),
         None => BTreeSet::new(),
     };
     let mut binding = ReachFootprintBinding {

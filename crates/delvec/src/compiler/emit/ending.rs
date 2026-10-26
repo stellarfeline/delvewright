@@ -122,8 +122,9 @@ pub(super) fn observation(plan: &Plan, eff: &QuestEffect) -> Option<Value> {
         Verb::AddState { state, amount, .. } => json!({"kind": "score",
             "holder": state_holder(plan, state), "objective": plan::state_score(state.as_str()),
             "added": amount}),
-        Verb::SetCheckpoint { anchor, .. } => {
-            let p = anchor_point_any(plan, anchor.as_str())?;
+        Verb::SetCheckpoint { anchor, on_respawn } => {
+            // The seat the respawn puts the party on ([`Plan::seat`]).
+            let p = plan.seat(plan.checkpoint_for(anchor.as_str(), on_respawn)?);
             json!({"kind": "score", "checkpoint": p})
         }
         _ => json!({"kind": kind}),

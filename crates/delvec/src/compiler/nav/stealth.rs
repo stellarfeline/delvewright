@@ -170,13 +170,11 @@ pub fn check_stealth_onset(plan: &Plan, world: &World) -> Result<(), Failure> {
             .iter()
             .filter(|c| c.fire_step <= beat.fire_step)
             .max_by_key(|c| (c.fire_step, c.index))
+            && let Some(seat) = world.rest_seat_of(reigning)
         {
             starts.push((
-                format!(
-                    "checkpoint `{}` respawn {:?}",
-                    reigning.anchor, reigning.pos
-                ),
-                reigning.pos,
+                format!("checkpoint `{}` respawn {seat:?}", reigning.anchor),
+                seat,
             ));
         }
         for c in plan
@@ -184,10 +182,9 @@ pub fn check_stealth_onset(plan: &Plan, world: &World) -> Result<(), Failure> {
             .iter()
             .filter(|c| c.fire_step > beat.fire_step && c.fire_step <= end)
         {
-            starts.push((
-                format!("checkpoint `{}` respawn {:?}", c.anchor, c.pos),
-                c.pos,
-            ));
+            if let Some(seat) = world.rest_seat_of(c) {
+                starts.push((format!("checkpoint `{}` respawn {seat:?}", c.anchor), seat));
+            }
         }
         let st = world.region_state_at(&plan.region_events, beat.fire_step, &|g, s| {
             plan.gate_fired_before(g, s)

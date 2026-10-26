@@ -205,6 +205,7 @@ pub struct Launch {
 /// where the rule lives.
 pub fn check(
     plan: &Plan,
+    world: &crate::compiler::nav::World,
     blocks: &crate::compiler::blockstate::BlockMap,
     entry: Option<[i32; 3]>,
     wave_seats: &BTreeMap<String, Vec<[i32; 3]>>,
@@ -226,7 +227,7 @@ pub fn check(
         }
     }
     // `DW0511`'s own enumeration, handed over rather than re-derived.
-    let posts = crate::compiler::lethal::posted_places(plan, entry, wave_seats);
+    let posts = crate::compiler::lethal::posted_places(plan, world, entry, wave_seats);
     let (mut gate, findings) = judge(&launches, &posts, blocks);
     gate.declared = declared.len();
     (gate, findings)
