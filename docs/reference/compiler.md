@@ -3848,8 +3848,9 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   vertical face — the eye at the opening's middle column on its sill at eye
   height (`1.62` over the opening's bottom course), looking along the face's
   inward normal at the play space's centre at eye height — and one per open
-  side no seam covers, the eye one cell outside the ring at the side's middle
-  over the walk plane. Each stands in the configuration of the critical path's
+  side, the eye one cell outside the ring at the side's middle over the walk
+  plane (in the neighbour's first row where a contact covers the side: a front
+  onto a street is seen from the street). Each stands in the configuration of the critical path's
   first arrival at a beat of its place, else at load, and goes through the one
   door every camera does (`DW0724`, a stand-off kind: pulled in off a blocked
   eye and saying so). `expect` reads *the place reads as its intent:

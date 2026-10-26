@@ -81,7 +81,7 @@ fn built_point(name: &str) -> Point {
 }
 
 /// **Criterion 6**: a `threshold` shot per portal seam on a vertical face and
-/// per uncovered open side, each eye at eye height over its place's walk
+/// per open side, each eye at eye height over its place's walk
 /// plane, the plan stating the count and the build printing it.
 #[test]
 fn the_site_plan_point_draws_a_threshold_shot_per_door_and_open_side() {

@@ -86,8 +86,8 @@
 //! A building is judged from its door: one `threshold` shot per portal seam on
 //! a vertical face of every box, the eye on the opening's sill at
 //! [`EYE_HEIGHT`] in its middle column, looking along the face's inward normal
-//! at the play space's centre; and one per open side no seam covers, the eye in
-//! the outside approach cell at the side's middle. The review reads each frame
+//! at the play space's centre; and one per open side, the eye in the outside
+//! approach cell at the side's middle. The review reads each frame
 //! blind — the trade, the front, the thing — before it opens the `expect`.
 //! The plan states the count as `threshold_shots` and the build prints
 //! `threshold shots: T over P place(s), D door(s), O open side(s)`, zeroes
@@ -1550,7 +1550,7 @@ pub struct ThresholdCount {
     pub places: usize,
     /// Shots standing on a portal's sill.
     pub doors: usize,
-    /// Shots standing outside an open side no seam covers.
+    /// Shots standing outside an open side.
     pub open_sides: usize,
 }
 
@@ -1582,8 +1582,9 @@ struct Thresholds {
 /// **The threshold shots** (spec-0123 §3.4): for every box, one shot per
 /// portal seam on a vertical face — the eye at the opening's middle column on
 /// its sill at eye height, looking along the face's inward normal at the play
-/// space's centre at eye height — and one per open side no seam covers, the
-/// eye in the outside approach cell at the side's middle. Each stands in the
+/// space's centre at eye height — and one per open side, the eye in the
+/// outside approach cell at the side's middle (a contact's neighbour's cell
+/// where a contact covers the side). Each stands in the
 /// configuration of the critical path's first arrival at a beat of the place,
 /// else at load.
 fn threshold_shots(plan: &Plan, frames: &FrameWorlds) -> Thresholds {
@@ -1660,13 +1661,10 @@ fn threshold_shots(plan: &Plan, frames: &FrameWorlds) -> Thresholds {
                 world,
             });
         }
-        let covered = |side: &delvewright_dsl::siteplan::OpenSide| {
-            !crate::compiler::detail::covering_contacts(side, &blockout.seams).is_empty()
-        };
+        // Every open side, a contact over it or none: a front onto a street
+        // is crossed through the contact, and its approach cell is the
+        // street's — the body's own view of the front all the same.
         for side in b.open_sides() {
-            if covered(&side) {
-                continue;
-            }
             let (lo, hi) = side.cells;
             let (n, a) = (side.normal_axis(), side.along_axis());
             let mut eye = [0.0; 3];

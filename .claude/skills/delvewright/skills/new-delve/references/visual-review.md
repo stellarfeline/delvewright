@@ -37,8 +37,8 @@ what you judge is the room it arrives in.
 
 **After the POV sequence, read every `threshold` frame blind.** The build draws
 one per door of every place — the eye on the doorway's sill at eye height,
-looking into the place — and one per open side no seam covers, the eye in the
-cell outside it; the plan's `threshold_shots` and the build's `threshold
+looking into the place — and one per open side, the eye in the cell outside
+it; the plan's `threshold_shots` and the build's `threshold
 shots: T over P place(s), D door(s), O open side(s)` line say how many. Draw
 them without `--labels`: a label would supply what the picture does not.
 
