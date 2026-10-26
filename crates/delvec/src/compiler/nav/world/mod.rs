@@ -1594,7 +1594,10 @@ impl World {
     /// last write lays a block that hurts ([`delvewright_dsl::blockshape::hurts_body`]
     /// — a campfire a pressable's `prop` lays at load) hurts, and a cell whose
     /// last write lays anything else, air included, does not.
-    fn with_laid_hurting(mut self, laid: &[(([i32; 3], [i32; 3]), Option<String>)]) -> World {
+    fn with_laid_hurting(
+        mut self,
+        laid: &[crate::compiler::nav::route::region::LaidWrite],
+    ) -> World {
         if laid.is_empty() {
             return self;
         }
