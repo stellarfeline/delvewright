@@ -631,6 +631,8 @@ export class RunReport {
         trials: this.crushTrials.map((t) => ({
           gate: t.gate,
           at: t.at,
+          boundary: t.boundary,
+          named_boundary: t.named ?? null,
           mouth: t.approach?.mouth ?? null,
           stand: t.approach?.stand ?? null,
           entered_region: t.enteredRegion,

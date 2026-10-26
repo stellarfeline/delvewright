@@ -876,6 +876,15 @@ jobs:
       # Deterministic, offline, stdlib-only python3.
       - name: a change that adds author-facing surface adds its demo row
         run: python3 tools/ci/check-demo-levels.py
+      # Every `campaigns/<id>` a demo-queue Status cell names is a directory the
+      # content pin carries (spec-0122 §7.2): nothing a creator runs reads the
+      # queue, so whether its addresses are real is this repository's concern.
+      # Read out of the content repository's object store at the pin, so the
+      # checkout needs no LFS payloads. Deterministic, stdlib-only python3.
+      - uses: ./.github/actions/checkout-content
+        with: { lfs: "false" }
+      - name: every level the demo queue names is a directory the content pin carries
+        run: python3 tools/ci/check-demo-queue.py
       # Isolation by construction (validation/README.md): container
       # names and host ports are Docker-GLOBAL — the only two things `docker
       # compose -p <project>` does not isolate — so validation/compose.yaml
@@ -1711,6 +1720,31 @@ jobs:
               sys.exit("the proven path came within reach of no watcher: the gallery's watch binds nothing at run time")
           if b["asserted"] != b["within_reach"]:
               sys.exit("a watcher the path reached was not asserted")
+          PY
+      # A crush gate's death is walked at the one boundary the build names
+      # (`death-plan.json` `trial_at`), never at one the run's pathfinder found:
+      # the seat a death returns to is judged at that boundary, so a run that
+      # chose its own would judge a different seat from run to run.
+      - name: the gallery's crush deaths are walked at the boundary the build names
+        run: |
+          python3 - <<'PY'
+          import json
+          import sys
+          sys.stdout.reconfigure(newline="\n")
+          plan = json.load(open("validation/delve-output-gallery-primary/validation/death-plan.json"))
+          r = json.load(open("validation/run-out/dw-ci-gallery-bot/run-report.json"))
+          named = {g["id"]: g["trial_at"] for g in plan["crush_gates"] if g["trial_at"] is not None}
+          trials = {t["gate"]: t for t in r["crush_deaths"]["trials"]}
+          print(f"crush gates the build names a boundary for: {len(named)} of {len(plan['crush_gates'])}; "
+                f"trials: {json.dumps({k: (t['boundary'], t['named_boundary']) for k, t in trials.items()})}")
+          if not named:
+              sys.exit("the build names a boundary for no crush gate: the judgement binds nothing")
+          bad = [f"{g}: walked at {trials[g]['boundary'] if g in trials else 'no boundary'}, named {at}"
+                 for g, at in named.items()
+                 if g not in trials or trials[g]["boundary"] != at or trials[g]["named_boundary"] != at
+                 or not trials[g]["died"]]
+          if bad:
+              sys.exit("a crush death was not walked at the boundary the build names: " + "; ".join(bad))
           PY
       # The engine's quest cues arrive where the player stands: every cue an
       # observed marker owed arrived at the bot, and at least one was judged

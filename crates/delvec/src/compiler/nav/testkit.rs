@@ -50,6 +50,7 @@ pub(in crate::compiler::nav) fn floored_with_lethal(
             footprints: Default::default(),
             // A synthetic solid cell is a full cube of stone: it hides.
             hiding: solid_hides,
+            hurting: Default::default(),
         },
         // The premises spelled out rather than derived from
         // `Premises::geometry_only()`: a struct literal is what makes a
@@ -201,6 +202,7 @@ pub(in crate::compiler::nav) fn classified(
             footprints: Default::default(),
             // A synthetic solid cell is a full cube of stone: it hides.
             hiding: solid_hides,
+            hurting: Default::default(),
         },
         Premises::geometry_only(),
     )

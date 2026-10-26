@@ -1,0 +1,239 @@
+//! **Where a respawn puts a body** — the one seating rule for a `set-checkpoint`
+//! and a `bonfire` alike.
+//!
+//! A checkpoint names two things, and they are not one cell: the **rest
+//! object** — the anchor, where a bonfire's hitbox stands and where a prefab may
+//! lay the campfire the party rests at — and the **seat**, the cell a dead
+//! body is put back on. The seat is derived here and never written: the anchor
+//! cell itself when a body may be put down there, else the safe standing cell
+//! nearest the rest object, on the side the party walks up from.
+//!
+//! Every reader of "where does a respawn put the party" reads [`World::rest_seat_of`]
+//! (or, for the emitter, which holds no world, [`Plan::seat`], fixed from the
+//! same derivation): the no-stranding and placement proofs (`DW0315`/`DW0316`),
+//! the respawn safe zone (`DW0478`), the lethal-seat proof (`DW0511`), the stake
+//! table and the death plan the bot checks its respawn against, the emitted
+//! `spawnpoint`, `dw:cp` mirror and re-seat teleport.
+//!
+//! What "may be put down" means ([`World::is_safe_seat`]): a standing cell in
+//! the model's own sense ([`World::is_standable`]: floor under it, room for the
+//! body, no killing volume or furniture), whose body meets no block that hurts
+//! it ([`delvewright_dsl::blockshape::hurts_body`]) — not the floor it stands
+//! on, not its feet cell, not its head cell. A lit campfire hurts every living
+//! body whose box enters its cell, and its collision top is 7/16 of a block, so
+//! a body standing on it has its feet inside it
+//! (`docs/reference/campfire-and-spawnpoint.md`). The table is read without the
+//! block's state: an unlit campfire is seated beside too, the direction that can
+//! only move a seat, never put one in a fire.
+
+use super::*;
+use crate::compiler::cellset::CellSet;
+use crate::compiler::plan::{CheckpointPlan, Plan};
+
+/// How a candidate seat ranks within its ring: the length of the party's walk
+/// to it, its squared distance to the rest object, the cell.
+type SeatKey = (usize, i32, [i32; 3]);
+
+/// What a [`World`] knows about putting a body down: the cells whose block
+/// hurts a body, and each checkpoint's seat once derived
+/// ([`World::with_rest_seats`]).
+#[derive(Clone, Debug, Default)]
+pub struct Seating {
+    /// Cells holding a block that hurts a body that meets it.
+    pub(in crate::compiler::nav) hurting: CellSet,
+    /// Each checkpoint's seat, by [`CheckpointPlan::index`]; `None` for one no
+    /// safe cell stands beside (`DW0316`). Empty until derived.
+    seats: std::sync::Arc<Vec<Option<[i32; 3]>>>,
+    /// Whether [`World::with_rest_seats`] has run on this world.
+    derived: bool,
+}
+
+impl Seating {
+    pub(in crate::compiler::nav) fn of_hurting(hurting: CellSet) -> Seating {
+        Seating {
+            hurting,
+            ..Seating::default()
+        }
+    }
+}
+
+impl World {
+    /// **Whether a body may be put down on `c` by declaration** — a respawn
+    /// seat. Standable ([`World::is_standable`]) and meeting no block that
+    /// hurts: the support under it (a campfire's top or magma underfoot), the
+    /// feet cell, or the head cell.
+    pub fn is_safe_seat(&self, c: [i32; 3]) -> bool {
+        self.standable(c) && !self.seat_hurts(c)
+    }
+
+    /// Whether a body standing on `c` meets a block that hurts it.
+    fn seat_hurts(&self, c: [i32; 3]) -> bool {
+        (-1..=1).any(|dy| self.seating.hurting.contains(&[c[0], c[1] + dy, c[2]]))
+    }
+
+    /// **The seat rule**: where a respawn at the rest object `rest` puts a body,
+    /// for a party that walks up from `from`.
+    ///
+    /// `rest` itself when [`World::is_safe_seat`] holds there. Otherwise the
+    /// safe cells around it, nearest ring first (Chebyshev distance 1, then 2,
+    /// up to [`SNAP_RADIUS`]); within a ring, the one the party's walk from
+    /// `from` reaches first ([`World::find_path`]'s length), then the nearest to
+    /// `rest`, then the least cell. A cell the walk does not reach comes after
+    /// every one it does. `None` when no safe cell lies within the radius.
+    pub fn rest_seat(&self, rest: [i32; 3], from: Option<[i32; 3]>) -> Option<[i32; 3]> {
+        if self.is_safe_seat(rest) {
+            return Some(rest);
+        }
+        let origin = from.and_then(|f| self.snap_standable(f, SNAP_RADIUS));
+        for ring in 1..=SNAP_RADIUS {
+            // `(walk, distance², cell)`: the walk from the approach first.
+            let mut best: Option<(SeatKey, [i32; 3])> = None;
+            for dy in -ring..=ring {
+                for dz in -ring..=ring {
+                    for dx in -ring..=ring {
+                        if dx.abs().max(dy.abs()).max(dz.abs()) != ring {
+                            continue;
+                        }
+                        let c = [rest[0] + dx, rest[1] + dy, rest[2] + dz];
+                        if !self.is_safe_seat(c) {
+                            continue;
+                        }
+                        let walk = origin
+                            .and_then(|o| self.find_path(o, c))
+                            .map_or(usize::MAX, |p| p.len());
+                        let key = (walk, dx * dx + dy * dy + dz * dz, c);
+                        if best.is_none_or(|(k, _)| key < k) {
+                            best = Some((key, c));
+                        }
+                    }
+                }
+            }
+            if let Some((_, c)) = best {
+                return Some(c);
+            }
+        }
+        None
+    }
+
+    /// This world with every checkpoint's seat derived over it
+    /// ([`World::rest_seat`], from [`approach_origin`]). Every world a proof
+    /// about a respawn walks takes its seats here: the build's final world,
+    /// once the plan its proofs read is settled (`emit::build`, after links are
+    /// taken), and each edit batch's (`edit::replay`).
+    pub fn with_rest_seats(mut self, plan: &Plan) -> World {
+        let seats: Vec<Option<[i32; 3]>> = plan
+            .checkpoints
+            .iter()
+            .map(|cp| self.rest_seat(cp.at, approach_origin(plan, cp)))
+            .collect();
+        self.seating.seats = std::sync::Arc::new(seats);
+        self.seating.derived = true;
+        self
+    }
+
+    /// **The seat of checkpoint `cp`** on this world: `None` for one no safe
+    /// cell stands beside (`DW0316`'s finding).
+    ///
+    /// # Panics
+    ///
+    /// When the seats were never derived on this world
+    /// ([`World::with_rest_seats`]): a proof reading a seat nobody derived
+    /// would judge a cell no build emits, which is a compiler defect.
+    pub fn rest_seat_of(&self, cp: &CheckpointPlan) -> Option<[i32; 3]> {
+        assert!(
+            self.seating.derived,
+            "the respawn seats were read on a world that never derived them \
+             (`World::with_rest_seats`) — a compiler defect"
+        );
+        self.seating.seats.get(cp.index).copied().flatten()
+    }
+
+    /// Every derived seat, by checkpoint index — what [`Plan::fix_seats`]
+    /// hands the emitter.
+    pub fn rest_seats(&self) -> Vec<Option<[i32; 3]>> {
+        self.seating.seats.as_ref().clone()
+    }
+}
+
+/// **Where the party walks up to checkpoint `cp` from**: where it stands when
+/// the beat that sets or arms it fires — the last critical-path position at or
+/// before its firing step, the entry spawn for a checkpoint set before any
+/// beat. `None` for a campaign with no position at all.
+pub fn approach_origin(plan: &Plan, cp: &CheckpointPlan) -> Option<[i32; 3]> {
+    critical_positions(plan)
+        .iter()
+        .rfind(|p| p.src_step <= cp.fire_step)
+        .map(|p| p.pos)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::compiler::nav::testkit::*;
+
+    /// A 5 × 5 floor at y 64 (stand at y 65), a campfire on `[2, 65, 2]`.
+    fn hearth(fire: &str) -> World {
+        let mut cells: Vec<([i32; 3], &str)> = Vec::new();
+        for x in 0..5 {
+            for z in 0..5 {
+                cells.push(([x, 64, z], "minecraft:stone"));
+            }
+        }
+        cells.push(([2, 65, 2], fire));
+        blocks_world(&cells)
+    }
+
+    /// The old shape: the seat on the rest object's own cell. A campfire's cell
+    /// is not a seat — nor is the cell over it, whose body has its feet in the
+    /// fire — and the derived seat is the floor beside it.
+    #[test]
+    fn a_campfire_rest_object_seats_the_body_beside_it() {
+        for fire in [
+            "minecraft:campfire[lit=true]",
+            "minecraft:campfire[lit=false]",
+        ] {
+            let w = hearth(fire);
+            assert!(!w.is_safe_seat([2, 65, 2]), "{fire}: its own cell");
+            assert!(!w.is_safe_seat([2, 66, 2]), "{fire}: on top of it");
+            let seat = w
+                .rest_seat([2, 65, 2], None)
+                .expect("floor beside the fire");
+            assert_ne!(seat, [2, 65, 2], "{fire}");
+            assert!(w.is_safe_seat(seat), "{fire}: {seat:?}");
+            let d = (seat[0] - 2).abs().max((seat[2] - 2).abs());
+            assert_eq!(d, 1, "{fire}: the seat is next to the rest object");
+        }
+    }
+
+    /// The seat is on the side the party walks up from: from the west, the
+    /// west cell; from the east, the east cell.
+    #[test]
+    fn the_seat_is_on_the_side_the_party_approaches_from() {
+        let w = hearth("minecraft:campfire[lit=true]");
+        assert_eq!(w.rest_seat([2, 65, 2], Some([0, 65, 2])), Some([1, 65, 2]));
+        assert_eq!(w.rest_seat([2, 65, 2], Some([4, 65, 2])), Some([3, 65, 2]));
+        assert_eq!(w.rest_seat([2, 65, 2], Some([2, 65, 0])), Some([2, 65, 1]));
+    }
+
+    /// A safe anchor cell is its own seat: a plain checkpoint on open floor
+    /// seats where it always did.
+    #[test]
+    fn a_safe_anchor_is_its_own_seat() {
+        let w = hearth("minecraft:campfire[lit=true]");
+        assert_eq!(w.rest_seat([0, 65, 0], Some([4, 65, 4])), Some([0, 65, 0]));
+    }
+
+    /// A rest object with no safe cell within the radius has no seat.
+    #[test]
+    fn a_rest_object_with_no_safe_cell_beside_it_has_no_seat() {
+        let mut cells: Vec<([i32; 3], &str)> = Vec::new();
+        for x in -4..=4 {
+            for z in -4..=4 {
+                cells.push(([x, 64, z], "minecraft:stone"));
+                cells.push(([x, 65, z], "minecraft:magma_block"));
+            }
+        }
+        let w = blocks_world(&cells);
+        assert_eq!(w.rest_seat([0, 65, 0], None), None);
+    }
+}

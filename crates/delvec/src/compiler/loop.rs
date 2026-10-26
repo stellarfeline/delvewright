@@ -2095,7 +2095,7 @@ fn check_one(
 
     // ---- §4.6 bodies ----
     let mut bodies: Vec<(String, [i32; 3])> =
-        crate::compiler::lethal::posted_places(plan, None, i.wave_seats)
+        crate::compiler::lethal::posted_places(plan, i.world, None, i.wave_seats)
             .into_iter()
             .map(|p| (p.label, p.cell))
             .collect();
@@ -2528,6 +2528,7 @@ mod tests {
                 unheld_climb: Default::default(),
                 footprints: Default::default(),
                 hiding: Default::default(),
+                hurting: Default::default(),
             },
             Premises::geometry_only(),
         )

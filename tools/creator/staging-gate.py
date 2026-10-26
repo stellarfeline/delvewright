@@ -134,14 +134,13 @@ derivation's binding line and the places it massed — counts a place no piece
 fills, names one, or is missing from a site-plan build. See `Subject.pre_detail`
 and `Subject.stand_ins`.
 
-**A declared demo level owes its queue row before any row reads the
-declaration.** A demo level carries no design record — its approved design is
-its row in `docs/demo-levels.md` — so the design-record rows name their class as
-a `world.json` whose content does not declare `demo_level: true`. The
-declaration reads as one more red row (`DEMO-UNQUEUED`, counted by
-`--acknowledge-red` and admitted by `--stage-anyway` like any red) unless the build's
-`manifest.json` carries it too and a row of the engine's queue names the
-campaign's directory, `campaigns/<id>`, in its Status cell. See `demo_refusal`.
+**A declared test level carries no design record** (spec-0122 §7.2): the
+design-record rows name their class as a `world.json` whose content does not
+declare `test_level: true`, so a declared test level measures them zero. The
+declaration stands only on a build compiled from it: a source and a build that
+disagree about it — the source's `world.json` against the compiler's own
+`manifest.json` `test_level` — are refused before any row is adjudicated, as a
+build that is not of this source. See `test_level_refusal`.
 
 The precondition may be a declared `applies_when`, or the binding probe's own
 shape where that probe COUNTS THE OBJECT CLASS ITSELF: an identity-shaped
@@ -223,13 +222,9 @@ import zipfile
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 
-from lib import demo_queue, dwcatalog, generator_workspaces, horizon  # noqa: E402
+from lib import dwcatalog, generator_workspaces, horizon  # noqa: E402
 
 DEFAULT_LEDGER = REPO_ROOT / "docs" / "playtest-findings.json"
-# The demo queue of the engine this gate ships in: the one place a demo level
-# is named (`tools/lib/demo_queue.py`). Not a flag: a gate pointed at a queue of
-# the caller's choosing would be a hatch the caller writes for itself.
-DEMO_QUEUE = REPO_ROOT / demo_queue.PATH
 
 # Verdicts, in report order. The reds are listed separately rather than as one
 # "FAIL" because the remedy differs completely per class — build the check /
@@ -245,7 +240,6 @@ RED_VERDICTS = (
     "NO-GENERAL-FORM",
     "MISSING-CHECK",
     "UNBOUND",
-    "DEMO-UNQUEUED",
 )
 # Counted, never refused, and never silent. Reported in its own section and
 # named row by row in the admission token, so a pass cannot be read as
@@ -514,16 +508,16 @@ class Subject:
         return bool(self.stages)
 
     @property
-    def demo_declared(self) -> bool:
-        """Does the campaign SOURCE declare itself a demo level
-        (`world.json` `content.demo_level: true`)?"""
+    def test_level_declared(self) -> bool:
+        """Does the campaign SOURCE declare itself a test level
+        (`world.json` `content.test_level: true`)?"""
         world = self.stages.get("world.json")
         content = world.get("content") if isinstance(world, dict) else None
-        return isinstance(content, dict) and content.get("demo_level") is True
+        return isinstance(content, dict) and content.get("test_level") is True
 
     @property
-    def manifest_demo_level(self) -> bool | None:
-        """Does the BUILD's manifest say it was compiled from a demo-level
+    def manifest_test_level(self) -> bool | None:
+        """Does the BUILD's manifest say it was compiled from a test-level
         declaration? `None` = the build tree cannot answer (no manifest, or an
         unreadable one); an absent key is `False`, which is what the compiler
         writes for a campaign that declares none."""
@@ -534,7 +528,7 @@ class Subject:
             return None
         if not isinstance(doc, dict):
             return None
-        return doc.get("demo_level") is True
+        return doc.get("test_level") is True
 
     @property
     def building_engine(self) -> BuildingEngine:
@@ -678,90 +672,36 @@ class Subject:
         return (self.build / "validation" / rel).is_file()
 
 
-def demo_refusal(subj: Subject, queue: pathlib.Path) -> tuple[str | None, list[int]]:
-    """`(refusal, queue lines)` for a subject that declares itself a demo level.
+def test_level_refusal(subj: Subject) -> str | None:
+    """Why a subject's test-level declaration does not stand, or `None`.
 
-    A demo level carries no design record: its approved design is its row in
-    the demo queue, the one mechanic it puts in the spotlight. So a ledger row
-    whose class is "a campaign that owes a design record" names that class by a
-    precondition that counts the source's `world.json` content unless it
-    declares `demo_level: true`, and a declared demo measures it zero.
+    A test level carries no design record (spec-0122 §7.2), and the rows whose
+    class is a campaign that owes one measure a declared test level zero. The
+    declaration buys that only on a build compiled from it: the compiler's own
+    `manifest.json` carries `test_level: true`, and a source and a build that
+    disagree, in either direction, are a build that is not of this source.
 
-    The declaration buys that only together with what a demo owes, and each of
-    these is something a campaign that merely skipped its design gate cannot
-    produce:
-
-    - the build was compiled from the declaration: the compiler's own
-      `manifest.json` carries `demo_level: true`, and a source and a build that
-      disagree are refused, in either direction;
-    - the engine's demo queue names the campaign's directory: at least one row
-      of `## Mechanic demos` whose Status cell names `campaigns/<id>`, which is
-      a row added to the engine's own record and reviewed there.
-
-    A subject declaring nothing, in source or build, is `(None, [])`: nothing to
-    refuse and nothing named.
+    A subject declaring nothing, in source or build, is `None`.
     """
-    declared = subj.demo_declared
-    carried = subj.manifest_demo_level
+    declared = subj.test_level_declared
+    carried = subj.manifest_test_level
     if not declared and carried is not True:
-        return None, []
+        return None
     if carried is None:
         return (
-            f"`{subj.name}` declares itself a demo level and the build carries no "
+            f"`{subj.name}` declares itself a test level and the build carries no "
             "readable `manifest.json`, so whether it was compiled from that "
-            "declaration is unknown",
-            [],
+            "declaration is unknown"
         )
     if declared != carried:
         said = "declares" if declared else "does not declare"
         built = "was" if carried else "was not"
         return (
-            f"`{subj.name}`'s `world.json` {said} `demo_level: true` and the build "
-            f"{built} compiled from one (`manifest.json` `demo_level`): the build "
-            "is not of this source. Rebuild it from the campaign as it stands",
-            [],
+            f"`{subj.name}`'s `world.json` {said} `test_level: true` and the build "
+            f"{built} compiled from one (`manifest.json` `test_level`): the build "
+            "is not of this source. Rebuild it from the campaign as it stands"
         )
-    try:
-        text = queue.read_text(encoding="utf-8")
-    except OSError as e:
-        return (
-            f"`{subj.name}` declares itself a demo level and the demo queue "
-            f"{queue} cannot be read ({e}), so nothing names it",
-            [],
-        )
-    lines = demo_queue.naming(text, subj.name)
-    if not lines:
-        return (
-            f"`{subj.name}` declares itself a demo level (`world.json` "
-            "`demo_level: true`) and no row of the engine's demo queue names it: "
-            f"{demo_queue.PATH} `{demo_queue.HEADING[3:]}` has no row whose Status "
-            f"cell names `campaigns/{subj.name}`. A demo level is the level of a "
-            "queued mechanic: name its directory in that mechanic's row, or, if "
-            "this is not a demo level, remove the declaration and carry the "
-            "design record step 4 writes",
-            [],
-        )
-    return None, lines
-
-
-DEMO_ROW_ID = "demo-declaration"
-
-
-def demo_red(subj: Subject, why: str) -> dict:
-    """The red row of a demo declaration that owes what a demo owes."""
-    return {
-        "id": DEMO_ROW_ID,
-        "campaign": subj.name,
-        "round": None,
-        "finding": "a campaign that declares itself a demo level owes a queued row and a build compiled from the declaration",
-        "triage": "",
-        "general_form": "demo_refusal",
-        "carrier": "staging-gate demo_refusal",
-        "binding": None,
-        "precondition": None,
-        "verdict": "DEMO-UNQUEUED",
-        "detail": why,
-    }
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -2139,23 +2079,33 @@ def main() -> int:
         print(f"staging-gate: REFUSED — not stageable. {why}", file=sys.stderr)
         return 1
 
-    # A declared demo level owes what a demo owes before any row may read the
-    # declaration. An unmet debt is an ordinary red row, printed and counted
-    # like any other, so `--stage-anyway` admits it only against a count that
-    # includes it.
-    demo_why, demo_lines = demo_refusal(subj, DEMO_QUEUE)
-    if demo_lines:
+    # A test-level declaration stands only on a build compiled from it. A build
+    # that disagrees with its source is not of this source, so it is refused
+    # before any row is adjudicated, out of `--stage-anyway`'s reach.
+    tl_why = test_level_refusal(subj)
+    if tl_why is not None:
+        stale = args.admit or (args.build / ADMISSION_NAME)
+        if stale.is_file():
+            stale.unlink()
+        if args.report:
+            args.report.parent.mkdir(parents=True, exist_ok=True)
+            args.report.write_text(
+                f"<!-- {GATE_ARTIFACT_MARKER} -->\n# Staging gate — `{subj.name}`\n\n"
+                f"**REFUSED — not stageable.** {tl_why}\n",
+                encoding="utf-8",
+            )
+        print(f"staging-gate: REFUSED — not stageable. {tl_why}", file=sys.stderr)
+        return 1
+    if subj.test_level_declared:
         print(
-            f"staging-gate: `{subj.name}` is a declared demo level, named by "
-            f"{demo_queue.PATH} line(s) {', '.join(map(str, demo_lines))}; a row "
-            "whose class is a campaign that is not a demo level measures it zero.",
+            f"staging-gate: `{subj.name}` is a declared test level, compiled from the "
+            "declaration; a row whose class is a campaign that carries a design "
+            "record measures it zero.",
             file=sys.stderr,
         )
 
     rows = [r for r in doc["findings"] if _applies(r, subj)]
     results = [adjudicate(r, eng, subj) for r in rows]
-    if demo_why is not None:
-        results.insert(0, demo_red(subj, demo_why))
 
     report = render_report(doc, subj, results, args.strict)
     if args.report:

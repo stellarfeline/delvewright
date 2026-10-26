@@ -127,7 +127,7 @@ and verifies over rcon that the datapack actually loaded before it says READY:
 
 ```sh
 "$DELVEWRIGHT_ENGINE/tools/creator/playtest-server.sh" up campaigns/<id> \
-    --prefabs "$DELVEWRIGHT_PREFABS" --delvec "$(command -v delvec)" --out "$PWD/.out/delve" \
+    --prefabs "$DELVEWRIGHT_PREFABS" --delvec "$(command -v delvec)" --out "$DELVE_OUTPUT" \
     --run-report "$DELVEWRIGHT_ENGINE/validation/run-out/dw-<campaign>-r1/run-report.json" \
     --written-world .out/written-world.json
 ```
@@ -189,12 +189,12 @@ boot or probe failure past this point removes the container it started and
 releases the mutex on its own; nothing is left running for you to find later.
 
 The **second path** is the compose pair, for a tree step 8 already left at
-`"$DELVEWRIGHT_ENGINE/validation/delve-output"` — it serves that tree instead of
+`"$DELVE_OUTPUT"` — it serves that tree instead of
 building a fresh one:
 
 ```sh
 "$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_ENGINE/tools/creator/staging-gate.py" --campaign campaigns/<id> \
-    --build "$DELVEWRIGHT_ENGINE/validation/delve-output" \
+    --build "$DELVE_OUTPUT" \
     --run-report "$DELVEWRIGHT_ENGINE/validation/run-out/dw-<campaign>-r1/run-report.json" \
     --written-world .out/written-world.json --report .out/round-1-gate.md
 EULA=TRUE docker compose -f "$DELVEWRIGHT_ENGINE/validation/compose.yaml" \
@@ -223,13 +223,12 @@ a token the gate minted for *that exact build tree*.
 without `--strict`, and out of `--stage-anyway`'s reach. A campaign is staged
 only once detailed; step 9 is what makes it so.
 
-**A demo level carries no design record, and says so.** A level off the
-engine's `docs/demo-levels.md` queue declares `demo_level: true` in
-`world.json`; its approved design is its queue row, so the design-record rows
-measure it zero. The gate reads the declaration as one more red row
-(`DEMO-UNQUEUED`, counted by `--acknowledge-red`) unless the build's
-`manifest.json` carries it and a row of that queue names `campaigns/<id>` in its
-Status cell. Any other campaign carries the design record step 4 writes.
+**A test level carries no design record, and says so.** A level built to try
+something declares `test_level: true` in `world.json` and carries no
+`design.json` (both at once is refused, `DW1061`); the design-record rows
+measure it zero, and the gate refuses only a source and a build whose
+`manifest.json` disagree about the declaration. Any other campaign carries the
+design record step 4 writes.
 
 **A red gate is not a defect count.** It is the list of defect classes a
 player is not protected from, drawn from every finding ever reported on any
@@ -262,7 +261,7 @@ override, not a new finding.
 
 ## The report
 
-**Then report to the user** — this hand-over ends the run: the campaign
+**Then report to the user and end your turn** — this hand-over (H) ends the run: the campaign
 summary, the playtime estimate, the validation results, anything still open,
 **what the delve asks of its
 host** — the view distance it serves and the heap the build stated for it
@@ -280,13 +279,30 @@ they will actually use, below. It also carries:
   2). Every `world.textures[]` row is its own item, named as the player sees it
   (*the red moon*, *the drowned on the shore*), with the sheet `delvec textures`
   wrote beside it — no machine can confirm a replaced texture; and tell them to
-  **accept the resource-pack prompt** when they join.
+  **accept the resource-pack prompt** when they join;
+- **every departure from the design they will see**, in player words — a forge
+  of campfires where the design drew lava, windows where it drew an open shop
+  front — whether debug is on or off; the engine limit behind one is not named
+  to them;
+- **with `DELVEWRIGHT_DEBUG` on, and only then**, a closing section for the
+  engine developer, *Technical decisions and engine limits*: every default the
+  run took, every refusal it met, every limit, workaround and departure,
+  recorded by `debug-note.py` as each happened. Render it from the rows and
+  append it to `GENERATION.md` in the same command, then paste what it printed:
+
+```sh
+"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/debug-report.py" campaigns/<id> \
+    --append campaigns/<id>/GENERATION.md
+```
+
+  Off, it prints nothing and appends nothing, so the command is the same
+  either way.
 
 ```sh
 
 # play — one command: build, gate, serve, and print the connect line
 "$DELVEWRIGHT_ENGINE/tools/creator/playtest-server.sh" up campaigns/<id> \
-    --prefabs "$DELVEWRIGHT_PREFABS" --delvec "$(command -v delvec)" --out "$PWD/.out/delve" \
+    --prefabs "$DELVEWRIGHT_PREFABS" --delvec "$(command -v delvec)" --out "$DELVE_OUTPUT" \
     --run-report "$DELVEWRIGHT_ENGINE/validation/run-out/dw-<campaign>-r1/run-report.json" \
     --written-world .out/written-world.json
 

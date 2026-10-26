@@ -448,11 +448,11 @@ pub fn check(c: &Campaign, files: &DesignFiles) -> (Vec<Diagnostic>, DesignBindi
         && let Ok(sheet) = crate::compiler::view::camera::parse_sheet(bytes)
     {
         for (i, cam) in sheet.cameras.iter().enumerate() {
-            let Some(ct) = cam.sky.and_then(|s| s.time.celestial()) else {
+            let Some(t) = cam.sky.map(|s| s.time) else {
                 continue;
             };
-            for m in delvewright_dsl::celestial::shape_findings(
-                ct,
+            for m in delvewright_dsl::celestial::time_findings(
+                t,
                 delvewright_dsl::celestial::CelestialSite::Camera,
                 c.world.content.time,
             ) {
@@ -706,6 +706,22 @@ pub fn answered(c: &Campaign, files: &DesignFiles) -> Vec<Diagnostic> {
         }
     };
     let mut d = Vec::new();
+    if let Some(why) =
+        crate::compiler::view::camera::unbound_refusal(&a, c.world.content.test_level)
+    {
+        d.push(Diagnostic::error(
+            crate::compiler::view::camera::DW_RECORD_AT_BUILD,
+            "design",
+            crate::compiler::view::camera::CAMERAS_FILE,
+            why.strip_prefix(&format!(
+                "{}: ",
+                crate::compiler::view::camera::CAMERAS_FILE
+            ))
+            .unwrap_or(&why)
+            .to_string(),
+        ));
+        return d;
+    }
     if let Some((name, answers)) = a.stray.first() {
         d.push(Diagnostic::error(
             crate::compiler::view::camera::DW_RECORD_AT_BUILD,
@@ -902,6 +918,7 @@ mod tests {
                 answered: vec!["concept/shore-far".to_string()],
                 unanswered: vec!["concept/tower-far".to_string()],
                 stray: Vec::new(),
+                unbound: Vec::new(),
             }),
         };
         let line = b.line();

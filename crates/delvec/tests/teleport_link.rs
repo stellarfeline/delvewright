@@ -1062,8 +1062,13 @@ fn the_put_at_roots_hold_every_destination_and_the_stands_at_roots_no_gather() {
     let crossing: Vec<[i32; 3]> = plan.transport.values().copied().collect();
     assert_eq!(crossing.len(), 1, "one crossing, into the keep");
     let entry = plan.campaign_start().map(|(_, p)| p);
-    let put = delvec::compiler::lethal::put_at_roots(&plan, entry);
-    let stands = delvec::compiler::lethal::stands_at_roots(&plan, entry);
+    // The roots read the seats off a world; this campaign sets no checkpoint,
+    // so a world of no blocks seats nothing and moves no root.
+    let world = delvec::compiler::nav::World::from_plan(&plan, &std::collections::BTreeMap::new())
+        .with_rest_seats(&plan);
+    assert!(plan.checkpoints.is_empty());
+    let put = delvec::compiler::lethal::put_at_roots(&plan, &world, entry);
+    let stands = delvec::compiler::lethal::stands_at_roots(&plan, &world, entry);
     let (link_to, gather_to) = (plan.links[0].to, plan.gathers[0].to);
     assert!(
         put.contains(&link_to) && put.contains(&gather_to),

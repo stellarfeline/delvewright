@@ -534,6 +534,7 @@ pub fn build_with_warnings(
     // every reader of the critical path takes (`holders::final_walk`).
     let owned_holders = crate::compiler::holders::own_holders(plan, &entity_holders);
     let (walked, relight) = crate::compiler::holders::final_walk(plan, assembled, &owned_holders);
+    eprintln!("{}", relight.binding.line());
     if let Some(diag) = relight.diagnostics.first() {
         return Err(BuildFailure::Diagnostic {
             code: diag.code,
@@ -683,6 +684,15 @@ pub fn build_with_warnings(
     // byte.
     let relinked = crate::compiler::nav::with_links_taken(plan, prefabs, &world)?;
     let plan: &Plan = relinked.as_ref().unwrap_or(plan);
+    // The respawn seats, derived over the final world for the plan every proof
+    // below reads — the relinked one, whose path the party approaches each rest
+    // object along — and fixed for the emitter before anything reads one. A
+    // checkpoint with no safe cell beside it is refused here (`DW0316`).
+    let world = world.with_rest_seats(plan);
+    crate::compiler::nav::fix_seats(plan, &world).map_err(|f| BuildFailure::Diagnostic {
+        code: f.code,
+        message: f.message,
+    })?;
 
     // ---- spec-0082: the assemblies (`DW0936`–`DW0938`) ----
     //

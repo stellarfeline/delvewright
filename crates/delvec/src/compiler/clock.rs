@@ -94,13 +94,14 @@ pub fn binding_lines(c: &Campaign) -> Vec<String> {
         out.push(line("set-time", t, k));
     }
     let all: Vec<WorldTime> = std::iter::once(world).chain(cuts.iter().copied()).collect();
-    let celestial = all.iter().filter(|t| !t.is_keyword()).count();
+    let celestial = all.iter().filter(|t| t.celestial().is_some()).count();
+    let ticks = all.iter().filter(|t| t.clock_statement().is_some()).count();
     let phases: BTreeSet<_> = all.iter().filter_map(|t| t.stated_phase()).collect();
     out.push(format!(
-        "clocks: 1 world + {} cut(s); {celestial} celestial, {} keyword; phases stated {{{}}}; \
-         days {{{}}}",
+        "clocks: 1 world + {} cut(s); {celestial} celestial, {ticks} tick, {} keyword; phases \
+         stated {{{}}}; days {{{}}}",
         cuts.len(),
-        all.len() - celestial,
+        all.len() - celestial - ticks,
         phases
             .iter()
             .map(|p| p.name())

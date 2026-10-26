@@ -21,6 +21,17 @@ delvewright_dsl::dw_code! {
 }
 
 delvewright_dsl::dw_code! {
+    /// `DW1062` (spec-0122 §7.5): **the prefab library a piece-reading verb was
+    /// pointed at is not there.** `--prefabs` (or the default `campaigns/prefabs`,
+    /// which exists only in an engine checkout) names a path that does not exist.
+    /// Refused at **validation tier (exit 1)** by every compiler verb that reads
+    /// pieces, with the sentence [`missing_library`] words, which names
+    /// `--prefabs` and `DELVEWRIGHT_PREFABS`. A directory that exists and cannot be
+    /// read is not this: it stays an internal fault.
+    pub const DW_NO_LIBRARY: DwCode = DwCode::new("DW1062", ExitTier::Build);
+}
+
+delvewright_dsl::dw_code! {
     /// `DW0543`: a prefab metadata file carries a key this delvec does not model.
     ///
     /// A **warning**, and the severity is the decision. Refusing the document was
@@ -429,6 +440,31 @@ pub struct PrefabRegistry {
     /// assembly names it (`DW0935`), never at load: a library may hold a rig
     /// no campaign uses.
     rigs: BTreeMap<String, Result<delvewright_dsl::rig::Rig, String>>,
+}
+
+/// **The library a verb was pointed at is not there** (spec-0122 §7.5): the
+/// sentence every verb that reads pieces prints when `--prefabs` names a path
+/// that does not exist — the ordinary state of a creator's working directory,
+/// where the default `campaigns/prefabs` is a development checkout's symlink
+/// and nothing else. `None` when the path exists, so an unreadable directory
+/// that IS there stays the internal fault it is.
+///
+/// One implementation: the compiler's verbs print it as [`DW_NO_LIBRARY`] at exit 1,
+/// the admission surface inside its own input diagnostic at its own exit, and
+/// neither words the remedy itself.
+#[must_use]
+pub fn missing_library(dir: &Path) -> Option<String> {
+    if dir.exists() {
+        return None;
+    }
+    Some(format!(
+        "no prefab library at `{}`: this verb reads pieces, and the path it was given does not \
+         exist. Pass the library with `--prefabs <dir>` — a creator's session names it in \
+         `DELVEWRIGHT_PREFABS`, so `--prefabs \"$DELVEWRIGHT_PREFABS\"`. The default \
+         `campaigns/prefabs` exists only in an engine checkout with the content repository \
+         linked at `campaigns/`.",
+        dir.display()
+    ))
 }
 
 impl PrefabRegistry {

@@ -3147,8 +3147,8 @@
             },
             {
               "time": {
-                "phase": "waxing-crescent",
-                "sun": "just-set"
+                "daytime": 13047,
+                "phase": "waxing-crescent"
               },
               "type": "set-time",
               "when": {

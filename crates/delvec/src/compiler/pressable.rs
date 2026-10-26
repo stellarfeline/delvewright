@@ -641,7 +641,7 @@ pub fn derive(plan: &Plan) -> Vec<PressPlan> {
                     owner: Owner::Bonfire { index: bf.index },
                     tag: format!("dw_bonfire_{}", bf.index),
                     anchor: bf.anchor.clone(),
-                    cell: bf.pos,
+                    cell: bf.at,
                     block: p.block.clone(),
                     struck: false,
                     places_block: true,
