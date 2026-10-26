@@ -23,6 +23,60 @@ pub(super) fn emit_despawn_actor(
     body.extend(removal_lines(ns, &tag, declares_drops, exit));
 }
 
+/// Whether an actor wears an **answer box** (spec-0119): it declares
+/// `answers`. A body owed answers and declaring none never reaches emission
+/// (`DW1055`), and a `vulnerable` one may declare none (`DW1056`).
+pub(super) fn actor_has_answer_box(c: &delvewright_dsl::Campaign, actor: &str) -> bool {
+    !crate::compiler::bodies::actor_box_trigger_tags(c, actor).is_empty()
+}
+
+/// The `spawn_actor_<id>` line that stands an actor's **answer box** on its
+/// puppet (spec-0119 §5.1): a `minecraft:interaction` that encloses the body
+/// that ships ([`crate::compiler::bodies::answer_box_dims`]), summoned at the
+/// puppet, wearing the actor's body tag (so a `despawn-actor` and every cleanup
+/// keyed on it remove the box with the puppet), its own
+/// [`crate::compiler::bodies::ANSWER_BOX_TAG`], and the tag of every answer it
+/// carries. Guarded on the puppet standing and no box standing, so the spawn
+/// stays idempotent and a twin never wears one. `None` for an actor that
+/// declares no `answers` — byte-identical.
+pub(super) fn actor_answer_box_summon(
+    c: &delvewright_dsl::Campaign,
+    a: &delvewright_dsl::Actor,
+) -> Option<String> {
+    let riders = crate::compiler::bodies::actor_box_trigger_tags(c, a.id.as_str());
+    if riders.is_empty() {
+        return None;
+    }
+    let safe = plan::safe_local(a.id.as_str());
+    let tag = crate::compiler::bodies::answer_box_tag(a.id.as_str());
+    let (w, h) =
+        crate::compiler::bodies::answer_box_dims(&crate::compiler::nav::actor_body_entity(a));
+    let tags = std::iter::once(format!("dw_actor_{safe}"))
+        .chain(std::iter::once(tag.clone()))
+        .chain(riders)
+        .map(|t| format!("\"{t}\""))
+        .collect::<Vec<_>>()
+        .join(",");
+    Some(format!(
+        "execute at @e[tag=dw_pup_{safe},limit=1] unless entity @e[tag={tag}] run summon \
+         minecraft:interaction ~ ~ ~ {{width:{}f,height:{}f,response:1b,Invulnerable:1b,Tags:[{BORNE_NBT}{tags}]}}",
+        crate::compiler::bodies::dim_snbt(w),
+        crate::compiler::bodies::dim_snbt(h)
+    ))
+}
+
+/// The line that removes an actor's answer box (spec-0119 §5.1), emitted by
+/// `unleash_<id>` and by `despawn-actor` before either touches the puppet.
+/// `None` for an actor that wears none.
+pub(super) fn actor_answer_box_kill(a: &delvewright_dsl::Actor) -> Option<String> {
+    a.answers.as_ref().map(|_| {
+        format!(
+            "kill @e[tag={}]",
+            crate::compiler::bodies::answer_box_tag(a.id.as_str())
+        )
+    })
+}
+
 /// The spawn yaw for an actor from its `facing` (default south = 0).
 pub(super) fn actor_facing_yaw(a: &delvewright_dsl::Actor) -> i32 {
     a.facing.map(|f| facing_yaw(Some(f.token()))).unwrap_or(0)
@@ -399,12 +453,16 @@ pub(super) fn actor_fns(
             "execute unless entity @e[tag=dw_actor_{safe}] run {}",
             actor_puppet_summon(ns, a, pos, yaw)
         )];
+        spawn.extend(actor_answer_box_summon(plan.campaign, a));
         spawn.extend(capture.clone());
         out.push((format!("spawn_actor_{safe}"), lines(&spawn)));
-        let mut unleash = vec![format!(
+        // spec-0119: the answer box goes before anything touches the puppet —
+        // the twin must take the blows the box would otherwise take.
+        let mut unleash: Vec<String> = actor_answer_box_kill(a).into_iter().collect();
+        unleash.push(format!(
             "execute at @e[tag=dw_pup_{safe},limit=1] run {}",
             actor_twin_summon(ns, a, "~ ~ ~")
-        )];
+        ));
         // The cage leaves unseen: the elite standing up is the twin, and a
         // puppet dying beside it is a death the story never wrote. A puppet
         // carrying a declared drop is stripped first — the twin is the body
@@ -534,6 +592,13 @@ pub(super) fn actor_fns(
                 fmt_f64(w[0]),
                 fmt_f64(w[1]),
                 fmt_f64(w[2])
+            ));
+        }
+        // spec-0119: an actor's answer box follows its puppet along the walk.
+        if actor_has_answer_box(plan.campaign, &m.actor) {
+            tick.push(format!(
+                "execute as @e[tag={}] at @e[tag=dw_pup_{safe},limit=1] run tp @s ~ ~ ~",
+                crate::compiler::bodies::answer_box_tag(&m.actor)
             ));
         }
         if watches {

@@ -150,7 +150,7 @@ fn time_refs(v: &serde_json::Value) -> usize {
 }
 
 #[test]
-fn every_site_exports_the_keyword_or_the_celestial_object() {
+fn every_site_exports_the_keyword_the_celestial_object_or_the_clock() {
     let world = stage_schema(Stage::World);
     let d = defs(&world);
     let wt = &d["WorldTime"];
@@ -160,7 +160,14 @@ fn every_site_exports_the_keyword_or_the_celestial_object() {
         .iter()
         .map(|b| b["$ref"].as_str().unwrap())
         .collect();
-    assert_eq!(any, ["#/$defs/TimeKeyword", "#/$defs/CelestialTime"]);
+    assert_eq!(
+        any,
+        [
+            "#/$defs/TimeKeyword",
+            "#/$defs/CelestialTime",
+            "#/$defs/ClockStatement"
+        ]
+    );
     let kw: Vec<String> = serde_json::to_string(&d["TimeKeyword"])
         .unwrap()
         .split('"')
@@ -500,10 +507,11 @@ fn a_celestial_camera_renders_its_positions_sun_and_its_days_moon() {
     };
     let cam = Camera {
         after: None,
-        answers: "concept/quay".into(),
+        answers: Some("concept/quay".into()),
         fov: 60.0,
         height: 90,
         name: "moonrise".into(),
+        note: None,
         pitch: 10.0,
         pos: [10.5, 70.0, -4.25],
         sky: Some(sky),
@@ -599,7 +607,7 @@ fn every_build_prints_its_clocks_zeroes_included() {
     );
     assert!(
         out.contains(
-            "clocks: 1 world + 0 cut(s); 0 celestial, 1 keyword; phases stated {}; days {0}"
+            "clocks: 1 world + 0 cut(s); 0 celestial, 0 tick, 1 keyword; phases stated {}; days {0}"
         ),
         "{out}"
     );
@@ -626,7 +634,7 @@ fn every_build_prints_its_clocks_zeroes_included() {
     );
     assert!(
         out.contains(
-            "clocks: 1 world + 1 cut(s); 1 celestial, 1 keyword; phases stated {new-moon}; days {4}"
+            "clocks: 1 world + 1 cut(s); 1 celestial, 0 tick, 1 keyword; phases stated {new-moon}; days {4}"
         ),
         "{out}"
     );

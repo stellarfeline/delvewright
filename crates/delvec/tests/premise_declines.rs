@@ -38,6 +38,11 @@ fn premise_declines_are_enumerated() {
         ("compiler/edit.rs", 1),
         // `light.rs`: the relight pass's darkness survey.
         ("compiler/light.rs", 1),
+        // `compiler/nav/width.rs`: the clear-width check's window of blocks
+        // round each way (spec-0120): whether a body can be in a column is a
+        // fact of the blocks there in one state, and no horizon, volume or
+        // gate premise changes the width a structure takes.
+        ("compiler/nav/width.rs", 1),
         // `compiler/nav/world/mod.rs`: the synthetic constructors' own door
         // (`from_solid_and_flooded`), which every unit-test world goes
         // through; and `World::of_piece`, ONE piece's own blocks judged before

@@ -232,6 +232,50 @@ pub fn gate_approaches(world: &World, region: ([i32; 3], [i32; 3])) -> Vec<GateA
     out
 }
 
+/// **Where on the critical path a crush gate's death is walked**: the first
+/// walked leg, in path order, from whose start one of `approaches`' mouths is
+/// reachable, and the first such mouth in `approaches` order.
+///
+/// Reachability is asked over the world the leg was proven in
+/// ([`LegRoute::proven_world`]), from the leg's first cell, never stepping
+/// into a cell of `region` (the walk to a mouth stays out of the span it
+/// waits at) and keeping a player's body out of every box in `kept` (the
+/// other crush gates, which nothing stages on this walk). Every other timed
+/// gate is open here, as every proof reads one: a walk crosses it on its
+/// window. Returns the leg's `from_step`, the walked step after which the
+/// party stands at that start; `None` when no leg start reaches a mouth.
+///
+/// Deterministic: legs in path order, mouths in [`gate_approaches`] order,
+/// one A* each (ADR-0006).
+pub fn first_mouth_reach(
+    world: &World,
+    routes: &[LegRoute],
+    region: ([i32; 3], [i32; 3]),
+    approaches: &[GateApproach],
+    kept: &[([i32; 3], [i32; 3])],
+) -> Option<(usize, GateApproach)> {
+    let inside = |c: [i32; 3], (lo, hi): ([i32; 3], [i32; 3])| {
+        (0..3).all(|i| lo[i] <= c[i] && c[i] <= hi[i])
+    };
+    let kept: Vec<([i32; 3], [i32; 3])> = kept
+        .iter()
+        .map(|(lo, hi)| {
+            delvewright_dsl::metrics::keep_out_box(delvewright_dsl::metrics::Body::PLAYER, *lo, *hi)
+        })
+        .collect();
+    let avoid = |c: [i32; 3]| inside(c, region) || kept.iter().any(|b| inside(c, *b));
+    let fp = Footprint::player();
+    routes.iter().find_map(|leg| {
+        let start = *leg.cells.first()?;
+        let owned = leg.proven_world(world);
+        let w: &World = owned.as_ref().unwrap_or(world);
+        approaches
+            .iter()
+            .find(|a| w.find_path_avoiding(start, a.mouth, &fp, &avoid).is_some())
+            .map(|a| (leg.from_step, *a))
+    })
+}
+
 /// The standable footings immediately on either side of a gate region, over the
 /// world with the region SEALED so neither endpoint can land inside it or snap
 /// through. The crossing axis is whichever horizontal axis actually has footing on
@@ -449,5 +493,91 @@ mod tests {
             (12, 4, 15, 26)
         );
         assert!(!v.is_coin_flip());
+    }
+
+    // --- where on the path a crush gate's death is walked ---
+
+    /// A leg that starts at `start`, as the router would export it.
+    fn leg_from(from_step: usize, start: [i32; 3]) -> LegRoute {
+        LegRoute {
+            from: start,
+            to: start,
+            from_step,
+            to_step: from_step + 1,
+            cells: vec![start],
+            use_gates: Vec::new(),
+            climbs: Vec::new(),
+            region_state: RegionState::default(),
+        }
+    }
+
+    /// A 12×9 floor split at z = 4 by a wall with a one-cell doorway at x = 1
+    /// (the crush gate), and a second wall at x = 6 shutting the south-east
+    /// pocket off from the doorway's south face.
+    fn split_hall() -> (World, ([i32; 3], [i32; 3])) {
+        let mut walls = Vec::new();
+        for x in 0..12 {
+            if x != 1 {
+                walls.push([x, 65, 4]);
+                walls.push([x, 66, 4]);
+            }
+        }
+        for z in 5..9 {
+            walls.push([6, 65, z]);
+            walls.push([6, 66, z]);
+        }
+        (floored(12, 9, 65, &walls), ([1, 65, 4], [1, 66, 4]))
+    }
+
+    /// The first leg whose start reaches a mouth is the answer, with the first
+    /// mouth it reaches; a leg start from which every mouth lies through the
+    /// gate itself, or behind a wall, is passed over.
+    #[test]
+    fn the_death_is_walked_from_the_first_leg_start_that_reaches_a_mouth() {
+        let (world, region) = split_hall();
+        let approaches = gate_approaches(&world, region);
+        assert_eq!(
+            approaches.iter().map(|a| a.mouth).collect::<Vec<_>>(),
+            vec![[1, 65, 3], [1, 65, 5]],
+            "a doorway in a z wall is entered from its two z faces"
+        );
+        let legs = vec![
+            leg_from(0, [9, 65, 7]),
+            leg_from(3, [3, 65, 7]),
+            leg_from(5, [3, 65, 1]),
+        ];
+        let got = first_mouth_reach(&world, &legs, region, &approaches, &[]);
+        assert_eq!(
+            got,
+            Some((3, approaches[1])),
+            "the pocket's leg reaches neither mouth; the next leg reaches the south one"
+        );
+        // From the north side the north mouth is first in order.
+        let north = first_mouth_reach(&world, &legs[2..], region, &approaches, &[]);
+        assert_eq!(north, Some((5, approaches[0])));
+        // The walk never passes through the gate's own span: from the pocket
+        // side alone there is no answer at all.
+        assert_eq!(
+            first_mouth_reach(&world, &legs[..1], region, &approaches, &[]),
+            None
+        );
+    }
+
+    /// Another crush gate is kept out of by a body's width: a mouth reachable
+    /// only past it is not reached.
+    #[test]
+    fn a_mouth_reached_only_past_another_crush_gate_is_not_reached() {
+        let (world, region) = split_hall();
+        let approaches = gate_approaches(&world, region);
+        let legs = vec![leg_from(3, [5, 65, 7])];
+        // A second crush gate across the only way from the leg start to the
+        // south mouth (x = 3, z = 5..8); widened by a body's half-width it
+        // keeps x = 2..4 out, and neither the start nor the mouth is in it.
+        let other = ([3, 65, 5], [3, 66, 8]);
+        assert_eq!(
+            first_mouth_reach(&world, &legs, region, &approaches, &[other]),
+            None
+        );
+        assert!(first_mouth_reach(&world, &legs, region, &approaches, &[]).is_some());
     }
 }

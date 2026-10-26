@@ -1,0 +1,15 @@
+{
+  "code": "DW1056",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/actors/2/answers",
+      "value": {
+        "struck": "It flinches."
+      }
+    }
+  ],
+  "units": [],
+  "why": "`actor/sergeant` is `vulnerable`: its puppet takes blows and can die. An answer box on it would take every blow meant for the fight, so a line there can never be shown. The validation names the line and why. It declares no unit: `answers.struck` is bound by the primary on `actor/hall-sentry` and `npc/copyist`; what the engine refuses is a line on a body that can be harmed."
+}

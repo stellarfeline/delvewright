@@ -141,8 +141,8 @@ not the delve's.
 outside the engine's `validation/`, on the one path that resolves the
 Dockerfile against the tree: a bare `docker compose` on the `play` or
 `playtest` profile with no `DELVE_DOCKERFILE` exported. `packtest-run.sh`,
-`bot-run.sh` and `branch-runs.sh` pass an absolute path and never raise it. Build into
-`$DELVEWRIGHT_ENGINE/validation/delve-output`, or copy the tree there — see step 8.
+`bot-run.sh` and `branch-runs.sh` pass an absolute path and never raise it. Source
+`.out/env.sh`, which exports `DELVE_OUTPUT` and `DELVE_DOCKERFILE` together — see step 8.
 
 **`refimg: no delvewright.local.toml` (exit 2).** Init I7, path B — and it
 is the state **every** fresh engine checkout is in, not a file that went

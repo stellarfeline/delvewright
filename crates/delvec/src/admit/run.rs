@@ -162,14 +162,9 @@ fn run_seating(horizon: &str, dir: &Path, json: bool) -> ExitCode {
             );
         }
     };
-    let registry = match crate::compiler::registry::PrefabRegistry::load_dir(dir) {
+    let registry = match read_library(dir) {
         Ok(r) => r,
-        Err(e) => {
-            return input_err(
-                &format!("cannot read prefabs dir {}: {e}", dir.display()),
-                json,
-            );
-        }
+        Err(msg) => return input_err(&msg, json),
     };
     // A document this engine cannot parse is ABSENT from the registry, so a
     // sweep that did not say so would report a smaller library as a clean one.
@@ -415,14 +410,9 @@ fn run_seating(horizon: &str, dir: &Path, json: bool) -> ExitCode {
 /// thing it does refuse is a question about nothing — a library with no pools,
 /// or a `--pool` this library does not declare.
 fn run_anchors(pool: Option<&str>, dir: &Path, json: bool) -> ExitCode {
-    let registry = match crate::compiler::registry::PrefabRegistry::load_dir(dir) {
+    let registry = match read_library(dir) {
         Ok(r) => r,
-        Err(e) => {
-            return input_err(
-                &format!("cannot read prefabs dir {}: {e}", dir.display()),
-                json,
-            );
-        }
+        Err(msg) => return input_err(&msg, json),
     };
     // A document this engine cannot parse is ABSENT from the registry, so a
     // report that did not say so would describe a smaller library as a whole one.
@@ -538,14 +528,9 @@ fn run_anchors(pool: Option<&str>, dir: &Path, json: bool) -> ExitCode {
 /// against the bytes beside it. The census is printed on every run, including
 /// the run that finds nothing.
 fn run_library_audit(dir: &Path, report: Option<&Path>, json: bool) -> ExitCode {
-    let registry = match crate::compiler::registry::PrefabRegistry::load_dir(dir) {
+    let registry = match read_library(dir) {
         Ok(r) => r,
-        Err(e) => {
-            return input_err(
-                &format!("cannot read prefabs dir {}: {e}", dir.display()),
-                json,
-            );
-        }
+        Err(msg) => return input_err(&msg, json),
     };
     let library = crate::compiler::seating::Library::read(&registry, dir);
     for line in &library.unreadable {
@@ -1823,6 +1808,18 @@ fn parse_ivec2(s: &str) -> Option<[i32; 2]> {
 fn parse_region(s: &str) -> Option<([i32; 3], [i32; 3])> {
     let (a, b) = s.split_once(':')?;
     Some((parse_ivec3(a)?, parse_ivec3(b)?))
+}
+
+/// The library `--prefabs` names, for an admission verb that reads a whole
+/// library: the absent path worded by
+/// [`missing_library`](crate::compiler::registry::missing_library), anything
+/// else as the read error — both carried by this surface's input diagnostic.
+fn read_library(dir: &Path) -> Result<crate::compiler::registry::PrefabRegistry, String> {
+    if let Some(msg) = crate::compiler::registry::missing_library(dir) {
+        return Err(msg);
+    }
+    crate::compiler::registry::PrefabRegistry::load_dir(dir)
+        .map_err(|e| format!("cannot read prefabs dir {}: {e}", dir.display()))
 }
 
 fn input_err(msg: &str, json: bool) -> ExitCode {

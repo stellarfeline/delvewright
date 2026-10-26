@@ -144,9 +144,9 @@ flowchart TD
     end
     C --> F["6 · delvec fmt — EVERY campaign"]
     F --> A["7 · delvec analyze<br/>reachability / deadlock / dark mitigation"]
-    A --> B["8 · delvec build -o validation/delve-output<br/>must exit 0"]
+    A --> B["8 · delvec build -o $DELVE_OUTPUT<br/>must exit 0"]
     B --> CAM["8b · showcase cameras<br/>one per approved image"]
-    CAM --> D["9 · detail — every place"]
+    CAM --> D["9 · detail — every place<br/>N authors at once, commits one at a time"]
     D --> G8{{"10 · MACHINE LADDER<br/>PackTest / bot / branch runs"}}
     G8 --> G7{{"11 · BRANCH CHRONICLE<br/>only when branch_points exist"}}
     G7 --> G9{{"12 · VISUAL REVIEW<br/>POV sequence first"}}
@@ -167,10 +167,10 @@ work entirely.
 
 | Role | Model | Owns |
 |---|---|---|
-| **authoring agent** (main) | session model | theme, beats, personas, quest-plan intent, stage summaries, **all user interaction**, the branch chronicle review, visual judgment |
+| **authoring agent** (main) | session model | theme, beats, personas, quest-plan intent, stage summaries, **all user interaction** — the opening check (A1), the design gate (A2) and the hand-over (H), and no other ask; every technical decision is its own, recorded under `DELVEWRIGHT_DEBUG` (spec-0122 §2, §4) — the branch chronicle review, visual judgment |
 | **dev subagent** | `opus` | the mechanical write of each stage's JSON + the `delvec validate` repair loop |
 | **test subagent** | `sonnet` | the machine ladder (step 10) — keeps long server logs out of the authoring context |
-| **per-place author** (step 9) | session model | one place's grammar program, from that place's handout and nothing else (spec-0121): a fresh `general-purpose` agent per place per attempt, launched with the Agent tool on the one line `scripts/handout.py` prints; a refusal is repaired by the next fresh agent, never by the main agent, which reads no program and no handout |
+| **per-place author** (step 9) | session model | one place's grammar program, from that place's handout and nothing else (spec-0121): a fresh `general-purpose` agent per place per attempt, launched with the Agent tool on the one line `scripts/handout.py` prints. **Up to N run concurrently**, N the `concurrency:` line `delvec allocation --all` prints; each checks with `delvec detail --check`, which writes nothing, and the main agent **commits serially** with `delvec detail`, one return at a time; a commit that refuses is handed back to the next fresh agent, never repaired by the main agent, which reads no program and no handout (spec-0122 §6) |
 
 One hard rule on top: **a subagent never runs a higher tier than the main agent.**
 Main on `sonnet` clamps every subagent to `sonnet`.

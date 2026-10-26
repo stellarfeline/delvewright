@@ -557,6 +557,15 @@ pub mod codes {
         pub const CELESTIAL_TIME: DwCode = DwCode::new("DW0931", ExitTier::Build);
     }
     crate::dw_code! {
+        /// (spec-0122 §7.2) **A test level that carries a design record.**
+        /// `world.json` `test_level: true` declares a level built to try
+        /// something, with no approved design; a `design.json` beside it is an
+        /// approved design, so the campaign states two authorities for one
+        /// design. Validation-tier (exit 1). Prescription: drop one — the
+        /// declaration, or the record.
+        pub const TEST_LEVEL_WITH_DESIGN: DwCode = DwCode::new("DW1061", ExitTier::Build);
+    }
+    crate::dw_code! {
         /// (spec-0088) **A gate that cannot stage a lethal volume.** Two shapes,
         /// refused at the document where they are entered:
         ///

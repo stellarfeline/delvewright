@@ -36,6 +36,7 @@ fn floored_with_furniture(
             unheld_climb: Default::default(),
             material: Default::default(),
             footprints: Default::default(),
+            hiding: Default::default(),
         },
         Premises {
             ambient: Ambient::Void,
@@ -954,7 +955,7 @@ fn a_seal_of_bars_through_a_floor_is_no_floor() {
     let bar = delvewright_dsl::blockshape::server_footprint("minecraft:iron_bars");
     let fps: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Footprint16> =
         cells.iter().map(|c| (*c, bar)).collect();
-    let barred = open.with_sealed_by(&cells, &fps);
+    let barred = open.with_sealed_by(&cells, &fps, &BTreeSet::new());
     assert!(!barred.is_standable([3, 64, 3]));
     assert!(barred.body_edge_cells([2, 64, 3]).contains(&[3, 60, 3]));
     let shut = open.with_sealed(&cells);

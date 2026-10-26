@@ -26,9 +26,12 @@
 //! pre-commitment ground (`DW0388`,
 //! [`crate::compiler::nav::hazard::pre_commit_ground`], over the course with
 //! its last platform walled up), a trigger-set checkpoint's root (`DW0315`,
-//! [`crate::compiler::nav::checkpoint::earliest_reaching_config`]) and a
+//! [`crate::compiler::nav::checkpoint::earliest_reaching_config`]), a
 //! `reach` objective's arriving cells (`DW0881`,
-//! [`crate::compiler::reach::cells_that_reach`]).
+//! [`crate::compiler::reach::cells_that_reach`]), and the shut-gate model's
+//! party reach (`DW1011`, `DW1053`/`DW1054`: `nav::shutmodel::party_reach`)
+//! with the order the shut-way eye is asked in (`nav::learned::route_tree`,
+//! every cell an eye stands in).
 //!
 //! The cases are parkour courses: platforms three wide along `x` with gaps of
 //! zero to four columns, rises of up to two courses either way, a low ceiling
@@ -239,6 +242,7 @@ fn edge(a: &str, b: &str, class: &str) -> ContractEdge {
         via: None,
         bar: None,
         way: None,
+        extra: Default::default(),
     }
 }
 
@@ -298,6 +302,7 @@ fn every_consumer_reaches_what_the_reach_graph_reaches() {
     let mut watch_needed = 0usize;
     let mut root_needed = 0usize;
     let mut arriving_needed = 0usize;
+    let mut eye_needed = 0usize;
     for seed in 0..CASES {
         let case = generate(seed);
         declared += case.jumps.len();
@@ -459,6 +464,29 @@ fn every_consumer_reaches_what_the_reach_graph_reaches() {
             if back && !jumping.walk_region(&[z]).contains(&case.root) {
                 arriving_needed += 1;
             }
+        }
+
+        // The shut-gate model's party reach and the shut-way eye's order: both
+        // hold exactly the graph's states.
+        let (_, party) = crate::compiler::nav::shutmodel::party_reach(&jumping, &[case.root]);
+        assert_eq!(
+            party.cells(),
+            states,
+            "case {seed}: the shut-gate model's party reach differs from the reach graph's"
+        );
+        let (_, order) = crate::compiler::nav::learned::route_tree(&party, &[case.root]);
+        let eyes: BTreeSet<[i32; 3]> = order.iter().copied().collect();
+        assert_eq!(
+            eyes.len(),
+            order.len(),
+            "case {seed}: the eye's order names a cell twice"
+        );
+        assert_eq!(
+            eyes, states,
+            "case {seed}: the shut-way eye stands in cells the reach graph does not, or misses some"
+        );
+        if eyes.iter().any(|c| !walk.contains(c)) {
+            eye_needed += 1;
         }
 
         // The contract, over the same blocks: a piece declares no jump.
@@ -653,7 +681,8 @@ fn every_consumer_reaches_what_the_reach_graph_reaches() {
          {held_reached} climb case(s) reaching a held cell; {entries} ground-entry cell(s), \
          {floor_needed} per-piece floor(s) a jump or fall; {volume_needed} DW0891 flood(s) \
          past the cell relation, {watch_needed} watch bay(s) past the walk, {root_needed} \
-         trigger root(s) and {arriving_needed} arriving cell(s) a jump or fall"
+         trigger root(s) and {arriving_needed} arriving cell(s) a jump or fall; {eye_needed} \
+         shut-way eye order(s) past the walk"
     );
     assert!(
         launch_needed > 0 && contract_launch_needed > 0,
@@ -674,6 +703,10 @@ fn every_consumer_reaches_what_the_reach_graph_reaches() {
     assert!(
         entries > 0 && floor_needed > 0,
         "no ground entry, or no per-piece floor needs more than the walk: the agreement is vacuous"
+    );
+    assert!(
+        eye_needed > 0,
+        "no shut-way eye order needs more than the walk: the agreement is vacuous"
     );
     assert!(
         volume_needed > 0 && watch_needed > 0 && root_needed > 0 && arriving_needed > 0,

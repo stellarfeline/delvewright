@@ -20,6 +20,8 @@
     "floor": "minecraft:polished_andesite",
     "lamp": "minecraft:sea_lantern",
     "lid": "minecraft:spruce_planks",
+    "post": "minecraft:polished_blackstone_wall[east=none,north=none,south=none,up=true,waterlogged=false,west=none]",
+    "post-lamp": "minecraft:lantern[hanging=false,waterlogged=false]",
     "wall": "minecraft:polished_blackstone_bricks"
   },
   "params": {},
@@ -54,6 +56,41 @@
             "role": "lamp"
           },
           "op": "fill"
+        },
+        "weight": 1
+      }
+    ],
+    "lamp-post": [
+      {
+        "body": {
+          "axis": "y",
+          "children": [
+            {
+              "op": "call",
+              "symbol": "post"
+            },
+            {
+              "op": "call",
+              "symbol": "post-lamp"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 5
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
         },
         "weight": 1
       }
@@ -185,19 +222,89 @@
                     "symbol": "wall"
                   },
                   {
-                    "axis": "z",
+                    "axis": "x",
                     "children": [
                       {
-                        "op": "call",
-                        "symbol": "causeway-front-air"
+                        "axis": "z",
+                        "children": [
+                          {
+                            "op": "call",
+                            "symbol": "causeway-front-air"
+                          },
+                          {
+                            "op": "call",
+                            "symbol": "room-air"
+                          },
+                          {
+                            "op": "call",
+                            "symbol": "wall"
+                          }
+                        ],
+                        "op": "split",
+                        "sizes": [
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 1
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 23
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "size": "relative",
+                            "weight": {
+                              "expr": "int",
+                              "value": 1
+                            }
+                          }
+                        ]
                       },
                       {
-                        "op": "call",
-                        "symbol": "room-air"
-                      },
-                      {
-                        "op": "call",
-                        "symbol": "wall"
+                        "axis": "z",
+                        "children": [
+                          {
+                            "op": "call",
+                            "symbol": "causeway-front-air"
+                          },
+                          {
+                            "op": "call",
+                            "symbol": "room-air"
+                          },
+                          {
+                            "op": "call",
+                            "symbol": "wall"
+                          }
+                        ],
+                        "op": "split",
+                        "sizes": [
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 1
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 23
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "size": "relative",
+                            "weight": {
+                              "expr": "int",
+                              "value": 1
+                            }
+                          }
+                        ]
                       }
                     ],
                     "op": "split",
@@ -205,14 +312,7 @@
                       {
                         "blocks": {
                           "expr": "int",
-                          "value": 1
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 23
+                          "value": 5
                         },
                         "size": "absolute"
                       },
@@ -233,6 +333,40 @@
                         "symbol": "room-air"
                       },
                       {
+                        "axis": "x",
+                        "children": [
+                          {
+                            "op": "call",
+                            "symbol": "lamp-post"
+                          },
+                          {
+                            "op": "call",
+                            "symbol": "room-air"
+                          }
+                        ],
+                        "op": "split",
+                        "sizes": [
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 1
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "size": "relative",
+                            "weight": {
+                              "expr": "int",
+                              "value": 1
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "op": "call",
+                        "symbol": "room-air"
+                      },
+                      {
                         "op": "call",
                         "symbol": "wall"
                       }
@@ -242,7 +376,21 @@
                       {
                         "blocks": {
                           "expr": "int",
-                          "value": 24
+                          "value": 19
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 1
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 4
                         },
                         "size": "absolute"
                       },
@@ -557,6 +705,28 @@
             }
           },
           "op": "mark"
+        },
+        "weight": 1
+      }
+    ],
+    "post": [
+      {
+        "body": {
+          "material": {
+            "role": "post"
+          },
+          "op": "fill"
+        },
+        "weight": 1
+      }
+    ],
+    "post-lamp": [
+      {
+        "body": {
+          "material": {
+            "role": "post-lamp"
+          },
+          "op": "fill"
         },
         "weight": 1
       }

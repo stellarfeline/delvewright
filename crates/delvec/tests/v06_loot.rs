@@ -232,7 +232,7 @@ fn no_loot_still_builds() {
 fn an_equipped_actor_emits_gear_and_its_packtest() {
     const ACTOR: &str = r#"{
       "id": "actor/elite",
-      "entity": "minecraft:wither_skeleton",
+      "entity": "minecraft:wither_skeleton", "answers": { "struck": "It does not stir.", "touched": "Cold, and still." },
       "anchor": "anchor/keeper-stand",
       "equipment": {
         "head": { "item": "minecraft:netherite_helmet",
@@ -305,13 +305,13 @@ fn an_equipped_actor_emits_gear_and_its_packtest() {
 fn two_body_kinds_give_two_gear_packtests() {
     const ACTORS: &str = r#"{
       "id": "actor/elite",
-      "entity": "minecraft:wither_skeleton",
+      "entity": "minecraft:wither_skeleton", "answers": { "struck": "It does not stir.", "touched": "Cold, and still." },
       "anchor": "anchor/keeper-stand",
       "equipment": { "main_hand": { "item": "minecraft:netherite_sword" } }
     },
     {
       "id": "actor/second-elite",
-      "entity": "minecraft:zombie",
+      "entity": "minecraft:zombie", "answers": { "struck": "It does not stir.", "touched": "Cold, and still." },
       "anchor": "anchor/keeper-stand",
       "skin": { "texture_id": "keeper", "model": "wide" },
       "equipment": { "main_hand": { "item": "minecraft:iron_sword" } }

@@ -101,7 +101,12 @@
         "floor": {
           "datum": "datum/grade"
         },
-        "node": "node/causeway"
+        "node": "node/causeway",
+        "way": {
+          "at": 0,
+          "axis": "z",
+          "clear": 6
+        }
       },
       {
         "ceiling": {
@@ -451,6 +456,20 @@
           66,
           20
         ]
+      },
+      {
+        "eye": [
+          32.5,
+          69.62,
+          61.5
+        ],
+        "id": "view/at-eye-height",
+        "look_at": [
+          32,
+          68,
+          20
+        ],
+        "note": "The approach as a body standing on the southern ground sees it: a half-block eye, 1.62 above the feet."
       }
     ],
     "volumes": [
@@ -506,6 +525,6 @@
       }
     ]
   },
-  "dsl_version": "0.61.0",
+  "dsl_version": "0.63.0",
   "stage": "site-plan"
 }

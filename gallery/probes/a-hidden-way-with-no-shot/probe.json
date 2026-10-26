@@ -1,0 +1,47 @@
+{
+  "code": "DW1054",
+  "patch": [
+    {
+      "doc": "layout-graph.json",
+      "op": "replace",
+      "path": "/content/edges/2/gating/learned",
+      "value": "hidden"
+    },
+    {
+      "doc": "layout-graph.json",
+      "op": "add",
+      "path": "/content/edges/2/gating/secret",
+      "value": [
+        "undershelf"
+      ]
+    },
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/0/on_complete/-",
+      "value": {
+        "style": "chat",
+        "text": "Beyond that door, the undershelf: the far hall's lowest shelf of stone.",
+        "type": "narrate"
+      }
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "add",
+      "path": "/content/fx.near-hall.done.5.narrate",
+      "value": "那道门后是下架：远厅最低的一层石架。"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "add",
+      "path": "/source/fx.near-hall.done.5.narrate",
+      "value": "Beyond that door, the undershelf: the far hall's lowest shelf of stone."
+    }
+  ],
+  "point": "site-plan",
+  "units": [
+    "Learned::hidden",
+    "EdgeGating.secret"
+  ],
+  "why": "The west door declared `learned: hidden` with its secret and a line after its opening beat that tells the word, and no `cutscene` of its seam anywhere in the beat that opens it. A hidden way is told by the shot that opens it; with no shot nothing tells it but text. The text check counts the way as having no shot to read against and judges nothing; the build refuses it `DW1054`, naming the opening effect list that carries no shot (and the grille the eye looks through). It declares `Learned::hidden` and `EdgeGating.secret`, as the probe beside it does."
+}

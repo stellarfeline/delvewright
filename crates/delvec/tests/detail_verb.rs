@@ -1149,6 +1149,8 @@ fn hung_program(name: &str, hollow: Option<i64>) -> Value {
 fn a_climb_inside_a_hung_place_proves_and_hung_scenery_states_its_zero() {
     let tmp = tempdir("hung-pair");
     let dir = gallery_site_plan(&tmp);
+    // The causeway is detailed from the gallery's own program, lamp post and
+    // all: the post stands on the verge, outside the way's clear columns.
     common::patch_file(&dir.join("site-plan.json"), |v| {
         for b in v["content"]["boxes"].as_array_mut().unwrap() {
             if b["node"] == "node/causeway" {
@@ -1447,7 +1449,9 @@ fn an_unlit_leafy_scenery_room_is_never_surveyed_for_light() {
     ]);
     let t = text(&out);
     assert_eq!(code(&out), 0, "{t}");
-    assert!(!t.contains("DW0210"), "{t}");
+    // The binding line names the code on every build; the refusal is the
+    // diagnostic.
+    assert!(!t.contains("DW0210 [error]"), "{t}");
     assert!(
         t.contains("detail: the whole builds with the piece(s) this run wrote."),
         "{t}"

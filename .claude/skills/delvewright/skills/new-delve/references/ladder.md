@@ -22,8 +22,8 @@ persisted world cannot keep completed objectives completed and fail a "fresh"
 playthrough for reasons that have nothing to do with the delve.
 
 ```sh
-EULA=TRUE "$DELVEWRIGHT_ENGINE/validation/packtest-run.sh" --project dw-<campaign>-r1
-EULA=TRUE "$DELVEWRIGHT_ENGINE/validation/bot-run.sh" --project dw-<campaign>-r1
+EULA=TRUE "$DELVEWRIGHT_ENGINE/validation/packtest-run.sh" --project dw-<campaign>-r1 --output "$DELVE_OUTPUT"
+EULA=TRUE "$DELVEWRIGHT_ENGINE/validation/bot-run.sh" --project dw-<campaign>-r1 --output "$DELVE_OUTPUT"
 ```
 
 Both must exit 0. Then read `$DELVEWRIGHT_ENGINE/validation/run-out/<id>/run-report.json` — it is
@@ -38,12 +38,12 @@ proof walks the engine's model; this is the one comparison with what the pinned
 server actually placed (`DW0955`). Mandatory on the build that ships:
 
 ```sh
-EULA=TRUE "$DELVEWRIGHT_ENGINE/validation/world-save.sh" "$DELVEWRIGHT_ENGINE/validation/delve-output" \
+EULA=TRUE "$DELVEWRIGHT_ENGINE/validation/world-save.sh" "$DELVE_OUTPUT" \
     --project dw-<campaign>-r1-world
 delvec --prefabs "$DELVEWRIGHT_PREFABS" written-world campaigns/<id> -o .out/written-world
 "$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_ENGINE/tools/ci/check-written-world.py" \
-    "$DELVEWRIGHT_ENGINE/validation/delve-output" .out/written-world \
-    "$DELVEWRIGHT_ENGINE/validation/delve-output/world" --record .out/written-world.json
+    "$DELVE_OUTPUT" .out/written-world \
+    "$DELVE_OUTPUT/world" --record .out/written-world.json
 ```
 
 `delvec written-world` writes the world the engine models at load from the
@@ -104,7 +104,7 @@ One critical-path run proves one storyline; a campaign that forks must have ever
 branch walked, each in its own fresh world.
 
 ```sh
-EULA=TRUE "$DELVEWRIGHT_ENGINE/validation/branch-runs.sh" --project dw-<campaign>-r1
+DELVE_OUTPUT="$DELVE_OUTPUT" EULA=TRUE "$DELVEWRIGHT_ENGINE/validation/branch-runs.sh" --project dw-<campaign>-r1
 ```
 
 It writes `$DELVEWRIGHT_ENGINE/validation/run-out/<id>/branch-runs.json`: per branch, ran or

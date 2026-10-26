@@ -2342,7 +2342,7 @@
             "target_minutes"
           ],
           "not_in": {
-            "demo_level": [
+            "test_level": [
               true
             ]
           }
@@ -2361,7 +2361,7 @@
       "finding": "a delve whose approved concept art is entirely night scenes was built, rendered and reviewed under noon daylight, because the world's time of day is an optional declaration written at the first authoring step, before the art the design gate approves exists, and nothing between the gate and the build compares the two; the mismatch was found by eye on the first point-of-view frame, after the build and the render had already been paid for",
       "general_form": "the world state a campaign declares and the art its design gate approved are held to each other before the build spends a render: the declaration is refused, or reported at the step that can still change it, when the approved reference and the declared world disagree about a property both state",
       "id": "drill3-01",
-      "note": "Closed by spec-0061: DW0890 holds the approved design's rows to the skies the world can reach, at validation, before anything is placed. The binding counts rows in validation/design-record.json, which every build writes even with no record, so a campaign that has approved no design counts zero. applies_when counts world.json's content unless it declares `demo_level: true`: every campaign owes a design gate except a declared demo level, whose approved design is its row in docs/demo-levels.md, and the staging gate refuses that declaration before any row is read unless the build's manifest carries it and a queue row's Status cell names `campaigns/<id>` (`demo_refusal`). So INAPPLICABLE is reachable only for a declared, queued demo, and any other zero is UNBOUND, refused. A skipped design gate is not a design choice.",
+      "note": "Closed by spec-0061: DW0890 holds the approved design's rows to the skies the world can reach, at validation, before anything is placed. The binding counts rows in validation/design-record.json, which every build writes even with no record, so a campaign that has approved no design counts zero. applies_when counts world.json's content unless it declares `test_level: true` (spec-0122 §7.2): every campaign owes a design gate except a declared test level, a level built to try something with no approved design, which may not also carry design.json (DW1061); the staging gate refuses the declaration before any row is read unless the build's manifest carries it too (`test_level_refusal`). So INAPPLICABLE is reachable only for a declared test level built from its declaration, and any other zero is UNBOUND, refused. A skipped design gate is not a design choice.",
       "round": "drill-3",
       "triage": "capability"
     },
@@ -2412,7 +2412,7 @@
             "target_minutes"
           ],
           "not_in": {
-            "demo_level": [
+            "test_level": [
               true
             ]
           }
@@ -2431,7 +2431,7 @@
       "finding": "the built areas bore no resemblance to the design set approved at the gate — a flat sand floor in a box of cobble where the approved image is a tide-cut stair on a black rock headland — and nothing in the pipeline put the two side by side: the build compares the sky and nothing else, and no rendered view of the built world was required to answer any approved image",
       "general_form": "a built world and the design set its gate approved are assembled into one comparison before the build is reviewed: every approved reference is answered by a stated view of the BUILT world, so the disagreement is put in front of a reader rather than left to be remembered; the likeness itself is that reader's judgement and no machine's",
       "id": "drill3-03",
-      "note": "Closed by spec-0070: DW0900 holds every row of design.json to a camera of design/cameras.json, through camera::tally — the one comparison between the two documents, which bind_answers is. A present record leaving any approved picture unanswered refuses delvec build (exit 3) before a piece is seated and delvec cameras scene emission (exit 2); a camera answering no row refuses the build under DW0721, the record's own rule, which the build read past until now. The absent record is not refused at the build, because the first build of every campaign is the build its cameras are written against: it is a measured zero on the binding line and in validation/design-record.json (cameras, answered, unanswered_rows), and it is refused HERE. The binding counts `answered`, so a campaign with rows and no camera reads UNBOUND. applies_when is drill3-01's, for drill3-01's reason: every campaign but a declared, queued demo level owes a design gate, so for any other campaign a zero is a refusal. The human reading this row also names — whether what was built LOOKS like the picture — is unchanged and stays a person's, at the contact sheet and the storybook; what the engine now guarantees is that the pair they look at exists.",
+      "note": "Closed by spec-0070: DW0900 holds every row of design.json to a camera of design/cameras.json, through camera::tally — the one comparison between the two documents, which bind_answers is. A present record leaving any approved picture unanswered refuses delvec build (exit 3) before a piece is seated and delvec cameras scene emission (exit 2); a camera answering no row refuses the build under DW0721, the record's own rule, which the build read past until now. The absent record is not refused at the build, because the first build of every campaign is the build its cameras are written against: it is a measured zero on the binding line and in validation/design-record.json (cameras, answered, unanswered_rows), and it is refused HERE. The binding counts `answered`, so a campaign with rows and no camera reads UNBOUND. applies_when is drill3-01's, for drill3-01's reason: every campaign but a declared test level owes a design gate, so for any other campaign a zero is a refusal. The human reading this row also names — whether what was built LOOKS like the picture — is unchanged and stays a person's, at the contact sheet and the storybook; what the engine now guarantees is that the pair they look at exists.",
       "round": "drill-3",
       "triage": "capability"
     },
@@ -3508,7 +3508,7 @@
       "finding": "objectives carried no hint, so the player did not know a step existed or where it was",
       "general_form": "every objective owes a hint that names the action as the player performs it and a place or landmark the player can find",
       "id": "str-04",
-      "note": "Carried by `DW0863` as spec-0104 §3 widens it to every act on every walked path: an objective is announced with a `hint`, or it is in sight (a clear line by `walk_cells` over `blocks_camera`, within 64 blocks) from the cell the party stands on before it, in the configuration that walk holds there. That is the machine half of the general form: the act can be found. Whether the hint names a place the player can find is prose, and stays QC (spec-0104 §2.4, §12).",
+      "note": "Carried by `DW0863` as spec-0104 §3 widens it to every act on every walked path: an objective is announced with a `hint`, or it is in sight (one of nine lines clear by the one sight rule, `framing::in_sight`, stopped only by a block that hides what is behind it, within 64 blocks) from the cell the party stands on before it, in the configuration that walk holds there. That is the machine half of the general form: the act can be found. Whether the hint names a place the player can find is prose, and stays QC (spec-0104 §2.4, §12).",
       "round": 1,
       "triage": "capability"
     },
@@ -3674,6 +3674,211 @@
       "general_form": "every shot declares the subject it frames, and the build proves the subject is inside the frustum and unoccluded from the camera pose",
       "id": "str-10",
       "note": "Carried by `DW1033` (spec-0110 §6.1, `compiler::framing`): every shot declares its `subject` (`DW0199` when absent; `\"landscape\"` declares a shot about no thing), and the build judges every shot at every driver tick over the client's tweened poses against the proof frame (70° vertical on 854 × 480, 60° in water): the subject's reference point must lie inside the action-safe rectangle and at least one of nine sight lines to its box must cross no camera-blocking cell. The one sight rule, `framing::sight`, also computes `delvec snapshot`'s `occluded`/`out_of_frame`. Every build with a cutscene prints `shot subjects: …` and writes `validation/shot-subjects.json`.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "npcs.json",
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "any_of": [
+            {
+              "prefix": {
+                "id": "npc/"
+              }
+            },
+            {
+              "prefix": {
+                "id": "actor/"
+              }
+            }
+          ]
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW1055",
+        "kind": "dw"
+      },
+      "finding": "a standing body of a hostile mob type that cannot be harmed stood beside the route, inviting an attack that did nothing",
+      "general_form": "a body of a kind the pinned game discards on peaceful, that cannot be harmed and does not fight, and that a walking player can strike at a station it is declared to stand on, carries a line the campaign writes for the blow (an actor also for the touch), shown to the player who struck it",
+      "id": "str-17",
+      "note": "Carried by DW1055 (spec-0119): every build reads every stage-2 NPC and stage-5 actor, and refuses an inert monster-kind body in reach that declares no `answers.struck` (an actor also `answers.touched`); DW1056 refuses a line no press of the body can show. The binding counts the bodies the check quantifies over: 12 npcs and 3 actors on the-stranding's source as committed on its campaign branch (15). The re-run on that campaign is not yet possible: its documents are written against an earlier surface and the current engine refuses them at the schema (DW0100, a layout-graph edge class) before the build reaches the bodies, so the general form is proven live on The Sentinels and the gallery instead.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "layout-graph.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "gating"
+          ],
+          "in": {
+            "class": [
+              "walk",
+              "stair",
+              "climb",
+              "drop"
+            ]
+          }
+        }
+      },
+      "binding": {
+        "file": "shut-ways.json",
+        "kind": "artifact",
+        "path": "gated"
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW1053",
+        "kind": "dw"
+      },
+      "finding": "a long climb led to a way the story keeps shut, and the player found that only at its top and walked back down",
+      "general_form": "every story-shut way a body meets says how the player learns it is shut — seen from the junction where its branch leaves the open route, told by a pressable answer at its face, or rewarded by a pickup, interaction or fight on its branch — and the world confirms the word",
+      "id": "str-19",
+      "note": "Carried by `DW1053` and `DW1054` (`compiler::nav::learned`, spec-0118): over the configurations, faces and reach `DW1011` judges (`compiler::nav::shutmodel`), every gated connection met shut at a face owes `gating.learned`, and the word is confirmed over the world. The general form is the ruling's: no source gives a length or rise at which a branch to a shut way is too long, so the branch's length and rise are written in `validation/shut-ways.json` and never judged. The binding counts the layout graph's gated connections (`shut-ways.json` `gated`); `applies_when` counts the traversal connections that carry a `gating`.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "site-plan.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "edge": "edge/"
+          }
+        }
+      },
+      "binding": {
+        "files": [
+          "site-plan.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "opening"
+          ]
+        }
+      },
+      "campaign": "three-ways-shut",
+      "carrier": {
+        "code": "DW1057",
+        "kind": "dw"
+      },
+      "finding": "a stone stair three wide stood with its foot against a shut way's barricade and that way's mouth: before the beat the barricade's wood stood over one of the stair's three columns and the jamb over another, and after it the jamb still did, while every proof passed on the one free column",
+      "general_form": "the clear width a door, a stair or a road declares is clear along the whole way — its approaches, every course of a stair's run, a contact's span, a way place's run — in every state its cells can take, and a narrowing the author means is declared on the way and confirmed cell for cell",
+      "id": "tws-01",
+      "note": "Carried by DW1057 (compiler::nav::width, build tier), with DW1058 holding every declared narrowing to the bytes (spec-0120). The binding counts the site plan's portal seams — every seam with an `opening`, a stair's among them — which is the class whose approaches and runs the check judges; the precondition is the plan's seams themselves (`edge/` ids). The re-run that closes the row is on the demo re-detailed in the shape spec-0120 §8 gives it — its mouth a fireplace that hides the passage, with its opening as wide as the stair — built on the integration that carries spec-0118 too: on the demo as found the stair is refused at its foot's approach, 1 of 3 columns clear as built and 2 of 3 once the barricade opens, and on the re-detailed demo every one of its 8 ways is whole. The measured binding lines, before and after, are in the commit body that lands the re-run.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "site-plan.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "edge": "edge/"
+          }
+        }
+      },
+      "binding": {
+        "files": [
+          "site-plan.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "opening"
+          ]
+        }
+      },
+      "campaign": "the-hearth-door",
+      "carrier": {
+        "code": "DW1057",
+        "kind": "dw"
+      },
+      "finding": "a stone stair three wide with a post standing in one of its three columns at its foot read as a blocked stair, although the documents declared the post meant and the check confirmed the declaration",
+      "general_form": "a declared way's clear width is clear: nothing standing inside it is excused by any declaration, and a thing meant to stand beside a way stands outside its declared width",
+      "id": "thd-01",
+      "note": "Carried by DW1057 (compiler::nav::width, build tier, spec-0120 as amended): the declaration that once excused a column is withdrawn, so a structure in any way's width is refused whatever the documents say. The binding counts the site plan's portal seams, as tws-01's does. Closed by the re-run on the rebuilt level: on the content as found, its two excuse entries removed, the stair is refused at its foot (2 of 3 columns clear, the newel at [14, 64, 22]) and the lane at its station 8 cells along (3 of 4, the lamp post at [26, 69, 28]); rebuilt with the newel beside the bottom tread and the lamp post on the verge, every one of its 5 ways is whole.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "layout-graph.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "learned": "hidden"
+          }
+        }
+      },
+      "binding": {
+        "file": "shut-ways.json",
+        "kind": "artifact",
+        "path": "hidden_ways"
+      },
+      "campaign": "the-hearth-door",
+      "carrier": {
+        "code": "DW1054",
+        "kind": "dw"
+      },
+      "finding": "a passage the story opens later was seen through the iron bars at the back of a fireplace before the beat that was to reveal it",
+      "general_form": "a way the player is not meant to know of is hidden from every eye in the party's reach while it is shut, in every configuration it is shut in — the eye looking through every block the pinned game draws as not occluding — and the beat that opens it carries the close-up shot of its mouth",
+      "id": "thd-02",
+      "note": "Carried by DW1054 (compiler::nav::learned, spec-0118 as amended): a connection declared `learned: hidden` is held to the eye over `World::hides` (the pinned jar's occlusion table) and to the shot of its seam in the beat that opens it; a grille, a pane or a fence is looked through. The binding counts the hidden ways the build judged (`shut-ways.json` `hidden_ways`); it applies where a connection declares `learned: hidden`. Closed by the re-run on the rebuilt level: the hearth's grate back is refused, `DW1054` naming the eye cell [13, 64, 22] and the bar [10, 64, 19] as looked through; with the firebox's brick back the way is hidden over every configuration it is shut in.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "layout-graph.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "learned": "hidden"
+          }
+        }
+      },
+      "binding": {
+        "files": [
+          "layout-graph.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "secret"
+          ]
+        }
+      },
+      "campaign": "the-hearth-door",
+      "carrier": {
+        "code": "DW1060",
+        "kind": "dw"
+      },
+      "finding": "the text the player read before the reveal said what lay behind the fireplace, so the shot that opened it told nothing new",
+      "general_form": "a secret the level shows is told by the shot that shows it and by no player-facing string the play order places before it, in any language, and is told by some string at or after it",
+      "id": "thd-03",
+      "note": "Carried by DW1060 (compiler::telling, validation tier, spec-0118 §6.4): the hidden way's declared `secret[]` words are matched by DW0982's matcher in every inventoried string, English and every sidecar, against the one placement of strings on the play order DW0982 reads. The binding counts the gatings that keep a secret. Closed by the re-run on the rebuilt level: on the content as found, declared hidden, the outro is refused for `passage` and the class blurb for `behind the hearth` and `records`; rebuilt, the 20 strings read before the shot mention none of the three words and the line after the shot tells each.",
       "round": 1,
       "triage": "capability"
     }

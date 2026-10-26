@@ -439,9 +439,15 @@ impl World {
 
     /// Whether a standing entity at cell `a` can see one at cell `b`: the segment
     /// between their eye points (1.5 blocks above each cell's floor, the vanilla
-    /// mob eye height) crosses no camera-blocking geometry. Reuses the cutscene
-    /// clip traversal, so "can this be seen through" has exactly one definition in
-    /// the compiler.
+    /// mob eye height) crosses no camera-blocking geometry ([`World::blocks_camera`],
+    /// the collision answer).
+    ///
+    /// **Whose eye**: a mob's, for the fight and hazard checks that ask what a
+    /// mob sees. A question about what the PLAYER sees walks the same
+    /// [`walk_cells`] from `metrics::PLAYER_EYE_HEIGHT` (1.62) instead — the loop
+    /// proof's *Sight*, and the shut-way check (`nav::learned`), whose eye is
+    /// stopped by [`World::hides`], occlusion in the pinned jar
+    /// (`docs/reference/sight-through-blocks.md`).
     pub(crate) fn has_line_of_sight(&self, a: [i32; 3], b: [i32; 3]) -> bool {
         let eye = |c: [i32; 3]| {
             let p = cell_center(c);
@@ -521,6 +527,19 @@ impl World {
     /// fence does to a view.
     pub fn blocks_camera(&self, c: [i32; 3]) -> bool {
         self.solid.contains(&c) || self.tall.contains(&c) || self.use_gates.contains(&c)
+    }
+
+    /// **Whether a cell hides what stands behind it from a player's eye** —
+    /// the one sight predicate (`docs/reference/sight-through-blocks.md` §2):
+    /// its block occludes with a full-cube occlusion shape in the pinned jar
+    /// ([`delvewright_dsl::blockshape::hides`], read from the committed
+    /// occlusion table and from no list here). The collision answer is
+    /// [`World::blocks_camera`], and the two part on every stair, slab, wall,
+    /// fence, door, trapdoor, pane, bar, chain and leaf block: a camera flies
+    /// into a grille, and an eye looks through it. A sealed gate cell hides
+    /// exactly when the block that seals it does.
+    pub fn hides(&self, c: [i32; 3]) -> bool {
+        self.hiding.contains(&c)
     }
 
     /// Whether a cell is occupied — a solid block, a 1.5-tall barrier (fence /

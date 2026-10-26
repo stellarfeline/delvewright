@@ -64,8 +64,8 @@ const MARKER_RETIRE_TIMEOUT_MS = 5_000;
 const MARKER_PLACE_TIMEOUT_MS = 10_000;
 
 /**
- * How long the reach probe may search before a boundary leaves a volume for a
- * later one. A probe that times out is not a path: the volume stays pending.
+ * How long the reach probe may search in all. A search this budget cuts short
+ * is refused rather than read as unreachable ({@link methods.reachableFromHere}).
  */
 const REACH_PROBE_MS = 5_000;
 
@@ -233,8 +233,7 @@ export const methods = {
     if (plan === undefined) return;
     const volumesOn = this.deathLoopOnPath && !plan.binding.unbound;
     const pending = volumesOn ? plan.volumes.filter((v) => !this.deathLoopTried.has(v.id)) : [];
-    // The crush gates due here: each is tried at this boundary only if one of
-    // its mouths can be reached from where the path left the bot.
+    // The crush gates due here: the build names this boundary for them.
     const crushDue = this.crushGatesDue(index);
     if (pending.length === 0 && crushDue.length === 0) return;
     const due: DeathPlan["volumes"][number][] = [];
@@ -296,7 +295,7 @@ export const methods = {
       if (crushDue.length > 0) {
         this.stageNow = "crush-death";
         for (const g of crushDue) {
-          await this.crushTrial(plan, g, index, `after step ${index} (${step})`, false);
+          await this.crushTrial(plan, g, index, `after step ${index} (${step})`);
           if (this.death !== undefined) await this.recoverFromDeath();
         }
         this.stageNow = "death-loop";
@@ -370,12 +369,26 @@ export const methods = {
     if (kept.length > 0) {
       movements.exclusionAreasStep.push((block): number => lethalStepCost(block, kept));
     }
-    const result = bot.pathfinder.getPathTo(
-      movements,
-      new goals.GoalNear(dest[0], dest[1], dest[2], range),
-      REACH_PROBE_MS,
-    );
-    return result.status === "success";
+    // `getPathTo` returns the search's FIRST slice: mineflayer-pathfinder 2.4.5
+    // computes in slices of `tickTimeout` (40 ms of wall clock) and answers
+    // `partial` when a slice runs out, so read alone it is a race against the
+    // host's CPU. The search is driven to its end, and an end that is the
+    // whole budget running out is not an answer either way.
+    const goal = new goals.GoalNear(dest[0], dest[1], dest[2], range);
+    let status = "partial";
+    for (const { result } of bot.pathfinder.getPathFromTo(movements, bot.entity.position, goal, {
+      timeout: REACH_PROBE_MS,
+    })) {
+      status = result.status;
+      if (status !== "partial") break;
+    }
+    if (status === "timeout") {
+      throw new Error(
+        `the reach probe to [${dest.join(", ")}] did not finish within ${REACH_PROBE_MS} ms: ` +
+          `a search the budget cut short answers neither reachable nor unreachable`,
+      );
+    }
+    return status === "success";
   },
 
   /**

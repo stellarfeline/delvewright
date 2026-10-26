@@ -122,10 +122,11 @@ fn campaign() -> Campaign {
 fn cam(name: &str, after: Option<&str>) -> camera::Camera {
     camera::Camera {
         after: after.map(|s| camera::CameraAfter::parse(s).unwrap()),
-        answers: "concept/keep".into(),
+        answers: Some("concept/keep".into()),
         fov: 70.0,
         height: 90,
         name: name.into(),
+        note: None,
         pitch: 10.0,
         pos: [5.5, 66.62, 2.5],
         sky: None,

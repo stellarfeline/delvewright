@@ -615,6 +615,7 @@ mod tests {
             unheld_climb: Default::default(),
             material: Default::default(),
             footprints: Default::default(),
+            hiding: Default::default(),
         }
     }
 

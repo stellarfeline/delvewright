@@ -200,7 +200,8 @@ enum Command {
     /// The handed allocation for a site-plan place (spec-0050 §4): the frame's
     /// extents, the datum in piece-local coordinates, every seam of the box with
     /// the answering face it requires, the owed anchor names, and the detail
-    /// plan's palette.
+    /// plan's palette. With `--all` it also prints, on stderr, the wave bound
+    /// place authors run up to: `concurrency: N = min(P, max(1, C / 2))`.
     ///
     /// Derived from the site plan on every invocation and an input to nothing:
     /// no gate, no build step and no check ever reads what this prints, so a
@@ -218,13 +219,19 @@ enum Command {
     /// Detail a place inside the allocation the whole handed it (spec-0058):
     /// read the allocation, bind it into the place's program
     /// (`programs/<place stem>.json` in the campaign, under the `handed/`
-    /// parameter prefix), expand at the frame, run every gate — the grammar's
-    /// contract gates, `DW0843`–`DW0845`, the admission audit, the
-    /// light probe — before any file is written, then freeze the piece into
-    /// the prefab directory (`--prefabs`) with its gate report beside it and
-    /// write the `details[]` row. The run ends by building the whole in
-    /// memory, so traversal equivalence against the blockout is proved by the
-    /// same observers `build` runs.
+    /// parameter prefix), expand at the frame, run the place's own gates and
+    /// the bindings check — the grammar's contract gates, `DW0843`–`DW0845`,
+    /// the admission audit, the light probe — before any file is written,
+    /// then freeze the piece into the prefab directory (`--prefabs`) with its
+    /// gate report beside it and write the `details[]` row. The run ends by
+    /// building the whole in memory over what it wrote, so traversal
+    /// equivalence against the blockout is proved by the same observers
+    /// `build` runs; a red there leaves the written piece standing.
+    ///
+    /// `--check` runs the same preparation and bindings check against the
+    /// whole as committed on disk and writes nothing — no piece, no row, no
+    /// battery: the place author's question, while the commit stays the
+    /// orchestrator's.
     ///
     /// Every input but the place is derived: the frame, the datum, the seams,
     /// the owed names, the palette, the piece id, the seed and the row are the
@@ -238,6 +245,10 @@ enum Command {
         /// first refusal with the place named.
         #[arg(long)]
         all: bool,
+        /// Judge the place against the whole as it stands and write nothing.
+        /// Refused beside `--all`, which is a commit by nature.
+        #[arg(long)]
+        check: bool,
     },
     /// One comparison sheet per `world.textures[]` row (spec-0084 §5.2):
     /// vanilla's texture on the left and the campaign's on the right, scaled to
@@ -366,10 +377,12 @@ fn main() -> ExitCode {
             campaign_dir,
             place,
             all,
+            check,
         } => detail::run_detail(
             campaign_dir,
             place.as_deref(),
             *all,
+            *check,
             &cli.prefabs,
             &cli.lang,
             cli.json,

@@ -2,7 +2,7 @@
 //! sight lines, and the sent / drawn bounds.
 
 use super::*;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// A lens pose facing +Z, level.
 fn pose_at(pos: [f64; 3]) -> ([f64; 3], f64, f64) {
@@ -13,6 +13,20 @@ const LENS: [f64; 3] = [0.5, 0.5, 0.5];
 
 fn none(_: [i32; 3]) -> bool {
     false
+}
+
+/// A synthetic world whose named cells hide what is behind them.
+#[derive(Default)]
+struct Hiding(BTreeSet<[i32; 3]>);
+
+impl Occupancy for Hiding {
+    fn hides(&self, c: [i32; 3]) -> bool {
+        self.0.contains(&c)
+    }
+}
+
+fn open() -> Hiding {
+    Hiding::default()
 }
 
 /// A point `dz` ahead of `LENS` whose normalised device y is `ndc_y` at a
@@ -28,7 +42,7 @@ fn at_ndc_y(dz: f64, ndc_y: f64) -> [f64; 3] {
 fn a_reference_at_y_095_is_out_of_frame_and_at_090_is_in() {
     let out = at_ndc_y(10.0, 0.95);
     let b = CellBox::cell(cell_of(out));
-    let j = frame_and_sight(&[pose_at(LENS)], &[out], &[b], &none, &none);
+    let j = frame_and_sight(&[pose_at(LENS)], &[out], &[b], &none, &open());
     assert_eq!(j.in_frame, vec![false]);
     let msg = j.first_failure.expect("out of frame is a refusal");
     assert!(msg.contains("at tick 0"), "{msg}");
@@ -36,7 +50,7 @@ fn a_reference_at_y_095_is_out_of_frame_and_at_090_is_in() {
 
     let inside = at_ndc_y(10.0, 0.90);
     let b = CellBox::cell(cell_of(inside));
-    let j = frame_and_sight(&[pose_at(LENS)], &[inside], &[b], &none, &none);
+    let j = frame_and_sight(&[pose_at(LENS)], &[inside], &[b], &none, &open());
     assert_eq!(j.in_frame, vec![true]);
     assert_eq!(j.first_failure, None);
 }
@@ -46,10 +60,10 @@ fn a_lens_in_water_narrows_the_judged_angle_to_60_degrees() {
     // ndc y 0.8 at 70° is tan(35°)·0.8 / tan(30°) ≈ 0.97 at 60°.
     let p = at_ndc_y(10.0, 0.8);
     let b = CellBox::cell(cell_of(p));
-    let dry = frame_and_sight(&[pose_at(LENS)], &[p], &[b], &none, &none);
+    let dry = frame_and_sight(&[pose_at(LENS)], &[p], &[b], &none, &open());
     assert_eq!(dry.first_failure, None, "passes at 70°");
     let water = |c: [i32; 3]| c == [0, 0, 0];
-    let wet = frame_and_sight(&[pose_at(LENS)], &[p], &[b], &water, &none);
+    let wet = frame_and_sight(&[pose_at(LENS)], &[p], &[b], &water, &open());
     assert_eq!(wet.in_frame, vec![false]);
     assert!(wet.first_failure.unwrap().contains("60° vertical"));
 }
@@ -67,7 +81,7 @@ fn wide_box() -> CellBox {
 #[test]
 fn a_pillar_on_the_centre_line_leaves_eight_lines_clear() {
     let solid: BTreeSet<[i32; 3]> = [[0, 0, 5]].into_iter().collect();
-    let blocks = |c: [i32; 3]| solid.contains(&c);
+    let blocks = Hiding(solid);
     let b = wide_box();
     let j = frame_and_sight(&[pose_at(LENS)], &[b.centre()], &[b], &none, &blocks);
     assert_eq!(j.lines_clear, vec![8]);
@@ -79,7 +93,7 @@ fn a_wall_across_all_nine_lines_is_occluded_naming_the_cell() {
     let solid: BTreeSet<[i32; 3]> = (-4..=4)
         .flat_map(|x| (-4..=4).map(move |y| [x, y, 5]))
         .collect();
-    let blocks = |c: [i32; 3]| solid.contains(&c);
+    let blocks = Hiding(solid);
     let b = wide_box();
     let j = frame_and_sight(&[pose_at(LENS)], &[b.centre()], &[b], &none, &blocks);
     assert_eq!(j.lines_clear, vec![0]);
@@ -94,7 +108,7 @@ fn a_wall_across_all_nine_lines_is_occluded_naming_the_cell() {
 #[test]
 fn a_bell_whose_own_cell_is_the_only_block_is_not_hidden_by_itself() {
     let bell = [0, 0, 10];
-    let blocks = |c: [i32; 3]| c == bell;
+    let blocks = Hiding([bell].into_iter().collect());
     let b = CellBox::cell(bell);
     let j = frame_and_sight(&[pose_at(LENS)], &[b.centre()], &[b], &none, &blocks);
     assert_eq!(j.lines_clear, vec![9]);
@@ -112,7 +126,7 @@ fn a_place_framed_from_outside_is_not_hidden_by_its_own_roof() {
     let roof: BTreeSet<[i32; 3]> = (-2..=2)
         .flat_map(|x| (6..=10).map(move |z| [x, -4, z]))
         .collect();
-    let blocks = |c: [i32; 3]| roof.contains(&c);
+    let blocks = Hiding(roof);
     let pose = (LENS, 0.0, 40.0);
     let j = frame_and_sight(&[pose], &[place.centre()], &[place], &none, &blocks);
     assert!(j.lines_clear[0] >= 1, "{:?}", j.lines_clear);
@@ -177,13 +191,18 @@ fn a_mannequin_100_blocks_off_is_sent_and_refused_as_not_drawn() {
 
 // --- one "in sight" rule, held by agreement ------------------------------
 //
-// Whether an eye sees a box past the cells that stop a line is
-// `framing::in_sight` (CLAUDE.md, *one question, one implementation*), and
-// every consumer of that question gives its answer: a cutscene shot's sight
-// (`shot::sight`, `DW1033`), an act's sight from where the party stands
-// (`promise::act_unfound`, `DW0863`), and a review frame's manifest
-// (`framing::resolve_targets`, over a grid of the same cells). The same
-// generated cases are asked of each, red on any difference.
+// Whether a player at an eye sees a box is `framing::in_sight` (CLAUDE.md,
+// *one question, one implementation*): nine lines, stopped only by a cell that
+// hides what is behind it (the pinned occlusion table). Every consumer of that
+// question gives its answer: a cutscene shot's sight (`shot::sight`,
+// `DW1033`), an act's sight from where the party stands
+// (`promise::act_unfound`, `DW0863`), the shut-way eye
+// (`nav::eye_meets`, `DW1053`/`DW1054`), and a review frame's manifest
+// (`framing::resolve_targets`, over a grid of the same blocks). The same
+// generated cases are asked of each, red on any difference. The blocks are
+// real ones — stone and deepslate hide; glass, a pane, bars, a fence, leaves
+// and a slab collide and are looked through — so a consumer that stopped at
+// collision would differ.
 
 /// A deterministic generator (ADR-0006): a 64-bit LCG, seeded.
 struct Lcg(u64);
@@ -201,18 +220,35 @@ impl Lcg {
     }
 }
 
+/// The blocks a case is built of: the first two hide, the rest are looked
+/// through and collide.
+const PALETTE: [&str; 8] = [
+    "minecraft:stone",
+    "minecraft:deepslate",
+    "minecraft:glass",
+    "minecraft:glass_pane",
+    "minecraft:iron_bars",
+    "minecraft:oak_fence",
+    "minecraft:oak_leaves[persistent=true]",
+    "minecraft:oak_slab[type=bottom]",
+];
+
 #[test]
 fn every_consumer_of_in_sight_answers_alike() {
+    use crate::compiler::blockstate::BlockState;
     let mut rng = Lcg(0x5167_4a6e);
     let cases = 2000;
-    let (mut seen, mut hidden, mut framed) = (0usize, 0usize, 0usize);
+    let (mut seen, mut hidden, mut framed, mut cell_cases) = (0usize, 0usize, 0usize, 0usize);
+    // Cases whose centre line crosses a block that collides and does not hide:
+    // the cases a collision-stopped consumer would answer differently.
+    let mut through = 0usize;
     let mut differ = Vec::new();
     for case in 0..cases {
-        // A 12 × 6 × 12 room with a floor at y = 0, some of it filled.
-        let mut solid = BTreeSet::new();
+        // A 12 × 6 × 12 room with a stone floor at y = 0, some of it filled.
+        let mut blocks: BTreeMap<[i32; 3], BlockState> = BTreeMap::new();
         for x in 0..12 {
             for z in 0..12 {
-                solid.insert([x, 0, z]);
+                blocks.insert([x, 0, z], BlockState::new("minecraft:stone"));
             }
         }
         let density = 4 + rng.below(20) as u64;
@@ -220,28 +256,32 @@ fn every_consumer_of_in_sight_answers_alike() {
             for y in 1..6 {
                 for z in 0..12 {
                     if (rng.next() % 100) < density {
-                        solid.insert([x, y, z]);
+                        let b = PALETTE[rng.below(PALETTE.len() as u64) as usize];
+                        blocks.insert([x, y, z], BlockState::new(b));
                     }
                 }
             }
         }
         let from = [rng.below(12), 1, rng.below(12)];
-        solid.remove(&from);
-        solid.remove(&[from[0], 2, from[2]]);
+        blocks.remove(&from);
+        blocks.remove(&[from[0], 2, from[2]]);
         let target = [rng.below(12), 1 + rng.below(3), rng.below(12)];
         let body = rng.below(2) == 1;
         if target == from {
             continue;
         }
-        let world = World::from_solid_cells(solid.clone());
-        let blocks = |c: [i32; 3]| world.blocks_camera(c);
+        let occ = crate::compiler::assembled::occupancy_over(&blocks, &BTreeSet::new());
+        let world = World::from_occupancy(occ, crate::compiler::nav::Premises::geometry_only());
+        let grid = super::super::VoxelGrid::build(&blocks);
         let eye = [from[0] as f64 + 0.5, 1.0 + 1.62, from[2] as f64 + 0.5];
+        let eye_cell = [from[0], 2, from[2]];
         let sight_box = if body {
             CellBox::spanning(target, [target[0], target[1] + 1, target[2]])
         } else {
             CellBox::cell(target)
         };
-        let rule = in_sight(eye, &sight_box, &blocks).seen();
+        let rule = in_sight(&world, eye, &sight_box, &[from, eye_cell]).seen();
+        let on_grid = in_sight(&grid, eye, &sight_box, &[from, eye_cell]).seen();
         let camera = !sight(
             &Pose {
                 pos: eye,
@@ -252,25 +292,12 @@ fn every_consumer_of_in_sight_answers_alike() {
             854.0 / 480.0,
             sight_box.centre(),
             &sight_box,
-            &blocks,
+            &world,
         )
         .occluded();
         let act = !crate::compiler::promise::act_unfound(&world, from, target, body, None)
             .iter()
             .any(|why| why.contains("hidden"));
-        // A review frame over a grid of the same cells, aimed at the box: the
-        // manifest's `occluded` ([`super::super::resolve_targets`]).
-        let grid = super::super::VoxelGrid::build(
-            &solid
-                .iter()
-                .map(|c| {
-                    (
-                        *c,
-                        crate::compiler::blockstate::BlockState::new("minecraft:stone"),
-                    )
-                })
-                .collect(),
-        );
         let t = [super::super::Target {
             id: "t".into(),
             kind: "anchor",
@@ -281,10 +308,24 @@ fn every_consumer_of_in_sight_answers_alike() {
         let cam = super::super::Camera::looking_at(eye, sight_box.centre(), 70.0);
         let (inside, _) = super::super::resolve_targets(&grid, &cam, 128, 128, &t);
         let manifest = inside.first().map(|r| !r.occluded());
+        let eye_walk =
+            (!body).then(|| crate::compiler::nav::eye_meets(&world, eye, target).is_none());
+        if crate::compiler::nav::walk_cells(eye, sight_box.centre(), |c| {
+            !sight_box.contains(c) && world.blocks_camera(c) && !world.hides(c)
+        })
+        .is_some()
+        {
+            through += 1;
+        }
         if rule {
             seen += 1;
         } else {
             hidden += 1;
+        }
+        if on_grid != rule {
+            differ.push(format!(
+                "case {case}: the frame grid's world says {on_grid}, the nav world {rule}"
+            ));
         }
         if camera != rule {
             differ.push(format!(
@@ -293,6 +334,14 @@ fn every_consumer_of_in_sight_answers_alike() {
         }
         if act != rule {
             differ.push(format!("case {case}: DW0863 says {act}, the rule {rule}"));
+        }
+        if let Some(e) = eye_walk {
+            cell_cases += 1;
+            if e != rule {
+                differ.push(format!(
+                    "case {case}: the shut-way eye says {e}, the rule {rule}"
+                ));
+            }
         }
         if let Some(m) = manifest {
             framed += 1;
@@ -304,15 +353,22 @@ fn every_consumer_of_in_sight_answers_alike() {
         }
     }
     println!(
-        "in-sight agreement: {} case(s), {seen} seen and {hidden} hidden; 3 consumer(s): \
-         framing::shot::sight and promise::act_unfound asked every case, the review frame's \
-         manifest (framing::resolve_targets) {framed}",
+        "in-sight agreement: {} case(s), {seen} seen and {hidden} hidden, {through} with a \
+         looked-through block on the centre line; 5 consumer(s): the frame grid's world, \
+         framing::shot::sight and promise::act_unfound asked every case, the shut-way eye \
+         (nav::eye_meets) {cell_cases}, the review frame's manifest (framing::resolve_targets) \
+         {framed}",
         seen + hidden
     );
     assert!(seen > 0 && hidden > 0, "the cases exercise both answers");
     assert!(
-        framed * 2 > seen + hidden,
-        "the review frame is asked most cases, not a handful: {framed}"
+        through > 0,
+        "no case put a looked-through block on a line: the cases cannot tell occlusion from \
+         collision"
+    );
+    assert!(
+        framed * 2 > seen + hidden && cell_cases * 3 > seen + hidden,
+        "the review frame and the shut-way eye are asked most cases: {framed}, {cell_cases}"
     );
     assert!(
         differ.is_empty(),

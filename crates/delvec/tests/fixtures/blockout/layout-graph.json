@@ -53,6 +53,7 @@
           "flags": [
             "flag/keeper-yields"
           ],
+          "learned": "seen",
           "opens_from": "a"
         },
         "id": "edge/hall-cell"
@@ -120,6 +121,6 @@
       }
     ]
   },
-  "dsl_version": "0.61.0",
+  "dsl_version": "0.63.0",
   "stage": "layout-graph"
 }

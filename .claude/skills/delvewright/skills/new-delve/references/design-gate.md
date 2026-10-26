@@ -2,6 +2,7 @@
 
 ## Contents
 
+- [The stop](#the-stop)
 - [What a yes is](#what-a-yes-is)
 - [Which pictures these are](#which-pictures-these-are)
 - [The hour, read against the pictures](#the-hour-read-against-the-pictures)
@@ -10,9 +11,10 @@
 - [When a still image cannot answer](#when-a-still-image-cannot-answer)
 - [Devices wait for their gate](#devices-wait-for-their-gate)
 
+## The stop
 
-**Stop here, end your turn, and do not begin step 5 until the user has said
-yes.** Steps 1–3 settle
+**This is A2: hand over the walkthrough, end your turn, and do not begin step 5
+until the user has said yes.** Steps 1–3 settle
 *what the delve is*; step 5 is where the expensive authoring happens, and every
 problem this gate would have caught gets paid for twice once it is written.
 
@@ -149,9 +151,11 @@ answer to — and holds the skies the rows state to the skies the world can reac
 A campaign that ships no `design.json` has approved no design: validation
 measures that as a zero and says so without refusing, and `"$DELVEWRIGHT_ENGINE/tools/creator/staging-gate.py"`
 is where the zero is a red, so a build nobody can stage is what an unwritten
-record costs. A demo level off the engine's queue is the one campaign that skips
-this step: it declares `demo_level: true` and is staged on its queue row
-(`hand-over.md`, *The staging gate*).
+record costs. A test level — a small level built to try something — is the one
+campaign that skips the record: it declares `test_level: true` in `world.json`,
+carries no `design.json`, and its cameras name what they frame in `note` with
+no `answers` (`hand-over.md`, *The staging gate*). It still passes this gate:
+the user says yes to its walkthrough.
 
 **Every later step that asks anyone to choose reads `design/` first**, and
 presents the choice beside that scene's image, under the approved name, saying

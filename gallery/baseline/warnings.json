@@ -16,208 +16,6 @@
       "stage": "world"
     }
   ],
-  "demo-level.en": [
-    {
-      "code": "DW0527",
-      "pointer": "/content/quests/0/on_objective_complete/obj/hear-the-curator/1/when/requires_state",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0527",
-      "pointer": "/content/quests/0/on_objective_complete/obj/hear-the-curator/2/when/requires_state",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0527",
-      "pointer": "/content/quests/0/on_objective_complete/obj/hear-the-curator/3/when/requires_state",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0527",
-      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/10/when/requires_state",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0527",
-      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/11/when/requires_state",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0527",
-      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/12/when/requires_state",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0527",
-      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/13/when/requires_state",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0527",
-      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/17/when/requires_state",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0527",
-      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/18/when/requires_state",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0527",
-      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/19/when/requires_state",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0527",
-      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/20/when/requires_state",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0527",
-      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/21/when/requires_state",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0527",
-      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/22/when/requires_state",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0527",
-      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/23/when/requires_state",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0527",
-      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/24/when/requires_state",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0527",
-      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/27/when/requires_state",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0527",
-      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/28/when/requires_state",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0527",
-      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/29/when/requires_state",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0527",
-      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/30/when/requires_state",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0527",
-      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/31/when/requires_state",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0527",
-      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/32/when/requires_state",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0527",
-      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/33/when/requires_state",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0527",
-      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/34/when/requires_state",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0527",
-      "pointer": "/content/triggers/11/effects/2/when/requires_state",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0527",
-      "pointer": "/content/triggers/12/effects/2/when/requires_state",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0822",
-      "pointer": "/content/critical_path",
-      "stage": "layout-graph"
-    },
-    {
-      "code": "DW0188",
-      "pointer": "l10n/zh-cn.json",
-      "stage": "l10n"
-    },
-    {
-      "code": "DW0330",
-      "pointer": "/content/triggers/3/effects/0/text",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0351",
-      "pointer": "/content/quests/0/on_complete/3",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0467",
-      "pointer": "/content/quests/0/cast/npc/curator",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0889",
-      "pointer": "/content/areas/area/annex",
-      "stage": "world"
-    },
-    {
-      "code": "DW0813",
-      "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
-      "stage": "layout-graph:"
-    },
-    {
-      "code": "DW0498",
-      "pointer": "/content/areas/1",
-      "stage": "world"
-    },
-    {
-      "code": "DW0353",
-      "pointer": "/content/batches/batch/dress-the-floor",
-      "stage": "world-edits"
-    },
-    {
-      "code": "DW0353",
-      "pointer": "/content/batches/batch/lay-the-barrier",
-      "stage": "world-edits"
-    },
-    {
-      "code": "DW0995",
-      "pointer": "pulse binding",
-      "stage": "build"
-    },
-    {
-      "code": "DW0453",
-      "pointer": "/content/actors/1",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0475",
-      "pointer": "/content/waves",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0810",
-      "pointer": "packtest watch coverage",
-      "stage": "build"
-    },
-    {
-      "code": "DW0380",
-      "pointer": "/content/waves/wave/edge",
-      "stage": "quests"
-    }
-  ],
   "easy.en": [
     {
       "code": "DW0527",
@@ -413,11 +211,6 @@
       "code": "DW0810",
       "pointer": "packtest watch coverage",
       "stage": "build"
-    },
-    {
-      "code": "DW0380",
-      "pointer": "/content/waves/wave/edge",
-      "stage": "quests"
     }
   ],
   "hard.en": [
@@ -615,11 +408,6 @@
       "code": "DW0810",
       "pointer": "packtest watch coverage",
       "stage": "build"
-    },
-    {
-      "code": "DW0380",
-      "pointer": "/content/waves/wave/edge",
-      "stage": "quests"
     }
   ],
   "ocean-horizon.en": [
@@ -817,11 +605,6 @@
       "code": "DW0810",
       "pointer": "packtest watch coverage",
       "stage": "build"
-    },
-    {
-      "code": "DW0380",
-      "pointer": "/content/waves/wave/edge",
-      "stage": "quests"
     }
   ],
   "primary.en": [
@@ -1019,11 +802,6 @@
       "code": "DW0810",
       "pointer": "packtest watch coverage",
       "stage": "build"
-    },
-    {
-      "code": "DW0380",
-      "pointer": "/content/waves/wave/edge",
-      "stage": "quests"
     }
   ],
   "primary.zh-cn": [
@@ -1221,11 +999,6 @@
       "code": "DW0810",
       "pointer": "packtest watch coverage",
       "stage": "build"
-    },
-    {
-      "code": "DW0380",
-      "pointer": "/content/waves/wave/edge",
-      "stage": "quests"
     }
   ],
   "site-plan-solid.en": [
@@ -1534,11 +1307,6 @@
       "code": "DW0810",
       "pointer": "packtest watch coverage",
       "stage": "build"
-    },
-    {
-      "code": "DW0380",
-      "pointer": "/content/waves/wave/edge",
-      "stage": "quests"
     }
   ]
 }
