@@ -1145,7 +1145,7 @@
             ],
             "prompt": "Rest at the hearth",
             "prop": {
-              "block": "minecraft:candle[candles=4,lit=false]"
+              "block": "minecraft:campfire[facing=north,lit=true,signal_fire=false,waterlogged=false]"
             },
             "rest_label": "Rest",
             "rest_tooltip": "The hearth keeps you, and the hall sets itself back up.",
