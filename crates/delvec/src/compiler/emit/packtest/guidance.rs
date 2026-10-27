@@ -957,6 +957,14 @@ pub(super) fn emit_compass_wave_packtest(plan: &Plan, out: &mut BuildOutput, g: 
     b.extend(d.open());
     b.push(format!("scoreboard players set @s {TRACK} 0"));
     b.push(format!("function {ns}:compass_give"));
+    // Every other body of the wave in the world — a sibling's spawn of the
+    // real wave, anywhere the batch put it — is held out of the wave for this
+    // template and handed back at its end: the nearest body is otherwise
+    // whichever a sibling left nearer.
+    b.push(format!(
+        "tag @e[tag={tag},tag=!dw_pt_cmpw] add dw_pt_cmpw_held"
+    ));
+    b.push(format!("tag @e[tag=dw_pt_cmpw_held] remove {tag}"));
     // Two bodies of the wave's tag, two and four blocks from the player: mobs
     // that die as a wave's do, so the one killed lies in its death animation
     // while the compass is re-aimed.
@@ -992,6 +1000,8 @@ pub(super) fn emit_compass_wave_packtest(plan: &Plan, out: &mut BuildOutput, g: 
     // The bodies leave the wave before they go, so no sibling counts them.
     b.push(format!("tag @e[tag=dw_pt_cmpw] remove {tag}"));
     b.push("kill @e[tag=dw_pt_cmpw]".to_string());
+    b.push(format!("tag @e[tag=dw_pt_cmpw_held] add {tag}"));
+    b.push("tag @e[tag=dw_pt_cmpw_held] remove dw_pt_cmpw_held".to_string());
     b.extend(d.close());
     b.push("clear @s".to_string());
     out.insert(
