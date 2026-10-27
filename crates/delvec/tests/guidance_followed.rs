@@ -1318,4 +1318,18 @@ fn a_compass_following_a_kill_points_at_the_nearest_living_body() {
             && pt.contains("@e[tag=dw_pt_cmpw_far,limit=1] Pos[0]"),
         "{pt}"
     );
+    // Every other body of the wave is held out of it before the first body
+    // is summoned and handed back after the last is killed: a sibling's body
+    // standing nearer than the far one would otherwise be the compass's aim.
+    let at = |needle: &str| {
+        pt.find(needle)
+            .unwrap_or_else(|| panic!("`{needle}` missing:\n{pt}"))
+    };
+    let hold = at("tag @e[tag=dw_wave_guards,tag=!dw_pt_cmpw] add dw_pt_cmpw_held");
+    assert!(
+        hold < at("summon minecraft:zombie")
+            && at("kill @e[tag=dw_pt_cmpw]\n")
+                < at("tag @e[tag=dw_pt_cmpw_held] add dw_wave_guards"),
+        "{pt}"
+    );
 }
