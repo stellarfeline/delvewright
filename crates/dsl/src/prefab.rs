@@ -361,6 +361,13 @@ pub struct ContractEdge {
     /// byte-for-byte what it was.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub way: Option<ContractWay>,
+    /// Every key of this edge the version does not model, kept so that reading
+    /// and writing the document is not the same as editing it, and so that the
+    /// contract gate can refuse it by name (`contract-well-formed`): a contract
+    /// edge is a claim the engine proves, and a claim it cannot read is never
+    /// carried through as proven. Emitted after the modelled keys, in key order.
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, serde_json::Value>,
 }
 
 /// A contingent edge's way: the region that decides whether the edge is

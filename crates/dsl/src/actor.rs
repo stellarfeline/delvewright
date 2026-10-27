@@ -114,6 +114,15 @@ pub struct Actor {
     /// byte-identical.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_kill: Option<OnKill>,
+    /// What this body says to the player who strikes or presses it
+    /// (spec-0119) — the same [`crate::BodyAnswers`] a stage-2 [`Npc`] carries.
+    /// Shown while the puppet stands: an answer box encloses it from
+    /// `spawn-actor` until `despawn-actor` or `unleash-actor`. Owed by `DW1055`
+    /// when the body's kind is one the game discards on peaceful, it is not
+    /// `vulnerable`, and a walking player can reach it; refused on a
+    /// `vulnerable` actor (`DW1056`). Absent = byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answers: Option<crate::BodyAnswers>,
 }
 
 /// A cardinal facing keyword (DSL v0.6). Emitted as the puppet's spawn yaw

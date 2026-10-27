@@ -101,6 +101,12 @@ impl<'a> Fight<'a> {
         }
     }
 
+    /// Whether the fight's body declares `answers` (spec-0119) — an actor
+    /// whose puppet then wears an answer box beside it. Never a wave.
+    pub fn declares_answers(&self) -> bool {
+        matches!(self, Fight::Actor(a) if a.answers.is_some())
+    }
+
     /// How many mob entries a wave declares (1 for an actor).
     pub fn entries(&self) -> usize {
         match self {

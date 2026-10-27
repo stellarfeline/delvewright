@@ -1,0 +1,15 @@
+{
+  "code": "DW1056",
+  "patch": [
+    {
+      "doc": "npcs.json",
+      "op": "add",
+      "path": "/content/npcs/0/answers",
+      "value": {
+        "touched": "The curator looks up."
+      }
+    }
+  ],
+  "units": [],
+  "why": "`npc/curator` is a stage-2 NPC: a right-click on it opens its dialogue, so a `touched` line could never be shown. The dialogue is the answer. It declares no unit: `answers.touched` is bound by the primary on `actor/hall-sentry`; what the engine refuses is a touch line on a body whose right-click already talks."
+}

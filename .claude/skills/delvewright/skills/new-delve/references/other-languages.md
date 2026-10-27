@@ -1,8 +1,7 @@
 # Reference: other languages
 
-Needed when the user asked for one — which step 1 asks them, so this page is
-reached with an answer in hand rather than a guess. A brief that arrives in
-another language is a reason to ask, never an answer by itself. It is
+Needed when the user chose one at the opening check (item b), so this page is
+reached with an answer in hand rather than a guess. It is
 a **final document stage after `dialogue`**, once the English campaign is
 complete. Everything in the campaign documents stays English, always; other
 languages are delivered as sidecars.
@@ -25,11 +24,10 @@ languages are delivered as sidecars.
    `"$DELVEWRIGHT_ENGINE/delvewright.toml"` into it and strip the `# `
    (`base_url = "https://api.deepseek.com/v1"`, `model = "deepseek-v4-pro"`).
    The key lives in the environment under the name `api_key_env` gives, never in
-   a file. Look before asking —
-   `env | grep -Eo '^[A-Z0-9_]*(API_KEY|APIKEY|TOKEN)[A-Z0-9_]*'` prints names
-   only: a set `DELVEWRIGHT_I18N_API_KEY`, or a name carrying `DEEPSEEK` (write
-   that name into `api_key_env`), is the key. With neither, ask the user once
-   for a DeepSeek key and say why. Then:
+   a file, under `DEEPSEEK_API_KEY` (write that name into `api_key_env`):
+   `env | grep -Eo '^DEEPSEEK_API_KEY='` prints the name only. A key the
+   opening check's item (d) collected is already there; with none, the user
+   chose the in-agent fallback at that check. Then:
 
    ```sh
    "$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_ENGINE/tools/creator/i18n-translate.py" "$PWD/campaigns/<id>" \
@@ -45,8 +43,8 @@ languages are delivered as sidecars.
    calls a model. If the run dies `HTTP 400` before any batch, read the
    provider's sentence in the error: a retired `model` id is the usual one, and
    `curl -H "Authorization: Bearer $KEY" <base_url>/models` lists what it offers.
-   Only when the user declines a key, write it yourself, 3 and 4 below, and tell
-   them the Chinese is the fallback quality.
+   Only when the user declined a key at the opening check, write it yourself, 3
+   and 4 below, and say at the hand-over that the text is the fallback quality.
 3. Yourself: `delvec --prefabs "$DELVEWRIGHT_PREFABS" l10n-inventory <campaign-dir> --lang <code>` gives the exact
    key inventory as JSON (key, English, kind, speaking NPC, situation, existing
    translation, stale). Hand your lines back with `delvec --prefabs "$DELVEWRIGHT_PREFABS" l10n-apply <campaign-dir> --lang <code> --table <file>`:
@@ -71,7 +69,7 @@ languages are delivered as sidecars.
    `assets/delvewright/lang/<mc_code>.json` per language into the delve's
    resource pack. A player whose locale you do not ship — or who declines the
    resource-pack prompt — reads the English fallback. Nothing extra to run.
-   `delvec --prefabs "$DELVEWRIGHT_PREFABS" build --lang <code>` produces the single-language bake for local dev;
+   `delvec --prefabs "$DELVEWRIGHT_PREFABS" build --lang <code> campaigns/<id> -o "$DELVE_OUTPUT"` produces the single-language bake for local dev;
    the release path does not use it. `critical-path.json` is language-neutral
    either way, so the ladder is unchanged.
 

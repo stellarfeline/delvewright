@@ -149,23 +149,24 @@ def test_a_token_in_a_build_tree_is_seen(tmp_path):
 # ------------------------------------------ the one point judged red, and exactly how
 
 
-def test_an_expected_red_is_bound_to_its_overlay_and_to_exactly_its_rows():
-    """The `demo-level` overlay declares itself a demo and no queue row names the
-    gallery, so its one red is stated with its count. The point is refused when
-    the red is gone (the declaration no longer binds), when another red joins it,
-    and when the gate stopped exiting red."""
-    key = "demo-level.en"
-    assert cgs.EXPECTED_REDS == {key: ["demo-declaration DEMO-UNQUEUED"]}
-    assert (REPO / "gallery" / "overlays" / "demo-level" / "world.json").is_file()
-    assert '"demo_level": true' in (REPO / "gallery" / "overlays" / "demo-level" / "world.json").read_text()
-    exp = cgs.EXPECTED_REDS[key]
+def test_no_point_is_expected_red():
+    """Every gallery point stages green: there is no expected red to absorb a
+    finding."""
+    assert cgs.EXPECTED_REDS == {}
+
+
+def test_an_expected_red_is_bound_to_exactly_its_rows():
+    """A point listed with expected reds is refused when the red is gone, when
+    another red joins it, and when the gate stopped exiting red; a point listed
+    with none is refused on any red."""
+    exp = ["a-row UNBOUND"]
     point = {"expected_reds": exp, "reds": list(exp), "exit": 1}
     assert not cgs.is_refused(point)
-    assert cgs.is_refused({**point, "reds": [], "exit": 0}), "declaration gone: unbound"
+    assert cgs.is_refused({**point, "reds": [], "exit": 0}), "the red gone: unbound"
     assert cgs.is_refused({**point, "reds": exp + ["bell-01 UNBOUND"]}), "a second red"
     assert cgs.is_refused({**point, "exit": 0}), "no longer red"
     plain = {"expected_reds": [], "reds": [], "exit": 0}
     assert not cgs.is_refused(plain)
-    assert cgs.is_refused({**plain, "reds": ["demo-declaration DEMO-UNQUEUED"], "exit": 1}), (
-        "any other point carrying the demo red is refused"
+    assert cgs.is_refused({**plain, "reds": exp, "exit": 1}), (
+        "any other point carrying a red is refused"
     )

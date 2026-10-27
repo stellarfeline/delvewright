@@ -305,6 +305,11 @@ pub struct World {
     /// beyond the box stay what they are.
     pub(in crate::compiler::nav) piece: Option<([i32; 3], [i32; 3])>,
     pub(in crate::compiler::nav) solid: CellSet,
+    /// Cells whose block hides what stands behind it from the eye — the one
+    /// sight predicate, [`World::hides`]. Measured from the blocks
+    /// ([`crate::compiler::assembled::Occupancy::hiding`]), and moved by a
+    /// region write exactly as the block it writes does.
+    pub(in crate::compiler::nav) hiding: CellSet,
     pub(in crate::compiler::nav) tall: CellSet,
     pub(in crate::compiler::nav) use_gates: CellSet,
     pub(in crate::compiler::nav) flooded: CellSet,
@@ -516,6 +521,7 @@ pub struct Floors {
 /// takes them from an occupancy.
 struct Cells {
     solid: CellSet,
+    hiding: CellSet,
     tall: CellSet,
     use_gates: CellSet,
     flooded: CellSet,
@@ -856,6 +862,7 @@ impl World {
             declared_jumps: self.declared_jumps.clone(),
             holder_stances: self.holder_stances.clone(),
             floors: self.floors.clone(),
+            hiding: self.hiding.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             keep_out: self.keep_out.clone(),
@@ -1133,6 +1140,7 @@ impl World {
         Self::from_cells(
             Cells {
                 solid: occ.solid.into(),
+                hiding: occ.hiding.into(),
                 tall: occ.tall.into(),
                 use_gates: occ.use_gates.into(),
                 flooded: occ.flooded.into(),
@@ -1156,6 +1164,7 @@ impl World {
         let mut w = Self::from_cells(
             Cells {
                 solid: self.solid.clone(),
+                hiding: self.hiding.clone(),
                 tall: self.tall.clone(),
                 use_gates: self.use_gates.clone(),
                 flooded: self.flooded.clone(),
@@ -1179,6 +1188,9 @@ impl World {
     pub fn with_extra_solid(mut self, extra: &BTreeSet<[i32; 3]>) -> World {
         self.solid.extend(extra.iter().copied());
         self.solid.compact();
+        // A full cube of stone hides what stands behind it.
+        self.hiding.extend(extra.iter().copied());
+        self.hiding.compact();
         for c in extra {
             self.floors.footprints.remove(c);
         }
@@ -1290,6 +1302,7 @@ impl World {
             declared_jumps: premises.declared_jumps,
             holder_stances: BTreeMap::new(),
             floors,
+            hiding: cells.hiding,
         }
         .resieve()
     }
@@ -1374,7 +1387,7 @@ impl World {
     /// model treats every gate cell as passable; sealing a gate for the legs that
     /// occur after it closes makes a path that must re-cross it fail routing.
     pub(in crate::compiler::nav) fn with_sealed(&self, extra: &BTreeSet<[i32; 3]>) -> World {
-        self.with_sealed_by(extra, &BTreeMap::new())
+        self.with_sealed_by(extra, &BTreeMap::new(), extra)
     }
 
     /// [`World::with_sealed`] where the sealing block is known per cell: a cell
@@ -1386,9 +1399,19 @@ impl World {
         &self,
         extra: &BTreeSet<[i32; 3]>,
         footprints: &BTreeMap<[i32; 3], delvewright_dsl::blockshape::Footprint16>,
+        hides: &BTreeSet<[i32; 3]>,
     ) -> World {
         let mut solid = self.solid.clone();
         solid.extend(extra.iter().copied());
+        // What the eye meets in a sealed cell is the block that seals it.
+        let mut hiding = self.hiding.clone();
+        for c in extra {
+            if hides.contains(c) {
+                hiding.insert(*c);
+            } else {
+                hiding.remove(c);
+            }
+        }
         // A sealed gate cell is a full-cube wall, never a partial floor.
         let mut partial = self.partial.clone();
         for c in extra {
@@ -1417,6 +1440,7 @@ impl World {
             declared_jumps: self.declared_jumps.clone(),
             holder_stances: self.holder_stances.clone(),
             floors: self.floors.clone(),
+            hiding,
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             keep_out: self.keep_out.clone(),
@@ -1480,6 +1504,7 @@ impl World {
             declared_jumps: self.declared_jumps.clone(),
             holder_stances: self.holder_stances.clone(),
             floors: self.floors.clone(),
+            hiding: self.hiding.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             keep_out: self.keep_out.clone(),
@@ -1501,6 +1526,7 @@ impl World {
                 continue; // another proof's premise, not a block this write owns
             }
             w.solid.remove(c);
+            w.hiding.remove(c);
             w.tall.remove(c);
             w.use_gates.remove(c);
             w.partial.remove(c);
@@ -1550,6 +1576,7 @@ impl World {
             declared_jumps: self.declared_jumps.clone(),
             holder_stances: self.holder_stances.clone(),
             floors: self.floors.clone(),
+            hiding: self.hiding.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             keep_out: self.keep_out.clone(),
@@ -1618,6 +1645,7 @@ impl World {
             declared_jumps: self.declared_jumps.clone(),
             holder_stances: self.holder_stances.clone(),
             floors: self.floors.clone(),
+            hiding: self.hiding.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             keep_out: self.keep_out.clone(),
@@ -1674,7 +1702,7 @@ impl World {
             st.unforced.union(&st.held).copied().collect()
         };
         self.with_cleared(&st.cleared)
-            .with_sealed_by(&st.solid, &st.fill_footprints)
+            .with_sealed_by(&st.solid, &st.fill_footprints, &st.fill_hides)
             .with_unforced(&walled)
             .with_flooded(&st.flooded, &st.flood_regions)
             .with_staged_lethal(&st.lethal, &st.lethal_regions)
@@ -1742,6 +1770,7 @@ impl World {
             declared_jumps: self.declared_jumps.clone(),
             holder_stances: self.holder_stances.clone(),
             floors: self.floors.clone(),
+            hiding: self.hiding.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             keep_out: self.keep_out.clone(),
@@ -1829,6 +1858,7 @@ impl World {
             declared_jumps: self.declared_jumps.clone(),
             holder_stances: self.holder_stances.clone(),
             floors: self.floors.clone(),
+            hiding: self.hiding.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             keep_out: self.keep_out.clone(),
@@ -1934,6 +1964,7 @@ impl World {
     /// Synthetic: there is no campaign behind these cells, so there is nothing
     /// for them to state — [`Premises::geometry_only`], said by name.
     pub fn from_solid_and_flooded(solid: BTreeSet<[i32; 3]>, flooded: BTreeSet<[i32; 3]>) -> Self {
+        let solid_hides = solid.clone();
         Self::from_occupancy(
             crate::compiler::assembled::Occupancy {
                 solid,
@@ -1947,6 +1978,8 @@ impl World {
                 unheld_climb: BTreeMap::new(),
                 material: Default::default(),
                 footprints: BTreeMap::new(),
+                // A synthetic solid cell is a full cube of stone: it hides.
+                hiding: solid_hides,
             },
             Premises::geometry_only(),
         )

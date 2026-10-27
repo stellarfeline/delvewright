@@ -42,6 +42,29 @@ pub(super) fn trigger_record(t: &delvewright_dsl::EnvTrigger) -> &'static str {
     }
 }
 
+/// **The advancement criterion that names the player for a press of this
+/// kind** — the one table the press dispatch is read off.
+///
+/// A right-click on an interaction entity is reported by
+/// `minecraft:player_interacted_with_entity`; a left-click on one by
+/// `minecraft:player_hurt_entity`, which vanilla grants to the attacking player
+/// with the interaction as `this` (`Interaction.skipAttackInteraction`,
+/// measured on the pinned jar: `docs/reference/click-attribution.md` §3, its
+/// instrument `tools/maintenance/probe-click-attribution.py`). A step is named by
+/// the cell's selector on the tick, not by a criterion, and an approach by
+/// nothing. `EnvTrigger::attributes_its_actor` is the DSL-side statement of the
+/// same table, held equal to it by an agreement test.
+pub fn press_criterion(on: &delvewright_dsl::TriggerOn) -> Option<&'static str> {
+    use delvewright_dsl::TriggerOn;
+    match on {
+        TriggerOn::Use => Some("minecraft:player_interacted_with_entity"),
+        TriggerOn::Strike | TriggerOn::StrikeNpc { .. } | TriggerOn::StrikeAssembly { .. } => {
+            Some("minecraft:player_hurt_entity")
+        }
+        TriggerOn::Step | TriggerOn::Approach { .. } => None,
+    }
+}
+
 /// Whether this trigger's effect tree reaches an `unleash-actor` — the only reason
 /// to capture the striker at all. Campaigns that never unleash from a click stay
 /// byte-identical.
@@ -175,6 +198,18 @@ pub(super) fn check_trigger_bodies(
         // A position trigger has no body to press; a `step`'s cell is judged by
         // `DW0917` against the assembled world instead.
         if !t.on.is_click() {
+            continue;
+        }
+        // spec-0119: a body's answer lands on the box its body owns.
+        if let Some(a) = crate::compiler::bodies::answer_of(plan.campaign, t.id.as_str()) {
+            ledger.push(
+                t.id.as_str(),
+                t.on.kind(),
+                a.body.id(),
+                &crate::compiler::pressable::describe(&crate::compiler::pressable::trigger_body(
+                    plan, t,
+                )),
+            );
             continue;
         }
         // A `strike-assembly` (spec-0082) lands on the assembly's own hitbox.
@@ -673,4 +708,59 @@ pub(super) fn press_dispatch_fn(
             dispatch,
         ]),
     )
+}
+
+#[cfg(test)]
+mod press_criterion_agreement {
+    use super::press_criterion;
+    use delvewright_dsl::TriggerOn;
+
+    /// **One table, two statements** (spec-0119 §5.2): the DSL's
+    /// `attributes_its_actor` admits a presser exactly where the emitter has a
+    /// criterion that names one, or a step's cell selector does — over every
+    /// `TriggerOn` variant. A new variant is a compile error in the match below
+    /// until it is placed in the table.
+    #[test]
+    fn attributes_its_actor_and_the_criterion_table_agree_over_every_variant() {
+        let every = [
+            TriggerOn::Strike,
+            TriggerOn::Use,
+            TriggerOn::Approach { range: 3 },
+            TriggerOn::Step,
+            TriggerOn::StrikeNpc {
+                npc: delvewright_dsl::NpcId("npc/x".to_string()),
+            },
+            TriggerOn::StrikeAssembly {
+                assembly: delvewright_dsl::AssemblyId("assembly/x".to_string()),
+            },
+        ];
+        let mut compared = 0;
+        for on in &every {
+            // Exhaustive by construction: a seventh variant fails to compile here.
+            let named_by_selector = match on {
+                TriggerOn::Step => true,
+                TriggerOn::Strike
+                | TriggerOn::Use
+                | TriggerOn::Approach { .. }
+                | TriggerOn::StrikeNpc { .. }
+                | TriggerOn::StrikeAssembly { .. } => false,
+            };
+            assert_eq!(
+                on.attributes_its_actor(),
+                press_criterion(on).is_some() || named_by_selector,
+                "`{}`: the DSL and the emitter disagree about who is named",
+                on.kind()
+            );
+            compared += 1;
+        }
+        assert_eq!(compared, 6);
+        assert_eq!(
+            press_criterion(&TriggerOn::Strike),
+            Some("minecraft:player_hurt_entity")
+        );
+        assert_eq!(
+            press_criterion(&TriggerOn::Use),
+            Some("minecraft:player_interacted_with_entity")
+        );
+    }
 }

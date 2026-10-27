@@ -269,6 +269,42 @@ impl ClickBox {
     }
 }
 
+/// What carries a borne box, read off the box's own tags.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Bearer {
+    /// An NPC's dialogue hitbox (`dw_npc_<id>`).
+    Npc,
+    /// An actor's answer box (spec-0119, [`crate::compiler::bodies::ANSWER_BOX_TAG`]).
+    ActorAnswer,
+    /// A borne box wearing neither tag.
+    Other,
+}
+
+impl Bearer {
+    /// What bears a box wearing `tags`.
+    fn of(tags: &[String]) -> Self {
+        if tags
+            .iter()
+            .any(|t| t.starts_with(crate::compiler::bodies::ANSWER_BOX_TAG))
+        {
+            Bearer::ActorAnswer
+        } else if tags.iter().any(|t| t.starts_with("dw_npc_")) {
+            Bearer::Npc
+        } else {
+            Bearer::Other
+        }
+    }
+
+    /// The words the binding line and the ledger use.
+    pub fn name(self) -> &'static str {
+        match self {
+            Bearer::Npc => "NPC dialogue hitbox(es)",
+            Bearer::ActorAnswer => "actor answer box(es)",
+            Bearer::Other => "other borne box(es)",
+        }
+    }
+}
+
 /// What [`check`] examined, stated whichever way it went.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ClickBoxBinding {
@@ -277,8 +313,11 @@ pub struct ClickBoxBinding {
     /// Of them, placed at a cell and judged, by the family of their first
     /// non-class tag (`dw_i`, `dw_trig`, `dw_seal`, …).
     pub placed: BTreeMap<String, usize>,
-    /// Of them, borne by a body (an NPC's dialogue hitbox): not judged.
+    /// Of them, borne by a body: not judged.
     pub borne: usize,
+    /// The borne boxes by what bears them, read off each summon's own tags
+    /// ([`Bearer`]); sums to [`Self::borne`].
+    pub borne_by: BTreeMap<Bearer, usize>,
     /// Of them, at a runtime position (`~`): not judged.
     pub runtime: usize,
 }
@@ -300,9 +339,25 @@ impl ClickBoxBinding {
                 .collect::<Vec<_>>()
                 .join(", ")
         };
+        let bearers = [Bearer::Npc, Bearer::ActorAnswer]
+            .into_iter()
+            .chain(
+                self.borne_by
+                    .contains_key(&Bearer::Other)
+                    .then_some(Bearer::Other),
+            )
+            .map(|k| {
+                format!(
+                    "{} {}",
+                    self.borne_by.get(&k).copied().unwrap_or(0),
+                    k.name()
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
         format!(
             "DW1013 binding: {} of {} interaction summon(s) placed at a cell and judged ({families}); \
-             {} borne by an NPC body, {} at a runtime position — every judged box's faces \
+             {} borne by a body ({bearers}), {} at a runtime position — every judged box's faces \
              at least {MIN_PROTRUSION} block off the block grid",
             self.judged(),
             self.summons,
@@ -319,6 +374,11 @@ impl ClickBoxBinding {
             "judged": self.judged(),
             "placed": self.placed,
             "borne": self.borne,
+            "borne_by": self
+                .borne_by
+                .iter()
+                .map(|(k, v)| (k.name().to_string(), json!(v)))
+                .collect::<serde_json::Map<String, Value>>(),
             "runtime": self.runtime,
             "margin": CLICK_MARGIN,
             "min_protrusion": MIN_PROTRUSION,
@@ -437,6 +497,7 @@ pub fn check(out: &BuildOutput) -> Result<ClickBoxBinding, Failure> {
             let t = tags(&s.nbt);
             if t.iter().any(|t| t == BORNE_TAG) {
                 b.borne += 1;
+                *b.borne_by.entry(Bearer::of(&t)).or_insert(0) += 1;
                 continue;
             }
             if s.coords
@@ -557,6 +618,33 @@ mod tests {
         ]);
         let b = check(&out).expect("neither kind is judged");
         assert_eq!((b.summons, b.borne, b.runtime, b.judged()), (2, 1, 1, 0));
+    }
+
+    /// The line names what bears each borne box, counted from the summons'
+    /// own tags: an NPC's dialogue hitbox and an actor's answer box (spec-0119).
+    #[test]
+    fn the_line_says_what_bears_each_borne_box() {
+        let out = tree(&[
+            "summon minecraft:interaction 4.5 65.0 6.5 {width:1.0f,height:2.0f,Tags:[\"dw_borne\",\"dw_npc_keeper\"]}",
+            "summon minecraft:interaction 8.5 65.0 6.5 {width:1.0f,height:2.0f,Tags:[\"dw_borne\",\"dw_npc_clerk\",\"dw_trig_dw_answer_npc_clerk_struck\"]}",
+            "execute at @e[tag=dw_pup_statue,limit=1] unless entity @e[tag=dw_abody_statue] run summon minecraft:interaction ~ ~ ~ {width:1.0f,height:2.0f,Tags:[\"dw_borne\",\"dw_actor_statue\",\"dw_abody_statue\"]}",
+        ]);
+        let b = check(&out).expect("borne boxes are counted");
+        assert_eq!(b.borne, 3);
+        assert_eq!(b.borne_by.get(&Bearer::Npc), Some(&2));
+        assert_eq!(b.borne_by.get(&Bearer::ActorAnswer), Some(&1));
+        let line = b.line();
+        assert!(
+            line.contains("3 borne by a body (2 NPC dialogue hitbox(es), 1 actor answer box(es))"),
+            "{line}"
+        );
+        assert_eq!(b.to_json()["borne_by"]["actor answer box(es)"], 1);
+        // With none borne, the zeroes are stated.
+        let none = check(&tree(&[])).unwrap().line();
+        assert!(
+            none.contains("0 borne by a body (0 NPC dialogue hitbox(es), 0 actor answer box(es))"),
+            "{none}"
+        );
     }
 
     #[test]

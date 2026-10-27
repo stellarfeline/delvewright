@@ -117,6 +117,13 @@ impl<'a> Bar<'a> {
         match self.fight.kind() {
             FightKind::Wave => format!("tag={}", plan::wave_tag(self.fight.id())),
             FightKind::Actor if self.fight.vulnerable() => format!("tag=dw_actor_{}", self.safe),
+            // spec-0119: an actor's answer box wears its body tag and is no
+            // twin, so a bar over an actor that has one excludes it.
+            FightKind::Actor if self.fight.declares_answers() => format!(
+                "tag=dw_actor_{s},tag=!dw_pup_{s},tag=!{}{s}",
+                crate::compiler::bodies::ANSWER_BOX_TAG,
+                s = self.safe
+            ),
             FightKind::Actor => format!("tag=dw_actor_{s},tag=!dw_pup_{s}", s = self.safe),
         }
     }

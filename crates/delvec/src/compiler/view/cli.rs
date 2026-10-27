@@ -940,13 +940,15 @@ pub fn run_place_camera(
             Ok(w) => w,
             Err(d) => return fail(d, json, exit::INPUT),
         };
-    let approved =
-        match read(&campaign.join("design.json")).and_then(|b| camera::reference_rows(&b)) {
-            Ok(r) => r,
-            Err(d) => return fail(d, json, exit::INPUT),
-        };
+    let (approved, test_level) = match camera::rows_of(campaign) {
+        Ok(r) => r,
+        Err(d) => return fail(d, json, exit::INPUT),
+    };
     let rows: Vec<String> = approved.iter().map(|r| r.name.clone()).collect();
     let answers = camera::tally(&written, &rows);
+    if let Some(why) = camera::unbound_refusal(&answers, test_level) {
+        return fail(Diagnostic::error(DW_INPUT, why), json, exit::INPUT);
+    }
     if let Some((name, a)) = answers.stray.first() {
         return fail(
             Diagnostic::error(DW_INPUT, camera::stray_message(name, a, &rows)),
@@ -1001,7 +1003,7 @@ pub fn run_place_camera(
         row.yaw,
         row.pitch,
         row.fov,
-        row.answers
+        row.answers.as_deref().unwrap_or("no approved image")
     );
     for r in &sky_of_row.resolved {
         eprintln!("{}", r.line());
@@ -1092,7 +1094,7 @@ pub fn run_cameras(
             Ok(s) => s,
             Err(d) => return fail(d, json, exit::INPUT),
         };
-    let rows = match read(campaign.join("design.json")).and_then(|b| camera::reference_rows(&b)) {
+    let (rows, test_level) = match camera::rows_of(campaign) {
         Ok(r) => r,
         Err(d) => return fail(d, json, exit::INPUT),
     };
@@ -1121,6 +1123,13 @@ pub fn run_cameras(
         eprintln!("{}", r.line());
     }
     eprintln!("{}", skies.summary());
+    if let Some(why) = camera::unbound_refusal(&answers, test_level) {
+        return fail(
+            Diagnostic::error(camera::DW_RECORD_AT_BUILD.id(), why),
+            json,
+            exit::INPUT,
+        );
+    }
     if let Some((name, a)) = answers.stray.first() {
         let names: Vec<String> = rows.iter().map(|r| r.name.clone()).collect();
         return fail(

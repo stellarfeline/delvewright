@@ -189,6 +189,30 @@ pub(crate) fn run_textures(
     ExitCode::SUCCESS
 }
 
+/// The prefab library `--prefabs` names, read for a compiler verb. A path that
+/// does not exist is refused at exit 1 as `DW1062` with the sentence
+/// [`missing_library`](delvec::compiler::registry::missing_library) words; an
+/// existing directory that cannot be read is an internal fault.
+pub(crate) fn load_library(prefabs_dir: &Path, json: bool) -> Result<PrefabRegistry, u8> {
+    if let Some(msg) = delvec::compiler::registry::missing_library(prefabs_dir) {
+        let d = Diagnostic::error(
+            delvec::compiler::registry::DW_NO_LIBRARY,
+            "prefabs",
+            prefabs_dir.display().to_string(),
+            msg,
+        );
+        print_diags(std::slice::from_ref(&d), json);
+        return Err(1);
+    }
+    PrefabRegistry::load_dir(prefabs_dir).map_err(|e| {
+        eprintln!(
+            "internal error: cannot read prefabs dir {}: {e}",
+            prefabs_dir.display()
+        );
+        EXIT_INTERNAL
+    })
+}
+
 /// Validate and return the parsed campaign + shared context (prefabs, loaded dir,
 /// l10n sidecars) + diagnostics; prints diagnostics. Returns `Err(exit)` on
 /// internal error.
@@ -209,13 +233,7 @@ pub(super) fn validate_loaded(
     prefabs_dir: &Path,
     json: bool,
 ) -> Result<Validated, u8> {
-    let prefabs = PrefabRegistry::load_dir(prefabs_dir).map_err(|e| {
-        eprintln!(
-            "internal error: cannot read prefabs dir {}: {e}",
-            prefabs_dir.display()
-        );
-        EXIT_INTERNAL
-    })?;
+    let prefabs = load_library(prefabs_dir, json)?;
     let items = FullItemRegistry::v1_21_11();
     // v0.3 wave-mob entity validation against the full 1.21.11 entity registry
     // (157 ids, same misode/mcmeta provenance as the item registry).
@@ -590,6 +608,15 @@ pub(super) fn validate_loaded(
                 let (nd, nbind) = delvec::compiler::telling::check_names_told_bound(&campaign);
                 examined.push(nbind.line());
                 diags.extend(nd);
+            }
+            // DW1060 (spec-0118 §6.4): a hidden way's secret is told by the
+            // shot that shows it and by no string before it, in English and
+            // every sidecar — over the same walk and the same placement
+            // DW0982 just read, with what it examined.
+            {
+                let (sd, sbind) = delvec::compiler::telling::check_secrets(&campaign, &sidecars);
+                examined.push(sbind.line());
+                diags.extend(sd);
             }
             // DW1026: one named character is one body — no story state of any
             // configuration leaves two declarations that carry one name in the

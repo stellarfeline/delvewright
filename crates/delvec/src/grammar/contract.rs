@@ -855,6 +855,14 @@ fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
             ));
         }
         way_well_formed(ix, model, i, edge, &site, exterior, &mut bad);
+        // A key the edge does not model is a claim nothing proves: refused by
+        // name, never carried through as if the gate had read it.
+        for key in edge.extra.keys() {
+            bad.push(format!(
+                "{site}: `{key}` is not a field of a contract edge — an edge declares `a`, `b`, \
+                 `class`, `rise`, `via`, `bar` and `way`, and nothing else"
+            ));
+        }
 
         let via = &ix.via_cells[i];
         if via.is_empty() {

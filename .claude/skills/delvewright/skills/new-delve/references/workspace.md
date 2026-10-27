@@ -177,7 +177,8 @@ the site plan is the placement authority, and a plan beside a non-empty
 ## The hour the delve is played at
 
 **`time` and `weather` are the delve's hour, and the engine will not choose it
-for you.** `time` is a keyword or a body, a position and a phase. A keyword —
+for you.** `time` is a keyword, a body with a position and a phase, or the
+clock itself. A keyword —
 `day`, `noon`, `dusk`, `night`, `midnight` or `dawn` (`sunrise` is accepted as a
 synonym of `dawn`) — is vanilla's hour on day 0, so **a keyword night is a full
 moon**. A designer's sentence about the sky is written as the body it is about,
@@ -187,7 +188,10 @@ where it stands, and the moon's phase: *a new moon just above the horizon* is
 `high`, `setting`, `just-set` and `below`; the phases are the pinned game's eight
 names, kebab-cased (`full-moon`, `waning-gibbous`, `third-quarter`,
 `waning-crescent`, `new-moon`, `waxing-crescent`, `first-quarter`,
-`waxing-gibbous`). On `world.time`, `phase` is required wherever the moon is up
+`waxing-gibbous`). An hour between those positions is **the clock statement**,
+`{"daytime": <0..23999>}` — vanilla's day time in ticks, `0` the sunrise, `6000`
+noon, `12000` the sunset, `18000` midnight — so *late afternoon* is
+`{"daytime": 10500}`, with `"phase"` added where the moon is up at that tick. On `world.time`, `phase` is required wherever the moon is up
 and refused wherever it is down (`delvec validate` names which, and why); a `set-time`, a design
 row or a camera that leaves it out takes the world's. The engine computes the
 tick count, day included, and every build prints a `clock:` line per stated time
@@ -244,18 +248,13 @@ bolt summoned onto each body showed what any one strike does to what it hits:
 Not measured: a villager NPC's name and dialogue after it turns, and species
 not listed here.
 
-## Languages — ask, do not assume
+## Languages — already answered
 
-**Ask the user which languages the delve ships in, here, before any prose is
-written.** One line is enough: *"English only, or shall it also ship in <the
-language they are writing to you in>?"* Their answer goes in `world.json`'s
-`languages`, and the localization stage at step 5 delivers the sidecars.
-
-Ask even when the brief says nothing about language, and especially when the
-brief arrives in a language other than English: a creator writing to you in
-Chinese has not thereby asked for a Chinese delve, and has not thereby declined
-one. Guessing either way is how a delve ships in a language its author did not
-choose — or ships without one they assumed.
+**The languages are the opening check's item (b)**, answered before step 1, so
+step 1 writes them rather than deciding them: the answer goes in `world.json`'s
+`languages`, and the localization stage at step 5 delivers the sidecars. Never
+guess either way from the language the prompt arrived in: that is how a delve
+ships in a language its author did not choose, or without one they assumed.
 
 ## The optional fields that commit something
 
@@ -283,6 +282,15 @@ last player-visible sentence of the run, absent = the finale quest's `goal`.
   (`DW0925`, as it does `seconds` outside 1–120), so
   decide it with the quest plan's checkpoints in front of you. `alone: true`
   makes a party of one wait too.
+- **`jumps`.** Absent = the route jumps nowhere. Each entry `{ "id":
+  "jump/<name>", "from": "anchor/…", "to": "anchor/…", "sprint": true }`
+  says a gap is meant to be jumped: two anchors a body stands at, one jump
+  apart. The build flies the jump as a player on cue makes it and refuses one
+  that misses, an anchor no body stands at, or a gap the walk already crosses
+  (`DW1041`); a proven jump is a move of the critical path and the bot makes
+  it. A gap nobody declares is judged only by where a body can be, never as a
+  way the story goes, so declare every gap the critical path is meant to
+  cross, once its two anchors exist.
 - **`view_distance`.** Absent = 10 chunks (160 blocks), the engine's floor.
   Declare it — in chunks, `10..=32` — when a thing is meant to be seen from
   farther than that: a tower across the water, a hill-sized body on the

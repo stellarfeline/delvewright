@@ -82,6 +82,8 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ),
     // spec-0082: a clip name is an id local to the assembly's library rig.
     ("Assembly", "initial", Reference),
+    ("BodyAnswers", "struck", Inventoried),
+    ("BodyAnswers", "touched", Inventoried),
     ("Boundary", "message", Inventoried),
     ("BranchDecl", "leads_to", Reference),
     ("CastBarks", "barks", Inventoried),
@@ -480,6 +482,10 @@ fn the_inventoried_fields_reach_the_inventory() {
         ("dialogue text", "dlg.", ".text"),
         ("quest goal", "quest.", ".goal"),
         ("effect narrate", "fx.", ".narrate"),
+        // spec-0119: what a body answers a blow and a touch.
+        ("npc struck answer", "npc.", ".answers.struck"),
+        ("actor struck answer", "actor.", ".answers.struck"),
+        ("actor touched answer", "actor.", ".answers.touched"),
     ] {
         assert!(
             inv.keys()
@@ -580,11 +586,18 @@ fn fixture_with_actors() -> delvewright_dsl::Campaign {
         { "id": "actor/ram-b", "entity": "minecraft:sheep",
           "name": "Ram of the Cave", "anchor": "anchor/hall" },
         { "id": "actor/ewe", "entity": "minecraft:sheep",
-          "name": "Ewe of the Cave", "anchor": "anchor/hall" },
+          "name": "Ewe of the Cave", "anchor": "anchor/hall",
+          "answers": { "struck": "Wool and bone, and no fight in it.",
+                       "touched": "It does not flinch." } },
     ]);
+    // spec-0119: an NPC's answer to a blow.
+    let mut npcs: Value = serde_json::from_str(&read("npcs.json")).expect("npcs parse");
+    npcs["dsl_version"] = Value::String(DSL_VERSION.to_string());
+    npcs["content"]["npcs"][0]["answers"] =
+        serde_json::json!({ "struck": "Your blow finds nothing to answer it." });
     delvewright_dsl::parse_campaign(&delvewright_dsl::RawCampaign {
         world: read("world.json"),
-        npcs: read("npcs.json"),
+        npcs: serde_json::to_string(&npcs).expect("npcs re-serialize"),
         classes: read("classes.json"),
         quest_plan: read("quest-plan.json"),
         quests: serde_json::to_string(&quests).expect("quests re-serialize"),

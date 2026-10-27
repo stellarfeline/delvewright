@@ -97,11 +97,11 @@ wrote — one per configuration its shots stand in, under
 this machine:
 
 ```sh
-delvec --prefabs "$DELVEWRIGHT_PREFABS" frames "$DELVEWRIGHT_ENGINE/validation/delve-output"
+delvec --prefabs "$DELVEWRIGHT_PREFABS" frames "$DELVE_OUTPUT"
 ```
 
 It writes `<stem>.png` and `<stem>.manifest.json` per shot and `shot-index.json`
-under `validation/delve-output/frames/`. **Quote its first line in the review**:
+under `"$DELVE_OUTPUT"/frames/`. **Quote its first line in the review**:
 `renderer: lumenwright <version>, backend <name> …` says what the frames came off,
 and whether a GPU drew them or the CPU did (`auto: fell back to cpu` with the
 reason). A shot naming a world the build directory does not hold is refused by

@@ -152,6 +152,18 @@ window for trees the remote holds no verdict on. Full argument, including which
 arm of that disjunction is the weak one and why it is acceptable, is in
 `decide_target`'s own docstring.
 
+## The remote build machine is a resource class of its own
+
+A round's heavy work runs on a remote machine in `~/dw/wt/<repo>/<tag>`, each with
+its own `target/`, and nothing local points at it. When a run reclaims a local
+worktree named `wt-<tag>` or `ct-<tag>` it reclaims that round's remote tree on
+the same proof, behind the local removal, and lists the remote again to prove it
+gone. An unreachable or unreadable remote keeps everything and says why. A remote
+tree whose tag matches no local worktree is an ORPHAN: it has no pull-request
+verdict to be deleted on, so it is reported and never deleted. The machine is
+reached only through the planner's `remote-ssh.sh` (`DW_REMOTE_SSH` names it; an
+empty value disables the class), the helper `remote-run.sh` also uses.
+
 ## Binding counts
 
 Every run states how many repositories it enumerated, how many worktrees it
@@ -171,6 +183,8 @@ import argparse
 import fcntl
 import json
 import os
+import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -240,13 +254,16 @@ BENIGN_DANGLING = {
 # ---------------------------------------------------------------------------
 
 
-def run(args: list[str], *, timeout: int = 60) -> tuple[int, str, str]:
+def run(
+    args: list[str], *, timeout: int = 60, input: str | None = None
+) -> tuple[int, str, str]:
     try:
         p = subprocess.run(
             args,
             capture_output=True,
             text=True,
             timeout=timeout,
+            input=input,
         )
     except FileNotFoundError:
         return 127, "", f"{args[0]}: not found"
@@ -306,6 +323,9 @@ class Worktree:
         self.verdict = "KEEP"
         self.reason = "not evaluated"
         self.size_kib: int | None = None
+        # Set by `reclaim` once git has removed the directory: the remote tree
+        # of the same round is reclaimed only behind it.
+        self.local_removed = False
 
     @property
     def label(self) -> str:
@@ -1267,6 +1287,269 @@ def sweep(
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# the remote build machine
+#
+# Heavy work runs on a remote machine, one checkout per round under
+# `~/dw/wt/<repo>/<tag>`, each carrying its own `target/`. Those trees outlive
+# the local worktree whose round made them: nothing local points at them, so a
+# reclaimer that names only local resources leaves the largest class of build
+# output on the one machine whose disk is shared by every round. This is that
+# class, judged by the key the local decision already used: a remote tree is
+# reclaimed only in the run that reclaims its round's local worktree, because
+# that decision is the only place the remote's pull-request verdict for the
+# round's branch was asked. A remote tree whose round has no local worktree has
+# no such verdict to carry, so it is REPORTED and never deleted.
+#
+# How the machine is reached is owned by one helper, `remote-ssh.sh`, which the
+# planner's `remote-run.sh` also execs; this tool holds no address, key or port.
+# ---------------------------------------------------------------------------
+
+REMOTE_HELPER = "remote-ssh.sh"
+REMOTE_REPOS = ("delvewright", "delvewright-campaigns", "lumenwright")
+TAG_RE = re.compile(r"[A-Za-z0-9._-]+")
+REMOTE_TIMEOUT = 300
+
+# Listing every remote tree, with a sentinel so a cut-off listing is never read
+# as a complete one.
+REMOTE_LIST = r"""
+set -u
+for d in "$HOME"/dw/wt/*/*/; do
+  [ -d "$d" ] || continue
+  d=${d%/}; echo "${d#"$HOME"/dw/wt/}"
+done
+echo END
+"""
+
+# `$1` repo, `$2` tag, `$3` size|remove. The names are validated again here,
+# because this is the script that deletes. A build holding the target's cargo
+# lock refuses the removal.
+REMOTE_ACT = r"""
+set -u
+REPO=$1; TAG=$2; MODE=$3
+case "$REPO" in delvewright|delvewright-campaigns|lumenwright) ;; *) echo REFUSED; exit 0;; esac
+case "$TAG" in *[!A-Za-z0-9._-]*|""|.|..) echo REFUSED; exit 0;; esac
+WT="$HOME/dw/wt/$REPO/$TAG"
+[ -d "$WT" ] || { echo ABSENT; exit 0; }
+if [ "$MODE" = size ]; then echo "SIZE $(du -sk "$WT" 2>/dev/null | cut -f1)"; exit 0; fi
+for f in "$WT"/target/*/.cargo-lock; do
+  [ -e "$f" ] || continue
+  flock -n -x "$f" true 2>/dev/null || { echo BUSY; exit 0; }
+done
+rm -rf -- "$WT"
+git -C "$HOME/dw/$REPO" worktree prune 2>/dev/null
+if [ -e "$WT" ]; then echo STILL; else echo REMOVED; fi
+"""
+
+
+def find_remote_helper() -> Path | None:
+    """The planner's `remote-ssh.sh`, or None.
+
+    `DW_REMOTE_SSH` names it (an empty value says there is none); otherwise it is
+    looked for in a `.planner` directory beside the worktrees, from this
+    checkout upward.
+    """
+    env = os.environ.get("DW_REMOTE_SSH")
+    if env is not None:
+        return Path(env) if env else None
+    for base in (REPO, *REPO.parents):
+        for cand in (
+            base / ".planner" / REMOTE_HELPER,
+            base / "delvewright-worktrees" / ".planner" / REMOTE_HELPER,
+        ):
+            if cand.is_file():
+                return cand
+    return None
+
+
+def remote_tag(wt: Worktree) -> str | None:
+    """The round's tag: the local tree's directory name without its `wt-` / `ct-`."""
+    name = wt.path.name
+    for prefix in ("wt-", "ct-"):
+        if name.startswith(prefix):
+            tag = name[len(prefix):]
+            return tag if TAG_RE.fullmatch(tag) and tag not in {".", ".."} else None
+    return None
+
+
+def remote_repo(rs: "RepoSweep") -> str | None:
+    slug = rs.authority.slug if rs.authority is not None else repo_slug(rs.path)
+    name = slug.split("/")[-1] if slug else ""
+    return name if name in REMOTE_REPOS else None
+
+
+class Remote:
+    """The remote build machine's trees, asked once and never guessed."""
+
+    def __init__(self, helper: Path | None):
+        self.helper = helper
+        self.reachable = False
+        self.reason = ""
+        self.trees: set[tuple[str, str]] = set()
+
+    def call(self, script: str, *args: str) -> tuple[int, str, str]:
+        assert self.helper is not None
+        cmd = "bash -s -- " + shlex.join(args) if args else "bash -s"
+        return run([str(self.helper), cmd], timeout=REMOTE_TIMEOUT, input=script)
+
+    def list(self) -> str:
+        """Refresh `trees`; returns "" or why the listing is not authoritative."""
+        code, out, err = self.call(REMOTE_LIST)
+        if code in (75, 255, 124, 127):
+            return err.strip() or f"the remote did not answer (exit {code})"
+        lines = out.splitlines()
+        if code != 0 or not lines or lines[-1] != "END":
+            return f"the remote's listing was incomplete (exit {code})"
+        found: set[tuple[str, str]] = set()
+        for line in lines[:-1]:
+            repo, _, tag = line.partition("/")
+            if repo and tag and "/" not in tag:
+                found.add((repo, tag))
+        self.trees = found
+        return ""
+
+    def connect(self) -> None:
+        if self.helper is None:
+            self.reason = f"NOT CONFIGURED — no {REMOTE_HELPER} was found (set DW_REMOTE_SSH)"
+            return
+        code, _, err = run([str(self.helper), "--probe"], timeout=60)
+        if code != 0:
+            self.reason = err.strip() or f"the remote is unreachable (exit {code})"
+            return
+        why = self.list()
+        if why:
+            self.reason = why
+            return
+        self.reachable = True
+
+    def act(self, repo: str, tag: str, mode: str) -> str:
+        code, out, err = self.call(REMOTE_ACT, repo, tag, mode)
+        if code != 0 or not out.strip():
+            return f"ERROR {err.strip() or 'exit ' + str(code)}"
+        return out.strip().splitlines()[-1]
+
+
+class RemoteRow:
+    def __init__(self, repo: str, tag: str, wt: Worktree | None, verdict: str, reason: str):
+        self.repo = repo
+        self.tag = tag
+        self.wt = wt
+        self.verdict = verdict
+        self.reason = reason
+        self.size_kib: int | None = None
+
+    @property
+    def where(self) -> str:
+        return f"~/dw/wt/{self.repo}/{self.tag}"
+
+
+def remote_phase(
+    sweeps: list["RepoSweep"],
+    *,
+    only: list[Worktree] | None,
+    apply: bool,
+    out,
+) -> None:
+    """Reclaim the remote tree of every locally reclaimed round, and report the rest.
+
+    `only` narrows to the trees a merge-time run selected; the orphan report
+    belongs to the full sweep alone.
+    """
+    remote = Remote(find_remote_helper())
+    remote.connect()
+    print("\n  remote build machine:", file=out)
+    if not remote.reachable:
+        print(
+            f"    KEEP    every remote tree — {remote.reason}; "
+            "an unanswered remote is never permission",
+            file=out,
+        )
+        return
+
+    local_keys: set[tuple[str, str]] = set()
+    planned: list[RemoteRow] = []
+    underived = 0
+    for rs in sweeps:
+        repo = remote_repo(rs)
+        for wt in rs.trees:
+            tag = remote_tag(wt)
+            if repo and tag:
+                local_keys.add((repo, tag))
+            if wt.verdict != "RECLAIM" or (only is not None and wt not in only):
+                continue
+            if not (repo and tag):
+                underived += 1
+                continue
+            if (repo, tag) not in remote.trees:
+                continue
+            if apply and not wt.local_removed:
+                planned.append(RemoteRow(repo, tag, wt, "KEEP", "the local tree was not removed"))
+            else:
+                planned.append(RemoteRow(
+                    repo, tag, wt, "RECLAIM",
+                    f"its local tree is reclaimed on the same proof ({wt.reason})",
+                ))
+
+    for row in planned:
+        if row.verdict == "RECLAIM":
+            said = remote.act(row.repo, row.tag, "size")
+            if said.startswith("SIZE "):
+                try:
+                    row.size_kib = int(said.split()[1])
+                except (IndexError, ValueError):
+                    pass
+
+    acted: list[RemoteRow] = []
+    for row in planned:
+        size = f"{row.size_kib / (1024**2):>5.1f} GiB" if row.size_kib else "    (unsized)"
+        if row.verdict != "RECLAIM":
+            print(f"    KEEP    {row.where}\n            {row.reason}", file=out)
+            continue
+        if not apply:
+            print(f"    RECLAIM {size}  {row.where}\n            {row.reason}", file=out)
+            continue
+        said = remote.act(row.repo, row.tag, "remove")
+        if said == "REMOVED":
+            acted.append(row)
+            print(f"    removed {size}  {row.where}", file=out)
+        else:
+            print(f"    KEEP    {row.where} — {said}", file=out)
+
+    if acted:
+        why = remote.list()
+        if why:
+            print(f"    NOT PROVEN gone — the remote could not be listed again ({why})", file=out)
+        else:
+            gone = [r for r in acted if (r.repo, r.tag) not in remote.trees]
+            print(
+                f"    proved gone by listing: {len(gone)} of {len(acted)} removed tree(s) absent",
+                file=out,
+            )
+            for r in acted:
+                if (r.repo, r.tag) in remote.trees:
+                    print(f"    FINDING  {r.where} is still listed after removal", file=out)
+
+    if only is None:
+        orphans = sorted(remote.trees - local_keys)
+        print(
+            f"    binding: {len(remote.trees)} remote tree(s) listed, "
+            f"{len([r for r in planned if r.verdict == 'RECLAIM'])} reclaimable, "
+            f"{len(orphans)} orphan(s), {underived} reclaimable local tree(s) with no derivable tag",
+            file=out,
+        )
+        if orphans:
+            swept = {remote_repo(rs) for rs in sweeps}
+            print(
+                f"    FINDING — {len(orphans)} ORPHAN remote tree(s): no local worktree carries "
+                "the tag, so there is no pull-request verdict to delete them on. REPORTED, "
+                "never deleted:",
+                file=out,
+            )
+            for repo, tag in orphans:
+                note = "" if repo in swept else "  (repository not swept this run)"
+                print(f"      ~/dw/wt/{repo}/{tag}{note}", file=out)
+
+
 def reclaim(rs: RepoSweep, wt: Worktree, out) -> bool:
     # `--force` is deliberately absent: git re-checks dirtiness itself, which
     # makes the refusal independent of every measurement above.
@@ -1275,6 +1558,7 @@ def reclaim(rs: RepoSweep, wt: Worktree, out) -> bool:
         print(f"  FAILED  {wt.path} — git refused: {err.strip()}", file=out)
         return False
     print(f"  removed {wt.path}  [{wt.label}]", file=out)
+    wt.local_removed = True
     if wt.branch:
         code, _, err = git(rs.path, "branch", "-D", wt.branch)
         if code == 0:
@@ -1757,7 +2041,9 @@ def main(argv: list[str] | None = None) -> int:
                 if wt.verdict in {"RECLAIM", "PRUNE"}:
                     reclaim(rs, wt, out)
                     git(rs.path, "worktree", "prune")
-        elif not args.apply:
+        if not args.targets_only:
+            remote_phase(sweeps, only=[wt for _, wt in selected], apply=args.apply, out=out)
+        if not args.apply:
             print("dry run — nothing deleted. Re-run with --apply.")
         return 0
 
@@ -1773,6 +2059,8 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     if not args.apply:
+        if not args.targets_only:
+            remote_phase(sweeps, only=None, apply=False, out=out)
         print("\n  dry run — nothing was deleted. Re-run with --apply to act on the RECLAIM rows.")
         return 0
 
@@ -1787,6 +2075,7 @@ def main(argv: list[str] | None = None) -> int:
             git(rs.path, "worktree", "prune")
         if acted == 0:
             print("    nothing was reclaimable this run", file=out)
+        remote_phase(sweeps, only=None, apply=True, out=out)
 
     # A target inside a tree that was just removed went with it; reporting it as
     # a failed deletion would be a red about work that succeeded.

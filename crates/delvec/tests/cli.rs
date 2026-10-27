@@ -1301,7 +1301,7 @@ fn move_actor_unroutable_exits_3_with_dw0325() {
             "type": "move-actor", "actor": "actor/beast", "to": { "anchor": "anchor/objective" }
         }));
         d["content"]["actors"] = serde_json::json!([
-            { "id": "actor/beast", "entity": "minecraft:zombie", "anchor": "anchor/keeper-stand" }
+            { "id": "actor/beast", "entity": "minecraft:zombie", "answers": { "struck": "It does not stir.", "touched": "Cold, and still." }, "anchor": "anchor/keeper-stand" }
         ]);
     });
     common::declare_story_dir(&camp);
@@ -1653,7 +1653,7 @@ fn v06_actor_datapack_emits_the_mechanics() {
             ] }),
         ]);
         d["content"]["actors"] = serde_json::json!([
-            { "id": "actor/giant", "entity": "minecraft:zombie", "name": "The Sleeper",
+            { "id": "actor/giant", "entity": "minecraft:zombie", "answers": { "struck": "It does not stir.", "touched": "Cold, and still." }, "name": "The Sleeper",
               "anchor": "spawn", "facing": "east" }
         ]);
     });
@@ -2632,7 +2632,7 @@ fn actor_skin_campaign(name: &str) -> std::path::PathBuf {
             "type": "spawn-actor", "actor": "actor/giant"
         }));
         d["content"]["actors"] = serde_json::json!([
-            { "id": "actor/giant", "entity": "minecraft:zombie", "name": "The Sleeper",
+            { "id": "actor/giant", "entity": "minecraft:zombie", "answers": { "struck": "It does not stir.", "touched": "Cold, and still." }, "name": "The Sleeper",
               "anchor": "anchor/exit", "facing": "east",
               "skin": { "texture_id": "giant-idle", "model": "wide" } }
         ]);
