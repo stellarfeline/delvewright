@@ -335,6 +335,12 @@ pub struct Plan<'a> {
     /// by [`crate::compiler::acts::walks`] — after the plan exists, because a
     /// branch's path is built from it.
     pub acts: std::sync::OnceLock<crate::compiler::acts::ActWalks>,
+    /// **Each checkpoint's respawn seat**, by [`CheckpointPlan::index`], fixed
+    /// from the build's final world ([`Plan::fix_seats`]) for the emitter,
+    /// which holds no world. Derived by the one seat rule
+    /// ([`crate::compiler::nav::World::rest_seat`]); a proof with a world in
+    /// hand reads [`crate::compiler::nav::World::rest_seat_of`].
+    pub seats: std::sync::OnceLock<Vec<Option<[i32; 3]>>>,
     /// **What the piece-mating check examined** (`DW0780`/`DW0781`), emitted as
     /// `validation/piece-mating.json`.
     ///
@@ -1280,6 +1286,7 @@ impl<'a> Plan<'a> {
             waterline,
             face_binding: binding,
             acts: std::sync::OnceLock::new(),
+            seats: std::sync::OnceLock::new(),
         };
         // The props the datapack sets at load, which only the finished plan can
         // list ([`Plan::load_prop_events`]).

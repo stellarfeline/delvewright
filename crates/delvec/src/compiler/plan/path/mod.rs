@@ -520,7 +520,7 @@ impl<'a> Plan<'a> {
                 lo[0] <= c[0] && c[0] <= hi[0] && lo[2] <= c[2] && c[2] <= hi[2]
             })
         };
-        let Some(home) = area_of(b.pos) else {
+        let Some(home) = area_of(b.at) else {
             return Some(armed);
         };
         // Where the party stands after step `i`: the last step at or before it

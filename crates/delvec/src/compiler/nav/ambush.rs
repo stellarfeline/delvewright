@@ -23,7 +23,11 @@ use std::collections::BTreeSet;
 /// does not, the player is sealed in a pocket with the ambush and the beat has no
 /// second attempt to reward — that is a broken beat, not a hard one.
 pub fn check_ambushes(plan: &Plan, world: &World, entry: Option<[i32; 3]>) -> Result<(), Failure> {
-    let mut rests: Vec<[i32; 3]> = plan.checkpoints.iter().map(|c| c.pos).collect();
+    let mut rests: Vec<[i32; 3]> = plan
+        .checkpoints
+        .iter()
+        .filter_map(|c| world.rest_seat_of(c))
+        .collect();
     rests.extend(entry);
     verify_ambushes(world, &plan.ambushes, &rests)
 }

@@ -616,6 +616,7 @@ mod tests {
             footprints: Default::default(),
             leaves: Default::default(),
             hiding: Default::default(),
+            hurting: Default::default(),
         }
     }
 

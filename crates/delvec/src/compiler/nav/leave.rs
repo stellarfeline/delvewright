@@ -923,6 +923,7 @@ mod leave_tests {
             footprints: Default::default(),
             leaves: Default::default(),
             hiding: Default::default(),
+            hurting: Default::default(),
         };
         let w = World::from_occupancy(occ, Premises::geometry_only());
         assert!(!w.body_moves([2, 1, 3]).contains(&[3, 0, 3]));
@@ -949,6 +950,7 @@ mod leave_tests {
             footprints: Default::default(),
             leaves: Default::default(),
             hiding: Default::default(),
+            hurting: Default::default(),
         };
         let w = World::from_occupancy(occ, Premises::geometry_only());
         assert_eq!(w.fatal_step_off([2, 1, 3]), Some(([3, 1, 3], true)));

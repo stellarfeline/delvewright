@@ -336,6 +336,39 @@
             "verb": "fill"
           },
           {
+            "name": "region/hearth-fire",
+            "shape": {
+              "frame": {
+                "anchor": "anchor/hearth",
+                "kind": "anchor-relative"
+              },
+              "kind": "box",
+              "max": [
+                0,
+                0,
+                0
+              ],
+              "min": [
+                0,
+                0,
+                0
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:campfire[lit=true]",
+                  "weight": 1.0
+                }
+              ]
+            },
+            "region": "region/hearth-fire",
+            "verb": "fill"
+          },
+          {
             "fixture": "shroomlight",
             "min_light": 8,
             "region": "region/hearth-bay",
@@ -343,7 +376,7 @@
           }
         ],
         "id": "batch/lay-the-hearth",
-        "note": "Give the respawn point a floor of its own. Exercises `anchor-relative` framing, `subtract` and `intersect`, `fill`, and `relight` with an explicit fixture."
+        "note": "Give the respawn point a floor of its own, and its fire: a lit campfire on the hearth's own cell, so the bonfire and the checkpoint on `anchor/hearth` rest at a fire and seat the respawned party on the floor beside it, on the side it walks up from. Exercises `anchor-relative` framing, `subtract` and `intersect`, `fill`, and `relight` with an explicit fixture."
       },
       {
         "area": "area/hall",

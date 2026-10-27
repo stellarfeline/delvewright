@@ -1434,6 +1434,13 @@ pub struct Occupancy {
     /// and this says which of its faces a body may cross, and at what height
     /// ([`delvewright_dsl::blockshape::Leaf::stops_crossing`]).
     pub leaves: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Leaf>,
+    /// Cells whose block **hurts a body that meets it**
+    /// ([`delvewright_dsl::blockshape::hurts_body`]: a campfire, magma, a
+    /// cactus, fire, a berry bush). Not a collision class and not disjoint from
+    /// them: a campfire is a partial floor and hurts. Read by one question, where
+    /// a body may be put down by declaration
+    /// ([`crate::compiler::nav::World::is_safe_seat`]); routing never reads it.
+    pub hurting: BTreeSet<[i32; 3]>,
 }
 
 /// **What keeps one climbable where it is** (spec-0099 §3.2), as the cells its
@@ -1697,9 +1704,13 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
     let mut hiding: BTreeSet<[i32; 3]> = BTreeSet::new();
     // One occlusion lookup per distinct block state, not per cell.
     let mut hides_of: BTreeMap<String, bool> = BTreeMap::new();
+    let mut hurting: BTreeSet<[i32; 3]> = BTreeSet::new();
     let mut leaves: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Leaf> = BTreeMap::new();
     let mut leaf_of: BTreeMap<String, Option<delvewright_dsl::blockshape::Leaf>> = BTreeMap::new();
     for (cell, name) in blocks {
+        if delvewright_dsl::blockshape::hurts_body(name) {
+            hurting.insert(*cell);
+        }
         // A door's or a trapdoor's leaf per state (`blockshape::leaf`): what
         // its panels and its plate do to a body crossing its cell's faces.
         // Whether a hand one stands open is the gate model's own reading, as
@@ -1815,6 +1826,7 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
         footprints,
         hiding,
         leaves,
+        hurting,
     }
 }
 

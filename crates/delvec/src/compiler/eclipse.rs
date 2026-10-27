@@ -547,7 +547,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
             kind: "bonfire",
             id: format!("bonfire #{}", bf.index),
             anchor: bf.anchor.clone(),
-            pos: bf.pos,
+            pos: bf.at,
             arming: Arming::Persistent,
         });
     }

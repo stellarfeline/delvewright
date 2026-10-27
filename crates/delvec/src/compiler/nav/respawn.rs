@@ -81,13 +81,17 @@ pub fn check_respawn_safe_zone(
         .checkpoints
         .iter()
         .zip(&reign_ends)
-        .map(|(c, end)| RestPoint {
-            index: c.index,
-            anchor: c.anchor.clone(),
-            kind: if c.rest { "bonfire" } else { "set-checkpoint" },
-            pos: c.pos,
-            fire_step: c.fire_step,
-            reign_end: *end,
+        // The seat a respawn puts the body on, not the rest object: a seat no
+        // derivation finds is `DW0316`'s, which runs before this proof.
+        .filter_map(|(c, end)| {
+            Some(RestPoint {
+                index: c.index,
+                anchor: c.anchor.clone(),
+                kind: if c.rest { "bonfire" } else { "set-checkpoint" },
+                pos: world.rest_seat_of(c)?,
+                fire_step: c.fire_step,
+                reign_end: *end,
+            })
         })
         .collect();
     let sources = aggro_sources(plan, world, placements, lanes);

@@ -685,7 +685,10 @@ fn check_batch_invariants(
     // declared lethal volumes are another, and were missing here exactly as they
     // were missing from `emit::build`'s edit arm.
     let premises = crate::compiler::nav::Premises::of_plan(plan, assembled.gate_seals.clone());
-    let with_fixtures = crate::compiler::light::lit_world(assembled, &relight, geometry, premises);
+    // The seats each respawn puts a body on, derived over this batch's world,
+    // as the final build derives them over its own.
+    let with_fixtures = crate::compiler::light::lit_world(assembled, &relight, geometry, premises)
+        .with_rest_seats(plan);
     let ctx = |e: Failure| Failure {
         code: e.code,
         message: format!("after world-edits batch `{bid}`: {}", e.message),
@@ -765,7 +768,7 @@ fn check_batch_invariants(
     if let Some(e) = crate::compiler::nav::measure_fluid_escape(&with_fixtures).finding() {
         return Err(ctx(e));
     }
-    let starts = body_starts(plan).roots;
+    let starts = body_starts(plan, &with_fixtures).roots;
     crate::compiler::nav::verify_boundary_safety(&with_fixtures, &starts).map_err(ctx)?;
     Ok(())
 }
@@ -1047,7 +1050,7 @@ pub struct BodyStarts {
 /// campaign puts a body in by declaration — a critical-path step, a link's or
 /// teleport's landing, a checkpoint seat inside its box — because then a
 /// body does stand there and the proof owes it.
-pub fn body_starts(plan: &Plan) -> BodyStarts {
+pub fn body_starts(plan: &Plan, world: &crate::compiler::nav::World) -> BodyStarts {
     let anchors = plan.anchors.len();
     type Space = ([i64; 3], [i64; 3]);
     let scenery: Vec<(&delvewright_dsl::layout::Node, Space)> =
@@ -1078,7 +1081,11 @@ pub fn body_starts(plan: &Plan) -> BodyStarts {
         .into_iter()
         .map(|(_, c)| c)
         .collect();
-    put.extend(plan.checkpoints.iter().map(|cp| cp.pos));
+    put.extend(
+        plan.checkpoints
+            .iter()
+            .filter_map(|cp| world.rest_seat_of(cp)),
+    );
     // The box's play space, a course deeper and higher: a body put on its
     // floor or its crown is in it.
     let inside = |c: [i32; 3], (lo, hi): Space| {
