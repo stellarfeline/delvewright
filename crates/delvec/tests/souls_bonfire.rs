@@ -282,6 +282,11 @@ fn save_only_is_the_checkpoint_and_nothing_else() {
     let out = build_fixture();
     let save = fn_body(&out, "bonfire_save_0");
     let rest = fn_body(&out, "bonfire_rest_0");
+    // The fire's seat over the world as the arming beat finds it
+    // (`nav::World::rest_seat`): the piece's block on `anchor/objective`
+    // [44, 65, 2] is replaced at load by the bonfire's `prop`, four candles,
+    // which hurt nothing and leave room for a body, so the anchor is its own
+    // seat.
     assert_eq!(
         save.lines().collect::<Vec<_>>(),
         vec![

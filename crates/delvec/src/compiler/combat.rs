@@ -170,8 +170,9 @@ pub struct Encounter {
     /// Does resting re-seat this wave (spec-0016 §1)?
     pub respawns_on_rest: bool,
     /// The checkpoint the party respawns at while this encounter is live, if the
-    /// campaign has set one by then.
-    pub checkpoint: Option<[i32; 3]>,
+    /// campaign has set one by then, as its [`crate::compiler::plan::CheckpointPlan::index`];
+    /// the combat plan writes its seat ([`Plan::seat`]).
+    pub checkpoint: Option<usize>,
 }
 
 /// Cheap gate: does this campaign have any mandatory **wave** fight? Used where
@@ -563,7 +564,7 @@ pub fn encounters(plan: &Plan) -> Vec<Encounter> {
             .checkpoints
             .iter()
             .rfind(|cp| cp.fire_step < i)
-            .map(|cp| cp.pos);
+            .map(|cp| cp.index);
         out.push(Encounter {
             wave_id: wave_id.clone(),
             objective_id: objective_id.clone(),
@@ -705,7 +706,11 @@ pub fn run_backs(
                         }
                         let from_fire;
                         let cells: &[[i32; 3]] = if Some(leg.to_step) == first {
-                            from_fire = leg.rerouted_from(world, b.pos);
+                            // From the fire's seat: the party stands beside the
+                            // rest object, never in it.
+                            from_fire = world
+                                .rest_seat_of(b)
+                                .and_then(|seat| leg.rerouted_from(world, seat));
                             from_fire.as_deref().unwrap_or(&leg.cells)
                         } else {
                             &leg.cells
@@ -1570,8 +1575,11 @@ pub fn combat_plan_json(
                 );
                 o["muster"] = crate::compiler::muster::to_json(&plan.namespace, &m);
             }
-            if let Some(cp) = e.checkpoint {
-                o["checkpoint"] = json!([cp[0], cp[1], cp[2]]);
+            // The seat the respawn puts the party on — what the die-retry
+            // stage asserts it lands at — not the rest object.
+            if let Some(cp) = e.checkpoint.and_then(|i| plan.checkpoints.get(i)) {
+                let seat = plan.seat(cp);
+                o["checkpoint"] = json!([seat[0], seat[1], seat[2]]);
             }
             o
         })
@@ -1715,6 +1723,7 @@ mod tests {
             unheld_climb: BTreeMap::new(),
             footprints: Default::default(),
             hiding: Default::default(),
+            hurting: Default::default(),
         }
     }
 

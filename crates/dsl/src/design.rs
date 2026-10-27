@@ -147,6 +147,22 @@ pub fn check(c: &crate::envelope::Campaign, d: &mut Vec<crate::diagnostic::Diagn
     let Some(env) = &c.design else {
         return;
     };
+    // spec-0122 §7.2: a test level carries no approved design, so a record
+    // beside the declaration is two authorities for one design.
+    if c.world.content.test_level {
+        d.push(Diagnostic::error(
+            codes::TEST_LEVEL_WITH_DESIGN,
+            crate::envelope::Stage::World.name(),
+            "/content/test_level",
+            format!(
+                "`{id}` declares `test_level: true` and carries `design.json`; a level with an \
+                 approved design is not a test level — drop one: delete `test_level` from \
+                 `world.json` if the design is approved, or delete `design.json` if this is a \
+                 level built to try something.",
+                id = c.world.campaign_id,
+            ),
+        ));
+    }
     let rows = &env.content.references;
     // A record of nothing is not a record. The exported schema says `minItems:
     // 1` and serde does not enforce it, so the rule is stated here as well —

@@ -715,43 +715,55 @@ fn the_vanilla_keywords_still_emit_keywords() {
     }
 }
 
-/// **The report a DERIVED map is handed, over the real build path.**
-///
-/// Two rules meet in one message and each was proven alone: `DW0210` names which
-/// rooms are dark (the report is built once for the whole build), and it
-/// prescribes only remedies this campaign's placement authority actually has.
-/// Every unit test of either half hands `dark_diagnostic` a `Placement` chosen by
-/// the test, so none of them binds the one step that decides it in a real build —
-/// `relight_over` asking the campaign. Perturbing that call to a hard-coded
-/// `Placement::Prefabs` left `cargo test --workspace` fully green while the
-/// message sent a site-plan author at `world.areas[].lighting` and
-/// `world.areas[].mitigation`, which `DW0839` and `DW0160` refuse. This is the
-/// test that reds.
+/// **A derived map's stand-ins are not judged, and the remedy a site-plan
+/// author is handed is one they can take — over the real build path.**
 ///
 /// The fixture is the site-plan blockout (`tests/fixtures/blockout`) with its
-/// plan's own `lighting` removed and `world.time` set to midnight — the state
-/// that reproduced the defect, made from the campaign rather than from bytes.
+/// plan's own `lighting` removed and `world.time` set to midnight. Every place
+/// is massed, so every dark interior is a stand-in's: the light gate judges
+/// none of them (spec-0122 §7.4), the build passes it, and the binding line
+/// counts the cells it left to the stand-ins.
+///
+/// The second half binds the one step that decides the remedy in a real build:
+/// `relight_over` asking the campaign for its `Placement`. Perturbing that call
+/// to a hard-coded `Placement::Prefabs` must red here. The plan declares a
+/// `lighting` no fixture can satisfy, so the relight pass refuses `DW0211`, and
+/// that refusal must send the author to the site plan's `lighting` and never to
+/// `world.areas`, which `DW0839` refuses on this campaign.
 #[test]
-fn dw0210_on_a_built_site_plan_names_the_rooms_and_a_reachable_remedy() {
+fn dw0210_on_a_built_site_plan_leaves_stand_ins_and_names_a_reachable_remedy() {
     let dir = common::repo_root().join("crates/delvec/tests/fixtures/blockout");
     let loaded = load_campaign_dir(&dir).expect("the blockout fixture is readable");
     let mut c = parse_campaign(&loaded.raw).expect("the blockout fixture parses");
-
-    let plan = c
+    let declared = c
         .site_plan
         .as_mut()
-        .expect("the fixture carries a site plan");
-    assert!(
-        plan.content.lighting.take().is_some(),
-        "fixture: the plan must have declared lighting for its removal to make the map dark"
-    );
+        .expect("the fixture carries a site plan")
+        .content
+        .lighting
+        .take()
+        .expect("fixture: the plan declares lighting");
     c.world.content.time = WorldTime::Midnight;
     assert!(
         c.world.content.areas.is_empty(),
         "fixture: a site-plan campaign declares an empty `areas` list (DW0839)"
     );
-
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).expect("the library loads");
+
+    let plan = Plan::build(&c, &prefabs).expect("the blockout fixture plans");
+    let r = light::relight(&plan, &BTreeMap::new());
+    assert!(r.diagnostics.is_empty(), "{:?}", r.diagnostics);
+    let b = &r.binding;
+    assert!(b.excluded > 0, "{}", b.line());
+    assert_eq!(b.standins, 7, "{}", b.line());
+    assert_eq!(b.dark, 0, "{}", b.line());
+    assert!(b.line().starts_with("DW0210 binding: "), "{}", b.line());
+
+    // The unsatisfiable declaration: a level no fixture reaches.
+    let mut lit = declared;
+    lit.min_light = 14;
+    lit.fixture = delvewright_dsl::Fixture::Campfire;
+    c.site_plan.as_mut().unwrap().content.lighting = Some(lit);
     let plan = Plan::build(&c, &prefabs).expect("the blockout fixture plans");
     let tree = CommandTree::v1_21_11();
     let err = emit::build(
@@ -763,44 +775,18 @@ fn dw0210_on_a_built_site_plan_names_the_rooms_and_a_reachable_remedy() {
         None,
         &BTreeMap::new(),
     )
-    .expect_err("an unlit derived blockout at midnight must fail the light gate");
+    .expect_err("a lighting no fixture can satisfy refuses");
     let BuildFailure::Diagnostic { code, message } = err else {
         panic!("expected a diagnostic, got {err:?}");
     };
-    assert_eq!(code, "DW0210");
-
-    // WHICH ROOM — the half this branch added, over a real build.
-    let area_line = message
-        .lines()
-        .find(|l| l.trim_start().starts_with("area `"))
-        .unwrap_or_else(|| panic!("the report names no area:\n{message}"));
+    assert_eq!(code, "DW0211", "{message}");
     assert!(
-        area_line.contains(&format!("area `{}`", delvewright_dsl::siteplan::SITE_AREA)),
-        "a derived map has exactly one area and the report must name it:\n{message}"
-    );
-    assert!(
-        message
-            .lines()
-            .any(|l| l.trim_start().starts_with("- ") && l.contains(" cell(s) spanning ")),
-        "the dark cells must be grouped into regions with extents:\n{message}"
-    );
-
-    // A REACHABLE REMEDY — the half `main` added, over the same message.
-    assert!(
-        message.contains("declare the site plan's `lighting`"),
+        message.contains("the site plan's `lighting`"),
         "the one declaration this author can write must be named:\n{message}"
     );
     assert!(
         !message.contains("world.areas"),
         "`DW0839` refuses `areas[]` here, so nothing may send the author to it:\n{message}"
-    );
-    assert!(
-        !message.contains("mitigation: "),
-        "a derived map has no per-area `mitigation` surface to declare:\n{message}"
-    );
-    assert!(
-        message.contains("one of two ways"),
-        "the count moves with the list of ways actually offered:\n{message}"
     );
 }
 

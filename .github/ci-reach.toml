@@ -125,7 +125,7 @@ inputs = [
   { glob = "docs/reference/delvec/**", why = "the DW catalogue's `delvec` module pages, which `test_check_dw_codes.py` and `test_staging_gate.py` read through `tools/lib/dwcatalog.py`" },
   { glob = "docs/reference/dsl/**", why = "the DW catalogue's `dsl` module pages, which `test_check_dw_codes.py` and `test_staging_gate.py` read through `tools/lib/dwcatalog.py`; the publish-gate tests copy `dsl/diagnostic.md` as a version site (the `DW0102` row)" },
   { glob = "docs/playtest-findings.json", why = "`test_staging_gate.py` reads the live findings ledger" },
-  { glob = "docs/demo-levels.md", why = "`test_staging_gate.py` reads the live demo queue through `tools/lib/demo_queue.py` (a queued demo is admitted on its row)" },
+  { glob = "docs/demo-levels.md", why = "`test_check_demo_queue.py` runs `check-demo-queue.py` over the live demo queue, read through `tools/lib/demo_queue.py`" },
   { glob = "docs/reference/game-writing.md", why = "`tools/creator/i18n-translate.py` reads its target-language writing rules into every prompt, and `test_i18n_translate.py` builds those prompts" },
 ]
 

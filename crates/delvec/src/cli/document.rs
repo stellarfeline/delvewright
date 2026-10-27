@@ -211,6 +211,15 @@ pub(crate) fn run_allocation(
         "{}",
         serde_json::to_string_pretty(&out.expect("an allocation serializes")).unwrap()
     );
+    if all {
+        // The wave bound the orchestrator launches place authors up to
+        // (spec-0122 §6.2), on stderr so stdout stays the one JSON document.
+        // The orchestrator never types it: the handout carries this line.
+        let places = delvec::compiler::detail::unauthored_places(&campaign);
+        let cores = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
+        let n = delvec::compiler::detail::concurrency_bound(places, cores);
+        eprintln!("concurrency: {n} = min({places}, max(1, {cores} / 2))");
+    }
     ExitCode::SUCCESS
 }
 

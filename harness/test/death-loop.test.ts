@@ -1584,6 +1584,8 @@ test("a crush gate row parses, and a binding that miscounts crush gates is refus
       phase: 0,
       approaches: [{ mouth: [0, 64, 32], stand: [0, 64, 33] }],
       crossed_at: 1,
+      trial_at: 0,
+      trial_mouth: [0, 64, 32],
       gate: { terms: [] },
     },
   ];
@@ -1591,8 +1593,41 @@ test("a crush gate row parses, and a binding that miscounts crush gates is refus
   const p = parseDeathPlan(doc);
   assert.equal(p.crushGates.length, 1);
   assert.equal(p.crushGates[0]!.crossedAt, 1);
+  assert.equal(p.crushGates[0]!.trialAt, 0);
+  assert.deepEqual(p.crushGates[0]!.trialMouth, [0, 64, 32]);
   assert.deepEqual(p.crushGates[0]!.approaches[0]!.stand, [0, 64, 33]);
   assert.equal(p.seats[0]!.inForceAfter, -1);
   (doc["binding"] as Record<string, unknown>)["crush_gates"] = 0;
   assert.throws(() => parseDeathPlan(doc), DeathPlanParseError);
+});
+
+test("a crush gate's trial boundary comes with a mouth of its own approaches, or neither comes", () => {
+  const row = (over: Record<string, unknown>): Record<string, unknown> => {
+    const doc = planDoc();
+    doc["crush_gates"] = [
+      {
+        id: "timed-gate/first-paddle",
+        region: { lo: [0, 64, 33], hi: [2, 66, 33] },
+        open_ticks: 80,
+        closed_ticks: 40,
+        phase: 0,
+        approaches: [{ mouth: [0, 64, 32], stand: [0, 64, 33] }],
+        crossed_at: null,
+        trial_at: 4,
+        trial_mouth: [0, 64, 32],
+        gate: { terms: [] },
+        ...over,
+      },
+    ];
+    (doc["binding"] as Record<string, unknown>)["crush_gates"] = 1;
+    return doc;
+  };
+  assert.equal(parseDeathPlan(row({})).crushGates[0]!.trialAt, 4);
+  const none = parseDeathPlan(row({ trial_at: null, trial_mouth: null })).crushGates[0]!;
+  assert.equal(none.trialAt, undefined);
+  assert.equal(none.trialMouth, undefined);
+  assert.throws(() => parseDeathPlan(row({ trial_mouth: null })), /given together/);
+  assert.throws(() => parseDeathPlan(row({ trial_at: null })), /given together/);
+  assert.throws(() => parseDeathPlan(row({ trial_mouth: [9, 64, 9] })), /names no mouth/);
+  assert.throws(() => parseDeathPlan(row({ trial_at: 1.5 })), DeathPlanParseError);
 });

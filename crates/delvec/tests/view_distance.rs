@@ -148,7 +148,7 @@ fn a_view_aimed_past_the_served_radius_is_refused_and_the_named_declaration_serv
     );
     let plan = c.site_plan.as_mut().unwrap();
     let view = &mut plan.content.views[0];
-    view.look_at = [view.eye[0], view.eye[1], view.eye[2] + 400];
+    view.look_at = [view.eye[0], view.eye[1], view.eye[2] + 400.0];
     let m = messages(&c, "DW0956");
     assert_eq!(m.len(), 1, "{m:?}");
     assert!(
@@ -197,7 +197,7 @@ fn a_view_past_what_any_distance_serves_names_the_ceiling() {
     c.world.content.view_distance = Some(CEILING);
     let plan = c.site_plan.as_mut().unwrap();
     let view = &mut plan.content.views[0];
-    view.look_at = [view.eye[0] + 600, view.eye[1], view.eye[2]];
+    view.look_at = [view.eye[0] + 600.0, view.eye[1], view.eye[2]];
     let m = messages(&c, "DW0956");
     assert_eq!(m.len(), 1, "{m:?}");
     assert!(

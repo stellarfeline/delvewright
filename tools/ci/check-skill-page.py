@@ -59,8 +59,10 @@ WHAT IS CHECKED, AND THE PERTURBATION THAT REDS EACH
                                                RED: an unpointed file
     8  a reference over 100 lines opens with a contents list resolving to its own
        headings; no reference links to another. RED: a chain two deep
-    9  every piece-reading `delvec` span carries `--prefabs "$DELVEWRIGHT_PREFABS"`.
-                                               RED: a bare `delvec analyze`
+    9  every piece-reading `delvec` span carries `--prefabs "$DELVEWRIGHT_PREFABS"`,
+       and every `build` invocation writes `-o "$DELVE_OUTPUT"`, the session's
+       own tree (spec-0122 §7.5).              RED: a bare `delvec analyze`;
+                                               a build into validation/delve-output
    10  retired: it held the page's headings to a frozen census of the page
        before it was split, so no step could ever be renamed or reordered.
    11  `plugin.json` parses; `name` is kebab-case; `version` is semver and IS
@@ -126,6 +128,17 @@ WHAT IS CHECKED, AND THE PERTURBATION THAT REDS EACH
                                             RED: `tools/creator/refimg.py` on the page
                                                  after the tool moved; a path
                                                  the pinned release lacks
+   22  every stop the pages spell is one `SKILL.md`'s ask table lists
+       (spec-0122 §5): a line of any page file matching the ask pattern lies
+       in a section a row's `where` cell links to, or in the table; every
+       row's sections exist and carry such a line; a paragraph that makes an
+       offer carries no stop. LEXICAL, and only that: it proves the pages'
+       stops are the listed ones, never that a listed stop is a design
+       question — that is a reader's test.
+                                            RED: `Ask the user which provider the
+                                                 key is for` in init.md I7; A1
+                                                 deleted while the opening check
+                                                 still asks
 
 RULE 21, AND THE PAIR IT NOW HOLDS WHOLE
 
@@ -282,6 +295,30 @@ def bundled_paths(text: str) -> list[str]:
 PIECE_FREE = {"fmt", "schema", "metrics"}
 PIECE_FREE_GROUP_VERBS = {("grammar", "list")}
 PREFABS_ARGUMENT = '"$DELVEWRIGHT_PREFABS"'
+# Rule 9's second arm: a build writes the session's own tree (spec-0122 §7.5).
+# `--perturb` writes nothing and refuses `--out`, so it owes none.
+BUILD_OUTPUT_ARGUMENTS = ('-o "$DELVE_OUTPUT"', '--out "$DELVE_OUTPUT"')
+
+# --- rule 22: the closed list of asks (spec-0122 §5) -------------------------
+#
+# The patterns are the spec's, written once here. `STOP` is a whole token in
+# capitals, because lower-case "stop" is everywhere a halt on failure is
+# described; the other three are matched in any case, because a sentence starts
+# with a capital.
+ASK_TABLE_HEADER = (
+    "id",
+    "where",
+    "what the user is asked, in player words",
+    "what the run waits for",
+)
+ASK_RE = re.compile(
+    r"\b(?:ask(?:s|ed|ing)? (?:the user|them)"
+    r"|wait(?:s|ing)? for (?:an answer|the user|a yes|an explicit yes)"
+    r"|end your turn)\b",
+    re.I,
+)
+STOP_RE = re.compile(r"(?<![\w-])STOP(?![\w-])")
+OFFER_RE = re.compile(r"\b(?:offer(?:s|ed)?|may (?:choose|pick|stand))\b", re.I)
 
 # --- rule 14: an unsubstituted template placeholder --------------------------
 #
@@ -420,6 +457,7 @@ STAGE_TOKEN_RE = re.compile(r"`([a-z][a-z0-9-]*)`")
 
 sys.path.insert(0, str(REPO / "tools"))
 from lib.clap_surface import kebab, normalize, parse_cli  # noqa: E402
+from lib import mdtable  # noqa: E402  — one reader of a pipe table
 from lib import release_tags  # noqa: E402  — the tag grammar, stated once (ADR-0028 §1)
 
 
@@ -1233,6 +1271,26 @@ def check(
                 f"working directory and reads as `internal error`, exit 10."
             )
     rep.bind("piece-reading invocation(s)", piece_refs, len(calls))
+    builds = to_output = 0
+    for (sub, flags, span, invocation), where in zip(calls, where_called):
+        if sub != "build" or not invocation or "perturb" in flags:
+            continue
+        builds += 1
+        raw = span.partition("\0")[0]
+        if any(arg in raw for arg in BUILD_OUTPUT_ARGUMENTS):
+            to_output += 1
+        else:
+            rep.find(
+                f"{where}: `delvec build` writes somewhere other than "
+                f'`-o "$DELVE_OUTPUT"`:\n      {raw.strip()}\n'
+                f"      The build tree is the session's own, `.out/delve` under the "
+                f"working directory, written into `.out/env.sh` by Init I4 with "
+                f"`DELVE_DOCKERFILE`; a tree anywhere else is one two sessions share."
+            )
+    rep.bind('build invocation(s) writing -o "$DELVE_OUTPUT"', to_output, builds)
+
+    # -- 22. every stop the pages spell is a listed ask ----------------------
+    ask_rule(rep, files)
 
     # -- 14/15/16. what the first full drill found ---------------------------
     placeholder_rule(rep)
@@ -1251,6 +1309,150 @@ def check(
 
     # -- 11/12. the manifests ------------------------------------------------
     manifest_rules(rep, repo, ref, rev, tag_exists)
+
+
+def is_ask(line: str) -> bool:
+    return bool(ASK_RE.search(line) or STOP_RE.search(line))
+
+
+def anchored_lines(text: str) -> list[tuple[int, str, tuple[str, ...]]]:
+    """`(1-based line number, line, enclosing heading anchors)` per prose line.
+
+    Fences are skipped: a fence is a command, never an instruction to stop. A
+    heading line belongs to the section it opens.
+    """
+    out: list[tuple[int, str, tuple[str, ...]]] = []
+    stack: list[tuple[int, str]] = []
+    fence = False
+    for n, line in enumerate(text.split("\n"), 1):
+        if FENCE_RE.match(line):
+            fence = not fence
+            continue
+        if fence:
+            continue
+        m = re.match(r"^(#{1,6}) (.+?)\s*$", line)
+        if m is not None:
+            level = len(m.group(1))
+            while stack and stack[-1][0] >= level:
+                stack.pop()
+            stack.append((level, slug(m.group(2))))
+        out.append((n, line, tuple(a for _, a in stack)))
+    return out
+
+
+def ask_rule(rep: Report, files: list[pathlib.Path]) -> None:
+    """Rule 22: every stop the pages spell lies in a row of the ask table."""
+    page = SKILL.read_text(encoding="utf-8")
+    rows = [r for r in mdtable.body_rows(page) if tuple(r.header) == ASK_TABLE_HEADER]
+    if not rows:
+        rep.find(
+            "`SKILL.md` carries no ask table — no pipe table whose header cells are "
+            + ", ".join(f"`{h}`" for h in ASK_TABLE_HEADER)
+            + ". Rule 22 judges every stop the pages spell against it, so without "
+            "it every stop is unlisted."
+        )
+        rep.bind("ask line(s) inside a listed section", 0, 0)
+        rep.bind("listed row(s) bound", 0, 0)
+        return
+    table_lines = {r.lineno for r in rows}
+    for n, line in enumerate(page.split("\n"), 1):
+        if [c.strip() for c in line.strip().strip("|").split("|")] == list(ASK_TABLE_HEADER):
+            table_lines.update({n, n + 1})
+
+    texts = {rel(p): p.read_text(encoding="utf-8") for p in files}
+    skill_key = rel(SKILL)
+    anchors = {
+        key: {a for _, _, chain in anchored_lines(text) for a in chain}
+        for key, text in texts.items()
+    }
+    # Each row's sections, as (file, anchor), resolved from its `where` links.
+    listed: dict[str, list[tuple[str, str]]] = {}
+    for r in rows:
+        ident = r.cells[0].strip("* ")
+        targets: list[tuple[str, str]] = []
+        for m in LINK_RE.finditer(r.cells[1]):
+            path, _, anchor = m.group("target").partition("#")
+            key = skill_key if not path else rel(SKILL_ROOT / path)
+            if key not in texts or not anchor:
+                rep.find(
+                    f"the ask table's row {ident} names `{m.group('target')}` in its "
+                    f"`where` cell, which is not a section of a page file."
+                )
+                continue
+            if anchor not in anchors[key]:
+                rep.find(
+                    f"the ask table's row {ident} names `{m.group('target')}`, and "
+                    f"{key} has no heading that anchors at `#{anchor}`."
+                )
+                continue
+            targets.append((key, anchor))
+        if not targets:
+            rep.find(
+                f"the ask table's row {ident} links no section in its `where` cell, "
+                f"so no stop on any page can lie in it."
+            )
+        listed[ident] = targets
+
+    allowed = {t for ts in listed.values() for t in ts}
+    asks = inside = 0
+    bound: dict[str, int] = {ident: 0 for ident in listed}
+    for key, text in texts.items():
+        for n, line, chain in anchored_lines(text):
+            if not is_ask(line):
+                continue
+            asks += 1
+            if key == skill_key and n in table_lines:
+                inside += 1
+                continue
+            hits = [ident for ident, ts in listed.items() if any((key, a) in ts for a in chain)]
+            if hits:
+                inside += 1
+                for ident in hits:
+                    bound[ident] += 1
+                continue
+            rep.find(
+                f"{key}:{n} asks the user to stop outside every section the ask "
+                f"table lists:\n      {line.strip()}\n"
+                f"      A stop is a design question at A1, A2 or H, or it is not a "
+                f"stop: a technical question is a default the page states, recorded "
+                f"with `scripts/debug-note.py`, or an engine fix."
+            )
+    rep.bind("ask line(s) inside a listed section", inside, asks)
+    for ident, count in bound.items():
+        if listed[ident] and count == 0:
+            rep.find(
+                f"the ask table's row {ident} is bound by no stop: none of its "
+                f"sections carries a line that asks — a row no page executes is "
+                f"the unrun shape."
+            )
+    rep.bind(
+        "listed row(s) bound",
+        sum(1 for ident, count in bound.items() if count > 0),
+        len(listed),
+    )
+
+    offers = free = 0
+    for key, text in texts.items():
+        paragraph: list[str] = []
+        prose = [line for _, line, _ in anchored_lines(text)] + [""]
+        for line in prose:
+            if line.strip():
+                paragraph.append(line)
+                continue
+            block = "\n".join(paragraph)
+            paragraph = []
+            if not OFFER_RE.search(block):
+                continue
+            offers += 1
+            if any(is_ask(x) for x in block.split("\n")):
+                rep.find(
+                    f"{key}: a paragraph that makes an offer also stops for an "
+                    f"answer — an offer is optional and never a stop:\n      "
+                    + block.strip().split("\n")[0]
+                )
+            else:
+                free += 1
+    rep.bind("offer paragraph(s) free of a stop", free, offers)
 
 
 def key_of(version: str) -> tuple[int, int, int]:

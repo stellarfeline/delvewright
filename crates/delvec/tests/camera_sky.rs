@@ -84,10 +84,11 @@ fn sky_of(f: &CameraFrame) -> FrameSky {
 fn cam(name: &str, answers: &str, sky: Option<CameraSky>) -> Camera {
     Camera {
         after: None,
-        answers: answers.into(),
+        answers: Some(answers.into()),
         fov: 60.0,
         height: 90,
         name: name.into(),
+        note: None,
         pitch: 10.0,
         pos: [10.5, 70.0, -4.25],
         sky,
@@ -519,7 +520,7 @@ fn the_gallery_reaches_every_weather_and_every_class() {
     let mut rows2 = rows.clone();
     let r = rows2
         .iter_mut()
-        .find(|r| r.name == sheet.cameras[j].answers)
+        .find(|r| Some(&r.name) == sheet.cameras[j].answers.as_ref())
         .unwrap();
     let s = r.sky.as_mut().unwrap();
     s.weather = if s.weather == WorldWeather::Clear {

@@ -351,6 +351,8 @@ fn crush_false_is_inert() {
         "validation/packtest-solo.json".to_string(),
         // So does the hand-back binding.
         "validation/packtest-handback.json".to_string(),
+        // So does the fresh-body binding.
+        "validation/packtest-fresh.json".to_string(),
         "manifest.json".to_string(),
     ];
     for path in &differing {
@@ -518,7 +520,10 @@ fn a_crush_gate_enters_the_death_plan() {
         "a gate that does not crush puts nothing in a death plan this fixture otherwise lacks"
     );
     let v = plan_of(&on).expect("a crush gate makes a death plan");
-    assert_eq!(v["format_version"], serde_json::json!(5));
+    assert_eq!(
+        v["format_version"],
+        serde_json::json!(delvec::compiler::deathplan::DEATH_PLAN_FORMAT_VERSION)
+    );
     let gates = v["crush_gates"].as_array().expect("crush_gates");
     assert_eq!(gates.len(), 1, "{v:#}");
     let g = &gates[0];
@@ -549,6 +554,19 @@ fn a_crush_gate_enters_the_death_plan() {
     assert!(
         g["crossed_at"].is_u64(),
         "the fixture's route crosses its gate: {g:#}"
+    );
+    // The death is walked at a boundary the build names, before the crossing,
+    // at a mouth of the gate's own.
+    let trial_at = g["trial_at"]
+        .as_u64()
+        .expect("the build names the trial's boundary");
+    assert!(
+        trial_at < g["crossed_at"].as_u64().unwrap(),
+        "a gate the path crosses is reached before it is crossed: {g:#}"
+    );
+    assert!(
+        approaches.iter().any(|a| a["mouth"] == g["trial_mouth"]),
+        "the trial's mouth is one of the gate's: {g:#}"
     );
     assert_eq!(v["binding"]["crush_gates"], serde_json::json!(1));
     let seats = v["placement"]["seats"].as_array().unwrap();

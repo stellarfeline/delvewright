@@ -3,8 +3,9 @@
 Every run of `/new-delve` asks it before anything reads a document, and the page
 binds to its exit codes. Each test builds a real machine in a scratch `HOME` —
 a skill root holding copies of the two scripts and a pin, a git checkout for
-the engine, a `delvec` that answers a version, and an `env.sh` — then moves
-exactly one thing and checks the script names the step that repairs it.
+the engine, a `delvec` that answers a version, and a working directory whose
+`.out/env.sh` is the session's environment — then moves exactly one thing and
+checks the script names the step that repairs it.
 
 The I4 command is taken out of `references/init.md`'s own fence and run, so the
 repair the check prescribes is the one the page actually carries.
@@ -69,7 +70,10 @@ class Machine:
         self.skill = root / "plugin" / "skills" / "new-delve"
         self.engine = self.home / ".delvewright" / "engine"
         self.bindir = self.home / ".delvewright" / "bin"
-        self.env = self.home / ".delvewright" / "env.sh"
+        self.work = root / "work"
+        self.env = self.work / ".out" / "env.sh"
+        self.stale = self.home / ".delvewright" / "env.sh"
+        self.env.parent.mkdir(parents=True)
 
         (self.skill / "scripts").mkdir(parents=True)
         for name in ("check-toolchain.py", "fetch-delvec.py"):
@@ -103,6 +107,7 @@ class Machine:
             f'export DELVEWRIGHT_MODE="{values["mode"]}"\n'
             f'export DELVEWRIGHT_ENGINE="{values["engine"]}"\n'
             f'export DELVEWRIGHT_SKILL="{values["skill"]}"\n'
+            f'export DELVE_OUTPUT="{values.get("output", self.work / ".out" / "delve")}"\n'
             f'export PATH="{values["bindir"]}:$PATH"\n',
             encoding="utf-8",
         )
@@ -124,6 +129,7 @@ class Machine:
             capture_output=True,
             text=True,
             env=env,
+            cwd=self.work,
         )
 
 
@@ -146,8 +152,9 @@ def test_a_machine_at_the_pin_agrees_on_every_comparison(machine):
     proc = machine.check()
     assert proc.returncode == 0, proc.stdout + proc.stderr
     agreeing = [line for line in proc.stdout.splitlines() if line.endswith("— agrees")]
-    # the tree, the binary, and three lines of env.sh: five comparisons, all bound
-    assert len(agreeing) == 5, proc.stdout
+    # the tree, the binary, four lines of env.sh and the absent stale file:
+    # seven comparisons, all bound
+    assert len(agreeing) == 7, proc.stdout
     assert "DISAGREES" not in proc.stdout
 
 
@@ -198,6 +205,39 @@ def test_an_env_sh_of_the_other_mode_is_refused(machine):
     proc = machine.check()
     assert proc.returncode == 3
     assert _refused_steps(proc.stdout) == ["I4"]
+
+
+def test_an_env_sh_naming_another_build_tree_is_refused_and_names_I4(machine, tmp_path):
+    """Two sessions built into one tree: the session's output is its own `.out/delve`."""
+    machine.write_env(
+        mode="creator", engine=machine.engine, skill=machine.skill, bindir=machine.bindir,
+        output=machine.engine / "validation" / "delve-output",
+    )
+    proc = machine.check()
+    assert proc.returncode == 3
+    assert "env.sh DELVE_OUTPUT" in proc.stdout
+    assert _refused_steps(proc.stdout) == ["I4"]
+
+
+def test_the_machine_wide_env_sh_is_named_stale_in_the_exit_3_remedy(machine):
+    """The file an older page wrote is a disagreement, and its repair is deleting it."""
+    machine.stale.parent.mkdir(parents=True, exist_ok=True)
+    machine.stale.write_text('export DELVEWRIGHT_PREFABS="/someone/elses/library"\n', encoding="utf-8")
+    proc = machine.check()
+    assert proc.returncode == 3, proc.stdout
+    assert "the machine-wide" in proc.stdout and "DISAGREES" in proc.stdout
+    assert _refused_steps(proc.stdout) == ["delete `~/.delvewright/env.sh`"]
+    machine.stale.unlink()
+    assert machine.check().returncode == 0
+
+
+def test_no_session_env_sh_beside_a_stale_one_names_both(machine):
+    machine.env.unlink()
+    machine.stale.parent.mkdir(parents=True, exist_ok=True)
+    machine.stale.write_text("", encoding="utf-8")
+    proc = machine.check()
+    assert proc.returncode == 4
+    assert "stale machine-wide toolchain file" in proc.stdout and "delete it" in proc.stdout
 
 
 def test_a_value_inherited_from_the_callers_shell_does_not_stand_in_for_env_sh(machine):
@@ -287,15 +327,26 @@ def test_the_i4_the_page_carries_repairs_env_sh_and_keeps_every_other_line(machi
         "DELVEWRIGHT_ENGINE": str(machine.engine),
         "DELVEWRIGHT_PYTHON": sys.executable,
         "DELVEWRIGHT_SKILL": str(machine.skill),
+        "DELVEWRIGHT_DEBUG": "0",  # I0's value when the session's shell set none
     }
     for _ in range(2):  # safe to run any number of times
-        subprocess.run(["sh", "-c", command], env=run_env, check=True)
+        subprocess.run(["sh", "-c", command], env=run_env, check=True, cwd=machine.work)
 
     text = machine.env.read_text(encoding="utf-8")
     assert 'export DELVEWRIGHT_PREFABS="/the/library"' in text
     assert 'export SOME_PROVIDER_KEY="k"' in text
-    for key in ("JAVA_HOME", "DELVEWRIGHT_MODE", "DELVEWRIGHT_SKILL", "DELVEWRIGHT_PREFABS", "PATH"):
+    for key in (
+        "JAVA_HOME", "DELVEWRIGHT_MODE", "DELVEWRIGHT_SKILL", "DELVEWRIGHT_PREFABS", "PATH",
+        "DELVEWRIGHT_DEBUG", "DELVE_OUTPUT", "DELVE_DOCKERFILE",
+    ):
         assert len(re.findall(rf"^export {key}=", text, re.M)) == 1, (key, text)
+    # The pair that travels together, the build tree under this working directory,
+    # and the flag off by default (spec-0122 §4.1, §7.5).
+    out = re.search(r'^export DELVE_OUTPUT="(.*)/\.out/delve"$', text, re.M)
+    assert out and pathlib.Path(out.group(1)).resolve() == machine.work.resolve(), text
+    assert f'export DELVE_DOCKERFILE="{machine.engine}/validation/Dockerfile.delve"' in text
+    assert 'export DELVEWRIGHT_DEBUG="0"' in text
+    assert not machine.stale.exists(), "I4 writes the session's file, never the machine-wide one"
     proc = machine.check()
     assert proc.returncode == 0, proc.stdout
 

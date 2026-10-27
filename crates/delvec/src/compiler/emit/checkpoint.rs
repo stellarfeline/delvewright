@@ -14,20 +14,20 @@ pub(super) fn emit_set_checkpoint(
     on_respawn: &[QuestEffect],
     body: &mut Vec<String>,
 ) {
-    if let Some(pos) = anchor_point_any(plan, anchor) {
-        body.push(format!("spawnpoint @a {} {} {}", pos[0], pos[1], pos[2]));
-        body.push(format!(
-            "data modify storage dw:cp pos set value [{}, {}, {}]",
-            pos[0], pos[1], pos[2]
-        ));
-        if plan.any_checkpoint() {
-            let idx = plan
-                .checkpoint_for(anchor, on_respawn)
-                .map(|c| c.index)
-                .unwrap_or(0);
-            body.push(format!("scoreboard players set #cp dw.sys {idx}"));
-        }
-    }
+    // The collector registers every `set-checkpoint` whose anchor resolves, so
+    // one that is not found has no cell and emits nothing, as before.
+    let Some(cp) = plan.checkpoint_for(anchor, on_respawn) else {
+        return;
+    };
+    // The seat, not the anchor: where a respawn puts the body
+    // ([`Plan::seat`]), which is the anchor cell whenever a body may stand there.
+    let pos = plan.seat(cp);
+    body.push(format!("spawnpoint @a {} {} {}", pos[0], pos[1], pos[2]));
+    body.push(format!(
+        "data modify storage dw:cp pos set value [{}, {}, {}]",
+        pos[0], pos[1], pos[2]
+    ));
+    body.push(format!("scoreboard players set #cp dw.sys {}", cp.index));
 }
 
 /// **The death-position seam — measured, and the answer is that it needs nothing.**
@@ -251,7 +251,9 @@ pub(super) fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
     if !plan.any_checkpoint() {
         return fns;
     }
-    // cp_seat_<i> (as @s): put the respawned player ON the checkpoint cell.
+    // cp_seat_<i> (as @s): put the respawned player ON the checkpoint's seat
+    // ([`Plan::seat`]): the anchor cell when a body may stand there, else the
+    // safe cell beside the rest object on the side the party walks up from.
     //
     // Why this exists. `set-checkpoint` records the
     // party's respawn with vanilla's `spawnpoint @a <cell>`, but `/spawnpoint` is
@@ -270,13 +272,14 @@ pub(super) fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
     // them back. Coordinates are compiled in — no macro, no storage read, so the
     // re-seat cannot itself fail on a malformed mirror.
     for c in &plan.checkpoints {
+        let seat = plan.seat(c);
         fns.push((
             format!("cp_seat_{}", c.index),
             lines(&[format!(
                 "tp @s {} {} {}",
-                center(c.pos[0]),
-                c.pos[1],
-                center(c.pos[2])
+                center(seat[0]),
+                seat[1],
+                center(seat[2])
             )]),
         ));
     }
@@ -536,7 +539,8 @@ pub(super) fn emit_bonfire_functions(plan: &Plan) -> Vec<(String, String)> {
     let mut fns: Vec<(String, String)> = Vec::new();
     for bf in plan.bonfires() {
         let i = bf.index;
-        let pos = bf.pos;
+        // Save moves the respawn to the fire's seat, not onto the fire.
+        let pos = plan.seat(bf);
         // The three lines a `set-checkpoint` writes: vanilla's respawn point, the
         // `dw:cp` mirror every other feature reads, and the active-checkpoint
         // marker that selects the respawn hook. This IS "save".

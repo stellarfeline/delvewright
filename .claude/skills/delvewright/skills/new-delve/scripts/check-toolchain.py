@@ -8,7 +8,7 @@ exits with a code the page binds to.
 
 WHAT IT COMPARES
 
-    the binary       `delvec --version`, as `. ~/.delvewright/env.sh && delvec`
+    the binary       `delvec --version`, as `. .out/env.sh && delvec`
                      resolves it — the binary every later command runs, not a
                      path this script guesses. Creator mode: equal to the
                      version the pin's `[engine].ref` tag states. Dev mode: equal
@@ -18,10 +18,17 @@ WHAT IT COMPARES
                      COMMIT the pin's `[engine].ref` tag points at, resolved in
                      the creator's own clone. Dev mode: the checkout is the
                      engine under work, so HEAD is printed and not compared.
-    env.sh           `DELVEWRIGHT_SKILL` equal to the skill root this script
-                     lives in, and `DELVEWRIGHT_MODE` / `DELVEWRIGHT_ENGINE`
-                     equal to this run's I0 — read by sourcing the file in `sh`,
-                     the way every later command reads it.
+    env.sh           the SESSION's file, `.out/env.sh` under the working
+                     directory (spec-0122 §7.5): `DELVEWRIGHT_SKILL` equal to
+                     the skill root this script lives in,
+                     `DELVEWRIGHT_MODE` / `DELVEWRIGHT_ENGINE` equal to this
+                     run's I0, and `DELVE_OUTPUT` equal to `.out/delve` under
+                     the working directory — read by sourcing the file in
+                     `sh`, the way every later command reads it.
+    the stale file   `~/.delvewright/env.sh`, the one-per-machine file an older
+                     page wrote. Two sessions on one machine rewrote each
+                     other's library and build tree through it, so where it
+                     exists it is a disagreement, repaired by deleting it.
 
 The skill root is this script's own location, so it is invoked by the path I1
 resolved in THIS run. A path read out of `env.sh` names whichever skill root
@@ -33,7 +40,8 @@ EXIT CODES, BECAUSE THE PAGE BINDS TO THEM RATHER THAN TO PROSE
     2  this script cannot run at all (the pin, env.sh or a flag is unusable)
     3  a comparison disagrees: run the Init steps it names, in the order it
        prints them, then this script again — nothing else runs before it exits 0
-    4  there is no toolchain on this machine (`env.sh` is absent): Init, I2-I8
+    4  this working directory has no toolchain (`.out/env.sh` is absent):
+       Init, I2-I8
 
     python3 scripts/check-toolchain.py --mode creator --engine ~/.delvewright/engine
 """
@@ -58,11 +66,24 @@ SKILL_ROOT = HERE.parent
 # The variables read back out of `env.sh`, and the ones cleared before sourcing
 # it: a value inherited from the caller's shell must not stand in for a line the
 # file does not carry.
-ENV_KEYS = ("DELVEWRIGHT_MODE", "DELVEWRIGHT_ENGINE", "DELVEWRIGHT_SKILL")
-CLEARED = ENV_KEYS + ("DELVEWRIGHT_PYTHON", "DELVEWRIGHT_PREFABS", "JAVA_HOME")
+ENV_KEYS = ("DELVEWRIGHT_MODE", "DELVEWRIGHT_ENGINE", "DELVEWRIGHT_SKILL", "DELVE_OUTPUT")
+CLEARED = ENV_KEYS + (
+    "DELVEWRIGHT_PYTHON",
+    "DELVEWRIGHT_PREFABS",
+    "DELVEWRIGHT_DEBUG",
+    "DELVE_DOCKERFILE",
+    "JAVA_HOME",
+)
 
-# The steps a disagreement is repaired by, in the order Init runs them.
-ORDER = ("I2", "I3a", "I3b", "I4")
+# Where the session's environment lives, under the working directory, and the
+# machine-wide file an older page wrote, which is stale wherever it exists.
+SESSION_ENV = pathlib.Path(".out") / "env.sh"
+STALE_ENV = pathlib.Path("~/.delvewright/env.sh")
+
+# The steps a disagreement is repaired by, in the order Init runs them. The
+# stale file's removal comes first: I4 then writes the session's own.
+DELETE_STALE = f"delete `{STALE_ENV}`"
+ORDER = (DELETE_STALE, "I2", "I3a", "I3b", "I4")
 
 
 def _fetch_delvec():
@@ -144,14 +165,26 @@ def same_path(got: str, want: str) -> bool:
     return bool(got) and pathlib.Path(got).resolve() == pathlib.Path(want).resolve()
 
 
-def run(mode: str, engine: pathlib.Path, env: pathlib.Path, pin: pathlib.Path) -> int:
+def run(
+    mode: str,
+    engine: pathlib.Path,
+    env: pathlib.Path,
+    pin: pathlib.Path,
+    stale: pathlib.Path | None = None,
+) -> int:
     _repo, ref = FD.read_pin(pin)
     version = FD.tag_version(ref)
     print(f"pin check: skill root {SKILL_ROOT}")
     print(f"pin check: its pin names engine release {ref} (delvec {version})")
+    stale_here = stale is not None and stale.is_file()
 
     if not env.is_file():
-        print(f"pin check: {env} is absent — there is no toolchain on this machine")
+        print(f"pin check: {env} is absent — this working directory has no toolchain")
+        if stale_here:
+            print(
+                f"pin check: {stale} is a stale machine-wide toolchain file an older page wrote; "
+                f"delete it — the session's own is written by I4"
+            )
         print("pin check: REFUSED — run Init from I2 through I8, then this check again")
         return EXIT_NO_TOOLCHAIN
 
@@ -203,6 +236,17 @@ def run(mode: str, engine: pathlib.Path, env: pathlib.Path, pin: pathlib.Path) -
     compare("env.sh DELVEWRIGHT_ENGINE", got, str(engine), same_path(got, str(engine)), "I4")
     got = values["DELVEWRIGHT_SKILL"]
     compare("env.sh DELVEWRIGHT_SKILL", got, str(SKILL_ROOT), same_path(got, str(SKILL_ROOT)), "I4")
+    want_out = env.resolve().parent / "delve"
+    got = values["DELVE_OUTPUT"]
+    compare("env.sh DELVE_OUTPUT", got, str(want_out), same_path(got, str(want_out)), "I4")
+    if stale is not None:
+        compare(
+            f"the machine-wide {stale}",
+            "a stale toolchain file" if stale_here else "",
+            "nothing — the session's environment is .out/env.sh",
+            not stale_here,
+            DELETE_STALE,
+        )
 
     if not repairs:
         print("pin check: ok — the toolchain on disk is the one this page pins")
@@ -232,8 +276,9 @@ def main(argv: list[str] | None = None) -> int:
         return run(
             args.mode,
             args.engine.expanduser(),
-            pathlib.Path("~/.delvewright/env.sh").expanduser(),
+            pathlib.Path.cwd() / SESSION_ENV,
             SKILL_ROOT / "versions.toml",
+            STALE_ENV.expanduser(),
         )
     except FD.Refusal as refusal:
         print(f"pin check: {refusal}", file=sys.stderr)

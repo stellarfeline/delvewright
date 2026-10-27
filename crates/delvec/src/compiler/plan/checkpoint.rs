@@ -13,8 +13,11 @@ pub struct CheckpointPlan {
     pub index: usize,
     /// The checkpoint anchor name.
     pub anchor: String,
-    /// The resolved absolute anchor cell.
-    pub pos: [i32; 3],
+    /// The resolved absolute anchor cell: the **rest object** — where a
+    /// bonfire's hitbox stands and the bot rests. Not where a respawn puts a
+    /// body: that is the seat ([`Plan::seat`],
+    /// [`crate::compiler::nav::World::rest_seat_of`]), derived beside it.
+    pub at: [i32; 3],
     /// Per-player `on_respawn` effects (may be empty). For a bonfire
     /// (`rest == true`) this is the `on_rest` bundle: the same effects run on a
     /// rest and on a respawn (spec-0016 §1).
@@ -80,6 +83,32 @@ impl<'a> Plan<'a> {
     /// step would only be a second place for it to go stale.
     pub fn on_death(&self) -> &[QuestEffect] {
         &self.campaign.quests.content.on_death
+    }
+
+    /// Fix every checkpoint's seat for the emitter, from the build's final
+    /// world. Once per build; a second call keeps the first.
+    pub fn fix_seats(&self, seats: Vec<Option<[i32; 3]>>) {
+        let _ = self.seats.set(seats);
+    }
+
+    /// **Where a respawn at `cp` puts a body**, as the emitter writes it.
+    ///
+    /// # Panics
+    ///
+    /// When read before [`Plan::fix_seats`], or for a checkpoint with no seat:
+    /// the build refuses that checkpoint (`DW0316`) before anything is emitted,
+    /// so either is a compiler defect.
+    pub fn seat(&self, cp: &CheckpointPlan) -> [i32; 3] {
+        self.seats
+            .get()
+            .and_then(|s| s.get(cp.index).copied().flatten())
+            .unwrap_or_else(|| {
+                panic!(
+                    "checkpoint `{}` was emitted with no seat fixed — `DW0316` refuses a \
+                     checkpoint with none before emission, so this is a compiler defect",
+                    cp.anchor
+                )
+            })
     }
 
     /// The collected checkpoint matching a `set-checkpoint` effect (by anchor +
@@ -260,7 +289,7 @@ impl V06Collector<'_> {
             self.checkpoints.push(CheckpointPlan {
                 index: self.checkpoints.len(),
                 anchor: anchor.to_string(),
-                pos,
+                at: pos,
                 on_respawn: on_respawn.to_vec(),
                 fire_step,
                 trigger: self.trigger.clone(),

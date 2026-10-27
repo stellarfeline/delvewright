@@ -466,6 +466,11 @@ pub struct World {
     /// does not cover its cell, and the subset of them a body over falls
     /// through.
     pub(in crate::compiler::nav) floors: Floors,
+    /// **Where a body is put down by declaration** ([`Seating`]): the cells
+    /// whose block hurts a body, and each checkpoint's respawn seat once
+    /// [`World::with_rest_seats`] has derived them over this world. Carried by
+    /// every view, as `holder_stances` is.
+    pub(in crate::compiler::nav) seating: crate::compiler::nav::Seating,
 }
 
 /// **Whether a solid cell holds a body standing over it**, read from the
@@ -506,6 +511,7 @@ struct Cells {
     climb_holds: ClimbHolds,
     unheld_climb: UnheldClimbs,
     footprints: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Footprint16>,
+    hurting: CellSet,
 }
 
 /// **Everything a [`World`] carries that is not a block** — the premises the
@@ -806,6 +812,7 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             holder_stances: self.holder_stances.clone(),
             floors: self.floors.clone(),
+            seating: self.seating.clone(),
             hiding: self.hiding.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
@@ -1047,6 +1054,7 @@ impl World {
                 climb_holds: std::sync::Arc::new(occ.climb),
                 unheld_climb: std::sync::Arc::new(occ.unheld_climb),
                 footprints: occ.footprints,
+                hurting: occ.hurting.into(),
             },
             premises,
         )
@@ -1070,6 +1078,7 @@ impl World {
                 climb_holds: self.climb_holds.clone(),
                 unheld_climb: self.unheld_climb.clone(),
                 footprints: self.floors.footprints.clone(),
+                hurting: self.seating.hurting.clone(),
             },
             premises,
         )
@@ -1189,6 +1198,7 @@ impl World {
             holder_stances: BTreeMap::new(),
             floors,
             hiding: cells.hiding,
+            seating: crate::compiler::nav::Seating::of_hurting(cells.hurting),
         }
         .resieve()
     }
@@ -1320,6 +1330,7 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             holder_stances: self.holder_stances.clone(),
             floors: self.floors.clone(),
+            seating: self.seating.clone(),
             hiding,
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
@@ -1379,6 +1390,7 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             holder_stances: self.holder_stances.clone(),
             floors: self.floors.clone(),
+            seating: self.seating.clone(),
             hiding: self.hiding.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
@@ -1446,6 +1458,7 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             holder_stances: self.holder_stances.clone(),
             floors: self.floors.clone(),
+            seating: self.seating.clone(),
             hiding: self.hiding.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
@@ -1510,6 +1523,7 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             holder_stances: self.holder_stances.clone(),
             floors: self.floors.clone(),
+            seating: self.seating.clone(),
             hiding: self.hiding.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
@@ -1572,6 +1586,41 @@ impl World {
             .with_flooded(&st.flooded, &st.flood_regions)
             .with_staged_lethal(&st.lethal, &st.lethal_regions)
             .with_keep_out(&st.keep_out)
+            .with_laid_hurting(&st.laid)
+    }
+
+    /// This world with what each laid write leaves in its cells joined to the
+    /// blocks that hurt a body ([`crate::compiler::nav::Seating`]): a cell whose
+    /// last write lays a block that hurts ([`delvewright_dsl::blockshape::hurts_body`]
+    /// — a campfire a pressable's `prop` lays at load) hurts, and a cell whose
+    /// last write lays anything else, air included, does not.
+    fn with_laid_hurting(
+        mut self,
+        laid: &[crate::compiler::nav::route::region::LaidWrite],
+    ) -> World {
+        if laid.is_empty() {
+            return self;
+        }
+        let mut last: BTreeMap<[i32; 3], bool> = BTreeMap::new();
+        for ((lo, hi), block) in laid {
+            let hurts = block
+                .as_deref()
+                .is_some_and(delvewright_dsl::blockshape::hurts_body);
+            for c in crate::compiler::assembled::region_cells(*lo, *hi) {
+                last.insert(c, hurts);
+            }
+        }
+        let mut hurting = self.seating.hurting.clone();
+        for (c, hurts) in last {
+            if hurts {
+                hurting.insert(c);
+            } else {
+                hurting.remove(&c);
+            }
+        }
+        hurting.compact();
+        self.seating.hurting = hurting;
+        self
     }
 
     /// This world keeping out of `regions` ([`World::keep_out`]).
@@ -1627,6 +1676,7 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             holder_stances: self.holder_stances.clone(),
             floors: self.floors.clone(),
+            seating: self.seating.clone(),
             hiding: self.hiding.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
@@ -1710,6 +1760,7 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             holder_stances: self.holder_stances.clone(),
             floors: self.floors.clone(),
+            seating: self.seating.clone(),
             hiding: self.hiding.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
@@ -1769,6 +1820,7 @@ impl World {
                 footprints: BTreeMap::new(),
                 // A synthetic solid cell is a full cube of stone: it hides.
                 hiding: solid_hides,
+                hurting: Default::default(),
             },
             Premises::geometry_only(),
         )

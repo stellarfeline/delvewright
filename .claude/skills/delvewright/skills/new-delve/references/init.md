@@ -5,9 +5,19 @@ Init is finished by. This file carries the commands and the meaning of every
 way each one fails. Read it while running Init and at no other time.
 
 Every command below runs through the environment file I4 writes, once I4 has
-written it: `. ~/.delvewright/env.sh && <the command>`. **I0, I1 and I1b are the
-exception**: they run on every run, before `env.sh` is sourced, because I1b is
-the step that decides whether `env.sh` still describes this run.
+written it: `. .out/env.sh && <the command>`, from the working directory. **I0,
+I1 and I1b are the exception**: they run on every run, before `env.sh` is
+sourced, because I1b is the step that decides whether `env.sh` still describes
+this run.
+
+**What is per machine and what is per session.** `~/.delvewright/` holds what
+one machine shares: `engine/` the clone at the pin, `bin/` the binary, `client/`
+the jar — written by Init, read-only after it. What belongs to one working
+directory lives in that directory's build output, `.out/`: the environment file
+`.out/env.sh` and the build tree `.out/delve`. Two sessions in two working
+directories therefore never rewrite each other's library or build into one
+tree. Two sessions in **one** working directory are one working tree with two
+writers, which nothing here makes safe: run one.
 
 ## Contents
 
@@ -46,7 +56,16 @@ DELVEWRIGHT_MODE="$(
 [ "$DELVEWRIGHT_MODE" = dev ] \
   && DELVEWRIGHT_ENGINE="$PWD" \
   || DELVEWRIGHT_ENGINE="$HOME/.delvewright/engine"
+DELVEWRIGHT_DEBUG="${DELVEWRIGHT_DEBUG:-0}"
 ```
+
+**`DELVEWRIGHT_DEBUG` is read here, from the shell that started the session.**
+Unset or `0` is **off**, the released default; any other value is **on**. It is
+the engine developer's switch, so no page asks for it and no settings screen
+shows it. It changes no document, no emitted byte and no gate: it decides only
+whether the run's final report carries the section *Technical decisions and
+engine limits* (step 13). I4 writes it into `.out/env.sh` so every later command
+sees the same value.
 
 **One assignment, on purpose.** The mode is written here and read everywhere
 else; a form with a branch per assignment is a form somebody adds a third branch
@@ -188,8 +207,9 @@ JUDGED. None of those three lines names Compose.
 ## I1b — the pin, checked on every run
 
 **A machine that has run Init before still runs this, first.** The toolchain in
-`~/.delvewright/` is whatever the last run left there, and the page you are
-reading may pin a different engine than that run's page did. Nothing on disk
+`~/.delvewright/` is whatever the last run left there, the working directory's
+`.out/env.sh` is whatever the last session here wrote, and the page you are
+reading may pin a different engine than either did. Nothing on disk
 says so by itself: an older `delvec` refuses a newer page's documents with
 `unknown variant` and codes it has never heard of, and none of those name a
 version.
@@ -213,14 +233,15 @@ found and what the pin wants:
 |---|---|
 | `delvec --version`, resolved through `env.sh`'s `PATH` — the binary every later command runs | creator: the version `[engine].ref` states; dev: `"$DELVEWRIGHT_ENGINE/versions.toml"`'s `[engine].version`, the number I3b holds a dev binary to |
 | `git -C "$DELVEWRIGHT_ENGINE" rev-parse HEAD` | creator: the commit `[engine].ref` resolves to in that clone. Dev: printed, not compared — the checkout is the engine under work |
-| `env.sh`'s `DELVEWRIGHT_SKILL`, `DELVEWRIGHT_MODE`, `DELVEWRIGHT_ENGINE`, read by sourcing it | the skill root the script lives in, and this run's I0 |
+| `.out/env.sh`'s `DELVEWRIGHT_SKILL`, `DELVEWRIGHT_MODE`, `DELVEWRIGHT_ENGINE`, `DELVE_OUTPUT`, read by sourcing it | the skill root the script lives in, this run's I0, and `.out/delve` under the working directory |
+| `~/.delvewright/env.sh` | absent: it is the machine-wide file an older page wrote, and two sessions rewrote each other's library through it. Present, it is named stale and its repair is deleting it |
 
 | exit | what it means | what to do |
 |---|---|---|
 | `0` | the toolchain on disk is the one this page pins | skip I2, I3 and I4 — nothing is cloned or downloaded. I5 only when `~/.delvewright/client/minecraft-1.21.11.jar` is not there. I6 on every run: the working directory decides it. I7 and I8 only when this run repaired something |
 | `3` a comparison disagrees | **a refusal.** The run may not go past it | run the steps its last line names, in that order — I3a's own table still applies and may send you to I3b — then this command again. **No campaign document is read and no `delvec` subcommand is run until it exits 0.** Then I6, I7 and I8 |
-| `4` no `env.sh` | this machine has never finished I4 | all of Init from I2 through I8, in order. I8 runs this command again |
-| `2` unusable | the pin, the checkout's `versions.toml` in dev mode, or `env.sh` cannot be read | **stop**, and say what it printed |
+| `4` no `.out/env.sh` | this working directory has never finished I4 | all of Init from I2 through I8, in order — on a machine that ran Init elsewhere, I2 and I3a find the clone and the binary already at the pin and change nothing. A stale `~/.delvewright/env.sh` it names is deleted first. I8 runs this command again |
+| `2` unusable | the pin, the checkout's `versions.toml` in dev mode, or `.out/env.sh` cannot be read | **stop**, and say what it printed |
 
 Say the versions it found out loud whenever it does not exit 0: the user reads
 which engine the machine had and which the page wants.
@@ -398,17 +419,20 @@ DW_PROBE=1` and then, as a *separate* command, `echo $DW_PROBE`. An empty answer
 means every command you issue gets a fresh shell — the normal case for an agent
 — and every `export` above is lost each time.
 
-The environment goes in one file, outside every campaign. I4 owns six of its
-lines and writes them with this run's values; **every other line is kept**, so
-running I4 again — which is how I1b's exit 3 repairs `env.sh` — never loses the
-library I6 named or a provider key I7 put there:
+The environment goes in one file, the working directory's own `.out/env.sh` —
+build output, gitignored, never committed. I4 owns nine of its lines and writes
+them with this run's values; **every other line is kept**, so running I4 again —
+which is how I1b's exit 3 repairs it — never loses the library I6 named or a
+provider key I7 put there:
 
 ```sh
-mkdir -p ~/.delvewright
-E="$HOME/.delvewright/env.sh"
+mkdir -p .out
+git rev-parse --git-dir >/dev/null 2>&1 && ! git check-ignore -q .out/env.sh \
+  && printf '.out/\n' >> .gitignore
+E="$PWD/.out/env.sh"
 touch "$E"
 {
-  grep -Ev '^export (JAVA_HOME|DELVEWRIGHT_MODE|DELVEWRIGHT_ENGINE|DELVEWRIGHT_PYTHON|DELVEWRIGHT_SKILL|PATH)=' "$E"
+  grep -Ev '^export (JAVA_HOME|DELVEWRIGHT_MODE|DELVEWRIGHT_ENGINE|DELVEWRIGHT_PYTHON|DELVEWRIGHT_SKILL|DELVEWRIGHT_DEBUG|DELVE_OUTPUT|DELVE_DOCKERFILE|PATH)=' "$E"
   grep -q '^export DELVEWRIGHT_PREFABS=' "$E" || echo 'export DELVEWRIGHT_PREFABS=""'
   cat <<EOF
 export JAVA_HOME="$JAVA_HOME"
@@ -416,14 +440,23 @@ export DELVEWRIGHT_MODE="$DELVEWRIGHT_MODE"
 export DELVEWRIGHT_ENGINE="$DELVEWRIGHT_ENGINE"
 export DELVEWRIGHT_PYTHON="$DELVEWRIGHT_PYTHON"
 export DELVEWRIGHT_SKILL="$DELVEWRIGHT_SKILL"
+export DELVEWRIGHT_DEBUG="$DELVEWRIGHT_DEBUG"
+export DELVE_OUTPUT="$PWD/.out/delve"
+export DELVE_DOCKERFILE="$DELVEWRIGHT_ENGINE/validation/Dockerfile.delve"
 export PATH="\$JAVA_HOME/bin:<the bin or target/release directory>:\$PATH"
 EOF
 } > "$E.next" && mv "$E.next" "$E"
 ```
 
+**The file holds keys, so it is never committed**: in a working directory that
+is a git checkout, the second line adds `.out/` to `.gitignore` unless git
+already ignores it (the content repository does).
 `DELVEWRIGHT_PREFABS` is written by I6; the first I4 leaves the line empty for
-it. Every command on this page then runs as `. ~/.delvewright/env.sh && <the
-command>`, and that is the form to use consistently.
+it. `DELVE_OUTPUT` and `DELVE_DOCKERFILE` are the pair every build and ladder
+command reads together (*Where output goes*, below). Every command on this page
+then runs as `. .out/env.sh && <the command>`, from the working directory, and
+that is the form to use consistently. **A `~/.delvewright/env.sh` an older page
+wrote is stale**: I1b names it, and it is deleted, never sourced.
 
 **Do not reach for the shorter-looking remedy of calling `delvec` by absolute
 path**: it carries `delvec` and nothing else, while later steps need
@@ -435,22 +468,14 @@ every invocation that reads a piece. A run that takes it reaches step 10 with
 ## I5 — the client jar
 
 Every picture in this pipeline is drawn with Minecraft's own textures. The jar
-is in no repository and this toolchain never redistributes it, so it has to
-reach the machine one of two ways — and **which way is the user's decision, not
-yours.** Reading files outside the project is not something you do because it
-happened to be convenient; it is something they asked for.
-
-**This is a hand-over: present both, and wait.** Say it in this form, then end
-your turn:
-
-> The frames need Minecraft 1.21.11's own textures — a 31 MB jar. By default I
-> **download it from Mojang**, and it lands in `~/.delvewright/client/` and
-> nowhere else. If you would rather not download, **tell me your Minecraft
-> directory** and I will copy the jar out of it instead. Which?
-
-Take **A, the download,** on a plain yes and on any answer that names no
-directory. Take **B** only when they name one — never go looking for it
-yourself, and never widen a directory they named into a search.
+is in no repository and this toolchain never redistributes it, so it reaches the
+machine one of two ways. **The download is the default, and nothing is asked**:
+the jar lands in `~/.delvewright/client/` beside the engine clone and the binary
+that already land there, digest-verified. Take **B, the copy,** only when the
+user's prompt itself names a Minecraft directory — never go looking for one
+yourself, and never widen a directory they named into a search. Once step 1
+has made the campaign directory, record which was taken with `debug-note.py`
+(`--kind default --step init`).
 
 **A — download (the default).**
 
@@ -479,10 +504,6 @@ mkdir -p ~/.delvewright/client
 cp "<the directory they named>/versions/1.21.11/1.21.11.jar" \
    ~/.delvewright/client/minecraft-1.21.11.jar
 ```
-
-If they ask where it usually is: `~/Library/Application Support/minecraft` on
-macOS, `~/.minecraft` on Linux. Offer those for them to confirm — do not `find`
-the disk for them.
 
 Either way the jar ends at `~/.delvewright/client/minecraft-1.21.11.jar`, the
 last of the three paths every texture-reading tool tries, in this order:
@@ -586,53 +607,25 @@ the gate:
   never stored or logged, and an inline `api_key =` is refused outright. So the
   key lives in **the environment your shell sees**, under the name that section
   gives.
-  - **The name is yours to choose, so look before you write it.** You are
-    writing the section, so it can name whatever variable the machine already
-    has — and the block you copied out of `delvewright.toml` names an example,
-    not a requirement. Read the environment for provider keys first; this prints
-    NAMES and never values:
+  - **The variable is named for its provider, and only such a name is read.**
+    The key is `GEMINI_API_KEY` for `gemini-native` and `IDEOGRAM_API_KEY` for
+    `ideogram-v3`; write that name into `api_key_env` and set `provider`/`model`
+    to match it. Read the environment for the two names; this prints NAMES and
+    never values:
 
     ```sh
-    env | grep -Eo '^[A-Z0-9_]*(API_KEY|APIKEY|TOKEN)[A-Z0-9_]*' | sort
+    env | grep -Eo '^(GEMINI_API_KEY|IDEOGRAM_API_KEY)=' | sort
     ```
 
-    **A name is evidence of a provider only when it NAMES one.** A variable
-    carrying `GEMINI` or `IDEOGRAM` says which of the two it is for, so write
-    that name into `api_key_env` and set `provider`/`model` to match it —
-    copying the example name literally and then finding it unset is how a run
-    spends a turn of the user's asking for a key they already have under another
-    name. **A provider-neutral name is a candidate, not a match**, and
-    `DELVEWRIGHT_REFIMG_API_KEY` is exactly that: it says what the key is *for*
-    and nothing about *whose* it is, and nothing in the engine tree resolves it —
-    `grep -rn DELVEWRIGHT_REFIMG_API_KEY "$DELVEWRIGHT_ENGINE"` returns nothing,
-    because the convention in `delvewright.toml` is one variable per provider and
-    a shared name is the case it did not anticipate. **Never guess between the
-    two.** Ask the user which provider that key is for, in one line, naming the
-    variable you found — that is a turn; a wrong guess is `HTTP 401: Access
-    denied` from a provider the key was never issued by, which reads like a dead
-    key rather than a wrong address and sends the next turn to the user anyway.
-    **Read the list, do not count it**: the pattern matches any name carrying
-    `TOKEN`, and on a machine that has never drawn anything the only hit is the
-    harness's own `CLAUDE_CODE_MESSAGING_TOKEN`, which is not a provider key.
-  - **Only when the list holds no provider key at all, ask the user for one.**
-    That is the ordinary case on a clean machine, so ask for the whole thing at
-    once rather than one field per turn, and ask for exactly this:
-
-    > Drawing the design reference calls a paid image API, and this machine has
-    > no image-provider key set. `delvec` supports two: **Google Gemini**
-    > (`gemini-native`) or **Ideogram** (`ideogram-v3`). Tell me which you have
-    > an account with and paste the key, and I will put the key in your shell
-    > environment — never in a file in the repository — under a name of your
-    > choosing. Without one I can still author the campaign, but step 4's design
-    > gate has no picture to show you.
-
-    Never guess a provider, and never invent a key name for a key you were not
-    given. **Where the key goes matters as much as having it**: your shell
-    almost certainly carries nothing between commands (I4's probe), so a key
-    exported in one turn is gone by the next. Put the `export` line in
-    `~/.delvewright/env.sh`, which every command already sources and which lives
-    outside every repository — and say to the user, in one line, that you have
-    done so and where the file is;
+    A variable whose name says what a key is *for* and nothing about *whose* it
+    is names no provider and is treated as absent.
+  - **Neither name set is the ordinary case on a clean machine**, and the key is
+    the opening check's item (c) on the page: one message, before step 1, with
+    the run's other opening items, never a stop of its own here. A key the user
+    pasted goes in as an `export` line of the provider's name in `.out/env.sh`,
+    which every command already sources and which no repository tracks — say to
+    the user, in one line, that you have done so and where the file is. With no
+    key the run proceeds and the design gate is reviewed as text and plans;
 - a confirmation that costs no call:
 
 ```sh
@@ -723,7 +716,8 @@ so only a tree beside `validation/` finds it. Pointed elsewhere without both
 variables, it fails with `failed to read dockerfile`, which reads as a broken
 harness and is not one.
 
-So every step that names a build output writes to
-`"$DELVEWRIGHT_ENGINE/validation/delve-output"` — the one tree every path can
-boot, in both modes, because the engine tree is a checkout in both. It is
-gitignored there and no campaign file goes near it.
+So every step that names a build output writes to **`"$DELVE_OUTPUT"`** —
+`.out/delve` under the working directory, written by I4 together with an
+absolute `DELVE_DOCKERFILE`, so every ladder entry and a hand-written compose
+command resolve the same tree. Each working directory builds into its own tree,
+and no campaign file goes near it.
