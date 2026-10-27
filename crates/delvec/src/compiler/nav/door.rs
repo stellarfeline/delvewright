@@ -197,8 +197,8 @@ fn refusal_words(
     };
     format!(
         "{}: the step {c:?} → {n:?} crosses the {} face of the {kind} at {cell:?} \
-         (`minecraft:{}`), where its leaf stands {state}, and {} — the way exists only across \
-         the leaf (the way crosses its cell's {} face(s)); {remedy}",
+         (`minecraft:{}`, {state}), the face its leaf stands on, and {} — the way exists only \
+         across the leaf (the way crosses its cell's {} face(s)); {remedy}",
         leg.label,
         here.iter()
             .find(|a| l.stops_crossing(a.2, a.3, a.4, leg.may_use, a.5))
