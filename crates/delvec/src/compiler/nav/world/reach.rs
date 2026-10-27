@@ -2652,18 +2652,28 @@ impl World {
         seeds: &[[i32; 3]],
         confinement: &super::Confinement<'_>,
     ) -> BTreeSet<[i32; 3]> {
+        // Taken a frontier at a time, each frontier's edges flown in parallel
+        // as [`World::body_reach`] flies a round: the closure is the same set
+        // whatever order its states are expanded in, since whether a move is
+        // taken depends only on its two ends, and the frontier is kept in
+        // cell order, so the work and the answer are both deterministic.
         let mut seen: BTreeSet<[i32; 3]> = seeds.iter().copied().collect();
-        let mut queue: std::collections::VecDeque<[i32; 3]> = seen.iter().copied().collect();
-        while let Some(cur) = queue.pop_front() {
-            for edge in self.body_edges(cur) {
-                if !seen.contains(&edge.to)
-                    && self.in_piece(edge.to)
-                    && confinement.admits(cur, edge.to)
-                {
-                    seen.insert(edge.to);
-                    queue.push_back(edge.to);
+        let mut frontier: Vec<[i32; 3]> = seen.iter().copied().collect();
+        while !frontier.is_empty() {
+            let edges: Vec<Vec<Edge>> = crate::par::map(&frontier, |c| self.body_edges(*c));
+            let mut next: BTreeSet<[i32; 3]> = BTreeSet::new();
+            for (cur, out) in frontier.iter().zip(edges) {
+                for edge in out {
+                    if !seen.contains(&edge.to)
+                        && self.in_piece(edge.to)
+                        && confinement.admits(*cur, edge.to)
+                    {
+                        seen.insert(edge.to);
+                        next.insert(edge.to);
+                    }
                 }
             }
+            frontier = next.into_iter().collect();
         }
         seen
     }
