@@ -2028,6 +2028,18 @@ CI-enforced over every fixture family by `tests/packtest_batch.rs`):
   test environment` and writes `validation/packtest-solo.json` (`templates`,
   `solo_count`, and per solo template the function and line that took the
   bodies). Gallery primary: 30 of 219.
+- **Own name, fresh (`compiler::freshbody`).** A score belongs to a player's
+  name, and PackTest names its dummies from a small pool, so a dummy is born
+  holding whatever an earlier dummy of the same name left: a dummy that died
+  and left before it came back leaves `dw.deaths` above `dw.death_ack`, and its
+  successor fires the death edge on its first tick and, with another player
+  present, is put on the respawn wait (tagged `dw_cutscene`, spectator). After
+  every emitter, `compiler::solo` and `compiler::handback`, every template whose
+  directives carry `# @dummy` gains `scoreboard players reset @s` as its first
+  command: its dummy enters as a player who has never joined. The build prints
+  `packtest fresh-body binding: R of T template(s) carry a dummy and reset
+  every score its name holds before their first command` and writes
+  `validation/packtest-fresh.json`.
 - **Own pressables, handed back (`compiler::handback`).** Every batch shares
   one world, and a pressable's block is what siblings read from load
   (`v04_prop`; a highlight's hold, which kills its display when the block it

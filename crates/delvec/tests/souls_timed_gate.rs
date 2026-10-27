@@ -351,6 +351,8 @@ fn crush_false_is_inert() {
         "validation/packtest-solo.json".to_string(),
         // So does the hand-back binding.
         "validation/packtest-handback.json".to_string(),
+        // So does the fresh-body binding.
+        "validation/packtest-fresh.json".to_string(),
         "manifest.json".to_string(),
     ];
     for path in &differing {
