@@ -215,6 +215,40 @@ mod tests {
         assert_eq!(w.rest_seat([2, 65, 2], Some([2, 65, 0])), Some([2, 65, 1]));
     }
 
+    /// **A seat is ranked by the walk that reads leaves**: an iron trapdoor
+    /// standing open in the cell west of the fire (`facing=east`, its panel
+    /// against that cell's west face) stops the party's straight step from
+    /// the west, so the seat is not that cell but one the walk reaches round
+    /// the panel. With the trapdoor lifted the same approach seats on it.
+    #[test]
+    fn a_seat_is_ranked_by_the_walk_that_reads_a_leaf() {
+        let fire = "minecraft:campfire[lit=true]";
+        let hatch = "minecraft:iron_trapdoor[facing=east,half=bottom,open=true,powered=false,waterlogged=false]";
+        let mut cells: Vec<([i32; 3], &str)> = Vec::new();
+        for x in 0..5 {
+            for z in 0..5 {
+                cells.push(([x, 64, z], "minecraft:stone"));
+            }
+        }
+        cells.push(([2, 65, 2], fire));
+        let lifted = blocks_world(&cells);
+        assert!(!lifted.has_leaves());
+        let from = Some([0, 65, 2]);
+        assert_eq!(lifted.rest_seat([2, 65, 2], from), Some([1, 65, 2]));
+
+        cells.push(([1, 65, 2], hatch));
+        let w = blocks_world(&cells);
+        assert_eq!(w.hatch_count(), 1);
+        let straight = w.find_path([0, 65, 2], [1, 65, 2]).map(|p| p.len());
+        assert_ne!(straight, Some(2), "the panel stops the straight step");
+        let seat = w
+            .rest_seat([2, 65, 2], from)
+            .expect("floor beside the fire");
+        assert_ne!(seat, [1, 65, 2], "the panel's side is not the nearest walk");
+        assert!(w.is_safe_seat(seat), "{seat:?}");
+        assert!(w.find_path([0, 65, 2], seat).is_some(), "{seat:?}");
+    }
+
     /// A safe anchor cell is its own seat: a plain checkpoint on open floor
     /// seats where it always did.
     #[test]
