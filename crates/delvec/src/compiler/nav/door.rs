@@ -96,6 +96,9 @@ fn unit_crossings(c: [i32; 3], n: [i32; 3], x_first: bool) -> Vec<([i32; 3], [i3
 /// whether the body is wide.
 type Asked = ([i32; 3], Leaf, Face, i64, i64, bool);
 
+/// A stopped step: from, to, the leaf's cell, and the leaf.
+type Stopped = ([i32; 3], [i32; 3], [i32; 3], Leaf);
+
 /// **Judge one walked leg**: every step it takes, every leaf the step's
 /// crossings meet. Returns the leaves asked (for the binding and the remedy)
 /// and the refusal, if a step is stopped by a leaf in every ordering of its
@@ -104,7 +107,7 @@ type Asked = ([i32; 3], Leaf, Face, i64, i64, bool);
 pub fn judge_leg(world: &World, leg: &WalkedLeg<'_>) -> (Vec<Asked>, Option<String>) {
     let fp = &leg.fp;
     let mut asked: Vec<Asked> = Vec::new();
-    let mut stopped: Option<([i32; 3], [i32; 3], [i32; 3], Leaf)> = None;
+    let mut stopped: Option<Stopped> = None;
     for w in leg.cells.windows(2) {
         let (c, n) = (w[0], w[1]);
         if c[0] == n[0] && c[2] == n[2] {
@@ -145,10 +148,11 @@ pub fn judge_leg(world: &World, leg: &WalkedLeg<'_>) -> (Vec<Asked>, Option<Stri
                 None => every_order_stopped = false,
             }
         }
-        if every_order_stopped && stopped.is_none() {
-            if let Some((cell, l)) = first {
-                stopped = Some((c, n, cell, l));
-            }
+        if every_order_stopped
+            && stopped.is_none()
+            && let Some((cell, l)) = first
+        {
+            stopped = Some((c, n, cell, l));
         }
     }
     let refusal = stopped.map(|(c, n, cell, l)| refusal_words(leg, &asked, c, n, cell, l));
