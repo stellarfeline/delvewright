@@ -28,13 +28,13 @@ A door's and a trapdoor's collision box are one shape class, a leaf: a plate 3/1
 
 ### A trapdoor's leaf
 
-#### The read site
+#### A trapdoor's read site
 
 - The same jar and mappings as above.
 - `javap -p -c` over `TrapDoorBlock`: its static initialiser builds `SHAPES` as `Shapes.rotateAll(Block.boxZ(16, 13, 16))`, a full-face box 3/16 deep; `getShape` returns `SHAPES.get(FACING)` when `OPEN` is true, and otherwise `SHAPES.get(DOWN)` for `half=top` and `SHAPES.get(UP)` for `half=bottom`. `useWithoutItem` never loads its `BlockHitResult` argument, and `ServerGamePacketListenerImpl.handleUseItemOn` reads the hit face only for the build-height message: no face of the block is refused.
 - A second method sharing no configuration with the first: a probe that boots the registries and prints `BlockState.getCollisionShape(EmptyBlockGetter.INSTANCE, BlockPos.ZERO).toAabbs()` for every trapdoor state, and the committed tables `crates/dsl/data/collision-footprints-1.21.11.tsv` and `collision-tops-1.21.11.tsv`, which `blockshape::leaf` reads. 1344 states (21 ids × 64) collapse onto 16 shapes, 84 states each: `powered` and `waterlogged` move nothing, and every trapdoor id, iron and copper included, takes the same box for the same `facing`, `half` and `open`.
 
-#### What the bytecode and the boxes say (cited)
+#### A trapdoor's boxes (cited)
 
 | state | box, in sixteenths (x, y, z) |
 |---|---|
@@ -47,7 +47,7 @@ A door's and a trapdoor's collision box are one shape class, a leaf: a plate 3/1
 
 So the open panel stands against the face **opposite** `facing`, the whole cell high, whatever the half. `facing` names the side the trapdoor swings toward; its hinge is on the other side.
 
-#### What follows for a body (authored, derived from the table and the player's 0.6 × 1.8 box)
+#### What follows for a body near a trapdoor (authored, derived from the table and the player's 0.6 × 1.8 box)
 
 - A body centred in a trapdoor's column clears an open panel on any face but the one it stands on: its box spans 0.2..0.8 of the cell and a side panel starts at 0.8125, so it clears by 1/80. Crossing the panel's own face, at any height that meets the cell, it is stopped.
 - A body rising through an open trapdoor's cell is not stopped by it: the panel is vertical. What it stops is a step **across** its face while the body's box meets the cell.
@@ -71,13 +71,13 @@ Every stop is the body's box against a panel's face (a centre 0.3 from it) or it
 
 ### A door's leaf
 
-#### The read site
+#### A door's read site
 
 - The same jar and mappings as above.
 - `javap -p -c` over `DoorBlock`: its static initialiser builds `SHAPES` as `Shapes.rotateHorizontal(Block.boxZ(16, 13, 16))`, a full-height box 3/16 deep against the cell's south face for `north`, turned for the other three. `getShape` reads `FACING` and `OPEN` and, when `OPEN` is true, `HINGE`: shut, it returns `SHAPES.get(facing)`; open, `SHAPES.get(facing.getClockWise())` for `hinge=left` and `SHAPES.get(facing.getCounterClockWise())` for `hinge=right`. It never reads `HALF` or `POWERED`. `DoorBlock` declares no `getCollisionShape`, so the collision box is the shape.
 - A second method sharing no configuration with the first: the committed tables `crates/dsl/data/collision-footprints-1.21.11.tsv` and `collision-tops-1.21.11.tsv`, measured by the registry probe, which `blockshape::leaf` reads. Every one of the 21 door ids, iron and copper included, in all 32 states of `facing`, `hinge`, `half` and `open`, takes the box the bytecode gives, full height in both halves (`blockshape::tests::a_door_reads_its_leaf_from_the_jar`, 672 states).
 
-#### What the bytecode and the boxes say (cited)
+#### A door's boxes (cited)
 
 | state | box, in sixteenths (x, y, z) |
 |---|---|
@@ -90,7 +90,7 @@ Every stop is the body's box against a panel's face (a centre 0.3 from it) or it
 
 So a door's leaf stands against the face opposite `facing` when shut, and against one of the two side faces when open, which one set by `hinge`. Shut and open, the leaf is on two different faces of its cell, and both halves take the same box.
 
-#### What follows for a body (authored, derived from the table and the player's 0.6 × 1.8 box)
+#### What follows for a body near a door (authored, derived from the table and the player's 0.6 × 1.8 box)
 
 - A body centred in a door's column clears its leaf on any face but the one it stands on, by the same 1/80 as a trapdoor's panel; crossing the leaf's own face, it is stopped.
 - A body that opens a door by hand sets it before it steps, and toggling it does not read the bodies in its cell (`useWithoutItem`, above). Its shut leaf and its open leaf stand on two faces, so for every face there is a state that clears it: a door a hand opens never stops a body that may use it. That is `Leaf::stops_crossing` with `may_use`, and why the party is never refused by one.
