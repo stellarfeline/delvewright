@@ -363,7 +363,7 @@ pub(super) fn prove_world(
             // `DW0322` floods from where a body can start a walk: every anchor
             // but a station of a scenery place nobody is put in
             // (`edit::body_starts`). The line states what it left out.
-            let body_starts = crate::compiler::edit::body_starts(plan);
+            let body_starts = crate::compiler::edit::body_starts(plan, world);
             eprintln!(
                 "boundary-safety binding: {} of {} anchor(s) root the walk region, {} \
                  excluded as a station of a scenery place (`reached: false`) no body is put in{}",
@@ -507,8 +507,13 @@ pub(super) fn prove_world(
             // the verdict is taken: a refusal owes its reader the same
             // denominators a pass does.
             {
-                let (binding, findings) =
-                    crate::compiler::firework::check(plan, blocks, campaign_spawn(plan), &waves);
+                let (binding, findings) = crate::compiler::firework::check(
+                    plan,
+                    world,
+                    blocks,
+                    campaign_spawn(plan),
+                    &waves,
+                );
                 eprintln!("{}", binding.line());
                 firework_gate = Some(binding);
                 if let Some((first, rest)) = findings.split_first() {
@@ -527,8 +532,13 @@ pub(super) fn prove_world(
             // `DW0511`'s enumeration, which is complete only once the seating has
             // run. The line prints before the verdict, zeroes included.
             {
-                let (binding, findings) =
-                    crate::compiler::lightning::check(plan, blocks, campaign_spawn(plan), &waves);
+                let (binding, findings) = crate::compiler::lightning::check(
+                    plan,
+                    world,
+                    blocks,
+                    campaign_spawn(plan),
+                    &waves,
+                );
                 eprintln!("{}", binding.line());
                 lightning_gate = Some(binding);
                 if let Some((first, rest)) = findings.split_first() {
@@ -655,6 +665,7 @@ pub(super) fn prove_world(
                 // nothing is lost by asking it first.
                 let lethal_seats = crate::compiler::lethal::check_respawn_seats(
                     plan,
+                    world,
                     campaign_spawn(plan),
                     &waves,
                 )?;
@@ -798,7 +809,11 @@ pub(super) fn prove_world(
                         plan,
                         world,
                         &waves,
-                        &crate::compiler::lethal::stands_at_roots(plan, campaign_spawn(plan)),
+                        &crate::compiler::lethal::stands_at_roots(
+                            plan,
+                            world,
+                            campaign_spawn(plan),
+                        ),
                         playable_region(plan).map(|r| (r.min, r.max)),
                     );
                     if strand.waves > 0 {

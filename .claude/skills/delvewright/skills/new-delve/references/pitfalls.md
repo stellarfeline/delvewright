@@ -128,6 +128,13 @@
   which retunes the fight to hide the placement. A re-seated wave always comes
   back **stationed** — a lane wave at its lane start, a plain wave at its anchor —
   so the safe zone stays true across every rest and every death.
+- **A bonfire may be a campfire.** Lay the fire on the bonfire's own anchor
+  cell (in the prefab, or with a world-edit `fill`): the party right-clicks the
+  fire, and a respawn puts the body on the floor beside it, on the side the party
+  walks up from — never in the fire, which hurts anyone who stands in it. Leave
+  open floor next to it; a fire with no safe floor within three blocks is
+  `DW0316`.
+
 ## Wave tuning
 
 - **Wave tuning**: `follow_range` below ~16 means distant wave mobs never engage;

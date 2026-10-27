@@ -360,11 +360,15 @@ fn standing_set(
     let reach = crate::compiler::crosshair::INTERACTION_REACH + 1.0;
     match f.seat {
         Seat::Anywhere => return population.clone(),
+        // The seats a respawn or rest at that anchor puts the body on
+        // ([`crate::compiler::nav::World::rest_seat_of`]) — one per checkpoint
+        // standing on it.
         Seat::Anchor(a) => {
             return plan
-                .point_any(a)
-                .and_then(|p| open.snap(p, crate::compiler::nav::SNAP_RADIUS))
-                .into_iter()
+                .checkpoints
+                .iter()
+                .filter(|cp| cp.anchor == a)
+                .filter_map(|cp| open.rest_seat_of(cp))
                 .collect();
         }
         Seat::Root => {}
@@ -413,7 +417,7 @@ fn standing_set(
         EffectRoot::DialogueRespawn | EffectRoot::OnDeath => plan
             .checkpoints
             .iter()
-            .filter_map(|c| open.snap(c.pos, crate::compiler::nav::SNAP_RADIUS))
+            .filter_map(|c| open.rest_seat_of(c))
             .collect(),
         EffectRoot::QuestComplete(_)
         | EffectRoot::ShortcutUnlock
@@ -480,7 +484,8 @@ pub fn judge(
     if found.is_empty() {
         return (binding, Ok(()));
     }
-    let population = open.reachable_walkable(&crate::compiler::lethal::put_at_roots(plan, entry));
+    let population =
+        open.reachable_walkable(&crate::compiler::lethal::put_at_roots(plan, open, entry));
     let body = delvewright_dsl::metrics::Body::PLAYER;
     let keep_outs: Vec<(&str, Box3)> = plan
         .lethal_volumes

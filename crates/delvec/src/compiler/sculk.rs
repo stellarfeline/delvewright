@@ -800,7 +800,7 @@ pub fn check(
     } else {
         open.with_openings_open(&openable)
     };
-    let body_roots: Vec<[i32; 3]> = crate::compiler::lethal::put_at_roots(plan, entry)
+    let body_roots: Vec<[i32; 3]> = crate::compiler::lethal::put_at_roots(plan, world, entry)
         .into_iter()
         .filter_map(|r| opened.snap(r, crate::compiler::nav::SNAP_RADIUS))
         .collect();

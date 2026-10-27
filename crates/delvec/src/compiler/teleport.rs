@@ -283,7 +283,7 @@ pub fn check_bound_affordances(plan: &Plan) -> Result<TeleportGate, Failure> {
                     "checkpoint seat"
                 },
                 format!("on anchor `{}`", cp.anchor),
-                cp.pos,
+                plan.seat(cp),
             )
         })
         .collect();

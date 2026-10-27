@@ -37,6 +37,7 @@ fn floored_with_furniture(
             footprints: Default::default(),
             leaves: Default::default(),
             hiding: Default::default(),
+            hurting: Default::default(),
         },
         Premises {
             ambient: Ambient::Void,

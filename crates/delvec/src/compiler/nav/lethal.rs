@@ -265,6 +265,7 @@ mod mob_reach_tests {
                 footprints: Default::default(),
                 leaves: Default::default(),
                 hiding: Default::default(),
+                hurting: Default::default(),
             },
             Premises::geometry_only(),
         )

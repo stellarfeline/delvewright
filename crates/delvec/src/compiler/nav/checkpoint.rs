@@ -31,7 +31,7 @@ pub fn check_checkpoints(plan: &Plan, world: &World) -> Result<(), Failure> {
     // the trigger (spec-0093 §6.2), not at the entry; the configurations are
     // gathered once and only when some checkpoint needs them.
     let mut configs: Option<Vec<TriggerRootConfig>> = None;
-    let mut cps: Vec<(String, [i32; 3], usize)> = Vec::new();
+    let mut cps: Vec<RestSeat> = Vec::new();
     for c in &plan.checkpoints {
         let mut fire_step = c.fire_step;
         if let Some(trigger) = &c.trigger {
@@ -48,7 +48,12 @@ pub fn check_checkpoints(plan: &Plan, world: &World) -> Result<(), Failure> {
                 );
             }
         }
-        cps.push((c.anchor.clone(), c.pos, fire_step));
+        cps.push(RestSeat {
+            anchor: c.anchor.clone(),
+            at: c.at,
+            seat: world.rest_seat_of(c),
+            fire_step,
+        });
     }
     verify_checkpoints(
         world,
@@ -256,29 +261,81 @@ fn earliest_reaching_config(
     })
 }
 
+/// **Fix every checkpoint's seat for the emitter** ([`Plan::fix_seats`]) from
+/// the build's final world, refusing a checkpoint with none (`DW0316`) before
+/// anything reads its seat.
+pub fn fix_seats(plan: &Plan, world: &World) -> Result<(), Failure> {
+    for c in &plan.checkpoints {
+        if world.rest_seat_of(c).is_none() {
+            return Err(unseated(&c.anchor, c.at, None));
+        }
+    }
+    plan.fix_seats(world.rest_seats());
+    Ok(())
+}
+
+/// `DW0316`: checkpoint `anchor`, whose rest object is at `at`, has no safe
+/// standing cell to seat a body on — none derived (`seat` is `None`), or the
+/// one handed is not safe.
+fn unseated(anchor: &str, at: [i32; 3], seat: Option<[i32; 3]>) -> Failure {
+    let found = match seat {
+        Some(c) => format!(
+            "the seat {c:?} is not one: a body put there stands on no floor, inside a block, \
+             or meets a block that hurts it"
+        ),
+        None => format!("no such cell lies within {SNAP_RADIUS} blocks of it"),
+    };
+    Failure {
+        code: DW_CHECKPOINT_UNSTANDABLE,
+        message: format!(
+            "checkpoint `{anchor}` at {at:?} has no safe standing cell to seat a respawn on — a \
+             respawn puts a body on the anchor cell when a body may stand there, and otherwise on \
+             the nearest floor beside the rest object that holds the body and hurts nothing it \
+             meets (a campfire, magma, a cactus, fire, a berry bush), on the side the party walks \
+             up from; {found}. Give the rest object floor beside it: clear a cell next to it of \
+             whatever is in the way, or move the anchor onto open floor. If the prefab looks \
+             correct, this is an assembly/toolchain defect — escalate rather than hide it."
+        ),
+    }
+}
+
+/// One checkpoint as the placement and no-stranding proofs see it: its rest
+/// object, the seat a respawn puts a body on ([`World::rest_seat_of`]), and
+/// the step the proof roots at.
+struct RestSeat {
+    anchor: String,
+    /// The rest object's cell (the anchor).
+    at: [i32; 3],
+    /// The seat, `None` when no safe cell stands beside the rest object.
+    seat: Option<[i32; 3]>,
+    fire_step: usize,
+}
+
 /// The pure core of [`check_checkpoints`] (split out so it is unit-testable
-/// against a synthetic [`World`] without a full [`Plan`]). Each checkpoint is
-/// `(anchor, cell, fire_step)`.
+/// against a synthetic [`World`] without a full [`Plan`]).
+///
+/// The placement half (`DW0316`) judges the **seat**, the cell the build
+/// emits: it must exist and be a safe standing cell ([`World::is_safe_seat`]).
+/// A seat the derivation never produces — the rest object's own cell when that
+/// cell holds a campfire — is refused here too, so a seat that reaches this
+/// proof by any other route is judged, not trusted.
 fn verify_checkpoints(
     world: &World,
-    checkpoints: &[(String, [i32; 3], usize)],
+    checkpoints: &[RestSeat],
     fixed_fires: &[usize],
     positions: &[VisitedPos],
     region_events: &RegionEvents,
     ancestor: &dyn Fn(usize, usize) -> bool,
 ) -> Result<(), Failure> {
-    for (anchor, pos, fire_step) in checkpoints {
-        let Some(cell) = world.snap_standable(*pos, SNAP_RADIUS) else {
-            return Err(Failure {
-                code: DW_CHECKPOINT_UNSTANDABLE,
-                message: format!(
-                    "checkpoint anchor `{anchor}` at {pos:?} has no standable floor within \
-                     {SNAP_RADIUS} blocks on the assembled model — the party would respawn into \
-                     void or a wall. Move the checkpoint onto reachable floor (not a trap-trigger, \
-                     hazard, or mid-air cell); if the prefab looks correct, this is an \
-                     assembly/toolchain defect — escalate rather than hide it."
-                ),
-            });
+    for RestSeat {
+        anchor,
+        at,
+        seat,
+        fire_step,
+    } in checkpoints
+    {
+        let Some(cell) = seat.filter(|c| world.is_safe_seat(*c)) else {
+            return Err(unseated(anchor, *at, *seat));
         };
         // The first walked critical position strictly after the checkpoint fires.
         let Some(target) = positions
@@ -317,7 +374,7 @@ fn verify_checkpoints(
             return Err(Failure {
                 code: DW_CHECKPOINT_STRANDED,
                 message: format!(
-                    "checkpoint `{anchor}` (cell {cell:?}) strands the party: the next required \
+                    "checkpoint `{anchor}` (seat {cell:?}) strands the party: the next required \
                      anchor {:?} (critical step {}) is not walkable from it over the assembled \
                      geometry (a checkpoint behind a one-way drop the forward path can't re-cross \
                      after respawn). The proof is rooted at step {fire_step}: a beat's checkpoint \
@@ -343,7 +400,11 @@ pub(in crate::compiler::nav) fn retry_cost_lint(plan: &Plan, world: &World) -> V
     let cps: Vec<(String, [i32; 3], usize, bool)> = plan
         .checkpoints
         .iter()
-        .map(|c| (c.anchor.clone(), c.pos, c.fire_step, c.rest))
+        .filter_map(|c| {
+            world
+                .rest_seat_of(c)
+                .map(|seat| (c.anchor.clone(), seat, c.fire_step, c.rest))
+        })
         .collect();
     verify_retry_cost(world, &cps, &critical_positions(plan))
 }
@@ -357,7 +418,7 @@ struct RestRef<'a> {
 }
 
 /// The pure core of [`retry_cost_lint`] (unit-testable against a synthetic
-/// [`World`]). Each rest point is `(anchor, cell, fire_step, is_bonfire)`.
+/// [`World`]). Each rest point is `(anchor, seat, fire_step, is_bonfire)`.
 ///
 /// **The quantity is the walk to the DEEPEST beat the rest point governs**, not
 /// to the first one after it. A party does not die at the nearest thing a fire
@@ -459,6 +520,19 @@ mod tests {
 
     use crate::compiler::plan::RegionEvents;
     use crate::compiler::plan::{RegionEvent, RegionWrite};
+
+    /// Each `(anchor, cell, fire_step)` with the seat the rule derives over
+    /// `world` for a rest object at `cell`.
+    fn seated(world: &World, cps: &[(String, [i32; 3], usize)]) -> Vec<RestSeat> {
+        cps.iter()
+            .map(|(anchor, at, fire_step)| RestSeat {
+                anchor: anchor.clone(),
+                at: *at,
+                seat: world.rest_seat(*at, None),
+                fire_step: *fire_step,
+            })
+            .collect()
+    }
 
     /// A rest point 4 blocks from the next beat is a real retry loop: 16 ticks
     /// back, well inside the 60 s budget. No warning.
@@ -607,7 +681,7 @@ mod tests {
         assert!(
             verify_checkpoints(
                 &world,
-                &cps,
+                &seated(&world, &cps),
                 &[],
                 &positions,
                 &RegionEvents::default(),
@@ -619,7 +693,7 @@ mod tests {
         let close = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Fill, 0);
         let err = verify_checkpoints(
             &world,
-            &cps,
+            &seated(&world, &cps),
             &[],
             &positions,
             &RegionEvents::from(vec![close.clone()]),
@@ -638,7 +712,7 @@ mod tests {
         let positions = vec![at_step([4, 65, 1], 1)];
         let err = verify_checkpoints(
             &world,
-            &cps,
+            &seated(&world, &cps),
             &[],
             &positions,
             &RegionEvents::default(),
@@ -663,7 +737,7 @@ mod tests {
         let positions = vec![at_step([4, 65, 1], 2)];
         verify_checkpoints(
             &world,
-            &cps,
+            &seated(&world, &cps),
             &[1],
             &positions,
             &RegionEvents::default(),
@@ -672,7 +746,7 @@ mod tests {
         .expect("the near checkpoint is replaced at step 1, before the leg to step 2");
         let err = verify_checkpoints(
             &world,
-            &cps,
+            &seated(&world, &cps),
             &[2],
             &positions,
             &RegionEvents::default(),
@@ -709,7 +783,7 @@ mod tests {
         let early = vec![("cp/far".to_string(), [3, 65, 1], 0usize)];
         let err = verify_checkpoints(
             &world,
-            &early,
+            &seated(&world, &early),
             &[],
             &positions,
             &RegionEvents::default(),
@@ -721,7 +795,7 @@ mod tests {
         assert!(
             verify_checkpoints(
                 &world,
-                &rooted,
+                &seated(&world, &rooted),
                 &[],
                 &positions,
                 &RegionEvents::default(),
@@ -740,7 +814,7 @@ mod tests {
         assert!(
             verify_checkpoints(
                 &world,
-                &cps,
+                &seated(&world, &cps),
                 &[],
                 &positions,
                 &RegionEvents::default(),
@@ -759,7 +833,7 @@ mod tests {
         assert!(
             verify_checkpoints(
                 &world,
-                &cps,
+                &seated(&world, &cps),
                 &[],
                 &positions,
                 &RegionEvents::default(),
@@ -769,13 +843,61 @@ mod tests {
         );
     }
 
+    /// **The old shape, planted**: a campfire is the rest object, and the seat
+    /// is the campfire's own cell — where the emitter put a respawned body
+    /// before the seat was derived — or the cell over it, whose body has its
+    /// feet in the fire. Both are refused (`DW0316`); the derived seat, the
+    /// floor beside the fire, is proven.
+    #[test]
+    fn a_seat_on_the_campfire_is_dw0316_and_the_seat_beside_it_passes() {
+        let mut cells: Vec<([i32; 3], &str)> = Vec::new();
+        for x in 0..5 {
+            for z in 0..3 {
+                cells.push(([x, 64, z], "minecraft:stone"));
+            }
+        }
+        cells.push(([2, 65, 1], "minecraft:campfire[lit=true]"));
+        let world = blocks_world(&cells);
+        let positions = vec![at_step([4, 65, 1], 1)];
+        let judge = |seat: Option<[i32; 3]>| {
+            verify_checkpoints(
+                &world,
+                &[RestSeat {
+                    anchor: "anchor/fire".to_string(),
+                    at: [2, 65, 1],
+                    seat,
+                    fire_step: 0,
+                }],
+                &[],
+                &positions,
+                &RegionEvents::default(),
+                &linear,
+            )
+        };
+        for planted in [[2, 65, 1], [2, 66, 1]] {
+            let err = judge(Some(planted)).unwrap_err();
+            assert_eq!(err.code, DW_CHECKPOINT_UNSTANDABLE, "{planted:?}"); // DW0316
+            assert!(err.message.contains("anchor/fire"), "{}", err.message);
+        }
+        let derived = world.rest_seat([2, 65, 1], Some([0, 65, 1]));
+        assert_eq!(derived, Some([1, 65, 1]), "the floor on the approach side");
+        judge(derived).expect("the seat beside the fire stands and is not stranded");
+    }
+
     #[test]
     fn checkpoint_over_void_is_dw0316() {
         // The checkpoint cell has no standable floor within snap radius.
         let world = floored(5, 3, 65, &[]);
         let cps = vec![("cp/rest".to_string(), [20, 65, 20], 0usize)];
-        let err = verify_checkpoints(&world, &cps, &[], &[], &RegionEvents::default(), &linear)
-            .unwrap_err();
+        let err = verify_checkpoints(
+            &world,
+            &seated(&world, &cps),
+            &[],
+            &[],
+            &RegionEvents::default(),
+            &linear,
+        )
+        .unwrap_err();
         assert_eq!(err.code, DW_CHECKPOINT_UNSTANDABLE); // DW0316
     }
 }

@@ -970,6 +970,7 @@ mod tests {
                 footprints: Default::default(),
                 leaves: Default::default(),
                 hiding: Default::default(),
+                hurting: Default::default(),
             },
             crate::compiler::nav::Premises::geometry_only(),
         )
@@ -1176,6 +1177,7 @@ mod tests {
             footprints: Default::default(),
             leaves: Default::default(),
             hiding: Default::default(),
+            hurting: Default::default(),
         };
         occ.partial.insert([4, 63, 3], 8);
         let w = World::from_occupancy(occ, crate::compiler::nav::Premises::geometry_only());
