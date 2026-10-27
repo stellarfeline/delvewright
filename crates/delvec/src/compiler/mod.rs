@@ -166,6 +166,7 @@ pub mod failure;
 pub mod firework;
 pub mod flow;
 pub mod framing;
+pub mod freshbody;
 pub mod gates;
 pub mod gatesignal;
 pub mod guarantee;

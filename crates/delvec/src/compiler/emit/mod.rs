@@ -1369,6 +1369,13 @@ pub fn build_with_warnings(
     eprintln!("{}", solo.line());
     put_json(&mut out, "validation/packtest-solo.json", &solo.to_json());
 
+    // ---- a template's dummy enters as a new player ----
+    // A score belongs to a name, and PackTest reuses dummy names across a
+    // suite (`crate::compiler::freshbody`).
+    let fresh = crate::compiler::freshbody::fresh_bodies(&plan.namespace, &mut out);
+    eprintln!("{}", fresh.line());
+    put_json(&mut out, "validation/packtest-fresh.json", &fresh.to_json());
+
     // ---- the checks read off the finished tree ----
     check_finished_tree(
         plan,
