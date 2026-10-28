@@ -313,3 +313,21 @@ original content built by the engine, showing Minecraft's textures. Mojang's
 [usage guidelines](https://www.minecraft.net/en-us/usage-guidelines) count
 screenshots among its assets and allow them to be created, used and shared; they
 are shared on those terms.
+
+## Consulted, ideas only (device logic)
+
+What a lock, a key, a door and a button owe the player is settled in
+[`docs/reference/device-logic.md`](reference/device-logic.md) against established practice
+(spec-0124). **Nothing here is adopted, ported, vendored or copied** — these are papers,
+articles and a book read for their rules, each paraphrased or quoted in a short phrase; no
+text, image or file from any of them is in this repository.
+
+| Source | What we took |
+|---|---|
+| Joris Dormans, *Adventures in Level Design: Generating Missions and Spaces for Action Adventure Games* (PCGames 2010, ACM) | A lock and its key are coupled in the mission, and the space is generated to keep the coupling |
+| [Boris the Brave, *Lock and Key Dungeons*](https://www.boristhebrave.com/2021/02/27/lock-and-key-dungeons) | The definitions of lock, key, hard and soft requirement; the event flag with no visible cause as the failure mode |
+| Wikipedia, [*Affordance*](https://en.wikipedia.org/wiki/Affordance) and [*The Design of Everyday Things*](https://en.wikipedia.org/wiki/The_Design_of_Everyday_Things) (CC BY-SA 4.0) | Norman's 2013 affordance and signifier, Gaver's 1991 false affordance, the book's feedback and mapping principles |
+| [Liz England, *The Door Problem*](https://lizengland.com/blog/2014/04/the-door-problem/) | The designer's question list for a door: locked and will open, against never opens; opens but is never entered |
+| [*The Level Design Book*, *Doors*](https://book.leveldesignbook.com/process/scripting/doors) (CC BY-NC-SA, ideas only) | The kinds of door a design separates: never opens, fake and set dressing, needs a key, quest-event locked |
+| [Bear's Smile Games, *Prologue level design: Vol. 2*](https://bearssmilegames.itch.io/legacy1917/devlog/444677/prologue-level-design-vol-2) | The player sees the result as soon as the lever is used; gate and lever side by side; a learned rule broken later is a deliberate exception |
+| Katie Salen and Eric Zimmerman, *Rules of Play* (MIT Press), as quoted in Nick Taylor's review | The definition of meaningful play as the system responding to the player's action |
