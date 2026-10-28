@@ -95,7 +95,7 @@
               "block": "minecraft:stone_button[face=floor,facing=north]"
             },
             "rest_label": "Rest",
-            "save_label": "Save and quit",
+            "save_label": "Save only",
             "type": "bonfire"
           },
           {

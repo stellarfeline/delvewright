@@ -1149,7 +1149,7 @@
             },
             "rest_label": "Rest",
             "rest_tooltip": "The hearth keeps you, and the hall sets itself back up.",
-            "save_label": "Save and quit",
+            "save_label": "Save only",
             "save_tooltip": "The hearth keeps you; nothing in the hall is reset.",
             "type": "bonfire"
           },
