@@ -23,6 +23,6 @@
     "title": "The Reading Room",
     "weather": "clear"
   },
-  "dsl_version": "0.66.0",
+  "dsl_version": "0.67.0",
   "stage": "world"
 }
