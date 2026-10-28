@@ -631,8 +631,10 @@ fn uncovered_face(
 ///
 /// The block under a box is read from the shipped `setup_finish` (the one
 /// `setblock` list the written world also lays; a door's two cells from its
-/// lower half), or, for a gate's own answer, from `gate_blocks` — the gate's
-/// block at the cell, which the prefab or a `close-gate` lays. A box over a
+/// lower half), or, for a press whose block the compiler does not place (a
+/// gate's own answer, a door-shut seam's key), from `gate_blocks` — the
+/// gate's block at the cell, which the prefab, the derivation or a
+/// `close-gate` lays. A box over a
 /// cell neither names, or over a block with no outline, has nothing under it
 /// and is refused. An assembly's declared hitbox (`dw_asm`) is judged against
 /// the block grid, because the assembly is an entity and not a block.

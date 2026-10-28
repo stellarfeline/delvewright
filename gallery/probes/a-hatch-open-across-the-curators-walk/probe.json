@@ -1,0 +1,53 @@
+{
+  "code": "DW1068",
+  "patch": [
+    {
+      "doc": "world-edits.json",
+      "op": "add",
+      "path": "/content/batches/-",
+      "value": {
+        "area": "area/hall",
+        "edits": [
+          {
+            "name": "region/curator-hatch",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-hall"
+              },
+              "kind": "box",
+              "max": [
+                10,
+                3,
+                7
+              ],
+              "min": [
+                10,
+                3,
+                7
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:oak_trapdoor[facing=south,half=bottom,open=true,powered=false,waterlogged=false]",
+                  "weight": 1.0
+                }
+              ]
+            },
+            "region": "region/curator-hatch",
+            "verb": "fill"
+          }
+        ],
+        "id": "batch/hang-a-hatch-on-the-curators-walk",
+        "note": "An oak trapdoor standing open on the Curator's walk from the lectern to the case, `facing=south`, so its open leaf stands against the cell's north face, across the walk."
+      }
+    }
+  ],
+  "units": [],
+  "why": "A leaf standing open across a walk a body takes that opens nothing. The Curator walks south from the lectern along x 10 and then east to the case; this edit stands an oak trapdoor in that walk at piece-local [10, 3, 7], open, `facing=south`, so its open leaf stands against the cell's north face, the face the walk crosses into the cell. The party sets a leaf before it steps and is never stopped by one, so the route the walk is planned on runs straight through; a `move-npc` body is a teleported puppet that opens nothing and meets the leaf as it stands. The build refuses it as `DW1068`, naming the walk, the step, the leaf's cell and the face it stops. A trapdoor, not a door: a door whose open leaf stands across a walk stands crosswise to the way through it, so its jambs lie on the walk and `DW1072` refuses it first as a door that closes no opening (spec-0124 §6.5); a trapdoor is not judged by that rule, so the walk's own refusal is the one this probe reaches. It declares no unit: whether a leaf stands across a walk is the geometry's, not a DSL field's."
+}
