@@ -128,7 +128,7 @@
             },
             "happening": {
               "text": "the party completes obj/door",
-              "verb": "opens"
+              "verb": "learns"
             },
             "hint": "Pull the lever on the barred door.",
             "id": "obj/door",

@@ -75,7 +75,7 @@
             },
             "happening": {
               "text": "the party completes obj/bolt",
-              "verb": "opens"
+              "verb": "learns"
             },
             "id": "obj/bolt",
             "prop": {

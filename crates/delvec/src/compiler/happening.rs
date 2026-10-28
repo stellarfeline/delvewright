@@ -9,7 +9,8 @@
 //! likewise, to `close-gate`.
 //!
 //! The node's own effects are: an objective's completion effects (its quest's
-//! `on_objective_complete` bundle, nested lists included); a dialogue option's
+//! `on_objective_complete` bundle, nested lists included, and the quest's
+//! `on_complete` when no other objective of the quest waits on it); a dialogue option's
 //! effects, which open nothing the world has; and a story-node effect itself,
 //! with the lists nested in it. Read off the documents alone, so it is refused
 //! at validation, where the statement is written.
@@ -167,11 +168,20 @@ pub fn check(c: &Campaign) -> (Vec<Diagnostic>, HappeningBinding) {
     for (qi, q) in c.quests.content.quests.iter().enumerate() {
         for (oi, o) in q.objectives.iter().enumerate() {
             let Some(h) = o.happening() else { continue };
-            let effects: Vec<&QuestEffect> = q
+            let mut effects: Vec<&QuestEffect> = q
                 .on_objective_complete
                 .get(o.id())
                 .map(|v| v.iter().collect())
                 .unwrap_or_default();
+            // An objective no other objective of its quest waits on completes
+            // the quest, so the quest's `on_complete` is its effects too.
+            let terminal = !q
+                .objectives
+                .iter()
+                .any(|other| other.after().iter().any(|a| a == o.id()));
+            if terminal {
+                effects.extend(q.on_complete.iter());
+            }
             verdict(
                 &mut bind,
                 "quests",

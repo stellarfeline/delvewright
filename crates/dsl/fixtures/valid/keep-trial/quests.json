@@ -116,7 +116,7 @@
             },
             "happening": {
               "text": "the party completes obj/door",
-              "verb": "opens"
+              "verb": "learns"
             },
             "hint": "The barred door stands in the corner room; use the old key on it.",
             "id": "obj/door",

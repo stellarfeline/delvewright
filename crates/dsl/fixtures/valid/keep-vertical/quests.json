@@ -116,7 +116,7 @@
             },
             "happening": {
               "text": "the party completes obj/door",
-              "verb": "opens"
+              "verb": "learns"
             },
             "hint": "Back down at the foot of the stair.",
             "id": "obj/door",

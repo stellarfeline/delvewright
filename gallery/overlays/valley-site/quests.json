@@ -53,7 +53,7 @@
             },
             "happening": {
               "text": "the party presses the stone set in the far corner of the parapet",
-              "verb": "opens"
+              "verb": "learns"
             },
             "id": "obj/the-corner-stone",
             "prop": {

@@ -81,7 +81,7 @@
               "text": "The centre door is unlocked, and opens by hand from now on.",
               "verb": "opens"
             },
-            "hint": "The centre door is in the near hall's south wall.",
+            "hint": "The centre door is the middle one of the near hall's three doors.",
             "id": "obj/unlock-the-centre-door",
             "requires_item": "minecraft:tripwire_hook",
             "title": "Unlock the centre door",
@@ -143,7 +143,12 @@
           "obj/unlock-the-centre-door": [
             {
               "anchor": "anchor/seam-centre-door",
-              "type": "open-gate"
+              "type": "open-gate",
+              "happening": {
+                "subject": "anchor/seam-centre-door",
+                "text": "The lock of the centre door turns.",
+                "verb": "opens"
+              }
             }
           ]
         }

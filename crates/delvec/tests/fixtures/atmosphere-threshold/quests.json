@@ -17,7 +17,7 @@
             },
             "happening": {
               "text": "The bell's note goes back through the door the way they came.",
-              "verb": "opens"
+              "verb": "learns"
             },
             "hint": "Through the door, in the middle of the far half.",
             "id": "obj/ring-the-bell",

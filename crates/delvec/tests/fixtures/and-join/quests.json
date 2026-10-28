@@ -73,7 +73,7 @@
             },
             "happening": {
               "text": "the party completes obj/ward-north",
-              "verb": "opens"
+              "verb": "learns"
             },
             "hint": "A lever in the room off the hall.",
             "id": "obj/ward-north",
@@ -91,7 +91,7 @@
             },
             "happening": {
               "text": "the party completes obj/ward-south",
-              "verb": "opens"
+              "verb": "learns"
             },
             "hint": "Its twin, a room away.",
             "id": "obj/ward-south",
