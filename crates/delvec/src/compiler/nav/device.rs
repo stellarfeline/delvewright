@@ -1069,8 +1069,9 @@ pub fn devices_json(
 }
 
 /// Every `decorative[]` entry of every unturned placed piece's contract, in
-/// world cells, with its `what` (spec-0124 §5.4). Every piece a detail plan
-/// binds is placed unturned; a turned area piece's entries are not read.
+/// world cells, with its `what` (spec-0124 §5.4). A turned area piece's
+/// entries are carried through its rotation by [`crate::compiler::ways::world_cell`],
+/// the one transform every reader of a placed piece's regions asks.
 #[must_use]
 pub fn decorative_cells(
     plan: &Plan,
@@ -1084,17 +1085,27 @@ pub fn decorative_cells(
         let Some(contract) = meta.spatial_contract.as_ref() else {
             continue;
         };
-        if p.rotation != crate::compiler::solver::Rotation::None {
-            continue;
-        }
-        for d in &contract.decorative {
-            out.push((
-                [p.pos[0] + d.at[0], p.pos[1] + d.at[1], p.pos[2] + d.at[2]],
-                d.what.clone(),
-            ));
-        }
+        out.extend(placed_decorative(p, contract));
     }
     out
+}
+
+/// One placed piece's `decorative[]` entries in world cells, through its
+/// placement and rotation.
+fn placed_decorative(
+    p: &crate::compiler::plan::PiecePlacement,
+    contract: &delvewright_dsl::prefab::SpatialContract,
+) -> Vec<([i32; 3], String)> {
+    contract
+        .decorative
+        .iter()
+        .map(|d| {
+            (
+                crate::compiler::ways::world_cell(p.rotation, p.pos, d.at),
+                d.what.clone(),
+            )
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -1441,6 +1452,43 @@ mod tests {
     /// jamb cells, a door whose jambs all stop a body closes its opening; an
     /// unframed one is refused unless the reach graph finds no body fits the
     /// gap, and that count is stated.
+    /// A turned piece's `decorative[]` entry lands where the turned piece's
+    /// own block lands: `at` `[6, 1, 3]` of a piece at `[10, 64, 10]` turned a
+    /// quarter clockwise is `[10 - 3, 65, 10 + 6]` (vanilla's
+    /// `clockwise_90`: `(x, z) → (-z, x)`), and unturned `[16, 65, 13]`.
+    #[test]
+    fn a_turned_pieces_decorative_entry_is_read_through_its_turn() {
+        use crate::compiler::solver::Rotation;
+        let contract = delvewright_dsl::prefab::SpatialContract {
+            entry: "room".to_string(),
+            spaces: BTreeMap::new(),
+            no_body: BTreeMap::new(),
+            edges: Vec::new(),
+            faces: Vec::new(),
+            no_body_majority_ack: None,
+            decorative: vec![delvewright_dsl::prefab::Decorative {
+                at: [6, 1, 3],
+                what: "an iron door laid as a bench top".to_string(),
+            }],
+        };
+        let at = |rotation| {
+            let p = crate::compiler::plan::PiecePlacement {
+                prefab_id: "prefab/test-bench".to_string(),
+                templates: Vec::new(),
+                pos: [10, 64, 10],
+                size: [8, 4, 8],
+                rotation,
+                mated: Vec::new(),
+            };
+            placed_decorative(&p, &contract)
+        };
+        let what = "an iron door laid as a bench top".to_string();
+        assert_eq!(at(Rotation::None), vec![([16, 65, 13], what.clone())]);
+        assert_eq!(at(Rotation::Cw90), vec![([7, 65, 16], what.clone())]);
+        assert_eq!(at(Rotation::Cw180), vec![([4, 65, 7], what.clone())]);
+        assert_eq!(at(Rotation::Ccw90), vec![([13, 65, 4], what)]);
+    }
+
     #[test]
     fn the_census_framing_and_clause_one_agree_over_every_jamb() {
         let kinds = [Some(STONE), None, Some("minecraft:stone_slab[type=bottom]")];
