@@ -72,8 +72,12 @@ const CABIN_LAMP: [i32; 3] = [2, 2, 29];
 /// re-seated spider at 15 of 16 health. Its south edge stops at `z = 21`:
 /// the row `z = 22` is the line from the west bay (`anchor/west-bay`) to the
 /// bay's knocker (`anchor/bay-knock`) that `DW0863` judges, and a deck there
-/// hides the knocker.
-const FERRY_DECK: (i32, i32, i32, i32) = (6, 12, 20, 21);
+/// hides the knocker. It keeps three rows, so the boarding objective's cube
+/// round [`FERRY_DECK_CENTRE`] stands on the deck.
+const FERRY_DECK: (i32, i32, i32, i32) = (6, 12, 19, 21);
+
+/// The deck's centre cell, `(x, z)`: the boarding volume's anchor.
+const FERRY_DECK_CENTRE: (i32, i32) = (9, 20);
 
 /// The deck's one column further east, `(x, z0)` to the deck's south edge,
 /// clear of the spider's body (it reaches `z = 20.2`): the tiller stands on
@@ -95,7 +99,7 @@ const FERRY_DECK_TOP_Y: i32 = 2;
 /// would meet the roof.
 const JETTY_PLANK: (i32, i32, i32, i32, i32) = (16, 17, FERRY_DECK_TOP_Y, 20, 20);
 
-/// The row the jump runs along: the deck's north row and the plank's.
+/// The row the jump runs along: the deck's middle row and the plank's.
 const JETTY_ROW: i32 = 20;
 
 /// **The fenced garden** (spec-0113 §9): a ring of oak fence round a bed in
@@ -877,7 +881,7 @@ const ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/ferry-deck",
-        pos: [9, FERRY_DECK_TOP_Y + 1, 21],
+        pos: [FERRY_DECK_CENTRE.0, FERRY_DECK_TOP_Y + 1, FERRY_DECK_CENTRE.1],
         facing: Some("east"),
         trigger_block: None,
         note: "the centre of the ferry's deck: the link's volume is this cell \
