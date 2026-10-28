@@ -1,0 +1,18 @@
+{
+  "code": "DW1072",
+  "patch": [
+    {
+      "doc": "programs/annex.json",
+      "op": "replace",
+      "path": "/contract/decorative/0/at",
+      "value": [
+        9,
+        0,
+        9
+      ]
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The smith's bench's `decorative` entry aimed one cell down, at the floor under the iron door: no door or gate stands there. `DW1072` refuses the entry as an exemption aimed at nothing, and the iron door it no longer covers is judged as any door is."
+}

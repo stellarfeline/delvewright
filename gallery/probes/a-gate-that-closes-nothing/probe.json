@@ -1,0 +1,42 @@
+{
+  "code": "DW1072",
+  "patch": [
+    {
+      "doc": "programs/far-hall.json",
+      "op": "replace",
+      "path": "/rules/fence-west",
+      "value": [
+        {
+          "body": {
+            "body": {
+              "op": "void"
+            },
+            "op": "claim",
+            "region": "south"
+          },
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "doc": "programs/far-hall.json",
+      "op": "replace",
+      "path": "/rules/fence-east",
+      "value": [
+        {
+          "body": {
+            "body": {
+              "op": "void"
+            },
+            "op": "claim",
+            "region": "south"
+          },
+          "weight": 1
+        }
+      ]
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The fence either side of the south space's yard gate taken away, so the gate stands free on the floor with nothing joined to it: shut, a body walks round it. `DW1072` refuses it on clause 1, naming the cells a body passes round the gate."
+}

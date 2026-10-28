@@ -1,0 +1,20 @@
+{
+  "code": "DW1072",
+  "patch": [
+    {
+      "doc": "programs/annex.json",
+      "op": "replace",
+      "path": "/palette/bench-door",
+      "value": "minecraft:oak_door[facing=west,half=lower,hinge=left,open=false,powered=false]"
+    },
+    {
+      "doc": "programs/annex.json",
+      "op": "replace",
+      "path": "/palette/bench-door-top",
+      "value": "minecraft:oak_door[facing=west,half=upper,hinge=left,open=false,powered=false]"
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The smith's bench in the annex, declared `decorative`, edited from an iron door to an oak one: a wooden door a player standing at the bench can touch and open by hand. The declaration no longer passes it — a decoration is exempt only when no hand opens it or no player can reach it — and `DW1072` refuses it naming the nearest rest cell and the distance from its eye."
+}

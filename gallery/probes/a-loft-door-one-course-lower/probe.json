@@ -1,0 +1,42 @@
+{
+  "code": "DW1072",
+  "patch": [
+    {
+      "doc": "programs/annex.json",
+      "op": "replace",
+      "path": "/rules/gable_row/0/when/rhs/value",
+      "value": 12
+    },
+    {
+      "doc": "programs/annex.json",
+      "op": "replace",
+      "path": "/rules/gable_row/0/body/children/3/sizes/0/blocks/value",
+      "value": 5
+    },
+    {
+      "doc": "programs/annex.json",
+      "op": "replace",
+      "path": "/rules/gable_row/1/when/rhs/value",
+      "value": 10
+    },
+    {
+      "doc": "programs/annex.json",
+      "op": "replace",
+      "path": "/rules/gable_row/1/body/children/3/sizes/0/blocks/value",
+      "value": 4
+    },
+    {
+      "doc": "programs/annex.json",
+      "op": "replace",
+      "path": "/contract/decorative/1/at",
+      "value": [
+        9,
+        8,
+        18
+      ]
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The annex's loft door, declared `decorative` and passed as out of reach eight courses over the floor, moved one course down: seven courses up, the jump apex of a body on the nearest rest cell is within the game's block interaction range of its lower cell (about 4.14 against 4.5). `DW1072` refuses it naming that rest cell, the jump and the distance, with the remedy to raise it or make it close a way."
+}

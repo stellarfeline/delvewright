@@ -1,0 +1,20 @@
+{
+  "code": "DW1072",
+  "patch": [
+    {
+      "doc": "programs/far-hall.json",
+      "op": "replace",
+      "path": "/palette/second-door",
+      "value": "minecraft:oak_door[facing=east,half=lower,hinge=left,open=false,powered=false]"
+    },
+    {
+      "doc": "programs/far-hall.json",
+      "op": "replace",
+      "path": "/palette/second-door-top",
+      "value": "minecraft:oak_door[facing=east,half=upper,hinge=left,open=false,powered=false]"
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The far hall's second door, the screen wall's west door onto the south space, edited to face along the wall: opened, the cells it swings onto are the screen wall's own stone. `DW1072` refuses that door alone on clause 2, naming the cell behind it and its block, and the hall door beside it stays green: each door of a room is judged with every other door shut, never against another's state."
+}

@@ -110,6 +110,8 @@
     "lamp": "minecraft:sea_lantern",
     "lid": "minecraft:spruce_planks",
     "newel": "minecraft:stripped_dark_oak_log[axis=y]",
+    "second-door": "minecraft:oak_door[facing=north,half=lower,hinge=left,open=false,powered=false]",
+    "second-door-top": "minecraft:oak_door[facing=north,half=upper,hinge=left,open=false,powered=false]",
     "tread": "minecraft:polished_diorite",
     "wall": "minecraft:polished_blackstone_bricks",
     "yard-gate": "minecraft:oak_fence_gate[facing=north,in_wall=false,open=false,powered=false]"
@@ -2897,7 +2899,7 @@
         "body": {
           "body": {
             "material": {
-              "role": "door"
+              "role": "second-door"
             },
             "op": "fill"
           },
@@ -2912,7 +2914,7 @@
         "body": {
           "body": {
             "material": {
-              "role": "door-top"
+              "role": "second-door-top"
             },
             "op": "fill"
           },
