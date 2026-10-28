@@ -157,8 +157,10 @@ What the pinned game lets a player touch, read from the jar so the decorative ex
   distance from the eye box over that cell to the door cell's box is `< 4.5`, with no padding: a
   vanilla client cannot send a use beyond the attribute, and the engine designs for the player,
   not for a modified client. The standing eye is `metrics::PLAYER_EYE_HEIGHT` (`1.62`); the
-  crouched eye height is owed by the implementing round (spec-0124, recorded debts). A jump
-  raises the eye and is not a rest state (spec-0124 §12).
+  crouched eye height is owed by the implementing round (spec-0124, recorded debts). A jump is
+  something a player can do and the game accepts a use mid-air, so the eye is also taken at the
+  jump's apex — the standing eye raised by `metrics::MAX_JUMP_RISE_16` (`1.25`), the constant the
+  reach graph's own jump step reads — and at every airborne state the graph records.
 
 ## Sources
 
