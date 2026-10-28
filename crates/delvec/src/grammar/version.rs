@@ -70,7 +70,7 @@
 
 /// The latest program document version this crate implements — what
 /// [`Program::new`](crate::grammar::ir::Program::new) stamps on a program built today.
-pub const LATEST_PROGRAM_VERSION: &str = "1.13.0";
+pub const LATEST_PROGRAM_VERSION: &str = "1.14.0";
 
 /// Every program document version the format has, oldest first — the ledger.
 ///
@@ -104,9 +104,12 @@ pub const LATEST_PROGRAM_VERSION: &str = "1.13.0";
 /// * `1.12.0` — an item holder at a mark (spec-0111): `holder` on a `mark`,
 ///   the item frame or armour stand the export writes into the piece's
 ///   `entities` list.
+/// * `1.13.0` — a door or gate kept as decoration (spec-0124, reserved).
+/// * `1.14.0` — the plot part a contract region is (spec-0125): `part` on a
+///   `spaces` or `no_body` entry.
 pub const SUPPORTED_PROGRAM_VERSIONS: &[&str] = &[
     "1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0", "1.7.0", "1.8.0", "1.9.0",
-    "1.10.0", "1.11.0", "1.12.0", "1.13.0",
+    "1.10.0", "1.11.0", "1.12.0", "1.13.0", "1.14.0",
 ];
 
 /// Ledger entries whose surface a **sibling** change introduces: the version,
@@ -127,6 +130,9 @@ pub const RESERVED_VERSIONS: &[(&str, &str)] = &[
     // spec-0106: a library piece placed by name. The implementing change
     // defines the constant and deletes this row in the same edit.
     ("1.11.0", "PREFAB_SINCE"),
+    // spec-0124: a door or gate kept as decoration. The implementing change
+    // defines the constant and deletes this row in the same edit.
+    ("1.13.0", "DECORATIVE_SINCE"),
 ];
 
 /// The version at which a frame may carry a reflection.
@@ -167,7 +173,7 @@ pub const HOLDER_SINCE: &str = "1.12.0";
 
 /// The version at which a contract space or out-of-walk region may name the
 /// plot part it is, with `part` (spec-0125 §5.1).
-pub const PART_SINCE: &str = "1.13.0";
+pub const PART_SINCE: &str = "1.14.0";
 
 /// The fence constant that introduces `version`'s surface, when `version` is a
 /// ledger entry this crate does not implement; `None` otherwise.

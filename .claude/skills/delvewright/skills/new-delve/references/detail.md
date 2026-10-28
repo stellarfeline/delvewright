@@ -259,7 +259,7 @@ nothing put there survives and nothing may depend on it.
 **A plot's parts are named on the contract.** When the place's node declares
 what it holds (the handout's *What this plot holds*), the program names each
 part on the spaces and out-of-walk regions that are it, with `"part":
-"part/<id>"` on the `spaces` or `no_body` entry, at program version `1.13.0`;
+"part/<id>"` on the `spaces` or `no_body` entry, at program version `1.14.0`;
 several spaces may name one part (two rooms of one house), and a space naming
 none is the plot's unprogrammed ground. The check prints `parts:
 B of K bound, W of R walked` and refuses four shapes, one line each:

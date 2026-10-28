@@ -1696,7 +1696,7 @@ fn a_part_is_fenced_below_its_version_and_spelled_part_kebab() {
         }) => {
             assert!(construct.contains("part"), "{construct}");
             assert_eq!(since, delvec::grammar::version::PART_SINCE);
-            assert_eq!(since, "1.13.0");
+            assert_eq!(since, "1.14.0");
         }
         other => panic!("expected a fenced-construct refusal, got {other:?}"),
     }
