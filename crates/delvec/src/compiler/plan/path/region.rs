@@ -1037,12 +1037,21 @@ impl Plan<'_> {
     /// Added to every path's events ([`Plan::build`],
     /// [`Plan::branch_gate_model`]) once the plan exists, because the list is the
     /// plan's: the synthesized press answers join the author's triggers there.
+    ///
+    /// A door's two halves are one write over its two cells, laid with its
+    /// lower half: what each cell holds is [`crate::compiler::region_fill`]'s
+    /// answer for its course, as for every other write of a two-high block. A
+    /// write per half would make each cell its own region's bottom course, and
+    /// the upper half would be laid as a lower one.
     pub(crate) fn load_prop_events(&self) -> Vec<RegionEvent> {
-        crate::compiler::pressable::props(self)
-            .into_iter()
-            .map(|(_, p)| {
+        self.presses()
+            .iter()
+            .filter(|p| p.places_block)
+            .map(|p| {
+                let cells = p.cells();
+                let region = (cells[0], *cells.last().expect("a press has a cell"));
                 let write = RegionWrite::of_block(&p.block);
-                let ev = RegionEvent::forced((p.pos, p.pos), write, 0);
+                let ev = RegionEvent::forced(region, write, 0);
                 if write == RegionWrite::Clear {
                     ev
                 } else {

@@ -69,15 +69,8 @@ const CABIN_LAMP: [i32; 3] = [2, 2, 29];
 /// Its east edge stops at `x = 12`: the muster wave seats its spider at
 /// `[14.5, 19.5]`, and a spider's body is 1.4 wide, so a deck block at
 /// `x = 13` is inside it: measured, the gallery bot's die-retry read the
-/// re-seated spider at 15 of 16 health. Its south edge stops at `z = 21`:
-/// the row `z = 22` is the line from the west bay (`anchor/west-bay`) to the
-/// bay's knocker (`anchor/bay-knock`) that `DW0863` judges, and a deck there
-/// hides the knocker. It keeps three rows, so the boarding objective's cube
-/// round [`FERRY_DECK_CENTRE`] stands on the deck.
-const FERRY_DECK: (i32, i32, i32, i32) = (6, 12, 19, 21);
-
-/// The deck's centre cell, `(x, z)`: the boarding volume's anchor.
-const FERRY_DECK_CENTRE: (i32, i32) = (9, 20);
+/// re-seated spider at 15 of 16 health.
+const FERRY_DECK: (i32, i32, i32, i32) = (6, 12, 20, 22);
 
 /// The deck's one column further east, `(x, z0)` to the deck's south edge,
 /// clear of the spider's body (it reaches `z = 20.2`): the tiller stands on
@@ -99,7 +92,7 @@ const FERRY_DECK_TOP_Y: i32 = 2;
 /// would meet the roof.
 const JETTY_PLANK: (i32, i32, i32, i32, i32) = (16, 17, FERRY_DECK_TOP_Y, 20, 20);
 
-/// The row the jump runs along: the deck's middle row and the plank's.
+/// The row the jump runs along: the deck's north row and the plank's.
 const JETTY_ROW: i32 = 20;
 
 /// **The fenced garden** (spec-0113 §9): a ring of oak fence round a bed in
@@ -781,10 +774,12 @@ const ANCHORS: &[Anchor] = &[
     // released to the hand once unbarred, and a chest that answers once taken.
     Anchor {
         name: "anchor/bay-knock",
-        pos: [29, 1, 21],
+        pos: [5, 1, 26],
         facing: Some("west"),
         trigger_block: None,
-        note: "the bay's knocker, a button on the floor: two knocks unbar the bay door",
+        note: "the bay's knocker, a button on the floor south of the west bay, in sight from \
+               it: the ferry deck stands across every line east of the bay (`DW0863`). Two \
+               knocks unbar the bay door",
         role: None,
     },
     Anchor {
@@ -881,7 +876,7 @@ const ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/ferry-deck",
-        pos: [FERRY_DECK_CENTRE.0, FERRY_DECK_TOP_Y + 1, FERRY_DECK_CENTRE.1],
+        pos: [9, FERRY_DECK_TOP_Y + 1, 21],
         facing: Some("east"),
         trigger_block: None,
         note: "the centre of the ferry's deck: the link's volume is this cell \

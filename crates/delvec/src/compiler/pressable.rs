@@ -358,9 +358,13 @@ fn with_half(block: &str, half: &str) -> String {
     format!("{name}[{}]", kv.join(","))
 }
 
-/// A door's upper half: the same state with `half=upper`.
+/// A door's upper half: the state a write of `block` over the door's two
+/// cells leaves in the upper one — [`crate::compiler::region_fill`]'s answer,
+/// the one rule for a two-high block's halves — from its lower half
+/// ([`lower_half`], which states `half` whether or not the author did).
 pub fn upper_half(block: &str) -> String {
-    with_half(block, "upper")
+    let lower = lower_half(block);
+    crate::compiler::region_fill::state_at(([0, 0, 0], [0, 1, 0]), &lower, [0, 1, 0]).into_owned()
 }
 
 /// A door's lower half — `half=lower`, whether or not the author wrote it; any
