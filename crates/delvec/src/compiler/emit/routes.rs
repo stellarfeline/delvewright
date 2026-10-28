@@ -609,6 +609,82 @@ pub(super) fn prove_world(
                 );
                 eprintln!("{}", census.line());
                 put_json(out, "validation/piece-census.json", &census.to_json());
+                // spec-0124 §6: a device does what it reads as — a door the
+                // story addresses is a seam's shutter (DW1069 a, b), a key's
+                // effect is in sight or shown (DW1071), and every door and
+                // gate in the world as shipped closes an opening (DW1072),
+                // judged by the reach graph. The three lines print before any
+                // verdict, zeroes included, and the ledger is written beside
+                // them.
+                {
+                    let shipped = crate::compiler::assembled::shipped_blocks(
+                        plan,
+                        &assembled.blocks,
+                        &relight.placements,
+                        &assembled.gate_seals,
+                        None,
+                    );
+                    let (ways, mut refused) =
+                        crate::compiler::nav::device::check_way_blocks(plan, world);
+                    let (keys, key_refused) = crate::compiler::nav::device::check_keys(plan, world);
+                    let decorative = crate::compiler::nav::device::decorative_cells(plan, prefabs);
+                    let (lo, hi) =
+                        shipped
+                            .keys()
+                            .fold(([i32::MAX; 3], [i32::MIN; 3]), |(lo, hi), c| {
+                                (
+                                    [lo[0].min(c[0]), lo[1].min(c[1]), lo[2].min(c[2])],
+                                    [hi[0].max(c[0]), hi[1].max(c[1]), hi[2].max(c[2])],
+                                )
+                            });
+                    let spawn = campaign_spawn(plan);
+                    let rest = || -> std::collections::BTreeSet<[i32; 3]> {
+                        spawn
+                            .map(|s| world.body_reach(&[s]).states.keys().copied().collect())
+                            .unwrap_or_default()
+                    };
+                    let in_pieces = census.pieces.iter().map(|p| p.doors.len()).sum();
+                    let (doors, door_refused) = crate::compiler::nav::device::check_doors(
+                        &shipped,
+                        lo,
+                        hi,
+                        &decorative,
+                        world,
+                        &rest,
+                        in_pieces,
+                    );
+                    eprintln!("{}", ways.line());
+                    eprintln!("{}", keys.line());
+                    eprintln!("{}", doors.line());
+                    put_json(
+                        out,
+                        "validation/devices.json",
+                        &crate::compiler::nav::device::devices_json(&ways, &keys, &doors),
+                    );
+                    let mut coded: Vec<(delvewright_dsl::DwCode, String)> = refused
+                        .drain(..)
+                        .map(|m| (crate::compiler::nav::device::DW_DOOR_NO_WAY, m))
+                        .collect();
+                    coded.extend(
+                        key_refused
+                            .into_iter()
+                            .map(|m| (crate::compiler::nav::device::DW_EFFECT_OUT_OF_SIGHT, m)),
+                    );
+                    coded.extend(
+                        door_refused
+                            .into_iter()
+                            .map(|m| (crate::compiler::nav::device::DW_DOOR_CLOSES_NOTHING, m)),
+                    );
+                    if let Some(((code, first), rest)) = coded.split_first() {
+                        for (c, m) in rest {
+                            eprintln!("{} [error] build: {m}", c.id());
+                        }
+                        return Err(BuildFailure::Diagnostic {
+                            code: *code,
+                            message: first.clone(),
+                        });
+                    }
+                }
                 if let Some((first, rest)) = refused.split_first() {
                     for extra in rest {
                         eprintln!("{} [error] build: {}", extra.code, extra.message);

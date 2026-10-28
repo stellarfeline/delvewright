@@ -710,6 +710,387 @@ pub fn check_doors(
     (ledger, refusals)
 }
 
+// ---------------------------------------------------------------------------
+// §6.1 — a story-addressed door is a seam's shutter (`DW1069` a, b)
+// ---------------------------------------------------------------------------
+
+use crate::compiler::plan::Plan;
+use crate::compiler::pressable::{Owner, in_region};
+
+/// What `DW1069`'s world arms bound on one build.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct WayBlockBinding {
+    /// Pressables the build places.
+    pub pressables: usize,
+    /// Of those, way-blocks the story addresses: a block a hand opens pressed
+    /// by an `interact`, a `use` trigger, a shortcut's unlock or a disarm.
+    pub way_blocks: usize,
+    /// Door-shut seams.
+    pub door_seams: usize,
+    /// Gated connections built shut.
+    pub gated: usize,
+    /// Refused.
+    pub refused: usize,
+}
+
+impl WayBlockBinding {
+    /// The binding line (spec-0124 §7.1).
+    #[must_use]
+    pub fn line(&self) -> String {
+        format!(
+            "device binding ({}): {} way-block(s) among {} pressable(s); {} door-shut seam(s) \
+             among {} gated connection(s); {} refused",
+            DW_DOOR_NO_WAY.id(),
+            self.way_blocks,
+            self.pressables,
+            self.door_seams,
+            self.gated,
+            self.refused
+        )
+    }
+}
+
+/// **`DW1069`, shapes *a* and *b***: every way-block the story addresses
+/// stands in a door-shut seam's gate region, and every door-shut seam opens
+/// onto a cell a body can be in on the side it opens to.
+#[must_use]
+pub fn check_way_blocks(plan: &Plan, world: &World) -> (WayBlockBinding, Vec<String>) {
+    let c = plan.campaign;
+    let seams = door_seam_edges(c);
+    let mut b = WayBlockBinding {
+        pressables: plan.presses().len(),
+        door_seams: seams.len(),
+        gated: gated_edges(c).len(),
+        ..WayBlockBinding::default()
+    };
+    let regions: Vec<(String, ([i32; 3], [i32; 3]))> = seams
+        .keys()
+        .filter_map(|a| {
+            crate::compiler::pressable::gate_region(plan, a).map(|(f, t, _)| (a.clone(), (f, t)))
+        })
+        .collect();
+    let mut refusals = Vec::new();
+    for p in plan.presses() {
+        let addressed = matches!(
+            p.owner,
+            Owner::Interact { .. }
+                | Owner::Trigger { .. }
+                | Owner::Shortcut { .. }
+                | Owner::TrapDisarm { .. }
+        );
+        if !addressed || !delvewright_dsl::blockshape::opens_by_hand(&p.block) {
+            continue;
+        }
+        b.way_blocks += 1;
+        if regions
+            .iter()
+            .any(|(_, r)| p.cells().iter().all(|c| in_region(*c, *r)))
+        {
+            continue;
+        }
+        b.refused += 1;
+        let nearest = plan
+            .anchors
+            .iter()
+            .filter_map(|((_, n), r)| match r {
+                crate::compiler::plan::ResolvedAnchor::Gate { from, .. }
+                    if n.starts_with("anchor/seam-") =>
+                {
+                    let d = (0..3).map(|i| (from[i] - p.cell[i]).abs()).sum::<i32>();
+                    Some((d, n.clone(), *from))
+                }
+                _ => None,
+            })
+            .min();
+        refusals.push(format!(
+            "shape a: {} presses `{}` at {:?}, a block a hand opens — a door the story \
+             addresses — and it stands in no door-shut seam: to the layout graph the way it \
+             reads as is not there, so pressing it opens nothing a proof walks (spec-0124 \
+             §6.1).{} Either declare the connection gated with `\"shut\": \"door\"` and anchor \
+             the step on its `anchor/seam-<edge>` (the seam stands the door), or make the \
+             pressable a block that is not a way — a lever, a button, a bell",
+            p.owner.word(),
+            p.block,
+            p.cell,
+            nearest
+                .map(|(d, n, at)| format!(" The nearest seam is `{n}` at {at:?}, {d} cell(s) off."))
+                .unwrap_or_default()
+        ));
+    }
+    // Shape b: the far side of every door-shut seam holds a body.
+    let site = delvewright_dsl::siteplan::SitePlan::of(c);
+    let graph = c.layout_graph.as_ref().map(|g| &g.content);
+    for s in site.seams.iter().filter(|s| s.door.is_some()) {
+        let Some((lo, _)) = s.bar() else { continue };
+        let lo = [lo[0] as i32, lo[1] as i32, lo[2] as i32];
+        let n = s.normal_axis;
+        let toward_b = s.face.vector()[n] as i32;
+        let opens = graph
+            .and_then(|g| g.edges.iter().find(|e| e.id() == &s.edge))
+            .and_then(|e| e.opens_from());
+        // The side it opens to: away from `opens_from`; both for `either`.
+        let fars: Vec<i32> = match opens {
+            Some(delvewright_dsl::layout::OpensFrom::A) => vec![toward_b],
+            Some(delvewright_dsl::layout::OpensFrom::B) => vec![-toward_b],
+            _ => vec![toward_b, -toward_b],
+        };
+        for k in fars {
+            let mut far = lo;
+            far[n] += k;
+            let under = [far[0], far[1] - 1, far[2]];
+            if world.rest_kind(far).is_some() || world.rest_kind(under).is_some() {
+                continue;
+            }
+            b.refused += 1;
+            refusals.push(format!(
+                "shape b: the door-shut seam of `{}` opens onto {far:?}, where no body can be \
+                 and none can stand on the cell under it: a shutter onto nothing is a door \
+                 that leads nowhere (spec-0124 §6.1). Floor the cell behind the door, or move \
+                 the seam",
+                s.edge,
+            ));
+        }
+    }
+    (b, refusals)
+}
+
+// ---------------------------------------------------------------------------
+// §6.3 — a key's effect is in sight or shown (`DW1071`)
+// ---------------------------------------------------------------------------
+
+/// What `DW1071` bound on one build.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct KeyBinding {
+    /// Objectives in the campaign.
+    pub objectives: usize,
+    /// `interact` objectives with `requires_item`.
+    pub keys: usize,
+    /// World writes their completions perform.
+    pub writes: usize,
+    /// Of those, in sight from the key's cell.
+    pub in_sight: usize,
+    /// Of those, shown by a shot in the same completion.
+    pub shown: usize,
+    /// Of those, a door-shut seam's release at the key's own anchor.
+    pub own_release: usize,
+    /// Refused.
+    pub refused: usize,
+}
+
+impl KeyBinding {
+    /// The binding line (spec-0124 §7.3).
+    #[must_use]
+    pub fn line(&self) -> String {
+        format!(
+            "key binding ({}): {} key objective(s) among {}; {} write(s) judged, {} in sight, {} \
+             shown by a shot, {} the key's own door released; {} refused",
+            DW_EFFECT_OUT_OF_SIGHT.id(),
+            self.keys,
+            self.objectives,
+            self.writes,
+            self.in_sight,
+            self.shown,
+            self.own_release,
+            self.refused
+        )
+    }
+}
+
+/// Whether a cutscene in `effects` frames `region`: a shot's (or the
+/// cutscene's) `look_at` or anchor subject resolving within two cells of it,
+/// or naming `anchor` itself.
+fn shown(
+    plan: &Plan,
+    effects: &[&delvewright_dsl::QuestEffect],
+    region: ([i32; 3], [i32; 3]),
+    anchor: Option<&str>,
+) -> bool {
+    use delvewright_dsl::{CameraSubject, Verb};
+    let near = |m: &delvewright_dsl::Mark| {
+        if anchor == Some(m.anchor.as_str()) {
+            return true;
+        }
+        crate::compiler::plan::point_any_in(&plan.anchors, m.anchor.as_str()).is_some_and(|p| {
+            let p = [p[0] + m.offset[0], p[1] + m.offset[1], p[2] + m.offset[2]];
+            (0..3).all(|i| {
+                let (a, b) = (region.0[i].min(region.1[i]), region.0[i].max(region.1[i]));
+                a - 2 <= p[i] && p[i] <= b + 2
+            })
+        })
+    };
+    let mut stack: Vec<&delvewright_dsl::QuestEffect> = effects.to_vec();
+    while let Some(e) = stack.pop() {
+        if let Verb::Cutscene {
+            shots,
+            look_at,
+            subject,
+            ..
+        } = &e.verb
+        {
+            let subj =
+                |s: &Option<CameraSubject>| matches!(s, Some(CameraSubject::Anchor(m)) if near(m));
+            if look_at.as_ref().is_some_and(near) || subj(subject) {
+                return true;
+            }
+            if shots
+                .iter()
+                .any(|s| s.look_at.as_ref().is_some_and(near) || subj(&s.subject))
+            {
+                return true;
+            }
+        }
+        for list in e.nested_effect_lists() {
+            stack.extend(list.iter());
+        }
+    }
+    false
+}
+
+/// **`DW1071`**: every world write a key's completion performs is in sight of
+/// the key's cell by `DW0863`'s own sight predicate
+/// ([`crate::compiler::promise::act_unfound`]), or shown by a shot in the
+/// same completion; a door-shut seam's release at the key's own anchor
+/// passes by construction.
+#[must_use]
+pub fn check_keys(plan: &Plan, world: &World) -> (KeyBinding, Vec<String>) {
+    let mut b = KeyBinding::default();
+    let mut refusals = Vec::new();
+    for q in &plan.campaign.quests.content.quests {
+        for o in &q.objectives {
+            b.objectives += 1;
+            let delvewright_dsl::Objective::Interact {
+                id,
+                anchor,
+                requires_item: Some(_),
+                ..
+            } = o
+            else {
+                continue;
+            };
+            b.keys += 1;
+            let from = crate::compiler::pressable::press_of_objective(plan, id.as_str())
+                .map(|p| p.cell)
+                .or_else(|| crate::compiler::plan::point_any_in(&plan.anchors, anchor.as_str()));
+            let Some(from) = from else { continue };
+            let effects: Vec<&delvewright_dsl::QuestEffect> = q
+                .on_objective_complete
+                .get(o.id())
+                .map(|v| v.iter().collect())
+                .unwrap_or_default();
+            let mut stack = effects.clone();
+            while let Some(e) = stack.pop() {
+                for list in e.nested_effect_lists() {
+                    stack.extend(list.iter());
+                }
+                let gate = e.gate_region_write().map(|(a, _)| a.as_str().to_string());
+                for (region, _, _) in
+                    crate::compiler::plan::effect_writes(e, &plan.anchors, &plan.ways)
+                {
+                    b.writes += 1;
+                    if gate.as_deref() == Some(anchor.as_str()) && plan.door_shut(anchor.as_str()) {
+                        b.own_release += 1;
+                        continue;
+                    }
+                    let cells = crate::compiler::assembled::region_cells(region.0, region.1);
+                    let mut why: Option<Vec<String>> = None;
+                    let mut seen = false;
+                    for c in cells {
+                        let w = crate::compiler::promise::act_unfound(world, from, c, false, None);
+                        if w.is_empty() {
+                            seen = true;
+                            break;
+                        }
+                        why.get_or_insert(w);
+                    }
+                    if seen {
+                        b.in_sight += 1;
+                        continue;
+                    }
+                    if shown(plan, &effects, region, gate.as_deref()) {
+                        b.shown += 1;
+                        continue;
+                    }
+                    b.refused += 1;
+                    refusals.push(format!(
+                        "`interact` `{}` is a key used at {from:?}, and its completion writes \
+                         {:?}..={:?}{} out of the presser's sight — {} — with no shot in the same \
+                         completion framing it: a key whose effect lands nowhere the player can \
+                         see is a cause with no visible lock (spec-0124 §6.3). Stand the device \
+                         where its effect is in view, or add a `cutscene` whose shot looks at it",
+                        id.as_str(),
+                        region.0,
+                        region.1,
+                        gate.as_deref()
+                            .map(|g| format!(" (`{g}`)"))
+                            .unwrap_or_default(),
+                        why.unwrap_or_default().join("; ")
+                    ));
+                }
+            }
+        }
+    }
+    (b, refusals)
+}
+
+/// `validation/devices.json`: the three build-tier ledgers of spec-0124.
+#[must_use]
+pub fn devices_json(
+    ways: &WayBlockBinding,
+    keys: &KeyBinding,
+    doors: &DoorsLedger,
+) -> serde_json::Value {
+    serde_json::json!({
+        "way_blocks": {
+            "code": DW_DOOR_NO_WAY.id(),
+            "pressables": ways.pressables,
+            "way_blocks": ways.way_blocks,
+            "door_seams": ways.door_seams,
+            "gated": ways.gated,
+            "refused": ways.refused,
+        },
+        "keys": {
+            "code": DW_EFFECT_OUT_OF_SIGHT.id(),
+            "objectives": keys.objectives,
+            "keys": keys.keys,
+            "writes": keys.writes,
+            "in_sight": keys.in_sight,
+            "shown": keys.shown,
+            "own_release": keys.own_release,
+            "refused": keys.refused,
+        },
+        "doors": doors.to_json(),
+    })
+}
+
+/// Every `decorative[]` entry of every unturned placed piece's contract, in
+/// world cells, with its `what` (spec-0124 §5.4). Every piece a detail plan
+/// binds is placed unturned; a turned area piece's entries are not read.
+#[must_use]
+pub fn decorative_cells(
+    plan: &Plan,
+    prefabs: &crate::compiler::registry::PrefabRegistry,
+) -> Vec<([i32; 3], String)> {
+    let mut out = Vec::new();
+    for p in plan.areas.iter().flat_map(|a| a.pieces.iter()) {
+        let Some(meta) = prefabs.get(p.prefab_id.as_str()) else {
+            continue;
+        };
+        let Some(contract) = meta.spatial_contract.as_ref() else {
+            continue;
+        };
+        if p.rotation != crate::compiler::solver::Rotation::None {
+            continue;
+        }
+        for d in &contract.decorative {
+            out.push((
+                [p.pos[0] + d.at[0], p.pos[1] + d.at[1], p.pos[2] + d.at[2]],
+                d.what.clone(),
+            ));
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
