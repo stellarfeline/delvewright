@@ -102,22 +102,23 @@ fn all_functions(out: &BuildOutput) -> String {
 }
 
 /// A `bonfire` does NOT move the respawn point when its beat fires — it only
-/// ARMS the rest affordance. This is the whole difference from `set-checkpoint`
+/// ARMS the rest point. This is the whole difference from `set-checkpoint`
 /// (spec-0016 §1): the checkpoint moves when the party rests.
 #[test]
 fn bonfire_arms_a_rest_affordance_and_does_not_move_the_checkpoint() {
     let out = build_fixture();
     let all = all_functions(&out);
-    // The arming line: a guarded interaction summon, never a bare one.
+    // The bonfire's block stands from world init, its box over it (a candle
+    // reports no press of its own); the beat only arms it.
+    let setup = fn_body(&out, "setup_finish");
     assert!(
-        all.contains(
-            "execute unless entity @e[tag=dw_bonfire_0] run summon minecraft:interaction "
-        ),
-        "the bonfire beat summons its rest affordance, guarded on absence"
+        setup.contains("minecraft:candle[candles=4,lit=false]")
+            && setup.contains("\"dw_bonfire_0\""),
+        "the bonfire's block and its box stand from world init: {setup}"
     );
     assert!(
-        all.contains("Tags:[\"dw_fixture\",\"dw_bonfire_0\"]"),
-        "the affordance carries the bonfire's stable content-ordered tag"
+        all.contains("scoreboard players set #bf_0 dw.sys 1"),
+        "the beat arms the bonfire"
     );
     // The beat that arms the bonfire must NOT itself carry `spawnpoint @a` — that
     // is the rest function's job.
@@ -281,14 +282,16 @@ fn save_only_is_the_checkpoint_and_nothing_else() {
     let out = build_fixture();
     let save = fn_body(&out, "bonfire_save_0");
     let rest = fn_body(&out, "bonfire_rest_0");
-    // The fire's seat, not its anchor: `anchor/objective` [44, 65, 2] is a
-    // cell a block fills, so a respawn is seated on the floor beside it
-    // (`nav::World::rest_seat`), the cell the rest step's walk reaches first.
+    // The fire's seat over the world as the arming beat finds it
+    // (`nav::World::rest_seat`): the piece's block on `anchor/objective`
+    // [44, 65, 2] is replaced at load by the bonfire's `prop`, four candles,
+    // which hurt nothing and leave room for a body, so the anchor is its own
+    // seat.
     assert_eq!(
         save.lines().collect::<Vec<_>>(),
         vec![
-            "spawnpoint @a 43 65 3",
-            "data modify storage dw:cp pos set value [43, 65, 3]",
+            "spawnpoint @a 44 65 2",
+            "data modify storage dw:cp pos set value [44, 65, 2]",
             "scoreboard players set #cp dw.sys 0",
         ],
         "save-only is exactly the three checkpoint lines: {save}"
@@ -855,7 +858,7 @@ fn the_two_options_are_packtested_apart() {
     );
     // … and still moves the checkpoint …
     assert!(
-        t.contains("assert score #bo_cp dw.sys matches 43"),
+        t.contains("assert score #bo_cp dw.sys matches 44"),
         "save-only still saves: {t}"
     );
     // … while the rest brings it back to the declared count.
@@ -963,19 +966,11 @@ fn a_named_potion_compiles_to_the_vanilla_brew() {
     );
 }
 
-// --- spec-0021 coexistence with the affordance hardware pass ---
+// --- spec-0021 coexistence with the pressable's box ---
 
-/// An **equipped actor** and the compiler-owned affordance hardware must
-/// coexist: the bonfire is permanent hardware (`retired_by: None`), so `DW0421`
-/// treats ANY `kill` reaching its `dw_hw_*` tag in the shipped datapack as an
-/// erasure. spec-0021 emission must therefore stay clear of it — actor gear is
-/// summon NBT, container fills are `item replace block`, and the only `kill`
-/// spec-0021 emits at all lives in `packtest-datapack/`, which the proof
-/// deliberately does not judge (ADR-0003).
-///
-/// This builds the bonfire fixture with an equipped actor spliced in, so both
-/// passes run over one datapack. A clean build IS the coexistence proof:
-/// `affordance::check` runs on the finished tree and would fail the build.
+/// An **equipped actor** and the bonfire's box coexist: actor gear is summon
+/// NBT, container fills are `item replace block`, and nothing spec-0021 emits
+/// reaches the box. A clean build with both is the proof.
 #[test]
 fn an_equipped_actor_coexists_with_affordance_hardware() {
     let dir = fixture_dir();
@@ -1024,7 +1019,6 @@ fn an_equipped_actor_coexists_with_affordance_hardware() {
         }
     }
     let tree = CommandTree::v1_21_11();
-    // DW0420/DW0421 run inside `emit::build` over the finished tree.
     let out = emit::build(
         &plan,
         &loaded.inputs,
@@ -1034,7 +1028,7 @@ fn an_equipped_actor_coexists_with_affordance_hardware() {
         None,
         &skins,
     )
-    .expect("affordance proofs hold with spec-0021 emission present");
+    .expect("the build's own proofs hold with spec-0021 emission present");
 
     // The gear really is there (so the build proved something, not nothing)…
     let spawn = fn_body(&out, "spawn_actor_elite");
@@ -1042,11 +1036,11 @@ fn an_equipped_actor_coexists_with_affordance_hardware() {
         spawn.contains("minecraft:netherite_sword"),
         "the equipped actor must actually be emitted:\n{spawn}"
     );
-    // …and the bonfire's visible hardware survives in the shipped datapack.
+    // …and the bonfire's box still stands in the shipped datapack.
     let all = all_functions(&out);
     assert!(
-        all.contains("dw_hw_dw_bonfire_"),
-        "the bonfire's compiler-owned hardware must still be summoned"
+        all.contains("\"dw_bonfire_0\""),
+        "the bonfire's box must still be summoned"
     );
 }
 

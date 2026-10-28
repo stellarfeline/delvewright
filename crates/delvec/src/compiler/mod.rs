@@ -8,7 +8,7 @@
 //! (`tests/module_list.rs`) is what keeps it whole.
 //!
 //! - [`acts`]: the acts on every walked path — what the party must do, where, and from where it stands (spec-0104), read by `DW0863`.
-//! - [`affordance`]: affordance hardware — the visible half of every right-click target the compiler owns (`DW0420`/`DW0421`).
+//! - [`affordance`]: the engine-fixture class tags and the region-selector exclusion (`DW0545`).
 //! - [`analyze`]: deep quest/objective reachability (`DW02xx`, exit 2).
 //! - [`approach`]: a body the party talks to faces their approach, or watches it (`DW1025`).
 //! - [`assembled`]: the shared assembled-world block model every geometric proof reads.
@@ -60,6 +60,7 @@
 //! - [`gatesignal`]: no redstone signal opens a shut gate — a source powering a shut seam's trapdoor is refused (`DW1047`).
 //! - [`guarantee`]: which anchors an area's binding guarantees, answered before anything is placed (`DW0889`).
 //! - [`gym`]: the metrics gym — a site-plan campaign generated from the metrics table.
+//! - [`handback`]: a generated PackTest template that writes a pressable's cell lays its block back when it ends.
 //! - [`healthbar`]: a fight's health bar — its emission, and the colour/style vocabulary read from the pinned command tree (`DW0911`).
 //! - [`hold`]: how long a cutscene holds the party, per critical-path step — what a step's completion schedules and what its walk passes.
 //! - [`holders`]: the holder census — every container and holder entity is loot, a collect, a device, scenery or exempt (`DW1018`, `DW1024`) — and the holder entities a piece carries, owned, summoned and proven takeable (`DW1037`, `DW1038`).
@@ -175,6 +176,7 @@ pub mod gates;
 pub mod gatesignal;
 pub mod guarantee;
 pub mod gym;
+pub mod handback;
 pub mod healthbar;
 pub mod hold;
 pub mod holders;

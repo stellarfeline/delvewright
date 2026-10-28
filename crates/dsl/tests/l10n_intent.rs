@@ -23,7 +23,15 @@ fn every_key_class_has_its_kind() {
         ("quest.open.goal", Objective),
         ("obj.open.talk.title", Objective),
         ("obj.open.talk.hint", Objective),
-        ("obj.open.door.missing_item_hint", Refusal),
+        ("obj.open.door.answers.not_yet", Refusal),
+        ("obj.open.door.answers.missing_item", Refusal),
+        ("obj.open.door.answers.done", Refusal),
+        ("trigger.lever.answers.not_yet", Refusal),
+        ("trigger.lever.answers.done", Refusal),
+        ("shortcut.side-door.answers.not_yet", Refusal),
+        ("shortcut.side-door.answers.done", Refusal),
+        ("trap.plate.disarm.answers.done", Refusal),
+        ("timed_gate.inner.disarm.answers.done", Refusal),
         ("obj.open.find.item_name", ItemName),
         ("cast.open.keeper.0.bark.1", Bark),
         ("dlg.keeper.greeting.text", Dialogue),
@@ -47,7 +55,7 @@ fn every_key_class_has_its_kind() {
         ("fx.trig.bonfire.0.rest_prompt", Prompt),
         ("fx.trig.bonfire.0.rest_label", OptionLabel),
         ("fx.trig.bonfire.0.save_label", OptionLabel),
-        ("fx.open.oc.talk.2.sealed_hint", Refusal),
+        ("fx.trig.bonfire.0.answers.not_yet", Refusal),
     ];
     for (key, kind) in table {
         assert_eq!(key_kind(key), Some(kind), "{key}");

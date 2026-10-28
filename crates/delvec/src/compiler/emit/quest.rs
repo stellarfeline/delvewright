@@ -69,6 +69,7 @@ pub(super) fn cue_ledger(plan: &Plan) -> Value {
             "announce": CUE_ANNOUNCE,
             "complete": CUE_COMPLETE,
             "campaign": CUE_CAMPAIGN,
+            "refused": super::press::CUE_REFUSED,
         },
         "objectives": objectives,
     })
@@ -181,6 +182,49 @@ pub(super) fn quests_in_arming_order(
         }
     }
     out
+}
+
+/// The guard a press that `serves` objective `o` is open under (spec-0117
+/// §5.3): its quest active, every `after` complete, and `o` not complete — the
+/// objective's [`pending_guard`] without its own gate, because the press may be
+/// what opens that gate (a puzzle whose presses count into the datum the
+/// objective reads), and a press held to the gate it feeds could never be made.
+pub(super) fn serving_guard(o: &Objective, quest_active: &str) -> String {
+    let p = plan::PARTY;
+    let mut g = format!(" if score {p} {quest_active} matches 1");
+    for a in o.after() {
+        g.push_str(&format!(
+            " if score {p} {} matches 1",
+            obj_score(a.as_str())
+        ));
+    }
+    g.push_str(&format!(
+        " unless score {p} {} matches 1",
+        obj_score(o.id().as_str())
+    ));
+    g
+}
+
+/// Whether a trigger declares `serves: {objective: o}` (spec-0117 §4): the
+/// presses it makes are part of `o`.
+pub(super) fn is_served(plan: &Plan, o: &Objective) -> bool {
+    plan.campaign.quests.content.triggers.iter().any(|t| {
+        matches!(&t.serves, Some(delvewright_dsl::Serves::Objective(s)) if s.as_str() == o.id().as_str())
+    })
+}
+
+/// The guard the party is **told** of objective `o` under — its announcement,
+/// its journal page, the compass following it (spec-0104 §5, §6, §8): the
+/// window in which the party can work at it. An objective a press `serves` is
+/// worked at from the moment its presses open, before its own gate holds —
+/// the presses are what open that gate — so it is told under the presses'
+/// [`serving_guard`]; any other objective under its [`pending_guard`].
+pub(super) fn told_guard(plan: &Plan, o: &Objective, quest_active: &str) -> String {
+    if is_served(plan, o) {
+        serving_guard(o, quest_active)
+    } else {
+        pending_guard(plan, o, quest_active)
+    }
 }
 
 pub(super) fn pending_guard(plan: &Plan, o: &Objective, quest_active: &str) -> String {
@@ -349,7 +393,7 @@ pub(super) fn quest_completion_fns(
             // summon (a non-empty activation) so objectives with no summon emit
             // nothing here.
             if !activation_commands(plan, holders, q_area, o).is_empty() {
-                body.extend(completion_cleanup(o));
+                body.extend(completion_cleanup(plan, o));
             }
             // spec-0104 §7.3: the highlight goes out with the act.
             body.extend(guidance::completion_lines(guide, ns, oid));

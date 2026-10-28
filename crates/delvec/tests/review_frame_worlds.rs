@@ -713,7 +713,7 @@ fn every_block_that_carries_a_block_entity_is_written_with_one() {
     for kind in [
         "minecraft:barrel",
         "minecraft:sculk_sensor",
-        "minecraft:sign",
+        "minecraft:bell",
         "minecraft:trapped_chest",
     ] {
         assert!(

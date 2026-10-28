@@ -877,8 +877,13 @@ fn the_press_ledger_records_the_strike_on_the_hitbox() {
     let out = build_fixture();
     let v: Value =
         serde_json::from_slice(out.get("validation/press-bodies.json").unwrap()).unwrap();
-    assert_eq!(v["examined"], 1, "{v:#}");
+    // The strike and its `not_yet` answer (spec-0117) both ride the hitbox.
+    assert_eq!(v["examined"], 2, "{v:#}");
     assert_eq!(v["presses"][0]["trigger"], "trigger/limb-struck");
+    assert_eq!(
+        v["presses"][1]["trigger"],
+        "trigger/dw-answer-trig-limb-struck-not-yet"
+    );
     assert!(
         v["presses"][0]["body"]
             .as_str()

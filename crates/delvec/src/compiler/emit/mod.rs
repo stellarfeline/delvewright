@@ -40,7 +40,6 @@ use delvewright_dsl::{DwCode, ExitTier};
 
 mod actor;
 mod advancement;
-mod affordance;
 mod atmosphere;
 mod boundary;
 mod branch;
@@ -70,6 +69,8 @@ mod onkill;
 mod packtest;
 pub use packtest::{PartyBinding, party_binding};
 mod piece;
+mod press;
+pub use press::gate_blocks;
 mod proofs;
 mod pulse;
 mod quest;
@@ -95,7 +96,6 @@ mod world;
 
 use actor::*;
 use advancement::*;
-use affordance::*;
 pub use atmosphere::*;
 pub use boundary::*;
 pub use branch::*;
@@ -122,6 +122,7 @@ pub(crate) use npc::*;
 use objective::*;
 use onkill::*;
 pub use piece::*;
+use press::*;
 use proofs::*;
 use pulse::*;
 use quest::*;
@@ -828,13 +829,15 @@ pub fn build_with_warnings(
         eprintln!("{}", acts.line());
         refuse_first(refusals)?;
     }
-    // DW0963 (spec-0093 §7): an unmarked `interact` with no `prop` stands on a
-    // block the piece authored, or the party is asked to press empty space.
-    // Read over the settled bytes, which only an assembled world has.
-    if assembles_world(plan) {
-        let (pressables, verdict) =
-            crate::compiler::promise::check_pressables_visible(plan, &assembled.blocks);
-        eprintln!("{}", pressables.line());
+    // spec-0117 §6: the press proof the placed world decides — a trigger at a
+    // gate region (DW1059), a knocker with no block, a prop on a gate's own
+    // answer (DW1052), every sealed gate answered (DW0429), one cell one block
+    // (DW0896). The binding is printed whichever way it goes.
+    {
+        let (proof, verdict) =
+            crate::compiler::pressable::check(plan, &assembled.blocks, &assembled.gate_seals);
+        eprintln!("{}", proof.line());
+        put_json(&mut out, "validation/press-proof.json", &proof.to_json());
         if let Err(f) = verdict {
             return Err(BuildFailure::Diagnostic {
                 code: f.code,
@@ -983,7 +986,7 @@ pub fn build_with_warnings(
     };
     // spec-0104 §6–§8: the compass, the journal and the highlights, derived once
     // over the assembled world every emitter here reads.
-    let guide = guidance::guide(plan, &assembled.blocks, &owned_holders);
+    let guide = guidance::guide(plan, &assembled.blocks, &owned_holders, &world);
     // spec-0109 §5.1: what every biome a camera can stand in plays, what each
     // cutscene hears, what each `stop-sound` cuts — read over the forced
     // route's legs (none for a campaign that walks no world). The line is
@@ -1368,6 +1371,30 @@ pub fn build_with_warnings(
     let solo = crate::compiler::solo::isolate(&plan.namespace, &mut out);
     eprintln!("{}", solo.line());
     put_json(&mut out, "validation/packtest-solo.json", &solo.to_json());
+    // ---- a template that writes a pressable's cell lays it back ----
+    // The world is shared by every batch; a pressable's block is what
+    // siblings read from load (`crate::compiler::handback`).
+    let handback = crate::compiler::handback::hand_back(
+        &plan.namespace,
+        &crate::compiler::pressable::props(plan)
+            .into_iter()
+            .map(|(_, p)| p)
+            .collect::<Vec<_>>(),
+        &mut out,
+    );
+    eprintln!("{}", handback.line());
+    put_json(
+        &mut out,
+        "validation/packtest-handback.json",
+        &handback.to_json(),
+    );
+
+    // ---- a template's dummy enters as a new player ----
+    // A score belongs to a name, and PackTest reuses dummy names across a
+    // suite (`crate::compiler::freshbody`).
+    let fresh = crate::compiler::freshbody::fresh_bodies(&plan.namespace, &mut out);
+    eprintln!("{}", fresh.line());
+    put_json(&mut out, "validation/packtest-fresh.json", &fresh.to_json());
 
     // ---- a template's dummy enters as a new player ----
     // A score belongs to a name, and PackTest reuses dummy names across a
@@ -1686,6 +1713,11 @@ pub fn build_with_warnings(
     // judges where each one arrives. Every build plays the campaign cue, so
     // every build writes the file.
     put_json(&mut out, "validation/cues.json", &cue_ledger(plan));
+    // What the journal owes at every quest start, read by the bot off the
+    // book it holds. Written exactly when the campaign carries a journal.
+    if let Some(j) = guidance::journal_ledger(plan, &guide) {
+        put_json(&mut out, "validation/journal-starts.json", &j);
+    }
     if let Some(gate) = firework_gate.as_ref().filter(|g| g.declared > 0) {
         put_json(&mut out, "validation/firework-gate.json", &gate.to_json());
     }

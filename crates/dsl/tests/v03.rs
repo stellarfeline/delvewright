@@ -28,7 +28,9 @@ static QUESTS_V03: LazyLock<String> = LazyLock::new(|| {
           { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },
           { "type": "kill", "id": "obj/slay", "wave": "wave/guards", "after": ["obj/talk"] },
           { "type": "collect", "id": "obj/gather", "item": "minecraft:bread", "count": 1, "anchor": "anchor/exit", "after": ["obj/slay"] },
-          { "type": "interact", "id": "obj/unlock", "anchor": "anchor/door", "requires_item": "minecraft:iron_sword", "after": ["obj/gather"], "requires_flags": ["flag/armed"] },
+          { "type": "interact", "id": "obj/unlock", "anchor": "anchor/door", "requires_item": "minecraft:iron_sword", "after": ["obj/gather"], "requires_flags": ["flag/armed"],
+            "prop": { "block": "minecraft:spruce_door[facing=south,half=lower]" }, "release": true,
+            "answers": { "not_yet": "Barred from within.", "missing_item": "Locked. The keeper's sword opens it." } },
           { "type": "reach-anchor", "id": "obj/reach", "anchor": "anchor/exit", "radius": 2, "after": ["obj/unlock"] }
         ],
         "on_objective_complete": {

@@ -1,0 +1,15 @@
+{
+  "code": "DW1052",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/shortcuts/0/release",
+      "value": true
+    }
+  ],
+  "units": [
+    "Shortcut.release"
+  ],
+  "why": "`release: true` added to the side door's unlock, a button. A button is pressed on its own and is never boxed, so there is nothing to release once the bar is thrown; DW1052 refuses the field. It discharges `Shortcut.release`."
+}

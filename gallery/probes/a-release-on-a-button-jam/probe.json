@@ -1,0 +1,15 @@
+{
+  "code": "DW1052",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/timed_gates/2/disarm/release",
+      "value": true
+    }
+  ],
+  "units": [
+    "TimedGateDisarm.release"
+  ],
+  "why": "`release: true` added to the inner portcullis's jam, a button. A button is pressed on its own and is never boxed, so a release gives up nothing; DW1052 refuses the field. It discharges `TimedGateDisarm.release`."
+}

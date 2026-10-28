@@ -215,8 +215,8 @@ pub(super) fn first_strike_trigger_on_npc<'a>(
 
 /// The planned NPC whose own interaction hitbox carries the left-click trigger
 /// `t` — the one rule, read by the emitter (which then summons no standalone
-/// hitbox) and by the visibility proof (`DW0963`: the NPC's body is the visible
-/// thing the strike sits on). `None` when `t` rides no NPC.
+/// hitbox) and by the press ledger (the NPC's body is the thing the strike sits
+/// on). `None` when `t` rides no NPC.
 pub(crate) fn npc_ridden_by<'a>(
     plan: &'a Plan,
     t: &delvewright_dsl::EnvTrigger,

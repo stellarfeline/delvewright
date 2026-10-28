@@ -229,6 +229,9 @@ export const methods = {
    * leg starts where it was proven.
    */
   async afterStep(this: MineflayerExecutor, index: number, done: Step): Promise<void> {
+    // The journal at every quest this step started (`journal.ts`), read before
+    // any trial moves the bot.
+    await this.judgeJournalStarts(index);
     const plan = this.deathPlan;
     if (plan === undefined) return;
     const volumesOn = this.deathLoopOnPath && !plan.binding.unbound;

@@ -808,8 +808,15 @@
                             "symbol": "wall"
                           },
                           {
-                            "op": "call",
-                            "symbol": "seam-loft-stair-bar"
+                            "body": {
+                              "op": "call",
+                              "symbol": "seam-loft-stair-bar"
+                            },
+                            "mark": {
+                              "anchor": "loft-stair-leaf",
+                              "at": "floor_center"
+                            },
+                            "op": "mark"
                           },
                           {
                             "op": "call",

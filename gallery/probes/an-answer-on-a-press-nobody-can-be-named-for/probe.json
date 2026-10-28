@@ -1,0 +1,15 @@
+{
+  "code": "DW0427",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/triggers/3/answers",
+      "value": {
+        "not_yet": "Nothing to see from here yet."
+      }
+    }
+  ],
+  "units": [],
+  "why": "Answers added to the vantage's `approach` trigger. An approach is entered by walking, and nobody pressed anything: there is no presser for a refusal line to address and no press for it to answer. DW0427 refuses `answers` (as it refuses `audience: presser`) on an approach. It declares no unit: `EnvTrigger.answers` is bound on the gallery's presses."
+}

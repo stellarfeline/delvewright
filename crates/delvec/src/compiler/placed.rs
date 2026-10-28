@@ -549,7 +549,7 @@ fn row_of_line(fired: &Firing, line: &str) -> Option<(String, Placed)> {
 }
 
 /// Which functions the ledger reads, and how each one fires: `setup_finish`,
-/// `ws_arm_` and a holder's `holder_<id>` at setup; `activate_<obj>` at the step
+/// a shortcut gate's `seal_arm_` and a holder's `holder_<id>` at setup; `activate_<obj>` at the step
 /// its objective activates on; a
 /// `complete_<obj>` at its objective's step and a `complete_q_<quest>` at its
 /// last objective's; a `trig_<trigger>` at the trigger's own step; a `trap_`
@@ -561,6 +561,13 @@ fn firings_of(plan: &crate::compiler::plan::Plan, name: &str) -> Option<Vec<Firi
     use crate::compiler::plan::safe_local;
     if name == "setup_finish" {
         return Some(vec![Firing::Setup]);
+    }
+    if name == "tick" {
+        // A boxed press's reconciliation pair (spec-0117 §3a): the box returns
+        // while its press is not open, which no configuration is held to lay.
+        return Some(vec![Firing::Unforced(
+            "a press's click box the tick returns while the press is not open".to_string(),
+        )]);
     }
     let objectives = || {
         plan.campaign
@@ -632,10 +639,25 @@ fn firings_of(plan: &crate::compiler::plan::Plan, name: &str) -> Option<Vec<Firi
             )),
         }]);
     }
-    if name.starts_with("ws_arm_") {
-        // A shortcut gate's wrong-side hitboxes: armed at world init, its one
-        // call site `setup_finish` (`emit::shortcut`).
-        return Some(vec![Firing::Setup]);
+    if let Some(safe) = name.strip_prefix("seal_arm_") {
+        // A sealed gate's own answer box (spec-0117 §3a): a shortcut gate's,
+        // and a served gate's sealed from load, is armed at world init
+        // (`setup_finish`, `emit::shortcut`, `emit::press::load_seal_setup`);
+        // a `close-gate` target's when a beat seals it, which no
+        // configuration is held to lay.
+        if plan
+            .shortcuts
+            .iter()
+            .any(|s| safe_local(&s.gate_anchor) == safe)
+            || crate::compiler::pressable::load_sealed_served_gates(plan)
+                .iter()
+                .any(|g| safe_local(g) == safe)
+        {
+            return Some(vec![Firing::Setup]);
+        }
+        return Some(vec![Firing::Unforced(format!(
+            "the answer box of gate `{safe}`, armed when a beat seals it"
+        ))]);
     }
     if name.starts_with("holder_") {
         // An item holder's body (spec-0111 §4.1): summoned at world init, its

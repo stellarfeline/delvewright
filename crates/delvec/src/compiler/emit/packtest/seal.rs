@@ -1,8 +1,9 @@
 use super::*;
 
-/// Generated `v08_seal_answers` PackTest: on a live pinned server,
-/// a gate that is sealed carries the hitboxes its answer rides, arming is
-/// idempotent, and re-opening it takes them away again.
+/// Generated `v08_seal_answers` PackTest: on a live pinned server, a gate that
+/// is sealed carries the boxes its own answer rides (spec-0117: one fitted box
+/// over the gate's block at each answer's cell), arming is idempotent, and
+/// re-opening it takes them away again.
 ///
 /// What this proves and what it deliberately does not: the **presence** contract
 /// is fully machine-checkable here, and it is the half that failed — the island's
@@ -16,12 +17,24 @@ use super::*;
 /// back exactly as it found it — region cleared, hitboxes killed.
 pub(super) fn emit_seal_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let Some(s) = plan.seal_hints.first() else {
+    let Some(s) = plan
+        .seal_hints
+        .iter()
+        .find(|s| super::super::press::gate_has_answer_box(plan, &s.anchor))
+    else {
         return;
     };
     let (from, to) = s.region;
-    let n = s.shell_cells().len();
-    let tag = format!("dw_seal_{}", s.safe);
+    let n = plan
+        .presses()
+        .iter()
+        .filter(|p| {
+            matches!(&p.owner, crate::compiler::pressable::Owner::GateAnswer { gate, .. } if gate == &s.anchor)
+        })
+        .map(|p| p.cell)
+        .collect::<BTreeSet<_>>()
+        .len();
+    let tag = format!("dw_gate_{}", s.safe);
     let count = |score: &str| {
         format!(
             "execute store result score #{score} dw.sys if entity @e[type=minecraft:interaction,tag={tag}]"
@@ -52,14 +65,14 @@ pub(super) fn emit_seal_packtest(plan: &Plan, out: &mut BuildOutput) {
     b.extend(lay_region_commands((from, to), &s.block));
     b.push(format!(
         "execute unless entity @e[tag={tag}] run function {ns}:{}",
-        seal_arm_fn(&s.safe)
+        super::super::press::gate_arm_fn(&s.safe)
     ));
     b.push(count("seal_armed"));
     b.push(format!("assert score #seal_armed dw.sys matches {n}"));
     b.push("# A re-fired seal must not stack a second, co-located set.".to_string());
     b.push(format!(
         "execute unless entity @e[tag={tag}] run function {ns}:{}",
-        seal_arm_fn(&s.safe)
+        super::super::press::gate_arm_fn(&s.safe)
     ));
     b.push(count("seal_again"));
     b.push(format!("assert score #seal_again dw.sys matches {n}"));

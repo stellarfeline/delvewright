@@ -1739,6 +1739,41 @@ impl World {
             .with_flooded(&st.flooded, &st.flood_regions)
             .with_staged_lethal(&st.lethal, &st.lethal_regions)
             .with_keep_out(&st.keep_out)
+            .with_laid_hurting(&st.laid)
+    }
+
+    /// This world with what each laid write leaves in its cells joined to the
+    /// blocks that hurt a body ([`crate::compiler::nav::Seating`]): a cell whose
+    /// last write lays a block that hurts ([`delvewright_dsl::blockshape::hurts_body`]
+    /// — a campfire a pressable's `prop` lays at load) hurts, and a cell whose
+    /// last write lays anything else, air included, does not.
+    fn with_laid_hurting(
+        mut self,
+        laid: &[crate::compiler::nav::route::region::LaidWrite],
+    ) -> World {
+        if laid.is_empty() {
+            return self;
+        }
+        let mut last: BTreeMap<[i32; 3], bool> = BTreeMap::new();
+        for ((lo, hi), block) in laid {
+            let hurts = block
+                .as_deref()
+                .is_some_and(delvewright_dsl::blockshape::hurts_body);
+            for c in crate::compiler::assembled::region_cells(*lo, *hi) {
+                last.insert(c, hurts);
+            }
+        }
+        let mut hurting = self.seating.hurting.clone();
+        for (c, hurts) in last {
+            if hurts {
+                hurting.insert(c);
+            } else {
+                hurting.remove(&c);
+            }
+        }
+        hurting.compact();
+        self.seating.hurting = hurting;
+        self
     }
 
     /// This world keeping out of `regions` ([`World::keep_out`]).

@@ -195,6 +195,36 @@ not third-party reconstructions.
   dumper's state count equals the rows' coverage, and `--check` diffs against the
   committed file; two runs of one jar give the same bytes.
 
+- **`outline-shapes-1.21.11.tsv`** (in `crates/dsl/data/`) — the **outline**
+  of every 1.21.11 blockstate: the boxes, in sixteenths from the cell's minimum
+  corner (`-` for an empty shape), of what the game's own
+  `BlockState.getShape(EmptyBlockGetter.INSTANCE, BlockPos.ZERO)` returns inside
+  the pinned server jar, read box by box (`VoxelShape.toAabbs()`), sorted (same
+  jar sha256 and mappings sha1 as the collision table, both recorded in the
+  file's header). 29,671 states collapse onto the properties that move the
+  outline: 11,025 rows. An outline is not a collision shape: a lever and every
+  button carry `-` in the collision table and a real box here, and a door's
+  outline is its leaf open or shut. `structure_void` has an outline (a
+  six-sixteenth cube); air, the fluids and `light` have none; four blocks
+  (bamboo, the lectern, the piston head, the pitcher crop) reach outside their
+  cell.
+  **Why it exists**: a click box is fitted to the outline of the block it stands
+  over, so the crosshair meets the box before the block from every eye outside
+  it (spec-0117 §3a, `DW1013`). Consumed by
+  `delvewright_dsl::blockshape::outline` / `has_outline`, which
+  `compiler::clickbox::ClickBox::fitted_to`, `DW1013` and `DW1059` read.
+  **Cross-checked** against the constants the pinned jar's `<clinit>`s and
+  `makeShapes` bodies build the lever, the button, the bell, the door, the
+  trapdoor, the fence gate, the campfire and the chest from (spec-0117 §2b) by
+  `blockshape::tests::the_*_outline_is_the_bytecodes`, which rebuild each shape
+  from those constants and compare covered sixteenths.
+  **Reproduce it**: `python3 tools/maintenance/dump-outline-shapes.py [--check]
+  [--work DIR]` (JDK ≥ 21 on `PATH`, network for the mappings). Its pin, fetch,
+  mapping and collapse steps are `dump-collision-tops.py`'s own, imported;
+  `tools/maintenance/outline/OutlineShapeDump.java` names no obfuscated member;
+  the dumper's state count must equal the rows' coverage; two runs of one jar
+  give the same bytes.
+
 - **`faces-1.21.11.tsv`** (in `crates/dsl/data/`) — which of every 1.21.11
   blockstate's six faces are **full**, asked two ways inside the pinned server
   jar (same jar sha256 and mappings sha1 as the collision table, both recorded in
@@ -748,6 +778,7 @@ What it establishes, all verified against 1.21.11 client bytecode rather than as
 | `block-renames-1.21.11.json` | `255937f801a71bb38fe92e7a5c16da74de934b88311b7ba68b62a0929e6756b5` |
 | `block-classification-1.21.11.json` | `58f80ca8bee1ed84e4cc64c3f4fda9d26cfba5f993c015489f3352c824a0e13d` |
 | `collision-tops-1.21.11.tsv` | `f4ea1e01f4463272ef527bafcbb36dbe4d8669e58fabfda5ec54c307469196bc` |
+| `outline-shapes-1.21.11.tsv` | `c5093ddf1b175a8eb35c300d6163240349a665b5291cf93a14d21b1324685501` |
 | `faces-1.21.11.tsv` | `ba718f855a73609ebd15f9ede83b43fec9f2bc1db2f53de0ba10ad8289ce8ad4` |
 | `occlusion-1.21.11.tsv` | `a867d92c5144be884c17c4627735e691fb395b6ab5f0c302cd99e188447c3cc7` |
 | `light-block-1.21.11.tsv` | `78125571c524732059d502b5144307d34dcb62a15c897f3e943f2793a19f4de9` |

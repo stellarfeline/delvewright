@@ -95,15 +95,19 @@ INTERACTION_SITES = {
     "clickbox::summon": (
         "THE SHAPE, not a verb. `compiler::clickbox::ClickBox::summon` writes the "
         "one `summon minecraft:interaction` every compiler-placed click box is "
-        "built by — each face near the block grid pushed one margin past it, so "
-        "the box is strictly nearer than any block it stands in (`DW1013`). It "
-        "answers no click and owns no reply; every caller is its own site in "
-        "this ledger, keyed by the caller's function."
+        "built by — fitted to the outline of the block it stands over "
+        "(`DW1013`). It answers no click and owns no reply; every caller is its "
+        "own site in this ledger, keyed by the caller's function."
     ),
-    "env_trigger_setup": (
-        "THE GENERAL CONSTRUCT. `EnvTrigger {at, on: strike|use, effects}` — the "
-        "DSL's first-class 'player clicked a thing here, run effects'. Every other "
-        "entry in this ledger is a verb that did not use it."
+    "derive": (
+        "THE PRESSABLE CLASS (spec-0117). `compiler::pressable::derive` is the one "
+        "derivation of every interaction point's body — an `interact`, a click "
+        "trigger, a gate's own answer, a shortcut unlock, a bonfire, a shop, a "
+        "trap or timed-gate disarm — as a real block, boxed where the game would "
+        "act or report nothing. The REPLY is never private: every pressable's "
+        "answers are ordinary `EnvTrigger{audience: presser}` triggers synthesized "
+        "by `derive_answers` and emitted by `env_trigger_fns` like every authored "
+        "click. Every verb that used to summon its own body is a consumer of this."
     ),
     "assembly_functions": (
         "An assembly's hitbox (spec-0082). Legitimately its own, for the reason an "
@@ -112,9 +116,8 @@ INTERACTION_SITES = {
         "assembly summons and removes it with its parts. The general construct "
         "RIDES it: `TriggerOn::StrikeAssembly` is an ordinary `EnvTrigger` whose "
         "poll and clear read this box's `attack` record (`emit::trigger_carrier_tag`), "
-        "exactly as `strike-npc` rides `npc_summon_rows`'s body, so a hit, a "
-        "count and what happens at the count are the general trigger, state and "
-        "gate. Shape 3, closed rather than catalogued."
+        "exactly as `strike-npc` rides `npc_summon_rows`'s body. Shape 3, closed "
+        "rather than catalogued."
     ),
     "npc_summon_rows": (
         "An NPC's dialogue hitbox. Legitimately its own: the box must track a "
@@ -124,87 +127,6 @@ INTERACTION_SITES = {
         "general mechanism was taught to RIDE this one (`npc_hitbox_trigger_tags`) "
         "rather than widened to bind to a body. Shape 3."
     ),
-    "seal_fns": (
-        "CLOSED (DSL v0.11) — this was the audit's live instance, and it is worth "
-        "keeping the shape written down. `close-gate.sealed_hint` owned the whole "
-        "reply: this body fleet, its own `seal_<anchor>` advancement, its own "
-        "`seal_hint_<anchor>` actionbar function and its own baked English, none of "
-        "which anything else could reach — so the second object that needed a reply "
-        "(a sealed shortcut door) had no surface and answered silence. The verb now "
-        "owns only the BODY; the reply is an ordinary "
-        "`EnvTrigger{on: use, audience: presser}` with a `narrate{style: actionbar}`, "
-        "synthesized by `plan::collect_press_answers` for any sealed body the "
-        "campaign leaves silent and emitted by `env_trigger_fns` like every other "
-        "click. Both private functions are gone. What kept the fix from being a "
-        "second bespoke field was widening the general verb instead: v0.11 gave "
-        "`narrate` the actionbar channel and a trigger a presser audience, which "
-        "were the only two things it could not say."
-    ),
-    "ws_arm_fns": (
-        "The shortcut gate's approach-side bodies, and the SHAPE-3 LIFT this PR "
-        "exists for. A trigger's `at` binds a POINT AT A CELL, not the clickable "
-        "shape of the object standing at that anchor — so authoring the island "
-        "boulder's own pattern on a shortcut door compiled clean and shipped a box "
-        "pressable only from the side the door opens from. The fix is not a fourth "
-        "mechanism: the body is arrayed over the gate's approach cells, and a click "
-        "trigger the author anchors there RIDES these hitboxes (`seal_rider_tags`) "
-        "instead of summoning a co-located one, exactly as `strike-npc` rides "
-        "`npc_summon_rows`'s body. The compiler supplies the SHAPE; the campaign "
-        "supplies the ANSWER, in the general effect vocabulary, so the reply is "
-        "l10n-inventoried and flag-gated by construction. Empty for a campaign with "
-        "no shortcut — byte-identical output. Shape 3, closed rather than catalogued. "
-        "v0.11 closed the other half, and WHO closes it is settled: "
-        "the answer is the general verb, and from 0.11.0 the CAMPAIGN must write "
-        "it — an unanswered SEALED BODY is `DW0429`, door and `close-gate` wall "
-        "alike, not a line the engine invents. A baked default would be the "
-        "compiler making a design statement about this thing's tone and never "
-        "disclosing it. Uniform over the class on purpose: two objects of one "
-        "class with two defaulting policies would be shape S1 committed while "
-        "closing it. The door is now an ordinary consumer of the mechanism rather "
-        "than the one pressable object in the engine with nothing to say."
-    ),
-    "shortcut_setup": (
-        "OPEN FINDING. `shortcuts[].unlock` summons its own body at the far-side "
-        "anchor. `on_unlock` already uses the general effect vocabulary, so only "
-        "the INTERACTION half is private: this is a trigger whose effects happen to "
-        "clear a gate. Shape 2."
-    ),
-    "trap_setup": (
-        "OPEN FINDING, two bodies in one function. `dw_trapfire_` detects the trap "
-        "firing; `dw_trapdis_` is `traps[].disarm.via`, a private "
-        "interaction-plus-set-flag that `EnvTrigger {on: use, effects: [set-flag]}` "
-        "expresses exactly. Note `traps[].payload` (spec-0022) already replaced this "
-        "trap's private CONSEQUENCE machinery with the general effect vocabulary — "
-        "the disarm affordance is the half that was not lifted. Shape 2."
-    ),
-    "timed_gate_setup": (
-        "OPEN FINDING. `timed_gates[].disarm.via` — a SECOND copy of the private "
-        "machinery `trap_setup` already had, for a struct (`TimedGateDisarm`) that "
-        "is a field-for-field twin of `TrapDisarm` (check C). The doc comment on it "
-        "states the intent — 'one affordance grammar for every mechanism the party "
-        "can switch off' — which is the general construct, described but not used. "
-        "Shapes 1 and 2."
-    ),
-    "emit_quest_effect": (
-        "OPEN FINDING. The `bonfire` rest affordance. Its body is private AND the "
-        "two-option dialog behind it is a private re-implementation of the stage-6 "
-        "dialogue machinery, with its own `prompt`/`rest_label`/`save_label` strings "
-        "(check B) instead of `DialogueNode`/`DialogueOption`. Shape 2, twice."
-    ),
-    "shop_setup": (
-        "OPEN FINDING, and the SAME finding as `emit_quest_effect`'s bonfire — "
-        "recorded as a new instance rather than folded in, because it is the second "
-        "consumer of one missing capability. A shop's body must open a DIALOG, and a "
-        "dialog has to be shown to a named player. `EnvTrigger` is polled off the "
-        "entity's own `interaction` NBT record, which names no player at all "
-        "(`seal_hint_fns` documents why the record is observed and not consumed), so "
-        "the general construct cannot express 'the player who pressed this' — every "
-        "site in the engine that needs the presser goes through a "
-        "`player_interacted_with_entity` advancement instead. The missing capability "
-        "is therefore not on the shop: it is that `EnvTrigger` has no acting-player "
-        "binding. Shape 3, catalogued rather than closed, because closing it is a "
-        "change to the trigger's own contract and not to this feature."
-    ),
     "emit_stake_functions": (
         "ACCEPTED — the general construct genuinely cannot bind here. A recovery "
         "stake's marker is summoned AT RUNTIME, at a position chosen at runtime from "
@@ -213,23 +135,17 @@ INTERACTION_SITES = {
         "at compile time, existing from world load — so there is no `EnvTrigger` a "
         "campaign could have written that would answer a click on a body that does "
         "not exist until somebody dies. The collection ANSWER is not private: the "
-        "amount restored is the declared datum, the line said is the stake's own "
-        "l10n-inventoried `collected_message`, and retirement goes through the one "
-        "`retired_by` function `DW0421` polices. What is private is only the "
-        "summoning, which is the half no declaration could have supplied."
-    ),
-    "activation_lines": (
-        "OPEN FINDING. `Objective::Interact` summons its own affordance, and carries "
-        "its own `missing_item_hint` for the refusal reply — a private narrate. The "
-        "objective genuinely needs an activation-gated body; the REPLY does not have "
-        "to be private. Shape 2."
+        "amount restored is the declared datum and the line said is the stake's own "
+        "l10n-inventoried `collected_message`; `stk_gc` alone retires the marker. "
+        "What is private is only the summoning, which is the half no declaration "
+        "could have supplied."
     ),
 }
 
 INTERACTION_SUMMON = re.compile(r'"(?:execute [^"]*run )?summon minecraft:interaction ')
 # A call to the one click-box rule (`compiler::clickbox::ClickBox`) summons a body
 # exactly as a literal does: the caller is the site, the rule only shapes it.
-CLICK_BOX_CALL = re.compile(r"ClickBox::(?:column|sized)\(")
+CLICK_BOX_CALL = re.compile(r"ClickBox::(?:fitted_to|sized)\(")
 # The rule's own literal, keyed apart from any caller: it is where every
 # compiler-placed box is written, and owns no verb.
 CLICK_BOX_RULE = ("crates/delvec/src/compiler/clickbox.rs", "summon")

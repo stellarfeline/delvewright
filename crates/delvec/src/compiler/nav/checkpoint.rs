@@ -55,8 +55,10 @@ pub fn check_checkpoints(plan: &Plan, world: &World) -> Result<(), Failure> {
             fire_step,
         });
     }
+    let shipped = world.seating_world(plan);
     verify_checkpoints(
         world,
+        shipped.as_ref().unwrap_or(world),
         &cps,
         &fixed_checkpoint_fires(plan),
         &critical_positions(plan),
@@ -324,6 +326,7 @@ struct RestSeat {
 /// proof by any other route is judged, not trusted.
 fn verify_checkpoints(
     world: &World,
+    seating: &World,
     checkpoints: &[RestSeat],
     fixed_fires: &[usize],
     positions: &[VisitedPos],
@@ -337,7 +340,7 @@ fn verify_checkpoints(
         fire_step,
     } in checkpoints
     {
-        let Some(cell) = seat.filter(|c| world.is_safe_seat(*c)) else {
+        let Some(cell) = seat.filter(|c| seating.is_safe_seat(*c)) else {
             return Err(unseated(anchor, *at, *seat));
         };
         // The first walked critical position strictly after the checkpoint fires.
@@ -684,6 +687,7 @@ mod tests {
         assert!(
             verify_checkpoints(
                 &world,
+                &world,
                 &seated(&world, &cps),
                 &[],
                 &positions,
@@ -695,6 +699,7 @@ mod tests {
         // Sealed before the party reaches the target (fire_step 0 < 1) → stranded.
         let close = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Fill, 0);
         let err = verify_checkpoints(
+            &world,
             &world,
             &seated(&world, &cps),
             &[],
@@ -714,6 +719,7 @@ mod tests {
         let cps = vec![("cp/rest".to_string(), [0, 65, 1], 0usize)];
         let positions = vec![at_step([4, 65, 1], 1)];
         let err = verify_checkpoints(
+            &world,
             &world,
             &seated(&world, &cps),
             &[],
@@ -740,6 +746,7 @@ mod tests {
         let positions = vec![at_step([4, 65, 1], 2)];
         verify_checkpoints(
             &world,
+            &world,
             &seated(&world, &cps),
             &[1],
             &positions,
@@ -748,6 +755,7 @@ mod tests {
         )
         .expect("the near checkpoint is replaced at step 1, before the leg to step 2");
         let err = verify_checkpoints(
+            &world,
             &world,
             &seated(&world, &cps),
             &[2],
@@ -795,6 +803,7 @@ mod tests {
         let early = vec![("cp/far".to_string(), [3, 65, 1], 0usize)];
         let err = verify_checkpoints(
             &world,
+            &world,
             &seated(&world, &early),
             &[],
             &positions,
@@ -806,6 +815,7 @@ mod tests {
         let rooted = vec![("cp/far".to_string(), [3, 65, 1], 2usize)];
         assert!(
             verify_checkpoints(
+                &world,
                 &world,
                 &seated(&world, &rooted),
                 &[],
@@ -826,6 +836,7 @@ mod tests {
         assert!(
             verify_checkpoints(
                 &world,
+                &world,
                 &seated(&world, &cps),
                 &[],
                 &positions,
@@ -844,6 +855,7 @@ mod tests {
         let positions = vec![at_step([4, 65, 1], 1)];
         assert!(
             verify_checkpoints(
+                &world,
                 &world,
                 &seated(&world, &cps),
                 &[],
@@ -874,6 +886,7 @@ mod tests {
         let judge = |seat: Option<[i32; 3]>| {
             verify_checkpoints(
                 &world,
+                &world,
                 &[RestSeat {
                     anchor: "anchor/fire".to_string(),
                     at: [2, 65, 1],
@@ -902,6 +915,7 @@ mod tests {
         let world = floored(5, 3, 65, &[]);
         let cps = vec![("cp/rest".to_string(), [20, 65, 20], 0usize)];
         let err = verify_checkpoints(
+            &world,
             &world,
             &seated(&world, &cps),
             &[],

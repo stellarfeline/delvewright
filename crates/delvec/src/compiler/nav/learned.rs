@@ -35,7 +35,7 @@ delvewright_dsl::dw_code! {
 delvewright_dsl::dw_code! {
     /// `DW1054`: **a declaration the world does not confirm** (spec-0118 §6.2):
     /// `seen`, but from the junction the eye meets a hiding cell before the
-    /// bar; `told`, but nothing answers a press at the seam; `rewarded`, but no
+    /// bar; `told`, but no `use` trigger serves the seam; `rewarded`, but no
     /// pickup, interaction or fight stands on the branch's ground; `hidden`,
     /// but an eye in the reach sees the way or its far side, or the beat that
     /// opens it carries no shot of its seam. As a warning, a word on a
@@ -172,8 +172,8 @@ pub(super) struct ShutWay {
     pub learned: Option<Learned>,
     /// The seam anchor a press is answered at (`anchor/seam-<edge>`).
     pub seam: String,
-    /// The `use` trigger that answers a press at the seam, if one does
-    /// ([`delvewright_dsl::QuestsContent::answers_press_at`]).
+    /// The `use` trigger that answers a press on the seam's gate, if one does
+    /// ([`delvewright_dsl::QuestsContent::gate_answers`]).
     pub answered_by: Option<String>,
     /// The block the gate is shut with, as the anchor declares it — named
     /// when an eye looks through it.
@@ -489,7 +489,6 @@ pub fn check_shut_ways_learned(
 ) -> (ShutWayBinding, Result<(), Failure>) {
     let gated = gated_connections(plan);
     let q = &plan.campaign.quests.content;
-    let triggers = q.all_triggers();
     let mut ways: Vec<ShutWay> = Vec::new();
     for (seal, _) in world.every_gate() {
         let Some(g) = gated.get(&seal.anchor) else {
@@ -500,18 +499,11 @@ pub fn check_shut_ways_learned(
             let (a, b) = (e.a().to_string(), e.b().to_string());
             if a_low { (a, b) } else { (b, a) }
         });
-        let answered_by = triggers
-            .iter()
-            .find(|t| {
-                matches!(t.on, delvewright_dsl::TriggerOn::Use)
-                    && t.at_anchor() == Some(seal.anchor.as_str())
-            })
+        // The press answer is the predicate `DW0429` reads (spec-0117 §6).
+        let answered_by = q
+            .gate_answers(&seal.anchor)
+            .next()
             .map(|t| t.id.to_string());
-        debug_assert_eq!(
-            answered_by.is_some(),
-            q.answers_press_at(&seal.anchor),
-            "the press answer is the predicate DW0429 reads"
-        );
         let far = sides
             .as_ref()
             .and_then(|(lo, hi)| Some((space_of(plan, lo)?, space_of(plan, hi)?)));
@@ -1315,8 +1307,8 @@ fn seen_words(m: &Met) -> String {
 
 fn told_words(way: &ShutWay) -> String {
     match &way.answered_by {
-        Some(t) => format!("`{t}` answers a press at `{}`", way.seam),
-        None => format!("nothing answers a press at `{}`", way.seam),
+        Some(t) => format!("`{t}` answers a press on `{}`", way.seam),
+        None => format!("no `use` trigger serves `{}`", way.seam),
     }
 }
 
@@ -1457,8 +1449,10 @@ fn unconfirmed_words(way: &ShutWay, m: &Met, configs: &[SeparationConfig<'_>]) -
             seen_words(m)
         ),
         Some(Learned::Told) => format!(
-            "{place}; declared `told`, but nothing answers a press at `{}`. Anchor a trigger on \
-             the seam — {}",
+            "{place}; declared `told`, but no `use` trigger serves `{}`. Anchor a trigger on \
+             the seam — {} — whose body is the gate's own block; or, where no anchor names a cell \
+             of the gate, a knocker (a bell or a button with its `prop`, and its `answers.done`) \
+             face-adjacent to it",
             way.seam,
             delvewright_dsl::trigger::press_answer_prescription(&way.seam, "the way")
         ),
@@ -1874,18 +1868,20 @@ mod learned_tests {
             .nth(1)
             .and_then(|t| t.split('`').next())
             .expect("the message carries the prescription")
-            .replace("trigger/<name>", "trigger/seam-answer");
+            .replace("trigger/<name>", "trigger/seam-answer")
+            .replace("<the door cell's anchor>", "anchor/seam-test-leaf");
         let trigger: delvewright_dsl::EnvTrigger =
             serde_json::from_str(&json).expect("the prescription is a trigger");
         let mut q: delvewright_dsl::QuestsContent =
             serde_json::from_value(serde_json::json!({ "quests": [] })).expect("an empty mission");
         q.triggers.push(trigger);
-        assert!(q.answers_press_at("anchor/seam-test"));
+        assert_eq!(q.gate_answers("anchor/seam-test").count(), 1);
         assert_eq!(
             json,
             delvewright_dsl::trigger::press_answer_prescription("anchor/seam-test", "the way")
                 .trim_matches('`')
                 .replace("trigger/<name>", "trigger/seam-answer")
+                .replace("<the door cell's anchor>", "anchor/seam-test-leaf")
         );
     }
 
@@ -1986,7 +1982,7 @@ mod learned_tests {
         );
         for w in [
             "`seen` — the bar is seen",
-            "`told` — nothing answers",
+            "`told` — no `use` trigger serves",
             "`rewarded` — no pickup",
         ] {
             assert!(err.message.contains(w), "{w}: {}", err.message);

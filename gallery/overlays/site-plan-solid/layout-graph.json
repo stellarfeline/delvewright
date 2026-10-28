@@ -194,18 +194,57 @@
           {
             "anchor": "anchor/reliquary-grille",
             "kind": "gate"
+          },
+          {
+            "anchor": "anchor/east-door-leaf",
+            "kind": "point",
+            "note": "A cell of the east door's own bar: where the door answers a press while it is barred (spec-0117, the gate's own answer)."
+          },
+          {
+            "anchor": "anchor/west-door-leaf",
+            "kind": "point",
+            "note": "A cell of the west door's own bar: where the shut way answers a press while it is barred (spec-0117, the gate's own answer; spec-0118, `told`)."
+          },
+          {
+            "anchor": "anchor/centre-door-leaf",
+            "kind": "point",
+            "note": "A cell of the centre door's own bar: where the shut way answers a press while it is barred (spec-0117, the gate's own answer; spec-0118, `told`)."
+          },
+          {
+            "anchor": "anchor/undercroft-shaft-leaf",
+            "kind": "point",
+            "note": "A cell of the undercroft shaft's own bar: where the shut way answers a press while it is barred (spec-0117, the gate's own answer; spec-0118, `told`)."
+          },
+          {
+            "anchor": "anchor/undercroft-crawl-leaf",
+            "kind": "point",
+            "note": "A cell of the undercroft crawl's own bar: where the shut way answers a press while it is barred (spec-0117, the gate's own answer; spec-0118, `told`)."
           }
         ]
       },
       {
         "id": "node/annex",
         "intent": "side-gallery",
-        "note": "The three-tile chain drawn from `pool/gallery-annex`, off the near hall and back into the far one."
+        "note": "The three-tile chain drawn from `pool/gallery-annex`, off the near hall and back into the far one.",
+        "stations": [
+          {
+            "anchor": "anchor/annex-chute-leaf",
+            "kind": "point",
+            "note": "A cell of the annex chute's own bar: where the shut way answers a press while it is barred (spec-0117, the gate's own answer; spec-0118, `told`)."
+          }
+        ]
       },
       {
         "id": "node/far-hall",
         "intent": "arena",
-        "note": "Behind the barred wall: the muster forms up here and the loft looks down on it."
+        "note": "Behind the barred wall: the muster forms up here and the loft looks down on it.",
+        "stations": [
+          {
+            "anchor": "anchor/loft-stair-leaf",
+            "kind": "point",
+            "note": "A cell of the loft stair's own bar: where the shut way answers a press while it is barred (spec-0117, the gate's own answer; spec-0118, `told`)."
+          }
+        ]
       },
       {
         "id": "node/loft",

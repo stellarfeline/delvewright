@@ -303,6 +303,12 @@ export interface RestStep extends PresentationMarkers {
   readonly pos: Vec3Tuple;
   /** The exact chat line the "rest and save" dialog button runs. */
   readonly command: string;
+  /**
+   * spec-0117: the bonfire's block when it reports its own press (a bell, a
+   * button) — the bot presses the block itself; absent, it right-clicks the
+   * click box fitted over the block (a campfire).
+   */
+  readonly block?: string;
 }
 
 /** The environment-trigger events a `trigger` step performs — the DSL's `on` tags. */
@@ -1082,12 +1088,16 @@ function parseStep(value: unknown, pointer: string): Step {
     case "rest": {
       rejectUnknownKeys(
         obj,
-        ["action", "bonfire", "anchor", "pos", "command", "sneak", "cutscene_seconds", "en_route_cutscene_seconds", "keep_out"],
+        ["action", "bonfire", "anchor", "pos", "command", "block", "sneak", "cutscene_seconds", "en_route_cutscene_seconds", "keep_out"],
         pointer,
       );
       const bonfire = obj["bonfire"];
       if (!Number.isInteger(bonfire) || (bonfire as number) < 0) {
         fail(`${pointer}/bonfire`, `must be a non-negative integer, got ${describe(bonfire)}`);
+      }
+      const block = obj["block"];
+      if (block !== undefined && (typeof block !== "string" || block.length === 0)) {
+        fail(`${pointer}/block`, `must be a block id, got ${describe(block)}`);
       }
       return {
         action: "rest",
@@ -1095,6 +1105,7 @@ function parseStep(value: unknown, pointer: string): Step {
         anchor: requireString(obj, "anchor", pointer),
         pos: requirePos(obj, pointer),
         command: requireString(obj, "command", pointer),
+        ...(typeof block === "string" ? { block } : {}),
         ...presentationFields(obj, pointer),
       };
     }

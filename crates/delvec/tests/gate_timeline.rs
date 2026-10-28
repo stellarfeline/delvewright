@@ -33,12 +33,20 @@ use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
 /// the `anchor/door` gate region (local x=4..5, z=6). Sealing the door therefore
 /// disconnects the two, which is exactly the island's geometry in miniature.
 fn quests_doc(on_complete: &str) -> String {
+    // A seal answers for itself (`DW0429`): the door's own answer, wherever the
+    // body seals it.
+    let triggers = if on_complete.contains("close-gate") {
+        format!(r#""triggers": [ {} ],"#, common::door_answer("Sealed."))
+    } else {
+        String::new()
+    };
     format!(
         r#"{{
   "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
+    {triggers}
     "actors": [
       {{ "id": "actor/ram", "entity": "minecraft:sheep", "anchor": "anchor/keeper-stand" }}
     ],
@@ -141,7 +149,7 @@ fn assert_validates(body: &str) {
 #[test]
 fn walk_after_close_gate_in_the_same_sequence_is_dw0410() {
     let body = r#"{ "type": "sequence", "steps": [
-          { "at_ticks": 460, "effects": [ { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." } ] },
+          { "at_ticks": 460, "effects": [ { "type": "close-gate", "anchor": "anchor/door" } ] },
           { "at_ticks": 700, "effects": [
               { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } } ] }
        ] },
@@ -159,7 +167,7 @@ fn walk_after_close_gate_in_the_same_sequence_is_dw0410() {
 /// lower index has provably fired before a later `move-actor` starts walking.
 #[test]
 fn walk_after_close_gate_in_the_same_effect_list_is_dw0410() {
-    let body = r#"{ "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." },
+    let body = r#"{ "type": "close-gate", "anchor": "anchor/door" },
        { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } },
        { "type": "campaign-complete" }"#;
     assert_validates(body);
@@ -169,7 +177,7 @@ fn walk_after_close_gate_in_the_same_effect_list_is_dw0410() {
 /// `move-npc` carries the identical obligation — same planner, same proof.
 #[test]
 fn move_npc_after_close_gate_is_dw0410() {
-    let body = r#"{ "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." },
+    let body = r#"{ "type": "close-gate", "anchor": "anchor/door" },
        { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } },
        { "type": "campaign-complete" }"#;
     assert_validates(body);
@@ -181,7 +189,7 @@ fn move_npc_after_close_gate_is_dw0410() {
 #[test]
 fn dw0410_message_names_the_verb_mover_and_gate() {
     let c = parse_hw(&quests_doc(
-        r#"{ "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." },
+        r#"{ "type": "close-gate", "anchor": "anchor/door" },
            { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } },
            { "type": "campaign-complete" }"#,
     ));
@@ -218,7 +226,7 @@ fn walk_before_close_gate_builds_clean() {
     let body = r#"{ "type": "sequence", "steps": [
           { "at_ticks": 100, "effects": [
               { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } } ] },
-          { "at_ticks": 700, "effects": [ { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." } ] }
+          { "at_ticks": 700, "effects": [ { "type": "close-gate", "anchor": "anchor/door" } ] }
        ] },
        { "type": "campaign-complete" }"#;
     assert_validates(body);
@@ -231,7 +239,7 @@ fn walk_before_close_gate_builds_clean() {
 #[test]
 fn sequence_order_follows_at_ticks_not_declaration_order() {
     let body = r#"{ "type": "sequence", "steps": [
-          { "at_ticks": 700, "effects": [ { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." } ] },
+          { "at_ticks": 700, "effects": [ { "type": "close-gate", "anchor": "anchor/door" } ] },
           { "at_ticks": 100, "effects": [
               { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } } ] }
        ] },
@@ -245,7 +253,7 @@ fn sequence_order_follows_at_ticks_not_declaration_order() {
 #[test]
 fn close_then_open_then_walk_builds_clean() {
     let body = r#"{ "type": "sequence", "steps": [
-          { "at_ticks": 0,   "effects": [ { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." } ] },
+          { "at_ticks": 0,   "effects": [ { "type": "close-gate", "anchor": "anchor/door" } ] },
           { "at_ticks": 200, "effects": [ { "type": "open-gate",  "anchor": "anchor/door" } ] },
           { "at_ticks": 700, "effects": [
               { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } } ] }
@@ -260,7 +268,7 @@ fn close_then_open_then_walk_builds_clean() {
 /// mode the no-false-certainty rule exists to prevent.
 #[test]
 fn conditional_close_gate_seals_nothing() {
-    let body = r#"{ "type": "close-gate", "when": { "requires_flags": ["flag/sealed"] }, "anchor": "anchor/door", "sealed_hint": "Sealed." },
+    let body = r#"{ "type": "close-gate", "when": { "requires_flags": ["flag/sealed"] }, "anchor": "anchor/door" },
        { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } },
        { "type": "campaign-complete" }"#;
     assert_validates(body);
@@ -292,7 +300,7 @@ fn close_gate_in_another_bundle_does_not_seal_this_timeline() {
             "radius": 2, "after": ["obj/talk"] }
         ],
         "on_objective_complete": {
-          "obj/talk": [ { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." } ]
+          "obj/talk": [ { "type": "close-gate", "anchor": "anchor/door" } ]
         },
         "on_complete": [
           { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } },
@@ -350,7 +358,7 @@ fn seal_flags(c: &Campaign) -> Vec<(String, bool)> {
 #[test]
 fn state_is_as_of_the_effect_not_after_it() {
     let c = parse_hw(&quests_doc(
-        r#"{ "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." },
+        r#"{ "type": "close-gate", "anchor": "anchor/door" },
            { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } },
            { "type": "campaign-complete" }"#,
     ));
@@ -368,7 +376,7 @@ fn state_is_as_of_the_effect_not_after_it() {
 fn walk_yields_every_effect_including_nested_ones() {
     let c = parse_hw(&quests_doc(
         r#"{ "type": "sequence", "steps": [
-              { "at_ticks": 0, "effects": [ { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." } ] },
+              { "at_ticks": 0, "effects": [ { "type": "close-gate", "anchor": "anchor/door" } ] },
               { "at_ticks": 40, "effects": [
                   { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } } ] }
            ] },
@@ -377,7 +385,8 @@ fn walk_yields_every_effect_including_nested_ones() {
     let flags = seal_flags(&c);
     let names: Vec<&str> = flags.iter().map(|(n, _)| n.as_str()).collect();
     // The objective bundle (open-gate, set-flag), then `on_complete`: the sequence
-    // node, its two nested steps in declaration order, then campaign-complete.
+    // node, its two nested steps in declaration order, then campaign-complete;
+    // then the door's own answer, a trigger root (its `narrate`).
     assert_eq!(
         names,
         vec![
@@ -386,7 +395,8 @@ fn walk_yields_every_effect_including_nested_ones() {
             "sequence",
             "close-gate",
             "move-actor",
-            "campaign-complete"
+            "campaign-complete",
+            "other"
         ],
         "pre-order: each effect ahead of its nested effects"
     );

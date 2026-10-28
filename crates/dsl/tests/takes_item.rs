@@ -7,6 +7,13 @@ mod common;
 use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign, parse_campaign};
 
 fn quests(fields: &str) -> String {
+    // spec-0117: every interact answers its states; a held-item gate owes its
+    // empty-hand line too (`DW1051`).
+    let answers = if fields.contains("requires_item") {
+        r#""answers": { "not_yet": "Not yet.", "missing_item": "Bare hands.", "done": "Laid." }"#
+    } else {
+        r#""answers": { "not_yet": "Not yet.", "done": "Laid." }"#
+    };
     format!(
         r#"{{
   "dsl_version": "{DSL_VERSION}",
@@ -19,7 +26,8 @@ fn quests(fields: &str) -> String {
         "trigger": {{ "type": "campaign-start" }},
         "objectives": [
           {{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }},
-          {{ "type": "interact", "id": "obj/lay", "anchor": "anchor/exit", "after": ["obj/talk"]{fields} }}
+          {{ "type": "interact", "id": "obj/lay", "anchor": "anchor/exit", "after": ["obj/talk"],
+             "prop": {{ "block": "minecraft:smooth_stone_slab" }}, {answers}{fields} }}
         ],
         "on_complete": [ {{ "type": "campaign-complete" }} ]
       }}

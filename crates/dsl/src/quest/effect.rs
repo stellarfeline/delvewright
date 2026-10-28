@@ -249,16 +249,6 @@ impl QuestEffect {
         }
     }
 
-    /// The authored `sealed_hint` if this is a `close-gate` that declares one (DSL
-    /// v0.8). `None` for every other effect **and** for a `close-gate` that takes
-    /// the compiler's canonical English seal line.
-    pub fn close_gate_sealed_hint(&self) -> Option<&str> {
-        match &self.verb {
-            Verb::CloseGate { sealed_hint, .. } => sealed_hint.as_deref(),
-            _ => None,
-        }
-    }
-
     /// The wave id if this is `spawn-wave` (v0.3).
     pub fn spawn_wave(&self) -> Option<&WaveId> {
         match &self.verb {

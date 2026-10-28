@@ -33,8 +33,10 @@ any game, however oblique its story.
   with a verb", "get to the point fast"); Game Accessibility Guidelines, *Use
   simple clear language* (basic level; about 14% of US/UK adults read below an
   11-year-old's level).
-- **F2 — A refusal says what is wrong and what fixes it.** A `missing_item_hint`,
-  a `sealed_hint`, a body's `answers.struck` / `answers.touched`, a shop refusal:
+- **F2 — A refusal says what is wrong and what fixes it.** A press answer
+  (`answers.not_yet`, `answers.missing_item`, `answers.done`, the `Refusal` class;
+  read site [`press-answers.md`](press-answers.md)), a sealed door's own answer,
+  a body's `answers.struck` / `answers.touched`, a shop refusal:
   `Locked. You need the Warden's Key.` One line of flavour may follow the
   statement, never replace it: `Not enough tallow. Pellam spreads his hands:
   "Tallow first, friend."` A thing that is not what it looks like says what it

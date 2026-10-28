@@ -498,9 +498,9 @@ fn declare_effects(node: &mut serde_json::Value) {
 ///
 /// A field the fixture states is left alone, so a test about one of these
 /// declarations writes its own and this never contradicts it. What it never
-/// supplies is a wording: a `sealed_hint` or a shortcut's press answer is a
-/// content decision (`DW0429`), and a fixture that seals something says what the
-/// seal answers.
+/// supplies is a wording: a sealed gate's answer is a content decision
+/// (`DW0429`), and a fixture that seals something says what the seal answers
+/// ([`door_answer`]).
 pub fn declare_story(
     quests: &mut serde_json::Value,
     npcs: &serde_json::Value,
@@ -651,6 +651,23 @@ pub fn declared_quests_doc(quests: &str, base: &Path) -> String {
     let npcs = read("npcs.json");
     let dialogue = read("dialogue.json");
     patch_doc(quests, |q| declare_story(q, &npcs, &dialogue))
+}
+
+/// The hello-room door's own answer (spec-0117 §3a): a `use` trigger at
+/// `anchor/door-leaf`, a cell of the door's bars, serving the gate
+/// `anchor/door`, answering the presser with `text`. A fixture that seals the
+/// door states this, with its own words, as `DW0429` owes.
+pub fn door_answer(text: &str) -> String {
+    format!(
+        r#"{{ "id": "trigger/door-answers", "at": "anchor/door-leaf", "on": {{ "on": "use" }},
+   "serves": {{ "gate": "anchor/door" }}, "audience": "presser",
+   "effects": [ {{ "type": "narrate", "style": "actionbar", "text": "{text}" }} ] }}"#
+    )
+}
+
+/// [`door_answer`] as a JSON value, for a test that patches a document.
+pub fn door_answer_value(text: &str) -> serde_json::Value {
+    serde_json::from_str(&door_answer(text)).expect("the door's answer is JSON")
 }
 
 /// [`declare_dialogue_story`] over a dialogue document written in a test.

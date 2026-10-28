@@ -73,8 +73,8 @@ pub struct TimedGate {
 /// exact shape a trap's [`TrapDisarm`] takes, and deliberately so: one affordance
 /// grammar for every mechanism the party can switch off.
 ///
-/// The player acts on the `via` anchor (a compiler-emitted interaction entity
-/// plus its visible hardware, `DW0420`) to jam the gate. The clock stops with the
+/// The player presses the disarm's `prop`, a real block at the `via` anchor
+/// (spec-0117 §3a), to jam the gate. The clock stops with the
 /// span cleared, `sets_flag` is raised party-wide, and nothing in the delve can
 /// put the gate back.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -84,6 +84,20 @@ pub struct TimedGateDisarm {
     /// some area's prefab provides, and never the gate anchor itself — the
     /// mechanism belongs beside the doorway, not inside the span that crushes.
     pub via: AnchorId,
+    /// **The real block at `via`** (spec-0117 §3a). Required (`DW1059`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(required)]
+    pub prop: Option<crate::Prop>,
+    /// What the spent disarm answers (spec-0117 §4): `done`, owed unless
+    /// `release` (`DW1051`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answers: Option<crate::Answers>,
+    /// **The block is vanilla's once spent** (spec-0117 §3a). Default `false`.
+    #[serde(default, skip_serializing_if = "crate::serde_fields::is_false")]
+    pub release: bool,
+    /// The proximity highlight (spec-0104 §7, spec-0117 §3b).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub highlight: Option<crate::Highlight>,
     /// The flag set when the gate is disarmed (a new flag this gate produces;
     /// other objectives/triggers may read it via `requires_flags`).
     pub sets_flag: FlagId,

@@ -260,6 +260,22 @@ pub enum TrapReset {
 pub struct TrapDisarm {
     /// The anchor the player interacts with to disarm.
     pub via: AnchorId,
+    /// **The real block at `via`** (spec-0117 §3a). A lever, which stays thrown,
+    /// is pressed through a click box once spent, unless `release`. Required
+    /// (`DW1059`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(required)]
+    pub prop: Option<crate::Prop>,
+    /// What the spent disarm answers (spec-0117 §4): `done`, owed unless
+    /// `release` (`DW1051`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answers: Option<crate::Answers>,
+    /// **The block is vanilla's once spent** (spec-0117 §3a). Default `false`.
+    #[serde(default, skip_serializing_if = "crate::serde_fields::is_false")]
+    pub release: bool,
+    /// The proximity highlight (spec-0104 §7, spec-0117 §3b).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub highlight: Option<crate::Highlight>,
     /// The flag set when the trap is disarmed (a new flag this trap produces; other
     /// objectives/triggers may read it via `requires_flags`).
     pub sets_flag: FlagId,

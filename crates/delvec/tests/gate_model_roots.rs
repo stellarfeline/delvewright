@@ -96,12 +96,18 @@ fn read_hw(name: &str) -> String {
 }
 
 fn parse_hw(quests: &str, dialogue: Option<&str>) -> Campaign {
+    // Every fixture here seals the door somewhere, and a seal answers for
+    // itself (`DW0429`): the door's own answer, stated once for all of them.
+    let quests = common::patch_doc(quests, |q| {
+        q["content"]["triggers"] =
+            serde_json::json!([common::door_answer_value("The door is shut.")]);
+    });
     let raw = RawCampaign {
         world: read_hw("world.json"),
         npcs: read_hw("npcs.json"),
         classes: read_hw("classes.json"),
         quest_plan: read_hw("quest-plan.json"),
-        quests: quests.to_string(),
+        quests,
         dialogue: dialogue
             .map(str::to_string)
             .unwrap_or_else(|| read_hw("dialogue.json")),

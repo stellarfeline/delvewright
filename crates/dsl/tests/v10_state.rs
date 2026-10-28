@@ -88,6 +88,8 @@ fn quests_doc() -> String {
         "id": "trigger/toll-box",
         "at": "anchor/exit",
         "on": {{ "on": "strike" }},
+        "prop": {{ "block": "minecraft:barrel" }},
+        "answers": {{ "not_yet": "The box is empty.", "done": "The box is spent." }},
         "requires_state": [ {{ "state": "state/toll", "op": "at-least", "value": 1 }} ],
         "effects": [ {{ "type": "add-state", "state": "state/toll", "amount": -1 }} ]
       }}

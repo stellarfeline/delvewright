@@ -149,8 +149,8 @@ pub(crate) struct EffectRootSite<'a> {
 /// stage happens to own it. Five lists are. Their order, and the reasoning, live
 /// with the enumeration in `delvewright_dsl::effects`.
 ///
-/// Consumers: [`for_each_gate_effect`] (→ the seal planner, `gates::check_seal_hints`
-/// and the completability model), [`crate::compiler::timeline::walk_campaign`] (→ the
+/// Consumers: [`for_each_gate_effect`] (→ the seal planner and the
+/// completability model), [`crate::compiler::timeline::walk_campaign`] (→ the
 /// `DW0410` staged-walk model and, defined as it, `nav::all_effects`),
 /// `emit::all_campaign_effects` (→ the generated functions themselves),
 /// `emit::check_effect_anchors` (→ `DW0360`), `emit::declared_flags` (→ the
@@ -198,8 +198,7 @@ pub(crate) fn for_each_effect_root<'a>(
 /// declaration order and each effect yielded ahead of its own nested lists.
 ///
 /// Every consumer that reasons about emitted gate commands walks THIS: the seal
-/// planner ([`collect_seal_hints`]), the wording check (`gates::check_seal_hints`,
-/// `DW0423`) and the completability model ([`collect_region_events`], which feeds
+/// planner ([`collect_seal_hints`]) and the completability model ([`collect_region_events`], which feeds
 /// `DW0311`/`DW0315`/`DW0342`/`DW0410`). Sharing the traversal is what makes the
 /// checks and the emission unable to disagree about which firings exist.
 pub(crate) fn for_each_gate_effect<'a>(

@@ -32,7 +32,6 @@ This module's rows of a section whose prose is on the [`delvewright_dsl::loot` p
 | Code | Meaning |
 |------|---------|
 | `DW1046` | **`takes_item` with nothing to take** (spec-0114 §6.3). An `interact` declares `takes_item: true` and no `requires_item`. The take is one of the item the player presents, and nothing is presented, so the declaration binds to nothing. Path `/content/quests/<q>/objectives/<o>/takes_item`. Prescription: state the `requires_item` the player lays down, or drop `takes_item`. Validation tier (exit 1). |
-| `DW0437` | An `interact` declares `missing_item_hint` without a `requires_item`. Validation-tier (exit 1). The hint exists to answer a click that arrives without the required item **in hand**; with no item gate there is no such click, so the authored line is dead content that could never narrate — and an author who wrote one plainly meant to gate the interaction. Prescription: add the `requires_item` the hint is about, or drop the hint. |
 
 ### DW0540–DW0542 and DW0545 — status effects, the region teleport, and the fixture class (`dsl::quest::check` / `compiler::teleport` / `compiler::affordance`; spec-0031)
 
@@ -128,11 +127,9 @@ cell is known at compile time is *refused* (`DW0542`), because the author can
 move it; a place only the runtime puts down is *skipped by the selector*
 (`DW0545`), because nobody can.
 
-`DW0545` is an emission self-check over the shipped datapack, in the `DW0420` /
-`DW0421` family — it is `DW0421`'s rule (*only the owner may disturb an
-affordance's hardware*) one verb wider, since moving hardware is disturbing it,
-and one binding wider, since a region verb selects by box where `DW0421` reads a
-tag. It fires on two clauses, and both are compiler defects rather than authoring
+`DW0545` is an emission self-check over the shipped datapack: only the owner may
+disturb an engine fixture, and a region verb selects by box, so it must exclude the
+class by tag. It fires on two clauses, and both are compiler defects rather than authoring
 ones: a summon that declares neither class (the exclusion then protects nothing),
 and a box-narrowed `@e` selector with no exclusion (the class exists and this verb
 does not read it). It can never be caused or fixed by campaign JSON: it is an

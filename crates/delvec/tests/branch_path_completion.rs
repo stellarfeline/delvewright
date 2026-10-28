@@ -120,14 +120,15 @@ fn a_branch_path_that_runs_past_the_ending_does_not_replay() {
         .steps
         .drain(..)
         .partition(|s| s.quest == "quest/the-reliquary");
-    assert_eq!(strand.len(), 3, "branch `{id}`");
+    // The reliquary's three looks, its bay door and its chest (spec-0117 §7).
+    assert_eq!(strand.len(), 5, "branch `{id}`");
     p.steps = rest.into_iter().chain(strand).collect();
     let err = flow
         .replay(&p)
         .expect_err("a path with objective steps past `campaign-complete` must not replay");
     assert_eq!(err.objective, "obj/reach-the-end");
     assert!(
-        err.reason.contains("3 step(s) before the end of the path"),
+        err.reason.contains("5 step(s) before the end of the path"),
         "{}",
         err.reason
     );

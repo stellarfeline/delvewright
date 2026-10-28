@@ -777,9 +777,9 @@ pub(super) fn emit_functions(
             "schedule function {ns}:night_vision_tick {NIGHT_VISION_PERIOD_TICKS}t"
         ));
     }
-    // v0.4: summon the interaction entities strike/use environment triggers watch
-    // (empty for a campaign with no triggers → byte-identical).
-    setup.extend(env_trigger_setup(plan, chrome));
+    // spec-0117 §5.1: every pressable's block, and every click box that stands
+    // in its pressable's first state.
+    setup.extend(press_setup(plan));
     // v0.6: fill each trap dispenser payload and summon disarm affordances
     // (spec-0011). Empty for a campaign with no traps → byte-identical.
     setup.extend(trap_setup(plan, trap_gates));
@@ -792,15 +792,15 @@ pub(super) fn emit_functions(
     // spec-0021: fill each declared container. Empty for a campaign with no
     // `loot` -> byte-identical.
     setup.extend(loot_setup(&plan.loot, holders));
-    // spec-0016 §2: summon each shortcut's far-side unlock affordance. The gate
-    // itself needs no command — it is sealed from world-load by the prefab.
+    // spec-0016 §2, spec-0117: a shortcut's gate is sealed from world-load by the
+    // prefab, so its own answer's boxes go up here, over the door's block.
     setup.extend(shortcut_setup(plan));
+    // spec-0117 §5.3: a gate sealed from load that a press serves holds its
+    // seal state, and its own answer's boxes, from load too.
+    setup.extend(load_seal_setup(plan));
     // spec-0016 §4: start each timed gate's clock. The gate is sealed from
     // world-load by the prefab, so the clock's first act is always an OPEN.
     setup.extend(timed_gate_setup(plan));
-    // spec-0032: arm each shop's interaction point and its visible marker. A shop
-    // is furniture, so it is armed at world init exactly as a shortcut's lever is.
-    setup.extend(shop_setup(plan));
     // spec-0102: seed each gated pulse's latch, start each ungated pulse's
     // chain. Empty for a campaign that declares none → byte-identical.
     setup.extend(pulse_setup(plan, pulses));
@@ -961,8 +961,9 @@ pub(super) fn emit_functions(
         }
     }
     // v0.3 objective-activation feedback (M2 fix 4): announce a titled objective
-    // the tick it becomes active (quest active, `after`/flags satisfied, not yet
-    // complete) and has not been announced. Runs before the completion checks so
+    // the tick the party can first work at it (`told_guard`: quest active, `after`
+    // satisfied, its gate too unless a press serves it, not yet complete) and has
+    // not been announced. Runs before the completion checks so
     // "new objective" precedes any same-tick "complete". Empty for v0.2.
     //
     // spec-0018: the whole predicate is party state now — the guard and the
@@ -974,7 +975,7 @@ pub(super) fn emit_functions(
             if o.announced(&c.quests.content.guidance) {
                 tick.push(format!(
                     "execute{} unless score {} {} matches 1 run function {ns}:announce_{}",
-                    pending_guard(plan, o, &qa),
+                    told_guard(plan, o, &qa),
                     plan::PARTY,
                     announce_score(o.id().as_str()),
                     safe_obj_fn(o.id().as_str())
@@ -1136,10 +1137,7 @@ pub(super) fn emit_functions(
                     ));
                 }
                 Objective::Interact {
-                    id,
-                    requires_item,
-                    missing_item_hint,
-                    ..
+                    id, requires_item, ..
                 } => {
                     let trigger = plan::interact_trigger(id.as_str());
                     // `requires_item` means HELD, not possessed: presenting the
@@ -1162,24 +1160,8 @@ pub(super) fn emit_functions(
                         pending_guard(plan, o, &qa),
                         safe_obj_fn(id.as_str())
                     ));
-                    // v0.7: the empty-hand answer. A click that reaches an OPEN
-                    // interaction without the item in hand used to be met with pure
-                    // silence, which reads as a broken affordance; an authored
-                    // `missing_item_hint` narrates it to that player instead. Same
-                    // activation guard as the completion line above (so an inactive
-                    // or already-finished objective stays quiet) plus the negation
-                    // of the item guard — and it sits BEFORE the trigger reset, in
-                    // the same tick that consumes the click record, so one click
-                    // yields exactly one line. Ordering against the completion line
-                    // is immaterial (the two conditions are mutually exclusive) but
-                    // is kept adjacent for readability. Absent field emits nothing.
-                    if let (Some(it), Some(hint)) = (requires_item, missing_item_hint) {
-                        tick.push(format!(
-                            "execute as @a[scores={{{trigger}=1..}}]{} unless items entity @s weapon.mainhand {it} run tellraw @s {}",
-                            pending_guard(plan, o, &qa),
-                            tr(hint)
-                        ));
-                    }
+                    // spec-0117: the empty-hand answer is the `missing_item` answer
+                    // trigger, dispatched as the presser on the press itself.
                     // Reset the trigger every tick so a gated attempt can be retried
                     // (e.g. clicked the door before holding the key).
                     tick.push(format!(
@@ -1221,6 +1203,10 @@ pub(super) fn emit_functions(
     // v0.4: environment-trigger per-tick checks (empty for a campaign with no
     // triggers → byte-identical).
     tick.extend(env_trigger_tick(plan, chrome));
+    // spec-0117: a boxed trigger's click box made its state, and last tick's
+    // acted presses forgotten.
+    tick.extend(press_tick(plan));
+    tick.extend(acted_clear_lines(plan));
     // v0.6: trap disarm-affordance detection (spec-0011). Empty for a campaign with
     // no disarmable traps → byte-identical.
     tick.extend(trap_tick(plan));
@@ -1311,9 +1297,11 @@ pub(super) fn emit_functions(
     fns.extend(emit_bonfire_functions(plan));
     // --- spec-0016 §2 shortcut unlock functions ---
     fns.extend(emit_shortcut_functions(plan));
+    fns.extend(shortcut_press_fns(plan));
+    fns.extend(disarm_press_fns(plan));
     // --- The clickable body of each sealed shortcut door ---
     // Empty for a campaign with no shortcut → byte-identical output.
-    fns.extend(ws_arm_fns(plan, chrome));
+    fns.extend(pst_fns(plan));
     // --- spec-0016 §4 timed-gate clock functions ---
     fns.extend(emit_timed_gate_functions(plan));
     // --- v0.6 stealth-beat functions (spec-0014) ---
@@ -1464,7 +1452,7 @@ pub(super) fn emit_functions(
     fns.extend(boundary_fns(plan, chrome));
     fns.extend(night_vision_fns(plan));
     // v0.8 seal answers. Empty for a campaign that seals no gate.
-    fns.extend(seal_fns(plan, chrome));
+    fns.extend(gate_arm_fns(plan));
     // Last, over every function above: the sweep exists exactly when a removal
     // schedules it.
     if let Some(sweep) = unseen_sweep_fn(&fns, ns) {

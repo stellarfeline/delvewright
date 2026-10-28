@@ -899,7 +899,6 @@ this section is what they are *for* and the traps in each.
     interrupt, does not stack, and is not width-checked. Use it for replies; use
     `title`/`subtitle` for beats.
   - Trigger ids starting with `dw-` are reserved for the compiler (`DW0428`).
-  - Two `close-gate`s on one anchor must still agree on the wording (`DW0423`).
 - **A beat that can FAIL the player must not arm before they could have read
   it.** Any fail-able beat — follow-an-NPC, escort, timed escape, stealth onset —
   arms only after a grace window long enough to read the on-screen prompt that

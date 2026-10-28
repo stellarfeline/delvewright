@@ -275,7 +275,7 @@ binding**, because a gate that matched nothing is vacuous, not a pass.
 
 | Check | Binds today |
 |---|---|
-| A — every `summon minecraft:interaction`, or call to the click-box rule (`ClickBox::column`/`sized`), keyed by enclosing fn | 15 sites |
+| A — every `summon minecraft:interaction`, or call to the click-box rule (`ClickBox::fitted_to`/`sized`), keyed by enclosing fn | 5 sites |
 | B — every compiler-baked player-facing English string | 3 constants (spec-0029 moved two behind `dsl::chrome`) |
 | C — DSL structs declared separately with an identical field set | 1 group (the camera position types are one `Mark` at spec-0066; `HorizonSpec` and `ResolvedHorizon` no longer share a field set at spec-0109, which gives the wire form the ground's `attributes` the resolved view does not carry) |
 | D — cross-cutting modifier absent from some variants of a tagged enum | 3 (enum, field) pairs (the gate's three fields left the ledger when the effect's guard became one `Guard` under `when`, carried by every verb; `QuestEffect.happening` left it at spec-0031 — see finding 12, which is still open) |

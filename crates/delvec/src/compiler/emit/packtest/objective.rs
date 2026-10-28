@@ -219,6 +219,9 @@ enum ActivationFixture {
     /// The objective's prop block alone (spec-0093 §6.5): a block vanilla
     /// reports the use of summons nothing — the block is the whole affordance.
     Block { pos: [i32; 3], block: String },
+    /// The objective's click box removed (spec-0117 §5.1): an `interact` whose
+    /// block acts on its own opens its window by taking its box away.
+    Removal { tag: String },
     /// The objective's stack in a holder entity's slot (spec-0111 §3.4): the
     /// collect path fills the frame or stand the piece carries.
     EntitySlot {
@@ -229,6 +232,15 @@ enum ActivationFixture {
 }
 
 fn activation_fixture(cmds: &[String]) -> Option<ActivationFixture> {
+    if let [one] = cmds
+        && let Some(tag) = one
+            .strip_prefix("kill @e[tag=")
+            .and_then(|r| r.strip_suffix(']'))
+    {
+        return Some(ActivationFixture::Removal {
+            tag: tag.to_string(),
+        });
+    }
     let summons = cmds.iter().filter(|c| c.starts_with("summon ")).count();
     if summons > 0 {
         // Every entity `activation_commands` summons carries the objective's own
@@ -346,6 +358,20 @@ pub(super) fn emit_objective_activation_packtests(
                     b.push(format!("assert score #fx1_{safe} dw.sys matches {count}"));
                     // Remove exactly what this template caused, and nothing else.
                     b.push(format!("kill @e[tag={tag},limit={count}]"));
+                }
+                ActivationFixture::Removal { tag } => {
+                    // The window opens: the box goes. Restored from the press's
+                    // own summon, so the template leaves the world as it found it.
+                    b.push(format!("function {ns}:activate_o_{safe}"));
+                    b.push(format!(
+                        "execute store result score #fx1_{safe} dw.sys if entity @e[tag={tag}]"
+                    ));
+                    b.push(format!("assert score #fx1_{safe} dw.sys matches 0"));
+                    if let Some(p) = crate::compiler::pressable::press_of_objective(plan, oid)
+                        && let Some(summon) = super::super::press::box_summon_once(plan, p)
+                    {
+                        b.push(summon);
+                    }
                 }
                 ActivationFixture::ContainerSlot { pos, slot, item } => {
                     let (x, y, z) = (pos[0], pos[1], pos[2]);
@@ -736,7 +762,9 @@ pub(super) fn emit_verb_packtests(
         // spec-0093 §6.5: a block a hand presses has no hitbox and no chat
         // command; its press is the advancement, so the test GRANTS it — which
         // runs the reward as the dummy — and the reward is what sets the score.
-        if crate::compiler::pressable::interact_block(o).is_some() {
+        if crate::compiler::pressable::press_of_objective(plan, id.as_str())
+            .is_some_and(|p| p.block_detects(crate::compiler::pressable::State::Open))
+        {
             b.push(format!(
                 "advancement grant {sel} only {ns}:i_{}",
                 plan::safe_local(id.as_str())

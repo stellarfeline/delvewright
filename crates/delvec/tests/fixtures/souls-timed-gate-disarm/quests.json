@@ -65,6 +65,12 @@
         "closed_ticks": 40,
         "crush": true,
         "disarm": {
+          "answers": {
+            "done": "Already done."
+          },
+          "prop": {
+            "block": "minecraft:stone_button[face=floor,facing=north]"
+          },
           "sets_flag": "flag/portcullis-jammed",
           "via": "anchor/exit"
         },

@@ -110,6 +110,9 @@
     ],
     "triggers": [
       {
+        "answers": {
+          "not_yet": "Not yet."
+        },
         "at": "anchor/tiller",
         "effects": [
           {
@@ -150,6 +153,9 @@
         ]
       },
       {
+        "answers": {
+          "not_yet": "Not yet."
+        },
         "at": "anchor/far-tiller",
         "effects": [
           {

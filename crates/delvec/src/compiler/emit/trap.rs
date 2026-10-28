@@ -215,8 +215,8 @@ pub(super) fn trap_gate_fns(
 
 /// `setup_finish` commands for traps (spec-0011): fill each `dispense` trap's
 /// prefab dispenser with its static payload (`item replace block … container.0`,
-/// the same deterministic mechanism as a `collect` chest — no raw NBT), and summon
-/// the disarm affordance's interaction entity. The trap's *harm* needs no command:
+/// the same deterministic mechanism as a `collect` chest — no raw NBT). A
+/// disarm's block and box are placed with every pressable's ([`press_setup`]). The trap's *harm* needs no command:
 /// the plate/tripwire/trapped-chest → dispenser redstone is already in the prefab.
 /// Empty for a campaign with no traps → byte-identical.
 pub(super) fn trap_setup(plan: &Plan, gate_hardware: &BTreeMap<String, String>) -> Vec<String> {
@@ -227,44 +227,6 @@ pub(super) fn trap_setup(plan: &Plan, gate_hardware: &BTreeMap<String, String>) 
             out.push(format!(
                 "item replace block {} {} {} container.0 with {item} {count}",
                 disp[0], disp[1], disp[2]
-            ));
-        }
-        // spec-0022: a `trapped-chest` trigger with a command payload needs a
-        // detection surface, and the only player-distinct one vanilla offers is
-        // the v0.4 interaction entity (`use`) — the SAME primitive the disarm
-        // affordance already uses. Reading the chest's redstone output would be
-        // block-power polling, which spec-0011 excluded as folklore.
-        //
-        // No `affordance_hardware` accompanies this one (cf. `DW0420` below):
-        // the trapped chest IS the visible hardware, authored in the prefab as
-        // the trap's trigger block. The invisible-lever failure that rule exists
-        // to catch is an interaction with nothing to look at — not the case here.
-        if !t.payload_effects.is_empty() && t.trigger == delvewright_dsl::TrapTrigger::TrappedChest
-        {
-            out.push(
-                crate::compiler::clickbox::ClickBox::column(t.trigger_cell, 2).summon(&format!(
-                    "response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"dw_trapfire_{}\"]",
-                    t.safe
-                )),
-            );
-        }
-        // Summon the disarm interaction affordance (a right-click target) and
-        // the visible hardware that makes it findable. The prefab may ALSO dress
-        // the cell, but the compiler no longer depends on that: an invisible
-        // `minecraft:interaction` on its own is a lever the player cannot see
-        // (the drowned-bell class, `DW0420`).
-        if let Some(dis) = &t.disarm {
-            let v = ent_xyz(dis.via_cell);
-            out.push(
-                crate::compiler::clickbox::ClickBox::column(dis.via_cell, 2).summon(&format!(
-                    "response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"dw_trapdis_{}\"]",
-                    t.safe
-                )),
-            );
-            out.push(affordance_hardware(
-                v,
-                &format!("dw_trapdis_{}", t.safe),
-                "minecraft:lever",
             ));
         }
     }
@@ -296,7 +258,7 @@ pub(super) fn trap_tick(plan: &Plan) -> Vec<String> {
     // power — that would be the polling hack spec-0011 excluded.
     out.extend(trap_fire_tick(plan));
     for t in &plan.traps {
-        if t.disarm.is_none() {
+        if t.disarm.is_none() || !disarm_by_box(plan, &t.id, false) {
             continue;
         }
         let id = &t.safe;
@@ -345,13 +307,14 @@ pub(super) fn trap_fns(
                 disp[0], disp[1], disp[2]
             ));
         }
-        // The lever has been thrown: the disarm affordance is spent, so its
-        // visible hardware retires with it. The ONE function allowed to do this
-        // — `DW0421` fails the build if any other machinery reaches it.
-        body.push(format!(
-            "kill @e[tag={}]",
-            crate::compiler::affordance::hardware_tag(&format!("dw_trapdis_{id}"))
-        ));
+        // The disarm is spent (spec-0117): its box returns over the thrown
+        // block, unless released to the player's hand.
+        if let Some(p) = super::press::press_of_owner(
+            plan,
+            &crate::compiler::pressable::Owner::TrapDisarm { id: t.id.clone() },
+        ) {
+            body.extend(super::press::settle_lines(plan, p));
+        }
         out.push((format!("trap_disarm_{id}"), lines(&body)));
     }
     out.extend(trap_payload_fns(plan));
@@ -659,21 +622,14 @@ pub(super) fn trap_fire_tick(plan: &Plan) -> Vec<String> {
         }
         let id = &t.safe;
         let guard = trap_fire_guard(t);
+        let _ = ns;
         match t.trigger {
+            // spec-0117: the trapped chest the trap names is the body, and its
+            // own press is the detector (`trapfire_<id>`'s advancement); a
+            // `rearm` trap's latch is lifted on the tick after it fires.
             delvewright_dsl::TrapTrigger::TrappedChest => {
-                out.push(format!(
-                    "execute unless score #trapfire_{id} dw.sys matches 1 {guard}if entity \
-                     @e[tag=dw_trapfire_{id},nbt={{interaction:{{}}}}] run function \
-                     {ns}:trap_fire_{id}"
-                ));
-                out.push(format!(
-                    "execute as @e[tag=dw_trapfire_{id}] run data remove entity @s interaction"
-                ));
                 if matches!(t.reset, delvewright_dsl::TrapReset::Rearm) {
-                    out.push(format!(
-                        "execute unless entity @e[tag=dw_trapfire_{id},nbt={{interaction:{{}}}}] \
-                         run scoreboard players set #trapfire_{id} dw.sys 0"
-                    ));
+                    out.push(format!("scoreboard players set #trapfire_{id} dw.sys 0"));
                 }
             }
             delvewright_dsl::TrapTrigger::PressurePlate
@@ -706,10 +662,26 @@ pub(super) fn trap_fire_tick(plan: &Plan) -> Vec<String> {
 /// hand-off has no answer here — the same structural guarantee scheduled
 /// sequences have.
 pub(super) fn trap_payload_fns(plan: &Plan) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
     let mut out = Vec::new();
     for t in &plan.traps {
         if t.payload_effects.is_empty() {
             continue;
+        }
+        // A trapped chest's press reaches its payload through the chest's own
+        // `default_block_use`, as the player who opened it.
+        if t.trigger == delvewright_dsl::TrapTrigger::TrappedChest {
+            let id = &t.safe;
+            let guard = trap_fire_guard(t);
+            out.push((
+                format!("trap_open_{id}"),
+                lines(&[
+                    format!("advancement revoke @s only {ns}:trapfire_{id}"),
+                    format!(
+                        "execute unless score #trapfire_{id} dw.sys matches 1 {guard}run function {ns}:trap_fire_{id}"
+                    ),
+                ]),
+            ));
         }
         let mut body = vec![format!(
             "scoreboard players set #trapfire_{} dw.sys 1",
@@ -721,6 +693,67 @@ pub(super) fn trap_payload_fns(plan: &Plan) -> Vec<(String, String)> {
             root_audience(delvewright_dsl::EffectRootKind::TrapPayload),
         ));
         out.push((format!("trap_fire_{}", t.safe), lines(&body)));
+    }
+    out
+}
+
+/// Whether a trap's (`timed: false`) or a timed gate's (`timed: true`) disarm
+/// is read off its box's record (its block reports no press of its own) rather
+/// than by its block's `default_block_use`.
+pub(super) fn disarm_by_box(plan: &Plan, id: &str, timed: bool) -> bool {
+    let owner = if timed {
+        crate::compiler::pressable::Owner::TimedGateDisarm { id: id.to_string() }
+    } else {
+        crate::compiler::pressable::Owner::TrapDisarm { id: id.to_string() }
+    };
+    super::press::press_of_owner(plan, &owner)
+        .is_some_and(|p| p.boxed_in(crate::compiler::pressable::State::Open))
+}
+
+/// The advancement rewards of every disarm whose block reports its own press
+/// (spec-0117): `trapdis_press_<trap>` / `tgdis_press_<gate>`, as the presser —
+/// revoke, mark the press acted, then disarm if not yet spent.
+pub(super) fn disarm_press_fns(plan: &Plan) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    let mut one = |kind: &str, safe: &str, func: &str| {
+        out.push((
+            format!("{kind}_press_{safe}"),
+            lines(&[
+                format!("advancement revoke @s only {ns}:{kind}_{safe}"),
+                format!(
+                    "execute unless score #{kind}_{safe} dw.sys matches 1 run tag @s add {}",
+                    super::press::acted_tag(&format!("{kind}_{safe}"))
+                ),
+                format!(
+                    "execute unless score #{kind}_{safe} dw.sys matches 1 run function {ns}:{func}_{safe}"
+                ),
+            ]),
+        ));
+    };
+    for t in &plan.traps {
+        if t.disarm.is_some()
+            && !disarm_by_box(plan, &t.id, false)
+            && super::press::press_of_owner(
+                plan,
+                &crate::compiler::pressable::Owner::TrapDisarm { id: t.id.clone() },
+            )
+            .is_some()
+        {
+            one("trapdis", &t.safe, "trap_disarm");
+        }
+    }
+    for g in &plan.timed_gates {
+        if g.disarm.is_some()
+            && !disarm_by_box(plan, &g.id, true)
+            && super::press::press_of_owner(
+                plan,
+                &crate::compiler::pressable::Owner::TimedGateDisarm { id: g.id.clone() },
+            )
+            .is_some()
+        {
+            one("tgdis", &g.safe, "tgate_disarm");
+        }
     }
     out
 }

@@ -1,0 +1,21 @@
+{
+  "code": "DW1051",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/0/objectives/1/prop",
+      "value": {
+        "block": "minecraft:lantern[hanging=false]"
+      }
+    },
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/0/objectives/1/release",
+      "value": true
+    }
+  ],
+  "units": [],
+  "why": "The case's button swapped for a lantern, and the interact released. A lantern is a block the game reports no press of, so it is pressed only through its click box; released, the box goes when the case opens and the lantern is scenery that a press reaches in silence. DW1051 refuses the release as the silent block. It declares no unit: `Objective.release` is bound by the bay door, which a press still reaches as a door."
+}

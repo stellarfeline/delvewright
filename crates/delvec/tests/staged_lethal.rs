@@ -1076,7 +1076,7 @@ fn a_staged_volume_is_emitted_behind_its_gate() {
 #[test]
 fn a_volume_only_a_purchase_arms_is_dw0954() {
     let shop = r#", "shops": [{ "id": "shop/counter", "anchor": "anchor/seat", "title": "The Counter",
-        "marker_item": "minecraft:emerald",
+        "prop": { "block": "minecraft:stone_button[face=floor,facing=north]" },
         "offers": [{ "label": "Pull the lid", "effects": [
           { "type": "set-flag", "flag": "flag/lid-fell" },
           { "type": "clear-region", "region": { "anchor": "anchor/lid", "extent": [0, 0, 0] } }

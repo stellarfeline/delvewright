@@ -1,0 +1,22 @@
+{
+  "code": "DW1051",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/quests/2/objectives/4/answers/done"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "remove",
+      "path": "/content/obj.the-reliquary.lift-the-lid.answers.done"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "remove",
+      "path": "/source/obj.the-reliquary.lift-the-lid.answers.done"
+    }
+  ],
+  "units": [],
+  "why": "The reliquary chest's `done` line removed (with its Chinese row). The chest is boxed and keeps its box after the lid is lifted, so a party that walks back and presses it again presses a box that intercepts the click and says nothing: the silent press this rule exists to end. DW1051 refuses the interact naming the state it owes a line for. It declares no unit: `Answers.done` is bound by the chest and the bell; what must not compile is a press with a state and no words for it."
+}

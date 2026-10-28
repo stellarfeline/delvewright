@@ -63,7 +63,7 @@ pub fn validate_campaign_with(
     crate::quest_plan::plan_checks(c, &mut d);
     crate::quest::check::after_ordering(c, &mut d);
     crate::trigger::press_answer_checks(c, &mut d);
-    crate::trigger::press_obligation_checks(c, &mut d);
+    d.extend(crate::trigger::press_checks(c).0);
     crate::world::horizon_param_checks(c, &mut d);
     crate::world::world_checks(c, &mut d);
     crate::world::lighting_range_checks(c, &mut d);

@@ -88,34 +88,6 @@ fn exit_cell_filled() -> Value {
 }
 
 /// [`build_dir`] as a result, for the tests that expect a refusal.
-fn try_build_dir(dir: &Path) -> Result<BuildOutput, String> {
-    let (loaded, campaign) = load(dir);
-    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
-    let plan = Plan::build(&campaign, &prefabs).map_err(|e| format!("{e:?}"))?;
-    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
-    for area in &plan.areas {
-        for piece in &area.pieces {
-            for t in &piece.templates {
-                let bytes = std::fs::read(common::prefabs_dir().join(&t.structure_file)).unwrap();
-                structures.insert(t.structure_file.clone(), bytes);
-            }
-        }
-    }
-    emit::build(
-        &plan,
-        &loaded.inputs,
-        &structures,
-        &CommandTree::v1_21_11(),
-        &prefabs,
-        None,
-        &BTreeMap::new(),
-    )
-    .map_err(|e| match e {
-        emit::BuildFailure::Diagnostic { code, message } => format!("{code}: {message}"),
-        other => format!("{other:?}"),
-    })
-}
-
 fn load(dir: &Path) -> (delvec::compiler::load::LoadedCampaign, Campaign) {
     let loaded = load_campaign_dir(dir).expect("variant loads");
     let campaign = parse_campaign(&loaded.raw).expect("variant parses");
@@ -235,8 +207,6 @@ fn guided_quests(guidance: Option<Value>, press: Value, stand: Value) -> Value {
     json!({ "campaign_id": NS, "stage": "quests", "content": content })
 }
 
-/// The press stands on a block the piece authored at the exit: a prop-less
-/// `interact` on air is `DW0963` (spec-0104 §7.6).
 /// [`guided_quests`] with no press: the talk, then the stand. A test that puts
 /// its own thing at the exit cell uses this, so the press does not stand on it.
 fn unpressed_quests() -> Value {
@@ -354,54 +324,62 @@ fn an_announcement_follows_the_objective_and_then_the_campaign() {
 }
 
 // ---------------------------------------------------------------------------
-// A pressable thing sits on a visible object (spec-0093 §6.5, §7 — DW0963)
+// A pressable thing is a real block (spec-0117 §3a — DW1059)
 // ---------------------------------------------------------------------------
 
-/// An interact with no prop whose cell is air asks the party to press empty
-/// space, and is refused where the bytes are known, with no marker hatch
-/// (spec-0104 §7.6, the tightening); the same objective on an authored block
-/// builds.
-#[test]
-fn an_interact_on_air_is_dw0963() {
-    let dir = variant(
-        "unmarked-on-air",
-        guided_quests(None, json!({}), json!({})),
-        dialogue_completing("obj/talk"),
-    );
-    let msg = try_build_dir(&dir).expect_err("an interact on air is refused");
-    assert!(msg.starts_with("DW0963"), "{msg}");
-    assert!(
-        msg.contains("obj/press") && msg.contains("anchor/exit"),
-        "{msg}"
-    );
-    assert!(msg.contains("`prop`"), "the remedy names the object: {msg}");
-    assert!(!msg.contains("marker"), "no marker hatch: {msg}");
-    // On an authored block, it builds.
-    guided("on-a-block", None, json!({}), json!({}));
+/// The validation diagnostics of a materialised variant.
+fn validate_dir(dir: &Path) -> Vec<delvewright_dsl::Diagnostic> {
+    let (_, campaign) = load(dir);
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    common::validation_diagnostics(
+        &campaign,
+        &delvec::compiler::registry::FullItemRegistry::v1_21_11(),
+        &prefabs,
+        &delvec::compiler::registry::FullEntityRegistry::v1_21_11(),
+    )
 }
 
-/// A lever prop is the whole body: the block is placed, no hitbox is summoned,
-/// vanilla's `default_block_use` at the cell is the advancement, the generated
-/// PackTest grants that advancement, and the critical path hands the bot the
-/// block to right-click. A lamp prop is a visible object vanilla reports no use
-/// of: it is placed and the hitbox is fitted over it.
+/// An interact with no prop asks the party to press a thing nothing names; it
+/// is refused where it is written, naming the field.
+#[test]
+fn an_interact_with_no_block_is_dw1059() {
+    let mut q = guided_quests(None, json!({}), json!({}));
+    q["content"]["quests"][0]["objectives"][1]
+        .as_object_mut()
+        .unwrap()
+        .remove("prop");
+    let dir = variant("unmarked-on-air", q, dialogue_completing("obj/talk"));
+    let d = validate_dir(&dir);
+    let hit = d
+        .iter()
+        .find(|d| d.code == "DW1059")
+        .unwrap_or_else(|| panic!("an interact with no prop is refused: {d:#?}"));
+    assert!(hit.path.ends_with("/objectives/1/prop"), "{}", hit.path);
+    assert!(hit.message.contains("obj/press"), "{}", hit.message);
+}
+
+/// A button prop is the whole body: the block is placed at `setup_finish`, no
+/// box is summoned, vanilla's `default_block_use` at the cell is the
+/// advancement, the generated PackTest grants it, and the critical path hands
+/// the bot the block. A lamp is a block vanilla reports no use of: it is placed
+/// and a box fitted over it stands from the start.
 #[test]
 fn a_prop_vanilla_reports_binds_the_interact_to_the_blocks_own_use() {
+    let button = "minecraft:stone_button[face=floor,facing=north]";
     let out = guided(
         "lever-prop",
         None,
-        json!({ "prop": { "block": "minecraft:lever[face=floor,facing=north]" } }),
+        json!({ "prop": { "block": button } }),
         json!({}),
     );
-    let activate = fn_body(&out, "activate_o_press").expect("the prop is placed on activation");
+    let setup = fn_body(&out, "setup_finish").expect("setup_finish");
     assert!(
-        activate.contains("setblock")
-            && activate.contains("minecraft:lever[face=floor,facing=north]"),
-        "{activate}"
+        setup.contains("setblock") && setup.contains(button),
+        "{setup}"
     );
     assert!(
-        !activate.contains("summon minecraft:interaction") && !activate.contains("item_display"),
-        "no hitbox and no marker for a block vanilla reports the use of: {activate}"
+        !all_functions(&out).contains("\"dw_i_press\""),
+        "no box for a block vanilla reports the use of"
     );
     let adv = out
         .get(&format!("datapack/data/{NS}/advancement/i_press.json"))
@@ -409,13 +387,12 @@ fn a_prop_vanilla_reports_binds_the_interact_to_the_blocks_own_use() {
         .expect("the interact's advancement");
     assert!(adv.contains("minecraft:default_block_use"), "{adv}");
     assert!(
-        adv.contains("minecraft:lever") && adv.contains("location_check"),
+        adv.contains("minecraft:stone_button") && adv.contains("location_check"),
         "{adv}"
     );
-    assert!(!adv.contains("player_interacted_with_entity"), "{adv}");
     let path = std::str::from_utf8(out.get("critical-path.json").unwrap()).unwrap();
     assert!(
-        path.contains("minecraft:lever[face=floor,facing=north]"),
+        path.contains(button),
         "the step hands the bot the block: {path}"
     );
     let test = out
@@ -434,10 +411,10 @@ fn a_prop_vanilla_reports_binds_the_interact_to_the_blocks_own_use() {
         json!({ "prop": { "block": "minecraft:redstone_lamp" } }),
         json!({}),
     );
-    let activate = fn_body(&out, "activate_o_press").unwrap();
+    let setup = fn_body(&out, "setup_finish").unwrap();
     assert!(
-        activate.contains("setblock") && activate.contains("summon minecraft:interaction"),
-        "a lamp is placed and the hitbox is fitted over it: {activate}"
+        setup.contains("minecraft:redstone_lamp") && setup.contains("\"dw_i_press\""),
+        "a lamp is placed and the box is fitted over it from the start: {setup}"
     );
     let adv = std::str::from_utf8(
         out.get(&format!("datapack/data/{NS}/advancement/i_press.json"))
@@ -449,7 +426,7 @@ fn a_prop_vanilla_reports_binds_the_interact_to_the_blocks_own_use() {
 
 /// A `use` trigger with a bell prop: the bell is placed at setup, no hitbox is
 /// summoned for it, the tick does not poll it, and its `press_` advancement is
-/// the bell's own ring. The same trigger on air with no prop is DW0963.
+/// the bell's own ring. The same trigger with no prop is DW1059.
 #[test]
 fn a_use_trigger_with_a_bell_prop_is_the_bell() {
     let with_prop = |prop: Option<Value>| {
@@ -543,10 +520,11 @@ fn a_use_trigger_with_a_bell_prop_is_the_bell() {
     // visible stands there.
     let on_air = with_prop(None);
     let dir = variant("trigger-on-air", on_air, dialogue_completing("obj/talk"));
-    let msg = try_build_dir(&dir).expect_err("a use trigger on open air with no prop is refused");
+    let d = validate_dir(&dir);
     assert!(
-        msg.starts_with("DW0963") && msg.contains("trigger/the-bell"),
-        "{msg}"
+        d.iter()
+            .any(|d| d.code == "DW1059" && d.message.contains("trigger/the-bell")),
+        "a use trigger with no prop is refused: {d:#?}"
     );
 }
 
@@ -712,8 +690,8 @@ fn the_button_guard_and_a_gated_press_answer_each_read_their_one_authority() {
                 "at": "anchor/exit",
                 "on": { "on": "use" },
                 // A lamp: a visible object vanilla reports no use of, so the
-                // press is the interaction hitbox fitted over it (DW0963 refuses
-                // a press on air), the presser path this pair is about.
+                // press is the click box fitted over it, the presser path this
+                // pair is about.
                 "prop": { "block": "minecraft:redstone_lamp" },
                 "audience": "presser",
                 "requires_flags": ["flag/ashore"],

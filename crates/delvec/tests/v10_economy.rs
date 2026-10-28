@@ -269,6 +269,7 @@ const PURSE_AND_STAKE: &str = r#",
     "on_death": [ { "type": "drop-stake", "stake": "stake/embers" } ],
     "shops": [
       { "id": "shop/brazier", "anchor": "spawn", "title": "The brazier",
+        "prop": { "block": "minecraft:stone_button[face=floor,facing=north]" },
         "offers": [
           { "label": "Bank an ember", "tooltip": "Costs one ember.",
             "effects": [
@@ -562,8 +563,8 @@ fn a_shop_offer_declares_no_comparison_field_of_its_own() {
     }
 }
 
-/// A shop rides the machinery that already ships: an interaction hitbox, a
-/// player-interaction advancement that supplies the acting player, a
+/// A shop rides the machinery that already ships: a real block (here a button,
+/// whose own use the game reports), an advancement that supplies the acting player, a
 /// `minecraft:multi_action` dialog whose buttons run `/trigger`, and tick dispatch.
 ///
 /// Binding: the offer count is asserted, so a shop that emitted zero buttons could
@@ -574,10 +575,8 @@ fn a_shop_is_the_rest_flow_with_different_buttons() {
 
     let setup = fnc(&out, "setup_finish") + &fnc(&out, "setup");
     assert!(
-        setup.contains("summon minecraft:interaction")
-            && setup.contains("dw_shop_0")
-            && setup.contains("dw_hw_dw_shop_0"),
-        "the hitbox and its VISIBLE marker are both armed"
+        setup.contains("setblock 5 65 2 minecraft:stone_button[face=floor,facing=north]"),
+        "the shop is its own real block, placed at the shop's anchor: {setup}"
     );
     assert!(
         setup.contains("scoreboard objectives add dw.shop trigger"),
@@ -591,7 +590,8 @@ fn a_shop_is_the_rest_flow_with_different_buttons() {
     .unwrap();
     assert_eq!(
         adv["criteria"]["interact"]["trigger"],
-        serde_json::json!("minecraft:player_interacted_with_entity")
+        serde_json::json!("minecraft:default_block_use"),
+        "a button reports its own press"
     );
     assert_eq!(
         adv["rewards"]["function"],
@@ -665,17 +665,9 @@ fn an_offer_gate_is_inert_to_a_direct_trigger() {
 
 /// **A shop's interaction point is visible to the body-eclipse proof** (`DW0359`).
 ///
-/// This is the instance fix's general form, and it is here because the gap was
-/// real and shipped: there are TWO affordance authorities — `emit::affordances`,
-/// which `DW0420`/`DW0421` read, and `eclipse::affordances`, which carries a
-/// resolved cell and is read by `DW0359`, and by any later proof that needs to
-/// know where an affordance stands. Registering the shop with only the first left
-/// its hitbox invisible
-/// to every proof that reasons about WHERE an affordance stands, and this PR's own
-/// two fixtures both put a shop on an anchor an NPC was standing on. Both compiled
-/// green.
-///
-/// A body on the shop's anchor must now be a build failure naming the shop.
+/// A shop is a pressable (spec-0117), so the press authority the eclipse proof
+/// reads carries its cell. A body on the shop's anchor is a build failure naming
+/// the shop.
 #[test]
 fn a_body_standing_on_a_shop_eclipses_it() {
     // `npc/keeper` stands at `anchor/keeper-stand` in the hello-world base, so a
@@ -982,7 +974,7 @@ fn a_stake_with_no_route_back_fails_to_compile() {
 
 /// A campaign whose one death forfeits TWO datums: two stakes, two `drop-stake`
 /// effects in one `on_death` bundle, and nothing else changed.
-fn two_stake_source(second_marker: &str) -> String {
+fn two_stake_source() -> String {
     let src = PURSE_AND_STAKE
         .replace(
             r#"      { "id": "state/embers", "scope": "player", "initial": 5, "name": "Embers",
@@ -995,14 +987,10 @@ fn two_stake_source(second_marker: &str) -> String {
         .replace(
             r#"      { "id": "stake/embers", "state": "state/embers",
         "collected_message": "You take back what the drop took." }"#,
-            &format!(
-                r#"      {{ "id": "stake/embers", "state": "state/embers",
-        "marker_item": "minecraft:lantern",
-        "collected_message": "You take back what the drop took." }},
-      {{ "id": "stake/relics", "state": "state/relics",
-        "marker_item": "{second_marker}",
-        "collected_message": "You take back the relics." }}"#
-            ),
+            r#"      { "id": "stake/embers", "state": "state/embers",
+        "collected_message": "You take back what the drop took." },
+      { "id": "stake/relics", "state": "state/relics",
+        "collected_message": "You take back the relics." }"#,
         )
         .replace(
             r#"    "on_death": [ { "type": "drop-stake", "stake": "stake/embers" } ],"#,
@@ -1035,10 +1023,7 @@ fn two_stake_source(second_marker: &str) -> String {
 /// second summon reintroduced anywhere reds — the emitter is the population.
 #[test]
 fn one_death_two_datums_leave_one_interaction_box() {
-    let out = build(&parse_hw(&quests_doc(
-        &two_stake_source("minecraft:lantern"),
-        "",
-    )));
+    let out = build(&parse_hw(&quests_doc(&two_stake_source(), "")));
 
     let mut summons: Vec<String> = Vec::new();
     let mut examined = 0usize;
@@ -1110,37 +1095,19 @@ fn one_death_two_datums_leave_one_interaction_box() {
     );
 }
 
-/// `DW0880`: two stakes that can each leave a marker must agree what a place
-/// looks like.
-///
-/// A place holds one marker and one glowing display, so the display renders one
-/// item — and two declarations cannot both be it. Without the refusal, whichever
-/// stake happened to fill the place first would silently decide what every other
-/// stake's marker looks like, and the losing declaration would be read, emitted
-/// nowhere, and disagree with what the player sees.
-///
-/// Both directions, so the refusal cannot be passing for some other reason: the
-/// same campaign with the same item on both stakes builds.
+/// Two stakes that each leave a marker share one place, and the place wears the
+/// engine's one marker item: no stake declares a face of its own (spec-0117
+/// §3a), so two declarations can never disagree about what a place looks like.
 #[test]
-fn dw0880_refuses_two_faces_at_one_place() {
-    let code = failure_code(&parse_hw(&quests_doc(
-        &two_stake_source("minecraft:soul_lantern"),
-        "",
-    )));
-    assert_eq!(
-        code,
-        delvec::compiler::stake::DW_STAKE_TWO_FACES,
-        "a place wears one face"
-    );
-
-    let agreed = build(&parse_hw(&quests_doc(
-        &two_stake_source("minecraft:lantern"),
-        "",
-    )));
+fn two_stakes_at_one_place_wear_the_one_marker() {
+    let agreed = build(&parse_hw(&quests_doc(&two_stake_source(), "")));
     let place = fnc(&agreed, "stk_place");
     assert!(
-        place.contains("item:{id:\"minecraft:lantern\",count:1}"),
-        "…and with both stakes agreeing, the place wears the item they named:\n{place}"
+        place.contains(&format!(
+            "item:{{id:\"{}\",count:1}}",
+            delvewright_dsl::STAKE_MARKER_ITEM
+        )),
+        "the place wears the engine's one marker item:\n{place}"
     );
 
     // The binding the proof states: a campaign whose every stake is `max_live: 0`
@@ -1150,7 +1117,7 @@ fn dw0880_refuses_two_faces_at_one_place() {
     assert_eq!(
         ledger["marker_leaving_stakes"],
         serde_json::json!(2),
-        "the face proof examined both stakes: {ledger}"
+        "the place ledger counts both stakes: {ledger}"
     );
     let none = PURSE_AND_STAKE.replace(
         r#"      { "id": "stake/embers", "state": "state/embers","#,
@@ -1226,7 +1193,7 @@ fn the_place_collected_is_the_box_that_was_clicked() {
 }
 
 /// Collecting restores exactly the amount recorded, retires the hardware through
-/// the ONE function allowed to (`DW0421`), and is idempotent under a double
+/// the ONE function that does it, and is idempotent under a double
 /// right-click in one tick — structurally, because taking a slot clears its live
 /// flag as part of taking it.
 #[test]
@@ -1260,7 +1227,7 @@ fn collecting_restores_the_amount_and_is_idempotent() {
          press in the same tick a no-op:\n{take}"
     );
 
-    // `DW0421` — exactly one function may kill the hardware.
+    // Exactly one function retires the marker.
     let mut killers = Vec::new();
     for (path, bytes) in &out {
         if !path.ends_with(".mcfunction") || path.starts_with("packtest-datapack/") {
@@ -1268,7 +1235,7 @@ fn collecting_restores_the_amount_and_is_idempotent() {
         }
         if String::from_utf8(bytes.clone())
             .unwrap()
-            .contains("kill @e[tag=dw_hw_dw_stk")
+            .contains("kill @e[tag=dw_stk")
         {
             killers.push(path.clone());
         }
@@ -1536,6 +1503,7 @@ const ENCHANTED_SHOP: &str = r#",
     ],
     "shops": [
       { "id": "shop/smithy", "anchor": "spawn", "title": "The smithy",
+        "prop": { "block": "minecraft:stone_button[face=floor,facing=north]" },
         "offers": [
           { "label": "A keen blade, three embers",
             "requires_state": [ { "state": "state/embers", "op": "at-least", "value": 3 } ],

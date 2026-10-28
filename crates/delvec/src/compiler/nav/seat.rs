@@ -76,15 +76,21 @@ impl World {
     ///
     /// `rest` itself when [`World::is_safe_seat`] holds there. Otherwise the
     /// safe cells around it, nearest ring first (Chebyshev distance 1, then 2,
-    /// up to [`SNAP_RADIUS`]); within a ring, the one the party's walk from
-    /// `from` reaches first ([`World::find_path`]'s length), then the nearest to
-    /// `rest`, then the least cell. A cell the walk does not reach comes after
-    /// every one it does. `None` when no safe cell lies within the radius.
+    /// up to [`SNAP_RADIUS`]); within a ring, one a body from `from` reaches
+    /// before one it does not — the reach graph's answer
+    /// ([`World::body_reach`], spec-0113), the one answer to where a body can
+    /// get to — then the shorter walk to it ([`World::find_path`]'s length; a
+    /// cell only a launch reaches after every cell a walk does), then the
+    /// nearest to `rest`, then the least cell. `None` when no safe cell lies
+    /// within the radius.
     pub fn rest_seat(&self, rest: [i32; 3], from: Option<[i32; 3]>) -> Option<[i32; 3]> {
         if self.is_safe_seat(rest) {
             return Some(rest);
         }
         let origin = from.and_then(|f| self.snap_standable(f, SNAP_RADIUS));
+        let reached: std::collections::BTreeSet<[i32; 3]> = origin
+            .map(|o| self.body_reach(&[o]).standing())
+            .unwrap_or_default();
         for ring in 1..=SNAP_RADIUS {
             // `(walk, distance², cell)`: the walk from the approach first.
             let mut best: Option<(SeatKey, [i32; 3])> = None;
@@ -98,9 +104,13 @@ impl World {
                         if !self.is_safe_seat(c) {
                             continue;
                         }
-                        let walk = origin
-                            .and_then(|o| self.find_path(o, c))
-                            .map_or(usize::MAX, |p| p.len());
+                        let walk = if reached.contains(&c) {
+                            origin
+                                .and_then(|o| self.find_path(o, c))
+                                .map_or(usize::MAX - 1, |p| p.len())
+                        } else {
+                            usize::MAX
+                        };
                         let key = (walk, dx * dx + dy * dy + dz * dz, c);
                         if best.is_none_or(|(k, _)| key < k) {
                             best = Some((key, c));
@@ -115,16 +125,43 @@ impl World {
         None
     }
 
+    /// **The world a seat is derived and judged over: the world as shipped**
+    /// — this world with the blocks every pressable lays at load standing in
+    /// it ([`Plan::load_prop_events`], the list `setup_finish` writes and the
+    /// shipped world lays), so a campfire a bonfire's `prop` lays on its own
+    /// cell hurts as one a piece placed, and a `prop` laid over a piece's
+    /// block replaces it. No beat's write is in it: a respawn bundle runs
+    /// after the body is seated, and a later beat's write is judged by the
+    /// proofs that walk from the seat. The derivation
+    /// ([`World::with_rest_seats`]) and the placement proof (`DW0316`) both
+    /// read it, so a seat is never derived over one world and judged over
+    /// another. `None` when no pressable lays a block, so the caller keeps this
+    /// world.
+    pub(in crate::compiler::nav) fn seating_world(&self, plan: &Plan) -> Option<World> {
+        let props: crate::compiler::plan::RegionEvents = plan.load_prop_events().into();
+        if props.is_empty() {
+            return None;
+        }
+        let ancestor = |g: usize, s: usize| plan.gate_fired_before(g, s);
+        let st = self.region_state_at(&props, 0, &ancestor);
+        Some(self.with_region_state(&st))
+    }
+
     /// This world with every checkpoint's seat derived over it
     /// ([`World::rest_seat`], from [`approach_origin`]). Every world a proof
     /// about a respawn walks takes its seats here: the build's final world,
     /// once the plan its proofs read is settled (`emit::build`, after links are
     /// taken), and each edit batch's (`edit::replay`).
+    ///
+    /// Each seat is derived over the world as shipped
+    /// ([`World::seating_world`]).
     pub fn with_rest_seats(mut self, plan: &Plan) -> World {
+        let shipped = self.seating_world(plan);
+        let seating = shipped.as_ref().unwrap_or(&self);
         let seats: Vec<Option<[i32; 3]>> = plan
             .checkpoints
             .iter()
-            .map(|cp| self.rest_seat(cp.at, approach_origin(plan, cp)))
+            .map(|cp| seating.rest_seat(cp.at, approach_origin(plan, cp)))
             .collect();
         self.seating.seats = std::sync::Arc::new(seats);
         self.seating.derived = true;
@@ -249,12 +286,108 @@ mod tests {
         assert!(w.find_path([0, 65, 2], seat).is_some(), "{seat:?}");
     }
 
+    /// **A seat is reached over the reach graph** (spec-0113 with the seat
+    /// rule). The rest object stands on a campfire between two floor cells:
+    /// the west one is shut in under a low roof no body gets into, and the
+    /// east one is across a two-wide gap from where the party walks up — no
+    /// walk reaches either. Ranked by the walk alone the two tie and the least
+    /// cell, the shut-in west one, would seat a respawn where the party never
+    /// stands; the reach graph's jump reaches the east one, and it is the
+    /// seat. The perturbation only the graph answers: with the far platform
+    /// one more cell away, past every jump, neither is reached and the tie
+    /// falls back to the least cell.
+    #[test]
+    fn a_seat_is_reached_over_the_reach_graph() {
+        let world = |far: i32| {
+            let fire = "minecraft:campfire[lit=true]";
+            let stone = "minecraft:stone";
+            let mut cells: Vec<([i32; 3], &str)> = Vec::new();
+            for x in -1..=far + 3 {
+                for y in 63..=67 {
+                    cells.push(([x, y, -1], stone));
+                    cells.push(([x, y, 1], stone));
+                }
+            }
+            for y in 64..=67 {
+                cells.push(([-1, y, 0], stone));
+                cells.push(([far + 4, y, 0], stone));
+            }
+            cells.push(([0, 64, 0], stone)); // the shut-in floor
+            cells.push(([1, 64, 0], fire)); // the rest object's campfire
+            cells.push(([2, 64, 0], stone)); // the floor across the gap
+            for x in far..=far + 3 {
+                cells.push(([x, 64, 0], stone)); // the approach
+            }
+            cells.push(([1, 66, 0], stone)); // no body passes over the fire
+            for x in -1..=1 {
+                cells.push(([x, 67, 0], stone)); // the low roof
+            }
+            for x in 3..far {
+                cells.push(([x, 58, 0], stone)); // the pit's floor
+            }
+            blocks_world(&cells)
+        };
+        let rest = [1, 65, 0];
+        let w = world(5);
+        let from = [7, 65, 0];
+        assert!(!w.is_safe_seat(rest));
+        assert!(w.is_safe_seat([0, 65, 0]) && w.is_safe_seat([2, 65, 0]));
+        assert!(
+            w.find_path(from, [2, 65, 0]).is_none(),
+            "no walk crosses the gap"
+        );
+        assert!(w.find_path(from, [0, 65, 0]).is_none());
+        let reached = w.body_reach(&[from]).standing();
+        assert!(reached.contains(&[2, 65, 0]), "a jump crosses the gap");
+        assert!(
+            !reached.contains(&[0, 65, 0]),
+            "nothing gets under the roof"
+        );
+        assert_eq!(w.rest_seat(rest, Some(from)), Some([2, 65, 0]));
+
+        let wide = world(9);
+        let from = [11, 65, 0];
+        assert!(!wide.body_reach(&[from]).standing().contains(&[2, 65, 0]));
+        assert_eq!(wide.rest_seat(rest, Some(from)), Some([0, 65, 0]));
+    }
+
     /// A safe anchor cell is its own seat: a plain checkpoint on open floor
     /// seats where it always did.
     #[test]
     fn a_safe_anchor_is_its_own_seat() {
         let w = hearth("minecraft:campfire[lit=true]");
         assert_eq!(w.rest_seat([0, 65, 0], Some([4, 65, 4])), Some([0, 65, 0]));
+    }
+
+    /// A block a region write lays is judged as a block a piece placed: a
+    /// campfire laid at load (a pressable's `prop`) hurts, so neither its cell
+    /// nor the cell over it is a seat; air laid over a placed campfire takes
+    /// the fire away.
+    #[test]
+    fn a_laid_block_hurts_as_a_placed_one() {
+        use crate::compiler::nav::route::region::RegionState;
+        let c = [2, 65, 2];
+        let laid = |block: Option<&str>| vec![((c, c), block.map(str::to_string))];
+        let bare = hearth("minecraft:air");
+        assert!(bare.is_safe_seat(c), "open floor before the write");
+        let st = RegionState {
+            solid: [c].into_iter().collect(),
+            laid: laid(Some("minecraft:campfire[lit=true]")),
+            ..RegionState::default()
+        };
+        let fired = bare.with_region_state(&st);
+        assert!(!fired.is_safe_seat(c), "the laid fire's own cell");
+        assert!(
+            !fired.is_safe_seat([2, 66, 2]),
+            "on top of the laid fire: its feet are in it"
+        );
+        let st = RegionState {
+            cleared: [c].into_iter().collect(),
+            laid: laid(None),
+            ..RegionState::default()
+        };
+        let put_out = hearth("minecraft:campfire[lit=true]").with_region_state(&st);
+        assert!(put_out.is_safe_seat(c), "the fire cleared by a write");
     }
 
     /// A rest object with no safe cell within the radius has no seat.

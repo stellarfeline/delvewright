@@ -87,6 +87,9 @@
     ],
     "triggers": [
       {
+        "answers": {
+          "not_yet": "Not yet."
+        },
         "at": "spawn",
         "effects": [
           {
@@ -212,7 +215,10 @@
         ]
       },
       {
-        "at": "anchor/door",
+        "answers": {
+          "not_yet": "Not yet."
+        },
+        "at": "anchor/latch",
         "effects": [
           {
             "steps": [
@@ -320,6 +326,9 @@
           "on": "use"
         },
         "once": false,
+        "prop": {
+          "block": "minecraft:stone_button[face=floor,facing=north]"
+        },
         "requires_state": [
           {
             "op": "not-equals",

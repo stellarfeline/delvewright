@@ -1322,7 +1322,11 @@ pub(super) fn build_critical_path(
                         pos,
                         command: format!("/trigger {} set 1", interact_trigger(id.as_str())),
                         requires_item: requires_item.clone(),
-                        block: crate::compiler::pressable::interact_block(obj).map(str::to_string),
+                        // spec-0117: the block itself is pressed inside the
+                        // window where no click box stands over it then.
+                        block: delvewright_dsl::press_site(campaign, id.as_str())
+                            .filter(|s| s.open_unboxed())
+                            .and_then(|s| s.prop.map(|p| p.block.clone())),
                     });
                     obj_areas.push((id.as_str().to_string(), area.to_string(), steps.len() - 1));
                 }

@@ -4515,9 +4515,9 @@ fn dw1044_closing_the_way_round_builds() {
 fn dolly_campaign(tag: &str, from: [i32; 3], to: [i32; 3]) -> PathBuf {
     let camp = campaign(tag, None);
     common::patch_file(&camp.join("quests.json"), |v| {
+        v["content"]["triggers"] = serde_json::json!([common::door_answer_value("The bars hold.")]);
         v["content"]["quests"][0]["on_objective_complete"]["obj/exit"] = serde_json::json!([
             {"type": "close-gate", "anchor": "anchor/door",
-             "sealed_hint": "The bars hold.",
              "happening": {"verb": "seals", "text": "the door shuts behind the party"}},
             {"type": "cutscene", "shots": [{"path": [
                 {"anchor": "anchor/exit", "offset": from},
@@ -5358,23 +5358,25 @@ fn dw1053_writing_seen_where_the_bar_is_seen_builds() {
     );
 }
 
-/// The trigger a `DW1054` `told` refusal prescribes, parsed out of its message
-/// and given a name.
-fn prescribed_trigger(message: &str) -> serde_json::Value {
-    let json = message
-        .split("Anchor a trigger on the seam — `")
+/// The prescription a refusal carries, in backticks after `lead`.
+fn prescription_after<'a>(message: &'a str, lead: &str) -> &'a str {
+    message
+        .split(lead)
         .nth(1)
         .and_then(|t| t.split('`').next())
         .expect("the refusal carries the trigger it prescribes")
-        .replace("trigger/<name>", "trigger/cell-door-shut");
-    serde_json::from_str(&json).expect("the prescription is JSON")
 }
 
-/// **WRITE the trigger.** The door declared `told` with nothing answering a
-/// press at its seam is refused `DW1054`, carrying the trigger `DW0429`
-/// prescribes; that trigger, parsed out of the message and written, builds —
-/// and the same trigger discharges `DW0429` on the door made a shortcut, so
-/// the two codes name one remedy (spec-0118 acceptance 5).
+/// **WRITE the trigger.** The door declared `told` with no `use` trigger
+/// serving its seam is refused `DW1054`, carrying the trigger `DW0429`
+/// prescribes (`dsl::trigger::press_answer_prescription`): one remedy, the
+/// gate's own answer, a trigger that `serves` the gate (spec-0117 §6,
+/// spec-0118 acceptance 5). This fixture is a massed site plan, where no
+/// anchor names a cell of the bar, so the message's second form is the one
+/// written: that trigger, parsed out of the message and anchored as a knocker
+/// at `anchor/unlock-hall-cell` beside the bar, builds. `DW0429` carries the
+/// same prescription for a sealed gate nothing answers
+/// (`gate_answers.rs::a_sealed_gate_with_no_answer_is_dw0429`).
 #[test]
 fn dw1054_writing_the_prescribed_trigger_clears_both_codes() {
     let camp = learned_fixture("dw1054-told-red", Some("told"), |_| {});
@@ -5384,10 +5386,22 @@ fn dw1054_writing_the_prescribed_trigger_clears_both_codes() {
         before.contains("DW1054 [error]") && before.contains("declared `told`"),
         "{before}"
     );
-    let trigger = prescribed_trigger(&before);
-    let t = trigger.clone();
+    let told = prescription_after(&before, "Anchor a trigger on the seam — `");
+    assert_eq!(
+        format!("`{told}`"),
+        delvewright_dsl::trigger::press_answer_prescription("anchor/seam-hall-cell", "the way")
+    );
+    let mut knocker: serde_json::Value = serde_json::from_str(
+        &told
+            .replace("trigger/<name>", "trigger/cell-door-shut")
+            .replace("<the door cell's anchor>", "anchor/unlock-hall-cell"),
+    )
+    .expect("the prescription is JSON");
+    knocker["prop"] =
+        serde_json::json!({ "block": "minecraft:stone_button[face=floor,facing=north]" });
+    knocker["answers"] = serde_json::json!({ "done": "The cell door stands open now." });
     let camp = learned_fixture("dw1054-told-green", Some("told"), move |q| {
-        q["content"]["triggers"] = serde_json::json!([t]);
+        q["content"]["triggers"] = serde_json::json!([knocker]);
     });
     let (code, after) = build("dw1054-told-green", &camp, &common::prefabs_dir());
     assert_eq!(code, 0, "{after}");
@@ -5395,34 +5409,6 @@ fn dw1054_writing_the_prescribed_trigger_clears_both_codes() {
         after.contains("(0 seen, 1 told, 0 rewarded, 0 hidden)"),
         "{after}"
     );
-
-    // The door as a shortcut whose wrong side nothing answers: `DW0429`.
-    let shortcut = |q: &mut serde_json::Value| {
-        q["content"]["shortcuts"] = serde_json::json!([{
-            "id": "shortcut/cell-door", "gate": "anchor/seam-hall-cell",
-            "unlock": "anchor/unlock-hall-cell", "on_unlock": []
-        }]);
-        for quest in q["content"]["quests"].as_array_mut().unwrap() {
-            if let Some(m) = quest["on_objective_complete"].as_object_mut() {
-                for effects in m.values_mut() {
-                    effects
-                        .as_array_mut()
-                        .unwrap()
-                        .retain(|e| e["type"] != "open-gate");
-                }
-            }
-        }
-    };
-    let camp = learned_fixture("dw0429-shortcut-red", Some("told"), shortcut);
-    let (code, red) = validate(&camp);
-    assert_ne!(code, 0, "{red}");
-    assert!(red.contains("DW0429 [error]"), "{red}");
-    let camp = learned_fixture("dw0429-shortcut-green", Some("told"), move |q| {
-        shortcut(q);
-        q["content"]["triggers"] = serde_json::json!([trigger]);
-    });
-    let (_, green) = validate(&camp);
-    assert!(!green.contains("DW0429 [error]"), "{green}");
 }
 
 /// **CHANGE the word to the one that is true.** The door declared `rewarded`
@@ -5460,6 +5446,11 @@ fn dw1054_a_reward_on_the_open_floor_pays_for_no_branch() {
             serde_json::json!({
                 "type": "interact", "id": "obj/try-the-door",
                 "anchor": "anchor/unlock-hall-cell",
+                "prop": { "block": "minecraft:stone_button[face=floor,facing=north]" },
+                "answers": {
+                    "not_yet": "The latch will not lift yet.",
+                    "done": "The latch has been tried."
+                },
                 "happening": { "text": "The party tries the cell door's latch.", "verb": "learns" }
             }),
         );
@@ -5518,11 +5509,16 @@ fn a_one_way_door_dw1011_counts_is_judged_at_its_wrong_side() {
                 }));
         },
         |q| {
+            // The press answer at the door (spec-0117): a knocker beside the
+            // bar, the one cell a massed place names there, serving its gate.
             q["content"]["triggers"] = serde_json::json!([{
-                "id": "trigger/cell-door-wrong-side", "at": "anchor/seam-hall-cell",
+                "id": "trigger/cell-door-wrong-side", "at": "anchor/unlock-hall-cell",
                 "on": { "on": "use" }, "once": false, "audience": "presser",
+                "prop": { "block": "minecraft:stone_button[face=floor,facing=north]" },
+                "serves": { "gate": "anchor/seam-hall-cell" },
+                "answers": { "done": "The cell door stands open now." },
                 "effects": [{ "type": "narrate", "style": "actionbar",
-                              "text": "The door does not open from this side." }]
+                              "text": "The cell door is barred." }]
             }]);
         },
     );

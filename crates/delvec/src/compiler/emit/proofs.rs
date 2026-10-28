@@ -276,17 +276,6 @@ pub(super) fn prove_declarations(
         })?,
     );
 
-    // …and no OTHER affordance may contest the hitboxes a sealed gate arms to
-    // answer a right-click (DW0422). Same box arithmetic, same tier:
-    // two interaction entities in one cell is a ray-pick tie the client resolves
-    // by iteration order, so one of them silently stops receiving clicks.
-    crate::compiler::eclipse::check_seal_collisions(plan).map_err(|e| {
-        BuildFailure::Diagnostic {
-            code: e.code,
-            message: e.message,
-        }
-    })?;
-
     // A shortcut whose sealed side the geometry does not name (DW0425) is
     // refused BEFORE the affordance proof below, and that ordering is load-bearing
     // rather than tidy. A `use` trigger on such a gate cannot ride the door —
@@ -300,6 +289,17 @@ pub(super) fn prove_declarations(
     // either way.)
     check_shortcut_sides(plan)?;
 
+    // …and no OTHER affordance may contest the hitboxes a sealed gate arms to
+    // answer a right-click (DW0422). Same box arithmetic, same tier:
+    // two interaction entities in one cell is a ray-pick tie the client resolves
+    // by iteration order, so one of them silently stops receiving clicks.
+    crate::compiler::eclipse::check_seal_collisions(plan).map_err(|e| {
+        BuildFailure::Diagnostic {
+            code: e.code,
+            message: e.message,
+        }
+    })?;
+
     // …and no two AFFORDANCES may stand on one cell either (DW0878). The three
     // proofs above each need one side of their pair to be something else — a
     // standing body for `DW0359`, a compiler-owned press set for `DW0422`, a cast
@@ -308,20 +308,6 @@ pub(super) fn prove_declarations(
     // exactly that pair. Same box arithmetic, same tier, same authority
     // (`eclipse::affordances`).
     crate::compiler::eclipse::check_affordance_contests(plan).map_err(|e| {
-        BuildFailure::Diagnostic {
-            code: e.code,
-            message: e.message,
-        }
-    })?;
-
-    // …and a recovery stake's marker is a PLACE, so every stake that can leave one
-    // has to agree what a place looks like (DW0880). Same family, same tier, and
-    // here for the same reason: one place holds ONE `minecraft:interaction`,
-    // because the placement table is keyed on (seat, region) rather than on the
-    // stake and the rule's common branch positions at a runtime death point — so
-    // four stakes a death drops are four coincident boxes unless the hardware
-    // belongs to the place. It does; this is what keeps its one face decidable.
-    crate::compiler::stake::check_marker_faces(plan.campaign).map_err(|e| {
         BuildFailure::Diagnostic {
             code: e.code,
             message: e.message,
@@ -383,22 +369,13 @@ pub(super) fn check_finished_tree(
     eprintln!("{}", chains.binding());
     put_json(out, "validation/chain-length.json", &chains.to_json());
 
-    // ---- affordance-hardware self-check (DW0420 / DW0421) ----
-    // Every right-click target the compiler owns must be VISIBLE in the shipped
-    // datapack, and only its own consumption may retire that visibility. Read
-    // off the finished tree, so it judges the commands that actually ship.
-    // See `crate::compiler::affordance` for the drowned-bell soft-lock this encodes.
-    crate::compiler::affordance::check(&affordances(plan), out)?;
-
     // ---- fixture-class self-check (DW0545) ----
-    // `DW0421` above is tag-keyed and asks who may DESTROY an affordance's
-    // hardware. A region verb selects by BOX and MOVES what it finds, so it slips
-    // past that entirely — which is how a lift carries a recovery stake's marker
-    // away from the position its ledger recorded, after which `stk_gc_<s>` deletes
-    // the marker and the wager with it. So the same rule is stated one verb wider,
-    // over the emitted tree: every engine-summoned hitbox, mark and display
-    // declares whether it is a PLACE or is carried by a BODY, and no box-narrowed
-    // entity selector may reach a place. Feature-blind, so a region verb nobody
+    // A region verb selects by BOX and MOVES what it finds — which is how a lift
+    // carries a recovery stake's marker away from the position its ledger
+    // recorded, after which `stk_gc_<s>` deletes the marker and the wager with
+    // it. So, over the emitted tree: every engine-summoned hitbox, mark and
+    // display declares whether it is a PLACE or is carried by a BODY, and no
+    // box-narrowed entity selector may reach a place. Feature-blind, so a region verb nobody
     // has written yet is covered by existing.
     let mut fixture_gate = crate::compiler::affordance::check_fixtures(out)?;
     // Counted off the shipped tree rather than reported by the emitter that wrote
@@ -410,15 +387,16 @@ pub(super) fn check_finished_tree(
     put_json(out, "validation/fixture-gate.json", &fixture_gate.to_json());
 
     // ---- a click box wins the pick (DW1013) ----
-    // Every `minecraft:interaction` placed at a cell must be strictly nearer than
-    // any block it stands in along every click ray, or the block wins the tie and
-    // the click never reaches the box. Read off the shipped tree, so every emitter
-    // that summons a box is an entry point by existing.
-    let click_boxes =
-        crate::compiler::clickbox::check(out).map_err(|e| BuildFailure::Diagnostic {
+    // Every `minecraft:interaction` placed at a cell must enclose the outline of
+    // the block it stands over (spec-0117 §3a), or the block wins the pick and
+    // the press acts or goes unreported. Read off the shipped tree, so every
+    // emitter that summons a box is an entry point by existing.
+    let click_boxes = crate::compiler::clickbox::check(out, &gate_blocks(plan)).map_err(|e| {
+        BuildFailure::Diagnostic {
             code: e.code,
             message: e.message,
-        })?;
+        }
+    })?;
     eprintln!("{}", click_boxes.line());
     put_json(out, "validation/click-box.json", &click_boxes.to_json());
 

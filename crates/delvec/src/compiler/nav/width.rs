@@ -2221,8 +2221,15 @@ pub fn check(
             "the relight fixture the build sets at setup".to_string(),
         );
     }
-    for (id, prop) in crate::compiler::pressable::trigger_props(plan) {
-        seated.insert(prop.pos, format!("the prop of `{id}`"));
+    // Every pressable's block (spec-0117 §5.1), a door's two halves: the
+    // same list `shipped_blocks` lays (`pressable::props`), named by owner.
+    for p in plan.presses() {
+        if !p.places_block {
+            continue;
+        }
+        for cell in p.cells() {
+            seated.insert(cell, format!("the block of {}", p.owner.word()));
+        }
     }
     let ground = Ground {
         shipped: &shipped,

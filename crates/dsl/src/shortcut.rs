@@ -31,10 +31,30 @@ pub struct Shortcut {
     /// carries the physical fill), and its metadata must declare the fill `block`
     /// the compiler clears — the same requirement `close-gate` has.
     pub gate: AnchorId,
-    /// The FAR-side anchor whose interaction fires the permanent open. The
-    /// compiler summons the affordance there and polls it, reusing the v0.4
-    /// interaction-entity `use` primitive.
+    /// The FAR-side anchor the unlock stands at; its `prop` is the block a
+    /// player presses there to open the gate for good.
     pub unlock: AnchorId,
+    /// **The real block at `unlock`** (spec-0117 §3a): a button is pressed on
+    /// its own; a lever — which stays thrown — is pressed through a click box
+    /// once it is spent, unless `release`. Required (`DW1059`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(required)]
+    pub prop: Option<crate::Prop>,
+    /// What the shortcut answers (spec-0117 §4): `not_yet` is what the sealed
+    /// door says to a presser on the **far** side while it is barred — the
+    /// door's own leaf, pressed from where it will not open — and `done` is
+    /// what the unlock says once thrown. Both owed (`DW1051`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answers: Option<crate::Answers>,
+    /// **The unlock is vanilla's once thrown** (spec-0117 §3a): not boxed again,
+    /// answering nothing. Default `false`; inert on a button (`DW1052`).
+    #[serde(default, skip_serializing_if = "crate::serde_fields::is_false")]
+    pub release: bool,
+    /// The proximity highlight (spec-0104 §7, spec-0117 §3b): the unlock glows
+    /// while the gate is sealed and a player stands on the far side where its
+    /// pressed face is in sight within `within` blocks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub highlight: Option<crate::Highlight>,
     /// Effects fired once, when the shortcut opens — the bar lifting, the
     /// elevator descending, the sound of a door you will never have to earn
     /// again. Emitted server-source-safe (the poll lives on the tick).

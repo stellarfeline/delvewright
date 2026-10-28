@@ -109,6 +109,11 @@
               "obj/key"
             ],
             "anchor": "anchor/door",
+            "answers": {
+              "done": "The inner door stands open.",
+              "missing_item": "The door takes the old key, held in hand.",
+              "not_yet": "The door is barred. The hall's guard keeps its key."
+            },
             "happening": {
               "text": "the party completes obj/door",
               "verb": "opens"
@@ -116,7 +121,7 @@
             "hint": "The barred door stands in the corner room; use the old key on it.",
             "id": "obj/door",
             "prop": {
-              "block": "minecraft:lever"
+              "block": "minecraft:lever[face=floor,facing=north]"
             },
             "requires_item": "minecraft:tripwire_hook",
             "title": "Open the Inner Door",

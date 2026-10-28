@@ -21,18 +21,6 @@ delvewright_dsl::dw_code! {
 }
 
 delvewright_dsl::dw_code! {
-    /// `DW0423`: two `close-gate` effects seal the **same** gate anchor with
-    /// different `sealed_hint` wordings.
-    ///
-    /// The seal's answer belongs to the place, not to the firing: one anchor gets one
-    /// set of `dw_seal_<anchor>` hitboxes and one reward function, so a second
-    /// wording has nowhere to live and would be silently dropped. Rejected instead —
-    /// a line an author wrote and a player can never read is the same silence class
-    /// as the finding this verb exists to close.
-    pub const DW_SEAL_HINT_CONFLICT: DwCode = DwCode::new("DW0423", ExitTier::Build);
-}
-
-delvewright_dsl::dw_code! {
     /// `DW0857`: a gate verb names an anchor **more than one of the campaign's areas
     /// provides as a gate**, so which building it addresses is decided by nothing an
     /// author can see.
@@ -347,12 +335,9 @@ pub fn check_close_gates(c: &Campaign, prefabs: &PrefabRegistry) -> Vec<Diagnost
             ),
         )]
     };
-    // Every root, every depth. Its own file's `check_seal_hints` (`DW0423`, twenty
-    // lines below) already carried the corrected reasoning; this half was never
-    // back-ported and still hand-listed three of the five roots. The walk also
-    // reports the *nested* effect's own pointer now rather than its top-level
-    // ancestor's, because `for_each_campaign_effect` threads the path down —
-    // a `close-gate` inside a `sequence` step used to be blamed on the sequence.
+    // Every root, every depth. The walk reports the *nested* effect's own
+    // pointer rather than its top-level ancestor's, because
+    // `for_each_campaign_effect` threads the path down.
     delvewright_dsl::for_each_campaign_effect(c, &mut |path, _site, e| {
         if let Some(a) = e.close_gate_anchor() {
             d.extend(diag(
@@ -392,57 +377,5 @@ pub fn check_close_gates(c: &Campaign, prefabs: &PrefabRegistry) -> Vec<Diagnost
             format!("/content/timed_gates/{gi}/gate"),
         ));
     }
-    d
-}
-
-/// Prove every gate anchor has ONE answer (`DW0423`, DSL v0.8).
-///
-/// A `close-gate`'s `sealed_hint` is the line the sealed region answers a
-/// right-click with. The hitboxes that carry it are named after the **anchor**,
-/// so all the `close-gate`s that seal one anchor share them — and therefore share
-/// one wording. Two firings that disagree are rejected here rather than resolved
-/// by declaration order.
-///
-/// A firing that authors no hint is compatible with anything: it asks for the
-/// compiler's canonical English, which any authored wording refines. Only two
-/// *authored* and *different* lines conflict.
-///
-/// Walks [`crate::compiler::plan::for_each_gate_effect`] — the **same** traversal the seal
-/// planner uses, so the check and the emission can never disagree about which
-/// firings exist. `dsl::for_each_campaign_effect` is deliberately not used: it
-/// stops at the quests stage and would miss a `close-gate` inside a dialogue
-/// option's `set-checkpoint` `on_respawn` bundle, which really does emit a fill.
-pub fn check_seal_hints(c: &Campaign) -> Vec<Diagnostic> {
-    let mut d = Vec::new();
-    // anchor → (first authored wording, its path)
-    let mut seen: std::collections::BTreeMap<String, (String, String)> = Default::default();
-    crate::compiler::plan::for_each_gate_effect(c, &mut |site, e| {
-        let (Some(anchor), Some(hint)) = (e.close_gate_anchor(), e.close_gate_sealed_hint()) else {
-            return;
-        };
-        let path = &site.path;
-        let key = anchor.as_str().to_string();
-        match seen.get(&key) {
-            None => {
-                seen.insert(key, (hint.to_string(), format!("{path}/sealed_hint")));
-            }
-            Some((first, first_path)) if first != hint => {
-                d.push(Diagnostic::error(
-                    DW_SEAL_HINT_CONFLICT,
-                    site.stage,
-                    format!("{path}/sealed_hint"),
-                    format!(
-                        "gate anchor `{}` is sealed with two different `sealed_hint` lines — \
-                         `{first}` at `{first_path}`, and `{hint}` here. A seal's answer belongs \
-                         to the PLACE: one anchor carries one set of `dw_seal_…` hitboxes and one \
-                         reward function, so the second wording would never reach a player. Give \
-                         both firings the same line, or seal two different gate anchors.",
-                        anchor.as_str()
-                    ),
-                ));
-            }
-            Some(_) => {}
-        }
-    });
     d
 }

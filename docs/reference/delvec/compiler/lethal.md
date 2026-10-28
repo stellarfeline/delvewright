@@ -98,7 +98,7 @@ through a volume is in it. Every gate anchor is judged open: a barred way the
 story or a lever ever opens is open for the rest of the delve, and a gate that
 nothing opens is better built as wall. **`DW0923` is the same reach through a
 barrier the party can leave open** — every fence gate, door and trapdoor a hand
-opens (`blockshape::is_player_openable`; the two iron ones open only to
+opens (`blockshape::opens_by_hand`; the two iron ones open only to
 redstone), removed (`World::with_openings_open`) — raised only where the
 as-built reach is clear. The repair it prescribes is the one vesperhold took:
 take the opening away, a jump across a dry cut that the party makes and a mob,

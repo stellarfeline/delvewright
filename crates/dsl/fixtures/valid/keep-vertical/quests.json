@@ -109,6 +109,11 @@
               "obj/key"
             ],
             "anchor": "anchor/door",
+            "answers": {
+              "done": "Already done.",
+              "missing_item": "Your hand is empty of what this takes.",
+              "not_yet": "Not yet."
+            },
             "happening": {
               "text": "the party completes obj/door",
               "verb": "opens"
@@ -116,7 +121,7 @@
             "hint": "Back down at the foot of the stair.",
             "id": "obj/door",
             "prop": {
-              "block": "minecraft:lever"
+              "block": "minecraft:lever[face=floor,facing=north]"
             },
             "requires_item": "minecraft:tripwire_hook",
             "title": "Open the door",

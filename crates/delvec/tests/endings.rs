@@ -368,7 +368,9 @@ fn tally(extra: Vec<Value>) -> Campaign {
         json!({
             "state": [{"id": "state/tally", "scope": "party"}],
             "triggers": [{
-                "id": "trigger/bell", "at": "anchor/door", "on": {"on": "use"},
+                "id": "trigger/bell", "at": "anchor/door-knock", "on": {"on": "use"},
+                "prop": {"block": "minecraft:bell[attachment=floor,facing=north]"},
+                "answers": {"done": "The bell has rung."},
                 "effects": [{"type": "add-state", "state": "state/tally", "amount": 1}]
             }],
             "quests": [decide_quest(), tally_q, end],
@@ -524,7 +526,7 @@ fn dw1030_refuses_an_ending_read_against_a_datum_a_stake_forfeits() {
     let c = tally(Vec::new());
     let mut quests: Value = serde_json::to_value(&c.quests).unwrap();
     quests["content"]["stakes"] = json!([{
-        "id": "stake/tally", "state": "state/tally", "marker_item": "minecraft:lantern",
+        "id": "stake/tally", "state": "state/tally",
         "collect_by": "anyone", "collected_message": "You take it back.",
         "forfeit": {"kind": "proportion", "percent": 50}
     }]);

@@ -36,7 +36,8 @@ static QUESTS_V06: LazyLock<String> = LazyLock::new(|| {
             { "type": "open-gate", "anchor": "anchor/door" },
             { "type": "spawn-wave", "wave": "wave/ambush" },
             { "type": "bonfire", "anchor": "anchor/keeper-stand",
-              "on_rest": [ { "type": "narrate", "text": "The fire steadies you.", "style": "chat" } ] }
+              "on_rest": [ { "type": "narrate", "text": "The fire steadies you.", "style": "chat" } ],
+              "prop": { "block": "minecraft:campfire" }, "answers": { "not_yet": "The fire is cold yet." } }
           ]
         },
         "on_complete": [ { "type": "campaign-complete" } ]
@@ -126,6 +127,10 @@ fn respawns_on_rest_without_a_bonfire_is_dw0356() {
     let no_bonfire = QUESTS_V06
         .as_str()
         .replace("\"bonfire\"", "\"set-checkpoint\"")
+        .replace(
+            ",\n              \"prop\": { \"block\": \"minecraft:campfire\" }, \"answers\": { \"not_yet\": \"The fire is cold yet.\" }",
+            "",
+        )
         .replace("\"on_rest\"", "\"on_respawn\"");
     assert_ne!(
         no_bonfire,

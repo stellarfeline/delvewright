@@ -40,11 +40,13 @@ static QUESTS_V06: LazyLock<String> = LazyLock::new(|| {
     ],
     "triggers": [
       { "id": "trigger/inner-door-barred", "at": "anchor/door", "on": { "on": "use" }, "once": false,
-        "audience": "presser",
+        "audience": "presser", "serves": { "gate": "anchor/door" },
         "effects": [ { "type": "narrate", "style": "actionbar", "text": "Barred from this side." } ] }
     ],
     "shortcuts": [
-      { "id": "shortcut/inner-door", "gate": "anchor/door", "unlock": "anchor/exit" }
+      { "id": "shortcut/inner-door", "gate": "anchor/door", "unlock": "anchor/exit",
+        "prop": { "block": "minecraft:stone_button[face=wall,facing=south]" },
+        "answers": { "not_yet": "Barred. The bar is on the other side.", "done": "The bar is thrown." } }
     ]
   }
 }"#,
@@ -145,7 +147,7 @@ fn close_gate_on_an_unowned_gate_is_still_legal() {
             "\"on_objective_complete\": { \"obj/talk\": [ { \"type\": \"close-gate\", \"anchor\": \"anchor/door\" } ] }",
         )
         .replace(
-            "    \"shortcuts\": [\n      { \"id\": \"shortcut/inner-door\", \"gate\": \"anchor/door\", \"unlock\": \"anchor/exit\" }\n    ]\n",
+            "    \"shortcuts\": [\n      { \"id\": \"shortcut/inner-door\", \"gate\": \"anchor/door\", \"unlock\": \"anchor/exit\",\n        \"prop\": { \"block\": \"minecraft:stone_button[face=wall,facing=south]\" },\n        \"answers\": { \"not_yet\": \"Barred. The bar is on the other side.\", \"done\": \"The bar is thrown.\" } }\n    ]\n",
             "    \"shortcuts\": []\n",
         );
     let diags = check_campaign(&campaign_with_quests(&no_shortcut));
