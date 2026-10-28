@@ -152,22 +152,26 @@ form and the commands are in *Reference: drawing the map's reference*.
      A plan without `fill` does not parse (`DW0100`); a heightmap of the wrong
      size or outside the region is `DW0826`. On an `open` site, ground no
      place claims is walkable commons.
-   - **Cut the site with one box per building or connector.** A building is a
-     place; a road, a flight of steps and a bridge are each a place; and so are
-     a yard, a garden strip and a square's centrepiece, each an open-sided place
-     (`sides`, below). A town's cut includes its yards. Never cut two buildings
-     into one box, nor a terrace of buildings into one place.
-   - **Give a building room for rooms.** A building of a trade — a forge, a
-     shop, a workshop — stands on at least **12 × 12** of play space, and on at
-     least **14 × 14** where a workroom and a shop front both stand; a
-     one-room house may be smaller. State the figure as a fact in the geometry
-     brief and bind the box to it with an `identities[]` row — `{"fact": …,
-     "cmp": "ge", "measure": {"of": "box-extent", "node": …, "axis": "x"}}`
-     — so the size is a declaration the plan is held to (`DW0833`), never a
-     class the engine infers. Bind it on an axis no wall between rooms
-     crosses: the built world measures a box's extent as the clear run through
-     its middle under the ceiling, so a wall dividing the rooms across `z`
-     measures one room on `z`, and the building is bound on `x`.
+   - **Cut the site with one box per plot or connector.** A plot is a place
+     that holds one or more related structures and the ground they share — a
+     house with its yards and shed, a forge with its work yard, a farmstead, a
+     precinct, a quay, a camp — and a building standing alone is a plot of one
+     structure. A road, a flight of steps and a bridge are each a place; a
+     square's centrepiece and a yard belonging to no plot are open-sided places
+     (`sides`, below). Never cut two unrelated buildings into one box, nor a
+     terrace of buildings into one place, nor one holding into several boxes.
+   - **Plan a plot with what it holds, and size it from that.** Before its box
+     is written, list its parts — each structure, each open space, whether a
+     body walks it or only sees it, and its play space in cells from the
+     research's bands — then add one ring of wall per structure and walked
+     ground at least two wide joining the entry to every walked part. The
+     box's extent is that sum, its ceiling `open`, its courses of air clearing
+     the tallest ridge; inside it the place's author builds the parts in any
+     outline. Never size a plot as room for its main structure, and never
+     larger than its parts: a plot whose parts and ways cover less than half of
+     it spreads its structures apart. A structure that is the whole plot with
+     no ground may stay a `clearance` box. The bands and the order are
+     `$DELVEWRIGHT_ENGINE/docs/reference/place-craft.md` §8.4.
    - **A box says what it is; a seam says where two boxes meet; the engine
      derives where it stands.** A box is a cuboid,
      `{node, extent: [dx, dz], floor, ceiling, base?, roof?, sides?, min?}`. `extent`
