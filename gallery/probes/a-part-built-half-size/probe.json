@@ -1,0 +1,14 @@
+{
+  "code": "DW1074",
+  "patch": [
+    {
+      "doc": "layout-graph.json",
+      "op": "replace",
+      "path": "/content/nodes/5/holds/2/cells",
+      "value": 6
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The planted bed's declared play space doubled, from 3 cells to 6, while the piece still builds a bed of 3: half its declaration, under the three quarters a part may fall to. The bindings check refuses the part as out of size, naming both numbers and the range. The bed is doubled rather than the court because the court doubled (104 cells) would first be too large for its box, which is the plot's own refusal. It declares no unit: every word it writes is bound on the site-plan point."
+}

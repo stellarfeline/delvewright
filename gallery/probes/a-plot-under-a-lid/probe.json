@@ -1,0 +1,21 @@
+{
+  "code": "DW1073",
+  "patch": [
+    {
+      "doc": "layout-graph.json",
+      "op": "add",
+      "path": "/content/nodes/1/holds",
+      "value": [
+        {
+          "cells": 100,
+          "id": "part/workshop",
+          "kind": "structure",
+          "use": "the annex's workshop, a room a body enters"
+        }
+      ]
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The annex — a lidded hall, `ceiling: {\"clearance\": 4}` — declared a plot holding one structure. A lid is one structure, and a plot's structures stand under the sky between them, so the plan cannot hold what it declares: `delvec detail` refuses the place before any piece is judged, and validation refuses the plan where it is written, each naming the shape (under a lid), the part and the two repairs — an `open` ceiling, or no `holds[]` and rooms instead. The edit is on the annex rather than the court because the court's box carries the gantry's ladder seam on its sky, which a lid would close, so a lidded court is refused first for the seam. It declares no unit: every word it writes is bound on the site-plan point."
+}

@@ -1,0 +1,14 @@
+{
+  "code": "DW1073",
+  "patch": [
+    {
+      "doc": "layout-graph.json",
+      "op": "replace",
+      "path": "/content/nodes/5/holds/0/cells",
+      "value": 65
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The court's declared play space raised to 65 cells on a box of 8 × 8 = 64: the parts declare 69 cells, more than the box holds before any wall or way between them. Validation refuses the plot as too small, naming the sum, the area and the shortfall. It declares no unit: every word it writes is bound on the site-plan point."
+}

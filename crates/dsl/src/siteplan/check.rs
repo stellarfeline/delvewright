@@ -347,7 +347,7 @@ pub fn check(c: &Campaign, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
     volumes_outside_boxes(plan, &placed, d);
     identities(c, plan, &placed, d);
     lighting(plan, d);
-    plots(plan, graph, d);
+    plots_cannot_hold(plan, graph, d);
 }
 
 /// `DW1073`: **a plot cannot hold what it declares** (spec-0125 §3.4) — one
@@ -355,7 +355,7 @@ pub fn check(c: &Campaign, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
 /// its parts' cells sum past its play space, or a structure's `height` is
 /// past its `open` courses. Judged on the declarations only; a plot whose
 /// parts fit is asked nothing more, whatever its coverage.
-fn plots(
+pub fn plots_cannot_hold(
     plan: &SitePlanContent,
     graph: &crate::layout::LayoutGraphContent,
     d: &mut Vec<Diagnostic>,

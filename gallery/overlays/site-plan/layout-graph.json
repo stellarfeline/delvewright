@@ -294,6 +294,28 @@
         "note": "No beat happens here, which is deliberate: a place off the mandatory spine is what makes the critical path's spine obligation say something."
       },
       {
+        "holds": [
+          {
+            "cells": 52,
+            "id": "part/court",
+            "kind": "ground",
+            "use": "the wet court a body crosses from the far hall's arch to the gantry's ladder"
+          },
+          {
+            "cells": 1,
+            "height": 3,
+            "id": "part/well-house",
+            "kind": "structure",
+            "use": "a small stone well-house against the far hall's wall, entered by its south door"
+          },
+          {
+            "cells": 3,
+            "id": "part/bed",
+            "kind": "ground",
+            "reached": false,
+            "use": "a planted bed of poppies along the court's open west edge"
+          }
+        ],
         "id": "node/exit",
         "intent": "goal-chamber",
         "stations": [

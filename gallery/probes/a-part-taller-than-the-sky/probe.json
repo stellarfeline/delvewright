@@ -1,0 +1,14 @@
+{
+  "code": "DW1073",
+  "patch": [
+    {
+      "doc": "layout-graph.json",
+      "op": "replace",
+      "path": "/content/nodes/5/holds/1/height",
+      "value": 5
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The well-house's declared height set to five courses, one more than the four courses of air the court's `open` ceiling claims. Validation refuses the plot as too low, naming the part, its height and the box's air. It declares no unit: every word it writes is bound on the site-plan point."
+}

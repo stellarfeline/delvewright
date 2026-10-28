@@ -544,6 +544,27 @@ fn prepare(
     // A plot's parts (spec-0125 §5.1): the node's `holds[]`, handed beside
     // the open sides — a derivation, never typed.
     opts.parts = delvec::compiler::plot::handed_parts(campaign, node);
+    // A plot whose box cannot hold its parts (`DW1073`) is refused here too,
+    // before any piece is judged against it: the plan is what changes.
+    if !opts.parts.is_empty()
+        && let (Some(plan), Some(graph)) =
+            (campaign.site_plan.as_ref(), campaign.layout_graph.as_ref())
+    {
+        let mut d = Vec::new();
+        let mut this = graph.content.clone();
+        this.nodes.retain(|n| n.id == *node);
+        delvewright_dsl::siteplan::plots_cannot_hold(&plan.content, &this, &mut d);
+        if !d.is_empty() {
+            for x in &d {
+                print_one_diag(x, json);
+            }
+            eprintln!(
+                "error: `{place}`: the plan's box cannot hold the parts its node declares; \
+                 nothing was written. The plan is what changes."
+            );
+            return Err(1);
+        }
+    }
     let size = [a.extent[0] as u32, a.extent[1] as u32, a.extent[2] as u32];
     let region = Box3::at_origin(size);
     let expansion = match expand(&program, region, &opts) {

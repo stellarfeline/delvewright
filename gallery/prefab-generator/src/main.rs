@@ -3702,8 +3702,39 @@ const YARD_VOIDS: [([i32; 3], [i32; 3]); 6] = [
 const YARD_WAY: ([i32; 3], [i32; 3]) = ([3, 5, 0], [4, 7, 0]);
 
 /// Where a body stands when a quest seats it here — `anchor/node-exit` after the
-/// re-binding. Open paving, clear of the plinth.
-const YARD_SEAT: [i32; 3] = [6, 5, 1];
+/// re-binding. Open paving, clear of the plinth and the well-house.
+const YARD_SEAT: [i32; 3] = [3, 5, 2];
+
+/// **The court is a plot** (spec-0125 §11): it holds the court a body walks,
+/// a well-house a body enters, and a planted bed nobody walks. The well-house
+/// stands against the far hall's wall in the court's north-east corner,
+/// set back from the open sides: walls of two courses round one cell of
+/// floor, a door in its south wall, and its roof on the course over them, so
+/// its ridge is three courses over the walk plane and the frame's top course
+/// stays air over it.
+const WELL_LO: [i32; 2] = [5, 0];
+const WELL_HI: [i32; 2] = [7, 2];
+/// The well-house's one cell of floor, and its door in the south wall.
+const WELL_ROOM: [i32; 2] = [6, 1];
+const WELL_DOOR: [i32; 2] = [6, 2];
+/// The well-house's roof course, piece-local `y`.
+const WELL_ROOF_Y: i32 = YARD_FLOOR + 2;
+/// The lamp in the well-house's west wall, lighting its floor.
+const WELL_LAMP: [i32; 3] = [5, YARD_FLOOR + 1, 1];
+/// The planted bed along the court's west edge, beside the open side: grass
+/// in the paving course and flowers on it, the court's seen ground.
+const BED: ([i32; 2], [i32; 2]) = ([1, 3], [1, 5]);
+
+/// Which plot parts the yard's contract names (spec-0125 §5.1). The two
+/// probe-only variants each break one binding: the well-house names no part
+/// (`DW1074` unbuilt), or the court names a part the plan never declared
+/// (`DW1074` undeclared).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum YardParts {
+    Bound,
+    WellUnnamed,
+    CourtUndeclared,
+}
 
 /// **The climb up to the gantry** (spec-0099): the seam the plan cut through
 /// the gantry's deck, answered on the yard's top course under it, as
@@ -3772,6 +3803,14 @@ fn build_yard() -> Structure {
 /// the yard's but the three trapdoors' `facing`.
 const YARD_HATCH_ACROSS_ID: &str = "gallery-yard-hatch-across";
 
+/// The probe-only yard whose well-house names no part
+/// (`gallery/probes/a-part-nobody-built`, `DW1074`).
+const YARD_WELL_UNNAMED_ID: &str = "gallery-yard-well-unnamed";
+
+/// The probe-only yard whose court names `part/garden`, which the plan does
+/// not declare (`gallery/probes/a-part-the-plan-does-not-declare`, `DW1074`).
+const YARD_COURT_UNDECLARED_ID: &str = "gallery-yard-court-undeclared";
+
 /// The yard, its cellar hatch facing `hatch`.
 fn build_yard_with_hatch(hatch: &str) -> Structure {
     let mut palette = Palette::new();
@@ -3827,6 +3866,30 @@ fn build_yard_with_hatch(hatch: &str) -> Structure {
                     "minecraft:air"
                 } else if CELLAR_LAMPS.contains(&[x, y, z]) {
                     "minecraft:sea_lantern"
+                } else if (WELL_LO[0]..=WELL_HI[0]).contains(&x)
+                    && (WELL_LO[1]..=WELL_HI[1]).contains(&z)
+                    && (YARD_FLOOR..=WELL_ROOF_Y).contains(&y)
+                {
+                    // The well-house: its roof on the top course, its walls
+                    // round the one cell of floor, its door two courses high.
+                    if y == WELL_ROOF_Y {
+                        "minecraft:spruce_planks"
+                    } else if [x, y, z] == WELL_LAMP {
+                        "minecraft:sea_lantern"
+                    } else if [x, z] == WELL_ROOM || ([x, z] == WELL_DOOR && y < YARD_FLOOR + 2) {
+                        "minecraft:air"
+                    } else {
+                        "minecraft:stone_bricks"
+                    }
+                } else if (BED.0[0]..=BED.1[0]).contains(&x)
+                    && (BED.0[1]..=BED.1[1]).contains(&z)
+                    && (y == YARD_FLOOR - 1 || y == YARD_FLOOR)
+                {
+                    if y == YARD_FLOOR - 1 {
+                        "minecraft:grass_block"
+                    } else {
+                        "minecraft:poppy"
+                    }
                 } else if in_box([x, y, z], YARD_BASIN) {
                     blocks.push(BlockEntry {
                         pos: [x, y, z],
@@ -3890,8 +3953,45 @@ fn yard_metadata() -> serde_json::Value {
 }
 
 fn yard_metadata_as(id: &str) -> serde_json::Value {
+    yard_metadata_parts(id, YardParts::Bound)
+}
+
+/// The court's own boxes: the whole footprint from the walk plane up, less
+/// the well-house's columns and the bed's.
+fn court_boxes() -> Vec<serde_json::Value> {
+    let (top, x1, z1) = (YARD_SIZE[1] - 1, YARD_SIZE[0] - 2, YARD_SIZE[2] - 2);
+    let f = YARD_FLOOR;
+    vec![
+        // West of the well-house, north of the bed: x 1..4, z 0..2.
+        region([1, f, 0], [WELL_LO[0] - 1, top, BED.0[1] - 1]),
+        // East of the well-house: x 8, z 0..2.
+        region([WELL_HI[0] + 1, f, 0], [x1, top, WELL_HI[1]]),
+        // The bed's rows, east of it: x 2..8, z 3..5.
+        region([BED.1[0] + 1, f, BED.0[1]], [x1, top, BED.1[1]]),
+        // South of the bed: x 1..8, z 6..7.
+        region([1, f, BED.1[1] + 1], [x1, top, z1]),
+    ]
+}
+
+fn yard_metadata_parts(id: &str, parts: YardParts) -> serde_json::Value {
     let (wl, wh) = YARD_WAY;
     let (cl, ch) = YARD_CLIMB;
+    let court_part = if parts == YardParts::CourtUndeclared {
+        "part/garden"
+    } else {
+        "part/court"
+    };
+    let mut well = serde_json::json!({
+        "envelope": "enclosed",
+        "boxes": [region(
+            [WELL_ROOM[0], YARD_FLOOR, WELL_ROOM[1]],
+            [WELL_ROOM[0], WELL_ROOF_Y - 1, WELL_ROOM[1]]
+        )],
+        "part": "part/well-house"
+    });
+    if parts == YardParts::WellUnnamed {
+        well.as_object_mut().expect("an object").remove("part");
+    }
     serde_json::json!({
         "prefab_id": format!("prefab/{id}"),
         "structure": {
@@ -3931,14 +4031,26 @@ fn yard_metadata_as(id: &str) -> serde_json::Value {
             "spaces": {
                 "yard": {
                     "envelope": "open_top",
-                    "boxes": [region([1, YARD_FLOOR, 0], [YARD_SIZE[0] - 2, YARD_SIZE[1] - 1, YARD_SIZE[2] - 2])]
+                    "boxes": court_boxes(),
+                    "part": court_part
                 },
+                "well-house": well,
                 "cellar": {
                     "envelope": "enclosed",
                     "boxes": [region(CELLAR_LO, CELLAR_HI)]
                 }
             },
-            "no_body": {},
+            "no_body": {
+                "well-roof": {
+                    "reason": "the well-house's roof; nothing climbs to it",
+                    "boxes": [region([WELL_LO[0], WELL_ROOF_Y + 1, WELL_LO[1]], [WELL_HI[0], WELL_ROOF_Y + 1, WELL_HI[1]])]
+                },
+                "bed": {
+                    "reason": "a planted bed along the court's west edge; nobody walks it",
+                    "boxes": [region([BED.0[0], YARD_FLOOR, BED.0[1]], [BED.1[0], YARD_FLOOR + 1, BED.1[1]])],
+                    "part": "part/bed"
+                }
+            },
             "edges": [
                 {
                     "a": "yard",
@@ -3951,6 +4063,18 @@ fn yard_metadata_as(id: &str) -> serde_json::Value {
                     "b": "exterior",
                     "class": "walk",
                     "via": { "region": "yard-climb", "boxes": [region(cl, ch)] }
+                },
+                {
+                    "a": "well-house",
+                    "b": "yard",
+                    "class": "walk",
+                    "via": {
+                        "region": "well-door",
+                        "boxes": [region(
+                            [WELL_DOOR[0], YARD_FLOOR, WELL_DOOR[1]],
+                            [WELL_DOOR[0], YARD_FLOOR + 1, WELL_DOOR[1]]
+                        )]
+                    }
                 },
                 {
                     "a": "cellar",
@@ -4034,6 +4158,7 @@ fn write_yard(out: &Path) {
     gz.write_all(&nbt).expect("gzip write");
     let framed = gz.finish().expect("gzip finish");
     std::fs::write(out.join(format!("{YARD_ID}.nbt")), &framed).expect("write yard nbt");
+    let framed_yard = framed.clone();
     let mut yard = yard_metadata();
     declare_walk_y(YARD_ID, &s, &mut yard);
     document::write_preserving(&out.join(format!("{YARD_ID}.json")), &yard);
@@ -4050,6 +4175,18 @@ fn write_yard(out: &Path) {
     let mut meta = yard_metadata_as(YARD_HATCH_ACROSS_ID);
     declare_walk_y(YARD_HATCH_ACROSS_ID, &across, &mut meta);
     document::write_preserving(&out.join(format!("{YARD_HATCH_ACROSS_ID}.json")), &meta);
+    // The two probe-only variants of the plot's binding (spec-0125 §11): the
+    // yard's bytes, its contract naming one part wrongly.
+    for (vid, parts) in [
+        (YARD_WELL_UNNAMED_ID, YardParts::WellUnnamed),
+        (YARD_COURT_UNDECLARED_ID, YardParts::CourtUndeclared),
+    ] {
+        std::fs::write(out.join(format!("{vid}.nbt")), &framed_yard)
+            .expect("write a part-probe yard nbt");
+        let mut meta = yard_metadata_parts(vid, parts);
+        declare_walk_y(vid, &s, &mut meta);
+        document::write_preserving(&out.join(format!("{vid}.json")), &meta);
+    }
     println!(
         "{YARD_ID}: detail piece written — {}x{}x{} to fill the exit box's frame exactly",
         YARD_SIZE[0], YARD_SIZE[1], YARD_SIZE[2]

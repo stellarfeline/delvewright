@@ -1,0 +1,20 @@
+{
+  "code": "DW0100",
+  "patch": [
+    {
+      "doc": "layout-graph.json",
+      "op": "replace",
+      "path": "/content/nodes/5/holds/0",
+      "value": {
+        "cells": 52,
+        "height": 3,
+        "id": "part/court",
+        "kind": "ground",
+        "use": "the wet court a body crosses from the far hall's arch to the gantry's ladder"
+      }
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The court's part, a `ground` part, given `\"height\": 3`. A height is courses from the walk plane to a structure's ridge, and open ground has none, so the schema tier refuses it, naming the part and the two repairs. It declares no unit: `Part.height` is bound on the site-plan point."
+}
