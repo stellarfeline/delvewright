@@ -1504,7 +1504,10 @@ fn check_owed(
                      whose only use is a `lethal_volumes[]` region anchor may stand in a \
                      `no_body` region: that is a pit's bottom, where `DW0891` sends a \
                      volume; one whose only use is the `at` of a gate's own answer may \
-                     stand in that gate's bar.",
+                     stand in that gate's bar. A door the story opens is no prop stood \
+                     beside a way: declare its connection `\"shut\": \"door\"` and anchor \
+                     the step on `anchor/seam-<edge>`, where the seam stands the door \
+                     (spec-0124 §5.2).",
                     piece = row.piece,
                 ),
             ));
