@@ -29,6 +29,14 @@ allocation the engine hands:
 - every owed name answered by a `mark` of its stem on walkable floor: `spawn`
   with the `entry` role, `unlock-<edge>` beside its bar, the rest along the
   room's middle;
+- on a plot, every handed part laid as a region of exactly its declared
+  cells, named for the part with `part`: the columns beside every opening,
+  ladder, landing and gate, and the middle of every open side, stay the room; a walked part is a space
+  (a walk edge joins every two walked spaces that touch); a part seen and
+  never entered is an out-of-walk region over the floor that no edge reaches,
+  laid only where the walked floor stays one piece — what keeps a body off it
+  (a hedge, a crop, a fence) is yours to build. Where each part stands is this starter's
+  choice; its count is the plan's;
 - a sconce every four cells of wall a course above the floor, and on a roofed
   place a lamp every four cells of the lid, so the light probe has something
   to measure.
@@ -254,12 +262,12 @@ class Place:
     def lay_parts(self, parts: list[dict]) -> None:
         """Lay each part as a region of exactly its declared cells.
 
-        The columns beside every opening, ladder, landing, gate and open side
-        stay the `room`, so every edge the room declares keeps its cells; the
+        The columns beside every opening, ladder, landing and gate, and the
+        middle of every open side, stay the `room`, so every edge the room declares keeps its cells; the
         rest of the play space is walked in rows, a part a body walks taking
         the next run of its `cells` columns and a part seen and never entered
-        taking columns from the far end, each one a solid mass under a
-        no-body region, only where the walked floor stays one piece. Where
+        taking columns from the far end, an out-of-walk region over the floor
+        no edge reaches, only where the walked floor stays one piece. Where
         the parts stand is this starter's choice and yours to change; the
         counts are the plan's.
         """
@@ -272,14 +280,33 @@ class Place:
         special = set()
         for x in range(lo[0] - 1, hi[0] + 2):
             for z in range(lo[2] - 1, hi[2] + 2):
-                if any(self.cell(x, y, z) not in plain for y in range(d - 1, top + 1)):
+                kinds = {self.cell(x, y, z) for y in range(d - 1, top + 1)} - plain
+                # An open side's run is a way out along a whole side: the room
+                # keeps the column inside its middle cell, and the parts may
+                # stand along the rest of it.
+                if kinds and not all(k[0] == "claim" and k[1].startswith("side-") for k in kinds):
                     special.add((x, z))
-        free = []
+        room = ("claim", "room", None)
+        floor = {
+            (x, z)
+            for x in range(lo[0], hi[0] + 1)
+            for z in range(lo[2], hi[2] + 1)
+            if self.cell(x, d, z) == room and self.cell(x, d + 1, z) == room
+        }
+        # A pillar, a ladder, an alcove: a column of the play space that is
+        # not open floor is as special as an opening.
+        special |= {(x, z) for x in range(lo[0], hi[0] + 1) for z in range(lo[2], hi[2] + 1)} - floor
         keep = set()
+        for sd in self.sides:
+            mx, mz = (sd["lo"][0] + sd["hi"][0]) // 2, (sd["lo"][1] + sd["hi"][1]) // 2
+            keep.add((min(max(mx, lo[0]), hi[0]), min(max(mz, lo[2]), hi[2])))
+        free = []
         for x in range(lo[0], hi[0] + 1):
             zs = range(lo[2], hi[2] + 1) if (x - lo[0]) % 2 == 0 else range(hi[2], lo[2] - 1, -1)
             for z in zs:
-                if any((x + i, z + k) in special for i in (-1, 0, 1) for k in (-1, 0, 1)):
+                if (x, z) not in floor:
+                    continue
+                if (x, z) in keep or any(n in special for n in ((x + 1, z), (x - 1, z), (x, z + 1), (x, z - 1))):
                     keep.add((x, z))
                 else:
                     free.append((x, z))
@@ -295,7 +322,13 @@ class Place:
                 f"starter.py: the play space beside the openings holds {len(free)} column(s) and the parts "
                 f"need at least {sum(targets)}; lay them by hand"
             )
-        walked = set(keep) | set(free)
+        walked = (keep & floor) | set(free)
+        beside_sides = {
+            (min(max(x, lo[0]), hi[0]), min(max(z, lo[2]), hi[2]))
+            for sd in self.sides
+            for x in range(sd["lo"][0], sd["hi"][0] + 1)
+            for z in range(sd["lo"][1], sd["hi"][1] + 1)
+        }
 
         def whole(cells: set) -> bool:
             if not cells:
@@ -319,6 +352,8 @@ class Place:
             for c in reversed(free):
                 if len(entry["cols"]) == n:
                     break
+                if c in beside_sides:
+                    continue
                 if whole(walked - {c}):
                     walked.discard(c)
                     entry["cols"].append(c)
@@ -350,10 +385,21 @@ class Place:
     # -- what one cell is, by the rules above --
     def cell(self, x: int, y: int, z: int) -> tuple:
         kind = self.base_cell(x, y, z)
+        if kind[0] == "claim" and kind[1].startswith("side-") and getattr(self, "col_part", None):
+            # An open side's cell is the way out of the space inside it.
+            space = self.side_space(x, z)
+            return kind if space == "room" else ("claim", f"{kind[1]}-{space}", None)
         part = getattr(self, "col_part", {}).get((x, z))
         if part is None or kind != ("claim", "room", None):
             return kind
-        return ("claim", part["region"], None if part["walked"] else "wall")
+        return ("claim", part["region"], None)
+
+    def side_space(self, x: int, z: int) -> str:
+        """The walked space whose column stands inside an open side's cell."""
+        lo, hi = self.space
+        inner = (min(max(x, lo[0]), hi[0]), min(max(z, lo[2]), hi[2]))
+        e = self.col_part.get(inner)
+        return e["region"] if e is not None and e["walked"] else "room"
 
     def walkable(self, kind: tuple) -> bool:
         """A cell of a space a body walks: the room, or a walked part."""
@@ -580,8 +626,17 @@ def contract(p: Place) -> dict:
     for s in p.sides:
         # A frontage a body crosses: the open side's cells are the way out
         # (spec-0123 §5.4). A counter a body does not cross stands at the play
-        # space's edge, inside, and the side stays this edge's.
-        edges.append({"a": "room", "b": "exterior", "class": "walk", "via": f"side-{s['face']}"})
+        # space's edge, inside, and the side stays this edge's. On a plot the
+        # run is one way out per walked space standing inside it.
+        spaces_in = []
+        for x in range(s["lo"][0], s["hi"][0] + 1):
+            for z in range(s["lo"][1], s["hi"][1] + 1):
+                sp = p.side_space(x, z) if p.col_part else "room"
+                if sp not in spaces_in:
+                    spaces_in.append(sp)
+        for sp in sorted(spaces_in):
+            via = f"side-{s['face']}" if sp == "room" else f"side-{s['face']}-{sp}"
+            edges.append({"a": sp, "b": "exterior", "class": "walk", "via": via})
     no_body = {}
     pairs = set()
     for e in p.parts:

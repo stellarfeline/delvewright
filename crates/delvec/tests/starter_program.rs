@@ -182,6 +182,8 @@ fn judge_every_place(tmp: &Path, campaign: &Path, prefabs: &Path) -> (usize, usi
         // other place standing as the gallery commits it.
         match before {
             Some(bytes) => std::fs::write(&program, bytes).unwrap(),
+            // A starter that refused wrote nothing to take back.
+            None if !program.exists() => {}
             None => std::fs::remove_file(&program).unwrap(),
         }
         match verdict {
@@ -221,4 +223,148 @@ fn the_starter_passes_the_check_unedited_on_every_place_of_the_gallery_site_plan
         failures.len(),
         failures.join("\n\n")
     );
+}
+
+/// The two-box `atmosphere-threshold` plan with `node/far` made a plot of
+/// three parts — a walked court, a walked house, a bed seen and never
+/// entered — and the starter run unedited on its allocation: the program
+/// binds the three, and `detail --check` passes.
+fn two_box_plot(root: &Path) -> (PathBuf, PathBuf) {
+    let campaign = root.join("campaign");
+    let prefabs = root.join("prefabs");
+    std::fs::create_dir_all(&prefabs).unwrap();
+    common::copy_dir_all(
+        &common::compiler_fixtures_dir().join("atmosphere-threshold"),
+        &campaign,
+    );
+    common::patch_file(&campaign.join("layout-graph.json"), |v| {
+        for n in v["content"]["nodes"].as_array_mut().unwrap() {
+            if n["id"] == "node/far" {
+                n["holds"] = serde_json::json!([
+                    {"id": "part/court", "kind": "ground", "use": "the court a body crosses", "cells": 60},
+                    {"id": "part/house", "kind": "structure", "use": "a house on the court", "cells": 30, "height": 4},
+                    {"id": "part/bed", "kind": "ground", "use": "a bed nobody walks", "cells": 8, "reached": false}
+                ]);
+            }
+        }
+    });
+    let cs = campaign.to_str().unwrap();
+    let a = delvec(&["allocation", cs, "node/far"]);
+    assert!(a.status.success(), "{}", text(&a));
+    let alloc: serde_json::Value = serde_json::from_slice(&a.stdout).unwrap();
+    let ids: Vec<&str> = alloc["parts"]
+        .as_array()
+        .expect("the allocation hands the plot's parts")
+        .iter()
+        .map(|p| p["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, ["part/court", "part/house", "part/bed"]);
+    let alloc_file = root.join("far.allocation.json");
+    std::fs::write(&alloc_file, &a.stdout).unwrap();
+    let program = campaign.join("programs").join("far.json");
+    std::fs::create_dir_all(program.parent().unwrap()).unwrap();
+    let run = Command::new(python())
+        .arg(starter())
+        .arg("--allocation")
+        .arg(&alloc_file)
+        .arg("--out")
+        .arg(&program)
+        .output()
+        .expect("run the starter");
+    assert!(run.status.success(), "{}", text(&run));
+    (campaign, prefabs)
+}
+
+fn check_far(campaign: &Path, prefabs: &Path) -> Output {
+    delvec(&[
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+        "detail",
+        "--check",
+        campaign.to_str().unwrap(),
+        "node/far",
+    ])
+}
+
+/// **spec-0125 criterion 5**: over a two-box plan whose plot's piece binds
+/// three parts, `delvec detail --check` passes with the parts line — the seen
+/// bed no flood reaches is not refused — and raises `DW1074` for each shape
+/// of §5.3: a part no region names (*unbuilt*), a `part` on a piece whose
+/// node declares no `holds[]` (*undeclared*), a walked part none of whose
+/// columns the piece's flood reaches (*not walked*), and a declaration far
+/// from the columns the piece claims (*out of size*).
+#[test]
+fn a_two_box_plots_piece_binds_three_parts_and_each_shape_is_refused() {
+    let tmp = tempdir("two-box-plot");
+    let (campaign, prefabs) = two_box_plot(&tmp);
+    let green = check_far(&campaign, &prefabs);
+    let t = text(&green);
+    assert!(green.status.success(), "{t}");
+    assert!(
+        t.contains("node/far: parts: 3 of 3 bound, 2 of 2 walked"),
+        "{t}"
+    );
+    assert!(!t.contains("DW1074"), "{t}");
+
+    let graph = |c: &Path, f: &dyn Fn(&mut serde_json::Value)| {
+        common::patch_file(&c.join("layout-graph.json"), |v| {
+            for n in v["content"]["nodes"].as_array_mut().unwrap() {
+                if n["id"] == "node/far" {
+                    f(&mut n["holds"]);
+                }
+            }
+        });
+    };
+    type Edit = Box<dyn Fn(&Path)>;
+    let cases: Vec<(&str, Edit, &str)> = vec![
+        (
+            "unbuilt",
+            Box::new(|c: &Path| {
+                common::patch_file(&c.join("programs/far.json"), |v| {
+                    let s = v["contract"]["spaces"]["part-house"]
+                        .as_object_mut()
+                        .unwrap();
+                    assert!(s.remove("part").is_some());
+                });
+            }),
+            "unbuilt: `node/far` declares the part `part/house` (a house on the court, 30 cell(s))",
+        ),
+        (
+            "undeclared",
+            Box::new(|c: &Path| {
+                common::patch_file(&c.join("layout-graph.json"), |v| {
+                    for n in v["content"]["nodes"].as_array_mut().unwrap() {
+                        if n["id"] == "node/far" {
+                            n.as_object_mut().unwrap().remove("holds");
+                        }
+                    }
+                });
+            }),
+            "names the part `part/court`",
+        ),
+        (
+            "not-walked",
+            Box::new(move |c: &Path| {
+                graph(c, &|h| {
+                    h[2].as_object_mut().unwrap().remove("reached");
+                })
+            }),
+            "not walked: `node/far`'s part `part/bed` (a bed nobody walks)",
+        ),
+        (
+            "out-of-size",
+            Box::new(move |c: &Path| graph(c, &|h| h[0]["cells"] = serde_json::json!(120))),
+            "out of size: `node/far`'s part `part/court` (the court a body crosses) declares 120 cell(s)",
+        ),
+    ];
+    for (tag, edit, shape) in cases {
+        let dir = tmp.join(tag);
+        common::copy_dir_all(&campaign, &dir);
+        edit(&dir);
+        let out = check_far(&dir, &prefabs);
+        let t = text(&out);
+        assert!(!out.status.success(), "{tag}: {t}");
+        assert!(t.contains("DW1074"), "{tag}: {t}");
+        assert!(t.contains(shape), "{tag}: {t}");
+    }
 }

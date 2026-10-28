@@ -337,8 +337,9 @@ def test_the_stub_answers_with_the_allocation_struct_s_own_fields():
     recorded = json.loads(ALLOCATIONS.read_text(encoding="utf-8"))
     assert len(recorded) == 3
     # `skip_serializing_if`: `Option::is_none` for `palette` and `roof`, and
-    # `Vec::is_empty` for `sides` (a place declaring no open side, spec-0123).
-    optional = {"palette", "roof", "sides"}
+    # `Vec::is_empty` for `sides` (a place declaring no open side, spec-0123)
+    # and `parts` (a place that is not a plot, spec-0125).
+    optional = {"palette", "roof", "sides", "parts"}
     for a in recorded:
         assert set(a) <= fields, set(a) - fields
         assert fields - set(a) <= optional, fields - set(a) - optional
