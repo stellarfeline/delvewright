@@ -1601,6 +1601,7 @@ impl ThresholdCount {
             "places": self.places,
             "doors": self.doors,
             "open_sides": self.open_sides,
+            "parts": self.parts,
         })
     }
 }
