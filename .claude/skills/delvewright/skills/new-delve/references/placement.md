@@ -171,7 +171,7 @@ form and the commands are in *Reference: drawing the map's reference*.
      larger than its parts: a plot whose parts and ways cover less than half of
      it spreads its structures apart. A structure that is the whole plot with
      no ground may stay a `clearance` box. The bands and the order are
-     `$DELVEWRIGHT_ENGINE/docs/reference/place-craft.md` §8.4.
+     `$DELVEWRIGHT_ENGINE/docs/reference/place-craft.md` §8.5.
    - **A box says what it is; a seam says where two boxes meet; the engine
      derives where it stands.** A box is a cuboid,
      `{node, extent: [dx, dz], floor, ceiling, base?, roof?, sides?, min?}`. `extent`

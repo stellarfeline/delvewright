@@ -12,7 +12,7 @@ The cut that won is the one the engine already describes: a scene is a place and
 
 ## 2. Twice the room **[ruling; authored where stated]**
 
-A building's play space is about twice what the first cut gave it, so its author has room for rooms (`place-craft.md` §2). The ruling was first carried out as a bigger box per building, and spec-0125 records that as the wrong reading: the room a structure gets is its part's `cells` in its plot's program, stated per part from the research's bands (`place-craft.md` §8.4) and confirmed by the engine against the box and the piece (spec-0125 §3.4, §5.3); no fixed figure per trade and no `identities[]` binding of a building's box. `references/placement.md` states the plot rule (spec-0125 §8). Guide text; the surface is spec-0125's.
+A building's play space is about twice what the first cut gave it, so its author has room for rooms (`place-craft.md` §2). The ruling was first carried out as a bigger box per building, and spec-0125 records that as the wrong reading: the room a structure gets is its part's `cells` in its plot's program, stated per part from the community's bands (`place-craft.md` §8.5) and confirmed by the engine against the box and the piece (spec-0125 §3.4, §5.3); no fixed figure per trade and no `identities[]` binding of a building's box. `references/placement.md` states the plot rule (spec-0125 §8). Guide text; the surface is spec-0125's.
 
 ## 3. Detail, as the trade
 
