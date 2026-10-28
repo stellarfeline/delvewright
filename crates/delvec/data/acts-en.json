@@ -64,6 +64,15 @@
     "prove",
     "show"
   ],
+  "quit": [
+    "disconnect",
+    "exit",
+    "leave",
+    "log off",
+    "log out",
+    "quit",
+    "return to menu"
+  ],
   "reach": [
     "approach",
     "arrive",
@@ -135,6 +144,22 @@
     "walk",
     "wander",
     "watch"
+  ],
+  "rest": [
+    "camp",
+    "rest",
+    "sit",
+    "sleep",
+    "stay",
+    "warm"
+  ],
+  "save": [
+    "keep",
+    "mark",
+    "record",
+    "remember",
+    "save",
+    "save progress"
   ],
   "take": [
     "acquire",

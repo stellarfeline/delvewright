@@ -1994,6 +1994,10 @@ fn completion_remedy(act: Act, o: &delvewright_dsl::Objective) -> String {
         Act::Present => "make it an `interact` at the thing with `requires_item` — the item \
                          held in the hand when it is used"
             .into(),
+        Act::Rest | Act::Save | Act::Quit => "resting, saving and quitting are a rest point's \
+                                              buttons, not a completion an objective has \
+                                              (spec-0124 §6.4)"
+            .into(),
         Act::Give if talk => "giving a thing to a body is not a completion the engine has \
                               (spec-0114 §6.4: a dialogue option reads no hand and takes nothing)"
             .into(),
@@ -2177,5 +2181,148 @@ pub fn check_hint_acts_with(c: &Campaign, lex: &Lexicon) -> (Vec<Diagnostic>, Hi
             ));
         }
     }
+    (d, bind)
+}
+
+// ---------------------------------------------------------------------------
+// DW1045, the label arm — a button's caption names only the acts it performs
+// (spec-0124 §6.4)
+// ---------------------------------------------------------------------------
+
+/// The acts a bonfire's **rest** option performs: the full loop, which rests
+/// the party and moves the checkpoint (`compiler.md`, `bonfire`).
+pub const REST_OPTION_ACTS: [Act; 2] = [Act::Rest, Act::Save];
+
+/// The acts a bonfire's **save** option performs: it moves the checkpoint and
+/// does nothing else (`compiler.md`, `bonfire`).
+pub const SAVE_OPTION_ACTS: [Act; 1] = [Act::Save];
+
+/// What the label arm of `DW1045` read, zeroes included (spec-0124 §6.4).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LabelBinding {
+    /// Bonfires in the campaign.
+    pub bonfires: usize,
+    /// Labels read: two per bonfire, the authored English or the engine's
+    /// default.
+    pub labels: usize,
+    /// Lexicon verbs found across those labels, each judged.
+    pub verbs: usize,
+    /// Labels whose clauses hold no verb the lexicon knows: counted, not judged.
+    pub unjudged: usize,
+    /// Labels refused.
+    pub refused: usize,
+}
+
+impl LabelBinding {
+    /// The binding line `delvec validate` prints.
+    pub fn line(&self) -> String {
+        format!(
+            "label act binding (DW1045): {} label(s) judged over {} bonfire(s); {} lexicon \
+             verb(s) found, {} label(s) with none; {} refused",
+            self.labels - self.unjudged,
+            self.bonfires,
+            self.verbs,
+            self.unjudged,
+            self.refused
+        )
+    }
+}
+
+/// The verbs of a caption (spec-0124 §6.4): the label as drawn, cut into
+/// clauses on *and*, `&` and `,`, each clause's head read by
+/// [`Lexicon::head`] — the rule a title is read by. A clause whose head the
+/// lexicon does not know contributes nothing.
+pub fn label_verbs<'l>(lex: &'l Lexicon, label: &str) -> Vec<(String, &'l BTreeSet<Act>)> {
+    let drawn = delvewright_dsl::l10n::plain(label);
+    let mut clauses: Vec<String> = Vec::new();
+    for part in drawn.split([',', '&']) {
+        let words = title_words(part);
+        let mut cur: Vec<String> = Vec::new();
+        for w in words {
+            if w == "and" {
+                clauses.push(cur.join(" "));
+                cur.clear();
+            } else {
+                cur.push(w);
+            }
+        }
+        clauses.push(cur.join(" "));
+    }
+    clauses
+        .iter()
+        .filter(|c| !c.trim().is_empty())
+        .filter_map(|c| lex.head(c))
+        .collect()
+}
+
+/// `DW1045`'s label arm over every bonfire, with what it read.
+pub fn check_labels(c: &Campaign) -> (Vec<Diagnostic>, LabelBinding) {
+    check_labels_with(c, Lexicon::english())
+}
+
+/// [`check_labels`] against a given lexicon.
+pub fn check_labels_with(c: &Campaign, lex: &Lexicon) -> (Vec<Diagnostic>, LabelBinding) {
+    let mut bind = LabelBinding::default();
+    let mut d = Vec::new();
+    delvewright_dsl::for_each_campaign_effect(c, &mut |path, _site, eff| {
+        let Some(labels) = eff.bonfire_labels() else {
+            return;
+        };
+        bind.bonfires += 1;
+        let options: [(&str, &str, &[Act], bool); 2] = [
+            (
+                "rest_label",
+                labels.rest_or_default(),
+                &REST_OPTION_ACTS,
+                labels.rest_label.is_some(),
+            ),
+            (
+                "save_label",
+                labels.save_or_default(),
+                &SAVE_OPTION_ACTS,
+                labels.save_label.is_some(),
+            ),
+        ];
+        for (field, label, performs, authored) in options {
+            bind.labels += 1;
+            let found = label_verbs(lex, label);
+            if found.is_empty() {
+                bind.unjudged += 1;
+                continue;
+            }
+            bind.verbs += found.len();
+            let performed: BTreeSet<Act> = performs.iter().copied().collect();
+            let Some((phrase, said)) = found
+                .iter()
+                .find(|(_, said)| said.intersection(&performed).next().is_none())
+            else {
+                continue;
+            };
+            bind.refused += 1;
+            let at = if authored {
+                format!("{path}/{field}")
+            } else {
+                path.to_string()
+            };
+            d.push(Diagnostic::error(
+                DW_ACT_UNTRUE,
+                "quests",
+                at,
+                format!(
+                    "the bonfire's `{field}` reads \"{label}\": `{phrase}` → {}, and the option \
+                     performs {} — the caption names an act its button does not perform \
+                     (spec-0124 §6.4). Name only what the button does (the engine's default \
+                     is \"{}\"), or drop the word",
+                    acts_line(said),
+                    acts_line(&performed),
+                    if field == "rest_label" {
+                        delvewright_dsl::BONFIRE_REST_LABEL_EN
+                    } else {
+                        delvewright_dsl::BONFIRE_SAVE_LABEL_EN
+                    },
+                ),
+            ));
+        }
+    });
     (d, bind)
 }

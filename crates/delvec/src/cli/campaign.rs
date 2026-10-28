@@ -423,6 +423,11 @@ pub(super) fn validate_loaded(
                 let (hd, hbind) = delvec::compiler::telling::check_hint_acts(&campaign);
                 examined.push(hbind.line());
                 diags.extend(hd);
+                // spec-0124 §6.4: a rest point's caption names only the
+                // acts its button performs — the same lexicon, refused.
+                let (ld, lbind) = delvec::compiler::telling::check_labels(&campaign);
+                examined.push(lbind.line());
+                diags.extend(ld);
             }
             // v0.6 `close-gate` gate-block declaration (DW0343): the fill block is
             // prefab metadata, so this compiler-side check runs here (validation

@@ -243,6 +243,7 @@ fn object_decided_heads_pass_in_their_set_and_refuse_outside_it() {
             Act::Use => interact,
             Act::Present => presents,
             Act::Give => takes,
+            Act::Rest | Act::Save | Act::Quit => unreachable!("a label act, never an objective's"),
         }
     };
     let lex = Lexicon::english();
@@ -306,11 +307,11 @@ fn the_lexicon_is_one_sorted_file() {
         .collect();
     let canonical = serde_json::to_string_pretty(&sorted).unwrap() + "\n";
     assert_eq!(canonical, ACTS_EN, "acts-en.json is written sorted");
-    assert_eq!(n, 230, "the seed's 230 entries");
+    assert_eq!(n, 249, "the seed's 230 entries and spec-0124's 19 label heads");
     assert_eq!(
         Lexicon::english().phrases().len(),
-        223,
-        "over 223 distinct heads"
+        240,
+        "over 240 distinct heads"
     );
     for a in Act::ALL {
         assert!(
@@ -629,4 +630,73 @@ fn the_title_row_situation_carries_the_act() {
             .any(|(k, v)| !k.ends_with(".title") && v.iter().any(|l| l.starts_with("act: "))),
         "only title rows carry the act"
     );
+}
+
+// ---------------------------------------------------------------------------
+// spec-0124 §6.4: a rest point's caption names only the acts its button performs
+// ---------------------------------------------------------------------------
+
+/// hello-world whose quest completes on a bonfire carrying `labels`.
+fn with_bonfire(labels: Value) -> Campaign {
+    let dir = common::hello_world_dir();
+    let mut q: Value = serde_json::from_str(&read(&dir, "quests.json")).unwrap();
+    let mut b = json!({"type": "bonfire", "anchor": "anchor/exit",
+                       "prop": {"block": "minecraft:campfire[lit=true]"}});
+    for (k, v) in labels.as_object().unwrap() {
+        b[k] = v.clone();
+    }
+    q["content"]["quests"][0]["on_complete"] = json!([b]);
+    parse_in(&dir, &q)
+}
+
+/// **spec-0124 criterion 9**: `Save and quit` on the save option is refused
+/// `DW1045` on `quit`; the engine's defaults and `Rest`, `Save` pass; a label
+/// with no lexicon verb passes unjudged and is counted as such.
+#[test]
+fn a_caption_names_only_what_its_button_does_dw1045() {
+    let (d, b) = telling::check_labels(&with_bonfire(json!({"save_label": "Save and quit"})));
+    assert_eq!(d.len(), 1, "{d:?}");
+    assert_eq!(d[0].code, DW_ACT_UNTRUE.id());
+    assert!(d[0].path.ends_with("/save_label"), "{}", d[0].path);
+    assert!(d[0].message.contains("`quit` → quit"), "{}", d[0].message);
+    assert!(d[0].message.contains("performs save"), "{}", d[0].message);
+    assert_eq!((b.bonfires, b.labels, b.refused), (1, 2, 1));
+    assert!(b.line().contains("2 label(s) judged over 1 bonfire(s)"), "{}", b.line());
+    for labels in [
+        json!({}),
+        json!({"rest_label": "Rest and save", "save_label": "Save only"}),
+        json!({"rest_label": "Rest", "save_label": "Save"}),
+    ] {
+        let (d, b) = telling::check_labels(&with_bonfire(labels.clone()));
+        assert!(d.is_empty(), "{labels}: {d:?}");
+        assert_eq!((b.bonfires, b.labels, b.unjudged), (1, 2, 0), "{labels}");
+    }
+    let (d, b) = telling::check_labels(&with_bonfire(json!({"rest_label": "By the fire"})));
+    assert!(d.is_empty(), "{d:?}");
+    assert_eq!(b.unjudged, 1, "{}", b.line());
+    // The spec's specimen of an unjudged caption is not lexicon-free on this
+    // tree: `light` is a `use` head, so the caption is judged, and a rest
+    // option performs no `use`.
+    let (d, _) = telling::check_labels(&with_bonfire(json!({"rest_label": "Light the candles"})));
+    assert_eq!(d.len(), 1, "{d:?}");
+    // The save option does not rest: a rest word on it is refused.
+    let (d, _) = telling::check_labels(&with_bonfire(json!({"save_label": "Sit a while"})));
+    assert_eq!(d.len(), 1, "{d:?}");
+    // A campaign with no bonfire states zeroes.
+    let (d, b) = telling::check_labels(&with_objectives(vec![interact("Pull the lever")], json!({})));
+    assert!(d.is_empty());
+    assert_eq!(
+        b.line(),
+        "label act binding (DW1045): 0 label(s) judged over 0 bonfire(s); 0 lexicon verb(s) \
+         found, 0 label(s) with none; 0 refused"
+    );
+}
+
+/// The zh sidecar is not read (spec-0116's English-only rule): the label arm
+/// reads the campaign's English, and a translation's words never reach it.
+#[test]
+fn the_label_arm_reads_the_english_alone() {
+    let c = with_bonfire(json!({"save_label": "Save"}));
+    let (d, _) = telling::check_labels(&c);
+    assert!(d.is_empty());
 }

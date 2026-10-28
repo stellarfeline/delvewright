@@ -464,11 +464,20 @@ pub enum Act {
     Present,
     /// One of the presented item leaves the player at the thing.
     Give,
+    /// A rest point's full loop: the party rests (spec-0124 §6.4). Performed
+    /// by a bonfire's rest option, never by an objective.
+    Rest,
+    /// The checkpoint moves to the rest point (spec-0124 §6.4). Performed by
+    /// both of a bonfire's options, never by an objective.
+    Save,
+    /// The player leaves the game (spec-0124 §6.4). Performed by no button
+    /// the engine emits.
+    Quit,
 }
 
 impl Act {
     /// Every act, in declaration order.
-    pub const ALL: [Act; 7] = [
+    pub const ALL: [Act; 10] = [
         Act::Reach,
         Act::Talk,
         Act::Kill,
@@ -476,6 +485,9 @@ impl Act {
         Act::Use,
         Act::Present,
         Act::Give,
+        Act::Rest,
+        Act::Save,
+        Act::Quit,
     ];
 
     /// The act's name as the lexicon and every message spell it.
@@ -488,6 +500,9 @@ impl Act {
             Act::Use => "use",
             Act::Present => "present",
             Act::Give => "give",
+            Act::Rest => "rest",
+            Act::Save => "save",
+            Act::Quit => "quit",
         }
     }
 
