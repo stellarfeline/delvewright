@@ -295,6 +295,7 @@ mod tests {
         ("SHOWN_FACES_SINCE", SHOWN_FACES_SINCE, has_shown_faces),
         ("CLIMB_SINCE", CLIMB_SINCE, has_climb),
         ("HOLDER_SINCE", HOLDER_SINCE, has_holder),
+        ("PART_SINCE", PART_SINCE, has_part),
     ];
 
     /// **The ordinal IS the ledger's order**, asserted over the ledger rather
