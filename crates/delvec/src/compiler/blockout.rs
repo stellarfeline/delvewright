@@ -1063,7 +1063,15 @@ pub fn derive_with(
             let dy = blo[1] - s.opening.0[1];
             ([olo[0], olo[1] + dy, olo[2]], [ohi[0], ohi[1] + dy, ohi[2]])
         };
-        mass.write(blo, bhi, s.bar_block());
+        // Course by course (`region_fill`): a door-shut seam's shutter stands
+        // its lower half under its upper (spec-0124 §5.1).
+        let block = s.bar_block();
+        for ((clo, chi), state) in
+            crate::compiler::region_fill::boxes((narrow(blo), narrow(bhi)), &block)
+        {
+            let wide = |c: [i32; 3]| [i64::from(c[0]), i64::from(c[1]), i64::from(c[2])];
+            mass.write(wide(clo), wide(chi), &state);
+        }
         anchors.insert(
             seam_anchor(&s.edge),
             AnchorSpec::Gate {
@@ -2244,10 +2252,16 @@ fn seal_unopened(
         if delvewright_dsl::layout::Closure::satisfied(edge.gating(), &closure.obtained) {
             continue; // the campaign opens it; the base world's clear stands.
         }
+        let block = s.bar_block();
         for cell in cells_of(lo, hi) {
+            let state = crate::compiler::region_fill::state_at(
+                (narrow(lo), narrow(hi)),
+                &block,
+                narrow(cell),
+            );
             out.insert(
                 narrow(cell),
-                crate::compiler::blockstate::BlockState::new(s.bar_block()),
+                crate::compiler::blockstate::BlockState::new(&state),
             );
         }
     }

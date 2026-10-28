@@ -228,6 +228,11 @@ pub struct PlacedSeam {
     /// Whether the world builds this crossing **shut** until the story opens it
     /// ([`Edge::shuts`], spec-0107): its connection's `gating` names a term.
     pub shut: bool,
+    /// **The facing of the door that shuts it** (spec-0124 §5.1), when the
+    /// connection's `gating.shut` is `door`: toward the side `opens_from`
+    /// names, toward `a` for `either`. `None` for a seam shut by bars, or
+    /// never shut.
+    pub door: Option<super::Face>,
 }
 
 impl PlacedSeam {
@@ -270,13 +275,20 @@ impl PlacedSeam {
     /// `drop` or a `stair`, [`super::SEAM_COVER`] on the course above the hole
     /// for a `climb`. One answer, read by the derivation that writes the bar
     /// and by every piece that ships it.
+    ///
+    /// A door-shut seam (spec-0124 §5.1) stands the derivation's door,
+    /// [`super::seam_door_block`], facing [`Self::door`].
     #[must_use]
-    pub fn bar_block(&self) -> &'static str {
+    pub fn bar_block(&self) -> String {
+        if let Some(facing) = self.door {
+            return super::seam_door_block(facing);
+        }
         match (self.normal_axis, self.class) {
             (1, "climb") => super::SEAM_COVER,
             (1, _) => super::SEAM_HATCH,
             _ => super::SEAM_BAR,
         }
+        .to_string()
     }
 }
 
@@ -644,6 +656,10 @@ pub fn placed_seams(c: &Campaign, boxes: &[PlacedBox], reads: &mut Reads) -> Vec
             stair_in: s.stair_in.clone(),
             form: s.form.clone(),
             shut: edge.shuts(),
+            door: edge.door_shut().then(|| match edge.opens_from() {
+                Some(crate::layout::OpensFrom::B) => s.face,
+                _ => s.face.opposite(),
+            }),
         });
     }
     out

@@ -1033,10 +1033,19 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
     // silently also the answer to "is this gate ever shut", so a campaign that
     // never opened its door compiled green and shipped unplayable.
     let gate_seals = measure_gate_seals(&plan.anchors, &blocks);
-    for resolved in plan.anchors.values() {
+    // A door-shut seam's shutter (spec-0124 §5.1) is the one gate the base
+    // world keeps: opening it releases the door to the hand rather than
+    // clearing it, so once the seal is gone the cells hold a shut door a hand
+    // opens — what the walk opens, the bot is told to open, and a body that
+    // opens nothing meets as it stands.
+    let door_seams = delvewright_dsl::siteplan::door_shut_seam_anchors(plan.campaign);
+    for ((_, name), resolved) in &plan.anchors {
         if let ResolvedAnchor::Gate { from, to, .. } = resolved {
+            let keep = door_seams.contains(name);
             for cell in region_cells(*from, *to) {
-                blocks.remove(&cell);
+                if !keep {
+                    blocks.remove(&cell);
+                }
                 open_gates.remove(&cell);
             }
         }

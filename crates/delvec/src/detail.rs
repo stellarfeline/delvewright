@@ -485,11 +485,15 @@ fn prepare(
             else {
                 continue; // an unbound role or a mix is `validate`'s refusal.
             };
-            if let Some(d) = engine::bar_a_hand_opens(
+            if let Some(d) = engine::bar_a_hand_opens_unless_door(
                 &id,
                 &edge.a,
                 &edge.b,
                 &state.to_string(),
+                Some((
+                    bar.region.as_str(),
+                    &delvewright_dsl::siteplan::door_shut_seam_anchors(campaign),
+                )),
                 STAGE,
                 program_path.display().to_string(),
             ) {

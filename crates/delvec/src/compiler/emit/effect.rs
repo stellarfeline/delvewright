@@ -394,6 +394,36 @@ pub(super) fn replace_filter(block: &str) -> &str {
     }
 }
 
+/// **The commands that open a gate region** (spec-0124 §5.1): a bar is
+/// cleared to air, `replace`-filtered to the gate's block; a door-shut seam's
+/// shutter is **released** — nothing is filled, the leaf stays and is
+/// vanilla's, opened and shut by hand. The kind of opening is decided by the
+/// gate, so every verb that opens a gate — `open-gate`, a shortcut's unlock, a
+/// timed gate's open and its disarm — takes its lines here.
+pub(super) fn open_gate_lines(
+    plan: &Plan,
+    anchor: &str,
+    region: ([i32; 3], [i32; 3]),
+    block: &str,
+) -> Vec<String> {
+    if plan.door_shut(anchor) {
+        Vec::new()
+    } else {
+        vec![fill_region_command(region, AIR, Some(block))]
+    }
+}
+
+/// The presses whose block stands in a door-shut seam's gate region: the key
+/// `interact` on its leaf, and any answer riding it (spec-0124 §5.2).
+pub(super) fn seam_door_presses<'p>(
+    plan: &'p Plan,
+    region: ([i32; 3], [i32; 3]),
+) -> impl Iterator<Item = &'p crate::compiler::pressable::PressPlan> {
+    plan.presses()
+        .iter()
+        .filter(move |p| crate::compiler::pressable::in_region(p.cell, region))
+}
+
 /// The block a cleared region is written with. Named because three verbs share it.
 pub(super) const AIR: &str = "minecraft:air";
 
@@ -501,8 +531,16 @@ pub(super) fn emit_quest_effect(
                 if name == anchor.as_str()
                     && let ResolvedAnchor::Gate { from, to, block } = resolved
                 {
-                    // A region write whose box and filter the gate anchor supplies.
-                    body.push(fill_region_command((*from, *to), AIR, Some(block)));
+                    // A region write whose box and filter the gate anchor
+                    // supplies, or a door-shut seam's release.
+                    body.extend(open_gate_lines(plan, anchor.as_str(), (*from, *to), block));
+                    // A released door is the hand's (spec-0124 §5.1): every
+                    // box standing over its leaf comes down with the seal.
+                    if plan.door_shut(anchor.as_str()) {
+                        body.extend(
+                            seam_door_presses(plan, (*from, *to)).map(super::press::box_kill),
+                        );
+                    }
                     // …and take the gate's own answer down with the seal
                     // (spec-0117): its block is air now, and a box left standing
                     // in a doorway swallows presses aimed through it.
@@ -528,6 +566,14 @@ pub(super) fn emit_quest_effect(
                 {
                     // The same region write, with the block the anchor declares.
                     body.extend(lay_region_commands((*from, *to), block));
+                    // A door-shut seam shut again (spec-0124 §5.1): its leaf
+                    // is laid shut and its key's box stands over it again.
+                    if plan.door_shut(anchor.as_str()) {
+                        body.extend(
+                            seam_door_presses(plan, (*from, *to))
+                                .filter_map(|p| super::press::box_summon_once(plan, p)),
+                        );
+                    }
                     // The gate is sealed (spec-0117 §4: what a `serves: {gate}`
                     // press reads), and its own answer's boxes go up over its
                     // block. Guarded on absence, so a re-fired `close-gate`

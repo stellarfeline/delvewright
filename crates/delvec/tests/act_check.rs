@@ -307,7 +307,10 @@ fn the_lexicon_is_one_sorted_file() {
         .collect();
     let canonical = serde_json::to_string_pretty(&sorted).unwrap() + "\n";
     assert_eq!(canonical, ACTS_EN, "acts-en.json is written sorted");
-    assert_eq!(n, 249, "the seed's 230 entries and spec-0124's 19 label heads");
+    assert_eq!(
+        n, 249,
+        "the seed's 230 entries and spec-0124's 19 label heads"
+    );
     assert_eq!(
         Lexicon::english().phrases().len(),
         240,
@@ -661,7 +664,11 @@ fn a_caption_names_only_what_its_button_does_dw1045() {
     assert!(d[0].message.contains("`quit` → quit"), "{}", d[0].message);
     assert!(d[0].message.contains("performs save"), "{}", d[0].message);
     assert_eq!((b.bonfires, b.labels, b.refused), (1, 2, 1));
-    assert!(b.line().contains("2 label(s) judged over 1 bonfire(s)"), "{}", b.line());
+    assert!(
+        b.line().contains("2 label(s) judged over 1 bonfire(s)"),
+        "{}",
+        b.line()
+    );
     for labels in [
         json!({}),
         json!({"rest_label": "Rest and save", "save_label": "Save only"}),
@@ -683,7 +690,10 @@ fn a_caption_names_only_what_its_button_does_dw1045() {
     let (d, _) = telling::check_labels(&with_bonfire(json!({"save_label": "Sit a while"})));
     assert_eq!(d.len(), 1, "{d:?}");
     // A campaign with no bonfire states zeroes.
-    let (d, b) = telling::check_labels(&with_objectives(vec![interact("Pull the lever")], json!({})));
+    let (d, b) = telling::check_labels(&with_objectives(
+        vec![interact("Pull the lever")],
+        json!({}),
+    ));
     assert!(d.is_empty());
     assert_eq!(
         b.line(),

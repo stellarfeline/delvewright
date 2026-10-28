@@ -177,6 +177,7 @@ pub mod gatesignal;
 pub mod guarantee;
 pub mod gym;
 pub mod handback;
+pub mod happening;
 pub mod healthbar;
 pub mod hold;
 pub mod holders;

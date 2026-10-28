@@ -397,6 +397,39 @@ pub enum OpensFrom {
     Either,
 }
 
+/// **What stands in a shut seam** (spec-0124 §5.1): the derivation's own bars,
+/// or a door the verb that opens the gate releases to the hand.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Shutter {
+    /// The bar spec-0107 derives: iron bars in a wall, an iron trapdoor
+    /// through a floor, cleared by the verb that opens the gate.
+    #[default]
+    Bars,
+    /// A door leaf standing in the plane's two cells, shut, answering presses
+    /// while shut, and released to the hand by the verb that opens the gate:
+    /// from then on it opens and shuts by hand. Admitted on a `walk` whose
+    /// seam's opening is one cell wide and two high (`DW1069`).
+    Door,
+}
+
+impl Shutter {
+    /// True for the default, which a canonical document leaves unwritten.
+    #[must_use]
+    pub fn is_bars(&self) -> bool {
+        matches!(self, Shutter::Bars)
+    }
+
+    /// The word as the document spells it.
+    #[must_use]
+    pub fn word(self) -> &'static str {
+        match self {
+            Shutter::Bars => "bars",
+            Shutter::Door => "door",
+        }
+    }
+}
+
 impl OpensFrom {
     /// True for the default, which a canonical document leaves unwritten.
     #[must_use]
@@ -447,6 +480,12 @@ pub struct EdgeGating {
     /// must (`DW1060`). The author's to know: never read from a place's name.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub secret: Vec<String>,
+    /// **What stands in the seam while the way is shut** (spec-0124 §5.1):
+    /// `bars` (the default, unwritten) or `door` — a door the story addresses
+    /// is the shutter of its way, released to the hand by the verb that opens
+    /// the gate. Like `opens_from`, it can only be named for a way that shuts.
+    #[serde(default, skip_serializing_if = "Shutter::is_bars")]
+    pub shut: Shutter,
 }
 
 /// How the player learns a shut way is shut (spec-0118 §4): the four ways the
@@ -816,6 +855,21 @@ impl Edge {
         self.way_gating()
             .filter(|g| !g.terms().is_empty())
             .map(|g| g.opens_from)
+    }
+
+    /// What stands in a shut connection's seam, or `None` for one that never
+    /// shuts (spec-0124 §5.1).
+    #[must_use]
+    pub fn shutter(&self) -> Option<Shutter> {
+        self.way_gating()
+            .filter(|g| !g.terms().is_empty())
+            .map(|g| g.shut)
+    }
+
+    /// Whether a shut connection's seam is shut by a door (spec-0124 §5.1).
+    #[must_use]
+    pub fn door_shut(&self) -> bool {
+        self.shutter() == Some(Shutter::Door)
     }
 
     /// How a shut connection declares it is learned shut, or `None` for one

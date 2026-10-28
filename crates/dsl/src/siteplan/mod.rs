@@ -271,6 +271,42 @@ pub fn seam_anchor(edge: &EdgeId) -> String {
     format!("anchor/seam-{}", slug(edge.0.as_str()))
 }
 
+/// **The gate anchors of every door-shut seam** (spec-0124 §5.1): each shut
+/// connection whose `gating.shut` is `door`, as `anchor/seam-<edge>`. Read off
+/// the layout graph alone, so a document check and the build ask the same
+/// set. Empty for a campaign with no layout graph.
+#[must_use]
+pub fn door_shut_seam_anchors(c: &Campaign) -> std::collections::BTreeSet<String> {
+    c.layout_graph
+        .as_ref()
+        .map(|g| {
+            g.content
+                .edges
+                .iter()
+                .filter(|e| e.door_shut())
+                .map(|e| seam_anchor(e.id()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// **What a door-shut seam stands in when no bound piece ships it** — the
+/// derivation's own door (spec-0124 §5.1), its `facing` and `hinge` set by
+/// [`seam_door_block`]. Oak: every wooden door opens by hand in adventure mode
+/// (`docs/reference/doors-by-hand.md`), and a released shutter is opened and
+/// shut by hand.
+pub const SEAM_DOOR: &str = "minecraft:oak_door";
+
+/// The door state a door-shut seam stands in, its lower half: shut, unpowered,
+/// `hinge=left`, facing `facing` — the side `opens_from` names (spec-0124 §5.1).
+#[must_use]
+pub fn seam_door_block(facing: Face) -> String {
+    format!(
+        "{SEAM_DOOR}[facing={},half=lower,hinge=left,open=false,powered=false]",
+        facing.as_str()
+    )
+}
+
 /// The anchor on the openable side of a one-sided shut seam
 /// (`gating.opens_from`), where a shortcut's far-side affordance stands.
 #[must_use]
@@ -333,7 +369,7 @@ pub const SEAM_COVER: &str =
 /// does not synthesize — those are the prefab registry's to answer for, and this
 /// function never overrides it.
 #[must_use]
-pub fn synthesized_gate_block(c: &Campaign, anchor: &str) -> Option<&'static str> {
+pub fn synthesized_gate_block(c: &Campaign, anchor: &str) -> Option<String> {
     // Asks the ONE kind authority rather than re-walking the edges, and that is
     // the whole repair: this used to enumerate `Edge::Barred` alone, so a
     // `close-gate`, `shortcut` or `timed-gate` naming a **gate station**
@@ -355,7 +391,7 @@ pub fn synthesized_gate_block(c: &Campaign, anchor: &str) -> Option<&'static str
             .seams
             .iter()
             .find(|s| seam_anchor(&s.edge) == anchor)
-            .map_or(SEAM_BAR, PlacedSeam::bar_block),
+            .map_or_else(|| SEAM_BAR.to_string(), PlacedSeam::bar_block),
     )
 }
 

@@ -131,19 +131,13 @@ pub(super) fn emit_shortcut_functions(plan: &Plan) -> Vec<(String, String)> {
     for sc in &plan.shortcuts {
         let id = &sc.safe;
         let (from, to) = sc.gate_region;
-        let mut body = vec![
-            format!("scoreboard players set #sc_{id} dw.sys 1"),
-            format!(
-                "fill {} {} {} {} {} {} minecraft:air replace {}",
-                from[0],
-                from[1],
-                from[2],
-                to[0],
-                to[1],
-                to[2],
-                replace_filter(&sc.gate_block)
-            ),
-        ];
+        let mut body = vec![format!("scoreboard players set #sc_{id} dw.sys 1")];
+        body.extend(super::effect::open_gate_lines(
+            plan,
+            &sc.gate_anchor,
+            (from, to),
+            &sc.gate_block,
+        ));
         // …and the door's own answer goes with the bars (spec-0117): its block
         // is air now, and a box left standing in a now-walkable doorway
         // swallows presses aimed through it — the same retirement `open-gate`

@@ -1587,6 +1587,29 @@ fn edge_proof(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> 
 
         let class = proving_class(&edge.class);
         let ends = (edge.a.as_str(), edge.b.as_str());
+        // A bar a hand opens is a door-shut seam's shutter (spec-0124 §5.1):
+        // while the way is shut the engine's click box stands over it and no
+        // hand opens it, so as built it is read as the campaign's world-load
+        // seal reads every shut gate — a cell no body can be in. Whether a
+        // bar may be one a hand opens at all is `DW1063`'s, which admits it
+        // only on a door-shut seam.
+        let locked;
+        let model = match cont
+            .filter(|c| c.sugar && delvewright_dsl::blockshape::opens_by_hand(&c.block.to_string()))
+        {
+            Some(c) => {
+                let mut m = model.clone();
+                let lock: BlockState = "minecraft:stone".parse().expect("a block state");
+                for &cell in &c.cells {
+                    if m.get(cell).is_some() {
+                        let _ = m.set(cell, &lock);
+                    }
+                }
+                locked = m;
+                &locked
+            }
+            None => model,
+        };
         let held = prove_class(class, model, &graph, &via, &span, &a, &b, ends);
 
         let Some(cont) = cont else {

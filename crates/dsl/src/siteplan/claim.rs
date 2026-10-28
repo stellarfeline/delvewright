@@ -851,6 +851,7 @@ mod tests {
             stair_in: None,
             form: "a doorway".into(),
             shut: false,
+            door: None,
         }
     }
 

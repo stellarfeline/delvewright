@@ -1079,16 +1079,26 @@ pub struct PressSite<'c> {
     pub gate_answer: bool,
     /// Is a strike (boxed in every state).
     pub struck: bool,
+    /// An `interact` anchored at a door-shut seam's gate (spec-0124 §5.2): its
+    /// body is the seam's door, which the derivation stands, and its release
+    /// is the gate's opening — so it writes no `prop` and no `release`.
+    pub seam_door: bool,
 }
 
 impl PressSite<'_> {
     /// The form its block is pressed in, when it names one.
     pub fn form(&self) -> Option<PressForm> {
-        let prop = self.prop?;
+        let block = match self.prop {
+            Some(p) => p.block.as_str(),
+            // A door-shut seam's door (spec-0124 §5.2): the derivation's own
+            // door, pressed as every door is.
+            None if self.seam_door => crate::siteplan::SEAM_DOOR,
+            None => return None,
+        };
         if self.struck {
-            return outline_in_cell(&prop.block).then_some(PressForm::Unobservable);
+            return outline_in_cell(block).then_some(PressForm::Unobservable);
         }
-        press_form(&prop.block, self.only_open)
+        press_form(block, self.only_open)
     }
 
     /// Whether a press in the **open** state lands on the block itself — no
@@ -1229,6 +1239,7 @@ pub fn answers_mut(
 /// one fixed walk per section (ADR-0006).
 pub fn press_sites(c: &Campaign) -> Vec<PressSite<'_>> {
     let quests = &c.quests.content;
+    let door_seams = crate::siteplan::door_shut_seam_anchors(c);
     let closed_by_story = close_gate_anchors(c);
     let npc_stands: BTreeSet<&str> = c
         .npcs
@@ -1243,6 +1254,7 @@ pub fn press_sites(c: &Campaign) -> Vec<PressSite<'_>> {
         for (oi, o) in q.objectives.iter().enumerate() {
             let crate::Objective::Interact {
                 id,
+                anchor,
                 prop,
                 answers,
                 release,
@@ -1252,20 +1264,22 @@ pub fn press_sites(c: &Campaign) -> Vec<PressSite<'_>> {
             else {
                 continue;
             };
+            let seam_door = door_seams.contains(anchor.as_str());
             out.push(PressSite {
                 kind: PressKind::Interact,
                 id: id.as_str().to_string(),
                 path: format!("/content/quests/{qi}/objectives/{oi}"),
                 prop: prop.as_ref(),
-                prop_owed: true,
+                prop_owed: !seam_door,
                 answers: answers.as_ref(),
-                release: *release,
+                release: *release || seam_door,
                 shut: true,
                 settled: true,
                 missing_item: requires_item.is_some(),
                 only_open: false,
                 gate_answer: false,
                 struck: false,
+                seam_door,
             });
         }
     }
@@ -1309,6 +1323,7 @@ pub fn press_sites(c: &Campaign) -> Vec<PressSite<'_>> {
             only_open: !shut && !settled,
             gate_answer,
             struck: matches!(t.on, TriggerOn::Strike) && at_point,
+            seam_door: false,
         });
     }
     for (si, sc) in quests.shortcuts.iter().enumerate() {
@@ -1335,6 +1350,7 @@ pub fn press_sites(c: &Campaign) -> Vec<PressSite<'_>> {
             only_open: false,
             gate_answer: false,
             struck: false,
+            seam_door: false,
         });
     }
     let mut bonfires = Vec::new();
@@ -1362,6 +1378,7 @@ pub fn press_sites(c: &Campaign) -> Vec<PressSite<'_>> {
                 only_open: false,
                 gate_answer: false,
                 struck: false,
+                seam_door: false,
             });
         }
     });
@@ -1381,6 +1398,7 @@ pub fn press_sites(c: &Campaign) -> Vec<PressSite<'_>> {
             only_open: true,
             gate_answer: false,
             struck: false,
+            seam_door: false,
         });
     }
     for (ti, t) in quests.traps.iter().enumerate() {
@@ -1399,6 +1417,7 @@ pub fn press_sites(c: &Campaign) -> Vec<PressSite<'_>> {
             only_open: false,
             gate_answer: false,
             struck: false,
+            seam_door: false,
         });
     }
     for (gi, g) in quests.timed_gates.iter().enumerate() {
@@ -1417,6 +1436,7 @@ pub fn press_sites(c: &Campaign) -> Vec<PressSite<'_>> {
             only_open: false,
             gate_answer: false,
             struck: false,
+            seam_door: false,
         });
     }
     out
@@ -1573,6 +1593,7 @@ pub fn press_checks(c: &Campaign) -> (Vec<Diagnostic>, PressBinding) {
                     ),
                 ));
             }
+            None if site.seam_door => {}
             None => {
                 if site.kind != PressKind::Step {
                     b.riding += 1;

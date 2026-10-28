@@ -552,6 +552,14 @@ impl LinkTakes {
 pub type TransportMap = BTreeMap<String, [i32; 3]>;
 
 impl<'a> Plan<'a> {
+    /// Whether `anchor` is a door-shut seam's gate (spec-0124 §5.1): the gate
+    /// region a released door stands in, opened by release and never by a
+    /// clear ([`delvewright_dsl::siteplan::door_shut_seam_anchors`]).
+    #[must_use]
+    pub fn door_shut(&self, anchor: &str) -> bool {
+        delvewright_dsl::siteplan::door_shut_seam_anchors(self.campaign).contains(anchor)
+    }
+
     /// Build the plan. Requires a validated campaign and loaded prefab metadata.
     pub fn build(campaign: &'a Campaign, prefabs: &PrefabRegistry) -> Result<Self, PlanError> {
         Self::build_with(campaign, prefabs, Perturb::none())

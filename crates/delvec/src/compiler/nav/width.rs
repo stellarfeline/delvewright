@@ -3050,6 +3050,7 @@ mod tests {
             stair_in: Some(node("node/hall")),
             form: "a stone stair up to the loft".to_string(),
             shut: false,
+            door: None,
         };
         let region = |a: [i32; 3], b: [i32; 3]| Region { from: a, to: b };
         let space = |a: [i32; 3], b: [i32; 3]| ContractSpace {
@@ -3211,6 +3212,7 @@ mod tests {
             stair_in: Some(node("node/yard")),
             form: "a stone stair up the yard's south wall".to_string(),
             shut: false,
+            door: None,
         };
         let region = |a: [i32; 3], b: [i32; 3]| Region { from: a, to: b };
         let space = |a: [i32; 3], b: [i32; 3]| ContractSpace {

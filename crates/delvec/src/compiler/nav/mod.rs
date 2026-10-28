@@ -36,6 +36,7 @@ mod ambush;
 pub mod census;
 mod checkpoint;
 mod cutscene;
+pub mod device;
 mod door;
 mod furniture;
 mod hazard;

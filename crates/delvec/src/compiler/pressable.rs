@@ -526,8 +526,16 @@ pub fn derive(plan: &Plan) -> Vec<PressPlan> {
                     .quest_area(q.id.as_str())
                     .and_then(|a| plan.point(a, anchor.as_str()))
                     .or_else(|| point_of(plan, anchor.as_str()));
-                match (cell, site.prop) {
-                    (Some(cell), Some(p)) => Some(Seat {
+                // A door-shut seam's key (spec-0124 §5.2): the body is the
+                // seam's door, standing in the gate region's lower cell, which
+                // the derivation (or the piece that owns the plane) stands.
+                let seam = site
+                    .seam_door
+                    .then(|| gate_region(plan, anchor.as_str()))
+                    .flatten();
+                if let Some((from, to, block)) = seam {
+                    let cell = [from[0].min(to[0]), from[1].min(to[1]), from[2].min(to[2])];
+                    Some(Seat {
                         owner: Owner::Interact {
                             quest: qi,
                             objective: oi,
@@ -536,13 +544,31 @@ pub fn derive(plan: &Plan) -> Vec<PressPlan> {
                         tag: format!("dw_i_{}", safe_local(&site.id)),
                         anchor: anchor.as_str().to_string(),
                         cell,
-                        block: p.block.clone(),
+                        block,
                         struck: false,
-                        places_block: true,
+                        places_block: false,
                         requires_item: requires_item.clone(),
                         highlight: *highlight,
-                    }),
-                    _ => None,
+                    })
+                } else {
+                    match (cell, site.prop) {
+                        (Some(cell), Some(p)) => Some(Seat {
+                            owner: Owner::Interact {
+                                quest: qi,
+                                objective: oi,
+                                id: site.id.clone(),
+                            },
+                            tag: format!("dw_i_{}", safe_local(&site.id)),
+                            anchor: anchor.as_str().to_string(),
+                            cell,
+                            block: p.block.clone(),
+                            struck: false,
+                            places_block: true,
+                            requires_item: requires_item.clone(),
+                            highlight: *highlight,
+                        }),
+                        _ => None,
+                    }
                 }
             }
             PressKind::Use | PressKind::Strike => {

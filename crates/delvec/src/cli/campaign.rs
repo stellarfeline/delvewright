@@ -428,6 +428,14 @@ pub(super) fn validate_loaded(
                 let (ld, lbind) = delvec::compiler::telling::check_labels(&campaign);
                 examined.push(lbind.line());
                 diags.extend(ld);
+                // spec-0124 §6.2: a `happening` that says it opens (or
+                // seals) a thing is held to its node's own effects.
+                let (hd, hbind) = delvec::compiler::happening::check(&campaign);
+                examined.push(hbind.line());
+                diags.extend(hd);
+                // spec-0124 §5: a door-shut seam stands where a door can,
+                // and its key writes no `prop` and no `release` (DW1069 c, d).
+                diags.extend(delvec::compiler::nav::device::check_document(&campaign));
             }
             // v0.6 `close-gate` gate-block declaration (DW0343): the fill block is
             // prefab metadata, so this compiler-side check runs here (validation

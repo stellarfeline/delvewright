@@ -92,6 +92,28 @@ pub fn bar_a_hand_opens(
     stage: &str,
     path: String,
 ) -> Option<Diagnostic> {
+    bar_a_hand_opens_unless_door(piece, a, b, block, None, stage, path)
+}
+
+/// [`bar_a_hand_opens`] for a bar standing in the gate region named `region`
+/// of `door_seams`' campaign: a door-shut seam's shutter is a door a hand
+/// opens once the story releases it, and the engine's box locks it until
+/// then (spec-0124 §5.1), so a bar whose region is `anchor/<region>` of a
+/// door-shut seam is admitted. `door_seams` is
+/// [`delvewright_dsl::siteplan::door_shut_seam_anchors`].
+#[must_use]
+pub fn bar_a_hand_opens_unless_door(
+    piece: &str,
+    a: &str,
+    b: &str,
+    block: &str,
+    door: Option<(&str, &BTreeSet<String>)>,
+    stage: &str,
+    path: String,
+) -> Option<Diagnostic> {
+    if door.is_some_and(|(region, seams)| seams.contains(&format!("anchor/{region}"))) {
+        return None;
+    }
     delvewright_dsl::blockshape::opens_by_hand(block).then(|| {
         Diagnostic::error(
             DW_BAR_BY_HAND,
@@ -1581,6 +1603,7 @@ pub fn check(c: &Campaign, prefabs: &PrefabRegistry) -> (Vec<Diagnostic>, Detail
     }
 
     let mut seen: BTreeSet<&str> = BTreeSet::new();
+    let door_seams = delvewright_dsl::siteplan::door_shut_seam_anchors(c);
     for (i, row) in doc.details.iter().enumerate() {
         binding.rows += 1;
         let path = format!("/content/details[{i}]");
@@ -1746,11 +1769,12 @@ pub fn check(c: &Campaign, prefabs: &PrefabRegistry) -> (Vec<Diagnostic>, Detail
             for e in &contract.edges {
                 let Some(bar) = e.bar.as_ref() else { continue };
                 binding.bars += 1;
-                if let Some(diag) = bar_a_hand_opens(
+                if let Some(diag) = bar_a_hand_opens_unless_door(
                     row.piece.as_str(),
                     &e.a,
                     &e.b,
                     &bar.block,
+                    Some((bar.region.as_str(), &door_seams)),
                     STAGE,
                     format!("{path}/piece"),
                 ) {
@@ -2406,6 +2430,7 @@ mod tests {
             stair_in: None,
             form: "a doorway".into(),
             shut: false,
+            door: None,
         }
     }
 
@@ -2457,6 +2482,7 @@ mod tests {
         // the owner's to ship.
         let s = PlacedSeam {
             shut: true,
+            door: None,
             ..a_seam("walk", Face::East, f.hi[0] + 1, 0)
         };
         assert!(!f.owns(s.opening.0), "the plane is beyond the frame");
@@ -2472,6 +2498,7 @@ mod tests {
         // (spec-0098 §2, spec-0107), and answers at the plane itself.
         let s = PlacedSeam {
             shut: true,
+            door: None,
             ..a_seam("walk", Face::East, f.hi[0], 0)
         };
         assert!(f.owns(s.opening.0), "the ring is the piece's");
@@ -2569,6 +2596,7 @@ mod tests {
                 stair_in: None,
                 form: "open ground".into(),
                 shut: false,
+                door: None,
             }
         };
         // The shared faces are the overlaps of the play spaces' spans: z 10..29

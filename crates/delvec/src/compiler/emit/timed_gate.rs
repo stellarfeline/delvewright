@@ -92,27 +92,22 @@ pub(super) fn emit_timed_gate_functions(plan: &Plan) -> Vec<(String, String)> {
         };
         out.push((
             format!("tgate_open_{id}"),
-            lines(&[
-                // The open itself is NEVER guarded: a jam that lands while the
-                // gate is shut leaves one already-scheduled open in flight, and
-                // that open is exactly what parks the portcullis in its resting
-                // position. Suppressing it would freeze the gate CLOSED, which
-                // is the opposite of a disarm.
-                format!(
-                    "fill {} {} {} {} {} {} minecraft:air replace {}",
-                    from[0],
-                    from[1],
-                    from[2],
-                    to[0],
-                    to[1],
-                    to[2],
-                    replace_filter(&g.gate_block)
-                ),
-                guarded(format!(
-                    "schedule function {ns}:tgate_close_{id} {}t",
-                    g.open_ticks
-                )),
-            ]),
+            lines(&{
+                let mut v: Vec<String> =
+                    super::effect::open_gate_lines(plan, &g.gate_anchor, (from, to), &g.gate_block);
+                v.extend([
+                    // The open itself is NEVER guarded: a jam that lands while the
+                    // gate is shut leaves one already-scheduled open in flight, and
+                    // that open is exactly what parks the portcullis in its resting
+                    // position. Suppressing it would freeze the gate CLOSED, which
+                    // is the opposite of a disarm.
+                    guarded(format!(
+                        "schedule function {ns}:tgate_close_{id} {}t",
+                        g.open_ticks
+                    )),
+                ]);
+                v
+            }),
         ));
         let mut close = Vec::new();
         // spec-0016 §4 addendum: the portcullis judgement. Emitted BEFORE the
@@ -176,17 +171,13 @@ pub(super) fn emit_timed_gate_disarm_functions(plan: &Plan) -> Vec<(String, Stri
                 plan::PARTY,
                 plan::flag_score(&dis.sets_flag)
             ),
-            format!(
-                "fill {} {} {} {} {} {} minecraft:air replace {}",
-                from[0],
-                from[1],
-                from[2],
-                to[0],
-                to[1],
-                to[2],
-                replace_filter(&g.gate_block)
-            ),
         ];
+        body.extend(super::effect::open_gate_lines(
+            plan,
+            &g.gate_anchor,
+            (from, to),
+            &g.gate_block,
+        ));
         // The disarm is spent (spec-0117): its box returns over the thrown
         // block, unless released to the player's hand.
         if let Some(p) = super::press::press_of_owner(
