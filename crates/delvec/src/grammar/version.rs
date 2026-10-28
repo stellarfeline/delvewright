@@ -70,7 +70,7 @@
 
 /// The latest program document version this crate implements — what
 /// [`Program::new`](crate::grammar::ir::Program::new) stamps on a program built today.
-pub const LATEST_PROGRAM_VERSION: &str = "1.12.0";
+pub const LATEST_PROGRAM_VERSION: &str = "1.13.0";
 
 /// Every program document version the format has, oldest first — the ledger.
 ///
@@ -104,9 +104,11 @@ pub const LATEST_PROGRAM_VERSION: &str = "1.12.0";
 /// * `1.12.0` — an item holder at a mark (spec-0111): `holder` on a `mark`,
 ///   the item frame or armour stand the export writes into the piece's
 ///   `entities` list.
+/// * `1.13.0` — a door or gate kept as decoration (spec-0124 §5.4):
+///   `decorative` on the spatial contract.
 pub const SUPPORTED_PROGRAM_VERSIONS: &[&str] = &[
     "1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0", "1.7.0", "1.8.0", "1.9.0",
-    "1.10.0", "1.11.0", "1.12.0",
+    "1.10.0", "1.11.0", "1.12.0", "1.13.0",
 ];
 
 /// Ledger entries whose surface a **sibling** change introduces: the version,
@@ -164,6 +166,10 @@ pub const CLIMB_SINCE: &str = "1.10.0";
 /// The version at which a mark may place an item holder — an item frame or an
 /// armour stand the export writes into the piece's `entities` (spec-0111 §3.2).
 pub const HOLDER_SINCE: &str = "1.12.0";
+
+/// The version at which a spatial contract may declare a door or gate kept as
+/// decoration (spec-0124 §5.4).
+pub const DECORATIVE_SINCE: &str = "1.13.0";
 
 /// The fence constant that introduces `version`'s surface, when `version` is a
 /// ledger entry this crate does not implement; `None` otherwise.
@@ -265,6 +271,11 @@ pub fn has_holder(version: &str) -> bool {
     is_supported_version(version) && minor_ordinal(version) >= minor_ordinal(HOLDER_SINCE)
 }
 
+/// True if `version` may declare a decorative door or gate on its contract.
+pub fn has_decorative(version: &str) -> bool {
+    is_supported_version(version) && minor_ordinal(version) >= minor_ordinal(DECORATIVE_SINCE)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -286,6 +297,7 @@ mod tests {
         ("SHOWN_FACES_SINCE", SHOWN_FACES_SINCE, has_shown_faces),
         ("CLIMB_SINCE", CLIMB_SINCE, has_climb),
         ("HOLDER_SINCE", HOLDER_SINCE, has_holder),
+        ("DECORATIVE_SINCE", DECORATIVE_SINCE, has_decorative),
     ];
 
     /// **The ordinal IS the ledger's order**, asserted over the ledger rather

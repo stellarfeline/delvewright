@@ -156,7 +156,7 @@ Program ─ expand(program, region, {seed, limits, orientation}) ─▶ VoxelMod
 | `palette` | role → paint | style controls; a paint is a block-state string or a weighted list. Also a frame — `bind` overrides it over a subtree |
 | `include` | `[{program, prefix, rename_anchors}]` | other program **files** composed into this one (§5c); resolved by the loader before anything reads the program |
 | `rules` | name → `[alternative]` | each alternative is `{weight, when, body}` |
-| `contract` | `{entry, spaces, no_body, edges, no_body_majority_ack}` | the spatial contract (§2d); omitted by a program that makes no spatial claim |
+| `contract` | `{entry, spaces, no_body, edges, no_body_majority_ack, decorative}` | the spatial contract (§2d); omitted by a program that makes no spatial claim |
 | `shown_faces` | `["north"\|"south"\|"east"\|"west"\|"up"\|"down"]` | which of this building's own six sides are finished exterior surface (§2f); written into the exported prefab's `shown_faces` on every expansion, and read there by `DW0885` |
 
 **Rule bodies** (`op`): `fill` (a role or an inline paint), `void` (air), `skip`
@@ -188,6 +188,7 @@ source is `crates/delvec/src/grammar/version.rs` (`SUPPORTED_PROGRAM_VERSIONS`,
 | `1.10.0` | a climb inside one piece — the `climb` class of a contract edge, a way a body climbs on a ladder or a vine between two spaces | yes |
 | `1.11.0` | a library piece placed by name (spec-0106) | reserved |
 | `1.12.0` | an item holder at a mark — `holder` on a `mark`, the item frame or armour stand the export writes into the piece's `entities` | yes |
+| `1.13.0` | a door or gate kept as decoration — `decorative` on the spatial contract (spec-0124 §5.4) | yes |
 
 A number names exactly one surface, in every engine build that knows the number;
 otherwise two engines both call themselves `1.1.0`, disagree about what a
@@ -973,6 +974,7 @@ the third use ends up with no surface at all — and it is also what makes the
 | `no_body` | name → `{reason}`; standable cells deliberately outside the walk, with the author's reason in their own words |
 | `edges` | `{a, b, class, …}` in declaration order; an endpoint is a declared space or the reserved name `exterior` |
 | `no_body_majority_ack` | the author's acknowledgement that the piece is mostly out-of-walk |
+| `decorative` (`1.13.0`) | doors and gates kept as decoration, each `{at, what}`: `at` the door's lower cell or the gate's cell in the piece's frame, `what` one sentence saying what it is dressed as. Carried to the piece's metadata; the build exempts a declared one from closing an opening only when no hand opens it or no player can reach it (`DW1072`, spec-0124 §5.4) |
 
 **Edge classes carry exactly the fields they mean**, so a bar on a walk or a rise
 on a sightline is not writable in the first place:
@@ -1202,6 +1204,7 @@ Two mechanisms answer it, and both are enforced by
 | `ir::Mark.index` | `1.0.0` | — |
 | `ir::Mark.role` | `1.8.0` | `ANCHOR_ROLE_SINCE` |
 | `ir::Mark.holder` | `1.12.0` | `HOLDER_SINCE` |
+| `ir::Contract.decorative` | `1.13.0` | `DECORATIVE_SINCE` |
 | `ir::HolderMark.rotation` | `1.12.0` | `via ir::Mark.holder` |
 | `ir::HolderMark.pose` | `1.12.0` | `via ir::Mark.holder` |
 | `ir::HolderMark.small` | `1.12.0` | `via ir::Mark.holder` |

@@ -1313,15 +1313,8 @@
                               "symbol": "wall"
                             },
                             {
-                              "body": {
-                                "op": "call",
-                                "symbol": "seam-centre-door-bar"
-                              },
-                              "mark": {
-                                "anchor": "centre-door-leaf",
-                                "at": "floor_center"
-                              },
-                              "op": "mark"
+                              "op": "call",
+                              "symbol": "seam-centre-door-bar"
                             },
                             {
                               "op": "call",

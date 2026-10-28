@@ -25,10 +25,10 @@ use crate::grammar::block::BlockState;
 use crate::grammar::export::AnchorRole;
 use crate::grammar::geom::{Axis, Mirror, Orientation};
 use crate::grammar::version::{
-    ANCHOR_ROLE_SINCE, BIND_SINCE, CLIMB_SINCE, CONTRACT_SINCE, HOLDER_SINCE, INCLUDE_SINCE,
-    LATEST_PROGRAM_VERSION, LOCAL_FRAME_SINCE, MIRROR_SINCE, SHOWN_FACES_SINCE, WAY_SINCE,
-    has_anchor_role, has_bind, has_climb, has_contract, has_holder, has_include, has_local_frame,
-    has_mirror, has_shown_faces, has_way, is_supported_version,
+    ANCHOR_ROLE_SINCE, BIND_SINCE, CLIMB_SINCE, CONTRACT_SINCE, DECORATIVE_SINCE, HOLDER_SINCE,
+    INCLUDE_SINCE, LATEST_PROGRAM_VERSION, LOCAL_FRAME_SINCE, MIRROR_SINCE, SHOWN_FACES_SINCE,
+    WAY_SINCE, has_anchor_role, has_bind, has_climb, has_contract, has_holder, has_include,
+    has_local_frame, has_mirror, has_shown_faces, has_way, is_supported_version,
 };
 
 // ---------------------------------------------------------------------------
@@ -2256,6 +2256,7 @@ impl Program {
         // the loader that was skipped.
         self.check_include_fence()?;
         self.check_shown_faces()?;
+        self.check_decorative()?;
         if let Some(first) = self.include.first() {
             return Err(ProgramError::UnresolvedInclude {
                 prefix: first.prefix.clone(),
@@ -2320,6 +2321,21 @@ impl Program {
     /// The vocabulary comes from [`crate::compiler::faces::dir_vector`] rather
     /// than from a list written here, because a second list is a second answer
     /// waiting to disagree with the one `DW0885` reads.
+    /// `decorative` on the spatial contract is fenced at
+    /// [`DECORATIVE_SINCE`] (spec-0124 §5.4).
+    fn check_decorative(&self) -> Result<(), ProgramError> {
+        let decorative = self.contract.as_ref().map_or(0, |c| c.decorative.len());
+        if decorative > 0 && !crate::grammar::version::has_decorative(&self.version) {
+            return Err(ProgramError::FencedConstruct {
+                construct: "a `decorative` list on the spatial contract",
+                since: DECORATIVE_SINCE,
+                declared: self.version.clone(),
+                written_by: "the program".to_string(),
+            });
+        }
+        Ok(())
+    }
+
     fn check_shown_faces(&self) -> Result<(), ProgramError> {
         // The guard reads the FIELD as well as the version, which is what
         // `tools/ci/check-grammar-ir-compat.py` holds a ledger row to: a refusal
