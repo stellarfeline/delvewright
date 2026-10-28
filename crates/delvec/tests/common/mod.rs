@@ -1616,3 +1616,36 @@ pub fn gallery_site_plan_detailed(root: &Path) -> (PathBuf, PathBuf) {
     );
     (campaign, prefabs)
 }
+
+/// **The detailed site-plan point with one edit to its `quests.json`**, built
+/// once by the binary: whether it built, everything it printed, and the output
+/// tree. `root` is the scratch directory the point is laid out under.
+#[allow(dead_code)]
+pub fn gallery_site_plan_quests_variant(
+    root: &Path,
+    edit: impl FnOnce(&mut serde_json::Value),
+) -> (bool, String, PathBuf) {
+    let _ = std::fs::remove_dir_all(root);
+    std::fs::create_dir_all(root).unwrap();
+    let (campaign, prefabs) = gallery_site_plan_detailed(root);
+    patch_file(&campaign.join("quests.json"), edit);
+    let out = root.join("out");
+    let run = std::process::Command::new(env!("CARGO_BIN_EXE_delvec"))
+        .arg("--prefabs")
+        .arg(&prefabs)
+        .arg("build")
+        .arg(&campaign)
+        .arg("-o")
+        .arg(&out)
+        .output()
+        .expect("run delvec");
+    (
+        run.status.success(),
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&run.stdout),
+            String::from_utf8_lossy(&run.stderr)
+        ),
+        out,
+    )
+}

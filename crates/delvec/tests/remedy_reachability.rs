@@ -5780,3 +5780,120 @@ fn dw0318_setting_the_horizon_base_to_ocean_gives_the_water_a_sea() {
     );
     assert_eq!(code, 0, "{after}");
 }
+
+/// A `use` trigger at the exit yard's stone carrying `prop`.
+fn press_at_the_exit(prop: &str) -> impl FnOnce(&mut serde_json::Value) {
+    let prop = prop.to_string();
+    move |v| {
+        v["content"]["triggers"].as_array_mut().unwrap().push(serde_json::json!({
+            "at": "anchor/exit-stone",
+            "audience": "presser",
+            "effects": [{"style": "actionbar", "text": "It gives onto the yard.", "type": "narrate"}],
+            "id": "trigger/press-the-room-door",
+            "on": {"on": "use"},
+            "once": false,
+            "prop": {"block": prop}
+        }));
+    }
+}
+
+/// **spec-0124 criteria 5 and 12, `DW1069` shape a and its remedy.** A `use` trigger whose prop
+/// is a shut oak door standing in the yard, on no seam, is refused `DW1069`
+/// naming the pressable, its cell and both remedies; the same trigger with a
+/// lever in that cell is not a way-block — the ledger counts it among the
+/// pressables and holds no row for it — and the build is green. The door
+/// declared as its edge's shutter, its step anchored on the seam — the
+/// message's other remedy — is the point itself, green as built
+/// (`place_reads.rs`, `the_door_shut_seam_is_released_where_a_bar_is_cleared`).
+#[test]
+fn a_door_on_no_seam_is_refused_and_a_lever_in_its_cell_is_not_judged() {
+    let (ok, said, _) = common::gallery_site_plan_quests_variant(
+        &tmp("dw1069-shape-a-door"),
+        press_at_the_exit(
+            "minecraft:oak_door[facing=north,half=lower,hinge=left,open=false,powered=false]",
+        ),
+    );
+    assert!(!ok, "a door on no seam is refused:\n{said}");
+    let line = said
+        .lines()
+        .find(|l| l.starts_with("DW1069"))
+        .unwrap_or_else(|| panic!("DW1069 in:\n{said}"));
+    for word in [
+        "trigger/press-the-room-door",
+        "oak_door",
+        "\"shut\": \"door\"",
+        "lever",
+    ] {
+        assert!(line.contains(word), "`{word}` in {line}");
+    }
+    let (ok, said, out) = common::gallery_site_plan_quests_variant(
+        &tmp("dw1069-shape-a-lever"),
+        press_at_the_exit("minecraft:lever[face=floor,facing=north,powered=false]"),
+    );
+    assert!(ok, "a lever is not a way:\n{said}");
+    let ledger = serde_json::from_slice::<serde_json::Value>(
+        &std::fs::read(out.join("validation/devices.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(ledger["way_blocks"]["pressables"], 9, "{ledger}");
+    assert_eq!(ledger["way_blocks"]["way_blocks"], 1, "{ledger}");
+    assert_eq!(ledger["way_blocks"]["refused"], 0, "{ledger}");
+    assert!(
+        said.contains("device binding (DW1069): 1 way-block(s) among 9 pressable(s)"),
+        "{said}"
+    );
+}
+
+/// The centre door's key, whose completion also opens the loft stair's bar —
+/// out of the presser's sight — and, with `shot`, a `cutscene` looking at it.
+fn key_with_a_far_write(shot: bool) -> impl FnOnce(&mut serde_json::Value) {
+    move |v| {
+        let list = v["content"]["quests"][0]["on_objective_complete"]["obj/unlock-the-centre-door"]
+            .as_array_mut()
+            .unwrap();
+        list.push(
+            serde_json::json!({"anchor": "anchor/seam-loft-stair", "type": "open-gate",
+            "happening": {"subject": "anchor/seam-loft-stair", "verb": "opens",
+                "text": "The bar at the loft stair's head draws back."}}),
+        );
+        if shot {
+            list.push(serde_json::json!({"type": "cutscene", "seconds": 3,
+                "look_at": {"anchor": "anchor/seam-loft-stair"},
+                "path": [{"anchor": "anchor/node-far-hall", "offset": [0, 2, 0]},
+                         {"anchor": "anchor/node-far-hall", "offset": [0, 3, 0]}]}));
+        }
+    }
+}
+
+/// **spec-0124 criteria 8 and 12, `DW1071` and its remedy, the shot added.**
+/// The key's far write with no shot is refused `DW1071` naming the key and
+/// the write; the one move the message names — a `cutscene` whose shot looks
+/// at it — is green, the write counted as shown by a shot.
+#[test]
+fn a_key_whose_far_write_a_shot_frames_is_green() {
+    let (ok, said, _) = common::gallery_site_plan_quests_variant(
+        &tmp("dw1071-unshown"),
+        key_with_a_far_write(false),
+    );
+    assert!(!ok, "an unshown far write is refused:\n{said}");
+    let line = said
+        .lines()
+        .find(|l| l.starts_with("DW1071"))
+        .unwrap_or_else(|| panic!("DW1071 in:\n{said}"));
+    for word in [
+        "obj/unlock-the-centre-door",
+        "anchor/seam-loft-stair",
+        "cutscene",
+    ] {
+        assert!(line.contains(word), "`{word}` in {line}");
+    }
+    let (ok, said, out) =
+        common::gallery_site_plan_quests_variant(&tmp("dw1071-shown"), key_with_a_far_write(true));
+    assert!(ok, "a shown write is green:\n{said}");
+    let ledger = serde_json::from_slice::<serde_json::Value>(
+        &std::fs::read(out.join("validation/devices.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(ledger["keys"]["shown"], 1, "{ledger}");
+    assert_eq!(ledger["keys"]["refused"], 0, "{ledger}");
+}
