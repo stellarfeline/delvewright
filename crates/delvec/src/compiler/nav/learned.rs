@@ -2729,4 +2729,133 @@ mod learned_tests {
         }
         assert!(met_any > 0, "the generator meets some face");
     }
+
+    /// **spec-0124 criterion 3**: the shut model reads a door-shut seam's leaf
+    /// as it reads a bar — shut, its column is no cell a body can be in; open,
+    /// it is — through the one predicate (`shutmodel::can_be`), and `DW1011`
+    /// and this check meet the same (gate, configuration, face) triples over
+    /// generated worlds with door-shut and bar-shut seams mixed in one wall.
+    #[test]
+    fn both_proofs_meet_the_same_faces_with_doors_and_bars_mixed() {
+        use super::super::shutmodel::can_be;
+        let (mut met_any, mut door_cells) = (0usize, 0usize);
+        let (mut doors_shut, mut doors_open) = (0usize, 0usize);
+        for seed in 0..40u64 {
+            let mut r = Lcg(seed * 104_729 + 7);
+            let doors: Vec<i32> = (0..3).map(|i| 2 + 4 * i + r.next(2) as i32).collect();
+            let leaf: Vec<bool> = (0..3).map(|_| r.next(2) == 0).collect();
+            let build = |shut: &BTreeSet<usize>, r: &mut Lcg| {
+                let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
+                let mut open_cells: BTreeSet<[i32; 3]> = BTreeSet::new();
+                let stone = || "minecraft:stone".to_string();
+                for x in -1..=14 {
+                    for z in -1..=16 {
+                        blocks.insert([x, 0, z], stone());
+                        if x == -1 || x == 14 || z == -1 || z == 16 {
+                            for y in 1..=WALL {
+                                blocks.insert([x, y, z], stone());
+                            }
+                        }
+                    }
+                    for y in 1..=WALL {
+                        let seam = doors.iter().position(|d| *d == x).filter(|_| y <= 2);
+                        match seam {
+                            Some(d) if leaf[d] => {
+                                let open = !shut.contains(&d);
+                                let half = if y == 1 { "lower" } else { "upper" };
+                                blocks.insert(
+                                    [x, y, 8],
+                                    format!(
+                                        "minecraft:oak_door[facing=north,half={half},\
+                                         hinge=left,open={open},powered=false]"
+                                    ),
+                                );
+                                if open {
+                                    open_cells.insert([x, y, 8]);
+                                }
+                            }
+                            Some(d) if !shut.contains(&d) => {}
+                            _ => {
+                                blocks.insert([x, y, 8], stone());
+                            }
+                        }
+                    }
+                }
+                for _ in 0..r.next(12) {
+                    let (x, z) = (r.next(14) as i32, r.next(16) as i32);
+                    if z != 8 && z != 7 && z != 9 {
+                        for y in 1..=(1 + r.next(3) as i32) {
+                            blocks.insert([x, y, z], stone());
+                        }
+                    }
+                }
+                World::from_occupancy(
+                    crate::compiler::assembled::occupancy_of(blocks, &open_cells),
+                    crate::compiler::nav::world::Premises::geometry_only(),
+                )
+                .without_gate_use()
+            };
+            let gates: Vec<GateUnderTest> = doors
+                .iter()
+                .map(|d| GateUnderTest {
+                    label: format!("gated walk `edge/door-{d}`"),
+                    region: ([*d, 1, 8], [*d, 2, 8]),
+                    axis: Some(2),
+                    opens_low: None,
+                    unlock: None,
+                })
+                .collect();
+            let base = build(&BTreeSet::new(), &mut Lcg(seed));
+            let worlds: Vec<(World, Vec<[i32; 3]>, Vec<usize>)> = (0..3)
+                .map(|_| {
+                    let shut: BTreeSet<usize> = (0..3).filter(|_| r.next(3) > 0).collect();
+                    let w = build(&shut, &mut Lcg(seed));
+                    let route: Vec<[i32; 3]> = (0..=r.next(4))
+                        .map(|_| [r.next(14) as i32, 1, r.next(16) as i32])
+                        .collect();
+                    (w, route, shut.into_iter().collect())
+                })
+                .collect();
+            for (w, _, shut) in &worlds {
+                for (d, x) in doors.iter().enumerate().filter(|(d, _)| leaf[*d]) {
+                    door_cells += 1;
+                    let closed = shut.contains(&d);
+                    assert_eq!(
+                        can_be(w, [*x, 1, 8]),
+                        !closed,
+                        "seed {seed}: a door seam's column is a body cell exactly when it is open"
+                    );
+                    if closed {
+                        doors_shut += 1;
+                    } else {
+                        doors_open += 1;
+                    }
+                }
+            }
+            let configs: Vec<SeparationConfig<'_>> = worlds
+                .iter()
+                .enumerate()
+                .map(|(i, (w, route, shut))| {
+                    (w, format!("config {i}"), route.clone(), shut.clone())
+                })
+                .collect();
+            let (sep, _) = verify_gates_separate(&gates, &[], &base, &configs);
+            let ways: Vec<ShutWay> = gates
+                .iter()
+                .map(|g| ShutWay {
+                    gate: g.clone(),
+                    ..way(g.region, 2, Some(Learned::Seen))
+                })
+                .collect();
+            let (learned, _) = verify_shut_ways(&ways, &base, &configs, &[], &[]);
+            assert_eq!(sep.met, learned.met_triples, "seed {seed}");
+            met_any += learned.met_triples.len();
+        }
+        assert!(met_any > 0, "the generator meets some face");
+        assert!(
+            doors_shut > 0 && doors_open > 0,
+            "the generator stands door seams both shut ({doors_shut}) and open ({doors_open}) \
+             over {door_cells} door column(s)"
+        );
+    }
 }

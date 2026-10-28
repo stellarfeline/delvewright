@@ -3998,7 +3998,7 @@
       "finding": "a wooden door stood in front of a doorway as the object of a step titled to unbar it; the key was used on it, the step's happening said the door opened, and the door did not open: the layout graph held the doorway open from world load, and the key's only effect was that a chest beside it would lift its lid",
       "general_form": "a door the story addresses is the shutter of a gated way: every pressable a hand opens that an interact, a use trigger, a shortcut's unlock or a disarm presses stands in a door-shut seam's gate region",
       "id": "tbb-door-01",
-      "note": "Direction: it can let something ship (a door that reads as a way and is none) and cannot turn a proof red. Carried by DW1069 shape a (compiler::nav::device::check_way_blocks); the binding is the build's pressables, of which the retired demo's store door is 1 way-block of 12. Closed by spec-0124's runs; the content is retired and not re-run.",
+      "note": "Direction: it can let something ship (a door that reads as a way and is none) and cannot turn a proof red. Carried by DW1069 shape a (compiler::nav::device::check_way_blocks); the binding is the build's pressables, of which the retired demo's store door is 1 way-block of 15 (measured by spec-0124's run with the demo's validation refusals set aside in a scratch copy). Closed by spec-0124's runs; the content is retired and not re-run.",
       "round": 1,
       "triage": "capability"
     },
@@ -4045,7 +4045,7 @@
       "finding": "a two-course door stood free on a stall's front row beside a one-course counter, with air on its other side and over the counter: a door a body walks round, closing nothing",
       "general_form": "every door and fence gate in the built world closes an opening: shut, no body passes round its leaf; open, the place behind it is reached through it — both asked of the reach graph",
       "id": "ff-door-01",
-      "note": "Direction: it can let something ship and cannot turn a proof red. Carried by DW1072 (compiler::nav::device::check_doors); bound 2 doors on the retired content, 1 refused. Closed by spec-0124's runs; the content is retired and not re-run.",
+      "note": "Direction: it can let something ship and cannot turn a proof red. Carried by DW1072 (compiler::nav::device::check_doors); the stall's shape is refused on clause 1 by the check's unit test. On the retired content the implementing engine stops earlier: DW1070 at validation (the ring's opening beat opens nothing) and, with that verb set aside in a scratch copy, DW0838 at the blockout (row and ring, row and square joined by unallocated geometry), so its door census is not reached. Closed by spec-0124's runs; the content is retired and not re-run.",
       "round": 1,
       "triage": "capability"
     }
