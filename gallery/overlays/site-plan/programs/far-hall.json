@@ -2972,10 +2972,14 @@
     "yard-gate": [
       {
         "body": {
-          "material": {
-            "role": "yard-gate"
+          "body": {
+            "material": {
+              "role": "yard-gate"
+            },
+            "op": "fill"
           },
-          "op": "fill"
+          "op": "claim",
+          "region": "south"
         },
         "weight": 1
       }
