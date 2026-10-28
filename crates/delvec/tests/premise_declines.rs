@@ -47,6 +47,11 @@ fn premise_declines_are_enumerated() {
         // a fact of the blocks, measured for the review and refusing nothing,
         // which no horizon, volume or gate of the campaign changes.
         ("compiler/nav/census.rs", 1),
+        // `compiler/nav/device.rs`: a door's neighbourhood in one configuration
+        // (spec-0124 §6.5) — whether a body passes round a leaf, or through it
+        // open, is a fact of the blocks beside it, which no horizon, volume or
+        // gate premise of the campaign moves.
+        ("compiler/nav/device.rs", 1),
         ("compiler/nav/width.rs", 1),
         // `compiler/nav/world/mod.rs`: the synthetic constructors' own door
         // (`from_solid_and_flooded`), which every unit-test world goes

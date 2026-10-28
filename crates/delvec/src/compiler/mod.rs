@@ -61,6 +61,7 @@
 //! - [`guarantee`]: which anchors an area's binding guarantees, answered before anything is placed (`DW0889`).
 //! - [`gym`]: the metrics gym — a site-plan campaign generated from the metrics table.
 //! - [`handback`]: a generated PackTest template that writes a pressable's cell lays its block back when it ends.
+//! - [`happening`]: a step that says it opens (or seals) a thing does it — a `happening`'s verb held to its node's own effects (`DW1070`, spec-0124 §6.2).
 //! - [`healthbar`]: a fight's health bar — its emission, and the colour/style vocabulary read from the pinned command tree (`DW0911`).
 //! - [`hold`]: how long a cutscene holds the party, per critical-path step — what a step's completion schedules and what its walk passes.
 //! - [`holders`]: the holder census — every container and holder entity is loot, a collect, a device, scenery or exempt (`DW1018`, `DW1024`) — and the holder entities a piece carries, owned, summoned and proven takeable (`DW1037`, `DW1038`).

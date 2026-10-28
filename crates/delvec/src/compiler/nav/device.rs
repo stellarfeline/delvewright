@@ -408,6 +408,9 @@ fn configuration(blocks: &BlockMap, centre: [i32; 3], open: Option<&[[i32; 3]]>)
             local.insert(c, name.to_string());
         }
     }
+    // `geometry_only`: whether a body passes round a leaf, or through it open,
+    // is a fact of the blocks beside it; no horizon, volume or gate premise of
+    // the campaign moves it (`tests/premise_declines.rs`).
     let mut w = World::from_occupancy(
         crate::compiler::assembled::occupancy_of(local, &open_set),
         Premises::geometry_only(),
