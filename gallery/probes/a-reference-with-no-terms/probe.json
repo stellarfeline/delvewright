@@ -1,0 +1,19 @@
+{
+  "code": "DW0100",
+  "patch": [
+    {
+      "doc": "layout-graph.json",
+      "op": "replace",
+      "path": "/content/nodes/1/references",
+      "value": [
+        {
+          "shows": "How a settlement's shops meet the street: take the front that says the trade before its door is opened.",
+          "url": "https://minecraft.wiki/w/Tutorial:Settlement_guide"
+        }
+      ]
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The annex's reference row with its `terms` key absent. A reference states the terms its source gives — `\"none stated\"` where it gives none — because a reference is looked at, never copied, and whether it may be more than an idea is decided by those terms (ADR-0013). A row that says nothing about them is no reference, and the schema refuses it. It declares no unit: `references[]` and its three keys are bound on the site-plan point, and what must not parse is a row missing one."
+}

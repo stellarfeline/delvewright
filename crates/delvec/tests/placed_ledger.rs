@@ -26,7 +26,8 @@ use std::process::Command;
 
 const BIN: &str = env!("CARGO_BIN_EXE_delvec");
 
-/// The functions the ledger reads, by name prefix (`setup_finish` exactly).
+/// The functions the ledger reads, by name prefix (`setup_finish` and `tick`
+/// exactly).
 const LEDGER: &[&str] = &[
     "activate_o_",
     "complete_o_",
@@ -40,7 +41,7 @@ const LEDGER: &[&str] = &[
     "trig_",
     "trap_",
     "loop_",
-    "ws_arm_",
+    "seal_arm_",
     "shortcut_open_",
     "holder_",
 ];
@@ -95,7 +96,8 @@ fn placing(line: &str) -> Option<&str> {
 }
 
 fn class_of(name: &str) -> &'static str {
-    if name == "setup_finish" || LEDGER.iter().any(|p| name.starts_with(p)) {
+    // `tick` is read for its boxed presses' reconciliation pairs (spec-0117).
+    if name == "setup_finish" || name == "tick" || LEDGER.iter().any(|p| name.starts_with(p)) {
         "ledger"
     } else if REGION.iter().any(|p| name.starts_with(p)) {
         "region"

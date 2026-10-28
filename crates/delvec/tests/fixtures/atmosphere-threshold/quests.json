@@ -11,6 +11,10 @@
         "objectives": [
           {
             "anchor": "anchor/node-far",
+            "answers": {
+              "done": "Already done.",
+              "not_yet": "Not yet."
+            },
             "happening": {
               "text": "The bell's note goes back through the door the way they came.",
               "verb": "opens"
@@ -68,6 +72,6 @@
       }
     ]
   },
-  "dsl_version": "0.63.0",
+  "dsl_version": "0.67.0",
   "stage": "quests"
 }

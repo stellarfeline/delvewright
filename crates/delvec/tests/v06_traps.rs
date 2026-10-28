@@ -255,7 +255,9 @@ fn trap_dispense_and_disarm_emit_end_to_end() {
         "trigger": "trapped-chest",
         "effect": { "dispense": { "item": "minecraft:arrow", "count": 8 } },
         "lethality": "harmful",
-        "disarm": { "via": "anchor/lever", "sets_flag": "flag/darts-off" }
+        "disarm": { "via": "anchor/lever", "sets_flag": "flag/darts-off",
+            "prop": { "block": "minecraft:lever[face=floor,facing=north]" },
+            "answers": { "done": "The darts are already stopped." } }
     });
     let out = build_with_trap("trap-clean", trap).expect("harmful trap builds");
 
@@ -268,10 +270,11 @@ fn trap_dispense_and_disarm_emit_end_to_end() {
         setup_finish.contains("item replace block 4 65 7 container.0 with minecraft:arrow 8"),
         "dispenser payload fill missing:\n{setup_finish}"
     );
-    // Disarm interaction affordance is summoned.
+    // The disarm is its lever, placed at world init (spec-0117 §3a); open from
+    // the start, the lever is the press, and its box returns once it is spent.
     assert!(
-        setup_finish.contains("dw_trapdis_dart_hall"),
-        "disarm affordance summon missing:\n{setup_finish}"
+        setup_finish.contains("setblock 3 65 6 minecraft:lever[face=floor,facing=north]"),
+        "the disarm's lever is placed:\n{setup_finish}"
     );
 
     // v0.6-gated TNT seal appears in setup.
@@ -367,7 +370,9 @@ fn gated_trap() -> serde_json::Value {
         "trigger": "pressure-plate",
         "effect": { "dispense": { "item": "minecraft:arrow", "count": 8 } },
         "lethality": "harmful",
-        "disarm": { "via": "anchor/lever", "sets_flag": "flag/darts-off" },
+        "disarm": { "via": "anchor/lever", "sets_flag": "flag/darts-off",
+            "prop": { "block": "minecraft:lever[face=floor,facing=north]" },
+            "answers": { "done": "The darts are already stopped." } },
         "forbids_flags": ["flag/darts-off"]
     })
 }

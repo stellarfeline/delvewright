@@ -342,7 +342,7 @@ fn main() -> ExitCode {
         return ExitCode::from(EXIT_INTERNAL);
     };
 
-    match command {
+    let status = match command {
         Command::Validate { campaign_dir } => run_validate(campaign_dir, &cli.prefabs, cli.json),
         Command::Analyze { campaign_dir } => run_analyze(campaign_dir, &cli.prefabs, cli.json),
         Command::Build {
@@ -518,7 +518,10 @@ fn main() -> ExitCode {
         Command::Rig {
             action: RigAction::Describe { rig, facing },
         } => run_rig_describe(rig, facing.facing(), &cli.prefabs, cli.json),
-    }
+    };
+    // A run that grew a node bank leaves it for the next (`DELVEC_REACH_CACHE`).
+    delvec::compiler::nav::persist_reach_cache();
+    status
 }
 
 #[cfg(test)]

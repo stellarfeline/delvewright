@@ -56,7 +56,7 @@ use delvewright_dsl::{DwCode, ExitTier};
 pub use delvewright_dsl::blockshape::{
     FULL_HEIGHT_16, THIN_HEIGHT_16, base_id, collision_top_16, is_air, is_fence_gate, is_fluid,
     is_no_collision_plant, is_partial_floor, is_passable_trap_trigger, is_tall_barrier,
-    is_thin_decoration, state_value,
+    is_thin_decoration, opens_by_hand, state_value,
 };
 
 /// Rewrite a blockstate's **orientation properties** for a piece placed with
@@ -935,7 +935,7 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
                         open_gates.remove(&cell);
                         continue;
                     }
-                    if is_fence_gate(&name) && open == Some(true) {
+                    if opens_by_hand(&name) && open == Some(true) {
                         open_gates.insert(cell);
                     } else {
                         open_gates.remove(&cell); // a later block overwrites the cell
@@ -1006,7 +1006,7 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
                         continue;
                     }
                     reached.mark(cell);
-                    if is_fence_gate(&name) && open == Some(true) {
+                    if opens_by_hand(&name) && open == Some(true) {
                         open_gates.insert(cell);
                     } else {
                         open_gates.remove(&cell);
@@ -1282,15 +1282,16 @@ pub fn shipped_blocks(
         if let Some((from, to, block)) =
             crate::compiler::plan::gate_region_block_any(&plan.anchors, &s.anchor)
         {
-            let state = BlockState::new(&block);
-            for c in region_cells(from, to) {
+            // Cell by cell from the declared block (`region_fill`): a door
+            // stands its lower half under its upper.
+            for (c, state) in crate::compiler::region_fill::cells((from, to), &block) {
                 if !inside(c) {
                     continue;
                 }
-                if is_air(&block) {
+                if is_air(&state) {
                     m.remove(&c);
                 } else {
-                    m.insert(c, state);
+                    m.insert(c, BlockState::new(&state));
                 }
             }
         }
@@ -1303,9 +1304,10 @@ pub fn shipped_blocks(
             m.insert(p.pos, BlockState::new(&p.block));
         }
     }
-    // Then every trigger's prop: `setup_finish` sets them after the relight
-    // fixtures, from the same list ([`crate::compiler::pressable::trigger_props`]).
-    for (_, p) in crate::compiler::pressable::trigger_props(plan) {
+    // Then every pressable's block (spec-0117 §5.1): `setup_finish` sets them
+    // after the relight fixtures, from the same list
+    // ([`crate::compiler::pressable::props`]), a door's two halves included.
+    for (_, p) in crate::compiler::pressable::props(plan) {
         if inside(p.pos) {
             m.insert(p.pos, BlockState::new(&p.block));
         }
@@ -1358,17 +1360,17 @@ const WATER_FLOW_RANGE: u8 = 7;
 /// |---|---|---|---|
 /// | `solid` | every other non-air block (full cube unless listed in `partial`) | no | yes |
 /// | `tall` | fences + walls ([`is_tall_barrier`], 1.5-tall) | no | **no** |
-/// | `use_gates` | closed fence gates ([`is_fence_gate`], 1.5-tall, openable) | player: yes, via right-click USE; NPC/actor/wave walkers: no | **no** |
+/// | `use_gates` | closed doors, trapdoors and fence gates a hand opens ([`opens_by_hand`], spec-0123 §3.1) | player: yes, via right-click USE; NPC/actor/wave walkers: no | **no** |
 /// | `flooded` | fluid reach — water and lava ([`is_fluid`]), conservative superset | no | no |
 /// | `partial` | a `solid` cell's true top-face height, in sixteenths, when < 16 | no | yes, **at that height** |
 ///
-/// **Modelled precisely**: fences, walls, fence gates (open = passable, closed =
-/// use-gate), pressure plates / tripwire and every other sub-auto-step decoration
+/// **Modelled precisely**: fences, walls, every door, trapdoor and fence gate a
+/// hand opens (open = passable, closed = use-gate), pressure plates / tripwire and every other sub-auto-step decoration
 /// (passable, [`is_thin_decoration`]), free fluid AND waterlogged blocks
 /// ([`is_waterlogged`]), and partial floor heights for slabs / snow layers /
 /// paths ([`collision_top_16`]). **Modelled conservatively** (treated as a full
-/// solid cube — may over-block a route, never over-prove one): stairs, doors,
-/// trapdoors, and every other partial-collision block whose pinned collision box
+/// solid cube — may over-block a route, never over-prove one): stairs,
+/// iron doors and iron trapdoors, and every other partial-collision block whose pinned collision box
 /// is not a floor at a measured height ([`collision_top_16`] reads the rest from
 /// the jar's own table).
 pub struct Occupancy {
@@ -1376,8 +1378,9 @@ pub struct Occupancy {
     pub solid: BTreeSet<[i32; 3]>,
     /// 1.5-tall barrier cells (fences/walls): block passage, never valid floor.
     pub tall: BTreeSet<[i32; 3]>,
-    /// Closed fence-gate cells: passable-with-use for the player (adventure-legal
-    /// right-click), impassable for walkers that cannot use gates; never floor.
+    /// Closed cells of a door, trapdoor or fence gate a hand opens: passable-with-use
+    /// for the player (adventure-legal right-click), impassable for walkers that
+    /// cannot use gates; never floor.
     pub use_gates: BTreeSet<[i32; 3]>,
     /// Fluid-flooded cells: impassable, never floor. Every cell a free
     /// fluid ([`is_fluid`]) occupies, plus the reach [`flood`] gives it. Disjoint
@@ -1412,6 +1415,12 @@ pub struct Occupancy {
     /// name it (`DW0991`) rather than report an unroutable leg over a ladder the
     /// author can see in the piece.
     pub unheld_climb: BTreeMap<[i32; 3], String>,
+    /// The blocks that change how a body moves on them or through them
+    /// ([`delvewright_dsl::metrics::body::Material`]): ice, slime, honey, soul
+    /// sand, hay, beds and cobwebs. Not a collision class: the movement
+    /// simulator the reach graph runs reads it (spec-0113). A block absent here
+    /// is [`delvewright_dsl::metrics::body::Material::Plain`].
+    pub material: BTreeMap<[i32; 3], delvewright_dsl::metrics::body::Material>,
     /// For each `solid` cell whose block does **not** cover its cell, the
     /// block's server footprint ([`delvewright_dsl::blockshape::server_footprint`]):
     /// the posts of iron bars, a pane, a chain, a lantern. Not a collision class
@@ -1426,6 +1435,12 @@ pub struct Occupancy {
     /// ([`crate::compiler::nav::World::hides`]). Iron bars are `solid` and not
     /// here; a stone wall is both.
     pub hiding: BTreeSet<[i32; 3]>,
+    /// Every door and trapdoor cell, with the shape its leaf takes per state
+    /// ([`delvewright_dsl::blockshape::leaf`]). Not a collision class and not
+    /// disjoint from them: the cell's class says whether a body may be in it,
+    /// and this says which of its faces a body may cross, and at what height
+    /// ([`delvewright_dsl::blockshape::Leaf::stops_crossing`]).
+    pub leaves: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Leaf>,
     /// Cells whose block **hurts a body that meets it**
     /// ([`delvewright_dsl::blockshape::hurts_body`]: a campfire, magma, a
     /// cactus, fire, a berry bush). Not a collision class and not disjoint from
@@ -1697,9 +1712,24 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
     // One occlusion lookup per distinct block state, not per cell.
     let mut hides_of: BTreeMap<String, bool> = BTreeMap::new();
     let mut hurting: BTreeSet<[i32; 3]> = BTreeSet::new();
+    let mut leaves: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Leaf> = BTreeMap::new();
+    let mut leaf_of: BTreeMap<String, Option<delvewright_dsl::blockshape::Leaf>> = BTreeMap::new();
     for (cell, name) in blocks {
         if delvewright_dsl::blockshape::hurts_body(name) {
             hurting.insert(*cell);
+        }
+        // A door's or a trapdoor's leaf per state (`blockshape::leaf`): what
+        // its panels and its plate do to a body crossing its cell's faces.
+        // Whether a hand one stands open is the gate model's own reading, as
+        // for any door.
+        if let Some(mut h) = *leaf_of
+            .entry(name.to_string())
+            .or_insert_with(|| delvewright_dsl::blockshape::leaf(name))
+        {
+            if h.by_hand {
+                h.open = open_gates.contains(cell);
+            }
+            leaves.insert(*cell, h);
         }
         if *hides_of
             .entry(name.to_string())
@@ -1750,7 +1780,7 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
             // (spec-0011), and so a corridor with a torch in it stays a corridor.
             // Air reaches this arm too, and its cell is likewise not a floor.
             Collision::Air | Collision::Thin(_) => {}
-            Collision::FenceGate => {
+            Collision::OpensByHand => {
                 barriers.insert(*cell);
                 if !open_gates.contains(cell) {
                     use_gates.insert(*cell); // closed: passable-with-use
@@ -1790,6 +1820,13 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
             .collect()
     };
     let (climb, unheld_climb) = climb_holds(blocks);
+    let material = blocks
+        .iter()
+        .filter_map(|(c, name)| {
+            let m = delvewright_dsl::metrics::body::material_of_block(name);
+            (m != delvewright_dsl::metrics::body::Material::Plain).then_some((*c, m))
+        })
+        .collect();
     Occupancy {
         solid,
         tall,
@@ -1800,8 +1837,10 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
         lava,
         climb,
         unheld_climb,
+        material,
         footprints,
         hiding,
+        leaves,
         hurting,
     }
 }

@@ -71,10 +71,14 @@ fn quests(guidance: Value) -> Value {
                     { "type": "interact", "id": "obj/pull", "anchor": "anchor/exit",
                       "prop": { "block": "minecraft:lever[face=floor,facing=north]" },
                       "title": "Pull the lever", "hint": "It is set in the floor by the door.",
+                      "answers": { "not_yet": "The lever is locked until he has spoken.",
+                                   "done": "The lever is already pulled." },
                       "after": ["obj/talk"] },
-                    { "type": "interact", "id": "obj/press", "anchor": "anchor/keeper-stand",
+                    { "type": "interact", "id": "obj/press", "anchor": "anchor/latch",
                       "prop": { "block": "minecraft:stone_button[face=floor,facing=north]" },
-                      "title": "Press the button", "hint": "It is set in the floor at his post.",
+                      "title": "Press the button", "hint": "It is set in the floor by the wall.",
+                      "answers": { "not_yet": "The button is stiff until the lever is pulled.",
+                                   "done": "The button is already pressed." },
                       "after": ["obj/pull"] }
                 ],
                 "on_objective_complete": {
@@ -926,8 +930,9 @@ fn a_highlight_lights_the_thing_while_armed_and_near() {
     objs[2]["title"] = json!("Ring the bell");
     objs[2]["highlight"] = json!({ "within": 6 });
     let out = try_build(&variant("highlight", q, dialogue(GREETING))).expect("builds");
-    // The activation places the prop and nothing else: a display exists
-    // only while the highlight is lit, summoned by `hl_hold_<a>` alone.
+    // The prop stands from world init (spec-0117) and its activation summons
+    // no display: a display exists only while the highlight is lit, summoned
+    // by `hl_hold_<a>` alone.
     let act = fn_body(&out, "activate_o_pull").unwrap();
     assert!(!act.contains("dw_hl"), "{act}");
     let show = fn_body(&out, "hl_hold_o_pull").unwrap();
@@ -971,13 +976,13 @@ fn a_highlight_lights_the_thing_while_armed_and_near() {
             .1;
         line.split(' ').take(3).collect::<Vec<_>>().join(" ")
     };
-    let [x, y, z] = cell_of("activate_o_pull", "minecraft:lever");
+    let [x, y, z] = cell_of("setup_finish", "minecraft:lever");
     assert_eq!(
         summon_at(show, "minecraft:block_display"),
         format!("{x}.0 {y}.0 {z}.0"),
         "{show}"
     );
-    let [x, y, z] = cell_of("activate_o_press", "minecraft:bell");
+    let [x, y, z] = cell_of("setup_finish", "minecraft:bell");
     assert_eq!(
         summon_at(bell, "minecraft:item_display"),
         format!(
@@ -989,9 +994,10 @@ fn a_highlight_lights_the_thing_while_armed_and_near() {
         "{bell}"
     );
     let poll = fn_body(&out, "hl_poll_o_pull").unwrap();
+    // Lit only from the cells the lever's pressed face is in sight from, within
+    // six blocks (spec-0117 §3b): boxes, not a sphere.
     assert!(
-        poll.contains("if score #gs_pull dw.guide matches 1")
-            && poll.contains("@a[distance=..6,tag=!dw_cutscene]"),
+        poll.contains("if score #gs_pull dw.guide matches 1") && poll.contains("if entity @a[x="),
         "{poll}"
     );
     // Lit, the displays are held to their cells; dark, none exists.
@@ -1332,4 +1338,165 @@ fn a_compass_following_a_kill_points_at_the_nearest_living_body() {
                 < at("tag @e[tag=dw_pt_cmpw_held] add dw_wave_guards"),
         "{pt}"
     );
+}
+
+/// `validation/journal-starts.json` owes, per quest, a page for every
+/// announced, hinted objective with no `after` whose gate is empty or that a
+/// press serves; one behind a gate nothing serves is listed under `gated`.
+#[test]
+fn the_journal_ledger_owes_each_quest_start_its_first_pages() {
+    let ledger = |q: Value, name: &str| -> Value {
+        let out = try_build(&variant(name, q, dialogue(GREETING))).expect("builds");
+        serde_json::from_slice(
+            out.get("validation/journal-starts.json")
+                .expect("a campaign with a journal writes the ledger"),
+        )
+        .unwrap()
+    };
+    let l = ledger(quests(nulls()), "jledger");
+    assert_eq!(l["party"], "#party");
+    let q0 = &l["quests"][0];
+    assert_eq!(q0["quest"], "quest/open-the-door");
+    assert_eq!(q0["active"], "dw.qa_open_the_door");
+    let told: Vec<&str> = q0["told"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["objective"].as_str().unwrap())
+        .collect();
+    assert_eq!(told, ["obj/talk"], "only the objective with no `after`");
+    assert_eq!(q0["told"][0]["done"], "dw.o_talk");
+    assert!(
+        q0["told"][0].get("hint").is_none(),
+        "no player-facing string"
+    );
+    assert!(
+        q0["told"][0]["hint_key"]
+            .as_str()
+            .unwrap()
+            .ends_with(".hint")
+    );
+
+    // Gated and served: owed. Gated and unserved: counted under `gated`.
+    let gated = |serves: bool| {
+        let mut q = quests(nulls());
+        let c = &mut q["content"];
+        c["state"] = json!([{ "id": "state/turns", "initial": 0, "name": "Turns",
+                              "scope": "party", "note": "How far the crank is wound." }]);
+        let objs = c["quests"][0]["objectives"].as_array_mut().unwrap();
+        objs.truncate(2);
+        objs[1].as_object_mut().unwrap().remove("after");
+        objs[1]["requires_state"] =
+            json!([{ "state": "state/turns", "op": "at-least", "value": 2 }]);
+        let mut t = json!({
+            "id": "trigger/crank", "at": "anchor/latch", "on": { "on": "use" },
+            "once": false,
+            "prop": { "block": "minecraft:stone_button[face=floor,facing=north]" },
+            "effects": [{ "type": "add-state", "state": "state/turns", "amount": 1 }]
+        });
+        if serves {
+            t["serves"] = json!({ "objective": "obj/pull" });
+        }
+        c["triggers"] = json!([t]);
+        q
+    };
+    let l = ledger(gated(true), "jledger-served");
+    let told: Vec<&str> = l["quests"][0]["told"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["objective"].as_str().unwrap())
+        .collect();
+    assert_eq!(told, ["obj/talk", "obj/pull"]);
+    assert_eq!(l["quests"][0]["gated"], json!([]));
+    let l = ledger(gated(false), "jledger-unserved");
+    assert_eq!(l["quests"][0]["gated"], json!(["obj/pull"]));
+}
+
+/// The party is told of an objective while it can work at it. `obj/pull` is
+/// gated on a datum the presses that `serve` it raise (spec-0117 §4): its
+/// announcement, journal page, compass and guidance state open with the
+/// presses — quest active, every `after` complete, not done — and never wait
+/// for the gate the presses open, or the party is told nothing at the moment
+/// the presses are the next act. An objective nothing serves keeps its whole
+/// gate (spec-0104 §8: a thread not yet unlocked has no page).
+#[test]
+fn a_served_objective_is_told_while_its_presses_are_open() {
+    let served = |serves: bool| {
+        let mut q = quests(nulls());
+        let c = &mut q["content"];
+        c["state"] = json!([{ "id": "state/turns", "initial": 0, "name": "Turns",
+                              "scope": "party", "note": "How far the crank is wound." }]);
+        let objs = c["quests"][0]["objectives"].as_array_mut().unwrap();
+        objs.truncate(2);
+        objs[1]["requires_state"] =
+            json!([{ "state": "state/turns", "op": "at-least", "value": 2 }]);
+        objs[1]["hint"] = json!("Wind the button twice, then pull the lever by the door.");
+        let mut t = json!({
+            "id": "trigger/crank", "at": "anchor/latch", "on": { "on": "use" },
+            "once": false,
+            "prop": { "block": "minecraft:stone_button[face=floor,facing=north]" },
+            "effects": [{ "type": "add-state", "state": "state/turns", "amount": 1 }]
+        });
+        if serves {
+            t["serves"] = json!({ "objective": "obj/pull" });
+        }
+        c["triggers"] = json!([t]);
+        q
+    };
+    let gate = "if score #party dw.s_turns matches 2..";
+    let out = try_build(&variant("told-served", served(true), dialogue(GREETING)))
+        .expect("the served variant builds");
+    let lines_of = |out: &BuildOutput, f: &str, needle: &str| -> Vec<String> {
+        fn_body(out, f)
+            .unwrap_or_else(|| panic!("{f} emitted"))
+            .lines()
+            .filter(|l| l.contains(needle))
+            .map(str::to_string)
+            .collect()
+    };
+    let told = [
+        ("journal_write", "journal_open_pull"),
+        ("journal_write", "journal_open_following_pull"),
+        ("guide_scan", "store success score #gs_pull"),
+        (
+            "compass_refresh",
+            "run scoreboard players set @s dw.tnext 2",
+        ),
+        ("tick", "announce_o_pull"),
+    ];
+    for (f, needle) in told {
+        let ls = lines_of(&out, f, needle);
+        assert!(!ls.is_empty(), "{f}: no line names {needle}");
+        for l in &ls {
+            assert!(
+                l.contains("if score #party dw.o_talk matches 1")
+                    && l.contains("unless score #party dw.o_pull matches 1"),
+                "{f}: the told window keeps its quest, `after` and not-done terms: {l}"
+            );
+            assert!(
+                !l.contains(gate),
+                "{f}: a served objective is told before the gate its presses open: {l}"
+            );
+        }
+    }
+    // Completing it still waits for the gate.
+    let tick = fn_body(&out, "tick").unwrap();
+    assert!(
+        tick.lines()
+            .any(|l| l.contains("run function hello-world:complete_o_pull") && l.contains(gate)),
+        "the completion keeps the whole gate"
+    );
+
+    // Nothing serves it: the whole gate stays on every told line.
+    let out = try_build(&variant("told-unserved", served(false), dialogue(GREETING)))
+        .expect("the unserved variant builds");
+    for (f, needle) in told {
+        for l in lines_of(&out, f, needle) {
+            assert!(
+                l.contains(gate),
+                "{f}: an unserved objective keeps its gate: {l}"
+            );
+        }
+    }
 }

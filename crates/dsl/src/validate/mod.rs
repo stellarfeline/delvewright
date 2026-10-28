@@ -63,7 +63,7 @@ pub fn validate_campaign_with(
     crate::quest_plan::plan_checks(c, &mut d);
     crate::quest::check::after_ordering(c, &mut d);
     crate::trigger::press_answer_checks(c, &mut d);
-    crate::trigger::press_obligation_checks(c, &mut d);
+    d.extend(crate::trigger::press_checks(c).0);
     crate::world::horizon_param_checks(c, &mut d);
     crate::world::world_checks(c, &mut d);
     crate::world::lighting_range_checks(c, &mut d);
@@ -230,6 +230,7 @@ pub fn validate_campaign_with(
     // completability half (`DW0510` the forced route, `DW0511` the respawn seat)
     // is compiler-tier, because it needs the solved layout.
     crate::lethal::lethal_volume_checks(c, anchors, &mut d);
+    crate::world::jump_checks(c, anchors, &mut d);
     crate::r#loop::loop_checks(c, anchors, &mut d);
     crate::pulse::pulse_checks(c, anchors, &mut d);
     // spec-0032: a shop stands on a prefab anchor, and an anchor

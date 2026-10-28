@@ -36,18 +36,6 @@ pub enum Verb {
     CloseGate {
         /// The gate anchor to seal.
         anchor: AnchorId,
-        /// What the seal *says* when a player right-clicks it (DSL v0.8). A sealed gate is a wall the party will walk back to
-        /// and press: the compiler answers that press on the actionbar. Absent, the
-        /// compiler's canonical English is baked in (`The way is sealed.`) exactly
-        /// as `world.boundary.message` does; authored, the line is l10n-inventoried
-        /// under `<effect-key>.sealed_hint` and translates like every other
-        /// player-visible string.
-        ///
-        /// Unlike `happening`, this **does** print in the hand-written `Debug`
-        /// below when present — it changes emission, so two otherwise-identical
-        /// sequences that differ only in their seal's answer are different content.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        sealed_hint: Option<String>,
     },
     /// Marks the campaign complete (final advancement + credits). Like every
     /// verb it takes `when`: several `campaign-complete`s with exclusive gates in
@@ -480,8 +468,8 @@ pub enum Verb {
     },
     /// Places a **bonfire** rest point (DSL v0.6, spec-0016 §1) — the sibling of
     /// [`Verb::SetCheckpoint`] for souls-mode pacing. The effect *arms*
-    /// the rest affordance (a `minecraft:interaction` the player right-clicks at
-    /// the anchor, the campfire prop being prefab dressing); the checkpoint moves
+    /// the rest affordance (the `prop` block the player presses at the anchor,
+    /// standing from `setup_finish`); the checkpoint moves
     /// only **when the party actually rests**. Resting fires `on_rest` — the
     /// scene reset that makes retry cheap: re-arming traps, re-seating waves
     /// declared `respawns_on_rest`, restoring actor postures. Death respawns the
@@ -496,6 +484,24 @@ pub enum Verb {
         /// The prefab anchor the rest affordance stands at, and the cell the
         /// party respawns at once rested.
         anchor: AnchorId,
+        /// **The real block the party rests at** (spec-0117 §3a): placed at
+        /// `anchor` at `setup_finish`, so a press before the arming beat is
+        /// answered. A campfire (the game reports no empty-hand press of one) is
+        /// pressed through a click box fitted to it; a bell or a button on its
+        /// own. Required (`DW1059`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(required)]
+        prop: Option<crate::Prop>,
+        /// What a press answers before the arming beat (spec-0117 §4):
+        /// `not_yet`, owed when the bonfire is armed after the start
+        /// (`DW1051`). A bonfire never settles, so `done` is inert (`DW1052`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        answers: Option<crate::Answers>,
+        /// The proximity highlight (spec-0104 §7, spec-0117 §3b): the block glows
+        /// while the bonfire is armed and a player stands where its pressed face
+        /// is in sight within `within` blocks.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        highlight: Option<crate::Highlight>,
         /// Effects re-run on every rest **and** on every respawn at this bonfire
         /// — the scene reset. Emitted in declared order and expected to be
         /// idempotent (the same contract as `set-checkpoint`'s `on_respawn`).
@@ -1042,9 +1048,8 @@ pub enum NarrateStyle {
     /// stack, and it is overwritten by the next one. Every reply the compiler
     /// itself writes has always used it — a sealed gate's answer, a checkpoint
     /// return, the lobby's party count — but `narrate` could not reach it, which
-    /// is the mechanical reason `close-gate.sealed_hint` could not have been an
-    /// ordinary `narrate` even had someone tried (capability-ownership audit
-    /// finding 3b). A channel is a property of the message, not of the verb that
+    /// was the mechanical reason a sealed gate's answer could not have been an
+    /// ordinary `narrate` (capability-ownership audit finding 3b). A channel is a property of the message, not of the verb that
     /// first wanted it.
     ///
     /// Unlike a title it is never width-checked: vanilla truncates nothing and

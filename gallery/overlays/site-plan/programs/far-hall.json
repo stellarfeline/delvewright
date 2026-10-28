@@ -44,8 +44,11 @@
       {
         "a": "room",
         "b": "exterior",
-        "class": "walk",
-        "via": "loft-drop"
+        "bar": {
+          "block": "bar",
+          "region": "seam-loft-drop"
+        },
+        "class": "barred"
       },
       {
         "a": "room",
@@ -54,24 +57,38 @@
         "via": "undercroft-stair-way"
       },
       {
-        "a": "room",
+        "a": "south",
         "b": "exterior",
         "class": "walk",
         "via": "exit-arch-way"
       },
       {
-        "a": "room",
+        "a": "south",
         "b": "exterior",
         "class": "walk",
         "via": "causeway-front-way"
+      },
+      {
+        "a": "room",
+        "b": "south",
+        "class": "walk",
+        "via": "hall-door"
       }
     ],
     "entry": "room",
+    "no_body": {
+      "screen-top": {
+        "reason": "the top of the screen wall across the hall, four courses up: nothing reaches it, and the hall is crossed through the door in it"
+      }
+    },
     "spaces": {
       "loft-landing": {
         "envelope": "open"
       },
       "room": {
+        "envelope": "open"
+      },
+      "south": {
         "envelope": "open"
       }
     }
@@ -79,6 +96,8 @@
   "name": "gallery-far-hall",
   "palette": {
     "bar": "minecraft:iron_bars[east=false,north=false,south=false,waterlogged=false,west=false]",
+    "door": "minecraft:oak_door[facing=north,half=lower,hinge=left,open=false,powered=false]",
+    "door-top": "minecraft:oak_door[facing=north,half=upper,hinge=left,open=false,powered=false]",
     "floor": "minecraft:polished_andesite",
     "lamp": "minecraft:sea_lantern",
     "lid": "minecraft:spruce_planks",
@@ -159,6 +178,36 @@
         "weight": 1
       }
     ],
+    "hall-door-lower": [
+      {
+        "body": {
+          "body": {
+            "material": {
+              "role": "door"
+            },
+            "op": "fill"
+          },
+          "op": "claim",
+          "region": "hall-door"
+        },
+        "weight": 1
+      }
+    ],
+    "hall-door-upper": [
+      {
+        "body": {
+          "body": {
+            "material": {
+              "role": "door-top"
+            },
+            "op": "fill"
+          },
+          "op": "claim",
+          "region": "hall-door"
+        },
+        "weight": 1
+      }
+    ],
     "lamp": [
       {
         "body": {
@@ -177,18 +226,6 @@
             "role": "lid"
           },
           "op": "fill"
-        },
-        "weight": 1
-      }
-    ],
-    "loft-drop-air": [
-      {
-        "body": {
-          "body": {
-            "op": "void"
-          },
-          "op": "claim",
-          "region": "loft-drop"
         },
         "weight": 1
       }
@@ -817,8 +854,15 @@
                             "symbol": "wall"
                           },
                           {
-                            "op": "call",
-                            "symbol": "seam-loft-stair-bar"
+                            "body": {
+                              "op": "call",
+                              "symbol": "seam-loft-stair-bar"
+                            },
+                            "mark": {
+                              "anchor": "loft-stair-leaf",
+                              "at": "floor_center"
+                            },
+                            "op": "mark"
                           },
                           {
                             "op": "call",
@@ -867,7 +911,7 @@
                           },
                           {
                             "op": "call",
-                            "symbol": "loft-drop-air"
+                            "symbol": "seam-loft-drop-bar"
                           },
                           {
                             "op": "call",
@@ -1709,7 +1753,321 @@
                           },
                           {
                             "op": "call",
+                            "symbol": "wall"
+                          },
+                          {
+                            "op": "call",
+                            "symbol": "hall-door-lower"
+                          },
+                          {
+                            "op": "call",
+                            "symbol": "wall"
+                          },
+                          {
+                            "op": "call",
+                            "symbol": "wall"
+                          }
+                        ],
+                        "op": "split",
+                        "sizes": [
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 1
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 16
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 1
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 15
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "size": "relative",
+                            "weight": {
+                              "expr": "int",
+                              "value": 1
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "axis": "x",
+                        "children": [
+                          {
+                            "op": "call",
+                            "symbol": "wall"
+                          },
+                          {
+                            "op": "call",
+                            "symbol": "wall"
+                          },
+                          {
+                            "op": "call",
+                            "symbol": "hall-door-upper"
+                          },
+                          {
+                            "op": "call",
+                            "symbol": "wall"
+                          },
+                          {
+                            "op": "call",
+                            "symbol": "wall"
+                          }
+                        ],
+                        "op": "split",
+                        "sizes": [
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 1
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 16
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 1
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 15
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "size": "relative",
+                            "weight": {
+                              "expr": "int",
+                              "value": 1
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "axis": "x",
+                        "children": [
+                          {
+                            "op": "call",
+                            "symbol": "wall"
+                          },
+                          {
+                            "op": "call",
+                            "symbol": "wall"
+                          },
+                          {
+                            "op": "call",
+                            "symbol": "wall"
+                          }
+                        ],
+                        "op": "split",
+                        "sizes": [
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 1
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 32
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "size": "relative",
+                            "weight": {
+                              "expr": "int",
+                              "value": 1
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "axis": "x",
+                        "children": [
+                          {
+                            "op": "call",
+                            "symbol": "wall"
+                          },
+                          {
+                            "op": "call",
+                            "symbol": "screen-top"
+                          },
+                          {
+                            "op": "call",
+                            "symbol": "wall"
+                          }
+                        ],
+                        "op": "split",
+                        "sizes": [
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 1
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 32
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "size": "relative",
+                            "weight": {
+                              "expr": "int",
+                              "value": 1
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "axis": "x",
+                        "children": [
+                          {
+                            "op": "call",
+                            "symbol": "wall"
+                          },
+                          {
+                            "op": "call",
                             "symbol": "room-air"
+                          },
+                          {
+                            "op": "call",
+                            "symbol": "wall"
+                          }
+                        ],
+                        "op": "split",
+                        "sizes": [
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 1
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 32
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "size": "relative",
+                            "weight": {
+                              "expr": "int",
+                              "value": 1
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "op": "call",
+                        "symbol": "part-5"
+                      }
+                    ],
+                    "op": "split",
+                    "sizes": [
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 1
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 1
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 1
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 2
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 1
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 3
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "size": "relative",
+                        "weight": {
+                          "expr": "int",
+                          "value": 1
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "axis": "y",
+                    "children": [
+                      {
+                        "op": "call",
+                        "symbol": "part-6"
+                      },
+                      {
+                        "axis": "x",
+                        "children": [
+                          {
+                            "op": "call",
+                            "symbol": "wall"
+                          },
+                          {
+                            "op": "call",
+                            "symbol": "south-air"
                           },
                           {
                             "op": "call",
@@ -1787,7 +2145,7 @@
                           },
                           {
                             "op": "call",
-                            "symbol": "room-air"
+                            "symbol": "south-air"
                           },
                           {
                             "op": "call",
@@ -2041,7 +2399,14 @@
                   {
                     "blocks": {
                       "expr": "int",
-                      "value": 9
+                      "value": 1
+                    },
+                    "size": "absolute"
+                  },
+                  {
+                    "blocks": {
+                      "expr": "int",
+                      "value": 8
                     },
                     "size": "absolute"
                   },
@@ -2133,6 +2498,33 @@
         "weight": 1
       }
     ],
+    "screen-top": [
+      {
+        "body": {
+          "body": {
+            "op": "void"
+          },
+          "op": "claim",
+          "region": "screen-top"
+        },
+        "weight": 1
+      }
+    ],
+    "seam-loft-drop-bar": [
+      {
+        "body": {
+          "body": {
+            "material": {
+              "role": "bar"
+            },
+            "op": "fill"
+          },
+          "op": "claim",
+          "region": "seam-loft-drop"
+        },
+        "weight": 1
+      }
+    ],
     "seam-loft-stair-bar": [
       {
         "body": {
@@ -2144,6 +2536,18 @@
           },
           "op": "claim",
           "region": "seam-loft-stair"
+        },
+        "weight": 1
+      }
+    ],
+    "south-air": [
+      {
+        "body": {
+          "body": {
+            "op": "void"
+          },
+          "op": "claim",
+          "region": "south"
         },
         "weight": 1
       }

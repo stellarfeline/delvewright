@@ -1,0 +1,15 @@
+{
+  "code": "DW1059",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/2/objectives/3/prop",
+      "value": {
+        "block": "minecraft:spruce_door[facing=north,half=upper,hinge=left,open=false]"
+      }
+    }
+  ],
+  "units": [],
+  "why": "The bay door's prop names the door's upper half. A door is placed from its lower half, which places both; a prop naming the upper half would place a half-door the game breaks at once. DW1059 refuses it naming the arm and the remedy (name `half=lower`). It declares no unit: `Objective.prop` is bound by every gallery interact."
+}

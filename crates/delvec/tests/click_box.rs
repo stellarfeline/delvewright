@@ -1,17 +1,15 @@
-//! A click box wins the pick (`DW1013`), on a real build.
+//! A click box fits its block (`DW1013`, spec-0117 criterion 17), on a real
+//! build.
 //!
-//! The finding: an `interact` prop took many right-clicks before one registered,
-//! because the `minecraft:interaction` box the compiler summoned over it was
-//! `1.0 × 2.0` at the cell centre — its side faces and floor exactly the faces of
-//! the full-cube prop standing in the same cell — and the client takes an entity
-//! only when it is strictly nearer than the block the same ray hits.
-//!
-//! These tests build the `souls-shortcut` fixture and prove three things over the
-//! shipped bytes: every click box the build places is judged and wins
+//! A boxed pressable is a real block with a `minecraft:interaction` fitted over
+//! its outline, so the crosshair's pick takes the box and never the block. These
+//! tests build the `souls-shortcut` fixture and prove, over the shipped bytes:
+//! every click box the build places is judged against the block it stands over
 //! (`compiler::clickbox::check` green, its binding equal to a count taken here by
-//! a second reading); a `use` trigger whose prop is a full cube gets the column
-//! the one rule builds; and that build, with the one box planted back in its
-//! flush shape, is refused under `DW1013`.
+//! a second reading); a gated lever trigger's box is the fitted one; the same
+//! build with that box written one margin short on its top face is refused
+//! naming the face; and a box moved over a cell `setup_finish` leaves as air is
+//! refused naming the cell.
 
 mod common;
 
@@ -19,38 +17,41 @@ use std::collections::BTreeMap;
 
 use delvec::compiler::clickbox::{DW_CLICK_BOX_FLUSH, check};
 use delvec::compiler::commands::CommandTree;
-use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::emit::{self, BuildOutput, gate_blocks};
 use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{Campaign, EnvTrigger, parse_campaign};
 
 const NS: &str = "souls-shortcut";
+const LEVER_TAG: &str = "\"dw_trig_pull_the_bar\"";
 
-/// The fixture as it stands: a shortcut's unlock and its sealed door.
+/// The fixture as it stands: a shortcut's unlock button and its sealed door,
+/// answered by the door's own bars.
 fn fixture() -> Campaign {
     let dir = common::compiler_fixtures_dir().join(NS);
     let loaded = load_campaign_dir(&dir).unwrap();
     parse_campaign(&loaded.raw).expect("souls-shortcut parses")
 }
 
-/// The fixture with its shortcut and triggers cleared and one `use` trigger on
-/// `anchor/exit` instead, its prop a full cube a `1.0`-wide box would be flush with.
+/// The fixture with a gated lever trigger beside the door: boxed while its gate
+/// is shut (spec-0117 §3a).
 fn campaign() -> Campaign {
     let mut c = fixture();
-    c.quests.content.shortcuts.clear();
-    c.quests.content.triggers = vec![
+    c.quests.content.triggers.push(
         serde_json::from_str::<EnvTrigger>(
-            r#"{ "id": "trigger/open-the-barrel", "at": "anchor/exit", "on": { "on": "use" },
-                 "prop": { "block": "minecraft:barrel[facing=up]" },
-                 "effects": [ { "type": "narrate", "text": "Empty.", "style": "chat" } ] }"#,
+            r#"{ "id": "trigger/pull-the-bar", "at": "anchor/door-knock", "on": { "on": "use" },
+                 "requires_flags": ["flag/bar-free"],
+                 "prop": { "block": "minecraft:lever[face=floor,facing=north]" },
+                 "answers": { "not_yet": "The bar is chained." },
+                 "effects": [ { "type": "narrate", "text": "Pulled.", "style": "chat" } ] }"#,
         )
         .expect("trigger parses"),
-    ];
+    );
     c
 }
 
-fn build(c: &Campaign) -> BuildOutput {
+fn plan_and_build(c: &Campaign) -> (BTreeMap<[i32; 3], String>, BuildOutput) {
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(c, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
@@ -62,7 +63,7 @@ fn build(c: &Campaign) -> BuildOutput {
             }
         }
     }
-    emit::build(
+    let out = emit::build(
         &plan,
         &BTreeMap::new(),
         &structures,
@@ -71,7 +72,8 @@ fn build(c: &Campaign) -> BuildOutput {
         None,
         &BTreeMap::new(),
     )
-    .expect("the fixture builds, DW1013 included")
+    .expect("the fixture builds, DW1013 included");
+    (gate_blocks(&plan), out)
 }
 
 /// Every shipped `summon minecraft:interaction` line, as `(path, line)`.
@@ -90,80 +92,22 @@ fn summons(out: &BuildOutput) -> Vec<(String, String)> {
     v
 }
 
-#[test]
-fn every_click_box_the_build_places_is_judged_and_wins() {
-    let out = build(&fixture());
-    let ledger: serde_json::Value = serde_json::from_slice(
-        out.get("validation/click-box.json")
-            .expect("the build writes the DW1013 ledger"),
-    )
-    .unwrap();
-    // The second reading: a placed box is a fixture-class summon at absolute
-    // coordinates; counted here by plain text, not by the check's parser.
-    let all = summons(&out);
-    let placed = all
-        .iter()
-        .filter(|(_, l)| l.contains("\"dw_fixture\"") && !l.contains(" ~"))
-        .count();
-    let borne = all
-        .iter()
-        .filter(|(_, l)| l.contains("\"dw_borne\""))
-        .count();
-    assert!(placed > 0, "the fixture places click boxes: {all:#?}");
-    assert_eq!(ledger["summons"], all.len(), "{ledger}");
-    assert_eq!(ledger["judged"], placed, "{ledger}");
-    assert_eq!(ledger["borne"], borne, "{ledger}");
-    // The families the fixture carries are each bound: the shortcut's unlock and
-    // its sealed door.
-    for family in ["dw_sc", "dw_ws"] {
-        assert!(
-            ledger["placed"][family].as_u64().unwrap_or(0) > 0,
-            "`{family}` boxes are judged: {ledger}"
-        );
-    }
-    let b = check(&out).expect("the shipped boxes all win the pick");
-    assert_eq!(b.judged(), placed);
-}
-
-#[test]
-fn the_full_prop_trigger_box_is_the_column_the_rule_builds() {
-    let out = build(&campaign());
-    let lines: Vec<String> = summons(&out)
-        .into_iter()
-        .map(|(_, l)| l)
-        .filter(|l| l.contains("\"dw_trig_open_the_barrel\""))
-        .collect();
-    assert_eq!(lines.len(), 1, "{lines:#?}");
-    assert!(
-        lines[0].contains(" 64.99 ") && lines[0].contains("{width:1.02f,height:2.02f,"),
-        "one margin past the barrel's faces and the head cell's: {}",
-        lines[0]
-    );
-}
-
-/// The perturbation, toward the shape the finding shipped with: the same build,
-/// the barrel trigger's box planted back as the flush `1.0 × 2.0` at the cell
-/// floor. Only `DW1013` reads a box's faces against the grid.
-#[test]
-fn the_same_build_with_a_flush_box_planted_is_refused() {
-    let mut out = build(&campaign());
+/// Rewrite every summon carrying `tag` through `f`; how many were rewritten.
+fn plant(out: &mut BuildOutput, tag: &str, f: impl Fn(&str) -> String) -> usize {
     let mut planted = 0;
     for bytes in out.values_mut() {
         let Ok(text) = std::str::from_utf8(bytes) else {
             continue;
         };
-        if !text.contains("\"dw_trig_open_the_barrel\"") {
+        if !text.contains(tag) {
             continue;
         }
         let new: Vec<String> = text
             .lines()
             .map(|l| {
-                if l.contains("summon minecraft:interaction ")
-                    && l.contains("\"dw_trig_open_the_barrel\"")
-                {
+                if l.contains("summon minecraft:interaction ") && l.contains(tag) {
                     planted += 1;
-                    l.replace(" 64.99 ", " 65.0 ")
-                        .replace("width:1.02f,height:2.02f", "width:1.0f,height:2.0f")
+                    f(l)
                 } else {
                     l.to_string()
                 }
@@ -171,12 +115,96 @@ fn the_same_build_with_a_flush_box_planted_is_refused() {
             .collect();
         *bytes = format!("{}\n", new.join("\n")).into_bytes();
     }
-    assert_eq!(planted, 1, "exactly the one box is planted");
-    let e = check(&out).expect_err("a flush box ties the barrel and loses the click");
+    planted
+}
+
+#[test]
+fn every_click_box_the_build_places_is_judged_against_its_block() {
+    for c in [fixture(), campaign()] {
+        let (gates, out) = plan_and_build(&c);
+        let ledger: serde_json::Value = serde_json::from_slice(
+            out.get("validation/click-box.json")
+                .expect("the build writes the DW1013 ledger"),
+        )
+        .unwrap();
+        // The second reading: a placed box is a fixture-class summon at
+        // absolute coordinates; counted here by plain text, not by the check's
+        // parser.
+        let all = summons(&out);
+        let placed = all
+            .iter()
+            .filter(|(_, l)| l.contains("\"dw_fixture\"") && !l.contains(" ~"))
+            .count();
+        let borne = all
+            .iter()
+            .filter(|(_, l)| l.contains("\"dw_borne\""))
+            .count();
+        assert!(placed > 0, "the fixture places click boxes: {all:#?}");
+        assert_eq!(ledger["summons"], all.len(), "{ledger}");
+        assert_eq!(ledger["judged"], placed, "{ledger}");
+        assert_eq!(ledger["borne"], borne, "{ledger}");
+        // The sealed door's own answer box is judged against the door's bars.
+        assert!(
+            ledger["placed"]["dw_gate"].as_u64().unwrap_or(0) > 0,
+            "the gate's own answer box is judged: {ledger}"
+        );
+        let b = check(&out, &gates).expect("every shipped box fits its block");
+        assert_eq!(b.judged(), placed);
+    }
+}
+
+#[test]
+fn a_gated_lever_gets_the_fitted_box() {
+    let (_, out) = plan_and_build(&campaign());
+    let lines: Vec<String> = summons(&out)
+        .into_iter()
+        .map(|(_, l)| l)
+        .filter(|l| l.contains(LEVER_TAG))
+        .collect();
+    assert!(!lines.is_empty(), "the lever is boxed");
+    for l in &lines {
+        assert!(
+            l.contains("{width:0.52f,height:0.395f,") && l.contains(".99 "),
+            "a floor lever's outline one margin out on every face: {l}"
+        );
+    }
+}
+
+/// The perturbation: the lever's box written one margin short on its top face,
+/// so its top lies on the lever's own outline. Only `DW1013` reads a box's faces
+/// against the block it stands over.
+#[test]
+fn a_box_one_margin_short_is_refused_naming_the_face() {
+    let (gates, mut out) = plan_and_build(&campaign());
+    let n = plant(&mut out, LEVER_TAG, |l| {
+        l.replace("height:0.395f", "height:0.385f")
+    });
+    assert!(n > 0, "the lever's box is planted");
+    let e = check(&out, &gates).expect_err("a box flush with the lever loses its top");
     assert_eq!(e.code, DW_CLICK_BOX_FLUSH);
     assert!(
-        e.message.contains("dw_trig_open_the_barrel"),
+        e.message.contains("top face") && e.message.contains("minecraft:lever"),
         "{}",
         e.message
     );
+}
+
+/// A box moved two cells up stands over a cell `setup_finish` leaves as air.
+#[test]
+fn a_box_over_air_is_refused_naming_the_cell() {
+    let (gates, mut out) = plan_and_build(&campaign());
+    let n = plant(&mut out, LEVER_TAG, |l| {
+        let mut f: Vec<String> = l.split(' ').map(str::to_string).collect();
+        let i = f
+            .iter()
+            .position(|w| w == "minecraft:interaction")
+            .expect("a summon line");
+        let y: f64 = f[i + 2].parse().unwrap();
+        f[i + 2] = format!("{:.2}", y + 2.0);
+        f.join(" ")
+    });
+    assert!(n > 0);
+    let e = check(&out, &gates).expect_err("a box in the air");
+    assert_eq!(e.code, DW_CLICK_BOX_FLUSH);
+    assert!(e.message.contains("stands in the air"), "{}", e.message);
 }

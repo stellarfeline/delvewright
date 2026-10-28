@@ -47,6 +47,10 @@
             ],
             "anchor": "anchor/bank-corner",
             "announcement": "hidden",
+            "answers": {
+              "done": "The stone is already pressed home.",
+              "not_yet": "The stone sits fast; the far corner has not been reached."
+            },
             "happening": {
               "text": "the party presses the stone set in the far corner of the parapet",
               "verb": "opens"
@@ -144,6 +148,6 @@
       }
     ]
   },
-  "dsl_version": "0.63.0",
+  "dsl_version": "0.67.0",
   "stage": "quests"
 }

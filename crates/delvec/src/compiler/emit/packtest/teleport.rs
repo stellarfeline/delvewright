@@ -71,7 +71,7 @@ pub(super) fn emit_fixture_packtests(plan: &Plan, out: &mut BuildOutput) {
         ];
         let at = format!("{} {} {}", mid[0] as f64 + 0.5, mid[1], mid[2] as f64 + 0.5);
         let tag = stk_tag();
-        let hw = crate::compiler::affordance::hardware_tag(&tag);
+        let hw = STK_DISPLAY_TAG;
         let body = format!("dw_fixbody_{key}");
         let (pin, me) = pin_dummy(&format!("dw_fixtest_{key}"));
         let sc = key.to_string();

@@ -21,7 +21,7 @@ use super::shutmodel::{
 use super::*;
 use crate::compiler::failure::Failure;
 use delvewright_dsl::layout::Learned;
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
 
 delvewright_dsl::dw_code! {
     /// `DW1053`: **a shut way the party meets, learned by no declared means**
@@ -35,7 +35,7 @@ delvewright_dsl::dw_code! {
 delvewright_dsl::dw_code! {
     /// `DW1054`: **a declaration the world does not confirm** (spec-0118 §6.2):
     /// `seen`, but from the junction the eye meets a hiding cell before the
-    /// bar; `told`, but nothing answers a press at the seam; `rewarded`, but no
+    /// bar; `told`, but no `use` trigger serves the seam; `rewarded`, but no
     /// pickup, interaction or fight stands on the branch's ground; `hidden`,
     /// but an eye in the reach sees the way or its far side, or the beat that
     /// opens it carries no shot of its seam. As a warning, a word on a
@@ -172,8 +172,8 @@ pub(super) struct ShutWay {
     pub learned: Option<Learned>,
     /// The seam anchor a press is answered at (`anchor/seam-<edge>`).
     pub seam: String,
-    /// The `use` trigger that answers a press at the seam, if one does
-    /// ([`delvewright_dsl::QuestsContent::answers_press_at`]).
+    /// The `use` trigger that answers a press on the seam's gate, if one does
+    /// ([`delvewright_dsl::QuestsContent::gate_answers`]).
     pub answered_by: Option<String>,
     /// The block the gate is shut with, as the anchor declares it — named
     /// when an eye looks through it.
@@ -489,7 +489,6 @@ pub fn check_shut_ways_learned(
 ) -> (ShutWayBinding, Result<(), Failure>) {
     let gated = gated_connections(plan);
     let q = &plan.campaign.quests.content;
-    let triggers = q.all_triggers();
     let mut ways: Vec<ShutWay> = Vec::new();
     for (seal, _) in world.every_gate() {
         let Some(g) = gated.get(&seal.anchor) else {
@@ -500,18 +499,11 @@ pub fn check_shut_ways_learned(
             let (a, b) = (e.a().to_string(), e.b().to_string());
             if a_low { (a, b) } else { (b, a) }
         });
-        let answered_by = triggers
-            .iter()
-            .find(|t| {
-                matches!(t.on, delvewright_dsl::TriggerOn::Use)
-                    && t.at_anchor() == Some(seal.anchor.as_str())
-            })
+        // The press answer is the predicate `DW0429` reads (spec-0117 §6).
+        let answered_by = q
+            .gate_answers(&seal.anchor)
+            .next()
             .map(|t| t.id.to_string());
-        debug_assert_eq!(
-            answered_by.is_some(),
-            q.answers_press_at(&seal.anchor),
-            "the press answer is the predicate DW0429 reads"
-        );
         let far = sides
             .as_ref()
             .and_then(|(lo, hi)| Some((space_of(plan, lo)?, space_of(plan, hi)?)));
@@ -555,31 +547,63 @@ pub fn check_shut_ways_learned(
     (binding, verdict)
 }
 
-/// The breadth-first tree of body moves from the route cells: each cell's
-/// predecessor, and every cell in order of moves from the route, ties broken
-/// by the cell (ADR-0006).
-fn route_tree(w: &World, route: &[[i32; 3]]) -> (Tree, Vec<[i32; 3]>) {
-    let mut pred: BTreeMap<[i32; 3], Option<[i32; 3]>> = BTreeMap::new();
-    let mut dist: BTreeMap<[i32; 3], usize> = BTreeMap::new();
-    let mut queue: VecDeque<[i32; 3]> = VecDeque::new();
+/// The tree of the reach graph's moves from the route cells, over the party's
+/// closure `graph` ([`super::shutmodel::party_reach`]): each cell's
+/// predecessor, and every cell in order from the route, ties broken by the
+/// cell (ADR-0006). It walks the closure's own edges ([`Reach::succ`], the
+/// open sea joined to itself as [`Reach::next`] joins it) and holds exactly
+/// its cells: the order the eye is asked in, never a second answer to where a
+/// body gets to.
+///
+/// A path takes the fewest leaps first — any edge but a step of the graph's
+/// cell relation (an edge that is no flown launch: the walk, the climb, the
+/// wade and the straight drop) — and of
+/// those the fewest moves, as `DW1011`'s witness does: a branch is walked
+/// cell by cell where it can be, so its path is one body wide and its junction
+/// is where a body walking off the route leaves it, and a jump is on the path
+/// only where the walk cannot go.
+pub(super) fn route_tree(graph: &Reach, route: &[[i32; 3]]) -> (Tree, Vec<[i32; 3]>) {
+    use std::cmp::Reverse;
+    use std::collections::BinaryHeap;
+    let mut pred: Tree = BTreeMap::new();
+    let mut best: BTreeMap<[i32; 3], (u32, u32)> = BTreeMap::new();
+    let mut heap: BinaryHeap<Reverse<(u32, u32, [i32; 3])>> = BinaryHeap::new();
     for c in route {
-        if pred.insert(*c, None).is_none() {
-            dist.insert(*c, 0);
-            queue.push_back(*c);
+        if best.insert(*c, (0, 0)).is_none() {
+            pred.insert(*c, None);
+            heap.push(Reverse((0, 0, *c)));
         }
     }
-    while let Some(cur) = queue.pop_front() {
-        let d = dist[&cur] + 1;
-        for n in w.body_moves(cur) {
-            if let std::collections::btree_map::Entry::Vacant(v) = pred.entry(n) {
-                v.insert(Some(cur));
-                dist.insert(n, d);
-                queue.push_back(n);
+    while let Some(Reverse((leaps, moves, cur))) = heap.pop() {
+        if best.get(&cur).is_some_and(|b| *b < (leaps, moves)) {
+            continue;
+        }
+        let edges = graph
+            .succ
+            .get(&cur)
+            .into_iter()
+            .flatten()
+            .map(|e| (e.to, e.yaw.is_none()));
+        let sea = graph
+            .open_sea
+            .contains(&cur)
+            .then(|| graph.open_sea.iter().map(|&c| (c, false)))
+            .into_iter()
+            .flatten();
+        for (n, step) in edges.chain(sea) {
+            if n == cur || !graph.states.contains_key(&n) {
+                continue;
+            }
+            let cost = (leaps + u32::from(!step), moves + 1);
+            if best.get(&n).is_none_or(|b| cost < *b) {
+                best.insert(n, cost);
+                pred.insert(n, Some(cur));
+                heap.push(Reverse((cost.0, cost.1, n)));
             }
         }
     }
-    let mut order: Vec<[i32; 3]> = dist.keys().copied().collect();
-    order.sort_by_key(|c| (dist[c], *c));
+    let mut order: Vec<[i32; 3]> = best.keys().copied().collect();
+    order.sort_by_key(|c| (best[c], *c));
     (pred, order)
 }
 
@@ -649,9 +673,14 @@ fn cut_branch(
 /// **The ground behind one cut**: the cells a body reaches from the shut
 /// way's face that it cannot reach from the open route without passing the
 /// cut — the junction, the branch path, and the cross-section `across` when
-/// one is given. The open side is the body-move closure of the route cells
-/// with the cut taken out; the ground is the closure from the face, less that
-/// open side, less every cell one move from it, and less the route itself. On
+/// one is given. The open side is the reach graph's closure of the route cells
+/// ([`World::body_flood`]) over the world with the cut walled up
+/// ([`World::walls_over`], the one rule a walk over the graph takes floor out
+/// of a body's reach by); the ground is the unconfined closure
+/// from the face, less that open side, less every cell beside it, and less
+/// the route itself. A cut cell is beside the open side when one move of the
+/// graph ([`World::body_edges`]) lands there; any other cell when one step of
+/// the graph's cell relation (an edge that is no flown launch) does. On
 /// an open floor the open side flows round the cut, so the ground is empty:
 /// an open floor is not a branch, and nothing on it pays for one.
 fn branch_ground(
@@ -662,32 +691,30 @@ fn branch_ground(
     across: &BTreeSet<[i32; 3]>,
 ) -> BTreeSet<[i32; 3]> {
     let cut: BTreeSet<[i32; 3]> = path.iter().chain(across).copied().collect();
-    let flood = |roots: Vec<[i32; 3]>, avoid: &BTreeSet<[i32; 3]>| {
-        let mut seen: BTreeSet<[i32; 3]> = roots.into_iter().collect();
-        let mut queue: VecDeque<[i32; 3]> = seen.iter().copied().collect();
-        while let Some(cur) = queue.pop_front() {
-            for n in w.body_moves(cur) {
-                if !avoid.contains(&n) && seen.insert(n) {
-                    queue.push_back(n);
-                }
-            }
-        }
-        seen
+    // The cut is a wall ([`World::walls_over`]): a jump that lands past it
+    // flies through its cells without standing in them, so a cut made by
+    // leaving cells out of the walk is crossed in the air.
+    let walls = World::walls_over(&cut, &|p| !w.solid_at(p));
+    let tops = World::wall_tops(&walls);
+    let walled = w.with_sealed(&walls);
+    let roots: Vec<[i32; 3]> = route.iter().copied().filter(|c| !cut.contains(c)).collect();
+    let open = walled.body_flood(&roots, &Confinement::cells(&|c| !tops.contains(&c)));
+    // A cell beside the open side is open ground too: on an open floor the
+    // cut's own cells, taken out of the flood, stand beside it — a cut cell
+    // from which one move of the graph, a leap included, lands on the open
+    // side. Any other cell is beside it when one step of the graph's cell
+    // relation (an edge that is no flown launch) takes it there: a leap off
+    // the far side of a real cut lands on the open side too, and the ground
+    // behind the cut is not open for that.
+    let beside = |c: [i32; 3]| {
+        let leaps = cut.contains(&c);
+        w.body_edges(c)
+            .iter()
+            .any(|e| (leaps || e.yaw.is_none()) && open.contains(&e.to))
     };
-    let open = flood(
-        route.iter().copied().filter(|c| !cut.contains(c)).collect(),
-        &cut,
-    );
-    let none = BTreeSet::new();
-    // A cell one move from the open side is open ground too: on an open floor
-    // the branch path's own cells, taken out of the flood, stand beside it.
-    flood(face.to_vec(), &none)
+    w.body_flood(face, &Confinement::none())
         .into_iter()
-        .filter(|c| {
-            !open.contains(c)
-                && !route.contains(c)
-                && !w.body_moves(*c).iter().any(|n| open.contains(n))
-        })
+        .filter(|c| !open.contains(c) && !route.contains(c) && !beside(*c))
         .collect()
 }
 
@@ -940,7 +967,9 @@ pub(super) fn verify_shut_ways(
 
 /// What one configuration yields: the shut ways met in it, and the hidden
 /// eye over each way shut in it that owes one.
-type ConfigFindings = (Vec<Met>, Vec<HiddenFinding>);
+/// A configuration whose reach graph passed its budget yields its closure
+/// and nothing else: a partial closure takes no verdict (spec-0113 §5.3).
+type ConfigFindings = (Vec<Met>, Vec<HiddenFinding>, Option<u64>, Reach);
 
 #[allow(clippy::too_many_lines)]
 fn verify_with_eye(
@@ -969,9 +998,13 @@ fn verify_with_eye(
     let per_config: Vec<ConfigFindings> = crate::par::map(
         &configs.iter().enumerate().collect::<Vec<_>>(),
         |(ci, (w, _, route, shut))| {
-            let (seeds, reach) = party_reach(w, route);
+            let (seeds, graph) = party_reach(w, route);
+            if let Some(budget) = graph.over_budget {
+                return (Vec::new(), Vec::new(), Some(budget), graph);
+            }
+            let reach = graph.cells();
             let route_set: BTreeSet<[i32; 3]> = seeds.iter().copied().collect();
-            let (tree, order) = route_tree(w, &seeds);
+            let (tree, order) = route_tree(&graph, &seeds);
             let mut out: Vec<Met> = Vec::new();
             let mut hidden: Vec<HiddenFinding> = Vec::new();
             for &gi in shut {
@@ -1053,14 +1086,21 @@ fn verify_with_eye(
                     });
                 }
             }
-            (out, hidden)
+            (out, hidden, None, graph)
         },
     );
     let mut met: Vec<Met> = Vec::new();
     let mut hidden: Vec<HiddenFinding> = Vec::new();
-    for (m, h) in per_config {
+    let mut over_budget: Option<u64> = None;
+    let mut graphs = ReachBinding::default();
+    for (ci, (m, h, over, graph)) in per_config.into_iter().enumerate() {
+        over_budget = over_budget.or(over);
+        graphs.add(configs[ci].0, &graph);
         met.extend(m);
         hidden.extend(h);
+    }
+    if let Some(budget) = over_budget {
+        return (binding, Err(reach_budget_failure(&graphs, budget)));
     }
     // A hidden way is confirmed when no configuration it is shut in has an
     // eye that sees it, and the beat that opens it shows it.
@@ -1269,8 +1309,8 @@ fn seen_words(m: &Met) -> String {
 
 fn told_words(way: &ShutWay) -> String {
     match &way.answered_by {
-        Some(t) => format!("`{t}` answers a press at `{}`", way.seam),
-        None => format!("nothing answers a press at `{}`", way.seam),
+        Some(t) => format!("`{t}` answers a press on `{}`", way.seam),
+        None => format!("no `use` trigger serves `{}`", way.seam),
     }
 }
 
@@ -1411,8 +1451,10 @@ fn unconfirmed_words(way: &ShutWay, m: &Met, configs: &[SeparationConfig<'_>]) -
             seen_words(m)
         ),
         Some(Learned::Told) => format!(
-            "{place}; declared `told`, but nothing answers a press at `{}`. Anchor a trigger on \
-             the seam — {}",
+            "{place}; declared `told`, but no `use` trigger serves `{}`. Anchor a trigger on \
+             the seam — {} — whose body is the gate's own block; or, where no anchor names a cell \
+             of the gate, a knocker (a bell or a button with its `prop`, and its `answers.done`) \
+             face-adjacent to it",
             way.seam,
             delvewright_dsl::trigger::press_answer_prescription(&way.seam, "the way")
         ),
@@ -1828,18 +1870,20 @@ mod learned_tests {
             .nth(1)
             .and_then(|t| t.split('`').next())
             .expect("the message carries the prescription")
-            .replace("trigger/<name>", "trigger/seam-answer");
+            .replace("trigger/<name>", "trigger/seam-answer")
+            .replace("<the door cell's anchor>", "anchor/seam-test-leaf");
         let trigger: delvewright_dsl::EnvTrigger =
             serde_json::from_str(&json).expect("the prescription is a trigger");
         let mut q: delvewright_dsl::QuestsContent =
             serde_json::from_value(serde_json::json!({ "quests": [] })).expect("an empty mission");
         q.triggers.push(trigger);
-        assert!(q.answers_press_at("anchor/seam-test"));
+        assert_eq!(q.gate_answers("anchor/seam-test").count(), 1);
         assert_eq!(
             json,
             delvewright_dsl::trigger::press_answer_prescription("anchor/seam-test", "the way")
                 .trim_matches('`')
                 .replace("trigger/<name>", "trigger/seam-answer")
+                .replace("<the door cell's anchor>", "anchor/seam-test-leaf")
         );
     }
 
@@ -1940,7 +1984,7 @@ mod learned_tests {
         );
         for w in [
             "`seen` — the bar is seen",
-            "`told` — nothing answers",
+            "`told` — no `use` trigger serves",
             "`rewarded` — no pickup",
         ] {
             assert!(err.message.contains(w), "{w}: {}", err.message);

@@ -912,6 +912,11 @@
             ],
             "anchor": "anchor/pedestal",
             "announcement": "shown",
+            "answers": {
+              "done": "The case stands open. What it held is out.",
+              "missing_item": "The Curator gave you the case key. It only opens the case from your hand.",
+              "not_yet": "The case is shut, and nothing in it is yours yet."
+            },
             "compass": "shown",
             "forbids_flags": [
               "flag/hall-sealed"
@@ -926,7 +931,6 @@
             },
             "hint": "The case stands in the middle of the near hall.",
             "id": "obj/press-the-case",
-            "missing_item_hint": "The Curator gave you the case key. It only opens the case from your hand.",
             "prop": {
               "block": "minecraft:stone_button[face=floor,facing=north]"
             },
@@ -995,7 +999,7 @@
             },
             "hint": "The Factor, the hall's trader, keeps the counter in the near hall.",
             "id": "obj/reach-the-counter",
-            "radius": 3,
+            "radius": 2,
             "requires_flags": [
               "flag/sentinel-sunk"
             ],
@@ -1021,6 +1025,11 @@
             ],
             "anchor": "anchor/tray",
             "announcement": "shown",
+            "answers": {
+              "done": "The emerald is on the tray already.",
+              "missing_item": "The tray takes an emerald, and your hand is empty of one.",
+              "not_yet": "The Factor's bell is not for ringing yet."
+            },
             "forbids_flags": [
               "flag/hall-sealed"
             ],
@@ -1032,7 +1041,7 @@
             "hint": "The Factor's tray sits at the far end of the counter from the stall.",
             "id": "obj/lay-an-emerald",
             "prop": {
-              "block": "minecraft:smooth_stone_slab"
+              "block": "minecraft:bell[attachment=floor,facing=south]"
             },
             "requires_flags": [],
             "requires_item": "minecraft:emerald",
@@ -1102,6 +1111,12 @@
           },
           {
             "anchor": "anchor/hearth",
+            "answers": {
+              "not_yet": "The hearth is cold; nothing has been lit here yet."
+            },
+            "highlight": {
+              "within": 4
+            },
             "on_rest": [
               {
                 "style": "chat",
@@ -1129,6 +1144,9 @@
               }
             ],
             "prompt": "Rest at the hearth",
+            "prop": {
+              "block": "minecraft:campfire[facing=north,lit=true,signal_fire=false,waterlogged=false]"
+            },
             "rest_label": "Rest",
             "rest_tooltip": "The hearth keeps you, and the hall sets itself back up.",
             "save_label": "Save and quit",
@@ -2202,7 +2220,7 @@
                 "anchor": "anchor/exit",
                 "offset": [
                   0,
-                  3,
+                  5,
                   -3
                 ]
               },
@@ -2210,7 +2228,7 @@
                 "anchor": "anchor/exit",
                 "offset": [
                   0,
-                  3,
+                  5,
                   -6
                 ]
               }
@@ -2584,7 +2602,6 @@
                 "text": "The main gate comes down again.",
                 "verb": "seals"
               },
-              "sealed_hint": "The main gate has come back down and will not lift from this side.",
               "type": "close-gate",
               "when": {
                 "forbids_flags": [
@@ -2636,9 +2653,9 @@
               "kill_zone": {
                 "anchor": "anchor/march",
                 "extent": [
-                  3,
                   1,
-                  2
+                  1,
+                  1
                 ]
               },
               "projectile": "minecraft:arrow",
@@ -3482,8 +3499,9 @@
               "text": "The west bay keeps the rest of it, and nothing on the way out needs any of it.",
               "verb": "learns"
             },
+            "hint": "The other arch, on the far side of the ferry's deck.",
             "id": "obj/look-in-the-west-bay",
-            "radius": 3,
+            "radius": 1,
             "title": "Look into the other side bay",
             "type": "reach-anchor"
           },
@@ -3505,6 +3523,59 @@
             "radius": 3,
             "title": "Go to the mouth of the well",
             "type": "reach-anchor"
+          },
+          {
+            "after": [
+              "obj/look-in-the-east-bay"
+            ],
+            "anchor": "anchor/bay-door",
+            "announcement": "shown",
+            "answers": {
+              "not_yet": "The bay door is barred from within."
+            },
+            "happening": {
+              "subject": "anchor/bay-door",
+              "text": "The bar lifts off the bay door.",
+              "verb": "opens"
+            },
+            "hint": "The bay door stands on its own in the far hall's corner past the bay; the knocker is on the floor beside the wall.",
+            "id": "obj/open-the-bay-door",
+            "prop": {
+              "block": "minecraft:spruce_door[facing=north,half=lower,hinge=left,open=false]"
+            },
+            "release": true,
+            "requires_state": [
+              {
+                "op": "at-least",
+                "state": "state/bay-knocks",
+                "value": 2
+              }
+            ],
+            "title": "Open the bay door",
+            "type": "interact"
+          },
+          {
+            "after": [
+              "obj/open-the-bay-door"
+            ],
+            "anchor": "anchor/reliquary-chest",
+            "announcement": "shown",
+            "answers": {
+              "done": "Empty. What it held is gone.",
+              "not_yet": "The lid will not lift while the bay door is barred."
+            },
+            "happening": {
+              "subject": "anchor/reliquary-chest",
+              "text": "The reliquary chest opens on nothing.",
+              "verb": "opens"
+            },
+            "hint": "The reliquary chest sits against the far hall's wall, by the bay door.",
+            "id": "obj/lift-the-lid",
+            "prop": {
+              "block": "minecraft:chest[facing=west]"
+            },
+            "title": "Lift the reliquary lid",
+            "type": "interact"
           }
         ],
         "on_complete": [
@@ -3693,8 +3764,10 @@
     "shops": [
       {
         "anchor": "anchor/counter",
+        "highlight": {
+          "within": 4
+        },
         "id": "shop/counter",
-        "marker_item": "minecraft:emerald",
         "offers": [
           {
             "effects": [
@@ -3859,12 +3932,22 @@
             "tooltip": "The Factor sells what the case holds: an edge that stays sharp, and a page an anvil can read."
           }
         ],
+        "prop": {
+          "block": "minecraft:oak_button[face=floor,facing=north]"
+        },
         "title": "The Factor's Counter"
       }
     ],
     "shortcuts": [
       {
+        "answers": {
+          "done": "The bar is thrown; the side door stands open.",
+          "not_yet": "Barred. The bar is on the other side."
+        },
         "gate": "anchor/shortcut-door",
+        "highlight": {
+          "within": 6
+        },
         "id": "shortcut/side-door",
         "on_unlock": [
           {
@@ -3888,6 +3971,9 @@
             }
           }
         ],
+        "prop": {
+          "block": "minecraft:stone_button[face=floor,facing=north]"
+        },
         "unlock": "anchor/side-lever"
       }
     ],
@@ -3899,8 +3985,10 @@
           "kind": "proportion",
           "percent": 50
         },
+        "highlight": {
+          "within": 4
+        },
         "id": "stake/tokens",
-        "marker_item": "minecraft:lantern",
         "max_live": 2,
         "on_full": "keep",
         "state": "state/tokens"
@@ -3912,7 +4000,6 @@
           "kind": "all"
         },
         "id": "stake/relics",
-        "marker_item": "minecraft:lantern",
         "max_live": 1,
         "on_full": "replace",
         "state": "state/relics"
@@ -3925,7 +4012,6 @@
           "kind": "fixed"
         },
         "id": "stake/toll",
-        "marker_item": "minecraft:lantern",
         "state": "state/toll"
       },
       {
@@ -3935,7 +4021,6 @@
           "kind": "none"
         },
         "id": "stake/keepsake",
-        "marker_item": "minecraft:lantern",
         "state": "state/keepsake"
       }
     ],
@@ -4009,6 +4094,11 @@
         "id": "state/hearth-struck",
         "note": "Whether anybody struck the hearth before the far hall closed: the deed the two endings divide on.",
         "scope": "party"
+      },
+      {
+        "id": "state/bay-knocks",
+        "initial": 0,
+        "scope": "party"
       }
     ],
     "timed_gates": [
@@ -4030,6 +4120,15 @@
         "closed_ticks": 60,
         "crush": true,
         "disarm": {
+          "answers": {
+            "done": "The portcullis is jammed open already."
+          },
+          "highlight": {
+            "within": 4
+          },
+          "prop": {
+            "block": "minecraft:stone_button[face=floor,facing=north]"
+          },
           "sets_flag": "flag/gate-jammed",
           "via": "anchor/clock-lever"
         },
@@ -4043,6 +4142,13 @@
       {
         "at": "anchor/march",
         "disarm": {
+          "highlight": {
+            "within": 4
+          },
+          "prop": {
+            "block": "minecraft:lever[face=floor,facing=north,powered=false]"
+          },
+          "release": true,
           "sets_flag": "flag/plate-disarmed",
           "via": "anchor/plate-lever"
         },
@@ -4151,6 +4257,9 @@
     ],
     "triggers": [
       {
+        "answers": {
+          "not_yet": "The label has gone dark behind the shut gate."
+        },
         "at": "anchor/label",
         "audience": "presser",
         "effects": [
@@ -4181,12 +4290,16 @@
         },
         "once": false,
         "prop": {
-          "block": "minecraft:oak_sign[rotation=8]"
+          "block": "minecraft:stone_button[face=floor,facing=north]"
         }
       },
       {
+        "answers": {
+          "done": "The hearth stone has already spoken.",
+          "not_yet": "The hearth stone gives back nothing yet."
+        },
         "at": "anchor/hearth-stone",
-        "audience": "party",
+        "audience": "presser",
         "effects": [
           {
             "at": {
@@ -4235,6 +4348,10 @@
         ]
       },
       {
+        "answers": {
+          "done": "The warden has already been told.",
+          "not_yet": "The warden does not turn for that now."
+        },
         "effects": [
           {
             "style": "chat",
@@ -4309,7 +4426,7 @@
         ]
       },
       {
-        "at": "anchor/shortcut-door",
+        "at": "anchor/shortcut-door-leaf",
         "audience": "presser",
         "effects": [
           {
@@ -4340,7 +4457,10 @@
         "once": false,
         "requires_flags": [
           "flag/hall-open"
-        ]
+        ],
+        "serves": {
+          "gate": "anchor/shortcut-door"
+        }
       },
       {
         "at": "anchor/annex-second-bay",
@@ -4363,6 +4483,9 @@
         }
       },
       {
+        "answers": {
+          "not_yet": "The tiller is lashed until the party is aboard."
+        },
         "at": "anchor/ferry-tiller",
         "effects": [
           {
@@ -4377,7 +4500,7 @@
                         "anchor": "anchor/ferry-deck",
                         "offset": [
                           0,
-                          3,
+                          1,
                           2
                         ]
                       },
@@ -4385,12 +4508,12 @@
                         "anchor": "anchor/ferry-deck",
                         "offset": [
                           0,
-                          3,
+                          1,
                           -2
                         ]
                       }
                     ],
-                    "seconds": 1,
+                    "seconds": 3,
                     "subject": {
                       "region": {
                         "anchor": "anchor/ferry-deck",
@@ -4444,6 +4567,9 @@
         ]
       },
       {
+        "answers": {
+          "not_yet": "The sentinel is sunk and takes no more blows."
+        },
         "effects": [
           {
             "amount": 1,
@@ -4489,6 +4615,9 @@
         "once": false
       },
       {
+        "answers": {
+          "not_yet": "The cabin's lever does nothing ashore."
+        },
         "at": "anchor/cabin-chest",
         "effects": [
           {
@@ -4731,6 +4860,75 @@
         "requires_flags": [
           "flag/flight-relaid"
         ]
+      },
+      {
+        "at": "anchor/gate-main-leaf",
+        "audience": "presser",
+        "effects": [
+          {
+            "style": "actionbar",
+            "text": "The main gate has come back down and will not lift from this side.",
+            "type": "narrate"
+          }
+        ],
+        "id": "trigger/main-gate-answers",
+        "on": {
+          "on": "use"
+        },
+        "once": false,
+        "serves": {
+          "gate": "anchor/gate-main"
+        }
+      },
+      {
+        "answers": {
+          "done": "The sluice is open; the lever stays down.",
+          "not_yet": "The sluice lever is chained to its post."
+        },
+        "at": "anchor/sluice-lever",
+        "effects": [
+          {
+            "style": "actionbar",
+            "text": "Water runs somewhere under the floor.",
+            "type": "narrate"
+          }
+        ],
+        "id": "trigger/pull-the-sluice",
+        "on": {
+          "on": "use"
+        },
+        "once": true,
+        "prop": {
+          "block": "minecraft:lever[face=floor,facing=north,powered=false]"
+        },
+        "requires_flags": [
+          "flag/hall-open"
+        ]
+      },
+      {
+        "answers": {
+          "done": "The bar is already off the bay door.",
+          "not_yet": "No one would hear a knock from here yet."
+        },
+        "at": "anchor/bay-knock",
+        "effects": [
+          {
+            "amount": 1,
+            "state": "state/bay-knocks",
+            "type": "add-state"
+          }
+        ],
+        "id": "trigger/knock-the-bay",
+        "on": {
+          "on": "use"
+        },
+        "once": false,
+        "prop": {
+          "block": "minecraft:oak_button[face=floor,facing=west]"
+        },
+        "serves": {
+          "objective": "obj/open-the-bay-door"
+        }
       }
     ],
     "waves": [
@@ -4878,6 +5076,6 @@
       }
     ]
   },
-  "dsl_version": "0.63.0",
+  "dsl_version": "0.67.0",
   "stage": "quests"
 }

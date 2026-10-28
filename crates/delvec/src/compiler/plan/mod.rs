@@ -152,6 +152,14 @@ pub struct Plan<'a> {
     /// for every campaign that declares none — which is what keeps the navigation
     /// world, the emitted tick and the build outputs byte-identical.
     pub lethal_volumes: Vec<LethalVolumePlan>,
+    /// Resolved declared jumps (spec-0113 §6), declaration-ordered: each
+    /// anchor's cell. A jump whose anchor no placed piece provides is dropped
+    /// (validation already reported `DW0142`). Empty for every campaign that
+    /// declares none.
+    pub jumps: Vec<JumpPlan>,
+    /// Every item and effect the campaign gives a player, read for how it moves
+    /// a body (spec-0113 §5.4, `DW1043`).
+    pub movement: crate::compiler::nav::MovementItems,
     /// Resolved loops (spec-0086), declaration-ordered. Empty for every campaign
     /// that declares none, which keeps the region model, the emitted tick and
     /// every output byte-identical.
@@ -228,11 +236,13 @@ pub struct Plan<'a> {
     /// in first-firing order — the seal the party can press for an answer. Empty
     /// for a campaign that never seals a gate.
     pub seal_hints: Vec<SealHintPlan>,
-    /// **What every compiler-owned sealed body answers a press with** (DSL v0.11).
-    /// One entry per pressable body the campaign does not answer itself — a
-    /// `close-gate` seal, a sealed `shortcut` door — in that order. Empty for a
-    /// campaign with neither.
-    pub press_answers: Vec<PressAnswer>,
+    /// **Every interaction point this build places** (spec-0117 §3a), derived
+    /// once from the finished plan ([`crate::compiler::pressable::derive`]) and
+    /// read through [`Plan::presses`].
+    pub presses: std::sync::OnceLock<Vec<crate::compiler::pressable::PressPlan>>,
+    /// **Every declared answer** (spec-0117 §5.2), derived once from
+    /// [`Plan::presses`] and read through [`Plan::answers`].
+    pub answer_plans: std::sync::OnceLock<Vec<crate::compiler::pressable::AnswerPlan>>,
     /// Resolved gate open/close firings (DSL v0.6), content-ordered — drives the
     /// `close-gate` completability model in `crate::compiler::nav`. Empty when the campaign
     /// uses no gate effects (byte-identical routing to pre-close-gate behavior).
@@ -1044,6 +1054,22 @@ impl<'a> Plan<'a> {
         // ---- lethal volumes (spec-0031) ----
         let lethal_volumes = collect_lethal_volumes(campaign, &anchors);
 
+        // ---- declared jumps (spec-0113 §6) ----
+        let jumps: Vec<JumpPlan> = campaign
+            .world
+            .content
+            .jumps
+            .iter()
+            .filter_map(|j| {
+                Some(JumpPlan {
+                    id: j.id.as_str().to_string(),
+                    from: point_any(&anchors, j.from.as_str())?,
+                    to: point_any(&anchors, j.to.as_str())?,
+                    sprint: j.sprint,
+                })
+            })
+            .collect();
+
         // ---- furniture (spec-0065) ----
         let furniture = collect_furniture(&areas, prefabs);
 
@@ -1084,12 +1110,6 @@ impl<'a> Plan<'a> {
 
         // ---- v0.8 seal hints: what a sealed gate answers ----
         let seal_hints = collect_seal_hints(campaign, &anchors);
-
-        // ---- the press answers (DSL v0.11): what every sealed body answers ----
-        // Collected AFTER both `shortcuts` and `seal_hints`, because it is derived
-        // from the union of the two — one rule over the pressable class, not one
-        // rule per verb.
-        let press_answers = collect_press_answers(campaign, &seal_hints, &shortcuts);
 
         // ---- the contingent ways the placed world stages (spec-0042 §2.4) ----
         //
@@ -1237,6 +1257,8 @@ impl<'a> Plan<'a> {
             }
         }
 
+        let movement = crate::compiler::nav::movement_items(campaign, &cp.steps);
+
         let mut plan = Self {
             campaign,
             namespace,
@@ -1260,6 +1282,8 @@ impl<'a> Plan<'a> {
             perturb,
             checkpoints,
             lethal_volumes,
+            jumps,
+            movement,
             furniture,
             stealth_beats,
             objective_steps,
@@ -1272,7 +1296,8 @@ impl<'a> Plan<'a> {
             ambushes,
             timed_gates,
             seal_hints,
-            press_answers,
+            presses: std::sync::OnceLock::new(),
+            answer_plans: std::sync::OnceLock::new(),
             region_events,
             clock_events,
             ways,
@@ -1315,4 +1340,18 @@ impl<'a> Plan<'a> {
         self.act_binding = Some(binding);
         self
     }
+}
+
+/// One declared jump resolved against the solved layout (spec-0113 §6): its
+/// id, the anchors' cells, and whether it is sprinted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JumpPlan {
+    /// The authored id, `jump/<kebab>`.
+    pub id: String,
+    /// The cell `from` names: where the body stands before the jump.
+    pub from: [i32; 3],
+    /// The cell `to` names: where it lands.
+    pub to: [i32; 3],
+    /// Whether the jump is sprinted.
+    pub sprint: bool,
 }

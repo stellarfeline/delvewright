@@ -14,13 +14,16 @@ export interface ControlBot {
  * and `allow1by1towers` are always locked off (adventure mode: never break or
  * pillar); `canOpenDoors` is turned ON (opening a door/fence-gate is a use
  * interaction vanilla permits in adventure mode — see {@link configureLeg});
- * `allowSprinting` is turned off only for a sneak leg.
+ * `allowSprinting` is turned off only for a sneak leg; `allowParkour` is
+ * turned off for every leg, and on only for the hop of a jump the compiler
+ * proved (spec-0113 §6, {@link parkourFor}).
  */
 export interface LegMovements {
   canDig: boolean;
   allow1by1towers: boolean;
   canOpenDoors: boolean;
   allowSprinting: boolean;
+  allowParkour: boolean;
 }
 
 /**
@@ -63,6 +66,17 @@ export function allowNonCollidingEntities(movements: PassableMovements): void {
   for (const name of NON_COLLIDING_ENTITY_TYPES) {
     movements.passableEntities.add(name);
   }
+}
+
+/**
+ * Whether a block is a door a hand opens: every `*_door` but the iron one
+ * (spec-0123 §3.1, `docs/reference/doors-by-hand.md`). The bot's pathfinder
+ * (mineflayer-pathfinder 2.4.5) opens fence gates itself and has no notion of
+ * a door, so the walk opens each door its proven route crosses and steps
+ * through it on foot.
+ */
+export function isDoorByHand(name: string): boolean {
+  return name.endsWith("_door") && name !== "iron_door";
 }
 
 /** One body near a stuck bot, as the stuck report needs to describe it. */
@@ -194,12 +208,26 @@ export function configureLeg(
   movements.canDig = false; // adventure mode: never break blocks
   movements.allow1by1towers = false;
   movements.canOpenDoors = true; // open doors/fence-gates (adventure-legal use, not a mutation)
+  // The library leaps gaps on its own (`allowParkour` defaults on). The bot
+  // walks what the compiler proved, so a leap is taken only on the hop of a
+  // declared jump the compiler proved makeable (spec-0113 §6).
+  movements.allowParkour = false;
   if (!sneak) {
     return () => {};
   }
   movements.allowSprinting = false; // a sprinting bot is not sneaking
   bot.setControlState("sneak", true);
   return () => bot.setControlState("sneak", false);
+}
+
+/**
+ * Set the pathfinder's parkour move for one hop: on when the hop is a jump the
+ * compiler proved (spec-0113 §6), off otherwise. Returns what it set, so the
+ * caller can state it per hop.
+ */
+export function parkourFor(movements: Pick<LegMovements, "allowParkour">, jump: boolean): boolean {
+  movements.allowParkour = jump;
+  return jump;
 }
 
 /**

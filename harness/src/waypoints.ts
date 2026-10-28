@@ -75,6 +75,43 @@ export interface Climb {
   readonly facing: Face | undefined;
 }
 
+/**
+ * One jump a compiler-proven route takes (spec-0113 §6): a declared
+ * `world.jumps[]` entry the compiler proved makeable, from the cell the body
+ * launches in to the cell it lands in — both kept waypoints of the leg — with
+ * whether it is sprinted and the run-up the compiler measured behind it. The
+ * harness drives the hop `from → to` with mineflayer-pathfinder's parkour move,
+ * on for that hop only ({@link parkourGap} says when the move cannot express it).
+ */
+export interface Jump {
+  readonly from: Vec3Tuple;
+  readonly to: Vec3Tuple;
+  readonly sprint: boolean;
+  readonly runUp: number;
+}
+
+/**
+ * Why mineflayer-pathfinder 2.4.5's parkour move (`getMoveParkourForward`)
+ * cannot express `jump`, or `undefined` when it can: the move goes along one
+ * axis, lands two to four cells forward (two without the sprint), one up only
+ * short of four, and one down at most. A jump outside it is a harness gap the
+ * run refuses by name, never a hop the pathfinder is left to improvise.
+ */
+export function parkourGap(jump: Jump): string | undefined {
+  const dx = jump.to[0] - jump.from[0];
+  const dy = jump.to[1] - jump.from[1];
+  const dz = jump.to[2] - jump.from[2];
+  if (dx !== 0 && dz !== 0) return "it is not along one axis (the parkour move leaps only straight ahead)";
+  const d = Math.abs(dx) + Math.abs(dz);
+  const maxD = jump.sprint ? 4 : 2;
+  if (d < 2) return "it lands in the next cell (a step, not a leap)";
+  if (d > maxD) return `it lands ${d} cells forward, beyond the parkour move's ${maxD}`;
+  if (dy > 1) return `it rises ${dy}, beyond the parkour move's one`;
+  if (dy === 1 && d === 4) return "it rises one at four cells forward, which the parkour move refuses";
+  if (dy < -1) return `it drops ${-dy}, beyond the parkour move's one`;
+  return undefined;
+}
+
 /** One walked critical-path leg: the ordered waypoint polyline connecting `from` to
  * `to`, both raw visited anchor cells (matching `critical-path.json` step `pos`).
  * `timedGates` are the gates the compiler proved this leg's route walks THROUGH —
@@ -90,6 +127,12 @@ export interface WaypointLeg {
   /** The sculk sensors the leg's proven route sets off and the shriekers that
    * answer each (spec-0100 §4.6) — empty for a leg that sets none off. */
   readonly vibrations: readonly Vibration[];
+  /** The declared jumps the leg's route takes, in route order (spec-0113 §6). */
+  readonly jumps: readonly Jump[];
+  /** The closed doors, trapdoors and fence gates a hand opens that the leg's
+   * proven route walks through (`use_gates`, spec-0123 §3.1): each a feet cell
+   * and a waypoint of the leg. Empty for a leg that crosses none. */
+  readonly doors: readonly Vec3Tuple[];
 }
 
 /** The parsed waypoints artifact. Legs are in critical-path order — the compiler
@@ -115,6 +158,9 @@ export interface GoalSpec {
   /** Set when this hop is a climb the compiler proved: the hop from `climb.from`
    * to this goal (`climb.to`) is driven by the climb, never by the pathfinder. */
   readonly climb?: Climb;
+  /** Set when this hop is a declared jump the compiler proved (spec-0113 §6):
+   * the pathfinder's parkour move is on for it, and for no other hop. */
+  readonly jump?: Jump;
 }
 
 /**
@@ -262,6 +308,35 @@ function parseClimbs(entry: Record<string, unknown>, pointer: string): Climb[] {
   });
 }
 
+/** Parse a leg's optional `jumps` (spec-0113 §6). Absent → `[]`. */
+function parseJumps(entry: Record<string, unknown>, pointer: string): Jump[] {
+  const value = entry["jumps"];
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    fail(`${pointer}/jumps`, `must be an array, got ${describe(value)}`);
+  }
+  return value.map((j, i) => {
+    const at = `${pointer}/jumps/${i}`;
+    if (!isRecord(j)) {
+      fail(at, `must be an object, got ${describe(j)}`);
+    }
+    const sprint = j["sprint"];
+    if (typeof sprint !== "boolean") {
+      fail(`${at}/sprint`, `must be a boolean, got ${describe(sprint)}`);
+    }
+    const runUp = j["run_up"];
+    if (typeof runUp !== "number" || !Number.isInteger(runUp) || runUp < 0) {
+      fail(`${at}/run_up`, `must be a whole number of cells, got ${describe(runUp)}`);
+    }
+    return {
+      from: requireVec3(j["from"], `${at}/from`),
+      to: requireVec3(j["to"], `${at}/to`),
+      sprint,
+      runUp,
+    };
+  });
+}
+
 /**
  * Parse a leg's optional `vibrations` (spec-0100 §4.6). Absent → `[]`. A sensor
  * not within 8 blocks (`distSqr ≤ 64`) of its leg's route — the polyline through
@@ -367,7 +442,34 @@ export function parseWaypoints(raw: unknown): Waypoints {
       }
     }
     const vibrations = parseVibrations(entry, pointer, waypoints);
-    return { from, to, waypoints, timedGates: legGates, climbs, vibrations };
+    const jumps = parseJumps(entry, pointer);
+    // A jump's two ends are waypoints of its own leg, adjacent: the hop between
+    // them is the jump.
+    for (const [j, jump] of jumps.entries()) {
+      const a = waypoints.findIndex((w) => samePos(w, jump.from));
+      const b = waypoints.findIndex((w) => samePos(w, jump.to));
+      if (a < 0 || b !== a + 1) {
+        fail(`${pointer}/jumps/${j}`, "its from and to are not consecutive waypoints of the leg");
+      }
+    }
+    // A door the route opens is a kept waypoint by contract (the compiler never
+    // thins it away); one that is not is a structural fault — the crossing could
+    // not then be asserted.
+    const doorsValue = entry["use_gates"];
+    let doors: Vec3Tuple[] = [];
+    if (doorsValue !== undefined) {
+      if (!Array.isArray(doorsValue)) {
+        fail(`${pointer}/use_gates`, `must be an array, got ${describe(doorsValue)}`);
+      }
+      doors = doorsValue.map((d, j) => {
+        const cell = requireVec3(d, `${pointer}/use_gates/${j}`);
+        if (!waypoints.some((w) => samePos(w, cell))) {
+          fail(`${pointer}/use_gates/${j}`, "is not one of the leg's waypoints");
+        }
+        return cell;
+      });
+    }
+    return { from, to, waypoints, timedGates: legGates, climbs, vibrations, jumps, doors };
   });
 
   return { version, campaignId, timedGates, legs };
@@ -475,6 +577,11 @@ export interface LegMatch {
   /** The vibrations the matched leg is predicted to make (empty when none, or
    * no match). */
   readonly vibrations: readonly Vibration[];
+  /** The declared jumps the matched leg's route takes (empty when none, or no match). */
+  readonly jumps: readonly Jump[];
+  /** The doors a hand opens the matched leg's route walks through (empty when
+   * none, or no match). */
+  readonly doors: readonly Vec3Tuple[];
   readonly cursor: number;
   /**
    * Whether the walk starts where the matched leg was proven from: within
@@ -528,6 +635,8 @@ export function nextLegWaypoints(
       timedGates: leg.timedGates,
       climbs: leg.climbs,
       vibrations: leg.vibrations,
+      jumps: leg.jumps,
+      doors: leg.doors,
       cursor: cursor + 1,
       startsOnLeg: startOffset === undefined || startOffset <= LEG_START_REACH,
       startOffset,
@@ -539,6 +648,8 @@ export function nextLegWaypoints(
     timedGates: [],
     climbs: [],
     vibrations: [],
+    jumps: [],
+    doors: [],
     cursor,
     startsOnLeg: true,
     startOffset: undefined,
@@ -652,6 +763,7 @@ export function walkGoals(
   pos: Vec3Tuple,
   finalRange: number,
   climbs: readonly Climb[] = [],
+  jumps: readonly Jump[] = [],
 ): readonly GoalSpec[] {
   const out: GoalSpec[] = [];
   if (legWaypoints) {
@@ -662,7 +774,12 @@ export function walkGoals(
       const climb = climbs.find(
         (c) => samePos(c.to, [x, y, z]) && prev !== undefined && samePos(c.from, [prev.x, prev.y, prev.z]),
       );
-      out.push(climb ? { x, y, z, range: WAYPOINT_RANGE, climb } : { x, y, z, range: WAYPOINT_RANGE });
+      // The hop from a jump's `from` to its `to` IS the jump (spec-0113 §6).
+      const jump = jumps.find(
+        (j) => samePos(j.to, [x, y, z]) && prev !== undefined && samePos(j.from, [prev.x, prev.y, prev.z]),
+      );
+      const base = { x, y, z, range: WAYPOINT_RANGE };
+      out.push(climb ? { ...base, climb } : jump ? { ...base, jump } : base);
     }
   }
   out.push({ x: pos[0], y: pos[1], z: pos[2], range: finalRange });
@@ -715,4 +832,17 @@ export function nearestIndex(cells: readonly Vec3Tuple[], target: Vec3Tuple): nu
     }
   });
   return best;
+}
+
+/**
+ * Which of a leg's doors (spec-0123 §3.1) the walk's feet stood in: every cell
+ * of `doors` paired with whether `visited` holds it. Pure, so the crossing rule
+ * is tested without a server; the walk records the feet cells and asserts that
+ * every door was crossed — never how the door opened.
+ */
+export function doorsCrossed(
+  doors: readonly Vec3Tuple[],
+  visited: readonly Vec3Tuple[],
+): { readonly door: Vec3Tuple; readonly crossed: boolean }[] {
+  return doors.map((door) => ({ door, crossed: visited.some((v) => samePos(v, door)) }));
 }

@@ -14,8 +14,9 @@
 //! # The model, cited and authored
 //!
 //! - **One predicate** (cited, spec-0120 §5): a column is clear when a body can
-//!   be in its body cell — [`super::shutmodel::can_be`], the nav model's one answer to
-//!   standing, holding a climbable or floating — or in the cell over it when
+//!   be in its body cell — [`super::shutmodel::can_be`], the reach graph's rest
+//!   predicate ([`World::rest_kind`], spec-0113): standing, holding a climbable,
+//!   afloat or under water — or in the cell over it when
 //!   what stands in the body cell is a floor a body steps onto
 //!   (`MAX_AUTO_STEP_16`: a slab, a path). A beam over a body's head blocks
 //!   nothing; a post, a wall, a raised full block takes the column. A
@@ -68,6 +69,15 @@ delvewright_dsl::dw_code! {
     pub const DW_WAY_NARROWED: DwCode = DwCode::new("DW1057", ExitTier::Build);
 }
 
+delvewright_dsl::dw_code! {
+    /// `DW1065`: **an open side built shut** (spec-0123 §5.4). A side the
+    /// plan declares open has every column of a station taken as built — a
+    /// side open in the plan and walled in the piece, a hedge along the whole
+    /// ring, or an open side at the region's edge with nothing beyond it.
+    /// Build tier.
+    pub const DW_OPEN_SIDE_SHUT: DwCode = DwCode::new("DW1065", ExitTier::Build);
+}
+
 /// An inclusive region of world cells.
 pub type Region3 = ([i32; 3], [i32; 3]);
 
@@ -92,6 +102,8 @@ pub enum WayKind {
     Place,
     /// A contract edge of a placed piece that answers no plan seam.
     Piece,
+    /// A side a site-plan box declares open (spec-0123 §5.4).
+    OpenSide,
 }
 
 impl WayKind {
@@ -101,6 +113,7 @@ impl WayKind {
             WayKind::Contact => "contact",
             WayKind::Place => "way-place",
             WayKind::Piece => "piece-way",
+            WayKind::OpenSide => "open side",
         }
     }
 }
@@ -128,6 +141,8 @@ pub enum StationKey {
     Along(u32),
     /// A piece way's station, by its coordinate on the travel axis.
     Piece(i32),
+    /// An open side's ring row (`0`) or its approach one cell outward (`1`).
+    OpenSide(u32),
 }
 
 /// One column of a station: the world column it stands in, the cells a body
@@ -327,6 +342,9 @@ impl WayRecord {
                     .collect();
                 let verdict = if s.deferred {
                     "left to DW0836"
+                } else if s.columns.is_empty() {
+                    // Every column is a seam's, and judged once, under it.
+                    "judged under its seam"
                 } else if v.clear.iter().all(|c| *c == 0) {
                     "shut"
                 } else if v.narrowed(s.columns.len()) {
@@ -559,9 +577,21 @@ pub fn judge(way: Way, ground: &Ground<'_>) -> WayRecord {
             continue;
         }
         let mut m = base.clone();
-        for c in crate::compiler::assembled::region_cells(w.region.0, w.region.1) {
-            if inside(&c) {
-                set(&mut m, c, w.block.as_deref());
+        match w.block.as_deref() {
+            // Cell by cell from the write's block (`region_fill`).
+            Some(b) => {
+                for (c, s) in crate::compiler::region_fill::cells(w.region, b) {
+                    if inside(&c) {
+                        set(&mut m, c, Some(&s));
+                    }
+                }
+            }
+            None => {
+                for c in crate::compiler::assembled::region_cells(w.region.0, w.region.1) {
+                    if inside(&c) {
+                        set(&mut m, c, None);
+                    }
+                }
             }
         }
         own_open(&mut m);
@@ -625,8 +655,11 @@ pub fn judge(way: Way, ground: &Ground<'_>) -> WayRecord {
             let n = clear.iter().filter(|x| **x).count();
             v.clear.push(n);
             v.states.push(maps[k].0.clone());
-            if n == 0 {
-                continue; // shut in this state: the gate's own finding.
+            // Shut in this state: the gate's own finding — except on an open
+            // side, which no gate shuts, where a station built shut is the
+            // finding (`DW1065`) and names every cell that takes it.
+            if n == 0 && !(way.kind == WayKind::OpenSide && k == 0) {
+                continue;
             }
             for (c, ok) in s.columns.iter().zip(&clear) {
                 if *ok || taken_in.contains_key(&c.index) {
@@ -650,17 +683,69 @@ pub fn judge(way: Way, ground: &Ground<'_>) -> WayRecord {
         v.taken = taken_in;
         verdicts.push(v);
     }
-    let refusal = way
-        .stations
-        .iter()
-        .zip(&verdicts)
-        .find(|(s, v)| !s.deferred && v.narrowed(s.columns.len()))
-        .map(|(s, v)| narrowed_refusal(&way, s, v));
+    let shut = (way.kind == WayKind::OpenSide)
+        .then(|| {
+            way.stations
+                .iter()
+                .zip(&verdicts)
+                .find(|(s, v)| !s.deferred && !s.columns.is_empty() && v.clear.first() == Some(&0))
+                .map(|(s, v)| shut_refusal(&way, s, v))
+        })
+        .flatten();
+    let refusal = shut.or_else(|| {
+        way.stations
+            .iter()
+            .zip(&verdicts)
+            .find(|(s, v)| !s.deferred && v.narrowed(s.columns.len()))
+            .map(|(s, v)| narrowed_refusal(&way, s, v))
+    });
     WayRecord {
         stations: verdicts,
         states: maps.len(),
         refusal,
         ..empty
+    }
+}
+
+/// The `DW1065` refusal for an open side built shut at one station: every
+/// column taken as built, each taking cell named with its block and state.
+fn shut_refusal(way: &Way, s: &Station, v: &StationVerdict) -> Failure {
+    let width = s.columns.len();
+    let cells: Vec<String> = v
+        .taken
+        .values()
+        .flatten()
+        .map(|t| {
+            format!(
+                "[{}, {}, {}] `{}` ({})",
+                t.cell[0], t.cell[1], t.cell[2], t.block, t.state
+            )
+        })
+        .collect();
+    let first = v
+        .taken
+        .values()
+        .flatten()
+        .next()
+        .map(|t| {
+            format!(
+                "[{}, {}, {}] by `{}`",
+                t.cell[0], t.cell[1], t.cell[2], t.block
+            )
+        })
+        .unwrap_or_else(|| "a cell no body can be in".to_string());
+    Failure {
+        code: DW_OPEN_SIDE_SHUT,
+        message: format!(
+            "{label} is declared open and built shut: {width} of {width} columns taken, first \
+             at {first} ({station}). Taken: {cells}. An open side stands no wall; a body \
+             meets the place's ground across it. Clear the run — move the hedge, the wall or the \
+             fence inside the play space or into the verge — or declare the side `wall`; at the \
+             region's edge, give the side ground beyond it.",
+            label = way.label,
+            station = s.label,
+            cells = cells.join(", "),
+        ),
     }
 }
 
@@ -743,6 +828,8 @@ pub struct Census {
     pub runs_undeclared: usize,
     /// Plane columns left to `DW0836`.
     pub plane_columns: usize,
+    /// Sides the plan's boxes declare open (spec-0123 §5.4).
+    pub open_sides: usize,
 }
 
 fn narrow(c: [i64; 3]) -> [i32; 3] {
@@ -801,7 +888,11 @@ fn opened_with(plan: &Plan, anchor: &str) -> BTreeSet<String> {
 
 fn gate_cells(plan: &Plan, anchor: &str) -> Vec<[i32; 3]> {
     crate::compiler::plan::gate_region_block_any(&plan.anchors, anchor)
-        .map(|(a, b, _)| crate::compiler::assembled::region_cells(a, b).collect())
+        .map(|(a, b, block)| {
+            crate::compiler::region_fill::cells((a, b), &block)
+                .map(|(c, _)| c)
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -1553,6 +1644,68 @@ fn place_ways(plan: &Plan, census: &mut Census, cover: &BTreeSet<[i32; 3]>, out:
     }
 }
 
+/// **Every open side as a way** (spec-0123 §5.4): its corridor is the ring
+/// run at the walk plane — corners excluded — and one approach cell outward
+/// where that cell is no seam's. Cells a `contact` on the side covers, and
+/// any station a seam's approach covers, are judged under the seam and
+/// counted once.
+fn open_side_ways(
+    plan: &Plan,
+    census: &mut Census,
+    cover: &BTreeSet<[i32; 3]>,
+    out: &mut Vec<Way>,
+) {
+    let Some(b) = plan.blockout.as_ref() else {
+        return;
+    };
+    let seam_cells: BTreeSet<[i32; 3]> = crate::compiler::blockout::seam_cells(&b.seams);
+    for placed in &b.boxes {
+        for side in placed.open_sides() {
+            census.open_sides += 1;
+            let contacted: BTreeSet<[i32; 3]> =
+                crate::compiler::detail::covering_contacts(&side, &b.seams)
+                    .into_iter()
+                    .flat_map(|(_, (lo, hi))| crate::compiler::blockout::cells_of(lo, hi))
+                    .map(narrow)
+                    .collect();
+            let (lo, hi) = side.cells;
+            let (n, a) = (side.normal_axis(), side.along_axis());
+            let y0 = side.walk_y;
+            let mut stations = Vec::new();
+            for (k, words) in [(0i64, "ring"), (1, "approach")] {
+                let t = lo[n] + side.outward() * k;
+                let columns: Vec<Column> = (lo[a]..=hi[a])
+                    .enumerate()
+                    .filter_map(|(index, u)| {
+                        let col = column_at(n, t, u, index, y0);
+                        let at = [col.x, n32(y0), col.z];
+                        let skip = cover.contains(&at)
+                            || contacted.contains(&at)
+                            || (k == 1 && seam_cells.contains(&at));
+                        (!skip).then_some(col)
+                    })
+                    .collect();
+                stations.push(Station {
+                    key: StationKey::OpenSide(u32::try_from(k).unwrap_or(0)),
+                    label: format!("the {words} of the {} side", side.face.as_str()),
+                    deferred: false,
+                    columns,
+                });
+            }
+            out.push(Way {
+                kind: WayKind::OpenSide,
+                name: format!("{} {}", placed.node.0, side.face.as_str()),
+                label: format!("the {} side of `{}`", side.face.as_str(), placed.node),
+                width: usize::try_from(hi[a] - lo[a] + 1).unwrap_or(0),
+                stations,
+                own: BTreeMap::new(),
+                piece: None,
+                run: Run::None,
+            });
+        }
+    }
+}
+
 /// The traversal and barred classes a piece way may be.
 const PIECE_CLASSES: [&str; 5] = ["walk", "stair", "climb", "drop", "barred"];
 
@@ -1958,7 +2111,7 @@ impl WidthBinding {
         format!(
             "clear width (DW1057): {w} way(s) of {t} traversal seam(s), {b} box(es) and {e} \
              contract edge(s) — {p} portal(s), {s} stair run(s), {cc} contact(s), {y} way \
-             place(s), {k} piece way(s); {m} column(s) at {n} station(s) judged over {v} \
+             place(s), {o} open side(s), {k} piece way(s); {m} column(s) at {n} station(s) judged over {v} \
              state(s); {h} way(s) whole, {u} narrowed; {l} plane column(s) left to DW0836; {r} \
              stair run(s) undeclared by their piece",
             w = self.records.len(),
@@ -1969,6 +2122,7 @@ impl WidthBinding {
             s = runs,
             cc = self.count(WayKind::Contact),
             y = self.count(WayKind::Place),
+            o = self.count(WayKind::OpenSide),
             k = self.count(WayKind::Piece),
             m = columns,
             n = stations,
@@ -1985,7 +2139,7 @@ impl WidthBinding {
     pub fn to_json(&self) -> Value {
         let c = &self.census;
         json!({
-            "codes": [DW_WAY_NARROWED.id()],
+            "codes": [DW_WAY_NARROWED.id(), DW_OPEN_SIDE_SHUT.id()],
             "line": self.line(),
             "ways": self.records.len(),
             "examined": self.records.len(),
@@ -1996,6 +2150,7 @@ impl WidthBinding {
             "contacts": self.count(WayKind::Contact),
             "way_places": self.count(WayKind::Place),
             "piece_ways": self.count(WayKind::Piece),
+            "open_sides": self.count(WayKind::OpenSide),
             "states": self.states,
             "plane_columns_left_to_dw0836": c.plane_columns,
             "stair_runs_undeclared": c.runs_undeclared,
@@ -2029,6 +2184,7 @@ pub fn population(plan: &Plan, prefabs: &PrefabRegistry) -> (Vec<Way>, Census) {
         .filter_map(|c| c.y0.map(|y| [c.x, y, c.z]))
         .collect();
     place_ways(plan, &mut census, &cover, &mut ways);
+    open_side_ways(plan, &mut census, &cover, &mut ways);
     piece_ways(plan, prefabs, &flights, &mut census, &mut ways);
     (ways, census)
 }
@@ -2065,8 +2221,15 @@ pub fn check(
             "the relight fixture the build sets at setup".to_string(),
         );
     }
-    for (id, prop) in crate::compiler::pressable::trigger_props(plan) {
-        seated.insert(prop.pos, format!("the prop of `{id}`"));
+    // Every pressable's block (spec-0117 §5.1), a door's two halves: the
+    // same list `shipped_blocks` lays (`pressable::props`), named by owner.
+    for p in plan.presses() {
+        if !p.places_block {
+            continue;
+        }
+        for cell in p.cells() {
+            seated.insert(cell, format!("the block of {}", p.owner.word()));
+        }
     }
     let ground = Ground {
         shipped: &shipped,
@@ -2381,9 +2544,11 @@ mod tests {
             (vec![[10, 1, 12]], "minecraft:stone_brick_wall"),
             (vec![[10, 1, 12]], "minecraft:oak_fence"),
             (vec![[10, 2, 12]], "minecraft:oak_planks"),
+            // A hatch a hand does not open (spec-0123 §3.1); an oak one is a
+            // door the body opens, and its column is clear.
             (
                 vec![[10, 1, 12]],
-                "minecraft:oak_trapdoor[facing=north,half=top,open=false]",
+                "minecraft:iron_trapdoor[facing=north,half=top,open=false]",
             ),
         ] {
             let mut m = floor();
@@ -2858,6 +3023,7 @@ mod tests {
             open: false,
             base: Base::Ground,
             roof: None,
+            sides: Default::default(),
         };
         let loft = PlacedBox {
             node: node("node/loft"),
@@ -2867,6 +3033,7 @@ mod tests {
             open: false,
             base: Base::Ground,
             roof: None,
+            sides: Default::default(),
         };
         let seam = PlacedSeam {
             edge: delvewright_dsl::ids::EdgeId("edge/hall-loft".to_string()),
@@ -3017,6 +3184,7 @@ mod tests {
             open: false,
             base: Base::Ground,
             roof: None,
+            sides: Default::default(),
         };
         let ledge = PlacedBox {
             node: node("node/ledge"),
@@ -3026,6 +3194,7 @@ mod tests {
             open: false,
             base: Base::Ground,
             roof: None,
+            sides: Default::default(),
         };
         let seam = PlacedSeam {
             edge: delvewright_dsl::ids::EdgeId("edge/yard-ledge".to_string()),
@@ -3226,17 +3395,88 @@ mod tests {
         assert_eq!(
             b.line(),
             "clear width (DW1057): 0 way(s) of 0 traversal seam(s), 0 box(es) and 0 contract \
-             edge(s) — 0 portal(s), 0 stair run(s), 0 contact(s), 0 way place(s), 0 piece way(s); \
-             0 column(s) at 0 station(s) judged over 1 state(s); 0 way(s) whole, 0 narrowed; 0 \
-             plane column(s) left to DW0836; 0 stair run(s) undeclared by their piece"
+             edge(s) — 0 portal(s), 0 stair run(s), 0 contact(s), 0 way place(s), 0 open side(s), \
+             0 piece way(s); 0 column(s) at 0 station(s) judged over 1 state(s); 0 way(s) whole, 0 \
+             narrowed; 0 plane column(s) left to DW0836; 0 stair run(s) undeclared by their piece"
         );
         let j = b.to_json();
         assert_eq!(j["ways"], 0);
-        assert_eq!(j["codes"], json!(["DW1057"]));
+        assert_eq!(j["codes"], json!(["DW1057", "DW1065"]));
+        assert_eq!(j["open_sides"], 0);
+    }
+
+    /// An open side's ring as a way (spec-0123 §5.4): the same three columns
+    /// as the yard's foot, judged as an open side.
+    fn open_side() -> Way {
+        Way {
+            kind: WayKind::OpenSide,
+            name: "node/yard east".to_string(),
+            label: "the east side of `node/yard`".to_string(),
+            width: 3,
+            stations: vec![Station {
+                key: StationKey::OpenSide(0),
+                label: "the ring of the east side".to_string(),
+                ..foot()
+            }],
+            own: BTreeMap::new(),
+            piece: None,
+            run: Run::None,
+        }
+    }
+
+    /// A post in one column of an open side narrows it: `DW1057`, its ledger
+    /// row of kind `open side`; the clear side is whole.
+    #[test]
+    fn a_post_in_an_open_side_is_dw1057_of_kind_open_side() {
+        let clear = judge_over(open_side(), &floor(), &[], &[]);
+        assert_eq!(clear.verdict(), "whole");
+        let mut m = floor();
+        put(&mut m, [[10, 1, 13]], "minecraft:oak_fence");
+        let rec = judge_over(open_side(), &m, &[], &[]);
+        assert_eq!(rec.refusal.as_ref().map(|f| f.code.id()), Some("DW1057"));
+        assert_eq!(rec.to_json()["kind"], "open side");
+        // A station every column of which a seam covers is judged under the
+        // seam, and the ledger says so rather than calling it shut.
+        let mut covered = open_side();
+        covered.stations[0].columns.clear();
+        let rec = judge_over(covered, &floor(), &[], &[]);
+        assert!(rec.refusal.is_none());
+        assert_eq!(
+            rec.to_json()["stations"][0]["verdict"],
+            "judged under its seam"
+        );
+    }
+
+    /// A hedge along the whole run leaves no column: `DW1065`, naming every
+    /// taking cell with its block; the same hedge across a portal's foot is no
+    /// finding of this check (a way shut in every column is its gate's).
+    #[test]
+    fn an_open_side_built_shut_is_dw1065_naming_every_cell() {
+        let mut m = floor();
+        let hedge = "minecraft:oak_leaves[distance=1,persistent=true,waterlogged=false]";
+        put(&mut m, (12..=14).map(|z| [10, 1, z]), hedge);
+        let rec = judge_over(open_side(), &m, &[], &[]);
+        let f = rec
+            .refusal
+            .as_ref()
+            .expect("an open side built shut is refused");
+        assert_eq!(f.code.id(), "DW1065");
+        assert!(f.message.contains("3 of 3 columns taken"), "{}", f.message);
+        for z in 12..=14 {
+            assert!(
+                f.message.contains(&format!("[10, 1, {z}]")),
+                "{}",
+                f.message
+            );
+        }
+        assert!(f.message.contains("oak_leaves"), "{}", f.message);
+        let portal = judge_over(way(vec![foot()]), &m, &[], &[]);
+        assert!(portal.refusal.is_none(), "{:?}", portal.refusal);
     }
 
     #[test]
     fn the_codes_are_their_numbers() {
         assert_eq!(DW_WAY_NARROWED.id(), "DW1057");
+        assert_eq!(DW_OPEN_SIDE_SHUT.id(), "DW1065");
     }
 }

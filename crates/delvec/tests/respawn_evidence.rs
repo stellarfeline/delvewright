@@ -470,6 +470,7 @@ fn bearer_removed_by_aside(dst: &Path, on_path: bool) {
                 "id": "trigger/wake",
                 "on": { "on": "strike-npc", "npc": "npc/keeper" },
                 "once": true,
+                "answers": { "done": "He is already awake." },
                 "effects": [
                     { "type": "spawn-actor", "actor": "actor/warden" },
                     { "type": "unleash-actor", "actor": "actor/warden" }

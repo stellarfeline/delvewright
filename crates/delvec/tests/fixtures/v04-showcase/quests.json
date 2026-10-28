@@ -121,6 +121,11 @@
               "obj/key"
             ],
             "anchor": "anchor/door",
+            "answers": {
+              "done": "Already done.",
+              "missing_item": "Your hand is empty of what this takes.",
+              "not_yet": "Not yet."
+            },
             "happening": {
               "text": "the party completes obj/door",
               "verb": "opens"
@@ -128,7 +133,7 @@
             "hint": "Pull the lever on the barred door.",
             "id": "obj/door",
             "prop": {
-              "block": "minecraft:lever"
+              "block": "minecraft:lever[face=floor,facing=north]"
             },
             "requires_item": "minecraft:tripwire_hook",
             "title": "Open the Inner Door",
@@ -264,7 +269,10 @@
         ]
       },
       {
-        "at": "anchor/gate",
+        "answers": {
+          "done": "Already done."
+        },
+        "at": "spawn",
         "effects": [
           {
             "style": "chat",
@@ -280,7 +288,10 @@
         "on": {
           "on": "strike"
         },
-        "once": true
+        "once": true,
+        "prop": {
+          "block": "minecraft:stone_button[face=floor,facing=north]"
+        }
       }
     ],
     "waves": [
@@ -338,6 +349,6 @@
       }
     ]
   },
-  "dsl_version": "0.63.0",
+  "dsl_version": "0.67.0",
   "stage": "quests"
 }

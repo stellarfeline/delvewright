@@ -199,6 +199,14 @@
       },
       "base": "void"
     },
+    "jumps": [
+      {
+        "from": "anchor/jetty-near",
+        "id": "jump/the-broken-plank",
+        "sprint": true,
+        "to": "anchor/jetty-far"
+      }
+    ],
     "languages": [
       "zh-cn"
     ],
@@ -215,6 +223,6 @@
     "title": "The Gallery",
     "weather": "clear"
   },
-  "dsl_version": "0.63.0",
+  "dsl_version": "0.67.0",
   "stage": "world"
 }

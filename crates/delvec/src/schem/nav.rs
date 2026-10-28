@@ -19,20 +19,23 @@
 //! admission pipeline already depend on, and because it already owns the other
 //! two facts shared at this layer: the block registry and the tile-set contract.
 //!
-//! # What the walk is, and is not
+//! # What is here, and what is not
 //!
-//! One walker: one cell horizontally at a time, stepping at most one block up or
-//! down, and — under [`reachable_with_fall`] only — walking off a ledge and
-//! landing on the first floor below.
+//! **Where a body can get to is not answered here.** It is the reach graph's
+//! ([`crate::compiler::nav::World::floor_reached`] over
+//! [`crate::compiler::nav::World::of_piece`]): the walk, the climb, every fall,
+//! every swim and every jump of the launch set, flown by the body simulator.
+//! A step walk here would be a second answer to that question, and this
+//! module had one until every reader asked the graph.
 //!
-//! The step rule is not written here. It is [`delvewright_dsl::metrics::step_allowed`],
-//! which is also what `delvec`'s navigation model asks, because there is one
-//! answer to "can a body get from here to there" and a second implementation of
-//! it is a second opinion two gates can disagree about. **This walk had one.** It
-//! stepped a whole block up with no headroom condition, so it connected a rise
-//! the router refuses — and a prefab's contract-reachability gate proves a
-//! *positive* claim over this walk, which is the direction in which being looser
-//! than the router admits a piece the compiler will later strand.
+//! What is here is what a box of cells says without a body moving through
+//! it: which cells hold a body ([`standable`]), where a body walks in
+//! ([`ground_entry`]), which cells are under a roof ([`sheltered`]), which lump
+//! of floor a cell belongs to ([`components`]) and, at the edge of what the
+//! graph reached, which step the step rule turned back
+//! ([`refused_frontier`]). The step rule those two read is not written here.
+//! It is [`delvewright_dsl::metrics::step_allowed`], which is also what
+//! `delvec`'s navigation model asks.
 //!
 //! What is genuinely this module's is the **measurement** of a rise. A box of
 //! cells has no collision heights, so a step of one cell is read as a full block
@@ -40,10 +43,6 @@
 //! [`Voxels::floor_top_16`]. Reading a partial floor as a full one only ever
 //! over-states a rise, so the default is the refusing direction — see that
 //! method for what it costs and who should override it.
-//!
-//! **Where this walk is still deliberately generous, it says so per function.**
-//! [`reachable_with_fall`] adds a one-way fall edge the router has no model of,
-//! and its own doc records the two directions it may and may not be used in.
 
 use std::collections::{BTreeSet, VecDeque};
 
@@ -152,139 +151,24 @@ pub fn standable<V: Voxels + ?Sized>(v: &V, pos: [i32; 3]) -> bool {
     v.passable(pos) && v.passable([x, y + 1, z]) && v.floor([x, y - 1, z])
 }
 
+/// **A piece's floor, walked in**: its standable cells, the cells a body
+/// starts from, and the standable cells the reach graph gets a body to from
+/// them — what the light probe measures over and the enclosure survey reports.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EnteredFloor {
+    /// Every standable cell of the box.
+    pub standable: BTreeSet<[i32; 3]>,
+    /// The cells a body starts from.
+    pub entry: BTreeSet<[i32; 3]>,
+    /// The standable cells a body reaches from `entry`.
+    pub reached: BTreeSet<[i32; 3]>,
+}
+
 /// Every standable cell of the box.
 pub fn standable_cells<V: Voxels + ?Sized>(v: &V) -> BTreeSet<[i32; 3]> {
     positions(v.origin(), v.size())
         .filter(|&p| standable(v, p))
         .collect()
-}
-
-/// Can a walker get from any cell of `from` to any cell of `to`, moving one cell
-/// horizontally at a time and stepping at most one cell up or down — with every
-/// step decided by [`delvewright_dsl::metrics::step_allowed`]?
-///
-/// The box is a parameter because the step rule needs one fact the standable set
-/// cannot carry: whether the cell a jumping body's head sweeps through is clear.
-/// That is the term this walk used to be missing.
-pub fn connected<V: Voxels + ?Sized>(
-    v: &V,
-    cells: &BTreeSet<[i32; 3]>,
-    from: &BTreeSet<[i32; 3]>,
-    to: &BTreeSet<[i32; 3]>,
-) -> bool {
-    let mut seen: BTreeSet<[i32; 3]> = BTreeSet::new();
-    let mut queue: VecDeque<[i32; 3]> =
-        from.iter().copied().filter(|c| cells.contains(c)).collect();
-    seen.extend(queue.iter().copied());
-    while let Some(cur) = queue.pop_front() {
-        if to.contains(&cur) {
-            return true;
-        }
-        let [x, y, z] = cur;
-        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-            for dy in [0, 1, -1] {
-                let next = [x + dx, y + dy, z + dz];
-                if cells.contains(&next) && can_step(v, cur, next) && seen.insert(next) {
-                    queue.push_back(next);
-                }
-            }
-        }
-    }
-    false
-}
-
-/// Every cell of `cells` a walker can reach from `seeds`, under [`connected`]'s
-/// walk. Seeds outside `cells` are dropped: a body standing nowhere reaches
-/// nowhere.
-///
-/// This is the set form of [`connected`], and it is the one a *measurement*
-/// wants: a probe that reports a minimum over player space has to know how many
-/// cells it bound to, not merely whether the set was non-empty.
-pub fn reachable_from<V: Voxels + ?Sized>(
-    v: &V,
-    cells: &BTreeSet<[i32; 3]>,
-    seeds: &BTreeSet<[i32; 3]>,
-) -> BTreeSet<[i32; 3]> {
-    let mut seen: BTreeSet<[i32; 3]> = BTreeSet::new();
-    let mut queue: VecDeque<[i32; 3]> = seeds
-        .iter()
-        .copied()
-        .filter(|c| cells.contains(c))
-        .collect();
-    seen.extend(queue.iter().copied());
-    while let Some(cur) = queue.pop_front() {
-        let [x, y, z] = cur;
-        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-            for dy in [0, 1, -1] {
-                let next = [x + dx, y + dy, z + dz];
-                if cells.contains(&next) && can_step(v, cur, next) && seen.insert(next) {
-                    queue.push_back(next);
-                }
-            }
-        }
-    }
-    seen
-}
-
-/// [`connected`]'s ±1-step walk, plus a one-way **fall**: stepping off a
-/// standable cell into an adjacent column with nothing underfoot, and landing on
-/// the first solid floor below however far that is.
-///
-/// Deliberately *more* permissive than [`connected`], which is why the two are
-/// used in opposite directions and never interchangeably: forward, where a piece
-/// is entered by stepping off a ledge and `connected` alone would call it
-/// severed; and as the adversary, when a piece claims a route is the only route,
-/// since a fall edge can carry a body past a wall a walker would have to go
-/// round. The negative direction — "there is no way back up" — is asserted under
-/// the plain walk instead, because a fall edge only ever points down and proving
-/// a negative under the generous model would be circular.
-///
-/// A landing must be a member of `cells`, not merely standable in the box: a
-/// gate proves a route is the only route by deleting cells from the graph, and a
-/// fall allowed to land on a deleted cell would walk straight through the cut.
-pub fn reachable_with_fall<V: Voxels + ?Sized>(
-    v: &V,
-    cells: &BTreeSet<[i32; 3]>,
-    from: &BTreeSet<[i32; 3]>,
-    to: &BTreeSet<[i32; 3]>,
-) -> bool {
-    let mut seen: BTreeSet<[i32; 3]> = BTreeSet::new();
-    let mut queue: VecDeque<[i32; 3]> =
-        from.iter().copied().filter(|c| cells.contains(c)).collect();
-    seen.extend(queue.iter().copied());
-    while let Some(cur) = queue.pop_front() {
-        if to.contains(&cur) {
-            return true;
-        }
-        let [x, y, z] = cur;
-        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-            for dy in [0, 1, -1] {
-                let next = [x + dx, y + dy, z + dz];
-                if cells.contains(&next) && can_step(v, cur, next) && seen.insert(next) {
-                    queue.push_back(next);
-                }
-            }
-            let mut fy = y;
-            loop {
-                fy -= 1;
-                if y - fy > 64 {
-                    break; // not a real shaft, a runaway search
-                }
-                let below = [x + dx, fy, z + dz];
-                if !v.contains(below) {
-                    break; // fell out of the box entirely
-                }
-                if solid(v, below) {
-                    let landing = [x + dx, fy + 1, z + dz];
-                    if cells.contains(&landing) && seen.insert(landing) {
-                        queue.push_back(landing);
-                    }
-                    break;
-                }
-            }
-        }
-    }
-    false
 }
 
 /// The connected components of a standable set, under the **undirected** step
@@ -303,7 +187,8 @@ pub fn reachable_with_fall<V: Voxels + ?Sized>(
 /// answers "which cells belong to the same piece of ground", which is a grouping
 /// question, and it is the right question for the one thing it is used for —
 /// naming the stranded pockets of a piece so an author can find them. **Which
-/// cells a body actually reaches is [`reachable_from`]**, from real entrances,
+/// cells a body actually reaches is the reach graph's**
+/// ([`crate::compiler::nav::World::floor_reached`]), from real entrances,
 /// and a caller that wants that must ask for it: taking the component containing
 /// an entrance is only the same answer while the relation is symmetric, which it
 /// no longer is.
@@ -404,7 +289,7 @@ pub fn sheltered<V: Voxels + ?Sized>(v: &V, pos: [i32; 3]) -> bool {
 
 /// **Why a step the walk tried was refused.**
 ///
-/// [`reachable_from`] answers *which cells*; it never says which step it was
+/// The reach graph answers *which cells*; it never says which step it was
 /// turned back at, and "this cell is unreachable" is the answer an author can do
 /// least with. The step rule is [`delvewright_dsl::metrics::step_allowed`] and it
 /// has exactly two ways to say no, so a refusal is one of exactly two things —
@@ -449,7 +334,7 @@ pub struct RefusedStep {
 ///
 /// `cells` is the standable set the walk ran over and `reached` its result. The
 /// frontier is every `(from, to)` with `from` reached, `to` standable and not
-/// reached, one move apart under [`connected`]'s neighbourhood — and the step
+/// reached, one horizontal move and at most one course apart — and the step
 /// rule refusing it. A `to` that several reached cells border appears once per
 /// bordering cell, because each is a different place to cut the opening.
 ///
@@ -533,35 +418,34 @@ mod tests {
         }
     }
 
+    /// The step rule's headroom arm, read off the frontier: with the swept head
+    /// cell clear, the full-block rise is no refused step; with it blocked, the
+    /// rise is refused as one course of headroom short, at that cell.
     #[test]
     fn a_full_block_rise_is_a_jump_and_needs_the_swept_head_cell_clear() {
+        let reached = BTreeSet::from([[0, 1, 0]]);
         let open = head_bonk(false);
         let cells = standable_cells(&open);
-        assert!(cells.contains(&[0, 1, 0]) && cells.contains(&[2, 2, 0]));
+        assert!(cells.contains(&[0, 1, 0]) && cells.contains(&[1, 2, 0]));
         assert!(
-            connected(
-                &open,
-                &cells,
-                &BTreeSet::from([[0, 1, 0]]),
-                &BTreeSet::from([[2, 2, 0]])
-            ),
-            "open headroom: the jump up is walkable"
+            refused_frontier(&open, &cells, &reached).is_empty(),
+            "open headroom: the jump up is a step"
         );
 
         let low = head_bonk(true);
         let cells = standable_cells(&low);
         assert!(
-            cells.contains(&[0, 1, 0]) && cells.contains(&[2, 2, 0]),
+            cells.contains(&[0, 1, 0]) && cells.contains(&[1, 2, 0]),
             "both ends are standable — the geometry differs only in the swept cell"
         );
-        assert!(
-            !connected(
-                &low,
-                &cells,
-                &BTreeSet::from([[0, 1, 0]]),
-                &BTreeSet::from([[2, 2, 0]])
-            ),
-            "a ceiling two courses over the feet blocks the jump, so no walk connects them"
+        assert_eq!(
+            refused_frontier(&low, &cells, &reached),
+            vec![RefusedStep {
+                from: [0, 1, 0],
+                to: [1, 2, 0],
+                refusal: StepRefusal::Headroom { head: [0, 3, 0] },
+            }],
+            "a ceiling two courses over the feet refuses the jump, at that cell"
         );
     }
 
@@ -585,8 +469,8 @@ mod tests {
         assert!(!standable(&g, [1, 1, -1]));
     }
 
-    /// A wall splits the floor into two components, and the walk refuses to
-    /// cross it — while a one-block step over a sill does cross.
+    /// A wall splits the floor into two lumps — while a one-block step over a
+    /// sill joins them.
     #[test]
     fn a_wall_severs_and_a_sill_does_not() {
         let mut g = field([5, 4, 3]);
@@ -596,9 +480,6 @@ mod tests {
             }
         }
         let cells = standable_cells(&g);
-        let west: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[0] < 2).collect();
-        let east: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[0] > 2).collect();
-        assert!(!connected(&g, &cells, &west, &east));
         assert_eq!(components(&g, &cells).len(), 2);
 
         // knock the wall down to a single course: now it is a step, not a wall.
@@ -607,24 +488,7 @@ mod tests {
             g.solid.remove(&[2, 3, z]);
         }
         let cells = standable_cells(&g);
-        assert!(connected(&g, &cells, &west, &east));
         assert_eq!(components(&g, &cells).len(), 1);
-    }
-
-    /// `reachable_from` is `connected`'s set form: same edges, and it reports
-    /// how many cells were reached — the number a measurement's binding is.
-    #[test]
-    fn reachable_from_reports_the_set_it_bound_to() {
-        let mut g = field([5, 4, 3]);
-        for z in 0..3 {
-            for y in 1..4 {
-                g.solid.insert([2, y, z]);
-            }
-        }
-        let cells = standable_cells(&g);
-        let west: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[0] < 2).collect();
-        assert_eq!(reachable_from(&g, &cells, &west).len(), 6);
-        assert_eq!(reachable_from(&g, &cells, &BTreeSet::new()).len(), 0);
     }
 
     /// A roof over part of the floor is what separates indoors from the ground
@@ -659,11 +523,5 @@ mod tests {
         g.solid.remove(&[0, 2, 2]);
         let entry = ground_entry(&g);
         assert_eq!(entry, BTreeSet::from([[0, 1, 2]]));
-        let cells = standable_cells(&g);
-        assert_eq!(
-            reachable_from(&g, &cells, &entry).len(),
-            10,
-            "doorway + interior"
-        );
     }
 }

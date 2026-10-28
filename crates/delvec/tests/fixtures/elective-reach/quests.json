@@ -134,7 +134,10 @@
     ],
     "triggers": [
       {
-        "at": "anchor/door",
+        "answers": {
+          "done": "The bell has rung; its note is still in the stone."
+        },
+        "at": "anchor/door-knock",
         "effects": [
           {
             "flag": "flag/rang",
@@ -148,10 +151,13 @@
         "id": "trigger/bell",
         "on": {
           "on": "use"
+        },
+        "prop": {
+          "block": "minecraft:bell[attachment=floor,facing=north]"
         }
       }
     ]
   },
-  "dsl_version": "0.63.0",
+  "dsl_version": "0.67.0",
   "stage": "quests"
 }

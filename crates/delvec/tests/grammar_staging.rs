@@ -164,35 +164,13 @@ const ARENA_SEED: u64 = 1;
 // Reading the expanded model the way a player meets it
 // ---------------------------------------------------------------------------
 
-// This file used to carry its own copy of the walk — `passable`, `solid`,
-// `standable`, `standable_cells`, `connected` and `reachable_with_fall`, all
-// six re-implemented — and the crate's own module header named folding it in as
-// a follow-up rather than a silence. It is folded in here, with the change that
-// made the copy dangerous rather than merely duplicated: the step rule now asks
-// whether a jumping body has room over its head, and a copy nobody edits would
-// have gone on proving routes the compiler refuses.
-//
-// The one behaviour that was genuinely this file's is preserved by the crate's
-// version and not by accident: `reachable_with_fall` is still deliberately more
-// permissive than the plain walk, and the fixtures below still rely on that
-// asymmetry — the L family proves "no way back **up**" under the plain walk,
-// where a fall edge cannot help, and proves arrival under the fall walk.
-//
-// **What neither models: a horizontal jump.** Every "unreachable" this file
-// proves means unreachable by walking and falling. The consequence differs per
-// rule and is stated here rather than left to be re-derived:
-//
-// * `drop_shaft` / `dumbwaiter` — unaffected in the direction that matters.
-//   Their claim is that you cannot get back up, and a jump does not lift you.
-// * `far_side_bar` — **this is where it bites.** The rule's whole point is that
-//   the near side cannot reach `anchor/unlock` while the bar is down. A gap a
-//   player could jump would defeat that and this model would not see it, so the
-//   fixture must not leave one: keep the separation wider than a jump, or solid.
-// * `elite_ground` — safe. A jump can only *add* flank routes, and the gate
-//   cares about there being enough, not few.
-use delvec::grammar::nav::{
-    connected, passable, reachable_with_fall, solid, standable, standable_cells,
-};
+// Every route this file proves is asked of the reach graph over the model's
+// own blocks (`grammar::nav::reaches`): the walk, the climb, every fall, every
+// swim and every jump of the launch set. An "unreachable" here means no body
+// gets there by any of them; a cut that proves a route is the only route walls
+// the removed floor up (`reaches_walled`), because a jump crosses a cut made by
+// leaving cells out.
+use delvec::grammar::nav::{passable, reaches, reaches_walled, solid, standable, standable_cells};
 
 // ---------------------------------------------------------------------------
 // Sightline — the same walk `DW0388` uses
@@ -373,13 +351,13 @@ fn the_ledge_lane_is_the_only_route_past_the_niches() {
     let exit: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[2] == 0).collect();
     assert!(!entry.is_empty() && !exit.is_empty());
     assert!(
-        connected(model, &cells, &entry, &exit),
+        reaches(model, &cells, &entry, &exit),
         "the path does not go anywhere"
     );
 
     let cut: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[0] != 0).collect();
     assert!(
-        !connected(model, &cut, &entry, &exit),
+        !reaches_walled(model, &cut, &entry, &exit),
         "with the ledge lane removed the path still connects end to end — the \
          niches are decoration beside a walkable bypass, not a knockback test"
     );
@@ -819,7 +797,7 @@ fn a_pillar_in_the_line_reds_the_sightline_gate() {
     let far = PASSAGE_REGION.size[2] as i32 - 1;
     let entry: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[2] == far).collect();
     let exit: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[2] == 0).collect();
-    assert!(connected(&out.model, &cells, &entry, &exit));
+    assert!(reaches(&out.model, &cells, &entry, &exit));
 }
 
 /// The standoff is enforced by the rule, not by the caller remembering it: a
@@ -930,7 +908,7 @@ fn a_full_span_truss_blinds_the_perches() {
     let far = HALL_REGION.size[2] as i32 - 1;
     let entry: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[2] == far).collect();
     let exit: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[2] == 0).collect();
-    assert!(connected(model, &cells, &entry, &exit));
+    assert!(reaches(model, &cells, &entry, &exit));
 }
 
 /// The second gate: at most one perch per 24 floor cells. The Cathedral's
@@ -1014,7 +992,7 @@ fn the_rafters_are_geometry_a_body_can_stand_on() {
     let floor: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[1] < y).collect();
     let up: BTreeSet<[i32; 3]> = perches.iter().copied().collect();
     assert!(
-        !connected(model, &cells, &floor, &up),
+        !reaches(model, &cells, &floor, &up),
         "a perch is reachable on foot from the nave — that is a ledge, not a rafter"
     );
 }
@@ -1043,7 +1021,7 @@ fn a_hall_under_six_tall_is_a_hall_without_rafters() {
     let entry: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[2] == far).collect();
     let exit: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[2] == 0).collect();
     assert!(!entry.is_empty());
-    assert!(connected(&short.model, &cells, &entry, &exit));
+    assert!(reaches(&short.model, &cells, &entry, &exit));
 }
 
 /// Floor cells of the nave — the denominator the density cap is stated over.
@@ -1176,7 +1154,7 @@ fn the_doorway_is_the_only_route_through_the_wall() {
     let inside: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[2] < wall).collect();
     assert!(!approach.is_empty() && !inside.is_empty());
     assert!(
-        connected(&out.model, &cells, &approach, &inside),
+        reaches(&out.model, &cells, &approach, &inside),
         "the doorway does not go anywhere"
     );
 
@@ -1186,7 +1164,7 @@ fn the_doorway_is_the_only_route_through_the_wall() {
         .filter(|c| c[0] != threshold[0] || c[2] != wall)
         .collect();
     assert!(
-        !connected(&out.model, &cut, &approach, &inside),
+        !reaches_walled(&out.model, &cut, &approach, &inside),
         "with the doorway plugged the wall still lets a walker through — there is \
          a second way round, so passing the alcove is optional"
     );
@@ -1368,14 +1346,14 @@ fn the_hazard_lane_is_the_only_continuous_route() {
     let exit: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[2] == 0).collect();
     assert!(!entry.is_empty() && !exit.is_empty());
     assert!(
-        connected(&out.model, &cells, &entry, &exit),
+        reaches(&out.model, &cells, &entry, &exit),
         "the lane does not go anywhere"
     );
 
     let pocket_x = indexed(&out.anchors, "pocket")[0][0];
     let cut: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[0] == pocket_x).collect();
     assert!(
-        !connected(&out.model, &cut, &entry, &exit),
+        !reaches_walled(&out.model, &cut, &entry, &exit),
         "the pocket band alone connects the box end to end — it is a parallel \
          bypass, not a side dodge off a lane the player has to take"
     );
@@ -1452,7 +1430,7 @@ fn a_lane_too_short_for_one_pocket_period_is_a_lane_without_pockets() {
     let entry: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[2] == far).collect();
     let exit: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[2] == 0).collect();
     assert!(!entry.is_empty());
-    assert!(connected(&short.model, &cells, &entry, &exit));
+    assert!(reaches(&short.model, &cells, &entry, &exit));
 }
 
 // ---------------------------------------------------------------------------
@@ -1718,7 +1696,7 @@ fn the_doorway_is_walkable_beneath_the_curtain() {
         let exit: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[2] == 0).collect();
         assert!(!entry.is_empty() && !exit.is_empty());
         assert!(
-            connected(&out.model, &cells, &entry, &exit),
+            reaches(&out.model, &cells, &entry, &exit),
             "single_strand={single_strand}: the curtain blocked the doorway"
         );
     }
@@ -1898,8 +1876,8 @@ fn a_drop_shaft_expands_deterministically() {
     assert!(a.anchors.contains_key("anchor/landing"));
 }
 
-/// The gate the entry is named for, half one: granting a player's own
-/// free-fall (`reachable_with_fall`), the brink genuinely reaches the landing
+/// The gate the entry is named for, half one: a body falls from the brink to
+/// the landing ([`reaches`], whose moves include the fall), so the brink genuinely reaches the landing
 /// — the structure is not simply broken in two.
 #[test]
 fn the_spill_falls_to_the_landing() {
@@ -1914,7 +1892,7 @@ fn the_spill_falls_to_the_landing() {
     let from: BTreeSet<[i32; 3]> = [spill].into_iter().collect();
     let to: BTreeSet<[i32; 3]> = [landing].into_iter().collect();
     assert!(
-        reachable_with_fall(model, &cells, &from, &to),
+        reaches(model, &cells, &from, &to),
         "the brink cannot even fall to its own landing"
     );
 }
@@ -1933,7 +1911,7 @@ fn the_landing_has_no_way_back_to_the_spill() {
     let from: BTreeSet<[i32; 3]> = [landing].into_iter().collect();
     let to: BTreeSet<[i32; 3]> = [spill].into_iter().collect();
     assert!(
-        !connected(model, &cells, &from, &to),
+        !reaches(model, &cells, &from, &to),
         "the landing walks straight back up to the brink — the shaft is not one-way"
     );
 }
@@ -1960,7 +1938,7 @@ fn a_rescued_shaft_has_a_way_back() {
         .into_iter()
         .collect();
     assert!(
-        !connected(&sealed_out.model, &sealed_cells, &s_landing, &s_spill),
+        !reaches(&sealed_out.model, &sealed_cells, &s_landing, &s_spill),
         "the un-rescued shaft already has a way back — the fixture proves nothing"
     );
 
@@ -1973,7 +1951,7 @@ fn a_rescued_shaft_has_a_way_back() {
         .into_iter()
         .collect();
     assert!(
-        connected(&rescued_out.model, &rescued_cells, &r_landing, &r_spill),
+        reaches(&rescued_out.model, &rescued_cells, &r_landing, &r_spill),
         "rescue_ladder notched the entry floor and the plain walk still reports no way back \
          — the gate proves nothing"
     );
@@ -2007,7 +1985,7 @@ fn the_hatch_falls_to_the_landing() {
     let from: BTreeSet<[i32; 3]> = [hatch].into_iter().collect();
     let to: BTreeSet<[i32; 3]> = [landing].into_iter().collect();
     assert!(
-        reachable_with_fall(model, &cells, &from, &to),
+        reaches(model, &cells, &from, &to),
         "the hatch cannot even fall to its own landing"
     );
 }
@@ -2022,7 +2000,7 @@ fn the_landing_has_no_way_back_to_the_hatch() {
     let from: BTreeSet<[i32; 3]> = [landing].into_iter().collect();
     let to: BTreeSet<[i32; 3]> = [hatch].into_iter().collect();
     assert!(
-        !connected(model, &cells, &from, &to),
+        !reaches(model, &cells, &from, &to),
         "the landing walks straight back up to the hatch — the duct is not one-way"
     );
 }
@@ -2045,7 +2023,7 @@ fn a_rescued_dumbwaiter_has_a_way_back() {
         .into_iter()
         .collect();
     assert!(
-        !connected(&sealed_out.model, &sealed_cells, &s_landing, &s_hatch),
+        !reaches(&sealed_out.model, &sealed_cells, &s_landing, &s_hatch),
         "the un-rescued duct already has a way back — the fixture proves nothing"
     );
 
@@ -2058,7 +2036,7 @@ fn a_rescued_dumbwaiter_has_a_way_back() {
         .into_iter()
         .collect();
     assert!(
-        connected(&rescued_out.model, &rescued_cells, &r_landing, &r_hatch),
+        reaches(&rescued_out.model, &rescued_cells, &r_landing, &r_hatch),
         "rescue_ladder notched the entry floor and the plain walk still reports no way back \
          — the gate proves nothing"
     );
@@ -2069,14 +2047,14 @@ fn a_rescued_dumbwaiter_has_a_way_back() {
 // ---------------------------------------------------------------------------
 //
 // Every gate here is read with the **same** `standable` predicate and the same
-// plain ±1-step `connected` walk the L family's one-wayness is proved with, and
-// that is the whole design of this section: `drop_shaft` asserts
-// `!connected(landing, spill)` and this asserts `connected(foot, head)`. One
+// reach graph the L family's one-wayness is proved with, and that is the whole
+// design of this section: `drop_shaft` asserts `!reaches(landing, spill)` and
+// this asserts `reaches(foot, head)`. One
 // model of "can a body get there", two rules, opposite verdicts — rather than
 // two independent ideas of reachability that could drift apart and both be
 // green.
 
-/// Anchor cells of a stem, as a one-element set for `connected`.
+/// Anchor cells of a stem, as a one-element set for [`reaches`].
 fn cell(out: &Expansion, name: &str) -> BTreeSet<[i32; 3]> {
     [out.anchors[name].pos].into_iter().collect()
 }
@@ -2097,15 +2075,11 @@ fn a_stair_flight_expands_deterministically() {
     );
 }
 
-/// **The gate the entry exists for.** A body walks from the foot landing to the
-/// head landing under the plain ±1 step — no fall edge, because a fall never
-/// points up — and walks back down again.
-///
-/// Both directions are asserted and they are deliberately the *same* claim:
-/// `connected`'s edge relation is symmetric (every `dy` step has a matching
-/// `-dy` step), so a graph that carries a climb carries the descent. Writing
-/// both down is what makes the calibration against `drop_shaft` legible —
-/// see `the_flight_and_the_drop_shaft_are_one_gate_read_twice`.
+/// **The gate the entry exists for.** A body gets from the foot landing to the
+/// head landing — a fall never points up, so the climb is the treads' — and
+/// back down again. Writing both down is what makes the calibration against
+/// `drop_shaft` legible — see
+/// `the_flight_and_the_drop_shaft_are_one_gate_read_twice`.
 ///
 /// Binding: 66 standable cells, 2 landings, 8 treads.
 #[test]
@@ -2126,12 +2100,12 @@ fn the_flight_walks_up_and_back_down() {
     let from = cell(&out, "anchor/stair-foot");
     let to = cell(&out, "anchor/stair-head");
     assert!(
-        connected(model, &cells, &from, &to),
+        reaches(model, &cells, &from, &to),
         "the foot landing cannot walk up to the head landing — nothing in the \
          vocabulary ascends after all"
     );
     assert!(
-        connected(model, &cells, &to, &from),
+        reaches(model, &cells, &to, &from),
         "the head landing cannot walk back down"
     );
 }
@@ -2139,13 +2113,13 @@ fn the_flight_walks_up_and_back_down() {
 /// The calibration, written as one test so nobody has to take it on trust:
 /// the same predicate, the same walk, the same direction of travel, run over
 /// this rule and over `drop_shaft`, must disagree. A change that broke
-/// `connected` into always-true would red the shaft's half; one that broke it
+/// [`reaches`] into always-true would red the shaft's half; one that broke it
 /// into always-false would red the flight's.
 #[test]
 fn the_flight_and_the_drop_shaft_are_one_gate_read_twice() {
     let flight = expand_at(&stair_flight(), FLIGHT_REGION, FLIGHT_SEED);
     let flight_cells = standable_cells(&flight.model);
-    let climbs = connected(
+    let climbs = reaches(
         &flight.model,
         &flight_cells,
         &cell(&flight, "anchor/stair-foot"),
@@ -2154,7 +2128,7 @@ fn the_flight_and_the_drop_shaft_are_one_gate_read_twice() {
 
     let shaft = expand_at(&drop_shaft(), SHAFT_REGION, SHAFT_SEED);
     let shaft_cells = standable_cells(&shaft.model);
-    let climbs_back = connected(
+    let climbs_back = reaches(
         &shaft.model,
         &shaft_cells,
         &cell(&shaft, "anchor/landing"),
@@ -2414,13 +2388,13 @@ fn the_stair_risers_move_the_bytes_and_not_the_walk() {
         ("anchor/stair-head", "anchor/stair-foot"),
     ] {
         assert_eq!(
-            connected(
+            reaches(
                 &out.model,
                 &stair_cells_standable,
                 &cell(&out, from),
                 &cell(&out, to)
             ),
-            connected(
+            reaches(
                 &plain.model,
                 &plain_cells,
                 &cell(&plain, from),
@@ -2480,7 +2454,7 @@ fn the_flight_stands_up_in_a_turned_frame() {
     // refusal that happened to have the facing this test wanted.
     for out in [&along_z, &along_x] {
         let cells = standable_cells(&out.model);
-        assert!(connected(
+        assert!(reaches(
             &out.model,
             &cells,
             &cell(out, "anchor/stair-foot"),
@@ -2508,7 +2482,7 @@ fn a_single_raised_tread_strands_the_head_landing() {
     let sound_out = expand_at(&sound, FLIGHT_REGION, FLIGHT_SEED);
     let sound_cells = standable_cells(&sound_out.model);
     assert!(
-        connected(
+        reaches(
             &sound_out.model,
             &sound_cells,
             &cell(&sound_out, "anchor/stair-foot"),
@@ -2522,13 +2496,17 @@ fn a_single_raised_tread_strands_the_head_landing() {
     let foot = cell(&out, "anchor/stair-foot");
     let head = cell(&out, "anchor/stair-head");
     assert!(
-        !connected(&out.model, &cells, &foot, &head),
+        !reaches(&out.model, &cells, &foot, &head),
         "a tread was raised a whole block and the climb still gets through — \
          the both-ways gate cannot see a step nobody can make"
     );
+    // Down is another matter: a body steps off the raised tread and falls the
+    // two blocks to the next, so the break strands the head landing for the
+    // climb and nobody coming down.
     assert!(
-        !connected(&out.model, &cells, &head, &foot),
-        "the descent is unaffected, so the break is not on the route"
+        reaches(&out.model, &cells, &head, &foot),
+        "the descent off the raised tread is a two-block fall a body takes, and \
+         it no longer gets down"
     );
 
     // ...and what was caught is a step, not a demolition. Exactly one riser is
@@ -2549,7 +2527,7 @@ fn a_single_raised_tread_strands_the_head_landing() {
     assert!(standable(&out.model, out.anchors["anchor/stair-foot"].pos));
     assert!(standable(&out.model, out.anchors["anchor/stair-head"].pos));
     assert!(
-        connected(&out.model, &cells, &foot, &[steps[1]].into_iter().collect()),
+        reaches(&out.model, &cells, &foot, &[steps[1]].into_iter().collect()),
         "the flight below the break stopped walking too — that is a demolished \
          shaft, not a broken step"
     );
@@ -2618,7 +2596,7 @@ fn the_run_is_the_only_way_between_the_landings() {
     let cells = standable_cells(model);
     let foot = cell(&out, "anchor/stair-foot");
     let head = cell(&out, "anchor/stair-head");
-    assert!(reachable_with_fall(model, &cells, &foot, &head));
+    assert!(reaches(model, &cells, &foot, &head));
 
     // The middle tread's own Z columns, whichever cells they turned out to be.
     let steps = indexed(&out.anchors, "stair-step");
@@ -2634,7 +2612,7 @@ fn the_run_is_the_only_way_between_the_landings() {
         "the cut removed the wrong number of cells"
     );
     assert!(
-        !reachable_with_fall(model, &cut, &foot, &head),
+        !reaches_walled(model, &cut, &foot, &head),
         "the landings are still joined with a slice of the run deleted, so the \
          run is not the route"
     );
@@ -2696,13 +2674,13 @@ fn the_near_side_cannot_reach_the_unlock_while_barred() {
     let far: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[2] < gate[2]).collect();
     assert!(!near.is_empty() && !far.is_empty());
     assert!(
-        !connected(model, &cells, &near, &far),
+        !reaches(model, &cells, &near, &far),
         "the near side reaches the far side while the bar stands — the shortcut has no far side \
          to earn"
     );
     let unlock_set: BTreeSet<[i32; 3]> = [unlock].into_iter().collect();
     assert!(
-        connected(model, &cells, &far, &unlock_set),
+        reaches(model, &cells, &far, &unlock_set),
         "the unlock is not even reachable from its own room"
     );
 }
@@ -2722,7 +2700,7 @@ fn unbarring_the_door_connects_the_rooms() {
     let near: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[2] > gate[2]).collect();
     let far: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[2] < gate[2]).collect();
     assert!(
-        connected(model, &cells, &near, &far),
+        reaches(model, &cells, &near, &far),
         "unbarring the door and the two rooms still do not connect — the gate proves nothing"
     );
 }
@@ -2799,7 +2777,7 @@ fn the_tee_passage_is_a_lane_with_one_side_opening() {
     let (entry, exit) = lane_ends(&out.model);
     assert!(!entry.is_empty() && !exit.is_empty(), "the lane has ends");
     assert!(
-        connected(&out.model, &cells, &entry, &exit),
+        reaches(&out.model, &cells, &entry, &exit),
         "the tee does not run end to end, so it cannot be a segment of a chain"
     );
 
@@ -2854,7 +2832,7 @@ fn the_tee_passages_doorway_is_beside_the_route_not_on_it() {
         "exactly the doorway was removed"
     );
     assert!(
-        connected(&out.model, &cut, &entry, &exit),
+        reaches_walled(&out.model, &cut, &entry, &exit),
         "plugging the branch doorway severed the lane — the tee put its opening on \
          the route, which is a `far_side_bar` and not a junction"
     );
@@ -2868,7 +2846,7 @@ fn the_tee_passages_doorway_is_beside_the_route_not_on_it() {
     let gate = bar.anchors["anchor/gate"].pos;
     let (bar_entry, bar_exit) = lane_ends(&bar.model);
     assert!(
-        connected(&bar.model, &bar_cells, &bar_entry, &bar_exit),
+        reaches(&bar.model, &bar_cells, &bar_entry, &bar_exit),
         "the unbarred fixture is not even a route, so the cut below proves nothing"
     );
     let bar_cut: BTreeSet<[i32; 3]> = bar_cells
@@ -2877,7 +2855,7 @@ fn the_tee_passages_doorway_is_beside_the_route_not_on_it() {
         .filter(|c| c[2] != gate[2])
         .collect();
     assert!(
-        !connected(&bar.model, &bar_cut, &bar_entry, &bar_exit),
+        !reaches_walled(&bar.model, &bar_cut, &bar_entry, &bar_exit),
         "plugging the bar's own opening left the box connected — this cut cannot \
          sever anything, so the tee passing it means nothing"
     );
@@ -2903,7 +2881,7 @@ fn sealing_the_tee_passage_closes_its_only_opening() {
     // same lane, minus the one cell that was the doorway.
     let cells = standable_cells(&out.model);
     let (entry, exit) = lane_ends(&out.model);
-    assert!(connected(&out.model, &cells, &entry, &exit));
+    assert!(reaches(&out.model, &cells, &entry, &exit));
     assert_eq!(
         cells.len(),
         standable_cells(&expand_at(&tee_passage(), TEE_REGION, TEE_SEED).model).len() - 1,
@@ -2994,7 +2972,7 @@ fn the_causeway_is_standable_and_the_flood_is_not() {
     let far_end: BTreeSet<[i32; 3]> = causeway_far_end(&lane);
     let near_end: BTreeSet<[i32; 3]> = [head].into_iter().collect();
     assert!(
-        connected(model, &lane, &near_end, &far_end),
+        reaches(model, &lane, &near_end, &far_end),
         "the causeway does not connect its own two ends"
     );
 
@@ -3099,7 +3077,7 @@ fn a_pillar_in_the_causeway_blinds_the_post() {
     // blindness, not impassability.
     let far_end: BTreeSet<[i32; 3]> = causeway_far_end(&lane);
     let near_end: BTreeSet<[i32; 3]> = [head].into_iter().collect();
-    assert!(connected(model, &lane, &near_end, &far_end));
+    assert!(reaches(model, &lane, &near_end, &far_end));
 }
 
 /// The causeway's two faces along travel: what is standable at local `Z`-max
@@ -3130,11 +3108,8 @@ const CAUSEWAY_GATE_REGION: Box3 = Box3::at_origin([9, 14, 24]);
 /// satisfy "chainable" and destroy the rule.
 ///
 /// 1. **With the gate open the piece is walkable through**: its `Z`-max face
-///    reaches its `Z`-min face under [`connected`] — the same ±1-step walk over
-///    standable cells every other gate in this file uses. That model is
-///    *test-local* (see [`reachable_with_fall`]'s note) and it does **not**
-///    model a horizontal jump; here that only ever under-counts routes, so a
-///    green means the lane is walkable, never merely jumpable.
+///    reaches its `Z`-min face by the reach graph ([`reaches`]) — the same
+///    moves every other gate in this file asks.
 /// 2. **With the gate shut it is not** — the terminus the rule is by default,
 ///    which is also the teeth for claim 1: the two runs differ in one
 ///    parameter, and only in that parameter.
@@ -3159,7 +3134,7 @@ fn the_berm_gate_opens_a_lane_past_the_post() {
 
     // 1. The lane runs through.
     assert!(
-        connected(model, &cells, &entry, &exit),
+        reaches(model, &cells, &entry, &exit),
         "the gate is open and the piece still does not cross itself"
     );
     // ...and the cell it comes out at is the berm's own column at berm height,
@@ -3181,7 +3156,7 @@ fn the_berm_gate_opens_a_lane_past_the_post() {
     let shut_cells = standable_cells(&shut.model);
     let (shut_entry, shut_exit) = causeway_faces(&shut.model);
     assert!(
-        !connected(&shut.model, &shut_cells, &shut_entry, &shut_exit),
+        !reaches(&shut.model, &shut_cells, &shut_entry, &shut_exit),
         "the gate is shut and the piece crosses anyway — claim 1 proves nothing"
     );
     assert!(
@@ -3198,11 +3173,11 @@ fn the_berm_gate_opens_a_lane_past_the_post() {
     assert!(standable(model, elite), "the guard has no floor: {elite:?}");
     for (name, from) in [("entry", &entry), ("exit lane", &exit_lane)] {
         assert!(
-            !connected(model, &cells, from, &post),
+            !reaches(model, &cells, from, &post),
             "the {name} face walks up onto the guard post {elite:?} — it is a landing now"
         );
         assert!(
-            !reachable_with_fall(model, &cells, from, &post),
+            !reaches(model, &cells, from, &post),
             "the {name} face reaches the guard post {elite:?} even before jumping is considered"
         );
     }
@@ -3295,7 +3270,7 @@ fn a_post_too_short_to_tunnel_refuses_the_lane() {
     let cells = standable_cells(&out.model);
     let (entry, exit) = causeway_faces(&out.model);
     assert!(
-        connected(&out.model, &cells, &entry, &exit),
+        reaches(&out.model, &cells, &entry, &exit),
         "the shortest post the rule will tunnel does not actually carry a lane"
     );
 }
@@ -3325,7 +3300,7 @@ fn flank_route_count(model: &VoxelModel, elite: [i32; 3], far_z: i32) -> usize {
             let entry: BTreeSet<[i32; 3]> =
                 band.iter().copied().filter(|c| c[2] == far_z).collect();
             let exit: BTreeSet<[i32; 3]> = band.iter().copied().filter(|c| c[2] == 0).collect();
-            !entry.is_empty() && !exit.is_empty() && connected(model, band, &entry, &exit)
+            !entry.is_empty() && !exit.is_empty() && reaches(model, band, &entry, &exit)
         })
         .count()
 }
@@ -3740,7 +3715,7 @@ fn the_hearth_ward_is_a_lane_that_walks_end_to_end() {
     assert_eq!(entry.len(), 6, "the lane at the approach end");
     assert_eq!(exit.len(), 6, "the lane at the way out");
     assert!(
-        connected(&out.model, &cells, &entry, &exit),
+        reaches(&out.model, &cells, &entry, &exit),
         "the rest ward does not walk end to end"
     );
 }
@@ -3763,7 +3738,7 @@ fn the_hearth_is_reachable_and_off_the_road() {
     );
     let (entry, exit) = travel_ends(&out.model);
     assert!(
-        connected(&out.model, &cells, &entry, &hearth),
+        reaches(&out.model, &cells, &entry, &hearth),
         "the lane cannot reach its own hearth"
     );
 
@@ -3771,7 +3746,7 @@ fn the_hearth_is_reachable_and_off_the_road() {
     assert_eq!(nook.len(), 6, "the nook's own cells");
     let without: BTreeSet<[i32; 3]> = cells.difference(&nook).copied().collect();
     assert!(
-        connected(&out.model, &without, &entry, &exit),
+        reaches(&out.model, &without, &entry, &exit),
         "delete the nook and the lane stops walking — the rest point is on the \
          road rather than beside it"
     );
@@ -3793,12 +3768,12 @@ fn sealing_the_nooks_mouth_puts_the_hearth_out_of_reach() {
     let hearth: BTreeSet<[i32; 3]> = [out.anchors["anchor/hearth"].pos].into_iter().collect();
     let (entry, exit) = travel_ends(&out.model);
     assert!(
-        !connected(&out.model, &cells, &entry, &hearth),
+        !reaches(&out.model, &cells, &entry, &hearth),
         "the mouth was filled and the hearth is still reachable — the way in was \
          never the mouth"
     );
     assert!(
-        connected(&out.model, &cells, &entry, &exit),
+        reaches(&out.model, &cells, &entry, &exit),
         "sealing the nook sealed the lane, so the red above is measuring a \
          severed ward rather than an unreachable hearth"
     );
@@ -3988,7 +3963,7 @@ fn the_bait_stand_is_a_room_that_walks_end_to_end() {
     assert_eq!(entry.len(), 7);
     assert_eq!(exit.len(), 7);
     assert!(
-        connected(&out.model, &cells, &entry, &exit),
+        reaches(&out.model, &cells, &entry, &exit),
         "the gallery does not walk"
     );
 }
@@ -4026,7 +4001,7 @@ fn the_disarm_stand_is_a_lane_that_walks_end_to_end() {
     assert_eq!(entry.len(), 4, "the lane past the stand");
     assert_eq!(exit.len(), 7, "the run at the far end");
     assert!(
-        connected(&out.model, &cells, &entry, &exit),
+        reaches(&out.model, &cells, &entry, &exit),
         "the head does not join its run"
     );
 }
@@ -4088,7 +4063,7 @@ fn the_release_can_be_reached_from_the_run() {
     let (run, operators) = run_and_operators(&out);
     assert_eq!(operators.len(), 1);
     assert!(
-        connected(&out.model, &cells, &run, &operators),
+        reaches(&out.model, &cells, &run, &operators),
         "the stand cannot be entered from the run — the release is unreachable"
     );
 
@@ -4103,13 +4078,13 @@ fn the_release_can_be_reached_from_the_run() {
         "the operating position is still standable, merely cut off"
     );
     assert!(
-        !connected(&shut.model, &shut_cells, &shut_run, &shut_operators),
+        !reaches(&shut.model, &shut_cells, &shut_run, &shut_operators),
         "the stand's mouth was filled and the release is still reachable — the \
          way in was never the mouth"
     );
     let (entry, exit) = travel_ends(&shut.model);
     assert!(
-        connected(&shut.model, &shut_cells, &entry, &exit),
+        reaches(&shut.model, &shut_cells, &entry, &exit),
         "sealing the stand sealed the lane, so the red above is measuring a \
          severed piece rather than an unreachable control"
     );
@@ -4340,10 +4315,8 @@ fn the_shell_opens_exactly_once_a_storey() {
 }
 
 /// **The L family's pair, the third time.** A body steps off a landing into an
-/// empty shaft and falls to `anchor/lift-pit` (`reachable_with_fall`, the
-/// player's own movement model); the pit does **not** walk back up to any
-/// landing under the plain ±1 step, because a fall edge only ever points down
-/// and proving the negative under the generous model would be circular.
+/// empty shaft and falls to `anchor/lift-pit`; the pit does **not** get back up
+/// to any landing by any move of the reach graph ([`reaches`]).
 ///
 /// The control is what `sill` is for, and it is the same short-drop pairing
 /// `drop_shaft` uses: at `sill = 2` the pit is one block under the lowest
@@ -4364,11 +4337,11 @@ fn the_shaft_drops_a_body_and_will_not_carry_one_back() {
 
     let to: BTreeSet<[i32; 3]> = [pit].into_iter().collect();
     assert!(
-        reachable_with_fall(model, &cells, &sills, &to),
+        reaches(model, &cells, &sills, &to),
         "a body cannot even fall down its own shaft"
     );
     assert!(
-        !connected(model, &cells, &to, &sills),
+        !reaches(model, &cells, &to, &sills),
         "the pit walks back up to a landing — the shaft is not one-way"
     );
 
@@ -4381,7 +4354,7 @@ fn the_shaft_drops_a_body_and_will_not_carry_one_back() {
     let low_sills = landings(&low.model, low.anchors["anchor/lift-pit"].pos[1]);
     assert_eq!(low_sills.len(), 2, "the control's landings: {low_sills:?}");
     assert!(
-        connected(&low.model, &low_cells, &low_pit, &low_sills),
+        reaches(&low.model, &low_cells, &low_pit, &low_sills),
         "a one-block sill still reports no way back, so the negative above is the \
          walk being broken rather than the shaft being deep"
     );

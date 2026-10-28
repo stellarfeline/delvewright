@@ -55,8 +55,10 @@ pub fn check_checkpoints(plan: &Plan, world: &World) -> Result<(), Failure> {
             fire_step,
         });
     }
+    let shipped = world.seating_world(plan);
     verify_checkpoints(
         world,
+        shipped.as_ref().unwrap_or(world),
         &cps,
         &fixed_checkpoint_fires(plan),
         &critical_positions(plan),
@@ -247,13 +249,16 @@ fn trigger_root_step(
 /// configuration (in `first` order) whose walkable flood from its route cells,
 /// over its own world, meets one of `fire_cells`; `None` when no configuration
 /// reaches them. Split out so it is unit-testable over synthetic [`World`]s.
-fn earliest_reaching_config(
+pub(crate) fn earliest_reaching_config(
     configs: &[TriggerRootConfig],
     world: &World,
     fire_cells: &BTreeSet<[i32; 3]>,
 ) -> Option<usize> {
     configs.iter().find_map(|(w, first, cells)| {
-        let reached = w.as_ref().unwrap_or(world).reachable_walkable(cells);
+        // Where a player's body can be (spec-0113 §5.1): a trigger the path
+        // does not perform is fired by whoever gets into its range first, on
+        // foot or by a jump, so the reach graph roots it.
+        let reached = w.as_ref().unwrap_or(world).body_region(cells);
         reached
             .iter()
             .any(|c| fire_cells.contains(c))
@@ -321,6 +326,7 @@ struct RestSeat {
 /// proof by any other route is judged, not trusted.
 fn verify_checkpoints(
     world: &World,
+    seating: &World,
     checkpoints: &[RestSeat],
     fixed_fires: &[usize],
     positions: &[VisitedPos],
@@ -334,7 +340,7 @@ fn verify_checkpoints(
         fire_step,
     } in checkpoints
     {
-        let Some(cell) = seat.filter(|c| world.is_safe_seat(*c)) else {
+        let Some(cell) = seat.filter(|c| seating.is_safe_seat(*c)) else {
             return Err(unseated(anchor, *at, *seat));
         };
         // The first walked critical position strictly after the checkpoint fires.
@@ -681,6 +687,7 @@ mod tests {
         assert!(
             verify_checkpoints(
                 &world,
+                &world,
                 &seated(&world, &cps),
                 &[],
                 &positions,
@@ -692,6 +699,7 @@ mod tests {
         // Sealed before the party reaches the target (fire_step 0 < 1) → stranded.
         let close = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Fill, 0);
         let err = verify_checkpoints(
+            &world,
             &world,
             &seated(&world, &cps),
             &[],
@@ -711,6 +719,7 @@ mod tests {
         let cps = vec![("cp/rest".to_string(), [0, 65, 1], 0usize)];
         let positions = vec![at_step([4, 65, 1], 1)];
         let err = verify_checkpoints(
+            &world,
             &world,
             &seated(&world, &cps),
             &[],
@@ -737,6 +746,7 @@ mod tests {
         let positions = vec![at_step([4, 65, 1], 2)];
         verify_checkpoints(
             &world,
+            &world,
             &seated(&world, &cps),
             &[1],
             &positions,
@@ -745,6 +755,7 @@ mod tests {
         )
         .expect("the near checkpoint is replaced at step 1, before the leg to step 2");
         let err = verify_checkpoints(
+            &world,
             &world,
             &seated(&world, &cps),
             &[2],
@@ -762,14 +773,23 @@ mod tests {
     /// steps 0–1 and the far patch from step 3; a trigger that fires only from the
     /// far patch is first reachable in the far configuration, so the checkpoint
     /// it sets roots at step 2 and owes only the far patch — which it reaches.
+    /// The patches are split by a wall: a one-column gap is one a body jumps,
+    /// and over the bare gap the trigger is reached from the entry's
+    /// configuration, so the checkpoint roots at the entry.
     #[test]
     fn a_trigger_checkpoint_is_rooted_where_the_trigger_is_first_reachable() {
-        let world = split_world(65);
         let configs: Vec<TriggerRootConfig> = vec![
             (None, 0, vec![[0, 65, 1], [1, 65, 1]]),
             (None, 3, vec![[3, 65, 1], [4, 65, 1]]),
         ];
         let far: BTreeSet<[i32; 3]> = [[4, 65, 0]].into_iter().collect();
+        assert_eq!(
+            earliest_reaching_config(&configs, &split_world(65), &far),
+            Some(0),
+            "the gap is jumped from the near patch"
+        );
+        let wall: BTreeSet<[i32; 3]> = (0..3).flat_map(|z| [[2, 65, z], [2, 66, z]]).collect();
+        let world = split_world(65).with_sealed(&wall);
         let near: BTreeSet<[i32; 3]> = [[0, 65, 0]].into_iter().collect();
         assert_eq!(earliest_reaching_config(&configs, &world, &far), Some(3));
         assert_eq!(earliest_reaching_config(&configs, &world, &near), Some(0));
@@ -783,6 +803,7 @@ mod tests {
         let early = vec![("cp/far".to_string(), [3, 65, 1], 0usize)];
         let err = verify_checkpoints(
             &world,
+            &world,
             &seated(&world, &early),
             &[],
             &positions,
@@ -794,6 +815,7 @@ mod tests {
         let rooted = vec![("cp/far".to_string(), [3, 65, 1], 2usize)];
         assert!(
             verify_checkpoints(
+                &world,
                 &world,
                 &seated(&world, &rooted),
                 &[],
@@ -814,6 +836,7 @@ mod tests {
         assert!(
             verify_checkpoints(
                 &world,
+                &world,
                 &seated(&world, &cps),
                 &[],
                 &positions,
@@ -832,6 +855,7 @@ mod tests {
         let positions = vec![at_step([4, 65, 1], 1)];
         assert!(
             verify_checkpoints(
+                &world,
                 &world,
                 &seated(&world, &cps),
                 &[],
@@ -862,6 +886,7 @@ mod tests {
         let judge = |seat: Option<[i32; 3]>| {
             verify_checkpoints(
                 &world,
+                &world,
                 &[RestSeat {
                     anchor: "anchor/fire".to_string(),
                     at: [2, 65, 1],
@@ -890,6 +915,7 @@ mod tests {
         let world = floored(5, 3, 65, &[]);
         let cps = vec![("cp/rest".to_string(), [20, 65, 20], 0usize)];
         let err = verify_checkpoints(
+            &world,
             &world,
             &seated(&world, &cps),
             &[],

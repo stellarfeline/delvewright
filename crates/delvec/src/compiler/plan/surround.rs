@@ -137,7 +137,7 @@ fn ground_columns(
 ) -> BTreeSet<(i32, i32)> {
     let datum = crate::compiler::horizon::VALLEY_GAP_FLOOR_TOP_Y;
     let mut out = BTreeSet::new();
-    let mut claim = |min: [i32; 3], max: [i32; 3]| {
+    claims(areas, &mut |min, max| {
         if min[1] > datum {
             return;
         }
@@ -146,7 +146,35 @@ fn ground_columns(
                 out.insert((x, z));
             }
         }
-    };
+    });
+    out
+}
+
+/// **The lowest cell anything the plan writes occupies, per column of the
+/// declared region** — the ground the surround's skirt reaches down to at the
+/// region's edge ([`crate::compiler::surround::edge_ground`]). Read from the
+/// same placement rectangles as [`ground_columns`], in the same safe
+/// direction: a rectangle's bottom is at or below every block in it, so the
+/// skirt reaches at least as deep as the ground it meets.
+fn lowest_ground(
+    areas: &[AreaPlacement],
+    region: &crate::compiler::surround::SceneRect,
+) -> BTreeMap<(i32, i32), i32> {
+    let mut out: BTreeMap<(i32, i32), i32> = BTreeMap::new();
+    claims(areas, &mut |min, max| {
+        for x in min[0].max(region.min_x)..=max[0].min(region.max_x) {
+            for z in min[2].max(region.min_z)..=max[2].min(region.max_z) {
+                let e = out.entry((x, z)).or_insert(min[1]);
+                *e = (*e).min(min[1]);
+            }
+        }
+    });
+    out
+}
+
+/// Every placement rectangle the plan writes blocks into — each piece's box
+/// and each fill or seal that lays a block — handed to `claim` as `(min, max)`.
+fn claims(areas: &[AreaPlacement], claim: &mut dyn FnMut([i32; 3], [i32; 3])) {
     for area in areas {
         for piece in &area.pieces {
             let (pmin, pmax) = piece.bbox();
@@ -169,7 +197,6 @@ fn ground_columns(
             claim(lo, hi);
         }
     }
-    out
 }
 
 /// Build the horizon's surround, or `None` for a base that declares a world
@@ -219,11 +246,17 @@ pub(super) fn build_surround(
         flora: Flora::Oak,
         palette: SurroundPalette::StoneGrass,
     };
-    let valley = surround::generate_valley(
+    // The skirt reaches down to the ground the region holds at each edge
+    // (`surround::edge_ground`), read from the same placement rectangles as
+    // the moat's floored columns.
+    let lowest = lowest_ground(areas, &scene);
+    let ground = surround::edge_ground(&scene, &|x, z| lowest.get(&(x, z)).copied());
+    let valley = surround::generate_valley_reaching(
         solver::stream_seed(seed, crate::compiler::horizon::VALLEY_STREAM),
         scene,
         crate::compiler::horizon::VALLEY_GAP_FLOOR_TOP_Y,
         &params,
+        &ground,
     )
     // The build-time restatement of the range fence the validation layer
     // already applied — the SAME code, because it is the same rule, and a

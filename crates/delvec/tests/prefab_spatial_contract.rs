@@ -265,9 +265,15 @@ fn both_spellings_of_one_door_give_the_second_door_the_same_verdict() {
     );
 }
 
+/// How long the broken passage runs along `z`: a gap no jump of the reach
+/// graph's launch set clears, so the deck is the only way across. A one-cell
+/// threshold is a gap a body jumps, and a way over it opens nothing.
+const DECK_RUN: i64 = 5;
+
 /// The same building with its threshold missing instead of barred: the
-/// partition's floor course is claimed as `deck` and left empty, and the door is
-/// a `walk` whose way is `laid`.
+/// partition is thickened into a passage [`DECK_RUN`] cells long, its floor
+/// course is claimed as `deck` and left empty, and the door is a `walk` whose
+/// way is `laid`.
 ///
 /// The other sign, through the door the operator runs. A `laid` way is the one
 /// whose cells the shipped bytes do *not* hold — the audit reads air where the
@@ -290,27 +296,43 @@ fn spatial_contract_as_a_laid_deck() -> Program {
             };
         }
     }
-    program.rule(
-        "doorway",
-        Node::Claim {
-            region: "gate".to_string(),
-            body: Box::new(Node::Split(Split {
-                axis: Axis::Y,
-                sizes: vec![Size::abs(1), Size::abs(3), Size::rel(1)],
+    program
+        .rule(
+            "doorway",
+            Node::Claim {
+                region: "gate".to_string(),
+                body: Box::new(Node::Split(Split {
+                    axis: Axis::Y,
+                    sizes: vec![Size::abs(1), Size::abs(3), Size::rel(1)],
+                    rounding: None,
+                    repeat: false,
+                    orient: Reorient::KEEP,
+                    children: vec![
+                        Node::Claim {
+                            region: "deck".to_string(),
+                            body: Box::new(Node::Void),
+                        },
+                        Node::Void,
+                        Node::fill("shell"),
+                    ],
+                })),
+            },
+        )
+        .rule(
+            "piece",
+            Node::Split(Split {
+                axis: Axis::Z,
+                sizes: vec![Size::rel(1), Size::abs(DECK_RUN), Size::rel(1)],
                 rounding: None,
                 repeat: false,
                 orient: Reorient::KEEP,
                 children: vec![
-                    Node::Claim {
-                        region: "deck".to_string(),
-                        body: Box::new(Node::Void),
-                    },
-                    Node::Void,
-                    Node::fill("shell"),
+                    Node::call("near_room"),
+                    Node::call("partition"),
+                    Node::call("far_room"),
                 ],
-            })),
-        },
-    )
+            }),
+        )
 }
 
 /// **A laid way, through the second door — green, and red one block later.**
@@ -327,7 +349,7 @@ fn the_second_door_judges_a_laid_way_on_bytes_that_do_not_hold_it_yet() {
     let (ok, stderr) = audit(&dir);
     assert!(ok, "{stderr}");
     assert!(
-        stderr.contains("way \"deck\": laid over 3 cell(s)"),
+        stderr.contains("way \"deck\": laid over 15 cell(s)"),
         "the way is enumerated with its sign and binding count: {stderr}"
     );
     assert!(
@@ -336,11 +358,14 @@ fn the_second_door_judges_a_laid_way_on_bytes_that_do_not_hold_it_yet() {
          `reachable eventually`: {stderr}"
     );
 
-    // Lay the threshold in the bytes. The way now opens nothing.
+    // Lay the deck in the bytes. The way now opens nothing.
     let nbt = dir.join("twin-room.nbt");
     let mut s = Structure::read(&std::fs::read(&nbt).unwrap()).unwrap();
+    let z0 = (15 - DECK_RUN as i32) / 2;
     for x in 4..=6 {
-        s.set_cell([x, 0, 7], PaletteEntry::simple("minecraft:stone"), None);
+        for z in z0..z0 + DECK_RUN as i32 {
+            s.set_cell([x, 0, z], PaletteEntry::simple("minecraft:stone"), None);
+        }
     }
     std::fs::write(&nbt, s.write()).unwrap();
 

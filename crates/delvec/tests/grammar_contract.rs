@@ -1428,11 +1428,11 @@ fn two_processes_write_the_same_contract_when_it_carries_a_way() {
 /// **The other sign, on the same building**: the doorway's threshold is missing
 /// and content lays it.
 ///
-/// The corpus piece with its partition's floor course claimed as `deck` and
-/// left empty, the passage over it open, and the door declared a `walk` whose
-/// way is `laid`. As built the two rooms are severed — a body cannot stand on
-/// a threshold that is not there — and laying the deck in the `floor` role
-/// connects them.
+/// The corpus piece with its partition thickened into a passage
+/// [`DECK_RUN`] cells long, the passage's floor course claimed as `deck` and
+/// left empty, and the door declared a `walk` whose way is `laid`. As built the
+/// two rooms are severed — no jump of the launch set clears a gap that long —
+/// and laying the deck in the `floor` role connects them.
 ///
 /// It exists because the export writes the sign it was handed, and a corpus in
 /// which every exported way is `cleared` would let an export that wrote the
@@ -1448,6 +1448,21 @@ fn spatial_contract_as_a_laid_deck() -> Program {
 /// apart in the DECLARATION and zero deltas apart in the blocks.
 fn broken_threshold_undeclared() -> Program {
     broken_threshold(false)
+}
+
+/// How long the broken passage runs along `z`: a gap no jump of the reach
+/// graph's launch set clears, so the deck is the only way across. A one-cell
+/// threshold is a gap a body jumps, and a way over it opens nothing.
+const DECK_RUN: i64 = 5;
+
+/// The cells the deck covers: the doorway's three columns, the passage's whole
+/// run, on the floor course.
+fn deck_cells() -> Vec<[i32; 3]> {
+    let run = DECK_RUN as i32;
+    let z0 = (15 - run) / 2;
+    (4..=6)
+        .flat_map(|x| (z0..z0 + run).map(move |z| [x, 0, z]))
+        .collect()
 }
 
 fn broken_threshold(declared: bool) -> Program {
@@ -1476,20 +1491,36 @@ fn broken_threshold(declared: bool) -> Program {
     } else {
         Node::Void
     };
-    program.rule(
-        "doorway",
-        Node::Claim {
-            region: "gate".to_string(),
-            body: Box::new(Node::Split(Split {
-                axis: Axis::Y,
-                sizes: vec![Size::abs(1), Size::abs(3), Size::rel(1)],
+    program
+        .rule(
+            "doorway",
+            Node::Claim {
+                region: "gate".to_string(),
+                body: Box::new(Node::Split(Split {
+                    axis: Axis::Y,
+                    sizes: vec![Size::abs(1), Size::abs(3), Size::rel(1)],
+                    rounding: None,
+                    repeat: false,
+                    orient: Reorient::KEEP,
+                    children: vec![threshold, Node::Void, Node::fill("shell")],
+                })),
+            },
+        )
+        .rule(
+            "piece",
+            Node::Split(Split {
+                axis: Axis::Z,
+                sizes: vec![Size::rel(1), Size::abs(DECK_RUN), Size::rel(1)],
                 rounding: None,
                 repeat: false,
                 orient: Reorient::KEEP,
-                children: vec![threshold, Node::Void, Node::fill("shell")],
-            })),
-        },
-    )
+                children: vec![
+                    Node::call("near_room"),
+                    Node::call("partition"),
+                    Node::call("far_room"),
+                ],
+            }),
+        )
 }
 
 /// **A `laid` way exports its own sign, role, block and cells** (spec-0042
@@ -1520,17 +1551,18 @@ fn a_laid_way_exports_the_sign_and_the_block_it_will_be_filled_with() {
     // one authority an `open-way` reads.
     assert_eq!(way.block, "minecraft:stone");
     assert_eq!(way.boxes.len(), 1);
-    assert_eq!(way.boxes[0].from, [4, 0, 7]);
-    assert_eq!(way.boxes[0].to, [6, 0, 7]);
+    let deck = deck_cells();
+    assert_eq!(way.boxes[0].from, deck[0]);
+    assert_eq!(way.boxes[0].to, *deck.last().unwrap());
 
     // The bytes are severed as shipped: the cells the way will lay are air, and
     // that is what makes the closed half of the proof above a real one. Asserted
     // on the exported model rather than trusted from the declaration.
     let expansion = run(&spatial_contract_as_a_laid_deck(), PIECE, 1);
-    for x in 4..=6 {
+    for c in &deck {
         assert!(
-            expansion.model.get([x, 0, 7]).map(|b| b.is_air()) == Some(true),
-            "the threshold at [{x},0,7] is not empty as built"
+            expansion.model.get(*c).map(|b| b.is_air()) == Some(true),
+            "the deck at {c:?} is not empty as built"
         );
     }
 

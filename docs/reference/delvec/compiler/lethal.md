@@ -78,10 +78,10 @@ get to.** The volume kills every body that is not a player, which is the
 mechanism working when the party leads a mob in, and a defect when the wave
 gets there unled: it thins itself before the party touches it, on every life,
 and what a member drops lands in the box. The movement is a mob's, not a
-player's (`World::mob_moves`): `World::body_moves` — the relation `DW0921`
-floods — with the jump arc taken away, because a mob's ground pathfinder never
-plans a leap across open air, asked of the mob's own footprint, plus one move a
-player route never takes: a mob stands on a **barrier top** (fence, wall, shut
+player's (`World::mob_moves`), never the reach graph `DW0921` reads (spec-0113
+§4.6): the walk step, a fall, a swim and a climb, asked of the mob's own
+footprint, with no jump across open air, because a mob's ground pathfinder never
+plans one, plus one move a player route never takes: a mob stands on a **barrier top** (fence, wall, shut
 gate) it can step or jump up to from something higher, walks along it, and
 drops off it. That is how vesperhold's choir drowned: from the wet flags onto a
 floor lantern, from its top onto the well's curb, along the curb over the shut
@@ -98,7 +98,7 @@ through a volume is in it. Every gate anchor is judged open: a barred way the
 story or a lever ever opens is open for the rest of the delve, and a gate that
 nothing opens is better built as wall. **`DW0923` is the same reach through a
 barrier the party can leave open** — every fence gate, door and trapdoor a hand
-opens (`blockshape::is_player_openable`; the two iron ones open only to
+opens (`blockshape::opens_by_hand`; the two iron ones open only to
 redstone), removed (`World::with_openings_open`) — raised only where the
 as-built reach is clear. The repair it prescribes is the one vesperhold took:
 take the opening away, a jump across a dry cut that the party makes and a mob,
@@ -151,8 +151,10 @@ configuration before each switch-on**: a body standing in a volume's keep-out
 when its gate flips is killed in the same server tick (`tools/spike-staged-lethal/ at aa5454feebf2`,
 three of three trials at zero ticks), so the floor it stood on must read as
 danger in that configuration's own bytes. Each configuration's world is its
-region state with every exclusion lifted, its population `reachable_walkable`
-from `lethal::put_at_roots`, and its bytes `RegionState::blocks_over` — the
+region state with every exclusion lifted, its population the standing states
+of that world's reach graph from `lethal::put_at_roots` that a body can also
+get back to the roots from (`lethal::body_population`; the cells `DW0921` would
+call a pocket are not in it), and its bytes `RegionState::blocks_over` — the
 assembled block map with every forced write it credits laid as the block its
 command writes (a fill's block, air for a clear or an unseal; a `RegionEvent`
 carries the block beside its class of write). A `collapse` is not a region write

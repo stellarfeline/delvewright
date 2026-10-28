@@ -1,0 +1,14 @@
+{
+  "code": "DW1064",
+  "patch": [
+    {
+      "doc": "site-plan.json",
+      "op": "replace",
+      "path": "/content/boxes/5/sides/north",
+      "value": "open"
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The yard declares its north side open as well as its other three — the side the far hall's arch, `edge/exit-arch`, is cut in. An open side stands no wall, so there is nothing to cut a portal in: the plan contradicts itself at the seam, and validation refuses it there, naming the edge, the face and the place, with the two repairs — declare the side `wall`, or make the crossing a `contact`. It declares no unit: every word it writes is bound on the site-plan point, and what must not validate is a door in a side with no wall."
+}

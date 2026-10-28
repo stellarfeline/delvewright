@@ -1803,6 +1803,7 @@ mod tests {
             open: false,
             base: delvewright_dsl::siteplan::Base::Ground,
             roof: None,
+            sides: Default::default(),
         }
     }
 

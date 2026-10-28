@@ -24,7 +24,7 @@ pub fn expand_at(program: &Program, region: Box3, seed: u64) -> Expansion {
 }
 
 pub use delvec::grammar::nav::{
-    connected, ends, passable, reachable_with_fall, solid, standable, standable_cells,
+    ends, passable, reaches, reaches_walled, solid, standable, standable_cells,
 };
 
 /// Whether an observer standing on `watch` can see the space a body standing on

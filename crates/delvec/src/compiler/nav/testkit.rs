@@ -47,7 +47,9 @@ pub(in crate::compiler::nav) fn floored_with_lethal(
             lava: BTreeSet::new(),
             climb: Default::default(),
             unheld_climb: Default::default(),
+            material: Default::default(),
             footprints: Default::default(),
+            leaves: Default::default(),
             // A synthetic solid cell is a full cube of stone: it hides.
             hiding: solid_hides,
             hurting: Default::default(),
@@ -69,6 +71,8 @@ pub(in crate::compiler::nav) fn floored_with_lethal(
             world_load_seals: Vec::new(),
             clocked_gates: BTreeSet::new(),
             objective_cells: Vec::new(),
+            unbounded_fall: false,
+            declared_jumps: Vec::new(),
         },
     )
 }
@@ -199,7 +203,9 @@ pub(in crate::compiler::nav) fn classified(
             lava: BTreeSet::new(),
             climb: Default::default(),
             unheld_climb: Default::default(),
+            material: Default::default(),
             footprints: Default::default(),
+            leaves: Default::default(),
             // A synthetic solid cell is a full cube of stone: it hides.
             hiding: solid_hides,
             hurting: Default::default(),

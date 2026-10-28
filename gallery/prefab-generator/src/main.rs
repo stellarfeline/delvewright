@@ -61,6 +61,58 @@ const CABIN_LANTERN: [i32; 3] = [2, 3, 27];
 /// stands in the cell under it). What the arrival view in the cabin frames.
 const CABIN_LAMP: [i32; 3] = [2, 2, 29];
 
+/// **The ferry's deck** (spec-0113 §9): a stone platform two courses high in
+/// the far hall's west half, `(x0, x1, z0, z1)` inclusive, that the deck and
+/// the tiller stand on. A body on the hall's floor cannot step two courses, so
+/// the one way onto it is the broken plank of [`JETTY_PLANK`]; one that drops
+/// off it lands on the floor and walks round to the flight again.
+/// Its east edge stops at `x = 12`: the muster wave seats its spider at
+/// `[14.5, 19.5]`, and a spider's body is 1.4 wide, so a deck block at
+/// `x = 13` is inside it: measured, the gallery bot's die-retry read the
+/// re-seated spider at 15 of 16 health.
+const FERRY_DECK: (i32, i32, i32, i32) = (6, 12, 20, 22);
+
+/// The deck's one column further east, `(x, z0)` to the deck's south edge,
+/// clear of the spider's body (it reaches `z = 20.2`): the tiller stands on
+/// it, three columns from the boarding volume's centre.
+const FERRY_TILLER_FOOT: (i32, i32) = (13, 21);
+
+/// The ferry deck's top solid course: a body stands on it at `y = 3`.
+const FERRY_DECK_TOP_Y: i32 = 2;
+
+/// **The broken plank** (spec-0113 §9): the one plank left of the jetty, two
+/// long and one wide against the mezzanine's west face at the deck's height,
+/// `(x0, x1, y, z0, z1)` — a step down off the mezzanine's top. Between it and
+/// the ferry deck three columns of the jetty are gone (`x ∈ 13..=15`), so the critical path
+/// from the loft to the ferry crosses them by a sprint jump on the flat —
+/// declared `jump/the-broken-plank` from `anchor/jetty-near` to
+/// `anchor/jetty-far`, proven (`DW1041`), taken by the route and driven by the
+/// bot's parkour move. At the deck's height the hall's roof is four courses
+/// over the plank, so the jump's arc is whole; from the mezzanine's top it
+/// would meet the roof.
+const JETTY_PLANK: (i32, i32, i32, i32, i32) = (16, 17, FERRY_DECK_TOP_Y, 20, 20);
+
+/// The row the jump runs along: the deck's north row and the plank's.
+const JETTY_ROW: i32 = 20;
+
+/// **The fenced garden** (spec-0113 §9): a ring of oak fence round a bed in
+/// the near hall's west half, `(x0, x1, z0, z1)` inclusive, the ring on the
+/// rectangle's edge. Nothing walks into the bed — a fence is a barrier the walk
+/// never stands on — but a body steps from [`GARDEN_BOULDER`] onto the fence's
+/// top, half a course up, and drops into the bed; [`GARDEN_STEP`] inside is the
+/// way it climbs back onto the fence and out, so the bed is a place a body
+/// gets into and out of, and `DW0921`'s binding counts the fence-top state.
+const GARDEN: (i32, i32, i32, i32) = (9, 11, 9, 12);
+
+/// The boulder outside the garden's west fence, one course high.
+const GARDEN_BOULDER: [i32; 3] = [8, 1, 10];
+
+/// The step inside the bed, one course high, against the south fence.
+const GARDEN_STEP: [i32; 3] = [10, 1, 11];
+
+/// The garden's fence.
+const GARDEN_FENCE: &str = "minecraft:oak_fence";
+
 /// **The cabin ladder** (spec-0099): a ladder up the ferry cabin's outer east
 /// wall, `(x, z)`, one rung on each of the wall's three courses and one on the
 /// roof's edge, so its top rung stands beside the roof and a body climbing it
@@ -138,11 +190,16 @@ const MUST_WALK_SENSOR: [i32; 3] = [17, 0, 3];
 
 /// **The sealed catalyst** (spec-0100 §3.7, `DW1001`): a sculk catalyst set
 /// into the solid stone over the near hall's roof, three courses above it,
-/// east of the terrace and west of the long gallery. The nearest place a body
-/// can stand is the near hall's floor nine courses below (`distSqr` 81 > 64)
-/// — so it can hear no death, and the build states the nearest body cell. Set
-/// six cells further west, over the terrace annex's rim, it is `DW1001`.
-const SEALED_CATALYST: [i32; 3] = [18, 10, 8];
+/// west of the long gallery. The places a body can stand nearest it (the reach
+/// graph's, spec-0113) are a rafter of the near hall seven columns east and
+/// five courses down (`distSqr` 74), the near hall's floor eight courses down
+/// and four south (80), and the roof of the vestibule closing the clocked door
+/// at `x` 19..20, which a body reaches from the rafters (93) — so it can hear
+/// no death, and the build states the nearest body cell. The probe that hangs
+/// a lever on a pane under the roof makes the pane's top a perch, seven south
+/// and five down (74), and is refused for the lever alone. One cell south the
+/// perch is within earshot (61), and that probe is `DW1001`.
+const SEALED_CATALYST: [i32; 3] = [16, 10, 5];
 
 /// The block state of [`SEALED_CATALYST`].
 const SEALED_CATALYST_STATE: &[(&str, &str)] = &[("bloom", "false")];
@@ -679,6 +736,70 @@ const ANCHORS: &[Anchor] = &[
     // nothing else claims (DW0878) — a row of levers is what a room with three
     // things to unlatch actually looks like, and it is the shape the engine's
     // one-press-one-anchor rule produces.
+    // spec-0117: the two sealed gates answer for themselves, through their own
+    // bars — a press on the door is a press on the door's block, answered by a
+    // trigger anchored on one of its cells. These are those cells: a point inside
+    // each gate's region, where the bar stands while the gate is shut.
+    Anchor {
+        name: "anchor/gate-main-leaf",
+        pos: [4, 1, DIVIDER_Z],
+        facing: None,
+        trigger_block: None,
+        note: "a cell of the story gate's own bars: where the gate answers a press \
+               while it is sealed (spec-0117, the gate's own answer)",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/shortcut-door-leaf",
+        pos: [14, 1, DIVIDER_Z],
+        facing: None,
+        trigger_block: None,
+        note: "a cell of the shortcut door's own bars: pressed from the sealed side it \
+               says the door will not open from there, from the far side what the \
+               shortcut says before its bar is thrown (spec-0117)",
+        role: None,
+    },
+    // spec-0117: a gated lever pressed once, boxed until the hall opens and
+    // after it is thrown, beside the valves on the south wall.
+    Anchor {
+        name: "anchor/sluice-lever",
+        pos: [17, 1, 1],
+        facing: Some("north"),
+        trigger_block: None,
+        note: "the sluice lever: chained until the hall opens, and thrown once",
+        role: None,
+    },
+    // spec-0117: the reliquary's knocks, its bay door and its chest — a button
+    // whose presses count toward the door's objective (`serves`), a door
+    // released to the hand once unbarred, and a chest that answers once taken.
+    Anchor {
+        name: "anchor/bay-knock",
+        pos: [5, 1, 26],
+        facing: Some("west"),
+        trigger_block: None,
+        note: "the bay's knocker, a button on the floor south of the west bay, in sight from \
+               it: the ferry deck stands across every line east of the bay (`DW0863`). Two \
+               knocks unbar the bay door",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/bay-door",
+        pos: [27, 1, 26],
+        facing: Some("north"),
+        trigger_block: None,
+        note: "the bay door, a door standing on its own: barred until knocked twice, \
+               then the party's to open by hand",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/reliquary-chest",
+        pos: [29, 1, 22],
+        facing: Some("west"),
+        trigger_block: None,
+        note: "the reliquary chest against the east wall: its lid will not lift before \
+               the bay door is unbarred, and it is empty once lifted",
+        role: None,
+    },
     Anchor {
         name: "anchor/side-lever",
         pos: [14, 1, 27],
@@ -755,7 +876,7 @@ const ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/ferry-deck",
-        pos: [9, 1, 21],
+        pos: [9, FERRY_DECK_TOP_Y + 1, 21],
         facing: Some("east"),
         trigger_block: None,
         note: "the centre of the ferry's deck: the link's volume is this cell \
@@ -766,12 +887,30 @@ const ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/ferry-tiller",
-        pos: [13, 1, 21],
+        pos: [13, FERRY_DECK_TOP_Y + 1, 21],
         facing: Some("west"),
         trigger_block: None,
         note: "the ferry's tiller: outside the deck's volume and within a strike \
                of its east column only, so the volume shrunk to its middle column \
                holds no cell a body pulls it from",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/jetty-near",
+        pos: [JETTY_PLANK.0, JETTY_PLANK.2 + 1, JETTY_ROW],
+        facing: Some("west"),
+        trigger_block: None,
+        note: "on the broken plank off the mezzanine's west face, where the jump to \
+               the ferry deck leaves from (spec-0113 §9)",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/jetty-far",
+        pos: [FERRY_DECK.1, FERRY_DECK_TOP_Y + 1, JETTY_ROW],
+        facing: Some("west"),
+        trigger_block: None,
+        note: "the ferry deck's east edge, across the three columns the jetty lost: \
+               where the jump from the broken plank lands",
         role: None,
     },
     Anchor {
@@ -1477,6 +1616,37 @@ fn block_at(
     if (lx0..=lx1).contains(&x) && (lz0..=lz1).contains(&z) && (1..=LOFT_TOP_Y).contains(&y) {
         return ("minecraft:stone", None);
     }
+    // The ferry deck and the one plank of its jetty (spec-0113 §9).
+    let (dx0, dx1, dz0, dz1) = FERRY_DECK;
+    if (dx0..=dx1).contains(&x) && (dz0..=dz1).contains(&z) && (1..=FERRY_DECK_TOP_Y).contains(&y) {
+        return ("minecraft:stone", None);
+    }
+    // The tiller's footing: the deck's east column past the spider's reach.
+    if x == FERRY_TILLER_FOOT.0
+        && (FERRY_TILLER_FOOT.1..=dz1).contains(&z)
+        && (1..=FERRY_DECK_TOP_Y).contains(&y)
+    {
+        return ("minecraft:stone", None);
+    }
+    if (JETTY_PLANK.0..=JETTY_PLANK.1).contains(&x)
+        && y == JETTY_PLANK.2
+        && (JETTY_PLANK.3..=JETTY_PLANK.4).contains(&z)
+    {
+        return ("minecraft:stone", None);
+    }
+    // The fenced garden: the ring, the boulder outside it, the step inside.
+    let (gx0, gx1, gz0, gz1) = GARDEN;
+    if y == 1 && (gx0..=gx1).contains(&x) && (gz0..=gz1).contains(&z) {
+        if [x, y, z] == GARDEN_STEP {
+            return ("minecraft:stone", None);
+        }
+        if x == gx0 || x == gx1 || z == gz0 || z == gz1 {
+            return (GARDEN_FENCE, None);
+        }
+    }
+    if [x, y, z] == GARDEN_BOULDER {
+        return ("minecraft:stone", None);
+    }
     // The ferry cabin: walls on the footprint's open edges, a roof over them,
     // and its own lantern. Nothing cuts a way in.
     let (fx0, fx1, fz0, fz1) = CABIN;
@@ -1523,6 +1693,7 @@ fn build() -> Structure {
         (TABLE_LEG, None),
         (TABLE_TOP, Some(&[("type", "bottom")][..])),
         (BENCH_BLOCK, Some(&[("type", "bottom")][..])),
+        (GARDEN_FENCE, None),
     ] {
         palette.idx(name, props);
     }
@@ -1605,6 +1776,14 @@ fn assert_anchors_are_standable(s: &Structure) {
     };
     for a in ANCHORS {
         let [x, y, z] = a.pos;
+        // spec-0117: a cell of a gate's own bars is a gate's own answer — the
+        // point a trigger that answers for the gate is anchored at, standing in
+        // the gate's block, not a place a body stands.
+        if GATE_ANCHORS.iter().any(|g| {
+            (0..3).all(|i| g.from[i].min(g.to[i]) <= a.pos[i] && a.pos[i] <= g.from[i].max(g.to[i]))
+        }) {
+            continue;
+        }
         // Air, or the trap trigger this very anchor declares. A pressure plate
         // and a tripwire are the two blocks a body stands ON rather than in, and
         // an anchor that declares one is an anchor whose own cell holds it —
@@ -3524,7 +3703,7 @@ const YARD_WAY: ([i32; 3], [i32; 3]) = ([3, 5, 0], [4, 7, 0]);
 
 /// Where a body stands when a quest seats it here — `anchor/node-exit` after the
 /// re-binding. Open paving, clear of the plinth.
-const YARD_SEAT: [i32; 3] = [2, 5, 4];
+const YARD_SEAT: [i32; 3] = [6, 5, 1];
 
 /// **The climb up to the gantry** (spec-0099): the seam the plan cut through
 /// the gantry's deck, answered on the yard's top course under it, as
@@ -3537,6 +3716,41 @@ const YARD_CLIMB: ([i32; 3], [i32; 3]) = ([4, 8, 5], [4, 8, 6]);
 const YARD_POST: [i32; 2] = [4, 4];
 const YARD_LADDER: [i32; 2] = [4, 5];
 
+/// **The cellar under the yard, and the hatch over its stair** (spec-0123,
+/// `docs/reference/doors-by-hand.md` *A trapdoor over a stair*): a room three
+/// wide and two deep sunk in the plinth at the yard's south end, its floor on
+/// the plinth's bottom course, and a one-wide stair shaft climbing north out of
+/// it to the paving between walls of plinth, under three oak trapdoors laid
+/// top-half in the paving course over the treads. The hatches are hinged on a
+/// long side of the hole — `facing=east`, the open panel against each cell's
+/// west face — so the panel stands along the climb and a body comes up onto
+/// the top tread and steps off onto the paving. Turned across the climb
+/// (`facing=north`), the north hatch stops the way up in both states and shuts
+/// a body in: `DW1066`, which `gallery/probes/a-hatch-across-the-cellar-stair`
+/// pins.
+const CELLAR_LO: [i32; 3] = [6, 1, 6];
+const CELLAR_HI: [i32; 3] = [8, 3, 7];
+/// The stair's column, and its treads: `(z, top course)`, the top tread first;
+/// the shaft is the column from the cellar floor to the hatch.
+const CELLAR_STAIR_X: i32 = 7;
+const CELLAR_TREADS: [(i32, i32); 3] = [(3, 3), (4, 2), (5, 1)];
+const CELLAR_SHAFT: ([i32; 3], [i32; 3]) = ([7, 1, 3], [7, 3, 5]);
+const CELLAR_HATCH: &str = "minecraft:oak_trapdoor";
+/// The lamps in the cellar's walls: the light probe judges every cell a body
+/// reaches, and a body reaches the cellar.
+const CELLAR_LAMPS: [[i32; 3]; 2] = [[5, 2, 7], [8, 2, 5]];
+
+/// **The court's water** (spec-0123 §3.5's census element): a trough sunk in
+/// the paving, two sources at the floor course with paving round them and
+/// the plinth under them, so the census states water standing one course
+/// below the walk plane. It stands clear of the seat, the ladder and the way
+/// in, so a rim raised round it closes on nothing a body needs.
+const YARD_BASIN: ([i32; 3], [i32; 3]) = ([2, 4, 5], [2, 4, 6]);
+
+fn in_box(p: [i32; 3], (lo, hi): ([i32; 3], [i32; 3])) -> bool {
+    (0..3).all(|i| p[i] >= lo[i] && p[i] <= hi[i])
+}
+
 fn yard_void(p: [i32; 3]) -> bool {
     YARD_VOIDS
         .iter()
@@ -3544,11 +3758,22 @@ fn yard_void(p: [i32; 3]) -> bool {
 }
 
 /// A courtyard on a plinth: paving, a low stone to walk around, four corner
-/// posts — and its own outside. The plinth is faced in stone down to the
-/// terrain on the three sides it does not share, the ring above the ground is
-/// left open so a body on the yard sees sky and the far hall's wall, and the
-/// ring's ground is the whole's.
+/// posts — and its own outside. On the three sides it does not share, which
+/// the site plan declares open (spec-0123 §5), the plinth runs out under the
+/// ring to the fixed ground and the paving runs across it, level with the green
+/// the plan raises beyond; nothing stands above the paving, so a body steps
+/// off the yard onto the green. The ring's ground is the whole's.
 fn build_yard() -> Structure {
+    build_yard_with_hatch("east")
+}
+
+/// The probe-only yard whose cellar hatch is turned across the climb
+/// (`gallery/probes/a-hatch-across-the-cellar-stair`, `DW1066`): every byte
+/// the yard's but the three trapdoors' `facing`.
+const YARD_HATCH_ACROSS_ID: &str = "gallery-yard-hatch-across";
+
+/// The yard, its cellar hatch facing `hatch`.
+fn build_yard_with_hatch(hatch: &str) -> Structure {
     let mut palette = Palette::new();
     let mut blocks = Vec::new();
     let [sx, sy, sz] = YARD_SIZE;
@@ -3559,8 +3784,55 @@ fn build_yard() -> Structure {
                 let name = if yard_void([x, y, z]) {
                     "minecraft:structure_void"
                 } else if !foot(x, z) {
-                    // The ring above the ground, on the yard's free sides: open.
+                    // The ring on the yard's three free sides, which the site
+                    // plan declares open (spec-0123 §5): no wall stands in it.
+                    // The plinth runs out under it to the fixed ground and the
+                    // paving runs across it, so a body steps off the court onto
+                    // the green level with it; above the paving, nothing.
+                    if y < YARD_FLOOR - 1 {
+                        "minecraft:stone_bricks"
+                    } else if y == YARD_FLOOR - 1 {
+                        "minecraft:polished_andesite"
+                    } else {
+                        "minecraft:air"
+                    }
+                } else if x == CELLAR_STAIR_X
+                    && y == YARD_FLOOR - 1
+                    && CELLAR_TREADS.iter().any(|(tz, _)| *tz == z)
+                {
+                    // The hatch over the stair, flush with the paving.
+                    blocks.push(BlockEntry {
+                        pos: [x, y, z],
+                        state: palette.idx(
+                            CELLAR_HATCH,
+                            Some(&[
+                                ("facing", hatch),
+                                ("half", "top"),
+                                ("open", "false"),
+                                ("powered", "false"),
+                                ("waterlogged", "false"),
+                            ]),
+                        ),
+                    });
+                    continue;
+                } else if x == CELLAR_STAIR_X
+                    && CELLAR_TREADS
+                        .iter()
+                        .any(|(tz, top)| *tz == z && (1..=*top).contains(&y))
+                {
+                    "minecraft:stone_bricks"
+                } else if in_box([x, y, z], (CELLAR_LO, CELLAR_HI))
+                    || in_box([x, y, z], CELLAR_SHAFT)
+                {
                     "minecraft:air"
+                } else if CELLAR_LAMPS.contains(&[x, y, z]) {
+                    "minecraft:sea_lantern"
+                } else if in_box([x, y, z], YARD_BASIN) {
+                    blocks.push(BlockEntry {
+                        pos: [x, y, z],
+                        state: palette.idx("minecraft:water", Some(&[("level", "0")])),
+                    });
+                    continue;
                 } else if y < YARD_FLOOR - 1 {
                     // The plinth, faced down to the terrain.
                     "minecraft:stone_bricks"
@@ -3614,13 +3886,17 @@ fn build_yard() -> Structure {
 /// observers are deliberately redundant: a piece that lies here passes the first
 /// and reds on the second.
 fn yard_metadata() -> serde_json::Value {
+    yard_metadata_as(YARD_ID)
+}
+
+fn yard_metadata_as(id: &str) -> serde_json::Value {
     let (wl, wh) = YARD_WAY;
     let (cl, ch) = YARD_CLIMB;
     serde_json::json!({
-        "prefab_id": format!("prefab/{YARD_ID}"),
+        "prefab_id": format!("prefab/{id}"),
         "structure": {
-            "file": format!("{YARD_ID}.nbt"),
-            "id": YARD_ID,
+            "file": format!("{id}.nbt"),
+            "id": id,
             "size": YARD_SIZE,
             "data_version": DATA_VERSION,
             "generator": "gallery/prefab-generator (gallery-prefab-gen)"
@@ -3638,26 +3914,28 @@ fn yard_metadata() -> serde_json::Value {
                 "note": "where a body stands when the campaign seats it in this place"
             }
         },
-        // **The sides of this piece the player is meant to see** (`DW0885`).
-        // The yard owns its outside (spec-0098): it stands as a plinth over
-        // terrain that falls away to the east, south and west, and the faces
-        // of that plinth are what a body on the ground around it looks at. The
-        // north side is the far hall's wall, and the underside sits on the
-        // ground.
+        // **The sides of this piece the player is meant to see** (`DW0885`):
+        // none. The yard owns its outside (spec-0098), a plinth over terrain
+        // that falls away to the east, south and west, and the site plan
+        // raises the green level with its paving on exactly those three sides,
+        // which it declares open (spec-0123 §5): every face of the plinth is
+        // buried by the green, the north side is the far hall's wall, and the
+        // underside sits on the ground.
         //
-        // The list is exact, never a blanket: a side declared here that the
-        // world has in fact buried is refused by the same code, so padding it
-        // out to six reds rather than passing. That is what makes this a bound
-        // declaration and not a hatch — perturb it either way and the gallery
-        // goes red, which is what `gallery/probes/a-face-nothing-stands-in-front-of`
-        // pins.
-        "shown_faces": ["east", "south", "west"],
+        // The list is exact, never a blanket: placed where nothing buries it,
+        // a piece declaring none of its seen sides is refused, which is what
+        // `gallery/probes/a-face-nothing-stands-in-front-of` pins.
+        "shown_faces": [],
         "spatial_contract": {
             "entry": "yard",
             "spaces": {
                 "yard": {
                     "envelope": "open_top",
                     "boxes": [region([1, YARD_FLOOR, 0], [YARD_SIZE[0] - 2, YARD_SIZE[1] - 1, YARD_SIZE[2] - 2])]
+                },
+                "cellar": {
+                    "envelope": "enclosed",
+                    "boxes": [region(CELLAR_LO, CELLAR_HI)]
                 }
             },
             "no_body": {},
@@ -3673,6 +3951,19 @@ fn yard_metadata() -> serde_json::Value {
                     "b": "exterior",
                     "class": "walk",
                     "via": { "region": "yard-climb", "boxes": [region(cl, ch)] }
+                },
+                {
+                    "a": "cellar",
+                    "b": "yard",
+                    "class": "stair",
+                    "rise": YARD_FLOOR - CELLAR_LO[1],
+                    "via": {
+                        "region": "cellar-stair",
+                        "boxes": [region(
+                            CELLAR_SHAFT.0,
+                            [CELLAR_STAIR_X, YARD_FLOOR - 1, CELLAR_TREADS[2].0]
+                        )]
+                    }
                 }
             ],
             "faces": [
@@ -3746,6 +4037,19 @@ fn write_yard(out: &Path) {
     let mut yard = yard_metadata();
     declare_walk_y(YARD_ID, &s, &mut yard);
     document::write_preserving(&out.join(format!("{YARD_ID}.json")), &yard);
+    // The probe-only variant: the same yard, its hatch turned across the climb.
+    let across = build_yard_with_hatch("north");
+    let nbt = fastnbt::to_bytes(&across).expect("structure serializes to NBT");
+    let mut gz = GzBuilder::new()
+        .mtime(0)
+        .write(Vec::new(), Compression::new(6));
+    gz.write_all(&nbt).expect("gzip write");
+    let framed = gz.finish().expect("gzip finish");
+    std::fs::write(out.join(format!("{YARD_HATCH_ACROSS_ID}.nbt")), &framed)
+        .expect("write the across-hatch yard nbt");
+    let mut meta = yard_metadata_as(YARD_HATCH_ACROSS_ID);
+    declare_walk_y(YARD_HATCH_ACROSS_ID, &across, &mut meta);
+    document::write_preserving(&out.join(format!("{YARD_HATCH_ACROSS_ID}.json")), &meta);
     println!(
         "{YARD_ID}: detail piece written — {}x{}x{} to fill the exit box's frame exactly",
         YARD_SIZE[0], YARD_SIZE[1], YARD_SIZE[2]

@@ -105,7 +105,7 @@ use crate::compiler::failure::Failure;
 use delvewright_dsl::Verb;
 use std::collections::BTreeSet;
 
-use delvewright_dsl::{Campaign, Diagnostic, Objective, TriggerOn};
+use delvewright_dsl::{Campaign, Diagnostic};
 
 use crate::compiler::nav::entity_dims;
 use crate::compiler::plan::Plan;
@@ -241,6 +241,10 @@ pub(crate) struct Affordance {
     /// `DW0359` and `DW0422` judge an affordance's PLACE, which does not depend
     /// on when it is armed.
     pub(crate) arming: Arming,
+    /// For a block pressed on its own, the block: two such presses of one
+    /// block on one cell are one body that one press reaches (spec-0117
+    /// criterion 2), not a contest.
+    pub(crate) own_block: Option<String>,
 }
 
 /// When an affordance's `minecraft:interaction` box exists.
@@ -325,7 +329,11 @@ impl Affordance {
 
     /// Whether this is a standard press body rather than a sized hitbox.
     fn is_standard(&self) -> bool {
-        self.size == AFFORDANCE_SIZE
+        // A press's box is fitted inside its own cell(s) expanded by one click
+        // margin (spec-0117 §3a, `DW1013`): two such boxes contest only on one
+        // cell, never across a shared face's centimetre. Only an assembly's
+        // declared hitbox is judged by the box it spans.
+        self.size == AFFORDANCE_SIZE || self.kind != "assembly hitbox"
     }
 }
 
@@ -432,12 +440,10 @@ fn bodies(plan: &Plan) -> Vec<Body> {
 /// [`affordances`] builds, flattened for a consumer that only needs to ask *what
 /// stands where*.
 ///
-/// Public so a proof outside this module can assert its own membership in it. That
-/// is not a convenience: there are TWO affordance authorities in the compiler —
-/// [`crate::compiler::affordance`], which `DW0420`/`DW0421` read for visibility and
-/// retirement, and this one, which carries a resolved CELL — and a new affordance
-/// class registered with only one of them is invisible to every proof on the other
-/// side. spec-0032's shop shipped exactly that way until a test asked.
+/// Public so a proof outside this module can assert its own membership in it. The
+/// pressable class ([`crate::compiler::pressable`]) is the authority every
+/// interaction point is read from; this is its cell-resolved view, and an
+/// affordance it misses is invisible to every proof built on it.
 pub fn affordance_cells(plan: &Plan) -> Vec<(&'static str, String, [i32; 3])> {
     affordances(plan)
         .into_iter()
@@ -451,6 +457,19 @@ pub fn affordance_cells(plan: &Plan) -> Vec<(&'static str, String, [i32; 3])> {
         .collect()
 }
 
+/// The `(width, height)` of a block's outline envelope, in blocks: the square
+/// in plan an `interaction` of the same reach would be.
+fn outline_size(block: &str) -> (f64, f64) {
+    let Some(boxes) = delvewright_dsl::blockshape::outline(block).filter(|b| !b.is_empty()) else {
+        return AFFORDANCE_SIZE;
+    };
+    let v =
+        |s: delvewright_dsl::blockshape::Sixteenths| f64::from(s.num) / (16.0 * f64::from(s.den));
+    let lo = |a: usize| boxes.iter().map(|b| v(b.min[a])).fold(f64::MAX, f64::min);
+    let hi = |a: usize| boxes.iter().map(|b| v(b.max[a])).fold(f64::MIN, f64::max);
+    ((hi(0) - lo(0)).max(hi(2) - lo(2)), hi(1) - lo(1))
+}
+
 /// Every interaction affordance the compiler will summon, in a deterministic
 /// order (objectives, triggers, bonfires, shortcut unlocks, trap disarms, shops).
 ///
@@ -462,144 +481,57 @@ pub fn affordance_cells(plan: &Plan) -> Vec<(&'static str, String, [i32; 3])> {
 /// retirement) and NOT here, so it was invisible to every proof that asks where an
 /// affordance stands, and two fixtures shipped a brazier behind an NPC's body.
 pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
+    use crate::compiler::pressable::{Form, Owner, State};
     let c = plan.campaign;
     let mut out = Vec::new();
-    for (qi, q) in c.quests.content.quests.iter().enumerate() {
-        let area = plan.quest_area(q.id.as_str()).unwrap_or("");
-        for o in &q.objectives {
-            let Objective::Interact { id, anchor, .. } = o else {
-                continue;
-            };
-            // spec-0093 §6.5: a prop vanilla reports the use of summons no
-            // hitbox — the block is the affordance, and a block contests nothing
-            // a ray picks among entities.
-            if crate::compiler::pressable::interact_block(o).is_some() {
-                continue;
+    // spec-0117: every interaction point is a real block, and a block contests
+    // nothing a ray picks among entities. Its click box, where it has one, is
+    // the affordance — fitted to the block, standing in the states the press
+    // table says.
+    for p in plan.presses() {
+        // A block pressed on its own is pressed at its outline; a body that
+        // stands nearer the eye takes the click from it exactly as from a box.
+        let size = match &p.click_box {
+            Some(b) => {
+                let (lo, hi) = b.aabb();
+                (hi[0] - lo[0], hi[1] - lo[1])
             }
-            // Mirrors `emit::activation_commands`: an interact objective's
-            // affordance is resolved within its quest's area.
-            let Some(pos) = plan.point(area, anchor.as_str()) else {
-                continue;
-            };
-            let gate = o.gate();
-            out.push(Affordance {
-                size: AFFORDANCE_SIZE,
-                kind: "interact objective",
-                id: id.as_str().to_string(),
-                anchor: anchor.as_str().to_string(),
-                pos,
-                arming: Arming::Objective {
-                    quest: qi,
+            None => outline_size(&p.block),
+        };
+        let (kind, id) = match &p.owner {
+            Owner::Interact { id, .. } => ("interact objective", id.clone()),
+            Owner::Trigger { id } | Owner::GateAnswer { id, .. } => ("trigger", id.clone()),
+            Owner::Shortcut { id } => ("shortcut unlock", id.clone()),
+            Owner::Bonfire { index } => ("bonfire", format!("bonfire #{index}")),
+            Owner::Shop { index } => ("shop", format!("shop #{index}")),
+            Owner::TrapDisarm { id } => ("trap disarm", id.clone()),
+            Owner::TimedGateDisarm { id } => ("timed-gate disarm", id.clone()),
+        };
+        // An `interact`'s box that goes at activation stands only while the
+        // objective is not pending; every other box is held to the persistent
+        // reading, the conservative direction for a contest.
+        let arming = match &p.owner {
+            Owner::Interact {
+                quest, objective, ..
+            } if p.form == Form::ActsOnOwn && !p.boxed_in(State::Open) => {
+                let o = &c.quests.content.quests[*quest].objectives[*objective];
+                let gate = o.gate();
+                Arming::Objective {
+                    quest: *quest,
                     requires: gate.requires_flags.iter().map(|f| f.to_string()).collect(),
                     forbids: gate.forbids_flags.iter().map(|f| f.to_string()).collect(),
-                },
-            });
-        }
-    }
-    for t in &plan.emitted_triggers_unlocalized() {
-        // `approach` and `step` triggers are a per-tick position test, not an
-        // entity.
-        if !t.on.is_click() {
-            continue;
-        }
-        // `strike-npc` (DSL v0.6) has no cell at all — it rides the NPC's own
-        // hitbox by construction, so eclipse is its *mechanism*, not a defect.
-        let Some(at) = t.at_anchor() else {
-            continue;
-        };
-        // The same shape spelled the old way: a `strike` trigger on an NPC's own
-        // anchor rides that NPC's hitbox and summons nothing (see the module
-        // docs). No second entity, nothing to eclipse.
-        if matches!(t.on, TriggerOn::Strike) && npc_stands_at(plan, at) {
-            continue;
-        }
-        // …and the general form of the same merge: wherever a
-        // compiler-owned interaction set already covers the anchor — a
-        // `close-gate` seal, a sealed shortcut door — the trigger rides it and
-        // summons nothing. Read from `crate::compiler::pressable`, the same authority the
-        // emitter uses, so the two can never disagree about whether a body exists.
-        // …and the general form again (spec-0093 §6.5): a trigger whose prop
-        // vanilla reports the use of has no hitbox; the block is the body.
-        if matches!(
-            crate::compiler::pressable::trigger_body(plan, t),
-            crate::compiler::pressable::Body::Rides { .. }
-                | crate::compiler::pressable::Body::Block { .. }
-        ) {
-            continue;
-        }
-        let Some(pos) = plan.point_any(at) else {
-            continue;
+                }
+            }
+            _ => Arming::Persistent,
         };
         out.push(Affordance {
-            size: AFFORDANCE_SIZE,
-            kind: "trigger",
-            id: t.id.as_str().to_string(),
-            anchor: at.to_string(),
-            pos,
-            // `env_trigger_setup` summons it in `setup_finish` and nothing ever
-            // kills it: a click trigger's body is there for the whole run.
-            arming: Arming::Persistent,
-        });
-    }
-    for bf in plan.bonfires() {
-        out.push(Affordance {
-            size: AFFORDANCE_SIZE,
-            kind: "bonfire",
-            id: format!("bonfire #{}", bf.index),
-            anchor: bf.anchor.clone(),
-            pos: bf.at,
-            arming: Arming::Persistent,
-        });
-    }
-    for sc in &plan.shortcuts {
-        out.push(Affordance {
-            size: AFFORDANCE_SIZE,
-            kind: "shortcut unlock",
-            id: sc.id.clone(),
-            anchor: sc.unlock_anchor.clone(),
-            pos: sc.unlock,
-            arming: Arming::Persistent,
-        });
-    }
-    for tr in &plan.traps {
-        if let Some(d) = &tr.disarm {
-            out.push(Affordance {
-                size: AFFORDANCE_SIZE,
-                kind: "trap disarm",
-                id: tr.id.clone(),
-                anchor: d.via_anchor.clone(),
-                pos: d.via_cell,
-                arming: Arming::Persistent,
-            });
-        }
-    }
-    for g in &plan.timed_gates {
-        if let Some(d) = &g.disarm {
-            out.push(Affordance {
-                size: AFFORDANCE_SIZE,
-                kind: "timed-gate disarm",
-                id: g.id.clone(),
-                anchor: d.via_anchor.clone(),
-                pos: d.via_cell,
-                arming: Arming::Persistent,
-            });
-        }
-    }
-    // spec-0032 shops. A shop's interaction point is a compiler-summoned hitbox on
-    // a declared prefab anchor — the same object class as a bonfire's, and a body
-    // parked in front of it is the same defect: a brazier the player can see and
-    // reach that answers nothing.
-    for (i, sh) in plan.campaign.quests.content.shops.iter().enumerate() {
-        let Some(pos) = plan.point_any(sh.anchor.as_str()) else {
-            continue;
-        };
-        out.push(Affordance {
-            size: AFFORDANCE_SIZE,
-            kind: "shop",
-            id: format!("{} (#{i})", sh.id),
-            anchor: sh.anchor.as_str().to_string(),
-            pos,
-            arming: Arming::Persistent,
+            size,
+            kind,
+            id,
+            anchor: p.anchor.clone(),
+            pos: p.cell,
+            arming,
+            own_block: (p.click_box.is_none() && p.form == Form::Own).then(|| p.block.clone()),
         });
     }
     // spec-0082 assemblies: a declared hitbox is a compiler-summoned
@@ -619,6 +551,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
             // Between a `spawn-assembly` and a `despawn-assembly`; held to the
             // persistent reading, the conservative direction for a contest.
             arming: Arming::Persistent,
+            own_block: None,
         });
     }
     // spec-0032 recovery stakes are deliberately ABSENT, and that is a decision
@@ -634,16 +567,6 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
     // anchor is walkable, is reachable from the respawn point in force, and stands
     // on ground the runtime does not rewrite (`crate::compiler::stake`, `DW0525`/`DW0526`).
     out
-}
-
-/// Whether a stage-2 NPC declares `anchor` as its standing anchor.
-fn npc_stands_at(plan: &Plan, anchor: &str) -> bool {
-    plan.campaign
-        .npcs
-        .content
-        .npcs
-        .iter()
-        .any(|n| n.anchor.as_str() == anchor && n.offset == [0, 0, 0])
 }
 
 /// Prove no body eclipses an interaction affordance (`DW0359`).
@@ -741,12 +664,19 @@ pub fn check_seal_collisions(plan: &Plan) -> Result<(), Failure> {
                 anchor: b.anchor,
                 pos: b.pos,
                 arming: Arming::Persistent,
+                own_block: None,
             }),
     );
     for body in pressable_bodies(plan) {
-        for cell in body.cells {
+        for &cell in &body.cells {
             let sbox = seal_box(cell);
             for a in &affordances {
+                // The gate's own answer is the body itself.
+                // The gate's own answers are the body itself; a second answer
+                // on one cell is two presses on one cell (`DW0896`).
+                if a.kind == "trigger" && body.answers.contains(&a.id) {
+                    continue;
+                }
                 let abox = a.boxed();
                 if (0..3).all(|i| sbox[i].overlaps(abox[i])) {
                     return Err(seal_collision_error(body.kind, &body.anchor, cell, a));
@@ -787,7 +717,8 @@ pub fn check_affordance_contests(plan: &Plan) -> Result<(), Failure> {
                 let (x, y) = (a.boxed(), b.boxed());
                 (0..3).all(|i| x[i].overlaps(y[i]))
             };
-            if contest && can_share_a_moment(a, b, order) {
+            let one_body = a.own_block.is_some() && a.own_block == b.own_block && a.pos == b.pos;
+            if contest && !one_body && can_share_a_moment(a, b, order) {
                 return Err(affordance_contest_error(a, b));
             }
         }
@@ -918,6 +849,9 @@ struct PressableBody {
     anchor: String,
     /// The cells its boxes stand in.
     cells: Vec<[i32; 3]>,
+    /// The triggers whose boxes these are: the gate's own answers, the
+    /// affordances that are the body rather than a contest with it.
+    answers: Vec<String>,
 }
 
 /// **Every compiler-owned press hitbox set in the campaign**, seals then shortcut
@@ -950,24 +884,36 @@ pub fn pressable_body_binding(plan: &Plan) -> Vec<(&'static str, String, usize)>
 }
 
 fn pressable_bodies(plan: &Plan) -> Vec<PressableBody> {
-    let mut out: Vec<PressableBody> = plan
-        .seal_hints
-        .iter()
-        .map(|s| PressableBody {
-            kind: "close-gate seal",
-            anchor: s.anchor.clone(),
-            cells: s.shell_cells(),
-        })
-        .collect();
-    out.extend(plan.shortcuts.iter().filter_map(|sc| {
-        Some(PressableBody {
-            kind: "shortcut door",
-            anchor: sc.gate_anchor.clone(),
-            // A door whose sealed side did not resolve places no bodies at all
-            // (`DW0425` has already failed the build).
-            cells: sc.sealed_side.as_ref()?.approach_cells(),
-        })
-    }));
+    // spec-0117: a sealed gate's body is its own answer's click box, fitted
+    // over the gate's block at each answer's cell, one set per gate.
+    let mut out: Vec<PressableBody> = Vec::new();
+    for p in plan.presses() {
+        let crate::compiler::pressable::Owner::GateAnswer { gate, .. } = &p.owner else {
+            continue;
+        };
+        let kind = if plan.shortcuts.iter().any(|s| &s.gate_anchor == gate) {
+            "shortcut door"
+        } else {
+            "close-gate seal"
+        };
+        let crate::compiler::pressable::Owner::GateAnswer { id, .. } = &p.owner else {
+            continue;
+        };
+        match out.iter_mut().find(|b| &b.anchor == gate) {
+            Some(b) => {
+                if !b.cells.contains(&p.cell) {
+                    b.cells.push(p.cell);
+                }
+                b.answers.push(id.clone());
+            }
+            None => out.push(PressableBody {
+                kind,
+                anchor: gate.clone(),
+                cells: vec![p.cell],
+                answers: vec![id.clone()],
+            }),
+        }
+    }
     out
 }
 

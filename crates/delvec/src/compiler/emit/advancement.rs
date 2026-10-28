@@ -11,53 +11,110 @@ pub(super) fn emit_advancements(
     let c = plan.campaign;
     let mut advs = Vec::new();
 
-    // spec-0016 §1: one advancement per bonfire, so a
-    // right-click opens the rest dialog AS the player who clicked. The interaction
-    // entity's own `interaction` record cannot do this — it names no player the
-    // `dialog show` could target — and this is the same vanilla criterion every
-    // `interact` objective already runs on. `bonfire_open_<i>` revokes it, so the
+    // spec-0016 §1: one advancement per bonfire, so a press opens the rest
+    // dialog AS the player who pressed. `bonfire_open_<i>` revokes it, so the
     // bonfire is re-openable forever (a rest point is used, never consumed).
+    // spec-0117: the press is the block's own report where no box stands over
+    // it in the open state, the box's otherwise.
     for bf in plan.bonfires() {
         let i = bf.index;
+        let Some(p) = press_of_owner(
+            plan,
+            &crate::compiler::pressable::Owner::Bonfire { index: i },
+        ) else {
+            continue;
+        };
         advs.push((
             format!("bf_{i}"),
             json!({
-                "criteria": {
-                    "interact": {
-                        "trigger": "minecraft:player_interacted_with_entity",
-                        "conditions": {
-                            "entity": {
-                                "type": "minecraft:interaction",
-                                "nbt": format!("{{Tags:[\"dw_bonfire_{i}\"]}}")
-                            }
-                        }
-                    }
-                },
+                "criteria": { "interact": press_criterion_of(p, crate::compiler::pressable::State::Open) },
                 "rewards": { "function": format!("{ns}:bonfire_open_{i}") }
             }),
         ));
     }
 
-    // spec-0032: one advancement per shop, and one per stake. Both are the bonfire's
-    // primitive verbatim — the interaction entity's own `interaction` record names
-    // no player, and a shop has to know WHO is buying and a stake WHOSE wager is
-    // being collected. Each handler revokes its own grant, so both are re-usable.
+    // spec-0032: one advancement per shop — the presser is who is buying.
+    // spec-0117: reported by the shop's block or its box, as for a bonfire.
     for (i, _, _) in shops(plan) {
+        let Some(p) = press_of_owner(plan, &crate::compiler::pressable::Owner::Shop { index: i })
+        else {
+            continue;
+        };
         advs.push((
             format!("shop_{i}"),
             json!({
-                "criteria": {
-                    "interact": {
-                        "trigger": "minecraft:player_interacted_with_entity",
-                        "conditions": {
-                            "entity": {
-                                "type": "minecraft:interaction",
-                                "nbt": format!("{{Tags:[\"dw_shop_{i}\"]}}")
-                            }
-                        }
-                    }
-                },
+                "criteria": { "interact": press_criterion_of(p, crate::compiler::pressable::State::Open) },
                 "rewards": { "function": format!("{ns}:shop_open_{i}") }
+            }),
+        ));
+    }
+
+    // spec-0117: an unlock or a disarm whose block reports its own press is
+    // dispatched by that report, as the presser; a boxed one stays on the
+    // tick's record poll.
+    for sc in &plan.shortcuts {
+        if unlock_by_box(plan, sc) {
+            continue;
+        }
+        let Some(p) = press_of_owner(
+            plan,
+            &crate::compiler::pressable::Owner::Shortcut { id: sc.id.clone() },
+        ) else {
+            continue;
+        };
+        advs.push((
+            format!("sc_{}", sc.safe),
+            json!({
+                "criteria": { "interact": block_use_criterion(&p.block, p.cell) },
+                "rewards": { "function": format!("{ns}:sc_press_{}", sc.safe) }
+            }),
+        ));
+    }
+    for (kind, owner, safe) in plan
+        .traps
+        .iter()
+        .filter(|t| t.disarm.is_some() && !disarm_by_box(plan, &t.id, false))
+        .map(|t| {
+            (
+                "trapdis",
+                crate::compiler::pressable::Owner::TrapDisarm { id: t.id.clone() },
+                t.safe.clone(),
+            )
+        })
+        .chain(
+            plan.timed_gates
+                .iter()
+                .filter(|g| g.disarm.is_some() && !disarm_by_box(plan, &g.id, true))
+                .map(|g| {
+                    (
+                        "tgdis",
+                        crate::compiler::pressable::Owner::TimedGateDisarm { id: g.id.clone() },
+                        g.safe.clone(),
+                    )
+                }),
+        )
+    {
+        let Some(p) = press_of_owner(plan, &owner) else {
+            continue;
+        };
+        advs.push((
+            format!("{kind}_{safe}"),
+            json!({
+                "criteria": { "interact": block_use_criterion(&p.block, p.cell) },
+                "rewards": { "function": format!("{ns}:{kind}_press_{safe}") }
+            }),
+        ));
+    }
+    // spec-0117: a trapped chest the trap names is its own detector.
+    for t in &plan.traps {
+        if t.payload_effects.is_empty() || t.trigger != delvewright_dsl::TrapTrigger::TrappedChest {
+            continue;
+        }
+        advs.push((
+            format!("trapfire_{}", t.safe),
+            json!({
+                "criteria": { "interact": block_use_criterion("minecraft:trapped_chest", t.trigger_cell) },
+                "rewards": { "function": format!("{ns}:trap_open_{}", t.safe) }
             }),
         ));
     }
@@ -92,11 +149,10 @@ pub(super) fn emit_advancements(
     // revokes its own grant, so the object answers every press — a wall is not
     // consumed by being asked.
     //
-    // This is `seal_<safe>` lifted off `close-gate`. It keys on the trigger's own
-    // `dw_trig_<id>` tag, which `seal_fns` / `ws_arm_fns` / `env_trigger_setup`
-    // already put on whatever body that trigger rides or summons — so the
-    // advancement needs to know nothing about seals, doors, or any future
-    // pressable object class.
+    // It keys on the trigger's own `dw_trig_<id>` tag, which every click box,
+    // NPC hitbox and answer box a trigger rides wears (`pressable::box_tags`) —
+    // so the advancement needs to know nothing about seals, doors, or any
+    // future pressable object class.
     for t in &plan.emitted_triggers(chrome) {
         // spec-0093 §6.5: a trigger whose prop a hand presses is dispatched by
         // vanilla's `default_block_use` at the block's cell, whoever it
@@ -169,26 +225,15 @@ pub(super) fn emit_advancements(
     for q in &c.quests.content.quests {
         for o in &q.objectives {
             match o {
-                Objective::Interact { id, anchor, .. } => {
-                    let tag = interact_entity_tag(id.as_str());
-                    // spec-0093 §6.5: a block a hand presses is reported by
-                    // vanilla's own `default_block_use` at the block's cell, as
-                    // the player who pressed; everything else rides the hitbox.
-                    let cell = plan
-                        .quest_area(q.id.as_str())
-                        .and_then(|a| plan.point(a, anchor.as_str()));
-                    let criterion = match crate::compiler::pressable::interact_block(o).zip(cell) {
-                        Some((block, cell)) => block_use_criterion(block, cell),
-                        None => json!({
-                            "trigger": "minecraft:player_interacted_with_entity",
-                            "conditions": {
-                                "entity": {
-                                    "type": "minecraft:interaction",
-                                    "nbt": format!("{{Tags:[\"{tag}\"]}}")
-                                }
-                            }
-                        }),
+                Objective::Interact { id, .. } => {
+                    // spec-0117 §5.2: the act is reported by the block itself
+                    // where no box stands in the open state, by the box
+                    // otherwise; either way as the player who pressed.
+                    let Some(p) = crate::compiler::pressable::press_of_objective(plan, id.as_str())
+                    else {
+                        continue;
                     };
+                    let criterion = press_criterion_of(p, crate::compiler::pressable::State::Open);
                     advs.push((
                         format!("i_{}", plan::safe_local(id.as_str())),
                         json!({

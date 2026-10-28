@@ -1672,7 +1672,7 @@ fn no_stage_five_verb_calls_a_synthesized_anchor_an_invented_name() {
         "id": "shop/counter",
         "anchor": "anchor/node-hall",
         "title": "The counter",
-        "marker_item": "minecraft:emerald",
+        "prop": { "block": "minecraft:barrel" },
         "offers": [{
             "label": "Bread, one emerald",
             "effects": [{ "type": "give-item", "item": "minecraft:bread", "count": 1 }]
@@ -1871,7 +1871,7 @@ fn no_refusal_on_a_derived_map_prescribes_a_prefab_document() {
         "id": "shop/counter",
         "anchor": "anchor/nowhere-shop",
         "title": "The counter",
-        "marker_item": "minecraft:emerald",
+        "prop": { "block": "minecraft:barrel" },
         "offers": [{
             "label": "Bread, one emerald",
             "effects": [{ "type": "give-item", "item": "minecraft:bread", "count": 1 }]
@@ -2344,4 +2344,94 @@ fn a_climb_carries_a_rise_and_a_climb_on_one_level_is_dw0992() {
     );
     let got = climb_codes("edge/porch-hall", "climb", |_| {});
     assert!(has(&got, "DW0992"), "{got:?}");
+}
+
+// ---------------------------------------------------------------------------
+// spec-0123 §5: a side that may stand no wall
+// ---------------------------------------------------------------------------
+
+/// The four horizontal sides and their two values are accepted and change no
+/// verdict the plan draws at validation: the yard declares three sides open
+/// and its north side, where the vault's arch comes in, a wall in words.
+#[test]
+fn sides_of_the_four_horizontal_names_and_two_values_are_accepted() {
+    let got = plan_with(|v| {
+        boxes(v)[box_of("node/yard")]["sides"] =
+            json!({"east": "open", "west": "open", "south": "open", "north": "wall"});
+    });
+    assert_eq!(
+        got,
+        vec!["DW0822".to_string(), "DW0813".to_string()],
+        "an open side is not itself a finding at validation"
+    );
+}
+
+/// `up` is not a side (a lid is the ceiling) and `ajar` is not a value: both
+/// are the schema's refusal.
+#[test]
+fn a_side_the_plan_cannot_spell_is_dw0100() {
+    let up = plan_with(|v| boxes(v)[box_of("node/yard")]["sides"] = json!({"up": "open"}));
+    assert!(has(&up, "DW0100"), "{up:?}");
+    let ajar = plan_with(|v| boxes(v)[box_of("node/yard")]["sides"] = json!({"east": "ajar"}));
+    assert!(has(&ajar, "DW0100"), "{ajar:?}");
+}
+
+/// `DW1064`: the vault's arch into the yard is cut in the vault's south face
+/// and the yard's north face. Declaring either open leaves no wall to cut it
+/// in, and the refusal names the edge, the face and the place; the green plan
+/// does not raise it.
+#[test]
+fn dw1064_a_portal_in_a_side_declared_open() {
+    let green = plan_with(|_| {});
+    assert!(!has(&green, "DW1064"), "{green:?}");
+    let yard = plan_diags(|v| boxes(v)[box_of("node/yard")]["sides"] = json!({"north": "open"}));
+    let hit: Vec<_> = yard.iter().filter(|d| d.code == "DW1064").collect();
+    assert_eq!(hit.len(), 1, "{yard:?}");
+    assert!(
+        hit[0]
+            .message
+            .contains("`edge/vault-yard` is a portal in the north face of `node/yard`"),
+        "{}",
+        hit[0].message
+    );
+    let vault = plan_diags(|v| boxes(v)[box_of("node/vault")]["sides"] = json!({"south": "open"}));
+    let hit: Vec<_> = vault.iter().filter(|d| d.code == "DW1064").collect();
+    assert_eq!(hit.len(), 1, "{vault:?}");
+    assert!(
+        hit[0].message.contains("in the south face of `node/vault`"),
+        "{}",
+        hit[0].message
+    );
+    // The same side open on a face no portal is cut in is no finding.
+    let elsewhere = plan_with(|v| boxes(v)[box_of("node/yard")]["sides"] = json!({"east": "open"}));
+    assert!(!has(&elsewhere, "DW1064"), "{elsewhere:?}");
+}
+
+/// A `contact` on an open side is that side's crossing, stated from the
+/// connection: `DW1064` does not judge it.
+#[test]
+fn dw1064_admits_a_contact_on_an_open_side() {
+    let got = plan_with(|v| {
+        boxes(v)[box_of("node/yard")]["sides"] = json!({"north": "open"});
+        let s = &mut seams(v)[seam_of("edge/vault-yard")];
+        let o = s.as_object_mut().expect("seam");
+        o.remove("opening");
+        o.remove("meets");
+        o.insert("at".into(), json!(0));
+        o.insert("contact".into(), json!({"extent": [8, 4]}));
+    });
+    assert!(!has(&got, "DW1064"), "{got:?}");
+}
+
+/// `delvec fmt` writes `sides` as it writes every object: its keys in the one
+/// canonical order (`east`, `north`, `south`, `west`), whatever order the
+/// author typed them in, and the formatted plan still validates.
+#[test]
+fn fmt_writes_sides_in_its_canonical_key_order() {
+    let text = r#"{"west": "open", "south": "wall", "north": "open", "east": "open"}"#;
+    let got = delvewright_dsl::fmt::format_text(text).expect("formats");
+    assert_eq!(
+        got,
+        "{\n  \"east\": \"open\",\n  \"north\": \"open\",\n  \"south\": \"wall\",\n  \"west\": \"open\"\n}\n"
+    );
 }

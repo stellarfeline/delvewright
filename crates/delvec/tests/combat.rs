@@ -404,6 +404,7 @@ fn unleash_trigger() -> serde_json::Value {
         "id": "trigger/warden-answers",
         "on": { "on": "strike-npc", "npc": "npc/keeper" },
         "once": true,
+        "answers": { "done": "He has already answered the blow." },
         "effects": [
             { "type": "spawn-actor", "actor": "actor/barrow-warden" },
             { "type": "unleash-actor", "actor": "actor/barrow-warden" }

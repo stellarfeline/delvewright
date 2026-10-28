@@ -1,0 +1,17 @@
+{
+  "code": "DW1052",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/traps/0/disarm/answers",
+      "value": {
+        "done": "The plate's lever is already thrown."
+      }
+    }
+  ],
+  "units": [
+    "TrapDisarm.answers"
+  ],
+  "why": "A `done` line added to the plate's disarm, which is released: once the lever is thrown its box goes and the lever is the player's, so no press ever reaches a done line. DW1052 refuses the dead line naming the state. It discharges `TrapDisarm.answers`: the gallery's one trap disarm is released, and what the engine refuses is an answer for a state its press never has."
+}

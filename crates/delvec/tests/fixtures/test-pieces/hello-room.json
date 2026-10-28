@@ -15,11 +15,43 @@
         ]
       }
     },
+    "anchor/door-knock": {
+      "note": "the cell beside the door on the keeper's side: where a knocker stands (spec-0117)",
+      "pos": [
+        5,
+        1,
+        5
+      ]
+    },
+    "anchor/door-leaf": {
+      "note": "a cell of the door's own bars: where a gate's own answer is anchored (spec-0117)",
+      "pos": [
+        4,
+        1,
+        6
+      ]
+    },
+    "anchor/door-leaf-east": {
+      "note": "the door's other lower cell of bars: a second cell its own answer can stand on",
+      "pos": [
+        5,
+        1,
+        6
+      ]
+    },
     "anchor/exit": {
       "pos": [
         5,
         1,
         8
+      ]
+    },
+    "anchor/far-knock": {
+      "note": "the cell beside the door on the exit's side: a knocker standing there is on the far side of a shortcut sealed toward the spawn",
+      "pos": [
+        5,
+        1,
+        7
       ]
     },
     "anchor/keeper-stand": {
@@ -28,6 +60,14 @@
         5,
         1,
         4
+      ]
+    },
+    "anchor/latch": {
+      "note": "a floor cell on the spawn side, clear of the keeper's stand and the exit: where a fixture's own press stands",
+      "pos": [
+        2,
+        1,
+        5
       ]
     },
     "spawn": {

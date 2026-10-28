@@ -120,8 +120,8 @@ effects; then `on_complete`. A `spawn-wave` or `spawn-actor` places the names it
 spawns. NPC lines are placed at the quest where the NPC is first reachable (its
 first `talk-to` objective or dialogue entry node, checked against the campaign's
 route in `DESIGN.md`), not at the first `cast` row, because a cast row stands an
-NPC at an anchor the party may not reach for several quests. A `close-gate`'s
-`sealed_hint` is placed where the gate is first reachable on the route.
+NPC at an anchor the party may not reach for several quests. A sealed gate's
+answer is placed where the gate is first reachable on the route.
 
 Cross-check: the static objective order for Vesperhold equals the objective
 order of the compiler's own branch chronicle
@@ -177,7 +177,7 @@ here is built.
    proves), per reachable branch. Every l10n key has a JSON pointer into its stage
    document; join each key to the first journal step whose quest, objective,
    effect or dialogue choice owns that pointer. Positional strings (a
-   `sealed_hint`, a `use`/`approach` trigger, loot, shop text) take the first step
+   press answer, a `use`/`approach` trigger, loot, shop text) take the first step
    at which their anchor is reachable under that step's gate seals — the same
    per-step seal set `nav::check_branch_path` already routes over.
 2. **Names.** A campaign glossary: every name the documents declare (NPC, actor,

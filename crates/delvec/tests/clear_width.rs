@@ -94,7 +94,9 @@ fn the_fixture_is_whole_and_states_its_population() {
     );
     let line = b.line();
     assert!(
-        line.contains("6 portal(s), 2 stair run(s), 1 contact(s), 0 way place(s), 0 piece way(s)"),
+        line.contains(
+            "6 portal(s), 2 stair run(s), 1 contact(s), 0 way place(s), 0 open side(s), 0 piece way(s)"
+        ),
         "{line}"
     );
     assert!(line.contains("7 way(s) whole, 0 narrowed;"), "{line}");

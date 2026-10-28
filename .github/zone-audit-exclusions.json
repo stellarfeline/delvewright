@@ -19,7 +19,7 @@
   ],
   "exclusion": [
     {
-      "capability_gap": "`causeway` floods its ward from floor to ceiling on both flanks of a 1-wide raised spine, and `fluid-contained` refuses that body of water: 134 of its 252 cells run into open air, 36 run directions leave the piece's own faces, and nothing in these bytes decides where that water goes. The repair is a contained ward — a lowered waterline with a wall under it — and it is now SAFE to make, which it was not before: `nav` used to read any non-air cell as floor, so lowering the waterline would have left a body-height air pocket the walk called a walkable surface and the ward's whole claim would have gone green while being false. That is fixed (a fluid is not a floor), so what remains here is a piece to repair rather than a capability to build, and this entry expires with the round that repairs it.",
+      "capability_gap": "`causeway`'s flood stands one course below the berm's top on both flanks of a 1-wide raised spine, and `fluid-contained` refuses that body of water: 8 run directions out of its 56 cells, every one into the open corbel of `guard_cantilever` at the ward's far end (the cantilever's flanks are air from the floor up, so the post's sightline has no mass to cross). The waterline is what keeps the berm dry and the post out of a swimming body's reach; what remains is a wall under the corbel at the waterline that keeps the cantilever's slice free of standable floor, which the rule does not yet have.",
       "expect_codes": [
         "DW0800"
       ],

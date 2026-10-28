@@ -67,6 +67,10 @@
         "objectives": [
           {
             "anchor": "anchor/door",
+            "answers": {
+              "done": "Already done.",
+              "not_yet": "Not yet."
+            },
             "happening": {
               "text": "the party completes obj/ward-north",
               "verb": "opens"
@@ -74,13 +78,17 @@
             "hint": "A lever in the room off the hall.",
             "id": "obj/ward-north",
             "prop": {
-              "block": "minecraft:lever"
+              "block": "minecraft:lever[face=floor,facing=north]"
             },
             "title": "Draw the North Ward",
             "type": "interact"
           },
           {
             "anchor": "anchor/chest",
+            "answers": {
+              "done": "Already done.",
+              "not_yet": "Not yet."
+            },
             "happening": {
               "text": "the party completes obj/ward-south",
               "verb": "opens"
@@ -88,7 +96,7 @@
             "hint": "Its twin, a room away.",
             "id": "obj/ward-south",
             "prop": {
-              "block": "minecraft:lever"
+              "block": "minecraft:lever[face=floor,facing=north]"
             },
             "title": "Draw the South Ward",
             "type": "interact"
@@ -152,6 +160,6 @@
       }
     ]
   },
-  "dsl_version": "0.63.0",
+  "dsl_version": "0.67.0",
   "stage": "quests"
 }

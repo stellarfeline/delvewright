@@ -1231,11 +1231,17 @@ fn refuse_broken_contract(expansion: &Expansion) -> Result<(), ExportError> {
         .iter()
         .map(|(name, a)| (name.clone(), a.pos))
         .collect();
-    let verdict = crate::grammar::contract::check_sealed(
+    let place = if expansion.sealed {
+        crate::grammar::contract::Place::Scenery
+    } else {
+        crate::grammar::contract::Place::Reached
+    };
+    let verdict = crate::grammar::contract::check_handed(
         &expansion.model,
         &contract,
         &anchors,
-        expansion.sealed,
+        place,
+        &expansion.open_sides,
     );
     let failed: Vec<String> = verdict
         .gates

@@ -24,7 +24,7 @@
 //!
 //! The redstone facts are the pinned jar's (`blockshape::redstone_*`, read from
 //! `crates/dsl/data/redstone-1.21.11.tsv`), the body relations the nav model's
-//! (`World::body_moves`, `World::mob_moves`); nothing here models either again.
+//! (`World::body_reach`, `World::mob_moves`); nothing here models either again.
 //!
 //! # Runtime writes: every possible block, at once
 //!
@@ -543,8 +543,8 @@ fn closure(
 /// world bodies move in (the caller lifts the exclusions and opens what a hand
 /// opens); `body_roots` are the standable cells the campaign puts the party
 /// at; `mob_roots` each wave stack's seats with its footprint. The body cells
-/// are the closure of [`World::body_moves`] from the first, united with the
-/// closure of [`World::mob_moves`] from the second.
+/// are every state of the reach graph from the first ([`World::body_reach`],
+/// spec-0113), united with the closure of [`World::mob_moves`] from the second.
 pub fn prove_catalysts(
     catalysts: &[[i32; 3]],
     world: &World,
@@ -558,7 +558,7 @@ pub fn prove_catalysts(
     if catalysts.is_empty() {
         return (b, None);
     }
-    let bodies = closure(body_roots.iter().copied(), |c| world.body_moves(c));
+    let bodies = world.body_reach(body_roots).cells();
     b.body_cells = bodies.len();
     let mut mobs: BTreeSet<[i32; 3]> = BTreeSet::new();
     for (seats, fp) in mob_roots {
@@ -792,7 +792,7 @@ pub fn check(
     let open = world.without_exclusions();
     let openable: BTreeSet<[i32; 3]> = blocks
         .iter()
-        .filter(|(_, n)| delvewright_dsl::blockshape::is_player_openable(n.as_str()))
+        .filter(|(_, n)| delvewright_dsl::blockshape::opens_by_hand(n.as_str()))
         .map(|(c, _)| *c)
         .collect();
     let opened = if openable.is_empty() {

@@ -69,6 +69,7 @@ fn good_trigger() -> String {
         r#"{{
       "id": "trigger/wake",
       "on": {{ "on": "strike-npc", "npc": "npc/keeper" }},
+      "answers": {{ "done": "He sleeps on." }},
       "effects": {NARRATE}
     }}"#
     )

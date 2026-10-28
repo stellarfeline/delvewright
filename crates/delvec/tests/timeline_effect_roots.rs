@@ -44,12 +44,16 @@ use std::sync::LazyLock;
 /// optional root's close. Anything these fixtures
 /// red on is therefore the timeline proof talking.
 fn quests_doc(traps: &str) -> String {
+    // Every fixture here seals the door, and a seal answers for itself
+    // (`DW0429`).
+    let answer = common::door_answer("Sealed.");
     format!(
         r#"{{
   "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
+    "triggers": [ {answer} ],
     "actors": [
       {{ "id": "actor/ram", "entity": "minecraft:sheep", "anchor": "anchor/keeper-stand" }}
     ],
@@ -83,7 +87,7 @@ const TRAP_SEALS_THEN_WALKS: &str = r#"{
   "trigger": "trapped-chest",
   "lethality": "harmful",
   "payload": [
-    { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." },
+    { "type": "close-gate", "anchor": "anchor/door" },
     { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } }
   ]
 }"#;
@@ -99,7 +103,7 @@ const TRAP_WALKS_THEN_SEALS: &str = r#"{
   "lethality": "harmful",
   "payload": [
     { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } },
-    { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." }
+    { "type": "close-gate", "anchor": "anchor/door" }
   ]
 }"#;
 
@@ -125,7 +129,7 @@ static DIALOGUE_SEALS_THEN_WALKS: LazyLock<String> = LazyLock::new(|| {
                 { "type": "complete-objective", "objective": "obj/talk" },
                 { "type": "set-checkpoint", "anchor": "anchor/exit",
                   "on_respawn": [
-                    { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." },
+                    { "type": "close-gate", "anchor": "anchor/door" },
                     { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } }
                   ] }
               ] }

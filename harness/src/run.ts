@@ -10,6 +10,12 @@ import { loadPulsePlanForCriticalPath, pulseBindingLine } from "./pulse.ts";
 import { loadContainerLedgerForCriticalPath } from "./containers.ts";
 import { cueBinding, cueBindingLine, loadCueLedgerForCriticalPath } from "./cues.ts";
 import {
+  journalBinding,
+  journalBindingLine,
+  journalFailures,
+  loadJournalLedgerForCriticalPath,
+} from "./journal.ts";
+import {
   ShotSubjectObserver,
   loadShotSubjectPlanForCriticalPath,
   shotSubjectBindingLine,
@@ -388,6 +394,18 @@ async function main(): Promise<number> {
   } else {
     process.stderr.write(`cue ledger: none in this build\n`);
   }
+  // The journal at every quest start, read off the book the bot holds.
+  // Absent → a build with no journal.
+  const journalLedger = await loadJournalLedgerForCriticalPath(pathArg);
+  if (journalLedger) {
+    executor.useJournalLedger(journalLedger);
+    process.stderr.write(
+      `journal ledger: ${journalLedger.quests.length} quest(s), ` +
+        `${journalLedger.quests.reduce((a, q) => a + q.told.length, 0)} page(s) owed at their start\n`,
+    );
+  } else {
+    process.stderr.write(`journal ledger: none in this build\n`);
+  }
   // spec-0110 §7: every body a cutscene shot frames, watched from the camera.
   // Absent → the build has no cutscene; empty → no shot frames a body.
   const shotPlan = await loadShotSubjectPlanForCriticalPath(pathArg);
@@ -670,6 +688,22 @@ async function main(): Promise<number> {
       for (const f of cueFailures) process.stderr.write(`[cue] FAIL ${f}\n`);
       report.recordCues({ ...b, line, verdicts: [...cues.owed, ...cues.unclaimed] });
     }
+    // Every page a quest start owed was on the journal the bot held.
+    const journalFails = journalFailures(executor.journalVerdicts);
+    if (journalLedger) {
+      const b = journalBinding(journalLedger, executor.journalStarted, executor.journalVerdicts);
+      const line = journalBindingLine(b);
+      // A ledger that owes pages and a whole path that saw no quest start is the
+      // reading failing, never a pass: a campaign-start quest starts on every run.
+      if (b.owing > 0 && b.started === 0 && pathFailure === undefined) {
+        journalFails.push(
+          `journal: the build owes ${b.owing} quest start(s) a page and the run read no quest start at all`,
+        );
+      }
+      process.stderr.write(`${line}\n`);
+      for (const f of journalFails) process.stderr.write(`[journal] FAIL ${f}\n`);
+      report.recordJournal({ ...b, line, verdicts: executor.journalVerdicts });
+    }
     report.stage({
       stage: "critical-path",
       ran: true,
@@ -679,6 +713,7 @@ async function main(): Promise<number> {
         watchFailures.length === 0 &&
         pulseFailures.length === 0 &&
         cueFailures.length === 0 &&
+        journalFails.length === 0 &&
         shotFailures.length === 0,
       findings: report.musterFindings(),
       failures: [
@@ -687,6 +722,7 @@ async function main(): Promise<number> {
         ...watchFailures,
         ...pulseFailures,
         ...cueFailures,
+        ...journalFails,
         ...shotFailures,
       ],
     });

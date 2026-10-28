@@ -908,3 +908,89 @@ fn the_gallery_east_door_is_opened_by_its_shortcut_unlock() {
     let closure = Closure::run(graph, &Grants::of(&c, graph));
     assert!(!closure.obtained.contains(&flag), "{:?}", closure.obtained);
 }
+
+// ---------------------------------------------------------------------------
+// spec-0123 §3.3 — the references a place is built from
+// ---------------------------------------------------------------------------
+
+fn binding_of(graph: String) -> delvewright_dsl::LayoutBinding {
+    let raw = campaign(Some(graph), Some(BRIEF.to_string()));
+    let c = delvewright_dsl::parse_campaign(&raw).expect("parses");
+    delvewright_dsl::LayoutBinding::of(&c)
+}
+
+fn a_reference(url: &str) -> Value {
+    json!({
+        "url": url,
+        "shows": "a smithy whose forge stands against the back wall and whose counter faces the lane",
+        "terms": "none stated"
+    })
+}
+
+/// A graph with none states its zero over every node: `0 … over 0 of 4`.
+#[test]
+fn references_binding_states_zero_on_a_graph_with_none() {
+    let b = binding_of(GREEN.to_string());
+    assert_eq!(
+        b.references_line(),
+        "references binding: 0 reference(s) over 0 of 4 node(s)"
+    );
+}
+
+/// Rows of `{url, shows, terms}` are accepted, refuse nothing, and are counted
+/// over the nodes that declare them: three rows over two of the four places.
+#[test]
+fn references_rows_are_accepted_and_counted() {
+    let g = graph_with(|v| {
+        nodes(v)[0]["references"] = json!([
+            a_reference("https://example.org/smithy.png"),
+            a_reference("https://example.org/forge-page")
+        ]);
+        nodes(v)[1]["references"] = json!([a_reference("https://example.org/hall.jpg")]);
+    });
+    assert_eq!(
+        validate(Some(g.clone())),
+        vec!["DW0822".to_string(), "DW0813".to_string()],
+        "a reference refuses nothing"
+    );
+    assert_eq!(
+        binding_of(g).references_line(),
+        "references binding: 3 reference(s) over 2 of 4 node(s)"
+    );
+}
+
+/// A row missing `terms` is refused by the schema (`DW0100`), as is a key the
+/// row does not carry.
+#[test]
+fn dw0100_a_reference_with_no_terms() {
+    let g = graph_with(|v| {
+        let mut r = a_reference("https://example.org/smithy.png");
+        r.as_object_mut().expect("object").remove("terms");
+        nodes(v)[0]["references"] = json!([r]);
+    });
+    assert!(validate(Some(g)).contains(&"DW0100".to_string()));
+    let g = graph_with(|v| {
+        let mut r = a_reference("https://example.org/smithy.png");
+        r["licence"] = json!("CC0");
+        nodes(v)[0]["references"] = json!([r]);
+    });
+    assert!(validate(Some(g)).contains(&"DW0100".to_string()));
+}
+
+/// A `url` that is not `https://` is refused at the schema tier (`DW0100`): a
+/// plain `http://`, a bare path, and an address with a blank in it.
+#[test]
+fn dw0100_a_reference_url_that_is_not_https() {
+    for url in [
+        "http://example.org/smithy.png",
+        "example.org/smithy.png",
+        "https://",
+        "https://example.org/a smithy.png",
+    ] {
+        let g = graph_with(|v| nodes(v)[0]["references"] = json!([a_reference(url)]));
+        assert!(
+            validate(Some(g)).contains(&"DW0100".to_string()),
+            "`{url}` must be refused"
+        );
+    }
+}

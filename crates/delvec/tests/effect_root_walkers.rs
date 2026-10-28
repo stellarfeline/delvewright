@@ -311,6 +311,7 @@ fn probe_at(loaded: &LoadedCampaign, k: EffectRootKind, bundle_json: &str) -> Ca
         EffectRootKind::ShopOffer => {
             let mut shop: delvewright_dsl::Shop = serde_json::from_str(
                 r#"{ "id": "shop/probe", "anchor": "anchor/shop", "title": "Wares",
+                     "prop": { "block": "minecraft:stone_button[face=floor,facing=north]" },
                      "offers": [{ "label": "Buy", "effects": [] }] }"#,
             )
             .expect("probe shop parses");

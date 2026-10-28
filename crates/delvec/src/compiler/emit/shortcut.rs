@@ -2,82 +2,24 @@
 
 use super::*;
 
-/// `setup_finish` commands for shortcut doors (spec-0016 §2): summon the
-/// far-side unlock affordance (a right-click target, the same
-/// `minecraft:interaction` primitive as a trap disarm) **and its visible
-/// hardware**. The gate needs no command at all — it is **physically sealed in
-/// the prefab** from world-load, which is precisely why the pattern needs no
-/// "seal it now" verb and why permanence can be structural. Empty for a
-/// campaign with no shortcut.
-///
-/// The hardware is not decoration. `minecraft:interaction` is an invisible
-/// hitbox, so the hitbox alone asks the player to right-click a point nothing
-/// marks — the drowned-bell soft-lock, where the unlock cell was bare air and
-/// the only visible thing there belonged to an unrelated objective. The
-/// compiler owns the affordance's visibility; it is never left to whether the
-/// tileset happens to carry a lever. Proven by `DW0420`
-/// ([`crate::compiler::affordance`]).
+/// `setup_finish` commands for shortcut doors (spec-0016 §2, spec-0117 §3a).
+/// The unlock's block and, where it starts boxed, its box are placed with every
+/// pressable's ([`press_setup`]); the gate is **physically sealed in the
+/// prefab** from world-load, so its own answer's boxes go up here, over the
+/// door's block. Empty for a campaign with no shortcut.
 pub(super) fn shortcut_setup(plan: &Plan) -> Vec<String> {
     let ns = &plan.namespace;
     let mut out = Vec::new();
     for sc in &plan.shortcuts {
-        let v = ent_xyz(sc.unlock);
-        out.push(
-            crate::compiler::clickbox::ClickBox::column(sc.unlock, 2).summon(&format!(
-                "response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"dw_sc_{}\"]",
-                sc.safe
-            )),
-        );
-        out.push(affordance_hardware(
-            v,
-            &format!("dw_sc_{}", sc.safe),
-            "minecraft:lever",
-        ));
-        // Arm the door itself, so a press from the sealed side reaches
-        // something. Unlike a `close-gate` seal — which is armed by the firing
-        // that seals it — a shortcut gate is sealed by the PREFAB at world-load,
-        // so world init is the only moment its answer can go up. Guarded on
-        // absence for the same reason the close-gate arming is: a second,
-        // co-located set of hitboxes is the exact ray-pick tie `DW0422` forbids.
-        out.push(format!(
-            "execute unless entity @e[tag=dw_ws_{}] run function {ns}:ws_arm_{}",
-            sc.safe, sc.safe
-        ));
+        let gate = plan::safe_local(&sc.gate_anchor);
+        if super::press::gate_has_answer_box(plan, &sc.gate_anchor) {
+            out.push(format!(
+                "execute unless entity @e[tag=dw_gate_{gate}] run function {ns}:{}",
+                super::press::gate_arm_fn(&gate)
+            ));
+        }
     }
     out
-}
-
-// The `seal_hint_<safe>` reward functions and their `seal_<safe>` advancements
-// are GONE (DSL v0.11). They were `close-gate`'s private copy of "a pressable
-// thing answers the player who pressed it": its own advancement shape, its own
-// actionbar command, its own baked English — none of which has anything to do
-// with closing a gate, and none of which the second object that needed them (a
-// sealed shortcut door) could reach.
-//
-// A seal's answer is now an ordinary `EnvTrigger{on: use, audience: presser}`
-// carrying an ordinary `narrate{style: actionbar}`, synthesized by
-// `plan::collect_press_answers` and emitted by `env_trigger_fns` /
-// `press_dispatch_fn` / `emit_advancements` like any author's own click. The
-// wording is unchanged, the revoke-every-press behaviour is unchanged, and the
-// shortcut door gets all of it for free — which is the whole finding.
-
-/// Every shortcut door with its derived sealed side.
-///
-/// **Every** shortcut gets a body — a door with no answer is still a door a
-/// player walks up to and pushes — so the only shortcut missing here is one whose
-/// side did not resolve, and such a campaign never reaches emission:
-/// [`check_shortcut_sides`] fails the build first. That is why `DW0425` binds to
-/// every shortcut rather than to the ones that authored something.
-pub(super) fn answering_shortcuts<'a>(
-    plan: &'a Plan,
-) -> Vec<(
-    &'a plan::ShortcutPlan,
-    &'a crate::compiler::wrongside::SealedSide,
-)> {
-    plan.shortcuts
-        .iter()
-        .filter_map(|sc| sc.sealed_side.as_ref().map(|s| (sc, s)))
-        .collect()
 }
 
 /// `DW0425`: a shortcut door whose sealed side the geometry does not name.
@@ -112,58 +54,6 @@ pub(super) fn check_shortcut_sides(plan: &Plan) -> Result<(), BuildFailure> {
     Ok(())
 }
 
-/// The `ws_arm_<safe>` functions: the **clickable body of a sealed
-/// shortcut door**.
-///
-/// A shortcut gate is a solid slab the prefab places, and nothing gave it a body.
-/// A `use`/`strike` trigger anchored on it summoned the ordinary point body — one
-/// `1.0f x 2.0f` box at the region's first cell — which for the `souls-shortcut`
-/// fixture lands at AABB `[4,65,6]..[5,67,7]` inside a slab occupying
-/// `[4,65,6]..[6,68,7]`: flush with the block on every face it touches and
-/// interior on the rest, so vanilla never finds it strictly nearer than the block
-/// and no press from any angle reaches it (see [`crate::compiler::clickbox::CLICK_MARGIN`]).
-///
-/// The body therefore stands in the **open air in front of the bars**, one cell
-/// per doorway cell, on the sealed side only
-/// ([`crate::compiler::wrongside::SealedSide::approach_cells`]). That placement is also the
-/// entire side mechanism: a near-side ray hits the body before the door, a
-/// far-side ray hits the door and stops, because vanilla bounds its entity
-/// raycast by the block hit distance. No player test, no DSL surface.
-///
-/// A click trigger the author anchors on the gate rides these — the same merge
-/// `seal_fns` performs for a `close-gate` seal — so the author's own prose and
-/// sound, gated by their own flags, are what a wrong-side press produces. The
-/// compiler supplies the body; the campaign supplies the answer.
-///
-/// Empty for a campaign with no shortcut → byte-identical output.
-pub(super) fn ws_arm_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, String)> {
-    let mut out = Vec::new();
-    for (sc, side) in answering_shortcuts(plan) {
-        // A click trigger the author anchored on this gate rides these hitboxes
-        // rather than summoning its own co-located one — the same merge
-        // `seal_fns` performs for a `close-gate` seal, and the reason a trigger
-        // at a gate anchor stops being a ray-pick tie.
-        let mut tags = vec![format!("dw_ws_{}", sc.safe)];
-        tags.extend(seal_rider_tags(plan, chrome, &sc.gate_anchor));
-        let tag_list = tags
-            .iter()
-            .map(|t| format!("\"{t}\""))
-            .collect::<Vec<_>>()
-            .join(",");
-        let body: Vec<String> = side
-            .approach_cells()
-            .into_iter()
-            .map(|c| {
-                crate::compiler::clickbox::ClickBox::column(c, 1).summon(&format!(
-                    "response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}{tag_list}]"
-                ))
-            })
-            .collect();
-        out.push((format!("ws_arm_{}", sc.safe), lines(&body)));
-    }
-    out
-}
-
 /// Per-tick shortcut unlock detection (spec-0016 §2). Fires **once** — the
 /// `#sc_<id>` sentinel is the structural expression of permanence: after the open
 /// there is nothing left to fire, and no verb anywhere can put the gate back
@@ -172,12 +62,61 @@ pub(super) fn shortcut_tick(plan: &Plan) -> Vec<String> {
     let ns = &plan.namespace;
     let mut out = Vec::new();
     for sc in &plan.shortcuts {
+        // spec-0117: a block that reports its own press is dispatched by its
+        // `sc_<id>` advancement; only a box's record is read on the tick.
+        if !unlock_by_box(plan, sc) {
+            continue;
+        }
         let id = &sc.safe;
         out.push(format!(
             "execute unless score #sc_{id} dw.sys matches 1 if entity @e[tag=dw_sc_{id},nbt={{interaction:{{}}}}] run function {ns}:shortcut_open_{id}"
         ));
         out.push(format!(
             "execute as @e[tag=dw_sc_{id}] run data remove entity @s interaction"
+        ));
+    }
+    out
+}
+
+/// Whether a shortcut's unlock is read off its box's record (its block reports
+/// no press of its own) rather than by its block's `default_block_use`.
+pub(super) fn unlock_by_box(plan: &Plan, sc: &plan::ShortcutPlan) -> bool {
+    super::press::press_of_owner(
+        plan,
+        &crate::compiler::pressable::Owner::Shortcut { id: sc.id.clone() },
+    )
+    .is_some_and(|p| p.boxed_in(crate::compiler::pressable::State::Open))
+}
+
+/// The `sc_<id>` advancement reward of an unlock whose block reports its own
+/// press (spec-0117): `sc_press_<id>`, as the presser — revoke, mark the
+/// press acted (so a `done` answer on the same press stays quiet), then open
+/// the gate if it is still shut.
+pub(super) fn shortcut_press_fns(plan: &Plan) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    for sc in &plan.shortcuts {
+        if unlock_by_box(plan, sc)
+            || !plan
+                .presses()
+                .iter()
+                .any(|p| p.tag == format!("dw_sc_{}", sc.safe))
+        {
+            continue;
+        }
+        let id = &sc.safe;
+        out.push((
+            format!("sc_press_{id}"),
+            lines(&[
+                format!("advancement revoke @s only {ns}:sc_{id}"),
+                format!(
+                    "execute unless score #sc_{id} dw.sys matches 1 run tag @s add {}",
+                    super::press::acted_tag(&format!("sc_{id}"))
+                ),
+                format!(
+                    "execute unless score #sc_{id} dw.sys matches 1 run function {ns}:shortcut_open_{id}"
+                ),
+            ]),
         ));
     }
     out
@@ -204,20 +143,25 @@ pub(super) fn emit_shortcut_functions(plan: &Plan) -> Vec<(String, String)> {
                 to[2],
                 replace_filter(&sc.gate_block)
             ),
-            // The affordance is spent: the bar is thrown and the door is open,
-            // so its hardware retires with it. This is the ONE function allowed
-            // to remove it — `DW0421` fails the build if anything else does.
-            format!(
-                "kill @e[tag={}]",
-                crate::compiler::affordance::hardware_tag(&format!("dw_sc_{id}"))
-            ),
         ];
-        // …and the door's own voice goes with the bars. An opened
-        // threshold that still says "this will not open" is a lie, and an
-        // invisible box left standing in a now-walkable doorway swallows
-        // right-clicks aimed through it — the same retirement `open-gate`
+        // …and the door's own answer goes with the bars (spec-0117): its block
+        // is air now, and a box left standing in a now-walkable doorway
+        // swallows presses aimed through it — the same retirement `open-gate`
         // performs for a `close-gate` seal.
-        body.push(format!("kill @e[tag=dw_ws_{id}]"));
+        if super::press::gate_has_answer_box(plan, &sc.gate_anchor) {
+            body.push(format!(
+                "kill @e[tag=dw_gate_{}]",
+                plan::safe_local(&sc.gate_anchor)
+            ));
+        }
+        // The unlock is spent: its box returns over the thrown block, unless
+        // released to the player's hand.
+        if let Some(p) = super::press::press_of_owner(
+            plan,
+            &crate::compiler::pressable::Owner::Shortcut { id: sc.id.clone() },
+        ) {
+            body.extend(super::press::settle_lines(plan, p));
+        }
         body.extend(emit_effect_bundle(
             plan,
             &sc.on_unlock,

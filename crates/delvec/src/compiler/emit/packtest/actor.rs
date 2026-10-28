@@ -422,10 +422,7 @@ pub(super) fn emit_v06_actor_packtests(
         b.push(format!("kill @e[tag=dw_actor_{safe}]"));
         b.push(format!("kill @e[tag={npc_tag}]"));
         for (from, to, block) in &sealed {
-            b.push(format!(
-                "fill {} {} {} {} {} {} {}",
-                from[0], from[1], from[2], to[0], to[1], to[2], block
-            ));
+            b.extend(lay_region_commands((**from, **to), block));
         }
         b.push(format!("function {ns}:spawn_actor_{safe}"));
         b.extend(walk_claim(

@@ -148,7 +148,7 @@ def run_build(
     """
     src = work / f"gallery-src-{point}-{lang}"
     out = work / f"delve-output-gallery-{point}-{lang}"
-    r = subprocess.run(
+    r = parallel.run(
         [
             sys.executable,
             str(GALLERY_BUILD),
@@ -167,8 +167,7 @@ def run_build(
             "--out",
             str(out),
         ],
-        capture_output=True,
-        text=True,
+        kind="gallery-build.py",
     )
     return src, out, r
 

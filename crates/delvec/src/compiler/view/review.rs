@@ -340,11 +340,7 @@ fn world_of(
     clock: Clock,
     rows: Vec<usize>,
 ) -> usize {
-    let laid: BTreeMap<[i32; 3], Option<String>> = config
-        .laid()
-        .into_iter()
-        .map(|(c, b)| (c, b.map(str::to_string)))
-        .collect();
+    let laid: BTreeMap<[i32; 3], Option<String>> = config.laid();
     if let Some(i) = worlds
         .iter()
         .position(|w| w.laid == laid && w.clock == clock && w.rows == rows)

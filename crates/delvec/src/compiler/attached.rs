@@ -1034,9 +1034,11 @@ fn judge_runtime(
     r.cells = may.len();
     // Every state a cell may hold, from `start`: each a write leaves where its
     // filter admits a state the cell may already hold, until none is added.
+    // `skip` is the writes not to take: the one whose block is being judged,
+    // and every write that ends that block's standing.
     let admitted = |c: [i32; 3],
                     mut v: Vec<(&'static str, Option<usize>)>,
-                    skip: Option<usize>|
+                    skip: &BTreeSet<usize>|
      -> Vec<(&'static str, Option<usize>)> {
         let Some(e) = may.get(&c) else {
             return v;
@@ -1044,7 +1046,7 @@ fn judge_runtime(
         loop {
             let mut grew = false;
             for (st, k, filter) in e {
-                if Some(*k) == skip || v.iter().any(|(_, o)| *o == Some(*k)) {
+                if skip.contains(k) || v.iter().any(|(_, o)| *o == Some(*k)) {
                     continue;
                 }
                 if v.iter().any(|(x, _)| filter.lays_over(x)) {
@@ -1057,12 +1059,17 @@ fn judge_runtime(
             }
         }
     };
-    // From its loaded block.
-    let states = |c: [i32; 3]| admitted(c, vec![(loaded.at(c), None)], None);
+    // From its loaded block, taking every write but `skip`.
+    let states_but =
+        |c: [i32; 3], skip: &BTreeSet<usize>| admitted(c, vec![(loaded.at(c), None)], skip);
+    let states = |c: [i32; 3]| states_but(c, &BTreeSet::new());
     // While a block write `origin` left beside it stands: where that one
     // command also wrote this cell, from what it wrote there — never what
-    // stood before it.
-    let beside_states = |c: [i32; 3], origin: Option<usize>| {
+    // stood before it. `ends` are the writes that end that block's standing
+    // (below): what they leave is never beside it.
+    let beside_states = |c: [i32; 3], origin: Option<usize>, ends: &BTreeSet<usize>| {
+        let mut skip = ends.clone();
+        skip.extend(origin);
         let own = origin.and_then(|k| {
             may.get(&c)?
                 .iter()
@@ -1070,8 +1077,8 @@ fn judge_runtime(
                 .map(|(st, _, _)| (st.as_str(), Some(k)))
         });
         match own {
-            Some(first) => admitted(c, vec![first], origin),
-            None => states(c),
+            Some(first) => admitted(c, vec![first], &skip),
+            None => states_but(c, ends),
         }
     };
     let by = |k: Option<usize>| -> String {
@@ -1092,21 +1099,51 @@ fn judge_runtime(
                 continue;
             }
             r.pairs += 1;
+            // **The writes that take a two-high block whole**: one command
+            // that writes an upper half's cell over it and its lower half's
+            // cell too (an `open-gate`'s clear of a door) removes the block,
+            // and what it leaves below is never under this half. Whichever
+            // cell it reaches first, the upper half goes without an item: the
+            // pinned jar's loot tables give an upper half's item only through
+            // its lower half, or only while its lower half stands under it, for
+            // every block with a `half` of `lower`/`upper`
+            // (`docs/reference/compiler.md`, `region_fill`). Only that block:
+            // a torch whose floor one `fill` clears with it is shape-updated as
+            // its floor goes, and drops.
+            let below = step(cell, Face::Down);
+            let upper_half = crate::compiler::region_fill::two_high(name)
+                && delvewright_dsl::blockshape::state_value(name, "half") == Some("upper");
+            let ends: BTreeSet<usize> = may
+                .get(&cell)
+                .into_iter()
+                .flatten()
+                .filter(|(_, k, filter)| {
+                    upper_half
+                        && Some(*k) != origin
+                        && filter.lays_over(name)
+                        && may
+                            .get(&below)
+                            .is_some_and(|e| e.iter().any(|(_, o, _)| o == k))
+                })
+                .map(|(_, k, _)| *k)
+                .collect();
             let mut why: Option<String> = None;
             // `canSurvive` is asked only when a write changes a cell the rule
             // reads (a `fill` or `setblock` keeps the block it places): a block
             // whose rule cells no other write touches is never asked again.
             let asked = |rules: &[delvewright_dsl::support::Rule]| {
                 rules.iter().any(|r| {
-                    may.get(&step(cell, r.cell))
-                        .is_some_and(|e| e.iter().any(|(_, k, _)| Some(*k) != origin))
+                    may.get(&step(cell, r.cell)).is_some_and(|e| {
+                        e.iter()
+                            .any(|(_, k, _)| Some(*k) != origin && !ends.contains(k))
+                    })
                 })
             };
             if let Some(Needs::Support(rules)) = needs(name)
                 && asked(rules)
             {
                 let held = rules.iter().any(|rule| {
-                    beside_states(step(cell, rule.cell), origin)
+                    beside_states(step(cell, rule.cell), origin, &ends)
                         .iter()
                         .all(|(n, _)| rule.holds(n))
                 });
@@ -1117,7 +1154,7 @@ fn judge_runtime(
                             .map(|rule| {
                                 let n = step(cell, rule.cell);
                                 let [nx, ny, nz] = n;
-                                let failing = beside_states(n, origin)
+                                let failing = beside_states(n, origin, &ends)
                                     .into_iter()
                                     .filter(|(s, _)| !rule.holds(s))
                                     .map(|(s, k)| format!("`{s}` {}", by(k)))
@@ -1137,14 +1174,15 @@ fn judge_runtime(
             }
             // A falling block a runtime write places asks the cell below as it
             // lands; one that stood at load, only once a write changes it.
-            let below_written = may
-                .get(&step(cell, Face::Down))
-                .is_some_and(|e| e.iter().any(|(_, k, _)| Some(*k) != origin));
+            let below_written = may.get(&step(cell, Face::Down)).is_some_and(|e| {
+                e.iter()
+                    .any(|(_, k, _)| Some(*k) != origin && !ends.contains(k))
+            });
             if crate::compiler::assembled::is_falling_block(name)
                 && (origin.is_some() || below_written)
             {
                 let below = step(cell, Face::Down);
-                let free: Vec<String> = beside_states(below, origin)
+                let free: Vec<String> = beside_states(below, origin, &ends)
                     .into_iter()
                     .filter(|(s, _)| delvewright_dsl::support::falls_into(s) != Some(false))
                     .map(|(s, k)| format!("`{s}` {}", by(k)))
@@ -1509,6 +1547,65 @@ mod tests {
             ],
         ));
         assert!(w.runtime.refusal().is_some(), "{}", w.runtime.line());
+    }
+
+    /// A door gate the story opens and shuts: its clear takes both halves in
+    /// one command, so the upper half never stands over the air it leaves
+    /// below; the close lays the lower half before the upper. A torch whose
+    /// floor one `fill` clears with it is still dropped: the torch is
+    /// shape-updated as its floor goes, and leaves its item.
+    #[test]
+    fn a_door_gate_cleared_whole_is_held_and_a_torch_cleared_with_its_floor_is_not() {
+        let lower =
+            "minecraft:iron_door[facing=south,half=lower,hinge=left,open=false,powered=false]";
+        let upper =
+            "minecraft:iron_door[facing=south,half=upper,hinge=left,open=false,powered=false]";
+        let f = load(
+            &[
+                "fill 0 63 0 1 63 0 minecraft:stone",
+                &format!("fill 0 64 0 1 64 0 {lower}"),
+                &format!("fill 0 65 0 1 65 0 {upper}"),
+            ],
+            &[
+                (
+                    "open",
+                    &["fill 0 64 0 1 65 0 minecraft:air replace minecraft:iron_door"],
+                ),
+                (
+                    "close",
+                    &[
+                        &format!("fill 0 64 0 1 64 0 {lower}"),
+                        &format!("fill 0 65 0 1 65 0 {upper}"),
+                    ],
+                ),
+            ],
+        );
+        let w = writes(&f);
+        assert!(w.runtime.refusal().is_none(), "{}", w.runtime.line());
+        // The same clear over the lower course alone leaves the upper half
+        // over air: refused.
+        let f = load(
+            &[
+                "fill 0 63 0 1 63 0 minecraft:stone",
+                &format!("fill 0 64 0 1 64 0 {lower}"),
+                &format!("fill 0 65 0 1 65 0 {upper}"),
+            ],
+            &[(
+                "open",
+                &["fill 0 64 0 1 64 0 minecraft:air replace minecraft:iron_door"],
+            )],
+        );
+        assert!(writes(&f).runtime.refusal().is_some());
+        // A torch on a stone one `fill` clears with it.
+        let f = load(
+            &[
+                "setblock 3 64 3 minecraft:stone",
+                "setblock 3 65 3 minecraft:torch",
+            ],
+            &[("clear", &["fill 3 64 3 3 65 3 minecraft:air"])],
+        );
+        let why = writes(&f).runtime.refusal().expect("refused");
+        assert!(why.contains("minecraft:torch"), "{why}");
     }
 
     /// A gate the story opens and shuts: a block hung on the gate's own cell

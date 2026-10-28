@@ -88,6 +88,28 @@ agent: *Reference: when the prefab library has no piece you need* and
 
 ## The loop
 
+0. **Gather the references, before the first handout.** For every place with
+   a `clearance` ceiling — a building — find at least two pictures or pages of
+   human builds of that kind of building (a forge, a general store, a
+   weaver's), read each for where the working object stands, how the rooms
+   divide and what the front shows, and record each as a row of the node's
+   `references[]` in `layout-graph.json`: `{url, shows, terms}`, the URL
+   `https://`, `shows` one sentence of what to take from it, `terms` what the
+   source states (`"none stated"` where it states nothing). This is yours and
+   not the place's author's: the rows are a design document's, and an author
+   holds nothing but its handout. A reference is looked at, never copied — an
+   unlicensed or non-commercial source is ideas only. Then fetch them:
+
+   ```sh
+   "$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/references.py" <campaign-dir> --all
+   ```
+
+   It writes each picture to `.out/references/<place stem>/<n>.<ext>`, records a
+   page as a page and a failure as failed, writes `index.json` beside them, and
+   prints `references: R row(s); F image(s) fetched, P page(s), E failed` per
+   place. The handout names each fetched file, and the author reads it with its
+   file tool. Nothing under `.out/` is committed.
+
 1. **Write the handouts of the first wave**, at most N, in the order above.
    Mandatory, and the only input to each agent:
 
@@ -115,7 +137,8 @@ agent: *Reference: when the prefab library has no piece you need* and
    it does; a directory that is not a campaign, an engine tree or a prefab
    directory that is not there, or a `delvec` that states no concurrency line,
    is exit 2. Read its stderr: the handout's binding — design rows, neighbours,
-   seams, voids, owed names, refusal lines — and the concurrency line. The
+   seams, voids, owed names, refusal lines, open sides, references — and the
+   concurrency line. The
    handout says which neighbours are detailed **as of the handout**, and that
    the author's check reads the whole as it stands when the check runs.
    **Do not read the handout**: it carries the allocation, and holding it is
@@ -217,12 +240,68 @@ those: a street, a pavilion or a covered market declares none and passes. A
 two-level interior is two spaces (a space is one floor) and a `climb` contract
 edge between them, at program version `1.10.0`, proved over the body's climb
 moves (`$DELVEWRIGHT_ENGINE/docs/reference/grammar.md`, the contract's edge
-classes). A scenery place (`"reached": false`) is judged sealed: no way in, no
+classes). **Several rooms on one floor are spaces joined by `walk` edges
+through their doorways**, and a doorway between rooms holds a wooden door
+block, which the walk opens by hand; a door the story shuts is iron, and a
+`barred` edge. **An open side** (the allocation's `sides`) stands no wall: its
+ring cells stay open from the walk plane up and the floor course runs across
+them; a frontage a body crosses is answered with an `exterior` edge whose `via`
+is those cells, and a counter a body does not cross stands at the play space's
+edge, inside. **Your open side stands no wall; build the frame the wall would
+have been one cell inside the ring, and stand what you open there in it.** A
+scenery place (`"reached": false`) is judged sealed: no way in, no
 floor or light owed. A ground place draws its own ground down to the terrain
 the whole hands, ring included where the whole has not fixed it; an aloft one
 is handed none. A declared roof's `clipped` runs and a neighbour's facade cells
 are voids: whatever the program paints there is replaced after expansion, so
 nothing put there survives and nothing may depend on it.
+
+**A place reads as what it is when four things hold at once**: the working
+object stands in its working position, not stored; the rooms follow the work —
+the room a visitor enters is not the room the work is done in, and a door
+between them says so, so a building of a trade has at least two rooms; the
+front says what the place is before the door is opened — a sign of its own
+object over the way, the goods shown at a window or a counter, or the workroom
+open to the way; and every room has a use a player could name, with nothing as
+filler. **The test**: stand in the door and name what the place is with no sign
+read. The review does exactly that, blind, from a frame the build draws on each
+threshold.
+
+**A building is built in one style**, four lines read with the four above
+(`$DELVEWRIGHT_ENGINE/docs/reference/place-craft.md` §7 carries the sources):
+
+- **one module** — every part measured in the unit the body gives it: a course
+  (a counter, a sill, a step), a body of two courses (a door, a window's clear
+  height, the gap under a beam), a storey; parts that share a wall meet at its
+  lines.
+- **openings follow construction** — an opening is a hole in a wall with jambs
+  and a head; what fills it follows how the wall is built, and the leaf is
+  chosen last: a walled front, a front of posts and a beam, a timber-framed
+  front, a masonry front each take a different counter and door.
+- **lines run through** — the heads of a front's openings stand at one course,
+  or in a hierarchy you mean; a beam, a fascia or an eave terminates the front
+  over every opening; solid stands upon solid; one structural material and one
+  infill, and every block kind has a job.
+- **a landmark reads by its silhouette from the approach** — what the thing
+  does is visible in its shape at eye height from the cell where a body enters,
+  and its parts obey the first three lines.
+
+No door, gate or counter is named per trade: the construction names it.
+
+**Outside the door**: a street's verge — the columns of a way place outside its
+declared clear width — is the street's to dress, and so is a yard cut as its
+own open-sided place: shrubs, potted flowers, a hedge on a log, a bench, a
+trough; dress for what stands opposite, which the neighbour summary names.
+Nothing stands in a way's clear width.
+
+**A wide way keeps a wide approach**: the approach to a stair or a door is as
+wide as the way, at least three; its landing is as deep as the way is wide;
+a hearth, a newel or a pillar stands three to five cells from a stair, a newel
+in the next column over. **A seam at grade is walked at the sill**: both
+places draw their ground to the sill at the crossing, the side the plan hands
+the ring row to paves it, and no cell of a street's or a flight's corridor lies
+below the walk plane with higher cells before and after it — a trench a body
+walking the road falls into.
 
 The agent iterates with `delvec --prefabs "$DELVEWRIGHT_PREFABS" grammar
 expand --file … --region <the frame>` and a render until it reads as the place

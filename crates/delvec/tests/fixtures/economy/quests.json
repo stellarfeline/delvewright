@@ -106,7 +106,6 @@
       {
         "anchor": "spawn",
         "id": "shop/keeper-brazier",
-        "marker_item": "minecraft:campfire",
         "offers": [
           {
             "effects": [
@@ -172,6 +171,9 @@
             ]
           }
         ],
+        "prop": {
+          "block": "minecraft:stone_button[face=floor,facing=north]"
+        },
         "title": "The keeper's brazier"
       }
     ],
@@ -183,7 +185,6 @@
           "kind": "all"
         },
         "id": "stake/embers",
-        "marker_item": "minecraft:soul_lantern",
         "max_live": 1,
         "on_full": "replace",
         "state": "state/embers"
@@ -199,6 +200,6 @@
       }
     ]
   },
-  "dsl_version": "0.63.0",
+  "dsl_version": "0.67.0",
   "stage": "quests"
 }

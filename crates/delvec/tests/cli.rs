@@ -870,6 +870,9 @@ fn lang_build_localizes_only_strings_and_is_deterministic() {
                 || p.as_str() == "validation/placed.json"
                 || p.starts_with("validation/worlds/")
                 || p.as_str() == "validation/review-frames.json"
+                // The journal ledger names each owed page by the key the page
+                // carries; a bake writes its hints as text with no key.
+                || p.as_str() == "validation/journal-starts.json"
                 || p.as_str() == "manifest.json",
             "unexpected non-string file differs between en and zh-cn: {p}"
         );

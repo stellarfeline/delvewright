@@ -121,6 +121,12 @@ pub struct ExpandOptions {
     /// judged sealed — no way in is claimed. Set by `delvec detail` from the
     /// layout graph, the place's kind, never the piece's own word.
     pub sealed: bool,
+    /// The sides the place declares open (spec-0123 §5.4), as the handout
+    /// states them: piece-local inclusive corners of each open side's ring
+    /// run, from the walk plane to the top of the play space. The contract's
+    /// closure takes them as declared openings of the space behind them. Set
+    /// by `delvec detail` from the allocation; empty everywhere else.
+    pub open_sides: Vec<([i32; 3], [i32; 3])>,
 }
 
 impl ExpandOptions {
@@ -133,6 +139,7 @@ impl ExpandOptions {
             orientation: Orientation::IDENTITY,
             overrides: Overrides::none(),
             sealed: false,
+            open_sides: Vec::new(),
         }
     }
 
@@ -436,6 +443,8 @@ pub struct Expansion {
     pub oriented: OrientedFillAudit,
     /// Carried from [`ExpandOptions::sealed`]: the contract is judged sealed.
     pub sealed: bool,
+    /// Carried from [`ExpandOptions::open_sides`].
+    pub open_sides: Vec<([i32; 3], [i32; 3])>,
 }
 
 /// The scope at a refusal site, in the terms guards read it.
@@ -945,6 +954,7 @@ pub fn expand(
             undecided: expander.oriented_undecided.into_iter().collect(),
         },
         sealed: options.sealed,
+        open_sides: options.open_sides.clone(),
     })
 }
 

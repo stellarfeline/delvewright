@@ -17,12 +17,20 @@ use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
 /// runs `on_complete` (a raw JSON array body, no surrounding brackets) after the
 /// exit is reached — where a `close-gate` seals nothing still to be walked.
 fn quests_doc(on_complete: &str) -> String {
+    // A seal answers for itself (`DW0429`): the door's own answer, wherever the
+    // body seals it.
+    let triggers = if on_complete.contains("close-gate") {
+        format!(r#""triggers": [ {} ],"#, common::door_answer("Sealed."))
+    } else {
+        String::new()
+    };
     format!(
         r#"{{
   "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
+    {triggers}
     "quests": [
       {{
         "id": "quest/open-the-door",
@@ -110,7 +118,7 @@ fn all_functions(out: &BuildOutput) -> String {
 #[test]
 fn close_gate_with_declared_block_validates_clean() {
     let c = parse_hw(&quests_doc(
-        r#"{ "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." },
+        r#"{ "type": "close-gate", "anchor": "anchor/door" },
            { "type": "campaign-complete" }"#,
     ));
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
@@ -143,7 +151,7 @@ fn close_gate_on_blockless_gate_is_dw0343() {
     std::fs::write(&hello, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
 
     let c = parse_hw(&quests_doc(
-        r#"{ "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." },
+        r#"{ "type": "close-gate", "anchor": "anchor/door" },
            { "type": "campaign-complete" }"#,
     ));
     let prefabs = PrefabRegistry::load_dir(&tmp).unwrap();
@@ -162,7 +170,7 @@ fn close_gate_on_blockless_gate_is_dw0343() {
 #[test]
 fn close_gate_emits_fill_with_declared_block() {
     let c = parse_hw(&quests_doc(
-        r#"{ "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." },
+        r#"{ "type": "close-gate", "anchor": "anchor/door" },
            { "type": "campaign-complete" }"#,
     ));
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
@@ -202,7 +210,7 @@ fn close_gate_emits_fill_with_declared_block() {
 fn nested_sequence_gate_effects_are_collected() {
     let c = parse_hw(&quests_doc(
         r#"{ "type": "sequence", "steps": [
-              { "at_ticks": 0, "effects": [ { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." } ] },
+              { "at_ticks": 0, "effects": [ { "type": "close-gate", "anchor": "anchor/door" } ] },
               { "at_ticks": 40, "effects": [ { "type": "open-gate", "anchor": "anchor/door" } ] }
            ] },
            { "type": "campaign-complete" }"#,

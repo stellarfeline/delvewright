@@ -23,12 +23,6 @@ crate::dw_code! {
 }
 
 crate::dw_code! {
-    /// An `interact` declares `missing_item_hint` without a `requires_item`: the
-    /// hint answers a gate that does not exist, so it could never narrate.
-    pub const MISSING_ITEM_HINT_WITHOUT_ITEM: DwCode = DwCode::new("DW0437", ExitTier::Build);
-}
-
-crate::dw_code! {
     /// An `interact` declares `takes_item: true` without a `requires_item`
     /// (spec-0114 §6.3): the take is one of the presented item, and nothing is
     /// presented, so the declaration could never take anything.
@@ -1006,7 +1000,6 @@ pub(crate) fn quest_reference_checks(
                 Objective::Interact {
                     anchor,
                     requires_item,
-                    missing_item_hint,
                     takes_item,
                     ..
                 } => {
@@ -1022,21 +1015,6 @@ pub(crate) fn quest_reference_checks(
                              this objective declares no `requires_item`, so nothing is presented \
                              and nothing can be taken — state the `requires_item` the player lays \
                              down, or drop `takes_item`"
-                                .to_string(),
-                        ));
-                    }
-                    // v0.7: the empty-hand narration answers the held-item gate;
-                    // without a gate there is no missing hand to narrate to, and
-                    // the authored line would be dead content that never fires.
-                    if missing_item_hint.is_some() && requires_item.is_none() {
-                        d.push(Diagnostic::error(
-                            MISSING_ITEM_HINT_WITHOUT_ITEM,
-                            "quests",
-                            format!("/content/quests/{i}/objectives/{j}/missing_item_hint"),
-                            "`interact.missing_item_hint` narrates the click that arrives \
-                             without the required item in hand, but this objective declares no \
-                             `requires_item` — add the `requires_item` this hint is about, or \
-                             drop the hint"
                                 .to_string(),
                         ));
                     }

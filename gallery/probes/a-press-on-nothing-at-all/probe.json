@@ -1,0 +1,15 @@
+{
+  "code": "DW1059",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/triggers/0/prop",
+      "value": {
+        "block": "minecraft:air"
+      }
+    }
+  ],
+  "units": [],
+  "why": "The label's button replaced by air. A press needs a block the player can see and aim at; air has no outline, so the press would sit on nothing at all. DW1059 refuses the prop naming the arm (a block with no outline) and the remedy. It declares no unit: `EnvTrigger.prop` is bound on every gallery press."
+}

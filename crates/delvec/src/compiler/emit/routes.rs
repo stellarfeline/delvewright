@@ -71,6 +71,8 @@ pub(super) fn prove_world(
     // Legs the default path crosses by a link — `teleport-gate.json`'s
     // `legs_carried`.
     let mut legs_carried = 0usize;
+    // The declared jumps DW1041 proved (spec-0113 §6), for the waypoints.
+    let mut proven_jumps: Vec<crate::compiler::nav::ProvenJump> = Vec::new();
     // Every exported path's steps and proven routes — the exported path and each
     // reachable branch's — kept for the run-back finder, which needs the seated
     // hostiles and the lanes that are only resolved further down.
@@ -252,8 +254,7 @@ pub(super) fn prove_world(
             // cannot disagree with it because the measurement is pure and reads
             // the same sets. A pass owes the numbers as much as a failure does —
             // `contact_face_cells: 0` is a watertight hull saying so.
-            let party_walk =
-                world.reachable_walkable_rooted(&crate::compiler::edit::anchor_starts(plan));
+            let party_walk = world.body_region_rooted(&crate::compiler::edit::anchor_starts(plan));
             let seepage = crate::compiler::nav::measure_sea_seepage(world, &party_walk);
             eprintln!("{}", seepage.line());
             sea_seepage_ledger = Some(seepage.ledger());
@@ -376,12 +377,11 @@ pub(super) fn prove_world(
                     format!(" ({})", body_starts.excluded.join(", "))
                 },
             );
-            crate::compiler::nav::verify_boundary_safety(world, &body_starts.roots).map_err(
-                |e| BuildFailure::Diagnostic {
+            crate::compiler::nav::verify_boundary_safety_of(plan, world, &body_starts.roots)
+                .map_err(|e| BuildFailure::Diagnostic {
                     code: e.code,
                     message: e.message,
-                },
-            )?;
+                })?;
 
             // spec-0092 §10: the boundary and the world agree (`DW0960`) — every
             // place a body is put stands inside a region that returns, and a
@@ -393,7 +393,7 @@ pub(super) fn prove_world(
                 let starts = crate::compiler::edit::anchor_starts(plan);
                 let (reachable, sea_entry) = if region.is_some() && !returns {
                     (
-                        world.reachable_walkable_rooted(&starts),
+                        world.body_region_rooted(&starts),
                         crate::compiler::nav::open_sea_entry(world, &starts),
                     )
                 } else {
@@ -430,7 +430,7 @@ pub(super) fn prove_world(
                 let reachable = if gathered.is_empty() {
                     BTreeSet::new()
                 } else {
-                    world.reachable_walkable_rooted(&crate::compiler::edit::anchor_starts(plan))
+                    world.body_region_rooted(&crate::compiler::edit::anchor_starts(plan))
                 };
                 let mut outside_cells = 0usize;
                 for l in &gathered {
@@ -581,6 +581,10 @@ pub(super) fn prove_world(
                     });
                 }
             }
+            // spec-0123 §3.1: the doors the walk opens are derived from the
+            // pinned registry, never written by hand, and every build states
+            // the set its proofs read.
+            eprintln!("{}", delvewright_dsl::blockshape::doors_by_hand().line());
             // DW1057 (spec-0120): every way's declared clear width is clear
             // along the whole way, in every state its cells can take, and
             // nothing excuses a column that is not. It reads the plan, the blocks as shipped and the runtime
@@ -595,6 +599,16 @@ pub(super) fn prove_world(
                 );
                 eprintln!("{}", binding.line());
                 put_json(out, "validation/clear-width.json", &binding.to_json());
+                // spec-0123 §3.5: the piece census, beside the clear-width
+                // ledger — a measurement the review reads, never a refusal.
+                let census = crate::compiler::nav::census::census(
+                    plan,
+                    prefabs,
+                    &assembled.blocks,
+                    structures,
+                );
+                eprintln!("{}", census.line());
+                put_json(out, "validation/piece-census.json", &census.to_json());
                 if let Some((first, rest)) = refused.split_first() {
                     for extra in rest {
                         eprintln!("{} [error] build: {}", extra.code, extra.message);
@@ -726,6 +740,13 @@ pub(super) fn prove_world(
                         });
                     }
                 }
+                // DW1041 (spec-0113 §5.2): every declared jump flown and proven
+                // makeable before any route takes one as a move.
+                let (jump_binding, proven, jump_verdict) =
+                    crate::compiler::nav::check_declared_jumps(plan, world);
+                eprintln!("{}", jump_binding.line());
+                jump_verdict?;
+                proven_jumps.extend(proven);
                 // DW0311, with its binding stated whichever way it goes
                 // (spec-0083 §5): every leg partitioned into walked, carried by
                 // a crossing and carried by a link.
@@ -759,8 +780,24 @@ pub(super) fn prove_world(
                     playable_region(plan).map(|r| (r.min, r.max)),
                 );
                 eprintln!("{}", leave_binding.line());
+                eprintln!("{}", leave_binding.reach.line());
+                // spec-0113 §5.4 (`DW1043`): what the campaign gives a player,
+                // read for how it moves a body, with the configurations judged
+                // and left unbounded — zeroes included.
+                eprintln!(
+                    "{}",
+                    plan.movement
+                        .line(leave_binding.configurations, leave_binding.unbounded)
+                );
+                warnings.extend(plan.movement.findings(leave_binding.unbounded));
+                eprintln!("{}", leave_binding.hatch_line());
                 leave_verdict?;
                 put_json(out, "validation/leave-proof.json", &leave_binding.to_json());
+                put_json(
+                    out,
+                    "validation/reach-graph.json",
+                    &leave_binding.reach.to_json(),
+                );
                 // DW1011: a shut gate separates its two sides — no walk, fall,
                 // jump or swim gets a body from its near face to its far one.
                 // Over the same configurations DW0921 judges; the binding is
@@ -920,6 +957,58 @@ pub(super) fn prove_world(
                     crate::compiler::nav::furniture_binding(plan, world, &routes, &m, &am);
                 eprintln!("{}", furniture.line());
                 put_json(out, "validation/furniture-gate.json", &furniture.to_json());
+                // `DW1068`: a walked way that exists only across a leaf its
+                // mover cannot set — over the same world and the same legs the
+                // proofs above walked, each mover with its own use of a leaf a
+                // hand opens (the party sets one; a scripted body opens
+                // nothing). The binding prints before the verdict, zeroes
+                // included.
+                {
+                    let scripted = crate::compiler::traversal::legs(plan, &m, &am);
+                    let mut walked: Vec<crate::compiler::nav::WalkedLeg<'_>> = routes
+                        .iter()
+                        .map(|r| crate::compiler::nav::WalkedLeg {
+                            label: format!(
+                                "the critical path's leg to step {} ({:?})",
+                                r.to_step, r.to
+                            ),
+                            cells: &r.cells,
+                            fp: crate::compiler::nav::Footprint::player(),
+                            may_use: true,
+                            body: "the party sets it before it moves".to_string(),
+                        })
+                        .collect();
+                    walked.extend(scripted.iter().map(|l| crate::compiler::nav::WalkedLeg {
+                        label: format!("`{}` `{}` → `{}`", l.verb, l.id, l.to_anchor),
+                        cells: l.cells,
+                        fp: if l.verb == "move-actor" {
+                            crate::compiler::nav::entity_footprint(&l.entity)
+                        } else {
+                            crate::compiler::nav::Footprint::player()
+                        },
+                        may_use: false,
+                        body: format!("a `{}` body opens no door or trapdoor", l.entity),
+                    }));
+                    let (leaves, refusals) = crate::compiler::nav::check_leaves(world, &walked);
+                    eprintln!("{}", leaves.line());
+                    put_json(out, "validation/door-leaves.json", &leaves.to_json());
+                    if let Some((first, rest)) = refusals.split_first() {
+                        let mut message = first.clone();
+                        if !rest.is_empty() {
+                            message.push_str(&format!(
+                                " {} further way(s) across a leaf in this build:",
+                                rest.len()
+                            ));
+                            for r in rest {
+                                message.push_str(&format!(" {r};"));
+                            }
+                        }
+                        return Err(BuildFailure::Diagnostic {
+                            code: crate::compiler::nav::DW_WAY_ACROSS_A_LEAF,
+                            message,
+                        });
+                    }
+                }
                 // `DW0850`: the volume that completes a `reach` and the footing
                 // a body can reach it from are the same place. Bound HERE, to
                 // the same build event and the same final world the waypoint
@@ -991,6 +1080,7 @@ pub(super) fn prove_world(
                         &routes,
                         &listening,
                         &plan.critical_path_sneak,
+                        &proven_jumps,
                     );
                     eprintln!(
                         "{}",
@@ -1115,6 +1205,7 @@ pub(super) fn prove_world(
                                     &branch_routes,
                                     &listening,
                                     &cp.sneak_by_step,
+                                    &proven_jumps,
                                 ),
                             ));
                         }

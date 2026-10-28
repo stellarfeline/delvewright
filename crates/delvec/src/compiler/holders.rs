@@ -1458,8 +1458,11 @@ pub fn final_walk(
 /// stance that pass chose. Private: every reader takes it through
 /// [`final_walk`].
 fn walk_world(plan: &Plan, world: crate::compiler::nav::World, owned: &[OwnedHolder]) -> Walked {
+    // A stance is where the critical path's leg ends and the bot takes the
+    // item (spec-0111 §5.2): a cell the party walks to on cue, so the walk
+    // relation, not the reach graph (spec-0113 §4.5).
     let reachable = if owned.iter().any(|o| o.is_filled()) {
-        world.reachable_walkable_rooted(&crate::compiler::edit::anchor_starts(plan))
+        world.walk_region_rooted(&crate::compiler::edit::anchor_starts(plan))
     } else {
         std::collections::BTreeSet::new()
     };

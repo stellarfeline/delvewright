@@ -69,6 +69,46 @@ delvewright_dsl::dw_code! {
 }
 
 delvewright_dsl::dw_code! {
+    /// `DW1063`: **a bar a hand opens** (spec-0123 §3.1). A `barred` contract
+    /// edge's bar resolves to a door, trapdoor or fence gate an adventure-mode
+    /// body opens by hand ([`delvewright_dsl::blockshape::opens_by_hand`]), so
+    /// the player walks through the gate before the story opens it. A bar is
+    /// iron bars, an iron door, an iron trapdoor or a solid. Validation tier,
+    /// over the contract's declared block; the derivation's own bars are iron
+    /// and are counted, not judged.
+    pub const DW_BAR_BY_HAND: DwCode = DwCode::new("DW1063", ExitTier::Build);
+}
+
+/// The `DW1063` refusal for one barred edge of `piece` whose bar is `block`,
+/// or `None` when no hand opens it — the one judgement `delvec detail` asks of
+/// a program before expanding it and validation asks of every bound piece's
+/// contract.
+#[must_use]
+pub fn bar_a_hand_opens(
+    piece: &str,
+    a: &str,
+    b: &str,
+    block: &str,
+    stage: &str,
+    path: String,
+) -> Option<Diagnostic> {
+    delvewright_dsl::blockshape::opens_by_hand(block).then(|| {
+        Diagnostic::error(
+            DW_BAR_BY_HAND,
+            stage,
+            path,
+            format!(
+                "`{piece}` edge `{a}`→`{b}`: the bar is `{block}`, which a player opens by hand; \
+                 a bar is iron bars, an iron door, an iron trapdoor or a solid. A gate a hand \
+                 opens is passed before the story opens it, so the connection it shuts is not \
+                 shut. Bind the bar's role to one of those, or make the door a `walk` the room \
+                 keeps open.",
+            ),
+        )
+    })
+}
+
+delvewright_dsl::dw_code! {
     /// `DW0845`: an owed anchor has no standing.
     pub const DW_ANCHOR_STANDING: DwCode = DwCode::new("DW0845", ExitTier::Build);
 }
@@ -361,6 +401,35 @@ pub struct Neighbour {
     pub roof: Option<[u32; 2]>,
     /// The seams that join the two, by edge.
     pub seams: Vec<String>,
+    /// Whether the neighbour declares its side toward this place open
+    /// (spec-0123 §5.3): its front faces you, and there is no wall to dress.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub open_toward: bool,
+}
+
+/// One side the place declares open (spec-0123 §5.3), piece-local.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HandedSide {
+    /// The face.
+    pub face: String,
+    /// The ring run along the face at the walk plane, its two corner cells
+    /// excluded: the two end cells, inclusive. Nothing stands in them from the
+    /// walk plane to the top of the play space; the ground runs across them.
+    pub cells: [[i64; 3]; 2],
+    /// The walk plane there, piece-local.
+    pub walk_y: i64,
+    /// Every `contact` seam covering cells of this side: the crossing stated
+    /// from the connection.
+    pub contacts: Vec<HandedContact>,
+}
+
+/// A contact's cells on an open side.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HandedContact {
+    /// The connection.
+    pub edge: String,
+    /// The covered run at the walk plane, piece-local, inclusive.
+    pub cells: [[i64; 3]; 2],
 }
 
 /// A plan view that sees this place, and the command that frames it.
@@ -495,6 +564,10 @@ pub struct Allocation {
     pub roof: Option<HandedRoof>,
     /// Every seam of this box, piece-local.
     pub seams: Vec<AllocatedSeam>,
+    /// Every side the place declares open (spec-0123 §5.3), in the engine's
+    /// face order.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub sides: Vec<HandedSide>,
     /// The synthesized names this place owes, which `anchors` must bind.
     pub owed_anchors: Vec<String>,
     /// Every cell of the frame the place does not own, with who does. The
@@ -516,6 +589,80 @@ fn face_between(b: &PlacedBox, q: &PlacedBox) -> &'static str {
     } else {
         "down"
     }
+}
+
+/// The face of `q` that looks toward `b`, as [`face_between`] names `b`'s.
+fn face_toward(b: &PlacedBox, q: &PlacedBox) -> Option<delvewright_dsl::siteplan::Face> {
+    use delvewright_dsl::siteplan::Face;
+    match face_between(b, q) {
+        "east" => Some(Face::West),
+        "west" => Some(Face::East),
+        "south" => Some(Face::North),
+        "north" => Some(Face::South),
+        _ => None,
+    }
+}
+
+/// [`HandedSide`] for every open side of `b`: the run at its walk plane, and
+/// the contacts of `seams` covering it.
+pub(crate) fn handed_sides(
+    b: &PlacedBox,
+    seams: &[PlacedSeam],
+    local: impl Fn([i64; 3]) -> [i64; 3],
+) -> Vec<HandedSide> {
+    b.open_sides()
+        .into_iter()
+        .map(|side| {
+            let (lo, hi) = side.cells;
+            let (lo, hi) = ([lo[0], side.walk_y, lo[2]], [hi[0], side.walk_y, hi[2]]);
+            let contacts = covering_contacts(&side, seams)
+                .into_iter()
+                .map(|(edge, (clo, chi))| HandedContact {
+                    edge,
+                    cells: [local(clo), local(chi)],
+                })
+                .collect();
+            HandedSide {
+                face: side.face.as_str().to_string(),
+                cells: [local(lo), local(hi)],
+                walk_y: local(lo)[1],
+                contacts,
+            }
+        })
+        .collect()
+}
+
+/// An inclusive world box, low corner first.
+pub type Aabb3 = ([i64; 3], [i64; 3]);
+
+/// The contacts of `seams` covering cells of `side`, each with the covered
+/// run at the walk plane in world cells: the one answer the allocation and the
+/// clear-width check read of which open-side columns a contact holds.
+pub fn covering_contacts(
+    side: &delvewright_dsl::siteplan::OpenSide,
+    seams: &[PlacedSeam],
+) -> Vec<(String, Aabb3)> {
+    let (lo, hi) = side.cells;
+    let (n, a) = (side.normal_axis(), side.along_axis());
+    seams
+        .iter()
+        .filter(|s| s.crossing == delvewright_dsl::siteplan::Crossing::Contact)
+        .filter(|s| s.normal_axis == n && s.plane == lo[n])
+        .filter_map(|s| {
+            let (olo, ohi) = s.opening;
+            let from = olo[a].max(lo[a]);
+            let to = ohi[a].min(hi[a]);
+            (from <= to).then(|| {
+                let mut clo = lo;
+                let mut chi = lo;
+                clo[a] = from;
+                chi[a] = to;
+                clo[1] = side.walk_y;
+                chi[1] = side.walk_y;
+                (s.edge.0.clone(), (clo, chi))
+            })
+        })
+        .collect()
 }
 
 fn kind_of(b: &PlacedBox) -> String {
@@ -631,6 +778,7 @@ pub fn allocation(c: &Campaign, node: &NodeId) -> Option<Allocation> {
                     .filter(|s| (&s.a == node && s.b == q.node) || (&s.b == node && s.a == q.node))
                     .map(|s| s.edge.0.clone())
                     .collect(),
+                open_toward: face_toward(b, q).is_some_and(|f| q.side_open(f)),
             }
         })
         .collect();
@@ -797,6 +945,7 @@ pub fn allocation(c: &Campaign, node: &NodeId) -> Option<Allocation> {
                 }
             })
             .collect(),
+        sides: handed_sides(b, &plan.seams, local),
         owed_anchors: delvewright_dsl::owed_anchors(c, node).into_iter().collect(),
         voids: frame
             .voids
@@ -872,6 +1021,11 @@ pub struct DetailBinding {
     pub seams_required: usize,
     /// Faces of bound pieces examined — `DW0844`, the other direction.
     pub faces_examined: usize,
+    /// Barred contract edges of bound pieces whose bar was judged — `DW1063`.
+    pub bars: usize,
+    /// Of those, faces whose cells lie in a side the place declares open
+    /// (spec-0123 §5.4) — answered by the open side, counted.
+    pub open_side_faces: usize,
     /// Owed anchor names checked over every bound place — `DW0845`.
     pub owed: usize,
     /// Of those, names bound into a piece's `no_body` region and admitted
@@ -889,14 +1043,17 @@ impl DetailBinding {
         format!(
             "detail binding: {bd} of {b} place(s) bound over {r} `details[]` row(s), {m} \
              piece(s) measured against their frame, {sr} seam(s) required answering over {fe} \
-             declared face(s) examined, {o} owed anchor name(s) checked, {k} of them a killing \
-             volume's seat in out-of-walk floor.",
+             declared face(s) examined ({os} answering an open side), {br} contract bar(s) \
+             judged against the hand (DW1063), {o} owed anchor name(s) checked, {k} of them a \
+             killing volume's seat in out-of-walk floor.",
             bd = self.bound,
             b = self.boxes,
             r = self.rows,
             m = self.measured,
             sr = self.seams_required,
             fe = self.faces_examined,
+            os = self.open_side_faces,
+            br = self.bars,
             o = self.owed,
             k = self.killing_seats,
         )
@@ -930,6 +1087,10 @@ pub struct KillingSeats {
     /// Station name → every place a document spells it, as `doc:pointer`,
     /// beside the volumes it centres.
     uses: BTreeMap<String, (Vec<String>, Vec<String>)>,
+    /// Station name → the gates the triggers anchored at it answer for
+    /// (spec-0117: a gate's own answer is anchored at a cell of the gate's
+    /// bar, the block the press lands on).
+    gate_answers: BTreeMap<String, Vec<String>>,
 }
 
 impl KillingSeats {
@@ -980,6 +1141,15 @@ impl KillingSeats {
                 if is_station {
                     continue;
                 }
+                if *doc == "quests"
+                    && let Some(g) = gate_answer_pointer(c, &pointer)
+                {
+                    out.gate_answers
+                        .entry(text.to_string())
+                        .or_default()
+                        .push(g);
+                    continue;
+                }
                 match (*doc, volume_anchor_pointer(&pointer)) {
                     ("quests", Some(i)) => {
                         volumes.push(c.quests.content.lethal_volumes[i].id.as_str().to_string())
@@ -998,6 +1168,18 @@ impl KillingSeats {
     pub fn only_volumes(&self, name: &str) -> Option<&[String]> {
         match self.uses.get(name) {
             Some((others, volumes)) if others.is_empty() && !volumes.is_empty() => Some(volumes),
+            _ => None,
+        }
+    }
+
+    /// The gates `name` answers for, when answering for them is the name's
+    /// only use: every string spelling it is the `at` of a trigger that
+    /// `serves` a gate (spec-0117 §3a). `None` otherwise.
+    #[must_use]
+    pub fn only_gate_answers(&self, name: &str) -> Option<&[String]> {
+        let gates = self.gate_answers.get(name)?;
+        match self.uses.get(name) {
+            Some((others, volumes)) if others.is_empty() && volumes.is_empty() => Some(gates),
             _ => None,
         }
     }
@@ -1048,6 +1230,20 @@ fn station_pointer(p: &str) -> bool {
 }
 
 /// `/lethal_volumes/<i>/region/anchor` — a killing volume's centre, as `i`.
+/// The gate a quests-document pointer's trigger answers for, when the pointer
+/// is that trigger's `at` and it `serves` a gate.
+fn gate_answer_pointer(c: &Campaign, p: &str) -> Option<String> {
+    let parts: Vec<&str> = p.split('/').collect();
+    let ["", "triggers", i, "at"] = parts.as_slice() else {
+        return None;
+    };
+    let t = c.quests.content.triggers.get(i.parse::<usize>().ok()?)?;
+    match &t.serves {
+        Some(delvewright_dsl::Serves::Gate(g)) => Some(g.as_str().to_string()),
+        _ => None,
+    }
+}
+
 fn volume_anchor_pointer(p: &str) -> Option<usize> {
     let parts: Vec<&str> = p.split('/').collect();
     match parts.as_slice() {
@@ -1243,6 +1439,17 @@ fn check_owed(
                 binding.killing_seats += 1;
                 continue;
             }
+            // spec-0117: a gate's own answer stands in the gate's bar — the
+            // press lands on the bar's block, and no body is put there.
+            if let Some(region) = resolves.strip_prefix("bar:")
+                && seats.only_gate_answers(name).is_some_and(|gates| {
+                    gates
+                        .iter()
+                        .all(|g| g.strip_prefix("anchor/").unwrap_or(g) == region)
+                })
+            {
+                continue;
+            }
             let why = if resolves.starts_with("no_body:") && !seats.volumes(name).is_empty() {
                 let others = seats.others(name);
                 format!(
@@ -1274,7 +1481,8 @@ fn check_owed(
                      anchor standing in one of the piece's declared spaces.{why} A station \
                      whose only use is a `lethal_volumes[]` region anchor may stand in a \
                      `no_body` region: that is a pit's bottom, where `DW0891` sends a \
-                     volume.",
+                     volume; one whose only use is the `at` of a gate's own answer may \
+                     stand in that gate's bar.",
                     piece = row.piece,
                 ),
             ));
@@ -1533,6 +1741,23 @@ pub fn check(c: &Campaign, prefabs: &PrefabRegistry) -> (Vec<Diagnostic>, Detail
             })
             .collect();
         let mut answered: BTreeSet<usize> = BTreeSet::new();
+        // ---- DW1063: a bar is a block no hand opens ----
+        if let Some(contract) = contract {
+            for e in &contract.edges {
+                let Some(bar) = e.bar.as_ref() else { continue };
+                binding.bars += 1;
+                if let Some(diag) = bar_a_hand_opens(
+                    row.piece.as_str(),
+                    &e.a,
+                    &e.b,
+                    &bar.block,
+                    STAGE,
+                    format!("{path}/piece"),
+                ) {
+                    d.push(diag);
+                }
+            }
+        }
         let Some(contract) = contract.filter(|_| got64 == want) else {
             check_owed(c, &mut d, &mut binding, row, meta, &path, (&gates, &seats));
             continue;
@@ -1626,6 +1851,15 @@ pub fn check(c: &Campaign, prefabs: &PrefabRegistry) -> (Vec<Diagnostic>, Detail
                 continue; // a face naming no direction is the contract checker's finding.
             }
             let (flo, fhi) = face_world(&frame, f);
+            // A face whose cells are a handed open side's answers it
+            // (spec-0123 §5.4): the frontage the plan declared open.
+            if boxes[b].open_sides().iter().any(|side| {
+                let (slo, shi) = side.cells;
+                (0..3).all(|k| slo[k] <= flo[k] && fhi[k] <= shi[k])
+            }) {
+                binding.open_side_faces += 1;
+                continue;
+            }
             d.push(Diagnostic::error(
                 DW_FACES,
                 STAGE,
@@ -2098,6 +2332,45 @@ mod tests {
     use delvewright_dsl::EdgeId;
     use delvewright_dsl::siteplan::Face;
 
+    /// **spec-0123 criterion 18**: a bar a hand opens is `DW1063`, naming the
+    /// piece, the edge and the block; iron bars, an iron door, an iron
+    /// trapdoor and a solid are bars.
+    #[test]
+    fn a_bar_a_hand_opens_is_dw1063_and_iron_is_a_bar() {
+        for block in [
+            "minecraft:oak_door[facing=north,half=lower,hinge=left,open=false,powered=false]",
+            "minecraft:spruce_trapdoor[half=top,open=false]",
+            "minecraft:copper_door",
+            "minecraft:oak_fence_gate[open=false]",
+        ] {
+            let d = bar_a_hand_opens("prefab/p", "room", "exterior", block, STAGE, "/x".into())
+                .unwrap_or_else(|| panic!("{block} is opened by hand"));
+            assert_eq!(d.code, "DW1063", "{block}");
+            assert!(
+                d.message
+                    .contains("`prefab/p` edge `room`→`exterior`: the bar is"),
+                "{}",
+                d.message
+            );
+            assert!(d.message.contains(block), "{}", d.message);
+        }
+        for block in [
+            "minecraft:iron_bars[east=false,north=false,south=false,waterlogged=false,west=false]",
+            "minecraft:iron_door[facing=north,half=lower,hinge=left,open=false,powered=false]",
+            "minecraft:iron_trapdoor[half=top,open=false]",
+            "minecraft:stone_bricks",
+            delvewright_dsl::siteplan::SEAM_BAR,
+            delvewright_dsl::siteplan::SEAM_HATCH,
+            delvewright_dsl::siteplan::SEAM_COVER,
+        ] {
+            assert!(
+                bar_a_hand_opens("prefab/p", "room", "exterior", block, STAGE, "/x".into())
+                    .is_none(),
+                "{block} is a bar"
+            );
+        }
+    }
+
     fn a_box(node: &str, floor: i64) -> PlacedBox {
         PlacedBox {
             node: NodeId(node.into()),
@@ -2107,6 +2380,7 @@ mod tests {
             open: false,
             base: delvewright_dsl::siteplan::Base::Ground,
             roof: None,
+            sides: Default::default(),
         }
     }
 
@@ -2255,6 +2529,7 @@ mod tests {
             open: true,
             base: delvewright_dsl::siteplan::Base::Ground,
             roof: None,
+            sides: Default::default(),
         };
         let strip = place("node/narrows", [10, 13, 10, 29]);
         let west = place("node/flat", [0, 8, 10, 29]);

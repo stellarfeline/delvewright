@@ -8,8 +8,15 @@ import type { ReachStep, Transport, Vec3Tuple } from "../critical-path.ts";
 import { insideCompletion, reachGoal } from "../critical-path.ts";
 import { BotDeathError } from "../death.ts";
 import { lethalStepCost, sameBox, spanStepCost } from "../death-loop.ts";
-import { allowNonCollidingEntities, configureLeg, describeStuckNeighbours } from "../movement.ts";
 import {
+  allowNonCollidingEntities,
+  configureLeg,
+  describeStuckNeighbours,
+  isDoorByHand,
+  parkourFor,
+} from "../movement.ts";
+import {
+  doorsCrossed,
   nextLegWaypoints,
   LEG_START_REACH,
   MAX_HOP_BLOCKS,
@@ -17,6 +24,8 @@ import {
   subdivideStraightRuns,
   walkGoals,
   type Climb,
+  type Jump,
+  parkourGap,
   type GoalSpec,
   type TimedGate,
   type Waypoints,
@@ -592,11 +601,15 @@ export const methods = {
       // not consume and falls back to the single destination goal.
       let legWaypoints: readonly Vec3Tuple[] | undefined;
       let legClimbs: readonly Climb[] = [];
+      let legJumps: readonly Jump[] = [];
       // spec-0100 §4.7: the vibrations the proven leg is predicted to make,
       // heard from the walk's start — or from the first walk along part of the
       // leg before it (a run-back approach, a pulse station walk), which is
       // the same leg being walked.
       let legVibrations: readonly Vibration[] = [];
+      // spec-0123 §3.1: the closed doors a hand opens the proven route walks
+      // through — asserted crossed after the leg, never how they opened.
+      let legDoors: readonly Vec3Tuple[] = [];
       let heardFrom: LegStart | undefined;
       // spec-0016 §4: the timed gates that bind THIS walk. A gate is a world fact
       // the compiler exports for the whole campaign; a proven leg's `timed_gates`
@@ -624,7 +637,14 @@ export const methods = {
         );
         legWaypoints = match.waypoints;
         legClimbs = match.climbs;
+        legJumps = match.jumps;
         legVibrations = match.vibrations;
+        // A walk that starts off the leg, or resumes it part-way, does not walk
+        // the whole proven route, so its doors are not this walk's to assert.
+        legDoors =
+          match.matched && match.startsOnLeg && this.legResume?.leg !== this.legCursor
+            ? match.doors
+            : [];
         if (match.matched) {
           if (this.legHearingFrom?.leg === this.legCursor) heardFrom = this.legHearingFrom.start;
           this.legHearingFrom = undefined;
@@ -704,6 +724,7 @@ export const methods = {
           this.watch.watchers,
           (a, b) =>
             climbs.some((c) => same(c.from, a) && same(c.to, b)) ||
+            legJumps.some((j) => same(j.from, a) && same(j.to, b)) ||
             gatesCrossedByHop(a, b, declaredGates).length > 0,
         );
         if (stops.inserted > 0) {
@@ -762,7 +783,26 @@ export const methods = {
         }
         legWaypoints = kept;
       }
-      const goalsList = walkGoals(legWaypoints, [pos[0], pos[1], pos[2]], r, legClimbs);
+      const goalsList = walkGoals(legWaypoints, [pos[0], pos[1], pos[2]], r, legClimbs, legJumps);
+      // spec-0113 §6: a declared jump the pathfinder's parkour move cannot
+      // express is a harness gap, refused by name before the walk starts.
+      for (const j of legJumps) {
+        const gap = parkourGap(j);
+        if (gap !== undefined) {
+          throw new Error(
+            `${label}: the proven leg's jump [${j.from.join(", ")}]→[${j.to.join(", ")}] is a harness ` +
+              `gap — ${gap}; mineflayer-pathfinder 2.4.5's parkour move is the only leap the bot ` +
+              `makes on cue`,
+          );
+        }
+      }
+      const jumpHops = goalsList.filter((g) => g.jump !== undefined).length;
+      if (legJumps.length > 0 || jumpHops > 0) {
+        process.stderr.write(
+          `[jump] ${label}: ${legJumps.length} jump(s) on the proven leg, ${jumpHops} driven ` +
+            `as a parkour hop\n`,
+        );
+      }
       const climbHops = goalsList.filter((g) => g.climb !== undefined).length;
       if (legClimbs.length > 0 || climbHops > 0) {
         // Stated binding count: the climbs the proven leg takes, and how many of
@@ -774,6 +814,19 @@ export const methods = {
             `as a climb hop\n`,
         );
       }
+      const visited: Vec3Tuple[] = [];
+      // The column and the course the feet are in: a body on a path block or
+      // a slab stands a sixteenth or a half under its cell, so the course is
+      // the nearest whole one, not the floor of the position.
+      const onMove = (): void => {
+        const p = bot.entity.position;
+        const feet: Vec3Tuple = [Math.floor(p.x), Math.round(p.y), Math.floor(p.z)];
+        if (legDoors.some((d) => d[0] === feet[0] && d[1] === feet[1] && d[2] === feet[2])) {
+          visited.push(feet);
+        }
+      };
+      if (legDoors.length > 0) bot.on("move", onMove);
+      try {
       await replayLegWithRecovery(
         goalsList,
         label,
@@ -786,9 +839,23 @@ export const methods = {
         // watching body in reach must face the bot. The judgement records,
         // never throws, so the walk's recovery never reads it as a stall.
         async (spec, glabel) => {
-          await (spec.climb
-            ? this.raceDeath(() => this.climbHop(spec, glabel))
-            : this.gotoStaged(spec, glabel, sneak));
+          const door = legDoors.find(
+            (d) => d[0] === Math.floor(spec.x) && d[1] === Math.floor(spec.y) && d[2] === Math.floor(spec.z),
+          );
+          if (door !== undefined && !spec.climb) {
+            await this.openDoorBefore(door, spec, glabel, sneak);
+          }
+          // The parkour move is on for a proven jump's hop and off for every
+          // other (spec-0113 §6): the bot walks what the proof proved.
+          parkourFor(movements, spec.jump !== undefined);
+          bot.pathfinder.setMovements(movements);
+          try {
+            await (spec.climb
+              ? this.raceDeath(() => this.climbHop(spec, glabel))
+              : this.gotoStaged(spec, glabel, sneak));
+          } finally {
+            parkourFor(movements, false);
+          }
           await this.judgeWatchers(glabel);
         },
         (target) => this.unstickToward(target),
@@ -809,12 +876,155 @@ export const methods = {
           : undefined,
         completion ? () => this.stepSettled(completion) : undefined,
       );
+      } finally {
+        if (legDoors.length > 0) bot.removeListener("move", onMove);
+      }
+      if (legDoors.length > 0) {
+        const crossings = doorsCrossed(legDoors, visited);
+        const missed = crossings.filter((c) => !c.crossed);
+        process.stderr.write(
+          `[door] ${label}: ${legDoors.length} door(s) a hand opens on the proven leg, ` +
+            `${crossings.length - missed.length} crossed\n`,
+        );
+        if (missed.length > 0) {
+          throw new Error(
+            `${label}: the proven route walks through the door(s) at ` +
+              `${missed.map((m) => `[${m.door.join(", ")}]`).join(" ")} and the walk never stood in ` +
+              `${missed.length === 1 ? "it" : "them"} (spec-0123 §3.1)`,
+          );
+        }
+      }
       if (legVibrations.length > 0 && heardFrom !== undefined) {
         await this.hearVibrations(label, legVibrations, heardFrom);
       }
     } finally {
       this.walkSettled = outerSettled;
       restoreControls();
+    }
+  },
+
+  /**
+   * spec-0123 §3.1: open the door a hand opens at `cell` before the hop that
+   * walks through it, as a player does — walk within reach, right-click the
+   * door if it stands closed, and wait for the server to say it is open. A
+   * fence gate is the pathfinder's own to open, and a block that is no door a
+   * hand opens is left alone. Asserts nothing about the door; the crossing is
+   * asserted after the leg.
+   */
+  async openDoorBefore(
+    this: MineflayerExecutor,
+    cell: Vec3Tuple,
+    spec: GoalSpec,
+    label: string,
+    sneak: boolean,
+  ): Promise<void> {
+    const bot = this.requireBot();
+    const block = () => {
+      const p = bot.entity.position;
+      return bot.blockAt(p.offset(cell[0] - p.x, cell[1] - p.y, cell[2] - p.z), false);
+    };
+    const props = (b: { getProperties(): unknown }) => b.getProperties() as Record<string, unknown>;
+    const door = block();
+    if (!door || !isDoorByHand(door.name)) return;
+    // Within reach, on the side the route comes from.
+    await this.gotoStaged({ ...spec, range: 2 }, `${label} (to the door)`, sneak);
+    const shut = block();
+    if (!shut) return;
+    if (props(shut)["open"] !== true) {
+      // Right-click the face of the door the bot stands before, at its middle.
+      const facingNow = String(props(shut)["facing"] ?? "north");
+      const ax = facingNow === "east" || facingNow === "west" ? 0 : 2;
+      const pos = bot.entity.position;
+      const toward = (ax === 0 ? pos.x : pos.z) < cell[ax]! + 0.5 ? -1 : 1;
+      const face = shut.position.offset(0, 0, 0).minus(shut.position).offset(
+        ax === 0 ? toward : 0,
+        0,
+        ax === 2 ? toward : 0,
+      );
+      const cursor = face.offset(0, 0, 0).scaled(0.5).offset(0.5, 0.5, 0.5);
+      let opened = false;
+      for (let attempt = 0; attempt < 3 && !opened; attempt++) {
+        await bot.lookAt(shut.position.offset(cursor.x, cursor.y, cursor.z), true);
+        await bot.activateBlock(shut, face, cursor);
+        const deadline = Date.now() + 1500;
+        while (Date.now() < deadline) {
+          const now = block();
+          if (now && props(now)["open"] === true) {
+            opened = true;
+            break;
+          }
+          await delay(50);
+        }
+      }
+      const p = bot.entity.position;
+      if (!opened) {
+        throw new Error(
+          `${label}: the ${shut.name} at [${cell.join(", ")}] did not open to three right-clicks ` +
+            `from ${fmt(p)}; its state reads ${JSON.stringify(props(block() ?? shut))}`,
+        );
+      }
+      process.stderr.write(
+        `[door] ${label}: opened the ${shut.name} at [${cell.join(", ")}] from ${fmt(p)}\n`,
+      );
+    }
+    // Through it, on foot: mineflayer-pathfinder 2.4.5 has no door in its
+    // vocabulary and plans no step into a door's cell, so the walk takes the
+    // step itself — across the door's cell along the axis the door spans, from
+    // the side the bot stands on to the cell beyond — and the pathfinder goes
+    // on from there.
+    const facing = String(props(shut)["facing"] ?? "north");
+    const axis = facing === "east" || facing === "west" ? 0 : 2;
+    const across = axis === 0 ? 2 : 0;
+    const here = bot.entity.position;
+    const side = (axis === 0 ? here.x : here.z) < cell[axis]! + 0.5 ? 1 : -1;
+    // The line the body walks: across the door's cell at the middle of the
+    // part its open leaf leaves free, read from the leaf's own collision box —
+    // a body 0.6 wide clears a leaf 3/16 thick by a hair on the cell's
+    // centre line, and grazes it.
+    const open = block() ?? shut;
+    let lo = 0;
+    let hi = 1;
+    for (const box of (open as unknown as { shapes: number[][] }).shapes ?? []) {
+      const a = box[across]!;
+      const b = box[across + 3]!;
+      if (a <= 0.01) lo = Math.max(lo, b);
+      else if (b >= 0.99) hi = Math.min(hi, a);
+    }
+    const line = cell[across]! + (lo + hi) / 2;
+    const point = (along: number): [number, number] =>
+      axis === 0 ? [along, line] : [line, along];
+    const before = point(cell[axis]! - side + 0.5);
+    const beyondCell = cell[axis]! + side;
+    const after = point(beyondCell + 0.5);
+    const beyond: Vec3Tuple =
+      axis === 0 ? [beyondCell, cell[1], cell[2]] : [cell[0], cell[1], beyondCell];
+    const deadline = Date.now() + 6000;
+    try {
+      for (const [tx, tz] of [before, after]) {
+        bot.clearControlStates();
+        let last = bot.entity.position.clone();
+        let still = 0;
+        for (;;) {
+          const p = bot.entity.position;
+          if (Math.hypot(p.x - tx, p.z - tz) <= 0.2) break;
+          // A lip under the threshold (a path block's sixteenth) can hold a
+          // walking body at the door's edge; a body held still hops it.
+          still = p.distanceTo(last) < 0.02 ? still + 1 : 0;
+          last = p.clone();
+          bot.setControlState("jump", still >= 4);
+          if (Date.now() > deadline) {
+            throw new Error(
+              `${label}: did not walk through the door at [${cell.join(", ")}] to ` +
+                `[${beyond.join(", ")}]; the bot is at ${fmt(p)}`,
+            );
+          }
+          await bot.lookAt(p.offset(tx - p.x, 1.6, tz - p.z), true);
+          bot.setControlState("forward", true);
+          await delay(50);
+        }
+      }
+    } finally {
+      bot.clearControlStates();
     }
   },
 

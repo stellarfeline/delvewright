@@ -923,6 +923,39 @@ fn a_gate_report_beside_a_piece_is_skipped_by_name_and_a_malformed_metadata_file
 
 /// The gallery's site-plan overlay point, materialised as
 /// `tools/ci/gallery_domain.py` does it.
+/// Every detail of the site-plan point dropped but the near hall's: the hall's
+/// east door is a shortcut whose own answer is anchored at a cell of its bar,
+/// a mark only the hall's program writes (spec-0117), so the hall stays
+/// detailed while the test re-cuts the rest.
+/// The places whose pieces carry a sealed gate's own answer: the near hall
+/// (the east door and three told ways), the annex (its chute) and the far hall
+/// (the loft stair). A gate's own answer stands on a mark only the place's
+/// program writes, so a test that leaves the rest as stand-ins keeps these.
+const ANSWERING_PLACES: [&str; 3] = ["near-hall", "annex", "far-hall"];
+
+fn only_the_answering_places(v: &mut Value) {
+    v["content"]["details"].as_array_mut().unwrap().retain(|d| {
+        ANSWERING_PLACES
+            .iter()
+            .any(|p| d["place"] == format!("node/{p}"))
+    });
+    assert_eq!(
+        v["content"]["details"].as_array().unwrap().len(),
+        ANSWERING_PLACES.len()
+    );
+}
+
+/// Those places' programs, written back after a test empties `programs/`.
+fn keep_the_answering_programs(programs: &Path) {
+    for p in ANSWERING_PLACES {
+        std::fs::copy(
+            common::repo_root().join(format!("gallery/overlays/site-plan/programs/{p}.json")),
+            programs.join(format!("{p}.json")),
+        )
+        .unwrap();
+    }
+}
+
 fn gallery_site_plan(root: &Path) -> PathBuf {
     let dir = root.join("site-plan");
     common::gallery_site_plan_at(&dir);
@@ -999,7 +1032,10 @@ fn the_handout_is_complete_and_hands_each_seams_form_to_both_sides() {
     assert!(!annex["seams"].as_array().unwrap().is_empty());
     assert_eq!(
         annex["brief"]["stations"],
-        json!(["anchor/annex-bench (point)"])
+        json!([
+            "anchor/annex-bench (point)",
+            "anchor/annex-chute-leaf (point)"
+        ])
     );
     assert!(!annex["brief"]["intent"].as_str().unwrap().is_empty());
     assert!(!annex["palette"].as_object().unwrap().is_empty());
@@ -1163,11 +1199,12 @@ fn a_climb_inside_a_hung_place_proves_and_hung_scenery_states_its_zero() {
         }
     });
     common::patch_file(&dir.join("detail-plan.json"), |v| {
-        v["content"]["details"] = json!([]);
+        only_the_answering_places(v);
     });
     let programs = dir.join("programs");
     std::fs::remove_dir_all(&programs).unwrap();
     std::fs::create_dir_all(&programs).unwrap();
+    keep_the_answering_programs(&programs);
     for (name, hollow) in [("causeway", None), ("beacon", Some(1))] {
         std::fs::write(
             programs.join(format!("{name}.json")),
@@ -1186,7 +1223,9 @@ fn a_climb_inside_a_hung_place_proves_and_hung_scenery_states_its_zero() {
     ]);
     let t = text(&out);
     assert_eq!(code(&out), 0, "{t}");
-    assert!(t.contains("detail: 2 place(s) detailed of 2 named"), "{t}");
+    // The causeway and the beacon, and the three places kept for their gates'
+    // own answers.
+    assert!(t.contains("detail: 5 place(s) detailed of 5 named"), "{t}");
     assert!(
         t.contains("detail: the whole builds with the piece(s) this run wrote."),
         "{t}"
@@ -1329,11 +1368,12 @@ fn a_leafy_scenery_crown_owes_no_floor_and_no_light_and_a_reached_one_is_judged(
     let tmp = tempdir("leafy-crown");
     let dir = gallery_site_plan(&tmp);
     common::patch_file(&dir.join("detail-plan.json"), |v| {
-        v["content"]["details"] = json!([]);
+        only_the_answering_places(v);
     });
     let programs = dir.join("programs");
     std::fs::remove_dir_all(&programs).unwrap();
     std::fs::create_dir_all(&programs).unwrap();
+    keep_the_answering_programs(&programs);
     std::fs::write(
         programs.join("beacon.json"),
         serde_json::to_string_pretty(&leafy_beacon()).unwrap(),
@@ -1423,7 +1463,7 @@ fn an_unlit_leafy_scenery_room_is_never_surveyed_for_light() {
     let tmp = tempdir("unlit-scenery");
     let dir = gallery_site_plan(&tmp);
     common::patch_file(&dir.join("detail-plan.json"), |v| {
-        v["content"]["details"] = json!([]);
+        only_the_answering_places(v);
     });
     common::patch_file(&dir.join("programs/beacon.json"), |v| {
         v["palette"]["lamp"] =
@@ -1438,6 +1478,15 @@ fn an_unlit_leafy_scenery_room_is_never_surveyed_for_light() {
         delvewright_dsl::synthesized_anchors(&c).contains("anchor/node-annex"),
         "a reached place keeps its own"
     );
+    // The beacon, with the places whose pieces carry the sealed gates' own
+    // answers: one run details them all, because each whole it builds needs
+    // every answer's piece.
+    let programs = dir.join("programs");
+    let beacon = std::fs::read(programs.join("beacon.json")).unwrap();
+    std::fs::remove_dir_all(&programs).unwrap();
+    std::fs::create_dir_all(&programs).unwrap();
+    keep_the_answering_programs(&programs);
+    std::fs::write(programs.join("beacon.json"), beacon).unwrap();
     let prefabs = tmp.join("prefabs");
     std::fs::create_dir_all(&prefabs).unwrap();
     let out = delvec(&[
@@ -1445,7 +1494,7 @@ fn an_unlit_leafy_scenery_room_is_never_surveyed_for_light() {
         prefabs.to_str().unwrap(),
         "detail",
         dir.to_str().unwrap(),
-        "node/beacon",
+        "--all",
     ]);
     let t = text(&out);
     assert_eq!(code(&out), 0, "{t}");
@@ -1485,11 +1534,12 @@ fn the_audit_judges_a_scenery_piece_as_its_writer_did_and_no_piece_vouches_for_i
     std::fs::create_dir_all(&campaigns).unwrap();
     let dir = gallery_site_plan(&campaigns);
     common::patch_file(&dir.join("detail-plan.json"), |v| {
-        v["content"]["details"] = json!([]);
+        only_the_answering_places(v);
     });
     let programs = dir.join("programs");
     std::fs::remove_dir_all(&programs).unwrap();
     std::fs::create_dir_all(&programs).unwrap();
+    keep_the_answering_programs(&programs);
     std::fs::write(
         programs.join("beacon.json"),
         serde_json::to_string_pretty(&leafy_beacon()).unwrap(),
@@ -1678,4 +1728,197 @@ fn after_a_frame_change_one_detail_all_passes_and_a_stale_sibling_it_leaves_is_r
         "{t}"
     );
     assert!(t.contains("The piece is 9x6x6; the frame is 9x6x10"), "{t}");
+}
+
+// ---------------------------------------------------------------------------
+// spec-0123 §5.3–§5.4: an open side handed, and answered two ways
+// ---------------------------------------------------------------------------
+
+/// The blockout fixture with `node/exit`'s south side declared open (or not),
+/// and the exit's allocation.
+fn open_side_fixture(root: &Path, open: bool) -> (PathBuf, PathBuf, Allocation) {
+    let (campaign, prefabs) = fixture(root, &[]);
+    common::patch_file(&campaign.join("site-plan.json"), |v| {
+        // The fixture's commons is flat ground to the region's edge; an open
+        // side onto it lets a body walk there, so the region is closed by a
+        // field wall two courses high along its four edges.
+        let vols = v["content"]["volumes"].as_array_mut().unwrap();
+        for (id, min, extent) in [
+            ("west", [0, 64, 0], [1, 2, 64]),
+            ("east", [63, 64, 0], [1, 2, 64]),
+            ("north", [1, 64, 0], [62, 2, 1]),
+            ("south", [1, 64, 63], [62, 2, 1]),
+        ] {
+            vols.push(json!({
+                "id": format!("volume/field-wall-{id}"),
+                "block": "minecraft:stone_bricks",
+                "role": "massif",
+                "region": {"min": min, "extent": extent},
+            }));
+        }
+        if open {
+            let boxes = v["content"]["boxes"].as_array_mut().unwrap();
+            let exit = boxes.iter_mut().find(|b| b["node"] == "node/exit").unwrap();
+            exit["sides"] = json!({"south": "open"});
+        }
+    });
+    // The exit's reach objective takes radius 1: with the commons now walked,
+    // its default cube would reach floor outside the exit's walls (`DW0881`).
+    common::patch_file(&campaign.join("quests.json"), |v| {
+        v["content"]["quests"][0]["objectives"][2]["radius"] = json!(1);
+    });
+    let c = common::campaign_at(&campaign);
+    let a = detail::allocation(&c, &NodeId("node/exit".into())).unwrap();
+    (campaign, prefabs, a)
+}
+
+/// The exit's program answering its south side with an `exterior` `walk`
+/// edge whose `via` is the side's ring cells — a frontage a body crosses.
+fn frontage_program(a: &Allocation) -> Value {
+    let mut p = program_for(a, None, true);
+    p["rules"]["ring_south"] =
+        rule(json!({"op": "claim", "region": "frontage", "body": {"op": "void"}}));
+    p["contract"]["edges"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"a": "exterior", "b": "room", "class": "walk", "via": "frontage"}));
+    p
+}
+
+/// The exit's program answering its south side with a counter at the play
+/// space's south edge, inside, one block high under the room's air, and the
+/// ring before it left as open ground — a counter front a body does not cross.
+fn counter_program(a: &Allocation) -> Value {
+    let mut p = program_for(a, None, true);
+    let [slo, shi] = a.space;
+    let (rn, rs) = (slo[2], a.extent[2] - 1 - shi[2]);
+    p["rules"]["mid"] = rule(split(
+        "z",
+        vec![abs(int(rn)), rel(), abs(int(1)), abs(int(rs))],
+        vec![
+            call("ring_north"),
+            call("room"),
+            call("counter"),
+            call("ring_south"),
+        ],
+    ));
+    p["rules"]["counter"] = rule(split(
+        "y",
+        vec![abs(int(1)), rel()],
+        vec![
+            fill("wall"),
+            json!({"op": "claim", "region": "room", "body": {"op": "void"}}),
+        ],
+    ));
+    p["rules"]["ring_south"] = rule(json!({"op": "void"}));
+    p
+}
+
+/// **spec-0123 criterion 10**: the allocation hands the open side — its face,
+/// its ring run at the walk plane with the corners excluded (as long as the
+/// box's extent along the face), the walk plane — and no side where none is
+/// declared.
+#[test]
+fn the_allocation_hands_an_open_side_against_the_boxs_extent() {
+    let tmp = tempdir("open-side-handed");
+    let (_, _, a) = open_side_fixture(&tmp.join("open"), true);
+    assert_eq!(a.sides.len(), 1, "{:?}", a.sides);
+    let s = &a.sides[0];
+    assert_eq!(s.face, "south");
+    let [lo, hi] = s.cells;
+    let [slo, shi] = a.space;
+    assert_eq!(
+        (lo[0], hi[0]),
+        (slo[0], shi[0]),
+        "the run is the play space's x span"
+    );
+    assert_eq!(
+        lo[2],
+        shi[2] + 1,
+        "the run is the ring row south of the play space"
+    );
+    assert_eq!(lo[2], hi[2]);
+    assert_eq!((lo[1], hi[1], s.walk_y), (a.datum_y, a.datum_y, a.datum_y));
+    assert!(s.contacts.is_empty());
+    let (_, _, none) = open_side_fixture(&tmp.join("walled"), false);
+    assert!(none.sides.is_empty());
+}
+
+/// **spec-0123 criterion 13**: `contract-closure`, `contract-coverage` and
+/// `DW0844` admit a face opening whose cells are a handed open side's — a
+/// frontage answered with an `exterior` `walk` edge, and a counter front whose
+/// ring is open ground — and refuse both where the side is not declared open:
+/// the frontage's face is then a seam nobody allocated (`DW0844`) and the
+/// counter's room is not closed (`contract-closure`).
+#[test]
+fn an_open_side_is_answered_by_a_frontage_or_a_counter_and_nowhere_else() {
+    let tmp = tempdir("open-side-answered");
+    for (name, make) in [
+        ("frontage", frontage_program as fn(&Allocation) -> Value),
+        ("counter", counter_program),
+    ] {
+        let (campaign, prefabs, a) = open_side_fixture(&tmp.join(format!("{name}-open")), true);
+        write_program(&campaign, "node/exit", &make(&a));
+        let out = delvec(&[
+            "--prefabs",
+            prefabs.to_str().unwrap(),
+            "detail",
+            campaign.to_str().unwrap(),
+            "node/exit",
+        ]);
+        assert_eq!(code(&out), 0, "{name}: {}", text(&out));
+        if name == "frontage" {
+            assert!(
+                text(&out).contains("(1 answering an open side)"),
+                "{name}: {}",
+                text(&out)
+            );
+        }
+
+        let (campaign, prefabs, walled) =
+            open_side_fixture(&tmp.join(format!("{name}-walled")), false);
+        write_program(&campaign, "node/exit", &make(&walled));
+        let out = delvec(&[
+            "--prefabs",
+            prefabs.to_str().unwrap(),
+            "detail",
+            campaign.to_str().unwrap(),
+            "node/exit",
+        ]);
+        assert_ne!(code(&out), 0, "{name} on a walled side: {}", text(&out));
+        let t = text(&out);
+        if name == "frontage" {
+            assert!(t.contains("DW0844"), "{t}");
+        } else {
+            assert!(t.contains("contract-closure FAIL"), "{t}");
+        }
+    }
+}
+
+/// **spec-0123 criterion 10, on the gallery**: the site-plan point's yard
+/// hands its three open sides and the causeway its two, each run as long as
+/// the box's extent along its face (corners excluded), at the walk plane.
+#[test]
+fn the_gallery_hands_the_yards_and_the_causeways_open_sides() {
+    let tmp = tempdir("gallery-sides");
+    let dir = gallery_site_plan(&tmp);
+    let c = common::campaign_at(&dir);
+    for (node, faces, along) in [
+        ("node/exit", vec!["east", "west", "south"], [8i64, 8, 8]),
+        ("node/causeway", vec!["east", "west"], [24, 24, 0]),
+    ] {
+        let a = detail::allocation(&c, &NodeId(node.into())).unwrap();
+        let got: Vec<&str> = a.sides.iter().map(|s| s.face.as_str()).collect();
+        assert_eq!(got, faces, "{node}");
+        for (s, want) in a.sides.iter().zip(along) {
+            let [lo, hi] = s.cells;
+            let run = if s.face == "east" || s.face == "west" {
+                hi[2] - lo[2] + 1
+            } else {
+                hi[0] - lo[0] + 1
+            };
+            assert_eq!(run, want, "{node} {}", s.face);
+            assert_eq!((lo[1], hi[1], s.walk_y), (a.datum_y, a.datum_y, a.datum_y));
+        }
+    }
 }

@@ -757,7 +757,7 @@ mod tests {
             }
         }
         let world = ocean(solid, BTreeSet::new(), vec![([0, 60, 0], [7, 66, 7])]);
-        let reachable = world.reachable_walkable_rooted(&roots([3, 62, 3]));
+        let reachable = world.body_region_rooted(&roots([3, 62, 3]));
         let m = measure_sea_seepage(&world, &reachable);
         assert_eq!(m.horizon, "ocean");
         assert!(
@@ -802,7 +802,7 @@ mod tests {
             }
         }
         let world = ocean(solid, BTreeSet::new(), vec![([0, 60, 0], [19, 66, 3])]);
-        let reachable = world.reachable_walkable_rooted(&roots([15, 62, 2]));
+        let reachable = world.body_region_rooted(&roots([15, 62, 2]));
         let m = measure_sea_seepage(&world, &reachable);
         assert!(m.contact_cells > 0, "the open end is contact face: {m:?}");
         assert!(m.wet_cells > 0, "the sea runs down the plate: {m:?}");
@@ -828,7 +828,7 @@ mod tests {
         let opening: Vec<[i32; 3]> = (61..=62).map(|y| [0, y, 3]).collect();
         let (solid, covered) = sunken_room(&opening);
         let world = ocean(solid, BTreeSet::new(), covered);
-        let reachable = world.reachable_walkable_rooted(&roots([3, 61, 3]));
+        let reachable = world.body_region_rooted(&roots([3, 61, 3]));
         let m = measure_sea_seepage(&world, &reachable);
         assert!(m.contact_cells > 0, "the opening is contact face: {m:?}");
         assert!(
@@ -884,7 +884,7 @@ mod tests {
         let mut solid = solid;
         solid.insert(bars); // the host block occupies its cell, as iron bars do
         let world = ocean(solid, BTreeSet::new(), covered).with_waterloggable([bars].into());
-        let reachable = world.reachable_walkable_rooted(&roots([3, 61, 3]));
+        let reachable = world.body_region_rooted(&roots([3, 61, 3]));
         let m = measure_sea_seepage(&world, &reachable);
         assert_eq!(
             m.contact_cells, 0,
@@ -914,7 +914,7 @@ mod tests {
     fn sea_seepage_passes_a_watertight_hull_with_a_stated_zero() {
         let (solid, covered) = sunken_room(&[]);
         let world = ocean(solid, BTreeSet::new(), covered);
-        let reachable = world.reachable_walkable_rooted(&roots([3, 61, 3]));
+        let reachable = world.body_region_rooted(&roots([3, 61, 3]));
         let m = measure_sea_seepage(&world, &reachable);
         assert_eq!(m.contact_cells, 0, "no face is open to the sea: {m:?}");
         assert_eq!(m.sea_waterlogged, 0, "nothing in it can hold water: {m:?}");
@@ -942,7 +942,7 @@ mod tests {
     fn sea_seepage_water_entering_below_the_surface_does_not_rise() {
         let (solid, covered) = sunken_room(&[[0, 61, 3]]);
         let world = ocean(solid, BTreeSet::new(), covered);
-        let reachable = world.reachable_walkable_rooted(&roots([3, 61, 3]));
+        let reachable = world.body_region_rooted(&roots([3, 61, 3]));
         let m = measure_sea_seepage(&world, &reachable);
         assert!(m.contact_cells > 0, "the hole is contact face: {m:?}");
         assert!(m.wet_cells > 0, "water came in: {m:?}");
@@ -964,7 +964,7 @@ mod tests {
     fn sea_seepage_under_void_reports_zeroes_and_says_which_horizon() {
         let (solid, covered) = sunken_room(&[[0, 61, 3]]);
         let world = World::from_solid_cells(solid).with_ambient(Ambient::Void, built(covered));
-        let reachable = world.reachable_walkable_rooted(&roots([3, 61, 3]));
+        let reachable = world.body_region_rooted(&roots([3, 61, 3]));
         let m = measure_sea_seepage(&world, &reachable);
         assert_eq!(m.horizon, "void");
         assert_eq!(m.contact_cells, 0);

@@ -1,0 +1,16 @@
+{
+  "code": "DW0100",
+  "patch": [
+    {
+      "doc": "site-plan.json",
+      "op": "replace",
+      "path": "/content/boxes/5/sides",
+      "value": {
+        "up": "open"
+      }
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "`\"sides\": {\"up\": \"open\"}` on the yard. A side is one of the four horizontal faces; what closes a place overhead is its `ceiling` and what it stands on is its `floor`, so `up` is no key `sides` has and the schema refuses it. It declares no unit: `sides` and its keys are bound on the site-plan point, and what must not parse is a fifth side."
+}

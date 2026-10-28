@@ -155,7 +155,30 @@ def rules() -> dict:
                 )
             )
         ],
-        "inner": [rule(eaves_frame("z", [VOID, fill("wall"), call("rooms"), fill("wall"), VOID]))],
+        "inner": [rule(eaves_frame("z", [VOID, fill("wall"), call("rooms"), call("street"), VOID]))],
+        # The street face (spec-0123 §3.5, the census element): a counter
+        # window and a door, both under one head course. The window is one
+        # course high over a one-course sill, its iron shutter folded down
+        # as the counter — an iron trapdoor laid closed on the sill, which a
+        # body leans on and never climbs through and no hand lifts; the door is
+        # iron too and stays shut: the shop is shut, and the face opens no way
+        # the plan did not allocate. A course of wall stands over both and
+        # frames each with jambs.
+        "street": [
+            rule(
+                split(
+                    "x",
+                    [blocks(num(4)), blocks(num(3)), one, one, rel()],
+                    [fill("wall"), call("counter_bay"), fill("wall"), call("door_bay"), fill("wall")],
+                )
+            )
+        ],
+        "counter_bay": [
+            rule(split("y", [one, one, rel()], [fill("wall"), fill("counter"), fill("wall")]))
+        ],
+        "door_bay": [
+            rule(split("y", [one, one, rel()], [fill("street-door"), fill("street-door-top"), fill("wall")]))
+        ],
         "rooms": [rule(split("x", [rel(), one], [call("room_main"), call("east_col")]))],
         # Contract: *it answers each seam with an opening at the handed cells
         # … and a contract edge to `exterior` whose `via` is that opening* —
@@ -193,7 +216,9 @@ def rules() -> dict:
         # Contract: *a gated seam whose bar this place owns* gets *a `barred`
         # contract edge whose `bar` is over exactly those cells, filled with a
         # palette role of that block, its region named by the same stem* — the
-        # chute is the `seam-annex-chute` region, filled with the `bar` role.
+        # chute is the `seam-annex-chute` region, filled with the `bar` role,
+        # and its leaf is marked `anchor/annex-chute-leaf`, where the gate's
+        # own answer is pressed (spec-0117).
         "party": [
             rule(
                 split(
@@ -212,7 +237,15 @@ def rules() -> dict:
                         blocks(span(CHUTE, "y")),
                         rel(),
                     ],
-                    [fill("wall"), claim(f"seam-{CHUTE}", fill("bar")), fill("wall")],
+                    [
+                        fill("wall"),
+                        {
+                            "body": claim(f"seam-{CHUTE}", fill("bar")),
+                            "mark": {"anchor": "annex-chute-leaf", "at": "floor_center"},
+                            "op": "mark",
+                        },
+                        fill("wall"),
+                    ],
                 )
             )
         ],
@@ -308,6 +341,9 @@ PALETTE = {
     "floor": "minecraft:stone_bricks",
     "furniture": "minecraft:chiseled_stone_bricks",
     "lamp": "minecraft:sea_lantern",
+    "counter": "minecraft:iron_trapdoor[facing=south,half=bottom,open=false,powered=false,waterlogged=false]",
+    "street-door": "minecraft:iron_door[facing=south,half=lower,hinge=left,open=false,powered=false]",
+    "street-door-top": "minecraft:iron_door[facing=south,half=upper,hinge=left,open=false,powered=false]",
     "roof_e": {"local": "minecraft:dark_oak_stairs[facing=east,half=bottom,shape=straight,waterlogged=false]"},
     "roof_w": {"local": "minecraft:dark_oak_stairs[facing=west,half=bottom,shape=straight,waterlogged=false]"},
     "wall": "minecraft:stone_bricks",

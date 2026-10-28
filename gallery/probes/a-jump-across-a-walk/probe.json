@@ -1,0 +1,13 @@
+{
+  "code": "DW1041",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "replace",
+      "path": "/content/jumps/0/to",
+      "value": "anchor/loft"
+    }
+  ],
+  "units": [],
+  "why": "One edit: `jump/the-broken-plank` lands at `anchor/loft`, on the near side — the broken plank and the mezzanine's top it steps down from, which the walk already joins. A declared jump the walk relation already makes confirms nothing, so it is refused as `DW1041`, `not a jump` in the binding line: the author's intent misread, never a pass. It declares no unit."
+}

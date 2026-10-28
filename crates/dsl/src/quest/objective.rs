@@ -379,16 +379,6 @@ pub enum Objective {
         /// anywhere, whatever the player was actually doing with their hands.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         requires_item: Option<String>,
-        /// Diegetic feedback for a click that arrives without the required item in
-        /// hand (DSL v0.7): narrated to that player in
-        /// chat instead of the silence the gate used to answer with. Requires
-        /// `requires_item` (`DW0437`).
-        ///
-        /// Only fires while the objective is genuinely open — same activation gate
-        /// as the affordance itself — so a finished or not-yet-active interaction
-        /// stays quiet.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        missing_item_hint: Option<String>,
         /// **The presented item leaves the hand** (spec-0114 §6.3): one of
         /// [`Objective::Interact::requires_item`] is taken from the player who
         /// presented it, at the moment the objective completes. Default `false`,
@@ -400,12 +390,28 @@ pub enum Objective {
         /// `on_objective_complete`), never a second mechanism here.
         #[serde(default, skip_serializing_if = "is_false")]
         takes_item: bool,
-        /// Prop block that IS the interaction affordance (DSL v0.4, spec-0008
-        /// §2): the compiler `setblock`s it at the anchor on activation (exactly
-        /// as `collect` uses a real chest). Omitted = the objective stands on a
-        /// block the piece authored at the anchor (`DW0963` refuses air).
+        /// **The real block the player presses** (spec-0117 §3a): placed at the
+        /// anchor from `setup_finish` to the end of the delve. A bell or a button
+        /// is pressed on its own; any other block with an outline — a door, a
+        /// lever, a chest, a campfire — is pressed through a click box fitted to
+        /// it, so it does not act before its step. Required (`DW1059`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(required)]
         prop: Option<Prop>,
+        /// **What the press answers outside its window** (spec-0117 §4):
+        /// `not_yet` before the objective is pending, `done` after it completes
+        /// (unless `release`), and with `requires_item` `missing_item` for a
+        /// press inside the window without the item in hand. Each owed line is
+        /// `DW1051`, each inert one `DW1052`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        answers: Option<crate::Answers>,
+        /// **The block is vanilla's once the objective completes** (spec-0117
+        /// §3a): a boxed block that acts on its own — a door the party unbarred
+        /// — is not boxed again and answers nothing thereafter. Default
+        /// `false`; inert on a bell or a button (`DW1052`), silent on a block the
+        /// game reports no press of (`DW1051`).
+        #[serde(default, skip_serializing_if = "is_false")]
+        release: bool,
         /// Prerequisite objectives.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         after: Vec<ObjectiveId>,
@@ -821,6 +827,20 @@ impl Objective {
             Objective::Interact { prop, .. } => prop.as_ref(),
             _ => None,
         }
+    }
+
+    /// The `interact`'s declared answers (spec-0117 §4), if any.
+    pub fn answers(&self) -> Option<&crate::Answers> {
+        match self {
+            Objective::Interact { answers, .. } => answers.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// Whether the `interact` releases its block to vanilla at completion
+    /// (spec-0117 §3a); `false` for every other objective.
+    pub fn release(&self) -> bool {
+        matches!(self, Objective::Interact { release: true, .. })
     }
 
     /// The kebab type tag.

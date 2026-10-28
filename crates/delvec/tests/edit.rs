@@ -1378,9 +1378,10 @@ fn edit_inside_a_close_gate_region_warns_dw0353() {
         &dir,
         quests_with(serde_json::json!({
             "on_complete": [
-                { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." },
+                { "type": "close-gate", "anchor": "anchor/door" },
                 { "type": "campaign-complete" }
-            ]
+            ],
+            "triggers": [ common::door_answer_value("Sealed.") ]
         })),
     );
     set_batches(

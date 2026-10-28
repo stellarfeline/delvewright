@@ -8,7 +8,7 @@
 //! (`tests/module_list.rs`) is what keeps it whole.
 //!
 //! - [`acts`]: the acts on every walked path — what the party must do, where, and from where it stands (spec-0104), read by `DW0863`.
-//! - [`affordance`]: affordance hardware — the visible half of every right-click target the compiler owns (`DW0420`/`DW0421`).
+//! - [`affordance`]: the engine-fixture class tags and the region-selector exclusion (`DW0545`).
 //! - [`analyze`]: deep quest/objective reachability (`DW02xx`, exit 2).
 //! - [`approach`]: a body the party talks to faces their approach, or watches it (`DW1025`).
 //! - [`assembled`]: the shared assembled-world block model every geometric proof reads.
@@ -16,6 +16,7 @@
 //! - [`atmos`]: sound-event validation (`DW0326`), the refused `play-sound at: actor` (`DW0335`), and the `delve:art` banner font (`DW0328`).
 //! - [`atmosphere`]: a campaign's declared skies (spec-0080) — the attribute, paint and declaration refusals (`DW0928`–`DW0930`), the biome each atmosphere ships as, and the one writer of `fillbiome`.
 //! - [`attached`]: every block the build writes is one the server keeps, by the jar's measured `canSurvive` (`DW1002`).
+//! - [`ballistics`]: the one-time ballistic instrument that measured the reach graph's simulator against the pinned jar (spec-0113 §8.2); no build emits it and no CI job runs it.
 //! - [`batchstate`]: a generated PackTest that drives an outcome owns every `#party` term the gates on it read (`DW0807`).
 //! - [`blind`]: a blinding beside a drop — the reach a `give-effect` of blindness or darkness owes the world it lands in (`DW0943`).
 //! - [`blocking`]: `delvec blocking-chart` — per-elevation cutaway floor plans.
@@ -59,6 +60,7 @@
 //! - [`gatesignal`]: no redstone signal opens a shut gate — a source powering a shut seam's trapdoor is refused (`DW1047`).
 //! - [`guarantee`]: which anchors an area's binding guarantees, answered before anything is placed (`DW0889`).
 //! - [`gym`]: the metrics gym — a site-plan campaign generated from the metrics table.
+//! - [`handback`]: a generated PackTest template that writes a pressable's cell lays its block back when it ends.
 //! - [`healthbar`]: a fight's health bar — its emission, and the colour/style vocabulary read from the pinned command tree (`DW0911`).
 //! - [`hold`]: how long a cutscene holds the party, per critical-path step — what a step's completion schedules and what its walk passes.
 //! - [`holders`]: the holder census — every container and holder entity is loot, a collect, a device, scenery or exempt (`DW1018`, `DW1024`) — and the holder entities a piece carries, owned, summoned and proven takeable (`DW1037`, `DW1038`).
@@ -88,6 +90,7 @@
 //! - [`pulse`]: a sound that beats over a place — its derived range and listening stations (`DW0994`, `DW0995`).
 //! - [`raster`]: the shared RGBA canvas and bitmap-text primitives the blocking chart, the contact sheet and a labelled frame draw on.
 //! - [`reach`]: what completes a `reach` — the one authority for the volume a body has to be in.
+//! - [`region_fill`]: what one region write of a block leaves in each cell — a two-high block's halves by course.
 //! - [`registry`]: the full pinned-MC item registry and the prefab/anchor metadata.
 //! - [`rehearsal`]: the compile-time inventory of every rehearsable cutscene beat and every shot inside it.
 //! - [`render_plan`]: `render-plan.json` emission.
@@ -129,6 +132,7 @@ pub mod assembly;
 pub mod atmos;
 pub mod atmosphere;
 pub mod attached;
+pub mod ballistics;
 pub mod batchstate;
 pub mod blind;
 pub mod blocking;
@@ -172,6 +176,7 @@ pub mod gates;
 pub mod gatesignal;
 pub mod guarantee;
 pub mod gym;
+pub mod handback;
 pub mod healthbar;
 pub mod hold;
 pub mod holders;
@@ -202,6 +207,7 @@ pub mod promise;
 pub mod pulse;
 pub mod raster;
 pub mod reach;
+pub mod region_fill;
 pub mod registry;
 pub mod rehearsal;
 pub mod render_plan;

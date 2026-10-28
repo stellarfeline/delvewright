@@ -743,6 +743,18 @@ fn check_batch_invariants(
                 return Err(ctx(f));
             }
         }
+        // `DW1041` before the route proof, here as in `emit::build`: a declared
+        // jump no body makes is the cause, and the leg it was declared to carry
+        // closing is the consequence. Printed only when this pass refuses, as
+        // the loop binding is.
+        if !plan.jumps.is_empty() {
+            let (binding, _, verdict) =
+                crate::compiler::nav::check_declared_jumps(plan, &with_fixtures);
+            if let Err(f) = verdict {
+                eprintln!("{}", binding.line());
+                return Err(ctx(f));
+            }
+        }
         crate::compiler::nav::check_critical_path(plan, &with_fixtures).map_err(ctx)?;
         crate::compiler::nav::check_checkpoints(plan, &with_fixtures).map_err(ctx)?;
     }
@@ -769,7 +781,7 @@ fn check_batch_invariants(
         return Err(ctx(e));
     }
     let starts = body_starts(plan, &with_fixtures).roots;
-    crate::compiler::nav::verify_boundary_safety(&with_fixtures, &starts).map_err(ctx)?;
+    crate::compiler::nav::verify_boundary_safety_of(plan, &with_fixtures, &starts).map_err(ctx)?;
     Ok(())
 }
 
@@ -1147,7 +1159,9 @@ fn write_cell(
         std::sync::Arc::make_mut(&mut assembled.blocks)
             .insert(cell, crate::compiler::blockstate::BlockState::new(block));
     }
-    if assembled::is_fence_gate(block) && assembled::state_value(block, "open") == Some("true") {
+    if delvewright_dsl::blockshape::opens_by_hand(block)
+        && assembled::state_value(block, "open") == Some("true")
+    {
         assembled.open_gates.insert(cell);
     } else {
         assembled.open_gates.remove(&cell);
@@ -1971,7 +1985,7 @@ fn relight_region(
     };
     let starts = anchor_starts(plan);
     let reachable: BTreeSet<[i32; 3]> = nav
-        .reachable_walkable_rooted(&starts)
+        .body_region_rooted(&starts)
         .into_iter()
         .filter(|cell| crate::compiler::light::in_bounds(*cell, amin, amax))
         .collect();
@@ -2751,7 +2765,7 @@ mod tests {
     /// standing over its middle column.
     fn walk(a: &Assembled, at: [i32; 3]) -> (BTreeSet<[i32; 3]>, f64) {
         let w = crate::compiler::light::geometry_world(a);
-        (w.reachable_walkable(&[[0, 65, 0]]), w.feet_y(at))
+        (w.body_region(&[[0, 65, 0]]), w.feet_y(at))
     }
 
     /// **What a world edit writes is classified by the collision table** — the

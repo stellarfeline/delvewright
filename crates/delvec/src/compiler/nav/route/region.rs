@@ -96,7 +96,7 @@ type CellFootprint = ([i32; 3], delvewright_dsl::blockshape::Footprint16);
 
 /// One region a forced write lays, with the block its command writes (`None` =
 /// air) — what [`RegionState::blocks_over`] lays over the assembled bytes.
-type LaidWrite = (([i32; 3], [i32; 3]), Option<String>);
+pub(in crate::compiler::nav) type LaidWrite = (([i32; 3], [i32; 3]), Option<String>);
 
 /// One box an unforced fill writes, with the beat that lays it in words — the blame
 /// unit [`DW_UNFORCED_FOOTING`] reports.
@@ -160,12 +160,15 @@ impl RegionState {
     ) -> crate::compiler::blockstate::BlockMap {
         let mut out = base.clone();
         for ((lo, hi), block) in &self.laid {
-            for c in crate::compiler::assembled::region_cells(*lo, *hi) {
-                match block {
-                    Some(b) => {
-                        out.insert(c, crate::compiler::blockstate::BlockState::new(b));
+            match block {
+                // Cell by cell from the write's block (`region_fill`).
+                Some(b) => {
+                    for (c, s) in crate::compiler::region_fill::cells((*lo, *hi), b) {
+                        out.insert(c, crate::compiler::blockstate::BlockState::new(&s));
                     }
-                    None => {
+                }
+                None => {
+                    for c in crate::compiler::assembled::region_cells(*lo, *hi) {
                         out.remove(&c);
                     }
                 }
@@ -402,17 +405,15 @@ impl World {
                 // world-load seal, whose block the bytes hold — the bytes'.
                 match block.as_deref() {
                     Some(b) => {
-                        let fp = delvewright_dsl::blockshape::server_footprint(b);
-                        if fp != delvewright_dsl::blockshape::FULL_FOOTPRINT {
-                            for c in crate::compiler::assembled::region_cells(region.0, region.1) {
+                        // Each cell's own block (`region_fill`).
+                        for (c, s) in crate::compiler::region_fill::cells(region, b) {
+                            let fp = delvewright_dsl::blockshape::server_footprint(&s);
+                            if fp != delvewright_dsl::blockshape::FULL_FOOTPRINT {
                                 st.fill_footprints.insert(c, fp);
                             }
-                        }
-                        if delvewright_dsl::blockshape::hides(b) {
-                            st.fill_hides
-                                .extend(crate::compiler::assembled::region_cells(
-                                    region.0, region.1,
-                                ));
+                            if delvewright_dsl::blockshape::hides(&s) {
+                                st.fill_hides.insert(c);
+                            }
                         }
                     }
                     None => {
@@ -778,15 +779,20 @@ pub fn reachable_under_every_quest_state(
     }
     // A seat whose span admits no configuration at all (its `from_step` is past the
     // last one) still gets the base world's answer rather than an empty set, which
-    // would silently make every proof over it vacuous.
+    // would silently make every proof over it vacuous. The walk relation, as in
+    // [`seat_reach`]: the recovery stake's way home.
     (
         seen.len().max(1),
-        acc.unwrap_or_else(|| world.reachable_walkable(&[seat])),
+        acc.unwrap_or_else(|| world.walk_region(&[seat])),
     )
 }
 
 /// Where a player walks from `seat` in one configuration `st` of `world`,
 /// pulling every shortcut lever the walk reaches ([`World::in_shortcut_rounds`]).
+///
+/// The walk relation, not the reach graph (spec-0113 §4.5): its one reader is
+/// the recovery stake ([`crate::compiler::stake`]), whose table is the way home
+/// the party walks back on cue.
 /// A shortcut's door is opened in the configuration's own terms: its cells
 /// leave the state's fills and join its clears, so the seal the state pins is
 /// lifted by the state rather than cleared under it.
@@ -802,7 +808,7 @@ pub(in crate::compiler::nav) fn seat_reach(
         .as_ref()
         .unwrap_or(world)
         .in_shortcut_rounds::<std::convert::Infallible>(shortcuts, open, |w| {
-            std::ops::ControlFlow::Continue(w.reachable_walkable(&[seat]))
+            std::ops::ControlFlow::Continue(w.walk_region(&[seat]))
         }) {
         std::ops::ControlFlow::Continue(r) => r,
     }

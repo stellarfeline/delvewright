@@ -106,6 +106,16 @@
         "node": "node/near-hall",
         "objective": "obj/take-the-seal",
         "quest": "quest/near-hall"
+      },
+      {
+        "node": "node/near-hall",
+        "objective": "obj/open-the-bay-door",
+        "quest": "quest/the-reliquary"
+      },
+      {
+        "node": "node/near-hall",
+        "objective": "obj/lift-the-lid",
+        "quest": "quest/the-reliquary"
       }
     ],
     "critical_path": [
@@ -349,6 +359,6 @@
       }
     ]
   },
-  "dsl_version": "0.63.0",
+  "dsl_version": "0.67.0",
   "stage": "layout-graph"
 }

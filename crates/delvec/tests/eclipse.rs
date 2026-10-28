@@ -207,7 +207,9 @@ fn a_body_within_a_block_of_the_affordance_warns() {
         .unwrap_or_else(|| panic!("expected a DW0359 warning, got {warnings:#?}"));
     assert_eq!(w.severity, Severity::Warning);
     assert!(
-        w.message.contains("0.52 blocks clear"),
+        // The torch's box is fitted to its outline (spec-0117 §3a): 0.27 wide at
+        // the cell centre, so the ravager's 1.95-wide body ends 0.89 short of it.
+        w.message.contains("0.89 blocks clear"),
         "the warning must report the measured gap: {}",
         w.message
     );
@@ -556,7 +558,8 @@ fn one_quest_two_objectives(second_gate: &str) -> String {
 /// refuses correct content gets weakened later by somebody who needs it green.
 #[test]
 fn two_objectives_in_different_quests_are_not_a_contest() {
-    let quests = two_quests_one_anchor("");
+    // One block pressed on its own: the two presses are one body (spec-0117).
+    let quests = two_quests_one_anchor("").replace("minecraft:torch", ONE_BUTTON);
     let plan = plan_with_second_quest();
     let binding = contest_binding(&quests, &plan);
     let cells: Vec<[i32; 3]> = binding.iter().map(|(_, _, c)| *c).collect();
@@ -600,11 +603,13 @@ fn two_objectives_in_one_quest_are_a_contest() {
 /// puts in one scene.
 #[test]
 fn opposed_flags_inside_one_quest_are_not_a_contest() {
-    let doc = one_quest_two_objectives(", \"forbids_flags\": [\"flag/one-way\"]").replace(
-        r#""after": ["obj/talk"], "title": "Board", "hint": "The first way out." }"#,
-        r#""after": ["obj/talk"], "title": "Board", "hint": "The first way out.",
+    let doc = one_quest_two_objectives(", \"forbids_flags\": [\"flag/one-way\"]")
+        .replace("minecraft:torch", ONE_BUTTON)
+        .replace(
+            r#""after": ["obj/talk"], "title": "Board", "hint": "The first way out." }"#,
+            r#""after": ["obj/talk"], "title": "Board", "hint": "The first way out.",
              "requires_flags": ["flag/one-way"] }"#,
-    );
+        );
     assert!(doc.contains("requires_flags"), "fixture patch applied");
     let warnings = build_quests("minecraft:villager", "spawn", &doc)
         .expect("two objectives one flag proves exclusive must build");
@@ -615,8 +620,12 @@ fn opposed_flags_inside_one_quest_are_not_a_contest() {
 }
 
 // ---------------------------------------------------------------------------
-// `DW0878` — two boxes on one cell whose lifetimes an `after` makes disjoint
+// `DW0878` — two presses on one cell whose order an `after` fixes
 // ---------------------------------------------------------------------------
+
+/// One block pressed on its own (spec-0117 §3a): two presses of it on one
+/// cell are one body a press reaches, so they contest nothing.
+const ONE_BUTTON: &str = "minecraft:stone_button[face=floor,facing=north]";
 //
 // A content demo lifted a hearthstone with one `interact` on `anchor/hearth` and
 // wanted the party to take what lay under it with a second `interact` on the
@@ -629,7 +638,7 @@ fn opposed_flags_inside_one_quest_are_not_a_contest() {
 /// `one_quest_two_objectives`, with the second box armed `after` the first
 /// objective instead of beside it.
 fn one_quest_second_after_first() -> String {
-    let doc = one_quest_two_objectives("");
+    let doc = one_quest_two_objectives("").replace("minecraft:torch", ONE_BUTTON);
     let patched = doc.replace(
         r#""after": ["obj/talk"], "title": "Board again","#,
         r#""after": ["obj/board-first"], "title": "Board again","#,
@@ -639,11 +648,9 @@ fn one_quest_second_after_first() -> String {
 }
 
 /// **(a)** Two `interact` objectives on one anchor, the second armed only after
-/// the first completes: the two boxes are never in the world together, so the
-/// build is green and `DW0878` does not speak. The emitted datapack is read for
-/// the two facts the verdict rests on, so a change to the emitter that made the
-/// lifetimes overlap reddens this test rather than leaving the proof believing
-/// in an order the datapack no longer keeps.
+/// the first completes, both on one button: one body, so the build is green and
+/// `DW0878` does not speak. The emitted advancements are read for the fact the
+/// verdict rests on — one block's own use at one cell.
 #[test]
 fn a_second_box_armed_after_the_first_completes_is_not_a_contest() {
     let (out, warnings) = build_quests_out(
@@ -656,55 +663,27 @@ fn a_second_box_armed_after_the_first_completes_is_not_a_contest() {
         !warnings.iter().any(|d| d.code == "DW0878"),
         "a sequence on one cell is not a contest: {warnings:#?}"
     );
-    let text = |suffix: &str| -> String {
-        let hits: Vec<&String> = out
+    // The two presses are one button at one cell: each objective's advancement
+    // is that block's own use at that cell, and no box stands over it.
+    let adv = |name: &str| -> String {
+        let key = out
             .keys()
-            .filter(|k| k.starts_with("datapack/") && k.ends_with(suffix))
-            .collect();
-        assert_eq!(hits.len(), 1, "exactly one emitted `{suffix}`: {hits:?}");
-        String::from_utf8(out[hits[0]].clone()).unwrap()
+            .find(|k| k.ends_with(&format!("/advancement/{name}.json")))
+            .unwrap_or_else(|| panic!("no advancement `{name}`"));
+        String::from_utf8(out[key].clone()).unwrap()
     };
-    // Both boxes are emitted at the same cell — otherwise there was never a pair.
-    let first_act = text("/activate_o_board_first.mcfunction");
-    let second_act = text("/activate_o_board_second.mcfunction");
-    let summon_at = |f: &str| -> String {
-        let line = f
-            .lines()
-            .find(|l| l.starts_with("summon minecraft:interaction "))
-            .unwrap_or_else(|| panic!("an interaction box is summoned: {f}"))
-            .to_string();
-        line.split_whitespace()
-            .skip(2)
-            .take(3)
-            .collect::<Vec<_>>()
-            .join(" ")
+    let (first, second) = (adv("i_board_first"), adv("i_board_second"));
+    assert!(first.contains("minecraft:default_block_use"), "{first}");
+    let pos = |a: &str| {
+        let v: serde_json::Value = serde_json::from_str(a).unwrap();
+        v["criteria"]["interact"]["conditions"]["location"][0]["predicate"]["position"].clone()
     };
-    assert_eq!(
-        summon_at(&first_act),
-        summon_at(&second_act),
-        "the two boxes must stand at one cell, or this test judges nothing"
-    );
-    // The first box dies in the function that completes the first objective,
-    // after the score that releases the second is set.
-    let complete = text("/complete_o_board_first.mcfunction");
-    let set = complete
-        .lines()
-        .position(|l| l == "scoreboard players set #party dw.o_board_first 1")
-        .unwrap_or_else(|| panic!("completion sets the score: {complete}"));
-    let kill = complete
-        .lines()
-        .position(|l| l == "kill @e[tag=dw_i_board_first]")
-        .unwrap_or_else(|| panic!("completion kills the first box: {complete}"));
-    assert!(set < kill, "{complete}");
-    // …and the second box is summoned only once that score is set.
-    let tick = text("/tick.mcfunction");
-    let arm = tick
-        .lines()
-        .find(|l| l.contains("run function") && l.ends_with(":activate_o_board_second"))
-        .unwrap_or_else(|| panic!("the tick arms the second box: {tick}"));
+    assert!(!pos(&first).is_null(), "{first}");
+    assert_eq!(pos(&first), pos(&second), "one cell, one block");
     assert!(
-        arm.contains("if score #party dw.o_board_first matches 1"),
-        "the second box waits on the first objective: {arm}"
+        !out.iter().any(|(k, v)| k.ends_with(".mcfunction")
+            && String::from_utf8_lossy(v).contains("\"dw_i_board_first\"")),
+        "no box stands over a button"
     );
 }
 
@@ -712,7 +691,9 @@ fn a_second_box_armed_after_the_first_completes_is_not_a_contest() {
 /// transitively, because a completed objective's score is never cleared.
 #[test]
 fn a_transitive_after_is_an_order_too() {
-    let doc = one_quest_two_objectives("").replace(
+    let doc = one_quest_two_objectives("")
+        .replace("minecraft:torch", ONE_BUTTON)
+        .replace(
         r#"          { "type": "interact", "id": "obj/board-second""#,
         r#"          { "type": "reach-anchor", "id": "obj/step-back", "anchor": "anchor/keeper-stand",
              "radius": 2, "after": ["obj/board-first"] },

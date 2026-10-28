@@ -177,6 +177,8 @@ fn a_reach_the_landing_puts_the_party_inside_completes_on_the_landing() {
 fn a_way_onward_that_fires_once_is_refused_with_the_link_remedy() {
     let run = build(&campaign("once", |q| {
         trigger_mut(q).as_object_mut().unwrap().remove("once");
+        // A press that fires once owes its settled line (spec-0117).
+        trigger_mut(q)["answers"]["done"] = json!("The ferry has crossed for good.");
     }));
     let line = run.refused("DW0311");
     assert!(line.contains("the `teleport` at"), "{line}");
@@ -939,6 +941,7 @@ fn pit_campaign(who: &str, gate: &str) -> PathBuf {
             q["content"]["triggers"].as_array_mut().unwrap().push(json!({
             "id": "trigger/rescue", "at": "anchor/rescue", "on": {"on": "use"}, "once": false,
             "prop": {"block": "minecraft:oak_sign[rotation=0]"},
+            "answers": {"not_yet": "Not yet."},
             "requires_flags": [gate],
             "effects": [{"type": "teleport",
                          "from": {"anchor": "anchor/pit", "extent": [0, 0, 0]},
@@ -968,7 +971,7 @@ fn a_pocket_whose_only_exit_is_a_live_links_stand_cell_is_not_a_trap() {
         .find(|l| l.starts_with("DW0921 binding:"))
         .expect("the leave proof states its binding");
     assert!(
-        line.ends_with("1 link stand cell(s) served as a way out"),
+        line.contains("1 link stand cell(s) served as a way out;"),
         "{line}"
     );
     // Shut in that configuration — `flag/landed` is set only once the far
@@ -1129,6 +1132,7 @@ fn branch_link_campaign(who: &str, gate: &str) -> PathBuf {
         q["content"]["triggers"] = json!([{
             "id": "trigger/vault", "at": "spawn", "on": {"on": "use"}, "once": false,
             "prop": {"block": "minecraft:oak_sign[rotation=0]"},
+            "answers": {"not_yet": "Not yet."},
             "requires_flags": [gate],
             "effects": [{"type": "teleport",
                          "from": {"anchor": "anchor/keeper-stand", "extent": [1, 1, 1]},

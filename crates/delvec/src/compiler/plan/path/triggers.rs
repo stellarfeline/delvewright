@@ -98,9 +98,26 @@ pub(super) fn path_triggers(
                 }
             });
         }
+        // spec-0117 §5.3: a trigger that `serves` an objective is performable
+        // only while that objective is pending on this walk — at or before the
+        // step that completes it; on a walk that never completes it, never.
+        let served_until: Option<Option<usize>> = match &t.serves {
+            Some(delvewright_dsl::Serves::Objective(o)) => Some(
+                path.steps
+                    .iter()
+                    .position(|st| st.objective.as_str() == o.as_str()),
+            ),
+            _ => None,
+        };
         let enabled = |si: usize| {
             let held = &flags_at[si];
-            t.requires_flags.iter().all(|f| held.contains(f.as_str()))
+            let serving = match served_until {
+                None => true,
+                Some(Some(done)) => si <= done,
+                Some(None) => false,
+            };
+            serving
+                && t.requires_flags.iter().all(|f| held.contains(f.as_str()))
                 && !t
                     .forbids_flags
                     .iter()
@@ -380,18 +397,13 @@ pub(crate) fn quest_complete_step(quest: &Quest, obj_step: &BTreeMap<String, usi
         .unwrap_or(0)
 }
 
-/// The block a trigger's act uses, when its `prop` is one a hand presses
-/// (spec-0093 §6.5) — what a `trigger` step hands the harness to right-click.
+/// The block a trigger's act lands on inside its window, when no click box
+/// stands over it then (spec-0117 §3a) — what a `trigger` step hands the
+/// harness to right-click. `None` where the press lands on a box.
 pub(super) fn pressed_block(campaign: &Campaign, trigger_id: &str) -> Option<String> {
-    campaign
-        .quests
-        .content
-        .triggers
-        .iter()
-        .find(|t| t.id.as_str() == trigger_id)
-        .and_then(|t| t.prop.as_ref())
-        .filter(|p| p.is_hand_pressed())
-        .map(|p| p.block.clone())
+    delvewright_dsl::press_site(campaign, trigger_id)
+        .filter(|s| s.open_unboxed())
+        .and_then(|s| s.prop.map(|p| p.block.clone()))
 }
 
 /// The `critical_path` step index of the `talk-to` objective that a dialogue tree

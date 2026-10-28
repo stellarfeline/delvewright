@@ -27,7 +27,7 @@ fn json(p: &Path) -> serde_json::Value {
     serde_json::from_slice(&std::fs::read(p).unwrap()).unwrap()
 }
 
-/// The objective on whose legs the hall's hardware is in frame.
+/// The objective on whose legs the hall's hardware once stood in frame.
 const MARKED: &str = "obj/reach-the-end";
 const MARKER: &str = "dw_hw_";
 
@@ -140,44 +140,24 @@ fn a_holder_the_renderer_draws_leaves_undrawn_and_the_curator_is_drawn() {
         "{curator}"
     );
 
-    // Criterion 17: a frame on the leg to the objective with a hardware
-    // display in sight lists nothing undrawn, and the renderer's own
-    // statistics for that frame count the item display and its lever drawn.
-    let seen = marker_frames(&index)
-        .into_iter()
-        .find(|s| {
-            s["shows"].as_array().unwrap().iter().any(|t| {
-                t["kind"] == "body"
-                    && t["id"].as_str().unwrap().starts_with(MARKER)
-                    && t["occluded"] == false
-            })
-        })
-        .expect("a frame with a hardware display in sight");
-    let id = seen["id"].as_str().unwrap();
-    assert_eq!(seen["undrawn"], serde_json::json!([]), "{seen}");
-    let m = json(
-        &frames.join(
-            seen["image"]
-                .as_str()
-                .unwrap()
-                .replace(".png", ".manifest.json"),
-        ),
-    );
-    let ents = &m["renderer_stats"]["entities"];
-    assert!(
-        ents["rendered"]["item_display"].as_u64().unwrap_or(0) >= 1,
-        "{ents}"
-    );
-    assert!(ents["skipped"].get("item_display").is_none(), "{ents}");
-    assert!(
-        ents["items_rendered"]["lever"].as_u64().unwrap_or(0) >= 1,
-        "{ents}"
-    );
-    assert_eq!(ents["items_skipped"], serde_json::json!({}), "{ents}");
+    let cid = curator["id"].as_str().unwrap();
     assert!(
         !log.lines()
-            .any(|l| l.starts_with("DW1039") && l.contains(&format!("shot `{id}`:"))),
-        "no DW1039 for `{id}`:\n{log}"
+            .any(|l| l.starts_with("DW1039") && l.contains(&format!("shot `{cid}`:"))),
+        "no DW1039 for the curator's frame `{cid}`:\n{log}"
+    );
+
+    // spec-0117: no interaction point carries compiler-summoned hardware, so
+    // no frame on the leg to the objective shows one.
+    let frames_seen = marker_frames(&index);
+    assert!(!frames_seen.is_empty(), "the leg to {MARKED} is framed");
+    assert!(
+        frames_seen.iter().all(|s| s["shows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|t| { t["id"].as_str().is_none_or(|id| !id.starts_with(MARKER)) })),
+        "no hardware display is in any frame"
     );
     assert!(
         log.contains("not drawn by the renderer (DW1039) in "),

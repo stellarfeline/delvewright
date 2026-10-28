@@ -1,0 +1,14 @@
+{
+  "code": "DW1063",
+  "patch": [
+    {
+      "doc": "programs/far-hall.json",
+      "op": "replace",
+      "path": "/palette/bar",
+      "value": "minecraft:oak_door[facing=north,half=lower,hinge=left,open=false,powered=false]"
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The far hall's program edited so the role its `barred` edge's bar is built from resolves to an oak door. An adventure-mode body opens an oak door by hand, so the bar at the loft stair's head would be passed before the muster is cleared and the story opens it. `delvec detail` refuses the program before expanding it, naming the piece, the edge and the block, and saying what a bar is: iron bars, an iron door, an iron trapdoor or a solid. It declares no unit: what must not detail is a gate the player opens first."
+}

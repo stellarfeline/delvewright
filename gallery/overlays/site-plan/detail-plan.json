@@ -13,6 +13,7 @@
       {
         "anchors": {
           "anchor/annex-bench": "anchor/annex-bench",
+          "anchor/annex-chute-leaf": "anchor/annex-chute-leaf",
           "anchor/node-annex": "anchor/node-annex",
           "anchor/seam-annex-chute": "anchor/seam-annex-chute"
         },
@@ -43,7 +44,9 @@
       },
       {
         "anchors": {
+          "anchor/loft-stair-leaf": "anchor/loft-stair-leaf",
           "anchor/node-far-hall": "anchor/node-far-hall",
+          "anchor/seam-loft-drop": "anchor/seam-loft-drop",
           "anchor/seam-loft-stair": "anchor/seam-loft-stair",
           "anchor/unlock-east-door": "anchor/unlock-east-door",
           "anchor/unlock-loft-stair": "anchor/unlock-loft-stair"
@@ -53,6 +56,8 @@
       },
       {
         "anchors": {
+          "anchor/centre-door-leaf": "anchor/centre-door-leaf",
+          "anchor/east-door-leaf": "anchor/east-door-leaf",
           "anchor/node-near-hall": "anchor/node-near-hall",
           "anchor/reading-desk": "anchor/reading-desk",
           "anchor/reliquary-grille": "anchor/reliquary-grille",
@@ -61,7 +66,9 @@
           "anchor/seam-undercroft-crawl": "anchor/seam-undercroft-crawl",
           "anchor/seam-undercroft-shaft": "anchor/seam-undercroft-shaft",
           "anchor/seam-west-door": "anchor/seam-west-door",
+          "anchor/undercroft-shaft-leaf": "anchor/undercroft-shaft-leaf",
           "anchor/unlock-west-door": "anchor/unlock-west-door",
+          "anchor/west-door-leaf": "anchor/west-door-leaf",
           "spawn": "anchor/spawn"
         },
         "piece": "prefab/gallery-near-hall",
@@ -93,6 +100,6 @@
       "role/wall": "minecraft:polished_blackstone_bricks"
     }
   },
-  "dsl_version": "0.63.0",
+  "dsl_version": "0.67.0",
   "stage": "detail-plan"
 }

@@ -77,6 +77,38 @@ ENGINE_REFERENCES = (
 STARTER = SKILL_ROOT / "scripts" / "starter.py"
 
 
+# The paragraphs a place's section carries (spec-0123 §3.2, §3.5, §4), fixed
+# text from `docs/reference/place-craft.md` §3, §4 and §7. None names a door,
+# a gate or a counter per kind of building: the construction names the leaf.
+TRADE_PARAGRAPH = (
+    "**This place reads as what it is when four things hold at once.** "
+    "(1) The working object stands in its working position, not stored: a tool in use, with what it works on and where the worker stands. "
+    "(2) The rooms follow the work: the room a visitor enters is not the room the work is done in, and a door between them says so — a building of this kind has at least two rooms. "
+    "(3) The front says what the place is before the door is opened: a sign of its own object hung over the way, the goods shown at a window or a counter, or the workroom itself open to the way. "
+    "(4) Every room has a use a player could name, and nothing is filler. "
+    "**The test**: stand in the door and name what the place is with no sign read. The review does exactly that, blind, from a frame the build draws on each of your thresholds."
+)
+OUTSIDE_PARAGRAPH = (
+    "**This place is outside, and the outside is what makes a settlement look lived in.** "
+    "What it owns beside the way a body walks — a street's verge, the columns outside its declared clear width, or this whole yard — is yours to dress: shrubs, potted flowers, a hedge on a log, a bench, a trough, a wall with something hung on it, worn paving where feet pass. "
+    "Nothing stands in a way's clear width. Dress for what stands opposite: each neighbour below says what it is, so what you set at its foot belongs to it."
+)
+STYLE_PARAGRAPH = (
+    "**Build it in one style**: four lines, read together with the four above (`docs/reference/place-craft.md` §7 has the sources). "
+    "(1) **One module**: every part is measured in the unit the body gives it — a course (a counter, a sill, a step), a body of two courses (a door, a window's clear height, the gap under a beam), a storey — and parts that share a wall meet at its lines: the counter's top at hand height, the door's head at the window's head, the storey line at the eave or the beam. "
+    "(2) **Openings follow construction**: an opening is a hole in a wall with jambs and a head; what fills it follows how the wall is built, and the leaf is chosen last — a walled front, a front of posts and a beam, a timber-framed front, a masonry front each take a different counter and door. No door is named per kind of building; the construction names it. "
+    "(3) **Lines run through**: the heads of a front's openings stand at one course, or in a hierarchy you mean; a horizontal — a beam, a fascia, an eave — terminates the front over every opening; solid stands upon solid; the trim that frames one opening frames all; one structural material and one infill, and every block kind has a job. "
+    "(4) **A landmark reads by its silhouette from the approach**: what the thing does is visible in its shape at eye height from the cell where a body enters, and its parts obey the first three."
+)
+FRAME_SENTENCE = (
+    "your open side stands no wall; build the frame the wall would have been one cell inside the ring, "
+    "and stand what you open there in it"
+)
+IDEAS_ONLY = "Looked at, never copied: an unlicensed or non-commercial source is ideas only."
+
+REFERENCES_DIR = pathlib.Path(".out") / "references"
+
+
 class Refusal(Exception):
     def __init__(self, code: int, message: str) -> None:
         super().__init__(message)
@@ -332,6 +364,11 @@ def neighbour_summary(
         else:
             out.append("- facade: it owns no cell of your frame; the boundary between you is yours or the whole's")
         seams = [s for s in a.get("seams", []) if s["edge"] in nb.get("seams", [])]
+        if nb.get("open_toward"):
+            out.append(
+                "- its side toward you is open: its front faces you and stands no wall, so you dress the foot "
+                "of an open front, not a wall"
+            )
         if not seams:
             out.append("- no seam joins you: the two claims meet, and nothing crosses")
         for s in seams:
@@ -354,6 +391,48 @@ def neighbour_summary(
             out.append("- not detailed yet: it stands as the whole's stand-in until its own agent builds it")
         out.append("")
     return out, len(a.get("neighbours", []))
+
+
+def fetched_files(campaign_dir: pathlib.Path, stem: str) -> dict[str, str]:
+    """The files `scripts/references.py` fetched for this place, by URL."""
+    index = campaign_dir / REFERENCES_DIR / stem / "index.json"
+    if not index.is_file():
+        return {}
+    try:
+        rows = json.loads(index.read_text(encoding="utf-8")).get("rows", [])
+    except (OSError, ValueError):
+        return {}
+    return {r["url"]: str(campaign_dir / r["file"]) for r in rows if r.get("file") and r.get("url")}
+
+
+def place_section(
+    place: str, graph: dict, plan: dict, campaign_dir: pathlib.Path
+) -> tuple[list[str], int]:
+    """*What this place is, and what it is built from* (spec-0123 §3.3)."""
+    stem = stem_of(place)
+    node = next((x for x in graph.get("nodes", []) if x.get("id") == place), None) or {}
+    box = next((x for x in plan.get("boxes", []) if x.get("node") == place), None) or {}
+    out = [f"- intent: {q(node.get('intent', '?'))}" + (f"; note: {node['note']}" if node.get("note") else "; no note")]
+    refs = node.get("references", []) or []
+    files = fetched_files(campaign_dir, stem)
+    if refs:
+        out.append(f"- {len(refs)} human-built reference(s) to work from. {IDEAS_ONLY}")
+        for i, r in enumerate(refs, 1):
+            line = f"  {i}. <{r.get('url')}> — {r.get('shows', '')} Terms: {r.get('terms', '')}."
+            if r.get("url") in files:
+                line += f" Fetched: `{files[r['url']]}` — read it with your file tool."
+            else:
+                line += " Not fetched as a picture: open the page by its URL."
+            out.append(line)
+    else:
+        out.append("- no reference is recorded for this place.")
+    out.append("")
+    ceiling = box.get("ceiling", {}) or {}
+    outside = bool(box.get("way")) or "open" in ceiling
+    out.append(OUTSIDE_PARAGRAPH if outside else TRADE_PARAGRAPH)
+    out.append("")
+    out.append(STYLE_PARAGRAPH)
+    return out, len(refs)
 
 
 def render(
@@ -387,6 +466,7 @@ def render(
     brief = content(docs.get("geometry-brief"))
     rows, n_rows = design_rows(place, a, graph, plan, brief, quests, design, owed)
     nbs, n_nbs = neighbour_summary(a, all_allocations, graph, plan, detailed)
+    what, n_refs = place_section(place, graph, plan, campaign_dir)
     ex, ey, ez = a["extent"]
     work = handout_path.parent / "work"
     delvec_p = f'"{delvec}" --prefabs "{prefabs}"'
@@ -445,6 +525,10 @@ def render(
     else:
         w("- the whole states no palette: your program's own material choices stand")
     w("")
+    w("## What this place is, and what it is built from")
+    w("")
+    lines.extend(what)
+    w("")
     w(f"## This place's rows of the design ({n_rows})")
     w("")
     lines.extend(rows or ["- (no row of any document names this place beyond its box)"])
@@ -479,6 +563,22 @@ def render(
             line += f" **The bar is yours**: fill {cells(s['bar'])} with a palette role of `{s['bar_block']}` inside a `barred` contract edge whose `bar.region` is `seam-{s['edge'].removeprefix('edge/')}` — it exports as the gate anchor `anchor/seam-{s['edge'].removeprefix('edge/')}` (`DW0845`)."
         if s.get("ground_y") is not None:
             line += f" The ring's ground under this seam is at y {s['ground_y']}."
+        w(line)
+    w("")
+    sides = a.get("sides", []) or []
+    w(f"### Open sides ({len(sides)}) — a side that stands no wall")
+    w("")
+    if not sides:
+        w("- none: every side of this place is a wall.")
+    for s in sides:
+        line = (
+            f"- your **{s['face']}** side is open: cells {cells(s['cells'])}, nothing stands in them from the walk plane "
+            f"(y {s['walk_y']}) to the top of the play space, your ground runs across them. "
+            f"Answer it in the contract: a frontage a body crosses is an `exterior` edge whose `via` is these cells; a counter a body does not cross stands at the play space's edge, inside. "
+            f"{FRAME_SENTENCE[0].upper() + FRAME_SENTENCE[1:]}."
+        )
+        for c in s.get("contacts", []) or []:
+            line += f" `{c['edge']}` crosses here at {cells(c['cells'])}: that run is the connection's crossing."
         w(line)
     w("")
     w(f"### Owed names ({len(a.get('owed_anchors', []))}) — each answered by a piece anchor of its stem")
@@ -530,6 +630,8 @@ def render(
         "voids": len(a.get("voids", [])),
         "owed names": len(a.get("owed_anchors", [])),
         "refusal lines": 0 if refusal is None else len(refusal.rstrip("\n").split("\n")),
+        "open sides": len(a.get("sides", []) or []),
+        "references": n_refs,
     }
     return "\n".join(lines) + "\n", counts
 

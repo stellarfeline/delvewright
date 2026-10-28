@@ -55,6 +55,7 @@ static QUESTS_FORBIDS: LazyLock<String> = LazyLock::new(|| {
         "on": { "on": "strike" },
         "requires_flags": ["flag/armed"],
         "forbids_flags": ["flag/stood-down"],
+        "answers": { "not_yet": "He pays you no mind.", "done": "He has stood down." },
         "effects": [
           { "type": "set-flag",
             "when": { "forbids_flags": ["flag/stood-down"] }, "flag": "flag/stood-down" }

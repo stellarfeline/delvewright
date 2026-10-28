@@ -364,6 +364,19 @@ pub(super) fn fill_region_command(
     )
 }
 
+/// **The `fill`s one region write of `block` lays**: one per box
+/// [`crate::compiler::region_fill::boxes`] cuts the region into, so a two-high
+/// block (a door) lays its lower half under its upper, and every other block is
+/// the one `fill` of its declared state. Every command that writes a block into
+/// a region — a `close-gate`, a `fill-region`, a laid way, a timed gate's
+/// closing edge, a PackTest's staged seal — takes its lines here.
+pub(super) fn lay_region_commands(region: ([i32; 3], [i32; 3]), block: &str) -> Vec<String> {
+    crate::compiler::region_fill::boxes(region, block)
+        .into_iter()
+        .map(|(r, state)| fill_region_command(r, &state, None))
+        .collect()
+}
+
 /// **The `replace` filter that clears a gate's block in any of its states.**
 ///
 /// A gate declares a block, and the placed world holds that block in whatever
@@ -490,13 +503,15 @@ pub(super) fn emit_quest_effect(
                 {
                     // A region write whose box and filter the gate anchor supplies.
                     body.push(fill_region_command((*from, *to), AIR, Some(block)));
-                    // …and take the seal's answer down with the seal.
-                    // The hitboxes exist exactly while the region is solid: an
-                    // opened threshold that still says "the way is sealed" is a
-                    // lie, and an invisible box left standing in a doorway
-                    // swallows right-clicks aimed through it.
-                    if let Some(s) = seal_hint_for(plan, anchor.as_str()) {
-                        body.push(format!("kill @e[tag=dw_seal_{}]", s.safe));
+                    // …and take the gate's own answer down with the seal
+                    // (spec-0117): its block is air now, and a box left standing
+                    // in a doorway swallows presses aimed through it.
+                    if super::press::gate_has_seal_state(plan, anchor.as_str()) {
+                        let safe = plan::safe_local(anchor.as_str());
+                        body.push(format!("scoreboard players set #gseal_{safe} dw.sys 0"));
+                        if super::press::gate_has_answer_box(plan, anchor.as_str()) {
+                            body.push(format!("kill @e[tag=dw_gate_{safe}]"));
+                        }
                     }
                     return;
                 }
@@ -512,16 +527,18 @@ pub(super) fn emit_quest_effect(
                     && let ResolvedAnchor::Gate { from, to, block } = resolved
                 {
                     // The same region write, with the block the anchor declares.
-                    body.push(fill_region_command((*from, *to), block, None));
-                    // Arm the seal's answer:
-                    // a wall the party walks back to and presses must say
-                    // something. Guarded on absence, so a re-fired `close-gate`
-                    // never stacks a second set of hitboxes.
-                    if let Some(s) = seal_hint_for(plan, anchor.as_str()) {
+                    body.extend(lay_region_commands((*from, *to), block));
+                    // The gate is sealed (spec-0117 §4: what a `serves: {gate}`
+                    // press reads), and its own answer's boxes go up over its
+                    // block. Guarded on absence, so a re-fired `close-gate`
+                    // never stacks a second set of boxes.
+                    let safe = plan::safe_local(anchor.as_str());
+                    body.push(format!("scoreboard players set #gseal_{safe} dw.sys 1"));
+                    body.push(format!("scoreboard players set #gsealed_{safe} dw.sys 1"));
+                    if super::press::gate_has_answer_box(plan, anchor.as_str()) {
                         body.push(format!(
-                            "execute unless entity @e[tag=dw_seal_{}] run function {ns}:{}",
-                            s.safe,
-                            seal_arm_fn(&s.safe)
+                            "execute unless entity @e[tag=dw_gate_{safe}] run function {ns}:{}",
+                            super::press::gate_arm_fn(&safe)
                         ));
                     }
                     return;
@@ -642,7 +659,7 @@ pub(super) fn emit_quest_effect(
             if let Some((zone, block)) = eff.region_write()
                 && let Some(region) = plan.zone_box(zone)
             {
-                body.push(fill_region_command(region, block.unwrap_or(AIR), None));
+                body.extend(lay_region_commands(region, block.unwrap_or(AIR)));
             }
         }
         // spec-0080 §3.3: a repaint is `fillbiome` over the volume — the
@@ -676,7 +693,7 @@ pub(super) fn emit_quest_effect(
                     crate::compiler::ways::Sign::Cleared => AIR,
                 };
                 for region in &way.boxes {
-                    body.push(fill_region_command(*region, block, None));
+                    body.extend(lay_region_commands(*region, block));
                 }
             }
         }
@@ -779,30 +796,22 @@ pub(super) fn emit_quest_effect(
         Verb::Bonfire {
             anchor, on_rest, ..
         } => {
-            // Arm the rest affordance (spec-0016 §1): summon the interaction
-            // entity the party right-clicks to rest. Guarded on absence so a
-            // re-fired beat never stacks a second affordance (and so a `bonfire`
-            // reached twice is idempotent). Nothing else happens here — the
-            // checkpoint moves when the party REST, not when the beat fires.
+            // Arm the rest point (spec-0016 §1, spec-0117 §3a): its block has
+            // stood since `setup_finish`, answering `not_yet`; the beat opens its
+            // window. A block that acts on its own loses its box. Idempotent, so
+            // a `bonfire` reached twice arms once. Nothing else happens here —
+            // the checkpoint moves when the party RESTS, not when the beat fires.
             if let Some(bf) = plan.bonfire_for(anchor.as_str(), on_rest) {
-                let v = ent_xyz(bf.at);
                 let i = bf.index;
-                body.push(format!(
-                    "execute unless entity @e[tag=dw_bonfire_{i}] run {}",
-                    crate::compiler::clickbox::ClickBox::column(bf.at, 2).summon(&format!(
-                        "response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"dw_bonfire_{i}\"]"
-                    ))
-                ));
-                // …and the visible hardware, under the same absence guard so a
-                // re-fired beat never stacks a second one. A rest point the
-                // player cannot see is the same soft-lock class as an invisible
-                // unlock lever (`DW0420`). Never retired: a bonfire is not
-                // consumed by resting at it.
-                let hw = crate::compiler::affordance::hardware_tag(&format!("dw_bonfire_{i}"));
-                body.push(format!(
-                    "execute unless entity @e[tag={hw}] run {}",
-                    affordance_hardware(v, &format!("dw_bonfire_{i}"), "minecraft:campfire")
-                ));
+                body.push(format!("scoreboard players set #bf_{i} dw.sys 1"));
+                if let Some(p) = super::press::press_of_owner(
+                    plan,
+                    &crate::compiler::pressable::Owner::Bonfire { index: i },
+                ) && p.boxed_in(crate::compiler::pressable::State::Shut)
+                    && !p.boxed_in(crate::compiler::pressable::State::Open)
+                {
+                    body.push(super::press::box_kill(p));
+                }
             }
         }
         Verb::BeginStealth {

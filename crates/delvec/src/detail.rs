@@ -166,6 +166,16 @@ fn run(
         );
         return Ok(());
     }
+    // The commit states the judge's binding before it writes, as `--check`
+    // states it: the two runs say the same thing up to the write.
+    eprintln!(
+        "detail: {places} judged against the whole as it stands. {binding}",
+        places = prepared
+            .iter()
+            .map(|p| format!("`{}`", p.place))
+            .collect::<Vec<_>>()
+            .join(", "),
+    );
     let mut done: Vec<String> = Vec::new();
     for p in &prepared {
         done.push(write_one(campaign_dir, &campaign, prefabs_dir, p, json)?);
@@ -459,6 +469,36 @@ fn prepare(
         }
     }
 
+    // ---- DW1063: every bar is a block no hand opens (spec-0123 §3.1) ----
+    //
+    // Judged over the contract's declared block, through the palette as this
+    // run binds it, before anything is expanded: a bar a hand opens would
+    // make the edge's own shut-state proof fail first, with no code naming the
+    // cause.
+    if let Some(contract) = program.contract.as_ref() {
+        for edge in &contract.edges {
+            let Some(bar) = edge.class.bar() else {
+                continue;
+            };
+            let Some(delvec::grammar::ir::States::One(state)) =
+                program.palette.get(&bar.block).map(Paint::states)
+            else {
+                continue; // an unbound role or a mix is `validate`'s refusal.
+            };
+            if let Some(d) = engine::bar_a_hand_opens(
+                &id,
+                &edge.a,
+                &edge.b,
+                &state.to_string(),
+                STAGE,
+                program_path.display().to_string(),
+            ) {
+                print_one_diag(&d, json);
+                return Err(1);
+            }
+        }
+    }
+
     // ---- the cells the place does not own, voided after expansion ----
     //
     // A derivation, never typed (spec-0098 §4): the handout's voids — a
@@ -487,6 +527,20 @@ fn prepare(
         .is_some_and(|g| delvec::admit::scenery::is_scenery(&g.content, node));
     let mut opts = ExpandOptions::seeded(seed).with_overrides(overrides);
     opts.sealed = scenery;
+    // Open sides (spec-0123 §5.4): the handout's runs, walk plane to the top
+    // of the play space — a derivation, never typed.
+    let top = a.space[1][1];
+    opts.open_sides = a
+        .sides
+        .iter()
+        .map(|s| {
+            let [lo, hi] = s.cells;
+            (
+                [lo[0] as i32, lo[1] as i32, lo[2] as i32],
+                [hi[0] as i32, top as i32, hi[2] as i32],
+            )
+        })
+        .collect();
     let size = [a.extent[0] as u32, a.extent[1] as u32, a.extent[2] as u32];
     let region = Box3::at_origin(size);
     let expansion = match expand(&program, region, &opts) {

@@ -55,6 +55,8 @@ fn npcs_deferred() -> String {
 /// terrain is the **arrival machinery**, which is a tp chain and not
 /// pathfinding. What may not be routed across a seal is the compiler's *plan*.
 fn quests_doc(on_arrive: &str) -> String {
+    // The seal answers for itself (`DW0429`).
+    let door = common::door_answer("The door is shut behind him.");
     format!(
         r#"{{
   "dsl_version": "{DSL_VERSION}",
@@ -77,6 +79,7 @@ fn quests_doc(on_arrive: &str) -> String {
       }}
     ],
     "triggers": [
+      {door},
       {{
         "id": "trigger/entrance",
         "at": "anchor/exit",

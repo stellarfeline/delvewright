@@ -137,6 +137,9 @@
             "label": "A candle"
           }
         ],
+        "prop": {
+          "block": "minecraft:stone_button[face=floor,facing=north]"
+        },
         "title": "The Stall"
       }
     ],
@@ -148,6 +151,9 @@
     ],
     "triggers": [
       {
+        "answers": {
+          "done": "Already done."
+        },
         "at": "anchor/exit",
         "effects": [
           {
@@ -167,6 +173,6 @@
       }
     ]
   },
-  "dsl_version": "0.63.0",
+  "dsl_version": "0.67.0",
   "stage": "quests"
 }

@@ -1,0 +1,22 @@
+{
+  "code": "DW0429",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/triggers/15"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "remove",
+      "path": "/content/fx.trig.main-gate-answers.0.narrate"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "remove",
+      "path": "/source/fx.trig.main-gate-answers.0.narrate"
+    }
+  ],
+  "units": [],
+  "why": "The main gate's own answer removed (with its Chinese row). The close-gate seals a wall the party walks back to, and with no answer a push on its bars is silent. DW0429 refuses it naming the gate, and names the gate's own block first as the remedy. It declares no unit: `EnvTrigger.serves` with a gate is bound by the shortcut's door."
+}

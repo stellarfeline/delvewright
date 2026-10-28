@@ -180,11 +180,22 @@ fn region_writes_emit_one_fill_over_the_resolved_box() {
 fn the_gate_verbs_emit_exactly_what_they_always_did() {
     // The seal fires on `on_complete`, after the exit is reached: sealing it
     // earlier walls the only route, which is `DW0311` and a different test.
-    let c = parse_hw(&quests_doc("").replace(
-        r#"[ { "type": "campaign-complete" } ]"#,
-        r#"[ { "type": "close-gate", "anchor": "anchor/door" },
+    let c = parse_hw(
+        &quests_doc("")
+            .replace(
+                r#"[ { "type": "campaign-complete" } ]"#,
+                r#"[ { "type": "close-gate", "anchor": "anchor/door" },
              { "type": "campaign-complete" } ]"#,
-    ));
+            )
+            .replacen(
+                r#""content": {"#,
+                &format!(
+                    r#""content": {{ "triggers": [ {} ],"#,
+                    common::door_answer("Sealed.")
+                ),
+                1,
+            ),
+    );
     let out = try_build(&c, &common::prefabs_dir()).expect("the gate campaign builds");
     let all = all_functions(&out);
     assert!(
@@ -736,19 +747,19 @@ fn a_set_block_of_a_non_colliding_block_in_the_same_place_builds() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// **An objective's activation prop is a runtime write in the same model**: an
-/// `interact` whose `prop` is stone is sealed from load without footing (it
-/// is placed when the objective activates, which no step dates) and forced
-/// from the step the path completes it at, laying the block the datapack's
-/// activation function sets.
+/// **A pressable's prop stands from load** (spec-0117 §5.1, criterion 2): an
+/// `interact` whose `prop` is stone is a write the region model registers forced
+/// at step 0, laying the block `setup_finish` sets — nobody plays a beat for it
+/// to stand where the world was shipped with it.
 #[test]
-fn an_activation_prop_enters_the_region_model() {
+fn a_prop_is_forced_from_step_zero() {
     let dir = prefabs_with_shelf("dw-activation-prop");
     let doc = quests_doc("").replace(
         r#"{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },"#,
         r#"{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },
           { "type": "interact", "id": "obj/press", "anchor": "anchor/shelf",
-            "prop": { "block": "minecraft:stone" }, "after": ["obj/talk"] },"#,
+            "prop": { "block": "minecraft:stone" }, "after": ["obj/talk"],
+            "answers": { "not_yet": "Not yet.", "done": "Done." } },"#,
     );
     assert!(
         doc.contains("obj/press"),
@@ -765,14 +776,12 @@ fn an_activation_prop_enters_the_region_model() {
         .collect();
     assert!(
         at.iter()
-            .any(|e| !e.is_forced() && e.fire_step == 0 && e.write == RegionWrite::Fill),
-        "sealed, unforced, from load: {at:?}"
+            .any(|e| e.is_forced() && e.fire_step == 0 && e.write == RegionWrite::Fill),
+        "forced, from load: {at:?}"
     );
-    let step = plan.objective_steps["obj/press"];
     assert!(
-        at.iter()
-            .any(|e| e.is_forced() && e.fire_step == step && e.write == RegionWrite::Fill),
-        "forced from its own step {step}: {at:?}"
+        !at.iter().any(|e| !e.is_forced()),
+        "no activation write is left for an interact's block: {at:?}"
     );
     let _ = std::fs::remove_dir_all(&dir);
 }

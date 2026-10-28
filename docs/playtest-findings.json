@@ -72,12 +72,13 @@
       },
       "campaign": "hollow-vigil",
       "carrier": {
-        "code": "DW0420",
+        "code": "DW1059",
         "kind": "dw"
       },
       "finding": "interact affordances were invisible points with no hardware a player could see or aim at",
-      "general_form": "a compiler-owned interact affordance has visible hardware at its cell",
+      "general_form": "every interaction point is a real block the world has, named in its prop, drawn and occluded like the world",
       "id": "hv-03",
+      "note": "Carried by `DW1059` (spec-0117 §3a): an interact, a press trigger, a shortcut unlock, a shop, a disarm and a bonfire each name the block a player presses in `prop`; with none, or a block with no outline, the campaign is refused. The compiler summons no visible stand-in.",
       "round": 1,
       "triage": "capability"
     },
@@ -1243,13 +1244,13 @@
       },
       "campaign": "nobodys-cave-island",
       "carrier": {
-        "code": "DW0437",
+        "code": "DW1051",
         "kind": "dw"
       },
       "finding": "an item requirement was satisfied by carrying the item in a pocket rather than holding it, so a beat about brandishing something worked with it stowed",
       "general_form": "requires_item means held in the main hand, and an interaction that can refuse a click explains the refusal",
       "id": "isl-41",
-      "note": "`requires_item` is an interact-objective declaration, and the class is the interacts declaring it. The precondition is the item-gate class itself, counted by a second instrument that shares nothing with the binding: a datapack function testing `if items entity @s weapon.mainhand` is the server's own adjudication of a held-item gate, and the emitter writes one for every `requires_item` (`crates/delvec/tests/v07_held_item.rs` asserts the spelling, `tools/tests/test_staging_gate.py` holds this probe to it). An `interact` with no `requires_item` completes on any click, so it cannot carry an item-gate defect and is not counted. A held-item test in the build with no `requires_item` in the source = UNBOUND (an item gate the check does not read); neither = the class measures zero.",
+      "note": "`requires_item` is an interact-objective declaration, and the class is the interacts declaring it. The precondition is the item-gate class itself, counted by a second instrument that shares nothing with the binding: a datapack function testing `if items entity @s weapon.mainhand` is the server's own adjudication of a held-item gate, and the emitter writes one for every `requires_item` (`crates/delvec/tests/v07_held_item.rs` asserts the spelling, `tools/tests/test_staging_gate.py` holds this probe to it). The refusal half is carried by `DW1051` (spec-0117): an `interact` with `requires_item` owes `answers.missing_item`, the line a press with an empty hand gets. An `interact` with no `requires_item` completes on any click, so it cannot carry an item-gate defect and is not counted. A held-item test in the build with no `requires_item` in the source = UNBOUND (an item gate the check does not read); neither = the class measures zero.",
       "round": 12,
       "triage": "capability"
     },
@@ -1879,12 +1880,13 @@
       },
       "campaign": "the-drowned-bell",
       "carrier": {
-        "code": "DW0420",
+        "code": "DW1059",
         "kind": "dw"
       },
       "finding": "a shortcut's unlock affordance shipped as an invisible interaction body with no hardware, and the delve soft-locked with the gate sealed and nothing to press",
-      "general_form": "a compiler-owned interact affordance has visible hardware, and that hardware is retired only by the machinery that owns it",
+      "general_form": "a shortcut unlock, like every interaction point, is a real block the world has, standing for the whole delve",
       "id": "bell-07",
+      "note": "Carried by `DW1059` (spec-0117 §3a): the shortcut names its unlock block in `prop`, placed at world load and never removed; a shortcut with none is refused.",
       "round": "2026-08-02",
       "triage": "capability"
     },
@@ -3006,6 +3008,62 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "area/"
+          }
+        }
+      },
+      "binding": {
+        "file": "reach-graph.json",
+        "kind": "artifact",
+        "path": "states.total"
+      },
+      "campaign": "the-bell-changes-the-tune",
+      "carrier": {
+        "code": "DW0921",
+        "kind": "dw"
+      },
+      "finding": "a player sprint-jumped from a standing stone onto a buttress and over the yard wall, and fell out of the world",
+      "general_form": "no place a body can reach from the proven route, by any movement the pinned game's physics gives it, is one it cannot leave or one under the world",
+      "id": "bct-01",
+      "note": "The leave proof's relation took cardinal jumps from cell centres inside a measured gap table, so a jump at an angle onto a buttress, and the second jump off it over the wall, were in no proof's reach. Carried by the reach graph (spec-0113): every launch flown through the simulator of the pinned physics, read by `DW0921` and by `DW0322`'s void branch. The Bell yard fixture (`nav::world::reach::tests::bell_yard`) reaches outside the wall by the two jumps and is refused by `DW0921`; the walk relation does not (`the_two_escapes_are_seen`). Binding: the graph's rest states on the build being staged.",
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "area/"
+          }
+        }
+      },
+      "binding": {
+        "file": "reach-graph.json",
+        "kind": "artifact",
+        "path": "states.total"
+      },
+      "campaign": "the-thing-across-the-water",
+      "carrier": {
+        "code": "DW0322",
+        "kind": "dw"
+      },
+      "finding": "a player jumped off the jetty into the sea and could not get back onto land",
+      "general_form": "no movement the pinned game's physics gives a body puts it in open water with no way back to land it reached",
+      "id": "tat-01",
+      "note": "The stranding proof judged only walk cells beside the sea, and the walk never left the jetty, so a jump off its end was in no proof's reach. Carried by the reach graph (spec-0113): `DW0322`'s ocean branch judges every rest state afloat in the open sea the graph reaches, by any launch, and refuses one with no swim and climb back to a place on land it reached. The jetty fixture (`nav::world::reach::tests::jetty`) is refused by `DW0322` naming the jump; the walk relation never enters the sea (`the_two_escapes_are_seen`). Binding: the graph's rest states on the build being staged.",
+      "triage": "capability"
+    },
+    {
       "binding": {
         "files": [
           "layout-graph.json"
@@ -3025,7 +3083,7 @@
       "finding": "the party reached scenes behind a shut barred door, out of story order, by entering the sea and swimming around it",
       "general_form": "the far side of every barred edge or gate is unreachable from its near side while the gate is shut, by walking, falling, jumping or swimming",
       "id": "str-01",
-      "note": "Carried by `DW1011` (`compiler::nav::separate`): per quest configuration, every gate the world resolves and every barred edge's seam gate is held to it: while the gate is shut, a body at its near face reaches its far face by no walk, fall, jump or swim (`World::body_moves`). Route proofs keep refusing water (spec-0038 §5); this is a separation proof. The binding counts barred edges in the layout graph.",
+      "note": "Carried by `DW1011` (`compiler::nav::separate`): per quest configuration, every gate the world resolves and every barred edge's seam gate is held to it: while the gate is shut, a body at its near face reaches its far face by no walk, fall, jump, climb or swim (the reach graph, `World::body_reach`, spec-0113). Route proofs keep refusing water (spec-0038 §5); this is a separation proof. The binding counts barred edges in the layout graph.",
       "round": 1,
       "triage": "capability"
     },
@@ -3503,13 +3561,13 @@
       },
       "campaign": "the-stranding",
       "carrier": {
-        "code": "DW0963",
+        "code": "DW1059",
         "kind": "dw"
       },
       "finding": "nothing taught the player that the world's blocks are right-clicked: a sign started a cutscene unannounced, and later props were not tried",
       "general_form": "a world block the party must act on is a visible block that reads as the thing, picked out on arrival by a highlight the author declares where it does not, and how the setting is operated where it contradicts vanilla is in the journal's manual, readable any time",
       "id": "str-07",
-      "note": "Carried by `DW0963` (spec-0104 §7.6): every `interact` and every `use`/`strike` trigger sits on a visible block — a prop or an authored block — with no marker hatch. Where the block does not read as the thing, the author declares `highlight {within}` (lit while a player is near and the act is armed; `DW1016` refuses one with nothing to light), and where the setting contradicts vanilla the author writes `guidance.manual` pages, which the journal in every hand holds with the open and done objectives. No check asks that an input be taught: a vanilla player right-clicks a lever without being told.",
+      "note": "Carried by `DW1059` (spec-0117 §3a): every `interact` and every `use`/`strike` trigger names the real block it is pressed on in `prop` — a press with none, or on a block with no outline, is refused. Where the block does not read as the thing, the author declares `highlight {within}` (lit while a player is near, on the side it is pressed from, and the act is open; `DW1016` refuses one with nothing to light), and where the setting contradicts vanilla the author writes `guidance.manual` pages. No check asks that an input be taught: a vanilla player right-clicks a lever without being told.",
       "round": 1,
       "triage": "capability"
     },
@@ -3823,6 +3881,101 @@
       "general_form": "a secret the level shows is told by the shot that shows it and by no player-facing string the play order places before it, in any language, and is told by some string at or after it",
       "id": "thd-03",
       "note": "Carried by DW1060 (compiler::telling, validation tier, spec-0118 §6.4): the hidden way's declared `secret[]` words are matched by DW0982's matcher in every inventoried string, English and every sidecar, against the one placement of strings on the play order DW0982 reads. The binding counts the gatings that keep a secret. Closed by the re-run on the rebuilt level: on the content as found, declared hidden, the outro is refused for `passage` and the class blurb for `behind the hearth` and `records`; rebuilt, the 20 strings read before the shot mention none of the three words and the line after the shot tells each.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "interact"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW1051",
+        "kind": "dw"
+      },
+      "finding": "a prop an objective would later open was pressed before its step and nothing happened and nothing was said",
+      "general_form": "every press on an interaction point answers in every state it can be pressed in: not yet before its step, done after it, and the missing item when the hand lacks it",
+      "id": "str-21",
+      "note": "Carried by `DW1051` (spec-0117 §6): every `interact` owes `answers.not_yet` and, unless released, `answers.done`, and with `requires_item` `answers.missing_item`; each is shown to the presser on the action bar with the refusal cue. The binding counts the interacts the check quantifies over: 16 on the-stranding's source as committed on its campaign branch. The re-run on that campaign waits on its redo (its documents are written against an earlier surface); the general form is proven live on the gallery and the demo level Three Buttons and a Bell.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "on": "use"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW1051",
+        "kind": "dw"
+      },
+      "finding": "a puzzle solved by several presses went on accepting presses after it was solved, and a press after the solve undid part of it",
+      "general_form": "a repeatable press that counts toward an objective stands down when the objective settles, and a press after it is answered, not acted on",
+      "id": "str-22",
+      "note": "Carried by `DW1051` (spec-0117 §6) through `serves`: a `use` trigger that declares `serves: {objective}` is open only while that objective is pending and owes `answers.not_yet` and `answers.done`, so the press after the solve says so and writes nothing. The remedy is `serves`; the check cannot infer that a trigger feeds an objective, so it judges what the trigger declares. The binding counts the `use` triggers on the-stranding (14). The instance is fixed on the branch that redoes that campaign (`campaign/stranding`).",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "shortcut/"
+          }
+        }
+      },
+      "campaign": "three-ways-shut",
+      "carrier": {
+        "code": "DW1059",
+        "kind": "dw"
+      },
+      "finding": "a shortcut's far-side unlock glowed through the shut door and the wall and was seen from the wrong side, giving the shortcut away",
+      "general_form": "an interaction point is drawn the way the world draws a thing, occluded by walls, and is lit only by a declared highlight, only near, and only from the side it is pressed from",
+      "id": "tws-02",
+      "note": "Carried by `DW1059` (spec-0117 §3a, §3b): a shortcut's unlock is a real block named in `prop` and the compiler summons no glowing icon; the one glow is `highlight {within}`, lit only for a player standing in the unlock's lit set on its far side. The binding counts the shortcuts on the demo level it was found on (1). Closed by the re-run of that level on this engine.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "contains": "(?<!trap)_door\\[",
+        "glob": "**/*.json",
+        "kind": "campaign"
+      },
+      "binding": {
+        "file": "door-leaves.json",
+        "kind": "artifact",
+        "path": "doors"
+      },
+      "campaign": "the-latch",
+      "carrier": {
+        "code": "DW1068",
+        "kind": "dw"
+      },
+      "finding": "a door's leaf is a thin panel of the same collision class as a trapdoor's — closed, a plate against one face of its cell; open, a plate against its hinge face — and the walk model holds a door a hand opens as a cell a body passes in every direction in both states, reading no panel, while it reads a trapdoor's per state; so a step that crosses a door's cell across the face its leaf stands on is a move the model admits and the game stops",
+      "general_form": "the walk model reads a door's collision per state as it reads a trapdoor's: a step across the face a door's leaf stands on, in the state it stands in, is no move, and every proof that reads the walk follows",
+      "id": "latch-01",
+      "note": "Direction: it can let something ship — a walk the model proved across a door's open leaf for a body that opens nothing is one the game refuses — and it cannot turn a proof red. The party was already read right: a door's shut and open leaves stand on two faces, so a body that sets the door before it steps is never stopped by it (`Leaf::stops_crossing` with `may_use`). Closed by `blockshape::leaf` (the door's leaf per `facing`, `hinge` and `open`, from the jar's tables), read by the walk for every door cell, and `DW1068`, which refuses a walked leg across a leaf its mover cannot set and names the `facing` and `hinge` that clear the way. The binding counts the door cells whose leaf the walk reads (`validation/door-leaves.json` `doors`).",
       "round": 1,
       "triage": "capability"
     }

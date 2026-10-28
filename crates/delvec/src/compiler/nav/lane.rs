@@ -84,6 +84,23 @@ pub fn plan_lanes(plan: &Plan, world: &World) -> Result<LaneRoutes, Failure> {
                 ))
             })?;
             if world.find_path(prev, cell).is_none() {
+                // DW1068: a leg the squad walks only across a leaf it cannot
+                // set — a door standing open with its leaf across the way.
+                if let Some(message) = lane_leg_across_a_leaf(
+                    world,
+                    format!(
+                        "lane wave `{}`: the leg `{prev_name}` → `{}`",
+                        w.id,
+                        wp.as_str()
+                    ),
+                    prev,
+                    cell,
+                ) {
+                    return Err(Failure {
+                        code: DW_WAY_ACROSS_A_LEAF,
+                        message,
+                    });
+                }
                 return Err(fail(format!(
                     "lane wave `{}`: the leg `{prev_name}` ({prev:?}) → `{}` ({cell:?}) is not \
                      walkable (spec-0016 §6). The squad marches this polyline on foot with native \

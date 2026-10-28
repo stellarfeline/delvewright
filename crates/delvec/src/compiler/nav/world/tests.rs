@@ -34,7 +34,9 @@ fn floored_with_furniture(
             lava: BTreeSet::new(),
             climb: Default::default(),
             unheld_climb: Default::default(),
+            material: Default::default(),
             footprints: Default::default(),
+            leaves: Default::default(),
             hiding: Default::default(),
             hurting: Default::default(),
         },
@@ -51,6 +53,8 @@ fn floored_with_furniture(
             world_load_seals: Vec::new(),
             clocked_gates: BTreeSet::new(),
             objective_cells: Vec::new(),
+            unbounded_fall: false,
+            declared_jumps: Vec::new(),
         },
     )
 }
@@ -184,7 +188,7 @@ fn a_ceiling_anchor_seats_in_its_room_not_on_the_roof() {
     // The defect: the nearest standable cell by squared distance is the roof
     // (Δy 2) rather than the room's own floor (Δy 3) — a solid ceiling in
     // between counts for nothing.
-    let loose = world.reachable_walkable(&[ceiling_anchor]);
+    let loose = world.walk_region(&[ceiling_anchor]);
     assert!(
         loose.contains(&roof),
         "unconfined snap climbs onto the roof"
@@ -195,7 +199,7 @@ fn a_ceiling_anchor_seats_in_its_room_not_on_the_roof() {
     );
 
     // The fix: the piece AABB (y 63..=68) excludes the roof cell entirely.
-    let seated = world.reachable_walkable_rooted(&[AnchorRoot {
+    let seated = world.walk_region_rooted(&[AnchorRoot {
         at: ceiling_anchor,
         within: ([0, 63, 0], [6, 68, 6]),
     }]);
@@ -863,9 +867,9 @@ fn a_body_falls_between_bars_laid_through_a_floor_and_stands_on_a_trapdoor() {
     assert!(bars.is_sieve([3, 63, 3]), "the hatch's bars are a sieve");
     assert!(!bars.is_standable(over), "no body stands over bars");
     assert!(
-        bars.body_moves(beside).contains(&[3, 60, 3]),
+        bars.body_edge_cells(beside).contains(&[3, 60, 3]),
         "a body stepping onto the bars falls into the cellar: {:?}",
-        bars.body_moves(beside)
+        bars.body_edge_cells(beside)
     );
     for lid in [
         "minecraft:iron_trapdoor[facing=north,half=top,open=false]",
@@ -876,7 +880,7 @@ fn a_body_falls_between_bars_laid_through_a_floor_and_stands_on_a_trapdoor() {
         assert!(!shut.is_sieve([3, 63, 3]), "{lid}");
         assert!(shut.is_standable(over), "{lid} holds a body");
         assert!(
-            !shut.body_moves(beside).iter().any(|c| c[1] < 63),
+            !shut.body_edge_cells(beside).iter().any(|c| c[1] < 63),
             "{lid}: no move below the hatch"
         );
     }
@@ -900,6 +904,48 @@ fn a_body_falls_between_bars_laid_through_a_floor_and_stands_on_a_trapdoor() {
     assert!(lone.is_standable([2, 64, 2]));
 }
 
+/// **The reach graph flies a sieve at its posts.** The same 2x2 hatch of bars
+/// over a shaft too deep to survive: the cell relation proves no landing down
+/// it, so only a launch can find the fall, and a launch over the bars drops
+/// between their posts and dies. Read as whole cells, the bars were a floor a
+/// launch walked across.
+#[test]
+fn a_launch_over_bars_drops_between_their_posts() {
+    let mut cells: Vec<([i32; 3], &str)> = Vec::new();
+    for x in 0..8 {
+        for z in 0..8 {
+            cells.push(([x, 20, z], "minecraft:stone"));
+            let in_hatch = (3..=4).contains(&x) && (3..=4).contains(&z);
+            cells.push((
+                [x, 63, z],
+                if in_hatch {
+                    "minecraft:iron_bars"
+                } else {
+                    "minecraft:stone"
+                },
+            ));
+            // A wall round the hall, so the one way down is the hatch.
+            if x == 0 || z == 0 || x == 7 || z == 7 {
+                for y in 64..=67 {
+                    cells.push(([x, y, z], "minecraft:stone"));
+                }
+            }
+        }
+    }
+    let bars = crate::compiler::nav::testkit::blocks_world(&cells);
+    assert!(bars.is_sieve([3, 63, 3]));
+    assert!(
+        bars.fatal_launch([2, 64, 3]).is_some(),
+        "a launch onto the bars falls between the posts"
+    );
+    let stone: Vec<([i32; 3], &str)> = cells.iter().map(|(c, _)| (*c, "minecraft:stone")).collect();
+    let floor = crate::compiler::nav::testkit::blocks_world(&stone);
+    assert!(
+        floor.fatal_launch([2, 64, 3]).is_none(),
+        "the same floor in stone kills no launch"
+    );
+}
+
 /// The seal a world-load gate lays is read through its block too: a hatch of
 /// bars sealed over an open shaft is no floor, and the same region sealed
 /// with a block that covers its cells is.
@@ -913,8 +959,54 @@ fn a_seal_of_bars_through_a_floor_is_no_floor() {
         cells.iter().map(|c| (*c, bar)).collect();
     let barred = open.with_sealed_by(&cells, &fps, &BTreeSet::new());
     assert!(!barred.is_standable([3, 64, 3]));
-    assert!(barred.body_moves([2, 64, 3]).contains(&[3, 60, 3]));
+    assert!(barred.body_edge_cells([2, 64, 3]).contains(&[3, 60, 3]));
     let shut = open.with_sealed(&cells);
     assert!(shut.is_standable([3, 64, 3]));
-    assert!(!shut.body_moves([2, 64, 3]).iter().any(|c| c[1] < 63));
+    assert!(!shut.body_edge_cells([2, 64, 3]).iter().any(|c| c[1] < 63));
+}
+
+/// **A wall laid to take floor away has a top, and a confined walk keeps off
+/// it** ([`World::walls_over`], [`World::wall_tops`]). A lane one wide: kept
+/// floor at both ends, the middle five cells taken away and walled, and a
+/// two-step stair at the near end that stands a body one below the wall's
+/// top. Over the walled world alone a body climbs the stair, steps onto the
+/// wall and walks across the taken floor on it — the shape that let `DW0838`'s
+/// flood without the commons cross the commons from a place's open side
+/// (spec-0123 §5 with the reach graph). Kept off the wall's top, it does not.
+#[test]
+fn a_confined_walk_keeps_off_the_top_of_the_wall_it_laid() {
+    let mut solid: BTreeSet<[i32; 3]> = BTreeSet::new();
+    for x in -1..=11 {
+        solid.insert([x, 63, 0]); // the lane's floor
+        for y in 63..=72 {
+            solid.insert([x, y, -1]);
+            solid.insert([x, y, 1]);
+        }
+    }
+    for y in 64..=72 {
+        solid.insert([-1, y, 0]);
+        solid.insert([11, y, 0]);
+    }
+    solid.insert([1, 64, 0]); // the stair: one up, then two up
+    solid.insert([2, 64, 0]);
+    solid.insert([2, 65, 0]);
+    let w = World::from_solid_cells(solid);
+    let taken: BTreeSet<[i32; 3]> = (3..=7).map(|x| [x, 64, 0]).collect();
+    let walls = World::walls_over(&taken, &|p| !w.solid_at(p));
+    assert_eq!(walls.len(), 15, "three high over five cells");
+    let tops = World::wall_tops(&walls);
+    assert_eq!(tops.len(), 5);
+    let walled = w.with_sealed(&walls);
+    let far = [9, 64, 0];
+    let over = walled.body_flood(&[[0, 64, 0]], &Confinement::none());
+    assert!(over.contains(&[2, 66, 0]), "the stair is climbed");
+    assert!(
+        over.contains(&far),
+        "over the walled world alone a body walks the wall's top across"
+    );
+    let kept = walled.body_flood(&[[0, 64, 0]], &Confinement::cells(&|c| !tops.contains(&c)));
+    assert!(
+        !kept.contains(&far),
+        "kept off the wall's top, it does not cross"
+    );
 }

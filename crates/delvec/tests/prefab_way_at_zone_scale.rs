@@ -58,7 +58,8 @@ fn prefab() -> Command {
 /// trusting this comment.
 const ZONE: Box3 = Box3::at_origin([97, 6, 15]);
 
-/// The partition's Z course, which is where every cell this file edits lives.
+/// The partition's middle Z course: every cell this file edits lies in it, or within
+/// half the laid passage's run of it.
 const PARTITION_Z: i32 = 7;
 
 fn scratch(tag: &str) -> PathBuf {
@@ -110,9 +111,15 @@ fn cleared_way() -> Program {
     program
 }
 
+/// How long the broken passage runs along `z`: a gap no jump of the reach
+/// graph's launch set clears, so the deck is the only way across. A one-cell
+/// threshold is a gap a body jumps, and a way over it opens nothing.
+const DECK_RUN: i64 = 5;
+
 /// The corpus piece with its threshold missing instead of barred: the
-/// partition's floor course is claimed as `deck`, left empty, and the door is a
-/// `walk` whose way is `laid`.
+/// partition is thickened into a passage [`DECK_RUN`] cells long, its floor
+/// course is claimed as `deck`, left empty, and the door is a `walk` whose way
+/// is `laid`.
 ///
 /// The sign whose cells the shipped bytes do **not** hold — at zone scale, where
 /// the three cells the metadata names are split across two files that each hold
@@ -133,27 +140,43 @@ fn laid_way() -> Program {
             };
         }
     }
-    program.rule(
-        "doorway",
-        Node::Claim {
-            region: "gate".to_string(),
-            body: Box::new(Node::Split(Split {
-                axis: Axis::Y,
-                sizes: vec![Size::abs(1), Size::abs(3), Size::rel(1)],
+    program
+        .rule(
+            "doorway",
+            Node::Claim {
+                region: "gate".to_string(),
+                body: Box::new(Node::Split(Split {
+                    axis: Axis::Y,
+                    sizes: vec![Size::abs(1), Size::abs(3), Size::rel(1)],
+                    rounding: None,
+                    repeat: false,
+                    orient: Reorient::KEEP,
+                    children: vec![
+                        Node::Claim {
+                            region: "deck".to_string(),
+                            body: Box::new(Node::Void),
+                        },
+                        Node::Void,
+                        Node::fill("shell"),
+                    ],
+                })),
+            },
+        )
+        .rule(
+            "piece",
+            Node::Split(Split {
+                axis: Axis::Z,
+                sizes: vec![Size::rel(1), Size::abs(DECK_RUN), Size::rel(1)],
                 rounding: None,
                 repeat: false,
                 orient: Reorient::KEEP,
                 children: vec![
-                    Node::Claim {
-                        region: "deck".to_string(),
-                        body: Box::new(Node::Void),
-                    },
-                    Node::Void,
-                    Node::fill("shell"),
+                    Node::call("near_room"),
+                    Node::call("partition"),
+                    Node::call("far_room"),
                 ],
-            })),
-        },
-    )
+            }),
+        )
 }
 
 /// Freeze a program as a TILED zone: several `.nbt` files and one manifest
@@ -380,7 +403,7 @@ fn a_laid_way_is_judged_across_a_seam_and_refused_once_the_bytes_hold_it() {
     let way = zone.way();
     assert_eq!(way["opens"], "laid", "{way}");
     let cells = zone.way_cells();
-    assert_eq!(cells.len(), 3, "{way}");
+    assert_eq!(cells.len(), 3 * DECK_RUN as usize, "{way}");
     assert_eq!(
         zone.tiles_the_way_spans(),
         2,
@@ -391,7 +414,7 @@ fn a_laid_way_is_judged_across_a_seam_and_refused_once_the_bytes_hold_it() {
     assert!(a.ok, "{}", a.stderr);
     assert_eq!(a.report["contract"]["state"], "judged");
     assert!(
-        a.stderr.contains("way \"deck\": laid over 3 cell(s)"),
+        a.stderr.contains("way \"deck\": laid over 15 cell(s)"),
         "the way is enumerated with its sign and binding count: {}",
         a.stderr
     );
@@ -405,7 +428,10 @@ fn a_laid_way_is_judged_across_a_seam_and_refused_once_the_bytes_hold_it() {
     // Lay the threshold, in both files.
     for cell in &cells {
         assert_eq!(cell[1], 0, "the deck is the floor course: {cell:?}");
-        assert_eq!(cell[2], PARTITION_Z, "in the partition: {cell:?}");
+        assert!(
+            (cell[2] - PARTITION_Z).abs() <= DECK_RUN as i32 / 2,
+            "in the partition: {cell:?}"
+        );
         zone.set_cell(*cell, "minecraft:stone");
     }
 

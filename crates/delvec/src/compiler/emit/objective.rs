@@ -7,11 +7,6 @@ pub(super) fn safe_obj_fn(obj_id: &str) -> String {
     format!("o_{}", plan::safe_local(obj_id))
 }
 
-/// The entity tag on an `interact` objective's interaction hitbox.
-pub(super) fn interact_entity_tag(obj_id: &str) -> String {
-    format!("dw_i_{}", plan::safe_local(obj_id))
-}
-
 /// Scoreboard (dummy, `dw.sys`) holder for the "already holding the item" per-tick
 /// collect completion check (gap 13).
 pub(super) const COLLECT_HOLD: &str = "dw.hold";
@@ -34,7 +29,8 @@ pub(super) fn has_collect_objective(c: &delvewright_dsl::Campaign) -> bool {
 }
 
 /// The world-placement commands run when an objective ACTIVATES (gap 13): a
-/// `collect` chest + item fill, or an `interact`'s prop and hitbox. Empty for
+/// `collect` chest + item fill, or an `interact`'s window opening (its click
+/// box removed where the block acts on its own). Empty for
 /// objectives that place nothing (`talk-to`, `kill`, `reach-anchor`) or an
 /// unresolvable anchor — both the `tick` activation driver and the
 /// `activate_<obj>` function key off this being non-empty, so they never diverge.
@@ -50,8 +46,11 @@ pub(super) fn activation_commands(
             Some(r) => r.command(),
             None => {
                 assert!(
-                    l.starts_with("item replace entity ") || l.starts_with("data merge entity "),
-                    "an activation places blocks, items and bodies, or fills a holder: {l}"
+                    l.starts_with("item replace entity ")
+                        || l.starts_with("data merge entity ")
+                        || l.starts_with("kill @e[tag="),
+                    "an activation places blocks, items and bodies, fills a holder, or opens \
+                     a pressable's window: {l}"
                 );
                 l
             }
@@ -151,81 +150,31 @@ fn activation_lines(
                 ));
             }
         }
-        Objective::Interact { id, anchor, .. } => {
-            if let Some(pos) = plan.point(area, anchor.as_str()) {
-                // spec-0093 §6.5: a prop a hand presses IS the thing. The block
-                // is placed and nothing else: no hitbox, no marker — vanilla's
-                // `default_block_use` at this cell completes the objective.
-                let prop = plan::activation_prop(&plan.anchors, area, o);
-                if crate::compiler::pressable::interact_block(o).is_some() {
-                    if let Some((p, block)) = &prop {
-                        cmds.push(format!("setblock {} {} {} {block}", p[0], p[1], p[2]));
-                    }
-                    return cmds;
-                }
-                // The standard column, bracketing the prop's cell and the one above
-                // it: a full-cube prop flush with a `1.0`-wide box wins every click
-                // that reaches its faces ([`crate::compiler::clickbox`]).
-                cmds.push(
-                    crate::compiler::clickbox::ClickBox::column(pos, 2).summon(&format!(
-                        "response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"{}\"]",
-                        interact_entity_tag(id.as_str())
-                    )),
-                );
-                if let Some((p, block)) = &prop {
-                    // v0.4: the prop block IS the affordance (spec-0008 §2) — place
-                    // it at the anchor. No hologram marker: the block is visible.
-                    cmds.push(format!("setblock {} {} {} {block}", p[0], p[1], p[2]));
-                }
-                // A prop-less interact stands on a block the piece authored
-                // (`DW0963` refuses one on air, spec-0104 §7.6): the hitbox
-                // over it is the whole affordance.
-            }
+        Objective::Interact { id, .. } => {
+            // spec-0117 §5.1: the block stands from `setup_finish`; activation
+            // only opens the window — a block that acts on its own loses its
+            // box, so the press is the block's own.
+            cmds.extend(super::press::interact_activation(plan, id.as_str()));
         }
         Objective::ReachAnchor { .. } | Objective::TalkTo { .. } | Objective::Kill { .. } => {}
     }
     cmds
 }
 
-/// The despawn commands run when an objective COMPLETES: remove every
-/// entity its [`activation_commands`] summoned. The objective-scoped tag
-/// (`dw_i_<obj>` on an interact's hitbox) is deterministic and unique to the
-/// objective, so a single tight `kill @e[tag=…]` covers it without touching
-/// players (players never carry these tags) or any other objective's entities.
-/// Prop BLOCKS and collect chests are the affordance itself and intentionally
-/// persist as scenery — they are not entities and are not killed here. `collect`
-/// (chest block only), `talk-to`, `kill` and `reach-anchor` summon no
-/// per-objective entity, so they contribute nothing.
-pub(super) fn completion_cleanup(o: &Objective) -> Vec<String> {
-    completion_rows(o)
-        .iter()
-        .map(crate::compiler::placed::Placed::command)
-        .collect()
+/// The commands run when an objective COMPLETES for the pressable it is: an
+/// `interact`'s click box returns over its settled block, or a retained box
+/// goes when the block is released. `collect`, `talk-to`, `kill` and
+/// `reach-anchor` place no pressable and contribute nothing.
+pub(super) fn completion_cleanup(plan: &Plan, o: &Objective) -> Vec<String> {
+    completion_lines(plan, o)
 }
 
-/// The ledger rows of [`completion_cleanup`]: one removal per objective tag.
-pub(super) fn completion_rows(o: &Objective) -> Vec<crate::compiler::placed::Placed> {
-    completion_lines(o)
-        .into_iter()
-        .map(|l| {
-            let tag = l
-                .trim_start_matches("kill @e[tag=")
-                .trim_end_matches(']')
-                .to_string();
-            crate::compiler::placed::Placed::removed(
-                crate::compiler::placed::Firing::Setup,
-                &tag,
-                &l,
-            )
-        })
-        .collect()
-}
-
-fn completion_lines(o: &Objective) -> Vec<String> {
+/// spec-0117 §5.1: a completed `interact` keeps its block and answers `done`
+/// through its box, which returns where the block acts on its own — unless
+/// released, when the block is vanilla's.
+fn completion_lines(plan: &Plan, o: &Objective) -> Vec<String> {
     match o {
-        Objective::Interact { id, .. } => {
-            vec![format!("kill @e[tag={}]", interact_entity_tag(id.as_str()))]
-        }
+        Objective::Interact { id, .. } => super::press::interact_completion(plan, id.as_str()),
         Objective::ReachAnchor { .. }
         | Objective::Collect { .. }
         | Objective::TalkTo { .. }

@@ -1,14 +1,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { walkGoals, type Jump } from "../src/waypoints.ts";
 import {
   allowNonCollidingEntities,
   configureLeg,
+  parkourFor,
   describeStuckNeighbours,
   NON_COLLIDING_ENTITY_TYPES,
   partitionByPassability,
   type ControlBot,
   type LegMovements,
   type Neighbour,
+  isDoorByHand,
 } from "../src/movement.ts";
 
 // A fake bot that records the sneak control-state toggles it is asked to make.
@@ -20,8 +23,9 @@ class FakeControlBot implements ControlBot {
 }
 
 function freshMovements(): LegMovements {
-  // Defaults mirror mineflayer-pathfinder: digging/towers on, doors off, sprinting on.
-  return { canDig: true, allow1by1towers: true, canOpenDoors: false, allowSprinting: true };
+  // Defaults mirror mineflayer-pathfinder: digging/towers on, doors off, sprinting
+  // and parkour on.
+  return { canDig: true, allow1by1towers: true, canOpenDoors: false, allowSprinting: true, allowParkour: true };
 }
 
 test("configureLeg locks adventure-mode movement and leaves sprint alone for a plain leg", () => {
@@ -34,6 +38,8 @@ test("configureLeg locks adventure-mode movement and leaves sprint alone for a p
   // can enter an area whose only opening is a closed gate (the ram pen).
   assert.equal(movements.canOpenDoors, true);
   assert.equal(movements.allowSprinting, true); // not a sneak leg → sprint untouched
+  // The library's own leaps are off: the bot walks what the compiler proved.
+  assert.equal(movements.allowParkour, false);
   assert.deepEqual(bot.toggles, []); // no sneak control toggled
   // Restore is a no-op and must not toggle sneak on a leg that never sneaked.
   restore();
@@ -151,4 +157,44 @@ test("the stuck report says so when nothing is near, and when nothing classified
   const line = describeStuckNeighbours(MUSTER_CROWD, undefined);
   assert.match(line, /7 entities within 12 blocks, unclassified/);
   assert.doesNotMatch(line, /Routed AROUND/);
+});
+
+// spec-0113 §6: the pathfinder's parkour move is on for the hop of a proven
+// jump and off for every other hop and every other leg.
+test("allowParkour is on for a proven jump's hop and off for every other", () => {
+  const jump: Jump = { from: [0, 64, 0], to: [3, 64, 0], sprint: true, runUp: 4 };
+  const goals = walkGoals(
+    [
+      [-4, 64, 0],
+      [0, 64, 0],
+      [3, 64, 0],
+      [6, 64, 0],
+    ],
+    [9, 64, 0],
+    1,
+    [],
+    [jump],
+  );
+  const movements = freshMovements();
+  configureLeg(new FakeControlBot(), movements, false);
+  const flags = goals.map((g) => {
+    parkourFor(movements, g.jump !== undefined);
+    const on = movements.allowParkour;
+    parkourFor(movements, false);
+    return on;
+  });
+  assert.deepEqual(flags, [false, false, true, false, false]);
+  assert.equal(movements.allowParkour, false, "off again after the hop");
+  // A leg with no jump never turns it on.
+  const plain = walkGoals([[0, 64, 0], [1, 64, 0]], [2, 64, 0], 1);
+  assert.ok(plain.every((g) => g.jump === undefined));
+});
+
+// spec-0123 §3.1: a door a hand opens is every `*_door` but the iron one.
+test("isDoorByHand is every door but the iron one", () => {
+  assert.equal(isDoorByHand("oak_door"), true);
+  assert.equal(isDoorByHand("copper_door"), true);
+  assert.equal(isDoorByHand("iron_door"), false);
+  assert.equal(isDoorByHand("iron_trapdoor"), false);
+  assert.equal(isDoorByHand("oak_fence_gate"), false);
 });

@@ -68,14 +68,18 @@
         "id": "quest/bolt",
         "objectives": [
           {
-            "anchor": "anchor/keeper-stand",
+            "anchor": "anchor/latch",
+            "answers": {
+              "done": "Already done.",
+              "not_yet": "Not yet."
+            },
             "happening": {
               "text": "the party completes obj/bolt",
               "verb": "opens"
             },
             "id": "obj/bolt",
             "prop": {
-              "block": "minecraft:lever"
+              "block": "minecraft:stone_button[face=floor,facing=north]"
             },
             "requires_flags": [
               "flag/flee"
@@ -180,6 +184,6 @@
       }
     ]
   },
-  "dsl_version": "0.63.0",
+  "dsl_version": "0.67.0",
   "stage": "quests"
 }

@@ -40,8 +40,7 @@
 //!
 //! Every other piece in the vocabulary stands a body on its own floor, one cell
 //! up. The causeway stands one on a berm `rise` cells up, and a seam is only
-//! walkable in **both** directions when the step across it is at most one — the
-//! `connected` walk's whole rule. So the zone pins `ward/rise` to
+//! walkable in **both** directions when a body can get back up it. So the zone pins `ward/rise` to
 //! [`BERM_STEP`] rather than inheriting the piece's default: at the default of
 //! 3 the seam is a two-block drop, which walk-and-fall would cross downhill and
 //! nothing would cross back. A zone whose shortcut exists to be walked the other
@@ -111,8 +110,7 @@ const SHORTCUT: &str = "shortcut";
 /// How far the berm stands over the floor every other piece of this zone walks
 /// on — and therefore the height of the step at the seam between them.
 ///
-/// One, because `connected` steps at most one block: two would make the seam a
-/// drop crossable only downhill. See the module note.
+/// See the module note.
 pub const BERM_STEP: i64 = 2;
 
 /// The Drowned Lower Ward.

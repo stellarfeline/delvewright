@@ -17,8 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     Actor, Ambush, Assembly, CastEntry, EnvTrigger, Happening, LethalVolume, Loop, Loot, NpcId,
-    ObjectiveId, Pulse, QuestId, Shop, Shortcut, Stake, StateDecl, TimedGate, Trap, TriggerOn,
-    Wave,
+    ObjectiveId, Pulse, QuestId, Shop, Shortcut, Stake, StateDecl, TimedGate, Trap, Wave,
 };
 
 /// Stage 5 payload: quest expansions.
@@ -285,22 +284,21 @@ impl QuestsContent {
         out
     }
 
-    /// **Does the campaign itself answer a right-click at `anchor`?**
+    /// **The triggers that answer a press on the gate `gate`** (spec-0117 §6):
+    /// every `use` trigger that declares `serves: {gate}` naming it, in
+    /// declared order — the gate's own answer at a cell of its region, or a
+    /// knocker beside it.
     ///
-    /// One predicate, read by both consumers of the press-answer rule, so they can
-    /// never disagree about what "the campaign answered it" means: the compiler's
-    /// synthesis (`plan::collect_press_answers`, which stands down where this is
-    /// true) and the obligation on a shortcut door (`DW0429`, which fires where it
-    /// is false). Split across the two crates they would drift, and the drift
-    /// would read as "the compiler refused a door I answered".
-    ///
-    /// Deliberately the widest reading — *any* `use` trigger anchored there.
-    /// Pressing it already does something the author chose, and the engine does
-    /// not adjudicate whether what they chose counts as an answer.
-    pub fn answers_press_at(&self, anchor: &str) -> bool {
-        self.all_triggers()
-            .iter()
-            .any(|t| matches!(t.on, TriggerOn::Use) && t.at_anchor() == Some(anchor))
+    /// One predicate for every reader of "this sealed gate answers a press":
+    /// `DW0429`'s obligation on a sealed gate (`compiler::pressable::check`)
+    /// and `DW1054`'s confirmation of a way declared `told` (spec-0118 §6.2,
+    /// `compiler::nav::learned`). A `told` way's press answer is a press
+    /// answer, so the two read one rule.
+    pub fn gate_answers<'a>(&'a self, gate: &'a str) -> impl Iterator<Item = &'a EnvTrigger> + 'a {
+        self.triggers.iter().filter(move |t| {
+            matches!(t.on, crate::TriggerOn::Use)
+                && matches!(&t.serves, Some(crate::Serves::Gate(g)) if g.as_str() == gate)
+        })
     }
 
     /// Desugar every `ambush` into a real environment trigger and clear the

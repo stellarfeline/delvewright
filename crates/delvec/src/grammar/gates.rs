@@ -384,7 +384,39 @@ const POCKETS_REPORTED: usize = 5;
 
 /// Walk the model from its grade entrance and count what that reaches.
 fn reachability(model: &VoxelModel, standable: &BTreeSet<[i32; 3]>) -> Reachability {
-    let entry = nav::ground_entry(model);
+    reachability_from(model, standable, &nav::ground_entry(model))
+}
+
+/// **Every cell a body reaches from `from`** over the piece's own blocks, by the
+/// reach graph's moves ([`crate::compiler::nav::World::body_flood`] over
+/// [`contract::body_world`]): the walk, the climb, every fall and every jump of
+/// the launch set. Unconfined: the piece is the whole world, and outside it is
+/// air with nothing to stand on. What `traversable` and `reachable-floor` ask.
+fn piece_reached(
+    world: &crate::compiler::nav::World,
+    from: &BTreeSet<[i32; 3]>,
+) -> BTreeSet<[i32; 3]> {
+    let seeds: Vec<[i32; 3]> = from.iter().copied().collect();
+    world.body_flood(&seeds, &crate::compiler::nav::Confinement::none())
+}
+
+/// The cells of `standable` a body reaches from `entry`
+/// ([`crate::compiler::nav::World::floor_reached`] over
+/// [`contract::body_world`]): what `reachable-floor` counts as reached.
+pub(crate) fn floor_walked(
+    model: &VoxelModel,
+    standable: &BTreeSet<[i32; 3]>,
+    entry: &BTreeSet<[i32; 3]>,
+) -> BTreeSet<[i32; 3]> {
+    contract::body_world(model).floor_reached(standable, entry)
+}
+
+/// [`reachability`] from the cells `entry` names.
+pub(crate) fn reachability_from(
+    model: &VoxelModel,
+    standable: &BTreeSet<[i32; 3]>,
+    entry: &BTreeSet<[i32; 3]>,
+) -> Reachability {
     let sheltered_total = standable
         .iter()
         .filter(|&&c| nav::sheltered(model, c))
@@ -394,14 +426,16 @@ fn reachability(model: &VoxelModel, standable: &BTreeSet<[i32; 3]>) -> Reachabil
     // the step relation was symmetric, and it is not: a body rises a full block
     // only where the cell its head sweeps through is clear, and comes back down
     // asking nothing. So a lump of floor can hold an entrance and still have a
-    // gallery inside it no body reaches. Walk it.
-    let walked = nav::reachable_from(model, standable, &entry);
+    // gallery inside it no body reaches. Walk it — by the reach graph's moves,
+    // so a gap a jump clears, a ladder and a ledge stepped off all count.
+    let walked = floor_walked(model, standable, entry);
     let reachable = walked.len();
     let unwalked: BTreeSet<[i32; 3]> = standable.difference(&walked).copied().collect();
     // The leftovers are grouped for the author by [`nav::components`], whose
     // relation is the undirected one — the question there is "which lump of
     // floor is this", not "can a body get to it", and the answer to the second
-    // is already `walked`.
+    // is already `walked`. Grouping is not reach, so it is not the reach
+    // graph's.
     let stranded = nav::components(model, &unwalked);
 
     let mut unreachable_sheltered = 0usize;
@@ -708,13 +742,7 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
                 })
                 .collect(),
         };
-        gates.push(traversal(
-            model,
-            &standable,
-            &ways,
-            options,
-            faces.is_some(),
-        ));
+        gates.push(traversal(model, &ways, options, faces.is_some()));
     }
     // --- Gates: the spatial contract, whenever the piece declares one. ------
     //
@@ -731,7 +759,18 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
             .iter()
             .map(|(name, a)| (name.clone(), a.pos))
             .collect();
-        let checked = contract::check_sealed(model, resolved, &anchor_positions, expansion.sealed);
+        let place = if expansion.sealed {
+            contract::Place::Scenery
+        } else {
+            contract::Place::Reached
+        };
+        let checked = contract::check_handed(
+            model,
+            resolved,
+            &anchor_positions,
+            place,
+            &expansion.open_sides,
+        );
         gates.extend(checked.gates);
         findings.extend(checked.findings);
         enumeration = checked.enumeration;
@@ -1173,22 +1212,26 @@ pub(crate) fn gate_non_empty(model: &VoxelModel) -> Gate {
 /// `declared` decides only the wording — whether the reader is being told about
 /// doors somebody wrote down or about sides a tool inferred. It never changes
 /// what is walked.
-fn traversal(
-    model: &VoxelModel,
-    standable: &BTreeSet<[i32; 3]>,
-    ways: &[Way],
-    options: Options,
-    declared: bool,
-) -> Gate {
+fn traversal(model: &VoxelModel, ways: &[Way], options: Options, declared: bool) -> Gate {
     let bound = ways.len();
     let mut severed: Vec<String> = Vec::new();
+    // Where a body gets from each way, by the reach graph's moves. A fall is
+    // one of them, so `allow_falls` decides what a pair owes: a route one way
+    // when falls are allowed, and both ways when they are not — a body that
+    // only falls from one way to the other has not walked between them.
+    let world = contract::body_world(model);
+    let reached: Vec<BTreeSet<[i32; 3]>> = ways
+        .iter()
+        .map(|w| piece_reached(&world, &w.cells))
+        .collect();
     for (i, a) in ways.iter().enumerate() {
-        for b in ways.iter().skip(i + 1) {
+        for (j, b) in ways.iter().enumerate().skip(i + 1) {
+            let forward = !reached[i].is_disjoint(&b.cells);
+            let back = !reached[j].is_disjoint(&a.cells);
             let walked = if options.allow_falls {
-                nav::reachable_with_fall(model, standable, &a.cells, &b.cells)
-                    || nav::reachable_with_fall(model, standable, &b.cells, &a.cells)
+                forward || back
             } else {
-                nav::connected(model, standable, &a.cells, &b.cells)
+                forward && back
             };
             if !walked {
                 severed.push(format!("{} <-> {}", a.label, b.label));
@@ -1247,6 +1290,32 @@ fn traversal(
         bound,
         detail,
     }
+}
+
+/// The `traversable` verdict between ways of the named cells: the gate's own
+/// walk, for the agreement test that asks it and the reach graph the same
+/// cases (`compiler::nav::world::reach`).
+#[cfg(test)]
+pub(crate) fn traversal_passes(
+    model: &VoxelModel,
+    ways: &[BTreeSet<[i32; 3]>],
+    allow_falls: bool,
+) -> bool {
+    let ways: Vec<Way> = ways
+        .iter()
+        .enumerate()
+        .map(|(i, cells)| Way {
+            label: format!("way {i}"),
+            cells: cells.clone(),
+        })
+        .collect();
+    let options = Options {
+        traversable: true,
+        allow_falls,
+        symmetric: None,
+        reachable_floor: false,
+    };
+    traversal(model, &ways, options, true).passed()
 }
 
 /// Where a body actually stands at a declared way in or out.
@@ -1948,6 +2017,7 @@ mod tests {
             stats: Default::default(),
             oriented: Default::default(),
             sealed: false,
+            open_sides: Vec::new(),
         }
     }
 
@@ -2110,6 +2180,7 @@ mod tests {
             stats: Default::default(),
             oriented: Default::default(),
             sealed: false,
+            open_sides: Vec::new(),
         };
         assert!(
             nav::standable_cells(&expansion.model).contains(&[5, 1, 2]),
