@@ -1895,6 +1895,10 @@ pub fn check(c: &Campaign, prefabs: &PrefabRegistry) -> (Vec<Diagnostic>, Detail
 
         check_owed(c, &mut d, &mut binding, row, meta, &path, (&gates, &seats));
     }
+    // spec-0125 §5.3: a plot's parts are built as declared (`DW1074`, the
+    // shapes the metadata answers; the walk is judged where the blocks are).
+    let (parts, _) = crate::compiler::plot::check_bound(c, prefabs);
+    d.extend(parts);
     (d, binding)
 }
 
@@ -2666,6 +2670,7 @@ mod tests {
         spaces.insert(
             "strip".to_string(),
             delvewright_dsl::prefab::ContractSpace {
+                part: None,
                 envelope: "open".to_string(),
                 boxes: vec![region(space_lo, shi)],
             },

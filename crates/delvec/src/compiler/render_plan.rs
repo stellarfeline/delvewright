@@ -1479,7 +1479,7 @@ pub fn render_plan(
 
     // --- threshold shots (spec-0123 §3.4): the body's own view of a place
     // from its doors and its open sides, read blind for the trade.
-    let thresholds = threshold_shots(plan, frames);
+    let thresholds = threshold_shots(plan, prefabs, frames);
     for shot in thresholds.shots {
         out.push(shot);
     }
@@ -1579,15 +1579,19 @@ pub struct ThresholdCount {
     pub doors: usize,
     /// Shots standing outside an open side.
     pub open_sides: usize,
+    /// Shots aimed at a plot's part from one of its crossings (spec-0125
+    /// §6.2).
+    pub parts: usize,
 }
 
 impl ThresholdCount {
-    /// `threshold shots: T over P place(s), D door(s), O open side(s)`.
+    /// `threshold shots: T over P place(s), D door(s), O open side(s), Q
+    /// part(s)`.
     #[must_use]
     pub fn line(&self) -> String {
         format!(
-            "threshold shots: {} over {} place(s), {} door(s), {} open side(s)",
-            self.shots, self.places, self.doors, self.open_sides
+            "threshold shots: {} over {} place(s), {} door(s), {} open side(s), {} part(s)",
+            self.shots, self.places, self.doors, self.open_sides, self.parts
         )
     }
 
@@ -1621,7 +1625,7 @@ struct Thresholds {
 /// where a contact covers the side). Each stands in the
 /// configuration of the critical path's first arrival at a beat of the place,
 /// else at load.
-fn threshold_shots(plan: &Plan, frames: &FrameWorlds) -> Thresholds {
+fn threshold_shots(plan: &Plan, prefabs: &PrefabRegistry, frames: &FrameWorlds) -> Thresholds {
     let mut out = Thresholds {
         shots: Vec::new(),
         count: ThresholdCount::default(),
@@ -1630,6 +1634,7 @@ fn threshold_shots(plan: &Plan, frames: &FrameWorlds) -> Thresholds {
         return out;
     };
     out.count.places = blockout.boxes.len();
+    let part_aims = crate::compiler::plot::part_aims(plan, prefabs);
     let graph = plan.campaign.layout_graph.as_ref().map(|g| &g.content);
     let last = frames.arrivals.len().saturating_sub(1);
     let first_arrival = |node: &str| -> usize {
@@ -1721,6 +1726,75 @@ fn threshold_shots(plan: &Plan, frames: &FrameWorlds) -> Thresholds {
                 fallback: Some(out_of(eye, centre, n)),
                 world,
             });
+        }
+        // A plot's parts (spec-0125 §6.2): one frame per part from each of the
+        // plot's crossings — a portal's sill or a contact's span, the eye on
+        // the plot's side — aimed at the centre of the part's built columns.
+        if let Some(aims) = part_aims.get(node) {
+            let (slo, shi) = b.space();
+            let mut crossings: Vec<(String, [f64; 3], usize)> = Vec::new();
+            for s in &blockout.seams {
+                if s.normal_axis == 1 || (s.a != b.node && s.b != b.node) {
+                    continue;
+                }
+                let (lo, hi) = s.opening;
+                let n = s.normal_axis;
+                let across = 2 - n;
+                let mut eye = [0.0; 3];
+                eye[n] = f(s.plane.clamp(slo[n], shi[n])) + 0.5;
+                eye[across] = f((lo[across] + hi[across]).div_euclid(2)) + 0.5;
+                eye[1] = f(b.floor) + EYE_HEIGHT;
+                crossings.push((s.edge.0.clone(), eye, n));
+            }
+            if crossings.is_empty() {
+                // Entered by no seam: the eye stands at the middle of its
+                // entry side — the south edge of its play space.
+                crossings.push((
+                    "entry side".to_string(),
+                    [
+                        (f(slo[0]) + f(shi[0])) / 2.0 + 0.5,
+                        f(b.floor) + EYE_HEIGHT,
+                        f(shi[2]) + 0.5,
+                    ],
+                    2,
+                ));
+            }
+            for (edge, eye, n) in &crossings {
+                for (part, use_, [x, z]) in aims {
+                    let look_at = [*x, f(b.floor) + EYE_HEIGHT, *z];
+                    out.count.parts += 1;
+                    out.shots.push(Shot {
+                        id: format!(
+                            "threshold/{}/{}/{}",
+                            short(node),
+                            short(part),
+                            edge.rsplit('/').next().unwrap_or(edge).replace(' ', "-")
+                        ),
+                        kind: "threshold",
+                        area: node.to_string(),
+                        eye: *eye,
+                        look_at,
+                        fov: Some(POV_FOV_DEG),
+                        extra: vec![
+                            ("node", json!(node)),
+                            ("part", json!(part)),
+                            ("crossing", json!(edge)),
+                            ("shows", json!([part, node])),
+                        ],
+                        expect: vec![
+                            Value::String(format!("the part reads as its use: {use_}")),
+                            Value::String(format!(
+                                "read blind from `{edge}`: name what the part is for, and whether \
+                                 it belongs with what else is in frame"
+                            )),
+                        ],
+                        stamped: false,
+                        aim: None,
+                        fallback: Some(out_of(*eye, look_at, *n)),
+                        world,
+                    });
+                }
+            }
         }
     }
     out.count.shots = out.shots.len();

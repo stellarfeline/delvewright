@@ -64,6 +64,26 @@ pub fn zone_grid(zone_size: [i32; 3], tiles: &[(TilePart, Structure)]) -> VoxelM
     model
 }
 
+/// **A whole piece as one grid, from template bytes already in hand** — the
+/// build's own copy of each template, at its whole-piece offset. The same
+/// blit [`zone_grid`] performs; a template whose bytes do not decode is named.
+pub fn grid_of_bytes(
+    zone_size: [i32; 3],
+    templates: &[([i32; 3], &[u8])],
+) -> Result<VoxelModel, String> {
+    let size = [
+        zone_size[0].max(0) as u32,
+        zone_size[1].max(0) as u32,
+        zone_size[2].max(0) as u32,
+    ];
+    let mut model = VoxelModel::new(Box3::at_origin(size));
+    for (offset, bytes) in templates {
+        let s = Structure::read(bytes).map_err(|e| format!("template at {offset:?}: {e}"))?;
+        blit(&mut model, &s, *offset);
+    }
+    Ok(model)
+}
+
 /// **A whole piece as one grid, read from its library files** — whichever of
 /// the two packagings its blocks arrived in.
 ///

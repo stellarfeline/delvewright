@@ -711,6 +711,26 @@ pub fn check_handed(
     }
 }
 
+/// **The cells the piece's own flood reaches** (spec-0125 §5.3, `grammar.md`
+/// §4d): the walk `contract-reachability` takes from the entry space's way in,
+/// confined to declared spaces and crossing only through declared edges, over
+/// the bytes as shipped and with every way opened — the union, as that gate
+/// proves it. What a plot part's walk obligation reads; one walk, never a
+/// second copy of it.
+pub fn walked_cells(model: &VoxelModel, contract: &SpatialContract) -> BTreeSet<[i32; 3]> {
+    let ix = Index::new(model, contract);
+    let confined = build_confined(&ix);
+    let seeds = entry_seeds(&ix, model);
+    let none: BTreeSet<&str> = BTreeSet::new();
+    let (_, mut reached) = confined.reach(model, &seeds.cells, &none);
+    if !confined.ways.is_empty() {
+        let all: BTreeSet<&str> = confined.ways.keys().map(String::as_str).collect();
+        let (_, opened) = confined.reach(model, &seeds.cells, &all);
+        reached.extend(opened);
+    }
+    reached
+}
+
 // --- §2.1 well-formed ------------------------------------------------------
 
 fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {

@@ -2880,6 +2880,7 @@ mod tests {
         spaces.insert(
             "room".to_string(),
             ContractSpace {
+                part: None,
                 envelope: "enclosed".to_string(),
                 boxes: vec![region([1, 1, 6], [5, 4, 9])],
             },
@@ -2887,6 +2888,7 @@ mod tests {
         spaces.insert(
             "landing".to_string(),
             ContractSpace {
+                part: None,
                 envelope: "enclosed".to_string(),
                 boxes: vec![region([1, 5, 0], [5, 7, 1])],
             },
@@ -3053,6 +3055,7 @@ mod tests {
         };
         let region = |a: [i32; 3], b: [i32; 3]| Region { from: a, to: b };
         let space = |a: [i32; 3], b: [i32; 3]| ContractSpace {
+            part: None,
             envelope: "enclosed".to_string(),
             boxes: vec![region(a, b)],
         };
@@ -3214,6 +3217,7 @@ mod tests {
         };
         let region = |a: [i32; 3], b: [i32; 3]| Region { from: a, to: b };
         let space = |a: [i32; 3], b: [i32; 3]| ContractSpace {
+            part: None,
             envelope: "enclosed".to_string(),
             boxes: vec![region(a, b)],
         };
@@ -3330,6 +3334,7 @@ mod tests {
         spaces.insert(
             "room".to_string(),
             ContractSpace {
+                part: None,
                 envelope: "enclosed".to_string(),
                 boxes: vec![region([1, 1, 1], [5, 3, 5])],
             },

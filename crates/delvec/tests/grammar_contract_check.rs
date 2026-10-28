@@ -84,6 +84,7 @@ fn region(from: [i32; 3], to: [i32; 3]) -> Region {
 
 fn space(envelope: &str, boxes: Vec<Region>) -> ContractSpace {
     ContractSpace {
+        part: None,
         envelope: envelope.to_string(),
         boxes,
     }
@@ -147,6 +148,7 @@ fn with_bar(mut e: ContractEdge, name: &str, boxes: Vec<Region>, block: &str) ->
 
 fn no_body(reason: &str, boxes: Vec<Region>) -> ContractNoBody {
     ContractNoBody {
+        part: None,
         reason: reason.to_string(),
         boxes,
     }

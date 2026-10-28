@@ -26,9 +26,9 @@ use crate::grammar::export::AnchorRole;
 use crate::grammar::geom::{Axis, Mirror, Orientation};
 use crate::grammar::version::{
     ANCHOR_ROLE_SINCE, BIND_SINCE, CLIMB_SINCE, CONTRACT_SINCE, HOLDER_SINCE, INCLUDE_SINCE,
-    LATEST_PROGRAM_VERSION, LOCAL_FRAME_SINCE, MIRROR_SINCE, SHOWN_FACES_SINCE, WAY_SINCE,
-    has_anchor_role, has_bind, has_climb, has_contract, has_holder, has_include, has_local_frame,
-    has_mirror, has_shown_faces, has_way, is_supported_version,
+    LATEST_PROGRAM_VERSION, LOCAL_FRAME_SINCE, MIRROR_SINCE, PART_SINCE, SHOWN_FACES_SINCE,
+    WAY_SINCE, has_anchor_role, has_bind, has_climb, has_contract, has_holder, has_include,
+    has_local_frame, has_mirror, has_part, has_shown_faces, has_way, is_supported_version,
 };
 
 // ---------------------------------------------------------------------------
@@ -1052,6 +1052,11 @@ impl Envelope {
 pub struct SpaceDecl {
     /// The envelope claim.
     pub envelope: Envelope,
+    /// The plot part this space is (spec-0125 §5.1): a `part/<id>` of the
+    /// place's node. Several spaces may name one part; a space naming none is
+    /// the plot's unprogrammed ground. Fenced at [`PART_SINCE`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub part: Option<String>,
 }
 
 /// A `no_body` region: standable cells deliberately outside the walk.
@@ -1067,6 +1072,10 @@ pub struct SpaceDecl {
 pub struct NoBodyDecl {
     /// Why these cells are out of play, in the author's words.
     pub reason: String,
+    /// The plot part this region is (spec-0125 §5.1), as on a space. Fenced
+    /// at [`PART_SINCE`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub part: Option<String>,
 }
 
 /// The bar of a `barred` edge: the region that stands in the way, and what
@@ -1319,7 +1328,13 @@ impl Contract {
 
     /// Declare a space (builder form).
     pub fn space(mut self, name: &str, envelope: Envelope) -> Contract {
-        self.spaces.insert(name.to_string(), SpaceDecl { envelope });
+        self.spaces.insert(
+            name.to_string(),
+            SpaceDecl {
+                envelope,
+                part: None,
+            },
+        );
         self
     }
 
@@ -1329,6 +1344,7 @@ impl Contract {
             name.to_string(),
             NoBodyDecl {
                 reason: reason.to_string(),
+                part: None,
             },
         );
         self
@@ -1822,6 +1838,14 @@ pub enum ProgramError {
         /// What is wrong with it: `"not a side"` or `"written twice"`.
         why: &'static str,
     },
+    /// A contract space or region names a plot part that is not spelled
+    /// `part/<kebab>` (spec-0125 §5.1).
+    BadPartName {
+        /// The space or region.
+        region: String,
+        /// The part as written.
+        part: String,
+    },
     /// A region name is not kebab-case, or is the reserved exterior name.
     BadRegionName {
         /// Where it was written — a rule name, or `"contract"`.
@@ -2015,6 +2039,12 @@ impl fmt::Display for ProgramError {
                  of the six words the rest of the engine spells one with — \"north\", \"south\", \
                  \"east\", \"west\", \"up\", \"down\" — and each side is either finished exterior \
                  surface or it is not, so naming one twice says nothing the first entry did not"
+            ),
+            ProgramError::BadPartName { region, part } => write!(
+                f,
+                "the contract's {region:?} names the part {part:?}, which is not a part id: a \
+                 part is named `part/<kebab>`, exactly as the place's node declares it in \
+                 `holds[]`"
             ),
             ProgramError::BadRegionName { written_by, region } => write!(
                 f,
@@ -2390,6 +2420,35 @@ impl Program {
             }
             return Ok(());
         };
+
+        // **The `part` fence** (spec-0125 §5.1), and its spelling: a part is
+        // named `part/<kebab>` exactly as the layout graph declares it.
+        let parts = contract
+            .spaces
+            .iter()
+            .filter_map(|(n, s)| s.part.as_ref().map(|p| (n, p)))
+            .chain(
+                contract
+                    .no_body
+                    .iter()
+                    .filter_map(|(n, r)| r.part.as_ref().map(|p| (n, p))),
+            );
+        for (name, part) in parts {
+            if !has_part(&self.version) {
+                return Err(ProgramError::FencedConstruct {
+                    construct: "a `part` on a contract space or region",
+                    since: PART_SINCE,
+                    declared: self.version.clone(),
+                    written_by: format!("the contract's {name:?}"),
+                });
+            }
+            if !part.strip_prefix("part/").is_some_and(is_kebab) {
+                return Err(ProgramError::BadPartName {
+                    region: name.clone(),
+                    part: part.clone(),
+                });
+            }
+        }
 
         // **The `way` fence** (spec-0042 §5). `way` is `1.7.0`'s surface, and it
         // is a `#[serde(default)]` field: an engine that predates it reads the

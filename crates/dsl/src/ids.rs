@@ -224,6 +224,11 @@ prefixed_id!(
     /// coordinate exists. Unique within the layout graph.
     NodeId, "node");
 prefixed_id!(
+    /// Plot part id: `part/<kebab>` (spec-0125 §3.2). One structure or one
+    /// open space a plot holds, unique within its node; what a piece's
+    /// contract names with `part`.
+    PartId, "part");
+prefixed_id!(
     /// Layout-graph edge id: `edge/<kebab>` (spec-0049 §3.1). A connection
     /// between two places, of a declared class. Unique within the layout graph.
     EdgeId, "edge");

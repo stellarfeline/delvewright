@@ -70,7 +70,7 @@
 
 /// The latest program document version this crate implements — what
 /// [`Program::new`](crate::grammar::ir::Program::new) stamps on a program built today.
-pub const LATEST_PROGRAM_VERSION: &str = "1.12.0";
+pub const LATEST_PROGRAM_VERSION: &str = "1.13.0";
 
 /// Every program document version the format has, oldest first — the ledger.
 ///
@@ -106,7 +106,7 @@ pub const LATEST_PROGRAM_VERSION: &str = "1.12.0";
 ///   `entities` list.
 pub const SUPPORTED_PROGRAM_VERSIONS: &[&str] = &[
     "1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0", "1.7.0", "1.8.0", "1.9.0",
-    "1.10.0", "1.11.0", "1.12.0",
+    "1.10.0", "1.11.0", "1.12.0", "1.13.0",
 ];
 
 /// Ledger entries whose surface a **sibling** change introduces: the version,
@@ -164,6 +164,10 @@ pub const CLIMB_SINCE: &str = "1.10.0";
 /// The version at which a mark may place an item holder — an item frame or an
 /// armour stand the export writes into the piece's `entities` (spec-0111 §3.2).
 pub const HOLDER_SINCE: &str = "1.12.0";
+
+/// The version at which a contract space or out-of-walk region may name the
+/// plot part it is, with `part` (spec-0125 §5.1).
+pub const PART_SINCE: &str = "1.13.0";
 
 /// The fence constant that introduces `version`'s surface, when `version` is a
 /// ledger entry this crate does not implement; `None` otherwise.
@@ -263,6 +267,11 @@ pub fn has_climb(version: &str) -> bool {
 /// True if `version` may place an item holder at a mark.
 pub fn has_holder(version: &str) -> bool {
     is_supported_version(version) && minor_ordinal(version) >= minor_ordinal(HOLDER_SINCE)
+}
+
+/// True if `version` may name a plot part on a contract space or region.
+pub fn has_part(version: &str) -> bool {
+    is_supported_version(version) && minor_ordinal(version) >= minor_ordinal(PART_SINCE)
 }
 
 #[cfg(test)]

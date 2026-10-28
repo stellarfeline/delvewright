@@ -257,6 +257,7 @@ fn open_contract(case: &Case) -> SpatialContract {
     spaces.insert(
         "course".to_string(),
         ContractSpace {
+            part: None,
             envelope: "open".to_string(),
             boxes: vec![region([2, 0, 0], [xmax, ymax, 4])],
         },

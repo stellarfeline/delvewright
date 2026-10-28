@@ -96,6 +96,7 @@ fn layout_binding_lines(campaign: &delvewright_dsl::Campaign, out: &mut Vec<Stri
     out.push(b.line());
     if campaign.layout_graph.is_some() {
         out.push(b.references_line());
+        out.push(b.plot_line());
     }
     if campaign.site_plan.is_some() {
         out.push(b.plan_line());

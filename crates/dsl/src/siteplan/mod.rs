@@ -172,6 +172,15 @@ crate::dw_code! {
 }
 
 crate::dw_code! {
+    /// `DW1073`: **a plot cannot hold its parts** (spec-0125 §3.4). A node
+    /// declaring `holds[]` whose box is lidded (`clearance`), whose play space
+    /// is smaller than the parts' declared cells, or whose `open` courses are
+    /// fewer than a structure's declared `height`. Validation tier, judged on
+    /// the author's declarations against each other.
+    pub const DW_PLOT_CANNOT_HOLD: DwCode = DwCode::new("DW1073", ExitTier::Build);
+}
+
+crate::dw_code! {
     /// `DW1064`: a portal seam is cut in a side its place declares open
     /// (spec-0123 §5.4). An open side stands no wall, so there is nothing to
     /// cut an opening in; the side's crossing is a `contact`.

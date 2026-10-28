@@ -199,6 +199,7 @@ pub mod observer;
 pub mod onkill;
 pub mod placed;
 pub mod plan;
+pub mod plot;
 pub mod png;
 pub mod pool;
 pub mod presence;

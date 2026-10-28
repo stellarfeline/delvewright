@@ -127,6 +127,11 @@ pub struct ExpandOptions {
     /// closure takes them as declared openings of the space behind them. Set
     /// by `delvec detail` from the allocation; empty everywhere else.
     pub open_sides: Vec<([i32; 3], [i32; 3])>,
+    /// The parts the place's node declares when it is a plot (spec-0125
+    /// §5.1), as the handout states them: what the piece's contract binds
+    /// with `part`, judged after expansion (`DW1074`). Set by `delvec detail`
+    /// from the layout graph; empty everywhere else.
+    pub parts: Vec<delvewright_dsl::layout::Part>,
 }
 
 impl ExpandOptions {
@@ -140,6 +145,7 @@ impl ExpandOptions {
             overrides: Overrides::none(),
             sealed: false,
             open_sides: Vec::new(),
+            parts: Vec::new(),
         }
     }
 
@@ -222,6 +228,8 @@ impl ResolvedRegion {
 pub struct ResolvedSpace {
     /// The envelope claim, as declared.
     pub envelope: Envelope,
+    /// The plot part it is, as declared (spec-0125 §5.1).
+    pub part: Option<String>,
     /// Where it is.
     pub region: ResolvedRegion,
 }
@@ -231,6 +239,8 @@ pub struct ResolvedSpace {
 pub struct ResolvedNoBody {
     /// Why, as declared.
     pub reason: String,
+    /// The plot part it is, as declared (spec-0125 §5.1).
+    pub part: Option<String>,
     /// Where it is.
     pub region: ResolvedRegion,
 }
@@ -982,6 +992,7 @@ fn resolve_contract(
                 name.clone(),
                 ResolvedSpace {
                     envelope: decl.envelope,
+                    part: decl.part.clone(),
                     region: take(regions, name),
                 },
             )
@@ -995,6 +1006,7 @@ fn resolve_contract(
                 name.clone(),
                 ResolvedNoBody {
                     reason: decl.reason.clone(),
+                    part: decl.part.clone(),
                     region: take(regions, name),
                 },
             )

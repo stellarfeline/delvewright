@@ -1020,6 +1020,7 @@ fn contract_without_faces(expansion: &Expansion) -> Option<SpatialContract> {
                     ContractSpace {
                         envelope: space.envelope.as_str().to_string(),
                         boxes: ranges(&space.region.boxes),
+                        part: space.part.clone(),
                     },
                 )
             })
@@ -1033,6 +1034,7 @@ fn contract_without_faces(expansion: &Expansion) -> Option<SpatialContract> {
                     ContractNoBody {
                         reason: region.reason.clone(),
                         boxes: ranges(&region.region.boxes),
+                        part: region.part.clone(),
                     },
                 )
             })

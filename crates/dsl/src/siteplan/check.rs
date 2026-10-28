@@ -347,6 +347,100 @@ pub fn check(c: &Campaign, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
     volumes_outside_boxes(plan, &placed, d);
     identities(c, plan, &placed, d);
     lighting(plan, d);
+    plots(plan, graph, d);
+}
+
+/// `DW1073`: **a plot cannot hold what it declares** (spec-0125 §3.4) — one
+/// code, three shapes, each named in the message: the plot is under a lid,
+/// its parts' cells sum past its play space, or a structure's `height` is
+/// past its `open` courses. Judged on the declarations only; a plot whose
+/// parts fit is asked nothing more, whatever its coverage.
+fn plots(
+    plan: &SitePlanContent,
+    graph: &crate::layout::LayoutGraphContent,
+    d: &mut Vec<Diagnostic>,
+) {
+    for n in &graph.nodes {
+        if n.holds.is_empty() {
+            continue;
+        }
+        let Some((bi, b)) = plan.boxes.iter().enumerate().find(|(_, b)| b.node == n.id) else {
+            continue; // `DW0824` reported the missing box.
+        };
+        let names = |ps: &[&crate::layout::Part]| {
+            ps.iter()
+                .map(|p| format!("`{}`", p.id))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let all: Vec<&crate::layout::Part> = n.holds.iter().collect();
+        match b.ceiling {
+            Ceiling::Clearance(c) => {
+                d.push(Diagnostic::error(
+                    DW_PLOT_CANNOT_HOLD,
+                    "site-plan",
+                    format!("/content/boxes/{bi}/ceiling"),
+                    format!(
+                        "under a lid: `{node}` is a plot — it declares {k} part(s) ({names}) — and \
+                         its box's ceiling is `{{\"clearance\": {c}}}`. A lid is one structure, and \
+                         a plot's structures stand under the sky between them. Give the box an \
+                         `open` ceiling clearing the tallest ridge, or remove `holds[]` and build \
+                         the place as rooms.",
+                        node = n.id,
+                        k = n.holds.len(),
+                        names = names(&all),
+                    ),
+                ));
+            }
+            Ceiling::Open(air) => {
+                for p in n
+                    .holds
+                    .iter()
+                    .filter(|p| p.kind == crate::layout::PartKind::Structure)
+                {
+                    let Some(h) = p.height else { continue };
+                    if h > air.get() {
+                        d.push(Diagnostic::error(
+                            DW_PLOT_CANNOT_HOLD,
+                            "site-plan",
+                            format!("/content/boxes/{bi}/ceiling/open"),
+                            format!(
+                                "too low: `{node}`'s part `{part}` ({use_}) declares a height of {h} \
+                                 course(s) and the box claims {air} course(s) of air over its \
+                                 walk plane, {over} short. Raise the box's `open` to at least {h}, \
+                                 or lower the part's `height`.",
+                                node = n.id,
+                                part = p.id,
+                                use_ = p.r#use,
+                                air = air.get(),
+                                over = h - air.get(),
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
+        let sum: u64 = n.holds.iter().map(|p| u64::from(p.cells)).sum();
+        let area = u64::from(b.extent[0].get()) * u64::from(b.extent[1].get());
+        if sum > area {
+            d.push(Diagnostic::error(
+                DW_PLOT_CANNOT_HOLD,
+                "site-plan",
+                format!("/content/boxes/{bi}/extent"),
+                format!(
+                    "too small: `{node}`'s {k} part(s) declare {sum} cell(s) of play space and its \
+                     box's play space is {x} × {z} = {area} cell(s), {short} short — before any \
+                     wall or way between them. Widen the box's `extent` to hold the parts and \
+                     their ways, or lower the parts' `cells`.",
+                    node = n.id,
+                    k = n.holds.len(),
+                    x = b.extent[0].get(),
+                    z = b.extent[1].get(),
+                    short = sum - area,
+                ),
+            ));
+        }
+    }
 }
 
 /// `DW0839`: a campaign has ONE placement authority.

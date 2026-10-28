@@ -259,6 +259,7 @@ fn contract_with(envelopes: &[(&str, &str)]) -> delvewright_dsl::prefab::Spatial
                 (
                     (*name).to_string(),
                     delvewright_dsl::prefab::ContractSpace {
+                        part: None,
                         envelope: (*env).to_string(),
                         boxes: vec![delvewright_dsl::prefab::Region {
                             from: [0, 1, 0],

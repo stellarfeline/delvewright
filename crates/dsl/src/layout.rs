@@ -270,6 +270,84 @@ pub struct Node {
     /// validation counts them and refuses nothing.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub references: Vec<PlaceReference>,
+    /// **What this place holds, when it is a plot** (spec-0125 §3).
+    ///
+    /// A plot is a whole holding: one or more structures and the open ground
+    /// they share, each declared here as a part before any coordinate exists.
+    /// A part carries no position, outline or neighbour — the author builds
+    /// the parts freely inside the box. Absent is a place that is its box.
+    /// The box must hold what is declared (`DW1073`) and the piece must build
+    /// it (`DW1074`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub holds: Vec<Part>,
+}
+
+/// **What a layout graph's plots declare** (spec-0125 §3.4), counted for the
+/// validation line.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct PlotCount {
+    /// Nodes declaring `holds[]`.
+    pub plots: usize,
+    /// Parts across every plot.
+    pub parts: usize,
+    /// Of those, structures.
+    pub structures: usize,
+    /// Of those, ground.
+    pub grounds: usize,
+    /// Of the parts, those declared `reached: false`.
+    pub seen: usize,
+    /// The parts' declared cells, summed.
+    pub cells: u64,
+    /// The plots' boxes' play space, `extent[0] × extent[1]`, summed.
+    pub area: u64,
+}
+
+/// **One part of a plot** (spec-0125 §3.2): a structure or an open space,
+/// its play space in cells, and whether a body walks it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Part {
+    /// `part/<kebab>`, unique within the node.
+    pub id: crate::ids::PartId,
+    /// The mechanism: a roofed, walled volume, or open space under the sky.
+    pub kind: PartKind,
+    /// The author's words for what the part is for. Never player-facing,
+    /// never inventoried.
+    #[schemars(length(min = 1))]
+    pub r#use: String,
+    /// The part's play space in cells — the cells a body could stand in. At
+    /// least 1.
+    #[schemars(range(min = 1))]
+    pub cells: u32,
+    /// On a `structure` only: courses from the walk plane to the ridge.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 1))]
+    pub height: Option<u32>,
+    /// Whether a body walks this part. `false` declares a part that is seen
+    /// and not entered. Absent means walked.
+    #[serde(default = "reached_default", skip_serializing_if = "is_true")]
+    pub reached: bool,
+}
+
+/// **What a part is** (spec-0125 §3.2) — the mechanism, never the use.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum PartKind {
+    /// A roofed, walled volume a body may enter.
+    Structure,
+    /// Open space under the sky.
+    Ground,
+}
+
+impl PartKind {
+    /// The word a diagnostic or a ledger prints for this kind.
+    #[must_use]
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Structure => "structure",
+            Self::Ground => "ground",
+        }
+    }
 }
 
 /// **One human-built reference** a place is built from (spec-0123 §3.3).
@@ -1208,6 +1286,8 @@ pub struct LayoutBinding {
     pub references: usize,
     /// Of the nodes, those declaring at least one reference.
     pub referenced_nodes: usize,
+    /// What the plots declare (spec-0125 §3.4).
+    pub plots: PlotCount,
     /// What the site plan offers the stage-4 checks.
     pub plan: crate::siteplan::PlanBinding,
 }
@@ -1241,6 +1321,25 @@ impl LayoutBinding {
         for n in &graph.nodes {
             b.references += n.references.len();
             b.referenced_nodes += usize::from(!n.references.is_empty());
+            if !n.holds.is_empty() {
+                b.plots.plots += 1;
+                for p in &n.holds {
+                    b.plots.parts += 1;
+                    match p.kind {
+                        PartKind::Structure => b.plots.structures += 1,
+                        PartKind::Ground => b.plots.grounds += 1,
+                    }
+                    b.plots.seen += usize::from(!p.reached);
+                    b.plots.cells += u64::from(p.cells);
+                }
+                b.plots.area += c
+                    .site_plan
+                    .as_ref()
+                    .and_then(|sp| sp.content.boxes.iter().find(|x| x.node == n.id))
+                    .map_or(0, |x| {
+                        u64::from(x.extent[0].get()) * u64::from(x.extent[1].get())
+                    });
+            }
             b.stations += n.stations.len();
             b.gate_stations += n
                 .stations
@@ -1292,6 +1391,23 @@ impl LayoutBinding {
         )
     }
 
+    /// What the plots declare (spec-0125 §3.4), zeroes stated:
+    /// `plot program: P plot(s) over N node(s), K part(s) — S structure(s),
+    /// G ground(s), R seen; cells declared C of A play space`, or
+    /// `plot program: 0 plot(s) over N node(s)` on a graph declaring none.
+    #[must_use]
+    pub fn plot_line(&self) -> String {
+        let p = &self.plots;
+        if p.plots == 0 {
+            return format!("plot program: 0 plot(s) over {} node(s)", self.nodes);
+        }
+        format!(
+            "plot program: {} plot(s) over {} node(s), {} part(s) — {} structure(s), {} \
+             ground(s), {} seen; cells declared {} of {} play space",
+            p.plots, self.nodes, p.parts, p.structures, p.grounds, p.seen, p.cells, p.area
+        )
+    }
+
     /// The references a layout graph carries (spec-0123 §3.3), zeroes stated:
     /// `references binding: R reference(s) over N of M node(s)`.
     #[must_use]
@@ -1338,6 +1454,7 @@ pub fn check(c: &Campaign, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
     let malformed = wellformed(graph, &known, d);
     stations(graph, d);
     references(graph, d);
+    holds(graph, d);
     if malformed {
         return;
     }
@@ -1391,6 +1508,79 @@ fn references(graph: &LayoutGraphContent, d: &mut Vec<Diagnostic>) {
                 }
             }
         }
+    }
+}
+
+/// **A plot's parts conform to their own schema** (spec-0125 §3.4 shape 4):
+/// each id is `part/<kebab>` (`DW0110`) and unique within its node
+/// (`DW0111`); `cells` is at least 1, `use` is not blank, and `height` is
+/// written on a `structure` only (`DW0100`). The schema states these bounds
+/// and serde enforces none of them, so they are restated here.
+fn holds(graph: &LayoutGraphContent, d: &mut Vec<Diagnostic>) {
+    for (i, n) in graph.nodes.iter().enumerate() {
+        for (j, p) in n.holds.iter().enumerate() {
+            let path = format!("/content/nodes/{i}/holds/{j}");
+            crate::ids::id_syntax!(d, p.id, "layout-graph", format!("{path}/id"));
+            if p.cells == 0 {
+                d.push(Diagnostic::error(
+                    crate::codes::SCHEMA,
+                    "layout-graph",
+                    format!("{path}/cells"),
+                    format!(
+                        "`{}` part `{}` declares `cells: 0`: a part's play space is the cells a \
+                         body could stand in, at least one; a part with none is not a part — \
+                         remove it",
+                        n.id, p.id
+                    ),
+                ));
+            }
+            if p.r#use.trim().is_empty() {
+                d.push(Diagnostic::error(
+                    crate::codes::SCHEMA,
+                    "layout-graph",
+                    format!("{path}/use"),
+                    format!(
+                        "`{}` part `{}` states an empty `use`: the use is the author's words for \
+                         what the part is for, and it is what the handout and the review read",
+                        n.id, p.id
+                    ),
+                ));
+            }
+            if p.height.is_some() && p.kind == PartKind::Ground {
+                d.push(Diagnostic::error(
+                    crate::codes::SCHEMA,
+                    "layout-graph",
+                    format!("{path}/height"),
+                    format!(
+                        "`{}` part `{}` is `ground` and declares a `height`: a height is courses \
+                         from the walk plane to a structure's ridge, and open ground has no \
+                         ridge — remove it, or make the part a `structure`",
+                        n.id, p.id
+                    ),
+                ));
+            }
+            if p.height == Some(0) {
+                d.push(Diagnostic::error(
+                    crate::codes::SCHEMA,
+                    "layout-graph",
+                    format!("{path}/height"),
+                    format!(
+                        "`{}` part `{}` declares `height: 0`: a structure's ridge stands at \
+                         least one course over its walk plane",
+                        n.id, p.id
+                    ),
+                ));
+            }
+        }
+        crate::ids::dup_check(
+            n.holds
+                .iter()
+                .enumerate()
+                .map(|(j, p)| (p.id.0.as_str(), format!("/content/nodes/{i}/holds/{j}/id"))),
+            "layout-graph",
+            "part",
+            d,
+        );
     }
 }
 

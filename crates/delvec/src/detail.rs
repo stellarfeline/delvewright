@@ -541,6 +541,9 @@ fn prepare(
             )
         })
         .collect();
+    // A plot's parts (spec-0125 §5.1): the node's `holds[]`, handed beside
+    // the open sides — a derivation, never typed.
+    opts.parts = delvec::compiler::plot::handed_parts(campaign, node);
     let size = [a.extent[0] as u32, a.extent[1] as u32, a.extent[2] as u32];
     let region = Box3::at_origin(size);
     let expansion = match expand(&program, region, &opts) {
@@ -568,6 +571,43 @@ fn prepare(
             program_path.display()
         );
         return Err(1);
+    }
+
+    // ---- the plot's parts, built as declared (spec-0125 §5.3, `DW1074`) ----
+    //
+    // Every shape over the piece's own contract and its own flood, the line
+    // first and the verdict after it.
+    {
+        let contract = export::contract_metadata(&expansion);
+        let names_a_part = contract.as_ref().is_some_and(|c| {
+            c.spaces.values().any(|s| s.part.is_some())
+                || c.no_body.values().any(|r| r.part.is_some())
+        });
+        if !opts.parts.is_empty() || names_a_part {
+            let empty = delvewright_dsl::prefab::SpatialContract {
+                entry: String::new(),
+                spaces: Default::default(),
+                no_body: Default::default(),
+                edges: Vec::new(),
+                faces: Vec::new(),
+                no_body_majority_ack: None,
+            };
+            let contract = contract.unwrap_or(empty);
+            let walked = delvec::grammar::contract::walked_cells(&expansion.model, &contract);
+            let binding = delvec::compiler::plot::bind(node, &opts.parts, &contract);
+            let (found, count) = delvec::compiler::plot::judge(&binding, &id, Some(&walked));
+            eprintln!("{place}: {}", count.line());
+            if !found.is_empty() {
+                for d in &found {
+                    print_one_diag(d, json);
+                }
+                eprintln!(
+                    "error: `{place}`: the piece does not build the plot as its node declares \
+                     it; nothing was written."
+                );
+                return Err(1);
+            }
+        }
     }
 
     // ---- 5. the piece, in memory ----

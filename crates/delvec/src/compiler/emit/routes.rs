@@ -609,6 +609,21 @@ pub(super) fn prove_world(
                 );
                 eprintln!("{}", census.line());
                 put_json(out, "validation/piece-census.json", &census.to_json());
+                // spec-0125 §5.4: the plot program, beside the census — the
+                // shares, setbacks and gaps the review reads, and the walk of
+                // each walked part judged again over the shipped templates.
+                let (plots, unwalked) = crate::compiler::plot::ledger(plan, prefabs, structures);
+                eprintln!("{}", plots.line());
+                put_json(out, "validation/plot-program.json", &plots.to_json());
+                if let Some((first, rest)) = unwalked.split_first() {
+                    for extra in rest {
+                        eprintln!("{} [error] build: {}", extra.code, extra.message);
+                    }
+                    return Err(BuildFailure::Diagnostic {
+                        code: crate::compiler::plot::DW_PART_NOT_BUILT,
+                        message: first.message.clone(),
+                    });
+                }
                 if let Some((first, rest)) = refused.split_first() {
                     for extra in rest {
                         eprintln!("{} [error] build: {}", extra.code, extra.message);
