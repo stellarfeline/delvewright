@@ -53,13 +53,13 @@
     {
       "doc": "l10n/zh-cn.json",
       "op": "add",
-      "path": "/content/fx.near-hall.done.6.narrate",
+      "path": "/content/fx.near-hall.done.5.narrate",
       "value": "那道门后是下架：远厅最低的一层石架。"
     },
     {
       "doc": "l10n/zh-cn.json",
       "op": "add",
-      "path": "/source/fx.near-hall.done.6.narrate",
+      "path": "/source/fx.near-hall.done.5.narrate",
       "value": "Beyond that door, the undershelf: the far hall's lowest shelf of stone."
     }
   ],
