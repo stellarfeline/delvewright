@@ -347,7 +347,7 @@
         "effects": [
           {
             "style": "actionbar",
-            "text": "The bars will not lift until the near hall's work is done.",
+            "text": "The iron door will not open until the near hall's work is done.",
             "type": "narrate"
           }
         ],
@@ -422,6 +422,6 @@
       }
     ]
   },
-  "dsl_version": "0.63.0",
+  "dsl_version": "0.66.0",
   "stage": "quests"
 }

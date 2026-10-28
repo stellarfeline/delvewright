@@ -57,6 +57,16 @@ plan-side half they are checked against.
 | `DW0835` | **A whole-owned volume enters a box.** A `volumes[]` region intersecting a box's play space, named with both and the intersection. The whole's mass may stand beside a place, under it and over it; inside it, the volume and the place are two authorities writing one cell, which the derivation must never be asked to arbitrate. |
 | `DW0883` | **A box is not placed exactly once** (spec-0059). Two shapes of one claim. A connected component of the seam graph in which no box pins its `min`: nothing places it — a box stands only where a pin puts it or where a seam hangs it off a box that already stands — named with every box in the component and the prescription to pin one of them (the entry's, when it is there). Or a pinned box a seam also reaches, at a different corner: the pin and the seam disagree, named with both corners and how each was obtained, addressed at the seam. A pin is a claim the packing verifies, never a second authority; a box the packing does not reach has no cells, so no geometric rule fires over it and the one refusal is the whole story. Validation tier (exit 1). Binding: the pinned / derived / component counts in the site-plan binding line. |
 
+### DW1064 — a door in an open side (`dsl::siteplan`; spec-0123)
+
+A box's `sides` declares each horizontal side `wall` or `open` (absent: `wall`).
+An open side stands no wall, so a portal cut in it contradicts the plan at the
+seam. Validation tier (exit 1), beside `DW1027` in the seam rules.
+
+| Code | Meaning |
+|------|---------|
+| `DW1064` | **A door in an open side.** A seam with an `opening` on a vertical face that either of its places declares open — the `a` box's declared `face`, or the `b` box's opposite one — raised at `/content/seams/<i>`, once per place that declares it: *`<edge>` is a portal in the `<face>` face of `<place>`, which is declared open: there is no wall to cut it in — declare the side `wall`, or make the crossing a `contact`*. A `contact` on an open side is that side's crossing, stated from the connection, and is admitted. Seams through a floor or a ceiling are not judged: `up` and `down` are not sides. |
+
 ### DW1027–DW1028 — a gated connection (`dsl::siteplan`; spec-0107)
 
 A connection whose `gating` names a term is **built shut**: the derivation

@@ -520,6 +520,14 @@ pub struct Floors {
     pub(in crate::compiler::nav) footprints:
         BTreeMap<[i32; 3], delvewright_dsl::blockshape::Footprint16>,
     pub(in crate::compiler::nav) sieve: BTreeSet<[i32; 3]>,
+    /// Every door and trapdoor cell with its leaf per state
+    /// ([`crate::compiler::assembled::Occupancy::leaves`]): which faces of its
+    /// cell a body crosses, and at what height ([`World::leaf_stopping`]).
+    pub(in crate::compiler::nav) leaves: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Leaf>,
+    /// Whether a body in this view may set a door or trapdoor a hand opens
+    /// before it moves — false for walkers that cannot use gates
+    /// ([`World::without_gate_use`]), which meet each leaf as it stands.
+    pub(in crate::compiler::nav) leaf_use: bool,
 }
 
 /// The block-derived cell sets of a [`World`], as [`World::from_occupancy`]
@@ -537,6 +545,7 @@ struct Cells {
     climb_holds: ClimbHolds,
     unheld_climb: UnheldClimbs,
     footprints: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Footprint16>,
+    leaves: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Leaf>,
     hurting: CellSet,
 }
 
@@ -1158,6 +1167,7 @@ impl World {
                 climb_holds: std::sync::Arc::new(occ.climb),
                 unheld_climb: std::sync::Arc::new(occ.unheld_climb),
                 footprints: occ.footprints,
+                leaves: occ.leaves,
                 hurting: occ.hurting.into(),
             },
             premises,
@@ -1183,6 +1193,7 @@ impl World {
                 climb_holds: self.climb_holds.clone(),
                 unheld_climb: self.unheld_climb.clone(),
                 footprints: self.floors.footprints.clone(),
+                leaves: self.floors.leaves.clone(),
                 hurting: self.seating.hurting.clone(),
             },
             premises,
@@ -1268,6 +1279,8 @@ impl World {
         let floors = Floors {
             footprints: cells.footprints,
             sieve: BTreeSet::new(),
+            leaves: cells.leaves,
+            leaf_use: true,
         };
         World {
             piece: None,
@@ -1470,6 +1483,8 @@ impl World {
         };
         w.drop_unheld_climbs(extra);
         for c in extra {
+            // A sealed cell holds the sealing block, not the trapdoor.
+            w.floors.leaves.remove(c);
             match footprints.get(c) {
                 Some(fp) => w.floors.footprints.insert(*c, *fp),
                 None => w.floors.footprints.remove(c),
@@ -1541,6 +1556,7 @@ impl World {
             w.hiding.remove(c);
             w.tall.remove(c);
             w.use_gates.remove(c);
+            w.floors.leaves.remove(c);
             w.partial.remove(c);
             w.floors.footprints.remove(c);
         }
@@ -1610,6 +1626,7 @@ impl World {
             w.solid.remove(c);
             w.tall.remove(c);
             w.use_gates.remove(c);
+            w.floors.leaves.remove(c);
             w.partial.remove(c);
             w.flooded.insert(*c);
             w.pinned.insert(*c);
@@ -1681,6 +1698,7 @@ impl World {
                 continue; // floor either way — no uncertainty to model
             }
             w.use_gates.remove(c);
+            w.floors.leaves.remove(c);
             w.partial.remove(c);
             w.tall.insert(*c);
             // This proof's premise from here on, exactly as a seal or a flood is.
@@ -1854,6 +1872,10 @@ impl World {
     pub fn without_gate_use(&self) -> World {
         let mut tall = self.tall.clone();
         tall.extend(self.use_gates.iter());
+        // A walker that cannot use a gate meets each door and trapdoor as it
+        // stands.
+        let mut floors = self.floors.clone();
+        floors.leaf_use = false;
         World {
             piece: self.piece,
             solid: self.solid.clone(),
@@ -1872,7 +1894,7 @@ impl World {
             unbounded_fall: self.unbounded_fall,
             declared_jumps: self.declared_jumps.clone(),
             holder_stances: self.holder_stances.clone(),
-            floors: self.floors.clone(),
+            floors,
             seating: self.seating.clone(),
             hiding: self.hiding.clone(),
             lethal: self.lethal.clone(),
@@ -1996,6 +2018,7 @@ impl World {
                 footprints: BTreeMap::new(),
                 // A synthetic solid cell is a full cube of stone: it hides.
                 hiding: solid_hides,
+                leaves: BTreeMap::new(),
                 hurting: Default::default(),
             },
             Premises::geometry_only(),

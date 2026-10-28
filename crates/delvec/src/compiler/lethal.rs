@@ -1497,7 +1497,7 @@ delvewright_dsl::dw_code! {
 delvewright_dsl::dw_code! {
     /// `DW0923`: **a seated wave that reaches a lethal volume through a barrier the
     /// party can leave open.** Every fence gate, door and trapdoor a player opens by
-    /// hand ([`delvewright_dsl::blockshape::is_player_openable`]) is judged in its
+    /// hand ([`delvewright_dsl::blockshape::opens_by_hand`]) is judged in its
     /// open state: a player who opens one may leave it open and die, and the wave
     /// re-seated after that death walks through it. Raised only where `DW0922` is
     /// not: the as-built reach is clear, and the opened one is not.
@@ -1738,7 +1738,7 @@ pub fn wave_reach(
     };
     let openable: std::collections::BTreeSet<[i32; 3]> = blocks
         .iter()
-        .filter(|(_, n)| delvewright_dsl::blockshape::is_player_openable(n.as_str()))
+        .filter(|(_, n)| delvewright_dsl::blockshape::opens_by_hand(n.as_str()))
         .map(|(c, _)| *c)
         .collect();
     b.openable = openable.len();

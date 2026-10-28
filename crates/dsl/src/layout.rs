@@ -260,6 +260,31 @@ pub struct Node {
     /// place must be reached. Absent means reached.
     #[serde(default = "reached_default", skip_serializing_if = "is_true")]
     pub reached: bool,
+    /// **Human-built references this place is built from** (spec-0123 §3.3).
+    ///
+    /// Each row names a picture or a page of a real build of the same kind of
+    /// place, what to take from it, and the terms its source states. A
+    /// reference is looked at, never copied: an unlicensed or non-commercial
+    /// source is ideas only (ADR-0013). None of the three strings is player
+    /// facing and none is inventoried. A node declaring none is legitimate;
+    /// validation counts them and refuses nothing.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub references: Vec<PlaceReference>,
+}
+
+/// **One human-built reference** a place is built from (spec-0123 §3.3).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PlaceReference {
+    /// Where the reference is: an `https://` URL, to an image or a page.
+    #[schemars(pattern(r"^https://\S+$"))]
+    pub url: String,
+    /// One sentence: what the reference shows, and what to take from it.
+    #[schemars(length(min = 1))]
+    pub shows: String,
+    /// The terms the source states — `"CC BY-SA 4.0"`, `"none stated"`.
+    #[schemars(length(min = 1))]
+    pub terms: String,
 }
 
 fn reached_default() -> bool {
@@ -1179,6 +1204,10 @@ pub struct LayoutBinding {
     pub path_steps: usize,
     /// Facts the geometry brief states — what a site plan's identities bind to.
     pub brief_facts: usize,
+    /// Reference rows declared across the graph (spec-0123 §3.3).
+    pub references: usize,
+    /// Of the nodes, those declaring at least one reference.
+    pub referenced_nodes: usize,
     /// What the site plan offers the stage-4 checks.
     pub plan: crate::siteplan::PlanBinding,
 }
@@ -1210,6 +1239,8 @@ impl LayoutBinding {
             .count();
         b.path_steps = graph.critical_path.len().saturating_sub(1);
         for n in &graph.nodes {
+            b.references += n.references.len();
+            b.referenced_nodes += usize::from(!n.references.is_empty());
             b.stations += n.stations.len();
             b.gate_stations += n
                 .stations
@@ -1261,6 +1292,18 @@ impl LayoutBinding {
         )
     }
 
+    /// The references a layout graph carries (spec-0123 §3.3), zeroes stated:
+    /// `references binding: R reference(s) over N of M node(s)`.
+    #[must_use]
+    pub fn references_line(&self) -> String {
+        format!(
+            "references binding: {r} reference(s) over {n} of {m} node(s)",
+            r = self.references,
+            n = self.referenced_nodes,
+            m = self.nodes,
+        )
+    }
+
     /// The site-plan half, when the campaign carries one.
     #[must_use]
     pub fn plan_line(&self) -> String {
@@ -1294,6 +1337,7 @@ pub fn check(c: &Campaign, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
     let known: BTreeSet<&str> = graph.nodes.iter().map(|n| n.id.0.as_str()).collect();
     let malformed = wellformed(graph, &known, d);
     stations(graph, d);
+    references(graph, d);
     if malformed {
         return;
     }
@@ -1305,6 +1349,49 @@ pub fn check(c: &Campaign, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
     // an author to loop `validate` at the graph step; this is what makes that
     // instruction true.
     d.extend(reachability(c));
+}
+
+/// **A reference row conforms to its own schema** (spec-0123 §3.3): an
+/// `https://` URL with no blank in it, and a non-empty `shows` and `terms`.
+/// The schema states the three bounds and serde enforces none of them, so they
+/// are restated here at the schema tier (`DW0100`).
+fn references(graph: &LayoutGraphContent, d: &mut Vec<Diagnostic>) {
+    for (i, n) in graph.nodes.iter().enumerate() {
+        for (j, r) in n.references.iter().enumerate() {
+            let path = format!("/content/nodes/{i}/references/{j}");
+            let url_ok = r
+                .url
+                .strip_prefix("https://")
+                .is_some_and(|rest| !rest.is_empty() && !rest.chars().any(char::is_whitespace));
+            if !url_ok {
+                d.push(Diagnostic::error(
+                    crate::codes::SCHEMA,
+                    "layout-graph",
+                    format!("{path}/url"),
+                    format!(
+                        "`{}` reference {j} has the url `{}`, which is not an `https://` address: \
+                         a reference is a page or a picture a person and the fetch tool can both \
+                         open, so it is named by an `https://` URL with no blank in it",
+                        n.id, r.url
+                    ),
+                ));
+            }
+            for (field, value) in [("shows", &r.shows), ("terms", &r.terms)] {
+                if value.trim().is_empty() {
+                    d.push(Diagnostic::error(
+                        crate::codes::SCHEMA,
+                        "layout-graph",
+                        format!("{path}/{field}"),
+                        format!(
+                            "`{}` reference {j} states an empty `{field}`: a reference says what it \
+                             shows and the terms its source states (`\"none stated\"` where it states none)",
+                            n.id
+                        ),
+                    ));
+                }
+            }
+        }
+    }
 }
 
 /// **The two refusals a declared station owes** (spec-0052 §7.1 and §7.2).

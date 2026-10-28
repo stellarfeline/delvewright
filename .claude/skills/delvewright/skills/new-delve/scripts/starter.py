@@ -16,7 +16,10 @@ allocation the engine hands:
   aloft place's one floor course under its walk plane and nothing beneath;
 - a wall on every cell of the one-cell ring, from the walk plane up — a cell a
   neighbour or the whole owns is a void the verb replaces, so painting it is
-  harmless and nothing depends on it;
+  harmless and nothing depends on it — except on a side the place declares
+  open, whose ring run (its two corners excluded) is left open from the walk
+  plane up with the floor course running across it, claimed as the region a
+  `walk` edge to `exterior` goes `via`;
 - a lid over a roofed place (at the plan's `roof/lid-y` where it declares a
   roof, at the frame's top course otherwise), and the declared roof zone above
   it claimed as a region no body walks;
@@ -165,6 +168,12 @@ class Place:
             seam = {"stem": stem, "lo": lo, "hi": hi, "seam": s, "bar": bar, "axis": axis, "approach": None}
             seam["approach"] = self.approach(seam, sign)
             self.seams.append(seam)
+        # Every side the place declares open (spec-0123 §5.3): its ring run at
+        # the walk plane, corners excluded, piece-local and inclusive.
+        self.sides = []
+        for s in a.get("sides", []) or []:
+            (sx0, _, sz0), (sx1, _, sz1) = s["cells"]
+            self.sides.append({"face": s["face"], "lo": (sx0, sz0), "hi": (sx1, sz1)})
         self.scenery = a.get("brief", {}).get("reached") is False
         # A station of kind `gate` is a volume that seals and clears, so it is
         # answered by a region, never a mark: a grille of bars in front of a
@@ -241,6 +250,13 @@ class Place:
         lo, hi = self.space
         return lo[0] <= x <= hi[0] and lo[2] <= z <= hi[2]
 
+    def open_side(self, x: int, z: int) -> str | None:
+        """The face of the open side whose ring run holds column `(x, z)`."""
+        for s in self.sides:
+            if s["lo"][0] <= x <= s["hi"][0] and s["lo"][1] <= z <= s["hi"][1]:
+                return s["face"]
+        return None
+
     def wall_ring(self, x: int, z: int) -> bool:
         lo, hi = self.space
         return (lo[0] - 1 <= x <= hi[0] + 1 and lo[2] - 1 <= z <= hi[2] + 1) and not self.in_space_xz(x, z)
@@ -290,6 +306,11 @@ class Place:
             return ("fill", "lid")
         if self.lid is not None and y > self.lid.value:
             return ("claim", "roof", None)
+        side = self.open_side(x, z)
+        if side is not None and d <= y < self.wall_top.value:
+            # An open side stands no wall: its ring cells are open from the
+            # walk plane up, and the floor course below runs across them.
+            return ("claim", f"side-{side}", None)
         if self.wall_ring(x, z) and y < self.wall_top.value:
             lo, hi = self.space
             along, a0, a1 = (z, lo[2], hi[2]) if x in (lo[0] - 1, hi[0] + 1) else (x, lo[0], hi[0])
@@ -319,6 +340,10 @@ class Place:
                     out += [lit(ap["ladder"]["lo"][axis]), lit(ap["ladder"]["hi"][axis])]
                 if ap["ladder"] is not None and axis == 1:
                     out += [ap["sill"].plus(1)]
+        for s in self.sides:
+            if axis != 1:
+                i = 0 if axis == 0 else 1
+                out += [lit(s["lo"][i]), lit(s["hi"][i] + 1)]
         for g in self.gates:
             out += [lit(g["lo"][axis]), lit(g["hi"][axis])]
             if axis == 0:
@@ -453,6 +478,11 @@ def contract(p: Place) -> dict:
         if cls in ("stair", "drop", "climb"):
             edge["rise"] = 0  # the level beyond is the neighbour's to measure
         edges.append(edge)
+    for s in p.sides:
+        # A frontage a body crosses: the open side's cells are the way out
+        # (spec-0123 §5.4). A counter a body does not cross stands at the play
+        # space's edge, inside, and the side stays this edge's.
+        edges.append({"a": "room", "b": "exterior", "class": "walk", "via": f"side-{s['face']}"})
     for g in p.gates:
         spaces[f"{g['stem']}-alcove"] = {"envelope": "open"}
         edges.append({"a": "room", "b": f"{g['stem']}-alcove", "bar": {"block": f"bar-{g['stem']}", "region": g["stem"]}, "class": "barred"})

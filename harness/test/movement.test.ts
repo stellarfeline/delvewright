@@ -11,6 +11,7 @@ import {
   type ControlBot,
   type LegMovements,
   type Neighbour,
+  isDoorByHand,
 } from "../src/movement.ts";
 
 // A fake bot that records the sneak control-state toggles it is asked to make.
@@ -187,4 +188,13 @@ test("allowParkour is on for a proven jump's hop and off for every other", () =>
   // A leg with no jump never turns it on.
   const plain = walkGoals([[0, 64, 0], [1, 64, 0]], [2, 64, 0], 1);
   assert.ok(plain.every((g) => g.jump === undefined));
+});
+
+// spec-0123 §3.1: a door a hand opens is every `*_door` but the iron one.
+test("isDoorByHand is every door but the iron one", () => {
+  assert.equal(isDoorByHand("oak_door"), true);
+  assert.equal(isDoorByHand("copper_door"), true);
+  assert.equal(isDoorByHand("iron_door"), false);
+  assert.equal(isDoorByHand("iron_trapdoor"), false);
+  assert.equal(isDoorByHand("oak_fence_gate"), false);
 });

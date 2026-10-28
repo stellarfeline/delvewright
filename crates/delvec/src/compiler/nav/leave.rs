@@ -9,6 +9,19 @@ use std::collections::{BTreeMap, BTreeSet};
 /// How many pockets a `DW0921` report names before summarising the rest.
 const POCKET_LIST_LIMIT: usize = 6;
 
+/// **What `DW1066` tells the author to do** — the remedy the record gives
+/// (`docs/reference/doors-by-hand.md`, *A trapdoor over a stair*), one text
+/// for both arms that raise it (the leave relation here, the blockout battery
+/// in `crate::compiler::blockout`).
+pub const HATCH_REMEDY: &str = "A trapdoor's open panel stands against one face of its cell — the \
+face opposite its `facing` — the whole cell high; closed, a top-half trapdoor is a plate across the \
+top of its cell. A hatch turned across a stair stops the climb both ways: open, its panel stands on \
+the face the climb crosses; closed, its plate is over the top tread. Turn each named trapdoor so its \
+open panel stands ALONG the way, on a face the way does not cross — for a way that climbs along z, \
+`facing=east` or `facing=west`, its hinge on a long side of the hole; along x, `facing=north` or \
+`facing=south` — and leave the floor beside the top tread one block up on the side the panel does \
+not stand on. Do not mark the ground under it unwalkable";
+
 /// What [`check_bodies_can_leave`] measured, whether or not it refused: the
 /// population it judged, stated so a pass that judged nothing reads as that.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -36,6 +49,14 @@ pub struct LeaveBinding {
     /// Quest configurations left unjudged because a body in them may hold a
     /// movement the reach graph does not fly (spec-0113 §5.4, `DW1043`).
     pub unbounded: usize,
+    /// Trapdoor cells in the world judged ([`World::hatch_count`]), the most
+    /// over the configurations — the population `DW1066` can bind to.
+    pub hatches: usize,
+    /// Places a body cannot leave, counted over configurations.
+    pub pockets: usize,
+    /// Of `pockets`, those a body leaves once the trapdoors' shapes are
+    /// lifted: the trapdoors' doing (`DW1066`).
+    pub hatch_pockets: usize,
 }
 
 impl LeaveBinding {
@@ -58,6 +79,16 @@ impl LeaveBinding {
         )
     }
 
+    /// The `DW1066` line: the trapdoors the leave relation crossed, and the
+    /// pockets they shut.
+    pub fn hatch_line(&self) -> String {
+        format!(
+            "DW1066 binding: {} trapdoor cell(s) whose shape every movement past them was asked; \
+             {} of {} place(s) a body cannot leave shut by a trapdoor",
+            self.hatches, self.hatch_pockets, self.pockets,
+        )
+    }
+
     /// The ledger `validation/leave-proof.json` carries: the same counts, so a
     /// reader (and the staging gate) can see what the proof judged.
     pub fn to_json(&self) -> serde_json::Value {
@@ -70,6 +101,8 @@ impl LeaveBinding {
             "perched": self.perched,
             "trapped": self.trapped,
             "unbounded": self.unbounded,
+            "hatches": self.hatches,
+            "hatch_pockets": self.hatch_pockets,
         })
     }
 }
@@ -279,7 +312,12 @@ fn verify_bodies_can_leave(
             // The ways out: the route itself and every reached stand cell of a live
             // link (spec-0083 §3.9), through the one leave relation (spec-0087).
             let ways_out: BTreeSet<[i32; 3]> = seed_set.union(exits).copied().collect();
-            let judge = |ways: &BTreeSet<[i32; 3]>| w.trapped_places(&seeds, ways, returned);
+            // The one leave relation, asked of this configuration's world and of
+            // the same world with trapdoor shapes lifted (`DW1066`).
+            let judge_in = |world: &World, ways: &BTreeSet<[i32; 3]>| {
+                world.trapped_places(&seeds, ways, returned)
+            };
+            let judge = |ways: &BTreeSet<[i32; 3]>| judge_in(w, ways);
             let judged = judge(&ways_out);
             // A stand cell SERVES as a way out where, without the links, a body
             // standing in it could not get back — counted against the same closure
@@ -312,6 +350,38 @@ fn verify_bodies_can_leave(
                 .cloned()
                 .collect();
             let trapped: BTreeSet<[i32; 3]> = kept.iter().flatten().copied().collect();
+            // DW1066: a pocket a body leaves in the same world with the trapdoors'
+            // shapes lifted is the trapdoors' doing, and is named as theirs.
+            let blind_trapped: BTreeSet<[i32; 3]> = if kept.is_empty() || !w.has_leaves() {
+                BTreeSet::new()
+            } else {
+                let blind = w.without_leaves();
+                judge_in(&blind, &ways_out)
+                    .pockets
+                    .into_iter()
+                    .flatten()
+                    .collect()
+            };
+            let mut hatch_described: Vec<String> = Vec::new();
+            let kept: Vec<Vec<[i32; 3]>> = if w.has_leaves() && !kept.is_empty() {
+                let mut rest = Vec::new();
+                for pocket in kept {
+                    if pocket.iter().any(|c| blind_trapped.contains(c)) {
+                        rest.push(pocket);
+                        continue;
+                    }
+                    let how = w.way_in_words(&pocket, &trapped, &judged.preds);
+                    hatch_described.push(format!(
+                        "{} cell(s) around {:?} ({when}): {how}, and {}",
+                        pocket.len(),
+                        pocket[0],
+                        w.hatches_shutting(&pocket)
+                    ));
+                }
+                rest
+            } else {
+                kept
+            };
             let reached = &judged.reached;
             let described: Vec<String> = kept
                 .iter()
@@ -336,16 +406,30 @@ fn verify_bodies_can_leave(
                 link_exits,
                 rb,
                 judged.reach.over_budget,
+                (w.hatch_count(), hatch_described),
             )
         })
         .collect();
     let mut pockets: Vec<String> = Vec::new();
     let mut pocket_count = 0usize;
+    let mut hatch_pockets: Vec<String> = Vec::new();
     let mut over_budget: Option<u64> = None;
-    for (route_cells, reached, (afloat, perched), trapped, described, link_exits, rb, over) in
-        judged
+    for (
+        route_cells,
+        reached,
+        (afloat, perched),
+        trapped,
+        described,
+        link_exits,
+        rb,
+        over,
+        (hatches, shut),
+    ) in judged
     {
         over_budget = over_budget.or(over);
+        binding.hatches = binding.hatches.max(hatches);
+        binding.hatch_pockets += shut.len();
+        hatch_pockets.extend(shut);
         binding.reach.configurations += rb.configurations;
         for i in 0..4 {
             binding.reach.states[i] += rb.states[i];
@@ -370,11 +454,45 @@ fn verify_bodies_can_leave(
             }
         }
     }
+    binding.pockets = pocket_count + binding.hatch_pockets;
     // `DW1042`: a configuration whose graph passed its budget is partial, and
     // no verdict is taken over it.
     if let Some(budget) = over_budget {
         let failure = reach_budget_failure(&binding.reach, budget);
         return (binding, Err(failure));
+    }
+    if !hatch_pockets.is_empty() {
+        let shown: Vec<String> = hatch_pockets
+            .iter()
+            .take(POCKET_LIST_LIMIT)
+            .cloned()
+            .collect();
+        let more = hatch_pockets.len() - shown.len();
+        let tail = if more > 0 {
+            format!("; and {more} more")
+        } else {
+            String::new()
+        };
+        let others = if pocket_count > 0 {
+            format!(
+                " ({pocket_count} other place(s) a body cannot leave are not a trapdoor's doing; \
+                 `DW0921` names them once these are mended)"
+            )
+        } else {
+            String::new()
+        };
+        return (
+            binding,
+            Err(Failure {
+                code: DW_HATCH_SHUTS_IN,
+                message: format!(
+                    "{} place(s) a trapdoor shuts a body into — the player is soft-locked there: \
+                     {}{tail}{others}. {HATCH_REMEDY}",
+                    hatch_pockets.len(),
+                    shown.join("; ")
+                ),
+            }),
+        );
     }
     if pockets.is_empty() {
         return (binding, Ok(()));
@@ -500,6 +618,108 @@ impl World {
             ),
             None => "a body gets in".to_string(),
         }
+    }
+
+    /// The trapdoors that stop every way out of `pocket` (`DW1066`), in words.
+    pub(in crate::compiler::nav) fn hatches_shutting(&self, pocket: &[[i32; 3]]) -> String {
+        let stops = self.hatch_stops(pocket.iter().copied());
+        if stops.is_empty() {
+            return "no way out of it crosses a face no trapdoor stops".to_string();
+        }
+        format!(
+            "every way out of it is stopped by a trapdoor: {}",
+            self.hatch_stops_words(&stops)
+        )
+    }
+
+    /// **Which trapdoor stops which movement**, over the body cells `cells`:
+    /// each movement a body makes from one of them once trapdoor shapes are
+    /// lifted ([`World::without_leaves`]) and does not make with them, by the
+    /// trapdoor that stops it ([`World::leaf_stopping`]) and the face of its
+    /// cell it stops. The one attribution both `DW1066` arms report through.
+    pub fn hatch_stops(
+        &self,
+        cells: impl IntoIterator<Item = [i32; 3]>,
+    ) -> BTreeMap<[i32; 3], BTreeSet<delvewright_dsl::blockshape::Face>> {
+        use delvewright_dsl::blockshape::Face;
+        let mut stops: BTreeMap<[i32; 3], BTreeSet<Face>> = BTreeMap::new();
+        if !self.has_leaves() {
+            return stops;
+        }
+        let fp = Footprint::player();
+        let blind = self.without_leaves();
+        for p in cells {
+            let with: BTreeSet<[i32; 3]> = self.body_edge_cells(p).into_iter().collect();
+            for n in blind.body_edge_cells(p) {
+                if with.contains(&n) {
+                    continue;
+                }
+                let step = [
+                    p[0] + (n[0] - p[0]).signum(),
+                    p[1],
+                    p[2] + (n[2] - p[2]).signum(),
+                ];
+                if (step[0] - p[0]).abs() + (step[2] - p[2]).abs() != 1 {
+                    continue;
+                }
+                let here = self.feet_16_fp(p, &fp);
+                let there = i64::from(n[1]) * delvewright_dsl::metrics::FULL_16;
+                // A step is swept from one height to the other; a fall or a
+                // jump leaves this column at the body's own height.
+                let step_move =
+                    (n[0] - p[0]).abs() + (n[2] - p[2]).abs() == 1 && (n[1] - p[1]).abs() <= 1;
+                let lo = if step_move { here.min(there) } else { here };
+                let Some(cell) = self.leaf_stopping(p, step, lo, here.max(there), &fp) else {
+                    continue;
+                };
+                let toward = [step[0] - p[0], step[2] - p[2]];
+                let own = cell[0] == p[0] && cell[2] == p[2];
+                let face = match (toward, own) {
+                    ([1, 0], true) | ([-1, 0], false) => Face::East,
+                    ([-1, 0], true) | ([1, 0], false) => Face::West,
+                    ([0, 1], true) | ([0, -1], false) => Face::South,
+                    _ => Face::North,
+                };
+                stops.entry(cell).or_default().insert(face);
+            }
+        }
+        stops
+    }
+
+    /// [`World::hatch_stops`] in words: each trapdoor, the faces it stops,
+    /// in which state, and the `facing` that stands its panel along the way.
+    pub fn hatch_stops_words(
+        &self,
+        stops: &BTreeMap<[i32; 3], BTreeSet<delvewright_dsl::blockshape::Face>>,
+    ) -> String {
+        use delvewright_dsl::blockshape::Face;
+        stops
+            .iter()
+            .map(|(cell, faces)| {
+                let names: Vec<&str> = faces.iter().map(|f| f.name()).collect();
+                let state = match self.floors.leaves.get(cell) {
+                    Some(h) if h.by_hand && self.floors.leaf_use => {
+                        "in both states a hand sets it to"
+                    }
+                    Some(h) if h.open => "standing open",
+                    _ => "standing shut",
+                };
+                let along_z = faces.iter().all(|f| matches!(f, Face::North | Face::South));
+                let along_x = faces.iter().all(|f| matches!(f, Face::East | Face::West));
+                let turn = if along_z {
+                    "turn it to `facing=east` or `facing=west`"
+                } else if along_x {
+                    "turn it to `facing=north` or `facing=south`"
+                } else {
+                    "the ways past it cross two axes: move it off one of them"
+                };
+                format!(
+                    "the trapdoor at {cell:?} stops the way across its {} face {state} ({turn})",
+                    names.join(" and ")
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("; ")
     }
 }
 
@@ -846,6 +1066,7 @@ mod leave_tests {
             unheld_climb: Default::default(),
             material: Default::default(),
             footprints: Default::default(),
+            leaves: Default::default(),
             hiding: Default::default(),
             hurting: Default::default(),
         };
@@ -875,6 +1096,7 @@ mod leave_tests {
             unheld_climb: Default::default(),
             material: Default::default(),
             footprints: Default::default(),
+            leaves: Default::default(),
             hiding: Default::default(),
             hurting: Default::default(),
         };
@@ -962,5 +1184,164 @@ mod leave_tests {
                 .body_edge_cells([2, 1, 0])
                 .contains(&[4 + flat, 1, 0])
         );
+    }
+
+    /// The Latch's cellar, planted: a stair climbing north (-z) under a row of
+    /// three top-half trapdoors set in the floor of the room over it. The top
+    /// tread's feet are in the north trapdoor's own cell; the room's floor is
+    /// one block over that, beside the hole. `facing` is the trapdoors'.
+    fn hatched_stair(facing: &str) -> World {
+        let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
+        let stone = "minecraft:stone".to_string();
+        for x in -1..=5 {
+            for z in 0..=7 {
+                blocks.insert([x, -1, z], stone.clone()); // the cellar floor
+                blocks.insert([x, 3, z], stone.clone()); // the room's floor
+                if x == -1 || x == 5 || z == 0 || z == 7 {
+                    for y in 0..=2 {
+                        blocks.insert([x, y, z], stone.clone()); // the cellar's walls
+                    }
+                }
+            }
+        }
+        // The stair, climbing north: treads whose tops are at y 2, 1 and 0.
+        for (z, top) in [(1, 2), (2, 1), (3, 0)] {
+            for y in 0..=top {
+                blocks.insert([2, y, z], stone.clone());
+            }
+        }
+        for z in 1..=3 {
+            blocks.insert(
+                [2, 3, z],
+                format!("minecraft:oak_trapdoor[facing={facing},half=top,open=false,powered=false,waterlogged=false]"),
+            );
+        }
+        World::from_occupancy(
+            crate::compiler::assembled::occupancy_of(blocks, &BTreeSet::new()),
+            Premises::geometry_only(),
+        )
+    }
+
+    /// **DW1066: a hatch turned across the stair shuts a body in, and turned
+    /// along it does not** — the plant, red, and the remedy, green. Across
+    /// (`facing=north`), the north trapdoor's open panel stands on its south
+    /// face, the face the climb onto the top tread crosses, and its closed
+    /// plate is over that tread: a body that drops into the cellar cannot climb
+    /// out, and the refusal names that trapdoor. Along (`facing=east`), the
+    /// panel stands on the west face, and the body climbs onto the top tread and
+    /// steps off east onto the floor.
+    #[test]
+    fn a_hatch_across_a_stair_shuts_a_body_in_and_one_along_it_does_not_dw1066() {
+        let across = hatched_stair("north");
+        // The climb onto the top tread, and the way off it to the floor beside.
+        assert!(!across.neighbors([2, 2, 2]).contains(&[2, 3, 1]));
+        assert_eq!(
+            across.leaf_stopping([2, 2, 2], [2, 3, 1], 32, 48, &Footprint::player()),
+            Some([2, 3, 1])
+        );
+        // Under the middle trapdoor shut, the body climbs: its head clears the
+        // plate by the 1/80 the shapes leave.
+        assert!(across.neighbors([2, 1, 3]).contains(&[2, 2, 2]));
+        let (binding, verdict) = judge(&across, &[[0, 4, 5]]);
+        let err = verdict.expect_err("the cellar is shut by the hatch");
+        assert_eq!(err.code.id(), "DW1066");
+        assert!(
+            err.message
+                .contains("the trapdoor at [2, 3, 1] stops the way across its south face"),
+            "{}",
+            err.message
+        );
+        assert!(
+            err.message.contains("`facing=east` or `facing=west`"),
+            "{}",
+            err.message
+        );
+        assert_eq!(binding.hatches, 3);
+        assert_eq!((binding.hatch_pockets, binding.pockets), (1, 1));
+        assert!(
+            binding.hatch_line().contains("1 of 1 place(s)"),
+            "{}",
+            binding.hatch_line()
+        );
+
+        let along = hatched_stair("east");
+        assert!(along.neighbors([2, 2, 2]).contains(&[2, 3, 1]));
+        assert!(along.neighbors([2, 3, 1]).contains(&[3, 4, 1]));
+        let (binding, verdict) = judge(&along, &[[0, 4, 5]]);
+        verdict.expect("turned along the climb, the hatch lets the body out");
+        assert_eq!(
+            (binding.hatches, binding.hatch_pockets, binding.pockets),
+            (3, 0, 0)
+        );
+        // And the same world with the trapdoors' shapes lifted is the world
+        // DW1066 compares against: there the planted cellar is no pocket.
+        let (_, lifted) = judge(&across.without_leaves(), &[[0, 4, 5]]);
+        lifted.expect("with no trapdoor shapes the stair is a stair");
+    }
+
+    /// **One authority for crossing a leaf: the reach graph meets the panel
+    /// the walk meets** (spec-0113 with spec-0123). A corridor one wide and two
+    /// high, an open top-half oak trapdoor in it whose panel stands on the
+    /// west face of its cell (`facing=east`): a body crossing that face meets
+    /// the panel open and the plate shut, so it is stopped whatever it sets
+    /// the trapdoor to ([`World::leaf_stopping`]). The reach graph's every
+    /// launch, flown, must not carry a body across it either — the simulator
+    /// holds the open panel as the jar's footprint (`Dense::of`). The
+    /// perturbation only the leaf answers: the same world with every leaf's
+    /// shape lifted ([`World::without_leaves`]) reaches the far end, and a
+    /// world whose leaves differ is a different graph ([`World::fingerprint`]).
+    #[test]
+    fn the_reach_graph_crosses_a_leaf_only_where_the_walk_does() {
+        let stone = "minecraft:stone".to_string();
+        let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
+        for x in -1..=11 {
+            blocks.insert([x, -1, 0], stone.clone()); // the floor
+            blocks.insert([x, 2, 0], stone.clone()); // the ceiling
+            for y in -1..=2 {
+                blocks.insert([x, y, -1], stone.clone());
+                blocks.insert([x, y, 1], stone.clone());
+            }
+        }
+        for y in 0..=1 {
+            blocks.insert([-1, y, 0], stone.clone());
+            blocks.insert([11, y, 0], stone.clone());
+        }
+        let hatch = [5, 0, 0];
+        blocks.insert(
+            hatch,
+            "minecraft:oak_trapdoor[facing=east,half=top,open=true,powered=false,waterlogged=false]"
+                .to_string(),
+        );
+        let open: BTreeSet<[i32; 3]> = [hatch].into_iter().collect();
+        let w = World::from_occupancy(
+            crate::compiler::assembled::occupancy_of(blocks, &open),
+            Premises::geometry_only(),
+        );
+        assert!(w.has_leaves(), "the trapdoor is read as a leaf");
+        let fp = Footprint::player();
+        let feet = w.feet_16_fp([4, 0, 0], &fp);
+        assert_eq!(
+            w.leaf_stopping([4, 0, 0], hatch, feet, feet, &fp),
+            Some(hatch),
+            "the walk is stopped at the panel"
+        );
+        let far = [8, 0, 0];
+        let reached = w.body_reach(&[[1, 0, 0]]).standing();
+        assert!(reached.contains(&[4, 0, 0]), "the near side is reached");
+        assert!(
+            !reached.contains(&far),
+            "no launch carries a body across the panel the walk is stopped by"
+        );
+        let lifted = w.without_leaves();
+        assert_ne!(w.fingerprint(), lifted.fingerprint());
+        assert!(
+            lifted.body_reach(&[[1, 0, 0]]).standing().contains(&far),
+            "with the leaf lifted the far end is reached: the leaf is what stops it"
+        );
+        // From the far side a body walks into the hatch's cell (its east face is
+        // clear) and is stopped at the panel there, as the walk is.
+        let back = w.body_reach(&[far]).standing();
+        assert!(back.contains(&hatch));
+        assert!(!back.contains(&[4, 0, 0]));
     }
 }

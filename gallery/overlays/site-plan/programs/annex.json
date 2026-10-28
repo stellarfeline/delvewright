@@ -34,6 +34,7 @@
   "palette": {
     "bar": "minecraft:iron_bars[east=false,north=false,south=false,waterlogged=false,west=false]",
     "ceiling": "minecraft:spruce_planks",
+    "counter": "minecraft:iron_trapdoor[facing=south,half=bottom,open=false,powered=false,waterlogged=false]",
     "floor": "minecraft:stone_bricks",
     "furniture": "minecraft:chiseled_stone_bricks",
     "lamp": "minecraft:sea_lantern",
@@ -43,6 +44,8 @@
     "roof_w": {
       "local": "minecraft:dark_oak_stairs[facing=west,half=bottom,shape=straight,waterlogged=false]"
     },
+    "street-door": "minecraft:iron_door[facing=south,half=lower,hinge=left,open=false,powered=false]",
+    "street-door-top": "minecraft:iron_door[facing=south,half=upper,hinge=left,open=false,powered=false]",
     "wall": "minecraft:stone_bricks"
   },
   "params": {
@@ -243,6 +246,58 @@
         "weight": 1
       }
     ],
+    "counter_bay": [
+      {
+        "body": {
+          "axis": "y",
+          "children": [
+            {
+              "material": {
+                "role": "wall"
+              },
+              "op": "fill"
+            },
+            {
+              "material": {
+                "role": "counter"
+              },
+              "op": "fill"
+            },
+            {
+              "material": {
+                "role": "wall"
+              },
+              "op": "fill"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
     "course": [
       {
         "body": {
@@ -287,6 +342,58 @@
                 "value": 1
               },
               "size": "absolute"
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "door_bay": [
+      {
+        "body": {
+          "axis": "y",
+          "children": [
+            {
+              "material": {
+                "role": "street-door"
+              },
+              "op": "fill"
+            },
+            {
+              "material": {
+                "role": "street-door-top"
+              },
+              "op": "fill"
+            },
+            {
+              "material": {
+                "role": "wall"
+              },
+              "op": "fill"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
             }
           ]
         },
@@ -622,10 +729,8 @@
               "symbol": "rooms"
             },
             {
-              "material": {
-                "role": "wall"
-              },
-              "op": "fill"
+              "op": "call",
+              "symbol": "street"
             },
             {
               "op": "void"
@@ -1316,6 +1421,80 @@
                 "name": "handed/roof/eaves"
               },
               "size": "absolute"
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "street": [
+      {
+        "body": {
+          "axis": "x",
+          "children": [
+            {
+              "material": {
+                "role": "wall"
+              },
+              "op": "fill"
+            },
+            {
+              "op": "call",
+              "symbol": "counter_bay"
+            },
+            {
+              "material": {
+                "role": "wall"
+              },
+              "op": "fill"
+            },
+            {
+              "op": "call",
+              "symbol": "door_bay"
+            },
+            {
+              "material": {
+                "role": "wall"
+              },
+              "op": "fill"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 4
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 3
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
             }
           ]
         },

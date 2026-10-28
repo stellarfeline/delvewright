@@ -26,6 +26,6 @@
     "title": "Showcase of the Keep",
     "weather": "clear"
   },
-  "dsl_version": "0.63.0",
+  "dsl_version": "0.66.0",
   "stage": "world"
 }

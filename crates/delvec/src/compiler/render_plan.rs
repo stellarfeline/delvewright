@@ -31,7 +31,7 @@
 //! ## Determinism
 //!
 //! Shots are emitted in a fixed order (spawn → per-area interiors+seams → NPCs →
-//! interacts → gates → **player-POV**), every list is plan-ordered or sorted, and
+//! interacts → gates → **player-POV** → cutscenes → **threshold**), every list is plan-ordered or sorted, and
 //! there is no RNG or wall-clock input — so `render-plan.json` rides the ADR-0006
 //! double-build byte-identity gate like every other output.
 //!
@@ -80,6 +80,20 @@
 //! the eye-height of a DW0314-proven-standable waypoint, so the camera is provably
 //! in open air; the DW0724 self-check ([`crate::compiler::nav::verify_camera_eyes`]) enforces
 //! it structurally, for this kind and every other.
+//!
+//! ## Threshold shots (spec-0123 §3.4)
+//!
+//! A building is judged from its door: one `threshold` shot per portal seam on
+//! a vertical face of every box, the eye on the opening's sill at
+//! [`EYE_HEIGHT`] in its middle column, looking along the face's inward normal
+//! at the play space's centre; and one per open side, the eye in the outside
+//! approach cell at the side's middle. Like a `pov` eye it is the body's own,
+//! so a block on its sight line never moves it; a block in its cell (a shut
+//! way's bar) stands it one cell further out. The review reads each frame
+//! blind — the trade, the front, the thing — before it opens the `expect`.
+//! The plan states the count as `threshold_shots` and the build prints
+//! `threshold shots: T over P place(s), D door(s), O open side(s)`, zeroes
+//! included.
 //!
 //! ## `horizon` (the render layer is told, never guesses)
 //!
@@ -755,6 +769,9 @@ struct Shot {
     /// A stated rotation (Minecraft yaw, pitch), for a camera whose pose is
     /// given rather than aimed at a point: a cutscene keyframe.
     aim: Option<(f64, f64)>,
+    /// A `threshold` eye's second stand: one cell further out along its
+    /// normal, taken when the first holds a block (a shut way's bar).
+    fallback: Option<[f64; 3]>,
 }
 
 /// The shot list under construction, the eye cells the clear-eye proof owes a
@@ -816,6 +833,12 @@ impl<'c> Shots<'c> {
         // A `cutscene` camera is a keyframe the datapack flies: never moved,
         // like a POV eye — a keyframe inside a block is `DW0724` against it.
         let pov = shot.kind == "pov" || shot.kind == "cutscene";
+        // A `threshold` eye is the body's own view of a place from its door
+        // or its open side: what stands between it and the room is what the
+        // frame exists to show, so a block on its sight line never moves it.
+        // Only a block in its own cell does — a shut way's bar — and then it
+        // stands one cell further out, before the bar.
+        let threshold = shot.kind == "threshold";
         let world = self.nav(shot.world);
         // A stand-off whose sight line to its subject crosses a block draws the
         // block, not the subject — a spawn camera outside the hall draws the
@@ -836,7 +859,15 @@ impl<'c> Shots<'c> {
                 past_subject && blocked && c != subject
             })
             .is_some();
-        let eye = if pov || (world.is_clear(eye_cell(requested)) && !sight_blocked) {
+        let fallback = shot.fallback.filter(|f| {
+            threshold && !world.is_clear(eye_cell(requested)) && world.is_clear(eye_cell(*f))
+        });
+        let eye = if let Some(f) = fallback {
+            f
+        } else if pov
+            || (threshold && world.is_clear(eye_cell(requested)))
+            || (world.is_clear(eye_cell(requested)) && !sight_blocked)
+        {
             // The requested stand-off is honoured wherever it sees its subject.
             // It yields to two facts of the world the frame stands in: the cell
             // it names holds a block, or a block stands between it and the
@@ -1104,6 +1135,7 @@ pub fn render_plan(
             ],
             stamped: false,
             aim: None,
+            fallback: None,
             world: at_load,
         });
     }
@@ -1167,6 +1199,7 @@ pub fn render_plan(
                 expect,
                 stamped: true,
                 aim: None,
+                fallback: None,
                 world: at_load,
             });
         }
@@ -1195,6 +1228,7 @@ pub fn render_plan(
                 ],
                 stamped: false,
                 aim: None,
+                fallback: None,
                 world: at_load,
             });
         }
@@ -1249,6 +1283,7 @@ pub fn render_plan(
             ],
             stamped: false,
             aim: None,
+            fallback: None,
             world: at_load,
         });
     }
@@ -1286,6 +1321,7 @@ pub fn render_plan(
             expect,
             stamped: false,
             aim: None,
+            fallback: None,
             world,
         });
     }
@@ -1339,6 +1375,7 @@ pub fn render_plan(
                 ],
                 stamped: false,
                 aim: None,
+                fallback: None,
                 world: at_load,
             });
         }
@@ -1372,6 +1409,7 @@ pub fn render_plan(
             expect,
             stamped: true,
             aim: None,
+            fallback: None,
             world: pov_stand(frames, shot),
         });
     }
@@ -1434,9 +1472,18 @@ pub fn render_plan(
                 stamped: false,
                 world: arrival,
                 aim: Some((f.yaw, f.pitch)),
+                fallback: None,
             });
         }
     }
+
+    // --- threshold shots (spec-0123 §3.4): the body's own view of a place
+    // from its doors and its open sides, read blind for the trade.
+    let thresholds = threshold_shots(plan, frames);
+    for shot in thresholds.shots {
+        out.push(shot);
+    }
+    eprintln!("{}", thresholds.count.line());
 
     let proven_in = out.prove_eyes(picture)?;
     let mut warnings = Vec::new();
@@ -1463,6 +1510,7 @@ pub fn render_plan(
             "worlds": proven_in,
         },
         "sky": sky_fact(c),
+        "threshold_shots": thresholds.count.to_json(),
         "shots": out.shots,
     });
     if let Some(h) = horizon_fact(c, plan) {
@@ -1517,6 +1565,166 @@ pub fn render_plan(
         )?;
     }
     Ok((root, warnings))
+}
+
+/// **What the threshold shots bind** (spec-0123 §3.4): `T` shots over `P`
+/// places, `D` of them from a door and `O` from an open side.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ThresholdCount {
+    /// Shots drawn.
+    pub shots: usize,
+    /// Places the plan allocates a box to.
+    pub places: usize,
+    /// Shots standing on a portal's sill.
+    pub doors: usize,
+    /// Shots standing outside an open side.
+    pub open_sides: usize,
+}
+
+impl ThresholdCount {
+    /// `threshold shots: T over P place(s), D door(s), O open side(s)`.
+    #[must_use]
+    pub fn line(&self) -> String {
+        format!(
+            "threshold shots: {} over {} place(s), {} door(s), {} open side(s)",
+            self.shots, self.places, self.doors, self.open_sides
+        )
+    }
+
+    fn to_json(self) -> Value {
+        json!({
+            "shots": self.shots,
+            "places": self.places,
+            "doors": self.doors,
+            "open_sides": self.open_sides,
+        })
+    }
+}
+
+/// One cell further from `centre` than `eye`, along `axis`.
+fn out_of(eye: [f64; 3], centre: [f64; 3], axis: usize) -> [f64; 3] {
+    let mut e = eye;
+    e[axis] += if eye[axis] < centre[axis] { -1.0 } else { 1.0 };
+    e
+}
+
+struct Thresholds {
+    shots: Vec<Shot>,
+    count: ThresholdCount,
+}
+
+/// **The threshold shots** (spec-0123 §3.4): for every box, one shot per
+/// portal seam on a vertical face — the eye at the opening's middle column on
+/// its sill at eye height, looking along the face's inward normal at the play
+/// space's centre at eye height — and one per open side, the eye in the
+/// outside approach cell at the side's middle (a contact's neighbour's cell
+/// where a contact covers the side). Each stands in the
+/// configuration of the critical path's first arrival at a beat of the place,
+/// else at load.
+fn threshold_shots(plan: &Plan, frames: &FrameWorlds) -> Thresholds {
+    let mut out = Thresholds {
+        shots: Vec::new(),
+        count: ThresholdCount::default(),
+    };
+    let Some(blockout) = plan.blockout.as_ref() else {
+        return out;
+    };
+    out.count.places = blockout.boxes.len();
+    let graph = plan.campaign.layout_graph.as_ref().map(|g| &g.content);
+    let last = frames.arrivals.len().saturating_sub(1);
+    let first_arrival = |node: &str| -> usize {
+        graph
+            .map(|g| {
+                g.beats
+                    .iter()
+                    .filter(|b| b.node.0 == node)
+                    .filter_map(|b| plan.objective_steps.get(b.objective.as_str()).copied())
+                    .min()
+                    .map_or(0, |s| s.min(last))
+            })
+            .unwrap_or(0)
+    };
+    let intent = |node: &str| -> String {
+        graph
+            .and_then(|g| g.nodes.iter().find(|n| n.id.0 == node))
+            .map_or_else(|| short(node), |n| n.intent.clone())
+    };
+    let f = |v: i64| v as f64;
+    for b in &blockout.boxes {
+        let node = b.node.0.as_str();
+        let world = first_arrival(node);
+        let eye_y = f(b.floor) + EYE_HEIGHT;
+        let centre = [
+            (f(b.foot[0]) + f(b.foot[1])) / 2.0 + 0.5,
+            eye_y,
+            (f(b.foot[2]) + f(b.foot[3])) / 2.0 + 0.5,
+        ];
+        let expect = |from: String| {
+            vec![
+                Value::String(format!("the place reads as its intent: {}", intent(node))),
+                Value::String(format!(
+                    "read blind from {from}: name the trade, judge the front, name the thing"
+                )),
+            ]
+        };
+        for (si, s) in blockout.seams.iter().enumerate() {
+            if s.crossing != delvewright_dsl::siteplan::Crossing::Portal
+                || s.normal_axis == 1
+                || (s.a != b.node && s.b != b.node)
+            {
+                continue;
+            }
+            let (lo, hi) = s.opening;
+            let across = 2 - s.normal_axis;
+            let mut eye = [0.0; 3];
+            eye[s.normal_axis] = f(s.plane) + 0.5;
+            eye[across] = f((lo[across] + hi[across]).div_euclid(2)) + 0.5;
+            eye[1] = f(lo[1]) + EYE_HEIGHT;
+            out.count.doors += 1;
+            out.shots.push(Shot {
+                id: format!("threshold/{}/door{si}", short(node)),
+                kind: "threshold",
+                area: node.to_string(),
+                eye,
+                look_at: centre,
+                fov: Some(POV_FOV_DEG),
+                extra: vec![("node", json!(node)), ("edge", json!(s.edge.0))],
+                expect: expect(format!("the sill of `{}`", s.edge.0)),
+                stamped: false,
+                aim: None,
+                fallback: Some(out_of(eye, centre, s.normal_axis)),
+                world,
+            });
+        }
+        // Every open side, a contact over it or none: a front onto a street
+        // is crossed through the contact, and its approach cell is the
+        // street's — the body's own view of the front all the same.
+        for side in b.open_sides() {
+            let (lo, hi) = side.cells;
+            let (n, a) = (side.normal_axis(), side.along_axis());
+            let mut eye = [0.0; 3];
+            eye[n] = f(lo[n] + side.outward()) + 0.5;
+            eye[a] = f((lo[a] + hi[a]).div_euclid(2)) + 0.5;
+            eye[1] = f(side.walk_y) + EYE_HEIGHT;
+            out.count.open_sides += 1;
+            out.shots.push(Shot {
+                id: format!("threshold/{}/{}", short(node), side.face.as_str()),
+                kind: "threshold",
+                area: node.to_string(),
+                eye,
+                look_at: centre,
+                fov: Some(POV_FOV_DEG),
+                extra: vec![("node", json!(node)), ("side", json!(side.face.as_str()))],
+                expect: expect(format!("outside its open {} side", side.face.as_str())),
+                stamped: false,
+                aim: None,
+                fallback: Some(out_of(eye, centre, n)),
+                world,
+            });
+        }
+    }
+    out.count.shots = out.shots.len();
+    out
 }
 
 /// **The hour this delve is played at**, as the render layer needs it.

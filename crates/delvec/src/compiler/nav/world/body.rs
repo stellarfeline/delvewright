@@ -517,6 +517,192 @@ impl World {
         self.solid.contains(&c)
     }
 
+    /// **The door or trapdoor that stops a body crossing from column `a` into
+    /// the neighbouring column `b`**, while the body's box sweeps the vertical
+    /// band `lo_16..` (its lowest feet, in absolute sixteenths) up to `hi_16`
+    /// (its highest feet) plus its own height — or `None` when nothing does.
+    ///
+    /// The one question every horizontal movement in this model asks of a
+    /// leaf (`docs/reference/doors-by-hand.md`, *A leaf's shape*): a cell's
+    /// collision class says whether a body may be IN a door's or a trapdoor's
+    /// cell; this says which of its faces the body may cross on the way, from
+    /// the shape the pinned jar gives each state
+    /// ([`delvewright_dsl::blockshape::Leaf::stops_crossing`]). A leaf in
+    /// either column is asked about the face between them, at every course
+    /// the band reaches. Whether the body may set a leaf a hand opens is this
+    /// view's ([`Floors::leaf_use`]). Empty for a world with no door or
+    /// trapdoor, which keeps every proof over it byte-identical.
+    pub(in crate::compiler::nav) fn leaf_stopping(
+        &self,
+        a: [i32; 3],
+        b: [i32; 3],
+        lo_16: i64,
+        hi_16: i64,
+        fp: &Footprint,
+    ) -> Option<[i32; 3]> {
+        self.leaf_stopping_as(a, b, lo_16, hi_16, fp, self.floors.leaf_use)
+    }
+
+    /// [`World::leaf_stopping`] for a mover whose use of a leaf a hand opens
+    /// is stated by the caller (`may_use`) rather than by this view — a
+    /// walked leg whose body opens no door, judged over the world its route
+    /// was planned in.
+    pub(in crate::compiler::nav) fn leaf_stopping_as(
+        &self,
+        a: [i32; 3],
+        b: [i32; 3],
+        lo_16: i64,
+        hi_16: i64,
+        fp: &Footprint,
+        may_use: bool,
+    ) -> Option<[i32; 3]> {
+        self.leaves_at_crossing(a, b, lo_16, hi_16, fp)
+            .into_iter()
+            .find(|&(cell, l, face, wide)| {
+                let floor_80 = i64::from(cell[1]) * 80;
+                let (lo_80, hi_80) = Self::crossing_band_80(lo_16, hi_16, fp);
+                l.stops_crossing(face, lo_80 - floor_80, hi_80 - floor_80, may_use, wide)
+            })
+            .map(|(cell, ..)| cell)
+    }
+
+    /// The band a body's box sweeps crossing with feet `lo_16..=hi_16`, in
+    /// absolute eightieths: from its lowest feet to its highest head.
+    fn crossing_band_80(lo_16: i64, hi_16: i64, fp: &Footprint) -> (i64, i64) {
+        let height_80 = (fp.body().height * 80.0).round() as i64;
+        (lo_16 * 5, hi_16 * 5 + height_80)
+    }
+
+    /// **Every leaf a crossing from column `a` into column `b` is asked
+    /// about**: each door or trapdoor cell in either column (for every column
+    /// of the body's footprint) at a course the body's band reaches, with the
+    /// face of its own cell the body crosses, and whether the body is wider
+    /// than 10/16 — what a centred box may be and clear a side panel — and so
+    /// meets a panel on any face. The population [`World::leaf_stopping`]
+    /// judges, and what a binding counts.
+    pub(in crate::compiler::nav) fn leaves_at_crossing(
+        &self,
+        a: [i32; 3],
+        b: [i32; 3],
+        lo_16: i64,
+        hi_16: i64,
+        fp: &Footprint,
+    ) -> Vec<(
+        [i32; 3],
+        delvewright_dsl::blockshape::Leaf,
+        delvewright_dsl::blockshape::Face,
+        bool,
+    )> {
+        use delvewright_dsl::blockshape::{Face, LEAF_THICKNESS_16};
+        let mut out = Vec::new();
+        if self.floors.leaves.is_empty() {
+            return out;
+        }
+        let face = match (b[0] - a[0], b[2] - a[2]) {
+            (1, 0) => Face::East,
+            (-1, 0) => Face::West,
+            (0, 1) => Face::South,
+            (0, -1) => Face::North,
+            _ => return out,
+        };
+        let wide = fp.body().width * FULL_16 as f64 > (FULL_16 - 2 * LEAF_THICKNESS_16) as f64;
+        let (lo_80, hi_80) = Self::crossing_band_80(lo_16, hi_16, fp);
+        let (y0, y1) = (lo_80.div_euclid(80), (hi_80 - 1).div_euclid(80));
+        for &[dx, dz] in &fp.cols {
+            for y in y0..=y1 {
+                let y = y as i32;
+                for (col, f) in [
+                    ([a[0] + dx, a[2] + dz], face),
+                    ([b[0] + dx, b[2] + dz], face.opposite()),
+                ] {
+                    let cell = [col[0], y, col[1]];
+                    if let Some(l) = self.floors.leaves.get(&cell) {
+                        out.push((cell, *l, f, wide));
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Whether a body crosses from column `a` to the neighbouring column `b`
+    /// sweeping feet `lo_16..=hi_16` — [`World::leaf_stopping`] answering none.
+    pub(in crate::compiler::nav) fn crosses(
+        &self,
+        a: [i32; 3],
+        b: [i32; 3],
+        lo_16: i64,
+        hi_16: i64,
+        fp: &Footprint,
+    ) -> bool {
+        self.leaf_stopping(a, b, lo_16, hi_16, fp).is_none()
+    }
+
+    /// Whether this world holds any door or trapdoor ([`Floors::leaves`]).
+    pub fn has_leaves(&self) -> bool {
+        !self.floors.leaves.is_empty()
+    }
+
+    /// The trapdoors of this world, by cell — what `DW1066`'s report names.
+    pub fn hatch_count(&self) -> usize {
+        self.floors.leaves.values().filter(|l| !l.is_door()).count()
+    }
+
+    /// The door cells of this world whose leaf the walk reads — what
+    /// `DW1068`'s binding names.
+    pub fn door_leaf_cells(&self) -> Vec<[i32; 3]> {
+        self.floors
+            .leaves
+            .iter()
+            .filter(|(_, l)| l.is_door())
+            .map(|(c, _)| *c)
+            .collect()
+    }
+
+    /// The leaf of the door or trapdoor at `cell`, if one stands there.
+    pub fn leaf_at(&self, cell: [i32; 3]) -> Option<delvewright_dsl::blockshape::Leaf> {
+        self.floors.leaves.get(&cell).copied()
+    }
+
+    /// This world with every door's and trapdoor's leaf lifted from the
+    /// crossing rule — the world [`World::leaf_stopping`] is not asked in. What
+    /// `DW1066` compares against to say a pocket is a trapdoor's doing.
+    pub fn without_leaves(&self) -> World {
+        let mut w = self.clone_world();
+        w.floors.leaves.clear();
+        w
+    }
+
+    /// This world with every DOOR's leaf lifted from the crossing rule and
+    /// every trapdoor's kept — what `DW1068` compares against to say a way is
+    /// refused only by a door.
+    pub fn without_door_leaves(&self) -> World {
+        let mut w = self.clone_world();
+        w.floors.leaves.retain(|_, l| !l.is_door());
+        w
+    }
+
+    /// The cells a body can stand in beside or under a trapdoor — its own
+    /// column and the four beside it, from two courses under it to one over
+    /// it — over the world with trapdoor shapes lifted, in cell order: the
+    /// cells [`World::hatch_stops`] is asked from when a whole world's
+    /// trapdoors are named.
+    pub fn cells_beside_hatches(&self) -> Vec<[i32; 3]> {
+        let blind = self.without_leaves();
+        let mut out = BTreeSet::new();
+        for (t, _) in self.floors.leaves.iter().filter(|(_, l)| !l.is_door()) {
+            for (dx, dz) in [(0, 0), (-1, 0), (1, 0), (0, -1), (0, 1)] {
+                for dy in -2..=1 {
+                    let c = [t[0] + dx, t[1] + dy, t[2] + dz];
+                    if blind.is_standable(c) {
+                        out.insert(c);
+                    }
+                }
+            }
+        }
+        out.into_iter().collect()
+    }
+
     /// Whether a cell contains block geometry a cutscene camera must not fly
     /// through: a full-cube solid, a 1.5-tall fence/wall, or a fence gate.
     /// Water does not clip a camera.
@@ -781,6 +967,10 @@ impl World {
                 if !step_allowed(rise, || head_clear_to_jump) {
                     continue;
                 }
+                let there = here + rise;
+                if !self.crosses(c, n, here.min(there), here.max(there), fp) {
+                    continue;
+                }
                 out.push(n);
             }
         }
@@ -825,12 +1015,20 @@ impl World {
                 let n = [c[0] + dx, c[1] + dy, c[2] + dz];
                 if let Some(feet) = self.perch_feet_16(n, fp)
                     && step_allowed(feet - here, head_clear)
+                    && self.crosses(c, n, here.min(feet), here.max(feet), fp)
                 {
                     out.push(n);
                 }
                 if perched.is_some()
                     && self.standable_fp(n, fp)
                     && step_allowed(self.feet_16_fp(n, fp) - here, head_clear)
+                    && self.crosses(
+                        c,
+                        n,
+                        here.min(self.feet_16_fp(n, fp)),
+                        here.max(self.feet_16_fp(n, fp)),
+                        fp,
+                    )
                 {
                     out.push(n);
                 }
@@ -838,6 +1036,7 @@ impl World {
             if perched.is_some() {
                 let (x1, z1) = (c[0] + dx, c[2] + dz);
                 if (c[1]..=c[1] + 1).all(|y| !self.is_occupied([x1, y, z1]))
+                    && self.crosses(c, [x1, c[1], z1], here, here, fp)
                     && let Some(n) = self.settle_fp(x1, z1, c[1] - 1, here, fp)
                 {
                     out.push(n);
@@ -917,6 +1116,10 @@ impl World {
             for (dx, dz) in HORIZ {
                 let (x1, z1) = (c[0] + dx, c[2] + dz);
                 let n = [x1, c[1], z1];
+                let afloat_16 = i64::from(c[1]) * FULL_16;
+                if !self.crosses(c, n, afloat_16, afloat_16 + FULL_16, fp) {
+                    continue;
+                }
                 if self.is_water_surface(n) {
                     out.push(n);
                     continue;
@@ -953,6 +1156,11 @@ impl World {
         }
         for (dx, dz) in HORIZ {
             let (x1, z1) = (c[0] + dx, c[2] + dz);
+            // Every arm below leaves this column sideways at the body's own
+            // height first; a trapdoor that stops that stops all of them.
+            if !self.crosses(c, [x1, c[1], z1], here, here, fp) {
+                continue;
+            }
             // Wade in: water at the body's feet in the next column, rising to
             // a surface with air over it.
             if self.is_water([x1, c[1], z1])
@@ -1077,6 +1285,9 @@ impl World {
                 }
                 let col = [cx, a[1], cz];
                 if self.is_use_gate(col)
+                    || (self.has_leaves()
+                        && (0..fp.height)
+                            .any(|dy| self.floors.leaves.contains_key(&[cx, a[1] + dy, cz])))
                     || !self.standable_fp(col, fp)
                     || self.feet_16_fp(col, fp) != floor
                 {

@@ -49,6 +49,7 @@ pub(in crate::compiler::nav) fn floored_with_lethal(
             unheld_climb: Default::default(),
             material: Default::default(),
             footprints: Default::default(),
+            leaves: Default::default(),
             // A synthetic solid cell is a full cube of stone: it hides.
             hiding: solid_hides,
             hurting: Default::default(),
@@ -204,6 +205,7 @@ pub(in crate::compiler::nav) fn classified(
             unheld_climb: Default::default(),
             material: Default::default(),
             footprints: Default::default(),
+            leaves: Default::default(),
             // A synthetic solid cell is a full cube of stone: it hides.
             hiding: solid_hides,
             hurting: Default::default(),

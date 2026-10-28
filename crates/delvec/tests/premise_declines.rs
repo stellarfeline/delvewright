@@ -42,6 +42,11 @@ fn premise_declines_are_enumerated() {
         // round each way (spec-0120): whether a body can be in a column is a
         // fact of the blocks there in one state, and no horizon, volume or
         // gate premise changes the width a structure takes.
+        // `compiler/nav/census.rs`: the piece census (spec-0123 §3.5) reads
+        // what a body cannot be in beside a door and what a face is made of —
+        // a fact of the blocks, measured for the review and refusing nothing,
+        // which no horizon, volume or gate of the campaign changes.
+        ("compiler/nav/census.rs", 1),
         ("compiler/nav/width.rs", 1),
         // `compiler/nav/world/mod.rs`: the synthetic constructors' own door
         // (`from_solid_and_flooded`), which every unit-test world goes

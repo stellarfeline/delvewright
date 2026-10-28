@@ -725,17 +725,62 @@ pub fn derive_with(
             slo[1]
         };
         let slo = [slo[0], wall_bottom, slo[2]];
-        for (a, c) in [
-            ([x0, slo[1], z0], [x0, wall_top, z1]),
-            ([x1, slo[1], z0], [x1, wall_top, z1]),
-            ([x0 + 1, slo[1], z0], [x1 - 1, wall_top, z0]),
-            ([x0 + 1, slo[1], z1], [x1 - 1, wall_top, z1]),
+        let fy = b.floor_course_y();
+        // An open side (spec-0123 §5.2) raises no wall above the floor course:
+        // its run stops at the floor course, and the cells over it are cleared
+        // to the top of the play space. A corner stands with the walled side
+        // beside it, and opens only where both its sides are open.
+        use delvewright_dsl::siteplan::Face;
+        let open = |f: Face| b.side_open(f);
+        let corner_open = |f: Face, g: Face| open(f) && open(g);
+        let mut open_runs: Vec<([i64; 3], [i64; 3])> = Vec::new();
+        for (face, a, c) in [
+            (Face::West, [x0, slo[1], z0], [x0, wall_top, z1]),
+            (Face::East, [x1, slo[1], z0], [x1, wall_top, z1]),
+            (Face::North, [x0 + 1, slo[1], z0], [x1 - 1, wall_top, z0]),
+            (Face::South, [x0 + 1, slo[1], z1], [x1 - 1, wall_top, z1]),
         ] {
-            mass.write_within(down(a), [c[0], c[1], c[2]], palette::WALL, mask, sink);
+            if !open(face) {
+                mass.write_within(down(a), [c[0], c[1], c[2]], palette::WALL, mask, sink);
+                continue;
+            }
+            // The run below the floor course is the place's foundation, as on
+            // a walled side; above it, nothing.
+            if a[1] < fy {
+                mass.write_within(down(a), [c[0], fy - 1, c[2]], palette::WALL, mask, sink);
+            }
+            let (mut lo, mut hi) = ([a[0], fy + 1, a[2]], [c[0], c[1], c[2]]);
+            // The two corners of an x-run belong to it; each stays a wall
+            // unless the side across the corner is open too.
+            if matches!(face, Face::West | Face::East) {
+                if !corner_open(face, Face::North) {
+                    lo[2] += 1;
+                }
+                if !corner_open(face, Face::South) {
+                    hi[2] -= 1;
+                }
+                for (corner, other) in [(z0, Face::North), (z1, Face::South)] {
+                    if !corner_open(face, other) {
+                        mass.write_within(
+                            down([a[0], fy + 1, corner]),
+                            [a[0], c[1], corner],
+                            palette::WALL,
+                            mask,
+                            sink,
+                        );
+                    }
+                }
+            }
+            if lo[0] <= hi[0] && lo[2] <= hi[2] && lo[1] <= hi[1] {
+                open_runs.push((lo, hi));
+            }
+        }
+        for (lo, hi) in &open_runs {
+            mass.write_within(down(*lo), *hi, palette::AIR, mask, sink);
         }
         // Floor course: the accent, so the colour under a body's feet names the
-        // place it is standing in.
-        let fy = b.floor_course_y();
+        // place it is standing in. It runs across an open side's ring, so a
+        // body steps on and off level.
         mass.write_within(
             down([x0, fy, z0]),
             down([x1, fy, z1]),
@@ -2077,14 +2122,99 @@ pub fn check(
         crate::compiler::nav::Premises::geometry_only().with_body_of(plan),
     );
 
-    seams_built(b, &open, &mut binding, &mut findings);
-    nodes_reached(c, b, &sealed, &mut binding, &mut findings);
-    crossings(c, b, plan, blocks, &open, &mut binding, &mut findings);
-    stitches(b, &open, &mut binding, &mut findings);
-    sightlines(c, b, &open, &mut binding, &mut findings);
-    identities(c, b, &open, &mut binding, &mut findings);
-    pacing(c, b, &open, &mut binding, &mut findings);
+    let run = |open: &crate::compiler::nav::World,
+               sealed: &crate::compiler::nav::World,
+               binding: &mut BatteryBinding,
+               findings: &mut Vec<(DwCode, Diagnostic)>| {
+        seams_built(b, open, binding, findings);
+        nodes_reached(c, b, sealed, binding, findings);
+        crossings(c, b, plan, blocks, open, binding, findings);
+        stitches(b, open, binding, findings);
+        sightlines(c, b, open, binding, findings);
+        identities(c, b, open, binding, findings);
+        pacing(c, b, open, binding, findings);
+    };
+    run(&open, &sealed, &mut binding, &mut findings);
+    hatch_refusals(&open, &sealed, run, &mut findings);
     Some(Battery { findings, binding })
+}
+
+/// **`DW1066` over the battery**: a refusal the battery raises only because a
+/// trapdoor's shape stops a body — the same battery, run again over the same
+/// two worlds with every trapdoor's shape lifted
+/// ([`crate::compiler::nav::World::without_leaves`]), does not raise it.
+/// Every such refusal is replaced by one `DW1066` naming each trapdoor that
+/// stops a step and the face it stops, because a remedy about seams and
+/// massing sends the author to move what is not wrong. A refusal the lifted
+/// run also raises stands as it is. A world with no trapdoor, or a battery
+/// with no refusal, is not run twice.
+fn hatch_refusals(
+    open: &crate::compiler::nav::World,
+    sealed: &crate::compiler::nav::World,
+    run: impl Fn(
+        &crate::compiler::nav::World,
+        &crate::compiler::nav::World,
+        &mut BatteryBinding,
+        &mut Vec<(DwCode, Diagnostic)>,
+    ),
+    findings: &mut Vec<(DwCode, Diagnostic)>,
+) {
+    let refusing = |f: &(DwCode, Diagnostic)| f.1.severity == delvewright_dsl::Severity::Error;
+    if !open.has_leaves() || !findings.iter().any(refusing) {
+        return;
+    }
+    let mut lifted = Vec::new();
+    run(
+        &open.without_leaves(),
+        &sealed.without_leaves(),
+        &mut BatteryBinding::default(),
+        &mut lifted,
+    );
+    let stands: BTreeSet<(&str, &str)> = lifted
+        .iter()
+        .filter(|f| refusing(f))
+        .map(|(code, d)| (code.id(), d.path.as_str()))
+        .collect();
+    let (theirs, rest): (Vec<_>, Vec<_>) = std::mem::take(findings)
+        .into_iter()
+        .partition(|f| refusing(f) && !stands.contains(&(f.0.id(), f.1.path.as_str())));
+    *findings = rest;
+    if theirs.is_empty() {
+        return;
+    }
+    let stops = open.hatch_stops(open.cells_beside_hatches());
+    let named = if stops.is_empty() {
+        "No single step beside a trapdoor is stopped by one: the ways are stopped by several \
+         together"
+            .to_string()
+    } else {
+        open.hatch_stops_words(&stops)
+    };
+    let codes: Vec<&str> = theirs.iter().map(|(code, _)| code.id()).collect();
+    let code = crate::compiler::nav::DW_HATCH_SHUTS_IN;
+    findings.insert(
+        0,
+        (
+            code,
+            Diagnostic::error(
+                code,
+                "build",
+                "/content/seams".to_string(),
+                format!(
+                    "a trapdoor stops a way the site plan declares: {} would refuse this world \
+                     ({}), and none of them does once the trapdoors' shapes are lifted: {}. {}",
+                    codes.join(", "),
+                    theirs
+                        .iter()
+                        .map(|(_, d)| d.path.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    named,
+                    crate::compiler::nav::HATCH_REMEDY
+                ),
+            ),
+        ),
+    );
 }
 
 /// The assembled blocks with every shut seam the graph's closure never opens
@@ -3174,10 +3304,22 @@ fn crossings(
             crate::compiler::blockstate::BlockState::new(palette::WALL),
         );
     }
-    let deleted = crate::compiler::nav::World::from_occupancy(
-        crate::compiler::assembled::occupancy_over(&walled, &BTreeSet::new()),
-        crate::compiler::nav::Premises::geometry_only().with_body_of(plan),
-    );
+    // Each world derived here from the blocks keeps the leaves the world the
+    // battery hands over keeps: `DW1066`'s second run hands it a world with
+    // every trapdoor's shape lifted (`hatch_refusals`), and a derived world
+    // that kept them would raise the same refusal in both runs.
+    let derive = |blocks: &crate::compiler::blockstate::BlockMap| {
+        let w = crate::compiler::nav::World::from_occupancy(
+            crate::compiler::assembled::occupancy_over(blocks, &BTreeSet::new()),
+            crate::compiler::nav::Premises::geometry_only().with_body_of(plan),
+        );
+        if world.has_leaves() {
+            w
+        } else {
+            w.without_leaves()
+        }
+    };
+    let deleted = derive(&walled);
     let in_region = |cell: [i32; 3]| {
         (0..3).all(|a| i64::from(cell[a]) >= rlo[a] && i64::from(cell[a]) <= rhi[a])
     };
@@ -3229,10 +3371,7 @@ fn crossings(
                 crate::compiler::blockstate::BlockState::new(palette::WALL),
             );
         }
-        crate::compiler::nav::World::from_occupancy(
-            crate::compiler::assembled::occupancy_over(&shut, &BTreeSet::new()),
-            crate::compiler::nav::Premises::geometry_only().with_body_of(plan),
-        )
+        derive(&shut)
     });
     let flood = |starts: &[[i32; 3]], through_commons: bool| -> BTreeSet<[i32; 3]> {
         let world = match (&without_commons, through_commons) {
@@ -3278,9 +3417,32 @@ fn crossings(
         // engine's closed shell, with no opening but the seams, so a stand-in
         // reaching the commons is the derivation's own leak.
         let leak_out = !binding.commons || massed.contains(x.node.0.as_str());
+        // A side the plan declares open is a stand-in's opening onto the
+        // commons as a seam is (spec-0123 §5.4, the commons rule of spec-0098
+        // §14): the leak is asked with the place's own open sides closed —
+        // walled, as the allocated openings are, so a jump does not carry a
+        // body through one either.
+        let sides: BTreeSet<[i32; 3]> = x
+            .open_sides()
+            .iter()
+            .flat_map(|s| cells_of(s.cells.0, s.cells.1))
+            .map(narrow)
+            .collect();
+        let leaking = if leak_out && binding.commons && !sides.is_empty() {
+            let mut shut = walled.clone();
+            for cell in &sides {
+                shut.insert(
+                    *cell,
+                    crate::compiler::blockstate::BlockState::new(palette::WALL),
+                );
+            }
+            crossing_flood(&derive(&shut), &starts, &in_region)
+        } else {
+            wide.clone()
+        };
         if leak_out
             && !outside_reported
-            && let Some(witness) = wide.iter().find(|c| commons.contains(*c))
+            && let Some(witness) = leaking.iter().find(|c| commons.contains(*c))
         {
             outside_reported = true;
             let message = if binding.commons {
@@ -4353,5 +4515,71 @@ impl clap::ValueEnum for Knob {
                 ""
             }
         )))
+    }
+}
+
+#[cfg(test)]
+mod hatch_refusal_tests {
+    use super::*;
+    use crate::compiler::nav::{Premises, World};
+
+    /// A floor with one top-half trapdoor standing on it, where a body's feet go.
+    fn hatched(facing: &str) -> World {
+        let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
+        for x in 0..=2 {
+            for z in 0..=2 {
+                blocks.insert([x, 0, z], "minecraft:stone".to_string());
+            }
+        }
+        blocks.insert(
+            [1, 1, 1],
+            format!("minecraft:oak_trapdoor[facing={facing},half=top,open=true]"),
+        );
+        World::from_occupancy(
+            crate::compiler::assembled::occupancy_of(blocks, &BTreeSet::new()),
+            Premises::geometry_only(),
+        )
+    }
+
+    fn refusal(code: DwCode, path: &str) -> (DwCode, Diagnostic) {
+        (code, Diagnostic::error(code, "build", path, "refused"))
+    }
+
+    /// **The battery's `DW1066` arm**: a refusal the lifted world does not
+    /// raise is the trapdoors' doing and becomes one `DW1066`, first, naming
+    /// the trapdoor; a refusal the lifted world raises too stands as it is; an
+    /// advisory is kept; a world with no trapdoor is not run twice.
+    #[test]
+    fn a_refusal_only_a_trapdoor_raises_is_named_as_the_trapdoors_dw1066() {
+        let w = hatched("north");
+        let run =
+            |open: &World, _: &World, _: &mut BatteryBinding, f: &mut Vec<(DwCode, Diagnostic)>| {
+                if open.has_leaves() {
+                    f.push(refusal(DW_PORTAL_UNCROSSABLE, "/content/seams[edge/a]"));
+                }
+                f.push(refusal(DW_SEAM_BUILT, "/content/seams[edge/b]"));
+            };
+        let mut findings = Vec::new();
+        run(&w, &w, &mut BatteryBinding::default(), &mut findings);
+        hatch_refusals(&w, &w, run, &mut findings);
+        let codes: Vec<&str> = findings.iter().map(|(c, _)| c.id()).collect();
+        assert_eq!(codes, ["DW1066", DW_SEAM_BUILT.id()]);
+        let msg = &findings[0].1.message;
+        assert!(msg.contains("DW0986 would refuse"), "{msg}");
+        assert!(
+            msg.contains("the trapdoor at [1, 1, 1] stops the way across its south face"),
+            "{msg}"
+        );
+
+        let bare = World::from_solid_cells(BTreeSet::from([[0, 0, 0]]));
+        let mut kept = vec![refusal(DW_PORTAL_UNCROSSABLE, "/content/seams[edge/a]")];
+        hatch_refusals(
+            &bare,
+            &bare,
+            |_, _, _, _| unreachable!("run twice"),
+            &mut kept,
+        );
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].0.id(), DW_PORTAL_UNCROSSABLE.id());
     }
 }

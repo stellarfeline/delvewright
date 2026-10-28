@@ -33,8 +33,10 @@ pub use world::*;
 
 mod actor;
 mod ambush;
+pub mod census;
 mod checkpoint;
 mod cutscene;
+mod door;
 mod furniture;
 mod hazard;
 mod horizon;
@@ -63,6 +65,7 @@ pub use actor::*;
 pub use ambush::*;
 pub use checkpoint::*;
 pub use cutscene::*;
+pub use door::*;
 pub use furniture::*;
 pub use hazard::*;
 pub use horizon::*;
@@ -514,6 +517,38 @@ delvewright_dsl::dw_code! {
     /// room shut until a later beat opens it is only a trap when the beat is out of
     /// reach from inside — which is what this refuses.
     pub const DW_BODY_CANNOT_LEAVE: DwCode = DwCode::new("DW0921", ExitTier::Build);
+}
+
+delvewright_dsl::dw_code! {
+    /// `DW1066`: **a trapdoor that shuts a body in.** A place `DW0921` would
+    /// refuse — a body gets in and cannot get back to the route — that a body
+    /// leaves once the trapdoors' shapes are lifted from the crossing rule
+    /// ([`World::leaf_stopping`]): the way out crosses a face a trapdoor
+    /// stops in every state the body can set it to. The open panel of a hatch
+    /// turned across a stair stands on the face the climb crosses, and its
+    /// closed plate is over the top tread (`docs/reference/doors-by-hand.md`,
+    /// *A trapdoor over a stair*).
+    ///
+    /// The refusal names each trapdoor and the face it stops, and the remedy
+    /// the record gives: turn it so its open panel stands along the climb. It
+    /// never marks the ground under it unwalkable.
+    pub const DW_HATCH_SHUTS_IN: DwCode = DwCode::new("DW1066", ExitTier::Build);
+}
+
+delvewright_dsl::dw_code! {
+    /// `DW1068`: **a walked way that exists only across a leaf its mover
+    /// cannot set.** A step of a walked leg — a `move-npc` or `move-actor`
+    /// body's, a lane's squad's, or the party's — crosses a face of a door's or
+    /// trapdoor's cell on which its leaf stands in every state the mover can
+    /// set it to ([`World::leaf_stopping`], `docs/reference/doors-by-hand.md`,
+    /// *A leaf's shape*). A body that opens nothing meets each leaf as it
+    /// stands: a door standing open with its leaf across the way stops it.
+    ///
+    /// The refusal names the leg, the step, the leaf's cell and the face it
+    /// stops, and the remedy computed from the jar's tables: each `facing` and
+    /// `hinge` (a door) or `half` (a trapdoor) of the same block, as open as it
+    /// stands, whose leaf clears every face the way crosses there.
+    pub const DW_WAY_ACROSS_A_LEAF: DwCode = DwCode::new("DW1068", ExitTier::Build);
 }
 
 delvewright_dsl::dw_code! {

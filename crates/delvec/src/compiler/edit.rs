@@ -1159,7 +1159,9 @@ fn write_cell(
         std::sync::Arc::make_mut(&mut assembled.blocks)
             .insert(cell, crate::compiler::blockstate::BlockState::new(block));
     }
-    if assembled::is_fence_gate(block) && assembled::state_value(block, "open") == Some("true") {
+    if delvewright_dsl::blockshape::opens_by_hand(block)
+        && assembled::state_value(block, "open") == Some("true")
+    {
         assembled.open_gates.insert(cell);
     } else {
         assembled.open_gates.remove(&cell);

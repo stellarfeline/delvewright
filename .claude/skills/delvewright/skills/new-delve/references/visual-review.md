@@ -3,6 +3,7 @@
 ## Contents
 
 - [The player's eye first](#the-players-eye-first)
+- [The threshold frames, read blind](#the-threshold-frames-read-blind)
 - [Read every frame against the approved image](#read-every-frame-against-the-approved-image)
 - [Drawing the set](#drawing-the-set)
 - [What the set costs](#what-the-set-costs)
@@ -31,6 +32,43 @@ a claim you hold the picture to. Where the standing waypoint lands on the
 objective's own cell the sentence says so instead — *it is under the frame and
 not in it* — and a frame that does not show the objective there is correct;
 what you judge is the room it arrives in.
+
+## The threshold frames, read blind
+
+**After the POV sequence, read every `threshold` frame blind.** The build draws
+one per door of every place — the eye on the doorway's sill at eye height,
+looking into the place — and one per open side, the eye in the cell outside
+it; the plan's `threshold_shots` and the build's `threshold
+shots: T over P place(s), D door(s), O open side(s)` line say how many. Draw
+them without `--labels`: a label would supply what the picture does not.
+
+**Write three lines under each frame before you open its index entry**:
+
+1. **The trade** — what the place is, in a word, from the picture alone.
+2. **The front** — do the parts in frame (counter, door, window, posts, beam,
+   wall, eave) belong to one construction, in one word, and if not, which part
+   jars and against what: *the door stands in air over the counter*; *the beam
+   stops short of the door*; *the third block kind has no job*. Write it with
+   the place's entry in `validation/piece-census.json` open beside the frame —
+   its `doors` (each door and gate with its jambs and head, present or absent)
+   and its `openings` (per face, each opening's head, sill and width). A door
+   entered with its head absent is read against the picture, never refused by
+   it.
+3. **The thing** — on a frame whose eye stands outside an open side looking into
+   a place with no `clearance` ceiling (a square, a yard, a court), the name of
+   what stands in it, in one word: *fountain*, *well*, *statue*, *tree*,
+   *nothing*. Read the entry's `water` beside it — how much, and its highest
+   and lowest course against the walk plane.
+
+Then open the entry and read `expect` — *the place reads as its intent: …* —
+against the three lines. **A trade that cannot be named or is named wrong, a
+front with a jarring part, or a thing named wrong or not nameable is a finding
+at the place's program**: step 9 again for that place, a fresh author, the
+finding written into the node's `note` so the handout carries it with the four
+style lines, and the census entry for that piece quoted beside the finding, so
+the author sees the doors and their framing, the heads, the kinds and the water
+you saw. State the read as one line in the review:
+`threshold read: T frame(s), trade misses M, front misses F, thing misses N`.
 
 ## Read every frame against the approved image
 

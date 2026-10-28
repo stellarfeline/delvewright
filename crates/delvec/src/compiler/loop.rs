@@ -1709,19 +1709,15 @@ fn write_box(
     block: &str,
     clip: ([i32; 3], [i32; 3]),
 ) {
-    for x in r.0[0].min(r.1[0])..=r.0[0].max(r.1[0]) {
-        for y in r.0[1].min(r.1[1])..=r.0[1].max(r.1[1]) {
-            for z in r.0[2].min(r.1[2])..=r.0[2].max(r.1[2]) {
-                let c = [x, y, z];
-                if !inside(clip, c) {
-                    continue;
-                }
-                if block == "minecraft:air" {
-                    m.remove(&c);
-                } else {
-                    m.insert(c, block.to_string());
-                }
-            }
+    // Cell by cell from the write's block (`region_fill`).
+    for (c, state) in crate::compiler::region_fill::cells(r, block) {
+        if !inside(clip, c) {
+            continue;
+        }
+        if state == "minecraft:air" {
+            m.remove(&c);
+        } else {
+            m.insert(c, state.into_owned());
         }
     }
 }
@@ -2528,6 +2524,7 @@ mod tests {
                 unheld_climb: Default::default(),
                 material: Default::default(),
                 footprints: Default::default(),
+                leaves: Default::default(),
                 hiding: Default::default(),
                 hurting: Default::default(),
             },

@@ -364,6 +364,19 @@ pub(super) fn fill_region_command(
     )
 }
 
+/// **The `fill`s one region write of `block` lays**: one per box
+/// [`crate::compiler::region_fill::boxes`] cuts the region into, so a two-high
+/// block (a door) lays its lower half under its upper, and every other block is
+/// the one `fill` of its declared state. Every command that writes a block into
+/// a region — a `close-gate`, a `fill-region`, a laid way, a timed gate's
+/// closing edge, a PackTest's staged seal — takes its lines here.
+pub(super) fn lay_region_commands(region: ([i32; 3], [i32; 3]), block: &str) -> Vec<String> {
+    crate::compiler::region_fill::boxes(region, block)
+        .into_iter()
+        .map(|(r, state)| fill_region_command(r, &state, None))
+        .collect()
+}
+
 /// **The `replace` filter that clears a gate's block in any of its states.**
 ///
 /// A gate declares a block, and the placed world holds that block in whatever
@@ -512,7 +525,7 @@ pub(super) fn emit_quest_effect(
                     && let ResolvedAnchor::Gate { from, to, block } = resolved
                 {
                     // The same region write, with the block the anchor declares.
-                    body.push(fill_region_command((*from, *to), block, None));
+                    body.extend(lay_region_commands((*from, *to), block));
                     // Arm the seal's answer:
                     // a wall the party walks back to and presses must say
                     // something. Guarded on absence, so a re-fired `close-gate`
@@ -642,7 +655,7 @@ pub(super) fn emit_quest_effect(
             if let Some((zone, block)) = eff.region_write()
                 && let Some(region) = plan.zone_box(zone)
             {
-                body.push(fill_region_command(region, block.unwrap_or(AIR), None));
+                body.extend(lay_region_commands(region, block.unwrap_or(AIR)));
             }
         }
         // spec-0080 §3.3: a repaint is `fillbiome` over the volume — the
@@ -676,7 +689,7 @@ pub(super) fn emit_quest_effect(
                     crate::compiler::ways::Sign::Cleared => AIR,
                 };
                 for region in &way.boxes {
-                    body.push(fill_region_command(*region, block, None));
+                    body.extend(lay_region_commands(*region, block));
                 }
             }
         }

@@ -513,30 +513,30 @@ impl TraversalGate {
 }
 
 /// One walked leg, flattened out of the two plan kinds.
-struct Leg<'a> {
+pub(crate) struct Leg<'a> {
     /// `move-npc` or `move-actor`.
-    verb: &'static str,
+    pub(crate) verb: &'static str,
     /// The moving body's declared id.
-    id: &'a str,
+    pub(crate) id: &'a str,
     /// The destination anchor id.
-    to_anchor: String,
+    pub(crate) to_anchor: String,
     /// The A* cell route, start to target inclusive.
-    cells: &'a [[i32; 3]],
+    pub(crate) cells: &'a [[i32; 3]],
     /// The entity whose body (and capabilities) the puppet wears.
-    entity: String,
+    pub(crate) entity: String,
     /// The locomotion this body's author DECLARED, if any (spec-0034). `None` =
     /// the class derived from [`Leg::entity`].
-    declared: Option<Locomotion>,
+    pub(crate) declared: Option<Locomotion>,
     /// JSON pointer at the declaration, for a warning's diagnostic path.
-    path: String,
+    pub(crate) path: String,
     /// The DSL stage the declaration lives in.
-    stage: &'static str,
+    pub(crate) stage: &'static str,
 }
 
 /// Every planned walked leg, in plan order, paired with the body that walks it.
 /// A leg whose mover is not declared is skipped — `DW0325`/`DW0345` own dangling
 /// references.
-fn legs<'a>(
+pub(crate) fn legs<'a>(
     plan: &'a Plan,
     moves: &'a [MovePlan],
     actor_moves: &'a [ActorMovePlan],
@@ -969,6 +969,7 @@ mod tests {
                 unheld_climb: BTreeMap::new(),
                 material: Default::default(),
                 footprints: Default::default(),
+                leaves: Default::default(),
                 hiding: Default::default(),
                 hurting: Default::default(),
             },
@@ -1176,6 +1177,7 @@ mod tests {
             unheld_climb: BTreeMap::new(),
             material: Default::default(),
             footprints: Default::default(),
+            leaves: Default::default(),
             hiding: Default::default(),
             hurting: Default::default(),
         };

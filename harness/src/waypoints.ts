@@ -129,6 +129,10 @@ export interface WaypointLeg {
   readonly vibrations: readonly Vibration[];
   /** The declared jumps the leg's route takes, in route order (spec-0113 §6). */
   readonly jumps: readonly Jump[];
+  /** The closed doors, trapdoors and fence gates a hand opens that the leg's
+   * proven route walks through (`use_gates`, spec-0123 §3.1): each a feet cell
+   * and a waypoint of the leg. Empty for a leg that crosses none. */
+  readonly doors: readonly Vec3Tuple[];
 }
 
 /** The parsed waypoints artifact. Legs are in critical-path order — the compiler
@@ -448,7 +452,24 @@ export function parseWaypoints(raw: unknown): Waypoints {
         fail(`${pointer}/jumps/${j}`, "its from and to are not consecutive waypoints of the leg");
       }
     }
-    return { from, to, waypoints, timedGates: legGates, climbs, vibrations, jumps };
+    // A door the route opens is a kept waypoint by contract (the compiler never
+    // thins it away); one that is not is a structural fault — the crossing could
+    // not then be asserted.
+    const doorsValue = entry["use_gates"];
+    let doors: Vec3Tuple[] = [];
+    if (doorsValue !== undefined) {
+      if (!Array.isArray(doorsValue)) {
+        fail(`${pointer}/use_gates`, `must be an array, got ${describe(doorsValue)}`);
+      }
+      doors = doorsValue.map((d, j) => {
+        const cell = requireVec3(d, `${pointer}/use_gates/${j}`);
+        if (!waypoints.some((w) => samePos(w, cell))) {
+          fail(`${pointer}/use_gates/${j}`, "is not one of the leg's waypoints");
+        }
+        return cell;
+      });
+    }
+    return { from, to, waypoints, timedGates: legGates, climbs, vibrations, jumps, doors };
   });
 
   return { version, campaignId, timedGates, legs };
@@ -558,6 +579,9 @@ export interface LegMatch {
   readonly vibrations: readonly Vibration[];
   /** The declared jumps the matched leg's route takes (empty when none, or no match). */
   readonly jumps: readonly Jump[];
+  /** The doors a hand opens the matched leg's route walks through (empty when
+   * none, or no match). */
+  readonly doors: readonly Vec3Tuple[];
   readonly cursor: number;
   /**
    * Whether the walk starts where the matched leg was proven from: within
@@ -612,6 +636,7 @@ export function nextLegWaypoints(
       climbs: leg.climbs,
       vibrations: leg.vibrations,
       jumps: leg.jumps,
+      doors: leg.doors,
       cursor: cursor + 1,
       startsOnLeg: startOffset === undefined || startOffset <= LEG_START_REACH,
       startOffset,
@@ -624,6 +649,7 @@ export function nextLegWaypoints(
     climbs: [],
     vibrations: [],
     jumps: [],
+    doors: [],
     cursor,
     startsOnLeg: true,
     startOffset: undefined,
@@ -806,4 +832,17 @@ export function nearestIndex(cells: readonly Vec3Tuple[], target: Vec3Tuple): nu
     }
   });
   return best;
+}
+
+/**
+ * Which of a leg's doors (spec-0123 §3.1) the walk's feet stood in: every cell
+ * of `doors` paired with whether `visited` holds it. Pure, so the crossing rule
+ * is tested without a server; the walk records the feet cells and asserts that
+ * every door was crossed — never how the door opened.
+ */
+export function doorsCrossed(
+  doors: readonly Vec3Tuple[],
+  visited: readonly Vec3Tuple[],
+): { readonly door: Vec3Tuple; readonly crossed: boolean }[] {
+  return doors.map((door) => ({ door, crossed: visited.some((v) => samePos(v, door)) }));
 }

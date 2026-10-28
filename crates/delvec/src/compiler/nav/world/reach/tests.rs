@@ -45,6 +45,7 @@ impl Build {
                 footprints: Default::default(),
                 hiding: Default::default(),
                 hurting: Default::default(),
+                leaves: Default::default(),
             },
             p,
         )

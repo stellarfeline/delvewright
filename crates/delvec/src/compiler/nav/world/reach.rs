@@ -437,6 +437,35 @@ impl Dense {
                 }
             });
         }
+        // An open door's or trapdoor's leaf ([`super::Floors::leaves`]) is no
+        // collision class: the cell relation asks it of every crossing
+        // ([`World::leaf_stopping`]), and the simulator meets it here, from
+        // the same reading. Where the leaf stops a crossing of its panel's face
+        // for this view's body ([`delvewright_dsl::blockshape::Leaf::stops_crossing`],
+        // with the view's use of a leaf a hand opens), its cell holds the open
+        // panel, the whole cell high, as a sieve's posts are held; where it
+        // stops none, the cell stays clear. A shut leaf is a gate or a solid
+        // cell already.
+        for (c, l) in world.floors.leaves.iter() {
+            if !l.open {
+                continue;
+            }
+            let full_80 = i64::from(delvewright_dsl::blockshape::FULL_HEIGHT_16) * 5;
+            if !l.stops_crossing(l.panel, 0, full_80, world.floors.leaf_use, false) {
+                continue;
+            }
+            let index = delvewright_dsl::blockshape::server_footprint_index(
+                &delvewright_dsl::blockshape::panel_footprint(l.panel),
+            )
+            .expect("an open leaf's panel is a footprint the server holds");
+            set(*c, &|v| {
+                if v & SHAPE != 0 || v & (WATER | LAVA) != 0 {
+                    v
+                } else {
+                    v | 16 | ((index as Code + 1) << POSTS_SHIFT)
+                }
+            });
+        }
         d.cells = Chunked::new(&cells);
         d
     }
@@ -1918,6 +1947,21 @@ impl World {
                     for x in from.iter().chain(to) {
                         h.update(x.to_le_bytes());
                     }
+                }
+            }
+            // A door's or a trapdoor's leaf stops crossings the cell relation
+            // and the simulator both read (`World::leaf_stopping`, `Dense::of`):
+            // two worlds that differ only in their leaves, or in whether the
+            // body may set one, are two graphs. A world with no leaf hashes as
+            // it did before.
+            if !self.floors.leaves.is_empty() {
+                h.update(b"leaves");
+                h.update([u8::from(self.floors.leaf_use)]);
+                for (c, l) in &self.floors.leaves {
+                    for x in c {
+                        h.update(x.to_le_bytes());
+                    }
+                    h.update(format!("{l:?}").as_bytes());
                 }
             }
             h.finalize().into()

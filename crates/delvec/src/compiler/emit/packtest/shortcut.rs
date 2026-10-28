@@ -21,10 +21,7 @@ pub(super) fn emit_shortcut_packtest(plan: &Plan, out: &mut BuildOutput) {
     // Re-seal the gate and clear the sentinel: a sibling template (or `setup`
     // itself, on a shared batch server) may have left either in any state.
     b.push(format!("scoreboard players set #sc_{} dw.sys 0", sc.safe));
-    b.push(format!(
-        "fill {} {} {} {} {} {} {}",
-        from[0], from[1], from[2], to[0], to[1], to[2], sc.gate_block
-    ));
+    b.extend(lay_region_commands((from, to), &sc.gate_block));
     // Sealed is the gate's block, by id: a block that connects to its
     // neighbours (iron bars, a pane, a fence) has its connection properties
     // rewritten by vanilla's shape update as soon as the fill lands beside a

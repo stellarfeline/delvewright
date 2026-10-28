@@ -68,6 +68,17 @@ export function allowNonCollidingEntities(movements: PassableMovements): void {
   }
 }
 
+/**
+ * Whether a block is a door a hand opens: every `*_door` but the iron one
+ * (spec-0123 §3.1, `docs/reference/doors-by-hand.md`). The bot's pathfinder
+ * (mineflayer-pathfinder 2.4.5) opens fence gates itself and has no notion of
+ * a door, so the walk opens each door its proven route crosses and steps
+ * through it on foot.
+ */
+export function isDoorByHand(name: string): boolean {
+  return name.endsWith("_door") && name !== "iron_door";
+}
+
 /** One body near a stuck bot, as the stuck report needs to describe it. */
 export interface Neighbour {
   /** The mineflayer `entity.name` (no `minecraft:` prefix), or `?` if unknown. */

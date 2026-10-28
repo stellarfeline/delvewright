@@ -42,7 +42,7 @@
 //! | [`Collision::PartialFloor`] (8..16) | no | yes | the measured top |
 //! | [`Collision::FullCube`] | no | yes | 16 |
 //! | [`Collision::TallBarrier`] (fence, wall) | no | **no** | — |
-//! | [`Collision::FenceGate`] | **yes** | no | — |
+//! | [`Collision::OpensByHand`] | **yes** | no | — |
 //! | [`Collision::Fluid`] | no | no | — |
 //! | [`Collision::Climbable`] (ladder, vines) | yes | no | — (what holds the body is the climb) |
 //!
@@ -52,9 +52,12 @@
 //! tuft or a `kelp` stem, whose vanilla block carries a water source in its own
 //! cell ([`is_submerged_by_nature`]). A **tall barrier** is 1.5 blocks on a 1-block
 //! cell: a body neither passes through it nor reaches its top face by jumping. A
-//! **fence gate** is the mirror: adventure mode permits the right-click that
-//! opens it, so a body gets through — and for a *closure* claim a gate was never
-//! a seal anyway, so reading it as a hole is the sound direction. A **fluid** is
+//! **door a hand opens** — a fence gate, a wooden or copper door or trapdoor
+//! ([`opens_by_hand`]) — is the mirror: adventure mode permits the right-click
+//! that opens it, so a body gets through in either state — and for a *closure*
+//! claim such a door was never a seal anyway, so reading it as a hole is the
+//! sound direction. An iron door or trapdoor is not one: it is what its collision
+//! box makes it. A **fluid** is
 //! neither, from the other side: spec-0038 forbids a route crediting water, and
 //! nothing stands on a surface.
 //!
@@ -261,16 +264,301 @@ pub fn is_fence_gate(name: &str) -> bool {
     bare_id(name).ends_with("_fence_gate")
 }
 
-/// Whether a player can open this block by hand, in adventure mode — every
-/// fence gate, door and trapdoor except the two iron ones, which open only to
-/// redstone. A player who opens one can leave it open, so a proof about where a
-/// mob can walk once the party has been through asks this (`DW0923`).
-pub fn is_player_openable(name: &str) -> bool {
-    let id = bare_id(name);
-    if id == "iron_door" || id == "iron_trapdoor" {
-        return false;
+/// The set types a hand does not open: a door or trapdoor of one of these
+/// materials moves only by redstone. `BlockSetType.IRON` is constructed with
+/// `canOpenByHand = false` in the pinned jar, and `GOLD`, the other, names no
+/// door (`docs/reference/doors-by-hand.md`, the read site and the reading).
+/// A fence gate consults no set type: every one opens by hand.
+const HELD_SET_TYPES: &[&str] = &["iron"];
+
+/// **The doors a hand opens**, derived from the pinned block-state registry
+/// (spec-0123 §3.1): every `*_door`, `*_trapdoor` and `*_fence_gate` id the
+/// registry names, split by its set type into the ones an adventure-mode body
+/// opens with an empty hand and the ones it does not. Never written by hand —
+/// the registry is the list, [`HELD_SET_TYPES`] the one fact read from the jar.
+#[derive(Debug)]
+pub struct DoorsByHand {
+    /// Bare ids a hand opens, sorted.
+    pub passable: Vec<String>,
+    /// Bare ids a hand does not open (`iron_door`, `iron_trapdoor`), sorted.
+    pub held: Vec<String>,
+}
+
+impl DoorsByHand {
+    /// The binding line every build prints:
+    /// `doors by hand: N block(s) passable, M held`.
+    pub fn line(&self) -> String {
+        format!(
+            "doors by hand: {} block(s) passable, {} held",
+            self.passable.len(),
+            self.held.len()
+        )
     }
-    is_fence_gate(name) || id.ends_with("_door") || id.ends_with("_trapdoor")
+}
+
+/// The door family a bare id belongs to, and its material: `oak_door` is
+/// `Some(("oak", "door"))`; anything else `None`.
+fn door_family(id: &str) -> Option<(&str, &str)> {
+    for kind in ["fence_gate", "trapdoor", "door"] {
+        if let Some(material) = id.strip_suffix(kind).and_then(|m| m.strip_suffix('_')) {
+            return Some((material, kind));
+        }
+    }
+    None
+}
+
+/// [`DoorsByHand`] over the pinned registry, computed once.
+pub fn doors_by_hand() -> &'static DoorsByHand {
+    static DOORS: std::sync::OnceLock<DoorsByHand> = std::sync::OnceLock::new();
+    DOORS.get_or_init(|| {
+        let mut passable = Vec::new();
+        let mut held = Vec::new();
+        for id in crate::blocks::BlockRegistry::v1_21_11().ids() {
+            let bare = bare_id(id);
+            let Some((material, kind)) = door_family(bare) else {
+                continue;
+            };
+            if kind != "fence_gate" && HELD_SET_TYPES.contains(&material) {
+                held.push(bare.to_string());
+            } else {
+                passable.push(bare.to_string());
+            }
+        }
+        passable.sort();
+        held.sort();
+        DoorsByHand { passable, held }
+    })
+}
+
+/// **Does a player open this block by hand, in adventure mode?** — the one
+/// predicate the walk, every route proof and the bar rule read (spec-0123
+/// §3.1): a door, trapdoor or fence gate in [`doors_by_hand`]'s passable set,
+/// in any state. An iron door or iron trapdoor is not; a body passes it only
+/// where it stands open. A player who opens one can leave it open, so a proof
+/// about where a mob can walk once the party has been through asks this too
+/// (`DW0923`).
+pub fn opens_by_hand(name: &str) -> bool {
+    let bare = bare_id(name);
+    door_family(bare).is_some()
+        && doors_by_hand()
+            .passable
+            .binary_search_by(|p| p.as_str().cmp(bare))
+            .is_ok()
+}
+
+/// **A leaf: a door's or a trapdoor's collision shape, per state**
+/// (`docs/reference/doors-by-hand.md`, *A leaf's shape*): measured from the
+/// pinned jar, where every door id takes the same box for the same `facing`,
+/// `hinge` and `open`, and every trapdoor id the same box for the same
+/// `facing`, `half` and `open`. Both are one shape class: a plate
+/// [`LEAF_THICKNESS_16`] thick standing in one cell.
+///
+/// - **Open**: a full-height panel against ONE side of the cell
+///   ([`Leaf::panel`]) — for a trapdoor the side opposite `facing`, for a door
+///   the side its hinge turns it to.
+/// - **Shut** ([`Shut`]): a trapdoor's full-width plate at the top or the
+///   bottom of the cell; a door's full-height panel against the side opposite
+///   `facing`.
+///
+/// What the shape does to a body is [`Leaf::stops_crossing`], the one rule
+/// the nav model asks of every horizontal movement past a door or a trapdoor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Leaf {
+    /// The bare id of the block whose leaf this is.
+    pub block: &'static str,
+    /// The face of its own cell the open leaf stands against.
+    pub panel: Face,
+    /// Where the shut leaf stands.
+    pub shut: Shut,
+    /// Whether the block stands open.
+    pub open: bool,
+    /// Whether a hand toggles it ([`opens_by_hand`]): a body may set it to
+    /// either state before it moves.
+    pub by_hand: bool,
+}
+
+/// Where a [`Leaf`] stands when it is shut.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Shut {
+    /// A trapdoor's plate across the whole cell, at the top of it (`half=top`)
+    /// or at the bottom.
+    Plate {
+        /// Whether the plate is the top one.
+        top: bool,
+    },
+    /// A door's full-height panel against this face of its cell.
+    Panel(Face),
+}
+
+/// A leaf's thickness, open or shut, in sixteenths (measured: every door and
+/// trapdoor box is 3/16 across its thin axis).
+pub const LEAF_THICKNESS_16: i64 = 3;
+
+/// [`Leaf`] for a door or trapdoor block state, or `None` for any other block.
+/// A property the name leaves out is read at the block's pinned default.
+///
+/// Read from the pinned jar's own tables, never from a rule written here: each
+/// panel's face is where that state's collision footprint lies
+/// (`collision-footprints-1.21.11.tsv`), and a trapdoor's plate height and a
+/// door's full height are the state's vertical extent
+/// (`collision-tops-1.21.11.tsv`). A block whose tables say anything else
+/// answers `None`, and the nav model then reads it by its collision class
+/// alone.
+pub fn leaf(name: &str) -> Option<Leaf> {
+    let bare = bare_id(name);
+    let (_, kind) = door_family(bare)?;
+    let block = door_family_id(bare)?;
+    let id = namespaced_id(name);
+    let defaults = crate::blocks::BlockRegistry::v1_21_11().default_state(&id);
+    let prop = |k: &str| {
+        state_value(name, k)
+            .map(str::to_string)
+            .or_else(|| defaults.and_then(|d| d.get(k)).cloned())
+    };
+    let facing = prop("facing")?;
+    let (axis, value) = match kind {
+        "trapdoor" => ("half", prop("half")?),
+        "door" => ("hinge", prop("hinge")?),
+        _ => return None,
+    };
+    let state = |open: bool| format!("{id}[facing={facing},{axis}={value},open={open}]");
+    let panel = edge_band(&server_footprint(&state(true)))?;
+    let full = i64::from(FULL_HEIGHT_16);
+    let span = |open: bool| -> Option<(i64, i64)> {
+        let (lo, hi) = measured_collision(&state(open))?.span?;
+        Some((i64::from(lo.whole()?), i64::from(hi.whole()?)))
+    };
+    let shut = if kind == "trapdoor" {
+        match span(false)? {
+            (a, b) if b == full && a == full - LEAF_THICKNESS_16 => Shut::Plate { top: true },
+            (0, LEAF_THICKNESS_16) => Shut::Plate { top: false },
+            _ => return None,
+        }
+    } else {
+        if span(false)? != (0, full) || span(true)? != (0, full) {
+            return None;
+        }
+        Shut::Panel(edge_band(&server_footprint(&state(false)))?)
+    };
+    Some(Leaf {
+        block,
+        panel,
+        shut,
+        open: prop("open").as_deref() == Some("true"),
+        by_hand: opens_by_hand(name),
+    })
+}
+
+/// The registry's own `&'static` spelling of a door-family bare id.
+fn door_family_id(bare: &str) -> Option<&'static str> {
+    let d = doors_by_hand();
+    d.passable
+        .iter()
+        .chain(d.held.iter())
+        .find(|p| p.as_str() == bare)
+        .map(String::as_str)
+}
+
+/// The horizontal face a footprint stands against when it is exactly a band
+/// [`LEAF_THICKNESS_16`] deep along one whole side of the cell, or `None`.
+fn edge_band(fp: &Footprint16) -> Option<Face> {
+    let t = LEAF_THICKNESS_16 as usize;
+    let band = |covered: &dyn Fn(usize, usize) -> bool| {
+        (0..16).all(|z| (0..16).all(|x| (fp[z] >> x & 1 == 1) == covered(x, z)))
+    };
+    Face::HORIZONTAL.into_iter().find(|f| match f {
+        Face::North => band(&|_, z| z < t),
+        Face::South => band(&|_, z| z >= 16 - t),
+        Face::West => band(&|x, _| x < t),
+        Face::East => band(&|x, _| x >= 16 - t),
+        _ => false,
+    })
+}
+
+impl Leaf {
+    /// Whether this is a door's leaf (its shut leaf a panel), not a trapdoor's.
+    pub fn is_door(self) -> bool {
+        matches!(self.shut, Shut::Panel(_))
+    }
+
+    /// The vertical band a trapdoor's shut plate fills, in sixteenths above
+    /// its cell floor; `None` for a door.
+    pub fn plate_16(self) -> Option<(i64, i64)> {
+        let full = i64::from(FULL_HEIGHT_16);
+        match self.shut {
+            Shut::Plate { top: true } => Some((full - LEAF_THICKNESS_16, full)),
+            Shut::Plate { top: false } => Some((0, LEAF_THICKNESS_16)),
+            Shut::Panel(_) => None,
+        }
+    }
+
+    /// **Does this leaf stop a body crossing `face` of its own cell?** The
+    /// body sweeps the vertical band `lo_80..hi_80`, measured from this cell's
+    /// floor in eightieths of a block (the unit a body's 1.8 is whole in),
+    /// centred in the column on each side, as every body in the nav model is.
+    ///
+    /// A panel spans the whole cell on its face; a body centred in its column
+    /// clears a panel on any other face (its box spans 0.2..0.8 of the cell, a
+    /// side panel starts at 0.8125) unless it is `wide` — wider than 10/16 —
+    /// and then it meets a panel on any face of the cell. A trapdoor's shut
+    /// plate spans every face at its own height; a shut bottom plate is
+    /// stepped over (3/16 is under the auto-step), so it stops nothing. Where
+    /// the mover may use it (`may_use`) a leaf a hand opens stops the crossing
+    /// only when BOTH states do — the body sets it before it moves; otherwise
+    /// it is judged in the state it stands in. A door's two panels stand on
+    /// two different faces, so a narrow body that may use a door is never
+    /// stopped by it.
+    pub fn stops_crossing(
+        self,
+        face: Face,
+        lo_80: i64,
+        hi_80: i64,
+        may_use: bool,
+        wide: bool,
+    ) -> bool {
+        let meets = |a: i64, b: i64| lo_80 < b * 5 && hi_80 > a * 5;
+        let full = meets(0, i64::from(FULL_HEIGHT_16));
+        let open_stops = (wide || face == self.panel) && full;
+        let shut_stops = match self.shut {
+            Shut::Plate { .. } => {
+                matches!(self.shut, Shut::Plate { top: true })
+                    && self.plate_16().is_some_and(|(a, b)| meets(a, b))
+            }
+            Shut::Panel(f) => (wide || face == f) && full,
+        };
+        if may_use && self.by_hand {
+            open_stops && shut_stops
+        } else if self.open {
+            open_stops
+        } else {
+            shut_stops
+        }
+    }
+
+    /// **The other ways this block can be set down**, standing as open as it
+    /// stands now: every `facing` with every `hinge` (a door) or `half` (a
+    /// trapdoor), each read back from the jar's tables by [`leaf`], with the
+    /// properties that name it (`facing=north,hinge=left`). What a refusal
+    /// offers as the remedy: the caller keeps the ones that clear the faces a
+    /// way crosses.
+    pub fn turnings(self) -> Vec<(String, Leaf)> {
+        let axis = if self.is_door() {
+            ("hinge", ["left", "right"])
+        } else {
+            ("half", ["top", "bottom"])
+        };
+        let mut out = Vec::new();
+        for facing in Face::HORIZONTAL {
+            for value in axis.1 {
+                let props = format!("facing={},{}={value}", facing.name(), axis.0);
+                let name = format!("minecraft:{}[{props},open={}]", self.block, self.open);
+                if let Some(l) = leaf(&name) {
+                    out.push((props, l));
+                }
+            }
+        }
+        out
+    }
 }
 
 /// Thin, walkable trap-trigger blocks (spec-0011) a player steps *onto* rather
@@ -972,6 +1260,27 @@ pub type Footprint16 = [u16; 16];
 /// A footprint that covers the whole cell.
 pub const FULL_FOOTPRINT: Footprint16 = [0xFFFF; 16];
 
+/// **The footprint of a leaf's panel standing against `face`** of its cell:
+/// [`LEAF_THICKNESS_16`] deep along that face, the whole width of it — the
+/// footprint the pinned table gives an open door or trapdoor whose panel
+/// stands there. Row `z`, bit `x`, as every [`Footprint16`].
+#[must_use]
+pub fn panel_footprint(face: Face) -> Footprint16 {
+    let t = LEAF_THICKNESS_16 as usize;
+    let mut fp = [0u16; 16];
+    let strip: u16 = (1u16 << t) - 1;
+    for (z, row) in fp.iter_mut().enumerate() {
+        *row = match face {
+            Face::West => strip,
+            Face::East => strip << (16 - t),
+            Face::North if z < t => 0xFFFF,
+            Face::South if z >= 16 - t => 0xFFFF,
+            _ => 0,
+        };
+    }
+    fp
+}
+
 /// A footprint that covers nothing.
 pub const EMPTY_FOOTPRINT: Footprint16 = [0; 16];
 
@@ -1393,9 +1702,10 @@ pub enum Collision {
     /// A fence or a wall: 1.5 blocks tall on a 1-block cell, so a body neither
     /// passes through it nor reaches its top.
     TallBarrier,
-    /// A fence gate: a body opens it with the adventure-legal right-click and
-    /// walks through. Never a floor.
-    FenceGate,
+    /// A door, trapdoor or fence gate a hand opens ([`opens_by_hand`]): a body
+    /// opens it with the adventure-legal right-click and walks through, in
+    /// either state the block stands in. Never a floor.
+    OpensByHand,
     /// Water or lava filling the cell: a body swims, and stands on nothing.
     Fluid,
     /// A block a body **climbs** ([`climbable`], every member of
@@ -1412,7 +1722,7 @@ impl Collision {
     pub fn passes_body(self) -> bool {
         matches!(
             self,
-            Collision::Air | Collision::Thin(_) | Collision::FenceGate | Collision::Climbable
+            Collision::Air | Collision::Thin(_) | Collision::OpensByHand | Collision::Climbable
         )
     }
 
@@ -1462,8 +1772,8 @@ pub fn collision_class(name: &str) -> Collision {
     if top < THIN_HEIGHT_16 {
         return Collision::Thin(top);
     }
-    if is_fence_gate(name) {
-        return Collision::FenceGate;
+    if opens_by_hand(name) {
+        return Collision::OpensByHand;
     }
     if is_tall_barrier(name) {
         return Collision::TallBarrier;
@@ -1570,7 +1880,7 @@ mod tests {
             (Collision::PartialFloor(15), false, true, Some(15)),
             (Collision::FullCube, false, true, Some(16)),
             (Collision::TallBarrier, false, false, None),
-            (Collision::FenceGate, true, false, None),
+            (Collision::OpensByHand, true, false, None),
             (Collision::Fluid, false, false, None),
             (Collision::Climbable, true, false, None),
         ];
@@ -1673,7 +1983,8 @@ mod tests {
         for id in [
             "minecraft:stone",
             "minecraft:oak_stairs[facing=north]",
-            "minecraft:oak_door[half=lower]",
+            // A door a hand opens passes (spec-0123 §3.1); an iron one does not.
+            "minecraft:iron_door[half=lower]",
             "minecraft:chain",
             "minecraft:end_rod",
             "minecraft:iron_bars",
@@ -1793,7 +2104,7 @@ mod tests {
             "minecraft:oak_fence_gate",
             "minecraft:oak_fence_gate[open=false]",
         ] {
-            assert_eq!(collision_class(gate), Collision::FenceGate, "{gate}");
+            assert_eq!(collision_class(gate), Collision::OpensByHand, "{gate}");
             assert!(passes_body(gate) && !supports_body(gate), "{gate}");
         }
         for fluid in [
@@ -2247,7 +2558,7 @@ mod tests {
             "minecraft:dark_oak_trapdoor",
             "minecraft:waxed_copper_trapdoor",
         ] {
-            assert!(is_player_openable(id), "{id}");
+            assert!(opens_by_hand(id), "{id}");
         }
         for id in [
             "minecraft:iron_door",
@@ -2256,7 +2567,52 @@ mod tests {
             "minecraft:iron_bars",
             "minecraft:stone",
         ] {
-            assert!(!is_player_openable(id), "{id}");
+            assert!(!opens_by_hand(id), "{id}");
+        }
+    }
+
+    /// The passable set is the registry's door family minus the two iron ones,
+    /// counted from the registry itself rather than from a number written here
+    /// (spec-0123 criterion 17), and the binding line states it.
+    #[test]
+    fn doors_by_hand_is_the_registry_less_the_two_iron_ones() {
+        let family = crate::blocks::BlockRegistry::v1_21_11()
+            .ids()
+            .map(bare_id)
+            .filter(|id| {
+                id.ends_with("_door") || id.ends_with("_trapdoor") || id.ends_with("_fence_gate")
+            })
+            .count();
+        let doors = doors_by_hand();
+        assert!(
+            family > 2,
+            "the registry names {family} door-family block(s)"
+        );
+        assert_eq!(doors.passable.len(), family - 2);
+        assert_eq!(doors.held, vec!["iron_door", "iron_trapdoor"]);
+        assert_eq!(
+            doors.line(),
+            format!("doors by hand: {} block(s) passable, 2 held", family - 2)
+        );
+        for id in &doors.passable {
+            let closed = format!("minecraft:{id}[open=false]");
+            assert!(passes_body(&closed), "{closed} is passed by a body");
+        }
+        for id in [
+            "minecraft:iron_door",
+            "minecraft:iron_door[open=true]",
+            "minecraft:iron_trapdoor[half=top]",
+        ] {
+            assert!(!opens_by_hand(id), "{id}");
+            assert_ne!(collision_class(id), Collision::OpensByHand, "{id}");
+        }
+        for id in [
+            "minecraft:oak_door[half=lower,open=false]",
+            "minecraft:oak_door[half=upper,open=true]",
+            "minecraft:oak_trapdoor[half=top,open=false]",
+            "minecraft:oak_trapdoor[half=bottom,open=true]",
+        ] {
+            assert!(passes_body(id) && !supports_body(id), "{id}");
         }
     }
 
@@ -2378,6 +2734,233 @@ mod tests {
             palette.len() < 1 << 16,
             "a footprint's index fits sixteen bits: {}",
             palette.len()
+        );
+    }
+
+    /// **An open leaf's panel is the footprint the server gives its state.**
+    /// The reach graph's simulator holds an open door's or trapdoor's cell as
+    /// [`panel_footprint`] of the leaf's panel face, so the face [`leaf`] reads
+    /// and the box the jar's footprint table holds are one answer: for every
+    /// open door and trapdoor state of the pinned registry, the two agree, and
+    /// the panel is a footprint the palette indexes. Stated with its
+    /// denominator.
+    #[test]
+    fn an_open_leafs_panel_is_the_servers_footprint() {
+        let ids: Vec<&str> = crate::blocks::BlockRegistry::v1_21_11()
+            .ids()
+            .filter(|id| bare_id(id).ends_with("_trapdoor") || bare_id(id).ends_with("_door"))
+            .collect();
+        let mut asked = 0;
+        for id in &ids {
+            let door = bare_id(id).ends_with("_door");
+            for facing in Face::HORIZONTAL {
+                for third in if door {
+                    ["left", "right"]
+                } else {
+                    ["top", "bottom"]
+                } {
+                    let name = if door {
+                        format!(
+                            "{id}[facing={},half=lower,hinge={third},open=true]",
+                            facing.name()
+                        )
+                    } else {
+                        format!("{id}[facing={},half={third},open=true]", facing.name())
+                    };
+                    let l = leaf(&name).unwrap_or_else(|| panic!("{name}: no leaf"));
+                    let fp = panel_footprint(l.panel);
+                    assert_eq!(server_footprint(&name), fp, "{name}");
+                    assert!(server_footprint_index(&fp).is_some(), "{name}");
+                    asked += 1;
+                }
+            }
+        }
+        assert!(
+            ids.len() > 21,
+            "the pinned registry's doors and trapdoors: {}",
+            ids.len()
+        );
+        assert_eq!(asked, ids.len() * 8);
+    }
+
+    /// **A trapdoor's shape is the jar's, per state.** Every trapdoor the pinned
+    /// registry holds, in every `facing`, `half` and `open`, reads a [`Leaf`]
+    /// out of the two measured tables, and what they say is one rule: the open
+    /// panel stands against the face opposite `facing`, the closed plate is at
+    /// the top for `half=top` and at the bottom otherwise. Stated with its
+    /// denominator, so a table that lost a row reds here.
+    #[test]
+    fn a_trapdoor_reads_its_shape_from_the_jar() {
+        let ids: Vec<&str> = crate::blocks::BlockRegistry::v1_21_11()
+            .ids()
+            .filter(|id| bare_id(id).ends_with("_trapdoor"))
+            .collect();
+        assert_eq!(ids.len(), 21, "the pinned registry's trapdoors");
+        let mut read = 0;
+        for id in &ids {
+            for facing in Face::HORIZONTAL {
+                for half in ["top", "bottom"] {
+                    for open in [false, true] {
+                        let name =
+                            format!("{id}[facing={},half={half},open={open}]", facing.name());
+                        let h = leaf(&name).unwrap_or_else(|| panic!("{name}: no leaf"));
+                        assert_eq!(h.panel, facing.opposite(), "{name}");
+                        assert_eq!(h.shut, Shut::Plate { top: half == "top" }, "{name}");
+                        assert_eq!(h.block, bare_id(id), "{name}");
+                        assert_eq!(h.open, open, "{name}");
+                        assert_eq!(h.by_hand, opens_by_hand(id), "{name}");
+                        read += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(read, 21 * 16);
+        assert_eq!(leaf("minecraft:oak_fence_gate"), None);
+        assert_eq!(leaf("minecraft:stone"), None);
+    }
+
+    /// **Both states of a hatch over a stair stop the climb** — the shape of
+    /// the trap, in eightieths of the hatch cell's floor. A body on the tread
+    /// one course under the hatch (feet at -80) stepping up under it onto the
+    /// top tread (feet at 0) sweeps -80..144: the open panel of a hatch turned
+    /// ACROSS the climb stands on the face it crosses, and the closed top plate
+    /// (65..80) is in the band. Turned ALONG the climb, the open panel is on a
+    /// side face and the body opens it and passes. A body whose head only
+    /// reaches into the cell (feet at -80, head at 64) passes under the closed
+    /// plate, which is the 1/80 the pinned shapes leave.
+    #[test]
+    fn a_hatch_turned_across_the_climb_shuts_it_in_both_states() {
+        let across = leaf("minecraft:oak_trapdoor[facing=north,half=top,open=false]").unwrap();
+        assert!(across.stops_crossing(Face::South, -80, 144, true, false));
+        let along = leaf("minecraft:oak_trapdoor[facing=east,half=top,open=false]").unwrap();
+        assert!(!along.stops_crossing(Face::South, -80, 144, true, false));
+        assert!(along.stops_crossing(Face::West, -80, 144, true, false));
+        // Under the closed plate, a body standing below passes.
+        assert!(!across.stops_crossing(Face::South, -80, 64, true, false));
+        // A hatch nobody may use is judged in its own state.
+        assert!(across.stops_crossing(Face::South, -80, 144, false, false));
+        assert!(!across.stops_crossing(Face::South, -80, 64, false, false));
+        let open_iron = leaf("minecraft:iron_trapdoor[facing=north,half=top,open=true]").unwrap();
+        assert!(open_iron.stops_crossing(Face::South, 0, 144, true, false));
+        assert!(!open_iron.stops_crossing(Face::North, 0, 144, true, false));
+        // A closed bottom plate is stepped over.
+        let low = leaf("minecraft:oak_trapdoor[facing=north,half=bottom,open=false]").unwrap();
+        assert!(!low.stops_crossing(Face::North, 0, 144, false, false));
+    }
+    /// **A door's leaf is the jar's, per state** (`docs/reference/doors-by-hand.md`,
+    /// *A leaf's shape*). Every door the pinned registry holds, in every
+    /// `facing`, `hinge`, `half` and `open`, reads a [`Leaf`] out of the two
+    /// measured tables, and what they say is one rule: shut, the panel stands
+    /// against the face opposite `facing`; open, against the face opposite
+    /// `facing` turned clockwise for `hinge=left` and counter-clockwise for
+    /// `hinge=right` (`DoorBlock.getShape`); `half` moves nothing. Stated with
+    /// its denominator, so a table that lost a row reds here.
+    #[test]
+    fn a_door_reads_its_leaf_from_the_jar() {
+        let ids: Vec<&str> = crate::blocks::BlockRegistry::v1_21_11()
+            .ids()
+            .filter(|id| {
+                let bare = bare_id(id);
+                bare.ends_with("_door") && !bare.ends_with("_trapdoor")
+            })
+            .collect();
+        assert_eq!(ids.len(), 21, "the pinned registry's doors");
+        let cw = |f: Face| match f {
+            Face::North => Face::East,
+            Face::East => Face::South,
+            Face::South => Face::West,
+            _ => Face::North,
+        };
+        let mut read = 0;
+        for id in &ids {
+            for facing in Face::HORIZONTAL {
+                for hinge in ["left", "right"] {
+                    for half in ["lower", "upper"] {
+                        for open in [false, true] {
+                            let name = format!(
+                                "{id}[facing={},half={half},hinge={hinge},open={open}]",
+                                facing.name()
+                            );
+                            let l = leaf(&name).unwrap_or_else(|| panic!("{name}: no leaf"));
+                            assert_eq!(l.shut, Shut::Panel(facing.opposite()), "{name}");
+                            let turned = if hinge == "left" {
+                                cw(facing)
+                            } else {
+                                cw(cw(cw(facing)))
+                            };
+                            assert_eq!(l.panel, turned.opposite(), "{name}");
+                            assert_eq!(l.open, open, "{name}");
+                            assert_eq!(l.by_hand, opens_by_hand(id), "{name}");
+                            assert!(l.is_door(), "{name}");
+                            read += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(read, 21 * 32);
+    }
+
+    /// **A door stops a crossing only where its leaf stands**, and a body that
+    /// may use it is never stopped: its two panels stand on two faces, so the
+    /// body sets it to the state whose panel is not on the face it crosses.
+    /// A body that may not use it meets it as it stands; a wide body meets a
+    /// panel on every face of its cell in both states. Every door state, every
+    /// face, both kinds of mover, counted.
+    #[test]
+    fn a_door_stops_a_crossing_only_where_its_leaf_stands() {
+        let mut asked = 0;
+        for facing in Face::HORIZONTAL {
+            for hinge in ["left", "right"] {
+                for open in [false, true] {
+                    let name = format!(
+                        "minecraft:oak_door[facing={},half=lower,hinge={hinge},open={open}]",
+                        facing.name()
+                    );
+                    let l = leaf(&name).unwrap();
+                    let standing = if open {
+                        l.panel
+                    } else {
+                        match l.shut {
+                            Shut::Panel(f) => f,
+                            _ => unreachable!(),
+                        }
+                    };
+                    for face in Face::HORIZONTAL {
+                        assert!(
+                            !l.stops_crossing(face, 0, 144, true, false),
+                            "{name} {face:?}"
+                        );
+                        assert_eq!(
+                            l.stops_crossing(face, 0, 144, false, false),
+                            face == standing,
+                            "{name} {face:?}"
+                        );
+                        assert!(
+                            l.stops_crossing(face, 0, 144, true, true),
+                            "{name} {face:?}"
+                        );
+                        // The iron door of the same state, which no hand opens.
+                        let iron = leaf(&name.replace("oak_door", "iron_door")).unwrap();
+                        assert_eq!(
+                            iron.stops_crossing(face, 0, 144, true, false),
+                            face == standing,
+                            "{name} {face:?}"
+                        );
+                        asked += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(asked, 4 * 2 * 2 * 4);
+        // The turnings of a door are its eight `facing` × `hinge`, read back.
+        let l = leaf("minecraft:spruce_door[facing=east,hinge=left,open=true]").unwrap();
+        let turnings = l.turnings();
+        assert_eq!(turnings.len(), 8);
+        assert!(
+            turnings
+                .iter()
+                .all(|(_, t)| t.open && t.block == "spruce_door")
         );
     }
 }

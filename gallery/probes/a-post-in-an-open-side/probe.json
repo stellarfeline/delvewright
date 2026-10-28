@@ -1,0 +1,77 @@
+{
+  "code": "DW1057",
+  "patch": [
+    {
+      "doc": "programs/causeway.json",
+      "op": "replace",
+      "path": "/rules/place/0/body/body/children/2/children/3/children/0",
+      "value": {
+        "axis": "z",
+        "children": [
+          {
+            "op": "void"
+          },
+          {
+            "axis": "y",
+            "children": [
+              {
+                "op": "call",
+                "symbol": "post"
+              },
+              {
+                "op": "void"
+              }
+            ],
+            "op": "split",
+            "sizes": [
+              {
+                "blocks": {
+                  "expr": "int",
+                  "value": 1
+                },
+                "size": "absolute"
+              },
+              {
+                "size": "relative",
+                "weight": {
+                  "expr": "int",
+                  "value": 1
+                }
+              }
+            ]
+          },
+          {
+            "op": "void"
+          }
+        ],
+        "op": "split",
+        "sizes": [
+          {
+            "blocks": {
+              "expr": "int",
+              "value": 11
+            },
+            "size": "absolute"
+          },
+          {
+            "blocks": {
+              "expr": "int",
+              "value": 1
+            },
+            "size": "absolute"
+          },
+          {
+            "size": "relative",
+            "weight": {
+              "expr": "int",
+              "value": 1
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The causeway's program edited to stand one wall post in a middle column of the ring along its open east side, half-way along the run. The side is declared open, so the clear-width check judges it as a way: the post takes one of its twenty-four columns and the rest stay clear, which is a way narrowed — `DW1057`, its ledger row of kind `open side` — while every route proof passes beside it. It declares no unit: what must not build is an open side with a post planted in it."
+}

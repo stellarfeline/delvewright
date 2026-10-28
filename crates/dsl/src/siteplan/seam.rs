@@ -239,6 +239,35 @@ pub(super) fn seams(
             continue;
         }
 
+        // ---- `DW1064`: a portal in an open side (spec-0123 §5.4). The seam
+        // cuts `a`'s declared face and `b`'s opposite one; a side either place
+        // declares open stands no wall to cut. A contact is that side's
+        // crossing and is admitted.
+        if s.contact.is_none() && !s.face.is_horizontal_plane() {
+            let mut refused = false;
+            for (place, face) in [(ctx.a, s.face), (ctx.b, s.face.opposite())] {
+                if place.plan.side_open(face) {
+                    d.push(Diagnostic::error(
+                        DW_DOOR_IN_OPEN_SIDE,
+                        "site-plan",
+                        format!("/content/seams/{}", ctx.index),
+                        format!(
+                            "`{edge}` is a portal in the {face} face of `{node}`, which is \
+                             declared open: there is no wall to cut it in — declare the side \
+                             `wall`, or make the crossing a `contact`",
+                            edge = ctx.seam.edge,
+                            face = face.as_str(),
+                            node = place.plan.node,
+                        ),
+                    ));
+                    refused = true;
+                }
+            }
+            if refused {
+                continue;
+            }
+        }
+
         let opening = if s.contact.is_some() {
             // A contact has no opening name to resolve and no single sill, so
             // `DW0829` does not run over it. That is stated rather than

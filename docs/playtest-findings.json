@@ -3881,6 +3881,29 @@
       "note": "Carried by DW1060 (compiler::telling, validation tier, spec-0118 §6.4): the hidden way's declared `secret[]` words are matched by DW0982's matcher in every inventoried string, English and every sidecar, against the one placement of strings on the play order DW0982 reads. The binding counts the gatings that keep a secret. Closed by the re-run on the rebuilt level: on the content as found, declared hidden, the outro is refused for `passage` and the class blurb for `behind the hearth` and `records`; rebuilt, the 20 strings read before the shot mention none of the three words and the line after the shot tells each.",
       "round": 1,
       "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "contains": "(?<!trap)_door\\[",
+        "glob": "**/*.json",
+        "kind": "campaign"
+      },
+      "binding": {
+        "file": "door-leaves.json",
+        "kind": "artifact",
+        "path": "doors"
+      },
+      "campaign": "the-latch",
+      "carrier": {
+        "code": "DW1068",
+        "kind": "dw"
+      },
+      "finding": "a door's leaf is a thin panel of the same collision class as a trapdoor's — closed, a plate against one face of its cell; open, a plate against its hinge face — and the walk model holds a door a hand opens as a cell a body passes in every direction in both states, reading no panel, while it reads a trapdoor's per state; so a step that crosses a door's cell across the face its leaf stands on is a move the model admits and the game stops",
+      "general_form": "the walk model reads a door's collision per state as it reads a trapdoor's: a step across the face a door's leaf stands on, in the state it stands in, is no move, and every proof that reads the walk follows",
+      "id": "latch-01",
+      "note": "Direction: it can let something ship — a walk the model proved across a door's open leaf for a body that opens nothing is one the game refuses — and it cannot turn a proof red. The party was already read right: a door's shut and open leaves stand on two faces, so a body that sets the door before it steps is never stopped by it (`Leaf::stops_crossing` with `may_use`). Closed by `blockshape::leaf` (the door's leaf per `facing`, `hinge` and `open`, from the jar's tables), read by the walk for every door cell, and `DW1068`, which refuses a walked leg across a leaf its mover cannot set and names the `facing` and `hinge` that clear the way. The binding counts the door cells whose leaf the walk reads (`validation/door-leaves.json` `doors`).",
+      "round": 1,
+      "triage": "capability"
     }
   ],
   "ledger_version": "2026-08-11"
