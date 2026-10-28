@@ -130,6 +130,14 @@ form and the commands are in *Reference: drawing the map's reference*.
      reference is looked at, never copied: an unlicensed or non-commercial
      source is ideas only.
 
+   **A door the story opens is the shutter of its way.** A door the player
+   unbars, unlocks or is told to go through stands in the opening between two
+   places — the edge carries `gating` with `"shut": "door"` — and the step that
+   opens it is an `interact` on `anchor/seam-<edge>`, holding the key. It opens
+   by hand onto the far place from then on. A door a step presses that is not a
+   way is refused; where a thing is pressed but is not a way, it is a lever, a
+   button or a bell.
+
 3. **`site-plan.json`** — the geometric embedding of that graph. `region` (the
    whole map's one box, in world coordinates), `datums` (named ground planes),
    **`fill`** (what the land is), **one `boxes[]` entry per node**, **one

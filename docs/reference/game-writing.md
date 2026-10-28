@@ -361,6 +361,7 @@ How a quest plan is shaped as a web rather than a chain, how an ending reads the
   engine holds the declared words of the secret to the play order (`DW1060`);
   the rest — the mechanism's place and every sentence around it — is the
   author's. **Authored**, from two playtests, on L1's pattern.
+- **L5 — A device does what it reads as.** Every door and gate closes an opening — shut, nothing passes through it; open, the place behind it is reached through it; wall is joined to both sides of it, or it is declared a decoration no hand opens; a door the story addresses opens onto the place behind it; a key's effect lands where the key is used, or the beat shows it; a caption names the acts the button performs and none it does not. **Cited** (`device-logic.md` §1–4: Dormans, Norman, Gaver, England). **Machine half** (spec-0124 §6).
 
 ## Sources
 

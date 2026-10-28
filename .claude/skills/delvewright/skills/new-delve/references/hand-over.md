@@ -7,6 +7,7 @@
 - [The render-distance line](#the-render-distance-line)
 - [The host line](#the-host-line)
 - [The play server](#the-play-server)
+- [Read the promise blind](#read-the-promise-blind)
 - [The staging gate](#the-staging-gate)
 - [The report](#the-report)
 
@@ -212,6 +213,10 @@ That form runs in the FOREGROUND and holds the terminal until it is stopped;
 `owner-play.yaml` refuses to start without an admission token minted for that
 exact build tree, and `playtest-server.sh` calls the gate itself rather than
 trusting anyone to remember.
+
+## Read the promise blind
+
+Hand a fresh agent the *what to look for* section and the build's `validation/critical-path.json`, `validation/ways.json` and `validation/shut-ways.json` — nothing else. It returns one row per numbered step: the proof entry that performs the act the step names, or *no proof walks this*. Append the table under the steps. For every *no proof walks this* row, name its case and act on it before sending: **(a) never declared** — the content has no surface a proof could bind to (no gated seam for the door, no required anchor in the room): declare it with a surface the released engine has, rebuild, re-read; **(b) does not matter** — strike the step; **(c) no released surface can prove it** — redesign the step so it needs no such surface, or strike it, and record the engine limit in the run's final report. Never work round a limit outside the skill. A row with no case named is a miss.
 
 ## The staging gate
 

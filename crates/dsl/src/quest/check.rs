@@ -876,6 +876,7 @@ pub(crate) fn quest_reference_checks(
 
     // area id -> its single-prefab anchor set (pool areas deferred to compiler).
     let providers = AnchorProviders::build(c, anchors);
+    let door_seams = crate::siteplan::door_shut_seam_anchors(c);
     let quest_area: BTreeMap<&str, &str> = c
         .quest_plan
         .content
@@ -1032,7 +1033,11 @@ pub(crate) fn quest_reference_checks(
                             ),
                         ));
                     }
-                    anchor_resolves(&providers, set, anchor, i, j, "anchor", d);
+                    // An `interact` at a door-shut seam's gate is its key
+                    // (spec-0124 §5.2): the gate's door is the thing pressed.
+                    if !door_seams.contains(anchor.as_str()) {
+                        anchor_resolves(&providers, set, anchor, i, j, "anchor", d);
+                    }
                 }
                 Objective::TalkTo { .. } | Objective::ReachAnchor { .. } => {}
             }

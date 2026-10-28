@@ -256,6 +256,8 @@ is handed none. A declared roof's `clipped` runs and a neighbour's facade cells
 are voids: whatever the program paints there is replaced after expansion, so
 nothing put there survives and nothing may depend on it.
 
+**Every door and gate closes an opening.** Shut, nothing passes through it; open, the place behind it is reached through it — the engine asks the body's reach, from either side. A door stands in a wall with wall joined to both sides of it at both courses and a floor a body can stand on in front and behind; a gate stands in its fence line. A door that closes nothing — standing free on a floor, beside a counter, against a wall with nothing behind — is not placed, or wall is joined to both sides of it; a room may have as many doors as it needs, each judged on its own. A door kept as a decoration (a loft door high on a facade, a bench top laid flat) is declared `decorative` on the piece's contract with what it is dressed as, and the engine then proves no player can touch it: from nowhere a body can stand is any of its cells within the game's hand reach (`4.5` blocks from the eye), or it is a door no hand opens (iron, with no control). A wooden door within reach that closes nothing is refused whatever it is declared; raise it out of reach, or make it close a way. A hatch is a trapdoor. A door-shut seam's door is the bar of its `barred` edge: the palette role is the door's lower half under its upper, the two halves filling the bar's two courses.
+
 **A place reads as what it is when four things hold at once**: the working
 object stands in its working position, not stored; the rooms follow the work —
 the room a visitor enters is not the room the work is done in, and a door

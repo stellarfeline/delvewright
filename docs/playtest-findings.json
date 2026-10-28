@@ -3978,6 +3978,76 @@
       "note": "Direction: it can let something ship — a walk the model proved across a door's open leaf for a body that opens nothing is one the game refuses — and it cannot turn a proof red. The party was already read right: a door's shut and open leaves stand on two faces, so a body that sets the door before it steps is never stopped by it (`Leaf::stops_crossing` with `may_use`). Closed by `blockshape::leaf` (the door's leaf per `facing`, `hinge` and `open`, from the jar's tables), read by the walk for every door cell, and `DW1068`, which refuses a walked leg across a leaf its mover cannot set and names the `facing` and `hinge` that clear the way. The binding counts the door cells whose leaf the walk reads (`validation/door-leaves.json` `doors`).",
       "round": 1,
       "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "contains": "\"type\": \"interact\"",
+        "glob": "**/quests.json",
+        "kind": "campaign"
+      },
+      "binding": {
+        "file": "devices.json",
+        "kind": "artifact",
+        "path": "way_blocks.pressables"
+      },
+      "campaign": "three-buttons-and-a-bell",
+      "carrier": {
+        "code": "DW1069",
+        "kind": "dw"
+      },
+      "finding": "a wooden door stood in front of a doorway as the object of a step titled to unbar it; the key was used on it, the step's happening said the door opened, and the door did not open: the layout graph held the doorway open from world load, and the key's only effect was that a chest beside it would lift its lid",
+      "general_form": "a door the story addresses is the shutter of a gated way: every pressable a hand opens that an interact, a use trigger, a shortcut's unlock or a disarm presses stands in a door-shut seam's gate region",
+      "id": "tbb-door-01",
+      "note": "Direction: it can let something ship (a door that reads as a way and is none) and cannot turn a proof red. Carried by DW1069 shape a (compiler::nav::device::check_way_blocks); the binding is the build's pressables, of which the retired demo's store door is 1 way-block of 12. Closed by spec-0124's runs; the content is retired and not re-run.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "bonfire"
+          }
+        }
+      },
+      "campaign": "three-buttons-and-a-bell",
+      "carrier": {
+        "code": "DW1045",
+        "kind": "dw"
+      },
+      "finding": "a rest point's second button was captioned with two acts, saving and quitting, and performed one: it moved the checkpoint and quit nothing",
+      "general_form": "a caption names only the acts its button performs: every lexicon verb in a bonfire's two labels is an act its option performs",
+      "id": "tbb-caption-01",
+      "note": "Carried by DW1045's label arm (compiler::telling::check_labels); bound 1 of 2 labels on the retired demo. Closed by spec-0124's runs; the content is retired and not re-run.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "contains": "_door\\[",
+        "glob": "**/*.json",
+        "kind": "campaign"
+      },
+      "binding": {
+        "file": "devices.json",
+        "kind": "artifact",
+        "path": "doors.doors_and_gates"
+      },
+      "campaign": "the-front-and-the-fountain",
+      "carrier": {
+        "code": "DW1072",
+        "kind": "dw"
+      },
+      "finding": "a two-course door stood free on a stall's front row beside a one-course counter, with air on its other side and over the counter: a door a body walks round, closing nothing",
+      "general_form": "every door and fence gate in the built world closes an opening: shut, no body passes round its leaf; open, the place behind it is reached through it — both asked of the reach graph",
+      "id": "ff-door-01",
+      "note": "Direction: it can let something ship and cannot turn a proof red. Carried by DW1072 (compiler::nav::device::check_doors); bound 2 doors on the retired content, 1 refused. Closed by spec-0124's runs; the content is retired and not re-run.",
+      "round": 1,
+      "triage": "capability"
     }
   ],
   "ledger_version": "2026-08-11"

@@ -36,6 +36,11 @@
         "node": "node/causeway",
         "objective": "obj/climb-the-crow",
         "quest": "quest/far-hall"
+      },
+      {
+        "node": "node/near-hall",
+        "objective": "obj/unlock-the-centre-door",
+        "quest": "quest/near-hall"
       }
     ],
     "critical_path": [
