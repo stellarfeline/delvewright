@@ -65,9 +65,13 @@ for their rules only (ADR-0013); each is listed under *Sources* with what was ta
   that never opens, or opens onto a wall, is Gaver's false affordance in the exact sense.
   So a door **the story addresses** — one a quest step is anchored on, one a key is used on,
   one an objective says the player opens — is a way: it stands in the opening between two
-  places and, once its step has passed, it opens by hand onto the far place. A door **nobody
-  addresses** is scenery, and the record's rule for scenery that looks usable applies
-  (`game-writing.md` L3: the player is told once, before the first one, that it will not).
+  places and, once its step has passed, it opens by hand onto the far place.
+- **[ruling]** A door must do a door's job: shut, it stops a body passing; open, it lets one
+  pass. A door that does not close a way either is not placed or gets wall joined to both
+  sides of it. This holds for every door block in the built world, of every door kind, whether
+  or not a story addresses it. There is no scenery door: the one block whose whole behaviour
+  is to open onto what is behind it is not placed where nothing is behind it, and L3's
+  told-once allowance for scenery that looks usable does not reach doors.
 - **[authored]** The same holds for every block the game opens by hand (door, trapdoor,
   fence gate): its press is an answer in itself (spec-0117, *release*), so a shut one promises
   a later opening, and the opening must lead somewhere.
@@ -112,7 +116,10 @@ for their rules only (ADR-0013); each is listed under *Sources* with what was ta
   used, or the beat shows it.
 - **R3 [authored, on §2]** A door the story addresses is a way: it stands in the opening
   between two places and opens by hand onto the far place once its step has passed.
-- **R4 [authored, on §2]** A door nobody addresses is scenery, under L3.
+- **R4 [ruling, §2]** Every door in the built world closes an opening: shut, its leaf stops a
+  body passing between the two cells it separates, and the cells beside the leaf at both of
+  its courses stop a body; open, it lets one pass. A door that closes nothing is not placed, or
+  wall is joined to both sides of it.
 - **R5 [authored, on §4]** A caption names the acts the button performs and none it does not.
 - **R6 [cited, §3]** A remote effect that is neither in sight nor shown is refused; a
   deliberate deception of a learned rule is a declared exception, never a default.
@@ -135,4 +142,6 @@ for their rules only (ADR-0013); each is listed under *Sources* with what was ta
 - Nick Taylor's review of Salen & Zimmerman, *Rules of Play* (MIT Press) — for the one
   quoted definition; the book is not re-read here.
 - The record: `docs/reference/game-writing.md` (F1, F4, L1, L3, L4), spec-0117 (*release*),
-  spec-0118 §9, `.claude/skills/delvewright/skills/new-delve/references/content.md` step 5.
+  spec-0118 §9, `.claude/skills/delvewright/skills/new-delve/references/content.md` step 5;
+  `docs/reference/doors-by-hand.md` and spec-0123 §3.5 (`origin/feature/a-place-reads-as-what-it-is`)
+  for the leaf's shape and the census of a door's framing.
