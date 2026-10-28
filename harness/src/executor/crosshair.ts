@@ -12,6 +12,7 @@ import {
   type Hitbox,
   type Vec3Like,
 } from "../crosshair.ts";
+import { outlineOf } from "../outline.ts";
 import { displayNameOf } from "./wave.ts";
 import type { MineflayerExecutor } from "../executor.ts";
 
@@ -24,8 +25,9 @@ const PLAYER_HITBOX_WIDTH = 0.6;
 
 const PLAYER_HITBOX_HEIGHT = 1.8;
 
-/** Cells the pick ray passes through: air (no outline) and fluids (the client's
- * pick clips blocks with fluids ignored). */
+/** Cells the pick ray passes through when the outline table does not hold the
+ * block: air (no outline) and fluids (the client's pick clips blocks with fluids
+ * ignored). */
 const PASS_THROUGH = new Set(["air", "cave_air", "void_air", "water", "lava", "bubble_column"]);
 
 /** Vanilla standing eye height, 1.21.11: where the entity-pick ray starts. */
@@ -141,15 +143,24 @@ export const methods = {
   /**
    * The blocks around the bot as the pick ray meets them (see {@link BlockShapes}).
    *
-   * mineflayer carries a block's collision boxes (`shapes`), not its outline; a
-   * block with no collision that is not air or a fluid — a lever, a sign, a
-   * flower — is taken as its whole cell, the conservative direction: its outline
-   * is inside that cell, so it can only occlude more here than in the client.
+   * The pick ray meets a block's OUTLINE, not its collision box: a lever, a
+   * button and a sign have no collision and a real outline, and the compiler
+   * fits a click box to that outline (`ClickBox::fitted_to`). So every block is
+   * read through the engine's outline table ({@link outlineOf}). A block the
+   * table does not hold keeps the collision reading — its collision boxes, or
+   * its whole cell when it has none and is not air or a fluid — and is counted
+   * in `unread`, so the step can say how many cells it judged without the table.
+   * Walking and standing still read collision ({@link stanceStandable}).
    */
-  blockShapes(this: MineflayerExecutor): { shapes: BlockShapes; names: (x: number, y: number, z: number) => string } {
+  blockShapes(this: MineflayerExecutor): {
+    shapes: BlockShapes;
+    names: (x: number, y: number, z: number) => string;
+    unread: () => readonly string[];
+  } {
     const bot = this.requireBot();
     const p = bot.entity.position;
     const cache = new Map<string, { boxes: readonly Box[] | null; name: string }>();
+    const unread: string[] = [];
     const read = (x: number, y: number, z: number) => {
       const key = `${x},${y},${z}`;
       const hit = cache.get(key);
@@ -157,16 +168,22 @@ export const methods = {
       const b = bot.blockAt(p.offset(x - p.x, y - p.y, z - p.z)) as {
         name?: string;
         shapes?: number[][];
+        getProperties?: () => Record<string, unknown>;
       } | null;
+      const box = (s: readonly number[]): Box => ({
+        min: { x: x + s[0]!, y: y + s[1]!, z: z + s[2]! },
+        max: { x: x + s[3]!, y: y + s[4]!, z: z + s[5]! },
+      });
       let boxes: readonly Box[] | null;
+      const outline = b ? outlineOf(b.name ?? "", b.getProperties?.() ?? {}) : undefined;
       if (!b) boxes = null;
-      else if (PASS_THROUGH.has(b.name ?? "")) boxes = [];
-      else if (Array.isArray(b.shapes) && b.shapes.length > 0) {
-        boxes = b.shapes.map((s) => ({
-          min: { x: x + s[0]!, y: y + s[1]!, z: z + s[2]! },
-          max: { x: x + s[3]!, y: y + s[4]!, z: z + s[5]! },
-        }));
-      } else boxes = [{ min: { x, y, z }, max: { x: x + 1, y: y + 1, z: z + 1 } }];
+      else if (outline) boxes = outline.map(box);
+      else {
+        unread.push(`${b.name ?? "unknown"} at [${x}, ${y}, ${z}]`);
+        if (PASS_THROUGH.has(b.name ?? "")) boxes = [];
+        else if (Array.isArray(b.shapes) && b.shapes.length > 0) boxes = b.shapes.map(box);
+        else boxes = [{ min: { x, y, z }, max: { x: x + 1, y: y + 1, z: z + 1 } }];
+      }
       const out = { boxes, name: b?.name ?? "unloaded" };
       cache.set(key, out);
       return out;
@@ -174,6 +191,7 @@ export const methods = {
     return {
       shapes: (x, y, z) => read(x, y, z).boxes,
       names: (x, y, z) => read(x, y, z).name,
+      unread: () => unread,
     };
   },
 
@@ -244,9 +262,19 @@ export const methods = {
       world.shapes,
       world.names,
     );
+    const unread = world.unread();
+    const unreadLine =
+      unread.length === 0
+        ? ""
+        : ` ${unread.length} cell(s) the engine's outline table does not hold were read by ` +
+          `collision or as their whole cell: ${unread.join("; ")}.`;
+    if (unread.length > 0) {
+      process.stderr.write(`[crosshair] ${what}:${unreadLine}\n`);
+    }
     if (!verdict.ok) {
       throw new Error(
-        occlusionFailure(what, target, verdict.blockers, verdict.triedStances, verdict.blocks),
+        occlusionFailure(what, target, verdict.blockers, verdict.triedStances, verdict.blocks) +
+          unreadLine,
       );
     }
     if (verdict.clearStances < verdict.triedStances) {

@@ -1913,7 +1913,7 @@ rested at the named bonfire since (a death-respawn at a fire counts as a rest,
 `respawnReseats`). A fought run-back is a fresh clearance; it is not fought again
 until the next rest.
 
-**Crosshair acquisition (`harness/src/crosshair.ts`).** Every interaction step —
+**Crosshair acquisition (`harness/src/crosshair.ts`, `harness/src/executor/crosshair.ts`).** Every interaction step —
 `talk-to`, `interact`, `rest`, and the click kinds of `trigger` — proves the click was *available to a player*
 before it acts. It casts the pick ray vanilla casts (eye → box, nearest
 hit wins, reach 3.0, pick radius 0) at every aim point on the target's hitbox,
@@ -1921,9 +1921,33 @@ from every standable cell the step's walk goal allows, and fails the step naming
 **both** sides if the target is unreachable from all of them. Blocks are in the
 ray as they are in the client: the entity is kept only when its box is strictly
 nearer than the first block the ray meets, so a box flush with a block's face
-loses to the block (the block is named). A block's shape is its collision boxes;
-a non-air, non-fluid block with none (a lever, a sign) is its whole cell, and an
-unloaded cell is a full block — the conservative direction both times. An
+loses to the block (the block is named). A block's shape in the ray is its
+**outline**, never its collision: a lever, a button and a sign have no collision
+and a real outline, and the compiler fits its click box to that outline
+(`compiler::clickbox`). The pinned client's `Entity.pick(double, float, boolean)`
+clips the blocks with `ClipContext.Block.OUTLINE`, whose shape is
+`BlockStateBase.getShape(BlockGetter, BlockPos, CollisionContext)`, and with
+`ClipContext.Fluid.NONE` when fluids are not asked for [cited — read with
+`javap -p -c -v` over the client jar of `versions.toml`'s `client_jar_sha256`
+through its client mappings (sha1 `031a68bebf55d824f66d6573d8c752f0e1bf232a`):
+`cgk.a(DFZ)` builds `new dvw(…, dvw$a.b, dvw$b.a|c, this)`, and `dvw$a.b`'s
+bootstrap is `eog$a.a(dvt, is, ftr)`]. The harness reads every outline from the
+engine's own table, `delvewright_dsl::blockshape::outline`, written for it as
+`harness/src/data/outline-shapes-1.21.11.json` by
+`crates/delvec/tests/outline_ledger.rs` (every state of every block of the
+pinned registry, dense over the properties that move the outline; the test reds
+when the committed file is not what it writes — rewrite it with
+`DELVEWRIGHT_WRITE_OUTLINES=1`) and indexes it by the live block's properties
+(`harness/src/outline.ts`); `harness/test/outline.test.ts` holds that reading to
+the engine's answer for every lever, button and sign state the client knows,
+with zero differences. The table is measured with an empty collision context
+at the origin (`getShape(EmptyBlockGetter, BlockPos.ZERO)`), so a block whose
+outline depends on its position or on what the player holds is read at that
+context [authored — which blocks do is not measured here]. A block the table does not
+hold keeps the collision reading — its collision boxes, or its whole cell when
+it has none and is not air or a fluid — and the step prints how many cells it
+read that way. An unloaded cell is a full block, the conservative direction.
+Standing and walking still read collision. An
 `interaction`'s size is read off its entity data (vanilla's `1.0` default for a
 field the server did not send), never assumed; the compiler's own boxes are
 `1.02 x 2.02` (`compiler::clickbox`, `DW1013`). The trigger it
