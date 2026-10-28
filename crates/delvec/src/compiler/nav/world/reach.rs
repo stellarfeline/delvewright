@@ -1703,10 +1703,11 @@ impl GraphMemo {
 
 /// The envelope index: per column of the window, the heights of every cell a
 /// body could possibly rest in (a superset of the rest states: no premise is
-/// applied), and whether the column holds nothing at all.
+/// applied), and the lowest cell that stops a fall (a shape, water or lava),
+/// `None` for a column that holds nothing at all.
 struct Columns {
     rest: Vec<Vec<i32>>,
-    empty: Vec<bool>,
+    lowest: Vec<Option<i32>>,
     /// Some cell of the window holds slime, which throws a body further than
     /// any launch: the envelope proves nothing and every node is flown.
     slime: bool,
@@ -1716,7 +1717,7 @@ impl Columns {
     fn of(d: &Dense) -> Columns {
         let n = (d.dims[0].max(0) * d.dims[2].max(0)) as usize;
         let mut rest = vec![Vec::new(); n];
-        let mut empty = vec![true; n];
+        let mut lowest: Vec<Option<i32>> = vec![None; n];
         let mut slime = false;
         for x in 0..d.dims[0] {
             for z in 0..d.dims[2] {
@@ -1728,8 +1729,8 @@ impl Columns {
                 for y in 0..d.dims[1] {
                     let c = [d.lo[0] + x, d.lo[1] + y, d.lo[2] + z];
                     let v = d.code(c);
-                    if v & (SHAPE | WATER | LAVA) != 0 {
-                        empty[col] = false;
+                    if v & (SHAPE | WATER | LAVA) != 0 && lowest[col].is_none() {
+                        lowest[col] = Some(c[1]);
                     }
                     if material_of_code(v) == Material::Slime {
                         slime = true;
@@ -1748,7 +1749,11 @@ impl Columns {
                 }
             }
         }
-        Columns { rest, empty, slime }
+        Columns {
+            rest,
+            lowest,
+            slime,
+        }
     }
 }
 
@@ -3322,7 +3327,10 @@ impl World {
     /// Which launches from `c` could still add to `reach` ([`Quadrants`]):
     /// those that can carry a body toward a cell of its envelope a body could
     /// rest in and the closure has not reached, or (under a void) toward a
-    /// column with nothing in it. `0` when there is none.
+    /// column with nothing at or below `c`'s height to stop a fall — an empty
+    /// column, and one whose every block is overhead (a ledge's underside, a
+    /// cliff's lip), which a body walks or jumps under and falls out of the
+    /// world through. `0` when there is none.
     fn envelope_open(&self, memo: &GraphMemo, reach: &Reach, c: [i32; 3]) -> Quadrants {
         let d = &memo.dense;
         if memo.columns.slime || d.dims[0] == 0 {
@@ -3362,7 +3370,7 @@ impl World {
                     continue;
                 }
                 let col = (x * d.dims[2] + z) as usize;
-                if void && memo.columns.empty[col] {
+                if void && memo.columns.lowest[col].is_none_or(|y| y > c[1]) {
                     q |= bit;
                     continue;
                 }

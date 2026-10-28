@@ -513,3 +513,48 @@ fn a_bank_read_back_from_its_file_answers_what_flying_gives() {
     // Bound, not vacuous: the bank read back answers nodes.
     assert!(answered > 0, "the read-back bank answered no node");
 }
+
+/// **A column whose every block is overhead is a way out of the world** (the
+/// void envelope). A slab 41 wide with one column cut out beside the root,
+/// and a single block over the cut at the root's head height plus one — the
+/// underside of a ledge, a cliff's lip — and nothing under it: a body walks
+/// under the block and falls out of the world. The root's own launches say
+/// so ([`World::fatal_launch`]); the closure must fly them and record the
+/// root as leaving the world, which `DW0322` reads. The envelope used to ask
+/// for a void launch only over a column with nothing in it at all, so the
+/// overhead block hid the drop and the closure never flew the launch: the
+/// gallery's site-plan point passed `DW0322` with a reached cell at its edge
+/// whose step south fell out of the world.
+#[test]
+fn a_column_with_only_an_overhead_block_is_a_way_out_of_the_world() {
+    let mut solid: BTreeSet<[i32; 3]> = BTreeSet::new();
+    for x in 0..=40 {
+        for z in 0..=40 {
+            if [x, z] != [21, 20] {
+                solid.insert([x, 0, z]);
+            }
+        }
+    }
+    solid.insert([21, 3, 20]);
+    let w = World::from_solid_cells(solid);
+    let root = [20, 1, 20];
+    assert_eq!(w.fatal_launch(root), Some(Death::Void));
+    let reach = w.body_reach(&[root]);
+    assert!(
+        reach.leaves_world.contains(&root),
+        "the root's launch under the overhead block leaves the world"
+    );
+    // The perturbation only the cut answers: fill its column's floor back in
+    // and the root leaves the world by no launch (the slab's rim, twenty
+    // columns off, is another cell's way out).
+    let mut closed: BTreeSet<[i32; 3]> = BTreeSet::new();
+    for x in 0..=40 {
+        for z in 0..=40 {
+            closed.insert([x, 0, z]);
+        }
+    }
+    closed.insert([21, 3, 20]);
+    let c = World::from_solid_cells(closed);
+    assert_eq!(c.fatal_launch(root), None);
+    assert!(!c.body_reach(&[root]).leaves_world.contains(&root));
+}
