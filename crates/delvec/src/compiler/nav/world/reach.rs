@@ -2079,6 +2079,17 @@ impl World {
         h.update(format!("{:?}", self.climb_holds).as_bytes());
         h.update(format!("{:?}", self.unheld_climb).as_bytes());
         h.update([u8::from(self.has_climbs())]);
+        // A door's or a trapdoor's leaf is read by the cell relation's every
+        // crossing (`World::leaf_stopping`) and carried by no window cell's
+        // membership, so worlds whose leaves or leaf use differ share no node
+        // — the world with its leaves lifted (`World::without_leaves`, what
+        // `DW1066` compares against) included. A world with none keys as it
+        // did before.
+        if !self.floors.leaves.is_empty() {
+            h.update(b"leaves");
+            h.update([u8::from(self.floors.leaf_use)]);
+            h.update(format!("{:?}", self.floors.leaves).as_bytes());
+        }
         h.finalize().iter().map(|b| format!("{b:02x}")).collect()
     }
 
