@@ -1005,6 +1005,19 @@ whose content is entirely ABOVE the datum is filled too: the valley floor runs
 on under an elevated storey. A floored column is untouched — the piece owns its
 ground, holes and basements included.
 
+**The skirt reaches the ground it rings** (`surround::generate_valley_reaching`,
+`surround::edge_ground`). Every tile is solid from its surface down to a skirt
+four blocks under its lowest surface, and a tile holding an edge column — a
+surround column one step outside the declared region, corners included — reaches
+further, down to the lowest cell anything the plan writes in the region column
+beside it (`plan::surround::lowest_ground`, read from the same placement
+rectangles as the moat's floored columns). A region column the plan writes
+nothing in is floored by the moat at the gap-floor datum and needs no more than
+the skirt. So the shell the surround lays never overhangs a slot open onto the
+void where a site's terrain dips below the gap floor at its edge, which a body
+walking off the region's last row would fall through (`DW0322`). No field
+states it.
+
 **Not an `AreaPlacement`, deliberately.** `plan.areas` is what the boundary
 region derives from, what relight lights, what anchors resolve against and what
 analysis counts, and a mountain is none of those. The surround is

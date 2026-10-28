@@ -999,6 +999,54 @@ pub fn generate_valley(
     floor_top_y: i32,
     params: &ValleyParams,
 ) -> Result<ValleySurround, String> {
+    generate_valley_reaching(seed, scene, floor_top_y, params, &BTreeMap::new())
+}
+
+/// **The cells an edge column's skirt reaches down to**: for each column of
+/// the surround next to `scene` (one step outside it, corners included), the
+/// lowest ground the region holds in the column beside it, as `lowest` answers
+/// for that region column — `None` where the region holds none of its own,
+/// which the moat floors at the gap-floor datum
+/// ([`ValleySurround::moat`]), and which then needs no more than the skirt.
+/// What [`generate_valley_reaching`] fills down to.
+pub fn edge_ground(
+    scene: &SceneRect,
+    lowest: &dyn Fn(i32, i32) -> Option<i32>,
+) -> BTreeMap<(i32, i32), i32> {
+    let mut out = BTreeMap::new();
+    let mut at = |x: i32, z: i32| {
+        let rx = x.clamp(scene.min_x, scene.max_x);
+        let rz = z.clamp(scene.min_z, scene.max_z);
+        if let Some(y) = lowest(rx, rz) {
+            out.insert((x, z), y.max(WORLD_MIN_Y));
+        }
+    };
+    for x in scene.min_x - 1..=scene.max_x + 1 {
+        at(x, scene.min_z - 1);
+        at(x, scene.max_z + 1);
+    }
+    for z in scene.min_z..=scene.max_z {
+        at(scene.min_x - 1, z);
+        at(scene.max_x + 1, z);
+    }
+    out
+}
+
+/// [`generate_valley`], with **every tile's skirt reaching down to the ground
+/// the region holds at its edge** (`ground`, [`edge_ground`]'s answer): a tile
+/// holding an edge column is solid from its surface down to that column's
+/// ground, so the shell the surround lays never overhangs a slot that opens
+/// onto the void. Under a site plan whose terrain dips below the gap floor at
+/// its edge, a skirt [`SKIRT`] deep under the surface left a slot between the
+/// shell's underside and the region's ground, and a body walking off the
+/// region's last row went under the shell and out of the world (`DW0322`).
+pub fn generate_valley_reaching(
+    seed: u64,
+    scene: SceneRect,
+    floor_top_y: i32,
+    params: &ValleyParams,
+    ground: &BTreeMap<(i32, i32), i32>,
+) -> Result<ValleySurround, String> {
     if !(2.0..=3.0).contains(&params.ratio) {
         return Err(format!(
             "valley `ratio` {} out of range 2..=3 (validation should have raised DW0853)",
@@ -1198,6 +1246,7 @@ pub fn generate_valley(
         &columns,
         &tree_cells,
         &decor_cells,
+        ground,
     );
 
     // --- 5. Biome paint rects (one per band, full build-height columns) ---
@@ -1340,6 +1389,7 @@ fn build_tiles(
     columns: &BTreeMap<(i32, i32), (Zone, i32)>,
     tree_cells: &BTreeMap<[i32; 3], &'static str>,
     decor_cells: &BTreeMap<[i32; 3], &'static str>,
+    ground: &BTreeMap<(i32, i32), i32>,
 ) -> Vec<SurroundTile> {
     let outer = outer_rect(scene, params.ratio);
     // Every footprint, in the order the tiles are numbered.
@@ -1368,6 +1418,7 @@ fn build_tiles(
             columns,
             tree_cells,
             decor_cells,
+            ground,
             x0,
             x1,
             z0,
@@ -1396,13 +1447,16 @@ fn tile_stack(
     columns: &BTreeMap<(i32, i32), (Zone, i32)>,
     tree_cells: &BTreeMap<[i32; 3], &'static str>,
     decor_cells: &BTreeMap<[i32; 3], &'static str>,
+    ground: &BTreeMap<(i32, i32), i32>,
     x0: i32,
     x1: i32,
     z0: i32,
     z1: i32,
 ) -> Vec<(Vec<u8>, [i32; 3], [i32; 3])> {
-    // Vertical span: solid skirt under the lowest surface, headroom over the
-    // tallest surface or tree cell in the footprint.
+    // Vertical span: solid skirt under the lowest surface — down to the
+    // region's ground where the footprint holds an edge column
+    // ([`generate_valley_reaching`]) — and headroom over the tallest surface
+    // or tree cell in the footprint.
     let mut min_surf = i32::MAX;
     let mut max_top = i32::MIN;
     for x in x0..=x1 {
@@ -1421,7 +1475,12 @@ fn tile_stack(
     if min_surf == i32::MAX {
         return Vec::new(); // footprint holds no annulus column
     }
-    let y_min = min_surf - SKIRT;
+    let reach = ground
+        .range((x0, i32::MIN)..=(x1, i32::MAX))
+        .filter(|((_, z), _)| (z0..=z1).contains(z))
+        .map(|(_, y)| *y)
+        .min();
+    let y_min = reach.map_or(min_surf - SKIRT, |g| (min_surf - SKIRT).min(g));
     let y_max = max_top;
 
     // World-cell content for the whole footprint, then sliced.
@@ -2255,6 +2314,49 @@ mod tests {
         if let Err(cell) = v.verify_unclimbable(&world) {
             panic!("gap floor escapes the valley at {cell:?}");
         }
+    }
+
+    /// **The surround reaches down to the ground it rings** (`DW0322`). A
+    /// region floored at y 55, under a gap floor whose top is 62: the skirt,
+    /// four deep under the surface, stops at 58, and the region's last row
+    /// opens under the shell onto the void. Over the old skirt a body standing
+    /// on the region's edge walks out of the world, and the boundary proof
+    /// refuses it; with every edge column's skirt reaching the region's ground
+    /// ([`edge_ground`], [`generate_valley_reaching`]) no reached cell leaves
+    /// the world, and the proof admits it.
+    #[test]
+    fn the_surround_reaches_down_to_the_ground_it_rings() {
+        let s = SceneRect {
+            min_x: 0,
+            min_z: 0,
+            max_x: 31,
+            max_z: 31,
+        };
+        let floor = 55;
+        let region: Vec<([i32; 3], &str)> = (0..=31)
+            .flat_map(|x| (0..=31).map(move |z| ([x, floor, z], "minecraft:stone")))
+            .collect();
+        let root = crate::compiler::nav::AnchorRoot {
+            at: [16, floor + 1, 16],
+            within: ([0, floor, 0], [31, floor + 3, 31]),
+        };
+        let params = ValleyParams::default();
+        let old = generate_valley(31, s, 62, &params).unwrap();
+        let shallow = decoded_world(&old, &region);
+        let refused = crate::compiler::nav::verify_boundary_safety(&shallow, &[root])
+            .expect_err("the old skirt leaves a slot under the shell");
+        assert_eq!(refused.code.id(), "DW0322", "{}", refused.message);
+
+        let ground = edge_ground(&s, &|_, _| Some(floor));
+        assert_eq!(
+            ground.len(),
+            4 * 32 + 4,
+            "every edge column, corners included"
+        );
+        let reaching = generate_valley_reaching(31, s, 62, &params, &ground).unwrap();
+        let deep = decoded_world(&reaching, &region);
+        crate::compiler::nav::verify_boundary_safety(&deep, &[root])
+            .unwrap_or_else(|f| panic!("the skirt reaches the ground: {}", f.message));
     }
 
     /// Decode every serialized tile into a blocks map (plus optional doctored
