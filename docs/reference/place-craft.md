@@ -1,6 +1,6 @@
 # A place reads as what it is
 
-Reader: the agent writing one place's program at step 9, and the engine work that hands it a frame. This is the research record behind spec-0123: how big a building is cut, how it is divided into rooms, how it shows its trade from the threshold and from the street, what makes its outside look lived in, what a way owes its approach, and how the parts of one building are kept in one style so that a front, and a landmark, read as what they are (§7). Every rule is marked **[cited]** with its source, **[authored]** — reasoned here from a cited rule or from the engine, with no source of its own — or **[ruling]** — a finding of the side-by-side playtest of one hillside town built twice, taken as given. Sources are read for their rules; nothing of their text, images or builds is taken (ADR-0013: an unlicensed or non-commercial source is ideas only). Rooflines and facades are `roof-and-facade-craft.md`; light is `interior-lighting.md`; the width of a way is `clear-width.md`.
+Reader: the agent writing one place's program at step 9, and the engine work that hands it a frame. This is the research record behind spec-0123: how big a building is cut, how it is divided into rooms, how it shows its trade from the threshold and from the street, what makes its outside look lived in, what a way owes its approach, and how the parts of one building are kept in one style so that a front, and a landmark, read as what they are (§7), and how a plot — a place that holds one or more related structures and the ground they share — is planned with what it holds before it is sized, at the player building community's scale (§8). Every rule is marked **[cited]** with its source, **[authored]** — reasoned here from a cited rule or from the engine, with no source of its own — or **[ruling]** — a finding of the side-by-side playtest of one hillside town built twice, taken as given. Sources are read for their rules; nothing of their text, images or builds is taken (ADR-0013: an unlicensed or non-commercial source is ideas only). Rooflines and facades are `roof-and-facade-craft.md`; light is `interior-lighting.md`; the width of a way is `clear-width.md`.
 
 ## 1. Sources
 
@@ -26,16 +26,37 @@ Reader: the agent writing one place's program at step 9, and the engine work tha
 | [Blendo Games — Level Design: Readability](https://blendogames.com/news/post/2026-06-xx-leveldesign_readability/) | No licence stated; ideas only | Judging what reads from the player's own position; the squint test |
 | [Minecraft Wiki — Village structure blueprints: Plains Meeting Point 1](https://minecraft.wiki/w/Village/Structure/Blueprints/Plains/Meeting_Point_1) and [Plains Fountain 01](https://minecraft.wiki/w/Village/Structure/Blueprints/Plains/Fountain_01) | CC BY-NC-SA 3.0; ideas only | The game's own well and its own fountain, layer by layer |
 | [Minecraft Wiki — Tutorial: Building water features](https://minecraft.wiki/w/Tutorial:Building_water_features) | CC BY-NC-SA 3.0; ideas only | The community's fountain: a frame round a column with water poured on its top |
+| [Wikipedia — Setback (land use)](https://en.wikipedia.org/wiki/Setback_(land_use)) | CC BY-SA 4.0 | What a setback is, what it is for, and how far apart houses stood in different periods |
+| [Wikipedia — Floor area ratio](https://en.wikipedia.org/wiki/Floor_area_ratio) | CC BY-SA 4.0 | Floor area ratio against building coverage ratio: one counts floors, the other the footprint |
+| [Wikipedia — Shophouse](https://en.wikipedia.org/wiki/Shophouse) | CC BY-SA 4.0 | The narrow, deep trade plot: shop at the street, dwelling behind and above, an air well between |
+| [Wikipedia — Farmyard](https://en.wikipedia.org/wiki/Farmyard) | CC BY-SA 4.0 | The yard beside the barn, what works in it, and its trough |
+| [Wikipedia — Castra](https://en.wikipedia.org/wiki/Castra) | CC BY-SA 4.0 | The Roman camp: a grid of ways, the headquarters at the crossing, barracks in blocks, a clear strip inside the wall |
+| [Wikipedia — Shinto shrine](https://en.wikipedia.org/wiki/Shinto_shrine) | CC BY-SA 4.0 | A precinct read as a sequence: gate, approach, basin, hall of worship, the small closed hall behind it |
+| [Wikipedia — Cathedral close](https://en.wikipedia.org/wiki/Cathedral_close) | CC BY-SA 4.0 | An enclosed precinct with its gates, the great building at its centre and the houses that serve it round the edge |
+| [Wikipedia — Motte-and-bailey castle](https://en.wikipedia.org/wiki/Motte-and-bailey_castle) | CC BY-SA 4.0 | The bailey: a palisaded yard holding hall, kitchens, chapel, stables, stores and workshops under the mound |
+| [Wikipedia — Wharf](https://en.wikipedia.org/wiki/Wharf) | CC BY-SA 4.0 | A quay's parts: the platform along the water, its berths, and the warehouses behind it |
+| [Montgomery County — R-90 zone development standards](https://assets.montgomerycountymd.gov/files/2026-04/DevelopmentStandardsForR90Zone.pdf) | Public record of a US county; paraphrased | A suburban lot's numbers: coverage, setbacks, where an accessory building stands and how big it may be |
+| [City of Toronto — Long Branch zoning information](https://www.toronto.ca/city-government/planning-development/zoning-by-law-preliminary-zoning-reviews/zoning-bylaws/long-branch-zoning-information/) | Public record of a city; paraphrased | A second lot's numbers, with the garage's share of the lot and of the rear yard |
+| [Shropshire Council — Farmsteads character statement, farmstead types and farmhouse position](https://next.shropshire.gov.uk/media/v2fdygew/section-6-results-farmstead-types-farmhouse-position.pdf) | Copyrighted; ideas only, paraphrased | A county's farmsteads classified by plan — courtyard, L, U, linear, dispersed — and by where the house stands against the yard, with counts |
+| [WBDG — Circulation: Defining and Planning](https://www.wbdg.org/FFC/DOD/UFC/600SERIES/RESOURCES/Circulation_-_Defining_and_Planning.pdf) | US federal publication | Net area, circulation and usable area; a program's areas are summed and grossed, and the one-size multiplier is the misconception |
+| [WesterosCraft — Building fundamentals: Layout & Foundation](https://westeroscraft.com/docs/building/fundamentals/layout-foundation) | No licence stated; ideas only | A footprint laid out in wool before it is built; wings only where each serves a function |
+| The pinned server's own village templates (`minecraft_server.1.21.11.jar`, sha256 `f83b8e09…`, the `size` tag of every `village/plains` structure template) | Measured, not a source | The game's own house and trade-site footprints — a lower bound only: too small to hold story content |
+| [GrabCraft — community build blueprints](https://www.grabcraft.com/minecraft) (the medieval, wooden, stone and starter house, restaurant, café, farm-building, church, road, garden and military categories; each listing's stated width × height × depth) | No licence stated; the builds are ideas only, their stated dimensions are measured facts | 58 documented community builds measured by their listed bounding boxes: dwellings, inns and shops, barns and stables, chapels, sheds, street pieces, a dock |
+| [Minecraft Wiki — Player](https://minecraft.wiki/w/Player) | CC BY-NC-SA 3.0; ideas only | The body the scale is read against: 0.6 wide, 1.8 tall, eye at 1.62, a jump of about 1.25 |
+| [Minecraft Wiki — Tutorial: Creating a village](https://minecraft.wiki/w/Tutorial:Creating_a_village) | CC BY-NC-SA 3.0; ideas only | The smallest hut the game's villagers need, and the ceiling an iron golem needs |
+| [Minecraft.net — Make Your Houses Better](https://www.minecraft.net/en-us/article/make-your-houses-better) | Copyrighted; ideas only | Mojang's guide relaying a recognised builder's five rules: depth, texture, detail, plants, the garden and landscape round the house |
 
 ## 2. The cut and the size
 
-**[ruling]** A site is cut with **one box per building or connector**; this cut's layout and seams were judged better than a cut of two terraces. A road, a flight of steps, a bridge, a yard and a square's centrepiece are each a place with a box of their own.
+**[ruling]** A site is cut with **one box per plot or connector**; this cut's layout and seams were judged better than a cut of two terraces holding several buildings each. A road, a flight of steps, a bridge and a square's centrepiece are each a place with a box of their own. A plot is a place too: it holds one or more structures that belong together and the ground they share (§8), and a building standing alone on no ground of its own is a plot of one structure.
 
 **[cited]** A village's buildings each connect to the street and not usually to each other; a town has larger open centres and denser structures; a settlement reads as genuine when it has a market place or, failing that, small trade shops. (Settlement guide.) A yard — a square space out back for vegetables, washing, animals or storage — is part of a house where the plot allows. (WesterosCraft.)
 
 **[ruling]** A building's play space is **about twice** what the first cut gave it, so its author has room for rooms. The first cut's trade buildings stood on 64 to 121 cells of play space (8 × 8 to 11 × 11, read from its site plan); the rule puts a trade building at about 130 to 240 cells.
 
-**[authored]** From the ruling and §3's room rule: a trade building's play space is at least **12 × 12**, and at least **14 × 14** where a workshop and a shop front both stand; a one-room house may stay smaller. These are the numbers a geometry brief states per trade and a site plan binds with `identities[]` (`box-extent`, `ge`), so the size is a declaration the plan is held to and never a class the engine infers.
+**[ruling]** The ruling above was carried out as a bigger box per building, every building a plain rectangle with no ground of its own, and that was wrong. A place's size is never room for its main building alone, and never bigger for its own sake: an oversized plot spreads its structures too far apart or makes one too large against a body. **The plot's size follows from what it holds**, planned at the cut — which structures, which open spaces, each with its use and its share — and inside the plot the structures take any outline. §8 is the research and the rule.
+
+**[authored]** From the two rulings and §3's room rule: a structure a trade is worked in has play space for at least two rooms — about 120 to 320 cells for the work and the front together, the community's own band (§8.2) — and it is one part of its plot, never the plot's whole box; the plot's play space is the sum of its parts and the ground between them (§8.5). These are the numbers a plot's program states per part, and the engine holds the plot to them (spec-0125); no figure is a class the engine infers from a label.
 
 ## 3. Rooms, and reading as a trade
 
@@ -64,7 +85,7 @@ Reader: the agent writing one place's program at step 9, and the engine work tha
 
 **[ruling]** The first cut had too few of these: bushes, potted flowers and non-functional props that make the outside feel lived in.
 
-**[authored]** Where the outside lives in this engine: a street's verge (the columns of a way place's extent outside its `clear`, `clear-width.md` §3), a yard or garden strip cut as its own open-sided place (spec-0123 §5), and the commons dressed by the stage-7 edit script (`scatter`, `plant`, `fragment`). Nothing stands in a way's clear width; a prop against a house wall stands in the street's verge, so the street's author dresses the house's foot, and the handout tells it what house it is.
+**[authored]** Where the outside lives in this engine: a street's verge (the columns of a way place's extent outside its `clear`, `clear-width.md` §3), a yard or garden strip as a ground part of its plot (§8, spec-0125) or, where it belongs to no plot — a square's green — as its own open-sided place (spec-0123 §5), and the commons dressed by the stage-7 edit script (`scatter`, `plant`, `fragment`). Nothing stands in a way's clear width; a prop against a house wall stands in the street's verge, so the street's author dresses the house's foot, and the handout tells it what house it is.
 
 ## 5. The approach to a wide way
 
@@ -107,22 +128,75 @@ Reader: the agent writing one place's program at step 9, and the engine work tha
 
 **[authored]** What the engine measures, and what it does not. It states, per bound piece, whether each door and gate stands framed — its two jambs at both courses and the cell over its head, a gate's two neighbours, each a cell a body cannot be in by the nav model's one predicate, recorded present or absent — and per face the openings it finds with each one's head course and width, the block kinds a face is built of with the longest unbroken run of one kind, and where the piece's water stands against the walk plane. These are measurements the review reads beside the threshold frame, and none is a refusal: a door standing free in a ruin, a gate where a hedge line ends, a hierarchy of heads, a third kind with a job and a flat ring are each an intent the author may mean and did not declare, and a check never infers an undeclared intent in order to refuse. The module, the construction and the leaf are never checked: they are read.
 
-## 8. Rule provenance
+## 8. The plot: what a place holds
+
+**[ruling]** A plot is a whole holding. One plot holds one or more structures that are closely related — by what they are for, or by design — together with the open spaces they share: a house with its front ground, its back ground and its outbuilding; a forge with its work yard and store; a farm with its house, barn, byre and yard; a shrine with its gate, approach, basin and halls; a quay with its apron, warehouse and shed; a camp with its rampart strip, headquarters, barracks and granary. The suburban lot is one example and names nothing in the rule. When the site is cut, each plot is planned with what it contains — which structures, which open spaces and whether each is walked or only seen, and what share each takes — and the plot's size follows from that plan. Inside the plot the author builds the planned contents freely, in any outline. A plot of one structure and no ground is legitimate.
+
+**[ruling]** The scale is the player building community's, never the real world's and never the game's own villages. The game's village houses are too small to hold story content and are at most a lower bound. Real-world lot planning says which parts belong together and how they are arranged, and never sets a size: Minecraft differs too much from reality. The primary source for the size, the style and the composition of a plot and its structures is what recognised builders and build teams make and teach.
+
+### 8.1 The community's rules of scale
+
+**[cited]** The body is 0.6 wide and 1.8 tall, its eye at 1.62, its jump about 1.25 blocks. (Player.) A ceiling of two blocks stops a jump and reads as cramped; three to four feels spacious; many builders hold four to five as a small room's height; a dwelling's main room runs five to six, a hall ten to twelve, with the other rooms of the same building at four to five; hallways are two wide in a small house and three or four in a large one; a window one or two blocks over the floor is easy to see out of. (Adding beauty.) A two-block ceiling is the applicant's mistake named first; rooms are planned by purpose before any wall stands, a large open room is divided, and a yard is a square space behind the house where the plot allows. (WesterosCraft, Interiors.) The footprint is laid out in wool and judged from outside for scale and from inside for its rooms before anything is built; a plain square reads flat, and an L, a T or an offset is added only where the added section has a function. (WesterosCraft, Layout.) An applicant to a build team is set a farmhouse first, then a trade building named by region and profession — a forge, a homestead — and later a whole farmstead, and is judged on whether the interior suits the profession and the class. (WesterosCraft, Apply.) Depth before anything: overhanging eaves, a recessed door, steps at the base, panes for glass, and then the garden and the ground round the house — ponds, a patch of farm, flowers of mixed height. (Make Your Houses Better, after Avomance.) A village's buildings each connect to the street and not to each other; a town is denser than a village and groups like services; a settlement reads as genuine with a market or small trade shops. (Settlement guide.) The game's own villagers need a hut of 5 × 5 and a trading hall three high. (Creating a village.)
+
+### 8.2 The community's builds, measured
+
+**[measured]** Fifty-eight documented community builds, read from their listings' stated bounding boxes (width × depth × height in blocks, roof and eaves included), grouped by what they are. Quartiles are over the group; the play space is estimated as the bounding footprint less one cell of wall and one of eave on each side, `(w − 3) × (d − 3)`, and is stated as that estimate.
+
+| Group | n | Bounding footprint, cells (q1 · median · q3) | Sides, blocks (min · median · max) | Estimated play space, cells (q1 · median · q3) | Height to the ridge, blocks (median, range) |
+|---|---|---|---|---|---|
+| dwellings (medieval, wooden, stone, starter) | 25 | 143 · 208 · 322 | 5 · 14 · 29 | 80 · 130 · 221 | 16, 7–32 |
+| inns, taverns, a bakery, a bar, a saloon | 11 | 202 · 342 · 440 | 11 · 19 · 31 | 124 · 240 · 323 | 13, 7–26 |
+| barns, stables, a pigsty, a store | 6 | 160 · 266 · 385 | 8 · 15.5 · 28 | 92 · 176 · 272 | 10.5, 6–23 |
+| a shed, a draw-well, a watchtower | 3 | 36 · 36 · 68 | 5 · 6.5 · 11 | 8 · 9 · 28 | 8, 5–16 |
+| chapels and churches | 5 | 285 · 300 · 612 | 12 · 19.5 · 34 | 192 · 198 · 465 | 17, 14–22 |
+| street pieces | 4 | 105 · 112 · 128 | 7 · 12.5 · 15 | — | — |
+
+A town gate in the same corpus stands 30 × 30 and 34 high; a boat dock 21 × 19 on a 5-high deck; a forest road piece 14 × 14. The street pieces are 7 to 10 wide across the way with their verges and 15 long, so the paved way itself is narrower than its piece. The smallest dwelling in the corpus, a tiny stone house of 5 × 6, and the largest, a Nordic house of 29 × 27, bracket the group; the middle half of dwellings stands between about 12 × 12 and 18 × 18 bounding.
+
+**[measured, lower bound]** The game's own plains village templates declare footprints of 7 × 7 to 13 × 11 for houses and 9 × 8 to 15 × 7 for trade sites, path and verge included (the `size` tag in the pinned jar). Those are the floor under the community's band and are not a target: a 7 × 7 house holds a bed and a table and no story.
+
+### 8.3 How a program sets a size
+
+**[cited]** A building's area is programmed before it is drawn: the spaces it needs are listed with an area each, the areas are summed, and a multiplier for the ground between them grosses the sum to the whole; one multiplier for every project is the recorded misconception, because the share the ground between takes depends on how open or how enclosed the plan is. (WBDG.) **[authored]** In the game the same order holds, with the community's numbers for the areas: list the parts, size each from §8.2, add the walls and the ways, and the plot is the sum.
+
+### 8.4 How real holdings are composed — arrangement only, never a size **[cited]**
+
+A setback keeps a structure off the line and the street for privacy, access and uniform appearance (Setback). A lot holds its main building toward the street and its accessory building — garage, shed — in the rear yard only, off the side and rear lines, never between the house and the street, and smaller than the main building (Montgomery County; Toronto). A trade plot is narrow at the street and deep into the block: the shop faces the street with its goods out front, the household's rooms lie behind and above, and a small court sits midway for light (Shophouse). A farmyard is the ground beside the barn, fenced by the farm's own buildings, with the animals and a trough in it (Farmyard); farmsteads are courtyard, L, U, linear or dispersed plans, and the house is attached to the working range or detached and set away, often facing away from the yard into its own garden (Shropshire). A shrine precinct is a sequence along its approach — gate, path, basin, lanterns, the hall laypeople enter, and behind it the small closed inner hall in its own fence (Shinto shrine); a close is enclosed ground round the great building with the serving houses at its edge (Cathedral close); a bailey is a palisaded yard holding hall, kitchens, chapel, barracks, stores, stables and workshops under its mound (Motte-and-bailey); a camp is a rectangle with two crossing ways, the headquarters at the crossing, barracks in paired blocks, granaries central and a clear strip inside the rampart (Castra); a quay is a platform with berths and warehouses behind (Wharf). Every figure these records carry — feet, metres, percentages — stays with them; none crosses into the game.
+
+### 8.5 The rule **[authored, from the rulings, the community's rules and the measured builds]**
+
+A plot is planned in this order, and its box is the last thing written:
+
+1. **Name the parts.** Each part is a **structure** — a roofed, walled volume a body may enter — or **ground** — open space under the sky. Each is named by its use in the author's words, and nothing in the engine's surface carries a building type: the kind is the mechanism, the use is the author's.
+2. **Say which parts a body walks** and which are only seen. A work yard, an approach and a shop's front are walked; a garden strip behind a hedge, a closed inner hall and a store nobody enters are seen. The question CLAUDE.md asks of every space — what does the player do in here — is answered per part at the cut, and a part with no answer is cut.
+3. **Give each part its play space in cells**, the cells a body could stand in, exactly as a box's extent is a play space: a structure's interior floor, a ground part's open cells. The bands are the community's middle half (§8.2): a dwelling 80 to 220 cells; a structure a trade is worked or served in — a shop and workroom, an inn, a bakery — 120 to 320; a barn, a stable or a store 90 to 270; a chapel or a hall 190 to 460; a shed, a well-house or a tower foot 8 to 30. A ground part is sized by what is done in it: a front strip two to four cells deep across the frontage; a back yard or work yard about the play space of the structure it serves; a court or a close about as large as the structures that face it together; a camp's clear strip two to three cells inside the wall. Where a part's height is a design fact, state it in courses from the walk plane to the ridge: the corpus puts a dwelling's ridge at 16 (7 to 32), an inn's at 13, a barn's at 10 or 11, a church's at 17, and a storey at four to five with a main room at five to six (§8.1).
+4. **Sum, and add the walls and the ways.** Each structure takes a one-cell ring for its walls and the corpus's eave beyond it; the parts are joined by ground a body walks, at least two cells wide, from the plot's entry to every walked part; a structure stands clear of the plot's line by its ring at least, and further where a side yard or an eave is wanted. The plot's play space is the sum of the parts' cells, the rings and that ground, and no more: a plot whose structures and walked ground cover less than about half of it is oversized, and the remainder is spread between its structures or the plot is cut down. The community's density is a town's, denser than a village's with its buildings meeting the street (§8.1), so a street lot stands at 50 to 80 % built and walked, a trade frontage near 100 % less its court, a farmstead or a close lower because its yard is the point of it.
+5. **Place by the arrangements of §8.4, not by a rule per theme.** The entry side is the front: a structure's door faces it, a trade's front stands at or near the line, a dwelling stands back by a strip of ground. An outbuilding stands to the rear or the side of its main structure, never between it and the entry, at least one cell from it so both read as buildings. A yard that serves a structure is enclosed by it and by the plot's line, so the structure is one side of the yard. A precinct is a sequence along one axis from the gate to the innermost part, the innermost smallest and last. A camp or a close is a wall round a clear strip round its structures.
+6. **Then write the box**: a sky-open place whose extent is the derived play space and whose courses of air clear the tallest structure's ridge; its sides and seams as any place's. A structure that is the whole plot — no ground, the outline the rectangle — may be written as today's lidded box instead, and is then not a plot.
+
+**[authored]** The size test, before the box is written: can a body standing at the plot's entry name every part and say what it would do in each; does any part fall under the community's lower quartile or exceed its upper quartile by half again; is the remainder over a third. A yes to the second or third is the oversized or the undersized plot the rulings refuse.
+
+### 8.6 What the engine measures, and what it does not **[authored]**
+
+The engine holds a plot to its own program and refuses nothing it did not declare (spec-0125). At validation it confirms the plot can hold its parts — the parts' cells fit the play space, the tallest declared height fits the courses of air, and the box is sky-open. At detail it confirms each declared part is built: the place's program names the part each of its spaces and out-of-walk regions belongs to, every declared part is named by at least one, a walked part has a cell the body reaches, and the part's built play space is within a quarter of its declared cells. It states, per plot, the built coverage, the unprogrammed remainder, each structure's setback on each side, the gaps between structures, each structure's storey clearances and ridge height, and the share of each part's columns that stand under a roof; the review reads these against §8.1, §8.2 and §8.5. Whether the parts belong together, whether the yard answers what the player does in it, whether a structure reads as its use from the entry and whether the holding reads as one holding are read from the threshold frame drawn per part, blind, as §7's test is read; none is measured.
+
+## 9. Rule provenance
 
 | rule | § | provenance |
 |---|---|---|
-| one box per building or connector | 2 | **ruling** |
+| one box per plot or connector | 2 | **ruling** |
 | buildings meet the street, not each other; a settlement has a market or trade shops | 2 | **cited** — Settlement guide |
 | a yard is part of a house | 2 | **cited** — WesterosCraft |
 | about twice the play space | 2 | **ruling**; the cells **authored** from the first cut's boxes |
-| 12 × 12 and 14 × 14, bound by the brief | 2 | **authored** |
+| a bigger box per building was the wrong reading; the size follows from the contents | 2 | **ruling** |
+| 50 to 100 cells for a two-room trade structure, one part of its plot | 2 | **authored** |
 | rooms with purposes, placed as a household used them | 3 | **cited** — WesterosCraft, Adding beauty |
 | the working object, occupancy over filler | 3 | **cited** — WesterosCraft |
 | objects combine into what happened here | 3 | **cited** — Worch and Smith |
 | the trade sign over the street | 3 | **cited** — Signage |
 | the four-part trade rule and the threshold test | 3 | **authored**, from the citations and the ruling |
 | gardens, hedges, worn floors, pens | 4 | **cited** — Adding beauty, WesterosCraft |
-| where the outside lives: verge, open-sided yard, stage 7 | 4 | **authored** |
+| where the outside lives: verge, the plot's ground parts, a lone yard as an open-sided place, stage 7 | 4 | **authored** |
 | a landing as wide and as deep as the stair | 5 | **cited** — IBC §1011.6 |
 | the engine judges one approach cell | 5 | **cited** — spec-0120 |
 | the landing's depth and what stands clear of it | 5 | **authored**, from the ruling |
@@ -142,3 +216,15 @@ Reader: the agent writing one place's program at step 9, and the engine work tha
 | a landmark has one unique aspect in its context; judge from the player's position, squint | 7 | **cited** — Image of the City, Imageability, Readability |
 | the four-part style rule: one module, openings follow construction, lines run through, a landmark by its silhouette | 7 | **authored**, from the citations and the ruling |
 | the extended threshold test; what the engine measures and what stays read | 7 | **authored** |
+| a plot is a whole holding, planned with its contents at the cut, sized from them, built free inside | 8 | **ruling** |
+| the scale is the community's; the game's villages are a lower bound; the real world arranges and never sizes | 8 | **ruling** |
+| the body's size; ceilings, room heights, hallways, windows | 8.1 | **cited** — Player, Adding beauty |
+| rooms by purpose, no two-block ceiling, the yard behind the house; the footprint in wool, wings only with a function; what an applicant builds and is judged on | 8.1 | **cited** — WesterosCraft Interiors, Layout, Apply |
+| depth, texture, detail, plants, the garden round the house | 8.1 | **cited** — Make Your Houses Better |
+| buildings meet the street; a town is denser; the villagers' smallest hut | 8.1 | **cited** — Settlement guide, Creating a village |
+| the footprints, sides and heights of 58 community builds by group | 8.2 | **measured** — GrabCraft listings |
+| the game's own template footprints as the floor | 8.2 | **measured, lower bound** — the pinned jar |
+| areas summed from a program and grossed per project | 8.3 | **cited** — WBDG; the game's order **authored** |
+| setbacks; the accessory building behind; the narrow deep trade plot; the farmyard and the farmstead plans; a precinct as a sequence; a close, a bailey, a camp, a quay — arrangement only | 8.4 | **cited** — Setback, Montgomery County, Toronto, Shophouse, Farmyard, Shropshire, Shinto shrine, Cathedral close, Motte-and-bailey, Castra, Wharf |
+| the six-step plot rule, its bands from the community's middle half, and its size test | 8.5 | **authored** |
+| what the engine confirms and states, and what stays read | 8.6 | **authored** |
