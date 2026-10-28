@@ -325,3 +325,55 @@ fn air_over_the_annex_door_unframes_it_and_moves_the_line() {
         .clone();
     assert_eq!(h["present"], false, "{framing}");
 }
+
+/// **spec-0124 criteria 4, 10 and 11, on the point as built**: the centre
+/// door is a door-shut seam whose key, anchored on the seam, stands its box
+/// over the door's lower cell at load; the key's completion releases the door
+/// — the box comes down and no `fill` is written — where the west door, a bar
+/// in a seam of the same wall, is cleared by a `fill` to air; the device
+/// ledger and the four binding lines state what they read.
+#[test]
+fn the_door_shut_seam_is_released_where_a_bar_is_cleared() {
+    let p = point("device");
+    let f = p.out.join("datapack/data/gallery/function");
+    let read = |name: &str| std::fs::read_to_string(f.join(name)).unwrap();
+    let setup = read("setup_finish.mcfunction");
+    assert!(
+        setup.lines().any(
+            |l| l.contains("summon minecraft:interaction 30.5 63.99 20.5")
+                && l.contains("\"dw_i_unlock_the_centre_door\"")
+        ),
+        "the key's box stands over the door's lower cell at load"
+    );
+    let key = read("complete_o_unlock_the_centre_door.mcfunction");
+    assert!(
+        key.lines()
+            .any(|l| l == "kill @e[tag=dw_i_unlock_the_centre_door]"),
+        "the released door's box comes down: {key}"
+    );
+    assert!(
+        !key.lines().any(|l| l.starts_with("fill ")),
+        "a released door is not cleared: {key}"
+    );
+    let bar = read("complete_q_near_hall.mcfunction");
+    assert!(
+        bar.lines()
+            .any(|l| l.starts_with("fill 23 64 20 23 65 20 minecraft:air replace ")),
+        "the west door's bar is cleared: {bar}"
+    );
+    let ledger = read_json(&p.out.join("validation/devices.json"));
+    assert_eq!(ledger["way_blocks"]["door_seams"], 1, "{ledger}");
+    assert_eq!(ledger["way_blocks"]["way_blocks"], 1, "{ledger}");
+    assert_eq!(ledger["way_blocks"]["refused"], 0, "{ledger}");
+    assert_eq!(ledger["keys"]["keys"], 1, "{ledger}");
+    assert_eq!(ledger["keys"]["own_release"], 1, "{ledger}");
+    assert_eq!(ledger["doors"]["refused"], 0, "{ledger}");
+    for line in [
+        "device binding (DW1069): 1 way-block(s) among 8 pressable(s); 1 door-shut seam(s) among 8 gated connection(s); 0 refused",
+        "key binding (DW1071): 1 key objective(s) among 8; 1 write(s) judged, 0 in sight, 0 shown by a shot, 1 the key's own door released; 0 refused",
+        "happening binding (DW1070): 9 opens/seals happening(s) among 18; 0 refused",
+        "DW1072 binding: 4 door(s) and gate(s) in the assembled world (3 in bound pieces, the census's N); 0 declared decorative; 4 judged over 5 configuration(s); 0 refused",
+    ] {
+        assert!(p.stderr.contains(line), "`{line}` in:\n{}", p.stderr);
+    }
+}

@@ -617,11 +617,26 @@ pub(super) fn prove_world(
                 // verdict, zeroes included, and the ledger is written beside
                 // them.
                 {
+                    // The doors' world: a story gate's bar stands open, the way
+                    // the story opens it (whether that way is shut when met is
+                    // `DW1011`'s question, not a door's); a bar that is itself
+                    // a door or a gate stands shut and is judged as one.
+                    let door_seals: Vec<crate::compiler::assembled::GateSeal> = assembled
+                        .gate_seals
+                        .iter()
+                        .filter(|s| {
+                            crate::compiler::plan::gate_region_block_any(&plan.anchors, &s.anchor)
+                                .is_some_and(|(_, _, b)| {
+                                    crate::compiler::nav::device::door_or_gate(&b)
+                                })
+                        })
+                        .cloned()
+                        .collect();
                     let shipped = crate::compiler::assembled::shipped_blocks(
                         plan,
                         &assembled.blocks,
                         &relight.placements,
-                        &assembled.gate_seals,
+                        &door_seals,
                         None,
                     );
                     let (ways, mut refused) =

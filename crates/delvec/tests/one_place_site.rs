@@ -98,6 +98,11 @@ fn campaign(dir: &Path) {
             .as_array_mut()
             .unwrap();
         ask.retain(|e| e["type"] != "open-gate");
+        // With no gate left to open, the asking opens nothing (`DW1070`).
+        q["objectives"][0]["happening"] = serde_json::json!({
+            "subject": "npc/keeper", "verb": "learns",
+            "text": "The keeper hears the asking and tells the way on."
+        });
     });
 }
 
@@ -250,7 +255,9 @@ fn a_one_box_site_is_route_a() {
         .output()
         .unwrap();
     let err = String::from_utf8_lossy(&out.stderr);
-    assert_eq!(out.status.code(), Some(0), "{err}");
+    // A refusal is printed on stdout; the binding lines on stderr.
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(out.status.code(), Some(0), "{said}{err}");
     assert!(
         err.contains("blockout battery binding: 0 seam(s) proven"),
         "{err}"

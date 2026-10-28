@@ -362,7 +362,7 @@ fn with_open(name: &str, open: bool) -> String {
 }
 
 /// Whether a block is a door or a fence gate — what §6.5 judges.
-fn door_or_gate(name: &str) -> bool {
+pub fn door_or_gate(name: &str) -> bool {
     let b = bare_id(name);
     b.ends_with("_door") || b.ends_with("_fence_gate")
 }
