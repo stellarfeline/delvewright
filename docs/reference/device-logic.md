@@ -73,7 +73,8 @@ for their rules only (ADR-0013); each is listed under *Sources* with what was ta
   is judged by the body's reach graph — shut, the area behind it cannot be reached through
   it; open, it can — never by a door-local rule. The one exemption is an explicit
   declaration that the door or gate is decorative, printed and counted, and secured by the
-  block being one no hand opens; an undeclared door that closes nothing is refused, and
+  engine proving no player can touch it from any rest state the reach graph admits (§6), or by
+  the block being one no hand opens; an undeclared door that closes nothing is refused, and
   L3's told-once allowance for scenery that looks usable does not reach doors.
 - **[authored]** The same holds for every block the game opens by hand (door, trapdoor,
   fence gate): its press is an answer in itself (spec-0117, *release*), so a shut one promises
@@ -122,12 +123,47 @@ for their rules only (ADR-0013); each is listed under *Sources* with what was ta
 - **R4 [ruling, §2]** Every door and fence gate in the built world closes an opening, by the
   reach graph: shut, the area behind it cannot be reached through it; open, it can. A door
   that closes nothing is not placed, or wall is joined to both sides of it, or it is declared
-  decorative — a declaration only a door no hand opens may carry.
+  decorative — a declaration that holds only for a door no player can touch from any rest
+  state (§6), or that no hand opens.
 - **R5 [authored, on §4]** A caption names the acts the button performs and none it does not.
 - **R6 [cited, §3]** A remote effect that is neither in sight nor shown is refused; a
   deliberate deception of a learned rule is a declared exception, never a default.
 
+## 6. The reach of a hand — the read site
+
+What the pinned game lets a player touch, read from the jar so the decorative exemption
+(spec-0124 §5.4) measures as the server does.
+
+- **The read site.** The server jar `versions.toml [minecraft].server_jar_url`, sha256
+  `f83b8e093865806f931c7e34aae41b177d4c076335263dd124c75d6d65dd1726` (the pin), its inner
+  `META-INF/versions/1.21.11/server-1.21.11.jar`; the ProGuard mappings piston-meta publishes
+  for the version, `downloads.server_mappings`, sha1 `5621e9253f05fd57872bbe7f8ddf5f9a7d525955`,
+  giving every member its Mojang name; `javap -p -c -constants` from a JDK 17 over `Player`,
+  `Attributes` and `ServerGamePacketListenerImpl`. No obfuscated name is written here.
+- **[cited]** (`Attributes`, static initialiser) `block_interaction_range` is a ranged attribute
+  with default `4.5`, minimum `0.0`, maximum `64.0`, marked syncable; `entity_interaction_range`
+  stands beside it.
+- **[cited]** (`Player.createAttributes`) the player's attribute set puts `block_interaction_range`
+  at `4.5` and `entity_interaction_range` at `3.0`; `Player.blockInteractionRange()` reads the
+  attribute's current value.
+- **[cited]** (`Player.isWithinBlockInteractionRange(BlockPos, double padding)`) the predicate is
+  `d = blockInteractionRange() + padding; new AABB(pos).distanceToSqr(getEyePosition()) < d·d`.
+  The distance is from the **eye position** to the **cell's full box** (`new AABB(pos)`), not to
+  the block's outline shape: a thin leaf in a cell is as near as its cell is. Strict `<`.
+- **[cited]** (`ServerGamePacketListenerImpl`, both call sites — the use-item-on handler and the
+  attack handler) the server calls it with `padding = 1.0` (`dconst_1`): a tolerance for a client
+  whose position the server has not yet caught up with, not a reach a player has.
+- **[authored]** The engine therefore judges a door touchable from a rest cell when the least
+  distance from the eye box over that cell to the door cell's box is `< 4.5`, with no padding: a
+  vanilla client cannot send a use beyond the attribute, and the engine designs for the player,
+  not for a modified client. The standing eye is `metrics::PLAYER_EYE_HEIGHT` (`1.62`); the
+  crouched eye height is owed by the implementing round (spec-0124, recorded debts). A jump
+  raises the eye and is not a rest state (spec-0124 §12).
+
 ## Sources
+
+- The pinned server jar and its Mojang mappings, as §6 names them — read with `javap`, nothing
+  copied.
 
 - Joris Dormans, *Adventures in Level Design: Generating Missions and Spaces for Action
   Adventure Games*, PCGames 2010 (ACM, copyright the author/ACM) — read for its rules,
