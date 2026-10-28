@@ -490,7 +490,7 @@
             "block": "minecraft:lantern[hanging=true]",
             "happening": {
               "text": "a second lamp is lit in bay 0 of the long gallery",
-              "verb": "opens"
+              "verb": "gains"
             },
             "type": "set-block",
             "when": {
@@ -508,7 +508,7 @@
             "block": "minecraft:lantern[hanging=true]",
             "happening": {
               "text": "a second lamp is lit in bay 1 of the long gallery",
-              "verb": "opens"
+              "verb": "gains"
             },
             "type": "set-block",
             "when": {
@@ -526,7 +526,7 @@
             "block": "minecraft:lantern[hanging=true]",
             "happening": {
               "text": "a second lamp is lit in bay 2 of the long gallery",
-              "verb": "opens"
+              "verb": "gains"
             },
             "type": "set-block",
             "when": {
@@ -544,7 +544,7 @@
             "block": "minecraft:lantern[hanging=true]",
             "happening": {
               "text": "a second lamp is lit in bay 3 of the long gallery",
-              "verb": "opens"
+              "verb": "gains"
             },
             "type": "set-block",
             "when": {
@@ -924,7 +924,7 @@
             "happening": {
               "subject": "anchor/pedestal",
               "text": "The case opens under their hand.",
-              "verb": "opens"
+              "verb": "gains"
             },
             "highlight": {
               "within": 6
@@ -1271,7 +1271,7 @@
               "happening": {
                 "subject": "anchor/lid",
                 "text": "The lid over the terrace pit drops away, and the pit's bottom starts to kill.",
-                "verb": "opens"
+                "verb": "loses"
               },
               "region": {
                 "anchor": "anchor/lid",
@@ -3531,17 +3531,17 @@
             "anchor": "anchor/bay-door",
             "announcement": "shown",
             "answers": {
-              "not_yet": "The bay door is barred from within."
+              "not_yet": "The bay lever is locked from within."
             },
             "happening": {
               "subject": "anchor/bay-door",
-              "text": "The bar lifts off the bay door.",
-              "verb": "opens"
+              "text": "The bay lever is thrown.",
+              "verb": "learns"
             },
-            "hint": "The bay door stands on its own in the far hall's corner past the bay; the knocker is on the floor beside the wall.",
+            "hint": "The bay lever stands in the far hall's corner past the bay; the knocker is on the floor beside the wall.",
             "id": "obj/open-the-bay-door",
             "prop": {
-              "block": "minecraft:spruce_door[facing=north,half=lower,hinge=left,open=false]"
+              "block": "minecraft:lever[face=floor,facing=north,powered=false]"
             },
             "release": true,
             "requires_state": [
@@ -3551,7 +3551,7 @@
                 "value": 2
               }
             ],
-            "title": "Open the bay door",
+            "title": "Pull the bay lever",
             "type": "interact"
           },
           {
@@ -3567,7 +3567,7 @@
             "happening": {
               "subject": "anchor/reliquary-chest",
               "text": "The reliquary chest opens on nothing.",
-              "verb": "opens"
+              "verb": "learns"
             },
             "hint": "The reliquary chest sits against the far hall's wall, by the bay door.",
             "id": "obj/lift-the-lid",

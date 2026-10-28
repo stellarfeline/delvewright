@@ -72,7 +72,7 @@
                 "happening": {
                   "subject": "npc/curator",
                   "text": "She lets them past the lectern.",
-                  "verb": "opens"
+                  "verb": "learns"
                 },
                 "label": "Read the label.",
                 "requires_state": [
