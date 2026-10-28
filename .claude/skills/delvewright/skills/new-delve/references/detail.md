@@ -256,6 +256,20 @@ is handed none. A declared roof's `clipped` runs and a neighbour's facade cells
 are voids: whatever the program paints there is replaced after expansion, so
 nothing put there survives and nothing may depend on it.
 
+**A plot's parts are named on the contract.** When the place's node declares
+what it holds (the handout's *What this plot holds*), the program names each
+part on the spaces and out-of-walk regions that are it, with `"part":
+"part/<id>"` on the `spaces` or `no_body` entry, at program version `1.13.0`;
+several spaces may name one part (two rooms of one house), and a space naming
+none is the plot's unprogrammed ground. The check prints `parts:
+B of K bound, W of R walked` and refuses four shapes, one line each:
+*unbuilt* — a declared part nothing names; *undeclared* — a part the node does
+not declare, or any `part` on a place that is not a plot; *not walked* — a walked
+part none of whose columns holds a cell the body reaches from the entry; *out of
+size* — a part whose claimed cells are under three quarters or over five
+quarters of its declared cells. How a holding is sized and arranged is
+`$DELVEWRIGHT_ENGINE/docs/reference/place-craft.md` §8.
+
 **A place reads as what it is when four things hold at once**: the working
 object stands in its working position, not stored; the rooms follow the work —
 the room a visitor enters is not the room the work is done in, and a door

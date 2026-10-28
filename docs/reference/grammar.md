@@ -188,6 +188,7 @@ source is `crates/delvec/src/grammar/version.rs` (`SUPPORTED_PROGRAM_VERSIONS`,
 | `1.10.0` | a climb inside one piece — the `climb` class of a contract edge, a way a body climbs on a ladder or a vine between two spaces | yes |
 | `1.11.0` | a library piece placed by name (spec-0106) | reserved |
 | `1.12.0` | an item holder at a mark — `holder` on a `mark`, the item frame or armour stand the export writes into the piece's `entities` | yes |
+| `1.13.0` | the plot part a contract region is — `part` on a `spaces` or `no_body` entry (spec-0125) | yes |
 
 A number names exactly one surface, in every engine build that knows the number;
 otherwise two engines both call themselves `1.1.0`, disagree about what a
@@ -969,9 +970,24 @@ the third use ends up with no surface at all — and it is also what makes the
 | Field | Meaning |
 |---|---|
 | `entry` | the declared space a body enters at |
-| `spaces` | name → `{envelope}`; `enclosed`, `open_top` or `open` |
-| `no_body` | name → `{reason}`; standable cells deliberately outside the walk, with the author's reason in their own words |
-| `edges` | `{a, b, class, …}` in declaration order; an endpoint is a declared space or the reserved name `exterior` |
+| `spaces` | name → `{envelope, part?}`; `enclosed`, `open_top` or `open` |
+| `no_body` | name → `{reason, part?}`; standable cells deliberately outside the walk, with the author's reason in their own words |
+| `edges` | `{a, b, class, …}` in declaration order; an endpoint is a declared space or the reserved name `exterior`; an edge carries no `part`, and the edge's closed schema refuses one where the program is parsed |
+
+**`part` (`1.13.0`) names the plot part a space or an out-of-walk region is**
+(spec-0125 §5.1): a `part/<kebab>` the place's layout-graph node declares in
+`holds[]`. Several spaces may name one part — two rooms of one house, a ground
+floor and the storey over it — and a space naming none is the plot's
+unprogrammed ground, refused by nothing. Spelled any other way it is a
+`Program::validate` error; written in a document declaring an earlier version it
+is a fenced construct. `delvec detail` hands the node's parts into the expansion
+(`ExpandOptions::parts`), binds them from the contract — a part's built play space
+is the union of the xz projections of the regions naming it, in columns — and
+refuses with `DW1074` a declared part nothing names, a part the node does not
+declare (or any `part` on a piece whose node declares none), a walked part none of
+whose columns holds a cell the piece's own flood reaches (§4d), and a part whose
+built play space is outside three quarters to five quarters of its declared
+`cells` (`docs/reference/delvec/compiler/plot.md`).
 | `no_body_majority_ack` | the author's acknowledgement that the piece is mostly out-of-walk |
 
 **Edge classes carry exactly the fields they mean**, so a bar on a walk or a rise
@@ -1202,6 +1218,8 @@ Two mechanisms answer it, and both are enforced by
 | `ir::Mark.index` | `1.0.0` | — |
 | `ir::Mark.role` | `1.8.0` | `ANCHOR_ROLE_SINCE` |
 | `ir::Mark.holder` | `1.12.0` | `HOLDER_SINCE` |
+| `ir::SpaceDecl.part` | `1.13.0` | `PART_SINCE` |
+| `ir::NoBodyDecl.part` | `1.13.0` | `PART_SINCE` |
 | `ir::HolderMark.rotation` | `1.12.0` | `via ir::Mark.holder` |
 | `ir::HolderMark.pose` | `1.12.0` | `via ir::Mark.holder` |
 | `ir::HolderMark.small` | `1.12.0` | `via ir::Mark.holder` |

@@ -450,3 +450,39 @@ def test_a_neighbour_s_open_side_toward_the_place_is_named(rig: Rig):
     nb = nb[: nb.find("\n### ") if "\n### " in nb else len(nb)]
     assert "its side toward you is open" in nb
     assert text.count("its side toward you is open") == 1, "only the yard declares one"
+
+
+def test_a_plot_is_handed_what_it_holds_its_binding_rule_and_its_shapes(rig: Rig):
+    out = rig.run(place="node/yard")
+    assert out.returncode == 0, out.stderr
+    text = rig.handouts("yard")[0].read_text(encoding="utf-8")
+    body = section(text, "What this plot holds")
+    # After what the place is and what it is built from, before its design rows.
+    assert text.index("## What this place is") < text.index("## What this plot holds") < text.index("## This place's rows")
+    assert "This place is a plot: it holds the parts below and the ground between them; build them in any outline, inside the frame." in body
+    assert "3 part(s) over 64 cell(s) of play space:" in body
+    assert "- `part/court` — ground: the court a body crosses from the hall; 50 cell(s), 78 % of the play space; walked" in body
+    assert "- `part/shed` — structure: a tool shed in the court's corner; 6 cell(s), 9 % of the play space; height 3 course(s) to the ridge; walked" in body
+    assert "- `part/bed` — ground: a herb bed nobody walks; 4 cell(s), 6 % of the play space; seen, never entered" in body
+    assert "Name each part on the contract spaces and out-of-walk regions that are it, with `part`; every part is named; a walked part has a cell the body reaches; a part's claimed cells stay within a quarter of its declared." in body
+    for line in (
+        "- the entry side is the front;",
+        "- an outbuilding stands behind or beside, one cell off;",
+        "- a yard is enclosed by the structure it serves;",
+        "- a precinct is a sequence from the gate;",
+    ):
+        assert line in body, line
+    frame = section(text, "The frame, read before anything is drawn")
+    assert "- plot: The box is sky-open, and the roof of every structure in it is yours, within the stated courses of air." in frame
+    assert "parts 3" in out.stderr
+
+
+def test_a_place_that_is_not_a_plot_has_no_plot_section(rig: Rig):
+    out = rig.run(place="node/hall")
+    assert out.returncode == 0, out.stderr
+    text = rig.handouts("hall")[0].read_text(encoding="utf-8")
+    assert "## What this plot holds" not in text
+    assert "- plot: The box is sky-open" not in text
+    assert "parts 0" in out.stderr
+    # The hall's neighbour summary states the yard's parts by use.
+    assert "- it is a plot holding: the court a body crosses from the hall (ground); a tool shed in the court's corner (structure); a herb bed nobody walks (ground)" in text

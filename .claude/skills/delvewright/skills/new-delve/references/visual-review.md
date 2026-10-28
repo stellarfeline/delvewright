@@ -39,8 +39,10 @@ what you judge is the room it arrives in.
 one per door of every place — the eye on the doorway's sill at eye height,
 looking into the place — and one per open side, the eye in the cell outside
 it; the plan's `threshold_shots` and the build's `threshold
-shots: T over P place(s), D door(s), O open side(s)` line say how many. Draw
-them without `--labels`: a label would supply what the picture does not.
+shots: T over P place(s), D door(s), O open side(s), Q part(s)` line say how
+many. A plot draws one more per part from each of its crossings, the eye on the
+plot's side of the crossing and aimed at the part. Draw them without
+`--labels`: a label would supply what the picture does not.
 
 **Write three lines under each frame before you open its index entry**:
 
@@ -59,6 +61,12 @@ them without `--labels`: a label would supply what the picture does not.
    what stands in it, in one word: *fountain*, *well*, *statue*, *tree*,
    *nothing*. Read the entry's `water` beside it — how much, and its highest
    and lowest course against the walk plane.
+4. **The holding** — on a part frame (the shot carries `part`), what the part is
+   for, in one phrase, and whether it belongs with what else is in frame: *a
+   shed behind a house*; *a store beside a forge yard*; *a hall and a hut that
+   have nothing to do with each other*. Read the plot's entry in
+   `validation/plot-program.json` beside it — each part's declared and built
+   cells, the setbacks, the gaps, the coverage and the remainder.
 
 Then open the entry and read `expect` — *the place reads as its intent: …* —
 against the three lines. **A trade that cannot be named or is named wrong, a
@@ -68,7 +76,12 @@ finding written into the node's `note` so the handout carries it with the four
 style lines, and the census entry for that piece quoted beside the finding, so
 the author sees the doors and their framing, the heads, the kinds and the water
 you saw. State the read as one line in the review:
-`threshold read: T frame(s), trade misses M, front misses F, thing misses N`.
+`threshold read: T frame(s), trade misses M, front misses F, thing misses N,
+holding misses H`. **A use that cannot be named, or a part that does not belong,
+is a finding at the plot's program** — the plan's parts and the piece together —
+repaired by a fresh author with the finding and
+`$DELVEWRIGHT_ENGINE/docs/reference/place-craft.md` §8.5 in its handout, the
+plot's `plot-program.json` entry quoted beside the finding.
 
 ## Read every frame against the approved image
 

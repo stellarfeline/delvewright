@@ -64,6 +64,28 @@
         ]
       },
       {
+        "holds": [
+          {
+            "cells": 50,
+            "id": "part/court",
+            "kind": "ground",
+            "use": "the court a body crosses from the hall"
+          },
+          {
+            "cells": 6,
+            "height": 3,
+            "id": "part/shed",
+            "kind": "structure",
+            "use": "a tool shed in the court's corner"
+          },
+          {
+            "cells": 4,
+            "id": "part/bed",
+            "kind": "ground",
+            "reached": false,
+            "use": "a herb bed nobody walks"
+          }
+        ],
         "id": "node/yard",
         "intent": "goal-chamber",
         "note": "A walled yard open to the sky, paved in stone, entered through the hall's barred arch on its north side. The whole ends here."

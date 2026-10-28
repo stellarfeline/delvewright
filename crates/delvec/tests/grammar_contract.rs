@@ -1630,3 +1630,102 @@ fn a_climb_is_refused_below_its_version_and_the_same_edge_as_a_stair_is_not() {
     }
     assert!(without.validate().is_ok(), "{:?}", without.validate());
 }
+
+// ---------------------------------------------------------------------------
+// spec-0125 §5.1 — `part` on a space and an out-of-walk region
+// ---------------------------------------------------------------------------
+
+/// The library's spatial contract with its `near` space and its first
+/// out-of-walk region each naming a plot part.
+fn with_parts(program: Program) -> Program {
+    let mut p = program;
+    let c = p
+        .contract
+        .as_mut()
+        .expect("the library program carries a contract");
+    c.spaces.get_mut("near").expect("near").part = Some("part/house".to_string());
+    let shelf = c
+        .no_body
+        .keys()
+        .next()
+        .expect("an out-of-walk region")
+        .clone();
+    c.no_body.get_mut(&shelf).expect("the region").part = Some("part/bed".to_string());
+    p
+}
+
+/// `part` is accepted on a space and on an out-of-walk region at the latest
+/// version, and the export writes it into the piece's contract metadata on
+/// exactly the regions that name it.
+#[test]
+fn a_part_on_a_space_and_a_region_is_accepted_and_exported() {
+    let program = with_parts(spatial_contract().at_version(LATEST_PROGRAM_VERSION));
+    assert!(program.validate().is_ok(), "{:?}", program.validate());
+    let e = export_prefab(&program, PIECE, &ExpandOptions::seeded(1), "piece").unwrap();
+    let c = e.metadata.spatial_contract.as_ref().unwrap();
+    assert_eq!(c.spaces["near"].part.as_deref(), Some("part/house"));
+    let named: Vec<&str> = c
+        .spaces
+        .values()
+        .filter_map(|s| s.part.as_deref())
+        .chain(c.no_body.values().filter_map(|r| r.part.as_deref()))
+        .collect();
+    assert_eq!(named, ["part/house", "part/bed"]);
+    // A piece that names no part writes no key, byte for byte as before.
+    let plain = export_prefab(
+        &spatial_contract(),
+        PIECE,
+        &ExpandOptions::seeded(1),
+        "piece",
+    )
+    .unwrap();
+    let json = serde_json::to_string(plain.metadata.spatial_contract.as_ref().unwrap()).unwrap();
+    assert!(!json.contains("\"part\""), "{json}");
+}
+
+/// Below its version `part` is a fenced construct; a name that is not
+/// `part/<kebab>` is refused by name.
+#[test]
+fn a_part_is_fenced_below_its_version_and_spelled_part_kebab() {
+    match with_parts(spatial_contract())
+        .at_version("1.12.0")
+        .validate()
+    {
+        Err(ProgramError::FencedConstruct {
+            construct, since, ..
+        }) => {
+            assert!(construct.contains("part"), "{construct}");
+            assert_eq!(since, delvec::grammar::version::PART_SINCE);
+            assert_eq!(since, "1.13.0");
+        }
+        other => panic!("expected a fenced-construct refusal, got {other:?}"),
+    }
+    let mut p = spatial_contract().at_version(LATEST_PROGRAM_VERSION);
+    p.contract
+        .as_mut()
+        .unwrap()
+        .spaces
+        .get_mut("near")
+        .unwrap()
+        .part = Some("house".into());
+    match p.validate() {
+        Err(e @ ProgramError::BadPartName { .. }) => {
+            assert!(e.to_string().contains("`part/<kebab>`"), "{e}");
+        }
+        other => panic!("expected a bad part name, got {other:?}"),
+    }
+}
+
+/// `part` on an edge is not a document this engine reads: the edge's closed
+/// schema refuses the key where the program is parsed, naming it.
+#[test]
+fn a_part_on_an_edge_is_refused() {
+    let program = spatial_contract().at_version(LATEST_PROGRAM_VERSION);
+    let mut v = serde_json::to_value(&program).unwrap();
+    v["contract"]["edges"][0]["part"] = serde_json::json!("part/house");
+    let got = serde_json::from_value::<Program>(v);
+    let err = got
+        .expect_err("a part on an edge must not parse")
+        .to_string();
+    assert!(err.contains("part"), "{err}");
+}

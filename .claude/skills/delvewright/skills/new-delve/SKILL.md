@@ -311,6 +311,9 @@ Before the brief is written, find the nearest reference work for the kind of map
 this is (a giant, an organic interior, a large single box, several levels
 joined): `references/reference-works.md`.
 Every destination is built to read as what it is: `docs/reference/game-writing.md` L1.
+A plot is planned with what it holds before its box is written — its structures
+and open ground, which are walked, each part's play space in cells — and its box
+is sized from them (`references/placement.md`).
 
 ## 3. The story documents — `npcs`, `classes`, `quest-plan`
 
@@ -422,7 +425,7 @@ skip it and the campaign is not verified, however green the ladder is.
 
 **Needs**: step 10 green. **Produces**: your judgement of the POV sequence in
 route order, read against `campaigns/<id>/design/concept/`, scene by scene.
-Yours to do, not a checklist to hand off: judging a frame is the whole task. `delvec --prefabs "$DELVEWRIGHT_PREFABS" frames` draws the whole set from the worlds the build wrote; quote its first line. Then the threshold frames, blind: three lines under each — the trade, the front, the thing — with the place's `validation/piece-census.json` entry beside it, and the `threshold read:` line. **Read**: `references/visual-review.md`. **A POV frame that is the wrong picture** is a camera question,
+Yours to do, not a checklist to hand off: judging a frame is the whole task. `delvec --prefabs "$DELVEWRIGHT_PREFABS" frames` draws the whole set from the worlds the build wrote; quote its first line. Then the threshold frames, blind: three lines under each — the trade, the front, the thing — with the place's `validation/piece-census.json` entry beside it, a fourth on each part frame — the holding — with the plot's `validation/plot-program.json` entry beside it, and the `threshold read:` line. **Read**: `references/visual-review.md`. **A POV frame that is the wrong picture** is a camera question,
 not a render one: place that one by hand in the running game
 (`references/tools-by-symptom.md`, *a render camera nobody is satisfied with*).
 

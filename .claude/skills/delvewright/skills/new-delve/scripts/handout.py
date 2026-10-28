@@ -104,6 +104,27 @@ FRAME_SENTENCE = (
     "your open side stands no wall; build the frame the wall would have been one cell inside the ring, "
     "and stand what you open there in it"
 )
+# The plot section (spec-0125 §6.1): fixed text, the shapes from
+# `docs/reference/place-craft.md` §8.5 step 5.
+PLOT_RULING = (
+    "this place is a plot: it holds the parts below and the ground between them; "
+    "build them in any outline, inside the frame"
+)
+PLOT_BINDING = (
+    "Name each part on the contract spaces and out-of-walk regions that are it, with `part`; "
+    "every part is named; a walked part has a cell the body reaches; "
+    "a part's claimed cells stay within a quarter of its declared."
+)
+PLOT_SHAPES = (
+    "the entry side is the front",
+    "an outbuilding stands behind or beside, one cell off",
+    "a yard is enclosed by the structure it serves",
+    "a precinct is a sequence from the gate",
+)
+PLOT_FRAME = (
+    "The box is sky-open, and the roof of every structure in it is yours, "
+    "within the stated courses of air."
+)
 IDEAS_ONLY = "Looked at, never copied: an unlicensed or non-commercial source is ideas only."
 
 REFERENCES_DIR = pathlib.Path(".out") / "references"
@@ -341,6 +362,11 @@ def neighbour_summary(
         if node.get("reached") is False:
             what += " — scenery, never entered"
         out.append(f"- what it is: {what}")
+        if node.get("holds"):
+            out.append(
+                "- it is a plot holding: "
+                + "; ".join(f"{p.get('use', '')} ({p.get('kind')})" for p in node["holds"])
+            )
         floor = f"its walk plane is {relative_plane(mine_y, nb['floor'])} (world y {nb['floor']})"
         if theirs:
             floor += f"; its frame is {theirs['extent'][0]}×{theirs['extent'][1]}×{theirs['extent'][2]}"
@@ -435,6 +461,37 @@ def place_section(
     return out, len(refs)
 
 
+def plot_section(place: str, graph: dict, plan: dict) -> tuple[list[str], int]:
+    """*What this plot holds* (spec-0125 §6.1), for a node declaring `holds[]`."""
+    node = next((x for x in graph.get("nodes", []) if x.get("id") == place), None) or {}
+    holds = node.get("holds", []) or []
+    if not holds:
+        return [], 0
+    box = next((x for x in plan.get("boxes", []) if x.get("node") == place), None) or {}
+    ext = box.get("extent", [0, 0])
+    area = ext[0] * ext[1] if len(ext) == 2 else 0
+    out = [f"{PLOT_RULING[0].upper() + PLOT_RULING[1:]}.", ""]
+    out.append(f"{len(holds)} part(s) over {area} cell(s) of play space:")
+    out.append("")
+    for p in holds:
+        share = f"{100 * p.get('cells', 0) / area:.0f} %" if area else "—"
+        line = (
+            f"- `{p.get('id')}` — {p.get('kind')}: {p.get('use', '')}; "
+            f"{p.get('cells')} cell(s), {share} of the play space"
+        )
+        if p.get("height") is not None:
+            line += f"; height {p['height']} course(s) to the ridge"
+        line += "; " + ("walked" if p.get("reached", True) else "seen, never entered")
+        out.append(line)
+    out.append("")
+    out.append(PLOT_BINDING)
+    out.append("")
+    out.append("Where the parts stand, as the community arranges a holding:")
+    for s in PLOT_SHAPES:
+        out.append(f"- {s};")
+    return out, len(holds)
+
+
 def render(
     *,
     campaign_dir: pathlib.Path,
@@ -467,6 +524,7 @@ def render(
     rows, n_rows = design_rows(place, a, graph, plan, brief, quests, design, owed)
     nbs, n_nbs = neighbour_summary(a, all_allocations, graph, plan, detailed)
     what, n_refs = place_section(place, graph, plan, campaign_dir)
+    plot, n_parts = plot_section(place, graph, plan)
     ex, ey, ez = a["extent"]
     work = handout_path.parent / "work"
     delvec_p = f'"{delvec}" --prefabs "{prefabs}"'
@@ -529,6 +587,11 @@ def render(
     w("")
     lines.extend(what)
     w("")
+    if plot:
+        w("## What this plot holds")
+        w("")
+        lines.extend(plot)
+        w("")
     w(f"## This place's rows of the design ({n_rows})")
     w("")
     lines.extend(rows or ["- (no row of any document names this place beyond its box)"])
@@ -546,6 +609,8 @@ def render(
         w("- roof: none declared; the place is roofed by a flat lid at its ceiling, which your program draws (the lid is the frame's top course).")
     else:
         w("- roof: none — the place is open to the sky; its declared courses of air above the play space are yours to leave open.")
+    if plot:
+        w(f"- plot: {PLOT_FRAME}")
     w("")
     w(f"### Seams ({len(a.get('seams', []))}) — every one is answered, none is discovered")
     w("")
@@ -632,6 +697,7 @@ def render(
         "refusal lines": 0 if refusal is None else len(refusal.rstrip("\n").split("\n")),
         "open sides": len(a.get("sides", []) or []),
         "references": n_refs,
+        "parts": n_parts,
     }
     return "\n".join(lines) + "\n", counts
 

@@ -743,7 +743,13 @@ An open side the whole hands the place (spec-0123 §5.4, the allocation's
 opening of the space behind them and `contract-coverage` as the place's open
 ground, so a frontage a body crosses is answered with an `exterior` edge whose
 `via` is the side's cells, and a counter front a body does not cross stands its
-counter at the play space's edge, the ring before it open ground. Which spaces
+counter at the play space's edge, the ring before it open ground. A plot's
+parts (spec-0125 §5.1, the node's `holds[]`) are handed the same way
+(`ExpandOptions::parts`, `plot::handed_parts`): after the grammar gates
+`delvec detail` binds them from the expansion's contract (`part` on a space or
+an out-of-walk region, `grammar.md` §2d), judges `DW1074` over the piece's own
+flood and prints `<place>: parts: B of K bound, W of R walked` before its
+verdict; a plot its box cannot hold is refused first (`DW1073`). Which spaces
 are enclosed is the piece's own declaration, and the closure gate
 confirms exactly those; a piece declaring none — a street, a pavilion, a
 covered market — passes, its zero stated in the enumeration with the count of
@@ -848,6 +854,7 @@ includes both.
 | Reachability | Judged under a **monotone closure**: from `entry` holding nothing, mark every edge whose gating the obtained set satisfies, mark every node reachable over those edges respecting one-way direction, add what every reached place grants, iterate to fixpoint. What a place grants is read from the one flag producer table (`delvewright_dsl::producers::flag_producers`), the same rows `compiler::flow` builds its producer model from: an objective's `set-flag` rows at the place its beat is bound to; a quest's `on_complete` rows, and the quest itself, once every one of its beats is somewhere a body can stand; and every ambient row — an environment trigger's effects, a trap's payload or `disarm.sets_flag`, a timed gate's `disarm.sets_flag`, a shortcut's `on_unlock`, a shop offer — at the place its anchor belongs to (`LayoutGraphContent::place_of`: the entry anchor, a place's `anchor/node-…` and stations, a gated connection's `anchor/unlock-…` on its `gating.opens_from` side; an anchor the graph does not spell is credited nowhere). A row whose chain requires flags (`requires_flags` on the trigger or trap, or on an enclosing effect) is credited only once the body holds them, and a reaction bundle (`on_respawn`, `on_caught`, `on_death`, `on_kill`, `on_land`, `on_cross`) is no producer. A `talk-to` beat also grants every flag the spoken-to NPC's dialogue options set, because the conversation happens where the speaker stands. So a gated way a lever trigger opens is declared by gating it on the lever's flag, and the lever's place decides whether the closure reaches past it. The closure is **optimistic in every direction it cannot decide**, which is one property rather than a list of exceptions: it is branch-blind, so a campaign whose branch points set mutually exclusive flags can reach a node no single playthrough reaches. That can only under-report at graph time; the branch-aware battery over the assembled world is what stops it shipping. |
 | `nodes[].stations[]` | `{anchor: anchor/<kebab>, kind, note?}` (spec-0052) — **the named places INSIDE a place**. A station is a name and a shape, never a position: there is no coordinate, offset or hint field, and that absence is the design. Declared names join the campaign's anchor vocabulary at the same authority as every synthesized one, so a quest can name the fire pit in the camp rather than flattening it onto the camp's box centre. `note` is recorded judgement for the reviewer that no check keys on, exactly as `intent` is. Refusals: `DW0869` (a name in the engine's derived namespace), `DW0870` (two claims on one name, scoped to the area), `DW0871` (a reference demanding a shape the station is not). A station no quest references is **legal** — that is the mid-authoring state, and the binding line counts it. |
 | `nodes[].references[]` | `{url, shows, terms}` (spec-0123 §3.3) — **the human-built references a place is built from**: an `https://` URL to a picture or a page of a real build of the same kind of place, one sentence saying what it shows and what to take from it, and the terms the source states (`"CC BY-SA 4.0"`, `"none stated"`). None is player-facing and none is inventoried; a reference is looked at, never copied (ADR-0013). A row missing `terms` or carrying a key it does not read is serde's `DW0100`; a `url` that is not `https://` or holds a blank, and an empty `shows` or `terms`, are restated at the schema tier as `DW0100` (`dsl::layout`), the schema stating those bounds and serde enforcing none. A node declaring none is legitimate: validation prints `references binding: R reference(s) over N of M node(s)` for every campaign with a layout graph, zeroes stated, and refuses nothing. The skill's `scripts/references.py` fetches the rows for the place's handout. |
+| `nodes[].holds[]` | `{id, kind, use, cells, height?, reached?}` (spec-0125 §3) — **what a place holds when it is a plot**: one box per whole holding, its structures and the open ground they share, each declared before any coordinate exists. `id` is `part/<kebab>`, unique within the node (`DW0110`/`DW0111`); `kind` is the mechanism, `structure` (a roofed, walled volume a body may enter) or `ground` (open space under the sky), and the schema spells no third word (`DW0100`); `use` is the author's words for what the part is for, never player-facing; `cells` is the part's play space in cells, at least 1; `height`, on a `structure` only, is courses from the walk plane to the ridge; `reached: false` declares a part seen and not entered. `cells: 0`, a blank `use` and `height` on a `ground` part are restated at the schema tier as `DW0100`. A part carries no position, outline or neighbour: the place's author builds the parts in any outline inside the box. Absent is a place that is its box. The box must hold what is declared (`DW1073`: under a lid, too small, too low) and the piece must build it (`DW1074`). Validation prints `plot program: P plot(s) over N node(s), K part(s) — S structure(s), G ground(s), R seen; cells declared C of A play space` for every campaign with a layout graph, or `plot program: 0 plot(s) over N node(s)` on one declaring none. `delvec fmt` writes a part's keys in its one canonical order. |
 | `stations[].kind` | `point` or `gate`. **The shape, never the purpose**: a bonfire, a camera subject and a shop counter are the same `point` to every check, for the same reason `intent` is free-form. `point` is a cell a body is put at; `gate` is a region that seals and clears, which is what `open-gate`, `close-gate`, a `shortcut` and a `timed-gate` address. spec-0052 §3 describes a third, `region`, and it is deliberately not built: this engine resolves an anchor to a point or a gate and to nothing else, every volume-shaped consumer is an anchor-centred box on a **point** plus an extent, and a bare `region` anchor is read as a gate filled with `minecraft:air`. A third variant would be declarable, bindable and consumable by no reference site. spec-0052 §11's falsifier decides it: the first campaign brief that cannot state its place without one. |
 | A station while its place is **massed** | The derivation realizes every station of every box at a stand-in, from the same authority validation resolved the name against — so a name that validates cannot fail to exist in the built world, massed or detailed. A point lands on its own standable cell (the first not already taken, ordered by Chebyshev distance from the floor centre then lexicographically — the order `footing` searches by); a gate lands on a minimal region of the derivation's own bar, **written into the mass** so the world-load seal measures it shut rather than taking the anchor's word. The author cannot state where a stand-in goes. |
 | A station once its place is **bound** | It joins the node's owed set beside its `anchor/node-…`, its `spawn` when it is the entry, and its `anchor/unlock-…` sides, and the `detail-plan` `anchors` map must bind it to an anchor of the piece. The map's shape and its gate are unchanged — it still refuses every key outside the owed set, so a binding cannot invent vocabulary and a typo cannot pass as intent. The bound anchor's **shape** is checked against the station's `kind` (`DW0842`), so the kind validation read off the graph and the kind the built world has cannot drift. Two owed names bound to one piece anchor is legal: one spot may carry two roles. |
@@ -3690,6 +3697,25 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   columns, clear counts per state, taken cells and verdict —
   `docs/reference/delvec/compiler/nav/width.md` has the fields. Written on every
   build that assembles a world and is not refused, zeroes included.
+- `<out>/validation/plot-program.json`: **the plot program** (`compiler::plot`,
+  spec-0125 §5.4) — a measurement the review reads beside the part frames, and
+  never a refusal. One entry per layout-graph node declaring `holds[]`, in graph
+  order: `node`, the box's `extent` and `play_space`, `built` (false while the
+  place is massed, with `reason: "massed"` and every built figure `null`),
+  `coverage` (structure parts' built cells over the play space),
+  `programmed_share` (every part's), `remainder` and `remainder_share` (play
+  space no part claims); per part `id`, `kind`, `use`, `reached`, `declared`
+  and `built` cells, `height`, `ridge` (the highest cell a body cannot be in
+  over its columns, in courses over the walk plane, read off the piece's own
+  blocks), `roofed_share` (the fraction of its columns with such a cell from
+  head height to the top of the box's air), `setbacks` per side for a structure
+  (play-space columns between its built columns and the box's edge), `gaps` to
+  each other structure part (columns strictly between), and `regions` — each
+  bound space or out-of-walk region by name with its envelope and, when
+  `enclosed`, its clearance in courses. The build prints `plot program: P
+  plot(s), K part(s) built B of K; coverage min–max %, remainder min–max %`
+  (`none built` with no built plot), and judges each walked part's walk again
+  over the plot piece's shipped templates (`DW1074`, *not walked*).
 - `<out>/validation/piece-census.json`: **the piece census** (`compiler::nav::census`,
   spec-0123 §3.5) — a measurement the visual review reads beside the threshold
   frames, and never a refusal. One entry per piece the detail plan binds to a
@@ -3933,10 +3959,18 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   what the frame shows; only a block in its own cell (a shut way's bar) does,
   and then it stands one cell further out along its normal, before the bar,
   saying so (`camera.requested_pos`). `expect` reads *the place reads as its intent:
-  <intent>*; the shot carries `node` and `edge` or `side`. The plan states
-  `threshold_shots: {shots, places, doors, open_sides}` and the build prints
-  `threshold shots: T over P place(s), D door(s), O open side(s)`; a plan with
-  no site plan writes `0 over 0`. Appended after the cutscene shots.
+  <intent>*; the shot carries `node` and `edge` or `side`. **A plot's parts**
+  (spec-0125 §6.2): for every detailed plot, one shot per part from each of the
+  plot's crossings — every seam on a vertical face of its box, portal or
+  contact — the eye on the plot's side of the crossing at the opening's or the
+  span's middle, `1.62` over the walk plane, aimed at the centre of the part's
+  built columns at eye height; a plot no seam enters stands the eye at the
+  middle of its south edge. `expect` reads *the part reads as its use: <use>*,
+  and the shot carries `node`, `part`, `crossing` and `shows` (the part and the
+  plot); a massed plot draws none. The plan states `threshold_shots: {shots,
+  places, doors, open_sides, parts}` and the build prints `threshold shots: T
+  over P place(s), D door(s), O open side(s), Q part(s)`; a plan with no site
+  plan writes `0 over 0`. Appended after the cutscene shots.
 - `<out>/render-plan.json` **player-POV shots** (`compiler::render_plan::pov_shots`):
   the visual tier of the *player's own eye*, not the
   overhead/orbit cameras of the other shot kinds. One first-person `pov` shot per

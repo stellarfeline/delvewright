@@ -837,3 +837,182 @@ pub fn part_aims(
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use delvewright_dsl::prefab::{ContractNoBody, ContractSpace};
+
+    fn part(id: &str, kind: PartKind, cells: u32, reached: bool) -> Part {
+        Part {
+            id: delvewright_dsl::ids::PartId(id.to_string()),
+            kind,
+            r#use: format!("the {id}"),
+            cells,
+            height: None,
+            reached,
+        }
+    }
+
+    fn region(from: [i32; 3], to: [i32; 3]) -> Region {
+        Region { from, to }
+    }
+
+    /// The plot of spec-0125 §3.2 in small: a house of two rooms (an L, 6 + 3
+    /// columns), a yard of 12 columns, and a bed of 2 columns nobody walks.
+    fn holds() -> Vec<Part> {
+        vec![
+            part("part/house", PartKind::Structure, 9, true),
+            part("part/yard", PartKind::Ground, 12, true),
+            part("part/bed", PartKind::Ground, 2, false),
+        ]
+    }
+
+    fn contract(house_part: Option<&str>, yard_part: Option<&str>) -> SpatialContract {
+        let space = |envelope: &str, boxes: Vec<Region>, part: Option<&str>| ContractSpace {
+            envelope: envelope.to_string(),
+            boxes,
+            part: part.map(str::to_string),
+        };
+        SpatialContract {
+            entry: "yard".to_string(),
+            spaces: [
+                (
+                    "hall".to_string(),
+                    space("enclosed", vec![region([0, 1, 0], [2, 3, 1])], house_part),
+                ),
+                (
+                    "wing".to_string(),
+                    space("enclosed", vec![region([0, 1, 2], [0, 3, 4])], house_part),
+                ),
+                (
+                    "yard".to_string(),
+                    space("open", vec![region([3, 1, 0], [5, 2, 3])], yard_part),
+                ),
+            ]
+            .into_iter()
+            .collect(),
+            no_body: [(
+                "bed".to_string(),
+                ContractNoBody {
+                    reason: "a bed".to_string(),
+                    boxes: vec![region([3, 1, 4], [4, 1, 4])],
+                    part: Some("part/bed".to_string()),
+                },
+            )]
+            .into_iter()
+            .collect(),
+            edges: Vec::new(),
+            faces: Vec::new(),
+            no_body_majority_ack: None,
+        }
+    }
+
+    fn node() -> NodeId {
+        NodeId("node/lot".to_string())
+    }
+
+    /// Every cell of the house and the yard: what a flood that walks both
+    /// reaches.
+    fn walked_all() -> BTreeSet<[i32; 3]> {
+        let mut w = BTreeSet::new();
+        for x in 0..=5 {
+            for z in 0..=4 {
+                w.insert([x, 1, z]);
+            }
+        }
+        w
+    }
+
+    fn shapes(d: &[Diagnostic]) -> Vec<&str> {
+        d.iter()
+            .map(|x| x.message.split(':').next().unwrap_or(""))
+            .collect()
+    }
+
+    #[test]
+    fn three_parts_bound_built_and_walked_pass_with_their_line() {
+        let h = holds();
+        let n = node();
+        let c = contract(Some("part/house"), Some("part/yard"));
+        let b = bind(&n, &h, &c);
+        let built: Vec<usize> = b.parts.iter().map(PartBuilt::built).collect();
+        assert_eq!(built, [9, 12, 2], "the L's two rooms are one part");
+        let (d, count) = judge(&b, "prefab/lot", Some(&walked_all()));
+        assert!(d.is_empty(), "{d:?}");
+        assert_eq!(count.line(), "parts: 3 of 3 bound, 2 of 2 walked");
+        assert!(d.iter().all(|x| x.code == DW_PART_NOT_BUILT.id()));
+    }
+
+    #[test]
+    fn a_part_no_region_names_is_unbuilt() {
+        let h = holds();
+        let n = node();
+        let (d, count) = judge(&bind(&n, &h, &contract(None, Some("part/yard"))), "p", None);
+        assert_eq!(shapes(&d), ["unbuilt"], "{d:?}");
+        assert!(d[0].message.contains("part/house") && d[0].message.contains("the part/house"));
+        assert_eq!(d[0].code, DW_PART_NOT_BUILT.id());
+        assert_eq!((count.bound, count.parts), (2, 3));
+    }
+
+    #[test]
+    fn a_part_the_node_does_not_declare_is_undeclared_and_so_is_any_part_on_a_non_plot() {
+        let h = holds();
+        let n = node();
+        let (d, _) = judge(
+            &bind(&n, &h, &contract(Some("part/house"), Some("part/garden"))),
+            "p",
+            None,
+        );
+        assert_eq!(shapes(&d), ["undeclared", "unbuilt"], "{d:?}");
+        assert!(d[0].message.contains("part/garden"));
+        let none: Vec<Part> = Vec::new();
+        let (d, _) = judge(
+            &bind(&n, &none, &contract(Some("part/house"), Some("part/yard"))),
+            "p",
+            None,
+        );
+        assert_eq!(shapes(&d), ["undeclared"; 4], "{d:?}");
+        assert!(d[0].message.contains("declares no `holds[]`"));
+    }
+
+    #[test]
+    fn a_walked_part_the_flood_never_reaches_is_refused_and_a_seen_one_is_not() {
+        let h = holds();
+        let n = node();
+        let c = contract(Some("part/house"), Some("part/yard"));
+        // The flood walks the yard and never the house; the bed is never
+        // walked either, and is declared seen.
+        let walked: BTreeSet<[i32; 3]> = walked_all().into_iter().filter(|c| c[0] >= 3).collect();
+        let walked: BTreeSet<[i32; 3]> = walked.into_iter().filter(|c| c[2] < 4).collect();
+        let (d, count) = judge(&bind(&n, &h, &c), "p", Some(&walked));
+        assert_eq!(shapes(&d), ["not walked"], "{d:?}");
+        assert!(d[0].message.contains("part/house"));
+        assert_eq!(count.line(), "parts: 3 of 3 bound, 1 of 2 walked");
+    }
+
+    #[test]
+    fn a_part_outside_a_quarter_of_its_cells_is_out_of_size_at_both_ends() {
+        let n = node();
+        let c = contract(Some("part/house"), Some("part/yard"));
+        // The yard builds 12 columns: inside a quarter for a declaration of
+        // 10 (12 ≤ 12.5) up to 16 (12 ≥ 12); 9 and 17 fall outside.
+        for (declared, refused) in [(9, true), (10, false), (12, false), (16, false), (17, true)] {
+            let mut h = holds();
+            h[1].cells = declared;
+            let (d, _) = judge(&bind(&n, &h, &c), "p", None);
+            assert_eq!(
+                shapes(&d).contains(&"out of size"),
+                refused,
+                "the yard declared {declared}: {d:?}"
+            );
+            if refused {
+                assert!(
+                    d[0].message
+                        .contains(&format!("declares {declared} cell(s)"))
+                );
+                assert!(d[0].message.contains("builds 12"));
+            }
+        }
+    }
+}

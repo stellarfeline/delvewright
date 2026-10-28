@@ -87,15 +87,16 @@ fn built_point(name: &str) -> Point {
 fn the_site_plan_point_draws_a_threshold_shot_per_door_and_open_side() {
     let p = point("threshold");
     assert!(
-        p.stderr
-            .contains("threshold shots: 23 over 10 place(s), 18 door(s), 5 open side(s)"),
+        p.stderr.contains(
+            "threshold shots: 26 over 10 place(s), 18 door(s), 5 open side(s), 3 part(s)"
+        ),
         "{}",
         p.stderr
     );
     let plan = read_json(&p.out.join("render-plan.json"));
     assert_eq!(
         plan["threshold_shots"],
-        serde_json::json!({"shots": 23, "places": 10, "doors": 18, "open_sides": 5})
+        serde_json::json!({"shots": 26, "places": 10, "doors": 18, "open_sides": 5, "parts": 3})
     );
     let shots: Vec<&serde_json::Value> = plan["shots"]
         .as_array()
@@ -103,7 +104,7 @@ fn the_site_plan_point_draws_a_threshold_shot_per_door_and_open_side() {
         .iter()
         .filter(|s| s["kind"] == "threshold")
         .collect();
-    assert_eq!(shots.len(), 23);
+    assert_eq!(shots.len(), 26);
     // The yard's open east side: the eye one cell outside the ring at the
     // side's middle, at eye height over the yard's walk plane (y 64).
     let east = shots
@@ -137,7 +138,7 @@ fn a_plan_with_no_portal_and_no_open_side_writes_zero_threshold_shots() {
     let run = build(&dir, &common::prefabs_dir(), &out);
     let stderr = String::from_utf8_lossy(&run.stderr);
     assert!(
-        stderr.contains("threshold shots: 0 over 2 place(s), 0 door(s), 0 open side(s)"),
+        stderr.contains("threshold shots: 0 over 2 place(s), 0 door(s), 0 open side(s), 0 part(s)"),
         "{stderr}"
     );
 }
@@ -324,4 +325,155 @@ fn air_over_the_annex_door_unframes_it_and_moves_the_line() {
         .unwrap()
         .clone();
     assert_eq!(h["present"], false, "{framing}");
+}
+
+// ---------------------------------------------------------------------------
+// spec-0125 — the plot program and the part frames
+// ---------------------------------------------------------------------------
+
+/// **spec-0125 criterion 9**: the court is a plot of three parts and one
+/// crossing (the far hall's arch; the gantry's ladder is a seam through its
+/// sky, not a crossing a body enters by), so it draws three part frames, each
+/// eye on the court's side of the arch's sill at eye height and each `expect`
+/// naming the part's use.
+#[test]
+fn the_court_draws_one_part_frame_per_part_from_its_crossing() {
+    let p = point("parts");
+    let plan = read_json(&p.out.join("render-plan.json"));
+    let parts: Vec<&serde_json::Value> = plan["shots"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|s| s["kind"] == "threshold" && s.get("part").is_some())
+        .collect();
+    let ids: Vec<&str> = parts.iter().map(|s| s["id"].as_str().unwrap()).collect();
+    assert_eq!(
+        ids,
+        [
+            "threshold/exit/court/exit-arch",
+            "threshold/exit/well_house/exit-arch",
+            "threshold/exit/bed/exit-arch"
+        ]
+    );
+    for s in &parts {
+        assert_eq!(s["crossing"], "edge/exit-arch", "{s}");
+        let y = s["camera"]["pos"][1].as_f64().unwrap();
+        assert!((y - 65.62).abs() < 1e-6, "{s}");
+        assert!(
+            s["expect"][0]
+                .as_str()
+                .unwrap()
+                .starts_with("the part reads as its use: "),
+            "{s}"
+        );
+    }
+    assert!(
+        parts[1]["expect"][0]
+            .as_str()
+            .unwrap()
+            .contains("a small stone well-house"),
+        "{}",
+        parts[1]
+    );
+}
+
+/// **spec-0125 criterion 6, the ledger**: the court's three parts with their
+/// declared and built cells, the well-house's ridge, clearance and setbacks,
+/// the plot's shares, and the index line.
+#[test]
+fn the_ledger_states_the_courts_three_parts_built_inside_the_tolerance() {
+    let p = point("ledger");
+    assert!(
+        p.stderr.contains(
+            "plot program: 1 plot(s), 3 part(s) built 3 of 3; coverage 2–2 %, remainder 13–13 %"
+        ),
+        "{}",
+        p.stderr
+    );
+    let l = read_json(&p.out.join("validation/plot-program.json"));
+    let plots = l["plots"].as_array().unwrap();
+    assert_eq!(plots.len(), 1);
+    let court = &plots[0];
+    assert_eq!(court["node"], "node/exit");
+    assert_eq!(court["play_space"], 64);
+    assert_eq!(court["remainder"], 8);
+    let rows: Vec<(String, i64, i64)> = court["parts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| {
+            (
+                x["id"].as_str().unwrap().to_string(),
+                x["declared"].as_i64().unwrap(),
+                x["built"].as_i64().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("part/court".to_string(), 52, 52),
+            ("part/well-house".to_string(), 1, 1),
+            ("part/bed".to_string(), 3, 3)
+        ]
+    );
+    let well = &court["parts"][1];
+    assert_eq!(well["ridge"], 3);
+    assert_eq!(well["regions"][0]["clearance"], 2);
+    assert_eq!(
+        well["setbacks"],
+        serde_json::json!({"east": 2, "north": 1, "south": 6, "west": 5})
+    );
+    assert_eq!(well["roofed_share"], 1.0);
+    assert_eq!(court["parts"][2]["reached"], false);
+}
+
+/// **spec-0125 criterion 6, the perturbation**: one claimed column moved
+/// from the court to the bed — in the yard's contract, and in the plan's
+/// declaration so the bed stays inside its quarter — moves the court's
+/// `built` from 52 to 51 and the bed's from 3 to 4, and nothing else.
+#[test]
+fn moving_one_claimed_cell_from_the_court_to_the_bed_moves_two_built_values_by_one() {
+    let p = point("ledger-move");
+    let tmp = tempdir("ledger-move");
+    let prefabs = tmp.join("prefabs");
+    common::copy_dir_all(&p.prefabs, &prefabs);
+    let meta_path = prefabs.join("gallery-yard.json");
+    let mut meta = read_json(&meta_path);
+    let c = &mut meta["spatial_contract"];
+    // The court's southern box (x 1..8, z 6..7) gives up its column x 1, z 6:
+    // split into the row z 6 without it and the row z 7 whole.
+    let boxes = c["spaces"]["yard"]["boxes"].as_array_mut().unwrap();
+    let south = boxes
+        .iter()
+        .position(|b| b["from"][2] == 6)
+        .expect("the court's southern box");
+    let b = boxes.remove(south);
+    let (f, t) = (b["from"].clone(), b["to"].clone());
+    boxes.push(serde_json::json!({"from": [2, f[1], 6], "to": [t[0], t[1], 6]}));
+    boxes.push(serde_json::json!({"from": [1, f[1], 7], "to": [t[0], t[1], 7]}));
+    c["no_body"]["bed"]["boxes"][0]["to"][2] = serde_json::json!(6);
+    std::fs::write(&meta_path, serde_json::to_vec_pretty(&meta).unwrap()).unwrap();
+    let campaign = tmp.join("campaign");
+    common::copy_dir_all(&p.campaign, &campaign);
+    let gp = campaign.join("layout-graph.json");
+    let mut g = read_json(&gp);
+    for n in g["content"]["nodes"].as_array_mut().unwrap() {
+        if n["id"] == "node/exit" {
+            n["holds"][0]["cells"] = serde_json::json!(51);
+            n["holds"][2]["cells"] = serde_json::json!(4);
+        }
+    }
+    std::fs::write(&gp, serde_json::to_vec_pretty(&g).unwrap()).unwrap();
+    let out = tmp.join("out");
+    let run = build(&campaign, &prefabs, &out);
+    assert!(run.status.success(), "{}", text(&run));
+    let l = read_json(&out.join("validation/plot-program.json"));
+    let built: Vec<i64> = l["plots"][0]["parts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x["built"].as_i64().unwrap())
+        .collect();
+    assert_eq!(built, [51, 1, 4]);
 }

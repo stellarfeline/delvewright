@@ -994,3 +994,95 @@ fn dw0100_a_reference_url_that_is_not_https() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// spec-0125 §3 — a plot's parts
+// ---------------------------------------------------------------------------
+
+fn three_parts() -> Value {
+    json!([
+        {"id": "part/house", "kind": "structure", "use": "the family's house, two storeys", "cells": 130, "height": 14},
+        {"id": "part/back", "kind": "ground", "use": "the back yard", "cells": 120},
+        {"id": "part/bed", "kind": "ground", "use": "a flower bed behind a hedge", "cells": 12, "reached": false}
+    ])
+}
+
+/// `holds[]` of `{id, kind, use, cells, height?, reached?}` is accepted and
+/// refuses nothing at the graph; a graph declaring none reads `0 plot(s)`.
+#[test]
+fn holds_are_accepted_and_counted_and_none_reads_zero() {
+    assert_eq!(
+        binding_of(GREEN.to_string()).plot_line(),
+        "plot program: 0 plot(s) over 4 node(s)"
+    );
+    let g = graph_with(|v| nodes(v)[0]["holds"] = three_parts());
+    assert_eq!(
+        validate(Some(g.clone())),
+        vec!["DW0822".to_string(), "DW0813".to_string()],
+        "a plot's parts refuse nothing at the graph"
+    );
+    assert_eq!(
+        binding_of(g).plot_line(),
+        "plot program: 1 plot(s) over 4 node(s), 3 part(s) — 1 structure(s), 2 ground(s), \
+         1 seen; cells declared 262 of 0 play space"
+    );
+}
+
+/// A kind the schema cannot spell, `cells: 0`, and `height` on a ground part
+/// are each `DW0100`.
+#[test]
+fn dw0100_a_part_the_schema_does_not_admit() {
+    for edit in [
+        (0usize, "kind", json!("yard")),
+        (1, "cells", json!(0)),
+        (1, "height", json!(3)),
+        (0, "colour", json!("red")),
+    ] {
+        let g = graph_with(|v| {
+            let mut h = three_parts();
+            h[edit.0][edit.1] = edit.2.clone();
+            nodes(v)[0]["holds"] = h;
+        });
+        assert!(
+            validate(Some(g)).contains(&"DW0100".to_string()),
+            "{edit:?} must be DW0100"
+        );
+    }
+}
+
+/// A part id that is not `part/<kebab>` is `DW0110`; two parts of one node
+/// with one id are `DW0111`, and two nodes may each hold a `part/house`.
+#[test]
+fn dw0110_and_dw0111_on_part_ids() {
+    let g = graph_with(|v| {
+        let mut h = three_parts();
+        h[0]["id"] = json!("part/The House");
+        nodes(v)[0]["holds"] = h;
+    });
+    assert!(validate(Some(g)).contains(&"DW0110".to_string()));
+    let g = graph_with(|v| {
+        let mut h = three_parts();
+        h[1]["id"] = json!("part/house");
+        nodes(v)[0]["holds"] = h;
+    });
+    assert!(validate(Some(g)).contains(&"DW0111".to_string()));
+    let g = graph_with(|v| {
+        nodes(v)[0]["holds"] = three_parts();
+        nodes(v)[1]["holds"] = three_parts();
+    });
+    assert!(!validate(Some(g)).contains(&"DW0111".to_string()));
+}
+
+/// `delvec fmt` writes a part as it writes every object: its keys in the one
+/// canonical order, whatever order the author typed them in. The order of
+/// spec-0125 §3.2 (`id, kind, use, cells, height, reached`) is not that
+/// order — `fmt` knows no schema — and this test asserts what it writes.
+#[test]
+fn fmt_writes_a_part_in_its_canonical_key_order() {
+    let text = r#"{"id": "part/house", "kind": "structure", "use": "a house", "cells": 130, "height": 14, "reached": true}"#;
+    let got = delvewright_dsl::fmt::format_text(text).expect("formats");
+    assert_eq!(
+        got,
+        "{\n  \"cells\": 130,\n  \"height\": 14,\n  \"id\": \"part/house\",\n  \"kind\": \"structure\",\n  \"reached\": true,\n  \"use\": \"a house\"\n}\n"
+    );
+}

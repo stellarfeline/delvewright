@@ -2435,3 +2435,103 @@ fn fmt_writes_sides_in_its_canonical_key_order() {
         "{\n  \"east\": \"open\",\n  \"north\": \"open\",\n  \"south\": \"wall\",\n  \"west\": \"open\"\n}\n"
     );
 }
+
+// ---------------------------------------------------------------------------
+// spec-0125 §3.4 — DW1073: a plot cannot hold its parts
+// ---------------------------------------------------------------------------
+
+/// The green campaign with `node/yard` (an `open: 8`, 16 × 16 box) declaring
+/// `holds`, and the plan perturbed by one edit.
+fn plot_diags(holds: Value, patch: impl FnOnce(&mut Value)) -> Vec<delvewright_dsl::Diagnostic> {
+    let mut g: Value = serde_json::from_str(GRAPH.as_str()).expect("the green graph parses");
+    let yard = g["content"]["nodes"]
+        .as_array_mut()
+        .expect("nodes")
+        .iter_mut()
+        .find(|n| n["id"] == "node/yard")
+        .expect("the yard");
+    yard["holds"] = holds;
+    let mut v: Value = serde_json::from_str(PLAN.as_str()).expect("the green plan parses");
+    patch(&mut v);
+    check_campaign(&campaign(
+        Some(serde_json::to_string(&v).expect("plan")),
+        Some(serde_json::to_string(&g).expect("graph")),
+        Some(BRIEF.to_string()),
+    ))
+}
+
+fn yard_parts(house: u32, height: u32) -> Value {
+    json!([
+        {"id": "part/house", "kind": "structure", "use": "the house", "cells": house, "height": height},
+        {"id": "part/shed", "kind": "structure", "use": "the shed", "cells": 20},
+        {"id": "part/back", "kind": "ground", "use": "the back yard", "cells": 100},
+        {"id": "part/bed", "kind": "ground", "use": "a bed", "cells": 6, "reached": false}
+    ])
+}
+
+fn dw1073(d: &[delvewright_dsl::Diagnostic]) -> Vec<&str> {
+    d.iter()
+        .filter(|x| x.code == "DW1073")
+        .map(|x| x.message.as_str())
+        .collect()
+}
+
+/// A plot whose parts fit its open box is asked nothing: 256 cells of play
+/// space hold 226 declared, and a ridge of 8 fits 8 courses of air.
+#[test]
+fn dw1073_a_plot_whose_parts_fit_passes() {
+    let d = plot_diags(yard_parts(100, 8), |_| {});
+    assert!(dw1073(&d).is_empty(), "{d:?}");
+}
+
+/// Under a lid: the plot's box given a `clearance` ceiling.
+#[test]
+fn dw1073_a_plot_under_a_lid() {
+    let d = plot_diags(yard_parts(100, 8), |v| {
+        boxes(v)[box_of("node/yard")]["ceiling"] = json!({"clearance": 8});
+    });
+    let hit = dw1073(&d);
+    assert_eq!(hit.len(), 1, "{d:?}");
+    assert!(
+        hit[0].starts_with("under a lid: `node/yard` is a plot"),
+        "{}",
+        hit[0]
+    );
+    assert!(hit[0].contains("{\"clearance\": 8}"), "{}", hit[0]);
+}
+
+/// Too small: the parts' cells past the box's play space, naming the sum, the
+/// area and the shortfall.
+#[test]
+fn dw1073_a_plot_smaller_than_its_parts() {
+    let d = plot_diags(yard_parts(140, 8), |_| {});
+    let hit = dw1073(&d);
+    assert_eq!(hit.len(), 1, "{d:?}");
+    assert!(hit[0].starts_with("too small:"), "{}", hit[0]);
+    assert!(
+        hit[0].contains("declare 266 cell(s)")
+            && hit[0].contains("16 × 16 = 256")
+            && hit[0].contains("10 short"),
+        "{}",
+        hit[0]
+    );
+}
+
+/// Too low: a structure's `height` past the box's `open` courses, naming the
+/// part.
+#[test]
+fn dw1073_a_part_taller_than_the_sky() {
+    let d = plot_diags(yard_parts(100, 9), |_| {});
+    let hit = dw1073(&d);
+    assert_eq!(hit.len(), 1, "{d:?}");
+    assert!(
+        hit[0].starts_with("too low: `node/yard`'s part `part/house`"),
+        "{}",
+        hit[0]
+    );
+    assert!(
+        hit[0].contains("height of 9") && hit[0].contains("8 course(s) of air"),
+        "{}",
+        hit[0]
+    );
+}
