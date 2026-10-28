@@ -2008,7 +2008,7 @@ fn room_part(cells: u32, reached: bool) -> Value {
 #[test]
 fn detail_check_binds_a_plots_part_and_refuses_each_shape() {
     let tmp = tempdir("plot-green");
-    let (campaign, prefabs) = plot_fixture(&tmp, Some("part/room"), Some(room_part(48, true)));
+    let (campaign, prefabs) = plot_fixture(&tmp, Some("part/room"), Some(room_part(64, true)));
     let (cs, ps) = (campaign.to_str().unwrap(), prefabs.to_str().unwrap());
     let out = delvec(&["--prefabs", ps, "detail", "--check", cs, "node/exit"]);
     let t = text(&out);
@@ -2022,7 +2022,7 @@ fn detail_check_binds_a_plots_part_and_refuses_each_shape() {
         (
             "plot-unbuilt",
             None,
-            Some(room_part(48, true)),
+            Some(room_part(64, true)),
             "unbuilt: `node/exit` declares the part `part/room`",
         ),
         (

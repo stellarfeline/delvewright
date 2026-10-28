@@ -82,6 +82,7 @@
 //! - [`onkill`]: whether a fight comes back, and the `on_kill.fires` judgement it owes (`DW0914`/`DW0915`).
 //! - [`placed`]: the placements ledger — every block, container item and body the datapack places outside the templates, and every removal, one record each, the command written from the record (spec-0112 §4).
 //! - [`plan`]: resolve a validated campaign into the placement + naming model emission reads.
+//! - [`plot`]: a plot is built as it was planned — its parts bound, judged (`DW1074`) and measured into `validation/plot-program.json` (spec-0125).
 //! - [`png`]: the deterministic hand-rolled PNG writer.
 //! - [`pool`]: a pool draw that seats the same anchored prefab twice (`DW0498`).
 //! - [`presence`]: one named character is one body in every story state (`DW1026`).

@@ -616,7 +616,8 @@ fn prepare(
             let contract = contract.unwrap_or(empty);
             let walked = delvec::grammar::contract::walked_cells(&expansion.model, &contract);
             let binding = delvec::compiler::plot::bind(node, &opts.parts, &contract);
-            let (found, count) = delvec::compiler::plot::judge(&binding, &id, Some(&walked));
+            let (found, count) =
+                delvec::compiler::plot::judge(&binding, &format!("prefab/{id}"), Some(&walked));
             eprintln!("{place}: {}", count.line());
             if !found.is_empty() {
                 for d in &found {
