@@ -5143,7 +5143,7 @@ fn dw1038_shrinking_the_region_off_the_holder_builds() {
                 .push(serde_json::json!({
                     "type": "clear-region",
                     "region": {"anchor": "anchor/keeper-stand", "extent": extent},
-                    "happening": {"text": "the floor clears", "verb": "opens"}
+                    "happening": {"text": "the stand loses its floor", "verb": "loses"}
                 }));
         }
     };

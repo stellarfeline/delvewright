@@ -1346,7 +1346,7 @@ fn a_camera_after_a_repaint_and_a_strike_names_the_biomes_it_does_not_lay() {
         beat.push(serde_json::json!({
             "type": "set-atmosphere", "atmosphere": "atmosphere/hush",
             "region": { "anchor": "anchor/door", "extent": [2, 2, 2] },
-            "happening": { "verb": "opens", "text": "the air at the door goes still" }
+            "happening": { "verb": "learns", "text": "the air at the door goes still" }
         }));
         beat.push(serde_json::json!({
             "type": "lightning", "at": { "anchor": "anchor/exit" },

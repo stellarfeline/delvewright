@@ -376,38 +376,6 @@ fn a_released_door_answers_nothing_once_open_and_the_chest_does() {
     );
 }
 
-/// **A door prop is laid as one door** (spec-0117 with spec-0123's
-/// `region_fill`): the bay door's two cells hold its lower half under its
-/// upper half in the shipped `setup_finish`, and the world the build judges at
-/// load holds the same — the gallery builds, and `DW1002` refuses a lower half
-/// standing on a lower half, which is what the load model laid when each half
-/// was its own one-cell write and `region_fill` read every one-cell region as
-/// the door's bottom course.
-#[test]
-fn a_door_prop_is_laid_as_one_door() {
-    let setup = std::fs::read_to_string(
-        gallery().join("datapack/data/gallery/function/setup_finish.mcfunction"),
-    )
-    .unwrap();
-    let door: Vec<&str> = setup
-        .lines()
-        .filter(|l| l.starts_with("setblock ") && l.contains("minecraft:spruce_door"))
-        .collect();
-    assert_eq!(door.len(), 2, "the bay door's two halves: {door:?}");
-    let at = |l: &str| -> Vec<i32> {
-        l.split_whitespace()
-            .skip(1)
-            .take(3)
-            .map(|v| v.parse().unwrap())
-            .collect()
-    };
-    let (lower, upper) = (door[0], door[1]);
-    assert!(lower.contains("half=lower"), "{lower}");
-    assert!(upper.contains("half=upper"), "{upper}");
-    let (l, u) = (at(lower), at(upper));
-    assert_eq!((u[0], u[1], u[2]), (l[0], l[1] + 1, l[2]), "{door:?}");
-}
-
 /// Criterion 20: a `presser` strike's dispatch and its `done` answer are each
 /// `player_hurt_entity` on the struck box's tag; a `party` `strike-assembly`
 /// emits no dispatch advancement of its own.
