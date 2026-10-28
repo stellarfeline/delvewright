@@ -184,11 +184,6 @@
     },
     {
       "code": "DW0353",
-      "pointer": "/content/batches/batch/stamp-the-shards",
-      "stage": "world-edits"
-    },
-    {
-      "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
       "stage": "world-edits"
     },
@@ -216,11 +211,6 @@
       "code": "DW0810",
       "pointer": "packtest watch coverage",
       "stage": "build"
-    },
-    {
-      "code": "DW0380",
-      "pointer": "/content/waves/wave/edge",
-      "stage": "quests"
     }
   ],
   "hard.en": [
@@ -391,11 +381,6 @@
     },
     {
       "code": "DW0353",
-      "pointer": "/content/batches/batch/stamp-the-shards",
-      "stage": "world-edits"
-    },
-    {
-      "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
       "stage": "world-edits"
     },
@@ -423,11 +408,6 @@
       "code": "DW0810",
       "pointer": "packtest watch coverage",
       "stage": "build"
-    },
-    {
-      "code": "DW0380",
-      "pointer": "/content/waves/wave/edge",
-      "stage": "quests"
     }
   ],
   "ocean-horizon.en": [
@@ -598,17 +578,7 @@
     },
     {
       "code": "DW0353",
-      "pointer": "/content/batches/batch/stamp-the-shards",
-      "stage": "world-edits"
-    },
-    {
-      "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
-      "stage": "world-edits"
-    },
-    {
-      "code": "DW0353",
-      "pointer": "/content/batches/batch/rough-the-lane",
       "stage": "world-edits"
     },
     {
@@ -635,11 +605,6 @@
       "code": "DW0810",
       "pointer": "packtest watch coverage",
       "stage": "build"
-    },
-    {
-      "code": "DW0380",
-      "pointer": "/content/waves/wave/edge",
-      "stage": "quests"
     }
   ],
   "primary.en": [
@@ -810,11 +775,6 @@
     },
     {
       "code": "DW0353",
-      "pointer": "/content/batches/batch/stamp-the-shards",
-      "stage": "world-edits"
-    },
-    {
-      "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
       "stage": "world-edits"
     },
@@ -842,11 +802,6 @@
       "code": "DW0810",
       "pointer": "packtest watch coverage",
       "stage": "build"
-    },
-    {
-      "code": "DW0380",
-      "pointer": "/content/waves/wave/edge",
-      "stage": "quests"
     }
   ],
   "primary.zh-cn": [
@@ -1017,11 +972,6 @@
     },
     {
       "code": "DW0353",
-      "pointer": "/content/batches/batch/stamp-the-shards",
-      "stage": "world-edits"
-    },
-    {
-      "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
       "stage": "world-edits"
     },
@@ -1049,11 +999,6 @@
       "code": "DW0810",
       "pointer": "packtest watch coverage",
       "stage": "build"
-    },
-    {
-      "code": "DW0380",
-      "pointer": "/content/waves/wave/edge",
-      "stage": "quests"
     }
   ],
   "site-plan-solid.en": [
@@ -1335,11 +1280,6 @@
     },
     {
       "code": "DW0353",
-      "pointer": "/content/batches/batch/stamp-the-shards",
-      "stage": "world-edits"
-    },
-    {
-      "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
       "stage": "world-edits"
     },
@@ -1367,11 +1307,6 @@
       "code": "DW0810",
       "pointer": "packtest watch coverage",
       "stage": "build"
-    },
-    {
-      "code": "DW0380",
-      "pointer": "/content/waves/wave/edge",
-      "stage": "quests"
     }
   ]
 }
