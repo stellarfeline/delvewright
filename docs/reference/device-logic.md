@@ -69,9 +69,12 @@ for their rules only (ADR-0013); each is listed under *Sources* with what was ta
 - **[ruling]** A door must do a door's job: shut, it stops a body passing; open, it lets one
   pass. A door that does not close a way either is not placed or gets wall joined to both
   sides of it. This holds for every door block in the built world, of every door kind, whether
-  or not a story addresses it. There is no scenery door: the one block whose whole behaviour
-  is to open onto what is behind it is not placed where nothing is behind it, and L3's
-  told-once allowance for scenery that looks usable does not reach doors.
+  or not a story addresses it. Fence gates are under the same rule. What is behind a door
+  is judged by the body's reach graph — shut, the area behind it cannot be reached through
+  it; open, it can — never by a door-local rule. The one exemption is an explicit
+  declaration that the door or gate is decorative, printed and counted, and secured by the
+  block being one no hand opens; an undeclared door that closes nothing is refused, and
+  L3's told-once allowance for scenery that looks usable does not reach doors.
 - **[authored]** The same holds for every block the game opens by hand (door, trapdoor,
   fence gate): its press is an answer in itself (spec-0117, *release*), so a shut one promises
   a later opening, and the opening must lead somewhere.
@@ -116,10 +119,10 @@ for their rules only (ADR-0013); each is listed under *Sources* with what was ta
   used, or the beat shows it.
 - **R3 [authored, on §2]** A door the story addresses is a way: it stands in the opening
   between two places and opens by hand onto the far place once its step has passed.
-- **R4 [ruling, §2]** Every door in the built world closes an opening: shut, its leaf stops a
-  body passing between the two cells it separates, and the cells beside the leaf at both of
-  its courses stop a body; open, it lets one pass. A door that closes nothing is not placed, or
-  wall is joined to both sides of it.
+- **R4 [ruling, §2]** Every door and fence gate in the built world closes an opening, by the
+  reach graph: shut, the area behind it cannot be reached through it; open, it can. A door
+  that closes nothing is not placed, or wall is joined to both sides of it, or it is declared
+  decorative — a declaration only a door no hand opens may carry.
 - **R5 [authored, on §4]** A caption names the acts the button performs and none it does not.
 - **R6 [cited, §3]** A remote effect that is neither in sight nor shown is refused; a
   deliberate deception of a learned rule is a declared exception, never a default.
