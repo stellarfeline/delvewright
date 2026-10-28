@@ -1,5 +1,23 @@
 {
   "contract": {
+    "decorative": [
+      {
+        "at": [
+          6,
+          1,
+          7
+        ],
+        "what": "an iron door laid as the smith's bench top, never opened"
+      },
+      {
+        "at": [
+          7,
+          9,
+          14
+        ],
+        "what": "a loft door high in the street gable, with no floor under it to stand on"
+      }
+    ],
     "edges": [
       {
         "a": "exterior",
@@ -33,11 +51,15 @@
   "name": "gallery-annex",
   "palette": {
     "bar": "minecraft:iron_bars[east=false,north=false,south=false,waterlogged=false,west=false]",
+    "bench-door": "minecraft:iron_door[facing=west,half=lower,hinge=left,open=false,powered=false]",
+    "bench-door-top": "minecraft:iron_door[facing=west,half=upper,hinge=left,open=false,powered=false]",
     "ceiling": "minecraft:spruce_planks",
     "counter": "minecraft:iron_trapdoor[facing=south,half=bottom,open=false,powered=false,waterlogged=false]",
     "floor": "minecraft:stone_bricks",
     "furniture": "minecraft:chiseled_stone_bricks",
     "lamp": "minecraft:sea_lantern",
+    "loft-door": "minecraft:oak_door[facing=south,half=lower,hinge=left,open=false,powered=false]",
+    "loft-door-top": "minecraft:oak_door[facing=south,half=upper,hinge=left,open=false,powered=false]",
     "roof_e": {
       "local": "minecraft:dark_oak_stairs[facing=east,half=bottom,shape=straight,waterlogged=false]"
     },
@@ -666,6 +688,246 @@
               "op": "void"
             },
             {
+              "axis": "x",
+              "children": [
+                {
+                  "material": {
+                    "role": "wall"
+                  },
+                  "op": "fill"
+                },
+                {
+                  "material": {
+                    "role": "loft-door"
+                  },
+                  "op": "fill"
+                },
+                {
+                  "material": {
+                    "role": "wall"
+                  },
+                  "op": "fill"
+                }
+              ],
+              "op": "split",
+              "sizes": [
+                {
+                  "blocks": {
+                    "expr": "int",
+                    "value": 2
+                  },
+                  "size": "absolute"
+                },
+                {
+                  "blocks": {
+                    "expr": "int",
+                    "value": 1
+                  },
+                  "size": "absolute"
+                },
+                {
+                  "size": "relative",
+                  "weight": {
+                    "expr": "int",
+                    "value": 1
+                  }
+                }
+              ]
+            },
+            {
+              "op": "void"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "param",
+                "name": "handed/roof/eaves"
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "param",
+                "name": "handed/roof/eaves"
+              },
+              "size": "absolute"
+            }
+          ]
+        },
+        "weight": 1,
+        "when": {
+          "cond": "cmp",
+          "lhs": {
+            "dim": "x",
+            "expr": "dim"
+          },
+          "op": "eq",
+          "rhs": {
+            "expr": "int",
+            "value": 6
+          }
+        }
+      },
+      {
+        "body": {
+          "axis": "z",
+          "children": [
+            {
+              "op": "void"
+            },
+            {
+              "material": {
+                "role": "wall"
+              },
+              "op": "fill"
+            },
+            {
+              "op": "void"
+            },
+            {
+              "axis": "x",
+              "children": [
+                {
+                  "material": {
+                    "role": "wall"
+                  },
+                  "op": "fill"
+                },
+                {
+                  "material": {
+                    "role": "loft-door-top"
+                  },
+                  "op": "fill"
+                },
+                {
+                  "material": {
+                    "role": "wall"
+                  },
+                  "op": "fill"
+                }
+              ],
+              "op": "split",
+              "sizes": [
+                {
+                  "blocks": {
+                    "expr": "int",
+                    "value": 1
+                  },
+                  "size": "absolute"
+                },
+                {
+                  "blocks": {
+                    "expr": "int",
+                    "value": 1
+                  },
+                  "size": "absolute"
+                },
+                {
+                  "size": "relative",
+                  "weight": {
+                    "expr": "int",
+                    "value": 1
+                  }
+                }
+              ]
+            },
+            {
+              "op": "void"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "param",
+                "name": "handed/roof/eaves"
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "param",
+                "name": "handed/roof/eaves"
+              },
+              "size": "absolute"
+            }
+          ]
+        },
+        "weight": 1,
+        "when": {
+          "cond": "cmp",
+          "lhs": {
+            "dim": "x",
+            "expr": "dim"
+          },
+          "op": "eq",
+          "rhs": {
+            "expr": "int",
+            "value": 4
+          }
+        }
+      },
+      {
+        "body": {
+          "axis": "z",
+          "children": [
+            {
+              "op": "void"
+            },
+            {
+              "material": {
+                "role": "wall"
+              },
+              "op": "fill"
+            },
+            {
+              "op": "void"
+            },
+            {
               "material": {
                 "role": "wall"
               },
@@ -714,7 +976,10 @@
             }
           ]
         },
-        "weight": 1
+        "weight": 1,
+        "when": {
+          "cond": "otherwise"
+        }
       }
     ],
     "inner": [
@@ -954,16 +1219,135 @@
     "plinth": [
       {
         "body": {
-          "axis": "y",
+          "axis": "x",
           "children": [
             {
-              "material": {
-                "role": "furniture"
-              },
-              "op": "fill"
+              "axis": "z",
+              "children": [
+                {
+                  "axis": "y",
+                  "children": [
+                    {
+                      "material": {
+                        "role": "bench-door"
+                      },
+                      "op": "fill"
+                    },
+                    {
+                      "material": {
+                        "role": "bench-door-top"
+                      },
+                      "op": "fill"
+                    },
+                    {
+                      "op": "void"
+                    }
+                  ],
+                  "op": "split",
+                  "sizes": [
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 1
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 1
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "size": "relative",
+                      "weight": {
+                        "expr": "int",
+                        "value": 1
+                      }
+                    }
+                  ]
+                },
+                {
+                  "axis": "y",
+                  "children": [
+                    {
+                      "material": {
+                        "role": "furniture"
+                      },
+                      "op": "fill"
+                    },
+                    {
+                      "op": "void"
+                    }
+                  ],
+                  "op": "split",
+                  "sizes": [
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 1
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "size": "relative",
+                      "weight": {
+                        "expr": "int",
+                        "value": 1
+                      }
+                    }
+                  ]
+                }
+              ],
+              "op": "split",
+              "sizes": [
+                {
+                  "blocks": {
+                    "expr": "int",
+                    "value": 1
+                  },
+                  "size": "absolute"
+                },
+                {
+                  "size": "relative",
+                  "weight": {
+                    "expr": "int",
+                    "value": 1
+                  }
+                }
+              ]
             },
             {
-              "op": "void"
+              "axis": "y",
+              "children": [
+                {
+                  "material": {
+                    "role": "furniture"
+                  },
+                  "op": "fill"
+                },
+                {
+                  "op": "void"
+                }
+              ],
+              "op": "split",
+              "sizes": [
+                {
+                  "blocks": {
+                    "expr": "int",
+                    "value": 1
+                  },
+                  "size": "absolute"
+                },
+                {
+                  "size": "relative",
+                  "weight": {
+                    "expr": "int",
+                    "value": 1
+                  }
+                }
+              ]
             }
           ],
           "op": "split",
@@ -1516,5 +1900,5 @@
     "west"
   ],
   "start": "annex",
-  "version": "1.9.0"
+  "version": "1.13.0"
 }
