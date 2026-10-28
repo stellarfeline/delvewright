@@ -720,6 +720,9 @@ pub fn check_doors(
 use crate::compiler::plan::Plan;
 use crate::compiler::pressable::{Owner, in_region};
 
+/// A gate region's inclusive corners.
+type Region = ([i32; 3], [i32; 3]);
+
 /// What `DW1069`'s world arms bound on one build.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct WayBlockBinding {
@@ -766,7 +769,7 @@ pub fn check_way_blocks(plan: &Plan, world: &World) -> (WayBlockBinding, Vec<Str
         gated: gated_edges(c).len(),
         ..WayBlockBinding::default()
     };
-    let regions: Vec<(String, ([i32; 3], [i32; 3]))> = seams
+    let regions: Vec<(String, Region)> = seams
         .keys()
         .filter_map(|a| {
             crate::compiler::pressable::gate_region(plan, a).map(|(f, t, _)| (a.clone(), (f, t)))
