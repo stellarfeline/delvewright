@@ -3,17 +3,17 @@
     "decorative": [
       {
         "at": [
-          6,
+          9,
           1,
-          7
+          9
         ],
         "what": "an iron door laid as the smith's bench top, never opened"
       },
       {
         "at": [
-          7,
           9,
-          14
+          9,
+          18
         ],
         "what": "a loft door high in the street gable, with no floor under it to stand on"
       }
@@ -714,7 +714,7 @@
                 {
                   "blocks": {
                     "expr": "int",
-                    "value": 2
+                    "value": 4
                   },
                   "size": "absolute"
                 },
@@ -787,7 +787,7 @@
           "op": "eq",
           "rhs": {
             "expr": "int",
-            "value": 6
+            "value": 10
           }
         }
       },
@@ -834,7 +834,7 @@
                 {
                   "blocks": {
                     "expr": "int",
-                    "value": 1
+                    "value": 3
                   },
                   "size": "absolute"
                 },
@@ -907,7 +907,7 @@
           "op": "eq",
           "rhs": {
             "expr": "int",
-            "value": 4
+            "value": 8
           }
         }
       },
