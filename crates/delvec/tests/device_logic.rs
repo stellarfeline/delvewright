@@ -70,15 +70,35 @@ fn a_step_that_says_it_opens_a_thing_opens_it_dw1070() {
     let d = refused(&none);
     assert_eq!(d.len(), 1, "{d:?}");
     assert_eq!(d[0].code, "DW1070");
-    assert!(d[0].message.contains("it opens nothing"), "{}", d[0].message);
+    assert!(
+        d[0].message.contains("it opens nothing"),
+        "{}",
+        d[0].message
+    );
     let gate = |a: &str| json!([{"type": "open-gate", "anchor": a}]);
-    assert!(refused(&with_happening(opens(Some("anchor/door")), gate("anchor/door"))).is_empty());
+    assert!(
+        refused(&with_happening(
+            opens(Some("anchor/door")),
+            gate("anchor/door")
+        ))
+        .is_empty()
+    );
     assert!(refused(&with_happening(opens(None), gate("anchor/door"))).is_empty());
-    let other = refused(&with_happening(opens(Some("anchor/door")), gate("anchor/exit")));
+    let other = refused(&with_happening(
+        opens(Some("anchor/door")),
+        gate("anchor/exit"),
+    ));
     assert_eq!(other.len(), 1, "{other:?}");
-    assert!(other[0].message.contains("is not the thing it opens"), "{}", other[0].message);
+    assert!(
+        other[0].message.contains("is not the thing it opens"),
+        "{}",
+        other[0].message
+    );
     let seals = json!({"verb": "seals", "text": "the door shuts", "subject": "anchor/door"});
-    assert_eq!(refused(&with_happening(seals.clone(), gate("anchor/door"))).len(), 1);
+    assert_eq!(
+        refused(&with_happening(seals.clone(), gate("anchor/door"))).len(),
+        1
+    );
     let close = json!([{"type": "close-gate", "anchor": "anchor/door"}]);
     assert!(refused(&with_happening(seals, close)).is_empty());
     let gains = json!({"verb": "gains", "text": "the party gains a key"});
@@ -86,9 +106,17 @@ fn a_step_that_says_it_opens_a_thing_opens_it_dw1070() {
     let (_, before) = happening::check(&with_happening(opens(None), json!([])));
     let (d, after) = happening::check(&c);
     assert!(refused(&c).is_empty(), "{d:?}");
-    assert_eq!(after.judged + 1, before.judged, "a `gains` is counted, not judged");
+    assert_eq!(
+        after.judged + 1,
+        before.judged,
+        "a `gains` is counted, not judged"
+    );
     assert_eq!(after.happenings, before.happenings);
-    assert!(after.line().starts_with("happening binding (DW1070): "), "{}", after.line());
+    assert!(
+        after.line().starts_with("happening binding (DW1070): "),
+        "{}",
+        after.line()
+    );
 }
 
 /// The gallery's site-plan point as a campaign, with `edit` applied to its

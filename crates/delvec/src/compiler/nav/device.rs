@@ -1377,6 +1377,59 @@ mod tests {
         assert!(r[0].contains("[0, 6, -1]"), "{}", r[0]);
     }
 
+    /// **spec-0124 criterion 8, the predicate half**: `DW1071` asks `DW0863`'s
+    /// own sight predicate (`promise::act_unfound`) of a key's cell: a region
+    /// behind a full wall is out of sight and named by its blocking cell, the
+    /// same wall of glass is looked through, and a region past 64 blocks is
+    /// out of sight by distance.
+    #[test]
+    fn a_key_sees_by_the_one_sight_predicate_dw1071() {
+        assert_eq!(DW_EFFECT_OUT_OF_SIGHT.id(), "DW1071");
+        let ground = |wall: Option<&str>, far: i32| {
+            let mut m: BTreeMap<[i32; 3], String> = BTreeMap::new();
+            for x in -2..=far + 2 {
+                for z in -2..=2 {
+                    m.insert([x, 0, z], STONE.into());
+                }
+            }
+            if let Some(w) = wall {
+                for z in -2..=2 {
+                    for y in 1..=6 {
+                        m.insert([5, y, z], w.to_string());
+                    }
+                }
+            }
+            World::from_occupancy(
+                crate::compiler::assembled::occupancy_of(m, &BTreeSet::new()),
+                Premises::geometry_only(),
+            )
+        };
+        let unfound = |w: &World, target: [i32; 3]| {
+            crate::compiler::promise::act_unfound(w, [0, 1, 0], target, false, None)
+        };
+        let walled = ground(Some(STONE), 12);
+        let why = unfound(&walled, [10, 1, 0]);
+        assert!(!why.is_empty() && why[0].contains("hidden"), "{why:?}");
+        let glass = ground(Some("minecraft:glass"), 12);
+        assert!(unfound(&glass, [10, 1, 0]).is_empty());
+        let open = ground(None, 72);
+        let why = unfound(&open, [70, 1, 0]);
+        assert!(why[0].contains("past the 64 blocks"), "{why:?}");
+        let b = KeyBinding {
+            objectives: 7,
+            keys: 2,
+            writes: 2,
+            in_sight: 1,
+            shown: 1,
+            ..KeyBinding::default()
+        };
+        assert_eq!(
+            b.line(),
+            "key binding (DW1071): 2 key objective(s) among 7; 2 write(s) judged, 1 in sight, 1 \
+             shown by a shot, 0 the key's own door released; 0 refused"
+        );
+    }
+
     /// **The agreement** between the census's framing and the reach graph's
     /// clause 1: over every assignment of stone, air or a slab to the four
     /// jamb cells, a door whose jambs all stop a body closes its opening; an

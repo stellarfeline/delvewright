@@ -157,10 +157,15 @@ What the pinned game lets a player touch, read from the jar so the decorative ex
   distance from the eye box over that cell to the door cell's box is `< 4.5`, with no padding: a
   vanilla client cannot send a use beyond the attribute, and the engine designs for the player,
   not for a modified client. The standing eye is `metrics::PLAYER_EYE_HEIGHT` (`1.62`); the
-  crouched eye height is owed by the implementing round (spec-0124, recorded debts). A jump is
+  crouched eye is `metrics::PLAYER_CROUCHED_EYE_HEIGHT` (`1.27`), read below. A jump is
   something a player can do and the game accepts a use mid-air, so the eye is also taken at the
   jump's apex — the standing eye raised by `metrics::MAX_JUMP_RISE_16` (`1.25`), the constant the
   reach graph's own jump step reads — and at every airborne state the graph records.
+- **[cited]** (`Avatar`, static initialiser, the `POSES` map) the standing dimensions are
+  `EntityDimensions.scalable(0.6, 1.8).withEyeHeight(1.62)` and `Pose.CROUCHING` maps to
+  `scalable(0.6, 1.5).withEyeHeight(1.27)`: the crouched eye is `1.27` above the feet, the
+  constant `metrics::PLAYER_CROUCHED_EYE_HEIGHT`. Read with `javap -p -c -constants` over the
+  class the Mojang mappings name `net.minecraft.world.entity.Avatar` in the pinned server jar.
 
 ## Sources
 
