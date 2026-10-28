@@ -92,7 +92,8 @@
             "flag/east-door-drawn"
           ],
           "learned": "told",
-          "opens_from": "b"
+          "opens_from": "b",
+          "shut": "bars"
         },
         "id": "edge/east-door",
         "one_way": "a-to-b",

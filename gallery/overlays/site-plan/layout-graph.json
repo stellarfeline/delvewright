@@ -86,7 +86,8 @@
         "gating": {
           "learned": "told",
           "opens_from": "either",
-          "quest": "quest/near-hall"
+          "quest": "quest/near-hall",
+          "shut": "door"
         },
         "id": "edge/centre-door"
       },
@@ -99,7 +100,8 @@
             "flag/east-door-drawn"
           ],
           "learned": "told",
-          "opens_from": "b"
+          "opens_from": "b",
+          "shut": "bars"
         },
         "id": "edge/east-door",
         "one_way": "a-to-b",
