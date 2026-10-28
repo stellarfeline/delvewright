@@ -298,6 +298,21 @@ pub struct SpatialContract {
     /// The author's acknowledgement that this piece is mostly out-of-walk.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub no_body_majority_ack: Option<String>,
+    /// **Doors and fence gates kept as decoration** (spec-0124 §5.4): each
+    /// exempt from closing an opening when no player can touch it, or no hand
+    /// opens it — the engine proves which (`DW1072`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub decorative: Vec<Decorative>,
+}
+
+/// **A door or fence gate a piece keeps as decoration** (spec-0124 §5.4).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Decorative {
+    /// The door's lower cell, or the gate's cell, in the piece's frame.
+    pub at: [i32; 3],
+    /// One sentence saying what it is dressed as.
+    pub what: String,
 }
 
 /// One face of the piece's face contract.

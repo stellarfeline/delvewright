@@ -272,6 +272,7 @@ fn contract_with(envelopes: &[(&str, &str)]) -> delvewright_dsl::prefab::Spatial
         edges: Vec::new(),
         faces: Vec::new(),
         no_body_majority_ack: None,
+        decorative: Vec::new(),
     }
 }
 

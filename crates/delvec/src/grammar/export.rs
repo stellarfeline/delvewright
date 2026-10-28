@@ -1070,6 +1070,7 @@ fn contract_without_faces(expansion: &Expansion) -> Option<SpatialContract> {
             .collect(),
         faces: Vec::new(),
         no_body_majority_ack: contract.no_body_majority_ack.clone(),
+        decorative: contract.decorative.clone(),
     })
 }
 

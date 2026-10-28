@@ -315,6 +315,8 @@ pub struct ResolvedContract {
     pub edges: Vec<ResolvedEdge>,
     /// The author's acknowledgement, carried through unchanged.
     pub no_body_majority_ack: Option<String>,
+    /// Decorative doors and gates, carried through unchanged (spec-0124 §5.4).
+    pub decorative: Vec<delvewright_dsl::Decorative>,
 }
 
 /// One orientation-unguarded fill: the `DW0736` finding
@@ -1046,6 +1048,7 @@ fn resolve_contract(
         no_body,
         edges,
         no_body_majority_ack: declared.no_body_majority_ack.clone(),
+        decorative: declared.decorative.clone(),
     })
 }
 

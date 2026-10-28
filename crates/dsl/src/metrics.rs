@@ -161,6 +161,18 @@ pub const PLAYER_CROUCHED_HEIGHT: f64 = 1.5;
 /// Player eye height above the floor of the cell the body stands in.
 pub const PLAYER_EYE_HEIGHT: f64 = 1.62;
 
+/// Player eye height above the floor, crouched: the pinned jar's
+/// `Avatar.POSES` entry for `Pose.CROUCHING`, `EntityDimensions.scalable(0.6,
+/// 1.5).withEyeHeight(1.27)` (`docs/reference/device-logic.md` §6).
+pub const PLAYER_CROUCHED_EYE_HEIGHT: f64 = 1.27;
+
+/// How far a player's hand reaches a block, in blocks: the pinned jar's
+/// `block_interaction_range` attribute default, measured from the eye to the
+/// cell's full box, strict `<` (`Player.isWithinBlockInteractionRange`,
+/// `docs/reference/device-logic.md` §6). The server's `1.0` padding is a
+/// tolerance for a lagging client and is not a reach.
+pub const BLOCK_INTERACTION_RANGE: f64 = 4.5;
+
 /// Player maximum health, in half-heart damage points.
 pub const PLAYER_MAX_HEALTH: f64 = 20.0;
 

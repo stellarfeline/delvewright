@@ -2911,6 +2911,7 @@ mod tests {
             edges: vec![edge],
             faces: Vec::new(),
             no_body_majority_ack: None,
+            decorative: Vec::new(),
         };
         let placement = crate::compiler::plan::PiecePlacement {
             prefab_id: "prefab/test-flight".to_string(),
@@ -3119,6 +3120,7 @@ mod tests {
             )],
             faces: Vec::new(),
             no_body_majority_ack: None,
+            decorative: Vec::new(),
         };
         let (way, census, flights) = run(&faced);
         assert_eq!(way.run, Run::Undeclared);
@@ -3144,6 +3146,7 @@ mod tests {
             ],
             faces: Vec::new(),
             no_body_majority_ack: None,
+            decorative: Vec::new(),
         };
         let (way, census, flights) = run(&flight);
         assert_eq!(way.run, Run::Piece);
@@ -3256,6 +3259,7 @@ mod tests {
             ],
             faces: Vec::new(),
             no_body_majority_ack: None,
+            decorative: Vec::new(),
         };
         let placement = crate::compiler::plan::PiecePlacement {
             prefab_id: "prefab/test-yard".to_string(),
@@ -3355,6 +3359,7 @@ mod tests {
             }],
             faces: Vec::new(),
             no_body_majority_ack: None,
+            decorative: Vec::new(),
         };
         let placement = crate::compiler::plan::PiecePlacement {
             prefab_id: "prefab/test-room".to_string(),

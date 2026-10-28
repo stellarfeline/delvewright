@@ -2718,6 +2718,7 @@ mod tests {
             edges: vec![via("to-flat", wl, wh), via("to-quay", nl, nh)],
             faces: Vec::new(),
             no_body_majority_ack: None,
+            decorative: Vec::new(),
         };
         let report = crate::grammar::contract::check(&model, &contract, &BTreeMap::new());
         let wf = report

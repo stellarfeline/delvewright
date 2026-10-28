@@ -279,6 +279,7 @@ fn open_contract(case: &Case) -> SpatialContract {
         ],
         faces: Vec::new(),
         no_body_majority_ack: None,
+        decorative: Vec::new(),
     }
 }
 

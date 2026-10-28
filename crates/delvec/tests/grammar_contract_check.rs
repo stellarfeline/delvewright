@@ -160,6 +160,7 @@ fn contract(entry: &str) -> SpatialContract {
         edges: Vec::new(),
         faces: Vec::new(),
         no_body_majority_ack: None,
+        decorative: Vec::new(),
     }
 }
 

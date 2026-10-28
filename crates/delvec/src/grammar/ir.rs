@@ -1303,6 +1303,10 @@ pub struct Contract {
     /// The author's acknowledgement that this piece is mostly out-of-walk.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub no_body_majority_ack: Option<String>,
+    /// Doors and fence gates kept as decoration (spec-0124 §5.4), carried to
+    /// the piece's metadata unchanged.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub decorative: Vec<delvewright_dsl::Decorative>,
 }
 
 impl Contract {
@@ -1314,6 +1318,7 @@ impl Contract {
             no_body: BTreeMap::new(),
             edges: Vec::new(),
             no_body_majority_ack: None,
+            decorative: Vec::new(),
         }
     }
 
