@@ -694,9 +694,11 @@ fn branch_ground(
     // The cut is a wall ([`World::walls_over`]): a jump that lands past it
     // flies through its cells without standing in them, so a cut made by
     // leaving cells out of the walk is crossed in the air.
-    let walled = w.with_sealed(&World::walls_over(&cut, &|p| !w.solid_at(p)));
+    let walls = World::walls_over(&cut, &|p| !w.solid_at(p));
+    let tops = World::wall_tops(&walls);
+    let walled = w.with_sealed(&walls);
     let roots: Vec<[i32; 3]> = route.iter().copied().filter(|c| !cut.contains(c)).collect();
-    let open = walled.body_flood(&roots, &Confinement::none());
+    let open = walled.body_flood(&roots, &Confinement::cells(&|c| !tops.contains(&c)));
     // A cell beside the open side is open ground too: on an open floor the
     // cut's own cells, taken out of the flood, stand beside it — a cut cell
     // from which one move of the graph, a leap included, lands on the open

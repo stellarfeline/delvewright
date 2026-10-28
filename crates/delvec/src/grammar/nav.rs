@@ -237,8 +237,11 @@ pub fn reaches_walled(
     from: &BTreeSet<[i32; 3]>,
     to: &BTreeSet<[i32; 3]>,
 ) -> bool {
-    let walled = walled(model, kept);
-    let cells = standable_cells(&walled);
+    let (walled, tops) = walled_with_tops(model, kept);
+    let cells: BTreeSet<[i32; 3]> = standable_cells(&walled)
+        .difference(&tops)
+        .copied()
+        .collect();
     reaches(&walled, &cells, from, to)
 }
 
@@ -248,14 +251,25 @@ pub fn reaches_walled(
 /// cross floor it was not given in the air ([`reaches_walled`], the edge
 /// proof).
 pub fn walled(model: &VoxelModel, kept: &BTreeSet<[i32; 3]>) -> VoxelModel {
+    walled_with_tops(model, kept).0
+}
+
+/// [`walled`], with the cells standing on the wall it laid
+/// ([`crate::compiler::nav::World::wall_tops`]): floor the wall made, which a
+/// confined walk keeps off.
+pub fn walled_with_tops(
+    model: &VoxelModel,
+    kept: &BTreeSet<[i32; 3]>,
+) -> (VoxelModel, BTreeSet<[i32; 3]>) {
     let removed: BTreeSet<[i32; 3]> = standable_cells(model).difference(kept).copied().collect();
     let mut out = model.clone();
     let stone = crate::grammar::block::BlockState::simple("minecraft:stone_bricks");
-    for p in crate::compiler::nav::World::walls_over(&removed, &|p| passable(model, p)) {
-        out.set(p, &stone)
+    let walls = crate::compiler::nav::World::walls_over(&removed, &|p| passable(model, p));
+    for p in &walls {
+        out.set(*p, &stone)
             .expect("the palette has room for the wall");
     }
-    out
+    (out, crate::compiler::nav::World::wall_tops(&walls))
 }
 
 /// Where a body walks in: the standable cells on the region's four **vertical**

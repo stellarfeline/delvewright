@@ -964,3 +964,49 @@ fn a_seal_of_bars_through_a_floor_is_no_floor() {
     assert!(shut.is_standable([3, 64, 3]));
     assert!(!shut.body_edge_cells([2, 64, 3]).iter().any(|c| c[1] < 63));
 }
+
+/// **A wall laid to take floor away has a top, and a confined walk keeps off
+/// it** ([`World::walls_over`], [`World::wall_tops`]). A lane one wide: kept
+/// floor at both ends, the middle five cells taken away and walled, and a
+/// two-step stair at the near end that stands a body one below the wall's
+/// top. Over the walled world alone a body climbs the stair, steps onto the
+/// wall and walks across the taken floor on it — the shape that let `DW0838`'s
+/// flood without the commons cross the commons from a place's open side
+/// (spec-0123 §5 with the reach graph). Kept off the wall's top, it does not.
+#[test]
+fn a_confined_walk_keeps_off_the_top_of_the_wall_it_laid() {
+    let mut solid: BTreeSet<[i32; 3]> = BTreeSet::new();
+    for x in -1..=11 {
+        solid.insert([x, 63, 0]); // the lane's floor
+        for y in 63..=72 {
+            solid.insert([x, y, -1]);
+            solid.insert([x, y, 1]);
+        }
+    }
+    for y in 64..=72 {
+        solid.insert([-1, y, 0]);
+        solid.insert([11, y, 0]);
+    }
+    solid.insert([1, 64, 0]); // the stair: one up, then two up
+    solid.insert([2, 64, 0]);
+    solid.insert([2, 65, 0]);
+    let w = World::from_solid_cells(solid);
+    let taken: BTreeSet<[i32; 3]> = (3..=7).map(|x| [x, 64, 0]).collect();
+    let walls = World::walls_over(&taken, &|p| !w.solid_at(p));
+    assert_eq!(walls.len(), 15, "three high over five cells");
+    let tops = World::wall_tops(&walls);
+    assert_eq!(tops.len(), 5);
+    let walled = w.with_sealed(&walls);
+    let far = [9, 64, 0];
+    let over = walled.body_flood(&[[0, 64, 0]], &Confinement::none());
+    assert!(over.contains(&[2, 66, 0]), "the stair is climbed");
+    assert!(
+        over.contains(&far),
+        "over the walled world alone a body walks the wall's top across"
+    );
+    let kept = walled.body_flood(&[[0, 64, 0]], &Confinement::cells(&|c| !tops.contains(&c)));
+    assert!(
+        !kept.contains(&far),
+        "kept off the wall's top, it does not cross"
+    );
+}

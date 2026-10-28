@@ -3363,23 +3363,33 @@ fn crossings(
     // a body that does not cross the commons cannot cross it in the air
     // either — a jump that lands in another place over the commons' ground
     // crosses the commons, and is counted where the commons is.
+    // The wall's own top is floor the wall made (`World::wall_tops`): a body
+    // stepping out of a place's open side gets up beside it and would walk
+    // across the commons on top of it, so the flood without the commons keeps
+    // off it too.
     let without_commons = (binding.commons && !commons.is_empty()).then(|| {
         let mut shut = walled.clone();
-        for cell in crate::compiler::nav::World::walls_over(commons, &|p| !deleted.solid_at(p)) {
+        let walls = crate::compiler::nav::World::walls_over(commons, &|p| !deleted.solid_at(p));
+        for cell in &walls {
             shut.insert(
-                cell,
+                *cell,
                 crate::compiler::blockstate::BlockState::new(palette::WALL),
             );
         }
-        derive(&shut)
+        (
+            derive(&shut),
+            crate::compiler::nav::World::wall_tops(&walls),
+        )
     });
     let flood = |starts: &[[i32; 3]], through_commons: bool| -> BTreeSet<[i32; 3]> {
-        let world = match (&without_commons, through_commons) {
-            (Some(shut), false) => shut,
-            _ => &deleted,
+        let (world, tops) = match (&without_commons, through_commons) {
+            (Some((shut, tops)), false) => (shut, Some(tops)),
+            _ => (&deleted, None),
         };
         crossing_flood(world, starts, &|next| {
-            in_region(next) && (through_commons || !commons.contains(&next))
+            in_region(next)
+                && (through_commons || !commons.contains(&next))
+                && tops.is_none_or(|t| !t.contains(&next))
         })
     };
     let inside = |c: &[i32; 3], y: &PlacedBox| {

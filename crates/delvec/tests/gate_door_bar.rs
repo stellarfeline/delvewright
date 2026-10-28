@@ -59,11 +59,18 @@ fn quests_doc() -> String {
           "obj/talk": [ {{ "type": "open-gate", "anchor": "anchor/door" }} ]
         }},
         "on_complete": [
-          {{ "type": "close-gate", "anchor": "anchor/door",
-             "sealed_hint": "The iron door will not open for you." }},
+          {{ "type": "close-gate", "anchor": "anchor/door" }},
           {{ "type": "campaign-complete" }}
         ]
       }}
+    ],
+    "triggers": [
+      {{ "id": "trigger/door-shut", "at": "anchor/door-leaf", "on": {{ "on": "use" }},
+         "once": false, "audience": "presser", "serves": {{ "gate": "anchor/door" }},
+         "effects": [
+           {{ "type": "narrate", "style": "actionbar",
+              "text": "The iron door will not open for you." }}
+         ] }}
     ]
   }}
 }}"#
@@ -96,6 +103,13 @@ fn campaign() -> Campaign {
 fn prefabs() -> PrefabRegistry {
     let mut reg = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let mut meta = reg.get("prefab/hello-room").expect("hello-room").clone();
+    // The seal's answer is a press on the door's own lower cell (spec-0117
+    // §4): a point anchor there, which the answer trigger stands on.
+    let mut leaf = meta.anchors["anchor/door"].clone();
+    leaf.pos = Some(LOCAL.0);
+    leaf.region = None;
+    leaf.block = None;
+    meta.anchors.insert("anchor/door-leaf".to_string(), leaf);
     let door = meta
         .anchors
         .get_mut("anchor/door")

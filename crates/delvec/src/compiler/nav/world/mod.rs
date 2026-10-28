@@ -2000,7 +2000,10 @@ impl World {
     ///
     /// The wall never takes a kept standable cell or its headroom: a cell two
     /// over removed floor is open only when the cell under it is, so no kept
-    /// floor stands on it.
+    /// floor stands on it. **A wall has a top, and its top is new floor**: a
+    /// body that gets up beside it walks across the removed floor on the wall
+    /// itself. Every confined walk over a walled world keeps the body off
+    /// [`World::wall_tops`] of the cells this returns.
     pub fn walls_over(
         floor: &BTreeSet<[i32; 3]>,
         open: &dyn Fn([i32; 3]) -> bool,
@@ -2015,6 +2018,17 @@ impl World {
             }
         }
         out
+    }
+
+    /// **The cells standing on a wall [`World::walls_over`] laid**: each cell
+    /// directly over a wall cell that is not itself a wall cell — floor the
+    /// wall made, which no confined walk may stand a body on.
+    pub fn wall_tops(walls: &BTreeSet<[i32; 3]>) -> BTreeSet<[i32; 3]> {
+        walls
+            .iter()
+            .map(|c| [c[0], c[1] + 1, c[2]])
+            .filter(|c| !walls.contains(c))
+            .collect()
     }
 
     /// Whether `c` lies inside this world's piece box — every cell of a world
