@@ -1648,6 +1648,11 @@ fn pit_campaign(tag: &str, bound: &str, extent: [i32; 3]) -> (PathBuf, PathBuf) 
             .as_array_mut()
             .unwrap()
             .retain(|e| e["type"] != "open-gate");
+        // With no gate left to open, the asking opens nothing (`DW1070`).
+        q["objectives"][0]["happening"] = serde_json::json!({
+            "subject": "npc/keeper", "verb": "learns",
+            "text": "The keeper hears the asking and tells the way on."
+        });
         v["content"]["lethal_volumes"] = serde_json::json!([{
             "id": "lethal/the-pit",
             "message": "The pit in the hall floor has no bottom you would survive.",

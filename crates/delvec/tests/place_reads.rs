@@ -11,7 +11,8 @@
 //! causeway's east and west), none under a contact — 5; ten boxes. The annex's
 //! street face is a three-wide counter window over a one-course sill and an
 //! iron door, both under one head course; the yard's trough is two sources in
-//! the paving course; the far hall's screen holds an oak door in a wall.
+//! the paving course; the far hall's screen holds an oak door in a wall, and
+//! the near hall ships the centre door's oak leaf in its seam (spec-0124).
 
 mod common;
 
@@ -153,7 +154,7 @@ fn the_census_states_the_annex_front_the_doors_and_the_court_water() {
     let p = point("census");
     assert!(
         p.stderr.contains(
-            "piece census: 10 piece(s), 30 face(s), 19 opening(s), 2 water cell(s); doors framed: 2 of 2"
+            "piece census: 10 piece(s), 30 face(s), 19 opening(s), 2 water cell(s); doors framed: 3 of 3"
         ),
         "{}",
         p.stderr
@@ -189,7 +190,7 @@ fn the_census_states_the_annex_front_the_doors_and_the_court_water() {
         })
         .collect();
     assert_eq!(openings, vec![(1, 1, 3), (0, 1, 1)], "{south}");
-    for node in ["node/annex", "node/far-hall"] {
+    for node in ["node/annex", "node/far-hall", "node/near-hall"] {
         let doors = piece(node)["doors"].clone();
         assert_eq!(doors.as_array().unwrap().len(), 1, "{node}: {doors}");
         assert_eq!(doors[0]["framed"], true, "{node}: {doors}");
@@ -313,8 +314,8 @@ fn air_over_the_annex_door_unframes_it_and_moves_the_line() {
     let (stderr, after) = rebuilt_with(p, "door", "gallery-annex.nbt", |s| {
         s.set_cell(head, PaletteEntry::with_props("minecraft:air", &[]), None);
     });
-    assert!(stderr.contains("doors framed: 1 of 2"), "{stderr}");
-    assert_eq!(after["census"]["doors_framed"], 1);
+    assert!(stderr.contains("doors framed: 2 of 3"), "{stderr}");
+    assert_eq!(after["census"]["doors_framed"], 2);
     let framing = entry(&after, "node/annex")["doors"][0]["framing"].clone();
     let h = framing
         .as_array()
