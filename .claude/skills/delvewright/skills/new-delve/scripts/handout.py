@@ -362,10 +362,10 @@ def neighbour_summary(
         if node.get("reached") is False:
             what += " — scenery, never entered"
         out.append(f"- what it is: {what}")
-        if node.get("holds"):
+        if (theirs or {}).get("parts"):
             out.append(
                 "- it is a plot holding: "
-                + "; ".join(f"{p.get('use', '')} ({p.get('kind')})" for p in node["holds"])
+                + "; ".join(f"{p.get('use', '')} ({p.get('kind')})" for p in theirs["parts"])
             )
         floor = f"its walk plane is {relative_plane(mine_y, nb['floor'])} (world y {nb['floor']})"
         if theirs:
@@ -461,10 +461,10 @@ def place_section(
     return out, len(refs)
 
 
-def plot_section(place: str, graph: dict, plan: dict) -> tuple[list[str], int]:
-    """*What this plot holds* (spec-0125 §6.1), for a node declaring `holds[]`."""
-    node = next((x for x in graph.get("nodes", []) if x.get("id") == place), None) or {}
-    holds = node.get("holds", []) or []
+def plot_section(place: str, a: dict, plan: dict) -> tuple[list[str], int]:
+    """*What this plot holds* (spec-0125 §6.1): the allocation's `parts`, the
+    same derivation the starter lays and `delvec detail` binds."""
+    holds = a.get("parts", []) or []
     if not holds:
         return [], 0
     box = next((x for x in plan.get("boxes", []) if x.get("node") == place), None) or {}
@@ -524,7 +524,7 @@ def render(
     rows, n_rows = design_rows(place, a, graph, plan, brief, quests, design, owed)
     nbs, n_nbs = neighbour_summary(a, all_allocations, graph, plan, detailed)
     what, n_refs = place_section(place, graph, plan, campaign_dir)
-    plot, n_parts = plot_section(place, graph, plan)
+    plot, n_parts = plot_section(place, a, plan)
     ex, ey, ez = a["extent"]
     work = handout_path.parent / "work"
     delvec_p = f'"{delvec}" --prefabs "{prefabs}"'

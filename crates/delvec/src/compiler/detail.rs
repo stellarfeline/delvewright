@@ -568,6 +568,12 @@ pub struct Allocation {
     /// face order.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub sides: Vec<HandedSide>,
+    /// The parts a plot holds (spec-0125 §5.1), [`crate::compiler::plot::handed_parts`]:
+    /// the node's `holds[]`, in declaration order. The handout states them and
+    /// the starter lays each one; `delvec detail` binds the expansion against
+    /// these. Absent on a place that is not a plot.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<delvewright_dsl::layout::Part>,
     /// The synthesized names this place owes, which `anchors` must bind.
     pub owed_anchors: Vec<String>,
     /// Every cell of the frame the place does not own, with who does. The
@@ -946,6 +952,7 @@ pub fn allocation(c: &Campaign, node: &NodeId) -> Option<Allocation> {
             })
             .collect(),
         sides: handed_sides(b, &plan.seams, local),
+        parts: crate::compiler::plot::handed_parts(c, node),
         owed_anchors: delvewright_dsl::owed_anchors(c, node).into_iter().collect(),
         voids: frame
             .voids

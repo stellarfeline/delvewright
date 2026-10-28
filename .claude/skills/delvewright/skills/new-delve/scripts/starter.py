@@ -185,6 +185,11 @@ class Place:
             if kind.rstrip(")") != "gate":
                 continue
             self.gates.append(self.place_gate(name.removeprefix("anchor/")))
+        # A plot's parts (spec-0125 §5.1): the allocation's `parts`, each laid
+        # as a region of its declared cells, named for the part.
+        self.parts: list[dict] = []
+        self.col_part: dict[tuple[int, int], dict] = {}
+        self.lay_parts(a.get("parts", []) or [])
 
     def approach(self, seam: dict, sign: int) -> dict | None:
         """How a body reaches an opening above the walk plane, or None.
@@ -246,6 +251,87 @@ class Place:
                 return g
         sys.exit(f"starter.py: no room against the north wall for the gate station `{stem}`; place it by hand")
 
+    def lay_parts(self, parts: list[dict]) -> None:
+        """Lay each part as a region of exactly its declared cells.
+
+        The columns beside every opening, ladder, landing, gate and open side
+        stay the `room`, so every edge the room declares keeps its cells; the
+        rest of the play space is walked in rows, a part a body walks taking
+        the next run of its `cells` columns and a part seen and never entered
+        taking columns from the far end, each one a solid mass under a
+        no-body region, only where the walked floor stays one piece. Where
+        the parts stand is this starter's choice and yours to change; the
+        counts are the plan's.
+        """
+        if not parts:
+            return
+        lo, hi = self.space
+        d = self.datum.value
+        top = self.lid.value if self.lid is not None else self.wall_top.value
+        plain = {("claim", "room", None), ("claim", "roof", None), ("fill", "floor"), ("fill", "wall"), ("fill", "lid"), ("fill", "lamp"), ("void",)}
+        special = set()
+        for x in range(lo[0] - 1, hi[0] + 2):
+            for z in range(lo[2] - 1, hi[2] + 2):
+                if any(self.cell(x, y, z) not in plain for y in range(d - 1, top + 1)):
+                    special.add((x, z))
+        free = []
+        keep = set()
+        for x in range(lo[0], hi[0] + 1):
+            zs = range(lo[2], hi[2] + 1) if (x - lo[0]) % 2 == 0 else range(hi[2], lo[2] - 1, -1)
+            for z in zs:
+                if any((x + i, z + k) in special for i in (-1, 0, 1) for k in (-1, 0, 1)):
+                    keep.add((x, z))
+                else:
+                    free.append((x, z))
+        if not keep and free:
+            keep.add(free.pop(len(free) // 2))
+        need = sum(p["cells"] for p in parts)
+        if need > len(free):
+            targets = [max(-(-3 * p["cells"] // 4), p["cells"] * len(free) // need) for p in parts]
+        else:
+            targets = [p["cells"] for p in parts]
+        if sum(targets) > len(free):
+            sys.exit(
+                f"starter.py: the play space beside the openings holds {len(free)} column(s) and the parts "
+                f"need at least {sum(targets)}; lay them by hand"
+            )
+        walked = set(keep) | set(free)
+
+        def whole(cells: set) -> bool:
+            if not cells:
+                return True
+            start = next(iter(cells))
+            seen, todo = {start}, [start]
+            while todo:
+                x, z = todo.pop()
+                for n in ((x + 1, z), (x - 1, z), (x, z + 1), (x, z - 1)):
+                    if n in cells and n not in seen:
+                        seen.add(n)
+                        todo.append(n)
+            return len(seen) == len(cells)
+
+        for p, n in zip(parts, targets):
+            stem = p["id"].removeprefix("part/")
+            entry = {"part": p, "region": f"part-{stem}", "walked": p.get("reached", True), "cols": []}
+            self.parts.append(entry)
+            if entry["walked"]:
+                continue
+            for c in reversed(free):
+                if len(entry["cols"]) == n:
+                    break
+                if whole(walked - {c}):
+                    walked.discard(c)
+                    entry["cols"].append(c)
+            if len(entry["cols"]) < n:
+                sys.exit(f"starter.py: no room for the seen part `{p['id']}` that leaves the walked floor one piece; lay it by hand")
+            free = [c for c in free if c not in set(entry["cols"])]
+        for e, n in zip(self.parts, targets):
+            if e["walked"]:
+                e["cols"], free = free[:n], free[n:]
+        for e in self.parts:
+            for c in e["cols"]:
+                self.col_part[c] = e
+
     def in_space_xz(self, x: int, z: int) -> bool:
         lo, hi = self.space
         return lo[0] <= x <= hi[0] and lo[2] <= z <= hi[2]
@@ -263,6 +349,17 @@ class Place:
 
     # -- what one cell is, by the rules above --
     def cell(self, x: int, y: int, z: int) -> tuple:
+        kind = self.base_cell(x, y, z)
+        part = getattr(self, "col_part", {}).get((x, z))
+        if part is None or kind != ("claim", "room", None):
+            return kind
+        return ("claim", part["region"], None if part["walked"] else "wall")
+
+    def walkable(self, kind: tuple) -> bool:
+        """A cell of a space a body walks: the room, or a walked part."""
+        return kind == ("claim", "room", None) or any(kind == ("claim", e["region"], None) for e in self.parts if e["walked"])
+
+    def base_cell(self, x: int, y: int, z: int) -> tuple:
         c = (x, y, z)
         for s in self.seams:
             if s["bar"] is not None and all(s["bar"][0][i] <= c[i] < s["bar"][1][i] for i in range(3)):
@@ -354,6 +451,8 @@ class Place:
                 out += [self.lid, self.lid.plus(1)]
         else:
             out += [lit(lo[axis] - 1), lit(lo[axis]), lit(hi[axis] + 1), lit(hi[axis] + 2)]
+            if self.parts:
+                out += [lit(v) for v in range(lo[axis], hi[axis] + 2)]
             out += [lit(v) for v in range(0, n, LAMP_PERIOD)] + [lit(v) for v in range(2, n, LAMP_PERIOD)] + [lit(v + 1) for v in range(2, n, LAMP_PERIOD)]
         best: dict[int, Bound] = {}
         for b in out:
@@ -428,7 +527,7 @@ def marks(p: Place, inner: dict) -> dict:
         for dz in range(0, max(p.ex, p.ez)):
             for x2, z2 in ((x, z + dz), (x, z - dz), (x + dz, z), (x - dz, z)):
                 if lo[0] <= x2 <= hi[0] and lo[2] <= z2 <= hi[2] and (x2, z2) not in taken:
-                    if p.cell(x2, p.datum.value, z2) == ("claim", "room", None) and p.cell(x2, p.datum.value + 1, z2) == ("claim", "room", None) and p.cell(x2, p.datum.value - 1, z2) == ("fill", "floor"):
+                    if p.walkable(p.cell(x2, p.datum.value, z2)) and p.walkable(p.cell(x2, p.datum.value + 1, z2)) and p.cell(x2, p.datum.value - 1, z2) == ("fill", "floor"):
                         taken.add((x2, z2))
                         return x2, z2
         sys.exit("starter.py: no free floor cell for a mark; the play space is full")
@@ -483,6 +582,26 @@ def contract(p: Place) -> dict:
         # (spec-0123 §5.4). A counter a body does not cross stands at the play
         # space's edge, inside, and the side stays this edge's.
         edges.append({"a": "room", "b": "exterior", "class": "walk", "via": f"side-{s['face']}"})
+    no_body = {}
+    pairs = set()
+    for e in p.parts:
+        if not e["walked"]:
+            no_body[e["region"]] = {"part": e["part"]["id"], "reason": f"{e['part']['use']}: seen, never entered"}
+            continue
+        spaces[e["region"]] = {"envelope": spaces["room"]["envelope"], "part": e["part"]["id"]}
+    # A walk edge between every two walked spaces whose columns touch.
+    for (x, z), e in p.col_part.items():
+        if not e["walked"]:
+            continue
+        for n in ((x + 1, z), (x, z + 1), (x - 1, z), (x, z - 1)):
+            if not p.in_space_xz(*n):
+                continue
+            o = p.col_part.get(n)
+            other = "room" if o is None else (o["region"] if o["walked"] else None)
+            if other is not None and other != e["region"]:
+                pairs.add(tuple(sorted((e["region"], other))))
+    for a_, b_ in sorted(pairs):
+        edges.append({"a": a_, "b": b_, "class": "walk"})
     for g in p.gates:
         spaces[f"{g['stem']}-alcove"] = {"envelope": "open"}
         edges.append({"a": "room", "b": f"{g['stem']}-alcove", "bar": {"block": f"bar-{g['stem']}", "region": g["stem"]}, "class": "barred"})
@@ -497,8 +616,10 @@ def contract(p: Place) -> dict:
         "spaces": spaces,
     }
     if p.lid is not None and p.lid.value + 1 < p.ey:
-        out["no_body"] = {"roof": {"reason": "the roof zone over the lid, which no one is meant to walk"}}
+        no_body["roof"] = {"reason": "the roof zone over the lid, which no one is meant to walk"}
         out["no_body_majority_ack"] = "the roof zone the plan reserves over the lid is left for the roof the author builds; nobody walks it"
+    if no_body:
+        out["no_body"] = no_body
     return out
 
 
@@ -548,7 +669,7 @@ def program(a: dict) -> dict:
         # block (`DW0885`), and a side over open air must be declared.
         "shown_faces": shown_faces(p),
         "start": "place",
-        "version": "1.10.0" if climbs else "1.9.0",
+        "version": "1.14.0" if p.parts else ("1.10.0" if climbs else "1.9.0"),
     }
 
 

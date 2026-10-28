@@ -93,7 +93,6 @@ fn judge_every_place(tmp: &Path, campaign: &Path, prefabs: &Path) -> (usize, usi
     let allocations: Vec<serde_json::Value> = serde_json::from_slice(&all.stdout).unwrap();
     assert!(!allocations.is_empty(), "the point allocates no box");
     let mut passed = 0;
-    let mut plots = 0;
     let mut failures = Vec::new();
     for a in &allocations {
         let place = a["place"].as_str().unwrap();
@@ -123,29 +122,7 @@ fn judge_every_place(tmp: &Path, campaign: &Path, prefabs: &Path) -> (usize, usi
                 cs,
                 place,
             ]);
-            let parts = parts_of(campaign, place);
-            if parts > 0 {
-                // A plot (spec-0125): its parts are its author's to build, so
-                // the starter — correct for the frame, naming no part — owes
-                // exactly one refusal per declared part, `DW1074` unbuilt, and
-                // nothing else.
-                let said = text(&check);
-                let errors: Vec<&str> = said.lines().filter(|l| l.contains(" [error] ")).collect();
-                let unbuilt = errors
-                    .iter()
-                    .filter(|l| l.starts_with("DW1074 [error]") && l.contains("unbuilt:"))
-                    .count();
-                if !check.status.success() && unbuilt == parts && errors.len() == parts {
-                    plots += 1;
-                    Ok(())
-                } else {
-                    Err(format!(
-                        "a plot of {parts} part(s): the starter must be refused for exactly its \
-                         unbuilt parts, and `detail --check` exited {:?}:\n{said}",
-                        check.status.code()
-                    ))
-                }
-            } else if !check.status.success() {
+            if !check.status.success() {
                 Err(format!(
                     "`detail --check` exited {:?}:\n{}",
                     check.status.code(),
@@ -211,28 +188,13 @@ fn judge_every_place(tmp: &Path, campaign: &Path, prefabs: &Path) -> (usize, usi
             Ok(()) => {
                 passed += 1;
                 eprintln!(
-                    "starter: {place} of `{cs}` passes `detail --check` (a plot: refused for exactly its unbuilt parts), or its commit writes it with no `DW0885`"
+                    "starter: {place} of `{cs}` passes `detail --check`, and its commit writes it with no `DW0885`"
                 );
             }
             Err(why) => failures.push(format!("{place}: {why}")),
         }
     }
-    eprintln!("starter: {plots} plot(s) of `{cs}` refused for exactly their unbuilt parts");
     (passed, allocations.len(), failures)
-}
-
-/// How many parts the place's node declares (spec-0125 `holds[]`).
-fn parts_of(campaign: &Path, place: &str) -> usize {
-    let g: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(campaign.join("layout-graph.json")).unwrap())
-            .unwrap();
-    g["content"]["nodes"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|n| n["id"] == place)
-        .and_then(|n| n["holds"].as_array())
-        .map_or(0, Vec::len)
 }
 
 #[test]

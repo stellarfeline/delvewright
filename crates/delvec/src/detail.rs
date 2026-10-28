@@ -541,9 +541,9 @@ fn prepare(
             )
         })
         .collect();
-    // A plot's parts (spec-0125 §5.1): the node's `holds[]`, handed beside
-    // the open sides — a derivation, never typed.
-    opts.parts = delvec::compiler::plot::handed_parts(campaign, node);
+    // A plot's parts (spec-0125 §5.1): the allocation's, handed beside the
+    // open sides — a derivation, never typed.
+    opts.parts = a.parts.clone();
     // A plot whose box cannot hold its parts (`DW1073`) is refused here too,
     // before any piece is judged against it: the plan is what changes.
     if !opts.parts.is_empty()

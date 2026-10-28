@@ -78,6 +78,6 @@ this place owns the plane, and the ring's ground under a vertical seam),
 `sides` (spec-0123 §5.3: each side the place declares open — its face, its ring
 run at the walk plane with the two corner cells excluded, piece-local, the walk
 plane, and every `contact` seam covering cells of it with the covered run;
-absent when the place declares none), `owed_anchors`, and `voids` (each run of the frame the place does not own, with
+absent when the place declares none), `parts` (spec-0125 §5.1: the plot's `holds[]`, read by `compiler::plot::handed_parts`, in declaration order; absent on a place that is not a plot), `owed_anchors`, and `voids` (each run of the frame the place does not own, with
 its owner). Two invocations print the same bytes. Every obligation is
 recomputed from the plan at every validation.
