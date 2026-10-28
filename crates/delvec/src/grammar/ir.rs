@@ -2421,8 +2421,33 @@ impl Program {
             return Ok(());
         };
 
-        // **The `part` fence** (spec-0125 §5.1), and its spelling: a part is
-        // named `part/<kebab>` exactly as the layout graph declares it.
+        // **The `part` fence** (spec-0125 §5.1), once per field that carries
+        // it, and its spelling: a part is named `part/<kebab>` exactly as the
+        // layout graph declares it.
+        let in_space = contract
+            .spaces
+            .iter()
+            .find_map(|(n, s)| s.part.as_ref().map(|p| (n, p)));
+        if let Some((name, part)) = in_space.filter(|_| !has_part(&self.version)) {
+            return Err(ProgramError::FencedConstruct {
+                construct: "a `part` on a contract space",
+                since: PART_SINCE,
+                declared: self.version.clone(),
+                written_by: format!("the contract's space {name:?} (part {part:?})"),
+            });
+        }
+        let in_region = contract
+            .no_body
+            .iter()
+            .find_map(|(n, r)| r.part.as_ref().map(|p| (n, p)));
+        if let Some((name, part)) = in_region.filter(|_| !has_part(&self.version)) {
+            return Err(ProgramError::FencedConstruct {
+                construct: "a `part` on an out-of-walk region",
+                since: PART_SINCE,
+                declared: self.version.clone(),
+                written_by: format!("the contract's out-of-walk region {name:?} (part {part:?})"),
+            });
+        }
         let parts = contract
             .spaces
             .iter()
@@ -2434,14 +2459,6 @@ impl Program {
                     .filter_map(|(n, r)| r.part.as_ref().map(|p| (n, p))),
             );
         for (name, part) in parts {
-            if !has_part(&self.version) {
-                return Err(ProgramError::FencedConstruct {
-                    construct: "a `part` on a contract space or region",
-                    since: PART_SINCE,
-                    declared: self.version.clone(),
-                    written_by: format!("the contract's {name:?}"),
-                });
-            }
             if !part.strip_prefix("part/").is_some_and(is_kebab) {
                 return Err(ProgramError::BadPartName {
                     region: name.clone(),
