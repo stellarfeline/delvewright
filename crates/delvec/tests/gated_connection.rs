@@ -448,3 +448,74 @@ fn a_gated_stair_through_a_stand_ins_floor_keeps_its_hatch() {
         "gated, the run still has its stairwell: {line}"
     );
 }
+
+/// The gallery's centre door with its `opens_from` set to `side`.
+fn centre_door_opening_from(c: &Campaign, side: &str) -> Campaign {
+    let mut c = c.clone();
+    let g = &mut c.layout_graph.as_mut().expect("a graph").content;
+    let mut v = serde_json::to_value(&*g).unwrap();
+    let edge = v["edges"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|e| e["id"] == "edge/centre-door")
+        .expect("the centre door");
+    edge["gating"]["opens_from"] = serde_json::Value::String(side.to_string());
+    *g = serde_json::from_value(v).unwrap();
+    c
+}
+
+/// **spec-0124 criterion 2, the derivation.** The centre door is a door-shut
+/// `walk` (near hall `a`, far hall `b`) whose seam no bound piece owns, so the
+/// derivation stands its door: in the plane's two cells — `[30, 64, 20]` and
+/// `[30, 65, 20]`, read off `delvec allocation` over the materialised point,
+/// the cells the world-load seal measures as `anchor/seam-centre-door` — the
+/// stand-in's own `minecraft:oak_door`, lower and upper half, shut, hinged
+/// left, facing the side `opens_from` names: the seam is on the near hall's
+/// `south` face, so toward `a` is `north`, toward `b` is `south`, and
+/// `either` faces `a`. Nothing else in the mass moves between the three.
+#[test]
+fn the_derivation_stands_a_shut_door_facing_the_side_it_opens_from() {
+    let c = gallery_stand_ins("door-shut");
+    let lower = [30, 64, 20];
+    let upper = [30, 65, 20];
+    let door = |facing: &str, half: &str| {
+        format!(
+            "minecraft:oak_door[facing={facing},half={half},hinge=left,open=false,powered=false]"
+        )
+    };
+    let mut masses = Vec::new();
+    for (side, facing) in [("either", "north"), ("a", "north"), ("b", "south")] {
+        let mass = mass_map(&centre_door_opening_from(&c, side));
+        assert_eq!(
+            mass.get(&lower),
+            Some(&door(facing, "lower")),
+            "`opens_from: {side}`: the lower leaf"
+        );
+        assert_eq!(
+            mass.get(&upper),
+            Some(&door(facing, "upper")),
+            "`opens_from: {side}`: the upper leaf"
+        );
+        let doors: Vec<_> = mass
+            .iter()
+            .filter(|(_, b)| b.starts_with("minecraft:oak_door"))
+            .map(|(k, _)| *k)
+            .collect();
+        assert_eq!(
+            doors,
+            vec![lower, upper],
+            "`{side}`: the seam's two cells and no other"
+        );
+        masses.push(mass);
+    }
+    // Only the leaf's facing moves between `a` and `b`.
+    let moved: BTreeSet<[i64; 3]> = masses[1]
+        .keys()
+        .chain(masses[2].keys())
+        .filter(|k| masses[1].get(*k) != masses[2].get(*k))
+        .copied()
+        .collect();
+    assert_eq!(moved, [lower, upper].into_iter().collect());
+    assert_eq!(masses[0], masses[1], "`either` stands the door `a` does");
+}

@@ -145,16 +145,17 @@ fn a_plan_with_no_portal_and_no_open_side_writes_zero_threshold_shots() {
 
 /// **Criteria 24 and 25 over the built point**: one entry per bound piece;
 /// the annex's street face lists its counter opening and its door opening
-/// with their heads at one course; both doors are framed; the yard's water
+/// with their heads at one course; every door is framed but the smith's
+/// bench, an iron door standing free by its `decorative` declaration; the yard's water
 /// stands one course under its walk plane; the undercroft, with no shown
 /// face, no open side and no door, writes a zero entry; the line states every
-/// count, `D` equal to `N`.
+/// count.
 #[test]
 fn the_census_states_the_annex_front_the_doors_and_the_court_water() {
     let p = point("census");
     assert!(
         p.stderr.contains(
-            "piece census: 10 piece(s), 30 face(s), 19 opening(s), 2 water cell(s); doors framed: 3 of 3"
+            "piece census: 10 piece(s), 30 face(s), 19 opening(s), 2 water cell(s); doors framed: 6 of 7"
         ),
         "{}",
         p.stderr
@@ -190,10 +191,19 @@ fn the_census_states_the_annex_front_the_doors_and_the_court_water() {
         })
         .collect();
     assert_eq!(openings, vec![(1, 1, 3), (0, 1, 1)], "{south}");
-    for node in ["node/annex", "node/far-hall", "node/near-hall"] {
+    // The annex: the street door, the loft door and the smith's bench; the
+    // far hall: the screen wall's two doors and the yard gate.
+    for (node, n) in [
+        ("node/annex", 3),
+        ("node/far-hall", 3),
+        ("node/near-hall", 1),
+    ] {
         let doors = piece(node)["doors"].clone();
-        assert_eq!(doors.as_array().unwrap().len(), 1, "{node}: {doors}");
-        assert_eq!(doors[0]["framed"], true, "{node}: {doors}");
+        assert_eq!(doors.as_array().unwrap().len(), n, "{node}: {doors}");
+        for d in doors.as_array().unwrap() {
+            let bench = d["cell"] == serde_json::json!([11, 64, 20]);
+            assert_eq!(d["framed"], !bench, "{node}: {d}");
+        }
     }
     let water = piece("node/exit")["water"].clone();
     assert_eq!(
@@ -304,7 +314,14 @@ fn air_over_the_annex_door_unframes_it_and_moves_the_line() {
     use delvec::admit::structure::PaletteEntry;
     let p = point("door");
     let before = read_json(&p.out.join("validation/piece-census.json"));
-    let door = entry(&before, "node/annex")["doors"][0]["cell"].clone();
+    // The street door, not the bench or the loft door the annex also holds.
+    let street = entry(&before, "node/annex")["doors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|d| d["cell"] == serde_json::json!([12, 64, 29]))
+        .expect("the annex's street door");
+    let door = entry(&before, "node/annex")["doors"][street]["cell"].clone();
     let origin = frame_origin(p, "node/annex");
     let head = [
         (door[0].as_i64().unwrap() - origin[0]) as i32,
@@ -314,9 +331,9 @@ fn air_over_the_annex_door_unframes_it_and_moves_the_line() {
     let (stderr, after) = rebuilt_with(p, "door", "gallery-annex.nbt", |s| {
         s.set_cell(head, PaletteEntry::with_props("minecraft:air", &[]), None);
     });
-    assert!(stderr.contains("doors framed: 2 of 3"), "{stderr}");
+    assert!(stderr.contains("doors framed: 5 of 7"), "{stderr}");
     assert_eq!(after["census"]["doors_framed"], 2);
-    let framing = entry(&after, "node/annex")["doors"][0]["framing"].clone();
+    let framing = entry(&after, "node/annex")["doors"][street]["framing"].clone();
     let h = framing
         .as_array()
         .unwrap()
@@ -373,8 +390,221 @@ fn the_door_shut_seam_is_released_where_a_bar_is_cleared() {
         "device binding (DW1069): 1 way-block(s) among 8 pressable(s); 1 door-shut seam(s) among 8 gated connection(s); 0 refused",
         "key binding (DW1071): 1 key objective(s) among 8; 1 write(s) judged, 0 in sight, 0 shown by a shot, 1 the key's own door released; 0 refused",
         "happening binding (DW1070): 9 opens/seals happening(s) among 18; 0 refused",
-        "DW1072 binding: 4 door(s) and gate(s) in the assembled world (3 in bound pieces, the census's N); 0 declared decorative; 4 judged over 5 configuration(s); 0 refused",
+        "DW1072 binding: 8 door(s) and gate(s) in the assembled world (7 in bound pieces, the census's N); 2 declared decorative [[11, 64, 20] (no hand opens), [11, 72, 29] (out of reach)]; 6 judged over 7 configuration(s); 0 refused",
     ] {
         assert!(p.stderr.contains(line), "`{line}` in:\n{}", p.stderr);
     }
+}
+
+/// Every file under `root`, by its path relative to `root`, with its bytes.
+fn tree(root: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
+    let mut out = std::collections::BTreeMap::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        for e in std::fs::read_dir(&d).unwrap() {
+            let p = e.unwrap().path();
+            if p.is_dir() {
+                stack.push(p);
+            } else {
+                out.insert(
+                    p.strip_prefix(root).unwrap().to_path_buf(),
+                    std::fs::read(&p).unwrap(),
+                );
+            }
+        }
+    }
+    out
+}
+
+/// **spec-0124 criterion 2, the bytes.** The centre door's seam is owned by
+/// no bound piece, so the derivation stands its door (the stand-in's oak, in
+/// `tests/gated_connection.rs`); the world-load seal measures the gate region
+/// `anchor/seam-centre-door` as the leaf's two cells, both blocked at load;
+/// and the point built a second time into another directory is the same
+/// bytes, file for file.
+#[test]
+fn the_derivations_door_is_sealed_at_load_and_built_twice_the_same() {
+    let p = point("door-twice");
+    let seal = read_json(&p.out.join("validation/gate-seal.json"));
+    let gate = seal["gates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|g| g["anchor"] == "anchor/seam-centre-door")
+        .expect("the seal measures the door-shut seam");
+    assert_eq!(gate["from"], serde_json::json!([30, 64, 20]), "{gate}");
+    assert_eq!(gate["to"], serde_json::json!([30, 65, 20]), "{gate}");
+    assert_eq!(gate["cells"], 2, "{gate}");
+    assert_eq!(gate["blocked_at_world_load"], 2, "{gate}");
+    assert_eq!(gate["sealed"], true, "{gate}");
+    let again = tempdir("door-twice").join("out");
+    build(&p.campaign, &p.prefabs, &again);
+    let (a, b) = (tree(&p.out), tree(&again));
+    assert_eq!(
+        a.keys().collect::<Vec<_>>(),
+        b.keys().collect::<Vec<_>>(),
+        "the same files"
+    );
+    let differ: Vec<&PathBuf> = a.keys().filter(|k| a[*k] != b[*k]).collect();
+    assert!(differ.is_empty(), "files whose bytes differ: {differ:?}");
+}
+
+/// The detailed site-plan point with `edit` applied to its `quests.json`,
+/// built once: the exit status, everything printed, and the output tree.
+fn variant(name: &str, edit: impl FnOnce(&mut serde_json::Value)) -> (bool, String, PathBuf) {
+    let tmp = tempdir(name);
+    let (campaign, prefabs) = common::gallery_site_plan_detailed(&tmp);
+    common::patch_file(&campaign.join("quests.json"), edit);
+    let out = tmp.join("out");
+    let run = Command::new(BIN)
+        .arg("--prefabs")
+        .arg(&prefabs)
+        .arg("build")
+        .arg(&campaign)
+        .arg("-o")
+        .arg(&out)
+        .output()
+        .expect("run delvec");
+    (run.status.success(), text(&run), out)
+}
+
+/// A `use` trigger at the exit yard's stone carrying `prop`.
+fn press_at_the_exit(prop: &str) -> impl FnOnce(&mut serde_json::Value) {
+    let prop = prop.to_string();
+    move |v| {
+        v["content"]["triggers"].as_array_mut().unwrap().push(serde_json::json!({
+            "at": "anchor/exit-stone",
+            "audience": "presser",
+            "effects": [{"style": "actionbar", "text": "It gives onto the yard.", "type": "narrate"}],
+            "id": "trigger/press-the-room-door",
+            "on": {"on": "use"},
+            "once": false,
+            "prop": {"block": prop}
+        }));
+    }
+}
+
+/// **spec-0124 criterion 5, shape a on a build.** A `use` trigger whose prop
+/// is a shut oak door standing in the yard, on no seam, is refused `DW1069`
+/// naming the pressable, its cell and both remedies; the same trigger with a
+/// lever in that cell is not a way-block — the ledger counts it among the
+/// pressables and holds no row for it — and the build is green. The door
+/// declared as its edge's shutter, its step anchored on the seam, is the
+/// point itself (`the_door_shut_seam_is_released_where_a_bar_is_cleared`).
+#[test]
+fn a_door_on_no_seam_is_refused_and_a_lever_in_its_cell_is_not_judged() {
+    let (ok, said, _) = variant(
+        "shape-a-door",
+        press_at_the_exit(
+            "minecraft:oak_door[facing=north,half=lower,hinge=left,open=false,powered=false]",
+        ),
+    );
+    assert!(!ok, "a door on no seam is refused:\n{said}");
+    let line = said
+        .lines()
+        .find(|l| l.starts_with("DW1069"))
+        .unwrap_or_else(|| panic!("DW1069 in:\n{said}"));
+    for word in [
+        "trigger/press-the-room-door",
+        "oak_door",
+        "\"shut\": \"door\"",
+        "lever",
+    ] {
+        assert!(line.contains(word), "`{word}` in {line}");
+    }
+    let (ok, said, out) = variant(
+        "shape-a-lever",
+        press_at_the_exit("minecraft:lever[face=floor,facing=north,powered=false]"),
+    );
+    assert!(ok, "a lever is not a way:\n{said}");
+    let ledger = read_json(&out.join("validation/devices.json"));
+    assert_eq!(ledger["way_blocks"]["pressables"], 9, "{ledger}");
+    assert_eq!(ledger["way_blocks"]["way_blocks"], 1, "{ledger}");
+    assert_eq!(ledger["way_blocks"]["refused"], 0, "{ledger}");
+    assert!(
+        said.contains("device binding (DW1069): 1 way-block(s) among 9 pressable(s)"),
+        "{said}"
+    );
+}
+
+/// **spec-0124 criterion 4, the close.** A `close-gate` on the door-shut seam
+/// at the far hall's end lays the leaf shut again — both halves, `open=false`
+/// — and stands the key's box over it once more, in the same function.
+#[test]
+fn a_close_gate_on_a_door_shut_seam_shuts_the_leaf_and_restands_the_box() {
+    let (ok, said, out) = variant("close-door", |v| {
+        v["content"]["quests"][1]["on_complete"]
+            .as_array_mut()
+            .unwrap()
+            .insert(
+                0,
+                serde_json::json!({"type": "close-gate", "anchor": "anchor/seam-centre-door"}),
+            );
+    });
+    assert!(ok, "the close builds:\n{said}");
+    let f = out.join("datapack/data/gallery/function");
+    let mut hits = Vec::new();
+    for e in std::fs::read_dir(&f).unwrap() {
+        let p = e.unwrap().path();
+        let body = std::fs::read_to_string(&p).unwrap();
+        if p.file_name().unwrap() == "setup_finish.mcfunction" {
+            continue;
+        }
+        if body.lines().any(|l| {
+            l.starts_with("summon minecraft:interaction 30.5 63.99 20.5")
+                && l.contains("\"dw_i_unlock_the_centre_door\"")
+        }) {
+            hits.push((p, body));
+        }
+    }
+    assert_eq!(
+        hits.len(),
+        1,
+        "one function restands the box: {:?}",
+        hits.iter().map(|h| &h.0).collect::<Vec<_>>()
+    );
+    let body = &hits[0].1;
+    // The door-prop pair, re-bound on a seam's shutter: the leaf is laid as
+    // one door, its lower half in the plane's lower cell under its upper half
+    // — never the declared lower state written into each cell, which the
+    // server drops and `DW1002` refuses on the world the build judges.
+    let leaf: Vec<&str> = body
+        .lines()
+        .filter(|l| l.contains("minecraft:oak_door["))
+        .collect();
+    assert_eq!(leaf.len(), 2, "the leaf's two halves: {leaf:?}");
+    for (cell, half) in [("30 64 20", "lower"), ("30 65 20", "upper")] {
+        assert!(
+            leaf.iter().any(|l| l.contains(cell)
+                && l.contains(&format!("half={half}"))
+                && l.contains("open=false")),
+            "the {half} half is laid shut at {cell}: {leaf:?}"
+        );
+    }
+}
+
+/// **spec-0124 criterion 8, the shot.** The key's completion gains an
+/// `open-gate` on the loft stair's bar, out of the presser's sight (the
+/// refusal is the probe `an-effect-out-of-sight`), and a `cutscene` whose
+/// shot looks at it: green, the write counted as shown by a shot.
+#[test]
+fn a_key_whose_far_write_a_shot_frames_is_green() {
+    let (ok, said, out) = variant("key-shot", |v| {
+        v["content"]["quests"][0]["on_objective_complete"]["obj/unlock-the-centre-door"]
+            .as_array_mut()
+            .unwrap()
+            .extend([
+                serde_json::json!({"anchor": "anchor/seam-loft-stair", "type": "open-gate",
+                    "happening": {"subject": "anchor/seam-loft-stair", "verb": "opens",
+                        "text": "The bar at the loft stair's head draws back."}}),
+                serde_json::json!({"type": "cutscene", "seconds": 3,
+                    "look_at": {"anchor": "anchor/seam-loft-stair"},
+                    "path": [{"anchor": "anchor/node-far-hall", "offset": [0, 2, 0]},
+                             {"anchor": "anchor/node-far-hall", "offset": [0, 3, 0]}]}),
+            ]);
+    });
+    assert!(ok, "a shown write is green:\n{said}");
+    let ledger = read_json(&out.join("validation/devices.json"));
+    assert_eq!(ledger["keys"]["shown"], 1, "{ledger}");
+    assert_eq!(ledger["keys"]["refused"], 0, "{ledger}");
 }
