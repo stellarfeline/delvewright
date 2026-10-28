@@ -1,0 +1,32 @@
+{
+  "code": "DW1069",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/triggers/-",
+      "value": {
+        "at": "anchor/node-near-hall",
+        "audience": "presser",
+        "effects": [
+          {
+            "style": "actionbar",
+            "text": "The door gives onto the wall.",
+            "type": "narrate"
+          }
+        ],
+        "id": "trigger/press-the-room-door",
+        "on": {
+          "on": "use"
+        },
+        "once": true,
+        "prop": {
+          "block": "minecraft:oak_door[facing=north,half=lower,hinge=left,open=false,powered=false]"
+        }
+      }
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "A shut oak door pressed by a `use` trigger in the middle of the near hall, in no seam: a door the story addresses that is no way's shutter. To the layout graph there is no way there, so pressing it opens nothing any proof walks — the store door of a retired demo. `DW1069` refuses it (shape a), naming the pressable, its cell, the nearest seam and the two remedies: declare the connection `shut: door` and anchor the step on its seam, or make the pressable a lever, a button or a bell."
+}

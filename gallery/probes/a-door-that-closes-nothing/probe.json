@@ -1,0 +1,16 @@
+{
+  "code": "DW1072",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/0/on_complete/1/prop",
+      "value": {
+        "block": "minecraft:spruce_door[facing=north,half=lower,hinge=left,open=false,powered=false]"
+      }
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The causeway beacon's press made a spruce door standing free on the causeway's floor, with nothing beside it: shut, a body walks round it; it does a door's job nowhere. `DW1072` refuses it on clause 1, naming the cells a body passes round the leaf and the remedies: remove it, join wall to both sides of it, or declare a decoration no hand opens or none a player can reach."
+}

@@ -1,0 +1,16 @@
+{
+  "code": "DW1069",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/0/objectives/3/prop",
+      "value": {
+        "block": "minecraft:oak_door[facing=north,half=lower,hinge=left,open=false,powered=false]"
+      }
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The centre door's key, anchored at the door-shut seam, with a `prop` written: the seam's door is already the pressable, and the gate's opening is its release, so a `prop` there is a second statement of what the seam declares. `DW1069` refuses it at validation (shape d)."
+}

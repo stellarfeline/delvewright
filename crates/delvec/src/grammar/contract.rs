@@ -1331,6 +1331,12 @@ fn closure(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> Gat
         let mut excused: BTreeSet<[i32; 3]> = BTreeSet::new();
         for i in ix.edges_at(name) {
             excused.extend(ix.via_cells[i].iter().copied());
+            // A barred edge's bar region is the opening it declares: a bar a
+            // hand opens (a door-shut seam's shutter, spec-0124 §5.1) is
+            // passable to the voxel rule and is that opening's leaf.
+            if let Some(c) = ix.contingency[i].as_ref().filter(|c| c.sugar) {
+                excused.extend(c.cells.iter().copied());
+            }
         }
         for (other, set) in &ix.space_cells {
             if other != name {

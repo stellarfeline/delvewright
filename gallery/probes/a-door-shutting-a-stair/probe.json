@@ -1,0 +1,14 @@
+{
+  "code": "DW1069",
+  "patch": [
+    {
+      "doc": "layout-graph.json",
+      "op": "add",
+      "path": "/content/edges/5/gating/shut",
+      "value": "door"
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "`shut: door` written on the loft stair, a gated `stair`: a door stands in a wall between two floors a body walks, and a stair's head has no such opening. `DW1069` refuses it at validation (shape c)."
+}

@@ -1,0 +1,17 @@
+{
+  "code": "DW1071",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/0/on_objective_complete/obj~1unlock-the-centre-door/-",
+      "value": {
+        "anchor": "anchor/seam-loft-stair",
+        "type": "open-gate"
+      }
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The centre door's key also opens the loft stair's head, up in the far hall behind the near hall's wall, with no shot of it: a key whose effect lands where the player using it cannot see, and nothing shows it. `DW1071` refuses the write, naming the key, the region, why the line of sight fails, and the two remedies: stand the device where its effect is in view, or add a `cutscene` whose shot looks at it."
+}

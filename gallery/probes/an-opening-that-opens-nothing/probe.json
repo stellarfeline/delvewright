@@ -1,0 +1,17 @@
+{
+  "code": "DW1070",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/0/on_objective_complete/obj~1unlock-the-centre-door/0",
+      "value": {
+        "anchor": "anchor/seam-centre-door",
+        "type": "close-gate"
+      }
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The centre door's key keeps its `happening` that says it opens the seam, and its completion closes the gate instead of opening it: a step the chronicle says opens a thing, over a node that opens nothing. `DW1070` refuses the happening, naming the node, the verb, the subject and what the node does carry."
+}

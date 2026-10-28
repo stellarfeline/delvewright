@@ -1,0 +1,14 @@
+{
+  "code": "DW1045",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/0/on_complete/1/save_label",
+      "value": "Save and quit"
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The causeway beacon's second button captioned `Save and quit`: the option moves the checkpoint and does nothing else, so the caption names an act — quit — its button does not perform. `DW1045`'s label arm refuses it."
+}
