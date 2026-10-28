@@ -363,7 +363,8 @@ impl DangerVisibility {
     /// modelled body can get into (`DW0891`'s vacuity half).
     ///
     /// Not a refusal. The usual cause is a movement the engine does not model —
-    /// a player diving to the bottom of a flooded shaft — and refusing would
+    /// an item that moves a body the reach graph does not fly (spec-0113 §5.4)
+    /// — and refusing would
     /// reject a legitimate design for an engine limitation. What it may not be is
     /// silent: an empty catch over a volume nothing can enter looks exactly like
     /// an empty catch over a volume that is clear of the floor.
@@ -405,8 +406,8 @@ impl DangerVisibility {
                          follow range, holds a body the volume catches.{where_} So the \
                          visibility proof caught nothing here because nothing can be caught, not \
                          because the volume is clear of the floor — this is a zero binding. A \
-                         body may still get in by a movement the model does not make (diving, a \
-                         diagonal jump), or nothing ever will. If a player is meant to \
+                         body may still get in by a movement the model does not make (an item \
+                         that moves a body, such as a pearl or an elytra), or nothing ever will. If a player is meant to \
                          be able to die here, the engine has not proven they can get in, and the \
                          bot cannot be sent there; if nothing is, delete the volume."
                     ),
@@ -579,8 +580,12 @@ fn loop_exercise_landings(plan: &Plan) -> Vec<[i32; 3]> {
         .collect()
 }
 
-/// **The population `P`** (spec-0062 §2): every cell a player can walk to from
-/// the cells the campaign MAY put the party at ([`put_at_roots`]), over `open`
+/// **The population `P`** (spec-0062 §2): every cell a body can stand in from
+/// the cells the campaign MAY put the party at ([`put_at_roots`]) **and get
+/// back from** — the reach graph's standing states (spec-0113 §5.1), so a ledge
+/// a body jumps to and back from is in it, less the places a body gets into
+/// and not out of: a pit's bottom is not floor the party walks, so a volume
+/// may sit there (`docs/reference/dsl/lethal.md`) — over `open`
 /// — which `DW0891` passes as the lethality-free counterfactual
 /// ([`crate::compiler::nav::World::without_exclusions`]). The one derivation,
 /// read by `DW0891` and by `DW0938`'s caught cells (`compiler::assembly`).
@@ -589,7 +594,31 @@ pub(crate) fn walked_population(
     open: &crate::compiler::nav::World,
     entry: Option<[i32; 3]>,
 ) -> std::collections::BTreeSet<[i32; 3]> {
-    open.reachable_walkable(&put_at_roots(plan, open, entry))
+    body_population(open, &put_at_roots(plan, open, entry))
+}
+
+/// The standing states of `open`'s reach graph from `roots` (each snapped to
+/// standable footing, as a walk region snaps them) that a body can also get
+/// back to the roots from — the reach graph's answer to "the floor the party
+/// walks". The cells `DW0921` would call a pocket are not in it.
+pub(crate) fn body_population(
+    open: &crate::compiler::nav::World,
+    roots: &[[i32; 3]],
+) -> std::collections::BTreeSet<[i32; 3]> {
+    let seats: Vec<[i32; 3]> = roots
+        .iter()
+        .filter_map(|r| open.snap(*r, crate::compiler::nav::SNAP_RADIUS))
+        .collect();
+    let ways: std::collections::BTreeSet<[i32; 3]> = seats.iter().copied().collect();
+    let judged = open.trapped_places(&seats, &ways, None);
+    let pockets: std::collections::BTreeSet<[i32; 3]> =
+        judged.pockets.iter().flatten().copied().collect();
+    judged
+        .reach
+        .standing()
+        .into_iter()
+        .filter(|c| !pockets.contains(c))
+        .collect()
 }
 
 /// `DW0891`: **prove no killing volume reaches a cell the player would read as
@@ -659,7 +688,7 @@ pub fn check_danger_is_visible(
     // The counterfactual, not the world the router walks. See the note above.
     let open = world.without_exclusions();
     binding.roots = roots.len();
-    let as_built = open.reachable_walkable(&roots);
+    let as_built = body_population(&open, &roots);
     binding.population = as_built.len();
 
     // The configurations, for the staged volumes: every one the critical path
@@ -853,7 +882,7 @@ pub fn check_danger_is_visible(
                 let cw = configs[ci]
                     .world(world)
                     .map_or_else(|| world.without_exclusions(), |w| w.without_exclusions());
-                let pop = cw.reachable_walkable(&roots);
+                let pop = body_population(&cw, &roots);
                 let bytes = configs[ci].blocks(blocks);
                 (cw, pop, bytes)
             });

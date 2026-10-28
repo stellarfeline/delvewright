@@ -19,7 +19,7 @@
 //!   [`crate::schem::nav::ground_entry`] seeds — or `DW0952`;
 //! - **no pocket**: the leave relation `DW0921` floods
 //!   ([`crate::compiler::nav::World::trapped_places`], over
-//!   [`crate::compiler::nav::World::body_moves`]) is run over the piece alone
+//!   [`crate::compiler::nav::World::body_reach`]) is run over the piece alone
 //!   from every anchor, and a reachable place from which no walk, fall, jump or
 //!   swim gets back to the ground at the piece's edge refuses the sculpt —
 //!   `DW0952`.
@@ -282,7 +282,8 @@ pub fn sculpt(form: &Form, seed: u64, id: Option<&str>) -> Result<Sculpture, Scu
     readings.shown_faces = shown_faces(&model);
     let standable = walk::standable_cells(&model);
     let grade = walk::ground_entry(&model);
-    let walked = walk::reachable_from(&model, &standable, &grade);
+    let world = crate::grammar::nav::body_world(&model);
+    let walked = entry_walked(&world, &standable, &grade);
     let standing: Vec<[i32; 3]> = form
         .anchors
         .values()
@@ -332,7 +333,7 @@ pub fn sculpt(form: &Form, seed: u64, id: Option<&str>) -> Result<Sculpture, Scu
     hull_light_reaches(&model, &mut readings.hull_lights, &mut refusals);
 
     // No pocket: the leave relation `DW0921` floods, over the piece alone.
-    readings.pockets = pockets(form, &model, &grade);
+    readings.pockets = pockets(form, &model, &world, &grade);
     if readings.pockets.places > 0 {
         let more = readings
             .pockets
@@ -594,15 +595,28 @@ fn hull_light_reaches(
     }
 }
 
+/// **The floor a body reaches from grade** over the piece alone
+/// ([`crate::compiler::nav::World::floor_reached`] over
+/// [`crate::grammar::nav::body_world`]): the walk, the climb, every fall and
+/// every jump of the launch set. What the entry reading counts and what an
+/// entry anchor must stand in.
+pub(crate) fn entry_walked(
+    world: &crate::compiler::nav::World,
+    standable: &BTreeSet<[i32; 3]>,
+    grade: &BTreeSet<[i32; 3]>,
+) -> BTreeSet<[i32; 3]> {
+    world.floor_reached(standable, grade)
+}
+
 /// **The pocket proof** over the piece alone (spec-0087 §3.4): the leave
 /// relation `DW0921` floods, from every anchor, with the ground at the box's
 /// vertical faces as the way out and the box's outside as gone.
-fn pockets(form: &Form, model: &VoxelModel, grade: &BTreeSet<[i32; 3]>) -> PocketReading {
-    let blocks = block_map(model);
-    let world = crate::compiler::nav::World::from_occupancy(
-        crate::compiler::assembled::occupancy_of(blocks, &BTreeSet::new()),
-        crate::compiler::nav::Premises::geometry_only(),
-    );
+fn pockets(
+    form: &Form,
+    model: &VoxelModel,
+    world: &crate::compiler::nav::World,
+    grade: &BTreeSet<[i32; 3]>,
+) -> PocketReading {
     let roots: Vec<[i32; 3]> = form
         .anchors
         .values()

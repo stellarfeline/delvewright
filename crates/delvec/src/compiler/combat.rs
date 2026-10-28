@@ -1721,6 +1721,7 @@ mod tests {
             lava: BTreeSet::new(),
             climb: BTreeMap::new(),
             unheld_climb: BTreeMap::new(),
+            material: Default::default(),
             footprints: Default::default(),
             hiding: Default::default(),
             hurting: Default::default(),

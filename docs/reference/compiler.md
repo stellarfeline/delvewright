@@ -215,6 +215,18 @@ available parallelism. `DELVEC_THREADS=1` runs everything on the calling
 thread. The count changes how long a build takes and never a byte it emits
 (§4 "Determinism").
 
+**The reach graph's node bank across runs.** `DELVEC_REACH_CACHE=<dir>` names
+a directory the reach graph's node banks are read from when a run first asks
+for one and written back to when the run ends, if the run grew one: a later
+run over a world of the same window takes every node whose read cells hold
+the same, unflown (`docs/reference/delvec/compiler/nav.md`, the node bank). A
+file is named for the bank's key and the sha256 of the running executable's
+own bytes, so a run reads only what its own binary wrote; a file that does not
+decode is read as empty, and a file is replaced whole by a rename. Unset, the
+bank lives and dies with the run. Either way the bytes a build emits are the
+same (`tests/reach_cache.rs`); the gallery coverage gate sets it to a scratch
+directory its probe runs share.
+
 **The output directory** holds exactly what the last build emitted: a build into a directory a previous build wrote removes every file that build emitted and this one does not, and a directory holding anything no build wrote is refused untouched (`DW0967`, §5).
 
 **Exit codes**: `0` ok · `1` validation failure · `2` analysis failure · `3`
@@ -2471,7 +2483,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   eye at the block centre, 1.62 over its floor): a site-plan box stands one
   eye per footprint column over its floor; an area, which states no floor,
   stands one at every cell of the party walk
-  (`World::reachable_walkable_rooted` from every anchor) inside its placed
+  (`World::walk_region_rooted` from every anchor) inside its placed
   bounds. The line is a measurement and
   refuses nothing.
 - **The cut in time** (spec-0080 §2.2, measured on The Thing Beyond the
@@ -3131,7 +3143,12 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   letting go at that cell and the second taking hold from it, and the cell is
   held by the climb whose column it is in (`World::climb_runs`; the gallery's
   causeway stacks two ladders this way on its critical path). Omitted for a leg
-  that climbs nothing. A leg that sets a sculk sensor off (spec-0100 §4.6)
+  that climbs nothing. A leg whose route takes a **declared jump** (spec-0113,
+  `DW1041`) carries a `jumps` array, in route order: each `{from, to, sprint,
+  run_up}` — the launch and landing cells (both kept waypoints), whether the
+  declaration sprints, and the straight run-up the course gives, as the proof
+  measured it. The bot drives each as a parkour hop and no other leg lets its
+  pathfinder parkour. Omitted for a leg that jumps nothing. A leg that sets a sculk sensor off (spec-0100 §4.6)
   carries a `vibrations` array: each `{sensor, shriekers}` — the sensor's cell
   and the cells of the shriekers that answer it. A sensor is **predicted** for a
   leg when the leg is not a `sneak` leg and four consecutive cells of its proven
@@ -3287,7 +3304,8 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   volume, `declarations.examined` vs `declarations.borne_out`, and one row per
   volume carrying its `keep_out` box, its `caught` count and cells, its `shown`
   count and its `shown_by` as declared, and `reached_by`: the first body the
-  engine models that gets its hitbox into the volume, in words, or `null` when
+  engine models that gets its hitbox into the volume, in words (a player by
+  the reach graph's moves from the population, or a wave's member by a mob's), or `null` when
   none does (then counted in `unreached`, and warned as `DW0891`). **A volume
   that catches nothing prints its zero beside the population**, so a pit whose
   keep-out lies under the rim reads as *checked and clear* rather than as
@@ -3590,8 +3608,21 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   proof was rooted at, summed over them), `reached` (cells a body reaches from
   them by walking, falling, jumping, swimming or climbing), `afloat` (of those, cells
   where the body floats at the top of water — the population the water half
-  judges), and `trapped` (zero on a build that ships). Written only when the
-  proof holds.
+  judges), `perched` (of those, cells where the body stands on a fence, wall or
+  gate top, a rest state the walk never stands a body in), `trapped` (zero
+  on a build that ships) and `unbounded` (configurations left unjudged because
+  a body in them may hold a movement the reach graph does not fly, `DW1043`).
+  Written only when the proof holds.
+- `<out>/validation/reach-graph.json`: the **reach graph's** binding (spec-0113,
+  `nav::ReachBinding`), summed over the configurations `DW0921` judges:
+  `configurations`, `states` (rest states, by kind), `edges` (by kind: walk,
+  fall, jump, dive, climb, exit), `simulated` (launch states flown through the
+  simulator), `credited` (template arcs credited from a flat, open floor),
+  `budget` (`dsl::metrics::REACH_BUDGET_STATES`), `unbounded_fall` and
+  `occupancy_sha256` — one canonical hash per configuration of the occupancy
+  its graph was built over, in configuration order, so the record names what
+  it measured. Written whenever `DW0921` is
+  judged; `reach binding: …` prints the same counts.
 - `<out>/validation/holders.json`: the holder census's **binding ledger** (`compiler::holders`, spec-0105 §4.3, spec-0111 §4.4), written by every build: `census_input_sha256`, the counts (`holders`, `cells` — the container rows —, `loot`, `collect`, `device`, `decoration`, `empty`, `exempt`, `by_kind`, `by_block`, `by_place`), `max_scenery_per_place`, `mixed_places`, `over_cap_places`, `stand_ins`, `stance` (`{unsupported, unreachable}`), the `notice` (`{text, style, sound}`, plain English, `sound` the namespaced event or `null`; or `null`) and one row per holder (`cell`, `kind`, `block`, `slots[{slot, filled}]`, `frozen`, `exempt`, `place`, `claims[{kind, id}]`). Its stderr twin, after the `holder binding` line: `holder census: N holder(s) in the assembled world (<kind>: n, …); L loot, C collect, V device, D decoration, E empty (frozen), X exempt (contents show from outside); notice <declared|none>; by place: <place>: n, …; arrangement: M mixed place(s), K over the cap of 2 decoration cell(s) per place. stance: F filled holder(s) and H holder(s) judged, U unsupported, R unreachable.` — a campaign with no holder prints `0 holder(s)` and `notice none`; while a site-plan place still stands in its stand-in the line adds `S place(s) still stand in their stand-in, whose containers this build cannot see (…)`, and `DW1018`'s notice-with-no-scenery arm is judged by the build that details them, as the fills are. Then `holder edits: K runtime edit(s) examined against H holder entit(y/ies), 0 reaching a holder (DW1038).` The harness reads the notice to assert the arrival line and, when it names a sound, that the sound packet arrives at the bot's own position after the warp (spec-0105 §5.3); the run report's `container_notice` records the verdict and the sound as it arrived.
 - `<out>/validation/threshold-gate.json`: the `DW1044` proof's **binding ledger**
   (`compiler::nav::ThresholdBinding`): the binding line's counts — `performed`,
@@ -3626,7 +3657,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   `open-gate` or `close-gate` names it and no gated connection bars it),
   `faceless` (no two faces) — then `configurations`, `shut` ((gate,
   configuration) pairs where the gate is shut), `unstood` (a face no body can
-  stand, hold a climbable or float at), `reached` (the party can get to a face) and `bypassed`
+  stand, hold a climbable or float at), `reached` (the party's reach graph gets it to a face) and `bypassed`
   (zero on a build that ships). Written only when the proof holds. Its
   neighbour is `shut-ways.json`, read over the same configurations, faces and
   reach.
@@ -4475,12 +4506,13 @@ or one lower), over the top from the top rung onto a standable cell one higher,
 off the bottom onto the floor one under, and in from a standable cell beside (or
 one higher, the climbable catching the step off the brink). The route relation
 (`neighbors_fp`) takes them, so every route proof does; a body holding in mid-air
-walks nowhere. `body_moves` and `mob_moves` take them too, with a step off the
-side, letting go at the bottom of a run, and the **catch**: a fall is stopped by
-the first climb cell whose top is at most `metrics::climb_catch_fall_blocks()`
-(7, derived from the fall law: past it a body moves a block a tick and can pass a
-one-block cell between ticks) under the body's feet. `fatal_step_off` slides a
-caught body to the bottom of its run and asks the fall below it. Scaffolding and
+walks nowhere. `mob_moves` takes them too, with a step off the side, letting go
+at the bottom of a run, and the **catch**: a fall is stopped by the first climb
+cell whose top is at most `metrics::climb_catch_fall_blocks()` (7, derived from
+the fall law: past it a body moves a block a tick and can pass a one-block cell
+between ticks) under the body's feet. The reach graph (spec-0113) holds a body on
+a climbable as a rest state of its own and flies every launch from it through
+the simulator, so a fall it flies is caught where the game catches it. Scaffolding and
 the open-trapdoor-over-ladder rule are not modelled (spec-0099 §3.3–3.4). A
 ladder dams a flood; a vine does not, and a flooded cell holds no climb.
 
@@ -4503,7 +4535,7 @@ the world as placed and every block a runtime write may lay — an effect, a lai
 way, a timed gate's phase, and every prop an `interact` objective or a click
 trigger sets (`sculk::runtime_writes`). The **catalyst
 proof** (`sculk::prove_catalysts`, `DW1001`): no cell of the closure of
-`body_moves` from every put-at root, or of `mob_moves` from every wave seat,
+the reach graph from every put-at root, or of `mob_moves` from every wave seat,
 lies within integer `distSqr ≤ 64` of a catalyst. A sensor is never a story
 trigger — vanilla gives a datapack no event for its firing (spec-0011, spec-0100
 §3.6) — and the walk's predicted vibrations travel on the waypoint export for
@@ -5092,7 +5124,9 @@ A world with no campaign behind it says `nav::Premises::geometry_only` by name,
 with its reason in a comment at the call site, and every production decline is
 enumerated by `tests/premise_declines.rs`: the stage-5 blockout
 battery's two massing worlds (they carry their own sealing authority, from the
-quest graph's monotone closure) and its stairwell pass (one step between two
+quest graph's monotone closure; the sealed one carries the body's own premises,
+`Premises::with_body_of` — the declared jumps and the fall bound — because
+`DW0837` asks where the player can be) and its stairwell pass (one step between two
 courses of a stair, a question about geometry inside the stair's own box); the
 synthetic constructor every unit-test world goes through; the two relight darkness
 surveys (`light::relight_over` and a `relight` verb's own — applying the premises
@@ -5183,9 +5217,10 @@ on the **rise** between the two feet heights:
 **Those three arms are one function, in one crate, and every walk in this engine
 asks it.** `delvewright_dsl::metrics::step_allowed` takes a rise in sixteenths and
 a head-clear answer and returns the verdict above; `compiler::nav` asks it, and so
-does `delvec::schem::nav`, which is the walk a grammar expansion, an ingested
-structure template and a reassembled zone are read with, and which a prefab's
-contract-reachability gate proves over. The site is `delvewright-dsl` because
+does `delvec::schem::nav`, whose lump grouping (`components`) and refused-step
+frontier (`refused_frontier`, what `DW0895` names) read a grammar expansion, an
+ingested structure template and a reassembled zone with it. Where a body gets
+to in a piece is the reach graph's (`World::floor_reached`). The site is `delvewright-dsl` because
 that is where the three constants live (`MAX_AUTO_STEP_16`, `MAX_JUMP_RISE_16`,
 `FULL_16`) and where the collision table it is measured against lives, which the
 prefab generators reach without depending on `delvec`.
@@ -7085,6 +7120,6 @@ drift the pin was bought to prevent.
 
 **Hull light** (spec-0087 §9; `sculpt::hull`). A `hull` entry's candidates are the fitted body blocks (full, stair or slab) in `within` whose face meets air with the body over it — `vault` if the air is below, else `wall` if beside, else `floor` if above; the ground is never a host — kept on the surfaces `on` names, and for `recessed` only where the recess fits: cover and slot blocks are body surface, the room cells in front of both are air, and every block round the source and the cell behind the slot is solid. A wall's slot opens sideways first (its mouth at the source's height), then up; a vault's along the first cardinal that fits. The candidates are shuffled by the crate's seeded generator and drawn as a maximal Poisson-disk set: a candidate is accepted when no source of its entry lies within its `spacing`, nor an earlier entry's within the smaller of the two spacings. `embedded` replaces the surface block with the source; `recessed` puts the source one block behind it (`H − d`), the oriented cover in it (`H`; on a wall a bottom-half stair with its full-height half toward the room, or a bottom slab; in a vault, where the source stands on the cover, its top half — a top-half stair with its quarter hanging away from the slot, or a top slab — because a lantern asks the face under it to be sturdy at its centre and a bottom half's top is not, `DW1002`), and opens the two blocks beside them along the slot (`H + u`, `H − d + u`). The finished piece is flooded by `compiler::light::LightModel` (block light only) and each source's room cell read; the run prints `lights[i] hull <mode>: N source(s) — w wall, v vault, f floor — of C candidate cell(s) (…), spacing s; room light lo..hi`.
 
-**What it checks before writing.** The grammar's always-on gates through the grammar's own functions (`blocks-exist`, `shape-complete`, `states-complete`, `stair-shape`, `fluid-contained`, `non-empty`), sealed by `gates::seal_zero_bindings`; then `DW0952` (§5): anchors stand, the entry is in the walk from grade, and no pocket. Every run prints the gate lines with binding counts, the fit counts, the entry walk (`… reaches N, and k of n standing anchor(s)`), the pocket line, `walk_y` and `shown_faces`.
+**What it checks before writing.** The grammar's always-on gates through the grammar's own functions (`blocks-exist`, `shape-complete`, `states-complete`, `stair-shape`, `fluid-contained`, `non-empty`), sealed by `gates::seal_zero_bindings`; then `DW0952` (§5): anchors stand, the entry is in the floor the reach graph gets a body to from grade (`sculpt::entry_walked`: walk, climb, fall, swim and every jump of the launch set), and no pocket. Every run prints the gate lines with binding counts, the fit counts, the entry walk (`… reaches N, and k of n standing anchor(s)`), the pocket line, `walk_y` and `shown_faces`.
 
 **What it writes.** Through `grammar::export::freeze_model` — the grammar export's palette, unknown-state refusal and 48-block tiling, over `convert::build_region`; one `<id>.nbt` when every axis is at most 48, else parts under a `structure_set` manifest. No schematic is constructed, so `DW0710` is not on the path. Metadata: `anchors` as declared; `lighting` **measured** by the piece light probe over the bytes (`unmeasured` only when it binds nothing — the grammar export's rule); `walk_y` the lowest standable local `y`; `shown_faces` every side the bytes put a block on; `license` `original`, `GPL-3.0-or-later`, `generated_by {generator: "sculpt", program: <form id>, program_hash: sha256 over the form's canonical JSON, seed, region}`. Same form, seed and engine: byte-identical files.

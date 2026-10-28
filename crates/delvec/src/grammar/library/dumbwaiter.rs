@@ -30,13 +30,10 @@
 //!
 //! # The gate
 //!
-//! The same two assertions as `drop_shaft`, against the same
-//! `reachable_with_fall` / plain-walk pair (see that module's note for why the
-//! model has to be that permissive going forward and that strict going back):
+//! The same two assertions as `drop_shaft`, against the same reach graph:
 //!
-//! 1. `anchor/hatch` reaches `anchor/landing` under the fall-capable walk.
-//! 2. `anchor/landing` does **not** reach `anchor/hatch` under the plain ±1
-//!    step walk. Teeth: the same `rescue_ladder` knob `drop_shaft` uses,
+//! 1. `anchor/hatch` reaches `anchor/landing`: a body falls there.
+//! 2. `anchor/landing` does **not** reach `anchor/hatch`. Teeth: the same `rescue_ladder` knob `drop_shaft` uses,
 //!    notching every column of `entry_run`'s floor but the one `anchor/hatch`
 //!    stands on — wide enough to be certain of overlapping wherever
 //!    `duct_core`'s own runtime-split margins actually put it — and, paired

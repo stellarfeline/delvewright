@@ -1797,11 +1797,14 @@ impl AssemblyBinding {
 }
 
 /// **Judge every assembly in the build** and return what was examined beside
-/// the refusals. `population` is the walked population `P`; `reaches` is as
-/// for [`judge`].
+/// the refusals. `population` is the walked population `P`; `walk` is the
+/// walk relation's region from where the party is put (spec-0113 §4.5), which
+/// bounds where the bot is sent to stand spared; `reaches` is as for
+/// [`judge`].
 pub fn check(
     plan: &Plan<'_>,
     population: &BTreeSet<[i32; 3]>,
+    walk: &BTreeSet<[i32; 3]>,
     reaches: &Reaches<'_>,
 ) -> (AssemblyBinding, Vec<Failure>) {
     let within = |c: [i32; 3]| population.contains(&c);
@@ -1833,7 +1836,7 @@ pub fn check(
         }
         if let Some((arming, _)) = &s.strikes {
             b.spared
-                .push((s.id.to_string(), spared_cell(population, *arming)));
+                .push((s.id.to_string(), spared_cell(population, walk, *arming)));
         }
         failures.extend(f);
     }
@@ -1841,10 +1844,16 @@ pub fn check(
     (b, failures)
 }
 
-/// A standable cell outside the arming region's keep-out — no body standing
-/// in it can be selected — as near the region as the population has one (by
-/// the larger of the x and z gaps), then in cell order.
-fn spared_cell(population: &BTreeSet<[i32; 3]>, arming: CellBox) -> Option<[i32; 3]> {
+/// A standable cell of `population` outside the arming region's keep-out — no
+/// body standing in it can be selected — as near the region as it has one (by
+/// the larger of the x and z gaps), then in cell order. The bot walks to it on
+/// cue, so only a cell of `walk` (the walk relation's region, spec-0113 §4.5)
+/// is drawn, never a place only a leap reaches.
+fn spared_cell(
+    population: &BTreeSet<[i32; 3]>,
+    walk: &BTreeSet<[i32; 3]>,
+    arming: CellBox,
+) -> Option<[i32; 3]> {
     let keep = keep_out_box(Body::PLAYER, arming.0, arming.1);
     let gap = |c: [i32; 3]| {
         let d = |i: usize| (arming.0[i] - c[i]).max(c[i] - arming.1[i]).max(0);
@@ -1853,7 +1862,7 @@ fn spared_cell(population: &BTreeSet<[i32; 3]>, arming: CellBox) -> Option<[i32;
     population
         .iter()
         .copied()
-        .filter(|c| !in_box(*c, keep))
+        .filter(|c| walk.contains(c) && !in_box(*c, keep))
         .min_by(|a, b| gap(*a).cmp(&gap(*b)).then(a.cmp(b)))
 }
 
@@ -3523,5 +3532,48 @@ mod tests {
             transformation(&t),
             "{translation:[-0.5000f,0.0000f,0.0000f],left_rotation:[0.0000f,0.0000f,0.0000f,1.0000f],scale:[1.0000f,1.0000f,1.0000f],right_rotation:[0.0000f,0.0000f,0.0000f,1.0000f]}"
         );
+    }
+
+    /// A walled yard, and north of it, across a moat two wide and three deep,
+    /// a platform at the yard's own level. A body sprint-jumps the moat both
+    /// ways, so the platform is in the reach graph's population; no walk
+    /// crosses a gap, so it is not in the walk relation's region (the walk
+    /// only drops into the moat, a pocket the population leaves out). The
+    /// arming region stands on the platform: the population's nearest spared
+    /// cell is on the platform, and the walk's is on the yard floor.
+    #[test]
+    fn the_spared_stand_is_never_a_cell_only_a_leap_reaches() {
+        let mut solid = BTreeSet::new();
+        for x in -1..=9 {
+            for z in -1..=11 {
+                let rim = x == -1 || x == 9 || z == -1 || z == 11;
+                let moat = !rim && (3..=4).contains(&z);
+                solid.insert([x, if moat { -3 } else { 0 }, z]);
+                if rim {
+                    for y in -2..=3 {
+                        solid.insert([x, y, z]);
+                    }
+                }
+            }
+        }
+        let world = crate::compiler::nav::World::from_solid_cells(solid);
+        let root = [4, 1, 8];
+        let population = crate::compiler::lethal::body_population(&world, &[root]);
+        let walk = world.walk_region(&[root]);
+        let leap_only: BTreeSet<[i32; 3]> = population.difference(&walk).copied().collect();
+        assert!(
+            leap_only.contains(&[2, 1, 0]),
+            "the platform is not in the population only: {} leap-only cell(s)",
+            leap_only.len()
+        );
+        assert!(walk.contains(&[0, 1, 5]), "the yard floor is not walked");
+        let arming: CellBox = ([4, 1, 1], [4, 1, 1]);
+        let spared = spared_cell(&population, &walk, arming).expect("a spared stand");
+        assert!(
+            !leap_only.contains(&spared),
+            "the spared stand {spared:?} is a cell only a leap reaches"
+        );
+        assert!(walk.contains(&spared), "{spared:?} is not walked");
+        assert_eq!(spared, [0, 1, 5]);
     }
 }

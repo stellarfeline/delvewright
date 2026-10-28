@@ -3006,6 +3006,62 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "area/"
+          }
+        }
+      },
+      "binding": {
+        "file": "reach-graph.json",
+        "kind": "artifact",
+        "path": "states.total"
+      },
+      "campaign": "the-bell-changes-the-tune",
+      "carrier": {
+        "code": "DW0921",
+        "kind": "dw"
+      },
+      "finding": "a player sprint-jumped from a standing stone onto a buttress and over the yard wall, and fell out of the world",
+      "general_form": "no place a body can reach from the proven route, by any movement the pinned game's physics gives it, is one it cannot leave or one under the world",
+      "id": "bct-01",
+      "note": "The leave proof's relation took cardinal jumps from cell centres inside a measured gap table, so a jump at an angle onto a buttress, and the second jump off it over the wall, were in no proof's reach. Carried by the reach graph (spec-0113): every launch flown through the simulator of the pinned physics, read by `DW0921` and by `DW0322`'s void branch. The Bell yard fixture (`nav::world::reach::tests::bell_yard`) reaches outside the wall by the two jumps and is refused by `DW0921`; the walk relation does not (`the_two_escapes_are_seen`). Binding: the graph's rest states on the build being staged.",
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "area/"
+          }
+        }
+      },
+      "binding": {
+        "file": "reach-graph.json",
+        "kind": "artifact",
+        "path": "states.total"
+      },
+      "campaign": "the-thing-across-the-water",
+      "carrier": {
+        "code": "DW0322",
+        "kind": "dw"
+      },
+      "finding": "a player jumped off the jetty into the sea and could not get back onto land",
+      "general_form": "no movement the pinned game's physics gives a body puts it in open water with no way back to land it reached",
+      "id": "tat-01",
+      "note": "The stranding proof judged only walk cells beside the sea, and the walk never left the jetty, so a jump off its end was in no proof's reach. Carried by the reach graph (spec-0113): `DW0322`'s ocean branch judges every rest state afloat in the open sea the graph reaches, by any launch, and refuses one with no swim and climb back to a place on land it reached. The jetty fixture (`nav::world::reach::tests::jetty`) is refused by `DW0322` naming the jump; the walk relation never enters the sea (`the_two_escapes_are_seen`). Binding: the graph's rest states on the build being staged.",
+      "triage": "capability"
+    },
+    {
       "binding": {
         "files": [
           "layout-graph.json"
@@ -3025,7 +3081,7 @@
       "finding": "the party reached scenes behind a shut barred door, out of story order, by entering the sea and swimming around it",
       "general_form": "the far side of every barred edge or gate is unreachable from its near side while the gate is shut, by walking, falling, jumping or swimming",
       "id": "str-01",
-      "note": "Carried by `DW1011` (`compiler::nav::separate`): per quest configuration, every gate the world resolves and every barred edge's seam gate is held to it: while the gate is shut, a body at its near face reaches its far face by no walk, fall, jump or swim (`World::body_moves`). Route proofs keep refusing water (spec-0038 §5); this is a separation proof. The binding counts barred edges in the layout graph.",
+      "note": "Carried by `DW1011` (`compiler::nav::separate`): per quest configuration, every gate the world resolves and every barred edge's seam gate is held to it: while the gate is shut, a body at its near face reaches its far face by no walk, fall, jump, climb or swim (the reach graph, `World::body_reach`, spec-0113). Route proofs keep refusing water (spec-0038 §5); this is a separation proof. The binding counts barred edges in the layout graph.",
       "round": 1,
       "triage": "capability"
     },

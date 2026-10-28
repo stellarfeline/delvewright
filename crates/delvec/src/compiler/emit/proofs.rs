@@ -37,13 +37,22 @@ pub(super) fn prove_assemblies(
             });
         let config = step.and_then(|s| crate::compiler::nav::world_while_next(plan, world, s));
         let ground = config.as_ref().unwrap_or(world);
+        // The walk relation, not the reach graph (spec-0113 §4.5): the
+        // critical path performs this strike, so the question is whether the
+        // party can walk on cue to a cell it is struck from — a place only a
+        // leap reaches is one the bot is never sent to.
         ground
-            .reachable_walkable(&roots)
+            .walk_region(&roots)
             .into_iter()
             .filter(|p| !crate::compiler::nav::returned_from(returned, *p))
             .any(|p| crate::compiler::strand::eye_reaches_box(ground, p, lo, hi))
     };
-    let (binding, findings) = crate::compiler::assembly::check(plan, population, &reaches);
+    // The spared stand is a cell the bot walks to on cue: drawn only from the
+    // walk relation's region from where the party is put (spec-0113 §4.5),
+    // never a place only a leap reaches.
+    let open = world.without_exclusions();
+    let walk = open.walk_region(&crate::compiler::lethal::put_at_roots(plan, &open, entry));
+    let (binding, findings) = crate::compiler::assembly::check(plan, population, &walk, &reaches);
     eprintln!("{}", binding.line());
     eprintln!("{}", binding.cost_line());
     if let Some((first, rest)) = findings.split_first() {

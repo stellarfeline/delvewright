@@ -813,9 +813,13 @@ pub fn build(
     // — a cell whose body the volume's selector reaches is one the runtime's own
     // `stk_route` selector projects to the region's lip, so it is not a cell whose
     // stake can strand.
+    // The walk relation, not the reach graph (spec-0113 §4.5): the table is the
+    // way home the party walks back on cue (the bot's death loop walks it),
+    // and its domain is read by the same relation as its way home, so a death
+    // cell is judged by the walk that recovers it.
     let from_entry = match seats.first() {
         Some(s) if s.cp == -1 => reach[0].clone(),
-        _ => world.reachable_walkable(&seats.iter().map(|s| s.cell).collect::<Vec<_>>()),
+        _ => world.walk_region(&seats.iter().map(|s| s.cell).collect::<Vec<_>>()),
     };
     let deaths = death_cells_per_seat(plan, world, &seats, &from_entry);
     let mut stranded_cells = 0usize;

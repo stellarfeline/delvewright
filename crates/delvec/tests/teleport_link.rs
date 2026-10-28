@@ -968,7 +968,7 @@ fn a_pocket_whose_only_exit_is_a_live_links_stand_cell_is_not_a_trap() {
         .find(|l| l.starts_with("DW0921 binding:"))
         .expect("the leave proof states its binding");
     assert!(
-        line.ends_with("1 link stand cell(s) served as a way out"),
+        line.contains("1 link stand cell(s) served as a way out;"),
         "{line}"
     );
     // Shut in that configuration — `flag/landed` is set only once the far

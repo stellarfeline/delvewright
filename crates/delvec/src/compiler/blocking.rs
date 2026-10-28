@@ -397,7 +397,7 @@ fn area_walkable(
         })
         .collect();
     world
-        .reachable_walkable(&starts)
+        .body_region(&starts)
         .into_iter()
         .filter(|c| (0..3).all(|a| c[a] >= min[a] && c[a] <= max[a]))
         .collect()

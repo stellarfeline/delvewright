@@ -496,7 +496,7 @@ fn the_entry_is_in_the_walk_from_grade() {
     let s = sculpt::sculpt(&form, 0, None).unwrap();
     let standable = delvec::schem::nav::standable_cells(&s.model);
     let grade = delvec::schem::nav::ground_entry(&s.model);
-    let walked = delvec::schem::nav::reachable_from(&s.model, &standable, &grade);
+    let walked = delvec::grammar::nav::body_world(&s.model).floor_reached(&standable, &grade);
     let entry = form
         .anchors
         .values()
@@ -565,8 +565,8 @@ fn the_sculpt_judges_pockets_with_the_relation_dw0921_floods() {
                 if l.contains(".cells_a_body_cannot_leave(") {
                     flooders.push(rel.clone());
                 }
-                if rel.starts_with("sculpt") && l.contains("body_moves(") {
-                    panic!("src/{rel} floods body_moves itself: {line}");
+                if rel.starts_with("sculpt") && l.contains("body_reach(") {
+                    panic!("src/{rel} floods the reach graph itself: {line}");
                 }
             }
         }
@@ -575,8 +575,13 @@ fn the_sculpt_judges_pockets_with_the_relation_dw0921_floods() {
     flooders.sort();
     assert_eq!(
         callers,
+        // `DW0891`'s population takes the leave judgement's pockets out of the
+        // floor the party walks (spec-0113 §5.1); the reach graph's tests ask it
+        // of their fixtures.
         vec![
+            "compiler/lethal.rs".to_string(),
             "compiler/nav/leave.rs".to_string(),
+            "compiler/nav/world/reach/tests.rs".to_string(),
             "sculpt/mod.rs".to_string()
         ],
         "the leave judgement's callers"

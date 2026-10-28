@@ -1,11 +1,11 @@
 //! The separation relation: while a gate is shut, its far side cannot be
 //! reached from its near side by any move a body can make (`DW1011`).
 //!
-//! The route proofs walk; this floods with every body move — walking, falling,
-//! jumping and swimming ([`World::body_moves`]) — because the question is not
-//! where the bot goes on cue but where a player can get to. It is the dual of
-//! `DW0921`'s question over the same relation: that one asks whether a body can
-//! get back, this one whether a body can get past.
+//! The route proofs walk; this floods the reach graph — walking, falling,
+//! jumping, climbing and swimming ([`World::body_reach`], spec-0113) — because
+//! the question is not where the bot goes on cue but where a player can get to.
+//! It is the dual of `DW0921`'s question over the same relation: that one asks
+//! whether a body can get back, this one whether a body can get past.
 
 use super::shutmodel::{
     Configurations, Faces, GateUnderTest, NamedGate, SeparationConfig, faces_of, gated_connections,
@@ -108,6 +108,18 @@ impl SeparationBinding {
     }
 }
 
+/// Whether a body in `c` is in water: afloat at its top or under it.
+fn wet(w: &World, c: [i32; 3]) -> bool {
+    matches!(w.rest_kind(c), Some(RestKind::Afloat | RestKind::Submerged))
+}
+
+/// An escape path: the cells it passes, and the edge of the reach graph that
+/// joins each to the next (`edges.len() + 1 == cells.len()`).
+struct Path {
+    cells: Vec<[i32; 3]>,
+    edges: Vec<Edge>,
+}
+
 /// The path over `w` from any cell of `from` to any cell of `to` that takes the
 /// fewest moves other than a walk, and of those the fewest moves — never
 /// stepping inside `region` (the shut gate itself) — or `None`.
@@ -121,11 +133,12 @@ impl SeparationBinding {
 /// one, because walling the dry way leaves it open.
 fn escape(
     w: &World,
+    reach: &Reach,
     from: &[[i32; 3]],
     to: &BTreeSet<[i32; 3]>,
     region: ([i32; 3], [i32; 3]),
     must_swim: bool,
-) -> Option<Vec<[i32; 3]>> {
+) -> Option<Path> {
     use std::cmp::Reverse;
     use std::collections::BinaryHeap;
     type State = ([i32; 3], bool);
@@ -133,7 +146,7 @@ fn escape(
     let inside =
         |c: &[i32; 3]| (0..3).all(|i| lo[i].min(hi[i]) <= c[i] && c[i] <= lo[i].max(hi[i]));
     let mut best: BTreeMap<State, (u32, u32)> = BTreeMap::new();
-    let mut pred: BTreeMap<State, State> = BTreeMap::new();
+    let mut pred: BTreeMap<State, (State, Edge)> = BTreeMap::new();
     let mut heap: BinaryHeap<Reverse<(u32, u32, State)>> = BinaryHeap::new();
     for c in from {
         best.insert((*c, false), (0, 0));
@@ -145,29 +158,41 @@ fn escape(
         }
         let (cur, wet) = state;
         if to.contains(&cur) && (wet || !must_swim) {
-            let mut path = vec![cur];
+            let mut cells = vec![cur];
+            let mut edges = Vec::new();
             let mut at = state;
-            while let Some(p) = pred.get(&at) {
-                path.push(p.0);
+            while let Some((p, e)) = pred.get(&at) {
+                cells.push(p.0);
+                edges.push(e.clone());
                 at = *p;
             }
-            path.reverse();
-            return Some(path);
+            cells.reverse();
+            edges.reverse();
+            return Some(Path { cells, edges });
         }
-        let walks: BTreeSet<[i32; 3]> = w.neighbors(cur).into_iter().collect();
-        let mut next: BTreeSet<[i32; 3]> = w.body_moves(cur).into_iter().collect();
-        next.extend(walks.iter().copied());
-        for n in next {
-            if inside(&n) {
+        // Every edge of the graph out of `cur`, and — the open sea being one
+        // place (spec-0113 §4.7) — a swim to every other cell of it.
+        let mut next: Vec<Edge> = w.body_edges(cur);
+        if reach.open_sea.contains(&cur) {
+            next.extend(reach.open_sea.iter().map(|&c| Edge {
+                to: c,
+                kind: EdgeKind::Dive,
+                yaw: None,
+                sprint: false,
+            }));
+        }
+        for e in next {
+            let n = e.to;
+            if e.kind == EdgeKind::Exit || inside(&n) {
                 continue;
             }
-            let walk = walks.contains(&n);
-            let touched = must_swim && (wet || w.is_water_surface(cur) || w.is_water_surface(n));
+            let walk = e.kind == EdgeKind::Walk && !self::wet(w, cur) && !self::wet(w, n);
+            let touched = must_swim && (wet || self::wet(w, cur) || self::wet(w, n));
             let to_state = (n, touched);
             let cost = (spent + u32::from(!walk), steps + 1);
             if best.get(&to_state).is_none_or(|b| cost < *b) {
                 best.insert(to_state, cost);
-                pred.insert(to_state, state);
+                pred.insert(to_state, (state, e));
                 heap.push(Reverse((cost.0, cost.1, to_state)));
             }
         }
@@ -189,42 +214,51 @@ struct Bypass {
     swims: bool,
 }
 
-/// The kind of one movement, in the four words the obligation is stated in.
-fn move_kind(words: &str) -> &'static str {
-    if words.contains("water") || words == "swimming" {
-        "swimming"
-    } else if words.starts_with("a fall") {
-        "falling"
-    } else if words.starts_with("a jump") {
-        "jumping"
-    } else {
-        "walking"
+/// The kind of one movement, in the words the obligation is stated in: any
+/// edge into, out of or through water is swimming.
+fn move_kind(w: &World, from: [i32; 3], edge: &Edge) -> &'static str {
+    if wet(w, from) || wet(w, edge.to) {
+        return "swimming";
+    }
+    match edge.kind {
+        EdgeKind::Walk => "walking",
+        EdgeKind::Fall => "falling",
+        EdgeKind::Jump => "jumping",
+        EdgeKind::Dive => "swimming",
+        EdgeKind::Climb => "climbing",
+        EdgeKind::Exit => "leaving the world",
     }
 }
 
 /// An escape path in words: its length, the move kinds it uses, where it leaves
 /// walking and where it regains it, and a few cells along the way.
-fn path_words(w: &World, path: &[[i32; 3]], others: &[NamedGate]) -> String {
-    let moves: Vec<([i32; 3], [i32; 3], String)> = path
-        .windows(2)
-        .map(|p| (p[0], p[1], movement_words(w, p[0], p[1])))
+fn path_words(w: &World, route: &Path, others: &[NamedGate]) -> String {
+    let path = &route.cells;
+    let moves: Vec<([i32; 3], [i32; 3], &'static str, String)> = path
+        .iter()
+        .zip(&route.edges)
+        .map(|(&from, e)| {
+            (
+                from,
+                e.to,
+                move_kind(w, from, e),
+                movement_words(w, from, e),
+            )
+        })
         .collect();
     let mut kinds: Vec<(&'static str, usize)> = Vec::new();
-    for (_, _, words) in &moves {
-        let k = move_kind(words);
+    for (_, _, k, _) in &moves {
+        let k = *k;
         match kinds.iter_mut().find(|(n, _)| *n == k) {
             Some((_, count)) => *count += 1,
             None => kinds.push((k, 1)),
         }
     }
     let kinds: Vec<String> = kinds.iter().map(|(k, n)| format!("{k} x{n}")).collect();
-    let off = moves.iter().find(|(_, _, m)| move_kind(m) != "walking");
-    let on = moves
-        .iter()
-        .rev()
-        .find(|(_, _, m)| move_kind(m) != "walking");
+    let off = moves.iter().find(|(_, _, k, _)| *k != "walking");
+    let on = moves.iter().rev().find(|(_, _, k, _)| *k != "walking");
     let mut s = format!("{} move(s) ({})", moves.len(), kinds.join(", "));
-    if let (Some((from, _, how_off)), Some((_, to, how_on))) = (off, on) {
+    if let (Some((from, _, _, how_off)), Some((_, to, _, how_on))) = (off, on) {
         s.push_str(&format!(
             "; it leaves the walked ground at {from:?} by {how_off} and is back on it at {to:?} \
              by {how_on}"
@@ -374,9 +408,30 @@ pub(super) fn verify_gates_separate(
         .zip(&faces)
         .map(|(g, f)| opens_low(g, f.as_ref()))
         .collect();
-    type Judged = (usize, usize, usize, Vec<Bypass>, Vec<(usize, bool)>);
+    type Judged = (
+        usize,
+        usize,
+        usize,
+        Vec<Bypass>,
+        Vec<(usize, bool)>,
+        Option<u64>,
+        Reach,
+    );
     let judged: Vec<Judged> = crate::par::map(configs, |(w, when, seeds, shut)| {
-        let (_, reach) = party_reach(w, seeds);
+        let (_, graph) = party_reach(w, seeds);
+        if let Some(budget) = graph.over_budget {
+            // A partial closure takes no verdict (spec-0113 §5.3).
+            return (
+                shut.len(),
+                0,
+                0,
+                Vec::new(),
+                Vec::new(),
+                Some(budget),
+                graph,
+            );
+        }
+        let reach = graph.cells();
         let (mut unstood, mut reached) = (0usize, 0usize);
         let mut found: Vec<Bypass> = Vec::new();
         let mut met: Vec<(usize, bool)> = Vec::new();
@@ -411,18 +466,16 @@ pub(super) fn verify_gates_separate(
                     continue;
                 }
                 let far_set: BTreeSet<[i32; 3]> = far.iter().copied().collect();
-                if let Some(path) = escape(w, near, &far_set, gates[gi].region, false) {
-                    let start = path[0];
-                    let end = *path.last().unwrap_or(&start);
+                if let Some(path) = escape(w, &graph, near, &far_set, gates[gi].region, false) {
+                    let start = path.cells[0];
+                    let end = *path.cells.last().unwrap_or(&start);
                     let words = format!(
                         "{} is shut {when}, and a body at its near face {start:?} gets to its far \
                          face {end:?} without passing it: {}",
                         gates[gi].label,
                         path_words(w, &path, others)
                     );
-                    let swims = path
-                        .windows(2)
-                        .any(|p| w.is_water_surface(p[0]) || w.is_water_surface(p[1]));
+                    let swims = path.cells.iter().any(|c| wet(w, *c));
                     found.push(Bypass {
                         gate: gi,
                         words,
@@ -434,13 +487,21 @@ pub(super) fn verify_gates_separate(
                 }
             }
         }
-        (shut.len(), unstood, reached, found, met)
+        (shut.len(), unstood, reached, found, met, None, graph)
     });
     // Each bypassed gate is named once, at the first configuration that finds
     // it, with the number of configurations it is got round in.
     let mut first: BTreeMap<usize, (usize, Bypass, usize)> = BTreeMap::new();
     let mut order: Vec<usize> = Vec::new();
-    for (ci, (shut, unstood, reached, found, met)) in judged.into_iter().enumerate() {
+    let mut over_budget: Option<u64> = None;
+    let mut graphs: ReachBinding = ReachBinding::default();
+    // A configuration's closure is kept only where a gate is got round in it:
+    // the search for a way round by water reads its open sea.
+    let mut closures: Vec<Option<Reach>> = Vec::with_capacity(judged.len());
+    for (ci, (shut, unstood, reached, found, met, over, graph)) in judged.into_iter().enumerate() {
+        over_budget = over_budget.or(over);
+        graphs.add(configs[ci].0, &graph);
+        closures.push((!found.is_empty()).then_some(graph));
         binding
             .met
             .extend(met.into_iter().map(|(gi, h)| (gi, ci, h)));
@@ -458,6 +519,9 @@ pub(super) fn verify_gates_separate(
             }
         }
     }
+    if let Some(budget) = over_budget {
+        return (binding, Err(reach_budget_failure(&graphs, budget)));
+    }
     if order.is_empty() {
         return (binding, Ok(()));
     }
@@ -473,12 +537,21 @@ pub(super) fn verify_gates_separate(
         let w = configs[*ci].0;
         let mut words = b.words.clone();
         if !b.swims
-            && let Some(wet) = escape(w, &b.near, &b.far, gates[b.gate].region, true)
+            && let Some(wet) = escape(
+                w,
+                closures[*ci]
+                    .as_ref()
+                    .expect("a configuration that got round a gate keeps its closure"),
+                &b.near,
+                &b.far,
+                gates[b.gate].region,
+                true,
+            )
         {
             words.push_str(&format!(
                 "; and by water, from {:?} to {:?}: {}",
-                wet[0],
-                wet.last().unwrap_or(&wet[0]),
+                wet.cells[0],
+                wet.cells.last().unwrap_or(&wet.cells[0]),
                 path_words(w, &wet, others)
             ));
         }
@@ -667,8 +740,44 @@ mod separate_tests {
         let (_, verdict) = judge(&base, &shut);
         let err = verdict.expect_err("the low wall end is a way round");
         assert_eq!(err.code.id(), "DW1011");
-        assert!(err.message.contains("jumping x1"), "{}", err.message);
-        assert!(err.message.contains("falling"), "{}", err.message);
+        // Over the reach graph the way down off the wall top is flown as a
+        // jump down (the graph's edge for it), not a fall: two jumps, the first
+        // off the crate, over the wall top.
+        assert!(err.message.contains("jumping x2"), "{}", err.message);
+        assert!(
+            err.message
+                .contains("it leaves the walked ground at [0, 2, 8] by a sprint jump"),
+            "{}",
+            err.message
+        );
+        assert!(err.message.contains("[0, 3, 10]"), "{}", err.message);
+    }
+
+    /// The crate stands one column east of the low wall end's axis, so the only
+    /// way onto the wall top is a jump off it to the south-west: a launch no
+    /// cardinal gap jump makes, which the reach graph flies at its facing
+    /// (spec-0113 §4.3). The gate is got round, and the witness names the jump.
+    #[test]
+    fn a_body_jumps_a_diagonal_onto_the_low_wall_dw1011() {
+        let build = |shut: bool| {
+            let (mut solid, _) = walled_yards(shut);
+            for y in 3..=4 {
+                solid.remove(&[0, y, 10]);
+            }
+            solid.insert([1, 1, 8]);
+            World::from_solid_cells(solid)
+        };
+        let (base, shut) = (build(false), build(true));
+        let (b, verdict) = judge(&base, &shut);
+        let err = verdict.expect_err("the diagonal jump onto the low wall is a way round");
+        assert_eq!(err.code.id(), "DW1011");
+        assert!(
+            err.message
+                .contains("it leaves the walked ground at [1, 2, 8] by a sprint jump south-west"),
+            "{}",
+            err.message
+        );
+        assert_eq!(b.bypassed, 1);
     }
 
     #[test]

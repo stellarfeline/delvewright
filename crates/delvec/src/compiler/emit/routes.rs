@@ -71,6 +71,8 @@ pub(super) fn prove_world(
     // Legs the default path crosses by a link — `teleport-gate.json`'s
     // `legs_carried`.
     let mut legs_carried = 0usize;
+    // The declared jumps DW1041 proved (spec-0113 §6), for the waypoints.
+    let mut proven_jumps: Vec<crate::compiler::nav::ProvenJump> = Vec::new();
     // Every exported path's steps and proven routes — the exported path and each
     // reachable branch's — kept for the run-back finder, which needs the seated
     // hostiles and the lanes that are only resolved further down.
@@ -252,8 +254,7 @@ pub(super) fn prove_world(
             // cannot disagree with it because the measurement is pure and reads
             // the same sets. A pass owes the numbers as much as a failure does —
             // `contact_face_cells: 0` is a watertight hull saying so.
-            let party_walk =
-                world.reachable_walkable_rooted(&crate::compiler::edit::anchor_starts(plan));
+            let party_walk = world.body_region_rooted(&crate::compiler::edit::anchor_starts(plan));
             let seepage = crate::compiler::nav::measure_sea_seepage(world, &party_walk);
             eprintln!("{}", seepage.line());
             sea_seepage_ledger = Some(seepage.ledger());
@@ -376,12 +377,11 @@ pub(super) fn prove_world(
                     format!(" ({})", body_starts.excluded.join(", "))
                 },
             );
-            crate::compiler::nav::verify_boundary_safety(world, &body_starts.roots).map_err(
-                |e| BuildFailure::Diagnostic {
+            crate::compiler::nav::verify_boundary_safety_of(plan, world, &body_starts.roots)
+                .map_err(|e| BuildFailure::Diagnostic {
                     code: e.code,
                     message: e.message,
-                },
-            )?;
+                })?;
 
             // spec-0092 §10: the boundary and the world agree (`DW0960`) — every
             // place a body is put stands inside a region that returns, and a
@@ -393,7 +393,7 @@ pub(super) fn prove_world(
                 let starts = crate::compiler::edit::anchor_starts(plan);
                 let (reachable, sea_entry) = if region.is_some() && !returns {
                     (
-                        world.reachable_walkable_rooted(&starts),
+                        world.body_region_rooted(&starts),
                         crate::compiler::nav::open_sea_entry(world, &starts),
                     )
                 } else {
@@ -430,7 +430,7 @@ pub(super) fn prove_world(
                 let reachable = if gathered.is_empty() {
                     BTreeSet::new()
                 } else {
-                    world.reachable_walkable_rooted(&crate::compiler::edit::anchor_starts(plan))
+                    world.body_region_rooted(&crate::compiler::edit::anchor_starts(plan))
                 };
                 let mut outside_cells = 0usize;
                 for l in &gathered {
@@ -726,6 +726,13 @@ pub(super) fn prove_world(
                         });
                     }
                 }
+                // DW1041 (spec-0113 §5.2): every declared jump flown and proven
+                // makeable before any route takes one as a move.
+                let (jump_binding, proven, jump_verdict) =
+                    crate::compiler::nav::check_declared_jumps(plan, world);
+                eprintln!("{}", jump_binding.line());
+                jump_verdict?;
+                proven_jumps.extend(proven);
                 // DW0311, with its binding stated whichever way it goes
                 // (spec-0083 §5): every leg partitioned into walked, carried by
                 // a crossing and carried by a link.
@@ -759,8 +766,23 @@ pub(super) fn prove_world(
                     playable_region(plan).map(|r| (r.min, r.max)),
                 );
                 eprintln!("{}", leave_binding.line());
+                eprintln!("{}", leave_binding.reach.line());
+                // spec-0113 §5.4 (`DW1043`): what the campaign gives a player,
+                // read for how it moves a body, with the configurations judged
+                // and left unbounded — zeroes included.
+                eprintln!(
+                    "{}",
+                    plan.movement
+                        .line(leave_binding.configurations, leave_binding.unbounded)
+                );
+                warnings.extend(plan.movement.findings(leave_binding.unbounded));
                 leave_verdict?;
                 put_json(out, "validation/leave-proof.json", &leave_binding.to_json());
+                put_json(
+                    out,
+                    "validation/reach-graph.json",
+                    &leave_binding.reach.to_json(),
+                );
                 // DW1011: a shut gate separates its two sides — no walk, fall,
                 // jump or swim gets a body from its near face to its far one.
                 // Over the same configurations DW0921 judges; the binding is
@@ -991,6 +1013,7 @@ pub(super) fn prove_world(
                         &routes,
                         &listening,
                         &plan.critical_path_sneak,
+                        &proven_jumps,
                     );
                     eprintln!(
                         "{}",
@@ -1115,6 +1138,7 @@ pub(super) fn prove_world(
                                     &branch_routes,
                                     &listening,
                                     &cp.sneak_by_step,
+                                    &proven_jumps,
                                 ),
                             ));
                         }

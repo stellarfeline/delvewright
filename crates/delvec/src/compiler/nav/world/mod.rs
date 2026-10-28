@@ -8,6 +8,10 @@ pub(in crate::compiler::nav) mod body;
 pub use body::*;
 pub(in crate::compiler::nav) mod climb;
 pub use climb::*;
+pub(in crate::compiler::nav) mod confine;
+pub use confine::*;
+pub(in crate::compiler::nav) mod reach;
+pub use reach::*;
 
 use crate::compiler::cellset::{CellMap, CellSet};
 use crate::compiler::nav::route::region::RegionState;
@@ -293,6 +297,13 @@ use crate::compiler::plan::FurnitureRegion;
 pub type BuiltPiece = (String, ([i32; 3], [i32; 3]));
 
 pub struct World {
+    /// **The box of the one piece this world is**, `[lo, hi)`, when it was
+    /// built by [`World::of_piece`]; `None` for every other world. A body
+    /// that leaves the box has left the thing being measured, so no move of
+    /// [`World::body_flood`] — the one confined walk every per-piece reader
+    /// takes — leads out of it, while the blocks, the water and its spill
+    /// beyond the box stay what they are.
+    pub(in crate::compiler::nav) piece: Option<([i32; 3], [i32; 3])>,
     pub(in crate::compiler::nav) solid: CellSet,
     /// Cells whose block hides what stands behind it from the eye — the one
     /// sight predicate, [`World::hides`]. Measured from the blocks
@@ -313,10 +324,17 @@ pub struct World {
     /// which makes it a water source the block map does not contain.
     pub(in crate::compiler::nav) waterloggable: CellSet,
     /// The subset of `flooded` that is **lava** rather than water
-    /// ([`crate::compiler::assembled::Occupancy::lava`]). Read by exactly one
-    /// question, [`World::body_moves`]: a body that enters water floats at its
-    /// surface, and one that enters lava does not come out of it at all.
+    /// ([`crate::compiler::assembled::Occupancy::lava`]). Read by the questions
+    /// of where a body can be — the reach graph and a mob's moves: a body that
+    /// enters water floats at its surface, and one that enters lava does not
+    /// come out of it at all.
     lava: CellSet,
+    /// The blocks that change how a body moves ([`crate::compiler::assembled::Occupancy::material`]).
+    /// Read by the reach graph's simulator alone ([`reach`]).
+    pub(in crate::compiler::nav) material: CellMap<delvewright_dsl::metrics::body::Material>,
+    /// This world's content digest, computed once on first ask
+    /// ([`World::fingerprint`]): the key the reach graph is memoised on.
+    pub(in crate::compiler::nav) fingerprint: std::sync::OnceLock<[u8; 32]>,
     /// The climbables the assembled world **keeps**, with what keeps each
     /// (spec-0099, [`crate::compiler::assembled::climb_holds`]). Shared, never
     /// narrowed: a derived world narrows `climb`, not this.
@@ -452,6 +470,13 @@ pub struct World {
     /// reported as the objectives it drowns rather than as a list of
     /// coordinates.
     pub(in crate::compiler::nav) objective_cells: Vec<(String, [i32; 3])>,
+    /// Whether no fall kills a body in this world: a kit the campaign hands
+    /// reduces fall damage (spec-0113 §4.2, [`Premises::unbounded_fall`]).
+    pub(in crate::compiler::nav) unbounded_fall: bool,
+    /// The declared jumps (spec-0113 §6) as `(from, to)`: the one move the walk
+    /// relation gains ([`World::neighbors_fp`]). A build proves every one before
+    /// any route is taken (`DW1041`), so a jump here is one a body on cue makes.
+    pub(in crate::compiler::nav) declared_jumps: Vec<([i32; 3], [i32; 3])>,
     /// **Where the party stands to take from a holder entity** (spec-0111
     /// §5.2): each `collect`-claimed holder's cell, paired with the stance cell
     /// the stance pass chose for it ([`crate::compiler::holders::collect_stances`]).
@@ -508,6 +533,7 @@ struct Cells {
     partial: CellMap<u8>,
     waterloggable: CellSet,
     lava: CellSet,
+    material: CellMap<delvewright_dsl::metrics::body::Material>,
     climb_holds: ClimbHolds,
     unheld_climb: UnheldClimbs,
     footprints: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Footprint16>,
@@ -564,6 +590,13 @@ pub struct Premises {
     pub(in crate::compiler::nav) world_load_seals: Vec<crate::compiler::assembled::GateSeal>,
     pub(in crate::compiler::nav) clocked_gates: BTreeSet<([i32; 3], [i32; 3])>,
     pub(in crate::compiler::nav) objective_cells: Vec<(String, [i32; 3])>,
+    /// **Whether every fall is survivable** (spec-0113 §4.2): a kit the
+    /// campaign hands a player reduces fall damage — a damage-reducing armour
+    /// enchantment, a max-health change or a fall-damage multiplier — so the
+    /// reach graph credits a landing however far the body fell.
+    pub(in crate::compiler::nav) unbounded_fall: bool,
+    /// The declared jumps, `(from, to)` (spec-0113 §6).
+    pub(in crate::compiler::nav) declared_jumps: Vec<([i32; 3], [i32; 3])>,
 }
 
 impl Premises {
@@ -623,7 +656,23 @@ impl Premises {
                 .iter()
                 .filter_map(|s| Some((s.objective()?.to_string(), s.pos()?)))
                 .collect(),
+            unbounded_fall: false,
+            declared_jumps: Vec::new(),
         }
+        .with_body_of(plan)
+    }
+
+    /// These premises with **the body's own** taken from `plan`: its declared
+    /// jumps (spec-0113 §6) and whether its kit makes every fall survivable
+    /// (§4.2). They are facts about the player, not about the world it is
+    /// in, so a world that declines the campaign's premises
+    /// ([`Premises::geometry_only`]) still carries them when the question
+    /// asked of it is where a body can be.
+    #[must_use]
+    pub fn with_body_of(mut self, plan: &Plan) -> Self {
+        self.unbounded_fall = plan.movement.unbounded_fall();
+        self.declared_jumps = plan.jumps.iter().map(|j| (j.from, j.to)).collect();
+        self
     }
 
     /// A world that is **geometry alone**: no ambient beyond [`Ambient::Void`],
@@ -655,6 +704,8 @@ impl Premises {
             world_load_seals: Vec::new(),
             clocked_gates: BTreeSet::new(),
             objective_cells: Vec::new(),
+            unbounded_fall: false,
+            declared_jumps: Vec::new(),
         }
     }
 }
@@ -799,6 +850,7 @@ impl World {
     /// A field-for-field copy, for the counterfactuals that change one premise.
     pub(in crate::compiler::nav) fn clone_world(&self) -> World {
         World {
+            piece: self.piece,
             solid: self.solid.clone(),
             tall: self.tall.clone(),
             use_gates: self.use_gates.clone(),
@@ -806,10 +858,14 @@ impl World {
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
             lava: self.lava.clone(),
+            material: self.material.clone(),
+            fingerprint: std::sync::OnceLock::new(),
             climb_holds: self.climb_holds.clone(),
             climb: self.climb.clone(),
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
+            unbounded_fall: self.unbounded_fall,
+            declared_jumps: self.declared_jumps.clone(),
             holder_stances: self.holder_stances.clone(),
             floors: self.floors.clone(),
             seating: self.seating.clone(),
@@ -830,6 +886,53 @@ impl World {
             base: self.base,
             built: self.built.clone(),
         }
+    }
+
+    /// This world without its declared jumps — the walk relation they are
+    /// judged against (`DW1041`: a jump across a gap a walk already crosses is
+    /// no jump).
+    pub fn without_declared_jumps(&self) -> World {
+        let mut w = self.clone_world();
+        w.declared_jumps = Vec::new();
+        w
+    }
+
+    /// This world with a straight run-up of `k` floor cells laid behind
+    /// `from` along the jump toward `to`, each the launch cell's own floor with
+    /// air over it — the course a declared jump would need, flown to say how
+    /// long a run-up it needs (`DW1041`).
+    pub fn with_flat_run_up(&self, from: [i32; 3], to: [i32; 3], k: u32) -> World {
+        let mut w = self.clone_world();
+        let (dx, dz) = (to[0] - from[0], to[2] - from[2]);
+        let axis = if dx.abs() >= dz.abs() {
+            [dx.signum(), 0]
+        } else {
+            [0, dz.signum()]
+        };
+        let support = [from[0], from[1] - 1, from[2]];
+        let top = self.partial.get(&support).copied();
+        for i in 1..=k as i32 {
+            let c = [from[0] - axis[0] * i, from[1], from[2] - axis[1] * i];
+            let under = [c[0], c[1] - 1, c[2]];
+            w.solid.insert(under);
+            match top {
+                Some(t) => {
+                    w.partial.insert(under, t);
+                }
+                None => {
+                    w.partial.remove(&under);
+                }
+            }
+            for y in 0..3 {
+                let a = [c[0], c[1] + y, c[2]];
+                w.solid.remove(&a);
+                w.tall.remove(&a);
+                w.use_gates.remove(&a);
+                w.flooded.remove(&a);
+                w.partial.remove(&a);
+            }
+        }
+        w
     }
 
     /// Whether this world carries any furniture region at all. Call sites skip
@@ -1051,6 +1154,7 @@ impl World {
                 partial: occ.partial.into(),
                 waterloggable: occ.waterloggable.into(),
                 lava: occ.lava.into(),
+                material: occ.material.into(),
                 climb_holds: std::sync::Arc::new(occ.climb),
                 unheld_climb: std::sync::Arc::new(occ.unheld_climb),
                 footprints: occ.footprints,
@@ -1065,7 +1169,7 @@ impl World {
     /// The cells are shared, not copied; anything a proof has derived on top
     /// of this world (pinned cells, runtime floods) is not carried.
     pub fn with_premises(&self, premises: Premises) -> World {
-        Self::from_cells(
+        let mut w = Self::from_cells(
             Cells {
                 solid: self.solid.clone(),
                 hiding: self.hiding.clone(),
@@ -1075,13 +1179,16 @@ impl World {
                 partial: self.partial.clone(),
                 waterloggable: self.waterloggable.clone(),
                 lava: self.lava.clone(),
+                material: self.material.clone(),
                 climb_holds: self.climb_holds.clone(),
                 unheld_climb: self.unheld_climb.clone(),
                 footprints: self.floors.footprints.clone(),
                 hurting: self.seating.hurting.clone(),
             },
             premises,
-        )
+        );
+        w.piece = self.piece;
+        w
     }
 
     /// This world with `extra` cells added to its solid set, as full cubes — a
@@ -1110,6 +1217,8 @@ impl World {
     /// close one it leaves open.
     pub(in crate::compiler::nav) fn resieve(mut self) -> World {
         use delvewright_dsl::blockshape::{EMPTY_FOOTPRINT, FULL_FOOTPRINT, body_falls_through};
+        // The reach graph's digest reads the sieve ([`World::fingerprint`]).
+        self.fingerprint = std::sync::OnceLock::new();
         self.floors.sieve.clear();
         if self.floors.footprints.is_empty() {
             return self;
@@ -1161,6 +1270,7 @@ impl World {
             sieve: BTreeSet::new(),
         };
         World {
+            piece: None,
             solid: cells.solid,
             tall: cells.tall,
             use_gates: cells.use_gates,
@@ -1168,6 +1278,8 @@ impl World {
             partial: cells.partial,
             waterloggable: cells.waterloggable,
             lava: cells.lava,
+            material: cells.material,
+            fingerprint: std::sync::OnceLock::new(),
             climb: cells.climb_holds.keys().copied().collect(),
             climb_holds: cells.climb_holds,
             unheld_climb: cells.unheld_climb,
@@ -1195,6 +1307,8 @@ impl World {
             base: premises.base,
             built: premises.built,
             objective_cells: premises.objective_cells,
+            unbounded_fall: premises.unbounded_fall,
+            declared_jumps: premises.declared_jumps,
             holder_stances: BTreeMap::new(),
             floors,
             hiding: cells.hiding,
@@ -1238,6 +1352,7 @@ impl World {
     pub fn with_ambient(mut self, ambient: Ambient, built: Vec<BuiltPiece>) -> Self {
         self.ambient = ambient;
         self.built = built;
+        self.fingerprint = std::sync::OnceLock::new();
         self
     }
 
@@ -1317,6 +1432,7 @@ impl World {
         let mut pinned = self.pinned.clone();
         pinned.extend(extra.iter().copied());
         let mut w = World {
+            piece: self.piece,
             solid,
             tall: self.tall.clone(),
             use_gates: self.use_gates.clone(),
@@ -1324,10 +1440,14 @@ impl World {
             partial,
             waterloggable: self.waterloggable.clone(),
             lava: self.lava.clone(),
+            material: self.material.clone(),
+            fingerprint: std::sync::OnceLock::new(),
             climb_holds: self.climb_holds.clone(),
             climb: self.climb.clone(),
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
+            unbounded_fall: self.unbounded_fall,
+            declared_jumps: self.declared_jumps.clone(),
             holder_stances: self.holder_stances.clone(),
             floors: self.floors.clone(),
             seating: self.seating.clone(),
@@ -1377,6 +1497,7 @@ impl World {
     /// than left to be discovered.
     pub(in crate::compiler::nav) fn with_cleared(&self, extra: &BTreeSet<[i32; 3]>) -> World {
         let mut w = World {
+            piece: self.piece,
             solid: self.solid.clone(),
             tall: self.tall.clone(),
             use_gates: self.use_gates.clone(),
@@ -1384,10 +1505,14 @@ impl World {
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
             lava: self.lava.clone(),
+            material: self.material.clone(),
+            fingerprint: std::sync::OnceLock::new(),
             climb_holds: self.climb_holds.clone(),
             climb: self.climb.clone(),
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
+            unbounded_fall: self.unbounded_fall,
+            declared_jumps: self.declared_jumps.clone(),
             holder_stances: self.holder_stances.clone(),
             floors: self.floors.clone(),
             seating: self.seating.clone(),
@@ -1445,6 +1570,7 @@ impl World {
     /// a later `clear-region` laid over them may not quietly delete the water.
     fn with_flooded(&self, extra: &BTreeSet<[i32; 3]>, regions: &[([i32; 3], [i32; 3])]) -> World {
         let mut w = World {
+            piece: self.piece,
             solid: self.solid.clone(),
             tall: self.tall.clone(),
             use_gates: self.use_gates.clone(),
@@ -1452,10 +1578,14 @@ impl World {
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
             lava: self.lava.clone(),
+            material: self.material.clone(),
+            fingerprint: std::sync::OnceLock::new(),
             climb_holds: self.climb_holds.clone(),
             climb: self.climb.clone(),
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
+            unbounded_fall: self.unbounded_fall,
+            declared_jumps: self.declared_jumps.clone(),
             holder_stances: self.holder_stances.clone(),
             floors: self.floors.clone(),
             seating: self.seating.clone(),
@@ -1510,6 +1640,7 @@ impl World {
     /// to re-surfacing existing floor, which is decoration.
     fn with_unforced(&self, extra: &BTreeSet<[i32; 3]>) -> World {
         let mut w = World {
+            piece: self.piece,
             solid: self.solid.clone(),
             tall: self.tall.clone(),
             use_gates: self.use_gates.clone(),
@@ -1517,10 +1648,14 @@ impl World {
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
             lava: self.lava.clone(),
+            material: self.material.clone(),
+            fingerprint: std::sync::OnceLock::new(),
             climb_holds: self.climb_holds.clone(),
             climb: self.climb.clone(),
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
+            unbounded_fall: self.unbounded_fall,
+            declared_jumps: self.declared_jumps.clone(),
             holder_stances: self.holder_stances.clone(),
             floors: self.floors.clone(),
             seating: self.seating.clone(),
@@ -1591,6 +1726,8 @@ impl World {
     /// This world keeping out of `regions` ([`World::keep_out`]).
     fn with_keep_out(mut self, regions: &[LethalRegion]) -> World {
         self.keep_out.extend(regions.iter().cloned());
+        // The reach graph's digest reads the keep-out ([`World::fingerprint`]).
+        self.fingerprint = std::sync::OnceLock::new();
         self
     }
 
@@ -1606,6 +1743,7 @@ impl World {
         self.lethal.extend(cells.iter().copied());
         self.lethal.compact();
         self.lethal_regions.extend(regions.iter().cloned());
+        self.fingerprint = std::sync::OnceLock::new();
         self
     }
 
@@ -1628,6 +1766,7 @@ impl World {
     /// report that sends someone to fix a prefab that was never wrong.
     pub(in crate::compiler::nav) fn without_runtime_flood(&self) -> World {
         let mut w = World {
+            piece: self.piece,
             solid: self.solid.clone(),
             tall: self.tall.clone(),
             use_gates: self.use_gates.clone(),
@@ -1635,10 +1774,14 @@ impl World {
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
             lava: self.lava.clone(),
+            material: self.material.clone(),
+            fingerprint: std::sync::OnceLock::new(),
             climb_holds: self.climb_holds.clone(),
             climb: self.climb.clone(),
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
+            unbounded_fall: self.unbounded_fall,
+            declared_jumps: self.declared_jumps.clone(),
             holder_stances: self.holder_stances.clone(),
             floors: self.floors.clone(),
             seating: self.seating.clone(),
@@ -1712,6 +1855,7 @@ impl World {
         let mut tall = self.tall.clone();
         tall.extend(self.use_gates.iter());
         World {
+            piece: self.piece,
             solid: self.solid.clone(),
             tall,
             use_gates: CellSet::new(),
@@ -1719,10 +1863,14 @@ impl World {
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
             lava: self.lava.clone(),
+            material: self.material.clone(),
+            fingerprint: std::sync::OnceLock::new(),
             climb_holds: self.climb_holds.clone(),
             climb: self.climb.clone(),
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
+            unbounded_fall: self.unbounded_fall,
+            declared_jumps: self.declared_jumps.clone(),
             holder_stances: self.holder_stances.clone(),
             floors: self.floors.clone(),
             seating: self.seating.clone(),
@@ -1757,6 +1905,68 @@ impl World {
         self.use_gates.contains(&c)
     }
 
+    /// **One piece alone, as a body meets it**: the world of `blocks` (a cell
+    /// to block-state map; air spellings are dropped) inside the box
+    /// `[lo, hi)`, with nothing outside it — outside is air, with nothing to
+    /// stand on. Water may spill into that air; no move of
+    /// [`World::body_flood`] follows it out of the box, because a body that
+    /// has left the box has left the piece. What every reader that asks
+    /// "can a body reach this cell" of one piece before any campaign places it
+    /// builds its reach graph over: the grammar's gates and edge proofs, the
+    /// sculpt, the light probe and the enclosure survey.
+    ///
+    /// A piece is judged before a campaign states anything about the world it
+    /// sits in, so there is no horizon, volume or gate to declare:
+    /// [`Premises::geometry_only`], said by name.
+    pub fn of_piece(blocks: BTreeMap<[i32; 3], String>, lo: [i32; 3], hi: [i32; 3]) -> Self {
+        let blocks: BTreeMap<[i32; 3], String> = blocks
+            .into_iter()
+            .filter(|(_, name)| !delvewright_dsl::blockshape::is_air(name))
+            .collect();
+        let mut w = Self::from_occupancy(
+            crate::compiler::assembled::occupancy_of(blocks, &BTreeSet::new()),
+            Premises::geometry_only(),
+        );
+        w.piece = Some((lo, hi));
+        w
+    }
+
+    /// **The cells that wall up `floor`**: each cell of it and the two over it
+    /// that `open` says a body could be in. The one rule every confined walk
+    /// over the reach graph uses to take floor out of a body's reach — the
+    /// fixtures' `reaches_walled`, the edge proof's confinement to an edge's
+    /// cells, `DW0838`'s flood without the commons. Leaving cells out of the
+    /// set a walk may enter is not the same claim for a body that jumps: an arc
+    /// that lands on kept floor flies through the left-out cells without
+    /// standing in them. A wall stops it; the caller lays one block in every
+    /// cell this returns and builds the world from those blocks.
+    ///
+    /// The wall never takes a kept standable cell or its headroom: a cell two
+    /// over removed floor is open only when the cell under it is, so no kept
+    /// floor stands on it.
+    pub fn walls_over(
+        floor: &BTreeSet<[i32; 3]>,
+        open: &dyn Fn([i32; 3]) -> bool,
+    ) -> BTreeSet<[i32; 3]> {
+        let mut out = BTreeSet::new();
+        for c in floor {
+            for dy in 0..3 {
+                let p = [c[0], c[1] + dy, c[2]];
+                if open(p) {
+                    out.insert(p);
+                }
+            }
+        }
+        out
+    }
+
+    /// Whether `c` lies inside this world's piece box — every cell of a world
+    /// that is no one piece.
+    pub fn in_piece(&self, c: [i32; 3]) -> bool {
+        self.piece
+            .is_none_or(|(lo, hi)| (0..3).all(|a| c[a] >= lo[a] && c[a] < hi[a]))
+    }
+
     /// Build a [`World`] directly from a set of solid cells, with no water (test /
     /// synthetic entry point; the relight unit tests build a world without a full
     /// [`Plan`]).
@@ -1782,6 +1992,7 @@ impl World {
                 lava: BTreeSet::new(),
                 climb: BTreeMap::new(),
                 unheld_climb: BTreeMap::new(),
+                material: Default::default(),
                 footprints: BTreeMap::new(),
                 // A synthetic solid cell is a full cube of stone: it hides.
                 hiding: solid_hides,

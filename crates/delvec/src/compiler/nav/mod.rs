@@ -38,10 +38,12 @@ mod cutscene;
 mod furniture;
 mod hazard;
 mod horizon;
+mod jump;
 mod lane;
 mod learned;
 mod leave;
 mod lethal;
+mod movement;
 mod npc;
 mod respawn;
 mod sea;
@@ -64,10 +66,12 @@ pub use cutscene::*;
 pub use furniture::*;
 pub use hazard::*;
 pub use horizon::*;
+pub use jump::*;
 pub use lane::*;
 pub use learned::*;
 pub use leave::*;
 pub use lethal::*;
+pub use movement::*;
 pub use npc::*;
 pub use respawn::*;
 pub use sea::*;
@@ -453,8 +457,48 @@ delvewright_dsl::dw_code! {
 }
 
 delvewright_dsl::dw_code! {
+    /// `DW1041`: **a declared jump is not makeable** (spec-0113 §5.2). A
+    /// `world.jumps[]` entry is flown as a body on cue makes it — every facing
+    /// within the window of the line between its two cells, the jump pressed on
+    /// either of the last supported ticks, from the straight run-up the course
+    /// gives — under the game's rules and the bot's, and one launch that misses
+    /// refuses it, naming the facing, the press tick, where the body ended, the
+    /// run-up measured and the run-up it needs. An anchor that names no place a
+    /// body stands, or a jump across a gap the walk relation already crosses
+    /// (`not a jump` in the binding line), is refused too: a declaration that
+    /// confirms nothing is the author's intent misread. Derived by simulation,
+    /// never by table.
+    pub const DW_JUMP_NOT_MAKEABLE: DwCode = DwCode::new("DW1041", ExitTier::Build);
+}
+
+delvewright_dsl::dw_code! {
+    /// `DW1043`: **a movement the reach graph does not fly** (spec-0113 §5.4):
+    /// an item or effect the campaign gives a player changes how a body moves
+    /// in a way the simulator does not take — a movement potion or effect, an
+    /// elytra, a wind charge, a pearl, chorus fruit, a riptide trident, a
+    /// movement enchantment. A warning, not a refusal: from the first step a
+    /// body can hold it the graph is unbounded, `DW0921` and `DW0322` report
+    /// those steps as unjudged, and the build goes on. About the engine: the
+    /// campaign wrote nothing wrong. Fall-damage reducers are admitted, and make
+    /// every fall survivable to the graph.
+    pub const DW_MOVEMENT_UNMODELLED: DwCode =
+        DwCode::new("DW1043", ExitTier::Build).about_the_engine();
+}
+
+delvewright_dsl::dw_code! {
+    /// `DW1042`: **the reach graph's work passed its budget** (spec-0113 §5.3):
+    /// launches simulated plus template arcs credited, for one configuration,
+    /// past `metrics::REACH_BUDGET_STATES`. The graph is refused rather than
+    /// truncated: an untraversed graph is a vacuity, and a green over a partial
+    /// one is not a pass. A property of the ENGINE's cost, not of anything the
+    /// campaign wrote wrong.
+    pub const DW_REACH_BUDGET: DwCode = DwCode::new("DW1042", ExitTier::Build).about_the_engine();
+}
+
+delvewright_dsl::dw_code! {
     /// `DW0921`: **a place a body can get into and not out of.** From a cell of the
-    /// proven route, a body walking, falling and jumping ([`World::body_moves`]) can
+    /// proven route, a body walking, falling and jumping (the reach graph,
+    /// [`World::body_reach`]) can
     /// reach a cell from which no walk, fall or jump leads back to the route — a
     /// garden bed ringed by a hedge it jumped onto and dropped off, a pit it fell
     /// into. The player is soft-locked there: nothing but leaving the game gets
@@ -476,9 +520,9 @@ delvewright_dsl::dw_code! {
     /// `DW1011`: **a shut gate its two sides are joined round.** While a gate is
     /// shut — a gated connection's seam gate (spec-0107), or any gate anchor, as the quest
     /// configuration leaves it — a body standing at its near face reaches its far
-    /// face by moves a player makes ([`World::body_moves`]: walking, falling,
-    /// jumping, swimming) without passing it, and so reaches what the story keeps
-    /// shut out of order.
+    /// face by moves a player makes (the reach graph, [`World::body_reach`]:
+    /// walking, falling, jumping, climbing, swimming) without passing it, and so
+    /// reaches what the story keeps shut out of order.
     ///
     /// Judged once per quest configuration the critical path passes through, from
     /// the faces of each shut gate the party can get to there. A `shortcut`'s door

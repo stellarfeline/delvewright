@@ -247,13 +247,16 @@ fn trigger_root_step(
 /// configuration (in `first` order) whose walkable flood from its route cells,
 /// over its own world, meets one of `fire_cells`; `None` when no configuration
 /// reaches them. Split out so it is unit-testable over synthetic [`World`]s.
-fn earliest_reaching_config(
+pub(crate) fn earliest_reaching_config(
     configs: &[TriggerRootConfig],
     world: &World,
     fire_cells: &BTreeSet<[i32; 3]>,
 ) -> Option<usize> {
     configs.iter().find_map(|(w, first, cells)| {
-        let reached = w.as_ref().unwrap_or(world).reachable_walkable(cells);
+        // Where a player's body can be (spec-0113 §5.1): a trigger the path
+        // does not perform is fired by whoever gets into its range first, on
+        // foot or by a jump, so the reach graph roots it.
+        let reached = w.as_ref().unwrap_or(world).body_region(cells);
         reached
             .iter()
             .any(|c| fire_cells.contains(c))
@@ -762,14 +765,23 @@ mod tests {
     /// steps 0–1 and the far patch from step 3; a trigger that fires only from the
     /// far patch is first reachable in the far configuration, so the checkpoint
     /// it sets roots at step 2 and owes only the far patch — which it reaches.
+    /// The patches are split by a wall: a one-column gap is one a body jumps,
+    /// and over the bare gap the trigger is reached from the entry's
+    /// configuration, so the checkpoint roots at the entry.
     #[test]
     fn a_trigger_checkpoint_is_rooted_where_the_trigger_is_first_reachable() {
-        let world = split_world(65);
         let configs: Vec<TriggerRootConfig> = vec![
             (None, 0, vec![[0, 65, 1], [1, 65, 1]]),
             (None, 3, vec![[3, 65, 1], [4, 65, 1]]),
         ];
         let far: BTreeSet<[i32; 3]> = [[4, 65, 0]].into_iter().collect();
+        assert_eq!(
+            earliest_reaching_config(&configs, &split_world(65), &far),
+            Some(0),
+            "the gap is jumped from the near patch"
+        );
+        let wall: BTreeSet<[i32; 3]> = (0..3).flat_map(|z| [[2, 65, z], [2, 66, z]]).collect();
+        let world = split_world(65).with_sealed(&wall);
         let near: BTreeSet<[i32; 3]> = [[0, 65, 0]].into_iter().collect();
         assert_eq!(earliest_reaching_config(&configs, &world, &far), Some(3));
         assert_eq!(earliest_reaching_config(&configs, &world, &near), Some(0));

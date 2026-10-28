@@ -1086,6 +1086,45 @@ pub fn body_falls_through(layer: &[[Footprint16; 3]; 3], under: &[[Footprint16; 
     false
 }
 
+/// **Every footprint [`server_footprint`] can answer**, sorted and without
+/// repeats: [`FULL_FOOTPRINT`], and for each block of the pinned table and each
+/// assignment of the properties the server does not re-derive, the
+/// intersection of the rows that assignment selects — the intersection
+/// `server_footprint` takes. A footprint's position here names it the same way
+/// in every build (ADR-0006), which a reader that packs a footprint into a
+/// small code needs ([`server_footprint_index`]).
+pub fn server_footprint_palette() -> &'static [Footprint16] {
+    static PALETTE: std::sync::OnceLock<Vec<Footprint16>> = std::sync::OnceLock::new();
+    PALETTE.get_or_init(|| {
+        let reg = crate::blocks::BlockRegistry::v1_21_11();
+        let mut out = std::collections::BTreeSet::from([FULL_FOOTPRINT]);
+        for (id, rows) in footprint_rows() {
+            let derived = reg.shape_carrying(id);
+            let mut groups: std::collections::BTreeMap<Vec<(String, String)>, Footprint16> =
+                std::collections::BTreeMap::new();
+            for (props, fp) in rows {
+                let key: Vec<(String, String)> = props
+                    .iter()
+                    .filter(|(k, _)| !derived.iter().any(|d| d == k))
+                    .cloned()
+                    .collect();
+                let acc = groups.entry(key).or_insert(FULL_FOOTPRINT);
+                for (o, r) in acc.iter_mut().zip(fp) {
+                    *o &= r;
+                }
+            }
+            out.extend(groups.into_values());
+        }
+        out.into_iter().collect()
+    })
+}
+
+/// The position of `fp` in [`server_footprint_palette`], or `None` for a
+/// footprint the server never holds.
+pub fn server_footprint_index(fp: &Footprint16) -> Option<usize> {
+    server_footprint_palette().binary_search(fp).ok()
+}
+
 // ---------------------------------------------------------------------------
 // What a block hides from the eye (spec-0118 §0.2, sight-through-blocks.md)
 // ---------------------------------------------------------------------------
@@ -2307,5 +2346,38 @@ mod tests {
             [stone; 3],
         ];
         assert!(body_falls_through(&edge, &pit));
+    }
+
+    /// The palette holds every footprint the server answers for every state of
+    /// the pinned table, and nothing twice.
+    #[test]
+    fn the_footprint_palette_holds_every_server_footprint() {
+        let palette = server_footprint_palette();
+        assert!(
+            palette.windows(2).all(|w| w[0] < w[1]),
+            "sorted, no repeats"
+        );
+        let mut states = 0usize;
+        for (id, rows) in footprint_rows() {
+            for (props, _) in rows {
+                let name = if props.is_empty() {
+                    id.clone()
+                } else {
+                    let p: Vec<String> = props.iter().map(|(k, v)| format!("{k}={v}")).collect();
+                    format!("{id}[{}]", p.join(","))
+                };
+                let fp = server_footprint(&name);
+                assert!(server_footprint_index(&fp).is_some(), "{name}");
+                states += 1;
+            }
+        }
+        assert!(states > 1000, "the table binds: {states} state(s)");
+        assert!(server_footprint_index(&server_footprint("minecraft:iron_bars")).is_some());
+        assert!(server_footprint_index(&FULL_FOOTPRINT).is_some());
+        assert!(
+            palette.len() < 1 << 16,
+            "a footprint's index fits sixteen bits: {}",
+            palette.len()
+        );
     }
 }

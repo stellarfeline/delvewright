@@ -202,10 +202,9 @@ def run_build(tree: Tree, delvec: Path, prefabs: Path, overlay: str | None, lang
     src = work / f"src-{overlay or 'primary'}-{lang}"
     out = work / f"out-{overlay or 'primary'}-{lang}"
     tree.domain.materialise(src, tree.gallery / "overlays" / overlay if overlay else None)
-    r = subprocess.run(
+    r = parallel.run(
         [str(delvec), "--lang", lang, "build", str(src), "-o", str(out), "--prefabs", str(prefabs)],
-        capture_output=True,
-        text=True,
+        kind="delvec build",
     )
     return out, r
 

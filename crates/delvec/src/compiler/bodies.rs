@@ -436,9 +436,9 @@ struct Reading<'c> {
 /// **`DW1055`**: every body owed a line declares it. Returns the binding (always)
 /// and the verdict.
 ///
-/// The walk-reachable set is `world.reachable_walkable_rooted(anchor_starts(plan))`
-/// — the set `DW1037`'s stance pass reads — computed only when some body needs
-/// it.
+/// The reachable set is `world.body_region_rooted(anchor_starts(plan))` — the
+/// reach graph's standing states (spec-0113), the set `DW1037`'s stance pass
+/// reads — computed only when some body needs it.
 pub fn check(
     plan: &Plan,
     world: &crate::compiler::nav::World,
@@ -472,7 +472,7 @@ pub fn check(
                     b.carried += 1;
                 } else {
                     let walk = reachable.get_or_insert_with(|| {
-                        world.reachable_walkable_rooted(&crate::compiler::edit::anchor_starts(plan))
+                        world.body_region_rooted(&crate::compiler::edit::anchor_starts(plan))
                     });
                     reading.reach = stations(plan, body).into_iter().find_map(|(cell, why)| {
                         reach_cells(world, &body_box(kind, cell), walk)

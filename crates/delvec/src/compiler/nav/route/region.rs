@@ -778,15 +778,20 @@ pub fn reachable_under_every_quest_state(
     }
     // A seat whose span admits no configuration at all (its `from_step` is past the
     // last one) still gets the base world's answer rather than an empty set, which
-    // would silently make every proof over it vacuous.
+    // would silently make every proof over it vacuous. The walk relation, as in
+    // [`seat_reach`]: the recovery stake's way home.
     (
         seen.len().max(1),
-        acc.unwrap_or_else(|| world.reachable_walkable(&[seat])),
+        acc.unwrap_or_else(|| world.walk_region(&[seat])),
     )
 }
 
 /// Where a player walks from `seat` in one configuration `st` of `world`,
 /// pulling every shortcut lever the walk reaches ([`World::in_shortcut_rounds`]).
+///
+/// The walk relation, not the reach graph (spec-0113 §4.5): its one reader is
+/// the recovery stake ([`crate::compiler::stake`]), whose table is the way home
+/// the party walks back on cue.
 /// A shortcut's door is opened in the configuration's own terms: its cells
 /// leave the state's fills and join its clears, so the seal the state pins is
 /// lifted by the state rather than cleared under it.
@@ -802,7 +807,7 @@ pub(in crate::compiler::nav) fn seat_reach(
         .as_ref()
         .unwrap_or(world)
         .in_shortcut_rounds::<std::convert::Infallible>(shortcuts, open, |w| {
-            std::ops::ControlFlow::Continue(w.reachable_walkable(&[seat]))
+            std::ops::ControlFlow::Continue(w.walk_region(&[seat]))
         }) {
         std::ops::ControlFlow::Continue(r) => r,
     }

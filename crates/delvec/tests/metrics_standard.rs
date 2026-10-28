@@ -101,6 +101,7 @@ fn two_ledges(rise: i64) -> (World, [i32; 3], [i32; 3]) {
             lava: BTreeSet::new(),
             climb: Default::default(),
             unheld_climb: Default::default(),
+            material: Default::default(),
             footprints: Default::default(),
             hiding: Default::default(),
             hurting: Default::default(),
@@ -112,7 +113,7 @@ fn two_ledges(rise: i64) -> (World, [i32; 3], [i32; 3]) {
 
 fn crosses(rise: i64) -> bool {
     let (world, start, goal) = two_ledges(rise);
-    world.reachable_walkable(&[start]).contains(&goal)
+    world.walk_region(&[start]).contains(&goal)
 }
 
 /// `step.walk-up` is the largest rise the model crosses, and one sixteenth more

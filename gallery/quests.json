@@ -995,7 +995,7 @@
             },
             "hint": "The Factor, the hall's trader, keeps the counter in the near hall.",
             "id": "obj/reach-the-counter",
-            "radius": 3,
+            "radius": 2,
             "requires_flags": [
               "flag/sentinel-sunk"
             ],
@@ -2202,7 +2202,7 @@
                 "anchor": "anchor/exit",
                 "offset": [
                   0,
-                  3,
+                  5,
                   -3
                 ]
               },
@@ -2210,7 +2210,7 @@
                 "anchor": "anchor/exit",
                 "offset": [
                   0,
-                  3,
+                  5,
                   -6
                 ]
               }
@@ -2636,9 +2636,9 @@
               "kill_zone": {
                 "anchor": "anchor/march",
                 "extent": [
-                  3,
                   1,
-                  2
+                  1,
+                  1
                 ]
               },
               "projectile": "minecraft:arrow",
@@ -3482,8 +3482,9 @@
               "text": "The west bay keeps the rest of it, and nothing on the way out needs any of it.",
               "verb": "learns"
             },
+            "hint": "The other arch, on the far side of the ferry's deck.",
             "id": "obj/look-in-the-west-bay",
-            "radius": 3,
+            "radius": 1,
             "title": "Look into the other side bay",
             "type": "reach-anchor"
           },
@@ -4377,7 +4378,7 @@
                         "anchor": "anchor/ferry-deck",
                         "offset": [
                           0,
-                          3,
+                          1,
                           2
                         ]
                       },
@@ -4385,12 +4386,12 @@
                         "anchor": "anchor/ferry-deck",
                         "offset": [
                           0,
-                          3,
+                          1,
                           -2
                         ]
                       }
                     ],
-                    "seconds": 1,
+                    "seconds": 3,
                     "subject": {
                       "region": {
                         "anchor": "anchor/ferry-deck",

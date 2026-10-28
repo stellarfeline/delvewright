@@ -9,7 +9,7 @@
 
 use super::*;
 use crate::compiler::plan::Plan;
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// One gate a proof judges: how a report names it, its region, and which of
 /// its two faces opens it when a declaration says so.
@@ -50,10 +50,14 @@ pub(super) struct Faces {
     pub(super) high: Vec<[i32; 3]>,
 }
 
-/// Whether a body can be in `c`: standing, holding a climbable (spec-0099), or
-/// afloat at the top of water.
+/// Whether a body can be in `c`: `c` is a rest state of the reach graph
+/// ([`World::rest_kind`], spec-0113 §4) — standing (a fence, wall or gate top
+/// included), holding a climbable, afloat or under water. The graph's own
+/// answer, so a face, a seed and a clear column (`DW1057`,
+/// [`super::width`]) are the cells the graph stands a body in, and no second
+/// predicate decides them.
 pub(super) fn can_be(w: &World, c: [i32; 3]) -> bool {
-    w.holds_body(c) || w.is_water_surface(c)
+    w.rest_kind(c).is_some()
 }
 
 /// The candidate cells on one face of a gate region, for thin axis `axis`.
@@ -148,25 +152,14 @@ pub(super) fn opens_low(g: &GateUnderTest, f: Option<&Faces>) -> Option<bool> {
     })
 }
 
-/// The body-movement closure of `roots` over `w`.
-pub(super) fn closure(w: &World, roots: &[[i32; 3]]) -> BTreeSet<[i32; 3]> {
-    let mut seen: BTreeSet<[i32; 3]> = roots.iter().copied().collect();
-    let mut queue: VecDeque<[i32; 3]> = seen.iter().copied().collect();
-    while let Some(cur) = queue.pop_front() {
-        for n in w.body_moves(cur) {
-            if seen.insert(n) {
-                queue.push_back(n);
-            }
-        }
-    }
-    seen
-}
-
 /// The party's reach in one configuration: the route cells a body can be in,
-/// and the body-movement closure of them.
-pub(super) fn party_reach(w: &World, route: &[[i32; 3]]) -> (Vec<[i32; 3]>, BTreeSet<[i32; 3]>) {
+/// and the reach graph's closure from them ([`World::body_reach`], spec-0113)
+/// — the one answer to where a body can get to, which every proof over this
+/// model reads and none walks again. A closure past its budget is partial
+/// (`over_budget`), and a proof takes no verdict over it.
+pub(super) fn party_reach(w: &World, route: &[[i32; 3]]) -> (Vec<[i32; 3]>, Reach) {
     let seeds: Vec<[i32; 3]> = route.iter().copied().filter(|c| can_be(w, *c)).collect();
-    let reach = closure(w, &seeds);
+    let reach = w.body_reach(&seeds);
     (seeds, reach)
 }
 

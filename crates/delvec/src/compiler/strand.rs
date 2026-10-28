@@ -27,7 +27,7 @@
 //! blow can send it to. A reached cell is **in reach** when some cell the party
 //! can be in holds an eye within a strike of the body's box there
 //! ([`STRIKE_REACH`] from [`PLAYER_EYE_HEIGHT`]); the party's cells are where it
-//! can **walk** ([`World::reachable_walkable`], the walk graph every route is
+//! can **walk** ([`World::walk_region`], the walk graph every route is
 //! proven on) from everywhere the campaign puts it, less every cell outside the
 //! playable region, from which the boundary carries a body back. A drop the
 //! party could survive is not a way to the fight: sixteen blocks into a valley
@@ -291,7 +291,7 @@ pub fn check(
         let ground = config.as_ref().unwrap_or(world).without_furniture();
         // The party: where it can walk from where the campaign puts it — a
         // route, not a leap off a cliff it might survive.
-        let mut party: BTreeSet<[i32; 3]> = ground.reachable_walkable(party_roots);
+        let mut party: BTreeSet<[i32; 3]> = ground.body_region(party_roots);
         party.retain(|p| !crate::compiler::nav::returned_from(returned, *p));
         b.party += party.len();
         let mob_owned;
@@ -432,7 +432,7 @@ mod tests {
 
     fn party_on_shelf(w: &World) -> BTreeSet<[i32; 3]> {
         // Only the shelf: the boundary returns a body that leaves it.
-        w.reachable_walkable(&[[1, 9, 1]])
+        w.body_region(&[[1, 9, 1]])
             .into_iter()
             .filter(|c| c[0] < 4)
             .collect()
@@ -470,7 +470,7 @@ mod tests {
     #[test]
     fn a_body_the_party_can_follow_is_not_stranded() {
         let w = shelf();
-        let party = w.reachable_walkable(&[[1, 9, 1], [10, 1, 1]]);
+        let party = w.body_region(&[[1, 9, 1], [10, 1, 1]]);
         let mut b = StrandBinding::default();
         let fp = entity_footprint("minecraft:zombie");
         assert!(strand(&w, &party, &[[1, 9, 1]], &fp, 16.0, &mut b).is_none());

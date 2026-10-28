@@ -85,7 +85,10 @@ fn an_editless_campaign_with_a_walkable_edge_over_void_is_dw0322() {
         panic!("expected a diagnostic failure");
     };
     assert_eq!(code, "DW0322", "{message}");
-    assert!(message.contains("void drop"), "names the hazard: {message}");
+    assert!(
+        message.contains("a fall out of the world"),
+        "names the hazard: {message}"
+    );
     assert!(
         message.contains(", 65,"),
         "flags the room's floor, the cells the party walks: {message}"

@@ -37,6 +37,7 @@ pub fn waypoints_json(
     routes: &[LegRoute],
     listening: &crate::compiler::sculk::Listening,
     sneak: &[bool],
+    jumps: &[crate::compiler::nav::ProvenJump],
 ) -> Value {
     let gates: Vec<([i32; 3], [i32; 3])> = plan
         .timed_gates
@@ -55,6 +56,18 @@ pub fn waypoints_json(
             for run in &leg.climbs {
                 keep.push(run.from);
                 keep.push(run.to);
+            }
+            // spec-0113 §6: the declared jumps the route takes — each pair of
+            // consecutive route cells a proven jump joins. Both ends are kept
+            // waypoints, so the hop between them is the jump.
+            let taken: Vec<&crate::compiler::nav::ProvenJump> = leg
+                .cells
+                .windows(2)
+                .filter_map(|w| jumps.iter().find(|j| j.from == w[0] && j.to == w[1]))
+                .collect();
+            for j in &taken {
+                keep.push(j.from);
+                keep.push(j.to);
             }
             let wps: Vec<Value> = leg_waypoints(&leg.cells, &keep, &gates)
                 .into_iter()
@@ -83,6 +96,16 @@ pub fn waypoints_json(
             if !leg.climbs.is_empty() {
                 leg_json["climbs"] =
                     json!(leg.climbs.iter().map(climb_json).collect::<Vec<Value>>());
+            }
+            // Emitted only when present, so a campaign with no declared jump
+            // stays byte-identical.
+            if !taken.is_empty() {
+                leg_json["jumps"] = json!(
+                    taken
+                        .iter()
+                        .map(|j| json!({"from": j.from, "to": j.to, "sprint": j.sprint, "run_up": j.run_up}))
+                        .collect::<Vec<Value>>()
+                );
             }
             // spec-0016 §4 timed gates: the gates whose clock can
             // physically interrupt THIS leg, in declared order. See

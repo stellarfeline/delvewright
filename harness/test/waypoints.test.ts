@@ -16,6 +16,7 @@ import {
   WAYPOINT_RANGE,
   type Waypoints,
   nearestIndex,
+  parkourGap,
 } from "../src/waypoints.ts";
 import type { Vec3Tuple } from "../src/critical-path.ts";
 import { distSqToRoute } from "../src/route.ts";
@@ -651,4 +652,44 @@ test("a sensor beside the middle of a straight two-waypoint leg is in earshot of
   );
   // Past the leg's end the distance is to the end, not to the line's extension.
   assert.equal(distSqToRoute([40, 64, 0], [[0, 64, 0], [30, 64, 0]]), 100);
+});
+
+// spec-0113 §6: a leg's `jumps` parse, their ends are consecutive waypoints, and
+// a jump the pathfinder's parkour move cannot express is refused by name.
+test("a leg's jumps parse, and one outside the parkour move's table is a named gap", () => {
+  const leg = {
+    from: [0, 64, 0],
+    to: [9, 64, 0],
+    waypoints: [
+      [0, 64, 0],
+      [3, 64, 0],
+      [6, 64, 0],
+      [9, 64, 0],
+    ],
+    jumps: [{ from: [3, 64, 0], to: [6, 64, 0], run_up: 3, sprint: true }],
+  };
+  const w = parseWaypoints({ version: "0.4.0", campaign_id: "c", legs: [leg] });
+  assert.equal(w.legs[0]!.jumps.length, 1);
+  assert.equal(w.legs[0]!.jumps[0]!.runUp, 3);
+  assert.equal(parkourGap(w.legs[0]!.jumps[0]!), undefined, "three forward, flat: the move's own");
+  // Not consecutive waypoints: refused at parse.
+  assert.throws(
+    () =>
+      parseWaypoints({
+        version: "0.4.0",
+        campaign_id: "c",
+        legs: [{ ...leg, jumps: [{ from: [0, 64, 0], to: [6, 64, 0], run_up: 0, sprint: true }] }],
+      }),
+    WaypointsParseError,
+  );
+  const gap = (to: [number, number, number], sprint = true): string | undefined =>
+    parkourGap({ from: [0, 64, 0], to, sprint, runUp: 6 });
+  assert.match(gap([5, 64, 0]) ?? "", /beyond the parkour move's 4/, "five forward");
+  assert.match(gap([4, 65, 0]) ?? "", /rises one at four/, "up one at four");
+  assert.match(gap([3, 62, 0]) ?? "", /drops 2/, "down two");
+  assert.match(gap([3, 64, 3]) ?? "", /not along one axis/, "diagonal");
+  assert.match(gap([3, 64, 0], false) ?? "", /beyond the parkour move's 2/, "a walking jump of three");
+  assert.equal(gap([4, 64, 0]), undefined);
+  assert.equal(gap([3, 65, 0]), undefined);
+  assert.equal(gap([4, 63, 0]), undefined);
 });

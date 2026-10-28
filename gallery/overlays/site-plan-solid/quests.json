@@ -179,7 +179,7 @@
             },
             "hint": "Back down off the causeway; the door is past the far hall.",
             "id": "obj/reach-the-end",
-            "radius": 3,
+            "radius": 1,
             "title": "Leave by the far door",
             "type": "reach-anchor"
           }
@@ -239,6 +239,14 @@
               "anchor": "anchor/seam-loft-stair",
               "happening": {
                 "text": "The bars at the head of the loft stair lift with the muster cleared.",
+                "verb": "opens"
+              },
+              "type": "open-gate"
+            },
+            {
+              "anchor": "anchor/seam-loft-drop",
+              "happening": {
+                "text": "The bars across the loft's drop lift with them.",
                 "verb": "opens"
               },
               "type": "open-gate"

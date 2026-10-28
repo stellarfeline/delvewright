@@ -283,18 +283,15 @@ aarch64-unknown-linux-gnu = "ubuntu-22.04-arm"
 # library at the pin and nothing else in the checkout: a campaign is judged at
 # its own release, by the engine revision it pins.
 repo = "stellarfeline/delvewright-campaigns"
-# Content `main` tip carrying the commit that moves the tileset generators
-# into the library's `prefabs/generators/` as provenance records (ADR-0018 §6) and removes
-# `hello-room` from the library: `prefab/hello-room` is engine test data
-# (`crates/delvec/tests/fixtures/test-pieces/`), laid over this library by
-# `tools/ci/test-library.sh`, which refuses a library that still holds it.
-#
-# What moves under `prefabs/`, counted from `git ls-tree` at both pins: 61
-# `.json` before, 60 after; 149 `.nbt` before, 148 after — `hello-room.json`
-# and `hello-room.nbt` are deleted, `README.md` changes, and
-# `prefabs/generators/` is added (no `.json` or `.nbt` in it; the registry
-# reads the library's top level and `rigs/`, so a subdirectory is not read).
-# No other document or `.nbt` changes (`git diff --name-status`).
+# Content `main` tip carrying the commit that declares the strip behind each
+# treehouse-camp hut out of walk: the Seed House's and the Watch House's
+# contracts owed a row no body reaches, which `contract-reachability`, seeded
+# from the entry's ways in, refuses. What moves under `prefabs/`
+# (`git diff --name-status` against the previous pin): the two pieces' `.json`
+# and `.report.json` are modified, with no `.nbt` changed; and the pin takes up
+# what content `main` gained since, 28 files added: nine campaign pieces
+# (`.json`, `.nbt`, `.report.json` each, for the-bell-changes-the-tune,
+# the-ferry-bell and the-thing-across-the-water) and `rigs/tentacle/rig.json`.
 #
 # WHAT CARRIES EACH CLAIM. `tools/ci/check-pins.py` holds this `sha` equal to
 # the `content-repo` entry in `.github/pins.toml`.
@@ -304,7 +301,7 @@ repo = "stellarfeline/delvewright-campaigns"
 # the property assembles; the library sweep (`crates/delvec/tests/admit_library.rs`)
 # asks it of every admitted piece on every run and prints its own binding count
 # there, which is where that number belongs.
-sha = "3d8b343dbcb9f44c267da77fa2a31f1c47e8957e"
+sha = "c1e29e0c62ed6fde43f35a517d2470c4dde9f0ba"
 
 [render]
 # The render layer (spec-0007 rendering infra / spec-0003 visual tier). Renders

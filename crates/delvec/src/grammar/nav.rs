@@ -1,37 +1,26 @@
 //! Reading an expanded model the way a body meets it: what it can stand in, and
-//! what it can walk to.
+//! where it can get to.
 //!
-//! # Where the walk lives
+//! # Where the answers live
 //!
-//! The walk itself is not here. It is [`delvec::schem::nav`], because "can a
-//! body stand on this cell, and can it walk from that one to this one" is the
-//! same question over a grammar expansion, over a structure template read off
-//! disk, and over a zone reassembled from tiles — one question, one
-//! implementation, and a fix to it reaches every caller. A capability belongs to
-//! the object class it acts on (CLAUDE.md), and that class is *a box of cells
-//! with a passability answer for each*, not `VoxelModel`.
+//! **Where a body can get to is the reach graph's**: [`body_world`] builds the
+//! model's own blocks into [`crate::compiler::nav::World::of_piece`], and
+//! [`reaches`] and [`reaches_walled`] ask its moves — the walk, the climb,
+//! every fall, every swim and every jump of the launch set — the same moves
+//! every route proof in the engine takes. No step walk of this crate's own
+//! survives to disagree with it.
+//!
+//! Which cells hold a body, which lump of floor a cell belongs to and which
+//! are under a roof are [`delvec::schem::nav`]'s, because those are the same
+//! question over a grammar expansion, a structure template read off disk and a
+//! zone reassembled from tiles. A capability belongs to the object class it
+//! acts on (CLAUDE.md), and that class is *a box of cells with a passability
+//! answer for each*, not `VoxelModel`.
 //!
 //! What lives here is the part that is genuinely this crate's: which of **its**
 //! blocks a body can occupy and which of them it can stand on, plus the rule
-//! library's own travel-axis convention. Everything else re-exports, so a
-//! program authored outside this repo still reaches the walk by the name it has
-//! always had.
-//!
-//! `tests/support/mod.rs` delegates here. `tests/staging.rs` still carries its
-//! own copy — that file's own header records why — and folding it in is a
-//! follow-up, not a silence.
-//!
-//! # What the model is, and is not
-//!
-//! One walker: one cell horizontally at a time, stepping at most one cell up or
-//! down, and — under [`reachable_with_fall`] only — walking off a ledge and
-//! landing on the first floor below. Every step is decided by the engine's one
-//! step rule, `delvewright_dsl::metrics::step_allowed`, which is also what
-//! `delvec` routes with: a full-block rise is a jump, and a jump needs the cell
-//! the head sweeps through clear.
-//!
-//! [`reachable_with_fall`] remains deliberately more permissive than the plain
-//! walk, and its own doc records which direction of claim may use it.
+//! library's own travel-axis convention. `tests/support/mod.rs` and
+//! `tests/grammar_staging.rs` both read the model through this module.
 
 use std::collections::BTreeSet;
 
@@ -40,7 +29,7 @@ use delvewright_dsl::blockshape::Collision;
 
 use crate::grammar::model::VoxelModel;
 
-pub use crate::schem::nav::{components, connected, reachable_from};
+pub use crate::schem::nav::components;
 
 /// What a body may occupy, what it may stand on, and how high that floor is —
 /// **asked, not decided, here**.
@@ -182,15 +171,91 @@ pub fn standable_cells(model: &VoxelModel) -> BTreeSet<[i32; 3]> {
     crate::schem::nav::standable_cells(model)
 }
 
-/// [`connected`]'s ±1-step walk, plus a one-way **fall** — see
-/// [`delvec::schem::nav::reachable_with_fall`].
-pub fn reachable_with_fall(
+/// **The body, over this model's own blocks**: [`crate::compiler::nav::World::of_piece`]
+/// built from the model, so every reach question asked of a piece is asked of
+/// the reach graph — a climbable is a cell a body holds in only while its
+/// `canSurvive` rule holds over these blocks, and from every rest state the
+/// walk, the climb, every fall and every jump of the launch set are the
+/// graph's. Outside the model is air to this world, as it is to an assembled
+/// one.
+pub fn body_world(model: &VoxelModel) -> crate::compiler::nav::World {
+    let mut blocks: std::collections::BTreeMap<[i32; 3], String> =
+        std::collections::BTreeMap::new();
+    for pos in model.region().positions() {
+        if let Some(b) = model.get(pos) {
+            blocks.insert(pos, b.to_string());
+        }
+    }
+    let region = model.region();
+    let lo = region.origin;
+    let hi = region.maximum();
+    crate::compiler::nav::World::of_piece(blocks, lo, hi)
+}
+
+/// **Can a body get from any cell of `from` to any cell of `to`, standing only
+/// on the floor `cells` names**, by the reach graph's moves over the model's
+/// blocks ([`body_world`], [`crate::compiler::nav::World::body_flood`])? A
+/// move onto a standable cell of the model is taken only when `cells` holds
+/// it; a move into a cell that is no floor of the model — water a body swims
+/// in, a ladder it holds, the air of a jump's landing beside a ledge — is
+/// not confined, because no fixture names those. No move leaves the
+/// model's box: [`body_world`] is one piece, and the graph's one confined walk
+/// keeps a body inside it. A cell of `from` outside
+/// `cells` is no start. A `cells` that leaves some floor out keeps a body to
+/// a band of it; to prove a route is the only one, wall the rest up
+/// ([`reaches_walled`]).
+pub fn reaches(
     model: &VoxelModel,
     cells: &BTreeSet<[i32; 3]>,
     from: &BTreeSet<[i32; 3]>,
     to: &BTreeSet<[i32; 3]>,
 ) -> bool {
-    crate::schem::nav::reachable_with_fall(model, cells, from, to)
+    let seeds: Vec<[i32; 3]> = from.intersection(cells).copied().collect();
+    !body_world(model)
+        .body_flood(
+            &seeds,
+            &crate::compiler::nav::Confinement::cells(&|next| {
+                cells.contains(&next) || !standable(model, next)
+            }),
+        )
+        .is_disjoint(to)
+}
+
+/// **Can a body get from `from` to `to` with every standable cell outside
+/// `kept` walled up?** Each removed cell, and the two cells over it, is filled
+/// with stone where a body could pass, and the question is [`reaches`] over
+/// the walled model's own floor.
+///
+/// What a proof that a route is the **only** route asks. Leaving a doorway's
+/// cells out of the set a walk may enter is not the same claim for a body
+/// that jumps: a jump that lands past the doorway flies through its cells
+/// without standing in them, so a cut made by confinement is crossed in the
+/// air. A wall is not.
+pub fn reaches_walled(
+    model: &VoxelModel,
+    kept: &BTreeSet<[i32; 3]>,
+    from: &BTreeSet<[i32; 3]>,
+    to: &BTreeSet<[i32; 3]>,
+) -> bool {
+    let walled = walled(model, kept);
+    let cells = standable_cells(&walled);
+    reaches(&walled, &cells, from, to)
+}
+
+/// **The model with every standable cell outside `kept` walled up**: stone in
+/// each cell [`crate::compiler::nav::World::walls_over`] names over that
+/// floor. What a confined walk over one piece is asked over, so a jump cannot
+/// cross floor it was not given in the air ([`reaches_walled`], the edge
+/// proof).
+pub fn walled(model: &VoxelModel, kept: &BTreeSet<[i32; 3]>) -> VoxelModel {
+    let removed: BTreeSet<[i32; 3]> = standable_cells(model).difference(kept).copied().collect();
+    let mut out = model.clone();
+    let stone = crate::grammar::block::BlockState::simple("minecraft:stone_bricks");
+    for p in crate::compiler::nav::World::walls_over(&removed, &|p| passable(model, p)) {
+        out.set(p, &stone)
+            .expect("the palette has room for the wall");
+    }
+    out
 }
 
 /// Where a body walks in: the standable cells on the region's four **vertical**
@@ -445,7 +510,7 @@ mod tests {
             "the doorway is the way in"
         );
         assert_eq!(
-            reachable_from(&bare, &bare_cells, &entry),
+            body_world(&bare).floor_reached(&bare_cells, &entry),
             bare_cells,
             "an empty room is walkable end to end"
         );
@@ -475,7 +540,7 @@ mod tests {
              torch as a wall again"
         );
         assert_eq!(
-            reachable_from(&lit, &lit_cells, &entry),
+            body_world(&lit).floor_reached(&lit_cells, &entry),
             bare_cells,
             "the decoration severed the room"
         );
@@ -523,7 +588,7 @@ mod tests {
             "on the stone, and on top of each slab"
         );
         assert!(
-            crate::schem::nav::connected(
+            reaches(
                 &m,
                 &cells,
                 &BTreeSet::from([[0, 1, 0]]),
@@ -543,7 +608,7 @@ mod tests {
         full.set([0, 3, 0], &stone).unwrap();
         let full_cells = standable_cells(&full);
         assert!(
-            !crate::schem::nav::connected(
+            !reaches(
                 &full,
                 &full_cells,
                 &BTreeSet::from([[0, 1, 0]]),

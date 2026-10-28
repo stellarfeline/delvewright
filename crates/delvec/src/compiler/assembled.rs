@@ -1412,6 +1412,12 @@ pub struct Occupancy {
     /// name it (`DW0991`) rather than report an unroutable leg over a ladder the
     /// author can see in the piece.
     pub unheld_climb: BTreeMap<[i32; 3], String>,
+    /// The blocks that change how a body moves on them or through them
+    /// ([`delvewright_dsl::metrics::body::Material`]): ice, slime, honey, soul
+    /// sand, hay, beds and cobwebs. Not a collision class: the movement
+    /// simulator the reach graph runs reads it (spec-0113). A block absent here
+    /// is [`delvewright_dsl::metrics::body::Material::Plain`].
+    pub material: BTreeMap<[i32; 3], delvewright_dsl::metrics::body::Material>,
     /// For each `solid` cell whose block does **not** cover its cell, the
     /// block's server footprint ([`delvewright_dsl::blockshape::server_footprint`]):
     /// the posts of iron bars, a pane, a chain, a lantern. Not a collision class
@@ -1790,6 +1796,13 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
             .collect()
     };
     let (climb, unheld_climb) = climb_holds(blocks);
+    let material = blocks
+        .iter()
+        .filter_map(|(c, name)| {
+            let m = delvewright_dsl::metrics::body::material_of_block(name);
+            (m != delvewright_dsl::metrics::body::Material::Plain).then_some((*c, m))
+        })
+        .collect();
     Occupancy {
         solid,
         tall,
@@ -1800,6 +1813,7 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
         lava,
         climb,
         unheld_climb,
+        material,
         footprints,
         hiding,
         hurting,

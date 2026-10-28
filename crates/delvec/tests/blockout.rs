@@ -290,7 +290,7 @@ fn a_low_wall_reddens_dw0838() {
         .find(|m| m.contains("allocated no seam for"))
         .unwrap_or_else(|| panic!("no pair-shaped DW0838 among {:?}", errors(&b)));
     assert!(
-        pair.contains("can still walk to"),
+        pair.contains("can still reach"),
         "the refusal names both places and a witness cell: {pair}"
     );
     assert_eq!(b.binding.pairs, 21);
@@ -500,7 +500,7 @@ fn a_stair_down_through_a_punched_floor_is_a_whole_run() {
         !seeds.is_empty(),
         "the place above offers somewhere to start"
     );
-    let reached = world.reachable_walkable(&seeds);
+    let reached = world.walk_region(&seeds);
     let landed = (lo[2]..=hi[2])
         .flat_map(|z| (lo[0]..=hi[0]).map(move |x| [x, under.floor, z]))
         .any(|c| reached.contains(&cell(c)));
@@ -521,7 +521,7 @@ fn a_stair_down_through_a_punched_floor_is_a_whole_run() {
 /// The hole the derivation cuts therefore clears the headroom over every course
 /// of the run, not just the cells the plan allocated.
 ///
-/// Judged by the movement relation `DW0921` floods (`nav::World::body_moves`), from
+/// Judged by the movement relation `DW0921` floods (the reach graph, `nav::World::body_reach`), from
 /// every standable cell of the lower place's walk plane — never a second model
 /// of how a body climbs.
 ///
@@ -598,20 +598,8 @@ fn a_stair_down_through_a_punched_floor_can_be_climbed_back_out() {
         (0..3).all(|i| i64::from(c[i]) >= alo[i] && i64::from(c[i]) <= ahi[i])
             && i64::from(c[1]) == above.floor
     };
-    let mut seen: std::collections::BTreeSet<[i32; 3]> = floor.iter().copied().collect();
-    let mut queue: std::collections::VecDeque<[i32; 3]> = seen.iter().copied().collect();
-    let mut out = false;
-    while let Some(cur) = queue.pop_front() {
-        if in_above(cur) {
-            out = true;
-            break;
-        }
-        for n in world.body_moves(cur) {
-            if seen.insert(n) {
-                queue.push_back(n);
-            }
-        }
-    }
+    let seen = world.body_reach(&floor).cells();
+    let out = seen.iter().any(|c| in_above(*c));
     assert!(
         out,
         "no body on `node/undercroft`'s walk plane ({} standable cell(s)) can walk, \
@@ -641,10 +629,18 @@ fn an_open_stairwell_reddens_dw0836() {
         open_stairwells: true,
         ..Perturb::none()
     });
+    // The wider hole is also a way nothing allocated: a body on the upper floor
+    // falls through it onto the treads below, a move of the reach graph, so
+    // `DW0838` names the crossing beside `DW0836`'s hole.
     assert_eq!(
         errors(&b),
-        vec!["DW0836".to_string()],
-        "a floor opened over courses no head reaches is a wider hole and nothing else"
+        vec!["DW0836".to_string(), "DW0838".to_string()],
+        "a floor opened over courses no head reaches is a wider hole, and a fall through it"
+    );
+    let crossing = message_for(&b, "DW0838");
+    assert!(
+        crossing.contains("node/cell") && crossing.contains("node/undercroft"),
+        "the crossing is the stair's two places: {crossing}"
     );
     let m = message_for(&b, "DW0836");
     assert!(
@@ -2291,8 +2287,8 @@ fn a_scenery_station_is_not_a_start_of_the_boundary_proof() {
     assert_eq!(starts.excluded, vec!["anchor/crown-top".to_string()]);
     assert_eq!(starts.roots.len(), all.len() - 1);
 
-    let every = world.reachable_walkable_rooted(&all);
-    let bodies = world.reachable_walkable_rooted(&starts.roots);
+    let every = world.body_region_rooted(&all);
+    let bodies = world.body_region_rooted(&starts.roots);
     let crown = box_of(&plan.blockout.as_ref().unwrap().boxes, "node/crown").space();
     let in_crown = |c: &[i32; 3]| {
         (0..3).all(|i| i64::from(c[i]) >= crown.0[i] - 1 && i64::from(c[i]) <= crown.1[i] + 1)

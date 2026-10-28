@@ -44,6 +44,7 @@
       {
         "anchors": {
           "anchor/node-far-hall": "anchor/node-far-hall",
+          "anchor/seam-loft-drop": "anchor/seam-loft-drop",
           "anchor/seam-loft-stair": "anchor/seam-loft-stair",
           "anchor/unlock-east-door": "anchor/unlock-east-door",
           "anchor/unlock-loft-stair": "anchor/unlock-loft-stair"

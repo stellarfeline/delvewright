@@ -259,7 +259,7 @@ impl ValleySurround {
     ///
     /// Returns the first escaped cell (for the caller's DW diagnostic).
     pub fn verify_unclimbable(&self, world: &crate::compiler::nav::World) -> Result<(), [i32; 3]> {
-        let reached = world.reachable_walkable(&self.gap_floor_starts);
+        let reached = world.body_region(&self.gap_floor_starts);
         for cell in reached {
             if self.beyond_crest(cell[0], cell[2]) {
                 return Err(cell);

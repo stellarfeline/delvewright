@@ -136,8 +136,9 @@ def points_by_base() -> dict[str, str | None]:
     return out
 
 
-def run(cmd: list[str]) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, capture_output=True, text=True)
+def run(cmd: list[str], kind: str) -> subprocess.CompletedProcess:
+    """One engine run, admitted by memory on the shared pool (`parallel.run`)."""
+    return parallel.run(cmd, kind=kind)
 
 
 def covers(chunks: list[list[int]], lo: list[int], hi: list[int]) -> list[str]:
@@ -254,17 +255,19 @@ def main() -> int:
         src, out = work / f"src-{label}", work / f"out-{label}"
         materialise(src, None if point is None else GALLERY / "overlays" / point)
         got: dict = {"src": src, "out": out, "label": label}
-        got["build"] = run([str(delvec), "build", str(src), "-o", str(out), "--prefabs", args.prefabs])
+        got["build"] = run([str(delvec), "build", str(src), "-o", str(out), "--prefabs", args.prefabs], "delvec build")
         if got["build"].returncode != 0:
             return got
         if (src / "design" / "cameras.json").is_file():
             got["cameras"] = run(
                 [str(delvec), "--prefabs", args.prefabs, "cameras", str(out),
                  "--campaign", str(src), "-o", str(work / f"cameras-{label}"),
-                 "--preview", "--backend", "cpu"]
+                 "--preview", "--backend", "cpu"],
+                "delvec cameras",
             )
         got["panorama"] = run(
-            [str(delvec), "panorama", str(out), "-o", str(work / f"panorama-{label}"), *PANORAMA]
+            [str(delvec), "panorama", str(out), "-o", str(work / f"panorama-{label}"), *PANORAMA],
+            "delvec panorama",
         )
         return got
 

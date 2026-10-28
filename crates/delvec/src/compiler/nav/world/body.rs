@@ -186,10 +186,15 @@ pub struct AnchorRoot {
 /// this module's is the **measurement** of a rise: real collision tops, water,
 /// tall barriers and a footprint's highest supporting face are facts about an
 /// assembled world, and a box of cells has none of them.
-use delvewright_dsl::metrics::{
-    FULL_16, JUMP_REACH, WATER_CLIMB_OUT_RISE, jump_max_gap, step_allowed,
-    unarmoured_survivable_fall_blocks,
-};
+use delvewright_dsl::metrics::{FULL_16, step_allowed, unarmoured_survivable_fall_blocks};
+
+/// **How high the cell relation lets a body afloat climb out**, in whole cells
+/// above the top water cell: a ledge whose standing cell is one over it. The
+/// reach graph flies the climb out itself (the `0.3` impulse of
+/// `LivingEntity.jumpOutOfFluid`, spec-0113 §4.3); this is only the cheap edge
+/// the mob relation and the graph's first pass take, and the curbed-pool tests
+/// of `DW0921` hold the two to the same answer.
+const AFLOAT_CLIMB_OUT_CELLS: i32 = 1;
 
 impl World {
     /// Whether a cell is a valid standing position (feet + head passable, solid
@@ -271,16 +276,23 @@ impl World {
     /// `BTreeSet` frontier with fixed neighbour order (ADR-0006). Starts that are
     /// not themselves standable are snapped within [`SNAP_RADIUS`] first; an
     /// unsnappable start contributes nothing.
-    pub fn reachable_walkable(&self, starts: &[[i32; 3]]) -> BTreeSet<[i32; 3]> {
+    pub fn walk_region(&self, starts: &[[i32; 3]]) -> BTreeSet<[i32; 3]> {
         self.flood_walkable(starts.iter().filter_map(|&s| self.snap(s, SNAP_RADIUS)))
     }
 
-    /// [`World::reachable_walkable`] with each root's **seating** confined to the
+    /// [`World::walk_region`] with each root's **seating** confined to the
     /// AABB that declares it ([`AnchorRoot`]). Only the snap is confined; the walk
     /// itself is unbounded, because a player who reaches a room does reach what it
     /// connects to.
-    pub fn reachable_walkable_rooted(&self, roots: &[AnchorRoot]) -> BTreeSet<[i32; 3]> {
+    pub fn walk_region_rooted(&self, roots: &[AnchorRoot]) -> BTreeSet<[i32; 3]> {
         self.flood_walkable(roots.iter().filter_map(|r| self.seat(r)))
+    }
+
+    /// [`World::body_reach`] from roots seated as [`World::walk_region_rooted`]
+    /// seats them: each confined to the AABB that declares it.
+    pub fn body_reach_rooted(&self, roots: &[AnchorRoot]) -> crate::compiler::nav::world::Reach {
+        let seats: Vec<[i32; 3]> = roots.iter().filter_map(|r| self.seat(r)).collect();
+        self.body_reach(&seats)
     }
 
     /// Where a root actually puts a walker: the nearest standable cell to
@@ -296,7 +308,7 @@ impl World {
 
     /// The walk closure of already-seated cells: deterministic BFS over a
     /// `BTreeSet` frontier with the fixed neighbour order (ADR-0006). The one flood
-    /// both [`World::reachable_walkable`] and [`World::reachable_walkable_rooted`]
+    /// both [`World::walk_region`] and [`World::walk_region_rooted`]
     /// run, so confining a root changes *where the walk starts* and nothing else.
     fn flood_walkable(&self, seats: impl IntoIterator<Item = [i32; 3]>) -> BTreeSet<[i32; 3]> {
         let mut seen: BTreeSet<[i32; 3]> = BTreeSet::new();
@@ -707,8 +719,13 @@ impl World {
         c: [i32; 3],
         fp: &Footprint,
     ) -> Vec<[i32; 3]> {
-        if !self.has_climbs() {
+        if !self.has_climbs() && self.declared_jumps.is_empty() {
             return self.neighbors_walk_fp(c, fp);
+        }
+        if !self.has_climbs() {
+            let mut out = self.neighbors_walk_fp(c, fp);
+            self.push_declared_jumps(c, fp, &mut out);
+            return out;
         }
         let hanging = self.climb_cell_fp(c, fp) && !self.standable_fp(c, fp);
         let mut out = if hanging {
@@ -721,7 +738,18 @@ impl World {
                 out.push(n);
             }
         }
+        self.push_declared_jumps(c, fp, &mut out);
         out
+    }
+
+    /// The declared jumps out of `c` (spec-0113 §6): the one move the walk
+    /// relation gains, taken only between two standable cells.
+    fn push_declared_jumps(&self, c: [i32; 3], fp: &Footprint, out: &mut Vec<[i32; 3]>) {
+        for (from, to) in &self.declared_jumps {
+            if *from == c && !out.contains(to) && self.standable_fp(*to, fp) {
+                out.push(*to);
+            }
+        }
     }
 
     /// The **walk** half of [`World::neighbors_fp`]: standable cardinal
@@ -759,153 +787,13 @@ impl World {
         out
     }
 
-    /// **Everywhere a body in `c` can put itself in one movement** — the player's
-    /// own movement over the assembled model, cardinal, player footprint,
-    /// ordered and deduplicated (ADR-0006).
-    ///
-    /// A body is in one of two states, and `c` says which: **standing** in a
-    /// standable cell, or **afloat** in a surface cell of water (a water cell with
-    /// open air over it, [`World::is_water_surface`]).
-    ///
-    /// Standing, it can take the walk step ([`World::neighbors`]), and the two
-    /// movements a route proof never takes and a player always can:
-    ///
-    /// - **Fall.** The neighbouring column is clear at the body's feet and head;
-    ///   the body drops to the first thing that stops it. A floor counts when it
-    ///   is standable (a lethal volume, a fence top are not) and no deeper than
-    ///   the fall an unarmoured body survives; water catches it at any depth, and
-    ///   the body floats at the surface it fell into.
-    /// - **Jump.** The launch column is clear for the whole arc (feet to two cells
-    ///   up, the measured headroom); each gap column is clear from the lower of the
-    ///   launch and landing feet to that same top; the body lands on the first
-    ///   floor below the arc in the landing column, and the gap is inside
-    ///   [`delvewright_dsl::metrics::jump_max_gap`] for the rise. Requiring the whole band clear
-    ///   refuses some arcs a body clears, never admits one it cannot.
-    ///
-    /// Walking into water whose surface is at or above the body's feet puts it
-    /// afloat at that surface.
-    ///
-    /// Afloat, it can swim to a neighbouring surface cell at the same height, and
-    /// **climb out** onto a neighbouring standable cell no higher than
-    /// [`delvewright_dsl::metrics::WATER_CLIMB_OUT_RISE`] above the water it floats in — or step
-    /// over a lower rim and fall. It cannot jump, and it does not dive: water it
-    /// could leave only by swimming under something is water it cannot leave.
-    /// Lava is never a place a body floats.
-    ///
-    /// A route proof may not use any of this: it must never prove a way the bot
-    /// cannot walk on cue. A proof that asks **where a body can end up** must, or
-    /// it cannot see the places a player jumps, falls or wades into — which is
-    /// what [`DW_BODY_CANNOT_LEAVE`] asks, in both directions of the same relation.
-    ///
-    /// **Holding** on a climb is the fourth state (spec-0099): a body in a climb
-    /// cell ([`World::climb_cell_fp`]) takes the climb's moves
-    /// ([`World::climb_moves_fp`]), steps off sideways into a fall, and lets go
-    /// at the bottom of a run that stands on nothing; and a body falling down a
-    /// column is caught by the first climb cell it reaches within
-    /// [`delvewright_dsl::metrics::climb_catch_fall_blocks`] — it holds there,
-    /// because a player who sneaks holds still.
-    ///
-    /// Diagonal jumps are not moves here: a place a body reaches only by one is
-    /// not seen, and a place it leaves only by one is seen as unleavable.
-    pub fn body_moves(&self, c: [i32; 3]) -> Vec<[i32; 3]> {
-        self.moves_of(c, &Footprint::player(), true)
-    }
-
-    /// **Where a body standing in `c` can step off into a fall it does not
-    /// survive** (spec-0085 §6.2): the first neighbouring column, in the fixed
-    /// cardinal order, whose feet and head cells beside `c` are clear, whose cell
-    /// under them is no floor, and under which nothing arrests the fall within
-    /// [`unarmoured_survivable_fall_blocks`] — or the first thing that does is
-    /// lava. Water at any depth in range arrests it; so does any solid, tall
-    /// barrier or use-gate block, a floor or not, because the question is whether
-    /// the body survives the drop, never whether it can stand where it lands.
-    /// A neighbouring cell that is lava, or whose floor is lava, is a step into
-    /// it, and is answered the same way.
-    ///
-    /// Returns the neighbouring cell and whether what kills is lava (`true`) or
-    /// the fall itself (`false`).
-    ///
-    /// `None` when every side of `c` is wall, floor, or a survivable drop. Asked
-    /// of a world with its exclusions lifted, so a declared killing volume is not
-    /// what this finds — the keep-out answers for those.
-    pub fn fatal_step_off(&self, c: [i32; 3]) -> Option<([i32; 3], bool)> {
-        const HORIZ: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
-        let deepest = unarmoured_survivable_fall_blocks() as i32;
-        for (dx, dz) in HORIZ {
-            let side = [c[0] + dx, c[1], c[2] + dz];
-            let head = [side[0], side[1] + 1, side[2]];
-            let under = [side[0], side[1] - 1, side[2]];
-            // A pool of lava let into the floor, or standing at the feet: one
-            // step and the body is in it.
-            if self.lava.contains(&side)
-                || (!self.is_occupied(side)
-                    && !self.is_occupied(head)
-                    && self.lava.contains(&under))
-            {
-                return Some((side, true));
-            }
-            if self.is_occupied(side) || self.is_occupied(head) || self.use_gates.contains(&side) {
-                continue;
-            }
-            let arrests = |y: i32| {
-                let cell = [side[0], y, side[2]];
-                (self.is_occupied(cell) && !self.is_sieve(cell)) || self.use_gates.contains(&cell)
-            };
-            if arrests(c[1] - 1) {
-                continue; // level ground beside: a walk, not a drop
-            }
-            match self.fall_from(side[0], side[2], c[1], deepest) {
-                Some(lava) => return Some((side, lava)),
-                None => continue,
-            }
-        }
-        None
-    }
-
-    /// Whether a body that steps into column `(x, z)` with its feet at `feet`
-    /// dies of it: `Some(true)` for lava, `Some(false)` for a fall no floor
-    /// arrests within `deepest`, `None` when it lives.
-    ///
-    /// A climbable on the way down catches the body ([`World::catch_fp`]) — the
-    /// game forgets the fall above it — and a body that does not hold on slides
-    /// to the bottom of the run and falls on from there with a fresh count
-    /// (spec-0099 §3.5). The blinded body this answers for does not sneak.
-    fn fall_from(&self, x: i32, z: i32, feet: i32, deepest: i32) -> Option<bool> {
-        let fp = Footprint::player();
-        let arrests = |y: i32| {
-            let cell = [x, y, z];
-            (self.is_occupied(cell) && !self.is_sieve(cell)) || self.use_gates.contains(&cell)
-        };
-        let mut feet = feet;
-        loop {
-            // The body's feet are at `feet`; a landing at cell y puts them at y + 1.
-            let landing = ((feet - 1 - deepest)..=(feet - 1))
-                .rev()
-                .find(|&y| arrests(y));
-            let caught = self.catch_fp(x, z, feet - 1, i64::from(feet) * FULL_16, &fp);
-            match (landing, caught) {
-                (_, Some(hold)) if landing.is_none_or(|y| y < hold[1]) => {
-                    let bottom = self.climb_bottom(hold);
-                    if arrests(bottom[1] - 1) {
-                        return None; // the run stands on a floor
-                    }
-                    feet = bottom[1];
-                }
-                (Some(y), _) if self.lava.contains(&[x, y, z]) => return Some(true),
-                (Some(_), _) => return None,
-                (None, _) => return Some(false),
-            }
-        }
-    }
-
     /// **Everywhere a mob in `c` can put itself in one movement** — the
-    /// relation `DW0922` and `DW0923` flood from a wave's seats. It differs from
-    /// [`World::body_moves`] in one respect only: a mob makes no gap jumps.
-    /// Vanilla's ground pathfinder steps and jumps onto a neighbouring block up
-    /// to one block higher and drops off edges, and never plans a leap across
-    /// open air; so this is `body_moves` with the jump arc taken away, asked of
-    /// the mob's own footprint instead of the player's. The walk, the fall and
-    /// the afloat arms are the same arms.
+    /// relation `DW0922` and `DW0923` flood from a wave's seats: the cell
+    /// relation [`World::moves_of`] (walk, fall, wade, afloat), asked of the
+    /// mob's own footprint. Vanilla's ground pathfinder steps and jumps onto a
+    /// neighbouring block up to one block higher and drops off edges, and never
+    /// plans a leap across open air or a dive (spec-0113 §4.6: a mob is not a
+    /// player body, and the reach graph is not its model).
     ///
     /// And one thing a mob does that the player relation leaves out: it stands
     /// on a **barrier top** ([`World::perch_feet_16`]) when it can step or jump
@@ -919,7 +807,7 @@ impl World {
         let perched = self.perch_feet_16(c, fp);
         let mut out = match perched {
             Some(_) => Vec::new(),
-            None => self.moves_of(c, fp, false),
+            None => self.moves_of(c, fp),
         };
         if self.is_water_surface(c) || (perched.is_none() && !self.standable_fp(c, fp)) {
             return out;
@@ -985,8 +873,8 @@ impl World {
                 }
                 let n = [x, y + 1, z];
                 return (self.standable_fp(n, fp)
-                    && jump_max_gap(self.feet_16_fp(n, fp) - from).is_some())
-                .then_some(n);
+                    && self.feet_16_fp(n, fp) - from >= -i64::from(deepest) * FULL_16)
+                    .then_some(n);
             }
             y -= 1;
         }
@@ -1012,9 +900,14 @@ impl World {
         room.then(|| (i64::from(p[1]) - 1) * FULL_16 + (BARRIER_HEIGHT * FULL_16 as f64) as i64)
     }
 
-    /// The one movement relation behind [`World::body_moves`] and
-    /// [`World::mob_moves`]; `gap_jumps` is the only thing that differs.
-    fn moves_of(&self, c: [i32; 3], fp: &Footprint, gap_jumps: bool) -> Vec<[i32; 3]> {
+    /// **The cell relation of a body's moves without a launch**: the walk step
+    /// ([`World::neighbors_fp`]), a fall in the next column settled on the first
+    /// floor within the survivable depth ([`World::settle_fp`]), wading in, and
+    /// for a body afloat the swim to a neighbouring surface, the climb out onto
+    /// a ledge one cell over the water's top and the step over a lower rim. The
+    /// mob relation ([`World::mob_moves`]) is this; the reach graph takes it as
+    /// its cheap edges and flies everything else (spec-0113 §4).
+    pub(in crate::compiler::nav) fn moves_of(&self, c: [i32; 3], fp: &Footprint) -> Vec<[i32; 3]> {
         const HORIZ: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
         let clear =
             |x: i32, y0: i32, y1: i32, z: i32| (y0..=y1).all(|y| !self.is_occupied([x, y, z]));
@@ -1029,7 +922,7 @@ impl World {
                     continue;
                 }
                 // Climb out onto a ledge in reach of the water's top.
-                for rise in (1..=WATER_CLIMB_OUT_RISE).rev() {
+                for rise in (1..=AFLOAT_CLIMB_OUT_CELLS).rev() {
                     let up = [x1, c[1] + rise, z1];
                     if self.standable_fp(up, fp) && clear(c[0], c[1] + 1, c[1] + rise + 1, c[2]) {
                         out.push(up);
@@ -1073,40 +966,6 @@ impl World {
                 && let Some(n) = settle(x1, z1, c[1] - 1, here)
             {
                 out.push(n);
-            }
-            // Jump: launch headroom, then gaps of 1.. columns. A mob makes none,
-            // and nor does a body holding on a climb — jump held there climbs.
-            if !gap_jumps || hanging || !clear(c[0], c[1], c[1] + 2, c[2]) {
-                continue;
-            }
-            let widest = JUMP_REACH.iter().map(|(_, g)| *g).max().unwrap_or(0) as i32;
-            for gap in 1..=widest {
-                let (lx, lz) = (c[0] + dx * (gap + 1), c[2] + dz * (gap + 1));
-                // The arc crosses every gap column at launch height; one that is
-                // blocked there stops this jump and every longer one.
-                let (gx, gz) = (c[0] + dx * gap, c[2] + dz * gap);
-                if !clear(gx, c[1], c[1] + 2, gz) {
-                    break;
-                }
-                let Some(n) = settle(lx, lz, c[1] + 2, here) else {
-                    continue;
-                };
-                // A landing afloat is judged as landing on the water's top.
-                let landing_16 = if self.is_water_surface(n) {
-                    (i64::from(n[1]) + 1) * FULL_16
-                } else {
-                    self.feet_16_fp(n, fp)
-                };
-                let Some(max_gap) = jump_max_gap(landing_16 - here) else {
-                    continue;
-                };
-                if gap as u32 > max_gap {
-                    continue;
-                }
-                let lo = n[1].min(c[1]);
-                if (1..=gap).all(|i| clear(c[0] + dx * i, lo, c[1] + 2, c[2] + dz * i)) {
-                    out.push(n);
-                }
             }
         }
         out.sort_unstable();

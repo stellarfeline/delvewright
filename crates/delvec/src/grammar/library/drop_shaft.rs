@@ -28,23 +28,18 @@
 //! Directionality, proved the family's way: graph connectivity over standable
 //! cells, not block placement — but a *player's* movement is not an NPC's, so
 //! the connectivity model has to be honest about that. `crate::grammar::nav`'s NPC
-//! pathing (`reachable_walkable`) never risks more than a one-block drop, which
+//! pathing (`walk_region`) never risks more than a one-block drop, which
 //! is right for an escorted NPC and wrong for a player who can walk off a
-//! ledge. `tests/staging.rs`'s `reachable_with_fall` models the player: the
-//! ordinary ±1-step edges `cliff_path` and `ambush_door` already use, plus a
-//! one-way **fall** — stepping off a standable cell into an adjacent column
-//! with nothing underfoot, landing on the first solid floor below, however far
-//! that is.
+//! ledge. The reach graph (`grammar::nav::reaches`) models the player: the
+//! walk, the climb, every jump of the launch set and the **fall** — stepping
+//! off a ledge and landing on the floor below, however far that is.
 //!
 //! Two assertions, not one, because either alone proves the wrong thing:
 //!
 //! 1. `anchor/spill` reaches `anchor/landing` under that model — the structure
 //!    is not simply broken in two pieces.
-//! 2. `anchor/landing` does **not** reach `anchor/spill`, under the plain ±1
-//!    step walk `cliff_path` already uses (no fall edge helps a climb — a fall
-//!    only ever points down). Proving the negative under the *stricter* model
-//!    used for gate 1 would be circular; using the plain walk here is the
-//!    stronger, more honest claim. Teeth: a `rescue_ladder` knob notches every
+//! 2. `anchor/landing` does **not** reach `anchor/spill` under the same model:
+//!    no walk, climb or jump carries a body back up. Teeth: a `rescue_ladder` knob notches every
 //!    column of the entry floor but the one `anchor/spill` stands on, and —
 //!    set alongside a short enough `drop` that the notch actually bridges the
 //!    gap — the same check must find a way up.

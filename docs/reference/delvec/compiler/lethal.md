@@ -78,10 +78,10 @@ get to.** The volume kills every body that is not a player, which is the
 mechanism working when the party leads a mob in, and a defect when the wave
 gets there unled: it thins itself before the party touches it, on every life,
 and what a member drops lands in the box. The movement is a mob's, not a
-player's (`World::mob_moves`): `World::body_moves` — the relation `DW0921`
-floods — with the jump arc taken away, because a mob's ground pathfinder never
-plans a leap across open air, asked of the mob's own footprint, plus one move a
-player route never takes: a mob stands on a **barrier top** (fence, wall, shut
+player's (`World::mob_moves`), never the reach graph `DW0921` reads (spec-0113
+§4.6): the walk step, a fall, a swim and a climb, asked of the mob's own
+footprint, with no jump across open air, because a mob's ground pathfinder never
+plans one, plus one move a player route never takes: a mob stands on a **barrier top** (fence, wall, shut
 gate) it can step or jump up to from something higher, walks along it, and
 drops off it. That is how vesperhold's choir drowned: from the wet flags onto a
 floor lantern, from its top onto the well's curb, along the curb over the shut
@@ -151,8 +151,10 @@ configuration before each switch-on**: a body standing in a volume's keep-out
 when its gate flips is killed in the same server tick (`tools/spike-staged-lethal/ at aa5454feebf2`,
 three of three trials at zero ticks), so the floor it stood on must read as
 danger in that configuration's own bytes. Each configuration's world is its
-region state with every exclusion lifted, its population `reachable_walkable`
-from `lethal::put_at_roots`, and its bytes `RegionState::blocks_over` — the
+region state with every exclusion lifted, its population the standing states
+of that world's reach graph from `lethal::put_at_roots` that a body can also
+get back to the roots from (`lethal::body_population`; the cells `DW0921` would
+call a pocket are not in it), and its bytes `RegionState::blocks_over` — the
 assembled block map with every forced write it credits laid as the block its
 command writes (a fill's block, air for a clear or an unseal; a `RegionEvent`
 carries the block beside its class of write). A `collapse` is not a region write

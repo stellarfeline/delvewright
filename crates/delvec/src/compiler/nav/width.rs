@@ -14,8 +14,9 @@
 //! # The model, cited and authored
 //!
 //! - **One predicate** (cited, spec-0120 §5): a column is clear when a body can
-//!   be in its body cell — [`super::shutmodel::can_be`], the nav model's one answer to
-//!   standing, holding a climbable or floating — or in the cell over it when
+//!   be in its body cell — [`super::shutmodel::can_be`], the reach graph's rest
+//!   predicate ([`World::rest_kind`], spec-0113): standing, holding a climbable,
+//!   afloat or under water — or in the cell over it when
 //!   what stands in the body cell is a floor a body steps onto
 //!   (`MAX_AUTO_STEP_16`: a slab, a path). A beam over a body's head blocks
 //!   nothing; a post, a wall, a raised full block takes the column. A

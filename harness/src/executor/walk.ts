@@ -8,7 +8,7 @@ import type { ReachStep, Transport, Vec3Tuple } from "../critical-path.ts";
 import { insideCompletion, reachGoal } from "../critical-path.ts";
 import { BotDeathError } from "../death.ts";
 import { lethalStepCost, sameBox, spanStepCost } from "../death-loop.ts";
-import { allowNonCollidingEntities, configureLeg, describeStuckNeighbours } from "../movement.ts";
+import { allowNonCollidingEntities, configureLeg, describeStuckNeighbours, parkourFor } from "../movement.ts";
 import {
   nextLegWaypoints,
   LEG_START_REACH,
@@ -17,6 +17,8 @@ import {
   subdivideStraightRuns,
   walkGoals,
   type Climb,
+  type Jump,
+  parkourGap,
   type GoalSpec,
   type TimedGate,
   type Waypoints,
@@ -592,6 +594,7 @@ export const methods = {
       // not consume and falls back to the single destination goal.
       let legWaypoints: readonly Vec3Tuple[] | undefined;
       let legClimbs: readonly Climb[] = [];
+      let legJumps: readonly Jump[] = [];
       // spec-0100 §4.7: the vibrations the proven leg is predicted to make,
       // heard from the walk's start — or from the first walk along part of the
       // leg before it (a run-back approach, a pulse station walk), which is
@@ -624,6 +627,7 @@ export const methods = {
         );
         legWaypoints = match.waypoints;
         legClimbs = match.climbs;
+        legJumps = match.jumps;
         legVibrations = match.vibrations;
         if (match.matched) {
           if (this.legHearingFrom?.leg === this.legCursor) heardFrom = this.legHearingFrom.start;
@@ -704,6 +708,7 @@ export const methods = {
           this.watch.watchers,
           (a, b) =>
             climbs.some((c) => same(c.from, a) && same(c.to, b)) ||
+            legJumps.some((j) => same(j.from, a) && same(j.to, b)) ||
             gatesCrossedByHop(a, b, declaredGates).length > 0,
         );
         if (stops.inserted > 0) {
@@ -762,7 +767,26 @@ export const methods = {
         }
         legWaypoints = kept;
       }
-      const goalsList = walkGoals(legWaypoints, [pos[0], pos[1], pos[2]], r, legClimbs);
+      const goalsList = walkGoals(legWaypoints, [pos[0], pos[1], pos[2]], r, legClimbs, legJumps);
+      // spec-0113 §6: a declared jump the pathfinder's parkour move cannot
+      // express is a harness gap, refused by name before the walk starts.
+      for (const j of legJumps) {
+        const gap = parkourGap(j);
+        if (gap !== undefined) {
+          throw new Error(
+            `${label}: the proven leg's jump [${j.from.join(", ")}]→[${j.to.join(", ")}] is a harness ` +
+              `gap — ${gap}; mineflayer-pathfinder 2.4.5's parkour move is the only leap the bot ` +
+              `makes on cue`,
+          );
+        }
+      }
+      const jumpHops = goalsList.filter((g) => g.jump !== undefined).length;
+      if (legJumps.length > 0 || jumpHops > 0) {
+        process.stderr.write(
+          `[jump] ${label}: ${legJumps.length} jump(s) on the proven leg, ${jumpHops} driven ` +
+            `as a parkour hop\n`,
+        );
+      }
       const climbHops = goalsList.filter((g) => g.climb !== undefined).length;
       if (legClimbs.length > 0 || climbHops > 0) {
         // Stated binding count: the climbs the proven leg takes, and how many of
@@ -786,9 +810,17 @@ export const methods = {
         // watching body in reach must face the bot. The judgement records,
         // never throws, so the walk's recovery never reads it as a stall.
         async (spec, glabel) => {
-          await (spec.climb
-            ? this.raceDeath(() => this.climbHop(spec, glabel))
-            : this.gotoStaged(spec, glabel, sneak));
+          // The parkour move is on for a proven jump's hop and off for every
+          // other (spec-0113 §6): the bot walks what the proof proved.
+          parkourFor(movements, spec.jump !== undefined);
+          bot.pathfinder.setMovements(movements);
+          try {
+            await (spec.climb
+              ? this.raceDeath(() => this.climbHop(spec, glabel))
+              : this.gotoStaged(spec, glabel, sneak));
+          } finally {
+            parkourFor(movements, false);
+          }
           await this.judgeWatchers(glabel);
         },
         (target) => this.unstickToward(target),

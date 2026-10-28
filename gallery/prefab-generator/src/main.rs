@@ -61,6 +61,58 @@ const CABIN_LANTERN: [i32; 3] = [2, 3, 27];
 /// stands in the cell under it). What the arrival view in the cabin frames.
 const CABIN_LAMP: [i32; 3] = [2, 2, 29];
 
+/// **The ferry's deck** (spec-0113 §9): a stone platform two courses high in
+/// the far hall's west half, `(x0, x1, z0, z1)` inclusive, that the deck and
+/// the tiller stand on. A body on the hall's floor cannot step two courses, so
+/// the one way onto it is the broken plank of [`JETTY_PLANK`]; one that drops
+/// off it lands on the floor and walks round to the flight again.
+/// Its east edge stops at `x = 12`: the muster wave seats its spider at
+/// `[14.5, 19.5]`, and a spider's body is 1.4 wide, so a deck block at
+/// `x = 13` is inside it: measured, the gallery bot's die-retry read the
+/// re-seated spider at 15 of 16 health.
+const FERRY_DECK: (i32, i32, i32, i32) = (6, 12, 20, 22);
+
+/// The deck's one column further east, `(x, z0)` to the deck's south edge,
+/// clear of the spider's body (it reaches `z = 20.2`): the tiller stands on
+/// it, three columns from the boarding volume's centre.
+const FERRY_TILLER_FOOT: (i32, i32) = (13, 21);
+
+/// The ferry deck's top solid course: a body stands on it at `y = 3`.
+const FERRY_DECK_TOP_Y: i32 = 2;
+
+/// **The broken plank** (spec-0113 §9): the one plank left of the jetty, two
+/// long and one wide against the mezzanine's west face at the deck's height,
+/// `(x0, x1, y, z0, z1)` — a step down off the mezzanine's top. Between it and
+/// the ferry deck three columns of the jetty are gone (`x ∈ 13..=15`), so the critical path
+/// from the loft to the ferry crosses them by a sprint jump on the flat —
+/// declared `jump/the-broken-plank` from `anchor/jetty-near` to
+/// `anchor/jetty-far`, proven (`DW1041`), taken by the route and driven by the
+/// bot's parkour move. At the deck's height the hall's roof is four courses
+/// over the plank, so the jump's arc is whole; from the mezzanine's top it
+/// would meet the roof.
+const JETTY_PLANK: (i32, i32, i32, i32, i32) = (16, 17, FERRY_DECK_TOP_Y, 20, 20);
+
+/// The row the jump runs along: the deck's north row and the plank's.
+const JETTY_ROW: i32 = 20;
+
+/// **The fenced garden** (spec-0113 §9): a ring of oak fence round a bed in
+/// the near hall's west half, `(x0, x1, z0, z1)` inclusive, the ring on the
+/// rectangle's edge. Nothing walks into the bed — a fence is a barrier the walk
+/// never stands on — but a body steps from [`GARDEN_BOULDER`] onto the fence's
+/// top, half a course up, and drops into the bed; [`GARDEN_STEP`] inside is the
+/// way it climbs back onto the fence and out, so the bed is a place a body
+/// gets into and out of, and `DW0921`'s binding counts the fence-top state.
+const GARDEN: (i32, i32, i32, i32) = (9, 11, 9, 12);
+
+/// The boulder outside the garden's west fence, one course high.
+const GARDEN_BOULDER: [i32; 3] = [8, 1, 10];
+
+/// The step inside the bed, one course high, against the south fence.
+const GARDEN_STEP: [i32; 3] = [10, 1, 11];
+
+/// The garden's fence.
+const GARDEN_FENCE: &str = "minecraft:oak_fence";
+
 /// **The cabin ladder** (spec-0099): a ladder up the ferry cabin's outer east
 /// wall, `(x, z)`, one rung on each of the wall's three courses and one on the
 /// roof's edge, so its top rung stands beside the roof and a body climbing it
@@ -138,11 +190,16 @@ const MUST_WALK_SENSOR: [i32; 3] = [17, 0, 3];
 
 /// **The sealed catalyst** (spec-0100 §3.7, `DW1001`): a sculk catalyst set
 /// into the solid stone over the near hall's roof, three courses above it,
-/// east of the terrace and west of the long gallery. The nearest place a body
-/// can stand is the near hall's floor nine courses below (`distSqr` 81 > 64)
-/// — so it can hear no death, and the build states the nearest body cell. Set
-/// six cells further west, over the terrace annex's rim, it is `DW1001`.
-const SEALED_CATALYST: [i32; 3] = [18, 10, 8];
+/// west of the long gallery. The places a body can stand nearest it (the reach
+/// graph's, spec-0113) are a rafter of the near hall seven columns east and
+/// five courses down (`distSqr` 74), the near hall's floor eight courses down
+/// and four south (80), and the roof of the vestibule closing the clocked door
+/// at `x` 19..20, which a body reaches from the rafters (93) — so it can hear
+/// no death, and the build states the nearest body cell. The probe that hangs
+/// a lever on a pane under the roof makes the pane's top a perch, seven south
+/// and five down (74), and is refused for the lever alone. One cell south the
+/// perch is within earshot (61), and that probe is `DW1001`.
+const SEALED_CATALYST: [i32; 3] = [16, 10, 5];
 
 /// The block state of [`SEALED_CATALYST`].
 const SEALED_CATALYST_STATE: &[(&str, &str)] = &[("bloom", "false")];
@@ -755,7 +812,7 @@ const ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/ferry-deck",
-        pos: [9, 1, 21],
+        pos: [9, FERRY_DECK_TOP_Y + 1, 21],
         facing: Some("east"),
         trigger_block: None,
         note: "the centre of the ferry's deck: the link's volume is this cell \
@@ -766,12 +823,30 @@ const ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/ferry-tiller",
-        pos: [13, 1, 21],
+        pos: [13, FERRY_DECK_TOP_Y + 1, 21],
         facing: Some("west"),
         trigger_block: None,
         note: "the ferry's tiller: outside the deck's volume and within a strike \
                of its east column only, so the volume shrunk to its middle column \
                holds no cell a body pulls it from",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/jetty-near",
+        pos: [JETTY_PLANK.0, JETTY_PLANK.2 + 1, JETTY_ROW],
+        facing: Some("west"),
+        trigger_block: None,
+        note: "on the broken plank off the mezzanine's west face, where the jump to \
+               the ferry deck leaves from (spec-0113 §9)",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/jetty-far",
+        pos: [FERRY_DECK.1, FERRY_DECK_TOP_Y + 1, JETTY_ROW],
+        facing: Some("west"),
+        trigger_block: None,
+        note: "the ferry deck's east edge, across the three columns the jetty lost: \
+               where the jump from the broken plank lands",
         role: None,
     },
     Anchor {
@@ -1477,6 +1552,37 @@ fn block_at(
     if (lx0..=lx1).contains(&x) && (lz0..=lz1).contains(&z) && (1..=LOFT_TOP_Y).contains(&y) {
         return ("minecraft:stone", None);
     }
+    // The ferry deck and the one plank of its jetty (spec-0113 §9).
+    let (dx0, dx1, dz0, dz1) = FERRY_DECK;
+    if (dx0..=dx1).contains(&x) && (dz0..=dz1).contains(&z) && (1..=FERRY_DECK_TOP_Y).contains(&y) {
+        return ("minecraft:stone", None);
+    }
+    // The tiller's footing: the deck's east column past the spider's reach.
+    if x == FERRY_TILLER_FOOT.0
+        && (FERRY_TILLER_FOOT.1..=dz1).contains(&z)
+        && (1..=FERRY_DECK_TOP_Y).contains(&y)
+    {
+        return ("minecraft:stone", None);
+    }
+    if (JETTY_PLANK.0..=JETTY_PLANK.1).contains(&x)
+        && y == JETTY_PLANK.2
+        && (JETTY_PLANK.3..=JETTY_PLANK.4).contains(&z)
+    {
+        return ("minecraft:stone", None);
+    }
+    // The fenced garden: the ring, the boulder outside it, the step inside.
+    let (gx0, gx1, gz0, gz1) = GARDEN;
+    if y == 1 && (gx0..=gx1).contains(&x) && (gz0..=gz1).contains(&z) {
+        if [x, y, z] == GARDEN_STEP {
+            return ("minecraft:stone", None);
+        }
+        if x == gx0 || x == gx1 || z == gz0 || z == gz1 {
+            return (GARDEN_FENCE, None);
+        }
+    }
+    if [x, y, z] == GARDEN_BOULDER {
+        return ("minecraft:stone", None);
+    }
     // The ferry cabin: walls on the footprint's open edges, a roof over them,
     // and its own lantern. Nothing cuts a way in.
     let (fx0, fx1, fz0, fz1) = CABIN;
@@ -1523,6 +1629,7 @@ fn build() -> Structure {
         (TABLE_LEG, None),
         (TABLE_TOP, Some(&[("type", "bottom")][..])),
         (BENCH_BLOCK, Some(&[("type", "bottom")][..])),
+        (GARDEN_FENCE, None),
     ] {
         palette.idx(name, props);
     }
