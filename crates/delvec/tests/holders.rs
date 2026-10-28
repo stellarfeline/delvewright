@@ -659,7 +659,7 @@ fn a_runtime_edit_reaching_a_holder_is_dw1038() {
                     .push(serde_json::json!({
                         "type": "clear-region",
                         "region": {"anchor": anchor, "extent": extent},
-                        "happening": {"text": "the wall falls", "verb": "opens"}
+                        "happening": {"text": "the hall loses its wall", "verb": "loses"}
                     }));
             },
             None,

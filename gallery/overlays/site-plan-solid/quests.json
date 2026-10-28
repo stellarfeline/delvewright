@@ -66,6 +66,26 @@
             "npc": "npc/curator",
             "title": "Talk to the Curator",
             "type": "talk-to"
+          },
+          {
+            "after": [
+              "obj/hear-the-curator"
+            ],
+            "anchor": "anchor/seam-centre-door",
+            "answers": {
+              "missing_item": "Locked. The Curator's key opens it, held in your hand.",
+              "not_yet": "Barred. The near hall has not finished with you yet."
+            },
+            "happening": {
+              "subject": "anchor/seam-centre-door",
+              "text": "The centre door is unlocked, and opens by hand from now on.",
+              "verb": "opens"
+            },
+            "hint": "The centre door is the middle one of the near hall's three doors.",
+            "id": "obj/unlock-the-centre-door",
+            "requires_item": "minecraft:tripwire_hook",
+            "title": "Unlock the centre door",
+            "type": "interact"
           }
         ],
         "on_complete": [
@@ -73,14 +93,6 @@
             "anchor": "anchor/seam-west-door",
             "happening": {
               "text": "The west door draws back into the barred wall.",
-              "verb": "opens"
-            },
-            "type": "open-gate"
-          },
-          {
-            "anchor": "anchor/seam-centre-door",
-            "happening": {
-              "text": "The centre door draws back with it.",
               "verb": "opens"
             },
             "type": "open-gate"
@@ -118,6 +130,27 @@
         ],
         "trigger": {
           "type": "campaign-start"
+        },
+        "on_objective_complete": {
+          "obj/hear-the-curator": [
+            {
+              "count": 1,
+              "item": "minecraft:tripwire_hook",
+              "name": "Centre Door Key",
+              "type": "give-item"
+            }
+          ],
+          "obj/unlock-the-centre-door": [
+            {
+              "anchor": "anchor/seam-centre-door",
+              "type": "open-gate",
+              "happening": {
+                "subject": "anchor/seam-centre-door",
+                "text": "The lock of the centre door turns.",
+                "verb": "opens"
+              }
+            }
+          ]
         }
       },
       {
@@ -362,25 +395,6 @@
         "once": false,
         "serves": {
           "gate": "anchor/seam-west-door"
-        }
-      },
-      {
-        "at": "anchor/centre-door-leaf",
-        "audience": "presser",
-        "effects": [
-          {
-            "style": "actionbar",
-            "text": "Barred. The near hall has not finished with you yet.",
-            "type": "narrate"
-          }
-        ],
-        "id": "trigger/centre-door-shut",
-        "on": {
-          "on": "use"
-        },
-        "once": false,
-        "serves": {
-          "gate": "anchor/seam-centre-door"
         }
       },
       {

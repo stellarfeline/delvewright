@@ -540,16 +540,36 @@ pub fn declare_story(
             if q.get("happening").is_none() {
                 q["happening"] = happening("learns", format!("the party takes on {id}"));
             }
+            // An `interact`'s placeholder says `opens` only where the node's own
+            // effects open something (spec-0124 §6.2, `DW1070`): its completion
+            // bundle, and the quest's `on_complete` when nothing waits on it.
+            let opens_on = |v: &serde_json::Value| {
+                let s = v.to_string();
+                s.contains("\"open-gate\"") || s.contains("\"open-way\"")
+            };
+            let waited: Vec<String> = q["objectives"]
+                .as_array()
+                .map(|objs| {
+                    objs.iter()
+                        .flat_map(|o| o["after"].as_array().cloned().unwrap_or_default())
+                        .filter_map(|a| a.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let quest_opens = opens_on(&q["on_complete"]);
+            let bundles = q["on_objective_complete"].clone();
             if let Some(objs) = q["objectives"].as_array_mut() {
                 for o in objs {
                     let oid = o["id"].as_str().unwrap_or("").to_string();
                     let kind = o["type"].as_str().unwrap_or("").to_string();
                     if o.get("happening").is_none() {
+                        let opens = opens_on(&bundles[oid.as_str()])
+                            || (quest_opens && !waited.contains(&oid));
                         let verb = match kind.as_str() {
                             "reach-anchor" => "arrives",
                             "kill" => "survives",
                             "collect" => "gains",
-                            "interact" => "opens",
+                            "interact" if opens => "opens",
                             _ => "learns",
                         };
                         o["happening"] = happening(verb, format!("the party completes {oid}"));

@@ -31,6 +31,11 @@
         "node": "node/near-hall",
         "objective": "obj/read-the-label",
         "quest": "quest/near-hall"
+      },
+      {
+        "node": "node/near-hall",
+        "objective": "obj/unlock-the-centre-door",
+        "quest": "quest/near-hall"
       }
     ],
     "critical_path": [
@@ -79,7 +84,8 @@
         "gating": {
           "learned": "told",
           "opens_from": "either",
-          "quest": "quest/near-hall"
+          "quest": "quest/near-hall",
+          "shut": "door"
         },
         "id": "edge/centre-door"
       },
@@ -205,11 +211,6 @@
             "anchor": "anchor/west-door-leaf",
             "kind": "point",
             "note": "A cell of the west door's own bar: where the shut way answers a press while it is barred (spec-0117, the gate's own answer; spec-0118, `told`)."
-          },
-          {
-            "anchor": "anchor/centre-door-leaf",
-            "kind": "point",
-            "note": "A cell of the centre door's own bar: where the shut way answers a press while it is barred (spec-0117, the gate's own answer; spec-0118, `told`)."
           },
           {
             "anchor": "anchor/undercroft-shaft-leaf",

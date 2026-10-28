@@ -537,13 +537,15 @@ pub(super) fn gate_has_answer_box(plan: &Plan, anchor: &str) -> bool {
         .any(|p| matches!(&p.owner, Owner::GateAnswer { gate, .. } if gate == anchor))
 }
 
-/// The cells a gate's own answer boxes stand over, with the gate's block —
-/// what `DW1013` judges those boxes against (the block is the gate's, laid by
-/// the prefab or the `close-gate`, not by `setup_finish`).
+/// The cells the boxes of every press whose block the compiler does not place
+/// stand over, with the gate's block — a gate's own answer, and a door-shut
+/// seam's key on the seam's door (spec-0124 §5.2) — what `DW1013` judges
+/// those boxes against (the block is the gate's, laid by the prefab, the
+/// derivation or the `close-gate`, not by `setup_finish`).
 pub fn gate_blocks(plan: &Plan) -> BTreeMap<[i32; 3], String> {
     plan.presses()
         .iter()
-        .filter(|p| matches!(p.owner, Owner::GateAnswer { .. }))
+        .filter(|p| !p.places_block)
         .map(|p| (p.cell, p.block.clone()))
         .collect()
 }

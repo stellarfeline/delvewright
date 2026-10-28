@@ -404,6 +404,13 @@ pub fn region_anchor_refusal(plan: &Plan, t: &delvewright_dsl::EnvTrigger) -> Op
     if point_of(plan, at).is_some() || gate_region(plan, at).is_none() {
         return None;
     }
+    // An answer the compiler synthesizes for a placed pressable lands on that
+    // pressable's own cell, whatever its owner is anchored at: a door-shut
+    // seam's key is anchored on the seam and pressed on its door's lower cell
+    // (spec-0124 §5.2).
+    if answer_of(plan, t.id.as_str()).is_some_and(|a| a.press.is_some()) {
+        return None;
+    }
     Some(format!(
         "trigger `{}` is anchored at `{at}`, a gate **region**: a region is many cells, \
          and a press lands on one real block. Prescription: anchor the trigger at a point anchor \

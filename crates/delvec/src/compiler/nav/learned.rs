@@ -500,10 +500,13 @@ pub fn check_shut_ways_learned(
             if a_low { (a, b) } else { (b, a) }
         });
         // The press answer is the predicate `DW0429` reads (spec-0117 §6).
+        // A door-shut seam's key is pressed on the seam's own door, and its
+        // `not_yet` is the shut way's answer (spec-0124 §5.1, the press).
         let answered_by = q
             .gate_answers(&seal.anchor)
             .next()
-            .map(|t| t.id.to_string());
+            .map(|t| t.id.to_string())
+            .or_else(|| seam_key_answer(plan, &seal.anchor));
         let far = sides
             .as_ref()
             .and_then(|(lo, hi)| Some((space_of(plan, lo)?, space_of(plan, hi)?)));
@@ -1305,6 +1308,20 @@ fn seen_words(m: &Met) -> String {
             )
         }
     }
+}
+
+/// The key that answers a press on a door-shut seam while it is shut: an
+/// `interact` anchored on the seam whose `answers.not_yet` the seam's door
+/// carries (spec-0124 §5.1, §5.2). Read off the build's one answer derivation.
+fn seam_key_answer(plan: &Plan, seam: &str) -> Option<String> {
+    plan.answers().iter().find_map(|a| match &a.owner {
+        crate::compiler::pressable::Owner::Interact { id, .. }
+            if a.state == delvewright_dsl::AnswerState::NotYet && a.at.as_deref() == Some(seam) =>
+        {
+            Some(id.clone())
+        }
+        _ => None,
+    })
 }
 
 fn told_words(way: &ShutWay) -> String {
