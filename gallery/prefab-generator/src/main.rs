@@ -69,8 +69,11 @@ const CABIN_LAMP: [i32; 3] = [2, 2, 29];
 /// Its east edge stops at `x = 12`: the muster wave seats its spider at
 /// `[14.5, 19.5]`, and a spider's body is 1.4 wide, so a deck block at
 /// `x = 13` is inside it: measured, the gallery bot's die-retry read the
-/// re-seated spider at 15 of 16 health.
-const FERRY_DECK: (i32, i32, i32, i32) = (6, 12, 20, 22);
+/// re-seated spider at 15 of 16 health. Its south edge stops at `z = 21`:
+/// the row `z = 22` is the line from the west bay (`anchor/west-bay`) to the
+/// bay's knocker (`anchor/bay-knock`) that `DW0863` judges, and a deck there
+/// hides the knocker.
+const FERRY_DECK: (i32, i32, i32, i32) = (6, 12, 20, 21);
 
 /// The deck's one column further east, `(x, z0)` to the deck's south edge,
 /// clear of the spider's body (it reaches `z = 20.2`): the tiller stands on
