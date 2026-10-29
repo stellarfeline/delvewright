@@ -68,6 +68,9 @@ impl PlacedBox {
     }
 }
 
+/// An inclusive world AABB of cells, `(min, max)`.
+pub type CellSpan = ([i64; 3], [i64; 3]);
+
 impl PlacedBox {
     /// **The border this place meets `other` across seamlessly**, if any: a
     /// horizontal face the two share (the one-cell gap, a common span on the
@@ -79,7 +82,7 @@ impl PlacedBox {
     /// meet — from the lower walk plane to the higher top of the two play
     /// spaces. What the leak proof (`DW0838`) reads as a declared opening.
     #[must_use]
-    pub fn seamless_border(&self, other: &PlacedBox) -> Option<(Face, ([i64; 3], [i64; 3]))> {
+    pub fn seamless_border(&self, other: &PlacedBox) -> Option<(Face, CellSpan)> {
         Sides::FACES.into_iter().find_map(|face| {
             if !self.side_open(face) || !other.side_open(face.opposite()) {
                 return None;
