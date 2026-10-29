@@ -7,12 +7,12 @@
       "path": "/content/quests/0/on_objective_complete/obj~1unlock-the-centre-door/-",
       "value": {
         "anchor": "anchor/seam-loft-stair",
-        "type": "open-gate",
         "happening": {
           "subject": "anchor/seam-loft-stair",
           "text": "The bar at the loft stair's head draws back.",
           "verb": "opens"
-        }
+        },
+        "type": "open-gate"
       }
     }
   ],

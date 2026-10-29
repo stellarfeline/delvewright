@@ -82,6 +82,8 @@
   "name": "gallery-near-hall",
   "palette": {
     "bar": "minecraft:iron_bars[east=false,north=false,south=false,waterlogged=false,west=false]",
+    "centre-door": "minecraft:oak_door[facing=north,half=lower,hinge=left,open=false,powered=false]",
+    "centre-door-top": "minecraft:oak_door[facing=north,half=upper,hinge=left,open=false,powered=false]",
     "cover": "minecraft:iron_trapdoor[facing=north,half=bottom,open=false,powered=false,waterlogged=false]",
     "floor": "minecraft:polished_andesite",
     "furniture": "minecraft:chiseled_stone_bricks",
@@ -89,9 +91,7 @@
     "ladder": "minecraft:ladder[facing=east,waterlogged=false]",
     "lamp": "minecraft:sea_lantern",
     "lid": "minecraft:spruce_planks",
-    "wall": "minecraft:polished_blackstone_bricks",
-    "centre-door": "minecraft:oak_door[facing=north,half=lower,hinge=left,open=false,powered=false]",
-    "centre-door-top": "minecraft:oak_door[facing=north,half=upper,hinge=left,open=false,powered=false]"
+    "wall": "minecraft:polished_blackstone_bricks"
   },
   "params": {},
   "rules": {
@@ -548,6 +548,96 @@
             {
               "op": "call",
               "symbol": "seam-centre-door-bar"
+            },
+            {
+              "op": "call",
+              "symbol": "wall"
+            },
+            {
+              "op": "call",
+              "symbol": "seam-east-door-bar"
+            },
+            {
+              "op": "call",
+              "symbol": "wall"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 3
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 6
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 2
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 2
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "part-6-top": [
+      {
+        "body": {
+          "axis": "x",
+          "children": [
+            {
+              "op": "call",
+              "symbol": "wall"
+            },
+            {
+              "op": "call",
+              "symbol": "seam-west-door-bar"
+            },
+            {
+              "op": "call",
+              "symbol": "wall"
+            },
+            {
+              "op": "call",
+              "symbol": "seam-centre-door-bar-top"
             },
             {
               "op": "call",
@@ -2089,6 +2179,21 @@
         "weight": 1
       }
     ],
+    "seam-centre-door-bar-top": [
+      {
+        "body": {
+          "body": {
+            "material": {
+              "role": "centre-door-top"
+            },
+            "op": "fill"
+          },
+          "op": "claim",
+          "region": "seam-centre-door"
+        },
+        "weight": 1
+      }
+    ],
     "seam-east-door-bar": [
       {
         "body": {
@@ -2270,111 +2375,6 @@
             "role": "wall"
           },
           "op": "fill"
-        },
-        "weight": 1
-      }
-    ],
-    "part-6-top": [
-      {
-        "body": {
-          "axis": "x",
-          "children": [
-            {
-              "op": "call",
-              "symbol": "wall"
-            },
-            {
-              "op": "call",
-              "symbol": "seam-west-door-bar"
-            },
-            {
-              "op": "call",
-              "symbol": "wall"
-            },
-            {
-              "op": "call",
-              "symbol": "seam-centre-door-bar-top"
-            },
-            {
-              "op": "call",
-              "symbol": "wall"
-            },
-            {
-              "op": "call",
-              "symbol": "seam-east-door-bar"
-            },
-            {
-              "op": "call",
-              "symbol": "wall"
-            }
-          ],
-          "op": "split",
-          "sizes": [
-            {
-              "blocks": {
-                "expr": "int",
-                "value": 3
-              },
-              "size": "absolute"
-            },
-            {
-              "blocks": {
-                "expr": "int",
-                "value": 1
-              },
-              "size": "absolute"
-            },
-            {
-              "blocks": {
-                "expr": "int",
-                "value": 6
-              },
-              "size": "absolute"
-            },
-            {
-              "blocks": {
-                "expr": "int",
-                "value": 1
-              },
-              "size": "absolute"
-            },
-            {
-              "blocks": {
-                "expr": "int",
-                "value": 2
-              },
-              "size": "absolute"
-            },
-            {
-              "blocks": {
-                "expr": "int",
-                "value": 2
-              },
-              "size": "absolute"
-            },
-            {
-              "size": "relative",
-              "weight": {
-                "expr": "int",
-                "value": 1
-              }
-            }
-          ]
-        },
-        "weight": 1
-      }
-    ],
-    "seam-centre-door-bar-top": [
-      {
-        "body": {
-          "body": {
-            "material": {
-              "role": "centre-door-top"
-            },
-            "op": "fill"
-          },
-          "op": "claim",
-          "region": "seam-centre-door"
         },
         "weight": 1
       }

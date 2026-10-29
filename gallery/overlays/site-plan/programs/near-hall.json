@@ -82,6 +82,8 @@
   "name": "gallery-near-hall",
   "palette": {
     "bar": "minecraft:iron_bars[east=false,north=false,south=false,waterlogged=false,west=false]",
+    "centre-door": "minecraft:oak_door[facing=north,half=lower,hinge=left,open=false,powered=false]",
+    "centre-door-top": "minecraft:oak_door[facing=north,half=upper,hinge=left,open=false,powered=false]",
     "cover": "minecraft:iron_trapdoor[facing=north,half=bottom,open=false,powered=false,waterlogged=false]",
     "door": "minecraft:iron_door[facing=south,half=lower,hinge=left,open=false,powered=false]",
     "door-top": "minecraft:iron_door[facing=south,half=upper,hinge=left,open=false,powered=false]",
@@ -91,9 +93,7 @@
     "ladder": "minecraft:ladder[facing=east,waterlogged=false]",
     "lamp": "minecraft:sea_lantern",
     "lid": "minecraft:spruce_planks",
-    "wall": "minecraft:polished_blackstone_bricks",
-    "centre-door": "minecraft:oak_door[facing=north,half=lower,hinge=left,open=false,powered=false]",
-    "centre-door-top": "minecraft:oak_door[facing=north,half=upper,hinge=left,open=false,powered=false]"
+    "wall": "minecraft:polished_blackstone_bricks"
   },
   "params": {},
   "rules": {
@@ -2181,6 +2181,21 @@
         "weight": 1
       }
     ],
+    "seam-centre-door-bar-top": [
+      {
+        "body": {
+          "body": {
+            "material": {
+              "role": "centre-door-top"
+            },
+            "op": "fill"
+          },
+          "op": "claim",
+          "region": "seam-centre-door"
+        },
+        "weight": 1
+      }
+    ],
     "seam-east-door-bar": [
       {
         "body": {
@@ -2370,21 +2385,6 @@
             "role": "wall"
           },
           "op": "fill"
-        },
-        "weight": 1
-      }
-    ],
-    "seam-centre-door-bar-top": [
-      {
-        "body": {
-          "body": {
-            "material": {
-              "role": "centre-door-top"
-            },
-            "op": "fill"
-          },
-          "op": "claim",
-          "region": "seam-centre-door"
         },
         "weight": 1
       }

@@ -128,9 +128,6 @@
             "type": "open-gate"
           }
         ],
-        "trigger": {
-          "type": "campaign-start"
-        },
         "on_objective_complete": {
           "obj/hear-the-curator": [
             {
@@ -143,14 +140,17 @@
           "obj/unlock-the-centre-door": [
             {
               "anchor": "anchor/seam-centre-door",
-              "type": "open-gate",
               "happening": {
                 "subject": "anchor/seam-centre-door",
                 "text": "The lock of the centre door turns.",
                 "verb": "opens"
-              }
+              },
+              "type": "open-gate"
             }
           ]
+        },
+        "trigger": {
+          "type": "campaign-start"
         }
       },
       {
