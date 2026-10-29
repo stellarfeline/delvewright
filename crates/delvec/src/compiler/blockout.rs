@@ -3302,6 +3302,14 @@ fn crossings(
     for wall in wall_openings(b, world) {
         seam.extend(wall.well.into_iter().map(narrow));
     }
+    // Every open side's run is a declared opening as a seam is (spec-0123
+    // §5.3): two seamless places meet across it by the plan's declaration, so
+    // it is walled with the seams and a join through it is never unallocated.
+    for x in &b.boxes {
+        for side in x.open_sides() {
+            seam.extend(cells_of(side.cells.0, side.cells.1).map(narrow));
+        }
+    }
     // Every standable cell the whole map has, minus the ways the plan cut.
     let (rlo, rhi) = region_span(c);
     let mut open: BTreeSet<[i32; 3]> = BTreeSet::new();
