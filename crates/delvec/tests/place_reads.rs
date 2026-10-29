@@ -332,7 +332,7 @@ fn air_over_the_annex_door_unframes_it_and_moves_the_line() {
         s.set_cell(head, PaletteEntry::with_props("minecraft:air", &[]), None);
     });
     assert!(stderr.contains("doors framed: 5 of 7"), "{stderr}");
-    assert_eq!(after["census"]["doors_framed"], 2);
+    assert_eq!(after["census"]["doors_framed"], 5);
     let framing = entry(&after, "node/annex")["doors"][street]["framing"].clone();
     let h = framing
         .as_array()
@@ -454,15 +454,18 @@ fn the_derivations_door_is_sealed_at_load_and_built_twice_the_same() {
 /// — and stands the key's box over it once more, in the same function.
 #[test]
 fn a_close_gate_on_a_door_shut_seam_shuts_the_leaf_and_restands_the_box() {
-    let (ok, said, out) = common::gallery_site_plan_quests_variant(&tempdir("close-door"), |v| {
-        v["content"]["quests"][1]["on_complete"]
-            .as_array_mut()
-            .unwrap()
-            .insert(
-                0,
-                serde_json::json!({"type": "close-gate", "anchor": "anchor/seam-centre-door"}),
-            );
-    });
+    let (ok, said, out) =
+        common::gallery_site_plan_quests_variant(&tempdir("close-door"), &[], |v| {
+            v["content"]["quests"][1]["on_complete"]
+                .as_array_mut()
+                .unwrap()
+                .insert(
+                    0,
+                    serde_json::json!({"type": "close-gate", "anchor": "anchor/seam-centre-door",
+                "happening": {"subject": "anchor/seam-centre-door", "verb": "seals",
+                    "text": "The centre door is shut and locked behind the party."}}),
+                );
+        });
     assert!(ok, "the close builds:\n{said}");
     let f = out.join("datapack/data/gallery/function");
     let mut hits = Vec::new();

@@ -1619,16 +1619,25 @@ pub fn gallery_site_plan_detailed(root: &Path) -> (PathBuf, PathBuf) {
 
 /// **The detailed site-plan point with one edit to its `quests.json`**, built
 /// once by the binary: whether it built, everything it printed, and the output
-/// tree. `root` is the scratch directory the point is laid out under.
+/// tree. `root` is the scratch directory the point is laid out under; `zh`
+/// are the lines the edit adds to the `zh-cn` sidecar, whose coverage is exact.
 #[allow(dead_code)]
 pub fn gallery_site_plan_quests_variant(
     root: &Path,
+    zh: &[(&str, &str)],
     edit: impl FnOnce(&mut serde_json::Value),
 ) -> (bool, String, PathBuf) {
     let _ = std::fs::remove_dir_all(root);
     std::fs::create_dir_all(root).unwrap();
     let (campaign, prefabs) = gallery_site_plan_detailed(root);
     patch_file(&campaign.join("quests.json"), edit);
+    if !zh.is_empty() {
+        patch_file(&campaign.join("l10n/zh-cn.json"), |v| {
+            for (k, t) in zh {
+                v["content"][*k] = serde_json::Value::String((*t).to_string());
+            }
+        });
+    }
     let out = root.join("out");
     let run = std::process::Command::new(env!("CARGO_BIN_EXE_delvec"))
         .arg("--prefabs")

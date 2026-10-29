@@ -5809,6 +5809,7 @@ fn press_at_the_exit(prop: &str) -> impl FnOnce(&mut serde_json::Value) {
 fn a_door_on_no_seam_is_refused_and_a_lever_in_its_cell_is_not_judged() {
     let (ok, said, _) = common::gallery_site_plan_quests_variant(
         &tmp("dw1069-shape-a-door"),
+        &[("fx.trig.press-the-room-door.0.narrate", "它通向院子。")],
         press_at_the_exit(
             "minecraft:oak_door[facing=north,half=lower,hinge=left,open=false,powered=false]",
         ),
@@ -5828,6 +5829,7 @@ fn a_door_on_no_seam_is_refused_and_a_lever_in_its_cell_is_not_judged() {
     }
     let (ok, said, out) = common::gallery_site_plan_quests_variant(
         &tmp("dw1069-shape-a-lever"),
+        &[("fx.trig.press-the-room-door.0.narrate", "它通向院子。")],
         press_at_the_exit("minecraft:lever[face=floor,facing=north,powered=false]"),
     );
     assert!(ok, "a lever is not a way:\n{said}");
@@ -5859,6 +5861,7 @@ fn key_with_a_far_write(shot: bool) -> impl FnOnce(&mut serde_json::Value) {
         if shot {
             list.push(serde_json::json!({"type": "cutscene", "seconds": 3,
                 "look_at": {"anchor": "anchor/seam-loft-stair"},
+                "subject": {"anchor": "anchor/seam-loft-stair"},
                 "path": [{"anchor": "anchor/node-far-hall", "offset": [0, 2, 0]},
                          {"anchor": "anchor/node-far-hall", "offset": [0, 3, 0]}]}));
         }
@@ -5873,6 +5876,7 @@ fn key_with_a_far_write(shot: bool) -> impl FnOnce(&mut serde_json::Value) {
 fn a_key_whose_far_write_a_shot_frames_is_green() {
     let (ok, said, _) = common::gallery_site_plan_quests_variant(
         &tmp("dw1071-unshown"),
+        &[],
         key_with_a_far_write(false),
     );
     assert!(!ok, "an unshown far write is refused:\n{said}");
@@ -5887,8 +5891,11 @@ fn a_key_whose_far_write_a_shot_frames_is_green() {
     ] {
         assert!(line.contains(word), "`{word}` in {line}");
     }
-    let (ok, said, out) =
-        common::gallery_site_plan_quests_variant(&tmp("dw1071-shown"), key_with_a_far_write(true));
+    let (ok, said, out) = common::gallery_site_plan_quests_variant(
+        &tmp("dw1071-shown"),
+        &[],
+        key_with_a_far_write(true),
+    );
     assert!(ok, "a shown write is green:\n{said}");
     let ledger = serde_json::from_slice::<serde_json::Value>(
         &std::fs::read(out.join("validation/devices.json")).unwrap(),
