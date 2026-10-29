@@ -659,6 +659,19 @@ pub struct StratumWhen {
     /// size `scale` blocks, reads at least `min` per mille there.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub patch: Option<Patch>,
+    /// The column lies in this rectangle, `[x, z]` corners inclusive.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub area: Option<StratumArea>,
+}
+
+/// A rectangle of columns, its two `[x, z]` corners inclusive.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct StratumArea {
+    /// The low corner.
+    pub min: [i64; 2],
+    /// The high corner.
+    pub max: [i64; 2],
 }
 
 /// A seeded value-noise patch (the world's `seed`, mixed with `salt`).
