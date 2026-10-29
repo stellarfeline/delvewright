@@ -6,7 +6,7 @@
 #                                [--delvec BIN] [--name NAME] [--out DIR]
 #                                [--memory SIZE]
 #                                [--run-report FILE --written-world FILE]
-#                                [--stage-anyway "REASON" --acknowledge-red N]
+#                                [--stage-anyway "REASON" [--acknowledge-red N]]
 #   tools/creator/playtest-server.sh down [--name NAME] [--prune]
 #   tools/creator/playtest-server.sh status [--name NAME]
 #   tools/creator/playtest-server.sh checkpoint "<name>" [--name NAME]
@@ -102,10 +102,11 @@
 # `--written-world` (`tools/ci/check-written-world.py --record`, the server's
 # world equal to the engine's model), each named by the build's manifest, so the
 # build this script makes must be the one the ladder ran on — a deterministic
-# rebuild of the same campaign is. `--stage-anyway "<reason>" --acknowledge-red
-# <N>` overrides the ledger deliberately — it prints every class being
-# overridden and stamps the reason into the build's admission token — and does
-# not reach the proofs.
+# rebuild of the same campaign is. `--stage-anyway "<reason>"`
+# overrides every refusal the gate makes — ledger reds, a missing or red proof,
+# a stand-in — deliberately: it prints each refusal overridden, one line each,
+# and stamps them and the reason into the build's admission token.
+# `--acknowledge-red <N>` is an optional guard on the ledger red count.
 #
 # ## What the prefab path does about the staging gate, and why that is honest
 #

@@ -123,8 +123,8 @@ fails on them too, for a reviewer who wants the absolute floor.
 
 **A pre-detail blockout is not stageable, and neither is a stand-in.** A
 site-plan campaign whose geometry is still derived massing anywhere is refused
-before any row is adjudicated, with or without `--strict`, and `--stage-anyway`
-does not reach the refusal: the first time a player meets a campaign is its
+before any row is adjudicated, with or without `--strict`; `--stage-anyway`
+overrides the refusal: the first time a player meets a campaign is its
 finished first version, so a stand-in is never handed to one (spec-0098 §8).
 The subject is refused when ANY of three unrelated instruments says so — the
 campaign source places by site plan and carries no `detail-plan.json`; the
@@ -1689,10 +1689,10 @@ def build_fingerprint(build: pathlib.Path) -> str | None:
 #   object by object with the world the engine writes. Refused when absent, for
 #   another build, without the object comparison, or not a pass on both.
 #
-# Neither is reachable by `--stage-anyway`: that override admits classes the
-# ledger cannot cover; a red critical path is a build a bot already failed,
-# and the owner's QA hour is never spent on one. `--coverage-only` asks the
-# ledger question alone and writes no token at all, so it cannot stage anything.
+# `--stage-anyway "<reason>"` overrides both like every other refusal, and the
+# refusals it overrode are printed one per line and recorded in the token.
+# `--coverage-only` asks the ledger question alone and writes no token at all,
+# so it cannot stage anything.
 
 
 def _read_record(path: pathlib.Path | None, flag: str, what: str) -> tuple[dict | None, str | None]:
@@ -1823,11 +1823,12 @@ def refuse_unproven(reasons: list[str], subj: Subject, report: pathlib.Path | No
     """Print the proof refusal (and append it to the report); exit 1."""
     lines = [
         f"staging-gate: REFUSED — `{subj.name}` is not proven completable on this build "
-        f"({len(reasons)} reason(s)); `--stage-anyway` does not reach this refusal:",
+        f"({len(reasons)} reason(s)):",
         *[f"  {r}" for r in reasons],
         "  Run the ladder and the written-world comparison on THIS build "
         "(`validation/bot-run.sh`, `validation/world-save.sh`, `delvec written-world`, "
-        "`tools/ci/check-written-world.py --record`) and present both records.",
+        "`tools/ci/check-written-world.py --record`) and present both records, or "
+        'override deliberately with `--stage-anyway "<reason>"`.',
     ]
     if report is not None and report.is_file():
         with report.open("a", encoding="utf-8") as f:
@@ -1977,8 +1978,9 @@ def main() -> int:
         "--stage-anyway",
         metavar="REASON",
         help=(
-            "DELIBERATE OVERRIDE: admit a red build, recording REASON in the "
-            "token. Requires --acknowledge-red with the exact current red count."
+            "DELIBERATE OVERRIDE: admit the build whatever the gate refused "
+            "(ledger reds, missing proofs, stand-ins, anything), printing every "
+            "refusal overridden and recording them and REASON in the token."
         ),
     )
     ap.add_argument(
@@ -1986,9 +1988,8 @@ def main() -> int:
         type=int,
         metavar="N",
         help=(
-            "the number of red findings you are overriding. Must equal the real "
-            "count exactly — it changes as the ledger does, so it cannot become "
-            "a flag you type from memory."
+            "optional with --stage-anyway: the number of red ledger findings you "
+            "believe you are overriding; when given it must equal the real count."
         ),
     )
     args = ap.parse_args()
@@ -2007,13 +2008,26 @@ def main() -> int:
     if not args.build.is_dir():
         print(f"staging-gate: no build tree {args.build}", file=sys.stderr)
         return 2
+    override_reason = None
+    overrides: list[str] = []
+    if args.stage_anyway is not None:
+        override_reason = args.stage_anyway.strip()
+        if len(override_reason) < MIN_JUSTIFICATION:
+            print(
+                f"staging-gate: --stage-anyway needs a real reason "
+                f"(≥{MIN_JUSTIFICATION} chars); got {len(override_reason)}",
+                file=sys.stderr,
+            )
+            return 2
     pack_refusal = pack_statement_refusal(args.build)
     if pack_refusal is not None:
-        stale = args.admit or (args.build / ADMISSION_NAME)
-        if stale.is_file():
-            stale.unlink()
-        print(f"staging-gate: REFUSED (spec-0084) — {pack_refusal}", file=sys.stderr)
-        return 1
+        if override_reason is None:
+            stale = args.admit or (args.build / ADMISSION_NAME)
+            if stale.is_file():
+                stale.unlink()
+            print(f"staging-gate: REFUSED (spec-0084) — {pack_refusal}", file=sys.stderr)
+            return 1
+        overrides.append(f"resource pack statement (spec-0084): {pack_refusal}")
     for flag, dest in (
         ("--report", args.report),
         ("--json", args.json_out),
@@ -2055,8 +2069,7 @@ def main() -> int:
         print(f"staging-gate: unreadable stage file — {err}", file=sys.stderr)
 
     # A campaign is staged only once detailed. Refused before any row is
-    # adjudicated, whatever `--strict` says, and out of `--stage-anyway`'s
-    # reach: the override admits a red list, and this is not one.
+    # adjudicated, whatever `--strict` says; `--stage-anyway` overrides it.
     if subj.pre_detail:
         stale = args.admit or (args.build / ADMISSION_NAME)
         if stale.is_file():
@@ -2067,23 +2080,28 @@ def main() -> int:
             "meets it is its finished first version, so a blockout is never "
             "handed to one, and a stand-in never ships. Detail every place "
             "(`delvec detail <campaign-dir> --all`), rebuild, and stage that "
-            "build. `--stage-anyway` does not reach this refusal."
+            "build."
         )
-        if args.report:
+        if override_reason is not None:
+            overrides.append(f"not stageable: {why}")
+        elif args.report:
             args.report.parent.mkdir(parents=True, exist_ok=True)
             args.report.write_text(
                 f"<!-- {GATE_ARTIFACT_MARKER} -->\n# Staging gate — `{subj.name}`\n\n"
                 f"**REFUSED — not stageable.** {why}\n",
                 encoding="utf-8",
             )
-        print(f"staging-gate: REFUSED — not stageable. {why}", file=sys.stderr)
-        return 1
+        if override_reason is None:
+            print(f"staging-gate: REFUSED — not stageable. {why}", file=sys.stderr)
+            return 1
 
     # A test-level declaration stands only on a build compiled from it. A build
     # that disagrees with its source is not of this source, so it is refused
-    # before any row is adjudicated, out of `--stage-anyway`'s reach.
+    # before any row is adjudicated; `--stage-anyway` overrides it.
     tl_why = test_level_refusal(subj)
-    if tl_why is not None:
+    if tl_why is not None and override_reason is not None:
+        overrides.append(f"not stageable: {tl_why}")
+    elif tl_why is not None:
         stale = args.admit or (args.build / ADMISSION_NAME)
         if stale.is_file():
             stale.unlink()
@@ -2143,7 +2161,7 @@ def main() -> int:
     if admit_path.is_file() and not args.coverage_only:
         admit_path.unlink()
 
-    if fail:
+    if args.coverage_only and (fail or overrides):
         print(
             f"staging-gate: REFUSED — {len(fail)} of {len(results)} findings have no "
             f"live, binding check on `{subj.name}`",
@@ -2151,100 +2169,8 @@ def main() -> int:
         )
         for r in fail:
             print(f"  {r['id']:<14} {r['verdict']:<16} {r['detail']}", file=sys.stderr)
+        return 1
 
-        if args.coverage_only:
-            return 1
-        if args.stage_anyway is None:
-            print(
-                "staging-gate: this build is NOT stageable. Fix the red list, or "
-                "override deliberately:\n"
-                f'  --stage-anyway "<why this session needs a red build>" '
-                f"--acknowledge-red {len(fail)}",
-                file=sys.stderr,
-            )
-            return 1
-
-        # ---- the deliberate override -----------------------------------
-        # Explicit, loud, and re-typed against a number that moves. The failure
-        # mode being designed against is not "someone overrides once", it is
-        # "the override becomes the way the tool is run".
-        reason = args.stage_anyway.strip()
-        if len(reason) < MIN_JUSTIFICATION:
-            print(
-                f"staging-gate: --stage-anyway needs a real reason "
-                f"(≥{MIN_JUSTIFICATION} chars); got {len(reason)}",
-                file=sys.stderr,
-            )
-            return 2
-        if args.acknowledge_red is None:
-            print(
-                "staging-gate: --stage-anyway requires --acknowledge-red "
-                f"{len(fail)} — the count is the acknowledgement",
-                file=sys.stderr,
-            )
-            return 2
-        if args.acknowledge_red != len(fail):
-            print(
-                f"staging-gate: --acknowledge-red {args.acknowledge_red} does not "
-                f"match the {len(fail)} red finding(s) above. The number moved "
-                "since you last looked; read the list and try again.",
-                file=sys.stderr,
-            )
-            return 2
-
-        by_verdict: dict[str, list[str]] = {}
-        for r in fail:
-            by_verdict.setdefault(r["verdict"], []).append(r["id"])
-        print("", file=sys.stderr)
-        print("=" * 72, file=sys.stderr)
-        print(
-            f"OVERRIDE — staging `{subj.name}` with {len(fail)} UNCOVERED "
-            "finding class(es).",
-            file=sys.stderr,
-        )
-        print(f"Reason given: {reason}", file=sys.stderr)
-        print("", file=sys.stderr)
-        print("These are the defect classes this session is NOT protected from:", file=sys.stderr)
-        for verdict, ids in sorted(by_verdict.items()):
-            print(f"  {verdict:<16} {', '.join(ids)}", file=sys.stderr)
-        print("", file=sys.stderr)
-        print(
-            "Every one of them is a class the owner has already hit once. If she "
-            "hits one again in this session it is not a finding — it is this "
-            "override.",
-            file=sys.stderr,
-        )
-        print("=" * 72, file=sys.stderr)
-
-        if fingerprint is None:
-            print(
-                "staging-gate: build tree has no manifest.json — it has no "
-                "identity to admit, override or not",
-                file=sys.stderr,
-            )
-            return 2
-        unproven, proven = proof_refusals(fingerprint, args.run_report, args.written_world)
-        if unproven:
-            return refuse_unproven(unproven, subj, args.report)
-        write_admission(
-            admit_path,
-            subj,
-            results,
-            fingerprint,
-            ledger_digest,
-            {"reason": reason, "acknowledged_red": len(fail)},
-            proven,
-        )
-        print(f"staging-gate: admitted UNDER OVERRIDE -> {admit_path}", file=sys.stderr)
-        return 0
-
-    if args.stage_anyway is not None:
-        print(
-            "staging-gate: --stage-anyway given but nothing is red; refusing to "
-            "record an override that overrode nothing",
-            file=sys.stderr,
-        )
-        return 2
     if args.coverage_only:
         print(
             f"staging-gate: {subj.name} — all {len(results)} findings carry a live, binding "
@@ -2253,16 +2179,103 @@ def main() -> int:
             file=sys.stderr,
         )
         return 0
+
+    if fail:
+        print(
+            f"staging-gate: REFUSED — {len(fail)} of {len(results)} findings have no "
+            f"live, binding check on `{subj.name}`",
+            file=sys.stderr,
+        )
+        for r in fail:
+            print(f"  {r['id']:<14} {r['verdict']:<16} {r['detail']}", file=sys.stderr)
+        if override_reason is None:
+            print(
+                "staging-gate: this build is NOT stageable. Fix the red list, or "
+                "override deliberately:\n"
+                '  --stage-anyway "<why this session needs a red build>"\n'
+                f"  (optional guard that the red count is the one you read: "
+                f"--acknowledge-red {len(fail)})",
+                file=sys.stderr,
+            )
+            return 1
+        if args.acknowledge_red is not None and args.acknowledge_red != len(fail):
+            print(
+                f"staging-gate: --acknowledge-red {args.acknowledge_red} does not "
+                f"match the {len(fail)} red finding(s) above. The number moved "
+                "since you last looked; read the list and try again.",
+                file=sys.stderr,
+            )
+            return 2
+        by_verdict: dict[str, list[str]] = {}
+        for r in fail:
+            by_verdict.setdefault(r["verdict"], []).append(r["id"])
+        for verdict, ids in sorted(by_verdict.items()):
+            overrides.append(f"ledger {verdict}: {', '.join(ids)}")
+
     if fingerprint is None:
         print(
-            f"staging-gate: {subj.name} is clean, but the build tree has no "
-            "manifest.json — nothing to bind an admission token to",
+            f"staging-gate: `{subj.name}`'s build tree has no manifest.json — it has "
+            "no identity to bind an admission token to, so there is nothing to admit, "
+            "override or not",
             file=sys.stderr,
         )
         return 2
+
     unproven, proven = proof_refusals(fingerprint, args.run_report, args.written_world)
     if unproven:
-        return refuse_unproven(unproven, subj, args.report)
+        if override_reason is None:
+            return refuse_unproven(unproven, subj, args.report)
+        overrides.extend(f"not proven completable: {r}" for r in unproven)
+
+    if override_reason is not None and overrides:
+        print("", file=sys.stderr)
+        print("=" * 72, file=sys.stderr)
+        print(
+            f"OVERRIDE — staging `{subj.name}` over {len(overrides)} refusal(s).",
+            file=sys.stderr,
+        )
+        print(f"Reason given: {override_reason}", file=sys.stderr)
+        print("", file=sys.stderr)
+        print("Refusals overridden:", file=sys.stderr)
+        for line in overrides:
+            print(f"  OVERRODE {line}", file=sys.stderr)
+        print("", file=sys.stderr)
+        print(
+            "Anything the owner hits that one of these would have caught in this "
+            "session is not a finding — it is this override.",
+            file=sys.stderr,
+        )
+        print("=" * 72, file=sys.stderr)
+        if args.report and args.report.is_file():
+            with args.report.open("a", encoding="utf-8") as f:
+                f.write(
+                    "\n## OVERRIDDEN refusals (`--stage-anyway`)\n\n"
+                    f"Reason: {override_reason}\n\n"
+                    + "\n".join(f"- {o}" for o in overrides)
+                    + "\n"
+                )
+        write_admission(
+            admit_path,
+            subj,
+            results,
+            fingerprint,
+            ledger_digest,
+            {
+                "reason": override_reason,
+                "acknowledged_red": args.acknowledge_red,
+                "refusals": overrides,
+            },
+            proven,
+        )
+        print(f"staging-gate: admitted UNDER OVERRIDE -> {admit_path}", file=sys.stderr)
+        return 0
+
+    if override_reason is not None:
+        print(
+            "staging-gate: --stage-anyway given but the gate refused nothing; "
+            "admitting normally, nothing was overridden",
+            file=sys.stderr,
+        )
     write_admission(admit_path, subj, results, fingerprint, ledger_digest, None, proven)
     print(
         f"staging-gate: {subj.name} is stageable — all {len(results)} findings carry a "

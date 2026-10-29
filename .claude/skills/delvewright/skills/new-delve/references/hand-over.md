@@ -138,8 +138,8 @@ A reference level is served with `--prefabs campaigns/references/<id>/prefabs`.
 admits only on them: the bot's critical path green, and the server's world equal
 to the engine's model, each for a build with this build's manifest. The build
 this command makes is that build when nothing changed since step 10 — the build
-is deterministic. A record of another build, a red one, or none is refused, and
-`--stage-anyway` does not reach that refusal.
+is deterministic. A record of another build, a red one, or none is refused, unless
+`--stage-anyway` overrides it (printed and recorded as an overridden refusal).
 
 **`--delvec` is optional; this prints it so the command is exact.** Without
 it the script uses the `delvec` already on `PATH` when that binary IS this
@@ -220,7 +220,7 @@ the only file that publishes 25565, and it refuses to start the server without
 a token the gate minted for *that exact build tree*.
 
 **A build with no place detailed is refused outright** — with or
-without `--strict`, and out of `--stage-anyway`'s reach. A campaign is staged
+without `--strict`, unless `--stage-anyway` overrides it. A campaign is staged
 only once detailed; step 9 is what makes it so.
 
 **A test level carries no design record, and says so.** A level built to try
@@ -242,21 +242,19 @@ whose class measured zero across the whole declared design is `INAPPLICABLE`,
 and is printed in its own section. Those rows still go into the report, by class; they do not
 refuse the build. A row in the RED list is worth stopping for.
 
-To go in anyway on a build you know is red:
+To go in anyway on a build the gate refuses, for any reason (red rows, missing
+proofs, a stand-in):
 
 ```sh
 "$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_ENGINE/tools/creator/staging-gate.py" --campaign <dir> --build <out> \
-    --stage-anyway "<why this session needs a red build>" --acknowledge-red <N>
+    --stage-anyway "<why this session needs this build now>"
 ```
 
-`<N>` is the red count the run above printed, and it must match exactly — the
-number is the acknowledgement, so it cannot become a flag typed from memory. Two
-runs over one unchanged campaign and one unchanged build tree give the same
-number, so the N you just read is the N to type; if it has moved, something
-about the campaign or the ledger really did.
+`--acknowledge-red <N>` is an optional guard: when given, `<N>` must equal the
+red count the run above printed.
 
-It prints every class being overridden, records the reason, and the server
-announces it at boot — so anything hit from those classes in that session is the
+It prints every refusal it overrode, one line each, records them and the
+reason, and the server announces it at boot — so anything hit from those classes in that session is the
 override, not a new finding.
 
 ## The report

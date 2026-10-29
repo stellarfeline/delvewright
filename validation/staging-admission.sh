@@ -124,6 +124,11 @@ if [ "$OVERRIDDEN" = "true" ]; then
   echo "  uncovered finding classes: ${ACK:-?}" >&2
   echo "  verdicts overridden:       ${REDS:-?}" >&2
   echo "  reason recorded:           ${REASON:-<none>}" >&2
+  # One line per refusal overridden, from the token's `override.refusals` array.
+  printf '%s\n' "$TOKEN_TEXT" | awk '/"refusals": \[/{f=1;next} f&&/^ *\]/{f=0} f' \
+    | sed -E 's/^ *"//; s/",?$//' | while IFS= read -r line; do
+      echo "  OVERRODE: $line" >&2
+    done
   echo "" >&2
   echo "Anything the owner hits from those classes in this session is this" >&2
   echo "override, not a new finding. Say so in the round summary." >&2
