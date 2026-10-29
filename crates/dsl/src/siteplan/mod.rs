@@ -614,7 +614,80 @@ pub enum Fill {
         surface: String,
         /// The block state under the top course.
         below: String,
+        /// **Surface rules** (the pinned game's own `surface_rule` idea: a
+        /// column's top blocks chosen by height, steepness and a noise patch):
+        /// the first stratum whose `when` a column meets gives its `surface`
+        /// and `below`, and may grow trees on it. A column no stratum meets
+        /// takes `surface` and `below`. Empty: one surface everywhere.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        strata: Vec<Stratum>,
     },
+}
+
+/// One surface rule of an `open` fill: where it applies, what the column's
+/// top and the ground under it are made of, and what grows on it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Stratum {
+    /// Where the rule applies; every condition stated must hold.
+    #[serde(default)]
+    pub when: StratumWhen,
+    /// The block state of the top course where the rule applies.
+    pub surface: String,
+    /// The block state under the top course where the rule applies.
+    pub below: String,
+    /// Trees grown on the rule's columns, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trees: Option<Trees>,
+}
+
+/// The conditions of a stratum. An empty one holds everywhere.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct StratumWhen {
+    /// The column's surface `y` is at least this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub y_min: Option<i64>,
+    /// The column's surface `y` is at most this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub y_max: Option<i64>,
+    /// The column is steep: its surface differs from one of its four
+    /// neighbours' by at least this many blocks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub steep: Option<u32>,
+    /// The column lies in a patch of a seeded value noise: the noise, cell
+    /// size `scale` blocks, reads at least `min` per mille there.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patch: Option<Patch>,
+}
+
+/// A seeded value-noise patch (the world's `seed`, mixed with `salt`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Patch {
+    /// The noise's cell size, in blocks.
+    pub scale: NonZeroU32,
+    /// The least reading, per mille (0..=1000), where the patch holds.
+    pub min: u32,
+    /// Mixed into the seed, so two strata draw two patterns.
+    #[serde(default)]
+    pub salt: u32,
+}
+
+/// Trees grown on a stratum's columns: a trunk of `log` and a crown of
+/// `leaves`, at `per_mille` of its columns, seeded by the world's `seed`.
+/// A tree stands only where its crown keeps clear of every place's claim.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Trees {
+    /// Trees per thousand columns of the stratum.
+    pub per_mille: u32,
+    /// The trunk's block state.
+    pub log: String,
+    /// The crown's block state (give it `persistent=true` so it never decays).
+    pub leaves: String,
+    /// The trunk's height range, in blocks, inclusive.
+    pub height: [u32; 2],
 }
 
 /// **The site's terrain: a declared heightfield** (spec-0098 §2c).

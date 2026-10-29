@@ -29,7 +29,36 @@ pub(super) fn fill(c: &Campaign, plan: &SitePlanContent, d: &mut Vec<Diagnostic>
             terrain,
             surface,
             below,
+            strata,
         } => {
+            for (i, st) in strata.iter().enumerate() {
+                block(
+                    &st.surface,
+                    format!("/content/fill/strata/{i}/surface"),
+                    "a stratum's surface",
+                    d,
+                );
+                block(
+                    &st.below,
+                    format!("/content/fill/strata/{i}/below"),
+                    "a stratum's ground",
+                    d,
+                );
+                if let Some(t) = &st.trees {
+                    block(
+                        &t.log,
+                        format!("/content/fill/strata/{i}/trees/log"),
+                        "a tree's trunk",
+                        d,
+                    );
+                    block(
+                        &t.leaves,
+                        format!("/content/fill/strata/{i}/trees/leaves"),
+                        "a tree's crown",
+                        d,
+                    );
+                }
+            }
             block(
                 surface,
                 "/content/fill/surface".into(),

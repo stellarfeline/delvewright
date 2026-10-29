@@ -664,6 +664,25 @@ pub fn derive_with(
     // (0) What undeclared space becomes (spec-0098 §2b): the declared fill, laid
     // over the whole region before anything is placed in it.
     lay_fill(&mut mass, &ground, plan, rlo, rhi);
+    // (0b) The trees the fill grows, clear of every place's footprint and ring.
+    let clear: Vec<[i64; 4]> = boxes
+        .iter()
+        .map(|b| {
+            let [x0, x1, z0, z1] = b.foot;
+            [x0 - 1, x1 + 1, z0 - 1, z1 + 1]
+        })
+        .collect();
+    let mut by_block: BTreeMap<&str, BTreeSet<[i64; 3]>> = BTreeMap::new();
+    for (cell, block) in ground.trees(&clear) {
+        if cell[1] <= rhi[1] {
+            by_block.entry(block).or_default().insert(cell);
+        }
+    }
+    for (block, cells) in &by_block {
+        for (lo, hi) in merge_cells(cells) {
+            mass.write(lo, hi, block);
+        }
+    }
 
     // (1) The whole's own mass, each volume of the block its kind takes from
     // the fill unless it names its own.
@@ -1276,8 +1295,12 @@ fn lay_fill(
             let Some(top) = ground.top(x, z) else {
                 continue;
             };
-            let same =
-                |xx: i64, zz: i64| !done.contains(&(xx, zz)) && ground.top(xx, zz) == Some(top);
+            let kind = ground.column_kind(x, z);
+            let same = |xx: i64, zz: i64| {
+                !done.contains(&(xx, zz))
+                    && ground.top(xx, zz) == Some(top)
+                    && ground.column_kind(xx, zz) == kind
+            };
             let mut z1 = z;
             while z1 < rhi[2] && same(x, z1 + 1) {
                 z1 += 1;

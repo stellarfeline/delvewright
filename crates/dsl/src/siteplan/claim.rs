@@ -21,7 +21,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::envelope::Campaign;
 use crate::ids::NodeId;
 
-use super::{Ground, PlacedBox, PlacedSeam};
+use super::{Face, Ground, PlacedBox, PlacedSeam};
 
 /// An inclusive world AABB, `(lo, hi)`.
 pub type Aabb = ([i64; 3], [i64; 3]);
@@ -140,6 +140,30 @@ impl PlacedBox {
         let in_shell = x >= x0 - 1 && x <= x1 + 1 && z >= z0 - 1 && z <= z1 + 1;
         let in_foot = x >= x0 && x <= x1 && z >= z0 && z <= z1;
         in_shell && !in_foot
+    }
+
+    /// Whether ring column `(x, z)` stands on an open side: on a side the
+    /// place stands no wall on, or a corner both of whose sides are open.
+    #[must_use]
+    pub fn is_open_ring_column(&self, x: i64, z: i64) -> bool {
+        if !self.is_ring_column(x, z) {
+            return false;
+        }
+        let [x0, x1, z0, z1] = self.foot;
+        let mut faces = Vec::new();
+        if x == x0 - 1 {
+            faces.push(Face::West);
+        }
+        if x == x1 + 1 {
+            faces.push(Face::East);
+        }
+        if z == z0 - 1 {
+            faces.push(Face::North);
+        }
+        if z == z1 + 1 {
+            faces.push(Face::South);
+        }
+        !faces.is_empty() && faces.iter().all(|f| self.side_open(*f))
     }
 }
 
@@ -572,7 +596,16 @@ impl<'a> Site<'a> {
                 }
                 let g = self.ground_height(i, x, z);
                 let from = self.column_bottom(i, x, z).unwrap_or(lo[1]);
-                for y in from..=g.min(hi[1]) {
+                // On an open side the floor course and everything over it is
+                // the place's own: its ground runs across the seam in the
+                // place's paving, so no strip of the fill's surface shows
+                // between two places that meet there.
+                let cap = if b.is_open_ring_column(x, z) {
+                    g.min(b.floor - 2)
+                } else {
+                    g
+                };
+                for y in from..=cap.min(hi[1]) {
                     out.push(([x, y, z], g));
                 }
             }
