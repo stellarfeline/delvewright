@@ -206,9 +206,10 @@ fn a_container_that_matters_among_scenery_is_dw1024() {
     assert!(census_line(&log).contains("1 mixed place(s)"), "{log}");
 }
 
-/// `DW1024`, storeroom: three scenery cells in one place, over the cap of two.
+/// `DW1024` caps nothing: three scenery cells in one place build, and the
+/// census line states no cap.
 #[test]
-fn a_storeroom_of_nothing_is_dw1024() {
+fn many_scenery_containers_in_one_place_build() {
     let (code, log, _) = build(
         "storeroom",
         &[
@@ -219,10 +220,13 @@ fn a_storeroom_of_nothing_is_dw1024() {
         None,
         true,
     );
-    assert_eq!(code, 3, "{log}");
-    assert!(log.contains("DW1024"), "{log}");
-    assert!(log.contains("STOREROOM — `area/keep` holds 3"), "{log}");
-    assert!(census_line(&log).contains("1 over the cap of 2"), "{log}");
+    assert_eq!(code, 0, "{log}");
+    assert!(!log.contains("DW1024 [error]"), "{log}");
+    assert!(
+        census_line(&log).contains("arrangement: 0 mixed place(s)."),
+        "{log}"
+    );
+    assert!(!census_line(&log).contains("cap"), "{log}");
 }
 
 fn validate(tag: &str, f: impl FnOnce(&mut serde_json::Value)) -> (i32, String) {

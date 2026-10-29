@@ -21,8 +21,9 @@
 //!
 //! Five verdicts are judged on the result: `DW1018` (the containers built and
 //! the containers declared disagree — scenery with no notice, or a notice over
-//! a world with no scenery), `DW1024` (scenery arranged as a storeroom, or a
-//! holder that matters standing among scenery, spec-0105 §9), `DW1037` (a
+//! a world with no scenery), `DW1024` (a holder that matters standing among
+//! scenery, spec-0105 §9; how many scenery containers a place holds is not
+//! capped), `DW1037` (a
 //! holder the party cannot take from: unsupported or unreachable, spec-0111
 //! §6.3) and `DW1038` (a runtime edit reaches a holder, spec-0111 §6.4). An
 //! empty frame or stand is frozen scenery that costs a player nothing to
@@ -48,9 +49,8 @@ delvewright_dsl::dw_code! {
 }
 
 delvewright_dsl::dw_code! {
-    /// (spec-0105 §9) Scenery containers arranged as a storeroom (more than
-    /// [`MAX_SCENERY_PER_PLACE`] in one place), or a container that matters —
-    /// loot, a collect or a device — standing in a place with scenery.
+    /// (spec-0105 §9) A container that matters — loot, a collect or a device —
+    /// standing in a place with scenery containers.
     pub const DW_CONTAINERS_ARRANGED: DwCode = DwCode::new("DW1024", ExitTier::Build);
 }
 
@@ -68,17 +68,6 @@ delvewright_dsl::dw_code! {
     /// would pop the frame or drop the stand mid-game, silently.
     pub const DW_HOLDER_EDITED: DwCode = DwCode::new("DW1038", ExitTier::Build);
 }
-
-/// **The most scenery container cells one place may hold** (spec-0105 §9.2).
-///
-/// Authored, from the *Oblivion* Construction Set wiki's dungeon practice: an
-/// ordinary room holds one to three containers, one or two of them junk. Junk
-/// there still holds a stack; scenery here holds nothing, so the cap is the
-/// practice's upper bound of non-paying containers. A double chest is two cells
-/// and counts two. The signal that would show it wrong: a playtest of a player
-/// opening every container of a place that passed (too high), or a place refused
-/// at three where a reader at playable scale sees furniture (too low).
-pub const MAX_SCENERY_PER_PLACE: usize = 2;
 
 /// The neighbourhood name of a cell that lies in no place.
 pub const OUTSIDE_EVERY_PLACE: &str = "(outside every place)";
@@ -428,7 +417,7 @@ impl Census {
 
     /// The places breaking §9, mixed arm then storeroom arm, each in place order.
     #[must_use]
-    pub fn arrangement(&self) -> (Vec<PlaceFinding>, Vec<PlaceFinding>) {
+    pub fn arrangement(&self) -> Vec<PlaceFinding> {
         let mut places: BTreeMap<&str, (Vec<HolderRow>, Vec<HolderRow>)> = BTreeMap::new();
         for r in &self.rows {
             // A holder whose contents show is neither scenery to search nor a
@@ -444,24 +433,16 @@ impl Census {
             }
         }
         let mut mixed = Vec::new();
-        let mut over = Vec::new();
         for (place, (decoration, matter)) in places {
             if !decoration.is_empty() && !matter.is_empty() {
                 mixed.push(PlaceFinding {
                     place: place.to_string(),
-                    decoration: decoration.clone(),
+                    decoration,
                     matter,
                 });
             }
-            if decoration.len() > MAX_SCENERY_PER_PLACE {
-                over.push(PlaceFinding {
-                    place: place.to_string(),
-                    decoration,
-                    matter: Vec::new(),
-                });
-            }
         }
-        (mixed, over)
+        mixed
     }
 
     /// **Owe the places still standing in their stand-in to their detail**:
@@ -491,7 +472,7 @@ impl Census {
         };
         let kinds = join(self.by(|r| r.kind.to_string()));
         let places = join(self.by(|r| r.place.clone()));
-        let (mixed, over) = self.arrangement();
+        let mixed = self.arrangement();
         let deferred = if self.stand_ins.is_empty() {
             String::new()
         } else {
@@ -524,8 +505,7 @@ impl Census {
             "holder census: {n} holder(s) in the assembled world{kinds}; {l} loot, {c} collect, \
              {v} device, {d} decoration, {e} empty (frozen), {x} exempt (contents show from \
              outside); notice {notice}; by place: \
-             {places}; arrangement: {m} mixed place(s), {o} over the cap of {cap} decoration \
-             cell(s) per place.{stance}{deferred}",
+             {places}; arrangement: {m} mixed place(s).{stance}{deferred}",
             n = self.rows.len(),
             kinds = if kinds.is_empty() {
                 String::new()
@@ -549,8 +529,6 @@ impl Census {
                 places
             },
             m = mixed.len(),
-            o = over.len(),
-            cap = MAX_SCENERY_PER_PLACE,
         )
     }
 
@@ -620,11 +598,12 @@ impl Census {
         Ok(())
     }
 
-    /// `DW1024` (spec-0105 §9.3): a container that matters among scenery, or a
-    /// place holding more scenery containers than [`MAX_SCENERY_PER_PLACE`].
+    /// `DW1024` (spec-0105 §9.3): a container that matters among scenery. How
+    /// many scenery containers a place holds is the author's: the count is
+    /// stated in the census line, never capped.
     pub fn check_arrangement(&self) -> Result<(), Failure> {
-        let (mixed, over) = self.arrangement();
-        if mixed.is_empty() && over.is_empty() {
+        let mixed = self.arrangement();
+        if mixed.is_empty() {
             return Ok(());
         }
         let cells = |rs: &[HolderRow]| {
@@ -658,28 +637,12 @@ impl Census {
                 cells(&f.decoration)
             ));
         }
-        for f in &over {
-            parts.push(format!(
-                "\n  STOREROOM — `{}` holds {} scenery container cell(s), more than the {} a \
-                 place may hold: {}. Many empty containers together read as a storeroom, and a \
-                 player opens every one. Fill some of them, or replace the surplus in the \
-                 place's piece or program with furniture that is not a container (a double \
-                 chest is two cells).",
-                f.place,
-                f.decoration.len(),
-                MAX_SCENERY_PER_PLACE,
-                cells(&f.decoration)
-            ));
-        }
         Err(Failure {
             code: DW_CONTAINERS_ARRANGED,
             message: format!(
-                "{} mixed place(s) and {} place(s) over the cap of {} scenery container cell(s): \
-                 scenery containers stay few, and a container that matters never stands among \
-                 them.{}",
+                "{} mixed place(s): a container that matters never stands among scenery \
+                 containers.{}",
                 mixed.len(),
-                over.len(),
-                MAX_SCENERY_PER_PLACE,
                 parts.concat()
             ),
         })
@@ -689,7 +652,7 @@ impl Census {
     #[must_use]
     pub fn to_json(&self) -> serde_json::Value {
         use serde_json::json;
-        let (mixed, over) = self.arrangement();
+        let mixed = self.arrangement();
         let names = |fs: &[PlaceFinding]| fs.iter().map(|f| f.place.clone()).collect::<Vec<_>>();
         json!({
             "census_input_sha256": self.input_digest,
@@ -704,9 +667,7 @@ impl Census {
             "by_kind": self.by(|r| r.kind.to_string()),
             "by_block": self.by(|r| r.block.clone()),
             "by_place": self.by(|r| r.place.clone()),
-            "max_scenery_per_place": MAX_SCENERY_PER_PLACE,
             "mixed_places": names(&mixed),
-            "over_cap_places": names(&over),
             "stand_ins": self.stand_ins,
             "stance": self.stance.map(|(u, r)| json!({"unsupported": u, "unreachable": r})),
             "notice": self.notice.as_ref().map(|n| json!({
@@ -1964,30 +1925,26 @@ mod tests {
         assert!(c.check_declared(&BTreeMap::new()).is_ok());
     }
 
-    /// The storeroom arm, by perturbation: two scenery cells in a place pass;
-    /// a third reds `DW1024`.
+    /// No cap on scenery: a place may hold as many scenery containers as its
+    /// author builds, and the census line states the count with no cap in it.
     #[test]
-    fn a_third_scenery_container_in_a_place_is_dw1024_storeroom() {
-        let passing = model(&[
-            ([200, 0, 0], "minecraft:barrel"),
-            ([202, 0, 0], "minecraft:barrel"),
-        ]);
-        let c = census(&passing, &[], &[], &two_places, Some(&notice()));
-        assert!(c.check_arrangement().is_ok());
-        let perturbed = model(&[
+    fn any_number_of_scenery_containers_in_a_place_passes_dw1024() {
+        let many = model(&[
             ([200, 0, 0], "minecraft:barrel"),
             ([202, 0, 0], "minecraft:barrel"),
             ([204, 0, 0], "minecraft:chest"),
+            ([206, 0, 0], "minecraft:barrel"),
         ]);
-        let c = census(&perturbed, &[], &[], &two_places, Some(&notice()));
-        let e = c.check_arrangement().unwrap_err();
-        assert_eq!(e.code, "DW1024");
+        let c = census(&many, &[], &[], &two_places, Some(&notice()));
+        assert!(c.check_arrangement().is_ok(), "{:?}", c.check_arrangement());
         assert!(
-            e.message.contains("STOREROOM — `area/crypt`"),
+            c.line().contains("arrangement: 0 mixed place(s)."),
             "{}",
-            e.message
+            c.line()
         );
-        assert!(c.line().contains("1 over the cap of 2"), "{}", c.line());
+        assert!(!c.line().contains("cap"), "{}", c.line());
+        let j = c.to_json();
+        assert!(j.get("max_scenery_per_place").is_none() && j.get("over_cap_places").is_none());
     }
 
     fn entity(token: &str, cell: [i32; 3]) -> PlacedHolder {
