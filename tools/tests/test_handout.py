@@ -377,8 +377,8 @@ def test_the_stub_answers_with_the_allocation_struct_s_own_fields():
     assert len(recorded) == 3
     # `skip_serializing_if`: `Option::is_none` for `palette` and `roof`, and
     # `Vec::is_empty` for `sides` (a place declaring no open side, spec-0123)
-    # and `parts` (a place that is not a plot, spec-0125).
-    optional = {"palette", "roof", "sides", "parts"}
+    # and `parts` and `bands` (a place that is not a plot, spec-0125).
+    optional = {"palette", "roof", "sides", "parts", "bands"}
     for a in recorded:
         assert set(a) <= fields, set(a) - fields
         assert fields - set(a) <= optional, fields - set(a) - optional
@@ -501,10 +501,11 @@ def test_a_plot_is_handed_what_it_holds_its_binding_rule_and_its_shapes(rig: Rig
     assert text.index("## What this place is") < text.index("## What this plot holds") < text.index("## This place's rows")
     assert "This place is a plot: it holds the parts below and the ground between them; build them in any outline, inside the frame." in body
     assert "3 part(s) over 64 cell(s) of play space:" in body
-    assert "- `part/court` — ground: the court a body crosses from the hall; 50 cell(s), 78 % of the play space; walked" in body
-    assert "- `part/shed` — structure: a tool shed in the court's corner; 6 cell(s), 9 % of the play space; height 3 course(s) to the ridge; walked" in body
-    assert "- `part/bed` — ground: a herb bed nobody walks; 4 cell(s), 6 % of the play space; seen, never entered" in body
-    assert "Name each part on the contract spaces and out-of-walk regions that are it, with `part`; every part is named; a walked part has a cell the body reaches; a part's claimed cells stay within a quarter of its declared." in body
+    # Each part's band is the allocation's (`bands`, `plot::size_band`).
+    assert "- `part/court` — ground: the court a body crosses from the hall; 50 cell(s), 78 % of the play space; walked; its spaces and regions claim 38 to 62 column(s) (DW1074)" in body
+    assert "- `part/shed` — structure: a tool shed in the court's corner; 6 cell(s), 9 % of the play space; height 3 course(s) to the ridge; walked; its spaces and regions claim 5 to 7 column(s) (DW1074)" in body
+    assert "- `part/bed` — ground: a herb bed nobody walks; 4 cell(s), 6 % of the play space; seen, never entered; its spaces and regions claim 3 to 5 column(s) (DW1074)" in body
+    assert "a part's claimed columns stay inside the band each part line states" in body
     for line in (
         "- the entry side is the front;",
         "- an outbuilding stands behind or beside, one cell off;",

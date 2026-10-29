@@ -910,7 +910,7 @@ fn leak_check(
         "leak proof from {places} place(s): {c} standable cell(s) classified over {p} place \
          pair(s), {sb} seamless border(s) deleted as declared openings ({bc} cell(s) beyond the \
          open sides' runs), {inv} cell(s) of floor the deletion made kept off; stitch: {bcol} \
-         plot-edge column(s) examined, {ck} crack(s) (DW0990); {exp}",
+         plot-edge column(s) examined, {ck} crack(s); {exp}",
         places = only.len(),
         c = b.standable,
         p = b.pairs,

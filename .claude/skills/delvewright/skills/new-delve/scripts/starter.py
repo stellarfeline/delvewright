@@ -196,6 +196,11 @@ class Place:
                    if 0 <= x < self.ex and 0 <= z < self.ez
                    and not any(all(se["lo"][i].value <= c[i] < se["hi"][i].value for i in range(3))
                                for se in self.seams for c in [(x, d0, z)])]
+            if any(se["seam"]["face"] == s["face"] and se["lo"][1].value > d0 for se in self.seams):
+                # the side a raised opening stands on is the neighbour's above
+                # the walk plane (its void) and the pillar's below it: nothing
+                # of it is a way out, so it is not declared
+                continue
             (self.sides if own else self.covered).append(side)
         self.scenery = a.get("brief", {}).get("reached") is False
         # A station of kind `gate` is a volume that seals and clears, so it is
@@ -972,6 +977,11 @@ class Model:
         self.shown: set[str] = set()
         self.no_touch: set[tuple[int, int, int]] = set()
         for s in place.seams:
+            # the ladder the starter stands up to a raised opening, bound
+            ap = s.get("approach")
+            if ap is not None and ap["ladder"] is not None:
+                f = ap["ladder"]["facing"]
+                self.palette[f"ladder-{f}"] = ladder(f)
             lo, hi = [b.value for b in s["lo"]], [b.value for b in s["hi"]]
             for x in range(lo[0], hi[0]):
                 for y in range(lo[1], hi[1]):
@@ -1254,6 +1264,15 @@ class Plot(Place):
         kind = Place.base_cell(self, x, y, z)
         if kind[0] == "claim" and kind[1].endswith("-way"):
             return kind  # a seam's opening, kept clear
+        if kind[0] == "claim" and kind[1].endswith("-ladder"):
+            return kind  # the ladder up to a raised opening, the starter's
+        if self.in_pillar(x, y, z):
+            # the pillar a ladder hangs on: a full block, whatever the drawing
+            # put there, or the ladder holds nothing
+            if "pillar" not in self.model.palette:
+                floor = self.block_of(("fill", "floor"))
+                self.model.palette["pillar"] = floor if is_full(floor) else "minecraft:stone_bricks"
+            return ("fill", "pillar")
         r = self.model.get(x, y, z)
         c = (x, y, z)
         if r is not None and r != AIR:
@@ -1293,6 +1312,18 @@ class Plot(Place):
         if c in self.unwalked:
             return ("claim", "unwalked", None)
         return kind if kind[0] == "claim" else ("claim", "room", None)
+
+    def in_pillar(self, x: int, y: int, z: int) -> bool:
+        """A cell of the masonry pillar under a raised opening that a ladder
+        climbs (`Place.approach`)."""
+        d = self.datum.value
+        for s in self.seams:
+            ap = s["approach"]
+            if ap is None or ap["ladder"] is None:
+                continue
+            if all(ap["plo"][i].value <= c < ap["phi"][i].value for i, c in ((0, x), (2, z))) and d <= y < ap["sill"].value:
+                return True
+        return False
 
     def beside_side(self, x: int, z: int) -> bool:
         """A ring column beside an open side's run: the corner between two

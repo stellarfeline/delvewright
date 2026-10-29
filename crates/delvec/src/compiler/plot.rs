@@ -140,7 +140,7 @@ impl Binding<'_> {
             })
             .collect();
         format!(
-            "part sizes (built play space of the band DW1074 allows): {}",
+            "part sizes (built play space, of the band a part may build): {}",
             if parts.is_empty() {
                 "none bound".to_string()
             } else {
