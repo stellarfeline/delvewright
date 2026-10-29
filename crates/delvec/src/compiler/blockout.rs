@@ -880,6 +880,18 @@ pub fn derive_with(
         if s.crossing == Crossing::Contact || !cut_by_derivation(k) {
             continue;
         }
+        // A portal in a side either place stands open (a stair: `DW1064`
+        // admits no other) has no wall to frame: a ring there is a lintel
+        // floating over open ground.
+        let side_open = |node: &NodeId, face| {
+            boxes
+                .iter()
+                .find(|b| &b.node == node)
+                .is_some_and(|b| b.side_open(face))
+        };
+        if side_open(&s.a, s.face) || side_open(&s.b, s.face.opposite()) {
+            continue;
+        }
         let mask: &[Aabb] = plane_owner[k].map_or(&[], |i| owned[i].as_slice());
         for (flo, fhi) in frame_ring(s) {
             mass.write_within(flo, fhi, palette::FRAME, mask, 0);
