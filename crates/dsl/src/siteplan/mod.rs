@@ -900,6 +900,21 @@ impl Sides {
         }
     }
 
+    /// Whether `face` is declared `open` in words — the side the plan asks
+    /// to stand clear as a way (`DW1057`, `DW1065`). An undeclared side is
+    /// seamless: it stands no wall, and owes no clear width.
+    #[must_use]
+    pub fn is_declared_open(&self, face: Face) -> bool {
+        let side = match face {
+            Face::East => self.east,
+            Face::West => self.west,
+            Face::South => self.south,
+            Face::North => self.north,
+            Face::Up | Face::Down => None,
+        };
+        side == Some(SideKind::Open)
+    }
+
     /// The faces declared open, in [`Sides::FACES`] order.
     #[must_use]
     pub fn open_faces(&self) -> Vec<Face> {

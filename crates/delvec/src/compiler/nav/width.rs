@@ -1660,7 +1660,7 @@ fn open_side_ways(
     };
     let seam_cells: BTreeSet<[i32; 3]> = crate::compiler::blockout::seam_cells(&b.seams);
     for placed in &b.boxes {
-        for side in placed.open_sides() {
+        for side in placed.declared_open_sides() {
             census.open_sides += 1;
             let contacted: BTreeSet<[i32; 3]> =
                 crate::compiler::detail::covering_contacts(&side, &b.seams)

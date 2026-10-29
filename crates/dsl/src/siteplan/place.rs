@@ -144,6 +144,17 @@ impl PlacedBox {
             .collect()
     }
 
+    /// The open sides the plan declares `open` in words (spec-0123 §5.1):
+    /// the ones the clear-width check judges as ways. An undeclared side is
+    /// seamless and is not among them.
+    #[must_use]
+    pub fn declared_open_sides(&self) -> Vec<OpenSide> {
+        self.open_sides()
+            .into_iter()
+            .filter(|s| self.sides.is_declared_open(s.face))
+            .collect()
+    }
+
     /// The floor centre — where a body seated in this place stands.
     #[must_use]
     pub fn centre(&self) -> [i64; 3] {
