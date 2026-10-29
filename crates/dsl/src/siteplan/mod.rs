@@ -835,8 +835,9 @@ pub struct PlanBox {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub way: Option<BoxWay>,
     /// **Which of its four sides this place stands a wall on** (spec-0123
-    /// §5.1): each horizontal side `"wall"` or `"open"`, a side absent a wall,
-    /// so a box with no `sides` is walled all round. An open side stands no
+    /// §5.1): each horizontal side `"wall"` or `"open"`, a side absent open,
+    /// so a box with no `sides` is seamless all round and a wall stands only
+    /// where the plan declares one. An open side stands no
     /// wall: its ring cells from the floor course to the top of the play space
     /// hold nothing a body cannot be in, the place's ground runs across them
     /// at the walk plane, and what lies beyond is the neighbour's or the
@@ -848,7 +849,8 @@ pub struct PlanBox {
 }
 
 /// The four horizontal sides of a place, each walled or open (spec-0123
-/// §5.1). A key absent is a wall. `up` and `down` are not sides: a lid is the
+/// §5.1). A key absent is open: a side stands a wall only where the plan
+/// declares `wall`, so a box with no `sides` is seamless all round. `up` and `down` are not sides: a lid is the
 /// `ceiling`, a floor is the `floor`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -881,7 +883,8 @@ impl Sides {
     /// The four horizontal faces, in the engine's face order.
     pub const FACES: [Face; 4] = [Face::East, Face::West, Face::South, Face::North];
 
-    /// Whether `face` is declared open. `up` and `down` never are.
+    /// Whether `face` is open: every horizontal side not declared `wall`.
+    /// `up` and `down` never are.
     #[must_use]
     pub fn is_open(&self, face: Face) -> bool {
         let side = match face {
@@ -891,7 +894,10 @@ impl Sides {
             Face::North => self.north,
             Face::Up | Face::Down => None,
         };
-        side == Some(SideKind::Open)
+        match face {
+            Face::Up | Face::Down => false,
+            _ => side != Some(SideKind::Wall),
+        }
     }
 
     /// The faces declared open, in [`Sides::FACES`] order.
@@ -908,13 +914,13 @@ impl PlanBox {
     /// Whether this place declares `face` open (spec-0123 §5.1).
     #[must_use]
     pub fn side_open(&self, face: Face) -> bool {
-        self.sides.is_some_and(|s| s.is_open(face))
+        self.sides.unwrap_or_default().is_open(face)
     }
 
     /// The faces this place declares open, in the engine's face order.
     #[must_use]
     pub fn open_faces(&self) -> Vec<Face> {
-        self.sides.map(|s| s.open_faces()).unwrap_or_default()
+        self.sides.unwrap_or_default().open_faces()
     }
 }
 

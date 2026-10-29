@@ -93,8 +93,8 @@ pub struct PlacedBox {
     /// The roof the plan reserves over this place (spec-0098 §3), when it
     /// declares one. Never present on an open box (`DW0988`).
     pub roof: Option<super::Roof>,
-    /// Which of its four sides stand a wall (spec-0123 §5.1); every side a
-    /// wall when the plan declares none.
+    /// Which of its four sides stand a wall (spec-0123 §5.1); every side
+    /// open when the plan declares none.
     pub sides: super::Sides,
 }
 
