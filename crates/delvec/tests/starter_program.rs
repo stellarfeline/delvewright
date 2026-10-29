@@ -412,6 +412,8 @@ def build(place):
             m.set(x, 1, z, "bloom")
     m.part(12, 15, 15, 16, "bed")
     m.part(9, 16, 2, 9, "court")
+    if EDIT == "raised-court":
+        m.box(9, 16, 1, 1, 2, 9, "boards")
     m.finish()
     return m
 
@@ -472,6 +474,14 @@ fn a_building_drawn_into_the_starter_s_model_is_claimed_from_the_engine_s_survey
         "{}",
         text(&run)
     );
+    let program: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(campaign.join("programs").join("far.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        program["contract"]["no_body"]["part-house"]["part"], "part/house",
+        "the part no body reaches is declared seen: {}",
+        program["contract"]
+    );
     let red = check_far(&campaign, &prefabs);
     let t = text(&red);
     assert!(!red.status.success(), "{t}");
@@ -479,6 +489,27 @@ fn a_building_drawn_into_the_starter_s_model_is_claimed_from_the_engine_s_survey
         t.contains("not walked: `node/far`'s part `part/house`"),
         "{t}"
     );
+
+    // A court a course above the house's floor: the walk between the two
+    // carries the rise the check measures, and the check passes.
+    let run = run_generator(&tmp, &campaign, "raised-court");
+    assert!(run.status.success(), "{}", text(&run));
+    let program: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(campaign.join("programs").join("far.json")).unwrap())
+            .unwrap();
+    let risen: Vec<&serde_json::Value> = program["contract"]["edges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["class"] == "walk" && e.get("rise").is_some())
+        .collect();
+    assert!(
+        !risen.is_empty(),
+        "a walk between floors that differ carries its rise: {}",
+        program["contract"]
+    );
+    let green = check_far(&campaign, &prefabs);
+    assert!(green.status.success(), "{}", text(&green));
 
     let run = run_generator(&tmp, &campaign, "lantern-in-air");
     assert!(!run.status.success());
