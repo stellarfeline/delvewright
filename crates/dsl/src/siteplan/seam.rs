@@ -68,6 +68,24 @@ impl PlacedBox {
     }
 }
 
+impl PlacedBox {
+    /// **The face of this place it meets `other` across seamlessly**, if any:
+    /// a horizontal face the two share (the one-cell gap, a common span on the
+    /// face's axis and a common vertical span) that neither declares `wall`
+    /// (spec-0123 §5.1). Two such places are one open ground across that
+    /// border by the plan's declaration, which is what the leak proof
+    /// (`DW0838`) reads. `None` when they share no face, or when either walls
+    /// the face they share.
+    #[must_use]
+    pub fn seamless_face(&self, other: &PlacedBox) -> Option<Face> {
+        Sides::FACES.into_iter().find(|&face| {
+            self.side_open(face)
+                && other.side_open(face.opposite())
+                && shared_face(self.side(), other.side(), face).is_ok()
+        })
+    }
+}
+
 /// [`shared_face`] over two fully resolved boxes.
 pub(super) fn shared_face_of(
     a: &PlacedBox,

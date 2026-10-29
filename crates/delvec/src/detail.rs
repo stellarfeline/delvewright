@@ -150,13 +150,14 @@ fn run(
     }
     let binding = judge_run(&campaign, &library, &prepared, json)?;
     if check {
+        let leaks = leak_check(&campaign, &library, &prepared, prefabs_dir, json)?;
         // `--check` is the commit's own `prepare` and `judge_run` with the
         // write and the battery not called (spec-0122 §6.1): the verdict
         // above is the one the commit would give against the whole as it
         // stands on disk now, and nothing was written.
         eprintln!(
             "detail --check: {places} would commit against the whole as it stands; nothing \
-             written. {binding}; peak rss: {rss}",
+             written. {binding}; {leaks}; peak rss: {rss}",
             places = prepared
                 .iter()
                 .map(|p| format!("`{}`", p.place))
@@ -826,6 +827,95 @@ fn judge_run(
         line = binding.line()
     );
     Err(1)
+}
+
+/// **The leak proof for the places this run checks** (`DW0838`): the whole
+/// as the run would leave it — every prepared piece standing in place of the
+/// library's copy, the edit script replayed — assembled in memory, and the
+/// battery's own crossing proof ([`blockout::leaks`]) flooded from those
+/// places alone. The same refusal the commit's battery would raise for them,
+/// found without building the delve. Returns the binding's words.
+fn leak_check(
+    campaign: &Campaign,
+    library: &PrefabRegistry,
+    prepared: &[Prepared],
+    prefabs_dir: &Path,
+    json: bool,
+) -> Result<String, u8> {
+    use delvec::compiler::{assembled, blockout, edit, plan::Plan};
+    let mut registry = library.clone();
+    let mut judged = campaign.clone();
+    let mut overlay: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for p in prepared {
+        registry.insert(p.meta.clone());
+        judged = with_row(&judged, &p.row);
+        for (part, _) in &p.tiles {
+            let bytes = match &p.exported {
+                export::ZoneExport::Single(e) => &e.nbt,
+                export::ZoneExport::Tiled(e) => {
+                    &e.tiles
+                        .iter()
+                        .find(|t| t.file == part.file)
+                        .expect("every tile part has its bytes")
+                        .nbt
+                }
+            };
+            overlay.insert(part.file.clone(), bytes.clone());
+        }
+    }
+    let plan = match Plan::build(&judged, &registry) {
+        Ok(p) => p,
+        Err(e) => {
+            print_diags(&e.warnings, json);
+            print_build_error(e.failure.code, &e.failure.message, json);
+            return Err(3);
+        }
+    };
+    let structures =
+        crate::cli::campaign::read_structures_over(&plan, &registry, prefabs_dir, &overlay, json)?;
+    let blocks = match edit::replay_view(&plan, &registry, &structures) {
+        Ok(Some(r)) => r.assembled.blocks,
+        Ok(None) => assembled::assemble(&plan, &structures).blocks,
+        Err(f) => {
+            print_build_error(f.code, &f.message, json);
+            return Err(3);
+        }
+    };
+    let only: std::collections::BTreeSet<String> =
+        prepared.iter().map(|p| p.place.clone()).collect();
+    let Some(battery) = blockout::leaks(&plan, &blocks, &only) else {
+        return Ok("no blockout, so no leak proof".to_string());
+    };
+    let b = &battery.binding;
+    let line = format!(
+        "leak proof (DW0838) from {places}: {c} standable cell(s) classified over {p} place \
+         pair(s), {sb} seamless border(s) joining {sp} place pair(s), {inv} cell(s) of floor the \
+         deletion made kept off",
+        places = only.len(),
+        c = b.standable,
+        p = b.pairs,
+        sb = b.seamless_borders,
+        sp = b.seamless_pairs,
+        inv = b.invented_floor,
+    );
+    let refusals: Vec<&(DwCode, Diagnostic)> = battery.refusals().collect();
+    if refusals.is_empty() {
+        return Ok(line);
+    }
+    for (_, d) in &refusals {
+        print_one_diag(d, json);
+    }
+    eprintln!(
+        "error: {places}: {n} leak(s) the commit's battery would refuse; nothing was written. \
+         {line}",
+        places = prepared
+            .iter()
+            .map(|p| format!("`{}`", p.place))
+            .collect::<Vec<_>>()
+            .join(", "),
+        n = refusals.len(),
+    );
+    Err(3)
 }
 
 /// Step 8 of spec-0058 §2.2: freeze one judged place into the library and its

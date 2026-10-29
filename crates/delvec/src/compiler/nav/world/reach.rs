@@ -89,6 +89,58 @@ pub struct Edge {
     pub sprint: bool,
 }
 
+/// **One route a body takes through the reach graph** ([`World::body_route`]):
+/// where it starts, and each move as the cell it leaves and the edge it takes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BodyRoute {
+    /// The rest state the route starts in.
+    pub start: [i32; 3],
+    /// Each move, in order: the cell it leaves and the edge it takes.
+    pub moves: Vec<([i32; 3], Edge)>,
+}
+
+impl BodyRoute {
+    /// The cell the route ends in.
+    #[must_use]
+    pub fn end(&self) -> [i32; 3] {
+        self.moves.last().map_or(self.start, |(_, e)| e.to)
+    }
+
+    /// The route in words, cell by cell: `[x, y, z]` then each move as its
+    /// kind and shape and the cell it ends in — "`[3, 64, 2]` → a walk →
+    /// `[4, 64, 2]` → a sprint jump north up 1 → `[4, 65, 5]`". A route of
+    /// more than `limit` moves names its first and last `limit / 2` and
+    /// counts the moves between.
+    #[must_use]
+    pub fn words(&self, world: &World, limit: usize) -> String {
+        let step = |(from, e): &([i32; 3], Edge)| {
+            format!(
+                " → {} → {:?}",
+                crate::compiler::nav::leave::movement_words(world, *from, e),
+                e.to
+            )
+        };
+        let mut s = format!("{:?}", self.start);
+        if self.moves.len() <= limit.max(2) {
+            for m in &self.moves {
+                s.push_str(&step(m));
+            }
+        } else {
+            let half = (limit / 2).max(1);
+            for m in &self.moves[..half] {
+                s.push_str(&step(m));
+            }
+            let skipped = self.moves.len() - 2 * half;
+            let resume = &self.moves[self.moves.len() - half..];
+            s.push_str(&format!(" → … {skipped} move(s) … → {:?}", resume[0].0));
+            for m in resume {
+                s.push_str(&step(m));
+            }
+        }
+        s
+    }
+}
+
 // ---------------------------------------------------------------------------
 // The world the simulator reads: a dense snapshot of the assembled world.
 // ---------------------------------------------------------------------------
@@ -2712,6 +2764,57 @@ impl World {
         seeds: &[[i32; 3]],
         confinement: &super::Confinement<'_>,
     ) -> BTreeSet<[i32; 3]> {
+        self.confined_closure(seeds, confinement, |_, _| false)
+    }
+
+    /// **The route a body takes from `seeds` to the first rest state `goal`
+    /// holds**, over exactly the moves [`World::body_flood`] takes under the
+    /// same confinement: the start, then each move as the cell it leaves and
+    /// the edge it takes. Fewest moves first, ties broken in cell order, so a
+    /// report names one route and two runs name the same one (ADR-0006).
+    /// `None` when the closure holds no state `goal` holds.
+    pub fn body_route(
+        &self,
+        seeds: &[[i32; 3]],
+        confinement: &super::Confinement<'_>,
+        goal: &dyn Fn([i32; 3]) -> bool,
+    ) -> Option<BodyRoute> {
+        if let Some(&start) = seeds.iter().filter(|s| goal(**s)).min() {
+            return Some(BodyRoute {
+                start,
+                moves: Vec::new(),
+            });
+        }
+        let mut came: BTreeMap<[i32; 3], ([i32; 3], Edge)> = BTreeMap::new();
+        let mut end: Option<[i32; 3]> = None;
+        self.confined_closure(seeds, confinement, |from, edge| {
+            came.insert(edge.to, (from, edge.clone()));
+            if goal(edge.to) {
+                end = Some(edge.to);
+                return true;
+            }
+            false
+        });
+        let mut at = end?;
+        let mut moves: Vec<([i32; 3], Edge)> = Vec::new();
+        while let Some((from, edge)) = came.get(&at) {
+            moves.push((*from, edge.clone()));
+            at = *from;
+        }
+        moves.reverse();
+        Some(BodyRoute { start: at, moves })
+    }
+
+    /// The one confined closure [`World::body_flood`] and
+    /// [`World::body_route`] both take: each move the confinement admits into
+    /// a state not yet reached is handed to `taken` (the cell it leaves and
+    /// the edge), which stops the walk by returning `true`.
+    fn confined_closure(
+        &self,
+        seeds: &[[i32; 3]],
+        confinement: &super::Confinement<'_>,
+        mut taken: impl FnMut([i32; 3], &Edge) -> bool,
+    ) -> BTreeSet<[i32; 3]> {
         // Taken a frontier at a time, each frontier's edges flown in parallel
         // as [`World::body_reach`] flies a round: the closure is the same set
         // whatever order its states are expanded in, since whether a move is
@@ -2730,6 +2833,9 @@ impl World {
                     {
                         seen.insert(edge.to);
                         next.insert(edge.to);
+                        if taken(*cur, &edge) {
+                            return seen;
+                        }
                     }
                 }
             }
