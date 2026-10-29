@@ -377,6 +377,7 @@ const FAR_GENERATOR: &str = r#"
 import os, sys
 sys.path.insert(0, os.path.join(os.environ["DELVEWRIGHT_SKILL"], "scripts"))
 from starter import Model, run
+from starter import lantern as lantern_state
 
 EDIT = os.environ.get("FAR_EDIT", "")
 
@@ -412,8 +413,20 @@ def build(place):
             m.set(x, 1, z, "bloom")
     m.part(12, 15, 15, 16, "bed")
     m.part(9, 16, 2, 9, "court")
+    if EDIT != "roof-undeclared":
+        m.show("up")   # the house's flat roof stands on the top course, in the open air
     if EDIT == "raised-court":
         m.box(9, 16, 1, 1, 2, 9, "boards")
+    if EDIT == "lantern-by-way":
+        # a lantern standing on the floor beside a seam's opening, inside
+        s = place.seams[0]
+        lo, hi = [b.value for b in s["lo"]], [b.value for b in s["hi"]]
+        (sx0, _, sz0), (sx1, _, sz1) = place.space
+        spot = next((x + dx, z + dz) for x in range(lo[0], hi[0]) for z in range(lo[2], hi[2])
+                    for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1))
+                    if sx0 <= x + dx <= sx1 and sz0 <= z + dz <= sz1
+                    and not (lo[0] <= x + dx < hi[0] and lo[2] <= z + dz < hi[2]))
+        m.set(spot[0], place.datum.value, spot[1], lantern_state())
     m.finish()
     return m
 
@@ -489,6 +502,28 @@ fn a_building_drawn_into_the_starter_s_model_is_claimed_from_the_engine_s_survey
         t.contains("not walked: `node/far`'s part `part/house`"),
         "{t}"
     );
+
+    // The house's roof on the frame's top course, its side left undeclared:
+    // the check names the exposure with its cell, as the build would.
+    let run = run_generator(&tmp, &campaign, "roof-undeclared");
+    assert!(run.status.success(), "{}", text(&run));
+    let red = check_far(&campaign, &prefabs);
+    let t = text(&red);
+    assert_eq!(red.status.code(), Some(3), "{t}");
+    assert!(
+        t.contains("DW0885")
+            && t.contains("its up side standing in open air")
+            && t.contains("the first is at ["),
+        "{t}"
+    );
+
+    // A lantern standing beside a seam's opening: the starter claims it in the
+    // space the way opens into, so the way's cells touch that space and the
+    // check passes (`contract-well-formed`).
+    let run = run_generator(&tmp, &campaign, "lantern-by-way");
+    assert!(run.status.success(), "{}", text(&run));
+    let green = check_far(&campaign, &prefabs);
+    assert!(green.status.success(), "{}", text(&green));
 
     // A court a course above the house's floor: the walk between the two
     // carries the rise the check measures, and the check passes.

@@ -2382,7 +2382,8 @@ fn dw0838_refuses_a_hole_between_two_places_nothing_allocated() {
     }
     let blocks = delvec::compiler::assembled::assembled_blocks(&plan, &structures);
     let only = |n: &str| std::collections::BTreeSet::from([n.to_string()]);
-    let alone = blockout::leaks(&plan, &blocks, &only("node/landing")).unwrap();
+    let open = blockout::open_world(&plan, &blocks);
+    let alone = blockout::leaks(&plan, &blocks, &open, &only("node/landing")).unwrap();
     assert!(
         alone.findings.iter().any(|(_, x)| x.code == "DW0838"
             && x.message.contains("node/landing")
@@ -2390,7 +2391,7 @@ fn dw0838_refuses_a_hole_between_two_places_nothing_allocated() {
         "{:?}",
         errors_of(&alone)
     );
-    let far = blockout::leaks(&plan, &blocks, &only("node/tunnel")).unwrap();
+    let far = blockout::leaks(&plan, &blocks, &open, &only("node/tunnel")).unwrap();
     assert!(
         !errors_of(&far).iter().any(|c| c == "DW0838"),
         "{:?}",

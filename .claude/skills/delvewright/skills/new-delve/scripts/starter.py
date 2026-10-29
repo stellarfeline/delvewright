@@ -969,6 +969,7 @@ class Model:
         self.region: dict[tuple[int, int], str] = {}
         self.marks: dict[str, tuple[int, int, str]] = {}
         self.skipped = 0
+        self.shown: set[str] = set()
         self.no_touch: set[tuple[int, int, int]] = set()
         for s in place.seams:
             lo, hi = [b.value for b in s["lo"]], [b.value for b in s["hi"]]
@@ -1017,6 +1018,18 @@ class Model:
     def mark(self, stem: str, x: int, z: int, facing: str = "south") -> None:
         """Stand the owed name `stem` on the floor at `(x, z)`."""
         self.marks[stem] = (x, z, facing)
+
+    def show(self, *faces: str) -> None:
+        """Declare sides of the piece finished exterior, meant to be seen
+        (`shown_faces`): `"up"` where the drawing stands a roof, a chimney or a
+        lamp on the frame's top course in the open air. The four walls are
+        always shown, the underside of an aloft place too. A solid cell on an
+        undeclared side in air the party can be in is `DW0885`, which
+        `detail --check` names with its cell."""
+        for f in faces:
+            if f not in ("east", "west", "north", "south", "up", "down"):
+                sys.exit(f"starter.py: `{f}` is not a side; a side is east, west, north, south, up or down")
+            self.shown.add(f)
 
     # -- shapes a builder reaches for --
 
@@ -1526,7 +1539,7 @@ def plot_program(a: dict, reason: str) -> dict:
         floor = sum(1 for cell in p.reached)
         if len(p.unwalked) >= floor:
             c["no_body_majority_ack"] = reason
-    faces = ["east", "north", "south", "west"] + (["down"] if p.aloft else [])
+    faces = sorted({"east", "north", "south", "west"} | ({"down"} if p.aloft else set()) | m.shown)
     return {
         "contract": c,
         "name": a["place"].removeprefix("node/"),

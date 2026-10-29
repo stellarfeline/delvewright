@@ -1032,6 +1032,32 @@ mod tests {
     }
 
     #[test]
+    fn the_size_band_is_three_to_five_quarters_in_whole_columns_and_is_stated_per_part() {
+        assert_eq!(size_band(38), (29, 47));
+        assert_eq!(size_band(4), (3, 5));
+        assert_eq!(size_band(1), (1, 1));
+        let holds = holds();
+        let n = node();
+        let b = bind(&n, &holds, &contract(Some("part/house"), Some("part/yard")));
+        let line = b.sizes_line();
+        for p in &b.parts {
+            if p.regions.is_empty() {
+                continue;
+            }
+            let (lo, hi) = size_band(p.part.cells);
+            assert!(
+                line.contains(&format!(
+                    "`{}` {} column(s) of {lo}..{hi}",
+                    p.part.id,
+                    p.built()
+                )),
+                "{line}"
+            );
+            assert_eq!(p.in_size(), (lo..=hi).contains(&(p.built() as u64)));
+        }
+    }
+
+    #[test]
     fn a_part_outside_a_quarter_of_its_cells_is_out_of_size_at_both_ends() {
         let n = node();
         let c = contract(Some("part/house"), Some("part/yard"));

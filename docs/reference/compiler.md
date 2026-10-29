@@ -691,8 +691,16 @@ they stand — then the battery's leak proof (`DW0838`) flooded from the checked
 place alone (`blockout::leaks`, the battery's own crossing proof over the
 battery's own world) over the whole as the run would leave it, assembled in
 memory with the edit script replayed, and writes nothing: no piece, no report,
-no row, and no rest of the battery. A leak it finds is the refusal the commit's
-battery would raise for that place, at exit 3, with its route.
+no row, and no rest of the battery. Over the same world it runs, for the checked
+place alone and through the build's own implementations, `DW0990`'s crack shape
+(`blockout::stitches`, inside `blockout::leaks`) and `DW0885`
+(`burial::check` with the checked piece, the party's walk taken as the build
+takes it, `World::body_region_rooted` from the plan's anchors, over the world
+with every declared way open). A refusal it finds is the one the build would
+raise for that place, at exit 3, named with its cell or its route. It prints
+`part sizes:` — each bound part's built play space against the band `DW1074`
+allows (`plot::size_band`), which `delvec allocation` also hands per part
+(`bands`).
 Exit 0 says the program would commit against the whole as it stands now; any
 other exit is the verdict the commit would give, in the same words. Its
 binding line ends `peak rss: <n> bytes` (`getrusage`). `--check` beside `--all`

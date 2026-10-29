@@ -68,9 +68,10 @@ handout quotes — the node's `note` in `layout-graph.json`, the seam's `form` i
 **Authors run concurrently, commits run one at a time.** The check and the
 commit are two runs of one verb: `delvec --prefabs "$DELVEWRIGHT_PREFABS" detail --check <campaign-dir> <place>`
 binds, expands, voids, runs every gate of the place and the bindings check over
-the whole **as committed on disk**, runs the leak proof (`DW0838`) from that place
-over the whole assembled in memory — each leak named with the route a body takes,
-move by move — and writes nothing; `delvec --prefabs "$DELVEWRIGHT_PREFABS" detail
+the whole **as committed on disk**, runs the leak proof (`DW0838`), the plot-edge
+stitch (`DW0990`) and the exposure check (`DW0885`) for that place over the whole
+assembled in memory — each named with its cell or the route a body takes — prints
+each part's size against its band (`DW1074`), and writes nothing; `delvec --prefabs "$DELVEWRIGHT_PREFABS" detail
 <campaign-dir> <place>` runs the same judge, then writes the piece, its report
 and the plan row — each through a temporary file renamed into place, so a check
 running at that instant reads the old file or the new one, never a torn one —
@@ -140,7 +141,8 @@ agent: *Reference: when the prefab library has no piece you need* and
    server would drop, the palette refuses, or the pinned game does not have
    (a state that leaves a property out included). Its constructors
    (`stairs`, `slab`, `door`, `trapdoor`, `fence`, …) write every property,
-   and `Model.roof` lays a roof whose eave sits level with the wall heads.
+   and `Model.roof` lays a roof whose eave sits level with the wall heads;
+   `Model.show("up")` declares a top the drawing means to be seen.
    A drawn model needs a `delvec` binary on the machine running it. The handout lists the refused blocks and the containers
    the holder census counts. So an author starts from a passing program and
    never from research: nothing outside the handout's reading list — the

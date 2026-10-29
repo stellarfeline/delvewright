@@ -1780,6 +1780,32 @@ fn a_hollow_edge_reddens_dw0990_alone() {
         "{m}"
     );
     assert!(b.binding.cracks > 0);
+
+    // A place author's own check (`blockout::leaks`, what `detail --check`
+    // runs) names the same crack for the landing, and none for a place whose
+    // edge is whole.
+    let reg = prefabs();
+    let plan = Plan::build_with(
+        &c,
+        &reg,
+        Perturb {
+            hollow_edge: true,
+            ..Perturb::none()
+        },
+    )
+    .expect("the variant plans");
+    let blocks = delvec::compiler::assembled::assembled_blocks(&plan, &BTreeMap::new());
+    let open = blockout::open_world(&plan, &blocks);
+    let only = |n: &str| std::collections::BTreeSet::from([n.to_string()]);
+    let alone = blockout::leaks(&plan, &blocks, &open, &only("node/landing")).unwrap();
+    assert_eq!(
+        errors(&alone),
+        ["DW0990".to_string()],
+        "the check for the landing names its crack"
+    );
+    assert_eq!(message_for(&alone, "DW0990"), m, "in the battery's words");
+    let other = blockout::leaks(&plan, &blocks, &open, &only("node/tunnel")).unwrap();
+    assert!(errors(&other).is_empty(), "{:?}", errors(&other));
 }
 
 fn battery_of_with(c: &Campaign, perturb: Perturb) -> blockout::Battery {
