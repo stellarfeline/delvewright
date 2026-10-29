@@ -2026,6 +2026,16 @@ pub fn loaded_extent(plan: &Plan) -> ([i32; 3], [i32; 3]) {
             max[a] = max[a].max(p[a] + d[a] - 1);
         }
     }
+    // A site plan's fill is ground the whole lays over its entire region,
+    // around the places as a valley's landform is: a frame that left it out
+    // would show the delve on a slab cut from its own island.
+    if let Some(sp) = plan.campaign.site_plan.as_ref() {
+        let (rlo, rhi) = (sp.content.region.min, sp.content.region.max());
+        for a in 0..3 {
+            min[a] = min[a].min(i32::try_from(rlo[a]).unwrap_or(min[a]));
+            max[a] = max[a].max(i32::try_from(rhi[a]).unwrap_or(max[a]));
+        }
+    }
     (min, max)
 }
 
