@@ -1702,10 +1702,12 @@ fn threshold_shots(plan: &Plan, prefabs: &PrefabRegistry, frames: &FrameWorlds) 
                 world,
             });
         }
-        // Every open side, a contact over it or none: a front onto a street
-        // is crossed through the contact, and its approach cell is the
-        // street's — the body's own view of the front all the same.
-        for side in b.open_sides() {
+        // Every side declared open, a contact over it or none: a front onto a
+        // street is crossed through the contact, and its approach cell is the
+        // street's — the body's own view of the front all the same. An
+        // undeclared side is seamless and has no front to shoot: its approach
+        // may be a neighbour's ground at another height.
+        for side in b.declared_open_sides() {
             let (lo, hi) = side.cells;
             let (n, a) = (side.normal_axis(), side.along_axis());
             let mut eye = [0.0; 3];
