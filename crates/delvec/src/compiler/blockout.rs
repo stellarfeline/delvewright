@@ -2175,7 +2175,7 @@ pub fn check(
         seams_built(b, open, binding, findings);
         nodes_reached(c, b, sealed, binding, findings);
         crossings(c, b, plan, blocks, open, None, binding, findings);
-        stitches(b, open, binding, findings);
+        stitches(b, open, None, binding, findings);
         sightlines(c, b, open, binding, findings);
         identities(c, b, open, binding, findings);
         pacing(c, b, open, binding, findings);
@@ -2189,7 +2189,7 @@ pub fn check(
 /// blocks with nothing shut, carrying the body's premises. One function, so
 /// the battery and the leak proof a place author runs alone ([`leaks`]) ask
 /// one world.
-fn open_world(
+pub fn open_world(
     plan: &crate::compiler::plan::Plan,
     blocks: &crate::compiler::blockstate::BlockMap,
 ) -> crate::compiler::nav::World {
@@ -2199,9 +2199,11 @@ fn open_world(
     )
 }
 
-/// **The leak proof alone** (`DW0838`), floods started only from the places
-/// `only` names: the battery's own [`crossings`] over the battery's own world
-/// ([`open_world`]). A leak is never a trapdoor's (`DW1066`, see
+/// **The leak proof and the stitch alone** (`DW0838`, `DW0990`'s crack shape),
+/// for the places `only` names: the battery's own [`crossings`], flooded from
+/// those places, and its own [`stitches`] along their edges, over the
+/// battery's own world ([`open_world`], which the caller builds once and
+/// hands in). A leak is never a trapdoor's (`DW1066`, see
 /// [`hatch_refusals`]), so it stands as the battery would leave it. What
 /// `delvec detail --check` runs for the place it
 /// checks, so a leak is found without building the whole delve. The pairs
@@ -2212,11 +2214,11 @@ fn open_world(
 pub fn leaks(
     plan: &crate::compiler::plan::Plan,
     blocks: &crate::compiler::blockstate::BlockMap,
+    open: &crate::compiler::nav::World,
     only: &BTreeSet<String>,
 ) -> Option<Battery> {
     let b = plan.blockout.as_ref()?;
     let c = plan.campaign;
-    let open = open_world(plan, blocks);
     let mut findings: Vec<(DwCode, Diagnostic)> = Vec::new();
     let mut binding = BatteryBinding::default();
     crossings(
@@ -2224,11 +2226,12 @@ pub fn leaks(
         b,
         plan,
         blocks,
-        &open,
+        open,
         Some(only),
         &mut binding,
         &mut findings,
     );
+    stitches(b, open, Some(only), &mut binding, &mut findings);
     Some(Battery { findings, binding })
 }
 
@@ -3805,11 +3808,15 @@ fn floor_made(
 fn stitches(
     b: &Blockout,
     world: &crate::compiler::nav::World,
+    only: Option<&BTreeSet<String>>,
     binding: &mut BatteryBinding,
     d: &mut Vec<(DwCode, Diagnostic)>,
 ) {
     let site = Site::new(&b.boxes, &b.seams, &b.ground);
     for (i, p) in b.boxes.iter().enumerate() {
+        if only.is_some_and(|o| !o.contains(p.node.0.as_str())) {
+            continue;
+        }
         if site.is_aloft(i) {
             binding.aloft += 1;
             continue;

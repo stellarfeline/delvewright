@@ -102,11 +102,51 @@ impl PartBuilt<'_> {
     }
 
     /// Whether the built play space is within a quarter of the declared
-    /// `cells` (§5.3 shape 4): from three quarters to five quarters, inclusive.
+    /// `cells` (§5.3 shape 4): inside [`size_band`].
     #[must_use]
     pub fn in_size(&self) -> bool {
-        let (b, d) = (self.built() as u64, u64::from(self.part.cells));
-        4 * b >= 3 * d && 4 * b <= 5 * d
+        let (lo, hi) = size_band(self.part.cells);
+        (lo..=hi).contains(&(self.built() as u64))
+    }
+}
+
+/// **The built play space a part of `cells` declared cells may have** (§5.3
+/// shape 4), inclusive: three quarters to five quarters of the declaration,
+/// in whole columns. The one answer `DW1074` judges by, the allocation hands
+/// each part (`bands`) and `delvec detail` states per part.
+#[must_use]
+pub fn size_band(cells: u32) -> (u64, u64) {
+    let d = u64::from(cells);
+    ((3 * d).div_ceil(4), 5 * d / 4)
+}
+
+impl Binding<'_> {
+    /// `sizes: part/a 35 of 24..40, …` — each bound part's built play space
+    /// against its band, the parts outside it marked.
+    #[must_use]
+    pub fn sizes_line(&self) -> String {
+        let parts: Vec<String> = self
+            .parts
+            .iter()
+            .filter(|p| !p.regions.is_empty())
+            .map(|p| {
+                let (lo, hi) = size_band(p.part.cells);
+                format!(
+                    "`{}` {} column(s) of {lo}..{hi}{}",
+                    p.part.id,
+                    p.built(),
+                    if p.in_size() { "" } else { " (OUT)" }
+                )
+            })
+            .collect();
+        format!(
+            "part sizes (built play space of the band DW1074 allows): {}",
+            if parts.is_empty() {
+                "none bound".to_string()
+            } else {
+                parts.join(", ")
+            }
+        )
     }
 }
 
@@ -318,8 +358,8 @@ pub fn judge(
                     p.part.cells,
                     p.built(),
                     p.built(),
-                    (3 * u64::from(p.part.cells)).div_ceil(4),
-                    5 * u64::from(p.part.cells) / 4,
+                    size_band(p.part.cells).0,
+                    size_band(p.part.cells).1,
                 ),
             ));
         }

@@ -181,10 +181,22 @@ class Place:
             self.seams.append(seam)
         # Every side the place declares open (spec-0123 §5.3): its ring run at
         # the walk plane, corners excluded, piece-local and inclusive.
+        # A side whose every ring cell at the walk plane, inside the frame, is
+        # a seam's opening is the seams' already: it is not declared again
+        # (it would be a way out with no cell of its own), and over the
+        # openings its ring is the place's open air, never a wall — a wall
+        # there stands in the open air over a stair or a front (`DW0885`).
         self.sides = []
+        self.covered: list[dict] = []
+        d0 = a["datum_y"]
         for s in a.get("sides", []) or []:
             (sx0, _, sz0), (sx1, _, sz1) = s["cells"]
-            self.sides.append({"face": s["face"], "lo": (sx0, sz0), "hi": (sx1, sz1)})
+            side = {"face": s["face"], "lo": (sx0, sz0), "hi": (sx1, sz1)}
+            own = [(x, z) for x in range(sx0, sx1 + 1) for z in range(sz0, sz1 + 1)
+                   if 0 <= x < self.ex and 0 <= z < self.ez
+                   and not any(all(se["lo"][i].value <= c[i] < se["hi"][i].value for i in range(3))
+                               for se in self.seams for c in [(x, d0, z)])]
+            (self.sides if own else self.covered).append(side)
         self.scenery = a.get("brief", {}).get("reached") is False
         # A station of kind `gate` is a volume that seals and clears, so it is
         # answered by a region, never a mark: a grille of bars in front of a
@@ -452,6 +464,9 @@ class Place:
             return ("fill", "lid")
         if self.lid is not None and y > self.lid.value:
             return ("claim", "roof", None)
+        if any(sd["lo"][0] <= x <= sd["hi"][0] and sd["lo"][1] <= z <= sd["hi"][1] for sd in self.covered) \
+                and d <= y < self.wall_top.value:
+            return ("claim", "room", None)  # over a covered side's openings: the place's air
         side = self.open_side(x, z)
         if side is not None and d <= y < self.wall_top.value:
             # An open side stands no wall: its ring cells are open from the
@@ -924,6 +939,18 @@ def tall_plant(block: str, half: str) -> str:
     return f"{mc(block)}[half={half}]"
 
 
+def is_full(s: str) -> bool:
+    """Whether a state is a full block by its name: anything that is not thin,
+    partial or passable. What a connecting block joins as it joins a full
+    block (`Model.finish`), and what may stand beside a way in without being
+    the way's room (`Plot.base_cell`)."""
+    b = s.split("[")[0]
+    thin = ("_slab", "_stairs", "_trapdoor", "_door", "_carpet", "_pressure_plate", "_button", "_sign",
+            "_banner", "_torch", "torch", "lantern", "_candle", "candle", "flower_pot", "_leaves", "_fence",
+            "_wall", "_pane", "_bars", "_fence_gate", "ladder", "_chain", "air", "short_grass", "fern")
+    return not b.startswith("minecraft:potted_") and not any(b.endswith(t) for t in thin)
+
+
 class Model:
     """The place as cells a generator draws into.
 
@@ -1140,14 +1167,7 @@ class Model:
         return None
 
     def _arms(self) -> None:
-        def solid(s: str) -> bool:
-            # A neighbour a connecting block joins as it joins a full block:
-            # anything that is not thin, partial or passable by its name.
-            b = s.split("[")[0]
-            thin = ("_slab", "_stairs", "_trapdoor", "_door", "_carpet", "_pressure_plate", "_button", "_sign",
-                    "_banner", "_torch", "torch", "lantern", "_candle", "candle", "flower_pot", "_leaves", "_fence",
-                    "_wall", "_pane", "_bars", "_fence_gate", "ladder", "_chain", "air", "short_grass", "fern")
-            return not b.startswith("minecraft:potted_") and not any(b.endswith(t) for t in thin)
+        solid = is_full
 
         new = {}
         for (x, y, z), r in list(self.v.items()):
@@ -1235,6 +1255,12 @@ class Plot(Place):
                 return ("claim", region or (e["region"] if e is not None else "room"), r)
             if e is not None and not e["walked"] and c in self.standable:
                 return ("claim", e["region"], r)  # the floor of a part seen and never entered
+            if self.in_space_xz(x, z) and not is_full(self.block_of(("fill", r))) and any(
+                    (x + dx, y, z + dz) in self.model.no_touch for dx, dz in DIRS.values()):
+                # A thin block beside a way in (a lantern, a post, a flower
+                # pot) stands in the space the way opens into, so the way's
+                # cells touch it (`contract-well-formed`).
+                return ("claim", e["region"] if e is not None and e["walked"] else "room", r)
             return ("fill", r)
         if not self.in_space_xz(x, z):
             if kind in (("fill", "wall"), ("fill", "lamp")) and self.beside_side(x, z):
@@ -1468,12 +1494,28 @@ def plot_program(a: dict, reason: str) -> dict:
     # check measures: the lowest course each space's claimed cells reach
     # (`min_y(b) - min_y(a)` over the resolved boxes).
     low: dict[str, int] = {}
+    cols: dict[str, set] = {}
     for x in range(p.ex):
         for y in range(p.ey):
             for z in range(p.ez):
                 k = p.cell(x, y, z)
-                if k[0] == "claim" and (k[1] not in low or y < low[k[1]]):
-                    low[k[1]] = y
+                if k[0] == "claim":
+                    cols.setdefault(k[1], set()).add((x, z))
+                    if k[1] not in low or y < low[k[1]]:
+                        low[k[1]] = y
+    # Each part's claimed columns against the band `DW1074` allows, as the
+    # allocation hands it (`bands`): the projection of the region naming it.
+    bands = {b["part"]: b for b in a.get("bands", []) or []}
+    sizes = []
+    for e in p.parts:
+        b = bands.get(e["part"]["id"])
+        if b is None:
+            continue
+        n = len(cols.get(e["region"], ()))
+        out = "" if b["min"] <= n <= b["max"] else " — OUT OF BAND (DW1074)"
+        sizes.append(f"{e['part']['id']} {n} of {b['min']}..{b['max']}{out}")
+    if sizes:
+        print("starter.py: part sizes, claimed columns of the band: " + "; ".join(sizes), file=sys.stderr)
     for x, y in sorted(p.joined):
         e = {"a": x, "b": y, "class": "walk"}
         if x in low and y in low and low[y] != low[x]:

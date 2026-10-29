@@ -301,6 +301,7 @@ pub(super) fn prove_world(
                 structures,
                 world,
                 &party_walk,
+                None,
             );
             eprintln!("{}", exposure.line());
             piece_exposure_ledger = Some(exposure.to_json());

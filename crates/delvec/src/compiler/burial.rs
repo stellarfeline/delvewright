@@ -301,6 +301,10 @@ fn moves(horizon: &str) -> String {
 /// build writes — and `reachable` the standing cells the reachability proof
 /// already computed. Both are arguments rather than things this derives, so this
 /// check and every proof around it are reading one world.
+///
+/// `only`, when given, names the pieces (by prefab id) whose sides are judged
+/// — a place author's own check, `delvec detail --check`; the air the party
+/// can be in is still every piece's. The build passes `None`.
 pub fn check(
     plan: &Plan,
     prefabs: &PrefabRegistry,
@@ -308,6 +312,7 @@ pub fn check(
     structures: &BTreeMap<String, Vec<u8>>,
     world: &World,
     reachable: &BTreeSet<[i32; 3]>,
+    only: Option<&BTreeSet<String>>,
 ) -> (ExposureBinding, Vec<Diagnostic>) {
     let ambient = Ambient::of_plan(plan);
     let mut binding = ExposureBinding {
@@ -390,7 +395,7 @@ pub fn check(
     // whole shell, because the verdict is per side: an author repairs a face,
     // not a cell, and the declaration is spelled in sides.
     for piece in &pieces {
-        if !piece.documented {
+        if !piece.documented || only.is_some_and(|o| !o.contains(&piece.prefab)) {
             continue;
         }
         let mut examined_this = false;

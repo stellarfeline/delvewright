@@ -620,6 +620,7 @@ fn prepare(
             let (found, count) =
                 delvec::compiler::plot::judge(&binding, &format!("prefab/{id}"), Some(&walked));
             eprintln!("{place}: {}", count.line());
+            eprintln!("{place}: {}", binding.sizes_line());
             if !found.is_empty() {
                 for d in &found {
                     print_one_diag(d, json);
@@ -883,31 +884,57 @@ fn leak_check(
     };
     let only: std::collections::BTreeSet<String> =
         prepared.iter().map(|p| p.place.clone()).collect();
-    let Some(battery) = blockout::leaks(&plan, &blocks, &only) else {
+    let open = blockout::open_world(&plan, &blocks);
+    // `DW0885` for the pieces this run checks: the build's own exposure check
+    // over the same assembled world, the party's walk taken as the build takes
+    // it (`World::body_region_rooted` from the plan's anchors).
+    let reachable = open.body_region_rooted(&delvec::compiler::edit::anchor_starts(&plan));
+    let pieces: std::collections::BTreeSet<String> = prepared
+        .iter()
+        .map(|p| format!("prefab/{}", p.id))
+        .collect();
+    let (exposure, exposed) = delvec::compiler::burial::check(
+        &plan,
+        &registry,
+        &blocks,
+        &structures,
+        &open,
+        &reachable,
+        Some(&pieces),
+    );
+    let Some(battery) = blockout::leaks(&plan, &blocks, &open, &only) else {
         return Ok("no blockout, so no leak proof".to_string());
     };
     let b = &battery.binding;
     let line = format!(
         "leak proof from {places} place(s): {c} standable cell(s) classified over {p} place \
          pair(s), {sb} seamless border(s) deleted as declared openings ({bc} cell(s) beyond the \
-         open sides' runs), {inv} cell(s) of floor the deletion made kept off",
+         open sides' runs), {inv} cell(s) of floor the deletion made kept off; stitch: {bcol} \
+         plot-edge column(s) examined, {ck} crack(s) (DW0990); {exp}",
         places = only.len(),
         c = b.standable,
         p = b.pairs,
         sb = b.seamless_borders,
         bc = b.border_cells,
         inv = b.invented_floor,
+        bcol = b.boundary_columns,
+        ck = b.cracks,
+        exp = exposure.line(),
     );
-    let refusals: Vec<&(DwCode, Diagnostic)> = battery.refusals().collect();
+    let refusals: Vec<&Diagnostic> = battery
+        .refusals()
+        .map(|(_, d)| d)
+        .chain(exposed.iter())
+        .collect();
     if refusals.is_empty() {
         return Ok(line);
     }
-    for (_, d) in &refusals {
+    for d in &refusals {
         print_one_diag(d, json);
     }
     eprintln!(
-        "error: {places}: {n} leak(s) the commit's battery would refuse; nothing was written. \
-         {line}",
+        "error: {places}: {n} refusal(s) the build would give this place (DW0838, DW0990, \
+         DW0885); nothing was written. {line}",
         places = prepared
             .iter()
             .map(|p| format!("`{}`", p.place))

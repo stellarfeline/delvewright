@@ -115,7 +115,10 @@ PLOT_RULING = (
 PLOT_BINDING = (
     "Name each part on the contract spaces and out-of-walk regions that are it, with `part`; "
     "every part is named; a walked part has a cell the body reaches; "
-    "a part's claimed cells stay within a quarter of its declared."
+    "a part's claimed columns stay inside the band each part line states "
+    "(three quarters to five quarters of its declared cells, as `delvec allocation` hands it); "
+    "the starter prints each part's claimed columns against its band, and `detail --check` prints "
+    "`part sizes:`."
 )
 PLOT_SHAPES = (
     "the entry side is the front",
@@ -475,6 +478,7 @@ def plot_section(place: str, a: dict, plan: dict) -> tuple[list[str], int]:
     out = [f"{PLOT_RULING[0].upper() + PLOT_RULING[1:]}.", ""]
     out.append(f"{len(holds)} part(s) over {area} cell(s) of play space:")
     out.append("")
+    bands = {b.get("part"): b for b in a.get("bands", []) or []}
     for p in holds:
         share = f"{100 * p.get('cells', 0) / area:.0f} %" if area else "—"
         line = (
@@ -484,6 +488,9 @@ def plot_section(place: str, a: dict, plan: dict) -> tuple[list[str], int]:
         if p.get("height") is not None:
             line += f"; height {p['height']} course(s) to the ridge"
         line += "; " + ("walked" if p.get("reached", True) else "seen, never entered")
+        b = bands.get(p.get("id"))
+        if b is not None:
+            line += f"; its spaces and regions claim {b['min']} to {b['max']} column(s) (DW1074)"
         out.append(line)
     out.append("")
     out.append(PLOT_BINDING)

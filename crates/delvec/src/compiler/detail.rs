@@ -522,6 +522,19 @@ pub struct HandedVoid {
     pub owner: String,
 }
 
+/// One part's size band in the allocation (`DW1074`'s shape 4).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct PartBand {
+    /// The part, `part/<kebab>`.
+    pub part: String,
+    /// Its declared cells.
+    pub cells: u32,
+    /// The fewest columns its spaces and regions may claim.
+    pub min: u64,
+    /// The most.
+    pub max: u64,
+}
+
 /// **What `delvec allocation` prints — the handout**: everything the whole gives
 /// a place, and nothing a piece could give back (spec-0098 §4).
 ///
@@ -574,6 +587,12 @@ pub struct Allocation {
     /// these. Absent on a place that is not a plot.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub parts: Vec<delvewright_dsl::layout::Part>,
+    /// Each part's size band (`DW1074`, [`crate::compiler::plot::size_band`]):
+    /// the built play space, in columns, its spaces and regions may claim,
+    /// inclusive, in `parts` order. The handout states it; the starter
+    /// measures what it laid against it.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub bands: Vec<PartBand>,
     /// The synthesized names this place owes, which `anchors` must bind.
     pub owed_anchors: Vec<String>,
     /// Every cell of the frame the place does not own, with who does. The
@@ -953,6 +972,18 @@ pub fn allocation(c: &Campaign, node: &NodeId) -> Option<Allocation> {
             .collect(),
         sides: handed_sides(b, &plan.seams, local),
         parts: crate::compiler::plot::handed_parts(c, node),
+        bands: crate::compiler::plot::handed_parts(c, node)
+            .iter()
+            .map(|p| {
+                let (min, max) = crate::compiler::plot::size_band(p.cells);
+                PartBand {
+                    part: p.id.0.clone(),
+                    cells: p.cells,
+                    min,
+                    max,
+                }
+            })
+            .collect(),
         owed_anchors: delvewright_dsl::owed_anchors(c, node).into_iter().collect(),
         voids: frame
             .voids
