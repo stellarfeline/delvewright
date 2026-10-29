@@ -879,17 +879,19 @@ def test_either_instrument_alone_names_a_blockout(gate, tmp_path):
     assert gate.Subject(plain, make_build(areas)).pre_detail is False
 
 
-def test_an_override_does_not_reach_the_blockout_refusal(gate, tmp_path):
-    """`--stage-anyway` admits a red list; a blockout is not one."""
+def test_an_override_reaches_the_blockout_refusal_and_lists_it(gate, tmp_path):
+    """`--stage-anyway` overrides the blockout refusal, naming it."""
     camp = make_blockout_campaign(tmp_path, objectives=[{"type": "interact"}])
     tree = make_blockout_build(tmp_path)
     proc = stage(
         camp, tree, green_ledger(tmp_path),
-        "--stage-anyway", "a session that wants the blockout served", "--acknowledge-red", "0",
+        "--stage-anyway", "a session that wants the blockout served",
     )
-    assert proc.returncode == 1, proc.stderr
-    assert "not stageable" in proc.stderr
-    assert not (tree / "staging-admission.json").exists()
+    assert proc.returncode == 0, proc.stderr
+    assert "OVERRODE not stageable" in proc.stderr
+    token = json.loads((tree / "staging-admission.json").read_text())
+    assert token["overridden"] is True
+    assert any("pre-detail blockout" in r for r in token["override"]["refusals"])
 
 
 def test_a_refusal_removes_a_stale_token(gate, tmp_path):
@@ -1978,8 +1980,18 @@ def test_the_override_needs_the_exact_current_red_count(gate, tmp_path):
     assert not (tree / "staging-admission.json").exists()
 
 
-def test_the_override_refuses_when_nothing_is_red(gate, tmp_path):
-    """An override that overrode nothing would normalise the flag."""
+def test_the_override_needs_no_acknowledgement_count(gate, tmp_path):
+    tree, camp, ledger = _red_setup(tmp_path)
+    proc = subprocess.run(
+        [sys.executable, str(SCRIPT), "--campaign", str(camp), "--build", str(tree), *proofs(tree),
+         "--ledger", str(ledger), "--stage-anyway", "one framing check, deliberately not a QC round"],
+        capture_output=True, text=True,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "OVERRODE ledger" in proc.stderr
+
+
+def test_the_override_with_nothing_refused_admits_and_says_it_overrode_nothing(gate, tmp_path):
     tree = tmp_path / "out"
     tree.mkdir()
     (tree / "manifest.json").write_text(manifest())
@@ -1987,8 +1999,9 @@ def test_the_override_refuses_when_nothing_is_red(gate, tmp_path):
     ledger = tmp_path / "led.json"
     ledger.write_text(json.dumps({"findings": [dict(BOUND_ROW, id="ok")]}))
     proc = _gate(tree, camp, ledger, "a reason long enough to pass the floor", "0")
-    assert proc.returncode == 2
-    assert "overrode nothing" in proc.stderr
+    assert proc.returncode == 0, proc.stderr
+    assert "nothing was overridden" in proc.stderr
+    assert json.loads((tree / "staging-admission.json").read_text())["overridden"] is False
 
 
 def _red_setup(tmp_path):
@@ -2565,17 +2578,24 @@ def test_a_declared_test_level_with_no_record_stages_with_the_design_rows_at_zer
     assert sorted(token["inapplicable"]) == sorted(LIVE_DESIGN_ROWS)
 
 
-def test_a_build_not_of_its_source_is_refused_out_of_stage_anyways_reach(tmp_path):
+def test_a_build_not_of_its_source_is_refused_unless_overridden(tmp_path):
     """Declared in the source, not carried by the build: the build is not of
-    this source, refused before any row is read, whatever override is given."""
-    for extra in ((), ("--stage-anyway", REASON, "--acknowledge-red", "0")):
-        proc, tree = tl_cli(
-            tmp_path / str(len(extra)), "a-test", declared=True, carried=False,
-            rows=[live_row(r) for r in LIVE_DESIGN_ROWS], extra=extra,
-        )
-        assert proc.returncode == 1, proc.stdout + proc.stderr
-        assert "the build is not of this source" in proc.stderr
-        assert not (tree / "staging-admission.json").exists()
+    this source, refused before any row is read; `--stage-anyway` admits it
+    and names the refusal."""
+    proc, tree = tl_cli(
+        tmp_path / "plain", "a-test", declared=True, carried=False,
+        rows=[live_row(r) for r in LIVE_DESIGN_ROWS],
+    )
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "the build is not of this source" in proc.stderr
+    assert not (tree / "staging-admission.json").exists()
+    proc, tree = tl_cli(
+        tmp_path / "anyway", "a-test", declared=True, carried=False,
+        rows=[live_row(r) for r in LIVE_DESIGN_ROWS], extra=("--stage-anyway", REASON),
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "OVERRODE not stageable" in proc.stderr
+    assert (tree / "staging-admission.json").is_file()
 
 
 def test_the_same_level_without_the_declaration_is_refused_end_to_end(tmp_path):
@@ -2907,20 +2927,34 @@ def test_no_token_without_the_two_proof_records(gate, tmp_path):
         ({"objects": None}, "written world (DW1040): "),
     ],
 )
-def test_a_red_or_foreign_proof_refuses_and_the_override_does_not_reach_it(gate, tmp_path, perturb, said):
+def test_a_red_or_foreign_proof_refuses_and_the_override_lists_it(gate, tmp_path, perturb, said):
     tree, base = _proof_subject(tmp_path)
     proc = _run_gate(base + proofs(tree, **perturb))
     assert proc.returncode == 1, proc.stderr
     assert said in proc.stderr, proc.stderr
     assert not (tree / "staging-admission.json").exists()
-    # The same proofs under the ledger override: still refused.
+    # The same proofs under the override: admitted, the refusal listed.
     tree, base = _proof_subject(tmp_path / "o", red_ledger=True)
     proc = _run_gate(base + proofs(tree, **perturb) + [
-        "--stage-anyway", "a deliberate look at one beat, not a QC round", "--acknowledge-red", "1",
+        "--stage-anyway", "a deliberate look at one beat, not a QC round",
     ])
-    assert proc.returncode == 1, proc.stderr
-    assert "`--stage-anyway` does not reach this refusal" in proc.stderr
+    assert proc.returncode == 0, proc.stderr
+    assert "OVERRODE not proven completable" in proc.stderr
+    assert said in proc.stderr, proc.stderr
+    token = json.loads((tree / "staging-admission.json").read_text())
+    assert any(said in r for r in token["override"]["refusals"])
+
+
+def test_an_unproven_build_is_admitted_only_under_the_override(gate, tmp_path):
+    tree, base = _proof_subject(tmp_path)
+    assert _run_gate(base).returncode == 1
     assert not (tree / "staging-admission.json").exists()
+    proc = _run_gate(base + ["--stage-anyway", "a quick look before the ladder has run"])
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stderr.count("OVERRODE not proven completable") == 2, proc.stderr
+    token = json.loads((tree / "staging-admission.json").read_text())
+    assert token["overridden"] is True
+    assert len(token["override"]["refusals"]) == 2
 
 
 def test_the_token_records_what_the_proofs_established(gate, tmp_path):

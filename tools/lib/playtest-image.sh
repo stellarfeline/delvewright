@@ -199,8 +199,8 @@ dw_playtest_build_and_gate() {
   [ -n "$RUN_REPORT" ]    && GATE_ARGS+=(--run-report "$RUN_REPORT")
   [ -n "$WRITTEN_WORLD" ] && GATE_ARGS+=(--written-world "$WRITTEN_WORLD")
   if [ -n "$STAGE_ANYWAY" ]; then
-    [ -n "$ACK_RED" ] || die "--stage-anyway needs --acknowledge-red <N> (the gate prints N)"
-    GATE_ARGS+=(--stage-anyway "$STAGE_ANYWAY" --acknowledge-red "$ACK_RED")
+    GATE_ARGS+=(--stage-anyway "$STAGE_ANYWAY")
+    [ -z "$ACK_RED" ] || GATE_ARGS+=(--acknowledge-red "$ACK_RED")
   fi
   echo "staging gate: $CAMPAIGN"
   echo "staging gate report: $GATE_REPORT"

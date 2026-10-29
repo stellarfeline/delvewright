@@ -585,8 +585,8 @@ risk item at that staging review.
 once detailed: the first time a player meets it is its finished first version,
 so a site-plan campaign whose only geometry is the derived massing (spec-0049)
 is never handed to one. The gate refuses such a subject before any row is
-adjudicated, with or without `--strict`, and `--stage-anyway` does not reach
-the refusal, because the override admits a red list and this is not one. The
+adjudicated, with or without `--strict`; `--stage-anyway` overrides it like
+any refusal, printed and recorded. The
 subject is a blockout when ANY of three instruments says so — the campaign places by
 site plan (`site-plan.json`; DW0839 makes the placement authorities exclusive)
 with no `detail-plan.json`; the build's **compiler-written manifest** lists
@@ -665,12 +665,12 @@ slow every ladder to protect nobody.
 
 She will sometimes want to look at one beat mid-work. That is legitimate, and an
 override that did not exist would simply be routed around. It is
-`--stage-anyway "<reason>" --acknowledge-red <N>`, and it is deliberately
-awkward: the reason must be substantive, and **`N` must equal the current red
-count exactly**. The count moves as the ledger does, so it cannot be typed from
-memory — the failure mode being designed against is not "someone overrides
-once", it is "the override becomes how the tool is run". It prints every class
-being overridden, stamps the reason into the token, and
+`--stage-anyway "<reason>"`: the reason must be substantive, and it overrides
+every refusal the gate makes (ledger reds, missing or red proofs, stand-ins,
+any class added later; no exclusion list). The failure mode being designed
+against is not "someone overrides once", it is "the override becomes how the
+tool is run", so it prints every refusal overridden, one per line, stamps them
+and the reason into the token (`override.refusals`), and
 `staging-admission.sh` re-announces it at boot: *anything she hits from those
 classes in this session is the override, not a new finding.*
 
