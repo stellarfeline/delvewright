@@ -2384,7 +2384,10 @@ fn a_side_the_plan_cannot_spell_is_dw0100() {
 fn dw1064_a_portal_in_a_side_declared_open() {
     let green = plan_with(|_| {});
     assert!(!has(&green, "DW1064"), "{green:?}");
-    let yard = plan_diags(|v| boxes(v)[box_of("node/yard")]["sides"] = json!({"north": "open"}));
+    let yard = plan_diags(|v| {
+        boxes(v)[box_of("node/yard")]["sides"] =
+            json!({"north": "open", "east": "wall", "west": "wall", "south": "wall"})
+    });
     let hit: Vec<_> = yard.iter().filter(|d| d.code == "DW1064").collect();
     assert_eq!(hit.len(), 1, "{yard:?}");
     assert!(
@@ -2394,7 +2397,10 @@ fn dw1064_a_portal_in_a_side_declared_open() {
         "{}",
         hit[0].message
     );
-    let vault = plan_diags(|v| boxes(v)[box_of("node/vault")]["sides"] = json!({"south": "open"}));
+    let vault = plan_diags(|v| {
+        boxes(v)[box_of("node/vault")]["sides"] =
+            json!({"south": "open", "east": "wall", "west": "wall", "north": "wall"})
+    });
     let hit: Vec<_> = vault.iter().filter(|d| d.code == "DW1064").collect();
     assert_eq!(hit.len(), 1, "{vault:?}");
     assert!(
@@ -2403,7 +2409,10 @@ fn dw1064_a_portal_in_a_side_declared_open() {
         hit[0].message
     );
     // The same side open on a face no portal is cut in is no finding.
-    let elsewhere = plan_with(|v| boxes(v)[box_of("node/yard")]["sides"] = json!({"east": "open"}));
+    let elsewhere = plan_with(|v| {
+        boxes(v)[box_of("node/yard")]["sides"] =
+            json!({"east": "open", "west": "wall", "south": "wall", "north": "wall"})
+    });
     assert!(!has(&elsewhere, "DW1064"), "{elsewhere:?}");
 }
 
@@ -2412,7 +2421,8 @@ fn dw1064_a_portal_in_a_side_declared_open() {
 #[test]
 fn dw1064_admits_a_contact_on_an_open_side() {
     let got = plan_with(|v| {
-        boxes(v)[box_of("node/yard")]["sides"] = json!({"north": "open"});
+        boxes(v)[box_of("node/yard")]["sides"] =
+            json!({"north": "open", "east": "wall", "west": "wall", "south": "wall"});
         let s = &mut seams(v)[seam_of("edge/vault-yard")];
         let o = s.as_object_mut().expect("seam");
         o.remove("opening");

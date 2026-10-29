@@ -1759,7 +1759,8 @@ fn open_side_fixture(root: &Path, open: bool) -> (PathBuf, PathBuf, Allocation) 
         if open {
             let boxes = v["content"]["boxes"].as_array_mut().unwrap();
             let exit = boxes.iter_mut().find(|b| b["node"] == "node/exit").unwrap();
-            exit["sides"] = json!({"south": "open"});
+            exit["sides"] =
+                json!({"south": "open", "east": "wall", "west": "wall", "north": "wall"});
         }
     });
     // The exit's reach objective takes radius 1: with the commons now walked,

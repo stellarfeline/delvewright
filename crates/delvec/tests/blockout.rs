@@ -2238,7 +2238,8 @@ fn crown_with_station(tag: &str, teleport_in: bool) -> Campaign {
                 .unwrap()
                 .push(serde_json::json!({
                     "node": "node/crown", "min": [48, 48], "extent": [8, 8],
-                    "floor": {"datum": "datum/grade"}, "ceiling": {"clearance": 3}
+                    "floor": {"datum": "datum/grade"}, "ceiling": {"clearance": 3},
+                    "sides": {"east": "wall", "west": "wall", "south": "wall", "north": "wall"}
                 }));
         },
         None,
@@ -2776,8 +2777,8 @@ fn the_mass_is_written_before_any_template() {
 /// with the walled sides beside them — holds nothing from the course over the
 /// floor course to the top of the play space, the floor course runs across it
 /// in the landing's accent, and every other cell the derivation writes is the
-/// cell it writes undeclared. Declaring all four sides `wall` derives the
-/// undeclared map byte for byte.
+/// cell it writes walled. A landing with no `sides` derives the map of one
+/// declared open all round (the seamless default).
 #[test]
 fn an_open_side_raises_no_wall_above_the_floor_course() {
     let undeclared = common::campaign_at(&variant("sides-none", |_| {}, Some(&slope)));
@@ -2793,7 +2794,7 @@ fn an_open_side_raises_no_wall_above_the_floor_course() {
         "sides-north",
         |v| {
             let i = landing_index(v);
-            v["content"]["boxes"][i]["sides"] = serde_json::json!({"north": "open"});
+            v["content"]["boxes"][i]["sides"] = serde_json::json!({"north": "open", "east": "wall", "west": "wall", "south": "wall"});
         },
         Some(&slope),
     ));
@@ -2807,12 +2808,45 @@ fn an_open_side_raises_no_wall_above_the_floor_course() {
         },
         Some(&slope),
     ));
+    // A side with no declaration is seamless: the landing with its `sides`
+    // removed derives the map of the landing declared open all round.
+    let absent = common::campaign_at(&variant(
+        "sides-absent",
+        |v| {
+            let i = landing_index(v);
+            v["content"]["boxes"][i]
+                .as_object_mut()
+                .unwrap()
+                .remove("sides");
+        },
+        Some(&slope),
+    ));
+    let all_open = common::campaign_at(&variant(
+        "sides-all-open",
+        |v| {
+            let i = landing_index(v);
+            v["content"]["boxes"][i]["sides"] = serde_json::json!({
+                "east": "open", "west": "open", "south": "open", "north": "open"
+            });
+        },
+        Some(&slope),
+    ));
+    assert_eq!(
+        mass_map(&absent),
+        mass_map(&all_open),
+        "a box with no `sides` is open all round"
+    );
+    assert_ne!(
+        mass_map(&absent),
+        mass_map(&walled),
+        "the open default stands no wall the walled box stands"
+    );
     let before = mass_map(&undeclared);
     let after = mass_map(&open);
     assert_eq!(
         mass_map(&walled),
         before,
-        "four walls are the undeclared box"
+        "the fixture declares its four walls"
     );
 
     let plan = SitePlan::of(&open);
@@ -2889,7 +2923,7 @@ fn an_open_side_is_a_stand_ins_opening_onto_the_commons() {
                 .iter_mut()
                 .find(|b| b["node"] == "node/landing")
                 .unwrap();
-            landing["sides"] = serde_json::json!({"north": "open"});
+            landing["sides"] = serde_json::json!({"north": "open", "east": "wall", "west": "wall", "south": "wall"});
         },
         None,
     ));
