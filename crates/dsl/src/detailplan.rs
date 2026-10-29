@@ -288,7 +288,14 @@ mod tests {
             open: false,
             base: crate::siteplan::Base::Ground,
             roof: None,
-            sides: Default::default(),
+            // Walled all round, the frame these tests were written for: a
+            // side with no declaration is open.
+            sides: crate::siteplan::Sides {
+                east: Some(crate::siteplan::SideKind::Wall),
+                west: Some(crate::siteplan::SideKind::Wall),
+                south: Some(crate::siteplan::SideKind::Wall),
+                north: Some(crate::siteplan::SideKind::Wall),
+            },
         }
     }
 
