@@ -20,7 +20,11 @@
 //! - which blocks the admission audit refuses (`DW0730`):
 //!   [`Allowlist::default_building`], the list `delvec detail` audits with;
 //! - which blocks the holder census counts as containers (`DW1018`,
-//!   `DW1024`): [`delvewright_dsl::blocks::container_kind`].
+//!   `DW1024`): [`delvewright_dsl::blocks::container_kind`];
+//! - which written states are no state of the pinned game, or leave a
+//!   property out: the pinned registry the `blocks-exist` and
+//!   `states-complete` gates judge the piece by
+//!   ([`delvewright_dsl::blocks::BlockRegistry`]).
 //!
 //! The request and the answer are JSON; nothing here writes a file.
 
@@ -81,6 +85,17 @@ pub struct Refused {
     pub route: Option<&'static str>,
 }
 
+/// A written state the pinned registry refuses, or one that leaves a
+/// property out — what `blocks-exist` and `states-complete` refuse in the
+/// finished piece.
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct Malformed {
+    /// The state, as written.
+    pub block: String,
+    /// What is wrong with it, in the registry's words.
+    pub why: String,
+}
+
 /// The engine's answers.
 #[derive(Debug, Serialize)]
 pub struct Answer {
@@ -102,6 +117,46 @@ pub struct Answer {
     pub refused: Vec<Refused>,
     /// Every distinct block the holder census counts as a container.
     pub containers: Vec<String>,
+    /// Every distinct written state (of `blocks` and `palette`) that is no
+    /// state of the pinned game — an unknown block, property or value — or
+    /// that leaves one of its block's properties out.
+    pub malformed: Vec<Malformed>,
+}
+
+/// Every distinct state of `states` the pinned registry refuses or finds
+/// incomplete, in state order.
+fn malformed<'a>(states: impl Iterator<Item = &'a str>) -> Vec<Malformed> {
+    let reg = delvewright_dsl::blocks::BlockRegistry::v1_21_11();
+    let distinct: BTreeSet<&str> = states.filter(|s| base_id(s) != "minecraft:air").collect();
+    let mut out = Vec::new();
+    for state in distinct {
+        let parsed: Result<BlockState, _> = state.parse();
+        let Ok(block) = parsed else {
+            out.push(Malformed {
+                block: state.to_string(),
+                why: "does not parse as a block state".to_string(),
+            });
+            continue;
+        };
+        if let Err(e) = reg.validate(&block.name, &block.properties) {
+            out.push(Malformed {
+                block: state.to_string(),
+                why: e.to_string(),
+            });
+            continue;
+        }
+        let omitted = reg.omitted_properties(&block.name, &block.properties);
+        if !omitted.is_empty() {
+            out.push(Malformed {
+                block: state.to_string(),
+                why: format!(
+                    "leaves out {} (every property of every block is written)",
+                    omitted.join(", ")
+                ),
+            });
+        }
+    }
+    out
 }
 
 /// The block id of a state: `minecraft:lantern[hanging=true]` → `minecraft:lantern`.
@@ -135,6 +190,12 @@ fn model_of(req: &Request) -> Result<VoxelModel, String> {
 
 /// Answer a request.
 pub fn survey(req: &Request) -> Result<Answer, String> {
+    let malformed = malformed(
+        req.blocks
+            .iter()
+            .map(|b| b.3.as_str())
+            .chain(req.palette.iter().map(String::as_str)),
+    );
     let model = model_of(req)?;
     let region = model.region();
     let max = region.maximum();
@@ -285,6 +346,7 @@ pub fn survey(req: &Request) -> Result<Answer, String> {
         unsupported,
         refused,
         containers,
+        malformed,
     })
 }
 

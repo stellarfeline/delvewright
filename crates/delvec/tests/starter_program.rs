@@ -400,6 +400,10 @@ def build(place):
         m.set(12, 3, 4, "lantern")
     if EDIT == "candle":
         m.set(4, 1, 13, "candle")
+    if EDIT == "no-such-block":
+        m.set(4, 1, 13, "minecraft:tuff_bricks_stairs[facing=north,half=bottom,shape=straight,waterlogged=false]")
+    if EDIT == "no-such-property":
+        m.set(4, 1, 13, "minecraft:muddy_mangrove_roots[waterlogged=false]")
     m.part(3, 8, 10, 14, "house")
     m.hollow(11, 16, 1, 1, 14, 17, "fence")
     for x in range(12, 16):
@@ -464,7 +468,7 @@ fn a_building_drawn_into_the_starter_s_model_is_claimed_from_the_engine_s_survey
     let run = run_generator(&tmp, &campaign, "no-door");
     assert!(run.status.success(), "{}", text(&run));
     assert!(
-        text(&run).contains("part/house is walked by declaration and no body reaches"),
+        text(&run).contains("part/house has no walkable column"),
         "{}",
         text(&run)
     );
@@ -492,5 +496,90 @@ fn a_building_drawn_into_the_starter_s_model_is_claimed_from_the_engine_s_survey
         text(&run).contains("minecraft:candle: the palette refuses it (DW0730)"),
         "{}",
         text(&run)
+    );
+
+    // A state the pinned game does not have is refused before anything is
+    // written: an unknown block, and an unknown property of a real one.
+    let program = campaign.join("programs").join("far.json");
+    for (edit, says) in [
+        (
+            "no-such-block",
+            "minecraft:tuff_bricks_stairs is not a block in Minecraft 1.21.11",
+        ),
+        (
+            "no-such-property",
+            "minecraft:muddy_mangrove_roots has no property \"waterlogged\"",
+        ),
+    ] {
+        let before = std::fs::read(&program).unwrap();
+        let run = run_generator(&tmp, &campaign, edit);
+        assert!(!run.status.success(), "{edit}: {}", text(&run));
+        assert!(text(&run).contains(says), "{edit}: {}", text(&run));
+        assert_eq!(
+            before,
+            std::fs::read(&program).unwrap(),
+            "{edit}: nothing written"
+        );
+    }
+}
+
+/// **Every block constructor the starter offers writes a full state of the
+/// pin**: each one's output, asked of the engine's survey, is a block of
+/// Minecraft 1.21.11 with every property written — what `blocks-exist` and
+/// `states-complete` judge in the finished piece. A misspelt state beside them
+/// is named, so the question is the engine's and not this test's.
+#[test]
+fn every_block_constructor_writes_a_full_state_of_the_pin() {
+    let tmp = tempdir("constructors");
+    let script = tmp.join("constructors.py");
+    std::fs::write(
+        &script,
+        r#"
+import json, os, sys
+sys.path.insert(0, os.path.join(os.environ["DELVEWRIGHT_SKILL"], "scripts"))
+import starter as s
+states = [
+    s.stairs("spruce", "north"), s.stairs("stone_brick", "east", "top", "outer_left"),
+    s.slab("deepslate_tile"), s.slab("spruce", "top"), s.pillar("spruce_log", "x"),
+    s.pillar("stripped_spruce_wood"), s.pillar("hay_block"),
+    s.door("spruce", "east", "lower"), s.door("spruce", "east", "upper", "right", True),
+    s.trapdoor("dark_oak", "north", "bottom", True), s.fence("spruce"),
+    s.fence_gate("oak", "south"), s.wall("cobblestone"), s.pane(), s.pane("iron_bars"),
+    s.lantern(), s.lantern(True, True), s.leaves("azalea"), s.bed("red", "east", "foot"),
+    s.candle(), s.candle(3, "white", True), s.torch(), s.wall_torch("west"), s.campfire(),
+    s.ladder("north"), s.chain("z"), s.barrel(), s.button("stone", "north"),
+    s.grass_block(), s.tall_plant("rose_bush", "lower"),
+]
+bad = "minecraft:oak_stairs[facing=east]"
+a = s.ask_engine(sys.argv[1], {"size": [1, 1, 1], "blocks": [], "palette": states + [bad]})
+print(json.dumps({"n": len(states), "malformed": a["malformed"]}))
+"#,
+    )
+    .unwrap();
+    let out = Command::new(python())
+        .arg(&script)
+        .arg(BIN)
+        .env(
+            "DELVEWRIGHT_SKILL",
+            starter().parent().unwrap().parent().unwrap(),
+        )
+        .output()
+        .expect("run the constructors");
+    assert!(out.status.success(), "{}", text(&out));
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let malformed = v["malformed"].as_array().unwrap();
+    assert_eq!(v["n"].as_u64(), Some(30), "{v}");
+    assert_eq!(
+        malformed.len(),
+        1,
+        "only the planted state is malformed: {v}"
+    );
+    assert_eq!(malformed[0]["block"], "minecraft:oak_stairs[facing=east]");
+    assert!(
+        malformed[0]["why"]
+            .as_str()
+            .unwrap()
+            .contains("leaves out half, shape, waterlogged"),
+        "{v}"
     );
 }

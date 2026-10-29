@@ -781,7 +781,9 @@ def shown_faces(p) -> list[str]:
 # `run` asks the engine (`delvec grammar survey`) what the drawing does — where
 # a body stands, what it reaches from the place's ways in, which air is sealed,
 # which spaces a walk joins, which blocks the server drops, which the palette
-# refuses — and claims every cell from those answers: a cell a body reaches
+# refuses, which written states the pinned game does not have — and refuses
+# before writing on any of the last three, or claims every cell from those
+# answers (a drawn model therefore needs a `delvec` binary, `--delvec`): a cell a body reaches
 # goes into the part whose column it stands in (the room where no part is
 # drawn); floor no body reaches, and the sealed air over it, is claimed
 # `unwalked`; a walk edge joins two spaces only where the engine proves a body
@@ -798,6 +800,128 @@ AIR = "~air"  # a cell the model clears: air, whatever the empty place had there
 DIRS = {"north": (0, -1), "south": (0, 1), "east": (1, 0), "west": (-1, 0)}
 OPP = {"north": "south", "south": "north", "east": "west", "west": "east"}
 CCW = {"north": "west", "west": "south", "south": "east", "east": "north"}
+
+
+# ---- block states, every property written ----
+#
+# Each constructor returns one full state: every property its block has at the
+# pinned version, written, so a generator never spells a state by hand. A
+# material is the block-name prefix the family is named by (`"spruce"`,
+# `"stone_brick"`, `"deepslate_tile"`, namespaced or bare). `run` asks the
+# engine whether every state the model writes is a state of the pinned game
+# and refuses before it writes anything when one is not, so a misspelt
+# material (`tuff_bricks_stairs`) or property is named at the generator, not
+# at `detail --check`. Connections (stair shapes, the arms of fences, walls,
+# panes and bars) are written straight here and derived from the neighbours by
+# `Model.finish`.
+
+
+def mc(name: str) -> str:
+    """`spruce` -> `minecraft:spruce`; a namespaced name is kept."""
+    return name if ":" in name else f"minecraft:{name}"
+
+
+def _b(v: bool) -> str:
+    return "true" if v else "false"
+
+
+def stairs(mat: str, facing: str, half: str = "bottom", shape: str = "straight") -> str:
+    return f"{mc(mat)}_stairs[facing={facing},half={half},shape={shape},waterlogged=false]"
+
+
+def slab(mat: str, kind: str = "bottom") -> str:
+    """`kind` is `bottom`, `top` or `double`."""
+    return f"{mc(mat)}_slab[type={kind},waterlogged=false]"
+
+
+def pillar(block: str, axis: str = "y") -> str:
+    """A block with an axis: a log, wood, a stripped log, a basalt or quartz
+    pillar, a hay bale. `block` is the whole block name (`spruce_log`)."""
+    return f"{mc(block)}[axis={axis}]"
+
+
+def door(mat: str, facing: str, half: str, hinge: str = "left", open: bool = False) -> str:
+    """One half of a door (`lower` or `upper`); `Model.door` stands both."""
+    return f"{mc(mat)}_door[facing={facing},half={half},hinge={hinge},open={_b(open)},powered=false]"
+
+
+def trapdoor(mat: str, facing: str, half: str = "bottom", open: bool = False) -> str:
+    return f"{mc(mat)}_trapdoor[facing={facing},half={half},open={_b(open)},powered=false,waterlogged=false]"
+
+
+def fence(mat: str) -> str:
+    return f"{mc(mat)}_fence[east=false,north=false,south=false,waterlogged=false,west=false]"
+
+
+def fence_gate(mat: str, facing: str, open: bool = False, in_wall: bool = False) -> str:
+    return f"{mc(mat)}_fence_gate[facing={facing},in_wall={_b(in_wall)},open={_b(open)},powered=false]"
+
+
+def wall(mat: str) -> str:
+    """A wall block (`stone_brick` -> `stone_brick_wall`)."""
+    return f"{mc(mat)}_wall[east=none,north=none,south=none,up=true,waterlogged=false,west=none]"
+
+
+def pane(block: str = "glass_pane") -> str:
+    """A pane or bars by its whole name: `glass_pane`, `white_stained_glass_pane`, `iron_bars`."""
+    return f"{mc(block)}[east=false,north=false,south=false,waterlogged=false,west=false]"
+
+
+def lantern(hanging: bool = False, soul: bool = False) -> str:
+    return f"minecraft:{'soul_' if soul else ''}lantern[hanging={_b(hanging)},waterlogged=false]"
+
+
+def leaves(mat: str, distance: int = 1) -> str:
+    """Persistent leaves (`azalea`, `oak`), which no decay takes."""
+    return f"{mc(mat)}_leaves[distance={distance},persistent=true,waterlogged=false]"
+
+
+def bed(colour: str, facing: str, part: str) -> str:
+    """One half of a bed (`foot` or `head`); `Model.bed` lays both."""
+    return f"minecraft:{colour}_bed[facing={facing},occupied=false,part={part}]"
+
+
+def candle(n: int = 1, colour: str | None = None, lit: bool = False) -> str:
+    name = f"{colour}_candle" if colour else "candle"
+    return f"minecraft:{name}[candles={n},lit={_b(lit)},waterlogged=false]"
+
+
+def torch() -> str:
+    return "minecraft:torch"
+
+
+def wall_torch(facing: str) -> str:
+    return f"minecraft:wall_torch[facing={facing}]"
+
+
+def campfire(facing: str = "north", lit: bool = True, soul: bool = False) -> str:
+    return f"minecraft:{'soul_' if soul else ''}campfire[facing={facing},lit={_b(lit)},signal_fire=false,waterlogged=false]"
+
+
+def ladder(facing: str) -> str:
+    return f"minecraft:ladder[facing={facing},waterlogged=false]"
+
+
+def chain(axis: str = "y") -> str:
+    return f"minecraft:iron_chain[axis={axis},waterlogged=false]"
+
+
+def barrel(facing: str = "up", open: bool = False) -> str:
+    return f"minecraft:barrel[facing={facing},open={_b(open)}]"
+
+
+def button(mat: str, facing: str, face: str = "wall") -> str:
+    """`face` is `floor`, `wall` or `ceiling`."""
+    return f"{mc(mat)}_button[face={face},facing={facing},powered=false]"
+
+
+def grass_block(snowy: bool = False) -> str:
+    return f"minecraft:grass_block[snowy={_b(snowy)}]"
+
+
+def tall_plant(block: str, half: str) -> str:
+    """One half of a two-high plant (`rose_bush`, `lilac`, `tall_grass`); `Model.tall` stands both."""
+    return f"{mc(block)}[half={half}]"
 
 
 class Model:
@@ -866,6 +990,82 @@ class Model:
     def mark(self, stem: str, x: int, z: int, facing: str = "south") -> None:
         """Stand the owed name `stem` on the floor at `(x, z)`."""
         self.marks[stem] = (x, z, facing)
+
+    # -- shapes a builder reaches for --
+
+    def door(self, x: int, y: int, z: int, mat: str, facing: str, hinge: str = "left", open: bool = False) -> None:
+        """A door's two halves, its lower half at `(x, y, z)`."""
+        self.set(x, y, z, door(mat, facing, "lower", hinge, open))
+        self.set(x, y + 1, z, door(mat, facing, "upper", hinge, open))
+
+    def bed(self, x: int, y: int, z: int, colour: str, facing: str) -> None:
+        """A bed's foot at `(x, y, z)`, its head the next cell toward `facing`."""
+        dx, dz = DIRS[facing]
+        self.set(x, y, z, bed(colour, facing, "foot"))
+        self.set(x + dx, y, z + dz, bed(colour, facing, "head"))
+
+    def tall(self, x: int, y: int, z: int, block: str) -> None:
+        """A two-high plant's halves, its lower half at `(x, y, z)`."""
+        self.set(x, y, z, tall_plant(block, "lower"))
+        self.set(x, y + 1, z, tall_plant(block, "upper"))
+
+    def roof(self, x0: int, x1: int, z0: int, z1: int, head: int, along: str, mat: str,
+             fill: str | None = None, overhang: int = 1, ridge: str | None = None, hip: bool = False) -> int:
+        """A pitched roof of `mat` stairs over walls `[x0..x1] x [z0..z1]`
+        (walls included) whose heads stand at course `head`. Its eave course
+        sits level with the wall heads, `overhang` cells out, and each course
+        rises one and steps one in, so the slope rests on the wall heads and
+        the loft under it is closed. A gable roof (the default) runs its
+        ridge along `along` (`"x"` or `"z"`) and fills its two gable ends
+        under the slope with `fill`; a hipped roof (`hip=True`) slopes on all
+        four sides and `along` is ignored. An odd span is capped with a
+        course of `ridge` (a `mat` slab by default). Returns the top course;
+        `Model.finish` turns the corner stairs."""
+        cap = ridge or slab(mat)
+        y0 = head - (overhang - 1) if overhang >= 1 else head + 1
+        ax0, ax1, az0, az1 = x0 - overhang, x1 + overhang, z0 - overhang, z1 + overhang
+        y = y0
+        if hip:
+            while ax0 <= ax1 and az0 <= az1:
+                if ax0 == ax1 or az0 == az1:
+                    self.box(ax0, ax1, y, y, az0, az1, cap)
+                    return y
+                for x in range(ax0, ax1 + 1):
+                    self.set(x, y, az0, stairs(mat, "south"))
+                    self.set(x, y, az1, stairs(mat, "north"))
+                for z in range(az0 + 1, az1):
+                    self.set(ax0, y, z, stairs(mat, "east"))
+                    self.set(ax1, y, z, stairs(mat, "west"))
+                ax0, ax1, az0, az1, y = ax0 + 1, ax1 - 1, az0 + 1, az1 - 1, y + 1
+            return y - 1
+        top = y0
+        if along == "x":
+            lo, hi = az0, az1
+            while lo <= hi:
+                top = y
+                if lo == hi:
+                    self.box(ax0, ax1, y, y, lo, lo, cap)
+                    break
+                self.box(ax0, ax1, y, y, lo, lo, stairs(mat, "south"))
+                self.box(ax0, ax1, y, y, hi, hi, stairs(mat, "north"))
+                if fill is not None and max(lo + 1, z0) <= min(hi - 1, z1):
+                    for x in (x0, x1):
+                        self.box(x, x, y, y, max(lo + 1, z0), min(hi - 1, z1), fill)
+                lo, hi, y = lo + 1, hi - 1, y + 1
+            return top
+        lo, hi = ax0, ax1
+        while lo <= hi:
+            top = y
+            if lo == hi:
+                self.box(lo, lo, y, y, az0, az1, cap)
+                break
+            self.box(lo, lo, y, y, az0, az1, stairs(mat, "east"))
+            self.box(hi, hi, y, y, az0, az1, stairs(mat, "west"))
+            if fill is not None and max(lo + 1, x0) <= min(hi - 1, x1):
+                for z in (z0, z1):
+                    self.box(max(lo + 1, x0), min(hi - 1, x1), y, y, z, z, fill)
+            lo, hi, y = lo + 1, hi - 1, y + 1
+        return top
 
     def states(self, r: str) -> list[str]:
         """Every block state a cell's value may write: one, or each variant."""
@@ -1012,6 +1212,8 @@ class Plot(Place):
         self.unwalked: set = set()
         self.standable: set = set()
         self.survey()
+        if self.seen_now:
+            self.survey()
 
     # -- what one cell is: the model's block over the empty place's claim --
 
@@ -1121,6 +1323,8 @@ class Plot(Place):
         }
         answer = ask_engine(type(self).DELVEC, request)
         problems = []
+        for b in answer["malformed"]:
+            problems.append(f"  {b['block']}: {b['why']}")
         for u in answer["unsupported"]:
             problems.append(f"  {u['block']} at {tuple(u['cell'])}: the server drops it; it needs {u['needs']}")
         for rf in answer["refused"]:
@@ -1144,9 +1348,16 @@ class Plot(Place):
             if e is None or e["walked"]:
                 unwalked.add(c)
         self.unwalked = unwalked
+        self.seen_now = []
         for e in self.parts:
-            if e["walked"] and not any((x, z) in set(e["cols"]) for (x, _, z) in self.reached):
-                print(f"starter.py: {e['part']['id']} is walked by declaration and no body reaches any of its floor from the ways in; open a way into it (DW1074)", file=sys.stderr)
+            cols = set(e["cols"])
+            if e["walked"] and not any((x, z) in cols for (x, _, z) in self.reached):
+                # No column of it holds floor a body walks onto from the ways
+                # in: a kiln, a stack, a shed drawn shut. The program declares
+                # it seen and never entered, and the survey is asked again.
+                e["walked"] = False
+                self.seen_now.append(e["part"]["id"])
+                print(f"starter.py: {e['part']['id']} has no walkable column — no body reaches any of its floor from the ways in — so the program declares it seen and never entered. If it is meant to be entered, open a way into it; if not, declare it `reached: false` in the layout graph's holds[], or `detail --check` refuses it (DW1074)", file=sys.stderr)
 
     def cuts(self, axis: int) -> list[Bound]:
         out = super().cuts(axis)
@@ -1253,7 +1464,21 @@ def plot_program(a: dict, reason: str) -> dict:
     # crosses from one to the other, never where their columns merely touch.
     walked = {e["region"] for e in p.parts if e["walked"]} | {"room"}
     c["edges"] = [e for e in c["edges"] if not (e["class"] == "walk" and e["a"] in walked and e["b"] in walked and "via" not in e)]
-    c["edges"] += [{"a": x, "b": y, "class": "walk"} for x, y in sorted(p.joined)]
+    # A walk between two spaces whose floors differ carries the rise the
+    # check measures: the lowest course each space's claimed cells reach
+    # (`min_y(b) - min_y(a)` over the resolved boxes).
+    low: dict[str, int] = {}
+    for x in range(p.ex):
+        for y in range(p.ey):
+            for z in range(p.ez):
+                k = p.cell(x, y, z)
+                if k[0] == "claim" and (k[1] not in low or y < low[k[1]]):
+                    low[k[1]] = y
+    for x, y in sorted(p.joined):
+        e = {"a": x, "b": y, "class": "walk"}
+        if x in low and y in low and low[y] != low[x]:
+            e["rise"] = low[y] - low[x]
+        c["edges"].append(e)
     if p.unwalked:
         c.setdefault("no_body", {})["unwalked"] = {"reason": reason}
         floor = sum(1 for cell in p.reached)

@@ -134,9 +134,14 @@ agent: *Reference: when the prefab library has no piece you need* and
    place into its `Model` as cells: the starter asks the engine (`delvec
    grammar survey`) where a body stands and what it reaches, claims every cell
    from the answer — reached floor into its part, unreached floor and the air
-   sealed over it `unwalked`, a walk edge only where a body crosses — and
-   refuses, naming block and cell, a block the server would drop or the
-   palette refuses. The handout lists the refused blocks and the containers
+   sealed over it `unwalked`, a walk edge only where a body crosses (with
+   its `rise` where the two floors differ), a part no body reaches declared
+   seen — and refuses before writing, naming block and cell, a block the
+   server would drop, the palette refuses, or the pinned game does not have
+   (a state that leaves a property out included). Its constructors
+   (`stairs`, `slab`, `door`, `trapdoor`, `fence`, …) write every property,
+   and `Model.roof` lays a roof whose eave sits level with the wall heads.
+   A drawn model needs a `delvec` binary on the machine running it. The handout lists the refused blocks and the containers
    the holder census counts. So an author starts from a passing program and
    never from research: nothing outside the handout's reading list — the
    engine's source, its gallery, another campaign — is needed or read. Where the
