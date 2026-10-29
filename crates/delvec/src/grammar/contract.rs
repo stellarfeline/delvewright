@@ -786,34 +786,13 @@ fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
         }
     }
 
-    // A space is one floor: its standable cells span at most two consecutive
-    // levels. Greater relief is two places and a transition, and a transition is
-    // an edge that owes a `rise`.
-    //
-    // Measured over the space's *walk*, so nested out-of-walk cells are left
-    // out: a corbel shelf eight courses up is not a second storey of the room,
-    // and §2.5 already excludes it from the walk for the same reason.
-    for name in &names {
-        let standable: BTreeSet<[i32; 3]> = ix
-            .standable_in(name)
-            .difference(&ix.all_no_body_cells)
-            .copied()
-            .collect();
-        let (Some(lo), Some(hi)) = (
-            standable.iter().map(|c| c[1]).min(),
-            standable.iter().map(|c| c[1]).max(),
-        ) else {
-            continue;
-        };
-        if hi - lo > 1 {
-            bad.push(format!(
-                "space {name:?} has standable floor at y {lo}..{hi}, which is {} levels — a space \
-                 is ONE floor (at most two consecutive levels, for a dais). Two levels are two \
-                 places and a transition, and a transition is an edge that owes a `rise`",
-                hi - lo + 1
-            ));
-        }
-    }
+    // A space spans as many levels as its blocks give it (a whole site — a
+    // castle with its ditches, halls and towers — is one space). What the old
+    // one-floor rule guaranteed is judged by the reach graph over the space's
+    // real cells, in `contract-reachability`: every standable cell is reached
+    // from the way in, and no cell of a space spanning more than two levels is a
+    // pocket a body falls into and cannot climb back out of
+    // ([`fall_in_pockets`]).
 
     // An out-of-walk region nests wholly inside one space, or touches none.
     for (name, region) in &ix.no_body_cells {
@@ -1066,7 +1045,7 @@ fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
         detail: if bad.is_empty() {
             format!(
                 "{} space(s), {} out-of-walk region(s) and {} edge(s) hold together: no overlap, \
-                 one floor each, every opening on the boundary it claims",
+                 every opening on the boundary it claims",
                 contract.spaces.len(),
                 contract.no_body.len(),
                 contract.edges.len()
@@ -1707,9 +1686,9 @@ fn edge_proof(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> 
     //
     // The defect cannot produce it: the population is empty only when the
     // document declares a single space, and a document cannot merge two spaces
-    // to dodge an edge proof without §2.1 refusing the merged space for
-    // spanning more than one floor, or §2.5 having to walk a body across the
-    // whole of it from the entry.
+    // to dodge an edge proof without §2.5 having to walk a body across the
+    // whole of it from the entry, and, where the merge spans more than two
+    // levels, judging every fall inside it for a way back (`fall_in_pockets`).
     let could_have = ix.contract.spaces.len() > 1;
     let empty_ok = (proved == 0 && !could_have && bad.is_empty()).then(|| {
         "the contract declares one space, so there is no interior edge that could have been \
@@ -2427,6 +2406,121 @@ pub(crate) fn class_proved(
 /// so: a seated, reached piece is refused that shape by `contract-well-formed`,
 /// so the fallback is left only to scenery and to a bare piece, whose entry has
 /// no subject yet.
+/// **The leave half of a many-level space** (what the one-floor rule kept):
+/// over the reach graph ([`body_world`]), every reached standable cell of a
+/// space spanning more than two levels must have a movement sequence back to
+/// where a body came into that space — the entry's mouths, or a cell a body
+/// first reaches the space at from outside it. A one-floor space could not hide
+/// a one-way fall; a many-level one can, and this names it.
+struct FallInPockets {
+    /// Spaces judged (more than two levels), cells judged, and the trapped.
+    spaces: Vec<String>,
+    judged: usize,
+    trapped: Vec<(String, Vec<[i32; 3]>)>,
+}
+
+impl FallInPockets {
+    fn line(&self) -> String {
+        format!(
+            "fall-in pockets (reach graph): {} space(s) spanning more than two levels judged ({}), \
+             {} standable cell(s) reached in them, {} pocket(s) a body cannot leave",
+            self.spaces.len(),
+            if self.spaces.is_empty() {
+                "none".to_string()
+            } else {
+                self.spaces.join(", ")
+            },
+            self.judged,
+            self.trapped.len()
+        )
+    }
+
+    fn refusal(&self) -> String {
+        let named: Vec<String> = self
+            .trapped
+            .iter()
+            .map(|(space, cells)| {
+                format!(
+                    "space {space:?}: {} cell(s) {}",
+                    cells.len(),
+                    describe_cells(&cells.iter().copied().collect())
+                )
+            })
+            .collect();
+        format!(
+            "{} place(s) in a many-level space a body can get into and not out of, by the reach \
+             graph's moves: {} — give whoever falls in a way back (a step, a stair, a lower wall) \
+             or close the gap they fall through",
+            self.trapped.len(),
+            named.join(" · ")
+        )
+    }
+}
+
+fn fall_in_pockets(ix: &Index, model: &VoxelModel, start: &BTreeSet<[i32; 3]>) -> FallInPockets {
+    let mut out = FallInPockets {
+        spaces: Vec::new(),
+        judged: 0,
+        trapped: Vec::new(),
+    };
+    let many: Vec<(&str, BTreeSet<[i32; 3]>)> = ix
+        .space_cells
+        .keys()
+        .copied()
+        .filter_map(|name| {
+            let standable: BTreeSet<[i32; 3]> = ix
+                .standable_in(name)
+                .difference(&ix.all_no_body_cells)
+                .copied()
+                .collect();
+            let lo = standable.iter().map(|c| c[1]).min()?;
+            let hi = standable.iter().map(|c| c[1]).max()?;
+            (hi - lo > 1).then(|| (name, ix.space(name).clone()))
+        })
+        .collect();
+    if many.is_empty() {
+        return out;
+    }
+    let world = body_world(model);
+    let seeds: Vec<[i32; 3]> = start
+        .iter()
+        .flat_map(|c| world.released_at(*c))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let reach = world.body_reach(&seeds);
+    let reached = reach.cells();
+    for (name, space) in many {
+        out.spaces.push(name.to_string());
+        let roots: Vec<[i32; 3]> = reached.intersection(&space).copied().collect();
+        out.judged += roots.len();
+        if roots.is_empty() {
+            continue;
+        }
+        // Where a body comes into the space: a seed inside it, or a reached cell
+        // of it whose predecessor stands outside it.
+        let mouths: BTreeSet<[i32; 3]> = roots
+            .iter()
+            .filter(|c| {
+                seeds.contains(c)
+                    || reach
+                        .preds
+                        .get(*c)
+                        .is_some_and(|ps| ps.iter().any(|(p, _)| !space.contains(p)))
+            })
+            .copied()
+            .collect();
+        let places = world.trapped_places(&roots, &mouths, None);
+        for pocket in places.pockets {
+            let inside: Vec<[i32; 3]> = pocket.into_iter().filter(|c| space.contains(c)).collect();
+            if !inside.is_empty() {
+                out.trapped.push((name.to_string(), inside));
+            }
+        }
+    }
+    out
+}
+
 struct EntrySeeds {
     /// The cells the walk may start from; filtered per opening state to the
     /// cells a body stands in.
@@ -2553,6 +2647,8 @@ fn reachability(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -
         }
     }
     let unreached: BTreeSet<[i32; 3]> = targets.difference(&reached).copied().collect();
+    let pockets = fall_in_pockets(ix, model, start);
+    enumeration.push(pockets.line());
     let from = if seeds.ways_in > 0 {
         format!(
             "the mouth(s) of the entry space {:?}'s {} way(s) in ({} cell(s))",
@@ -2581,7 +2677,11 @@ fn reachability(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -
 
     Gate {
         id: "contract-reachability",
-        state: verdict(unreached.is_empty() && (!targets.is_empty() || ix.sealed || ix.unseated)),
+        state: verdict(
+            unreached.is_empty()
+                && pockets.trapped.is_empty()
+                && (!targets.is_empty() || ix.sealed || ix.unseated),
+        ),
         undecided: 0,
         empty_ok: targets
             .is_empty()
@@ -2592,7 +2692,9 @@ fn reachability(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -
             })
             .flatten(),
         bound: targets.len(),
-        detail: if !unreached.is_empty() {
+        detail: if !pockets.trapped.is_empty() && unreached.is_empty() {
+            pockets.refusal()
+        } else if !unreached.is_empty() {
             format!(
                 "{} of {} standable cell(s) in declared space cannot be reached from {from} by \
                  a walk confined to declared spaces and crossing only through declared edges — \
