@@ -1482,7 +1482,7 @@ fn prove_class(
             }
         }
         "walk" => {
-            if joined(graph, a, b) && joined(graph, b, a) {
+            if walk_joined(model, graph, a, b) {
                 Ok(())
             } else {
                 Err("a walk connects both ways, and this one does not".to_string())
@@ -1515,6 +1515,22 @@ fn prove_class(
         }
         _ => Ok(()),
     }
+}
+
+/// **Does a `walk` join `a` and `b` both ways, over the floor `graph` names**
+/// — the edge proof's one answer for a walk: [`body_connected`] each way over
+/// the model with every standable cell outside `graph` walled up
+/// ([`nav::walled`]), so a jump cannot cross floor the edge was not given.
+/// `delvec grammar survey` asks this for an author's pair of spaces, so the
+/// edge a starter declares is the edge this gate proves.
+pub(crate) fn walk_joined(
+    model: &VoxelModel,
+    graph: &BTreeSet<[i32; 3]>,
+    a: &BTreeSet<[i32; 3]>,
+    b: &BTreeSet<[i32; 3]>,
+) -> bool {
+    let world = body_world(&nav::walled(model, graph));
+    body_connected(&world, graph, a, b) && body_connected(&world, graph, b, a)
 }
 
 fn edge_proof(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> Gate {
@@ -1730,7 +1746,7 @@ fn edge_proof(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> 
 /// The model's region is the artifact's bounding box, so a cell there is closed
 /// on that side by nothing but the end of the world, and a blanket declared out
 /// to it would otherwise buy `sealed` for the whole sky (spec-0047 §1.4).
-fn on_outer_layer(model: &VoxelModel, cell: [i32; 3]) -> bool {
+pub(crate) fn on_outer_layer(model: &VoxelModel, cell: [i32; 3]) -> bool {
     let region = model.region();
     let min = region.origin;
     let max = region.maximum();
@@ -1744,7 +1760,7 @@ fn on_outer_layer(model: &VoxelModel, cell: [i32; 3]) -> bool {
 /// buy the kind. A stranded cell is stranded *with respect to something that
 /// reaches its air* — the sky, the exterior, or play air through the breach —
 /// and each of those is a cell in this set that no `no_body` declaration covers.
-fn passable_component(model: &VoxelModel, seed: [i32; 3]) -> BTreeSet<[i32; 3]> {
+pub(crate) fn passable_component(model: &VoxelModel, seed: [i32; 3]) -> BTreeSet<[i32; 3]> {
     let mut seen: BTreeSet<[i32; 3]> = BTreeSet::new();
     if !nav::passable(model, seed) {
         return seen;

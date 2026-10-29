@@ -5,7 +5,7 @@
 //! deterministic expander does geometry, machine gates judge the result** —
 //! needs an entry point a creator can invoke; this is it.
 //!
-//! Six commands. The first four are the steps of the loop; the last two ask
+//! Eight commands. The first four are the steps of the loop; the next two ask
 //! what the corpus those steps start from demonstrates, and whether every
 //! member of it still holds up.
 //!
@@ -16,7 +16,13 @@
 //! delvec grammar expand --file scene.json --region 11x6x13 -o out/   # build + judge + freeze
 //! delvec grammar coverage                              # what no example demonstrates
 //! delvec grammar audit --library --campaign-root ../content  # judge EVERY program
+//! delvec grammar survey --file request.json            # what the engine says of a drawn model
+//! delvec grammar blocks                                # the blocks a place may write
 //! ```
+//!
+//! The last two serve a place generator (`scripts/starter.py`): it draws its
+//! building as cells and asks the engine where a body goes and which blocks
+//! hold, rather than keeping a second answer of its own (`grammar::survey`).
 //!
 //! `expand` judges the one program an operator names, which leaves the corpus
 //! itself judged only when somebody remembers to walk it — and a campaign's
@@ -55,9 +61,26 @@ pub struct GrammarArgs {
     pub command: GrammarCommand,
 }
 
-/// The six verbs of `delvec grammar`.
+/// The verbs of `delvec grammar`.
 #[derive(Clone, Subcommand)]
 pub enum GrammarCommand {
+    /// What the engine says of a voxel model a place generator draws
+    /// (`grammar::survey`): where a body stands, what it reaches from the
+    /// ways in, which air is sealed, which declared spaces a walk joins,
+    /// which blocks the pinned server drops (`DW1002`), which the admission
+    /// audit refuses (`DW0730`) and which the holder census counts as
+    /// containers. Reads the request JSON from `--file`, prints the answer
+    /// JSON on stdout; writes nothing.
+    Survey {
+        /// The request: `{size, blocks: [[x, y, z, state], …], keep?, from?, spaces?, palette?}`.
+        #[arg(long)]
+        file: PathBuf,
+    },
+    /// The pinned registry's blocks as a place author plans with them: every
+    /// block the admission audit admits, every block it refuses (`DW0730`)
+    /// with the surface it is had through instead, and every block the holder
+    /// census counts as a container (`DW1018`, `DW1024`). JSON on stdout.
+    Blocks,
     /// List every program in the rule library, with its knobs.
     List,
     /// Validate a program's structure without expanding it.
@@ -1434,10 +1457,41 @@ fn run_audit(
     }
 }
 
+/// `delvec grammar survey --file <request.json>`.
+fn run_survey(file: &Path) -> ExitCode {
+    let text = match std::fs::read_to_string(file) {
+        Ok(t) => t,
+        Err(e) => return bad_input(format!("cannot read {}: {e}", file.display())),
+    };
+    let req: crate::grammar::survey::Request = match serde_json::from_str(&text) {
+        Ok(r) => r,
+        Err(e) => return bad_input(format!("{} is not a survey request: {e}", file.display())),
+    };
+    match crate::grammar::survey::survey(&req) {
+        Ok(answer) => {
+            println!(
+                "{}",
+                serde_json::to_string(&answer).expect("the survey answer serialises")
+            );
+            ExitCode::SUCCESS
+        }
+        Err(e) => bad_input(e),
+    }
+}
+
 /// Run `delvec grammar`.
 pub fn run(args: GrammarArgs) -> ExitCode {
     match args.command {
         GrammarCommand::List => run_list(),
+        GrammarCommand::Survey { file } => run_survey(&file),
+        GrammarCommand::Blocks => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&crate::grammar::survey::blocks())
+                    .expect("the block lists serialise")
+            );
+            ExitCode::SUCCESS
+        }
         GrammarCommand::Audit {
             library,
             campaign_roots,

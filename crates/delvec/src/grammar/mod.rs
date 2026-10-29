@@ -120,6 +120,7 @@ pub mod orient;
 pub mod rng;
 pub mod settle;
 pub mod split;
+pub mod survey;
 pub mod version;
 
 pub use block::BlockState;

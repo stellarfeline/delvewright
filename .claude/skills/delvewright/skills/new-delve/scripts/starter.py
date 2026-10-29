@@ -573,16 +573,27 @@ def marks(p: Place, inner: dict) -> dict:
         for dz in range(0, max(p.ex, p.ez)):
             for x2, z2 in ((x, z + dz), (x, z - dz), (x + dz, z), (x - dz, z)):
                 if lo[0] <= x2 <= hi[0] and lo[2] <= z2 <= hi[2] and (x2, z2) not in taken:
-                    if p.walkable(p.cell(x2, p.datum.value, z2)) and p.walkable(p.cell(x2, p.datum.value + 1, z2)) and p.cell(x2, p.datum.value - 1, z2) == ("fill", "floor"):
+                    if p.walkable(p.cell(x2, p.datum.value, z2)) and p.walkable(p.cell(x2, p.datum.value + 1, z2)) and p.cell(x2, p.datum.value - 1, z2)[0] == "fill":
                         taken.add((x2, z2))
                         return x2, z2
         sys.exit("starter.py: no free floor cell for a mark; the play space is full")
 
     out = inner
+    drawn = getattr(getattr(p, "model", None), "marks", {})
+    for x, z, _ in drawn.values():
+        taken.add((x, z))
     for name in reversed(p.a["owed_anchors"]):
         stem = name.removeprefix("anchor/")
         if stem.startswith("seam-") or any(g["stem"] == stem for g in p.gates):
             continue  # answered by a barred edge's region, never a mark
+        if stem in drawn:
+            # Where the generator's model stands it: on floor a body reaches.
+            x, z, facing = drawn[stem]
+            if not p.walkable(p.cell(x, p.datum.value, z)):
+                sys.exit(f"starter.py: the mark `{stem}` the model stands at ({x}, {z}) is not on floor a body reaches: {p.cell(x, p.datum.value, z)}")
+            mark = {"anchor": stem, "at": "offset", "facing": facing, "y": p.datum.expr, "x": num(x), "z": num(z)}
+            out = {"body": out, "mark": mark, "op": "mark"}
+            continue
         mark = {"anchor": stem, "at": "offset", "facing": "south", "y": p.datum.expr}
         if stem == "spawn":
             mark["role"] = "entry"
@@ -742,17 +753,534 @@ def shown_faces(p) -> list[str]:
     return sorted(faces)
 
 
-def main(argv: list[str] | None = None) -> int:
+# ════════════════════════════════════════════════════════════════════════
+# A building drawn as cells
+#
+# A place generator does not edit the body above. It draws its buildings,
+# yards and life into a `Model` — cells in piece-local coordinates (+x east,
+# +z south, the walk plane at `place.datum.value`) — and hands the drawing to
+# `run`:
+#
+#     import os, sys
+#     sys.path.insert(0, os.path.join(os.environ["DELVEWRIGHT_SKILL"], "scripts"))
+#     from starter import Model, run
+#
+#     def build(place):
+#         m = Model(place)
+#         m.palette["boards"] = "minecraft:spruce_planks"
+#         m.box(3, 8, 1, 4, 3, 7, "boards")          # x0, x1, y0, y1, z0, z1, inclusive
+#         m.clear(4, 7, 1, 3, 4, 6)                    # the room inside
+#         m.part(3, 8, 3, 7, "house")                  # the columns of part/house
+#         return m
+#
+#     raise SystemExit(run(build))
+#
+# `run` asks the engine (`delvec grammar survey`) what the drawing does — where
+# a body stands, what it reaches from the place's ways in, which air is sealed,
+# which spaces a walk joins, which blocks the server drops, which the palette
+# refuses — and claims every cell from those answers: a cell a body reaches
+# goes into the part whose column it stands in (the room where no part is
+# drawn); floor no body reaches, and the sealed air over it, is claimed
+# `unwalked`; a walk edge joins two spaces only where the engine proves a body
+# crosses. Nothing here decides where a body goes.
+# ════════════════════════════════════════════════════════════════════════
+
+import os
+import shutil
+import subprocess
+import tempfile
+
+AIR = "~air"  # a cell the model clears: air, whatever the empty place had there
+
+DIRS = {"north": (0, -1), "south": (0, 1), "east": (1, 0), "west": (-1, 0)}
+OPP = {"north": "south", "south": "north", "east": "west", "west": "east"}
+CCW = {"north": "west", "west": "south", "south": "east", "east": "north"}
+
+
+class Model:
+    """The place as cells a generator draws into.
+
+    A cell holds a palette role (a key of `palette`, which may be a weighted
+    list) or a literal block state (`minecraft:…`, every property written).
+    The cells of every seam's opening stay the connection's: a write into one
+    is skipped and counted. `part` names a column's part; `mark` stands an
+    owed name.
+    """
+
+    def __init__(self, place: "Place") -> None:
+        self.place = place
+        self.ex, self.ey, self.ez = place.n
+        self.palette: dict = dict(PALETTE)
+        self.v: dict[tuple[int, int, int], str] = {}
+        self.region: dict[tuple[int, int], str] = {}
+        self.marks: dict[str, tuple[int, int, str]] = {}
+        self.skipped = 0
+        self.no_touch: set[tuple[int, int, int]] = set()
+        for s in place.seams:
+            lo, hi = [b.value for b in s["lo"]], [b.value for b in s["hi"]]
+            for x in range(lo[0], hi[0]):
+                for y in range(lo[1], hi[1]):
+                    for z in range(lo[2], hi[2]):
+                        self.no_touch.add((x, y, z))
+
+    def set(self, x: int, y: int, z: int, role: str) -> None:
+        if not (0 <= x < self.ex and 0 <= y < self.ey and 0 <= z < self.ez):
+            return
+        if (x, y, z) in self.no_touch:
+            self.skipped += 1
+            return
+        self.v[(x, y, z)] = role
+
+    def get(self, x: int, y: int, z: int) -> str | None:
+        return self.v.get((x, y, z))
+
+    def box(self, x0, x1, y0, y1, z0, z1, role: str) -> None:
+        """Fill a box, inclusive on every axis."""
+        for x in range(min(x0, x1), max(x0, x1) + 1):
+            for y in range(min(y0, y1), max(y0, y1) + 1):
+                for z in range(min(z0, z1), max(z0, z1) + 1):
+                    self.set(x, y, z, role)
+
+    def clear(self, x0, x1, y0, y1, z0, z1) -> None:
+        self.box(x0, x1, y0, y1, z0, z1, AIR)
+
+    def hollow(self, x0, x1, y0, y1, z0, z1, role: str) -> None:
+        """Four walls of a box, inclusive; the inside untouched."""
+        for y in range(min(y0, y1), max(y0, y1) + 1):
+            for x in range(min(x0, x1), max(x0, x1) + 1):
+                self.set(x, y, z0, role)
+                self.set(x, y, z1, role)
+            for z in range(min(z0, z1), max(z0, z1) + 1):
+                self.set(x0, y, z, role)
+                self.set(x1, y, z, role)
+
+    def part(self, x0, x1, z0, z1, stem: str) -> None:
+        """The columns `[x0..x1] x [z0..z1]` are `part/<stem>`'s."""
+        for x in range(min(x0, x1), max(x0, x1) + 1):
+            for z in range(min(z0, z1), max(z0, z1) + 1):
+                self.region[(x, z)] = stem
+
+    def mark(self, stem: str, x: int, z: int, facing: str = "south") -> None:
+        """Stand the owed name `stem` on the floor at `(x, z)`."""
+        self.marks[stem] = (x, z, facing)
+
+    def states(self, r: str) -> list[str]:
+        """Every block state a cell's value may write: one, or each variant."""
+        if r == AIR:
+            return ["minecraft:air"]
+        if r.startswith("minecraft:"):
+            return [r]
+        b = self.palette.get(r)
+        if b is None:
+            sys.exit(f"starter.py: the model paints the role `{r}`, which its palette does not bind")
+        return [v["block"] for v in b] if isinstance(b, list) else [b]
+
+    def state(self, r: str) -> str:
+        return self.states(r)[0]
+
+    def finish(self) -> None:
+        """Write every connecting block as the game derives it from its
+        neighbours: stair shapes, and the arms of panes, bars, fences and
+        walls. A building helper: the arms are read off the neighbours' names,
+        never asked of the engine."""
+        self._stairs()
+        self._arms()
+
+    def _props(self, r):
+        if r is None or r == AIR:
+            return None
+        s = self.state(r) if not r.startswith("minecraft:") else r
+        if "_stairs[" not in s:
+            return None
+        kv = dict(p.split("=") for p in s[s.index("[") + 1:-1].split(","))
+        return kv["facing"], kv["half"], s
+
+    def _stairs(self) -> None:
+        new = {}
+        for (x, y, z), r in list(self.v.items()):
+            st = self._props(r)
+            if st is None:
+                continue
+            f, h, s = st
+
+            def at(dx, dz):
+                return self._props(self.v.get((x + dx, y, z + dz)))
+
+            def take(face):
+                n = at(*DIRS[face])
+                return n is None or n[0] != f or n[1] != h
+
+            shape = "straight"
+            dx, dz = DIRS[f]
+            front = at(dx, dz)
+            if front and front[1] == h and (front[0] in ("north", "south")) != (f in ("north", "south")) and take(OPP[front[0]]):
+                shape = "outer_left" if front[0] == CCW[f] else "outer_right"
+            if shape == "straight":
+                back = at(-dx, -dz)
+                if back and back[1] == h and (back[0] in ("north", "south")) != (f in ("north", "south")) and take(back[0]):
+                    shape = "inner_left" if back[0] == CCW[f] else "inner_right"
+            if shape != "straight":
+                new[(x, y, z)] = s.replace("shape=straight", f"shape={shape}")
+        self.v.update(new)
+
+    @staticmethod
+    def _family(s: str) -> str | None:
+        b = s.split("[")[0]
+        if b.endswith("glass_pane") or b.endswith("_bars"):
+            return "pane"
+        if b.endswith("_fence_gate"):
+            return "gate"
+        if b.endswith("_fence"):
+            return "fence"
+        if b.endswith("_wall"):
+            return "wall"
+        return None
+
+    def _arms(self) -> None:
+        def solid(s: str) -> bool:
+            # A neighbour a connecting block joins as it joins a full block:
+            # anything that is not thin, partial or passable by its name.
+            b = s.split("[")[0]
+            thin = ("_slab", "_stairs", "_trapdoor", "_door", "_carpet", "_pressure_plate", "_button", "_sign",
+                    "_banner", "_torch", "torch", "lantern", "_candle", "candle", "flower_pot", "_leaves", "_fence",
+                    "_wall", "_pane", "_bars", "_fence_gate", "ladder", "_chain", "air", "short_grass", "fern")
+            return not b.startswith("minecraft:potted_") and not any(b.endswith(t) for t in thin)
+
+        new = {}
+        for (x, y, z), r in list(self.v.items()):
+            if r == AIR:
+                continue
+            s = r if r.startswith("minecraft:") else self.state(r)
+            if isinstance(self.palette.get(r), list):
+                continue
+            fam = self._family(s)
+            if fam not in ("pane", "fence", "wall"):
+                continue
+            arms = {}
+            for face, (dx, dz) in DIRS.items():
+                nr = self.v.get((x + dx, y, z + dz))
+                ns = "" if nr in (None, AIR) else (nr if nr.startswith("minecraft:") else self.state(nr))
+                nf = self._family(ns) if ns else None
+                arms[face] = bool(ns) and (solid(ns) or nf == fam or (fam == "fence" and nf == "gate") or (fam == "wall" and nf in ("pane", "gate")))
+            base = s.split("[")[0]
+            if fam == "wall":
+                straight = (arms["north"] and arms["south"] and not arms["east"] and not arms["west"]) or (arms["east"] and arms["west"] and not arms["north"] and not arms["south"])
+                up = not straight or self.v.get((x, y + 1, z)) not in (None, AIR)
+                st = ",".join(f"{f}={'low' if arms[f] else 'none'}" for f in ("east", "north", "south"))
+                new[(x, y, z)] = f"{base}[{st},up={str(up).lower()},waterlogged=false,west={'low' if arms['west'] else 'none'}]"
+            else:
+                st = ",".join(f"{f}={str(arms[f]).lower()}" for f in ("east", "north", "south"))
+                new[(x, y, z)] = f"{base}[{st},waterlogged=false,west={str(arms['west']).lower()}]"
+        self.v.update(new)
+
+
+class Plot(Place):
+    """The starter's place, with a generator's model in place of the empty room.
+
+    What the model draws stands; every rule above still binds the handing
+    (datum, seams, open sides, owed names). On a model there is no ring wall
+    and no sconce: a wall belongs to a building, and so does its light."""
+
+    BUILD = None  # (place) -> Model, set by `run`
+    DELVEC = "delvec"
+
+    def lay_parts(self, parts: list[dict]) -> None:
+        self.model = type(self).BUILD(self)
+        if not isinstance(self.model, Model):
+            sys.exit("starter.py: the generator's build(place) returns no Model")
+        by_stem = {p["id"].removeprefix("part/"): p for p in parts}
+        unknown = sorted(set(self.model.region.values()) - set(by_stem))
+        if unknown:
+            sys.exit(f"starter.py: the model names part(s) the place does not hold: {unknown}; it holds {sorted(by_stem)}")
+        missing = [f"part/{s} ({p['cells']} cell(s), {p['use']})" for s, p in by_stem.items() if s not in set(self.model.region.values())]
+        if missing:
+            sys.exit("starter.py: the model lays no column for " + ", ".join(missing) + "; name each part's columns with `Model.part`")
+        self.parts, self.col_part = [], {}
+        for stem, p in by_stem.items():
+            e = {"part": p, "region": f"part-{stem}", "walked": p.get("reached", True), "cols": []}
+            self.parts.append(e)
+            for c, st in sorted(self.model.region.items()):
+                if st == stem:
+                    e["cols"].append(c)
+                    self.col_part[c] = e
+        self.reached: set = set()
+        self.unwalked: set = set()
+        self.survey()
+
+    # -- what one cell is: the model's block over the empty place's claim --
+
+    def base_cell(self, x: int, y: int, z: int) -> tuple:
+        kind = Place.base_cell(self, x, y, z)
+        if kind[0] == "claim" and kind[1].endswith("-way"):
+            return kind  # a seam's opening, kept clear
+        r = self.model.get(x, y, z)
+        c = (x, y, z)
+        if r is not None and r != AIR:
+            # A drawn block: claimed with the block in it where a body
+            # stands in it (a flower, a carpet), out of walk where the floor
+            # is one no body reaches, and only written everywhere else.
+            if c in self.unwalked:
+                return ("claim", "unwalked", r)
+            if c in self.reached:
+                region = kind[1] if kind[0] == "claim" and not self.in_space_xz(x, z) else None
+                e = self.col_part.get((x, z))
+                return ("claim", region or (e["region"] if e is not None else "room"), r)
+            return ("fill", r)
+        if not self.in_space_xz(x, z):
+            if kind in (("fill", "wall"), ("fill", "lamp")):
+                return ("claim", "room", None)  # no wall marks the place's edge
+            if kind[0] == "claim" and kind[1].startswith("side-"):
+                # An open side's ring cell is a way out only where the cell
+                # inside it is air a body walks; beside a wall, a hedge, an
+                # eave or a bush it is the place's own air, the room's.
+                lo, hi = self.space
+                inner = (min(max(x, lo[0]), hi[0]), y, min(max(z, lo[2]), hi[2]))
+                ik = self.cell(*inner)
+                if not (self.walkable(ik) or (ik[0] == "claim" and ik[1].endswith("-way"))):
+                    return ("claim", "room", None)
+            return kind
+        if r is None and y < self.datum.value:
+            return kind  # the ground the empty place lays
+        if c in self.unwalked:
+            return ("claim", "unwalked", None)
+        return kind if kind[0] == "claim" else ("claim", "room", None)
+
+    def block_of(self, kind: tuple) -> str:
+        """The block a cell's kind writes (a weighted role's first variant)."""
+        if kind[0] == "void":
+            return "minecraft:air"
+        role = kind[1] if kind[0] == "fill" else kind[2]
+        if role is None:
+            return "minecraft:air"
+        if role.startswith("minecraft:"):
+            return role
+        return self.model.state(role)
+
+    # -- the engine's answers --
+
+    def survey(self) -> None:
+        """Ask `delvec grammar survey` what the drawing does, and keep its answers."""
+        m = self.model
+        lo, hi = self.space
+        d = self.datum.value
+        voids = set()
+        for v in self.a.get("voids", []) or []:
+            (vx0, vy0, vz0), (vx1, vy1, vz1) = v["cells"]
+            voids |= {(vx, vy, vz) for vx in range(vx0, vx1 + 1) for vy in range(vy0, vy1 + 1) for vz in range(vz0, vz1 + 1)}
+        blocks = []
+        for x in range(self.ex):
+            for y in range(self.ey):
+                for z in range(self.ez):
+                    if (x, y, z) in voids:
+                        blocks.append([x, y, z, "minecraft:structure_void"])
+                        continue
+                    b = self.block_of(self.cell(x, y, z))
+                    if b != "minecraft:air":
+                        blocks.append([x, y, z, b])
+        # Where a body comes in: every seam's opening and every open side.
+        start = []
+        for s in self.seams:
+            sl, sh = [b.value for b in s["lo"]], [b.value for b in s["hi"]]
+            start += [[x, y, z] for x in range(sl[0], sh[0]) for y in range(sl[1], sh[1]) for z in range(sl[2], sh[2])]
+        for sd in self.sides:
+            start += [[x, yy, z] for x in range(sd["lo"][0], sd["hi"][0] + 1) for z in range(sd["lo"][1], sd["hi"][1] + 1) for yy in (d, d + 1)]
+        spaces: dict[str, list] = {"room": []}
+        for e in self.parts:
+            if e["walked"]:
+                spaces[e["region"]] = []
+        for x in range(lo[0] - 1, hi[0] + 2):
+            for z in range(lo[2] - 1, hi[2] + 2):
+                if not self.in_space_xz(x, z) and self.open_side(x, z) is not None:
+                    continue  # an open side's ring is the way out, no space's
+                e = self.col_part.get((x, z))
+                name = "room" if e is None else (e["region"] if e["walked"] else None)
+                if name is None:
+                    continue
+                spaces[name] += [[x, y, z] for y in range(d, self.ey) if (x, y, z) not in m.no_touch]
+        palette = sorted({b for r in set(m.v.values()) for b in m.states(r)} | {b for k, v in m.palette.items() for b in m.states(k)})
+        request = {
+            "size": [self.ex, self.ey, self.ez],
+            "blocks": blocks,
+            "keep": [[lo[0] - 1, 0, lo[2] - 1], [hi[0] + 1, self.ey - 1, hi[2] + 1]],
+            "from": start,
+            "spaces": spaces,
+            "palette": palette,
+        }
+        answer = ask_engine(type(self).DELVEC, request)
+        problems = []
+        for u in answer["unsupported"]:
+            problems.append(f"  {u['block']} at {tuple(u['cell'])}: the server drops it; it needs {u['needs']}")
+        for rf in answer["refused"]:
+            route = f" — {rf['route']}" if rf.get("route") else ""
+            problems.append(f"  {rf['block']}: the palette refuses it (DW0730){route}")
+        if problems:
+            sys.exit("starter.py: the model writes blocks the engine refuses:\n" + "\n".join(problems))
+        if m.skipped:
+            print(f"starter.py: {m.skipped} write(s) into a seam's opening skipped; the opening stays the connection's", file=sys.stderr)
+        if answer["containers"]:
+            print("starter.py: containers the holder census counts (DW1018, DW1024): " + ", ".join(answer["containers"]), file=sys.stderr)
+        standable = {tuple(c) for c in answer["standable"]}
+        self.reached = {tuple(c) for c in answer["reached"]}
+        self.joined = [tuple(p) for p in answer["joined"]]
+        unwalked = set()
+        for c in standable | {tuple(c) for c in answer["sealed"]}:
+            x, y, z = c
+            if not self.in_space_xz(x, z) or c in self.reached or y < 1:
+                continue
+            e = self.col_part.get((x, z))
+            if e is None or e["walked"]:
+                unwalked.add(c)
+        self.unwalked = unwalked
+
+    def cuts(self, axis: int) -> list[Bound]:
+        out = super().cuts(axis)
+        best = {b.value: b for b in out}
+        for v in range(self.n[axis]):
+            best.setdefault(v, lit(v))
+        return [best[v] for v in sorted(best)]
+
+
+def ask_engine(delvec: str, request: dict) -> dict:
+    """`delvec grammar survey` over `request`, answered as JSON."""
+    exe = shutil.which(delvec) or delvec
+    with tempfile.TemporaryDirectory(prefix="starter-survey-", dir=os.environ.get("DELVEWRIGHT_SCRATCH")) as tmp:
+        path = os.path.join(tmp, "request.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(request, f)
+        try:
+            r = subprocess.run([exe, "grammar", "survey", "--file", path], capture_output=True, text=True, check=False)
+        except FileNotFoundError:
+            sys.exit(f"starter.py: no `{delvec}` to ask; pass --delvec, or source .out/env.sh")
+    if r.returncode != 0:
+        sys.exit(f"starter.py: `{delvec} grammar survey` exited {r.returncode}: {r.stderr.strip()}")
+    return json.loads(r.stdout)
+
+
+def plot_body(p: Plot, rules: Rules) -> dict:
+    """The place cut on x, then y, then z, one cell at a time, equal
+    neighbours merged into one span."""
+    xs, ys, zs = p.cuts(0), p.cuts(1), p.cuts(2)
+
+    def runs(cuts, items):
+        out_c, out_i = [], []
+        for c, it in zip(cuts, items):
+            if out_i and json.dumps(out_i[-1], sort_keys=True) == json.dumps(it, sort_keys=True):
+                continue
+            out_c.append(c)
+            out_i.append(it)
+        return out_c, out_i
+
+    columns = []
+    for x in xs:
+        courses = []
+        for y in ys:
+            row = [leaf(p.cell(x.value, y.value, z.value)) for z in zs]
+            cz, rz = runs(zs, row)
+            courses.append(rules.name(split("z", cz, rz), "row"))
+        cy, ry = runs(ys, courses)
+        columns.append(rules.name(split("y", cy, ry), "column"))
+    cx, rx = runs(xs, columns)
+    return split("x", cx, rx)
+
+
+def plot_program(a: dict, reason: str) -> dict:
+    """The place's program from the generator's model."""
+    p = Plot(a)
+    m = p.model
+    rules = Rules()
+    # Every literal state the model holds becomes a palette role, named in a
+    # fixed order so the program is byte-stable.
+    literal = sorted({r for r in m.v.values() if r != AIR and r.startswith("minecraft:")})
+    name_of = {s: f"b{i}" for i, s in enumerate(literal)}
+
+    def role(r: str) -> str:
+        return name_of.get(r, r)
+
+    def leaf_of(kind: tuple) -> dict:
+        if kind[0] == "fill":
+            return fill(role(kind[1]))
+        if kind[0] == "void":
+            return VOID
+        _, region, r = kind
+        return claim(region, fill(role(r)) if r else VOID)
+
+    global leaf
+    starter_leaf = leaf
+    leaf = leaf_of
+    try:
+        start = marks(p, plot_body(p, rules))
+    finally:
+        leaf = starter_leaf
+    rules.rules["place"] = [{"body": start, "weight": 1}]
+    palette = dict(m.palette)
+    for s, n in name_of.items():
+        palette[n] = s
+    for s in p.seams:
+        if s["bar"] is not None:
+            palette[f"bar-{s['stem']}"] = full_state(s["seam"]["bar_block"])
+    used: set = set()
+
+    def scan(o) -> None:
+        if isinstance(o, dict):
+            if o.get("op") == "fill":
+                used.add(o["material"]["role"])
+            for v in o.values():
+                scan(v)
+        elif isinstance(o, list):
+            for v in o:
+                scan(v)
+
+    scan(rules.rules)
+    palette = {k: v for k, v in sorted(palette.items()) if k in used}
+    c = contract(p)
+    # Two walked spaces are joined by a walk where the engine proves a body
+    # crosses from one to the other, never where their columns merely touch.
+    walked = {e["region"] for e in p.parts if e["walked"]} | {"room"}
+    c["edges"] = [e for e in c["edges"] if not (e["class"] == "walk" and e["a"] in walked and e["b"] in walked and "via" not in e)]
+    c["edges"] += [{"a": x, "b": y, "class": "walk"} for x, y in sorted(p.joined)]
+    if p.unwalked:
+        c.setdefault("no_body", {})["unwalked"] = {"reason": reason}
+        floor = sum(1 for cell in p.reached)
+        if len(p.unwalked) >= floor:
+            c["no_body_majority_ack"] = reason
+    faces = ["east", "north", "south", "west"] + (["down"] if p.aloft else [])
+    return {
+        "contract": c,
+        "name": a["place"].removeprefix("node/"),
+        "palette": palette,
+        "params": dict(sorted(p.h.params.items())),
+        "rules": rules.rules,
+        "shown_faces": sorted(faces),
+        "start": "place",
+        "version": "1.14.0",
+    }
+
+
+def run(build=None, argv: list[str] | None = None, reason: str = "roof slopes, wall heads and sills: seen, never stood on") -> int:
+    """Write the place's program: the empty place with no `build`, the
+    generator's model with one. `reason` is the out-of-walk reason the
+    unreached floor is claimed with."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--allocation", required=True, help="`delvec allocation <campaign> <place>`, saved")
     ap.add_argument("--out", required=True, help="where the program is written")
+    ap.add_argument("--delvec", default="delvec", help="the `delvec` a drawn model is surveyed with (default: the one on PATH)")
     args = ap.parse_args(argv)
     with open(args.allocation, encoding="utf-8") as f:
         allocation = json.load(f)
-    text = json.dumps(program(allocation), indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    if build is None:
+        doc = program(allocation)
+    else:
+        Plot.BUILD = staticmethod(build)
+        Plot.DELVEC = args.delvec
+        doc = plot_program(allocation, reason)
+    text = json.dumps(doc, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
     with open(args.out, "w", encoding="utf-8") as f:
         f.write(text)
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    return run(None, argv)
 
 
 if __name__ == "__main__":
