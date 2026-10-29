@@ -17,7 +17,13 @@
           8200,
           8196
         ],
-        "node": "node/near"
+        "node": "node/near",
+        "sides": {
+          "east": "wall",
+          "west": "wall",
+          "south": "wall",
+          "north": "wall"
+        }
       },
       {
         "atmosphere": "atmosphere/wrong-place",
@@ -31,7 +37,13 @@
         "floor": {
           "datum": "datum/grade"
         },
-        "node": "node/far"
+        "node": "node/far",
+        "sides": {
+          "east": "wall",
+          "west": "wall",
+          "south": "wall",
+          "north": "wall"
+        }
       }
     ],
     "datums": [

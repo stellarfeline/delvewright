@@ -17,7 +17,13 @@
           21,
           4
         ],
-        "node": "node/near-hall"
+        "node": "node/near-hall",
+        "sides": {
+          "east": "wall",
+          "west": "wall",
+          "south": "wall",
+          "north": "wall"
+        }
       },
       {
         "ceiling": {
@@ -30,7 +36,13 @@
         "floor": {
           "datum": "datum/grade"
         },
-        "node": "node/far-hall"
+        "node": "node/far-hall",
+        "sides": {
+          "east": "wall",
+          "west": "wall",
+          "south": "wall",
+          "north": "wall"
+        }
       },
       {
         "ceiling": {
@@ -43,7 +55,13 @@
         "floor": {
           "datum": "datum/grade"
         },
-        "node": "node/annex"
+        "node": "node/annex",
+        "sides": {
+          "east": "wall",
+          "west": "wall",
+          "south": "wall",
+          "north": "wall"
+        }
       },
       {
         "ceiling": {
@@ -56,7 +74,13 @@
         "floor": {
           "datum": "datum/loft"
         },
-        "node": "node/loft"
+        "node": "node/loft",
+        "sides": {
+          "east": "wall",
+          "west": "wall",
+          "south": "wall",
+          "north": "wall"
+        }
       },
       {
         "ceiling": {
@@ -69,7 +93,13 @@
         "floor": {
           "y": 60
         },
-        "node": "node/undercroft"
+        "node": "node/undercroft",
+        "sides": {
+          "east": "wall",
+          "west": "wall",
+          "south": "wall",
+          "north": "wall"
+        }
       },
       {
         "atmosphere": "atmosphere/wet-court",
@@ -83,7 +113,13 @@
         "floor": {
           "datum": "datum/grade"
         },
-        "node": "node/exit"
+        "node": "node/exit",
+        "sides": {
+          "east": "wall",
+          "west": "wall",
+          "south": "wall",
+          "north": "wall"
+        }
       },
       {
         "ceiling": {
@@ -101,6 +137,12 @@
           "at": 0,
           "axis": "z",
           "clear": 6
+        },
+        "sides": {
+          "east": "wall",
+          "west": "wall",
+          "south": "wall",
+          "north": "wall"
         }
       }
     ],
