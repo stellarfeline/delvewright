@@ -2950,3 +2950,62 @@ fn an_open_side_is_a_stand_ins_opening_onto_the_commons() {
         errors(&low)
     );
 }
+
+/// **A seamless border is a declared opening along its whole length**
+/// (`DW0838`, spec-0123 §5.1). The cell and the exit stand side by side, their
+/// spans aligned, each leaving the face they share and its south side unwalled.
+/// They meet seamlessly by the plan's declaration, so the border — the gap
+/// over the common span and the two ring corners where the rings meet, which
+/// lie in neither open run — is deleted with the seams, and the binding counts
+/// the border and the cells it adds. The perturbation: the walls built a
+/// course tall, and the pairs that share no seamless border still leak.
+#[test]
+fn a_seamless_border_is_crossed_anywhere_along_it() {
+    let seamless = |v: &mut serde_json::Value| {
+        let boxes = v["content"]["boxes"].as_array_mut().unwrap();
+        for b in boxes.iter_mut() {
+            if b["node"] == "node/cell" {
+                b["sides"] = serde_json::json!({"west": "open", "south": "open", "east": "wall", "north": "wall"});
+            }
+            if b["node"] == "node/exit" {
+                b["sides"] = serde_json::json!({"east": "open", "south": "open", "west": "wall", "north": "wall"});
+            }
+        }
+    };
+    let c = common::campaign_at(&variant("seamless-border", seamless, None));
+    let b = battery_of(&c);
+    let leaks: Vec<String> = b
+        .findings
+        .iter()
+        .filter(|(_, d)| d.code == "DW0838")
+        .map(|(_, d)| d.message.clone())
+        .collect();
+    assert!(leaks.is_empty(), "a seamless border is declared: {leaks:?}");
+    assert_eq!(b.binding.seamless_borders, 1, "{}", b.binding.line());
+    assert!(b.binding.border_cells > 0, "{}", b.binding.line());
+    assert!(
+        b.binding.line().contains("1 seamless border(s)"),
+        "{}",
+        b.binding.line()
+    );
+
+    let low = battery_of_with(
+        &c,
+        Perturb {
+            short_walls: true,
+            ..Perturb::none()
+        },
+    );
+    let pairs: Vec<String> = low
+        .findings
+        .iter()
+        .filter(|(_, d)| d.code == "DW0838" && d.message.contains("allocated no seam"))
+        .map(|(_, d)| d.message.clone())
+        .collect();
+    assert!(
+        pairs
+            .iter()
+            .any(|m| !(m.contains("`node/cell`") && m.contains("`node/exit`"))),
+        "a pair with no seamless border still leaks: {pairs:?}"
+    );
+}

@@ -68,7 +68,9 @@ handout quotes — the node's `note` in `layout-graph.json`, the seam's `form` i
 **Authors run concurrently, commits run one at a time.** The check and the
 commit are two runs of one verb: `delvec --prefabs "$DELVEWRIGHT_PREFABS" detail --check <campaign-dir> <place>`
 binds, expands, voids, runs every gate of the place and the bindings check over
-the whole **as committed on disk**, and writes nothing; `delvec --prefabs "$DELVEWRIGHT_PREFABS" detail
+the whole **as committed on disk**, runs the leak proof (`DW0838`) from that place
+over the whole assembled in memory — each leak named with the route a body takes,
+move by move — and writes nothing; `delvec --prefabs "$DELVEWRIGHT_PREFABS" detail
 <campaign-dir> <place>` runs the same judge, then writes the piece, its report
 and the plan row — each through a temporary file renamed into place, so a check
 running at that instant reads the old file or the new one, never a torn one —
@@ -191,8 +193,8 @@ agent: *Reference: when the prefab library has no piece you need* and
    committed whole refuses. Capture every commit's output to a file
    (`… > .out/commit-<stem>.txt 2>&1`). A refusal before the write is what
    `detail --check` gives too: run step 1 for that place again and the script
-   embeds the check's verdict. **A battery refusal is one `--check` cannot
-   see** — the piece is already written, its own gates passed — so hand the
+   embeds the check's verdict. **A battery refusal other than a leak from the
+   checked place is one `--check` cannot see** — the piece is already written, its own gates passed — so hand the
    commit's output to the script: step 1 with `--from .out/commit-<stem>.txt`
    embeds it verbatim. The battery names the place whose piece it judges;
    where it names a cell, the place whose frame holds that cell is the one

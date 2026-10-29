@@ -209,8 +209,12 @@ validating and building the whole in memory through the observers `build` runs
 the run then exits on the whole. Each write goes through a temporary file in the
 target's own directory and is renamed into place, so a reader never sees one
 torn. **`--check`** runs the same `prepare` and `judge_run` against the whole as
-committed on disk and writes nothing — no piece, no row, no battery — and prints
-`peak rss: <bytes>` on its binding line; exit 0 says the program would commit
+committed on disk, then the battery's leak proof (`DW0838`, `blockout::leaks`)
+flooded from the checked place alone over the whole as the run would leave it,
+assembled in memory with the edit script replayed — each leak named with its
+route, move by move — and writes nothing — no piece, no row, no rest of the
+battery — and prints the leak proof's binding and `peak rss: <bytes>` on its
+binding line; exit 0 says the program would commit
 now. It is the per-place author's check at step 9; the commit is the
 orchestrator's, one at a time (spec-0122 §6). `--check --all` is refused (exit
 2). A program declaring a `handed/…` name the allocation does not hand is `DW0882`,

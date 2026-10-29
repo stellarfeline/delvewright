@@ -888,14 +888,14 @@ fn leak_check(
     };
     let b = &battery.binding;
     let line = format!(
-        "leak proof (DW0838) from {places}: {c} standable cell(s) classified over {p} place \
-         pair(s), {sb} seamless border(s) joining {sp} place pair(s), {inv} cell(s) of floor the \
-         deletion made kept off",
+        "leak proof from {places} place(s): {c} standable cell(s) classified over {p} place \
+         pair(s), {sb} seamless border(s) deleted as declared openings ({bc} cell(s) beyond the \
+         open sides' runs), {inv} cell(s) of floor the deletion made kept off",
         places = only.len(),
         c = b.standable,
         p = b.pairs,
         sb = b.seamless_borders,
-        sp = b.seamless_pairs,
+        bc = b.border_cells,
         inv = b.invented_floor,
     );
     let refusals: Vec<&(DwCode, Diagnostic)> = battery.refusals().collect();

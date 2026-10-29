@@ -69,19 +69,31 @@ impl PlacedBox {
 }
 
 impl PlacedBox {
-    /// **The face of this place it meets `other` across seamlessly**, if any:
-    /// a horizontal face the two share (the one-cell gap, a common span on the
+    /// **The border this place meets `other` across seamlessly**, if any: a
+    /// horizontal face the two share (the one-cell gap, a common span on the
     /// face's axis and a common vertical span) that neither declares `wall`
     /// (spec-0123 §5.1). Two such places are one open ground across that
-    /// border by the plan's declaration, which is what the leak proof
-    /// (`DW0838`) reads. `None` when they share no face, or when either walls
-    /// the face they share.
+    /// border by the plan's declaration. Returned as the face of this place
+    /// and the border's cells, inclusive: the gap plane over the common span
+    /// grown by one cell at each end — the ring corners where the two rings
+    /// meet — from the lower walk plane to the higher top of the two play
+    /// spaces. What the leak proof (`DW0838`) reads as a declared opening.
     #[must_use]
-    pub fn seamless_face(&self, other: &PlacedBox) -> Option<Face> {
-        Sides::FACES.into_iter().find(|&face| {
-            self.side_open(face)
-                && other.side_open(face.opposite())
-                && shared_face(self.side(), other.side(), face).is_ok()
+    pub fn seamless_border(&self, other: &PlacedBox) -> Option<(Face, ([i64; 3], [i64; 3]))> {
+        Sides::FACES.into_iter().find_map(|face| {
+            if !self.side_open(face) || !other.side_open(face.opposite()) {
+                return None;
+            }
+            let shared = shared_face(self.side(), other.side(), face).ok()?;
+            let (alo, ahi) = self.space();
+            let (blo, bhi) = other.space();
+            let (ylo, yhi) = (alo[1].min(blo[1]), ahi[1].max(bhi[1]));
+            let (ulo, uhi) = (shared.u.0 - 1, shared.u.1 + 1);
+            let cells = match face {
+                Face::East | Face::West => ([shared.plane, ylo, ulo], [shared.plane, yhi, uhi]),
+                _ => ([ulo, ylo, shared.plane], [uhi, yhi, shared.plane]),
+            };
+            Some((face, cells))
         })
     }
 }

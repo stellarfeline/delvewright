@@ -2326,6 +2326,76 @@ fn dw0838_refuses_a_hole_between_two_places_nothing_allocated() {
         "{:?}",
         errors_of(&b)
     );
+    // The leak names its route: from a cell of the landing, move by move,
+    // through the hole, to a cell of the hall.
+    let m = &b
+        .findings
+        .iter()
+        .find(|(_, x)| x.code == "DW0838" && x.message.contains("allocated no seam"))
+        .unwrap()
+        .1
+        .message;
+    let route = m
+        .split("The route: ")
+        .nth(1)
+        .unwrap_or_else(|| panic!("the route is named: {m}"));
+    let cells: Vec<[i64; 3]> = route
+        .split(" → ")
+        .filter_map(|t| {
+            let t = t.trim().strip_prefix('[')?;
+            let t = &t[..t.find(']')?];
+            let v: Vec<i64> = t.split(',').filter_map(|n| n.trim().parse().ok()).collect();
+            (v.len() == 3).then(|| [v[0], v[1], v[2]])
+        })
+        .collect();
+    let world = |n: &str, local: [i64; 3]| {
+        let a = detail::allocation(&c, &NodeId(n.into())).unwrap();
+        [
+            a.world_min[0] + local[0],
+            a.world_min[1] + local[1],
+            a.world_min[2] + local[2],
+        ]
+    };
+    let hole_world = world("node/landing", hole[0]);
+    assert!(cells.len() >= 2, "{route}");
+    assert!(
+        cells
+            .iter()
+            .any(|p| p[0] == hole_world[0] && p[2] == hole_world[2]
+                || (p[0] - hole_world[0]).abs() <= 1 && p[2] == hole_world[2]),
+        "the route crosses at the hole {hole_world:?}: {route}"
+    );
+    // The leak proof alone, from the landing, finds the same pair; from a
+    // place nowhere near the hole it finds none.
+    let c2 = campaign_at(&d.campaign);
+    let reg = PrefabRegistry::load_dir(&d.prefabs).unwrap();
+    let plan = Plan::build(&c2, &reg).unwrap();
+    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for area in &plan.areas {
+        for piece in &area.pieces {
+            for t in &piece.templates {
+                if let Ok(bytes) = std::fs::read(d.prefabs.join(&t.structure_file)) {
+                    structures.insert(t.structure_file.clone(), bytes);
+                }
+            }
+        }
+    }
+    let blocks = delvec::compiler::assembled::assembled_blocks(&plan, &structures);
+    let only = |n: &str| std::collections::BTreeSet::from([n.to_string()]);
+    let alone = blockout::leaks(&plan, &blocks, &only("node/landing")).unwrap();
+    assert!(
+        alone.findings.iter().any(|(_, x)| x.code == "DW0838"
+            && x.message.contains("node/landing")
+            && x.message.contains("node/hall")),
+        "{:?}",
+        errors_of(&alone)
+    );
+    let far = blockout::leaks(&plan, &blocks, &only("node/tunnel")).unwrap();
+    assert!(
+        !errors_of(&far).iter().any(|c| c == "DW0838"),
+        "{:?}",
+        errors_of(&far)
+    );
     let tmp = tempdir("dw0838-no-hole");
     let d = detailed(&tmp, &["node/landing"]);
     let (b, _) = battery_at(&d);
