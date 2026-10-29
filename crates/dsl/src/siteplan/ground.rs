@@ -229,6 +229,9 @@ impl Ground {
                         && w.steep.is_none_or(|m| steep >= i64::from(m))
                         && w.patch
                             .is_none_or(|p| patch_reading(seed, &p, x, z) >= p.min)
+                        && w.area.is_none_or(|a| {
+                            x >= a.min[0] && x <= a.max[0] && z >= a.min[1] && z <= a.max[1]
+                        })
                 });
                 out.push(k.map_or(0, |k| u8::try_from(k + 1).unwrap_or(0)));
             }
