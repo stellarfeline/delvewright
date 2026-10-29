@@ -402,7 +402,24 @@ impl<'a> Site<'a> {
         !self.is_aloft(i)
             && self.in_shell(i, cell)
             && self.boxes[i].is_ring_column(cell[0], cell[2])
-            && cell[1] <= self.ground_height(i, cell[0], cell[2])
+            && cell[1] <= self.fixed_top(i, cell[0], cell[2])
+    }
+
+    /// The highest fixed ground cell of place `i`'s ring column `(x, z)`:
+    /// the column's ground height, except on an open side, where it stops
+    /// under the floor course — the floor course and everything over it are
+    /// the place's own, so its ground runs across the seam in its paving and
+    /// no strip of the fill's surface shows between two places meeting there.
+    /// The one answer [`Site::is_fixed`] and [`Site::fixed_cells`] read.
+    #[must_use]
+    pub fn fixed_top(&self, i: usize, x: i64, z: i64) -> i64 {
+        let b = &self.boxes[i];
+        let g = self.ground_height(i, x, z);
+        if b.is_open_ring_column(x, z) {
+            g.min(b.floor - 2)
+        } else {
+            g
+        }
     }
 
     /// True when `cell` is **sky ring** of place `i`: a ring cell of an open
@@ -596,15 +613,7 @@ impl<'a> Site<'a> {
                 }
                 let g = self.ground_height(i, x, z);
                 let from = self.column_bottom(i, x, z).unwrap_or(lo[1]);
-                // On an open side the floor course and everything over it is
-                // the place's own: its ground runs across the seam in the
-                // place's paving, so no strip of the fill's surface shows
-                // between two places that meet there.
-                let cap = if b.is_open_ring_column(x, z) {
-                    g.min(b.floor - 2)
-                } else {
-                    g
-                };
+                let cap = self.fixed_top(i, x, z);
                 for y in from..=cap.min(hi[1]) {
                     out.push(([x, y, z], g));
                 }
