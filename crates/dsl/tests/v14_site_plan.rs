@@ -165,7 +165,8 @@ static PLAN: LazyLock<String> = LazyLock::new(|| {
           4,
           4
         ],
-        "node": "node/porch"
+        "node": "node/porch",
+        "sides": {"east": "wall", "west": "wall", "south": "wall", "north": "wall"}
       },
       {
         "ceiling": {
@@ -178,7 +179,8 @@ static PLAN: LazyLock<String> = LazyLock::new(|| {
         "floor": {
           "datum": "datum/grade"
         },
-        "node": "node/hall"
+        "node": "node/hall",
+        "sides": {"east": "wall", "west": "wall", "south": "wall", "north": "wall"}
       },
       {
         "ceiling": {
@@ -191,7 +193,8 @@ static PLAN: LazyLock<String> = LazyLock::new(|| {
         "floor": {
           "datum": "datum/grade"
         },
-        "node": "node/vault"
+        "node": "node/vault",
+        "sides": {"east": "wall", "west": "wall", "south": "wall", "north": "wall"}
       },
       {
         "ceiling": {
@@ -204,7 +207,8 @@ static PLAN: LazyLock<String> = LazyLock::new(|| {
         "floor": {
           "datum": "datum/undercroft"
         },
-        "node": "node/cellar"
+        "node": "node/cellar",
+        "sides": {"east": "wall", "west": "wall", "south": "wall", "north": "wall"}
       },
       {
         "ceiling": {
@@ -217,7 +221,8 @@ static PLAN: LazyLock<String> = LazyLock::new(|| {
         "floor": {
           "datum": "datum/grade"
         },
-        "node": "node/yard"
+        "node": "node/yard",
+        "sides": {"east": "wall", "west": "wall", "south": "wall", "north": "wall"}
       },
       {
         "ceiling": {
@@ -230,7 +235,8 @@ static PLAN: LazyLock<String> = LazyLock::new(|| {
         "floor": {
           "y": 59
         },
-        "node": "node/pit"
+        "node": "node/pit",
+        "sides": {"east": "wall", "west": "wall", "south": "wall", "north": "wall"}
       }
     ],
     "datums": [
