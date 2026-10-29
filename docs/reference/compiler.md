@@ -2647,6 +2647,12 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   that no DSL surface stands in for it. The table is `ROUTES` in
   `crates/delvec/src/admit/allowlist.rs`; `tests/remedy_reachability.rs` and
   `tests/v06_trap_payloads.rs` build each route.
+- **The default palette allowlist admits every potted plant the pin holds.**
+  `Allowlist::default_building` adds each registry id beginning
+  `minecraft:potted_` to its exact set, read from the pinned registry, so a
+  piece's flower pot holding a flower passes `DW0730` as the empty
+  `flower_pot` and the bare flowers do. A `from_file` override replaces the
+  default whole, this family included.
 - **`delvec prefab planes <asset> [--write]`** measures a piece's own `walk_y`
   and, where it authors water, its own `waterline_y`, and declares them. Both are
   measurements of the bytes and every generator writes them by reading them back

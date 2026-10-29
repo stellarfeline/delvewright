@@ -67,7 +67,16 @@ struct AllowlistFile {
 impl Allowlist {
     /// The built-in default (broad vanilla building set).
     pub fn default_building() -> Allowlist {
-        let exact: BTreeSet<String> = DEFAULT_EXACT.iter().map(|s| s.to_string()).collect();
+        let mut exact: BTreeSet<String> = DEFAULT_EXACT.iter().map(|s| s.to_string()).collect();
+        // Every potted plant the pin holds: a flower pot with a plant in it is
+        // decoration, as the empty pot and the bare plants already admitted are.
+        // Read from the pinned registry, so the family is the game's, never a copy.
+        exact.extend(
+            delvewright_dsl::blocks::BlockRegistry::v1_21_11()
+                .ids()
+                .filter(|id| id.starts_with(POTTED_PREFIX))
+                .map(|id| id.to_string()),
+        );
         let suffixes: Vec<String> = DEFAULT_SUFFIXES.iter().map(|s| s.to_string()).collect();
         Allowlist {
             exact,
@@ -294,6 +303,9 @@ const DEFAULT_SUFFIXES: &[&str] = &[
 ];
 
 /// Exact ids that are not covered by a suffix family.
+/// The id prefix of the potted-plant family, admitted whole from the pin.
+const POTTED_PREFIX: &str = "minecraft:potted_";
+
 const DEFAULT_EXACT: &[&str] = &[
     "minecraft:air",
     "minecraft:cave_air",
@@ -610,5 +622,26 @@ mod tests {
             }
         }
         assert_eq!(n, 8, "the routed blocks counted: {n}");
+    }
+
+    /// Every potted plant the pin holds is admitted by the default, and the
+    /// family is not empty: a pot with a flower in it is decoration.
+    #[test]
+    fn every_potted_plant_in_the_pin_is_admitted() {
+        let allow = Allowlist::default_building();
+        let registry = delvewright_dsl::blocks::BlockRegistry::v1_21_11();
+        let potted: Vec<&str> = registry
+            .ids()
+            .filter(|id| id.starts_with(POTTED_PREFIX))
+            .collect();
+        assert!(!potted.is_empty(), "the pin holds no potted plant");
+        for id in &potted {
+            assert!(allow.permits(id), "{id} is refused");
+        }
+        assert!(allow.permits("minecraft:potted_red_tulip"));
+        assert!(
+            !allow.permits("minecraft:potted_nothing"),
+            "a name the pin lacks is admitted"
+        );
     }
 }
