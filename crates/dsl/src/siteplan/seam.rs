@@ -242,8 +242,10 @@ pub(super) fn seams(
         // ---- `DW1064`: a portal in an open side (spec-0123 §5.4). The seam
         // cuts `a`'s declared face and `b`'s opposite one; a side either place
         // declares open stands no wall to cut. A contact is that side's
-        // crossing and is admitted.
-        if s.contact.is_none() && !s.face.is_horizontal_plane() {
+        // crossing and is admitted; so is a stair, whose flight is a
+        // crossing in the open air (a contact carries no stair, so the
+        // remedy this names would be unreachable for one).
+        if s.contact.is_none() && s.stair_in.is_none() && !s.face.is_horizontal_plane() {
             let mut refused = false;
             for (place, face) in [(ctx.a, s.face), (ctx.b, s.face.opposite())] {
                 if place.plan.side_open(face) {
