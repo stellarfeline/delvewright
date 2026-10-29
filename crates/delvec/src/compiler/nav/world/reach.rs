@@ -1976,13 +1976,28 @@ impl World {
     /// The memo of this world's graph at `params`, shared by every world with
     /// this world's digest.
     pub(in crate::compiler::nav) fn graph_memo(&self, params: &ReachParams) -> Arc<GraphMemo> {
-        type Graphs = Mutex<HashMap<([u8; 32], String), Arc<GraphMemo>>>;
+        // One cell per digest, taken under the lock and filled outside it: the
+        // first thread to ask builds the graph, and every other thread that
+        // asks for the same digest meanwhile waits for that one rather than
+        // building a copy of its own — a copy that would be thrown away, and
+        // would have been made the next graph's lineage with none of the
+        // nodes the kept one goes on to fly.
+        type Graphs = Mutex<HashMap<([u8; 32], String), Arc<OnceLock<Arc<GraphMemo>>>>>;
         static MEMO: OnceLock<Graphs> = OnceLock::new();
         let key = (self.fingerprint(), params.key());
-        let memo = MEMO.get_or_init(|| Mutex::new(HashMap::new()));
-        if let Some(g) = memo.lock().expect("memo").get(&key) {
-            return Arc::clone(g);
-        }
+        let cell = Arc::clone(
+            MEMO.get_or_init(|| Mutex::new(HashMap::new()))
+                .lock()
+                .expect("memo")
+                .entry(key)
+                .or_default(),
+        );
+        Arc::clone(cell.get_or_init(|| self.build_graph(params)))
+    }
+
+    /// A new graph memo over this world at `params`, with the latest graph of
+    /// its window as its lineage; it becomes the next one's.
+    fn build_graph(&self, params: &ReachParams) -> Arc<GraphMemo> {
         let mut dense = Dense::of(self);
         // A declared jump's launch cell is a premise cell too: a node whose
         // jumps differ from the lineage's is not the lineage's node.
@@ -2050,11 +2065,7 @@ impl World {
         // The latest graph is the next one's lineage: configurations are asked
         // about in story order, and the one before differs least.
         seeds.lock().expect("memo").insert(seed_key, Arc::clone(&g));
-        memo.lock()
-            .expect("memo")
-            .entry(key)
-            .or_insert_with(|| Arc::clone(&g))
-            .clone()
+        g
     }
 
     /// What a node's world queries read beyond the cells round it: the climb
@@ -2712,30 +2723,146 @@ impl World {
         seeds: &[[i32; 3]],
         confinement: &super::Confinement<'_>,
     ) -> BTreeSet<[i32; 3]> {
-        // Taken a frontier at a time, each frontier's edges flown in parallel
-        // as [`World::body_reach`] flies a round: the closure is the same set
-        // whatever order its states are expanded in, since whether a move is
-        // taken depends only on its two ends, and the frontier is kept in
-        // cell order, so the work and the answer are both deterministic.
+        // Taken as [`World::body_reach_at`] takes a closure: the cell
+        // relation's moves first, then the launches of each standing or
+        // holding state toward the directions its envelope still asks for
+        // ([`World::envelope_open`], read against the cells this flood holds),
+        // then the cell relation again from what they reached, until no state
+        // has a direction left to fly. A direction the envelope does not ask
+        // for holds no cell a body could rest in that the flood lacks, so a
+        // launch flown there would only land where the flood already is: the
+        // set is the closure of [`World::body_edges`] under the confinement,
+        // with no launch flown that could not add to it. The states are taken
+        // in cell order, their flights in chunks as `body_reach_at` takes
+        // them, so the work and the answer are both deterministic.
+        let params = ReachParams::shipped(self.unbounded_fall);
+        let memo = self.graph_memo(&params);
         let mut seen: BTreeSet<[i32; 3]> = seeds.iter().copied().collect();
-        let mut frontier: Vec<[i32; 3]> = seen.iter().copied().collect();
-        while !frontier.is_empty() {
-            let edges: Vec<Vec<Edge>> = crate::par::map(&frontier, |c| self.body_edges(*c));
-            let mut next: BTreeSet<[i32; 3]> = BTreeSet::new();
-            for (cur, out) in frontier.iter().zip(edges) {
-                for edge in out {
-                    if !seen.contains(&edge.to)
-                        && self.in_piece(edge.to)
-                        && confinement.admits(*cur, edge.to)
-                    {
-                        seen.insert(edge.to);
-                        next.insert(edge.to);
-                    }
+        // What the envelope reads the flood's cells through: the window's
+        // bitmap, and the cells outside the window by name.
+        let mut held = Reach::default();
+        let hold = |held: &mut Reach, c: [i32; 3]| {
+            if memo.dense.index(c).is_some() {
+                held.mark(&memo.dense, c);
+            } else {
+                held.states.insert(c, RestKind::Standing);
+            }
+        };
+        for c in &seen {
+            hold(&mut held, *c);
+        }
+        let mut flown: HashMap<[i32; 3], Quadrants> = HashMap::new();
+        let take = |seen: &mut BTreeSet<[i32; 3]>,
+                    held: &mut Reach,
+                    next: &mut Vec<[i32; 3]>,
+                    cur: [i32; 3],
+                    edges: &[Edge]| {
+            for edge in edges {
+                if !seen.contains(&edge.to)
+                    && self.in_piece(edge.to)
+                    && confinement.admits(cur, edge.to)
+                {
+                    seen.insert(edge.to);
+                    hold(held, edge.to);
+                    next.push(edge.to);
                 }
             }
-            frontier = next.into_iter().collect();
+        };
+        let close =
+            |seen: &mut BTreeSet<[i32; 3]>, held: &mut Reach, mut frontier: Vec<[i32; 3]>| {
+                while !frontier.is_empty() {
+                    let edges = self.cell_edges(&memo, &params, &frontier);
+                    let mut next: Vec<[i32; 3]> = Vec::new();
+                    for (cur, e) in frontier.iter().zip(edges) {
+                        take(seen, held, &mut next, *cur, &e.edges);
+                    }
+                    next.sort_unstable();
+                    frontier = next;
+                }
+            };
+        let open = |held: &Reach, flown: &HashMap<[i32; 3], Quadrants>, c: [i32; 3]| {
+            self.envelope_open(&memo, held, c) & !flown.get(&c).copied().unwrap_or(0)
+        };
+        let start: Vec<[i32; 3]> = seen.iter().copied().collect();
+        close(&mut seen, &mut held, start);
+        loop {
+            let todo: Vec<[i32; 3]> = seen
+                .iter()
+                .copied()
+                .filter(|c| {
+                    matches!(
+                        self.rest_kind(*c),
+                        Some(RestKind::Standing | RestKind::Holding)
+                    ) && open(&held, &flown, *c) != 0
+                })
+                .collect();
+            if todo.is_empty() {
+                break;
+            }
+            for chunk in todo.chunks(2048) {
+                let chunk: Vec<([i32; 3], Quadrants)> = chunk
+                    .iter()
+                    .filter_map(|c| {
+                        let q = open(&held, &flown, *c);
+                        (q != 0).then_some((*c, q))
+                    })
+                    .collect();
+                let out: Vec<Arc<NodeEdges>> =
+                    crate::par::map(&chunk, |(c, q)| self.flown(&memo, &params, *c, *q));
+                let mut next: Vec<[i32; 3]> = Vec::new();
+                for ((c, q), e) in chunk.iter().zip(out) {
+                    *flown.entry(*c).or_insert(0) |= *q;
+                    take(&mut seen, &mut held, &mut next, *c, &e.edges);
+                }
+                next.sort_unstable();
+                close(&mut seen, &mut held, next);
+            }
         }
         seen
+    }
+
+    /// The cell relation's edges of each of `cells` (no launch flown), from
+    /// the graph's memo where it holds them. The nodes the memo holds are
+    /// read under one lock; the rest are expanded across the cores only when
+    /// there are enough of them to pay for the threads.
+    fn cell_edges(
+        &self,
+        memo: &GraphMemo,
+        params: &ReachParams,
+        cells: &[[i32; 3]],
+    ) -> Vec<Arc<NodeEdges>> {
+        let mut out: Vec<Option<Arc<NodeEdges>>> = {
+            let held = memo.nodes.lock().expect("memo");
+            cells.iter().map(|c| held.get(c).cloned()).collect()
+        };
+        let missing: Vec<[i32; 3]> = cells
+            .iter()
+            .zip(&out)
+            .filter(|(_, e)| e.is_none())
+            .map(|(c, _)| *c)
+            .collect();
+        if !missing.is_empty() {
+            let fresh: Vec<Arc<NodeEdges>> = if missing.len() >= 64 {
+                crate::par::map(&missing, |c| {
+                    Arc::new(self.expand(memo, params, *c, 0, None))
+                })
+            } else {
+                missing
+                    .iter()
+                    .map(|c| Arc::new(self.expand(memo, params, *c, 0, None)))
+                    .collect()
+            };
+            let mut held = memo.nodes.lock().expect("memo");
+            let mut fresh = missing.iter().zip(fresh);
+            for (c, slot) in cells.iter().zip(out.iter_mut()) {
+                if slot.is_none() {
+                    let (m, e) = fresh.next().expect("one per missing node");
+                    debug_assert_eq!(m, c);
+                    *slot = Some(Arc::clone(held.entry(*c).or_insert(e)));
+                }
+            }
+        }
+        out.into_iter().map(|e| e.expect("expanded")).collect()
     }
 
     /// **The floor a body reaches from `entry`**: the cells of `standable` in
@@ -3122,9 +3249,48 @@ impl World {
         reach
     }
 
+    /// Fly, of each of `cells` — standing or holding states of `reach` — the
+    /// launches not yet flown that can carry a body toward a cell a body could
+    /// rest in that `settled` does not hold, or out of the world
+    /// ([`World::envelope_toward`]), and close over what they reach. Every
+    /// launch it leaves out lands, if anywhere, on a cell `settled` holds.
+    /// With `one`, only the first such direction of each cell is flown.
+    /// Whether any launch was flown.
+    pub fn fly_toward(
+        &self,
+        reach: &mut Reach,
+        cells: &[[i32; 3]],
+        settled: &dyn Fn([i32; 3]) -> bool,
+        one: bool,
+    ) -> bool {
+        let params = ReachParams::shipped(self.unbounded_fall);
+        let memo = self.graph_memo(&params);
+        let todo: Vec<([i32; 3], Quadrants)> = cells
+            .iter()
+            .copied()
+            .filter(|c| {
+                matches!(
+                    reach.states.get(c),
+                    Some(RestKind::Standing | RestKind::Holding)
+                )
+            })
+            .filter_map(|c| {
+                let q = self.envelope_toward(&memo, c, settled) & !reach.flown_mask(c);
+                let q = if one { q & q.wrapping_neg() } else { q };
+                (q != 0).then_some((c, q))
+            })
+            .collect();
+        if todo.is_empty() {
+            return false;
+        }
+        self.fly_into(&memo, &params, reach, &todo);
+        true
+    }
+
     /// Fly every launch of `cells` — standing or holding states of `reach` —
     /// and close over what they reach. The caller that needs a node's every
-    /// edge (a pocket's way out, `DW0921`) asks this of the nodes it judges.
+    /// edge (the moves a blinded body makes, `DW0943`) asks this of the nodes
+    /// it judges.
     pub fn fly_cells(&self, reach: &mut Reach, cells: &[[i32; 3]]) {
         let params = ReachParams::shipped(self.unbounded_fall);
         let memo = self.graph_memo(&params);
@@ -3252,42 +3418,7 @@ impl World {
         frontier.dedup();
         let mut queued: BTreeSet<[i32; 3]> = frontier.iter().copied().collect();
         while !frontier.is_empty() {
-            // The nodes the memo holds are read under one lock; the rest are
-            // expanded across the cores only when there are enough of them to
-            // pay for the threads.
-            let mut expanded: Vec<Option<Arc<NodeEdges>>> = {
-                let held = memo.nodes.lock().expect("memo");
-                frontier.iter().map(|c| held.get(c).cloned()).collect()
-            };
-            let missing: Vec<[i32; 3]> = frontier
-                .iter()
-                .zip(&expanded)
-                .filter(|(_, e)| e.is_none())
-                .map(|(c, _)| *c)
-                .collect();
-            if !missing.is_empty() {
-                let fresh: Vec<Arc<NodeEdges>> = if missing.len() >= 64 {
-                    crate::par::map(&missing, |c| {
-                        Arc::new(self.expand(memo, params, *c, 0, None))
-                    })
-                } else {
-                    missing
-                        .iter()
-                        .map(|c| Arc::new(self.expand(memo, params, *c, 0, None)))
-                        .collect()
-                };
-                let mut held = memo.nodes.lock().expect("memo");
-                let mut fresh = missing.iter().zip(fresh);
-                for (c, slot) in frontier.iter().zip(expanded.iter_mut()) {
-                    if slot.is_none() {
-                        let (m, e) = fresh.next().expect("one per missing node");
-                        debug_assert_eq!(m, c);
-                        *slot = Some(Arc::clone(held.entry(*c).or_insert(e)));
-                    }
-                }
-            }
-            let expanded: Vec<Arc<NodeEdges>> =
-                expanded.into_iter().map(|e| e.expect("expanded")).collect();
+            let expanded = self.cell_edges(memo, params, &frontier);
             let mut next: Vec<[i32; 3]> = Vec::new();
             for (c, e) in frontier.iter().zip(expanded) {
                 reach.simulated += e.simulated;
@@ -3332,6 +3463,21 @@ impl World {
     /// cliff's lip), which a body walks or jumps under and falls out of the
     /// world through. `0` when there is none.
     fn envelope_open(&self, memo: &GraphMemo, reach: &Reach, c: [i32; 3]) -> Quadrants {
+        let d = &memo.dense;
+        self.envelope_toward(memo, c, &|x| reach.has(d, x))
+    }
+
+    /// Which launches from `c` can carry a body toward a cell of its envelope
+    /// a body could rest in that `settled` does not hold, or (under a void)
+    /// out of the world ([`World::envelope_open`], whose `settled` is the
+    /// closure's cells). A launch the answer leaves out lands, if anywhere,
+    /// on a cell `settled` holds.
+    fn envelope_toward(
+        &self,
+        memo: &GraphMemo,
+        c: [i32; 3],
+        settled: &dyn Fn([i32; 3]) -> bool,
+    ) -> Quadrants {
         let d = &memo.dense;
         if memo.columns.slime || d.dims[0] == 0 {
             return ALL_QUADRANTS;
@@ -3378,9 +3524,7 @@ impl World {
                     if y > c[1] + 2 {
                         break;
                     }
-                    if cheb <= reach_columns(c[1] - y + 1)
-                        && !reach.has(d, [c[0] + dx, y, c[2] + dz])
-                    {
+                    if cheb <= reach_columns(c[1] - y + 1) && !settled([c[0] + dx, y, c[2] + dz]) {
                         q |= bit;
                         break;
                     }

@@ -770,24 +770,36 @@ impl World {
         returned: Option<([i32; 3], [i32; 3])>,
     ) -> (BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>, Reach) {
         let mut reach = self.body_reach(roots);
-        // A node the closure did not fly has only its cheap edges; a node that
-        // reads as trapped is flown, and the judgement taken again, until every
-        // trapped node has all its edges (spec-0113 §4.3: the envelope proves
-        // what a node reaches, never what it can leave by).
+        // A node the closure did not fly has only the edges its envelope asked
+        // for (spec-0113 §4.3: the envelope proves what a node reaches, never
+        // what it can leave by). A node that reads as trapped is flown, and
+        // the judgement taken again: first one direction at a time toward a
+        // cell that gets back, so a node one launch takes back costs that
+        // direction's launches; once no trapped node has such a direction
+        // left, every launch not yet flown toward a cell that is not trapped
+        // (one that gets back, or one the closure never reached). When none
+        // is left, every launch of a trapped node lands, if anywhere, on a
+        // trapped cell: no edge it has or could have leads back, and the
+        // trapped cells are the ones flying every launch of every trapped
+        // node finds.
         loop {
             let back = self.back_to(&reach, ways_out, returned);
-            let unflown: Vec<[i32; 3]> = reach
-                .states
-                .keys()
+            let seen = reach.cells();
+            let trapped: BTreeSet<[i32; 3]> = seen.difference(&back).copied().collect();
+            let unflown: Vec<[i32; 3]> = trapped
+                .iter()
                 .copied()
-                .filter(|c| !back.contains(c) && reach.unflown(*c))
+                .filter(|c| reach.unflown(*c))
                 .collect();
             if unflown.is_empty() {
-                let seen = reach.cells();
-                let trapped = seen.difference(&back).copied().collect();
                 return (seen, trapped, reach);
             }
-            self.fly_cells(&mut reach, &unflown);
+            if self.fly_toward(&mut reach, &unflown, &|c| !back.contains(&c), true) {
+                continue;
+            }
+            if !self.fly_toward(&mut reach, &unflown, &|c| trapped.contains(&c), false) {
+                return (seen, trapped, reach);
+            }
         }
     }
 

@@ -466,6 +466,23 @@ pub(super) fn verify_gates_separate(
                     continue;
                 }
                 let far_set: BTreeSet<[i32; 3]> = far.iter().copied().collect();
+                // Whether any way round exists is the confined closure's to
+                // say ([`World::body_flood`], the closure of every edge
+                // `escape` takes, kept out of the gate's region); the search
+                // for the way round with the fewest moves that are no walk is
+                // made only where the closure meets the far face or the open
+                // sea, whose one-place swims the closure does not take.
+                let (lo, hi) = gates[gi].region;
+                let outside = |c: [i32; 3]| {
+                    !(0..3).all(|i| lo[i].min(hi[i]) <= c[i] && c[i] <= lo[i].max(hi[i]))
+                };
+                let round = w
+                    .body_flood(near, &Confinement::cells(&outside))
+                    .iter()
+                    .any(|c| far_set.contains(c) || graph.open_sea.contains(c));
+                if !round {
+                    continue;
+                }
                 if let Some(path) = escape(w, &graph, near, &far_set, gates[gi].region, false) {
                     let start = path.cells[0];
                     let end = *path.cells.last().unwrap_or(&start);
