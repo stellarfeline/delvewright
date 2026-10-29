@@ -2249,8 +2249,7 @@ fn two_level(ladder: Option<&str>) -> Build {
     b
 }
 
-/// The honest contract of [`two_level`]: the two floors are two spaces (a
-/// space is one floor), the ladder column is the climb's own volume, and the
+/// The honest contract of [`two_level`]: the two floors are two spaces, the ladder column is the climb's own volume, and the
 /// way between them is a `climb` rising 4.
 fn two_level_contract() -> SpatialContract {
     let mut c = contract("lower");
@@ -2360,6 +2359,7 @@ fn a_ladder_between_two_floors_is_a_climb_edge_proved_both_ways() {
                 region([1, 1, 1], [5, 3, 1]),
                 region([1, 1, 3], [5, 3, 3]),
                 region([2, 1, 2], [5, 3, 2]),
+                region([1, 1, 2], [1, 4, 2]),
                 region([1, 5, 1], [5, 7, 3]),
             ],
         ),
@@ -2376,7 +2376,15 @@ fn a_ladder_between_two_floors_is_a_climb_edge_proved_both_ways() {
     let reach = gate(&report, "contract-reachability");
     assert!(
         reach.passed(),
-        "the folded floors are judged by the reach graph — the ladder climbed both ways: {}",
+        "the folded floors, ladder column included, are judged by the reach graph — the \
+         ladder climbed both ways: {}",
+        reach.detail
+    );
+    let report = check(&two_level(None).model, &merged, &no_anchors());
+    let reach = gate(&report, "contract-reachability");
+    assert!(
+        reach.failed() && reach.detail.contains("space room"),
+        "the same fold with no ladder leaves the upper floor unreached: {}",
         reach.detail
     );
 }
