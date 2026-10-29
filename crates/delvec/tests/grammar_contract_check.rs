@@ -399,11 +399,14 @@ fn an_opening_claimed_away_from_the_shared_boundary_is_refused() {
     assert!(g.detail.contains("inside space \"hall\""), "{}", g.detail);
 }
 
-/// **One floor per space** (spec-0036 §1a): merging a stair's two ends into one
-/// space is refused, because a merge with no internal edge has nothing to carry
-/// a `rise` and hides the seam the level check exists to find.
+/// **A space spans as many levels as its blocks give it**: a stair's two ends
+/// and its flight declared as one space are well formed, and what the old
+/// one-floor rule kept is judged by the reach graph — the flight walked both
+/// ways. Perturbed toward the hidden seam (the treads taken out, so the head
+/// stands three courses over the foot with nothing to climb), the head is not
+/// reached and `contract-reachability` reds.
 #[test]
-fn merging_a_stairs_two_ends_into_one_space_is_refused() {
+fn a_stairs_two_ends_in_one_space_are_judged_by_the_reach_graph() {
     let (b, _) = stair_piece();
     let mut c = contract("flight");
     c.spaces.insert(
@@ -424,8 +427,74 @@ fn merging_a_stairs_two_ends_into_one_space_is_refused() {
     ));
     let report = check(&b.model, &c, &no_anchors());
     let g = gate(&report, "contract-well-formed");
-    assert!(!g.passed(), "{}", g.detail);
-    assert!(g.detail.contains("is ONE floor"), "{}", g.detail);
+    assert!(g.passed(), "{}", g.detail);
+    let r = gate(&report, "contract-reachability");
+    assert!(r.passed(), "{}", r.detail);
+    assert!(
+        report.enumeration.iter().any(|l| l
+            .contains("1 space(s) spanning more than two levels judged (flight)")
+            && l.contains("0 pocket(s)")),
+        "{:?}",
+        report.enumeration
+    );
+
+    let (mut no_treads, _) = stair_piece();
+    no_treads.stone([1, 1, 5], [5, 3, 7]);
+    let report = check(&no_treads.model, &c, &no_anchors());
+    let r = gate(&report, "contract-reachability");
+    assert!(
+        r.failed(),
+        "with no treads the head is not reached: {}",
+        r.detail
+    );
+}
+
+/// **A fall inside a many-level space owes a way back** (the leave half of the
+/// old one-floor rule, over the reach graph): a room with a pit three courses
+/// deep is one space spanning four levels; a body that drops in cannot climb
+/// out, and `contract-reachability` names the pocket. Perturbed with a step
+/// up out of the pit, the pocket is gone and the gate passes.
+#[test]
+fn a_pit_in_a_many_level_space_is_a_fall_in_pocket() {
+    let pit = |stepped: bool| {
+        let mut b = Build::new([9, 10, 9]);
+        b.stone([0, 0, 0], [8, 9, 8]);
+        b.air([1, 4, 1], [7, 8, 7]); // the room: floor y3, standable y4
+        b.air([3, 1, 3], [4, 3, 4]); // the pit: floor y0, standable y1
+        b.air([0, 4, 4], [0, 5, 4]); // the way in
+        if stepped {
+            b.paint([4, 1, 4], [4, 1, 4], "minecraft:stone_bricks");
+            b.paint([4, 1, 3], [4, 2, 3], "minecraft:stone_bricks");
+        }
+        b
+    };
+    let mut c = contract("room");
+    c.spaces.insert(
+        "room".to_string(),
+        space("enclosed", vec![region([1, 1, 1], [7, 8, 7])]),
+    );
+    c.edges.push(with_via(
+        edge("room", "exterior", "walk"),
+        "door",
+        vec![region([0, 4, 4], [0, 5, 4])],
+    ));
+    let report = check(&pit(false).model, &c, &no_anchors());
+    assert!(
+        gate(&report, "contract-well-formed").passed(),
+        "{}",
+        gate(&report, "contract-well-formed").detail
+    );
+    let r = gate(&report, "contract-reachability");
+    assert!(
+        r.failed()
+            && r.detail.contains("can get into and not out of")
+            && r.detail.contains("space \"room\""),
+        "{}",
+        r.detail
+    );
+    let report = check(&pit(true).model, &c, &no_anchors());
+    let r = gate(&report, "contract-reachability");
+    assert!(r.passed(), "a step out of the pit: {}", r.detail);
 }
 
 /// **A covered space declared `open` is taken as declared** (spec-0098 §14,
@@ -2180,8 +2249,7 @@ fn two_level(ladder: Option<&str>) -> Build {
     b
 }
 
-/// The honest contract of [`two_level`]: the two floors are two spaces (a
-/// space is one floor), the ladder column is the climb's own volume, and the
+/// The honest contract of [`two_level`]: the two floors are two spaces, the ladder column is the climb's own volume, and the
 /// way between them is a `climb` rising 4.
 fn two_level_contract() -> SpatialContract {
     let mut c = contract("lower");
@@ -2291,6 +2359,7 @@ fn a_ladder_between_two_floors_is_a_climb_edge_proved_both_ways() {
                 region([1, 1, 1], [5, 3, 1]),
                 region([1, 1, 3], [5, 3, 3]),
                 region([2, 1, 2], [5, 3, 2]),
+                region([1, 1, 2], [1, 4, 2]),
                 region([1, 5, 1], [5, 7, 3]),
             ],
         ),
@@ -2300,9 +2369,23 @@ fn a_ladder_between_two_floors_is_a_climb_edge_proved_both_ways() {
     let report = check(&two_level(Some("east")).model, &merged, &no_anchors());
     let wf = gate(&report, "contract-well-formed");
     assert!(
-        wf.failed() && wf.detail.contains("ONE floor"),
-        "two floors folded into one space are refused: {}",
+        wf.passed(),
+        "two floors folded into one space are well formed: {}",
         wf.detail
+    );
+    let reach = gate(&report, "contract-reachability");
+    assert!(
+        reach.passed(),
+        "the folded floors, ladder column included, are judged by the reach graph — the \
+         ladder climbed both ways: {}",
+        reach.detail
+    );
+    let report = check(&two_level(None).model, &merged, &no_anchors());
+    let reach = gate(&report, "contract-reachability");
+    assert!(
+        reach.failed() && reach.detail.contains("space room"),
+        "the same fold with no ladder leaves the upper floor unreached: {}",
+        reach.detail
     );
 }
 

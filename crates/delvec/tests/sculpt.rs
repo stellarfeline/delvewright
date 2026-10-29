@@ -577,11 +577,13 @@ fn the_sculpt_judges_pockets_with_the_relation_dw0921_floods() {
         callers,
         // `DW0891`'s population takes the leave judgement's pockets out of the
         // floor the party walks (spec-0113 §5.1); the reach graph's tests ask it
-        // of their fixtures.
+        // of their fixtures; a program's contract judges the falls inside a
+        // space spanning more than two levels with it.
         vec![
             "compiler/lethal.rs".to_string(),
             "compiler/nav/leave.rs".to_string(),
             "compiler/nav/world/reach/tests.rs".to_string(),
+            "grammar/contract.rs".to_string(),
             "sculpt/mod.rs".to_string()
         ],
         "the leave judgement's callers"
