@@ -2769,10 +2769,20 @@ fn wall_openings<'a>(
     walls
         .into_iter()
         .map(|((slo, shi), group)| {
-            let allowed: BTreeSet<[i64; 3]> = group
+            // The seams' openings, and every cell of an open side either
+            // place declares: an open side stands no wall, so its run is a
+            // declared opening and never a leak (spec-0123 §5.3).
+            let mut allowed: BTreeSet<[i64; 3]> = group
                 .iter()
                 .flat_map(|s| cells_of(s.opening.0, s.opening.1))
                 .collect();
+            for node in group.iter().flat_map(|s| [&s.a, &s.b]) {
+                if let Some(pb) = b.boxes.iter().find(|p| &p.node == node) {
+                    for side in pb.open_sides() {
+                        allowed.extend(cells_of(side.cells.0, side.cells.1));
+                    }
+                }
+            }
             let open: Vec<[i64; 3]> = cells_of(slo, shi)
                 .filter(|c| !allowed.contains(c) && world.is_clear(narrow(*c)))
                 .collect();
