@@ -5862,8 +5862,8 @@ fn key_with_a_far_write(shot: bool) -> impl FnOnce(&mut serde_json::Value) {
             list.push(serde_json::json!({"type": "cutscene", "seconds": 3,
                 "look_at": {"anchor": "anchor/seam-loft-stair"},
                 "subject": {"anchor": "anchor/seam-loft-stair"},
-                "path": [{"anchor": "anchor/node-far-hall", "offset": [0, 2, 0]},
-                         {"anchor": "anchor/node-far-hall", "offset": [0, 3, 0]}]}));
+                "path": [{"anchor": "anchor/node-far-hall", "offset": [2, 7, -5]},
+                         {"anchor": "anchor/node-far-hall", "offset": [2, 7, -4]}]}));
         }
     }
 }

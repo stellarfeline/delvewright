@@ -454,8 +454,17 @@ fn the_derivations_door_is_sealed_at_load_and_built_twice_the_same() {
 /// — and stands the key's box over it once more, in the same function.
 #[test]
 fn a_close_gate_on_a_door_shut_seam_shuts_the_leaf_and_restands_the_box() {
-    let (ok, said, out) =
-        common::gallery_site_plan_quests_variant(&tempdir("close-door"), &[], |v| {
+    let (ok, said, out) = common::gallery_site_plan_quests_variant(
+        &tempdir("close-door"),
+        &[("fx.trig.centre-door-shut.0.narrate", "中门又锁上了。")],
+        |v| {
+            // A sealed door answers a press (`DW0429`): the close's own answer.
+            v["content"]["triggers"].as_array_mut().unwrap().push(serde_json::json!({
+            "at": "anchor/seam-centre-door", "audience": "presser",
+            "effects": [{"style": "actionbar", "text": "The centre door is locked again.", "type": "narrate"}],
+            "id": "trigger/centre-door-shut", "on": {"on": "use"}, "once": false,
+            "serves": {"gate": "anchor/seam-centre-door"}
+        }));
             v["content"]["quests"][1]["on_complete"]
                 .as_array_mut()
                 .unwrap()
@@ -465,7 +474,8 @@ fn a_close_gate_on_a_door_shut_seam_shuts_the_leaf_and_restands_the_box() {
                 "happening": {"subject": "anchor/seam-centre-door", "verb": "seals",
                     "text": "The centre door is shut and locked behind the party."}}),
                 );
-        });
+        },
+    );
     assert!(ok, "the close builds:\n{said}");
     let f = out.join("datapack/data/gallery/function");
     let mut hits = Vec::new();
