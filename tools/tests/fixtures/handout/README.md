@@ -15,6 +15,10 @@ equal to the built binary's own answer, byte for byte, so a change to what the
 engine hands a place reds there and the file is re-recorded with the same
 command.
 
+`blocks.json` is `delvec grammar blocks`, recorded the same way and held equal
+to the built binary's answer by the same test file: re-record it with
+`delvec grammar blocks > tools/tests/fixtures/handout/blocks.json`.
+
 The per-place procedure of `references/detail.md` has been executed green on
 this fixture once, end to end: three fresh agents, one per place in
 critical-path order, each from its own handout; `delvec detail --all` and

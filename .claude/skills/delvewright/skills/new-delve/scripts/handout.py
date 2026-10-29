@@ -7,8 +7,9 @@ derived here from the campaign on every invocation and typed by nobody: the
 place's own allocation as `delvec allocation` prints it, that place's rows of
 the campaign's design, a summary of every adjacent box drawn from the
 neighbours' design rows and the seam forms, the wave bound `delvec allocation
---all` states, and — on a repair — the refusal `delvec detail --check` gives
-the program the last agent left.
+--all` states, the blocks the place may write as `delvec grammar blocks` lists
+them (saved beside the handout as `blocks.json`), and — on a repair — the
+refusal `delvec detail --check` gives the program the last agent left.
 
     "$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/handout.py" <campaign-dir> <place> \\
         --engine "$DELVEWRIGHT_ENGINE" --prefabs "$DELVEWRIGHT_PREFABS"
@@ -22,8 +23,9 @@ WHAT IT REFUSES, SO A MISTAKE IS AN ERROR WHERE IT IS ENTERED
 - a place whose program ALREADY passes `delvec detail --check` (exit 3):
   there is nothing to author, and a handout would send an agent to rewrite a
   program nobody refused — the orchestrator commits it with `delvec detail`;
-- a `delvec` whose `allocation --all` states no concurrency line (exit 2): the
-  wave bound is the engine's to state, never this tool's to assume;
+- a `delvec` whose `allocation --all` states no concurrency line, or that has
+  no `grammar blocks` (exit 2): the wave bound and the block lists are the
+  engine's to state, never this tool's to assume;
 - an engine tree or a prefab directory that is not there (exit 2).
 
 The refusal a repair hands on is never passed in by hand: when the place has a
@@ -512,6 +514,8 @@ def render(
     from_commit: bool,
     starter: pathlib.Path,
     allocation_file: pathlib.Path,
+    blocks: dict,
+    blocks_file: pathlib.Path,
 ) -> tuple[str, dict[str, int]]:
     stem = stem_of(place)
     world = content(docs.get("world"))
@@ -543,11 +547,11 @@ def render(
     generator = campaign_dir / "design" / "generator" / f"{stem}.py"
     w("## Step 1: start from the starter")
     w("")
-    w(f"Beside this handout stand `{starter}` — a ready-to-run generator for this place — and `{allocation_file}`, this place's allocation as `delvec allocation` prints it. The starter reads every handed value from the allocation (datum, ground, each seam's cells and rise, the roof, the owed names) and emits an empty-but-correct program: the floor, the ring wall, the lid where the place is roofed, every seam's opening answered, every owed name marked, sconces for the light probe. **It passes `detail --check` as it stands.** So:")
+    w(f"Beside this handout stand `{starter}` — a ready-to-run generator for this place — and `{allocation_file}`, this place's allocation as `delvec allocation` prints it. The starter reads every handed value from the allocation (datum, ground, each seam's cells and rise, the roof, the owed names, the parts) and emits an empty-but-correct program: the floor, the ring wall, the lid where the place is roofed, every seam's opening answered, every owed name marked, sconces for the light probe. **It passes `detail --check` as it stands.** So:")
     w("")
-    w(f"1. Copy it to `{generator}` and run it: `\"$DELVEWRIGHT_PYTHON\" \"{generator}\" --allocation \"{allocation_file}\" --out \"{program}\"`.")
-    w(f"2. Check it — `{delvec_p} detail --check \"{campaign_dir}\" {place}` — and see it green before you build anything.")
-    w("3. Build the place at the points marked `# ── BUILD HERE` in your copy, each of which names the idiom (the grammar reference's §2c) and the step of the *new pieces* reference it reaches for; re-run the generator and check after every edit.")
+    w(f"1. Run it: `\"$DELVEWRIGHT_PYTHON\" \"{starter}\" --allocation \"{allocation_file}\" --out \"{program}\"`, then check it — `{delvec_p} detail --check \"{campaign_dir}\" {place}` — and see it green before you build anything.")
+    w(f"2. Write your generator at `{generator}`: it imports the starter from `$DELVEWRIGHT_SKILL/scripts` (never a copy) and draws the place into a `Model` — every building, yard and piece of life as cells in piece-local coordinates, each part's columns named with `Model.part`, an owed name stood with `Model.mark` where you want it (the starter stands any you leave). The starter's section *A building drawn as cells* is the template. Run it the same way, adding `--delvec \"{delvec}\"`: the starter asks the engine (`delvec grammar survey`) where a body stands and what it reaches from your ways in, and claims every cell from the answer — the floor a body reaches into the part it stands in, the floor no body reaches (a roof, a wall head, a sill) and the air sealed over it as `unwalked`, a walk edge between two parts only where a body crosses; an open side's ring cell beside a wall, a hedge or a bush is your own air. **You never claim a cell or write an edge by hand.**")
+    w("3. Before it writes anything it refuses, naming the block and the cell, every block the server would drop (a lantern hung under a slab, a flower off soil) and every block the palette refuses (the list below); fix the drawing and run it again. Re-run the generator and check after every edit.")
     w("")
     w("**Nothing outside this handout's reading list is needed, and nothing outside it is read**: not the engine's source, not the engine's gallery, not another campaign. Everything the starter does not already do is in the references listed below.")
     w("")
@@ -570,6 +574,17 @@ def render(
     for rel, gloss in ENGINE_REFERENCES:
         w(f"- `{engine / rel}` — {gloss}")
     w(f"- `{starter}` — your starting program's generator, and the shape every generator takes")
+    w("")
+    refused = blocks.get("refused", [])
+    w(f"## The blocks you may write ({len(blocks.get('admitted', []))} admitted, {len(refused)} refused)")
+    w("")
+    w(f"`{blocks_file}` is `delvec grammar blocks`, saved: every block of the pinned game the palette admits, every one it refuses, and every one the holder census counts as a container. The palette admits every block of the game **except** these {len(refused)}, which `detail --check` refuses (`DW0730`) and your generator refuses before it writes: " + ", ".join(f"`{r['block'].removeprefix('minecraft:')}`" for r in refused) + ".")
+    for r in refused:
+        if r.get("route"):
+            w(f"- `{r['block']}` is had another way: {r['route']}")
+    containers = blocks.get("containers", [])
+    w("")
+    w(f"**Containers** ({len(containers)}): " + ", ".join(f"`{c.removeprefix('minecraft:')}`" for c in containers) + ". Each one you build is a holder the census counts: claimed by no loot and no device it is scenery, which the campaign must declare (`DW1018`), and a place may not mix scenery containers with ones that matter (`DW1024`).")
     w("")
     w("The *detail* reference's section *The program's contract* is the contract your program has to meet: every handed value used is declared as a parameter under the `handed/` prefix with the allocation's value as its default (`handed/datum-y`; `handed/ground/{min-y,max-y,bottom-y}`; `handed/roof/…` on a declared roof; `handed/seam/<edge stem>/{x0,y0,z0,x1,y1,z1,rise}`); every seam is answered with an opening at the handed cells and a contract edge to `exterior` whose `via` is that opening; every owed name is answered with a `mark` of that stem; a bar this place owns is a `barred` contract edge over exactly the bar's cells, its region named by the seam's stem; the piece is EXACTLY the frame's shape. `delvec detail --check` names every handed name it offers when your program asks for one it does not (`DW0882`).")
     w("")
@@ -698,6 +713,8 @@ def render(
         "open sides": len(a.get("sides", []) or []),
         "references": n_refs,
         "parts": n_parts,
+        "refused blocks": len(blocks.get("refused", [])),
+        "containers": len(blocks.get("containers", [])),
     }
     return "\n".join(lines) + "\n", counts
 
@@ -774,6 +791,17 @@ def go(args: argparse.Namespace) -> int:
             "is the engine's to state (spec-0122), so this `delvec` predates the page — run Init I1b",
         )
     concurrency = bound.group(0)
+    listed = run([args.delvec, "grammar", "blocks"])
+    try:
+        blocks = json.loads(listed.stdout) if listed.returncode == 0 else None
+    except json.JSONDecodeError:
+        blocks = None
+    if not isinstance(blocks, dict) or not all(k in blocks for k in ("admitted", "refused", "containers")):
+        raise Refusal(
+            EXIT_UNUSABLE,
+            f"`{delvec} grammar blocks` exited {listed.returncode} without the block lists; which blocks a "
+            "place may write is the engine's to state, so this `delvec` predates the page — run Init I1b",
+        )
     all_allocations = {x["place"]: x for x in all_list}
     if place not in all_allocations:
         raise Refusal(
@@ -825,6 +853,8 @@ def go(args: argparse.Namespace) -> int:
     shutil.copyfile(STARTER, starter)
     allocation_file = out_dir / "allocation.json"
     allocation_file.write_text(json.dumps(a, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    blocks_file = out_dir / "blocks.json"
+    blocks_file.write_text(listed.stdout, encoding="utf-8")
     text, counts = render(
         campaign_dir=campaign_dir,
         place=place,
@@ -844,6 +874,8 @@ def go(args: argparse.Namespace) -> int:
         from_commit=args.commit_output is not None,
         starter=starter,
         allocation_file=allocation_file,
+        blocks=blocks,
+        blocks_file=blocks_file,
     )
     handout_path.write_text(text, encoding="utf-8")
     if refusal is not None:

@@ -490,6 +490,6 @@ reference means the file listed here.
 | `scripts/fetch-client-jar.py` | run at I5, on the download path | I5 |
 | `scripts/handout.py` | run at step 9, once per place per attempt: the handout a fresh agent authors that place's program from | step 9 |
 | `scripts/references.py` | run at step 9 before the first handout: fetches every place's `references[]` into `.out/references/`, so its author reads the pictures | step 9 |
-| `scripts/starter.py` | copied beside every handout by `handout.py`, run by the place's author at step 9: an empty-but-correct program for that place, read off its allocation, that passes `detail --check` as it stands | step 9 |
+| `scripts/starter.py` | copied beside every handout by `handout.py`, run by the place's author at step 9: an empty-but-correct program for that place, read off its allocation, that passes `detail --check` as it stands; the place's generator imports its `Model` and `run`, draws the place as cells, and has every cell claimed from `delvec grammar survey` | step 9 |
 | `scripts/debug-note.py` | run wherever a default is taken or a refusal, limit, workaround or departure is met: one row of `.out/technical.jsonl`, written only under `DELVEWRIGHT_DEBUG` | any step |
 | `scripts/debug-report.py` | run at step 13: the *Technical decisions and engine limits* section, rendered and appended to `GENERATION.md`, only under `DELVEWRIGHT_DEBUG` | step 13 |

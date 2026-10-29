@@ -3,7 +3,8 @@
 The script's whole verdict comes from `delvec` — `allocation --all` for the
 facts and the wave bound, `detail --check` for the refusal a repair hands on — so every test here runs it
 against a stub `delvec` that answers with the recorded allocations of
-`tools/tests/fixtures/handout/` (held equal to the real binary's output by
+`tools/tests/fixtures/handout/` and the recorded block lists of `blocks.json`
+(each held equal to the real binary's output by
 `crates/delvec/tests/handout_script.rs`) and with whatever `detail` verdict the
 test plants. One rig, one thing moved per test.
 """
@@ -25,7 +26,7 @@ FIXTURE = REPO / "tools" / "tests" / "fixtures" / "handout"
 ALLOCATIONS = FIXTURE / "allocations.json"
 
 STUB = r'''#!/usr/bin/env python3
-"""A `delvec` that answers `--version`, `allocation --all` and `detail` from files."""
+"""A `delvec` that answers `--version`, `allocation --all`, `grammar blocks` and `detail` from files."""
 import pathlib, sys
 here = pathlib.Path(__file__).resolve().parent
 args = sys.argv[1:]
@@ -38,6 +39,12 @@ if "allocation" in args:
     sys.stdout.write((here / "allocations.json").read_text())
     bound = here / "concurrency.txt"
     sys.stderr.write(bound.read_text() if bound.is_file() else "concurrency: 2 = min(3, max(1, 4 / 2))\n")
+    sys.exit(0)
+if args == ["grammar", "blocks"]:
+    blocks = here / "blocks.json"
+    if not blocks.is_file():
+        sys.exit(2)
+    sys.stdout.write(blocks.read_text())
     sys.exit(0)
 if "detail" in args:
     if "--check" not in args:
@@ -63,6 +70,7 @@ class Rig:
         self.delvec.write_text(STUB, encoding="utf-8")
         self.delvec.chmod(0o755)
         shutil.copy2(ALLOCATIONS, self.bin / "allocations.json")
+        shutil.copy2(FIXTURE / "blocks.json", self.bin / "blocks.json")
 
     def plant_detail(self, exit_code: int, verdict: str) -> None:
         (self.bin / "detail-exit.txt").write_text(str(exit_code), encoding="utf-8")
@@ -175,6 +183,37 @@ def test_a_delvec_that_states_no_wave_bound_is_refused(rig: Rig):
     out = rig.run()
     assert out.returncode == 2
     assert "stated no `concurrency:` line" in out.stderr
+    assert rig.handouts("hall") == []
+
+
+def test_the_blocks_a_place_may_write_are_the_engine_s_lists(rig: Rig):
+    """Which blocks are refused (`DW0730`) and which are containers is read from
+    `delvec grammar blocks`, saved beside the handout, never typed."""
+    out = rig.run()
+    assert out.returncode == 0, out.stderr
+    handout = rig.handouts("hall")[0]
+    blocks = json.loads((FIXTURE / "blocks.json").read_text(encoding="utf-8"))
+    assert handout.with_name("blocks.json").read_text(encoding="utf-8") == (FIXTURE / "blocks.json").read_text(encoding="utf-8")
+    text = handout.read_text(encoding="utf-8")
+    assert f"## The blocks you may write ({len(blocks['admitted'])} admitted, {len(blocks['refused'])} refused)" in text
+    for r in blocks["refused"]:
+        assert f"`{r['block'].removeprefix('minecraft:')}`" in text
+    assert f"**Containers** ({len(blocks['containers'])}): " in text
+    assert "`smoker`" in text and "`blast_furnace`" in text
+    assert f"refused blocks {len(blocks['refused'])}; containers {len(blocks['containers'])}" in out.stderr
+    # Moved: the engine refuses one more block, and the handout says so.
+    blocks["refused"].append({"block": "minecraft:stone_bricks", "route": None})
+    (rig.bin / "blocks.json").write_text(json.dumps(blocks), encoding="utf-8")
+    out = rig.run(place="node/yard")
+    assert out.returncode == 0, out.stderr
+    assert "`stone_bricks`" in rig.handouts("yard")[0].read_text(encoding="utf-8").split("## The blocks you may write")[1].split("**Containers**")[0]
+
+
+def test_a_delvec_with_no_block_lists_is_refused(rig: Rig):
+    (rig.bin / "blocks.json").unlink()
+    out = rig.run()
+    assert out.returncode == 2
+    assert "grammar blocks` exited 2 without the block lists" in out.stderr
     assert rig.handouts("hall") == []
 
 

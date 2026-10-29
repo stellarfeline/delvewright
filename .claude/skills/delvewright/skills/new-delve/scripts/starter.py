@@ -8,9 +8,9 @@ from research. Run it as the handout prints it:
 
     "$DELVEWRIGHT_PYTHON" starter.py --allocation allocation.json --out <campaign>/programs/<stem>.json
 
-It runs no binary and names no path: it reads the allocation `delvec allocation
-<campaign> <place>` printed and writes the program. What it emits, for any
-allocation the engine hands:
+Run bare, it runs no binary and names no path: it reads the allocation
+`delvec allocation <campaign> <place>` printed and writes the program. What it
+emits, for any allocation the engine hands:
 
 - the ground: a ground place's floor drawn down to the bottom of its claim; an
   aloft place's one floor course under its walk plane and nothing beneath;
@@ -47,10 +47,13 @@ parameter (`references/detail.md`, *The program's contract*). A number that is
 not handed — where a mark stands, how far apart the lamps are — is this
 starter's choice and yours to change.
 
-The building is yours. The places to put it are marked `# ── BUILD HERE`, each
-naming the idiom of `docs/reference/grammar.md` §2c it reaches for and the step
-of `references/new-pieces.md` that says how. Edit a copy under
-`<campaign>/design/generator/<stem>.py`, re-run it, and check after every edit:
+The building is yours, and it is drawn, not edited in: a generator at
+`<campaign>/design/generator/<stem>.py` imports `Model` and `run` from this
+file (`$DELVEWRIGHT_SKILL/scripts`, never a copy), draws the place as cells and
+names each part's columns; `run(build)` binds the handing as above and claims
+every cell from what the engine says of the drawing (`delvec grammar survey`).
+The section *A building drawn as cells* below is the template. Re-run it and
+check after every edit:
 `delvec --prefabs "$DELVEWRIGHT_PREFABS" detail --check <campaign> <place>`.
 
 Standard library only.
@@ -978,8 +981,10 @@ class Plot(Place):
     """The starter's place, with a generator's model in place of the empty room.
 
     What the model draws stands; every rule above still binds the handing
-    (datum, seams, open sides, owed names). On a model there is no ring wall
-    and no sconce: a wall belongs to a building, and so does its light."""
+    (datum, seams, open sides, owed names). Inside the play space, above the
+    floor, the model is everything: the empty place's room, lid and sconces
+    give way to it. The ring wall stands where the place has no open side,
+    and no corner post stands between two open sides."""
 
     BUILD = None  # (place) -> Model, set by `run`
     DELVEC = "delvec"
@@ -1005,6 +1010,7 @@ class Plot(Place):
                     self.col_part[c] = e
         self.reached: set = set()
         self.unwalked: set = set()
+        self.standable: set = set()
         self.survey()
 
     # -- what one cell is: the model's block over the empty place's claim --
@@ -1021,14 +1027,16 @@ class Plot(Place):
             # is one no body reaches, and only written everywhere else.
             if c in self.unwalked:
                 return ("claim", "unwalked", r)
+            e = self.col_part.get((x, z))
             if c in self.reached:
                 region = kind[1] if kind[0] == "claim" and not self.in_space_xz(x, z) else None
-                e = self.col_part.get((x, z))
                 return ("claim", region or (e["region"] if e is not None else "room"), r)
+            if e is not None and not e["walked"] and c in self.standable:
+                return ("claim", e["region"], r)  # the floor of a part seen and never entered
             return ("fill", r)
         if not self.in_space_xz(x, z):
-            if kind in (("fill", "wall"), ("fill", "lamp")):
-                return ("claim", "room", None)  # no wall marks the place's edge
+            if kind in (("fill", "wall"), ("fill", "lamp")) and self.beside_side(x, z):
+                return ("claim", "room", None)  # no corner post marks an open place's edge
             if kind[0] == "claim" and kind[1].startswith("side-"):
                 # An open side's ring cell is a way out only where the cell
                 # inside it is air a body walks; beside a wall, a hedge, an
@@ -1044,6 +1052,11 @@ class Plot(Place):
         if c in self.unwalked:
             return ("claim", "unwalked", None)
         return kind if kind[0] == "claim" else ("claim", "room", None)
+
+    def beside_side(self, x: int, z: int) -> bool:
+        """A ring column beside an open side's run: the corner between two
+        open sides, where the empty place stands a post."""
+        return any(self.open_side(x + dx, z + dz) is not None for dx in (-1, 0, 1) for dz in (-1, 0, 1))
 
     def block_of(self, kind: tuple) -> str:
         """The block a cell's kind writes (a weighted role's first variant)."""
@@ -1097,7 +1110,7 @@ class Plot(Place):
                 if name is None:
                     continue
                 spaces[name] += [[x, y, z] for y in range(d, self.ey) if (x, y, z) not in m.no_touch]
-        palette = sorted({b for r in set(m.v.values()) for b in m.states(r)} | {b for k, v in m.palette.items() for b in m.states(k)})
+        palette = sorted({b for r in set(m.v.values()) for b in m.states(r)})
         request = {
             "size": [self.ex, self.ey, self.ez],
             "blocks": blocks,
@@ -1119,7 +1132,7 @@ class Plot(Place):
             print(f"starter.py: {m.skipped} write(s) into a seam's opening skipped; the opening stays the connection's", file=sys.stderr)
         if answer["containers"]:
             print("starter.py: containers the holder census counts (DW1018, DW1024): " + ", ".join(answer["containers"]), file=sys.stderr)
-        standable = {tuple(c) for c in answer["standable"]}
+        standable = self.standable = {tuple(c) for c in answer["standable"]}
         self.reached = {tuple(c) for c in answer["reached"]}
         self.joined = [tuple(p) for p in answer["joined"]]
         unwalked = set()
@@ -1131,6 +1144,9 @@ class Plot(Place):
             if e is None or e["walked"]:
                 unwalked.add(c)
         self.unwalked = unwalked
+        for e in self.parts:
+            if e["walked"] and not any((x, z) in set(e["cols"]) for (x, _, z) in self.reached):
+                print(f"starter.py: {e['part']['id']} is walked by declaration and no body reaches any of its floor from the ways in; open a way into it (DW1074)", file=sys.stderr)
 
     def cuts(self, axis: int) -> list[Bound]:
         out = super().cuts(axis)

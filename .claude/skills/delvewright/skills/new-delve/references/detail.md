@@ -122,22 +122,31 @@ agent: *Reference: when the prefab library has no piece you need* and
    `<campaign-dir>/.out/handouts/<place stem>/handout-<n>.md` — `n` is the
    attempt, counted from the files already there — and prints two lines: the
    handout's path, and the one-line prompt you launch the agent with. Beside the
-   handout it writes `allocation.json`, the place's allocation, and
-   `starter.py`, the starter generator: run on that allocation it writes an
+   handout it writes `allocation.json`, the place's allocation,
+   `starter.py`, the starter generator, and `blocks.json`, `delvec grammar
+   blocks` as printed. Run on that allocation the starter writes an
    empty-but-correct program — floor, ring wall, lid, every seam answered,
    every owed name marked, sconces — that passes `detail --check` as it
-   stands, with the places to build marked inside it. The handout makes it the
-   author's step 1, so an author starts from a passing program and never from
-   research: nothing outside the handout's reading list — the engine's
-   source, its gallery, another campaign — is needed or read. Where the
+   stands. The handout makes it the author's step 1, and step 2 a generator
+   that imports the starter from `$DELVEWRIGHT_SKILL/scripts` and draws the
+   place into its `Model` as cells: the starter asks the engine (`delvec
+   grammar survey`) where a body stands and what it reaches, claims every cell
+   from the answer — reached floor into its part, unreached floor and the air
+   sealed over it `unwalked`, a walk edge only where a body crosses — and
+   refuses, naming block and cell, a block the server would drop or the
+   palette refuses. The handout lists the refused blocks and the containers
+   the holder census counts. So an author starts from a passing program and
+   never from research: nothing outside the handout's reading list — the
+   engine's source, its gallery, another campaign — is needed or read. Where the
    place already has a program it runs `detail --check` on it: a program
    that passes is **exit 3** and no handout (commit it, step 3), a refused one
    puts the verdict into the handout verbatim as the refusal the next attempt
    repairs. A place the plan allocates no box to is exit 1, naming every place
    it does; a directory that is not a campaign, an engine tree or a prefab
-   directory that is not there, or a `delvec` that states no concurrency line,
-   is exit 2. Read its stderr: the handout's binding — design rows, neighbours,
-   seams, voids, owed names, refusal lines, open sides, references — and the
+   directory that is not there, or a `delvec` that states no concurrency line
+   or has no `grammar blocks`, is exit 2. Read its stderr: the handout's
+   binding — design rows, neighbours, seams, voids, owed names, refusal lines,
+   open sides, references, parts, refused blocks, containers — and the
    concurrency line. The
    handout says which neighbours are detailed **as of the handout**, and that
    the author's check reads the whole as it stands when the check runs.
@@ -151,8 +160,9 @@ agent: *Reference: when the prefab library has no piece you need* and
    other place and the design included, which is the one thing the agent must
    not hold. The handout tells the agent what it may read (the handout, its
    own program, the starter, the authoring references, the grammar corpus),
-   that it starts by copying the starter to `design/generator/<place stem>.py`,
-   running it and checking it green before it builds, what it may run
+   that it starts by running the starter and checking it green, then draws
+   the place from `design/generator/<place stem>.py` into the starter's
+   `Model`, what it may run
    (`delvec allocation` for the same facts again; `delvec grammar expand` at
    the frame and a render to look; `detail --check` to check), what it
    writes (`programs/<place stem>.json`, and a generator script beside it under

@@ -368,3 +368,129 @@ fn a_two_box_plots_piece_binds_three_parts_and_each_shape_is_refused() {
         assert!(t.contains(shape), "{tag}: {t}");
     }
 }
+
+/// A generator drawn into the starter's `Model` (the template of its section
+/// *A building drawn as cells*): a court, a house with a door, a fenced bed of
+/// poppies nobody walks. `DELVEWRIGHT_SKILL` names the skill root, as a
+/// creator's session does.
+const FAR_GENERATOR: &str = r#"
+import os, sys
+sys.path.insert(0, os.path.join(os.environ["DELVEWRIGHT_SKILL"], "scripts"))
+from starter import Model, run
+
+EDIT = os.environ.get("FAR_EDIT", "")
+
+
+def build(place):
+    m = Model(place)
+    m.palette.update({
+        "boards": "minecraft:spruce_planks",
+        "fence": "minecraft:oak_fence[east=false,north=false,south=false,waterlogged=false,west=false]",
+        "soil": "minecraft:grass_block[snowy=false]",
+        "bloom": "minecraft:poppy",
+        "lantern": "minecraft:lantern[hanging=true,waterlogged=false]",
+        "candle": "minecraft:candle[candles=1,lit=false,waterlogged=false]",
+    })
+    m.hollow(3, 8, 1, 3, 10, 14, "boards")
+    m.box(3, 8, 4, 4, 10, 14, "boards")
+    if EDIT != "no-door":
+        m.clear(5, 5, 1, 2, 10, 10)
+    m.set(5, 3, 12, "lantern")
+    if EDIT == "lantern-in-air":
+        m.set(12, 3, 4, "lantern")
+    if EDIT == "candle":
+        m.set(4, 1, 13, "candle")
+    m.part(3, 8, 10, 14, "house")
+    m.hollow(11, 16, 1, 1, 14, 17, "fence")
+    for x in range(12, 16):
+        for z in (15, 16):
+            m.set(x, 0, z, "soil")
+            m.set(x, 1, z, "bloom")
+    m.part(12, 15, 15, 16, "bed")
+    m.part(9, 16, 2, 9, "court")
+    m.finish()
+    return m
+
+
+raise SystemExit(run(build))
+"#;
+
+fn run_generator(root: &Path, campaign: &Path, edit: &str) -> Output {
+    let generator = root.join("far_generator.py");
+    std::fs::write(&generator, FAR_GENERATOR).unwrap();
+    let a = delvec(&["allocation", campaign.to_str().unwrap(), "node/far"]);
+    assert!(a.status.success(), "{}", text(&a));
+    let alloc_file = root.join("far.allocation.json");
+    std::fs::write(&alloc_file, &a.stdout).unwrap();
+    Command::new(python())
+        .arg(&generator)
+        .arg("--allocation")
+        .arg(&alloc_file)
+        .arg("--out")
+        .arg(campaign.join("programs").join("far.json"))
+        .arg("--delvec")
+        .arg(BIN)
+        .env(
+            "DELVEWRIGHT_SKILL",
+            starter().parent().unwrap().parent().unwrap(),
+        )
+        .env("FAR_EDIT", edit)
+        .output()
+        .expect("run the generator")
+}
+
+/// **A plot with a building in it passes as drawn**: the generator names its
+/// parts' columns and nothing else; the starter claims every cell from the
+/// engine's survey, and `detail --check` passes with the parts bound. With
+/// the door left out, the house's floor is claimed out of walk — what the
+/// survey says — and the check refuses the walked part no flood reaches
+/// (`DW1074`). A lantern hung in air and a refused candle are refused by the
+/// starter before it writes, naming the block.
+#[test]
+fn a_building_drawn_into_the_starter_s_model_is_claimed_from_the_engine_s_survey() {
+    let tmp = tempdir("model");
+    let (campaign, prefabs) = two_box_plot(&tmp);
+
+    let run = run_generator(&tmp, &campaign, "");
+    assert!(run.status.success(), "{}", text(&run));
+    let green = check_far(&campaign, &prefabs);
+    let t = text(&green);
+    assert!(green.status.success(), "{t}");
+    assert!(
+        t.contains("node/far: parts: 3 of 3 bound, 2 of 2 walked"),
+        "{t}"
+    );
+
+    let run = run_generator(&tmp, &campaign, "no-door");
+    assert!(run.status.success(), "{}", text(&run));
+    assert!(
+        text(&run).contains("part/house is walked by declaration and no body reaches"),
+        "{}",
+        text(&run)
+    );
+    let red = check_far(&campaign, &prefabs);
+    let t = text(&red);
+    assert!(!red.status.success(), "{t}");
+    assert!(
+        t.contains("not walked: `node/far`'s part `part/house`"),
+        "{t}"
+    );
+
+    let run = run_generator(&tmp, &campaign, "lantern-in-air");
+    assert!(!run.status.success());
+    assert!(
+        text(&run).contains(
+            "minecraft:lantern[hanging=true,waterlogged=false] at (12, 3, 4): the server drops it"
+        ),
+        "{}",
+        text(&run)
+    );
+
+    let run = run_generator(&tmp, &campaign, "candle");
+    assert!(!run.status.success());
+    assert!(
+        text(&run).contains("minecraft:candle: the palette refuses it (DW0730)"),
+        "{}",
+        text(&run)
+    );
+}
