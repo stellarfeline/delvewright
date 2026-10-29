@@ -327,6 +327,17 @@ impl Ground {
                 if top + h + 2 > hi[1] {
                     continue;
                 }
+                // A body walks out under every crown: its lowest layer
+                // stands at least three over the ground of every column it
+                // covers (a body's two courses and a step), so no crown
+                // closes a pocket on a slope.
+                let low = top + h - 2;
+                let clear_under = (-2..=2_i64).all(|dx| {
+                    (-2..=2_i64).all(|dz| self.top(x + dx, z + dz).is_some_and(|g| low - g >= 3))
+                });
+                if !clear_under {
+                    continue;
+                }
                 for y in top + 1..=top + h {
                     out.push(([x, y, z], t.log.as_str()));
                 }
