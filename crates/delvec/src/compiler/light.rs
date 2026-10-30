@@ -1281,6 +1281,37 @@ pub fn final_world(
     (world, relight)
 }
 
+/// **The cells the `DW0210` survey judges in one area**: every standing state
+/// of the reach graph from `starts`, snapped — or `DW1042` when the graph's
+/// work passed `budget` (the shipped ceiling in a build). A closure that
+/// stopped at its budget is partial, and a survey over it judges a part of
+/// the area and reports it as the whole: the cells it never reached read as
+/// neither dark nor lit, and the binding counts what it happened to reach.
+pub(crate) fn surveyed_region(
+    nav: &World,
+    area: &str,
+    starts: &[[i32; 3]],
+    budget: u64,
+) -> Result<BTreeSet<[i32; 3]>, Failure> {
+    let reach = nav.body_reach_snapped_within(starts, budget);
+    if let Some(budget) = reach.over_budget {
+        return Err(Failure {
+            code: crate::compiler::nav::DW_REACH_BUDGET,
+            message: format!(
+                "the darkness survey (`DW0210`) of `{area}` reads a reach graph whose work passed \
+                 its budget: {} launch state(s) simulated and {} template arc(s) credited, past \
+                 the ceiling of {budget} (`metrics::REACH_BUDGET_STATES`). The survey is refused \
+                 rather than taken over a partial graph — a cell the closure never reached would \
+                 be judged neither dark nor lit — and the ceiling is the engine's, so this build \
+                 is one the engine cannot yet afford; it is not something the campaign wrote \
+                 wrong",
+                reach.simulated, reach.credited,
+            ),
+        });
+    }
+    Ok(reach.standing())
+}
+
 /// **The cells a relight fixture may neither stand in nor hang from** — the
 /// one set both relight entry points (the area pass and the `relight` verb)
 /// hand the siting rule.
@@ -1377,12 +1408,23 @@ pub fn relight_with(
             })
             .collect();
         // Every cell a body can stand in — a ledge a body jumps to is a cell
-        // that must be lit (spec-0113 §5.1).
-        let reachable: BTreeSet<[i32; 3]> = nav
-            .body_region(&starts)
-            .into_iter()
-            .filter(|cell| in_bounds(*cell, amin, amax))
-            .collect();
+        // that must be lit (spec-0113 §5.1) — over a whole reach graph, or no
+        // survey at all (`DW1042`).
+        let reachable: BTreeSet<[i32; 3]> = match surveyed_region(
+            nav,
+            &area.area_id,
+            &starts,
+            delvewright_dsl::metrics::REACH_BUDGET_STATES,
+        ) {
+            Ok(r) => r
+                .into_iter()
+                .filter(|cell| in_bounds(*cell, amin, amax))
+                .collect(),
+            Err(f) => {
+                out.diagnostics.push(f);
+                continue;
+            }
+        };
         if reachable.is_empty() {
             continue; // nothing a player can stand on / reach in this area
         }
@@ -2355,6 +2397,30 @@ mod tests {
     }
 
     /// A nav world whose solid set is every non-air cell of `map`.
+    /// **A survey over a partial reach graph is refused** (`DW1042`): the
+    /// same room surveyed under the shipped ceiling is every standing cell of
+    /// it, and under a ceiling of one launch it is no survey at all — never
+    /// the part the closure reached before it stopped.
+    #[test]
+    fn a_survey_over_a_partial_reach_graph_is_refused() {
+        let map = room(7, 4, 7, true);
+        let nav = nav_of(&map);
+        let start = [[3, 1, 3]];
+        let whole = surveyed_region(
+            &nav,
+            "area/room",
+            &start,
+            delvewright_dsl::metrics::REACH_BUDGET_STATES,
+        )
+        .expect("the room's graph is far under the shipped ceiling");
+        assert_eq!(whole, nav.body_region(&start));
+        assert!(whole.len() >= 25, "{}", whole.len());
+        let partial = surveyed_region(&nav, "area/room", &start, 1);
+        let f = partial.expect_err("a closure past its ceiling is no survey");
+        assert_eq!(f.code.id(), "DW1042");
+        assert!(f.message.contains("`area/room`"), "{}", f.message);
+    }
+
     fn nav_of(map: &BTreeMap<[i32; 3], String>) -> World {
         World::from_solid_cells(map.keys().copied().collect())
     }
