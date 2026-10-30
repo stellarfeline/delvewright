@@ -127,6 +127,56 @@ fn the_site_plan_point_draws_a_threshold_shot_per_door_and_open_side() {
     }
 }
 
+/// **A side declared `open` in words is a way and has a front; a side with no
+/// declaration is seamless and has neither** (spec-0127 §4.2). The same whole
+/// rebuilt with the yard's west side left undeclared: the clear-width ledger
+/// counts one open side fewer, the render plan draws one threshold shot fewer
+/// and names no `threshold/exit/west`, and every other count stands.
+#[test]
+fn an_undeclared_side_owes_no_clear_width_and_has_no_front() {
+    let p = point("undeclared");
+    let before = read_json(&p.out.join("validation/clear-width.json"));
+    assert_eq!(before["open_sides"], 5, "{before}");
+    let tmp = tempdir("undeclared");
+    let campaign = tmp.join("site-plan");
+    common::copy_dir_all(&p.campaign, &campaign);
+    common::patch_file(&campaign.join("site-plan.json"), |v| {
+        let exit = v["content"]["boxes"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|b| b["node"] == "node/exit")
+            .expect("the yard");
+        assert_eq!(exit["sides"]["west"], "open", "{exit}");
+        exit["sides"].as_object_mut().unwrap().remove("west");
+    });
+    let out = tmp.join("out");
+    let run = build(&campaign, &p.prefabs, &out);
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(run.status.success(), "{stderr}");
+    assert!(
+        stderr.contains(
+            "threshold shots: 25 over 10 place(s), 18 door(s), 4 open side(s), 3 part(s)"
+        ),
+        "{stderr}"
+    );
+    let plan = read_json(&out.join("render-plan.json"));
+    assert_eq!(
+        plan["threshold_shots"],
+        serde_json::json!({"shots": 25, "places": 10, "doors": 18, "open_sides": 4, "parts": 3})
+    );
+    assert!(
+        plan["shots"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|s| s["id"] != "threshold/exit/west"),
+        "an undeclared side has no front"
+    );
+    let width = read_json(&out.join("validation/clear-width.json"));
+    assert_eq!(width["open_sides"], 4, "{width}");
+}
+
 /// **Criterion 6, the zero**: a plan with no portal and no open side — the
 /// ferry site, two boxes a link joins — writes `0 over 2`.
 #[test]

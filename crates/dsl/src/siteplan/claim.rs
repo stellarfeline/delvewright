@@ -956,6 +956,75 @@ mod tests {
         assert!(site.is_fixed(0, [8, 63, 2]));
     }
 
+    /// **The open side's floor course is the place's** (spec-0127 §3): on a
+    /// ring column of a side the place leaves unwalled — and on a corner both
+    /// of whose sides are open — the fixed ground stops under the floor
+    /// course, at `floor − 2`; on a walled side, and on a corner with a walled
+    /// side beside it, it is the column's ground height. `is_fixed` and
+    /// `fixed_cells` read the one answer. The ground stands at the floor
+    /// course here, so the two readings differ by exactly the course the
+    /// place's paving takes.
+    #[test]
+    fn fixed_ground_stops_under_the_floor_course_on_an_open_side() {
+        let mut house = a_box("node/house", [0, 7, 0, 7], 64, 4, false);
+        house.sides.east = None;
+        house.sides.south = None;
+        let boxes = vec![house];
+        let seams: Vec<PlacedSeam> = Vec::new();
+        let ground = Ground::open_flat(63, "minecraft:grass_block", "minecraft:dirt");
+        let site = Site::new(&boxes, &seams, &ground);
+        assert_eq!(
+            site.ground_height(0, 8, 3),
+            63,
+            "the ground stands at the floor course"
+        );
+        assert_eq!(
+            site.fixed_top(0, 8, 3),
+            62,
+            "an open east side stops under the floor course"
+        );
+        assert_eq!(site.fixed_top(0, 3, 8), 62, "an open south side too");
+        assert_eq!(
+            site.fixed_top(0, -1, 3),
+            63,
+            "a walled west side is the ground"
+        );
+        assert_eq!(
+            site.fixed_top(0, 8, 8),
+            62,
+            "a corner both of whose sides are open"
+        );
+        assert_eq!(
+            site.fixed_top(0, 8, -1),
+            63,
+            "a corner with a walled side beside it"
+        );
+        assert!(
+            !site.is_fixed(0, [8, 63, 3]),
+            "the floor course on an open side is the place's, not fixed ground"
+        );
+        assert!(
+            site.is_fixed(0, [-1, 63, 3]),
+            "on a walled side it is the ground's"
+        );
+        let cells = site.fixed_cells(0);
+        let east_run_top = cells
+            .iter()
+            .filter(|(c, _)| c[0] == 8 && (0..=7).contains(&c[2]))
+            .map(|(c, _)| c[1])
+            .max();
+        assert!(
+            east_run_top.is_none_or(|y| y <= 62),
+            "fixed_cells reads the same answer: {east_run_top:?}"
+        );
+        let west_run_top = cells
+            .iter()
+            .filter(|(c, _)| c[0] == -1 && (0..=7).contains(&c[2]))
+            .map(|(c, _)| c[1])
+            .max();
+        assert_eq!(west_run_top, Some(63));
+    }
+
     #[test]
     fn the_party_plane_between_a_house_and_a_street_is_the_facade() {
         let boxes = house_and_street();

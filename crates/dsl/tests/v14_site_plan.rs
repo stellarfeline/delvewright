@@ -2673,3 +2673,137 @@ fn a_stratum_gives_its_columns_their_blocks_and_grows_trees_clear_of_every_ring(
     let codes = plan_with(|v| strata(v, "minecraft:not_a_block"));
     assert!(codes.contains(&"DW0193".to_string()), "{codes:?}");
 }
+
+/// **`DW1064` judges doors and arches; a `stair` crosses a side declared open
+/// in the open air** (spec-0127 §4.3). The cellar's east side, where the
+/// hall's stair arrives, declared open: no finding. The hall's west side
+/// carries two seams — the porch's arch and the same stair — and declared open
+/// it is refused once, for the arch alone, so the verdict turns on the seam's
+/// kind over one face of one place.
+#[test]
+fn dw1064_admits_a_stair_across_a_side_declared_open() {
+    let open = |face: &str| {
+        let mut sides = json!({"east": "wall", "west": "wall", "south": "wall", "north": "wall"});
+        sides[face] = json!("open");
+        sides
+    };
+    let cellar = plan_diags(|v| boxes(v)[box_of("node/cellar")]["sides"] = open("east"));
+    let hit: Vec<&str> = cellar
+        .iter()
+        .filter(|x| x.code == "DW1064")
+        .map(|x| x.message.as_str())
+        .collect();
+    assert!(
+        hit.is_empty(),
+        "the stair arrives through the cellar's open east side: {hit:?}"
+    );
+    let hall = plan_diags(|v| boxes(v)[box_of("node/hall")]["sides"] = open("west"));
+    let hit: Vec<&str> = hall
+        .iter()
+        .filter(|x| x.code == "DW1064")
+        .map(|x| x.message.as_str())
+        .collect();
+    assert_eq!(hit.len(), 1, "one face, two seams, one refusal: {hit:?}");
+    assert!(
+        hit[0].contains("`edge/porch-hall` is a portal"),
+        "{}",
+        hit[0]
+    );
+    assert!(
+        !hit[0].contains("edge/hall-cellar"),
+        "the stair is not the portal: {}",
+        hit[0]
+    );
+}
+
+/// **A tree stands only where a body walks out under its crown** (spec-0127
+/// §2.2): over a slope rising one course per column, the lowest leaf layer of
+/// any tree would stand under three courses over the ground two columns
+/// uphill, so no tree is drawn there; over the flat shelf beside it, with the
+/// same rule at a thousand per mille, trees stand. Every crown drawn clears
+/// every column it covers by three or more. The terrain is a heightmap handed
+/// to the campaign as the loader hands it.
+#[test]
+fn a_crown_stands_three_or_more_over_every_column_it_covers_on_a_slope() {
+    use delvewright_dsl::siteplan::{Ground, HeightmapRead};
+    let mut v: Value = serde_json::from_str(PLAN.as_str()).expect("the green plan parses");
+    v["content"]["fill"] = json!({
+        "kind": "open",
+        "surface": "minecraft:grass_block",
+        "below": "minecraft:dirt",
+        "terrain": {"kind": "heightmap", "heightmap": "terrain.png", "base_y": 60, "range": 15},
+        "strata": [{
+            "when": {"area": {"min": [40, 40], "max": [63, 63]}},
+            "surface": "minecraft:podzol",
+            "below": "minecraft:dirt",
+            "trees": {
+                "per_mille": 1000,
+                "log": "minecraft:oak_log[axis=y]",
+                "leaves": "minecraft:oak_leaves[persistent=true]",
+                "height": [5, 5]
+            }
+        }]
+    });
+    let raw = campaign(
+        Some(v.to_string()),
+        Some(GRAPH.to_string()),
+        Some(BRIEF.to_string()),
+    );
+    let mut c = delvewright_dsl::parse_campaign(&raw).expect("the plan with a heightmap parses");
+    // The surface: flat at 60 west of x 40, rising one course per column from
+    // x 40 to x 55, flat at 75 beyond. `pixel_top` is base_y + grey * range / 255,
+    // so a grey of 17 per course gives the course back exactly.
+    let top = |x: i64| 60 + (x - 40).clamp(0, 15);
+    let grey: Vec<u8> = (0..64 * 64)
+        .map(|i| u8::try_from((top(i % 64) - 60) * 17).unwrap())
+        .collect();
+    c.heightmap = Some(HeightmapRead::Read {
+        path: "terrain.png".into(),
+        width: 64,
+        depth: 64,
+        grey,
+    });
+    let ground = Ground::of(&c);
+    assert_eq!(ground.top(40, 50), Some(60));
+    assert_eq!(ground.top(55, 50), Some(75));
+    assert_eq!(ground.top(63, 50), Some(75));
+    let trees = ground.trees(&[]);
+    let trunks: Vec<[i64; 3]> = trees
+        .iter()
+        .filter(|(_, block)| *block == "minecraft:oak_log[axis=y]")
+        .filter(|(cell, _)| ground.top(cell[0], cell[2]) == Some(cell[1] - 1))
+        .map(|(cell, _)| *cell)
+        .collect();
+    assert!(
+        !trunks.is_empty(),
+        "the flat shelf grows trees at a thousand per mille"
+    );
+    // On the slope proper (x 40..54) the column two uphill stands two courses
+    // higher, so the lowest leaf layer would clear it by two: no tree. From the
+    // slope's top course (x 55) on, the crown clears every column it covers.
+    let on_the_slope: Vec<&[i64; 3]> = trunks.iter().filter(|t| t[0] < 55).collect();
+    assert!(
+        on_the_slope.is_empty(),
+        "no tree stands where the ground two columns uphill is two courses higher: {on_the_slope:?}"
+    );
+    for t in &trunks {
+        // The lowest leaf layer: two under the trunk's top (height 5).
+        let low = t[1] - 1 + 5 - 2;
+        for dx in -2..=2 {
+            for dz in -2..=2 {
+                let g = ground.top(t[0] + dx, t[2] + dz).unwrap();
+                assert!(
+                    low - g >= 3,
+                    "crown of {t:?} stands {} over column ({}, {})",
+                    low - g,
+                    t[0] + dx,
+                    t[2] + dz
+                );
+            }
+        }
+    }
+    eprintln!(
+        "slope binding: {} tree(s) from the slope's top course on, 0 on its 15 rising columns, every crown three or more over its 25 columns",
+        trunks.len()
+    );
+}
