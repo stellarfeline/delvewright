@@ -528,6 +528,18 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
             }
         }
     }
+    // Stage 5 — sign texts (spec-0128 §8): every lettered line of either side.
+    // A blank line is no text and is not inventoried.
+    for sg in &mut c.quests.content.signs {
+        let sl = local(sg.id.as_str()).to_string();
+        for (side, lines) in [("front", &mut sg.front), ("back", &mut sg.back)] {
+            for (i, line) in lines.iter_mut().enumerate() {
+                if !line.is_empty() {
+                    f(&format!("sign.{sl}.{side}.{i}"), line);
+                }
+            }
+        }
+    }
     // Stage 5 — the container class's arrival line (spec-0105): told to each
     // player as they arrive, through the one `narrate` emitter.
     if let Some(n) = c
@@ -725,6 +737,9 @@ pub enum TextKind {
     Prompt,
     /// Narration in chat, on screen or on the action bar.
     Narration,
+    /// Lettering on a sign the world shows: a name, a notice, a direction,
+    /// each line on a board of fixed width.
+    Sign,
 }
 
 /// The situation line every answer of `state` carries (spec-0117 §4): when the
@@ -808,6 +823,7 @@ pub fn key_kind(key: &str) -> Option<TextKind> {
             _ => return None,
         },
         "loot" if n == 5 && last == "name" => ItemName,
+        "sign" if n == 4 && matches!(segs[2], "front" | "back") => Sign,
         "lethal" if n == 3 && last == "message" => Narration,
         "containers" if key == DECORATION_NOTICE_KEY => Narration,
         "guidance"
@@ -935,6 +951,34 @@ pub fn key_situations(c: &Campaign) -> BTreeMap<String, Vec<String>> {
             }
             ["world", "outro"] => {
                 lines.push("The closing line, shown when the delve is complete.".into())
+            }
+            ["sign", sg, side, i] => {
+                if let Some(sign) = c
+                    .quests
+                    .content
+                    .signs
+                    .iter()
+                    .find(|x| local(x.id.as_str()) == *sg)
+                {
+                    let all = if *side == "back" {
+                        &sign.back
+                    } else {
+                        &sign.front
+                    };
+                    lines.push(format!(
+                        "Line {} of {} on the {side} of the sign at `{}`; each line is drawn on \
+                         one line of the board and cut where it runs past its edge.",
+                        i.parse::<usize>().map_or(0, |n| n + 1),
+                        all.len(),
+                        sign.anchor
+                    ));
+                    let whole: Vec<&str> = all
+                        .iter()
+                        .map(String::as_str)
+                        .filter(|l| !l.is_empty())
+                        .collect();
+                    lines.push(format!("The whole {side}: {}", whole.join(" / ")));
+                }
             }
             ["class", cl, "blurb"] | ["class", cl, "kit", _, "name"] => {
                 if let Some(class) = c

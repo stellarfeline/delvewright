@@ -81,6 +81,7 @@ mod seal;
 mod sequence;
 mod server;
 mod shortcut;
+mod sign;
 mod stake;
 mod state;
 mod stealth;
@@ -133,6 +134,7 @@ use seal::*;
 use sequence::*;
 pub use server::*;
 use shortcut::*;
+use sign::*;
 use stake::*;
 use state::*;
 pub use stealth::*;
@@ -511,6 +513,36 @@ pub fn build_with_warnings(
                 message: e.message,
             },
         )?;
+    }
+
+    // spec-0128 §8 (DW1075): every sign text names a sign the assembled world
+    // really has, and every line fits that sign's board in the English and
+    // every declared translation. Off the same block map as the container
+    // proofs, with the same deferral for a place still standing in its
+    // stand-in; the binding line is printed for every campaign.
+    {
+        let sidecars: BTreeMap<String, delvewright_dsl::L10nDoc> = plan
+            .campaign
+            .world
+            .content
+            .languages
+            .iter()
+            .filter_map(|lang| {
+                let raw = input_bytes.get(&format!("l10n/{lang}.json"))?;
+                Some((lang.clone(), serde_json::from_slice(raw).ok()?))
+            })
+            .collect();
+        let (binding, proof) = crate::compiler::sign::check_signs(
+            &assembled.blocks,
+            plan.blockout.as_ref(),
+            &plan.signs,
+            &sidecars,
+        );
+        eprintln!("{}", binding.line());
+        proof.map_err(|e| BuildFailure::Diagnostic {
+            code: e.code,
+            message: e.message,
+        })?;
     }
 
     // v0.4 navigation planning over the solved voxel grid (spec-0008 addendum):
