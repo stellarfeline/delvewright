@@ -1705,13 +1705,17 @@ impl DarkSurvey {
         sky: u8,
         below: u8,
     ) -> DarkSurvey {
-        let light = model.flood(sky);
+        // The dense field is read where it lies: the map form holds one entry
+        // per lit cell of the whole field box, and a site plan whose region
+        // reaches the horizon lights tens of millions of open-air cells that
+        // nobody measures.
+        let light = LightField::new(model, sky);
         let mut out = DarkSurvey {
             examined: cells.len(),
             dark: BTreeMap::new(),
         };
         for &cell in cells {
-            let l = light.get(&cell).copied().unwrap_or(0);
+            let l = light.light_at(cell);
             if l < below {
                 out.dark.insert(cell, l);
             }
