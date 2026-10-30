@@ -3,7 +3,7 @@
 - **Status**: Approved
 - **Ground**: written against the branch that carries spec-0123 and `docs/reference/place-craft.md` §7 (`feature/a-place-reads-as-what-it-is` @ `a99a13a48`), read only — `docs/reference/compiler.md` (*The map pipeline — `site-plan`*: `boxes[]`, `ceiling`, `sides`, `roof`, `identities[]`; *The blockout*), `docs/reference/grammar.md` §2d (the spatial contract: `spaces`, `no_body`, `edges`) and §4d (reachability), `docs/reference/delvec/compiler/burial.md` (`DW0885`), `crates/delvec/src/compiler/blockout.rs` (the stand-in is raised only for a place no piece fills; the leak check's commons rule), `crates/delvec/src/compiler/render_plan.rs` (the `threshold` shots), spec-0098 §14, spec-0120 §3, spec-0121 §2.3, spec-0122 §7.4, spec-0123 §1, §2, §3.4, §5; the skill's `references/placement.md`. Evidence: the demo The Four Trades (content `demo/the-four-trades` @ `4d60d3e`, four `clearance: 4` boxes of exactly 14 × 14, every building a plain rectangle) and the hillside comparison (`demo/saltstair-a-1140` @ `c4f3db2`, one box per building; `demo/saltstair-b-1140` @ `75643b0`, two open boxes of 41 × 54 and 41 × 50, in which the agent built an open-walled smithy and a cartographer with a reception room before its map room). The research is `docs/reference/place-craft.md` §8, whose scale is the player building community's: 58 documented community builds measured by their stated dimensions, the community's own rules of ceiling and room, and real-world holdings read for arrangement only.
 - **What it is for**: the ruling of the side-by-side playtest of the two comparisons, taken as given and marked **[ruling]**: the one-box-per-building cut won on layout and seams, but *make each place larger* was carried out as *a bigger box per building*, and that was wrong. Every other statement is **[cited]** (a reading of the tree, a constitution rule, a research page) or **[authored]** (this spec chooses).
-- **Numbers**: spec `0125`. Two diagnostics, written `DW-new-a-plot-cannot-hold-its-parts` (§3.4) and `DW-new-a-part-not-built-as-declared` (§5.3) until the planner allocates them. `nodes[].holds[]` (§3) changes what a layout graph says and the contract's `part` key (§5.1) changes what a program says; the `dsl_version` and the grammar document version each move to the next the planner allocates. The ledger and the shots (§5.4, §6.2) change no document and take no number.
+- **Numbers**: spec `0125`. Two diagnostics, `DW1073` (§3.4) and `DW1074` (§5.3). `nodes[].holds[]` (§3) changes what a layout graph says and the contract's `part` key (§5.1) changes what a program says; `dsl_version` moves to `0.69.0` and the grammar document version to `1.14.0`. The ledger and the shots (§5.4, §6.2) change no document and take no number.
 - **Non-goals**: a building type anywhere in the surface (§3.2: the kind is a mechanism, the use is the author's words); a part's position or outline declared in the plan (the author builds the parts freely, §1); a coverage, setback or storey band the engine refuses on (§4.3: stated, read, never refused); a plot that spans two boxes; a part shared between two plots; a plot's parts as graph nodes (§13).
 
 ## 1. The ruling **[ruling]**
@@ -70,7 +70,7 @@ The `cells` in the example above are the community's: a dwelling's play space si
 
 The `use` strings carry the theme; the surface carries two kinds, a number and a flag.
 
-### 3.4 What is refused at validation — `DW-new-a-plot-cannot-hold-its-parts`
+### 3.4 What is refused at validation — `DW1073`
 
 A plot that **cannot hold what it declares** is refused where the plan is written, validation tier, one code with its shapes named in the message:
 
@@ -124,7 +124,7 @@ Per plot, in `validation/plot-program.json` and one line of the build's index (�
 
 A part's **built play space** is the union of the xz projections of every region bound to it — the cells its spaces and `no_body` regions claim — counted in columns. A part's columns are those cells. The measurement is of the piece's own declarations, which the contract gates then prove against the bytes (`contract-closure`, `DW0844`, spec-0036); nothing here reads a wall off a block.
 
-### 5.3 What is refused at detail — `DW-new-a-part-not-built-as-declared`
+### 5.3 What is refused at detail — `DW1074`
 
 Judged by `delvec detail --check` over the piece and again by the whole build, detail tier, one code with its shapes named:
 
@@ -199,12 +199,12 @@ The question is answered by reading, and the demo (§12) is where the reading is
 
 | Probe | Code | Edit |
 |---|---|---|
-| `a-plot-under-a-lid` | `DW-new-a-plot-cannot-hold-its-parts` | `node/exit`'s box given `ceiling: {"clearance": 4}` |
-| `a-plot-smaller-than-its-parts` | `DW-new-a-plot-cannot-hold-its-parts` | `part/court`'s `cells` raised past the box's play space |
-| `a-part-taller-than-the-sky` | `DW-new-a-plot-cannot-hold-its-parts` | `part/well-house`'s `height` set to the box's `open` plus one |
-| `a-part-nobody-built` | `DW-new-a-part-not-built-as-declared` | `exit.json`'s `well-house` space loses its `part` |
-| `a-part-the-plan-does-not-declare` | `DW-new-a-part-not-built-as-declared` | `exit.json`'s `court` space names `part/garden` |
-| `a-part-built-half-size` | `DW-new-a-part-not-built-as-declared` | `part/court`'s `cells` doubled in the graph |
+| `a-plot-under-a-lid` | `DW1073` | `node/exit`'s box given `ceiling: {"clearance": 4}` |
+| `a-plot-smaller-than-its-parts` | `DW1073` | `part/court`'s `cells` raised past the box's play space |
+| `a-part-taller-than-the-sky` | `DW1073` | `part/well-house`'s `height` set to the box's `open` plus one |
+| `a-part-nobody-built` | `DW1074` | `exit.json`'s `well-house` space loses its `part` |
+| `a-part-the-plan-does-not-declare` | `DW1074` | `exit.json`'s `court` space names `part/garden` |
+| `a-part-built-half-size` | `DW1074` | `part/court`'s `cells` doubled in the graph |
 | `a-seen-part-nobody-reaches-passes` | none — a green probe is not a probe | not written: the `reached: false` bed is the gallery element itself |
 | `a-kind-the-schema-cannot-spell` | `DW0100` | `"kind": "yard"` on `part/court` |
 | `a-height-on-the-ground` | `DW0100` | `"height": 3` on `part/court` |
@@ -233,10 +233,10 @@ One row for `docs/demo-levels.md`: **The Lane of Holdings** — one lane with fo
 ## Acceptance criteria
 
 1. `layout-graph.json` accepts `nodes[].holds[]` of `{id, kind, use, cells, height?, reached?}` with `kind` one of `structure` and `ground`; `"kind": "yard"`, `cells: 0` and `height` on a `ground` part are `DW0100`; a duplicate `part/` id is `DW0111`; `delvec fmt` writes the fields in the order of §3.2; a `crates/dsl` test asserts each.
-2. `DW-new-a-plot-cannot-hold-its-parts` is raised at validation for a plot under a `clearance` ceiling, for parts whose `cells` sum past the box's play space, and for a `height` past the box's `open` courses, each naming its shape and numbers, and not for a plot whose parts fit; asserted by a test; listed in `compiler.md`; bound by the three probes of §11.
+2. `DW1073` is raised at validation for a plot under a `clearance` ceiling, for parts whose `cells` sum past the box's play space, and for a `height` past the box's `open` courses, each naming its shape and numbers, and not for a plot whose parts fit; asserted by a test; listed in `compiler.md`; bound by the three probes of §11.
 3. Every validation of a plan prints `plot program: P plot(s) over N node(s), K part(s) — S structure(s), G ground(s), R seen; cells declared C of A play space`, with `0 plot(s) over N node(s)` on a graph declaring none; a test asserts both.
 4. The grammar's contract accepts `part` on a space and on a `no_body` region; `contract-well-formed` refuses `part` on an edge; the document version moves; `grammar.md` §2d states the key; a test asserts each.
-5. `DW-new-a-part-not-built-as-declared` is raised by `delvec detail --check` and by the build for the four shapes of §5.3 — unbuilt, undeclared (a part on a piece whose node has no `holds[]` included), not walked, out of size — naming the part, its use, the shape and the numbers, and not for a `reached: false` part no flood reaches; asserted by a test over a two-box plan whose plot's piece binds three parts; listed in `compiler.md`; bound by the three probes of §11.
+5. `DW1074` is raised by `delvec detail --check` and by the build for the four shapes of §5.3 — unbuilt, undeclared (a part on a piece whose node has no `holds[]` included), not walked, out of size — naming the part, its use, the shape and the numbers, and not for a `reached: false` part no flood reaches; asserted by a test over a two-box plan whose plot's piece binds three parts; listed in `compiler.md`; bound by the three probes of §11.
 6. `validation/plot-program.json` carries, per plot, every field of §5.4; the index prints `plot program: P plot(s), K part(s) built B of K; coverage min–max %, remainder min–max %`; `detail --check` prints `parts: B of K bound, W of R walked`; a test asserts the ledger over the gallery's site-plan point and that moving one claimed cell between two parts moves two `built` values by one.
 7. `delvec detail` hands the node's parts into the expansion; a test asserts the handed set equals the node's `holds[]` on `node/exit` and is empty on `node/annex`.
 8. `scripts/handout.py` writes *What this plot holds* for a node with `holds[]` and not for one without, with one row per part carrying id, kind, use, cells and share, height where declared, walked or seen; the binding sentence; the four placement lines; the frame's sky-open sentence; and a neighbour's parts by use; its binding counts include `parts`; `tools/tests/test_handout.py` asserts each on a fixture plot of three parts and on a fixture with none.
