@@ -2606,11 +2606,25 @@ fn a_stratum_gives_its_columns_their_blocks_and_grows_trees_clear_of_every_ring(
     // own outside it, and no steep column anywhere on a flat terrain.
     assert_eq!(ground.column_kind(50, 50), 1, "a column of the wood");
     assert_eq!(ground.column_kind(39, 50), 0, "one column west of the wood");
-    assert_eq!(ground.column_kind(10, 10), 0, "a flat column is never steep");
+    assert_eq!(
+        ground.column_kind(10, 10),
+        0,
+        "a flat column is never steep"
+    );
     assert_eq!(ground.fill_block([50, 63, 50]), Some("minecraft:podzol"));
-    assert_eq!(ground.fill_block([50, 62, 50]), Some("minecraft:coarse_dirt"));
-    assert_eq!(ground.fill_block([50, 64, 50]), None, "air over the surface");
-    assert_eq!(ground.fill_block([10, 63, 10]), Some("minecraft:grass_block"));
+    assert_eq!(
+        ground.fill_block([50, 62, 50]),
+        Some("minecraft:coarse_dirt")
+    );
+    assert_eq!(
+        ground.fill_block([50, 64, 50]),
+        None,
+        "air over the surface"
+    );
+    assert_eq!(
+        ground.fill_block([10, 63, 10]),
+        Some("minecraft:grass_block")
+    );
     assert_eq!(ground.fill_block([10, 62, 10]), Some("minecraft:dirt"));
     assert_eq!(ground.ground_block([50, 63, 50], 63), "minecraft:podzol");
     // The trees: drawn, inside the wood, clear of every ring, and the same twice.
@@ -2626,7 +2640,10 @@ fn a_stratum_gives_its_columns_their_blocks_and_grows_trees_clear_of_every_ring(
         .filter(|(cell, block)| *block == "minecraft:oak_log[axis=y]" && cell[1] == 64)
         .map(|(cell, _)| *cell)
         .collect();
-    assert!(!trunks.is_empty(), "300 per mille over a 24 × 24 wood draws a tree");
+    assert!(
+        !trunks.is_empty(),
+        "300 per mille over a 24 × 24 wood draws a tree"
+    );
     for t in &trunks {
         assert!(
             (40..=63).contains(&t[0]) && (40..=63).contains(&t[2]),
@@ -2640,7 +2657,9 @@ fn a_stratum_gives_its_columns_their_blocks_and_grows_trees_clear_of_every_ring(
         }
     }
     assert!(
-        trees.iter().any(|(_, b)| *b == "minecraft:oak_leaves[persistent=true]"),
+        trees
+            .iter()
+            .any(|(_, b)| *b == "minecraft:oak_leaves[persistent=true]"),
         "a crown is drawn"
     );
     assert_eq!(trees, ground.trees(&clear), "the draw is seeded");

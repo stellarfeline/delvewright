@@ -3013,7 +3013,10 @@ fn a_seamless_border_is_crossed_anywhere_along_it() {
         // The face is open on both sides, so its crossing is a contact along
         // the whole face and not a portal cut in an open side (`DW1064`).
         let seams = v["content"]["seams"].as_array_mut().unwrap();
-        let seam = seams.iter_mut().find(|s| s["edge"] == "edge/cell-exit").unwrap();
+        let seam = seams
+            .iter_mut()
+            .find(|s| s["edge"] == "edge/cell-exit")
+            .unwrap();
         seam.as_object_mut().unwrap().remove("opening");
         seam["contact"] = serde_json::json!({});
     };
@@ -3025,7 +3028,10 @@ fn a_seamless_border_is_crossed_anywhere_along_it() {
         .filter(|(_, d)| d.code == "DW0838")
         .map(|(_, d)| d.message.clone())
         .collect();
-    assert!(leaks.is_empty(), "two seamless places are no leak: {leaks:?}");
+    assert!(
+        leaks.is_empty(),
+        "two seamless places are no leak: {leaks:?}"
+    );
     assert_eq!(b.binding.seamless_borders, 1, "{}", b.binding.line());
     assert!(b.binding.border_cells > 0, "{}", b.binding.line());
     assert!(
@@ -3058,7 +3064,10 @@ fn a_seamless_border_is_crossed_anywhere_along_it() {
 
     // The same face, walled on both sides (the fixture as committed), under the
     // same perturbation: the cell and the exit leak into each other.
-    let walled = battery_of_with(&common::campaign_at(&variant("walled-face", |_| {}, None)), low);
+    let walled = battery_of_with(
+        &common::campaign_at(&variant("walled-face", |_| {}, None)),
+        low,
+    );
     assert!(
         !named(&walled, "`node/cell`", "`node/exit`").is_empty(),
         "a hop over the low wall between two places that wall their face is a leak: {:?}",
