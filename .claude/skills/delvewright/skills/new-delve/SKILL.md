@@ -314,6 +314,9 @@ Every destination is built to read as what it is: `docs/reference/game-writing.m
 A plot is planned with what it holds before its box is written — its structures
 and open ground, which are walked, each part's play space in cells — and its box
 is sized from them (`references/placement.md`).
+A settlement — streets, lots, a harbour — is laid out against the town
+checklist, and its places are drawn with the starter's town helpers:
+`references/town.md`.
 
 ## 3. The story documents — `npcs`, `classes`, `quest-plan`
 
@@ -463,6 +466,7 @@ reference means the file listed here.
 | `references/init.md` | every Init command, and what each failure means | Init |
 | `references/the-shipped-library.md` | the optional prefab library: its revision, its postconditions, what a campaign records | I6, step 9 |
 | `references/placement.md` | the three site-plan documents, in the order they compile | step 2 |
+| `references/town.md` | a settlement: the town checklist, the starter's town helpers, a plan moving under a drawn place | steps 2, 9 |
 | `references/workspace.md` | the campaign directory and every document in it | step 1 |
 | `references/map-reference.md` | drawing the map's own reference views | step 2 |
 | `references/reference-works.md` | the finished levels to start from, by kind of map, and how one is added | steps 2, 9 |
@@ -491,5 +495,6 @@ reference means the file listed here.
 | `scripts/handout.py` | run at step 9, once per place per attempt: the handout a fresh agent authors that place's program from | step 9 |
 | `scripts/references.py` | run at step 9 before the first handout: fetches every place's `references[]` into `.out/references/`, so its author reads the pictures | step 9 |
 | `scripts/starter.py` | copied beside every handout by `handout.py`, run by the place's author at step 9: an empty-but-correct program for that place, read off its allocation, that passes `detail --check` as it stands; the place's generator imports its `Model` and `run`, draws the place as cells, and has every cell claimed from `delvec grammar survey` | step 9 |
+| `scripts/town.py` | imported through `starter.py` by a settlement's place generators at step 9: the town helpers — ways, fronts, lot edges, boats and quays, a front's seam and sign station — each parameterised by its caller | steps 2, 9 |
 | `scripts/debug-note.py` | run wherever a default is taken or a refusal, limit, workaround or departure is met: one row of `.out/technical.jsonl`, written only under `DELVEWRIGHT_DEBUG` | any step |
 | `scripts/debug-report.py` | run at step 13: the *Technical decisions and engine limits* section, rendered and appended to `GENERATION.md`, only under `DELVEWRIGHT_DEBUG` | step 13 |
