@@ -1396,7 +1396,7 @@ impl Assembled {
             ymin = ymin.min(c[1]);
             ymax = ymax.max(c[1]);
             if inside(c) {
-                blocks.insert(*c, b.clone());
+                blocks.insert(*c, *b);
             } else {
                 left_out += 1;
             }
@@ -1410,13 +1410,13 @@ impl Assembled {
         for y in ymin..=ymax + 3 {
             for x in lo[0] - 1..=hi[0] + 1 {
                 for z in [lo[1] - 1, hi[1] + 1] {
-                    blocks.insert([x, y, z], wall.clone());
+                    blocks.insert([x, y, z], wall);
                     walls += 1;
                 }
             }
             for z in lo[1]..=hi[1] {
                 for x in [lo[0] - 1, hi[0] + 1] {
-                    blocks.insert([x, y, z], wall.clone());
+                    blocks.insert([x, y, z], wall);
                     walls += 1;
                 }
             }
