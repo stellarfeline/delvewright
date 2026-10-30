@@ -69,7 +69,9 @@ Methodology; CI enforces the DW-code subset — see `tools/ci/check-dw-codes.py`
 - The assembled-light gate (`DW0210`/`DW0211`) runs inside the build (it needs the
   placed geometry) but is analysis-tier: `main` maps a `DW02xx` build diagnostic to
   **exit 2**. Its relight fixtures feed both `setup_finish` emission and the nav
-  re-verification in pass 10.
+  re-verification in pass 10. Its survey reads a whole reach graph or refuses
+  `DW1042` (`light::surveyed_region`): a closure that passed its budget is
+  partial and is never surveyed.
 - The light field itself (`compiler::light`) is **dense**: over the assembled
   AABB plus the layer of open air above it (the cell a body stands in on the
   tallest block, which reads the sky and block light it really has), each cell is one byte holding whether light passes it, whether the sky is
