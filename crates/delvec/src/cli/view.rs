@@ -52,6 +52,9 @@ pub(crate) struct FramesCampaignArgs<'a> {
     pub(crate) out: Option<&'a Path>,
     pub(crate) labels: bool,
     pub(crate) size: u32,
+    /// `--served`: draw what the client draws from the camera, not every
+    /// loaded chunk.
+    pub(crate) served: bool,
     pub(crate) draw: &'a delvec::compiler::view::cli::DrawArgs,
 }
 
@@ -161,7 +164,9 @@ pub(crate) fn run_frames_campaign(
             backend: args.draw.backend,
             width: args.size,
             height: args.size,
-            served: Some(delvewright_dsl::viewdistance::chunks(&campaign)),
+            served: args
+                .served
+                .then(|| delvewright_dsl::viewdistance::chunks(&campaign)),
         },
         args.draw.threads,
     ) {

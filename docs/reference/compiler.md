@@ -6256,7 +6256,7 @@ the mode, and returns the pixels with the renderer's own statistics.
 delvec frames <build-dir> [-o <dir>] [--shot <id>]... [--labels] [--size 1024]
     [--backend auto|cpu|metal|vulkan|dx12] [--threads N] [--textures <jar>]
 delvec frames --campaign <campaign-dir> (--camera x,y,z,yaw,pitch[,fov] | --at <anchor>
-    [--orbit <deg>] [--dist <n>]) [-o out.png] [--labels] [--size 1024] [draw flags]
+    [--orbit <deg>] [--dist <n>]) [-o out.png] [--labels] [--served] [--size 1024] [draw flags]
 ```
 
 **A build's frames.** Every shot of `<build-dir>/render-plan.json` (or the
@@ -6298,14 +6298,15 @@ the eye then pulled along its sight line into open air
 (`compiler::camera::stand_in_open_air`, the render plan's own walk). A
 campaign frame lays no datapack placement — its world is the templates, the
 assembly and the load configuration — and writes the PNG, its manifest and
-`world/`, nothing else. **A campaign frame draws what the client draws at the
-served view distance** (`frames::served_rect`): the square of
+`world/`, nothing else. A campaign frame draws every loaded chunk; with
+**`--served`** it draws what the pinned client draws from the camera at the
+served view distance (`frames::served_rect`): the square of
 `world.view_distance` chunks (the floor, 10, when undeclared) around the
 camera's own chunk, clipped to the loaded extent, with the render-distance fog
-closing at 16 blocks a chunk — so a frame taken where a body stands shows what
-a player there sees, and nothing the server never sends. A camera farther than
-that from every loaded chunk draws nothing and is `DW0723`. A build's review
-frames, panoramas and showcase cameras draw every loaded chunk.
+closing at 16 blocks a chunk — what a player standing there sees, and nothing
+the server never sends. A `--served` camera farther than that from every
+loaded chunk draws nothing and is `DW0723`. A build's review frames, panoramas
+and showcase cameras draw every loaded chunk.
 
 **`--labels`** stamps every target's outline and name on the frame; it changes
 the frame and never the manifest.
