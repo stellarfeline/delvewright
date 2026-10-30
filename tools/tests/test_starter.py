@@ -74,3 +74,57 @@ def test_a_side_with_nothing_of_its_own_to_claim_is_not_declared(tmp_path: pathl
     assert not [e for e in p["contract"]["edges"] if e.get("via") == "side-north"]
     # the side it does own is still declared
     assert {"a": "room", "b": "exterior", "class": "walk", "via": "side-south"} in p["contract"]["edges"]
+
+
+def _starter_module():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("starter_under_test", STARTER)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class _Datum:
+    value = 1
+    expr = {"expr": "int", "value": 1}
+
+
+class _Place:
+    """The fields `marks` reads, over a place whose floor no body reaches."""
+
+    a = {"space": [[0, 0, 0], [4, 3, 4]], "owed_anchors": ["anchor/sign-bakery"]}
+    ex = ez = 5
+    datum = _Datum()
+    gates: list = []
+    seams: list = []
+
+    def __init__(self, drawn: dict):
+        self.model = type("M", (), {"marks": drawn})()
+
+    def walkable(self, cell) -> bool:
+        return False
+
+    def cell(self, x, y, z):
+        return ("fill", None, None)
+
+
+def test_a_mark_given_a_course_names_the_block_at_that_cell():
+    """`Model.mark(stem, x, z, y=…)` names a block's own cell — a sign a
+    `signs` entry writes — so no floor is asked of it (spec-0128 §8); the
+    same name with no course is refused off walkable floor."""
+    st = _starter_module()
+    out = st.marks(_Place({"sign-bakery": (2, 3, "south", 3)}), {"op": "skip"})
+    assert out["mark"] == {
+        "anchor": "sign-bakery",
+        "at": "offset",
+        "facing": "south",
+        "y": {"expr": "int", "value": 3},
+        "x": {"expr": "int", "value": 2},
+        "z": {"expr": "int", "value": 3},
+    }
+    import pytest
+
+    with pytest.raises(SystemExit) as e:
+        st.marks(_Place({"sign-bakery": (2, 3, "south", None)}), {"op": "skip"})
+    assert "not on floor a body reaches" in str(e.value)

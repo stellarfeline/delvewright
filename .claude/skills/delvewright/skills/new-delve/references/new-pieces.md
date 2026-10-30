@@ -451,9 +451,11 @@ these sources or adding more of them, never by another kind of light.
 
 ## What the grammar cannot express
 
-**What the grammar cannot express — escalate, do not work around**: block
-entities of any kind (chest loot, sign text, spawners — bind those in the
-campaign against an anchor the piece declares), **smooth** curves (a smooth
+**What the grammar cannot express — escalate, do not work around**: a
+block entity's payload the campaign has no binding for (a spawner's mob, a
+banner's pattern — chest loot and sign text are bound in the campaign, `loot`
+and `signs`, against an anchor the piece declares at the block's own cell),
+**smooth** curves (a smooth
 body is the form route below, not an escalation), diagonals, a
 profile step that varies independently of the box, a vault bending on two axes at
 once, and terrain. **Neither a stepped arch nor a symmetric shape is on this
