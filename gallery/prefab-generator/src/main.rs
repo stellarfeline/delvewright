@@ -1055,6 +1055,33 @@ const CONTAINERS: &[Anchor] = &[
     },
 ];
 
+/// **Sign anchors** — the cells that hold a sign (spec-0128 §8).
+///
+/// A `signs` entry writes the words of a sign the piece placed, so its anchor
+/// names the sign's own cell. The hall hangs one board under the near hall's
+/// ceiling between two lanterns of the grid, over the pedestal row, readable
+/// from both sides; a hanging sign is the narrower of the two boards, which
+/// is the board the width proof (`DW1075`) is strictest on.
+const SIGNS: &[Anchor] = &[Anchor {
+    name: "anchor/hall-sign",
+    pos: [12, HALL_ROOF_Y - 1, 9],
+    facing: None,
+    trigger_block: None,
+    note: "the board hung over the pedestal row, given its words by a `signs` entry",
+    role: None,
+}];
+
+/// The sign every [`SIGNS`] cell holds: a hanging sign under the ceiling,
+/// its faces to the north and the south.
+const HALL_SIGN: (&str, &[(&str, &str)]) = (
+    "minecraft:spruce_hanging_sign",
+    &[
+        ("attached", "false"),
+        ("rotation", "0"),
+        ("waterlogged", "false"),
+    ],
+);
+
 /// **Solid anchors** — cells that are deliberately stone.
 ///
 /// `collapse` needs a slab of blocks to bring down and refuses both an empty
@@ -1665,6 +1692,9 @@ fn block_at(
     if (x, z) == CABIN_LADDER && (1..=CABIN_ROOF_Y).contains(&y) {
         return ("minecraft:ladder", Some(CABIN_LADDER_STATE));
     }
+    if SIGNS.iter().any(|a| a.pos == [x, y, z]) {
+        return (HALL_SIGN.0, Some(HALL_SIGN.1));
+    }
     if CONTAINERS.iter().any(|a| a.pos == [x, y, z]) {
         // Facing north, so the lid opens toward the walker coming down the hall.
         return (
@@ -1857,6 +1887,20 @@ fn assert_anchors_are_standable(s: &Structure) {
             a.name
         );
     }
+    for a in SIGNS {
+        assert_eq!(
+            at(a.pos),
+            HALL_SIGN.0,
+            "{ID}: sign anchor `{}` holds no sign",
+            a.name
+        );
+        assert_eq!(
+            at([a.pos[0], a.pos[1] + 1, a.pos[2]]),
+            "minecraft:stone",
+            "{ID}: sign `{}` hangs from nothing",
+            a.name
+        );
+    }
     // A volume's centre hangs in the air it centres.
     for a in VOLUME_ANCHORS {
         assert_eq!(
@@ -1923,15 +1967,17 @@ fn assert_anchors_are_standable(s: &Structure) {
         !ANCHORS.is_empty()
             && !GATE_ANCHORS.is_empty()
             && !CONTAINERS.is_empty()
+            && !SIGNS.is_empty()
             && !SOLID_ANCHORS.is_empty()
             && !FURNITURE_ANCHORS.is_empty(),
         "{ID}: the anchor inventory is empty, so nothing above examined anything"
     );
     println!(
-        "{ID}: anchor inventory bound — {} point anchor(s), {} container(s), \
+        "{ID}: anchor inventory bound — {} point anchor(s), {} container(s), {} sign(s), \
          {} solid anchor(s), {} gate anchor(s), {} furniture anchor(s) checked against the blocks",
         ANCHORS.len(),
         CONTAINERS.len(),
+        SIGNS.len(),
         SOLID_ANCHORS.len(),
         GATE_ANCHORS.len(),
         FURNITURE_ANCHORS.len()
@@ -2418,6 +2464,7 @@ fn metadata() -> serde_json::Value {
     for a in ANCHORS
         .iter()
         .chain(CONTAINERS)
+        .chain(SIGNS)
         .chain(SOLID_ANCHORS)
         .chain(VOLUME_ANCHORS)
     {

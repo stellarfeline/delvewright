@@ -599,8 +599,8 @@ Each of these was established by running it, except the two marked otherwise:
 
 - **No block entities and no NBT.** No chest loot, no sign text, no spawner, no
   banner. Anything with a payload is bound by the *campaign* against an anchor
-  (spec-0021), never by the piece. So the piece must **declare an anchor** for
-  every such thing.
+  (`loot`, spec-0021; `signs`, spec-0128 §8), never by the piece. So the piece
+  must **declare an anchor** at the cell of every such thing.
 - **Entities: item holders, saying what they look like, and nothing else**
   (spec-0111 §3.1). A template's `entities` may carry an item frame, a glow
   item frame or an armour stand — a grammar program places one with `holder`
