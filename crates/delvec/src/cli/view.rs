@@ -362,7 +362,12 @@ pub(crate) fn camera_world(
     delvec::compiler::nav::World,
     delvec::compiler::light::Relight,
 ) {
-    delvec::compiler::light::final_world(plan, assembled)
+    // The build's own cut: the proofs a view's world answers read the judged
+    // columns ([`delvec::compiler::assembled::Assembled::judged_within`]); the
+    // picture ([`camera_base`]) is the whole world.
+    let judged = delvec::compiler::emit::judged_columns(plan)
+        .and_then(|(lo, hi)| assembled.judged_within(lo, hi));
+    delvec::compiler::light::final_world(plan, judged.as_ref().map_or(assembled, |(a, _)| a))
 }
 
 /// See [`camera_world`]: the picture base over the relight `relight` placed.

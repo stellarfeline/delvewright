@@ -398,6 +398,17 @@ pub fn build_with_warnings(
             .as_ref()
             .expect("an assembly the replay did not take"),
     };
+    // Ground past the boundary's playable region is placed and written and
+    // judged by nothing (`Assembled::judged_within`): every proof below reads
+    // the judged part; the picture the review worlds and the render plan are
+    // written from is the whole one.
+    let whole = assembled;
+    let judged = boundary::judged_columns(plan).and_then(|(lo, hi)| whole.judged_within(lo, hi));
+    if let Some((_, j)) = &judged {
+        eprintln!("{}", j.line());
+    }
+    let assembled: &crate::compiler::assembled::Assembled =
+        judged.as_ref().map_or(whole, |(a, _)| a);
     // Advisory findings the replay raised (`DW0353` gate-region collisions,
     // `DW0354` broken block support) — reported by the caller, never fatal.
     // Advisory findings the PLACEMENT stage raised (`DW0498`: a pool draw that
@@ -1321,6 +1332,12 @@ pub fn build_with_warnings(
     let pov_legs: Vec<(usize, usize)> = pov_shots.iter().map(|s| (s.from_step, s.step)).collect();
     let frame_worlds =
         crate::compiler::view::review::frame_worlds_with(plan, &world, Some(&ledger), &pov_legs);
+    // The worlds a reviewer looks at hold the whole world, the ground past the
+    // judged columns included.
+    let whole_picture = judged
+        .is_some()
+        .then(|| crate::compiler::view::beat::picture_base(plan, whole, &relight.placements));
+    let picture = whole_picture.as_ref().unwrap_or(&picture);
     let (render_plan_doc, camera_warnings) = crate::compiler::render_plan::render_plan(
         plan,
         prefabs,
@@ -1328,15 +1345,14 @@ pub fn build_with_warnings(
         &cutscene_proof.frames,
         &world,
         &frame_worlds,
-        &picture,
+        picture,
     )?;
     warnings.extend(camera_warnings);
     put_json(&mut out, "render-plan.json", &render_plan_doc);
-    let maker =
-        crate::compiler::view::review::WorldMaker::new(plan, assembled, &picture, structures);
+    let maker = crate::compiler::view::review::WorldMaker::new(plan, whole, picture, structures);
     let review = crate::compiler::view::review::write_review(
         plan,
-        &picture,
+        picture,
         &maker,
         crate::compiler::view::review::ReviewOf {
             frames: &frame_worlds,

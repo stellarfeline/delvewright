@@ -70,6 +70,30 @@ pub fn playable_region_box(plan: &Plan) -> Option<([i32; 3], [i32; 3])> {
     playable_region(plan).map(|r| (r.min, r.max))
 }
 
+/// **How far past the playable region the body-judging analyses read the
+/// world** ([`judged_columns`]). Light is the one quantity inside the region
+/// that ground outside it can move, and light falls one level a block from at
+/// most 15 (`compiler::light`), so a cell inside the region measures the same
+/// light in a world cut 16 columns out as in the whole one.
+pub const JUDGED_MARGIN: i32 = 16;
+
+/// **The columns every proof of where a body can be reads**: the playable
+/// region grown by [`JUDGED_MARGIN`] on each horizontal face, inclusive
+/// `[x, z]` corners — `None` when the boundary does not return a body (none
+/// declared, or `returns: false`), since then every column is one a body may
+/// reach. The boundary's region is the one authority: ground past it is seen
+/// and never stood on.
+pub fn judged_columns(plan: &Plan) -> Option<([i32; 2], [i32; 2])> {
+    if !boundary_returns(plan) {
+        return None;
+    }
+    let r = playable_region(plan)?;
+    Some((
+        [r.min[0] - JUDGED_MARGIN, r.min[2] - JUDGED_MARGIN],
+        [r.max[0] + JUDGED_MARGIN, r.max[2] + JUDGED_MARGIN],
+    ))
+}
+
 /// Derive the playable region, or `None` when no `boundary` is declared (the whole
 /// feature is then off and output stays byte-identical).
 pub(super) fn playable_region(plan: &Plan) -> Option<PlayableRegion> {

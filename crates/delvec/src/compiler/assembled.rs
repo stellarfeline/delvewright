@@ -1334,6 +1334,118 @@ pub fn assemble(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Assemble
     }
 }
 
+/// The block that closes the judged world's faces ([`Assembled::judged_within`]):
+/// a full collision box that passes light and hides nothing from the eye
+/// (`light-block`, `occlusion` tables) — the boundary's return, as a block.
+pub const JUDGED_WALL: &str = "minecraft:barrier";
+
+/// What [`Assembled::judged_within`] kept and left out, for the binding line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Judged {
+    /// The judged columns' inclusive `[x, z]` corners.
+    pub lo: [i32; 2],
+    pub hi: [i32; 2],
+    /// Cells of the assembled world inside the judged columns.
+    pub kept: usize,
+    /// Cells of the assembled world outside them: placed and written, never judged.
+    pub left_out: usize,
+    /// Wall cells standing on the judged columns' faces.
+    pub wall: usize,
+}
+
+impl Judged {
+    /// The binding line every build that judges part of its world prints.
+    pub fn line(&self) -> String {
+        format!(
+            "judged world: columns x {}..{}, z {}..{} (the boundary's playable region grown by {}); \
+             {} assembled cell(s) judged, {} placed beyond them and judged by nothing, {} wall \
+             cell(s) closing the faces",
+            self.lo[0],
+            self.hi[0],
+            self.lo[1],
+            self.hi[1],
+            crate::compiler::emit::JUDGED_MARGIN,
+            self.kept,
+            self.left_out,
+            self.wall
+        )
+    }
+}
+
+impl Assembled {
+    /// **The part of the world the body-judging analyses read**: the cells of
+    /// the inclusive columns `lo..=hi` (`[x, z]`), every height, with a
+    /// [`JUDGED_WALL`] standing on each face one column out, from the lowest
+    /// cell of the world to three over its highest. `None` when no cell lies
+    /// outside the columns: the world is judged whole and nothing changes.
+    ///
+    /// Ground past the boundary's playable region is seen and never reached —
+    /// the boundary returns a body that leaves — so it enters placement and
+    /// the world write and no proof of where a body can be, what it stands in
+    /// or how lit it is. The wall keeps a flood from walking off the judged
+    /// columns onto nothing: a body that walks out meets the return, never a
+    /// fall. It passes light, so a column's sky is what it was.
+    pub fn judged_within(&self, lo: [i32; 2], hi: [i32; 2]) -> Option<(Assembled, Judged)> {
+        let inside =
+            |c: &[i32; 3]| c[0] >= lo[0] && c[0] <= hi[0] && c[2] >= lo[1] && c[2] <= hi[1];
+        let mut ymin = i32::MAX;
+        let mut ymax = i32::MIN;
+        let mut left_out = 0usize;
+        let mut blocks = BlockMap::new();
+        for (c, b) in self.blocks.iter() {
+            ymin = ymin.min(c[1]);
+            ymax = ymax.max(c[1]);
+            if inside(c) {
+                blocks.insert(*c, b.clone());
+            } else {
+                left_out += 1;
+            }
+        }
+        if left_out == 0 {
+            return None;
+        }
+        let kept = blocks.len();
+        let wall = BlockState::new(JUDGED_WALL);
+        let mut walls = 0usize;
+        for y in ymin..=ymax + 3 {
+            for x in lo[0] - 1..=hi[0] + 1 {
+                for z in [lo[1] - 1, hi[1] + 1] {
+                    blocks.insert([x, y, z], wall.clone());
+                    walls += 1;
+                }
+            }
+            for z in lo[1]..=hi[1] {
+                for x in [lo[0] - 1, hi[0] + 1] {
+                    blocks.insert([x, y, z], wall.clone());
+                    walls += 1;
+                }
+            }
+        }
+        let judged = Assembled {
+            blocks: std::sync::Arc::new(blocks),
+            settled: self.settled.clone(),
+            open_gates: self
+                .open_gates
+                .iter()
+                .copied()
+                .filter(|c| inside(c))
+                .collect(),
+            gate_seals: self.gate_seals.clone(),
+            reached: self.reached.clone(),
+        };
+        Some((
+            judged,
+            Judged {
+                lo,
+                hi,
+                kept,
+                left_out,
+                wall: walls,
+            },
+        ))
+    }
+}
+
 /// The authoritative assembled-world cell→block map: placed structures + solver
 /// seals + gate clears, **then gravity-settled**. Cells absent from the map are
 /// air. Shared by the nav occupancy model and the relight light model so a single
@@ -3503,5 +3615,89 @@ mod typed_read_tests {
             };
             assert_eq!(structure_size(&bytes), walked_size, "{what}: size");
         }
+    }
+}
+
+#[cfg(test)]
+mod judged_tests {
+    use super::*;
+
+    fn world(cells: &[([i32; 3], &str)]) -> Assembled {
+        let mut blocks = BlockMap::new();
+        for (c, b) in cells {
+            blocks.insert(*c, BlockState::new(b));
+        }
+        Assembled {
+            blocks: std::sync::Arc::new(blocks),
+            settled: Vec::new(),
+            open_gates: BTreeSet::new(),
+            gate_seals: Vec::new(),
+            reached: Reached::default(),
+        }
+    }
+
+    /// Nothing outside the columns: the world is judged whole, unchanged.
+    #[test]
+    fn a_world_inside_its_columns_is_judged_whole() {
+        let a = world(&[
+            ([0, 64, 0], "minecraft:stone"),
+            ([3, 65, 3], "minecraft:stone"),
+        ]);
+        assert!(a.judged_within([0, 0], [3, 3]).is_none());
+    }
+
+    /// Cells past the columns leave; the faces one column out are walled from
+    /// the lowest cell to three over the highest; the cells inside stay as
+    /// they were.
+    #[test]
+    fn ground_past_the_columns_leaves_and_a_wall_closes_the_faces() {
+        let a = world(&[
+            ([0, 64, 0], "minecraft:stone"),
+            ([2, 66, 2], "minecraft:grass_block"),
+            ([9, 70, 0], "minecraft:stone"),
+            ([0, 60, -9], "minecraft:dirt"),
+        ]);
+        let (j, b) = a.judged_within([0, 0], [2, 2]).expect("cells lie outside");
+        assert_eq!((b.kept, b.left_out), (2, 2));
+        assert_eq!(
+            j.blocks.get(&[0, 64, 0]).map(|s| s.as_str()),
+            Some("minecraft:stone")
+        );
+        assert_eq!(
+            j.blocks.get(&[2, 66, 2]).map(|s| s.as_str()),
+            Some("minecraft:grass_block")
+        );
+        assert!(!j.blocks.contains_key(&[9, 70, 0]));
+        assert!(!j.blocks.contains_key(&[0, 60, -9]));
+        // A ring of 5 x 5 minus the 3 x 3 inside = 16 columns, y 60..=73.
+        assert_eq!(b.wall, 16 * 14);
+        for c in [
+            [-1, 60, 0],
+            [3, 73, 1],
+            [1, 70, -1],
+            [3, 65, 3],
+            [-1, 66, -1],
+        ] {
+            assert_eq!(
+                j.blocks.get(&c).map(|s| s.as_str()),
+                Some(JUDGED_WALL),
+                "{c:?}"
+            );
+        }
+        assert!(!j.blocks.contains_key(&[-1, 74, 0]));
+        assert!(!j.blocks.contains_key(&[-1, 59, 0]));
+    }
+
+    /// The wall stops a body and leaves the light and the eye alone.
+    #[test]
+    fn the_wall_is_solid_passes_light_and_hides_nothing() {
+        assert!(delvewright_dsl::blockshape::supports_body(JUDGED_WALL));
+        assert!(!delvewright_dsl::blockshape::passes_body(JUDGED_WALL));
+        assert!(crate::compiler::light::passes_light(JUDGED_WALL));
+        let occ = occupancy_of(
+            BTreeMap::from([([0, 64, 0], JUDGED_WALL.to_string())]),
+            &BTreeSet::new(),
+        );
+        assert!(occ.hiding.is_empty());
     }
 }
