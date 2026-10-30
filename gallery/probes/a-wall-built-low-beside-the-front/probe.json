@@ -1,5 +1,5 @@
 {
-  "code": "DW0838",
+  "code": "DW0836",
   "patch": [
     {
       "doc": "programs/far-hall.json",
@@ -42,5 +42,5 @@
   ],
   "point": "site-plan",
   "units": [],
-  "why": "The far hall's program edited so the east end of its south wall — the twelve columns past the span the causeway front allocates (edge/causeway-front, a contact of extent [6, 6] at 15) — stands one course over the floor course, its head claimed as the hall's own floor. A body in the hall steps onto the low wall and off its far side into the causeway, a crossing outside the span the plan allocated and through no seam. The piece's own gates pass: every cell is claimed, and the room's passable boundary there is the whole's to judge. The leak proof names the pair and the route, move by move, at the author's own check (detail --check) and at the build. It declares no unit: what must not build is a way between two places that nothing in the design agreed to."
+  "why": "The far hall's program edited so the east end of its south wall — the twelve columns past the span the causeway front allocates (edge/causeway-front, a contact of extent [6, 6] at 15) — stands one course over the floor course, its head claimed as the hall's own floor. The piece's own gates pass (every cell is claimed, and the room's passable boundary there is the whole's to judge), and the whole refuses it: the wall the two places share carries a seam, and a passable cell of that plane outside the cells the seam allocated is the second claim of `DW0836` — a way opened where nothing was allocated — named with the plane and the cells. It declares no unit: what must not build is a hole in a party wall beside the front the plan drew."
 }

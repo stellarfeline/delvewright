@@ -1,0 +1,26 @@
+{
+  "code": "DW0838",
+  "patch": [
+    {
+      "doc": "programs/gantry.json",
+      "op": "replace",
+      "path": "/palette/rail",
+      "value": "minecraft:spruce_planks"
+    },
+    {
+      "doc": "programs/gantry.json",
+      "op": "replace",
+      "path": "/rules/open-air/0/body",
+      "value": {
+        "body": {
+          "op": "void"
+        },
+        "op": "claim",
+        "region": "deck"
+      }
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The gantry's program edited so its rail is a course of planks a body jumps onto instead of a fence it cannot clear, with the air over the rail claimed as the deck's own. The gantry hangs over the yard and shares no wall with it: its one allocated way down is the ladder through its deck. A body on the deck jumps onto the rail and off its edge, and falls five courses into the yard's play space — a crossing between two places through no cell the plan allocated, which is a leak the leak proof names with its route, move by move. The piece's own gates pass: every standable cell is claimed and the deck's envelope is `open`. It declares no unit: what must not build is a way between two places that nothing in the design agreed to."
+}
