@@ -466,8 +466,9 @@ fn a_campaign_with_no_way_writes_its_zeros() {
 
 /// **A way place climbs where its place climbs.** The hall's way, x 13..14,
 /// built as a flight: at z 14 a stair tread in x 13 beside a ladder whose
-/// foot stands on the hall's floor course in x 14, the floor raised a course
-/// under both columns at z 15..16, and back down at z 17. A body climbs the
+/// foot stands on the hall's floor course in x 14 (hung on the verge's wall),
+/// the floor raised a course under both columns at z 15..16, and back down at
+/// z 17. A body climbs the
 /// tread and passes the ladder at the treads' plane, so every station is
 /// whole — the station that judged both columns at the hall's floor took the
 /// tread and left only the ladder. A wall standing on the raised floor in
@@ -476,11 +477,14 @@ fn a_campaign_with_no_way_writes_its_zeros() {
 fn a_way_place_built_as_a_flight_is_judged_at_the_plane_it_climbs_to() {
     let stair =
         "minecraft:stone_brick_stairs[facing=south,half=bottom,shape=straight,waterlogged=false]";
-    let ladder = "minecraft:ladder[facing=south,waterlogged=false]";
+    // Facing west, the ladder hangs on the verge's wall at x 15.
+    let ladder = "minecraft:ladder[facing=west,waterlogged=false]";
     let flight = |m: &mut delvec::compiler::blockstate::BlockMap| {
         m.insert([13, 64, 14], BlockState::new(stair));
         m.insert([14, 64, 14], BlockState::new(ladder));
         m.insert([14, 65, 14], BlockState::new(ladder));
+        m.insert([15, 64, 14], BlockState::new("minecraft:stone_bricks"));
+        m.insert([15, 65, 14], BlockState::new("minecraft:stone_bricks"));
         for z in 15..=16 {
             for x in 13..=14 {
                 m.insert([x, 64, z], BlockState::new("minecraft:stone_bricks"));
