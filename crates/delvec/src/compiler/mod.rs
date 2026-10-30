@@ -101,6 +101,7 @@
 //! - [`seating`]: a horizon and a piece set are a pair — this base cannot seat this pool (`DW0886`), and a declared waterline is not in the bytes (`DW0887`).
 //! - [`seeding`]: no emitted comparison reads a score entry the emitted pack never creates (`DW0495`).
 //! - [`served`]: what the declared view distance costs the host — the pinned server's chunk set, the fitted live heap, the ceiling stated in `server/resources.properties` (spec-0091).
+//! - [`sign`]: the sign at a `signs` entry's anchor shows its text (`DW1075`).
 //! - [`skinparts`]: the model-part table every skin and entity texture is drawn to, and the one rule that refuses paint no box samples (`DW0978`) or nobody standing level sees (`DW0979`) — spec-0097.
 //! - [`solo`]: a generated PackTest whose drive takes every player's body runs alone, in its own test environment.
 //! - [`solver`]: the jigsaw layout solver.
@@ -219,6 +220,7 @@ pub mod sculk;
 pub mod seating;
 pub mod seeding;
 pub mod served;
+pub mod sign;
 pub mod skinparts;
 pub mod solo;
 pub mod solver;

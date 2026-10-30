@@ -792,6 +792,9 @@ pub(super) fn emit_functions(
     // spec-0021: fill each declared container. Empty for a campaign with no
     // `loot` -> byte-identical.
     setup.extend(loot_setup(&plan.loot, holders));
+    // spec-0128 §8: write each sign text into the sign the piece placed.
+    // Empty for a campaign with no `signs` -> byte-identical.
+    setup.extend(sign_setup(&plan.signs));
     // spec-0016 §2, spec-0117: a shortcut's gate is sealed from world-load by the
     // prefab, so its own answer's boxes go up here, over the door's block.
     setup.extend(shortcut_setup(plan));

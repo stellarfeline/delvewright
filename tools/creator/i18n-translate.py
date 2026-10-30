@@ -330,6 +330,11 @@ Rules:
     in a hover box; it reads as the longer form of its sibling label.
   - `item-name`, `item-tooltip`: an item's name, and what the item does first.
   - `name`, `title`, `description`: proper names, headings, a class's role.
+  - `sign`: one line lettered on a sign in the world, drawn on a board of fixed
+    width and cut where it runs past the edge: 90 font pixels on a standing or
+    wall sign (about 15 Latin or 10 Han characters), 60 on a hanging sign
+    (about 10 or 6). `situation` names the sign and its other lines; write the
+    line, never the whole sign, and keep it to the board.
 - `situation` is context, never text to render: use it to understand what the
   line must do, then write only the line.
 - Every name in the glossary is written exactly as the glossary renders it, every

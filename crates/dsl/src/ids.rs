@@ -177,6 +177,11 @@ prefixed_id!(
     /// within the stage-5 loot namespace.
     LootId, "loot");
 prefixed_id!(
+    /// Sign-text id: `sign/<kebab>` (stage-5 `signs` section, spec-0128 §8).
+    /// Unique within the stage-5 sign namespace; it names the sign's l10n keys
+    /// and the text a `DW1075` refusal blames.
+    SignId, "sign");
+prefixed_id!(
     /// Lethal-volume id: `lethal/<kebab>` (stage-5 `lethal_volumes` section, DSL
     /// v0.10, spec-0031). Unique within the stage-5 lethal-volume namespace; it
     /// names the volume's emitted tick function, its l10n key, and the volume a

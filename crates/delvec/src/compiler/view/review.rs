@@ -463,6 +463,7 @@ impl WorldMaker {
             ground.mark_box(*lo, *hi);
         }
         let mut items: BTreeMap<[i32; 3], Vec<(String, String)>> = BTreeMap::new();
+        let mut data: Vec<([i32; 3], &str)> = Vec::new();
         let mut entities: Vec<EntityRecord> = Vec::new();
         for r in rows {
             match &r.object {
@@ -480,6 +481,7 @@ impl WorldMaker {
                         .or_default()
                         .push((slot.clone(), stack.clone()));
                 }
+                PlacedObject::Data { cell, nbt } => data.push((*cell, nbt.as_str())),
                 PlacedObject::Entity { .. } => entities.extend(r.entity_record()),
                 PlacedObject::Removed { .. } => {}
             }
@@ -501,6 +503,19 @@ impl WorldMaker {
                 }
             }
             entry.set("Items", Nbt::List(list));
+        }
+        // Keys a `data merge block` writes go into the block entity at its
+        // cell, in firing order; a cell whose block carries none takes no
+        // keys, on the server as here.
+        for (cell, nbt) in data {
+            let (Some(entry), Ok(Nbt::Compound(keys))) =
+                (bes.get_mut(&cell), crate::compiler::placed::parse_snbt(nbt))
+            else {
+                continue;
+            };
+            for (k, v) in keys {
+                entry.set(&k, v);
+            }
         }
         let biome = |c: [i32; 3]| self.biome.at(c).0.to_string();
         let w = crate::compiler::view::world::encode_world(&WorldInput {

@@ -501,6 +501,12 @@ into the prefab metadata's `anchors` map in the hand-built `{pos, facing}` shape
 `pos` local to the structure; `PrefabRegistry` reads a grammar prefab's anchors
 with the same code path as a hand-built one (`crates/delvec/tests/grammar_prefab.rs`).
 
+A mark may name a block's own cell rather than a place a body stands: the
+container a `loot` entry fills, the sign a `signs` entry writes
+([`compiler.md`](compiler.md), `signs[]`). The campaign binds the payload
+against the anchor, and the build proves the block is there (`DW0431`,
+`DW1075`); the program writes no NBT.
+
 Refusals: a non-kebab stem is a `Program::validate` error (before any expansion);
 a mark aimed outside its own scope, an underivable facing, and two marks
 producing the same name are expansion errors — the collision names both rules.

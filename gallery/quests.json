@@ -3977,6 +3977,19 @@
         "unlock": "anchor/side-lever"
       }
     ],
+    "signs": [
+      {
+        "anchor": "anchor/hall-sign",
+        "back": [
+          "Way to the",
+          "far hall"
+        ],
+        "front": [
+          "The Gallery"
+        ],
+        "id": "sign/hall"
+      }
+    ],
     "stakes": [
       {
         "collect_by": "anyone",

@@ -44,6 +44,8 @@ fn every_key_class_has_its_kind() {
         ("actor.moth.drop.0.name", ItemName),
         ("actor.moth.health_bar.title", Title),
         ("loot.case.item.0.name", ItemName),
+        ("sign.exit.front.0", Sign),
+        ("sign.exit.back.3", Sign),
         ("lethal.pit.message", Narration),
         ("stake.tallow.collected", Narration),
         ("shop.counter.title", Title),
@@ -64,6 +66,7 @@ fn every_key_class_has_its_kind() {
         "dlg.keeper.greeting",
         "fx.open.done.0.spawn",
         "nope.x.name",
+        "sign.exit.side.0",
         "",
     ] {
         assert_eq!(key_kind(key), None, "{key}");

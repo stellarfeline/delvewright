@@ -603,15 +603,22 @@ def marks(p: Place, inner: dict) -> dict:
 
     out = inner
     drawn = getattr(getattr(p, "model", None), "marks", {})
-    for x, z, _ in drawn.values():
-        taken.add((x, z))
+    for x, z, _, y in drawn.values():
+        if y is None:
+            taken.add((x, z))
     for name in reversed(p.a["owed_anchors"]):
         stem = name.removeprefix("anchor/")
         if stem.startswith("seam-") or any(g["stem"] == stem for g in p.gates):
             continue  # answered by a barred edge's region, never a mark
         if stem in drawn:
+            x, z, facing, y = drawn[stem]
+            if y is not None:
+                # A block's own cell (a sign's, a container's): the name says
+                # where the thing stands, never where a body does.
+                mark = {"anchor": stem, "at": "offset", "facing": facing, "y": num(y), "x": num(x), "z": num(z)}
+                out = {"body": out, "mark": mark, "op": "mark"}
+                continue
             # Where the generator's model stands it: on floor a body reaches.
-            x, z, facing = drawn[stem]
             if not p.walkable(p.cell(x, p.datum.value, z)):
                 sys.exit(f"starter.py: the mark `{stem}` the model stands at ({x}, {z}) is not on floor a body reaches: {p.cell(x, p.datum.value, z)}")
             mark = {"anchor": stem, "at": "offset", "facing": facing, "y": p.datum.expr, "x": num(x), "z": num(z)}
@@ -972,7 +979,7 @@ class Model:
         self.palette: dict = dict(PALETTE)
         self.v: dict[tuple[int, int, int], str] = {}
         self.region: dict[tuple[int, int], str] = {}
-        self.marks: dict[str, tuple[int, int, str]] = {}
+        self.marks: dict[str, tuple[int, int, str, int | None]] = {}
         self.skipped = 0
         self.shown: set[str] = set()
         self.no_touch: set[tuple[int, int, int]] = set()
@@ -1025,9 +1032,11 @@ class Model:
             for z in range(min(z0, z1), max(z0, z1) + 1):
                 self.region[(x, z)] = stem
 
-    def mark(self, stem: str, x: int, z: int, facing: str = "south") -> None:
-        """Stand the owed name `stem` on the floor at `(x, z)`."""
-        self.marks[stem] = (x, z, facing)
+    def mark(self, stem: str, x: int, z: int, facing: str = "south", y: int | None = None) -> None:
+        """Stand the owed name `stem` on the floor at `(x, z)`; with `y`, name
+        the block at `(x, y, z)` instead — a sign a `signs` entry writes, a
+        container a `loot` entry fills — which is not a place a body stands."""
+        self.marks[stem] = (x, z, facing, y)
 
     def show(self, *faces: str) -> None:
         """Declare sides of the piece finished exterior, meant to be seen
