@@ -1485,11 +1485,15 @@ pub fn run(args: GrammarArgs) -> ExitCode {
         GrammarCommand::List => run_list(),
         GrammarCommand::Survey { file } => run_survey(&file),
         GrammarCommand::Blocks => {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&crate::grammar::survey::blocks())
-                    .expect("the block lists serialise")
-            );
+            // Printed in the repository's canonical JSON form, so a saved copy
+            // (`tools/tests/fixtures/handout/blocks.json`, the handout's
+            // `blocks.json`) is what `delvec fmt` would write and what this
+            // binary prints at once.
+            let text = serde_json::to_string(&crate::grammar::survey::blocks())
+                .expect("the block lists serialise");
+            let canonical =
+                delvewright_dsl::fmt::format_text(&text).expect("the block lists are JSON");
+            print!("{canonical}");
             ExitCode::SUCCESS
         }
         GrammarCommand::Audit {

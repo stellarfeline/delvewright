@@ -386,8 +386,10 @@ holder census counts) and `malformed` (every distinct written state, of
 property or value — or that leaves a property of its block out, with the
 registry's words: what `blocks-exist` and `states-complete` refuse in the
 finished piece). It writes nothing; an unparseable block or a cell
-outside `size` is exit 2. `blocks` prints `{admitted, refused, containers}`
-over the pinned registry (air aside, every block is admitted or refused).
+outside `size` is exit 2. `blocks` prints `{admitted, containers, refused}`
+over the pinned registry (air aside, every block is admitted or refused), in
+the repository's canonical JSON form, so a saved copy is what `delvec fmt`
+writes.
 `scripts/starter.py` is the consumer of both through `run(build)`;
 `scripts/handout.py` saves `blocks` beside every handout.
 
