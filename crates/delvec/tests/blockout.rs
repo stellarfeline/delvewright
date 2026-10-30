@@ -2978,15 +2978,28 @@ fn an_open_side_is_a_stand_ins_opening_onto_the_commons() {
 }
 
 /// **A seamless border is a declared opening along its whole length**
-/// (`DW0838`, spec-0123 §5.1). The cell and the exit stand side by side, their
-/// spans aligned, each leaving the face they share and its south side unwalled.
-/// They meet seamlessly by the plan's declaration, so the border — the gap
-/// over the common span and the two ring corners where the rings meet, which
-/// lie in neither open run — is deleted with the seams, and the binding counts
-/// the border and the cells it adds. The perturbation: the walls built a
-/// course tall, and the pairs that share no seamless border still leak.
+/// (`DW0838`, spec-0123 §5.1). The cell and the exit leave the face they share
+/// unwalled, so the border — the gap over the common span and the two ring
+/// corners where the rings meet, which lie in neither open run — is deleted
+/// with the seams, and the binding counts the border and the cells it adds.
+/// The proof reads the declaration and nothing else, shown by one perturbation
+/// and two spellings of the same face: with every shell wall built one course
+/// tall (`Perturb::short_walls`) a body steps onto a wall head and walks it to
+/// the ring corner, and from there into the neighbour — a leak between the cell
+/// and the exit while they wall the face they share, and no leak once both
+/// leave it unwalled, because the corner is the border's and is deleted;
+/// disable the border cells and the unwalled pair reds at the corner. A pair
+/// that walls its face still leaks under the same perturbation, so the green
+/// is the declaration's and not the perturbation failing to bite.
 #[test]
 fn a_seamless_border_is_crossed_anywhere_along_it() {
+    let named = |b: &blockout::Battery, a: &str, z: &str| -> Vec<String> {
+        b.findings
+            .iter()
+            .filter(|(_, d)| d.code == "DW0838" && d.message.contains(a) && d.message.contains(z))
+            .map(|(_, d)| d.message.clone())
+            .collect()
+    };
     let seamless = |v: &mut serde_json::Value| {
         let boxes = v["content"]["boxes"].as_array_mut().unwrap();
         for b in boxes.iter_mut() {
@@ -2997,8 +3010,14 @@ fn a_seamless_border_is_crossed_anywhere_along_it() {
                 b["sides"] = serde_json::json!({"east": "open", "south": "open", "west": "wall", "north": "wall"});
             }
         }
+        // The face is open on both sides, so its crossing is a contact along
+        // the whole face and not a portal cut in an open side (`DW1064`).
+        let seams = v["content"]["seams"].as_array_mut().unwrap();
+        let seam = seams.iter_mut().find(|s| s["edge"] == "edge/cell-exit").unwrap();
+        seam.as_object_mut().unwrap().remove("opening");
+        seam["contact"] = serde_json::json!({});
     };
-    let c = common::campaign_at(&variant("seamless-border", seamless, None));
+    let c = common::campaign_at(&variant("seamless-face", seamless, None));
     let b = battery_of(&c);
     let leaks: Vec<String> = b
         .findings
@@ -3006,7 +3025,7 @@ fn a_seamless_border_is_crossed_anywhere_along_it() {
         .filter(|(_, d)| d.code == "DW0838")
         .map(|(_, d)| d.message.clone())
         .collect();
-    assert!(leaks.is_empty(), "a seamless border is declared: {leaks:?}");
+    assert!(leaks.is_empty(), "two seamless places are no leak: {leaks:?}");
     assert_eq!(b.binding.seamless_borders, 1, "{}", b.binding.line());
     assert!(b.binding.border_cells > 0, "{}", b.binding.line());
     assert!(
@@ -3015,23 +3034,34 @@ fn a_seamless_border_is_crossed_anywhere_along_it() {
         b.binding.line()
     );
 
-    let low = battery_of_with(
-        &c,
-        Perturb {
-            short_walls: true,
-            ..Perturb::none()
-        },
+    let low = Perturb {
+        short_walls: true,
+        ..Perturb::none()
+    };
+    let unwalled = battery_of_with(&c, low.clone());
+    assert!(
+        named(&unwalled, "`node/cell`", "`node/exit`").is_empty(),
+        "a crossing anywhere along the border, its ring corners included, is declared: {:?}",
+        named(&unwalled, "`node/cell`", "`node/exit`")
     );
-    let pairs: Vec<String> = low
+    let others: Vec<String> = unwalled
         .findings
         .iter()
         .filter(|(_, d)| d.code == "DW0838" && d.message.contains("allocated no seam"))
         .map(|(_, d)| d.message.clone())
         .collect();
     assert!(
-        pairs
-            .iter()
-            .any(|m| !(m.contains("`node/cell`") && m.contains("`node/exit`"))),
-        "a pair with no seamless border still leaks: {pairs:?}"
+        !others.is_empty(),
+        "the perturbation bites: a pair that walls its face still leaks: {:?}",
+        errors(&unwalled)
+    );
+
+    // The same face, walled on both sides (the fixture as committed), under the
+    // same perturbation: the cell and the exit leak into each other.
+    let walled = battery_of_with(&common::campaign_at(&variant("walled-face", |_| {}, None)), low);
+    assert!(
+        !named(&walled, "`node/cell`", "`node/exit`").is_empty(),
+        "a hop over the low wall between two places that wall their face is a leak: {:?}",
+        errors(&walled)
     );
 }

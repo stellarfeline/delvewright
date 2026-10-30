@@ -415,7 +415,7 @@ impl Census {
         self
     }
 
-    /// The places breaking §9, mixed arm then storeroom arm, each in place order.
+    /// The places breaking §9 — a container that matters among scenery — in place order.
     #[must_use]
     pub fn arrangement(&self) -> Vec<PlaceFinding> {
         let mut places: BTreeMap<&str, (Vec<HolderRow>, Vec<HolderRow>)> = BTreeMap::new();

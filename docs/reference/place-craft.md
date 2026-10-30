@@ -191,7 +191,7 @@ How a plot is drawn so these confirmations hold without the author reading the e
 | a yard is part of a house | 2 | **cited** — WesterosCraft |
 | about twice the play space | 2 | **ruling**; the cells **authored** from the first cut's boxes |
 | a bigger box per building was the wrong reading; the size follows from the contents | 2 | **ruling** |
-| 50 to 100 cells for a two-room trade structure, one part of its plot | 2 | **authored** |
+| about 120 to 320 cells for a two-room trade structure, one part of its plot | 2 | **authored** |
 | rooms with purposes, placed as a household used them | 3 | **cited** — WesterosCraft, Adding beauty |
 | the working object, occupancy over filler | 3 | **cited** — WesterosCraft |
 | objects combine into what happened here | 3 | **cited** — Worch and Smith |
