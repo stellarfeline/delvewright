@@ -25,10 +25,13 @@
 //!   passes through.
 //! - **Where the body cell is** (authored): a seam's approach stands at its
 //!   place's walk plane, a contact's span at the higher of the two, a laid
-//!   stair's course over its tread, a way place at its floor. A piece's way
-//!   says no walk plane, so a station's plane is the lowest a body stands in
-//!   any of its columns as built, and a column a body stands in only higher
-//!   than a step above it is taken.
+//!   stair's course over its tread. A piece's way and a way place say no
+//!   walk plane — a way place climbs where its place climbs, a flight or a
+//!   ramp — so a station's plane is the lowest floor a body stands on in any
+//!   of its columns as built (a way place's columns searched from its floor
+//!   through its headroom; a climbable holds a body and lays no plane, so a
+//!   ladder beside the treads is judged at the treads' plane), and a column a
+//!   body stands in only higher than a step above it is taken.
 //! - **States** (cited, spec-0120 §3): a column is clear only when it is clear
 //!   in every state its cells can take — the world as shipped
 //!   ([`crate::compiler::assembled::shipped_blocks`]: every gate as authored,
@@ -473,6 +476,33 @@ fn lowest_body(w: &World, c: &Column) -> Option<i32> {
     (c.ylo..=c.yhi + 1).find(|y| super::shutmodel::can_be(w, [c.x, *y, c.z]))
 }
 
+/// The lowest cell of a column a body stands on a floor in — standing, and
+/// not held by a climbable — over `w`.
+fn lowest_floor(w: &World, c: &Column) -> Option<i32> {
+    (c.ylo..=c.yhi + 1).find(|y| {
+        let cell = [c.x, *y, c.z];
+        w.is_standable(cell) && !w.is_climb_cell(cell)
+    })
+}
+
+/// **The walk plane of a station whose way says none** — a piece way's, a
+/// way place's: the lowest floor a body stands on in any of its columns as
+/// built. A climbable holds a body and lays no walk plane: a ladder beside a
+/// flight's treads, its foot on the course under them, is passed by the body
+/// climbing the treads and judged at their plane, not the treads at its foot.
+/// A station with no floor in any column (a ladder shaft, a pool) takes the
+/// lowest cell a body can be in at all.
+fn station_plane(w: &World, columns: &[Column]) -> Option<i32> {
+    let open: Vec<&Column> = columns
+        .iter()
+        .filter(|c| c.y0.is_none() && !c.vertical)
+        .collect();
+    open.iter()
+        .filter_map(|c| lowest_floor(w, c))
+        .min()
+        .or_else(|| open.iter().filter_map(|c| lowest_body(w, c)).min())
+}
+
 /// What takes a column a body cannot be in: every non-air block of the body
 /// cell and the head cell, or — when both are empty — the missing floor.
 fn taking_cells(map: &BlockMap, c: &Column, y0: i32) -> Vec<([i32; 3], String)> {
@@ -635,14 +665,9 @@ pub fn judge(way: Way, ground: &Ground<'_>) -> WayRecord {
             verdicts.push(StationVerdict::default());
             continue;
         }
-        // A station whose way says no walk plane: the lowest a body stands in
-        // any of its columns as built.
-        let plane: Option<i32> = s
-            .columns
-            .iter()
-            .filter(|c| c.y0.is_none() && !c.vertical)
-            .filter_map(|c| lowest_body(&worlds[0], c))
-            .min();
+        // A station whose way says no walk plane: the lowest floor a body
+        // stands on in any of its columns as built ([`station_plane`]).
+        let plane = station_plane(&worlds[0], &s.columns);
         let y0 = |c: &Column| c.y0.or(plane).unwrap_or(c.ylo);
         let mut v = StationVerdict::default();
         let mut taken_in: BTreeMap<usize, Vec<Taking>> = BTreeMap::new();
@@ -1610,16 +1635,23 @@ fn place_ways(plan: &Plan, census: &mut Census, cover: &BTreeSet<[i32; 3]>, out:
         let at = way_at(way, c1 - c0 + 1);
         let clear = i64::from(way.clear.get());
         let mut stations = Vec::new();
+        // A way place climbs where its place climbs: its stations say no walk
+        // plane, and each is measured as a piece way's is — the lowest a body
+        // stands in any of its columns as built, from the floor up through
+        // the place's headroom.
+        let top = placed.floor + i64::from(placed.clearance.max(2)) - 2;
         for t in t0..=t1 {
             let columns: Vec<Column> = (0..clear)
                 .filter_map(|k| {
-                    let col = column_at(
+                    let mut col = column_at(
                         axis,
                         t,
                         c0 + at + k,
                         usize::try_from(k).unwrap_or(0),
                         placed.floor,
                     );
+                    col.yhi = n32(top);
+                    col.y0 = None;
                     (!cover.contains(&[col.x, n32(placed.floor), col.z])).then_some(col)
                 })
                 .collect();

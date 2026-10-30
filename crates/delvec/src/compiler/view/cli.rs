@@ -120,6 +120,12 @@ pub enum ViewCommand {
         /// Distance in blocks from the `--at` subject.
         #[arg(long, requires = "at")]
         dist: Option<f64>,
+        /// Draw only what the pinned client draws from this camera: the
+        /// square of `world.view_distance` chunks around it, the fog closing
+        /// at 16 blocks a chunk — what a player standing there sees. Without
+        /// it the frame draws every loaded chunk.
+        #[arg(long, requires = "campaign")]
+        served: bool,
     },
     /// Draw a frame per showcase camera a campaign states in
     /// `design/cameras.json` — a camera on the assembled world, estimated from
@@ -624,6 +630,7 @@ fn run_panorama(
             backend: draw.backend,
             width: pano.frame.width,
             height: pano.frame.height,
+            served: None,
         },
         draw.threads,
     ) {
@@ -1294,6 +1301,7 @@ pub fn run_cameras(
                 backend: draw.backend,
                 width,
                 height,
+                served: None,
             },
             draw.threads,
         ) {

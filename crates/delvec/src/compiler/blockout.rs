@@ -3445,8 +3445,16 @@ fn crossings(
         }
     }
     binding.border_cells = seam.len() - declared;
-    // Every standable cell the whole map has, minus the ways the plan cut.
-    let (rlo, rhi) = region_span(c);
+    // Every standable cell the whole map has, minus the ways the plan cut —
+    // over the columns a body is judged in (`emit::judged_columns`): past them
+    // the boundary returns a body, and the world the walk reads is walled.
+    let (mut rlo, mut rhi) = region_span(c);
+    if let Some((jlo, jhi)) = crate::compiler::emit::judged_columns(plan) {
+        rlo[0] = rlo[0].max(i64::from(jlo[0]) - 1);
+        rlo[2] = rlo[2].max(i64::from(jlo[1]) - 1);
+        rhi[0] = rhi[0].min(i64::from(jhi[0]) + 1);
+        rhi[2] = rhi[2].min(i64::from(jhi[1]) + 1);
+    }
     let mut open: BTreeSet<[i32; 3]> = BTreeSet::new();
     for cell in cells_of(rlo, rhi) {
         let cell = narrow(cell);

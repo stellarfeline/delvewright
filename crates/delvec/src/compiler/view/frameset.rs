@@ -460,6 +460,7 @@ pub fn run_frames(build_dir: &Path, opts: &FramesOptions, json: bool) -> ExitCod
                 backend: opts.draw.backend,
                 width: opts.size,
                 height: opts.size,
+                served: None,
             },
             opened.get(&shot.world),
             opts.draw.threads,

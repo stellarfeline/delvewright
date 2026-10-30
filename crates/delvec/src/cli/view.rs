@@ -52,6 +52,9 @@ pub(crate) struct FramesCampaignArgs<'a> {
     pub(crate) out: Option<&'a Path>,
     pub(crate) labels: bool,
     pub(crate) size: u32,
+    /// `--served`: draw what the client draws from the camera, not every
+    /// loaded chunk.
+    pub(crate) served: bool,
     pub(crate) draw: &'a delvec::compiler::view::cli::DrawArgs,
 }
 
@@ -161,6 +164,9 @@ pub(crate) fn run_frames_campaign(
             backend: args.draw.backend,
             width: args.size,
             height: args.size,
+            served: args
+                .served
+                .then(|| delvewright_dsl::viewdistance::chunks(&campaign)),
         },
         args.draw.threads,
     ) {
@@ -356,7 +362,12 @@ pub(crate) fn camera_world(
     delvec::compiler::nav::World,
     delvec::compiler::light::Relight,
 ) {
-    delvec::compiler::light::final_world(plan, assembled)
+    // The build's own cut: the proofs a view's world answers read the judged
+    // columns ([`delvec::compiler::assembled::Assembled::judged_within`]); the
+    // picture ([`camera_base`]) is the whole world.
+    let judged = delvec::compiler::emit::judged_columns(plan)
+        .and_then(|(lo, hi)| assembled.judged_within(lo, hi));
+    delvec::compiler::light::final_world(plan, judged.as_ref().map_or(assembled, |(a, _)| a))
 }
 
 /// See [`camera_world`]: the picture base over the relight `relight` placed.

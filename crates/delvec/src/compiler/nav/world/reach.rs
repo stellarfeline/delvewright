@@ -3129,11 +3129,20 @@ impl World {
     /// standable cell first, as [`World::walk_region`] snaps them; a start
     /// with none within [`crate::compiler::nav::SNAP_RADIUS`] contributes nothing.
     pub fn body_reach_snapped(&self, starts: &[[i32; 3]]) -> Reach {
+        self.body_reach_snapped_within(starts, delvewright_dsl::metrics::REACH_BUDGET_STATES)
+    }
+
+    /// [`World::body_reach_snapped`] under a work ceiling of `budget` rather
+    /// than the shipped one: the closure a proof that must refuse a partial
+    /// graph (`DW1042`) reads, and the ceiling a test lowers to make one.
+    pub fn body_reach_snapped_within(&self, starts: &[[i32; 3]], budget: u64) -> Reach {
         let seats: Vec<[i32; 3]> = starts
             .iter()
             .filter_map(|s| self.snap(*s, crate::compiler::nav::SNAP_RADIUS))
             .collect();
-        self.body_reach(&seats)
+        let mut params = ReachParams::shipped(self.unbounded_fall);
+        params.budget = budget;
+        self.body_reach_at(&seats, &params)
     }
 
     /// **Every cell a body can stand in** from `starts` (snapped as

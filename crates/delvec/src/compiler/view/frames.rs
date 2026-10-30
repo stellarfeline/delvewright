@@ -270,6 +270,32 @@ pub struct FrameRequest<'a> {
     pub backend: Backend,
     pub width: u32,
     pub height: u32,
+    /// **How far the frame draws.** `None`: every loaded chunk, the fog closing
+    /// past the farthest of them — a review frame shows the whole scene.
+    /// `Some(n)`: what the pinned client draws at render distance `n` — the
+    /// square of `n` chunks around the camera's own chunk ([`served_rect`]),
+    /// the fog closing at `16 · n` blocks — so a frame taken at a pose shows
+    /// what a player standing there sees, and nothing the server never sends.
+    pub served: Option<u8>,
+}
+
+/// The chunks the pinned client draws at render distance `n` around a camera
+/// at `eye`, inside the `loaded` rectangle: the square of `n` chunks around the
+/// camera's own chunk (`delvewright_dsl::viewdistance`, spec-0091 §2), clipped
+/// to what was loaded. `None` when the two do not meet: the camera stands
+/// farther than `n` chunks from every loaded chunk, and the client draws
+/// nothing there.
+pub fn served_rect(
+    eye: [f64; 3],
+    n: u8,
+    loaded: ([i32; 2], [i32; 2]),
+) -> Option<([i32; 2], [i32; 2])> {
+    let cx = (eye[0].floor() as i32).div_euclid(16);
+    let cz = (eye[2].floor() as i32).div_euclid(16);
+    let n = i32::from(n);
+    let lo = [loaded.0[0].max(cx - n), loaded.0[1].max(cz - n)];
+    let hi = [loaded.1[0].min(cx + n), loaded.1[1].min(cz + n)];
+    (lo[0] <= hi[0] && lo[1] <= hi[1]).then_some((lo, hi))
 }
 
 /// What the renderer reported of one body kind: drawn, drawn as a box, or
@@ -421,6 +447,22 @@ impl OpenedWorld {
 /// or pack that is not there, a chunk rectangle holding no chunk) and a
 /// backend that cannot be opened are `DW0723`, naming what was asked.
 pub fn draw(req: &FrameRequest<'_>, opened: Option<&OpenedWorld>) -> Result<Drawn, Diagnostic> {
+    let (chunks, reach) = match req.served {
+        None => (req.chunks, draw_distance(req.camera.pos, req.chunks)),
+        Some(n) => match served_rect(req.camera.pos, n, req.chunks) {
+            Some(r) => (r, f32::from(n) * 16.0),
+            None => {
+                return Err(Diagnostic::error(
+                    DW_RENDER,
+                    format!(
+                        "the camera at {:?} stands farther than the served {n} chunk(s) from \
+                         every loaded chunk: the client draws nothing there",
+                        req.camera.pos
+                    ),
+                ));
+            }
+        },
+    };
     let cam = LwCamera {
         pos: DVec3::new(req.camera.pos[0], req.camera.pos[1], req.camera.pos[2]),
         yaw: req.camera.yaw as f32,
@@ -448,8 +490,8 @@ pub fn draw(req: &FrameRequest<'_>, opened: Option<&OpenedWorld>) -> Result<Draw
     let request = Request {
         world,
         chunks: ChunkRect {
-            min: req.chunks.0,
-            max: req.chunks.1,
+            min: chunks.0,
+            max: chunks.1,
         },
         jar: req.jar,
         // No Unifont is handed, so a character no bitmap font of the jar
@@ -469,7 +511,7 @@ pub fn draw(req: &FrameRequest<'_>, opened: Option<&OpenedWorld>) -> Result<Draw
         },
         quick: QuickOptions {
             ssaa: 1,
-            draw_distance: draw_distance(req.camera.pos, req.chunks),
+            draw_distance: reach,
             brightness: scene::DEFAULT_BRIGHTNESS as f32,
             smooth: true,
             mipmap_levels: CLIENT_MIPMAP_LEVELS,
@@ -677,6 +719,23 @@ mod tests {
             assert_eq!(wet.quick.fog, quick_sky(dusk(w), look).fog, "{w:?}");
             assert_eq!(wet.hq.sun_color, Vec3::ZERO, "{w:?}");
         }
+    }
+
+    #[test]
+    fn a_served_frame_draws_the_clients_square_inside_what_was_loaded() {
+        let loaded = ([-10, -10], [30, 40]);
+        // A camera in chunk (2, -1) at render distance 10.
+        assert_eq!(
+            served_rect([40.5, 80.0, -3.2], 10, loaded),
+            Some(([-8, -10], [12, 9]))
+        );
+        // Far outside every loaded chunk: nothing is drawn.
+        assert_eq!(served_rect([1000.0, 80.0, 0.0], 10, loaded), None);
+        // The camera's own chunk is read by flooring, so -0.5 is chunk -1.
+        assert_eq!(
+            served_rect([-0.5, 64.0, 0.0], 0, loaded),
+            Some(([-1, 0], [-1, 0]))
+        );
     }
 
     #[test]
