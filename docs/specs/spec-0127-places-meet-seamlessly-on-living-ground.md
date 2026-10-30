@@ -99,6 +99,10 @@ The same branch carries the place generator, which is a spec of its own and take
 - *Placing trees by the edit script.* The script dresses what the whole built; a tree is part of the ground's rule, and a seeded draw per column keeps it deterministic and off every place's ring.
 - *A seamless group.* The first reading let every pair of a group of seamlessly joined places through; in the town every place was one group, so a crossing through a side one place walls was no longer refused. Every pair stays judged and only the border's cells are deleted.
 
+## 10. Open questions and debts
+
+- **Trees on reachable commons meet the night relight.** A stratum's trees stand on the commons, which a body reaches, and the relight proof lights every reachable walkable cell under the darkest sky with the plan's fixture; under a crown the fixture finds no site. Measured on the gallery's site-plan point: a 16 × 24 wood (`area` x 48..63, z 40..63) at 60 per mille refused with `DW0211` — *the darkest reachable walkable cell at [54, 66, 56] has no valid placement site left* — and an 8 × 8 wood in the corner at 400 per mille builds green with two trunks. A wood of any real size needs a lighting answer the engine does not have: a fixture the relight may site under a crown, or a reading of a crown as a lit-enough sky. Recorded, not fixed here.
+
 ## Acceptance criteria
 
 Each criterion is checked against the tree at `fa16f5581` plus this spec's PR; a criterion the tree cannot yet satisfy is marked **debt** with what is owed.
