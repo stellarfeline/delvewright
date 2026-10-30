@@ -488,7 +488,18 @@ class Place:
         return ("void",)
 
     def cuts(self, axis: int) -> list[Bound]:
-        """Every coordinate on `axis` where what a cell is can change."""
+        """Every coordinate on `axis` where what a cell is can change, one
+        bound per value (a handed one where any is), in emitted order."""
+        n = self.n[axis]
+        best: dict[int, Bound] = {}
+        for b in self.cut_candidates(axis):
+            if 0 <= b.value <= n and (b.value not in best or (b.handed and not best[b.value].handed)):
+                best[b.value] = b
+        best[0] = lit(0)
+        return [best[v] for v in sorted(best) if v < n]
+
+    def cut_candidates(self, axis: int) -> list[Bound]:
+        """Every bound a cut on `axis` stands for, coincident ones included."""
         n = self.n[axis]
         lo, hi = self.space
         out = [lit(0), lit(n)]
@@ -523,12 +534,7 @@ class Place:
             if self.parts:
                 out += [lit(v) for v in range(lo[axis], hi[axis] + 2)]
             out += [lit(v) for v in range(0, n, LAMP_PERIOD)] + [lit(v) for v in range(2, n, LAMP_PERIOD)] + [lit(v + 1) for v in range(2, n, LAMP_PERIOD)]
-        best: dict[int, Bound] = {}
-        for b in out:
-            if 0 <= b.value <= n and (b.value not in best or (b.handed and not best[b.value].handed)):
-                best[b.value] = b
-        best[0] = lit(0)
-        return [best[v] for v in sorted(best) if v < n]
+        return out
 
 
 def size_of(lo: Bound, hi: Bound | None) -> dict:
@@ -555,6 +561,63 @@ class Rules:
             self.names[key] = name
             self.rules[name] = [{"body": body, "weight": 1}]
         return {"op": "call", "symbol": self.names[key]}
+
+
+AXES = ("x", "y", "z")
+
+
+def order_guard(p: "Place") -> dict | None:
+    """The order the program's cuts were emitted in, stated as the guard of
+    its start rule.
+
+    A split's sizes are differences of neighbouring cuts, and the cuts mix
+    handed bounds with this starter's literals, sorted at their values now.
+    The program binds when the plan moves only while that order holds: a
+    handed bound that passes a literal (a seam's top `y1 + 1` dropping below a
+    course `8`) would size a box negative, and the cells either side of the
+    cut were read at the old order. So the start rule holds only while every
+    handed cut stays strictly between its neighbours and level with any
+    handed bound it coincided with; past that the expansion refuses, naming
+    the parameter and the bound it crossed (`no alternative of rule "place"
+    applies`), and the remedy is to re-run the generator against the new
+    allocation. A drawn plot cuts at every course, so its guard pins every
+    handed value it reads: a drawing is valid at the allocation it was drawn
+    against and nowhere else, and now says so.
+    """
+    leaves: list[dict] = []
+    seen: set[str] = set()
+
+    def need(lhs: dict, op: str, rhs: dict) -> None:
+        leaf = {"cond": "cmp", "lhs": lhs, "op": op, "rhs": rhs}
+        key = json.dumps(leaf, sort_keys=True)
+        if key not in seen:
+            seen.add(key)
+            leaves.append(leaf)
+
+    for axis in range(3):
+        cuts = p.cuts(axis)
+        end = Bound(p.n[axis], {"expr": "dim", "dim": AXES[axis]}, False)
+        seq = cuts + [end]
+        for a, b in zip(seq, seq[1:]):
+            if a.handed or b.handed:
+                need(b.expr, "gt", a.expr)
+        rep = {c.value: c for c in cuts}
+        for b in p.cut_candidates(axis):
+            r = rep.get(b.value)
+            if b.handed and r is not None and r.expr != b.expr:
+                need(b.expr, "eq", r.expr)
+    if not leaves:
+        return None
+    return leaves[0] if len(leaves) == 1 else {"cond": "all", "of": leaves}
+
+
+def start_rule(p: "Place", start: dict) -> list:
+    """The start rule's one alternative, guarded by the order it was emitted in."""
+    alt = {"body": start, "weight": 1}
+    guard = order_guard(p)
+    if guard is not None:
+        alt["when"] = guard
+    return [alt]
 
 
 def leaf(kind: tuple) -> dict:
@@ -742,7 +805,7 @@ def program(a: dict) -> dict:
     # procedure (references/new-pieces.md step 3, the program; step 4, the
     # gates). Keep every seam's region and every mark; they are what binds.
     start = marks(p, body(p, rules))
-    rules.rules["place"] = [{"body": start, "weight": 1}]
+    rules.rules["place"] = start_rule(p, start)
     palette = dict(PALETTE)
     for s in p.seams:
         if s["bar"] is not None:
@@ -983,6 +1046,7 @@ class Model:
         self.skipped = 0
         self.shown: set[str] = set()
         self.no_touch: set[tuple[int, int, int]] = set()
+        self.dx = self.dz = 0  # `shift`: where the drawing stands, moved
         for s in place.seams:
             # the ladder the starter stands up to a raised opening, bound
             ap = s.get("approach")
@@ -995,7 +1059,17 @@ class Model:
                     for z in range(lo[2], hi[2]):
                         self.no_touch.add((x, y, z))
 
+    def shift(self, dx: int, dz: int = 0) -> None:
+        """Draw moved `(dx, dz)` from here on: every write and read through
+        `set`, `get`, `part` and `mark` (and so `box`, `door`, `roof`…) lands
+        that far over, so a building drawn at its own coordinates is stood,
+        whole, where the lot needs it (on its street edge, say). `shift(0)`
+        ends it; `run` reads the cells as they stand whatever was left set.
+        A seam's opening is absolute: a shifted write into it is still skipped."""
+        self.dx, self.dz = dx, dz
+
     def set(self, x: int, y: int, z: int, role: str) -> None:
+        x, z = x + self.dx, z + self.dz
         if not (0 <= x < self.ex and 0 <= y < self.ey and 0 <= z < self.ez):
             return
         if (x, y, z) in self.no_touch:
@@ -1004,7 +1078,7 @@ class Model:
         self.v[(x, y, z)] = role
 
     def get(self, x: int, y: int, z: int) -> str | None:
-        return self.v.get((x, y, z))
+        return self.v.get((x + self.dx, y, z + self.dz))
 
     def box(self, x0, x1, y0, y1, z0, z1, role: str) -> None:
         """Fill a box, inclusive on every axis."""
@@ -1030,13 +1104,13 @@ class Model:
         """The columns `[x0..x1] x [z0..z1]` are `part/<stem>`'s."""
         for x in range(min(x0, x1), max(x0, x1) + 1):
             for z in range(min(z0, z1), max(z0, z1) + 1):
-                self.region[(x, z)] = stem
+                self.region[(x + self.dx, z + self.dz)] = stem
 
     def mark(self, stem: str, x: int, z: int, facing: str = "south", y: int | None = None) -> None:
         """Stand the owed name `stem` on the floor at `(x, z)`; with `y`, name
         the block at `(x, y, z)` instead — a sign a `signs` entry writes, a
         container a `loot` entry fills — which is not a place a body stands."""
-        self.marks[stem] = (x, z, facing, y)
+        self.marks[stem] = (x + self.dx, z + self.dz, facing, y)
 
     def show(self, *faces: str) -> None:
         """Declare sides of the piece finished exterior, meant to be seen
@@ -1245,6 +1319,7 @@ class Plot(Place):
         self.model = type(self).BUILD(self)
         if not isinstance(self.model, Model):
             sys.exit("starter.py: the generator's build(place) returns no Model")
+        self.model.shift(0)  # every read from here on is of the cells as they stand
         by_stem = {p["id"].removeprefix("part/"): p for p in parts}
         unknown = sorted(set(self.model.region.values()) - set(by_stem))
         if unknown:
@@ -1517,7 +1592,7 @@ def plot_program(a: dict, reason: str) -> dict:
         start = marks(p, plot_body(p, rules))
     finally:
         leaf = starter_leaf
-    rules.rules["place"] = [{"body": start, "weight": 1}]
+    rules.rules["place"] = start_rule(p, start)
     palette = dict(m.palette)
     for s, n in name_of.items():
         palette[n] = s
@@ -1617,6 +1692,28 @@ def run(build=None, argv: list[str] | None = None, reason: str = "roof slopes, w
 
 def main(argv: list[str] | None = None) -> int:
     return run(None, argv)
+
+
+def __getattr__(name: str):
+    """The settlement helpers (`town.py`, beside this file) are the starter's
+    too: `from starter import stretch, street_front` reaches them, loaded on
+    first use so a bare run needs nothing but this file."""
+    if name.startswith("__"):
+        raise AttributeError(name)
+    town = sys.modules.get("town")
+    if town is None:
+        # the file beside this one, by path: a campaign's own `town.py` on
+        # the generator's path is never taken for it
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("town", os.path.join(os.path.dirname(os.path.abspath(__file__)), "town.py"))
+        town = importlib.util.module_from_spec(spec)
+        sys.modules["town"] = town
+        spec.loader.exec_module(town)
+    try:
+        return getattr(town, name)
+    except AttributeError:
+        raise AttributeError(f"module 'starter' has no attribute {name!r}") from None
 
 
 if __name__ == "__main__":
