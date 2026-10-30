@@ -575,14 +575,13 @@ def order_guard(p: "Place") -> dict | None:
     The program binds when the plan moves only while that order holds: a
     handed bound that passes a literal (a seam's top `y1 + 1` dropping below a
     course `8`) would size a box negative, and the cells either side of the
-    cut were read at the old order. So the start rule holds only while every
-    handed cut stays strictly between its neighbours and level with any
+    cut were read at the old order. So the start rule holds only while, in
+    every split the program emits (`SPLITS`), each handed cut stays strictly
+    between its neighbours, and each handed bound stays level with any
     handed bound it coincided with; past that the expansion refuses, naming
     the parameter and the bound it crossed (`no alternative of rule "place"
-    applies`), and the remedy is to re-run the generator against the new
-    allocation. A drawn plot cuts at every course, so its guard pins every
-    handed value it reads: a drawing is valid at the allocation it was drawn
-    against and nowhere else, and now says so.
+    applies … required … >`), and the remedy is to re-run the generator
+    against the new allocation. Inside it no split sizes a box negative.
     """
     leaves: list[dict] = []
     seen: set[str] = set()
@@ -594,14 +593,14 @@ def order_guard(p: "Place") -> dict | None:
             seen.add(key)
             leaves.append(leaf)
 
-    for axis in range(3):
-        cuts = p.cuts(axis)
-        end = Bound(p.n[axis], {"expr": "dim", "dim": AXES[axis]}, False)
+    for axis, cuts in SPLITS:
+        end = Bound(p.n[AXES.index(axis)], {"expr": "dim", "dim": axis}, False)
         seq = cuts + [end]
         for a, b in zip(seq, seq[1:]):
             if a.handed or b.handed:
                 need(b.expr, "gt", a.expr)
-        rep = {c.value: c for c in cuts}
+    for axis in range(3):
+        rep = {c.value: c for c in p.cuts(axis)}
         for b in p.cut_candidates(axis):
             r = rep.get(b.value)
             if b.handed and r is not None and r.expr != b.expr:
@@ -629,9 +628,13 @@ def leaf(kind: tuple) -> dict:
     return claim(region, fill(role) if role else VOID)
 
 
+SPLITS: list[tuple[str, list]] = []  # every split's cuts, as emitted: what `order_guard` reads
+
+
 def split(axis: str, cuts: list[Bound], children: list[dict]) -> dict:
     if len(children) == 1:
         return children[0]
+    SPLITS.append((axis, list(cuts)))
     sizes = [size_of(cuts[i], cuts[i + 1] if i + 1 < len(cuts) else None) for i in range(len(cuts))]
     return {"axis": axis, "children": children, "op": "split", "sizes": sizes}
 
@@ -797,6 +800,7 @@ def full_state(block: str) -> str:
 def program(a: dict) -> dict:
     p = Place(a)
     rules = Rules()
+    SPLITS.clear()
     # ── BUILD HERE: the building. The body below is the empty place — floor,
     # ring wall, lid, openings, sconces. Replace the `room` boxes with the
     # rooms the design draws, starting from the idioms (grammar.md §2c: 1
@@ -1569,6 +1573,7 @@ def plot_program(a: dict, reason: str) -> dict:
     p = Plot(a)
     m = p.model
     rules = Rules()
+    SPLITS.clear()
     # Every literal state the model holds becomes a palette role, named in a
     # fixed order so the program is byte-stable.
     literal = sorted({r for r in m.v.values() if r != AIR and r.startswith("minecraft:")})
