@@ -649,3 +649,92 @@ print(json.dumps({"n": len(states), "malformed": a["malformed"]}))
         "{v}"
     );
 }
+
+/// **A program states the order its cuts were emitted in** (spec-0128 §9):
+/// the start rule of a drawn plot's program is guarded so each handed cut
+/// stays between its neighbours in every split the program emits. Expanded
+/// at the handing it was drawn against it builds; with one handed bound moved
+/// past the literal beside it, the expansion refuses at rule `place`, naming
+/// the bound and what it crossed — where the same program with its guard
+/// taken off sizes a box negative somewhere inside it.
+#[test]
+fn a_program_states_the_order_its_cuts_were_emitted_in() {
+    let tmp = tempdir("order");
+    let (campaign, prefabs) = two_box_plot(&tmp);
+    let run = run_generator(&tmp, &campaign, "");
+    assert!(run.status.success(), "{}", text(&run));
+    let path = campaign.join("programs").join("far.json");
+    let program: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    let a = delvec(&["allocation", campaign.to_str().unwrap(), "node/far"]);
+    let alloc: serde_json::Value = serde_json::from_slice(&a.stdout).unwrap();
+    let region = alloc["extent"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.to_string())
+        .collect::<Vec<_>>()
+        .join("x");
+    let leaves = program["rules"]["place"][0]["when"]["of"]
+        .as_array()
+        .expect("the start rule carries its order guard")
+        .clone();
+    // A handed bound standing just above a literal: moved one below it.
+    let (name, literal) = leaves
+        .iter()
+        .find_map(|l| {
+            (l["op"] == "gt" && l["lhs"]["expr"] == "param" && l["rhs"]["expr"] == "int").then(
+                || {
+                    (
+                        l["lhs"]["name"].as_str().unwrap().to_string(),
+                        l["rhs"]["value"].as_i64().unwrap(),
+                    )
+                },
+            )
+        })
+        .expect("a handed cut beside a literal");
+    let expand = |file: &Path, moved: bool, out: &str| {
+        let mut args = vec![
+            "grammar".to_string(),
+            "expand".to_string(),
+            "--file".to_string(),
+            file.to_str().unwrap().to_string(),
+            "--region".to_string(),
+            region.clone(),
+            "--prefabs".to_string(),
+            prefabs.to_str().unwrap().to_string(),
+            "--out".to_string(),
+            tmp.join(out).to_str().unwrap().to_string(),
+        ];
+        if moved {
+            args.push("--param".to_string());
+            args.push(format!("{name}={}", literal - 1));
+        }
+        Command::new(BIN).args(&args).output().unwrap()
+    };
+    let green = expand(&path, false, "at-its-handing");
+    assert!(green.status.success(), "{}", text(&green));
+    let red = expand(&path, true, "moved");
+    let t = text(&red);
+    assert!(!red.status.success(), "{t}");
+    assert!(
+        t.contains("no alternative of rule \"place\"")
+            && t.contains("required")
+            && t.contains(&name),
+        "{t}"
+    );
+    let mut bare = program.clone();
+    bare["rules"]["place"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("when");
+    let unguarded = tmp.join("unguarded.json");
+    std::fs::write(&unguarded, serde_json::to_vec_pretty(&bare).unwrap()).unwrap();
+    let old = expand(&unguarded, true, "unguarded");
+    let t = text(&old);
+    assert!(!old.status.success(), "{t}");
+    assert!(
+        t.contains("is not a usable split size") && !t.contains("no alternative of rule \"place\""),
+        "the guard is what names the cause: {t}"
+    );
+}
