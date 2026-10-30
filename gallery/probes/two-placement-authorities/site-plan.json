@@ -20,9 +20,9 @@
         "node": "node/near-hall",
         "sides": {
           "east": "wall",
-          "west": "wall",
+          "north": "wall",
           "south": "wall",
-          "north": "wall"
+          "west": "wall"
         }
       },
       {
@@ -39,9 +39,9 @@
         "node": "node/far-hall",
         "sides": {
           "east": "wall",
-          "west": "wall",
+          "north": "wall",
           "south": "wall",
-          "north": "wall"
+          "west": "wall"
         }
       },
       {
@@ -62,9 +62,9 @@
         },
         "sides": {
           "east": "wall",
-          "west": "wall",
+          "north": "wall",
           "south": "wall",
-          "north": "wall"
+          "west": "wall"
         }
       },
       {
@@ -81,9 +81,9 @@
         "node": "node/loft",
         "sides": {
           "east": "wall",
-          "west": "wall",
+          "north": "wall",
           "south": "wall",
-          "north": "wall"
+          "west": "wall"
         }
       },
       {
@@ -100,9 +100,9 @@
         "node": "node/undercroft",
         "sides": {
           "east": "wall",
-          "west": "wall",
+          "north": "wall",
           "south": "wall",
-          "north": "wall"
+          "west": "wall"
         }
       },
       {
@@ -120,9 +120,9 @@
         "node": "node/exit",
         "sides": {
           "east": "wall",
-          "west": "wall",
+          "north": "wall",
           "south": "wall",
-          "north": "wall"
+          "west": "wall"
         }
       },
       {
@@ -139,9 +139,9 @@
         "node": "node/causeway",
         "sides": {
           "east": "wall",
-          "west": "wall",
+          "north": "wall",
           "south": "wall",
-          "north": "wall"
+          "west": "wall"
         }
       }
     ],

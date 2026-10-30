@@ -143,7 +143,7 @@ impl Ground {
             } => {
                 let tops = Self::tops(plan, terrain, c.heightmap.as_ref());
                 let seed = c.world.content.seed;
-                let cols = Self::columns(&tops, strata, seed, region_min);
+                let cols = Self::columns(&tops, strata, seed, region_min, region_max);
                 GroundKind::Open {
                     surface: surface.clone(),
                     below: below.clone(),
@@ -203,16 +203,29 @@ impl Ground {
 
     /// Which stratum each column meets first (index + 1; 0 none), over a
     /// heightmap; empty when there are no strata or no map.
-    fn columns(tops: &Tops, strata: &[Stratum], seed: u64, region_min: [i64; 3]) -> Vec<u8> {
-        let Tops::Map { width, depth, tops } = tops else {
-            return Vec::new();
-        };
+    fn columns(
+        tops: &Tops,
+        strata: &[Stratum],
+        seed: u64,
+        region_min: [i64; 3],
+        region_max: [i64; 3],
+    ) -> Vec<u8> {
         if strata.is_empty() {
             return Vec::new();
         }
-        let (w, d) = (*width, *depth);
-        let at = |px: i64, pz: i64| tops[(pz.clamp(0, d - 1) * w + px.clamp(0, w - 1)) as usize];
-        let mut out = Vec::with_capacity(tops.len());
+        // A flat terrain is one surface everywhere and no column of it is
+        // steep; its rules still read the band, the patch and the area column
+        // by column over the region's grid.
+        let (w, d) = Self::grid(tops, region_min, region_max);
+        let at = |px: i64, pz: i64| match tops {
+            Tops::Flat(y) => *y,
+            Tops::Map { width, depth, tops } => {
+                tops[(pz.clamp(0, depth - 1) * width + px.clamp(0, width - 1)) as usize]
+            }
+            // An empty grid asks for no column.
+            Tops::Unresolved => 0,
+        };
+        let mut out = Vec::with_capacity(usize::try_from(w * d).unwrap_or(0));
         for pz in 0..d {
             for px in 0..w {
                 let y = at(px, pz);
@@ -239,16 +252,30 @@ impl Ground {
         out
     }
 
+    /// The column grid the surface rules are read over: the heightmap's, or
+    /// the region's `x × z` on a flat terrain; empty for an unresolved one.
+    fn grid(tops: &Tops, region_min: [i64; 3], region_max: [i64; 3]) -> (i64, i64) {
+        match tops {
+            Tops::Map { width, depth, .. } => (*width, *depth),
+            Tops::Flat(_) => (
+                region_max[0] - region_min[0] + 1,
+                region_max[2] - region_min[2] + 1,
+            ),
+            Tops::Unresolved => (0, 0),
+        }
+    }
+
     /// The stratum a column takes (index + 1; 0 is the fill's own blocks).
     #[must_use]
     pub fn column_kind(&self, x: i64, z: i64) -> u8 {
         let GroundKind::Open { cols, tops, .. } = &self.kind else {
             return 0;
         };
-        let Tops::Map { width, depth, .. } = tops else {
-            return 0;
-        };
         if cols.is_empty() {
+            return 0;
+        }
+        let (width, depth) = Self::grid(tops, self.region_min, self.region_max);
+        if width == 0 || depth == 0 {
             return 0;
         }
         let px = (x - self.region_min[0]).clamp(0, width - 1);

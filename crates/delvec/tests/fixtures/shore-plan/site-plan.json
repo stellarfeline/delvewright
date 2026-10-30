@@ -20,9 +20,9 @@
         "node": "node/landing",
         "sides": {
           "east": "wall",
-          "west": "wall",
+          "north": "wall",
           "south": "wall",
-          "north": "wall"
+          "west": "wall"
         }
       },
       {
@@ -39,9 +39,9 @@
         "node": "node/hall",
         "sides": {
           "east": "wall",
-          "west": "wall",
+          "north": "wall",
           "south": "wall",
-          "north": "wall"
+          "west": "wall"
         }
       },
       {
@@ -58,9 +58,9 @@
         "node": "node/loft",
         "sides": {
           "east": "wall",
-          "west": "wall",
+          "north": "wall",
           "south": "wall",
-          "north": "wall"
+          "west": "wall"
         }
       },
       {
@@ -77,9 +77,9 @@
         "node": "node/cell",
         "sides": {
           "east": "wall",
-          "west": "wall",
+          "north": "wall",
           "south": "wall",
-          "north": "wall"
+          "west": "wall"
         }
       },
       {
@@ -96,9 +96,9 @@
         "node": "node/exit",
         "sides": {
           "east": "wall",
-          "west": "wall",
+          "north": "wall",
           "south": "wall",
-          "north": "wall"
+          "west": "wall"
         }
       }
     ],

@@ -20,9 +20,9 @@
         "node": "node/near-hall",
         "sides": {
           "east": "wall",
-          "west": "wall",
+          "north": "wall",
           "south": "wall",
-          "north": "wall"
+          "west": "wall"
         }
       },
       {
@@ -39,9 +39,9 @@
         "node": "node/far-hall",
         "sides": {
           "east": "wall",
-          "west": "wall",
+          "north": "wall",
           "south": "wall",
-          "north": "wall"
+          "west": "wall"
         }
       },
       {
@@ -62,9 +62,9 @@
         },
         "sides": {
           "east": "wall",
-          "west": "wall",
+          "north": "wall",
           "south": "wall",
-          "north": "wall"
+          "west": "wall"
         }
       },
       {
@@ -81,9 +81,9 @@
         "node": "node/loft",
         "sides": {
           "east": "wall",
-          "west": "wall",
+          "north": "wall",
           "south": "wall",
-          "north": "wall"
+          "west": "wall"
         }
       },
       {
@@ -100,9 +100,9 @@
         "node": "node/undercroft",
         "sides": {
           "east": "wall",
-          "west": "wall",
+          "north": "wall",
           "south": "wall",
-          "north": "wall"
+          "west": "wall"
         }
       },
       {
@@ -140,9 +140,9 @@
         "node": "node/causeway",
         "sides": {
           "east": "open",
-          "west": "open",
+          "north": "wall",
           "south": "wall",
-          "north": "wall"
+          "west": "open"
         },
         "way": {
           "at": 0,
@@ -168,9 +168,9 @@
         "node": "node/beacon",
         "sides": {
           "east": "wall",
-          "west": "wall",
+          "north": "wall",
           "south": "wall",
-          "north": "wall"
+          "west": "wall"
         }
       },
       {
@@ -190,9 +190,9 @@
         "node": "node/gantry",
         "sides": {
           "east": "wall",
-          "west": "wall",
+          "north": "wall",
           "south": "wall",
-          "north": "wall"
+          "west": "wall"
         }
       },
       {
@@ -212,9 +212,9 @@
         "node": "node/perch",
         "sides": {
           "east": "wall",
-          "west": "wall",
+          "north": "wall",
           "south": "wall",
-          "north": "wall"
+          "west": "wall"
         }
       }
     ],
@@ -232,6 +232,47 @@
     "fill": {
       "below": "minecraft:dirt",
       "kind": "open",
+      "strata": [
+        {
+          "below": "minecraft:dirt",
+          "surface": "minecraft:podzol",
+          "trees": {
+            "height": [
+              5,
+              6
+            ],
+            "leaves": "minecraft:oak_leaves[persistent=true]",
+            "log": "minecraft:oak_log[axis=y]",
+            "per_mille": 400
+          },
+          "when": {
+            "area": {
+              "max": [
+                63,
+                63
+              ],
+              "min": [
+                56,
+                56
+              ]
+            },
+            "y_max": 69,
+            "y_min": 54
+          }
+        },
+        {
+          "below": "minecraft:stone",
+          "surface": "minecraft:stone",
+          "when": {
+            "patch": {
+              "min": 300,
+              "salt": 9,
+              "scale": 5
+            },
+            "steep": 2
+          }
+        }
+      ],
       "surface": "minecraft:grass_block",
       "terrain": {
         "base_y": 54,

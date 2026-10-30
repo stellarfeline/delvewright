@@ -1,0 +1,46 @@
+{
+  "code": "DW0838",
+  "patch": [
+    {
+      "doc": "programs/far-hall.json",
+      "op": "replace",
+      "path": "/rules/place/0/body/body/body/body/children/10/children/4",
+      "value": {
+        "axis": "y",
+        "children": [
+          {
+            "op": "call",
+            "symbol": "wall"
+          },
+          {
+            "body": {
+              "op": "void"
+            },
+            "op": "claim",
+            "region": "room"
+          }
+        ],
+        "op": "split",
+        "sizes": [
+          {
+            "blocks": {
+              "expr": "int",
+              "value": 2
+            },
+            "size": "absolute"
+          },
+          {
+            "size": "relative",
+            "weight": {
+              "expr": "int",
+              "value": 1
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The far hall's program edited so the east end of its south wall — the twelve columns past the span the causeway front allocates (edge/causeway-front, a contact of extent [6, 6] at 15) — stands one course over the floor course, its head claimed as the hall's own floor. A body in the hall steps onto the low wall and off its far side into the causeway, a crossing outside the span the plan allocated and through no seam. The piece's own gates pass: every cell is claimed, and the room's passable boundary there is the whole's to judge. The leak proof names the pair and the route, move by move, at the author's own check (detail --check) and at the build. It declares no unit: what must not build is a way between two places that nothing in the design agreed to."
+}

@@ -2551,3 +2551,106 @@ fn dw1073_a_part_taller_than_the_sky() {
         hit[0]
     );
 }
+
+/// **`fill.strata[]`: the first rule a column meets gives its blocks, and a
+/// stratum's trees stand clear of every ring** (spec-0127 §2.2). The green
+/// plan's fill made `open` and flat at the grade, with two rules: a wood in a
+/// rectangle of columns (`area`, a surface band, `trees`), and rock on steep
+/// patches (`steep`, `patch`). On a flat terrain no column is steep, so the
+/// second rule meets none and the fill's own blocks stand outside the wood —
+/// which is what shows `steep` is read rather than ignored. Every tree drawn
+/// stands inside the wood, four or more cells from every place's ring, and the
+/// draw is the same twice (ADR-0006). A stratum block that is not a block state
+/// is `DW0193`.
+#[test]
+fn a_stratum_gives_its_columns_their_blocks_and_grows_trees_clear_of_every_ring() {
+    use delvewright_dsl::siteplan::{Ground, placed_boxes};
+    let strata = |v: &mut Value, surface: &str| {
+        v["content"]["fill"] = json!({
+            "kind": "open",
+            "surface": "minecraft:grass_block",
+            "below": "minecraft:dirt",
+            "terrain": {"kind": "flat", "datum": "datum/grade"},
+            "strata": [
+                {
+                    "when": {"y_min": 60, "y_max": 70, "area": {"min": [40, 40], "max": [63, 63]}},
+                    "surface": surface,
+                    "below": "minecraft:coarse_dirt",
+                    "trees": {
+                        "per_mille": 300,
+                        "log": "minecraft:oak_log[axis=y]",
+                        "leaves": "minecraft:oak_leaves[persistent=true]",
+                        "height": [5, 6]
+                    }
+                },
+                {
+                    "when": {"steep": 1, "patch": {"scale": 4, "min": 0, "salt": 3}},
+                    "surface": "minecraft:stone",
+                    "below": "minecraft:stone"
+                }
+            ]
+        });
+    };
+    let mut v: Value = serde_json::from_str(PLAN.as_str()).expect("the green plan parses");
+    strata(&mut v, "minecraft:podzol");
+    let raw = campaign(
+        Some(v.to_string()),
+        Some(GRAPH.to_string()),
+        Some(BRIEF.to_string()),
+    );
+    let c = delvewright_dsl::parse_campaign(&raw).expect("the plan with strata parses");
+    let ground = Ground::of(&c);
+    // The surface stands one under the datum's walk plane.
+    assert_eq!(ground.top(50, 50), Some(63));
+    // The first rule a column meets: the wood inside its rectangle, the fill's
+    // own outside it, and no steep column anywhere on a flat terrain.
+    assert_eq!(ground.column_kind(50, 50), 1, "a column of the wood");
+    assert_eq!(ground.column_kind(39, 50), 0, "one column west of the wood");
+    assert_eq!(ground.column_kind(10, 10), 0, "a flat column is never steep");
+    assert_eq!(ground.fill_block([50, 63, 50]), Some("minecraft:podzol"));
+    assert_eq!(ground.fill_block([50, 62, 50]), Some("minecraft:coarse_dirt"));
+    assert_eq!(ground.fill_block([50, 64, 50]), None, "air over the surface");
+    assert_eq!(ground.fill_block([10, 63, 10]), Some("minecraft:grass_block"));
+    assert_eq!(ground.fill_block([10, 62, 10]), Some("minecraft:dirt"));
+    assert_eq!(ground.ground_block([50, 63, 50], 63), "minecraft:podzol");
+    // The trees: drawn, inside the wood, clear of every ring, and the same twice.
+    let mut reads = delvewright_dsl::metrics::Reads::new();
+    let clear: Vec<[i64; 4]> = placed_boxes(&c, &mut reads)
+        .iter()
+        .map(|b| [b.foot[0] - 1, b.foot[1] + 1, b.foot[2] - 1, b.foot[3] + 1])
+        .collect();
+    assert!(!clear.is_empty(), "the plan places boxes");
+    let trees = ground.trees(&clear);
+    let trunks: Vec<[i64; 3]> = trees
+        .iter()
+        .filter(|(cell, block)| *block == "minecraft:oak_log[axis=y]" && cell[1] == 64)
+        .map(|(cell, _)| *cell)
+        .collect();
+    assert!(!trunks.is_empty(), "300 per mille over a 24 × 24 wood draws a tree");
+    for t in &trunks {
+        assert!(
+            (40..=63).contains(&t[0]) && (40..=63).contains(&t[2]),
+            "a trunk inside the wood: {t:?}"
+        );
+        for f in &clear {
+            assert!(
+                t[0] < f[0] - 4 || t[0] > f[1] + 4 || t[2] < f[2] - 4 || t[2] > f[3] + 4,
+                "a trunk four or more cells from every ring: {t:?} against {f:?}"
+            );
+        }
+    }
+    assert!(
+        trees.iter().any(|(_, b)| *b == "minecraft:oak_leaves[persistent=true]"),
+        "a crown is drawn"
+    );
+    assert_eq!(trees, ground.trees(&clear), "the draw is seeded");
+    eprintln!(
+        "strata binding: {} tree(s) drawn over the wood, {} cell(s) of trunk and crown",
+        trunks.len(),
+        trees.len()
+    );
+
+    // A stratum block that is not a block state is refused where it is written.
+    let codes = plan_with(|v| strata(v, "minecraft:not_a_block"));
+    assert!(codes.contains(&"DW0193".to_string()), "{codes:?}");
+}
