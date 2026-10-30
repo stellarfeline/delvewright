@@ -605,3 +605,59 @@ fn the_provenance_record_is_every_input_and_replaying_it_gives_the_same_bytes() 
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// **`delvec grammar survey` refuses a request it cannot model with exit 2**
+/// (spec-0128 §3.2): a block that does not parse, and a cell outside `size`,
+/// each named with its cell; nothing is printed on stdout. The same request
+/// with the offending block removed is answered, exit 0, as JSON.
+#[test]
+fn a_survey_request_it_cannot_model_is_exit_2_naming_the_cell() {
+    let dir = scratch("survey-input");
+    let request = |extra: &str| -> PathBuf {
+        let text = format!(
+            r#"{{"size": [3, 3, 3], "blocks": [[0, 0, 0, "minecraft:stone"], [1, 0, 0, "minecraft:stone"]{extra}], "from": [[0, 1, 0]]}}"#
+        );
+        let file = dir.join("request.json");
+        std::fs::write(&file, text).unwrap();
+        file
+    };
+    let survey = |file: &Path| -> Output {
+        grammar()
+            .args(["survey", "--file"])
+            .arg(file)
+            .output()
+            .expect("run delvec")
+    };
+    let unparseable = survey(&request(r#", [2, 0, 0, "minecraft:stone["]"#));
+    assert_eq!(
+        unparseable.status.code(),
+        Some(2),
+        "{}",
+        combined(&unparseable)
+    );
+    assert!(unparseable.stdout.is_empty(), "nothing on stdout");
+    let err = String::from_utf8_lossy(&unparseable.stderr);
+    assert!(
+        err.contains("the block at [2, 0, 0] does not parse"),
+        "{err}"
+    );
+
+    let outside = survey(&request(r#", [9, 0, 0, "minecraft:stone"]"#));
+    assert_eq!(outside.status.code(), Some(2), "{}", combined(&outside));
+    assert!(outside.stdout.is_empty(), "nothing on stdout");
+    let err = String::from_utf8_lossy(&outside.stderr);
+    assert!(
+        err.contains("`minecraft:stone` at [9, 0, 0] lies outside the model's extent [3, 3, 3]"),
+        "{err}"
+    );
+
+    let answered = survey(&request(""));
+    assert_eq!(answered.status.code(), Some(0), "{}", combined(&answered));
+    let answer: serde_json::Value = serde_json::from_slice(&answered.stdout).expect("JSON");
+    assert_eq!(
+        answer["standable"].as_array().map(Vec::len),
+        Some(2),
+        "{answer}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}

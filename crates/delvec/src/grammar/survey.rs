@@ -458,6 +458,84 @@ mod tests {
         assert_eq!(b.joined, vec![["east".to_string(), "west".to_string()]]);
     }
 
+    /// **`sealed` is the out-of-walk gate's own object** (spec-0128 §3.2): a
+    /// room with a closed loft over it — floor, ring walls, a ceiling, two
+    /// courses of attic air, a roof — flooded from the room. The attic's floor
+    /// is standable and unreached, its air touches neither the model's outer
+    /// layer nor anywhere a body goes, so `sealed` is exactly
+    /// [`contract::passable_component`] of one attic cell: the eighteen cells of
+    /// attic air. One roof block taken out puts an outer-layer cell in the same
+    /// component, and nothing is sealed.
+    #[test]
+    fn sealed_air_is_the_passable_component_of_a_closed_loft() {
+        let size = [5, 7, 5];
+        let mut blocks = floor(size);
+        for y in 1..6 {
+            for x in 0..5 {
+                for z in 0..5 {
+                    if x == 0 || x == 4 || z == 0 || z == 4 {
+                        blocks.push((x, y, z, "minecraft:stone".to_string()));
+                    }
+                }
+            }
+        }
+        for x in 1..4 {
+            for z in 1..4 {
+                blocks.push((x, 3, z, "minecraft:stone".to_string()));
+            }
+        }
+        for x in 0..5 {
+            for z in 0..5 {
+                blocks.push((x, 6, z, "minecraft:stone".to_string()));
+            }
+        }
+        let req = Request {
+            size,
+            blocks: blocks.clone(),
+            keep: None,
+            from: vec![[1, 1, 1]],
+            spaces: BTreeMap::new(),
+            palette: vec![],
+        };
+        let a = survey(&req).unwrap();
+        assert!(a.reached.contains(&[2, 1, 2]), "the room is reached");
+        assert!(!a.reached.contains(&[2, 4, 2]), "the attic is not");
+        let model = model_of(&req).unwrap();
+        let component = contract::passable_component(&model, [1, 4, 1]);
+        assert_eq!(
+            component.len(),
+            18,
+            "two courses of attic air over nine columns"
+        );
+        let sealed: BTreeSet<[i32; 3]> = a.sealed.iter().copied().collect();
+        assert_eq!(
+            sealed, component,
+            "sealed is the component, no more and no less"
+        );
+        assert!(
+            sealed.iter().all(|c| !a.reached.contains(c)),
+            "nothing a body reaches is sealed"
+        );
+        // The perturbation: one roof block out. The attic's air now holds a
+        // cell on the model's outer layer, so it is open and nothing is sealed.
+        let mut holed = blocks;
+        holed.retain(|b| !(b.0 == 2 && b.1 == 6 && b.2 == 2));
+        let open = Request {
+            size,
+            blocks: holed,
+            keep: None,
+            from: vec![[1, 1, 1]],
+            spaces: BTreeMap::new(),
+            palette: vec![],
+        };
+        let b = survey(&open).unwrap();
+        assert!(b.sealed.is_empty(), "{:?}", b.sealed);
+        assert!(
+            !b.reached.contains(&[2, 4, 2]),
+            "still unreached, only unsealed"
+        );
+    }
+
     /// A lantern hung under air is dropped; one under stone is kept. A fence
     /// top is no floor. A candle is refused and a barrel is a container.
     #[test]
