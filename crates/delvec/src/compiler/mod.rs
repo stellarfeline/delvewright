@@ -73,7 +73,6 @@
 //! - [`load`]: read a campaign directory into the DSL's `RawCampaign`, keeping the raw bytes for input hashing.
 //! - [`r#loop`]: an endless corridor (spec-0086) — the slab, the closed view, identical blocks and light, and the loop's seal and exercise (`DW0945`–`DW0950`).
 //! - [`loot`]: container-fill proofs over the assembled world (`DW0431`/`DW0438`).
-//! - [`sign`]: the sign at a `signs` entry's anchor shows its text (`DW1075`).
 //! - [`mark`]: a mark stays in the room its anchor names — an offset that leaves its anchor's piece is refused (`DW0897`).
 //! - [`massing`]: the L2 massing verbs — declarative control of a pool area's solved jigsaw layout.
 //! - [`music`]: what every biome a camera can stand in plays, what each cutscene hears and what each `stop-sound` cuts — the music ledger and `DW1032`.
@@ -102,6 +101,7 @@
 //! - [`seating`]: a horizon and a piece set are a pair — this base cannot seat this pool (`DW0886`), and a declared waterline is not in the bytes (`DW0887`).
 //! - [`seeding`]: no emitted comparison reads a score entry the emitted pack never creates (`DW0495`).
 //! - [`served`]: what the declared view distance costs the host — the pinned server's chunk set, the fitted live heap, the ceiling stated in `server/resources.properties` (spec-0091).
+//! - [`sign`]: the sign at a `signs` entry's anchor shows its text (`DW1075`).
 //! - [`skinparts`]: the model-part table every skin and entity texture is drawn to, and the one rule that refuses paint no box samples (`DW0978`) or nobody standing level sees (`DW0979`) — spec-0097.
 //! - [`solo`]: a generated PackTest whose drive takes every player's body runs alone, in its own test environment.
 //! - [`solver`]: the jigsaw layout solver.
