@@ -624,6 +624,7 @@ fn run_panorama(
             backend: draw.backend,
             width: pano.frame.width,
             height: pano.frame.height,
+            served: None,
         },
         draw.threads,
     ) {
@@ -1294,6 +1295,7 @@ pub fn run_cameras(
                 backend: draw.backend,
                 width,
                 height,
+                served: None,
             },
             draw.threads,
         ) {

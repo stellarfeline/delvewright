@@ -161,6 +161,7 @@ pub(crate) fn run_frames_campaign(
             backend: args.draw.backend,
             width: args.size,
             height: args.size,
+            served: Some(delvewright_dsl::viewdistance::chunks(&campaign)),
         },
         args.draw.threads,
     ) {
