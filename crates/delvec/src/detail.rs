@@ -874,14 +874,24 @@ fn leak_check(
     };
     let structures =
         crate::cli::campaign::read_structures_over(&plan, &registry, prefabs_dir, &overlay, json)?;
-    let blocks = match edit::replay_view(&plan, &registry, &structures) {
-        Ok(Some(r)) => r.assembled.blocks,
-        Ok(None) => assembled::assemble(&plan, &structures).blocks,
+    let whole = match edit::replay_view(&plan, &registry, &structures) {
+        Ok(Some(r)) => r.assembled,
+        Ok(None) => assembled::assemble(&plan, &structures),
         Err(f) => {
             print_build_error(f.code, &f.message, json);
             return Err(3);
         }
     };
+    // The build's own cut (`Assembled::judged_within`): the proofs below read
+    // the columns a body is judged in, never the ground past the boundary.
+    let judged = delvec::compiler::emit::judged_columns(&plan)
+        .and_then(|(lo, hi)| whole.judged_within(lo, hi));
+    if let Some((_, j)) = &judged {
+        eprintln!("{}", j.line());
+    }
+    let blocks = std::sync::Arc::clone(judged.as_ref().map_or(&whole.blocks, |(a, _)| &a.blocks));
+    drop(judged);
+    drop(whole);
     let only: std::collections::BTreeSet<String> =
         prepared.iter().map(|p| p.place.clone()).collect();
     let open = blockout::open_world(&plan, &blocks);
