@@ -1011,7 +1011,6 @@ fn the_handout_is_complete_and_hands_each_seams_form_to_both_sides() {
         for f in [
             "fill",
             "bottom_y",
-            "floor_y",
             "perimeter",
             "min_y",
             "max_y",
@@ -1024,10 +1023,38 @@ fn the_handout_is_complete_and_hands_each_seams_form_to_both_sides() {
                 h["place"]
             );
         }
+        // The walk plane is handed once, as `datum_y`.
+        assert!(h["ground"].get("floor_y").is_none(), "`{}`", h["place"]);
+        // Every handed ground block is a full state: every property written.
+        let reg = delvewright_dsl::blocks::BlockRegistry::v1_21_11();
+        for col in h["ground"]["columns"].as_array().unwrap() {
+            for b in col["blocks"].as_array().unwrap() {
+                let s = b.as_str().unwrap();
+                let st: delvec::grammar::BlockState = s.parse().unwrap();
+                assert!(
+                    reg.omitted_properties(&st.name, &st.properties).is_empty(),
+                    "`{}` hands `{s}`, a state that leaves a property out",
+                    h["place"]
+                );
+            }
+        }
         let c = &h["concept"];
         assert!(c["row"].is_object() || c["absent"].is_string(), "{c}");
     }
+    // The way a place is, handed with its clear columns resolved: the
+    // causeway's `way` (`axis z, clear 6, at 0`) — its run along z, its first
+    // clear column at the box's own low x, piece-local. A place the plan
+    // declares no way for is handed none.
+    let ways: Vec<&Value> = all.iter().filter(|h| h.get("way").is_some()).collect();
+    assert_eq!(ways.len(), 1, "the binding: one way place in the overlay");
+    let causeway = all.iter().find(|h| h["place"] == "node/causeway").unwrap();
+    let lo_x = causeway["space"][0][0].as_i64().unwrap();
+    assert_eq!(
+        causeway["way"],
+        json!({"axis": "z", "clear": 6, "cols": [lo_x, lo_x + 5]})
+    );
     let annex = all.iter().find(|h| h["place"] == "node/annex").unwrap();
+    assert!(annex.get("way").is_none());
     assert!(annex["roof"].is_object(), "the annex declares a roof");
     assert!(!annex["seams"].as_array().unwrap().is_empty());
     assert_eq!(

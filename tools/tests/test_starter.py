@@ -128,3 +128,99 @@ def test_a_mark_given_a_course_names_the_block_at_that_cell():
     with pytest.raises(SystemExit) as e:
         st.marks(_Place({"sign-bakery": (2, 3, "south", None)}), {"op": "skip"})
     assert "not on floor a body reaches" in str(e.value)
+
+
+# ---------------------------------------------------------------- the handed ground
+
+
+def test_the_ground_course_is_the_ground_the_whole_hands_each_column():
+    """`ground.columns` hands each column's blocks (spec-0128): the starter
+    paints the ground course in them — a ring column from its nearest
+    column inside — and falls back to the `floor` role only where nothing is
+    handed."""
+    st = _starter_module()
+    a = next(x for x in json.loads(ALLOCATIONS.read_text(encoding="utf-8")) if x["place"] == "node/yard")
+    a = json.loads(json.dumps(a))
+    lo, hi = a["space"]
+    cols = a["ground"]["columns"]
+    assert cols, "the binding: a handed column"
+    for c in cols:
+        c["blocks"] = ["minecraft:coarse_dirt" if (c["x"] + c["z"]) % 2 else "minecraft:grass_block[snowy=false]"]
+    p = st.Place(a)
+    d = a["datum_y"]
+    assert p.ground_roles == {"minecraft:coarse_dirt": "ground-0", "minecraft:grass_block[snowy=false]": "ground-1"}
+    by = {(c["x"], c["z"]): c["blocks"][0] for c in cols}
+    for (x, z), b in by.items():
+        assert p.cell(x, d - 1, z) == ("fill", p.ground_roles[b]), (x, z)
+    # a ring column takes its nearest column inside
+    x, z = lo[0] - 1, lo[2]
+    assert p.cell(x, d - 1, z) == ("fill", p.ground_roles[by[(lo[0], lo[2])]])
+    # nothing handed: the `floor` role, as before
+    a["ground"]["columns"] = []
+    assert st.Place(a).cell(lo[0], d - 1, lo[2]) == ("fill", "floor")
+
+
+# ---------------------------------------------------------------- an opening touches the room
+
+
+def _plot_of(st, a: dict, build, monkeypatch):
+    """A drawn plot over `a`, the engine's survey answered without a binary:
+    every air cell over a solid one in the play space is standable and
+    reached, nothing sealed."""
+
+    def survey(_delvec, request):
+        solid = {(x, y, z) for x, y, z, _ in request["blocks"]}
+        stand = sorted([x, y, z] for (x, y, z) in {(x, y + 1, z) for x, y, z in solid} if (x, y, z) not in solid)
+        return {"standable": stand, "reached": stand, "sealed": [], "joined": [], "unsupported": [],
+                "refused": [], "containers": [], "malformed": []}
+
+    monkeypatch.setattr(st, "ask_engine", survey)
+    st.Plot.BUILD = staticmethod(build)
+    return st.plot_program(a, "seen")
+
+
+def _front_alloc() -> dict:
+    """An open 9x6x9 plot whose north seam opens its whole first row,
+    owned by the street, with one part to lay."""
+    return {"place": "node/lot", "extent": [9, 6, 9], "space": [[1, 1, 1], [7, 5, 7]], "datum_y": 1,
+            "ground": {"base": "ground", "columns": []},
+            "seams": [{"edge": "edge/street-to-lot", "face": "north", "cells": [[2, 1, 1], [6, 3, 1]], "bar": None,
+                       "owns_plane": False, "other": "node/street", "answer_with": ["walk"], "rise": 0}],
+            "sides": [], "voids": [], "brief": {"kind": "open"}, "owed_anchors": [],
+            "parts": [{"id": "part/yard", "cells": 9, "kind": "ground", "use": "the yard"}]}
+
+
+def test_a_part_or_a_full_block_behind_an_opening_is_refused_before_writing(monkeypatch):
+    """Every cell of a seam's opening touches the room its edge enters
+    (`contract-well-formed`): a part named on the row behind it, or a full
+    block standing there, is refused by the starter with the cell and what is
+    behind it; the same part one row in passes."""
+    import pytest
+
+    st = _starter_module()
+
+    def yard_at(z0):
+        def build(place):
+            m = st.Model(place)
+            m.part(2, 4, z0, z0 + 2, "yard")
+            return m
+        return build
+
+    with pytest.raises(SystemExit) as e:
+        _plot_of(st, _front_alloc(), yard_at(2), monkeypatch)
+    msg = str(e.value)
+    assert "`edge/street-to-lot`" in msg and "the columns of part/yard" in msg and "(2, 1, 2)" in msg, msg
+
+    def cauldron(place):
+        m = st.Model(place)
+        m.part(2, 4, 4, 6, "yard")
+        m.set(5, 1, 2, "minecraft:water_cauldron[level=3]")
+        return m
+
+    with pytest.raises(SystemExit) as e:
+        _plot_of(st, _front_alloc(), cauldron, monkeypatch)
+    msg = str(e.value)
+    assert "(5, 1, 1)" in msg and "minecraft:water_cauldron" in msg, msg
+
+    doc = _plot_of(st, _front_alloc(), yard_at(4), monkeypatch)
+    assert {"a": "room", "b": "exterior", "class": "walk", "via": "street-to-lot-way"} in doc["contract"]["edges"]

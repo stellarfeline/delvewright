@@ -470,8 +470,6 @@ pub struct HandedGround {
     /// The claim's bottom, piece-local — the lowest course of ground the piece
     /// owns under its plot; on an aloft place, the lowest underside course.
     pub bottom_y: i64,
-    /// The walk plane, piece-local.
-    pub floor_y: i64,
     /// The terrain's surface height along the plot's perimeter (the ring's
     /// columns), world `y`: each `[x, z, top]` piece-local `x`/`z`.
     pub perimeter: Vec<[i64; 3]>,
@@ -943,7 +941,6 @@ pub fn allocation(c: &Campaign, node: &NodeId) -> Option<Allocation> {
         .to_string(),
         base: b.base,
         bottom_y: frame.bottom - frame.lo[1],
-        floor_y: frame.datum_y(),
         perimeter,
         min_y,
         max_y,

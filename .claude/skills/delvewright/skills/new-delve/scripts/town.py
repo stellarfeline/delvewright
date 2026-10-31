@@ -23,6 +23,8 @@ Standard library only.
 
 from __future__ import annotations
 
+import sys
+
 from starter import AIR, fence, lantern, slab, stairs
 
 # ════════════════════════════════════════════════════════════════════════
@@ -72,6 +74,24 @@ def way_frame(place, axis: str):
     raise ValueError(f"town.way_frame: `{axis}` is not an axis; a way runs along x or z")
 
 
+def handed_way(place, axis: str | None, clear: int | None, who: str) -> tuple[str, int | None, tuple[int, int] | None]:
+    """The way's axis, clear width and clear columns as the plan hands them
+    (`place.way`), or as the caller states them where the plan declares no
+    way. A stated value the plan also hands is refused when it differs: the
+    plan's number is the one the clear-width check judges (`DW1057`), so a
+    retyped one can only be wrong. Returns `(axis, clear, cols)`, `cols` the
+    first and last clear column across the run where handed."""
+    way = getattr(place, "way", None)
+    if way is not None:
+        for name, said, handed in (("axis", axis, way["axis"]), ("clear", clear, way["clear"])):
+            if said is not None and said != handed:
+                sys.exit(f"town.{who}: `{name}={said!r}` is stated, and the plan hands this way `{name}` {handed!r}; leave it out — the plan's is the one judged")
+        return way["axis"], way["clear"], tuple(way["cols"])
+    if axis is None:
+        sys.exit(f"town.{who}: the plan declares no `way` for this place, so state its `axis` (\"x\" or \"z\")")
+    return axis, clear, None
+
+
 def up_seam(place):
     """The seam a way climbs to (its `rise` above zero), or None."""
     return next((s for s in place.seams if s["seam"].get("rise", 0) > 0), None)
@@ -88,6 +108,10 @@ def lamp(m, x: int, z: int, y: int | None = None, post: str | None = None, light
     for dy in range(height):
         m.set(x, y + dy, z, post or fence("minecraft:oak"))
     m.set(x, y + height, z, light or lantern(False))
+    if y + height >= getattr(m, "ey", y + height + 2) - 1 and hasattr(m, "show"):
+        # The light stands on the frame's top course in the open air: the
+        # piece's top is seen there, and is declared so (`DW0885`).
+        m.show("up")
 
 
 SIGN_ROT = {"west": 12, "east": 4, "north": 0, "south": 8}  # a sign hung before a front on each face looks back at the street
@@ -134,6 +158,8 @@ def bracket(m, place, seam, top: int, sign: str, mark: str | None, post: str | N
     for x, z in ((px, pz), (sx, sz)):
         m.set(x, top, z, f"{beam}[axis={axis}]")
     m.set(sx, top - 1, sz, f"{sign}[attached=false,rotation={SIGN_ROT[face]},waterlogged=false]")
+    if top >= getattr(m, "ey", top + 2) - 1 and hasattr(m, "show"):
+        m.show("up")  # the beam on the frame's top course, in the open air (`DW0885`)
     if mark:
         m.mark(mark, sx, sz, y=top - 1)
     return {(px, pz), (sx, sz)}
@@ -191,16 +217,22 @@ def pave_way(m, x0: int, x1: int, z0: int, z1: int, axis: str, roles: dict | Non
                 m.set(a, y, b, role)
 
 
-VERGE_THINGS = ("lamp", "bed", "bench", "barrel", "cart", "bed", "lamp", "bench")
+# No container among the defaults: a barrel is a holder the census counts
+# (`DW1018`), so one stands on a verge only where the caller names it.
+VERGE_THINGS = ("lamp", "bed", "bench", "cart", "bed", "lamp", "bench")
 FLOWERS = ("minecraft:poppy", "minecraft:cornflower", "minecraft:oxeye_daisy", "minecraft:allium", "minecraft:dandelion")
 
 
-def stretch(m, place, axis: str, seed: int, clear: int = 5, roles: dict | None = None,
+def stretch(m, place, axis: str | None = None, seed: int | None = None, clear: int | None = None, roles: dict | None = None,
             fronts: dict | None = None, bands: int = 2, verge=None, top: int | None = None) -> dict:
     """A stretch of a main street, after the medieval street (cobbles set in
     sand, a central kennel, the paving re-laid in patches).
 
-    The clear way is `clear` wide and centred across the play space; its
+    The run's `axis`, the clear way's width and its columns are the plan's
+    (`place.way`, handed by the allocation): leave them out. Only a place the
+    plan declares no way for states `axis` and `clear` (centred across the
+    play space). `seed` is the stretch's own wear, and is always stated. The
+    clear way's
     `kennel` wanders a column either side of the middle every three rows and
     is broken where the paving was re-laid, `bands` rows of `kerb` setts lie
     at each end (where the flights land), the centre worn in patches of
@@ -216,13 +248,21 @@ def stretch(m, place, axis: str, seed: int, clear: int = 5, roles: dict | None =
     verge; `frame` is a dict of `free` (the verge columns off every opening,
     doorway and bracket), `rows`, `cols`, `cell`, `c0`, `c1` (the clear way's
     cols), `axis` and `seed`. Returns that dict."""
+    if seed is None:
+        sys.exit("town.stretch: state the stretch's `seed`, its own wear, the same on every run")
+    axis, clear, handed = handed_way(place, axis, clear, "stretch")
+    if handed is None and clear is None:
+        sys.exit("town.stretch: the plan declares no `way` for this place, so state its `clear` width")
     r = dict(WAY_ROLES, **(roles or {}))
     rows, cols, cell = way_frame(place, axis)
     a0, a1 = rows[0], rows[-1]
     b0, b1 = cols[0], cols[-1]
     g = walk_of(m) - 1
-    c0 = b0 + (len(cols) - clear) // 2
-    c1 = c0 + clear - 1
+    if handed is not None:
+        c0, c1 = handed
+    else:
+        c0 = b0 + (len(cols) - clear) // 2
+        c1 = c0 + clear - 1
     mid = (c0 + c1) // 2
     band = set(rows[:bands]) | set(rows[-bands:]) if bands else set()
     for a in rows:
@@ -260,44 +300,79 @@ def stretch(m, place, axis: str, seed: int, clear: int = 5, roles: dict | None =
 
 
 def verge_life(m, frame: dict, things: tuple = VERGE_THINGS, every: int = 3, flowers: tuple = FLOWERS,
-               bench: str = "minecraft:spruce", cart: str = "minecraft:spruce", cart_load: str = "minecraft:hay_block") -> None:
-    """A street's verge furnished in turn: one thing every `every` rows on
-    each side, taken round `things` from the seed — `lamp`, `bed` (a flower
-    and a tuft in turf), `bench` (two stairs of `bench`, their backs to the
-    lot), `barrel`, `cart` (two slabs of `cart` along the way, `cart_load`
-    on one) — wherever the verge column is free."""
+               bench: str = "minecraft:spruce", cart: str = "minecraft:spruce", cart_load: str = "minecraft:hay_block",
+               at: list | tuple = ()) -> list[tuple[str, int, str, int, int]]:
+    """A street's verge furnished: first each thing the caller places in
+    `at` — `(kind, row, side)`, `row` a coordinate along the way (one of
+    `frame["rows"]`), `side` `"low"` or `"high"` across it — then one thing
+    every `every` rows on each side, taken round `things` from the seed,
+    wherever the verge column is still free. A kind is `lamp`, `bed` (a
+    flower and a tuft in turf), `bench` (two stairs of `bench`, their backs
+    to the lot), `cart` (two slabs of `cart` along the way, `cart_load` on
+    one) or `barrel` — a container the holder census counts (`DW1018`), so
+    it is never among the defaults and stands only where named. `things=()`
+    places `at` alone. A placement in `at` on a column that is not free (an
+    opening, a doorway, a bracket, the clear way) is refused. Returns every
+    placement made, `(kind, row, side, x, z)`."""
     free, rows, cell, c0, c1, seed = frame["free"], frame["rows"], frame["cell"], frame["c0"], frame["c1"], frame["seed"]
     low, high = ACROSS[frame["axis"]]
     w = walk_of(m)
     grass = "minecraft:grass_block[snowy=false]"
+    placed: list[tuple[str, int, str, int, int]] = []
+    taken: set[tuple[int, int]] = set()
+
+    def put(kind: str, a: int, side: str) -> bool:
+        b = c0 - 1 if side == "low" else c1 + 1
+        x, z = cell(a, b)
+        nx, nz = cell(a + 1, b)
+        if (x, z) not in free or (x, z) in taken:
+            return False
+        nxt = (nx, nz) in free and (nx, nz) not in taken
+        taken.add((x, z))
+        if kind in ("bed", "bench", "cart") and nxt:
+            taken.add((nx, nz))
+        placed.append((kind, a, side, x, z))
+        draw(kind, b, x, z, nx, nz, nxt, a)
+        return True
+
+    def draw(kind, b, x, z, nx, nz, nxt, a) -> None:
+        if kind == "lamp":
+            lamp(m, x, z)
+        elif kind == "bed":
+            m.set(x, w - 1, z, grass)
+            m.set(x, w, z, flowers[(seed + a) % len(flowers)])
+            if nxt:
+                m.set(nx, w - 1, nz, grass)
+                m.set(nx, w, nz, "minecraft:short_grass")
+        elif kind == "bench":
+            face = low if b < c0 else high
+            m.set(x, w, z, stairs(bench, face))
+            if nxt:
+                m.set(nx, w, nz, stairs(bench, face))
+        elif kind == "barrel":
+            m.set(x, w, z, "minecraft:barrel[facing=up,open=false]")
+        elif kind == "cart" and nxt:
+            m.set(x, w, z, slab(cart, "top"))
+            m.set(nx, w, nz, slab(cart, "top"))
+            m.set(x, w + 1, z, f"{cart_load}[axis={frame['axis']}]")
+
+    for kind, a, side in at:
+        if side not in ("low", "high"):
+            sys.exit(f"town.verge_life: side `{side}` is not one; a verge side is \"low\" or \"high\" across the way")
+        if not put(kind, a, side):
+            sys.exit(f"town.verge_life: `{kind}` at row {a} on the {side} verge stands on a column that is not free verge (an opening, a doorway, a bracket, the clear way, or taken); choose another row")
+    if not things:
+        return placed
     i = 0
     for a in range(rows[0] + 2, rows[-1] - 1, every):
         for side, b in enumerate((c0 - 1, c1 + 1)):
             x, z = cell(a, b)
-            nx, nz = cell(a + 1, b)
-            if (x, z) not in free:
+            if (x, z) not in free or (x, z) in taken:
                 continue
             kind = things[(i + seed + side * 3) % len(things)]
             i += 1
-            if kind == "lamp":
-                lamp(m, x, z)
-            elif kind == "bed":
-                m.set(x, w - 1, z, grass)
-                m.set(x, w, z, flowers[(seed + a) % len(flowers)])
-                if (nx, nz) in free:
-                    m.set(nx, w - 1, nz, grass)
-                    m.set(nx, w, nz, "minecraft:short_grass")
-            elif kind == "bench":
-                face = low if b < c0 else high
-                m.set(x, w, z, stairs(bench, face))
-                if (nx, nz) in free:
-                    m.set(nx, w, nz, stairs(bench, face))
-            elif kind == "barrel":
-                m.set(x, w, z, "minecraft:barrel[facing=up,open=false]")
-            elif kind == "cart" and (nx, nz) in free:
-                m.set(x, w, z, slab(cart, "top"))
-                m.set(nx, w, nz, slab(cart, "top"))
-                m.set(x, w + 1, z, f"{cart_load}[axis={frame['axis']}]")
+            put(kind, a, ("low", "high")[side])
+    return placed
 
 
 STALL_COLOURS = ("red", "yellow", "blue", "green")
@@ -333,6 +408,8 @@ def market(m, frame: dict, colours: tuple = STALL_COLOURS, wood: str = "minecraf
                 for b in side:
                     x, z = cell(aa, b)
                     m.set(x, w + 3, z, f"minecraft:{col}_wool" if aa % 2 else "minecraft:white_wool")
+                if w + 3 >= getattr(m, "ey", w + 5) - 1 and hasattr(m, "show"):
+                    m.show("up")  # the awning on the frame's top course, in the open air (`DW0885`)
             for aa in (span[0], span[-1]):
                 for y in (w, w + 1, w + 2):
                     for b in side:
@@ -395,16 +472,18 @@ def flight(m, place, roles: dict | None = None, step: str = "minecraft:stone_bri
         m.set(fx, w, fz, flower)
 
 
-LANE_THINGS = ("cart", "barrel", "bench")
+LANE_THINGS = ("cart", "bench")  # no container among the defaults (`VERGE_THINGS`)
 
 
-def lane(m, place, axis: str, edge: str = "high", roles: dict | None = None, every: int = 5,
+def lane(m, place, axis: str | None = None, edge: str = "high", roles: dict | None = None, every: int = 5,
          things: tuple = LANE_THINGS, wood: str = "minecraft:spruce") -> None:
     """A side street: paved as a way (`pave_way`), a lamp and then one of
-    `things` in turn (`cart` two slabs, `barrel`, `bench` a stair its back
-    to the edge) every `every` cells along its `edge` column (`"high"` or
-    `"low"` across the way), clear of every opening. The clear width is the
-    way's other columns."""
+    `things` in turn (`cart` two slabs, `bench` a stair its back to the edge,
+    `barrel` — a container the census counts, so only where named) every
+    `every` cells along its `edge` column (`"high"` or `"low"` across the
+    way), clear of every opening. The clear width is the way's other
+    columns. `axis` is the plan's (`place.way`) where it declares a way."""
+    axis, _, _ = handed_way(place, axis, None, "lane")
     rows, cols, cell = way_frame(place, axis)
     (x0, _, z0), (x1, _, z1) = place.space
     pave_way(m, x0, x1, z0, z1, axis, roles)
@@ -433,17 +512,19 @@ def lane(m, place, axis: str, edge: str = "high", roles: dict | None = None, eve
         n += 1
 
 
-def ramp(m, place, axis: str, roles: dict | None = None, step: str = "minecraft:stone_brick", fill: str = "road",
+def ramp(m, place, axis: str | None = None, roles: dict | None = None, step: str = "minecraft:stone_brick", fill: str = "road",
          landing: str | None = None, flat: int = 2) -> bool:
     """A way that climbs to the opening above (the seam whose `rise` is above
     zero) across its whole width: `flat` rows at grade, then a stair of
     `step`, then a landing of `landing` (`kerb` by default), and so on up the
-    rise, the ground under each filled with `fill`. Returns False (and draws
-    nothing) when no seam rises."""
+    rise, the ground under each filled with `fill`. `axis` is the plan's
+    (`place.way`) where it declares a way. Returns False (and draws nothing)
+    when no seam rises."""
     r = dict(WAY_ROLES, **(roles or {}))
     up = up_seam(place)
     if up is None:
         return False
+    axis, _, _ = handed_way(place, axis, None, "ramp")
     rows, cols, cell = way_frame(place, axis)
     face = up["seam"]["face"]
     top_end = {"north": rows[0], "west": rows[0], "south": rows[-1], "east": rows[-1]}[face]

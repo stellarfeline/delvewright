@@ -12,7 +12,9 @@ Run bare, it runs no binary and names no path: it reads the allocation
 `delvec allocation <campaign> <place>` printed and writes the program. What it
 emits, for any allocation the engine hands:
 
-- the ground: a ground place's floor drawn down to the bottom of its claim; an
+- the ground: a ground place's ground drawn down to the bottom of its claim
+  in the blocks the whole hands each column (`ground.columns`, the terrain's
+  own, every property written), the ring's run from its nearest column; an
   aloft place's one floor course under its walk plane and nothing beneath;
 - a wall on every cell of the one-cell ring, from the walk plane up — a cell a
   neighbour or the whole owns is a void the verb replaces, so painting it is
@@ -153,6 +155,25 @@ class Place:
         self.space = a["space"]
         self.datum = self.h("datum-y", a["datum_y"])
         self.aloft = isinstance(a["ground"].get("base"), dict)
+        # The ground the whole hands each column under the plot (`ground.
+        # columns`): its blocks bottom first up to the terrain's top or the
+        # floor course, whichever is lower. The ground course is painted in
+        # them, each a palette role of its own (`ground-<n>`, in block order);
+        # an author's drawing over it is the author's.
+        d = a["datum_y"]
+        self.ground_cols: dict[tuple[int, int], tuple[int, list[str]]] = {}
+        for c in a["ground"].get("columns", []) or []:
+            blocks = [b for b in c["blocks"]]
+            if not blocks:
+                continue
+            top = min(c["top"], d - 1)
+            self.ground_cols[(c["x"], c["z"])] = (top - len(blocks) + 1, blocks)
+        kinds = sorted({b for _, bs in self.ground_cols.values() for b in bs if b != "minecraft:air"})
+        self.ground_roles: dict[str, str] = {b: f"ground-{i}" for i, b in enumerate(kinds)}
+        # The way this place is, as the plan declares it (`way`: axis, clear
+        # width, clear columns piece-local), or None: what a street's helpers
+        # draw the run and the verge from, never retyped.
+        self.way = a.get("way")
         roof = a.get("roof")
         self.roofed = roof is not None or a.get("brief", {}).get("kind") == "roofed"
         if roof is not None:
@@ -297,6 +318,7 @@ class Place:
         d = self.datum.value
         top = self.lid.value if self.lid is not None else self.wall_top.value
         plain = {("claim", "room", None), ("claim", "roof", None), ("fill", "floor"), ("fill", "wall"), ("fill", "lid"), ("fill", "lamp"), ("void",)}
+        plain |= {("fill", r) for r in getattr(self, "ground_roles", {}).values()}
         special = set()
         for x in range(lo[0] - 1, hi[0] + 2):
             for z in range(lo[2] - 1, hi[2] + 2):
@@ -398,6 +420,31 @@ class Place:
                 return s["face"]
         return None
 
+    def ground_role(self, x: int, y: int, z: int) -> str | None:
+        """The handed ground's role at a cell under the walk plane: the
+        column's own block, a ring column's from the nearest column inside;
+        the surface block at the floor course where the terrain lies below it
+        and the one under the surface between; the bottom block under the
+        column's bottom. None where the whole hands no column."""
+        if not self.ground_cols:
+            return None
+        lo, hi = self.space
+        key = (min(max(x, lo[0]), hi[0]), min(max(z, lo[2]), hi[2]))
+        col = self.ground_cols.get(key)
+        if col is None:
+            return None
+        bottom, blocks = col
+        k = y - bottom
+        if 0 <= k < len(blocks):
+            b = blocks[k]
+        elif k < 0:
+            b = blocks[0]
+        elif y == self.datum.value - 1 or len(blocks) == 1:
+            b = blocks[-1]
+        else:
+            b = blocks[-2]
+        return self.ground_roles.get(b)
+
     def wall_ring(self, x: int, z: int) -> bool:
         lo, hi = self.space
         return (lo[0] - 1 <= x <= hi[0] + 1 and lo[2] - 1 <= z <= hi[2] + 1) and not self.in_space_xz(x, z)
@@ -462,7 +509,8 @@ class Place:
         if y < d:
             if self.aloft and y < d - 1:
                 return ("void",)
-            return ("fill", "floor")
+            g = None if self.aloft else self.ground_role(x, y, z)
+            return ("fill", g or "floor")
         if self.lid is not None and y == self.lid.value:
             if self.in_space_xz(x, z) and (x % LAMP_PERIOD, z % LAMP_PERIOD) == (2, 2):
                 return ("fill", "lamp")
@@ -811,6 +859,7 @@ def program(a: dict) -> dict:
     start = marks(p, body(p, rules))
     rules.rules["place"] = start_rule(p, start)
     palette = dict(PALETTE)
+    palette.update({r: b for b, r in p.ground_roles.items()})
     for s in p.seams:
         if s["bar"] is not None:
             palette[f"bar-{s['stem']}"] = full_state(s["seam"]["bar_block"])
@@ -1044,6 +1093,8 @@ class Model:
         self.place = place
         self.ex, self.ey, self.ez = place.n
         self.palette: dict = dict(PALETTE)
+        # the handed ground's blocks, each its own role (`Place.ground_role`)
+        self.palette.update({r: b for b, r in place.ground_roles.items()})
         self.v: dict[tuple[int, int, int], str] = {}
         self.region: dict[tuple[int, int], str] = {}
         self.marks: dict[str, tuple[int, int, str, int | None]] = {}
@@ -1568,10 +1619,95 @@ def plot_body(p: Plot, rules: Rules) -> dict:
     return split("x", cx, rx)
 
 
+def detached_openings(p: Plot) -> list[str]:
+    """Every cell of a seam's opening that touches no cell of the room its
+    edge enters, as the drawing claims it: one line per opening, naming what
+    stands behind each such cell.
+
+    The contract's well-formedness asks it of every opening to `exterior`
+    (`contract-well-formed`, `docs/reference/grammar.md` §2d): each cell of
+    the opening touches the space the edge enters, or a cell of another of
+    its openings that does. A drawn plot breaks it where the cells behind the
+    opening are a part's columns, a full block, or floor no body reaches —
+    a yard named on the front row, a cauldron in the doorway's lee. The
+    starter asks it of the claims it is about to write, and refuses before
+    writing, naming each cell and what is behind it."""
+    out = []
+    openings = []
+    for s in p.seams:
+        if s["bar"] is not None or s["approach"] is not None or s["axis"] == 1:
+            continue  # barred, raised or through a floor: answered otherwise
+        lo, hi = [b.value for b in s["lo"]], [b.value for b in s["hi"]]
+        cells = {(x, y, z) for x in range(lo[0], hi[0]) for y in range(lo[1], hi[1]) for z in range(lo[2], hi[2])}
+        openings.append((s, cells))
+
+    def room(c) -> bool:
+        k = p.cell(*c)
+        return k[0] == "claim" and k[1] == "room"
+
+    for s, cells in openings:
+        others = set().union(*[c for t, c in openings if t is not s]) if len(openings) > 1 else set()
+        # sides answered by `side-*` edges of the room count as other openings
+        for sd in p.sides:
+            for x in range(sd["lo"][0], sd["hi"][0] + 1):
+                for z in range(sd["lo"][1], sd["hi"][1] + 1):
+                    for y in range(p.datum.value, p.wall_top.value):
+                        if p.cell(x, y, z) == ("claim", f"side-{sd['face']}", None):
+                            others.add((x, y, z))
+        hops = {c for c in others if any(room(n) for n in _around(c) if n not in others)}
+        bad = []
+        for c in sorted(cells):
+            near = [n for n in _around(c) if n not in cells]
+            if any(room(n) for n in near) or any(n in hops for n in near):
+                continue
+            bad.append(c)
+        if not bad:
+            continue
+        axis, sign = FACES[s["seam"]["face"]]
+        behind = []
+        for c in bad[:8]:
+            n = list(c)
+            n[axis] -= sign
+            k = p.cell(*n)
+            e = p.col_part.get((n[0], n[2]))
+            drawn = p.model.get(*n)
+            if e is not None and k[0] == "claim" and k[1] == e["region"]:
+                what = f"the columns of {e['part']['id']}"
+            elif k == ("claim", "unwalked", k[2]) or (k[0] == "claim" and k[1] == "unwalked"):
+                what = "floor no body reaches, claimed `unwalked`"
+            elif drawn is not None and drawn != AIR:
+                what = f"`{p.block_of(('fill', drawn))}`, a block a body is not in"
+            else:
+                what = f"`{k[1] if len(k) > 1 else k[0]}`"
+            behind.append(f"{c} (behind it, {tuple(n)}: {what})")
+        out.append(
+            f"  `{s['seam']['edge']}`: {len(bad)} cell(s) of its opening touch no cell of the room — "
+            + "; ".join(behind)
+            + (f"; … ({len(bad)} in all)" if len(bad) > 8 else "")
+        )
+    return out
+
+
+def _around(c):
+    x, y, z = c
+    return [(x + 1, y, z), (x - 1, y, z), (x, y + 1, z), (x, y - 1, z), (x, y, z + 1), (x, y, z - 1)]
+
+
 def plot_program(a: dict, reason: str) -> dict:
     """The place's program from the generator's model."""
     p = Plot(a)
     m = p.model
+    detached = detached_openings(p)
+    if detached:
+        sys.exit(
+            "starter.py: a seam's opening must touch the room a body enters by, cell for cell "
+            "(`contract-well-formed`: every cell of an opening to the outside touches the space "
+            "its edge enters, or a cell of another of its openings that does), and the drawing "
+            "stands something else behind it:\n" + "\n".join(detached) + "\n"
+            "Keep the row behind each opening the plot's own ground from the walk plane to the "
+            "opening's head: no part's columns (`Model.part`), no full block; start a yard or a "
+            "bench one row in."
+        )
     rules = Rules()
     SPLITS.clear()
     # Every literal state the model holds becomes a palette role, named in a

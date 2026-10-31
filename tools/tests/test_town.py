@@ -105,6 +105,18 @@ def test_a_lamp_is_a_post_with_a_light_on_it_from_the_walk_plane():
     assert m.get(3, 0, 4) is None
 
 
+def test_a_lamp_whose_light_stands_on_the_frames_top_course_declares_the_top_shown():
+    """A lantern on the top course stands in the open air (`DW0885` refuses an
+    undeclared side there): the helper that puts it there declares `up`; one
+    under the top course declares nothing."""
+    m = model(allocation(9, 5, 9))
+    town.lamp(m, 3, 4)
+    assert m.get(3, 4, 4).startswith("minecraft:lantern") and m.shown == {"up"}
+    m = model(allocation(9, 8, 9))
+    town.lamp(m, 3, 4)
+    assert m.shown == set()
+
+
 def test_a_bracket_hangs_the_sign_on_the_streets_own_post_and_names_its_cell():
     s = seam("street-to-shop", "west", [[0, 1, 6], [0, 3, 8]], "node/shop")
     p = starter.Place(allocation(9, 6, 20, [s]))
@@ -153,13 +165,79 @@ def test_a_stretch_keeps_its_clear_way_and_its_fronts_doorways_open():
     assert "sign-cottage" not in m.marks
 
 
+def way_alloc(axis: str = "z", clear: int = 3, cols=(4, 6)) -> dict:
+    """The street allocation with the way the plan hands it."""
+    a = street_alloc()
+    a["way"] = {"axis": axis, "clear": clear, "cols": list(cols)}
+    return a
+
+
+def test_a_stretch_takes_its_axis_and_clear_way_from_the_plan_and_refuses_a_retyped_one():
+    """The plan's `way` is handed (`place.way`): the stretch draws its run and
+    its clear columns from it with nothing stated but the seed, and a stated
+    axis or width that differs from the plan's is refused by name."""
+    a = way_alloc(cols=(5, 7))
+    m = model(a)
+    f = town.stretch(m, starter.Place(a), seed=3)
+    assert (f["axis"], f["c0"], f["c1"]) == ("z", 5, 7), "the handed columns, not centred"
+    assert not [c for c in m.v if 5 <= c[0] <= 7 and c[1] >= 1]
+    same = model(a)
+    town.stretch(same, starter.Place(a), "z", 3, clear=3)  # the plan's own numbers, restated
+    assert same.v == m.v
+    for bad in ({"axis": "x"}, {"clear": 5}):
+        with pytest.raises(SystemExit) as e:
+            town.stretch(model(a), starter.Place(a), seed=3, **bad)
+        assert "the plan hands this way" in str(e.value)
+    with pytest.raises(SystemExit) as e:
+        town.stretch(model(street_alloc()), starter.Place(street_alloc()), seed=3)
+    assert "declares no `way`" in str(e.value)
+
+
+def test_no_default_verge_or_lane_thing_is_a_container():
+    """A barrel is a holder the census counts (`DW1018`): no helper's default
+    furniture is one, so a default never refuses a campaign that declares no
+    scenery."""
+    for things in (town.VERGE_THINGS, town.LANE_THINGS):
+        assert "barrel" not in things
+    a = allocation(11, 6, 40)
+    for seed in range(8):
+        m = model(a)
+        town.stretch(m, starter.Place(a), "z", seed, clear=5)
+        town.lane(m, starter.Place(a), "z")
+        assert not [r for r in m.v.values() if "barrel" in r], seed
+
+
+def test_verge_life_places_what_the_caller_states_where_it_states_it():
+    """`at` places each `(kind, row, side)` first, the cycle fills round it,
+    `things=()` places `at` alone, and a stated column that is not free verge
+    is refused."""
+    a = allocation(11, 6, 40)
+    m = model(a)
+    placed = []
+
+    def verge(m, f):
+        rows = f["rows"]
+        placed.extend(town.verge_life(m, f, things=(), at=[("lamp", rows[2], "low"), ("lamp", rows[-3], "high")]))
+
+    f = town.stretch(m, starter.Place(a), "z", 1, clear=5, verge=verge)
+    rows = f["rows"]
+    assert [(k, r, s) for k, r, s, _, _ in placed] == [("lamp", rows[2], "low"), ("lamp", rows[-3], "high")]
+    lanterns = sorted((x, z) for (x, y, z), r in m.v.items() if r.startswith("minecraft:lantern"))
+    assert lanterns == sorted((x, z) for _, _, _, x, z in placed)
+    assert lanterns[0][0] == f["c0"] - 1 and lanterns[1][0] == f["c1"] + 1
+    with pytest.raises(SystemExit) as e:
+        town.stretch(model(a), starter.Place(a), "z", 1, clear=5,
+                     verge=lambda m, f: town.verge_life(m, f, at=[("lamp", f["rows"][0], "low")]))
+    assert "not free verge" in str(e.value)
+
+
 def test_a_stretch_along_x_is_the_transpose_of_the_same_stretch_along_z():
     a = street_alloc()
     mz = model(a)
-    town.stretch(mz, starter.Place(a), "z", 5)
+    town.stretch(mz, starter.Place(a), "z", 5, clear=5)
     t = transpose_alloc(a)
     mx = model(t)
-    town.stretch(mx, starter.Place(t), "x", 5)
+    town.stretch(mx, starter.Place(t), "x", 5, clear=5)
     assert mx.v == transposed(mz.v)
 
 
@@ -167,7 +245,7 @@ def test_a_stretchs_seed_moves_its_wear_and_the_same_seed_repeats_it():
     a = street_alloc()
     one, again, other = model(a), model(a), model(a)
     for m, seed in ((one, 1), (again, 1), (other, 2)):
-        town.stretch(m, starter.Place(a), "z", seed)
+        town.stretch(m, starter.Place(a), "z", seed, clear=5)
     assert one.v == again.v
     assert one.v != other.v
 
@@ -175,7 +253,7 @@ def test_a_stretchs_seed_moves_its_wear_and_the_same_seed_repeats_it():
 def test_a_market_on_a_stretchs_verge_stands_stalls_only_on_free_columns():
     a = allocation(13, 6, 24)
     m = model(a)
-    f = town.stretch(m, starter.Place(a), "z", 4, verge=town.market)
+    f = town.stretch(m, starter.Place(a), "z", 4, clear=5, verge=town.market)
     awnings = [c for c, r in m.v.items() if c[1] == 4 and r.endswith("_wool")]
     assert awnings
     assert all((x, z) in f["free"] for x, _, z in awnings)
@@ -459,8 +537,8 @@ def test_a_seed_draws_the_way_it_drew():
     a = street_alloc()
     got = {}
     for name, draw in (
-        ("stretch", lambda m, p: town.stretch(m, p, "z", 3, fronts={"node/bakery": "minecraft:spruce_hanging_sign"})),
-        ("market", lambda m, p: town.stretch(m, p, "z", 4, verge=town.market)),
+        ("stretch", lambda m, p: town.stretch(m, p, "z", 3, clear=5, fronts={"node/bakery": "minecraft:spruce_hanging_sign"})),
+        ("market", lambda m, p: town.stretch(m, p, "z", 4, clear=5, verge=town.market)),
         ("lane", lambda m, p: town.lane(m, p, "z")),
         ("rail", lambda m, p: town.rail(m, p, "z", "high", 7, ["A", "B"], lamp_at=lambda i, n: i % 9 == 4, gap=0.28)),
     ):
@@ -478,7 +556,7 @@ def test_a_verge_bench_turns_its_back_to_the_lot():
     a = allocation(11, 6, 40)
     for seed in range(8):
         m = model(a)
-        f = town.stretch(m, starter.Place(a), "z", seed, verge=lambda m, f: town.verge_life(m, f, things=("bench",)))
+        f = town.stretch(m, starter.Place(a), "z", seed, clear=5, verge=lambda m, f: town.verge_life(m, f, things=("bench",)))
         benches = {c: r for c, r in m.v.items() if "_stairs[" in r}
         assert benches
         for (x, _, _), r in benches.items():
