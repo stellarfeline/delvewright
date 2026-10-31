@@ -629,15 +629,22 @@ impl Listening {
     /// write's, not the placement's.
     pub fn of(blocks: &BlockMap, writes: &[Write]) -> Listening {
         let mut l = Listening::default();
+        // Each reading is a function of the state alone: made once per
+        // distinct state, not once per cell.
+        let mut by_state: std::collections::HashMap<(usize, usize), (bool, bool, Option<Sculk>)> =
+            std::collections::HashMap::new();
         for (c, s) in blocks {
-            let n = s.as_str();
-            if occludes_vibrations(n) {
+            let (occludes, dampens, kind) = *by_state.entry(s.key()).or_insert_with(|| {
+                let n = s.as_str();
+                (occludes_vibrations(n), dampens_vibrations(n), sculk_kind(n))
+            });
+            if occludes {
                 l.occluders.insert(*c);
             }
-            if dampens_vibrations(n) {
+            if dampens {
                 l.dampeners.insert(*c);
             }
-            let Some(kind) = sculk_kind(n) else { continue };
+            let Some(kind) = kind else { continue };
             if matches!(kind, Sculk::Catalyst) {
                 continue;
             }
