@@ -563,6 +563,8 @@ def test_a_verge_bench_turns_its_back_to_the_lot():
             assert ("facing=west" in r) == (x < f["c0"]) and ("facing=east" in r) == (x > f["c1"])
 
 
-# measured with the helpers that regenerated the town's 72 street programs equal
-EXPECTED_DIGESTS = {"stretch": "67930c68f0787d03", "market": "1a568c6a8f4968d1", "lane": "150a4d074863c337",
+# measured with the helpers that regenerated the town's 72 street programs
+# equal; `stretch` re-measured when the default verge stopped standing a
+# barrel (no default is a container the census counts)
+EXPECTED_DIGESTS = {"stretch": "7d172f1355545fe4", "market": "1a568c6a8f4968d1", "lane": "150a4d074863c337",
                     "rail": "4f53cda18c2baa0c", "flight": "e9fed371a5aa6448"}

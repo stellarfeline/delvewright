@@ -209,7 +209,9 @@ def test_a_part_or_a_full_block_behind_an_opening_is_refused_before_writing(monk
     with pytest.raises(SystemExit) as e:
         _plot_of(st, _front_alloc(), yard_at(2), monkeypatch)
     msg = str(e.value)
-    assert "`edge/street-to-lot`" in msg and "the columns of part/yard" in msg and "(2, 1, 2)" in msg, msg
+    # the opening's end column touches the room beside it, and its top course
+    # the room above it: what is refused is what the engine would refuse
+    assert "`edge/street-to-lot`: 4 cell(s)" in msg and "(3, 1, 1) (behind it, (3, 1, 2): the columns of part/yard)" in msg, msg
 
     def cauldron(place):
         m = st.Model(place)
