@@ -226,3 +226,33 @@ def test_a_part_or_a_full_block_behind_an_opening_is_refused_before_writing(monk
 
     doc = _plot_of(st, _front_alloc(), yard_at(4), monkeypatch)
     assert {"a": "room", "b": "exterior", "class": "walk", "via": "street-to-lot-way"} in doc["contract"]["edges"]
+
+
+def test_part_sizes_name_every_column_named_for_a_part_and_left_out(monkeypatch, capsys):
+    """The generator's part sizes are the count `DW1074` judges, and beside
+    it every column the drawing named for the part that the claim leaves
+    out, with why (`Model.unpart`): an author reads a band against what was
+    drawn before running the check. A part with nothing left out is the
+    count alone."""
+    st = _starter_module()
+    a = _front_alloc()
+    a["bands"] = [{"part": "part/yard", "min": 6, "max": 12}]
+
+    def build(place):
+        m = st.Model(place)
+        m.part(2, 4, 4, 6, "yard")
+        m.unpart(3, 5, why="handed back for the test")
+        return m
+
+    _plot_of(st, a, build, monkeypatch)
+    err = capsys.readouterr().err
+    assert "part/yard 8 of 6..12 (9 named, 1 left out: 1 handed back for the test — (3,5))" in err, err
+
+    def whole(place):
+        m = st.Model(place)
+        m.part(2, 4, 4, 6, "yard")
+        return m
+
+    _plot_of(st, a, whole, monkeypatch)
+    err = capsys.readouterr().err
+    assert "part/yard 9 of 6..12;" in err or err.rstrip().endswith("part/yard 9 of 6..12"), err

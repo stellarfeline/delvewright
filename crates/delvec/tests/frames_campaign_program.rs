@@ -174,7 +174,11 @@ fn a_camera_is_stood_in_a_places_own_frame() {
         &tmp.join("world"),
         &["--camera", "2,3,4,90,10"],
     );
-    assert!(!text(&plain).contains("read in"), "{}", text(&plain));
+    assert!(
+        !text(&plain).contains("'s frame (its low corner at world"),
+        "without --frame the camera is world coordinates: {}",
+        text(&plain)
+    );
 
     let none = std::process::Command::new(BIN)
         .arg("--prefabs")

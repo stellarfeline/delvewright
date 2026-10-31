@@ -56,9 +56,12 @@ The building is yours, and it is drawn, not edited in: a generator at
 file (`$DELVEWRIGHT_SKILL/scripts`, never a copy), draws the place as cells and
 names each part's columns; `run(build)` binds the handing as above and claims
 every cell from what the engine says of the drawing (`delvec grammar survey`).
-The section *A building drawn as cells* below is the template. Re-run it and
-check after every edit:
-`delvec --prefabs "$DELVEWRIGHT_PREFABS" detail --check <campaign> <place>`.
+The section *A building drawn as cells* below is the template. Re-run the
+generator after every edit (seconds: it refuses a wrong block and prints each
+part's claimed columns against its band); check with
+`delvec --prefabs "$DELVEWRIGHT_PREFABS" detail --check <campaign> <place>`
+when the drawing is clean — the check assembles the whole and takes minutes
+(the handout states what each step costs).
 
 Standard library only.
 """

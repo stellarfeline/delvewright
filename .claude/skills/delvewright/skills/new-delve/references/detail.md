@@ -166,7 +166,7 @@ agent: *Reference: when the prefab library has no piece you need* and
    name marked, sconces — that passes every judgement `detail --check` makes of
    the place itself as it stands (the commit's battery, which the check runs
    too, may name what the whole's story asks of the place and the empty place
-   does not yet hold: a pressable a station names, a vista through it). The handout makes it the author's step 1, and step 2 a generator
+   does not yet hold: a pressable a station names, a vista through it). The handout numbers the author's steps in the order they are needed, each with its tool and its measured cost — start (the starter), measure the palette (`block-appearance.py`), draw, look at the piece alone, look at it in place, check — and step 3 is a generator
    that imports the starter from `$DELVEWRIGHT_SKILL/scripts` and draws the
    place into its `Model` as cells: the starter asks the engine (`delvec
    grammar survey`) where a body stands and what it reaches, claims every cell
@@ -379,17 +379,23 @@ the ring row to paves it, and no cell of a street's or a flight's corridor lies
 below the walk plane with higher cells before and after it — a trench a body
 walking the road falls into.
 
-The agent iterates with `delvec --prefabs "$DELVEWRIGHT_PREFABS" grammar
+The agent iterates with its generator, `delvec --prefabs "$DELVEWRIGHT_PREFABS" grammar
 expand --file … --region <the frame>` and a render until it reads as the place
-— the program's `handed/…` defaults are the handed values, so no `--param` is
+— each a matter of seconds, the edit loop — the program's `handed/…` defaults are the handed values, so no `--param` is
 typed; the piece is named for the program's filename up to its first `.`, so
 a working copy `potter.json.new` writes `potter.nbt`; `render piece
---view face=up,cutaway=<y>` takes every course from piece-local `y` up off —
+--view face=up,cutaway=<y>` takes every course from piece-local `y` up off,
+and a `face=up` picture has south at its top and west at its right —
 and looks at it in the whole, uncommitted, with `delvec --prefabs
 "$DELVEWRIGHT_PREFABS" frames --campaign <campaign-dir> --program <place> --at
 <place>`: the program drawn as it stands in place of the committed piece, the
-camera outside the place's box. It checks with `detail --check`, which is the
-only run that sees the voids, the seams and the whole.
+camera outside the place's box on bearing `--orbit` (0 due south, turning
+clockwise seen from above), or stood at `--camera x,y,z,yaw,pitch --frame
+<place>` in a place's own piece-local frame. It checks with `detail --check`,
+which is the only run that sees the voids, the seams and the whole. Both
+assemble the whole and take minutes, where the generator, the expansion and
+the render take seconds (the handout states each step's measured cost): they
+run when the drawing is clean, never as the edit loop.
 
 ## After a plan or graph edit
 

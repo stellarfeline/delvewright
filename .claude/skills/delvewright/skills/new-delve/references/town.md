@@ -19,17 +19,18 @@ source, or a rule reasoned here — and its sources are
 Go through it at step 2 and again before you call the map done.
 
 1. **Disguise the island, dress its edge.** The playable side faces the sea and the far side returns the player; the region reaches as far past the walk region as a player at its edge can see (`seen_region(walk, view_distance)`), the land runs on past the walk region and falls to the sea in headlands and coves, and a summit castle stands on its mountain in steps of rock, not on a flat table.
-2. **Give every street a box and build it.** Paving with a gutter down the middle, worn patches, steps with landings, and on the verge lamps, benches, barrels, carts and flowers — nothing in the clear width, nothing in front of a doorway.
+2. **Give every street a box and build it.** The clear way the plan hands paved, a gutter down its middle, worn patches, steps with landings; the verge outside it holds lamps, benches, barrels, carts, hedges and flowers — nothing in the clear width, nothing in front of a doorway.
 3. **No line where a box ends.** Walls come from buildings and yards, never from plot edges; paving runs to the edge; no edge column stands over air; no eave hangs past the play space.
-4. **Fronts stand on the street.** A lot that fronts its street meets it only at its doorway span; the rest of its edge up to the street's air is the building's front or a yard wall; the trade's sign hangs on the street's bracket and the campaign letters it.
-5. **Set buildings back; aim windows at open space.** Keep buildings off the plot's and the map's edges; a window looks onto a yard, a street or the sea.
+4. **Fronts stand on the street.** A lot that fronts its street meets it only at its doorway span; the rest of its edge up to the street's air is the building's front or a yard wall at least as long as it is tall — a shorter run between the building and a corner is the front carried over it, never a pier; the trade's sign hangs on the street's bracket and the campaign letters it.
+5. **Set buildings back; aim windows at open space.** Keep buildings off the plot's side and back edges and the map's edges (the street edge is line 4's); a window looks onto a yard, a street or the sea.
 6. **Several rooms inside.** A first room (shop, reception), the work room behind it through a door; outlines, porches and open fronts are free.
 7. **Life outside.** Bushes, pots, small ornaments, yards.
 8. **References per trade.** Each building from community builds of its own theme, listed in its node's `references[]`.
 9. **One style, the community's scale.** One palette family and one scale across the town.
 10. **Interior frames from a corner.** Standing eye height, across the room, field of view about 90°.
-11. **Look at the whole map four ways.** From the air, from the summit, from the sea, at eye height down the main street.
+11. **Look at the whole map four ways.** From the air, from the summit, from the sea, at eye height down the main street — a camera stood at a cell of a place's own frame with `frames --campaign --camera x,y,z,yaw,pitch --frame <place>`.
 12. **Count the places without a program.** `delvec --prefabs "$DELVEWRIGHT_PREFABS" allocation <campaign> --all` less `<campaign>/programs/*.json`, each named; the map is done at zero.
+13. **Show a trade whose goods have no block by what it works with.** Its working objects that have blocks, a good built out of blocks where its weight warrants, and never a block that reads as something else at playable scale; scenery containers only where the campaign's decoration notice covers them (the handout says).
 
 ## The helpers that draw it
 
@@ -49,11 +50,12 @@ itself. `--help`-level detail is each function's docstring.
 
 | need | helpers |
 |---|---|
-| a main street's stretch, its verge's life, a market | `stretch(m, place, seed=…, roles=…, fronts=…, verge=…)`, `verge_life(m, frame, things=…, every=…, at=[(kind, row, "low"\|"high"), …])` (returns its placements), `market` |
-| a side street, a flight of steps, a climbing road, a verge rail | `lane(m, place, edge=…)`, `flight(m, place, roles, lamp_side=…)`, `ramp(m, place)`, `rail(m, place, axis, edge, seed, block, lamp_at=…)` |
-| paving, a square's paving and paths | `pave_way`, `square` |
+| a main street's stretch, a market | `stretch(m, place, seed=…, roles=…, fronts=…, verge=…)`, `market` |
+| a side street, a flight of steps, a climbing road, a verge rail | `lane(m, place, edge=…, verge=…)`, `flight(m, place, roles, lamp_side=…)`, `ramp(m, place)`, `rail(m, place, axis, edge, seed, block, lamp_at=…)` |
+| any way's verge — a stretch's, a lane's, a ramp's, a flight's | each returns its frame (`way_verge`); `verge_life(m, frame, things=…, every=…, sides=…, at=[(kind, row, "low"\|"high"), …])` furnishes it on the column just outside the clear way, at that column's own course, and returns its placements |
+| paving, a square's paving and paths | `pave_way(…, clear=(c0, c1))` (verge only outside the clear columns), `square` |
 | lamps, a front's sign on the street's bracket | `lamp`, `bracket`, `doorway_verge`, `seam_cols`, `way_frame`, `hsh` |
-| a lot's street edge | `street_seam(place, face)`, `street_front(m, edge, lo, hi, doorway, air, roles, axis=…)`, `Model.shift(dx, dz)` to stand a building drawn at its own coordinates on the edge |
+| a lot's street edge | `street_seam(place, face)`, `street_front(m, edge, lo, hi, doorway, air, roles, axis=…)` (a yard run shorter than the wall is tall carries the front; the columns it hands back from a part are named in the generator's part sizes), `Model.shift(dx, dz)` to stand a building drawn at its own coordinates on the edge |
 | a lot's other edges | `clip_beyond`, `clip_unwalled_edge`, `close_edge_gaps` |
 | small buildings and furnishing | `post_shed`, `loft`, `ring`, `window`, `flower_bed` |
 | boats and quays | `hull`, `hull_on_stocks`, `mast`, `pier`, `slipway`, `water_step` |
