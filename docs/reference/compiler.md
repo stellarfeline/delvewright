@@ -693,8 +693,7 @@ against the whole **as committed on disk** — the detail plan and the library a
 they stand — then the battery's leak proof (`DW0838`) flooded from the checked
 place alone (`blockout::leaks`, the battery's own crossing proof over the
 battery's own world) over the whole as the run would leave it, assembled in
-memory with the edit script replayed, and writes nothing: no piece, no report,
-no row, and no rest of the battery. Over the same world it runs, for the checked
+memory with the edit script replayed. Over the same world it runs, for the checked
 place alone and through the build's own implementations, `DW0990`'s crack shape
 (`blockout::stitches`, inside `blockout::leaks`) and `DW0885`
 (`burial::check` with the checked piece, the party's walk taken as the build
@@ -703,20 +702,32 @@ with every declared way open). A refusal it finds is the one the build would
 raise for that place, at exit 3, named with its cell or its route. It prints
 `part sizes:` — each bound part's built play space against the band `DW1074`
 allows (`plot::size_band`), which `delvec allocation` also hands per part
-(`bands`).
+(`bands`). Then it **runs the commit into a scratch copy**: the campaign (its
+`.out/` left behind) and the library copied to
+`<campaign>/.out/detail-check-<pid>/`, the commit's own write (`write_files`:
+the piece's structure file(s), metadata, report and row) into the copies, and
+the commit's own battery (`battery`) over the whole that leaves — so every
+refusal the commit can give, the check gives, at the commit's exit, with no
+list of battery observers to keep in step. The scratch is removed when the run
+ends; nothing of the campaign or the library is written.
 Exit 0 says the program would commit against the whole as it stands now; any
 other exit is the verdict the commit would give, in the same words. Its
-binding line ends `peak rss: <n> bytes` (`getrusage`). `--check` beside `--all`
+binding line carries the battery's (`the commit's battery: the whole builds
+with N piece(s) this run would write, judged over a scratch copy of F
+file(s)`) and ends `peak rss: <n> bytes` (`getrusage`). **A program reaches the
+campaign in canonical form**: one that is not what `delvec fmt` writes is
+refused by the commit and the check alike before it is read (`DW0773`, naming
+the line of the first difference). `--check` beside `--all`
 is refused at exit 2: `--all` is a commit by nature. The commit, `delvec detail
 <dir> <place>`, writes the piece, its gate report and the row, then runs the
 battery — the whole validated and built in memory over what it wrote — so a
 place whose own gates pass is written, and the run then exits on the whole.
 `crates/delvec/tests/detail_check_agrees.rs` holds the two to one verdict: over
-every program place of the gallery's site-plan point and three perturbations
-(`DW0843`, `DW0844`, `DW0845`) the DW codes each prints up to the commit's write
-are equal, and `--check` leaves the library and `detail-plan.json`
-byte-identical. The battery's codes are outside the comparison because
-`--check` runs only its leak proof, and only from the checked place.
+every program place of the gallery's site-plan point and five perturbations
+(`DW0843`, `DW0844`, `DW0845`, `DW0773`, and `DW1002` — a ceiling laid in
+gravel, which only the battery refuses) the DW codes each prints up to the
+commit's write are equal, the two exit alike, and `--check` leaves the library
+and the campaign byte-identical.
 
 **A commit's writes are never seen half done** (spec-0122 §6.4): each file —
 the piece's structure file(s), its metadata, its gate report and
@@ -728,9 +739,12 @@ the old file or the new one (`detail_atomic_write.rs`).
 stderr after the JSON document, exactly one line `concurrency: N = min(P, max(1,
 C / 2))` with the numbers substituted. `C` is `std::thread::available_parallelism()`
 read at that moment; `P` is the number of boxes the plan allocates with **no
-`details[]` row** — a row is written only by a commit whose program passed, so a
-row is the evidence of a passing program readable without running one, and a
-program file with no row counts as unauthored. Zero places is `N = 0`. The
+`details[]` row**, or whose row binds the piece `detail` writes from a program
+(`prefab/<campaign>-<stem>`) while `programs/<stem>.json` is gone — a row is
+written only by a commit whose program passed, so a row is the evidence of a
+passing program readable without running one while that program is there; a
+program file with no row counts as unauthored, and a row binding a library
+piece bound by hand does not. Zero places is `N = 0`. The
 divisor 2 is authored until a measured peak replaces it
 (`compiler::detail::concurrency_bound`, `allocation_concurrency.rs`).
 

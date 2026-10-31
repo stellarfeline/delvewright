@@ -169,7 +169,9 @@ They hold at every step by their nature, and nothing below repeats them.
 - **Commit only canonically formatted JSON.** The last thing before any `git add`
   of a document or sidecar is `delvec fmt <campaign-dir>`; CI runs
   `delvec fmt --check`. A diff that rewrites a file nobody edited is the defect
-  this closes.
+  this closes. A place's program is held to it where it enters: `delvec
+  detail` and `detail --check` refuse one not in canonical form (`DW0773`),
+  and the starter's `run` writes it canonical.
 - **Design for what the player experiences, never for the host.** A far view,
   a large map or a crowd is not cut to fit a server's memory or CPU; the
   hosting side is sized to the delve.
@@ -395,7 +397,8 @@ handout — `scripts/handout.py` writes it from the campaign, and you launch the
 agent with the Agent tool on the one-line prompt the script prints. **Up to N
 at once**, N the `concurrency:` line `delvec --prefabs "$DELVEWRIGHT_PREFABS" allocation <campaign> --all` prints, in
 critical-path order then allocation order, scenery last. Each author checks
-with `detail --check`, which writes nothing; on each return **you commit,
+with `detail --check`, which runs the commit's own battery over a scratch copy
+and writes nothing; on each return **you commit,
 one at a time**, with `delvec --prefabs "$DELVEWRIGHT_PREFABS" detail <campaign> <place>`, and launch the next.
 A commit that refuses goes back into a fresh agent's handout, never into your
 own edit. **Before the first handout**, record at least two human-built

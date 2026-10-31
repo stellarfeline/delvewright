@@ -1673,7 +1673,7 @@ def detached_openings(p: Plot) -> list[str]:
             drawn = p.model.get(*n)
             if e is not None and k[0] == "claim" and k[1] == e["region"]:
                 what = f"the columns of {e['part']['id']}"
-            elif k == ("claim", "unwalked", k[2]) or (k[0] == "claim" and k[1] == "unwalked"):
+            elif k[0] == "claim" and k[1] == "unwalked":
                 what = "floor no body reaches, claimed `unwalked`"
             elif drawn is not None and drawn != AIR:
                 what = f"`{p.block_of(('fill', drawn))}`, a block a body is not in"

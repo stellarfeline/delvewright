@@ -71,14 +71,19 @@ binds, expands, voids, runs every gate of the place and the bindings check over
 the whole **as committed on disk**, runs the leak proof (`DW0838`), the plot-edge
 stitch (`DW0990`) and the exposure check (`DW0885`) for that place over the whole
 assembled in memory — each named with its cell or the route a body takes — prints
-each part's size against its band (`DW1074`), and writes nothing; `delvec --prefabs "$DELVEWRIGHT_PREFABS" detail
+each part's size against its band (`DW1074`), then writes the commit into a
+scratch copy of the campaign and the library and runs the commit's own battery
+over the whole it leaves, and writes nothing to either; `delvec --prefabs "$DELVEWRIGHT_PREFABS" detail
 <campaign-dir> <place>` runs the same judge, then writes the piece, its report
 and the plan row — each through a temporary file renamed into place, so a check
 running at that instant reads the old file or the new one, never a torn one —
-and then runs the battery over the committed whole. Up to **N** authors are in
+and then runs the battery over the committed whole. So every refusal the
+commit can give, `--check` gives at the same exit. Up to **N** authors are in
 flight at once, N the line `delvec --prefabs "$DELVEWRIGHT_PREFABS" allocation
 <campaign-dir> --all` prints on stderr, `concurrency: N = min(P, max(1, C /
-2))` — P the places with no passing program, C the cores the machine offers.
+2))` — P the places with no passing program (no `details[]` row, or a row
+binding the piece `detail` made from a program that is no longer there), C
+the cores the machine offers.
 You never type N; the handout's header quotes the line. The order is the
 critical path from `entry`, then every other place in the order `allocation
 --all` prints them, scenery last — a spine place no program can answer is found
@@ -101,7 +106,35 @@ agent: *Reference: when the prefab library has no piece you need* and
    source states (`"none stated"` where it states nothing). This is yours and
    not the place's author's: the rows are a design document's, and an author
    holds nothing but its handout. A reference is looked at, never copied — an
-   unlicensed or non-commercial source is ideas only. Then fetch them:
+   unlicensed or non-commercial source is ideas only.
+
+   **When the community has no build of the trade, or its pages cannot be
+   read**, the question is still researched against established practice and
+   never invented (`$DELVEWRIGHT_ENGINE/CLAUDE.md`, *A craft question …*):
+
+   - *No community build of the trade.* Take the trade's real building from a
+     source that records it — a museum, a historic-environment record, an
+     encyclopedia entry on the trade or its working object (a potter's kiln and
+     wheel-house, a ropewalk) — for where the work stands and how the rooms
+     divide; and take the scale, the palette and the front from community
+     builds of the **nearest** trade that shares the arrangement (a smithy for
+     a kiln trade, a general store for a counter trade). Each row's `shows`
+     says which it is, and one row says the search found no community build
+     of this trade and what was searched for.
+   - *A page that cannot be read* — refused to an automated fetch, a video, a
+     page built by script — is not read some other way: no spoofed
+     user-agent, no scraping round the refusal. Use a source that can be read
+     instead; where a search result's own summary is all that was read, the
+     row's `shows` says so. A row whose content was never read — a title
+     alone — is not a reference: leave it out.
+   - *A picture for the author.* `references.py` fetches a picture only from
+     a URL that is the image's own address (its response an `image/…`); a
+     page is recorded as a page and its author opens it by URL. Where a
+     source offers its picture at its own URL (an encyclopedia's media file,
+     a build page's image link), that URL is the row's.
+
+   At least two rows that were read; the step is done when every building has
+   them. Then fetch them:
 
    ```sh
    "$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/references.py" <campaign-dir> --all
@@ -128,21 +161,26 @@ agent: *Reference: when the prefab library has no piece you need* and
    handout it writes `allocation.json`, the place's allocation,
    `starter.py`, the starter generator, and `blocks.json`, `delvec grammar
    blocks` as printed. Run on that allocation the starter writes an
-   empty-but-correct program — floor, ring wall, lid, every seam answered,
-   every owed name marked, sconces — that passes `detail --check` as it
-   stands. The handout makes it the author's step 1, and step 2 a generator
+   empty-but-correct program — the ground in the blocks the whole hands each
+   column (`ground.columns`), ring wall, lid, every seam answered, every owed
+   name marked, sconces — that passes `detail --check` as it stands. The handout makes it the author's step 1, and step 2 a generator
    that imports the starter from `$DELVEWRIGHT_SKILL/scripts` and draws the
    place into its `Model` as cells: the starter asks the engine (`delvec
    grammar survey`) where a body stands and what it reaches, claims every cell
    from the answer — reached floor into its part, unreached floor and the air
-   sealed over it `unwalked`, a walk edge only where a body crosses (with
+   sealed over it `unwalked` (the gates' reachability measurement still counts
+   it, and the finding about floor nobody can enter takes it as declared), a walk edge only where a body crosses (with
    its `rise` where the two floors differ), a part no body reaches declared
    seen — and refuses before writing, naming block and cell, a block the
    server would drop, the palette refuses, or the pinned game does not have
-   (a state that leaves a property out included). Its constructors
+   (a state that leaves a property out included), and a seam's opening a cell
+   of which touches no cell of the room a body enters by (a part's columns, a
+   full block or unreached floor on the row behind it: `contract-well-formed`). Its constructors
    (`stairs`, `slab`, `door`, `trapdoor`, `fence`, …) write every property,
    and `Model.roof` lays a roof whose eave sits level with the wall heads;
-   `Model.show("up")` declares a top the drawing means to be seen.
+   `Model.show("up")` declares a top the drawing means to be seen (the town
+   helpers that stand a lamp, a bracket or an awning on the frame's top
+   course declare it themselves).
    A drawn model needs a `delvec` binary on the machine running it. The handout lists the refused blocks and the containers
    the holder census counts. So an author starts from a passing program and
    never from research: nothing outside the handout's reading list — the
@@ -200,10 +238,12 @@ agent: *Reference: when the prefab library has no piece you need* and
    committed whole refuses. Capture every commit's output to a file
    (`… > .out/commit-<stem>.txt 2>&1`). A refusal before the write is what
    `detail --check` gives too: run step 1 for that place again and the script
-   embeds the check's verdict. **A battery refusal other than a leak from the
-   checked place is one `--check` cannot see** — the piece is already written, its own gates passed — so hand the
-   commit's output to the script: step 1 with `--from .out/commit-<stem>.txt`
-   embeds it verbatim. The battery names the place whose piece it judges;
+   embeds the check's verdict. A battery refusal is one `--check` gives too,
+   against the whole as it stood when it ran; one the commit raises and the
+   author's check did not is the whole having moved since — a neighbour
+   committed between them — and the piece is already written, its own gates
+   passed, so hand the commit's output to the script: step 1 with `--from
+   .out/commit-<stem>.txt` embeds it verbatim. The battery names the place whose piece it judges;
    where it names a cell, the place whose frame holds that cell is the one
    handed back. Either way the script writes `handout-<n+1>.md` and you
    launch a fresh agent on it. While a battery refusal stands, every later
@@ -339,8 +379,14 @@ walking the road falls into.
 The agent iterates with `delvec --prefabs "$DELVEWRIGHT_PREFABS" grammar
 expand --file … --region <the frame>` and a render until it reads as the place
 — the program's `handed/…` defaults are the handed values, so no `--param` is
-typed — and checks with `detail --check`, which is the only run that
-sees the voids, the seams and the whole.
+typed; the piece is named for the program's filename up to its first `.`, so
+a working copy `potter.json.new` writes `potter.nbt`; `render piece
+--view face=up,cutaway=<y>` takes every course from piece-local `y` up off —
+and looks at it in the whole, uncommitted, with `delvec --prefabs
+"$DELVEWRIGHT_PREFABS" frames --campaign <campaign-dir> --program <place> --at
+<place>`: the program drawn as it stands in place of the committed piece, the
+camera outside the place's box. It checks with `detail --check`, which is the
+only run that sees the voids, the seams and the whole.
 
 ## After a plan or graph edit
 

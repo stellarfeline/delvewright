@@ -38,13 +38,19 @@ from the starter like `Model` and `run` (never copied):
 
     from starter import Model, run, stretch, street_seam, street_front
 
-Each takes what you state — seed, clear width, axis, edge, roles — and reads
-nothing from a place's name; `--help`-level detail is each function's docstring.
+Each takes what you state — seed, edge, roles, what stands where — and reads
+nothing from a place's name; what the plan hands is never stated: a way
+place's run axis, clear width and clear columns come from `place.way` (the
+allocation's `way`), and a value you state that differs is refused. No
+default thing a helper stands is a container the holder census counts
+(`DW1018`): a barrel stands only where you name one. A helper that stands a
+lamp, a bracket or an awning on the frame's top course declares `up` shown
+itself. `--help`-level detail is each function's docstring.
 
 | need | helpers |
 |---|---|
-| a main street's stretch, its verge's life, a market | `stretch(m, place, axis, seed, clear, roles, fronts, verge=…)`, `verge_life`, `market` |
-| a side street, a flight of steps, a climbing road, a verge rail | `lane(m, place, axis, edge)`, `flight(m, place, roles, lamp_side=…)`, `ramp(m, place, axis)`, `rail(m, place, axis, edge, seed, block, lamp_at=…)` |
+| a main street's stretch, its verge's life, a market | `stretch(m, place, seed=…, roles=…, fronts=…, verge=…)`, `verge_life(m, frame, things=…, every=…, at=[(kind, row, "low"\|"high"), …])` (returns its placements), `market` |
+| a side street, a flight of steps, a climbing road, a verge rail | `lane(m, place, edge=…)`, `flight(m, place, roles, lamp_side=…)`, `ramp(m, place)`, `rail(m, place, axis, edge, seed, block, lamp_at=…)` |
 | paving, a square's paving and paths | `pave_way`, `square` |
 | lamps, a front's sign on the street's bracket | `lamp`, `bracket`, `doorway_verge`, `seam_cols`, `way_frame`, `hsh` |
 | a lot's street edge | `street_seam(place, face)`, `street_front(m, edge, lo, hi, doorway, air, roles, axis=…)`, `Model.shift(dx, dz)` to stand a building drawn at its own coordinates on the edge |
