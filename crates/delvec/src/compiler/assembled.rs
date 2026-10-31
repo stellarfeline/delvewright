@@ -1703,28 +1703,29 @@ pub fn occupancy_of(
 
 /// [`occupancy_of`] over a borrowed cell→block map.
 pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occupancy {
-    let mut solid: BTreeSet<[i32; 3]> = BTreeSet::new();
-    let mut tall: BTreeSet<[i32; 3]> = BTreeSet::new();
-    let mut use_gates: BTreeSet<[i32; 3]> = BTreeSet::new();
-    let mut barriers: BTreeSet<[i32; 3]> = BTreeSet::new();
-    let mut sources: BTreeSet<[i32; 3]> = BTreeSet::new();
-    let mut lava_sources: BTreeSet<[i32; 3]> = BTreeSet::new();
-    let mut partial: BTreeMap<[i32; 3], u8> = BTreeMap::new();
-    let mut waterloggable: BTreeSet<[i32; 3]> = BTreeSet::new();
-    let mut footprints: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Footprint16> =
-        BTreeMap::new();
-    let mut hiding: BTreeSet<[i32; 3]> = BTreeSet::new();
-    let mut hurting: BTreeSet<[i32; 3]> = BTreeSet::new();
-    let mut leaves: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Leaf> = BTreeMap::new();
-    let mut material: BTreeMap<[i32; 3], delvewright_dsl::metrics::body::Material> =
-        BTreeMap::new();
+    // `blocks` is walked in ascending cell order, so every set below is
+    // gathered in that order and built at the end in one pass
+    // (`collect` over sorted input), not searched once per insert.
+    let mut solid: Vec<[i32; 3]> = Vec::new();
+    let mut tall: Vec<[i32; 3]> = Vec::new();
+    let mut use_gates: Vec<[i32; 3]> = Vec::new();
+    let mut barriers: Vec<[i32; 3]> = Vec::new();
+    let mut sources: Vec<[i32; 3]> = Vec::new();
+    let mut lava_sources: Vec<[i32; 3]> = Vec::new();
+    let mut partial: Vec<([i32; 3], u8)> = Vec::new();
+    let mut waterloggable: Vec<[i32; 3]> = Vec::new();
+    let mut footprints: Vec<([i32; 3], delvewright_dsl::blockshape::Footprint16)> = Vec::new();
+    let mut hiding: Vec<[i32; 3]> = Vec::new();
+    let mut hurting: Vec<[i32; 3]> = Vec::new();
+    let mut leaves: Vec<([i32; 3], delvewright_dsl::blockshape::Leaf)> = Vec::new();
+    let mut material: Vec<([i32; 3], delvewright_dsl::metrics::body::Material)> = Vec::new();
     // Every reading below is a function of the block state alone, so it is
     // made once per distinct state ([`StateClass`]), not once per cell.
     let mut classes = StateClasses::default();
     for (cell, name) in blocks {
         let k = classes.of(*name);
         if k.hurts {
-            hurting.insert(*cell);
+            hurting.push(*cell);
         }
         // A door's or a trapdoor's leaf per state (`blockshape::leaf`): what
         // its panels and its plate do to a body crossing its cell's faces.
@@ -1734,22 +1735,22 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
             if h.by_hand {
                 h.open = open_gates.contains(cell);
             }
-            leaves.insert(*cell, h);
+            leaves.push((*cell, h));
         }
         if k.hides {
-            hiding.insert(*cell);
+            hiding.push(*cell);
         }
         if k.waterloggable {
-            waterloggable.insert(*cell);
+            waterloggable.push(*cell);
         }
         // A waterlogged block's cell holds a real water source that spreads into
         // its air neighbours — seed the flood from it, then classify
         // the host block normally below (the cell itself stays occupied).
         if k.waterlogged {
-            sources.insert(*cell);
+            sources.push(*cell);
         }
         if k.material != delvewright_dsl::metrics::body::Material::Plain {
-            material.insert(*cell, k.material);
+            material.push((*cell, k.material));
         }
         // The classification is not made here: it is
         // [`delvewright_dsl::blockshape::collision_class`], the one rule three
@@ -1761,9 +1762,9 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
                 // Water AND lava: a body stands on neither, so neither is `solid`.
                 // A water-only test dropped lava through to the default and made
                 // a lava surface into floor a route proof walks.
-                sources.insert(*cell);
+                sources.push(*cell);
                 if k.lava {
-                    lava_sources.insert(*cell);
+                    lava_sources.push(*cell);
                 }
             }
             // A climbable's cell is empty to a body (spec-0099); whether a body in
@@ -1773,7 +1774,7 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
             // cell, and the flooded cell is then no climb.
             Collision::Climbable => {
                 if k.ladder {
-                    barriers.insert(*cell);
+                    barriers.push(*cell);
                 }
             }
             // A pressure plate / tripwire / carpet / candle / torch / thin snow
@@ -1783,27 +1784,45 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
             // Air reaches this arm too, and its cell is likewise not a floor.
             Collision::Air | Collision::Thin(_) => {}
             Collision::OpensByHand => {
-                barriers.insert(*cell);
+                barriers.push(*cell);
                 if !open_gates.contains(cell) {
-                    use_gates.insert(*cell); // closed: passable-with-use
+                    use_gates.push(*cell); // closed: passable-with-use
                 } // open: a passable threshold (still dams water)
             }
             Collision::TallBarrier => {
-                barriers.insert(*cell);
-                tall.insert(*cell);
+                barriers.push(*cell);
+                tall.push(*cell);
             }
             class @ (Collision::PartialFloor(_) | Collision::FullCube) => {
-                barriers.insert(*cell);
-                solid.insert(*cell);
+                barriers.push(*cell);
+                solid.push(*cell);
                 if let Collision::PartialFloor(h) = class {
-                    partial.insert(*cell, h);
+                    partial.push((*cell, h));
                 }
                 if let Some(fp) = k.footprint {
-                    footprints.insert(*cell, fp);
+                    footprints.push((*cell, fp));
                 }
             }
         }
     }
+    // A waterlogged fluid cell is pushed to `sources` twice; the set holds it
+    // once, as the set it replaces did.
+    let solid: BTreeSet<[i32; 3]> = solid.into_iter().collect();
+    let tall: BTreeSet<[i32; 3]> = tall.into_iter().collect();
+    let use_gates: BTreeSet<[i32; 3]> = use_gates.into_iter().collect();
+    let barriers: BTreeSet<[i32; 3]> = barriers.into_iter().collect();
+    let sources: BTreeSet<[i32; 3]> = sources.into_iter().collect();
+    let lava_sources: BTreeSet<[i32; 3]> = lava_sources.into_iter().collect();
+    let partial: BTreeMap<[i32; 3], u8> = partial.into_iter().collect();
+    let waterloggable: BTreeSet<[i32; 3]> = waterloggable.into_iter().collect();
+    let footprints: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Footprint16> =
+        footprints.into_iter().collect();
+    let hiding: BTreeSet<[i32; 3]> = hiding.into_iter().collect();
+    let hurting: BTreeSet<[i32; 3]> = hurting.into_iter().collect();
+    let leaves: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Leaf> =
+        leaves.into_iter().collect();
+    let material: BTreeMap<[i32; 3], delvewright_dsl::metrics::body::Material> =
+        material.into_iter().collect();
     // The sets stay pairwise disjoint: a waterlogged (or fluid-adjacent) barrier
     // cell is already impassable as its host class, so it must not also appear as
     // free water — `flooded` means "a walker would be in open water here".
