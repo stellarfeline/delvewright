@@ -278,6 +278,17 @@ def test_a_drawn_way_up_to_a_raised_opening_stands_no_ladder(monkeypatch):
     assert all(e["class"] != "climb" for e in doc["contract"]["edges"]), doc["contract"]["edges"]
     assert {"a": "room", "b": "exterior", "class": "walk", "via": "top-to-flight-way"} in doc["contract"]["edges"]
 
+    # beside an open side, the ring cell straight out from the opening is the
+    # neighbour's side of the way, never this place's room: claimed room it
+    # would stand the room on both sides of the opening and leave the way
+    # facing nowhere (`exterior_faces`, `DW0844`)
+    a = _raised_alloc()
+    a["sides"] = [{"face": "west", "cells": [[0, 1, 1], [0, 1, 7]]}]
+    _plot_of(st, a, steps(True), monkeypatch)
+    p = st.Plot(a)
+    assert p.cell(1, 4, 0) != ("claim", "room", None), p.cell(1, 4, 0)
+    assert p.cell(0, 4, 1)[1] == "side-west"
+
     def bare(place):
         return st.Model(place)
 

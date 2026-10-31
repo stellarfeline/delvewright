@@ -1454,7 +1454,7 @@ class Plot(Place):
                 return ("claim", e["region"] if e is not None and e["walked"] else "room", r)
             return ("fill", r)
         if not self.in_space_xz(x, z):
-            if kind in (("fill", "wall"), ("fill", "lamp")) and self.beside_side(x, z):
+            if kind in (("fill", "wall"), ("fill", "lamp")) and self.beside_side(x, z) and not self.before_opening(x, y, z):
                 return ("claim", "room", None)  # no corner post marks an open place's edge
             if kind[0] == "claim" and kind[1].startswith("side-"):
                 # An open side's ring cell is a way out only where the cell
@@ -1516,6 +1516,23 @@ class Plot(Place):
             if ap is None or ap["ladder"] is None:
                 continue
             if all(ap["plo"][i].value <= c < ap["phi"][i].value for i, c in ((0, x), (2, z))) and d <= y < ap["sill"].value:
+                return True
+        return False
+
+    def before_opening(self, x: int, y: int, z: int) -> bool:
+        """A cell straight out from a seam's opening, beyond its plane: the
+        neighbour's side of the way, never this place's room — claimed room,
+        it would stand the room on both sides of the opening and leave the
+        way facing nowhere (`exterior_faces`)."""
+        for s in self.seams:
+            if s["axis"] == 1:
+                continue
+            axis, sign = FACES[s["seam"]["face"]]
+            c = [x, y, z]
+            c[axis] -= sign
+            lo, hi = [b.value for b in s["lo"]], [b.value for b in s["hi"]]
+            inside = lambda q: all(lo[i] <= q[i] < hi[i] for i in range(3))  # noqa: E731
+            if inside(c) and not inside([x, y, z]):
                 return True
         return False
 
