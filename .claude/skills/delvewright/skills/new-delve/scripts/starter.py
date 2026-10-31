@@ -56,9 +56,12 @@ The building is yours, and it is drawn, not edited in: a generator at
 file (`$DELVEWRIGHT_SKILL/scripts`, never a copy), draws the place as cells and
 names each part's columns; `run(build)` binds the handing as above and claims
 every cell from what the engine says of the drawing (`delvec grammar survey`).
-The section *A building drawn as cells* below is the template. Re-run it and
-check after every edit:
-`delvec --prefabs "$DELVEWRIGHT_PREFABS" detail --check <campaign> <place>`.
+The section *A building drawn as cells* below is the template. Re-run the
+generator after every edit (seconds: it refuses a wrong block and prints each
+part's claimed columns against its band); check with
+`delvec --prefabs "$DELVEWRIGHT_PREFABS" detail --check <campaign> <place>`
+when the drawing is clean — the check assembles the whole and takes minutes
+(the handout states what each step costs).
 
 Standard library only.
 """
@@ -1099,6 +1102,7 @@ class Model:
         self.palette.update({r: b for b, r in place.ground_roles.items()})
         self.v: dict[tuple[int, int, int], str] = {}
         self.region: dict[tuple[int, int], str] = {}
+        self.unparted: dict[tuple[int, int], tuple[str, str]] = {}  # column -> (part it was named for, why it was handed back)
         self.marks: dict[str, tuple[int, int, str, int | None]] = {}
         self.skipped = 0
         self.shown: set[str] = set()
@@ -1162,6 +1166,15 @@ class Model:
         for x in range(min(x0, x1), max(x0, x1) + 1):
             for z in range(min(z0, z1), max(z0, z1) + 1):
                 self.region[(x + self.dx, z + self.dz)] = stem
+
+    def unpart(self, x: int, z: int, why: str) -> None:
+        """Hand the column `(x, z)` back from the part `Model.part` named it
+        for, saying `why`; `run`'s part sizes name every column handed back
+        beside the count, so a band is read against what was drawn."""
+        c = (x + self.dx, z + self.dz)
+        stem = self.region.pop(c, None)
+        if stem is not None:
+            self.unparted[c] = (stem, why)
 
     def mark(self, stem: str, x: int, z: int, facing: str = "south", y: int | None = None) -> None:
         """Stand the owed name `stem` on the floor at `(x, z)`; with `y`, name
@@ -1777,16 +1790,10 @@ def plot_program(a: dict, reason: str) -> dict:
     # Each part's claimed columns against the band `DW1074` allows, as the
     # allocation hands it (`bands`): the projection of the region naming it.
     bands = {b["part"]: b for b in a.get("bands", []) or []}
-    sizes = []
-    for e in p.parts:
-        b = bands.get(e["part"]["id"])
-        if b is None:
-            continue
-        n = len(cols.get(e["region"], ()))
-        out = "" if b["min"] <= n <= b["max"] else " — OUT OF BAND (DW1074)"
-        sizes.append(f"{e['part']['id']} {n} of {b['min']}..{b['max']}{out}")
+    sizes = part_sizes(p, cols, bands)
     if sizes:
-        print("starter.py: part sizes, claimed columns of the band: " + "; ".join(sizes), file=sys.stderr)
+        print("starter.py: part sizes, claimed columns of the band (what DW1074 judges; a column named with "
+              "`Model.part` and not claimed is listed with why): " + "; ".join(sizes), file=sys.stderr)
     for x, y in sorted(p.joined):
         e = {"a": x, "b": y, "class": "walk"}
         if x in low and y in low and low[y] != low[x]:
@@ -1808,6 +1815,37 @@ def plot_program(a: dict, reason: str) -> dict:
         "start": "place",
         "version": "1.14.0",
     }
+
+
+def part_sizes(p: "Plot", cols: dict, bands: dict) -> list[str]:
+    """Each banded part's claimed columns against its band, and the columns
+    the drawing named for it that the claim leaves out, each with why: handed
+    back by a helper (`Model.unpart`), or holding no cell a body's space
+    claims (solid from the ground to the lid)."""
+    m = p.model
+    out = []
+    for e in p.parts:
+        b = bands.get(e["part"]["id"])
+        if b is None:
+            continue
+        stem = e["part"]["id"].removeprefix("part/")
+        claimed = cols.get(e["region"], set())
+        n = len(claimed)
+        line = f"{e['part']['id']} {n} of {b['min']}..{b['max']}"
+        if not b["min"] <= n <= b["max"]:
+            line += " — OUT OF BAND (DW1074)"
+        named = set(e["cols"]) | {c for c, (st, _) in m.unparted.items() if st == stem}
+        left = sorted(named - claimed)
+        if left:
+            why: dict[str, list] = {}
+            for c in left:
+                r = m.unparted.get(c)
+                reason = r[1] if r is not None and r[0] == stem else "no cell of it is claimed: solid from the ground up"
+                why.setdefault(reason, []).append(c)
+            line += f" ({len(named)} named, {len(left)} left out: " + "; ".join(
+                f"{len(cs)} {reason} — " + " ".join(f"({x},{z})" for x, z in cs) for reason, cs in why.items()) + ")"
+        out.append(line)
+    return out
 
 
 def run(build=None, argv: list[str] | None = None, reason: str = "roof slopes, wall heads and sills: seen, never stood on") -> int:

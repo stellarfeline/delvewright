@@ -227,7 +227,7 @@ def test_a_starter_and_its_allocation_stand_beside_the_handout(rig: Rig):
     assert starter.read_bytes() == (SKILL / "scripts" / "starter.py").read_bytes()
     assert json.loads(allocation_file.read_text(encoding="utf-8")) == allocation("node/hall")
     text = handout.read_text(encoding="utf-8")
-    assert "## Step 1: start from the starter" in text
+    assert "## The steps, in the order you need them — each names its tool and what it costs" in text
     assert f'--allocation "{allocation_file}" --out "{rig.campaign / "programs" / "hall.json"}"' in text
     assert str(rig.campaign / "design" / "generator" / "hall.py") in text
     assert "It passes every judgement `detail --check` makes of the place itself as it stands" in text
@@ -240,6 +240,78 @@ def test_a_starter_and_its_allocation_stand_beside_the_handout(rig: Rig):
     doc = json.loads(prog.read_text(encoding="utf-8"))
     assert doc["params"]["handed/datum-y"] == allocation("node/hall")["datum_y"]
     assert {e.get("via") or e["bar"]["region"] for e in doc["contract"]["edges"]} == {"landing-hall-way", "seam-hall-yard"}
+
+
+def test_the_steps_run_in_the_order_an_author_needs_each_naming_its_tool_and_cost(rig: Rig):
+    """Start, measure the palette, draw, look alone, look in place, check: each
+    step names the tool it runs and what it costs, the palette is measured
+    before anything is drawn, and the loop is the cheap steps — the check is
+    never told to run after every edit or as often as one likes."""
+    out = rig.run()
+    assert out.returncode == 0, out.stderr
+    text = rig.handouts("hall")[0].read_text(encoding="utf-8")
+    steps = text.split("## The steps, in the order you need them")[1].split("## What you may do")[0]
+    heads = ["1. **Start** — `starter.py`", "2. **Measure the palette, never guess it** — `block-appearance.py`",
+             "3. **Draw** — your generator", "4. **Look at the piece alone** — `grammar expand`",
+             "5. **Look at it in its surroundings** — `frames --campaign`", "6. **Check** — `detail --check`"]
+    at = [steps.index(h) for h in heads]
+    assert at == sorted(at), "the steps are in order"
+    for key, cost in (("check", "12 to 13 min, peaking at 18.8 GB"), ("frames", "about 3 min and 11 GB"), ("generator", "about 1.5 s")):
+        assert cost in steps, key
+    assert "Steps 1 to 4 are seconds: run them after every edit." in steps
+    assert "Run it as often as you like" not in text
+    assert "check after every edit" not in text
+
+
+def test_the_camera_conventions_are_stated_and_a_camera_stands_in_a_places_frame(rig: Rig):
+    out = rig.run()
+    assert out.returncode == 0, out.stderr
+    text = rig.handouts("hall")[0].read_text(encoding="utf-8")
+    assert "the bearing turns clockwise seen from above" in text
+    assert "90 due west looking east" in text
+    assert "**A `face=up` picture has south at its top and west at its right**" in text
+    assert "--camera x,y,z,yaw,pitch[,fov]` with `--frame <place>`" in text
+
+
+def test_the_handout_says_whether_the_campaigns_notice_covers_scenery(rig: Rig):
+    """Scenery containers are allowed exactly where the campaign declares its
+    decoration notice (`DW1018`), and never beside a container a `loot`
+    entry fills in the place (`DW1024`): the handout reads both from the
+    quests document and says which holds here."""
+    out = rig.run()
+    assert out.returncode == 0, out.stderr
+    text = rig.handouts("hall")[0].read_text(encoding="utf-8")
+    assert "**This campaign declares no decoration notice**" in text
+    quests_path = rig.campaign / "quests.json"
+    doc = json.loads(quests_path.read_text(encoding="utf-8"))
+    body = doc.get("content", doc)
+    body["containers"] = {"decoration_notice": {"style": "chat", "text": "Not yours to open."}}
+    quests_path.write_text(json.dumps(doc), encoding="utf-8")
+    out = rig.run(place="node/yard")
+    assert out.returncode == 0, out.stderr
+    text = rig.handouts("yard")[0].read_text(encoding="utf-8")
+    assert "**This campaign declares its decoration notice** — players are told “Not yours to open.”" in text
+    assert "No `loot` entry fills an owed name of this place" in text
+    owed = allocation("node/landing")["owed_anchors"][0]
+    body["loot"] = [{"id": "loot/x", "anchor": owed, "contents": []}]
+    quests_path.write_text(json.dumps(doc), encoding="utf-8")
+    out = rig.run(place="node/landing")
+    assert out.returncode == 0, out.stderr
+    assert f"a `loot` entry fills `{owed}` — so no scenery container may stand in it (`DW1024`)" in rig.handouts("landing")[0].read_text(encoding="utf-8")
+
+
+def test_the_generator_path_is_the_campaigns_own_where_one_exists(rig: Rig):
+    out = rig.run()
+    assert out.returncode == 0, out.stderr
+    assert str(rig.campaign / "design" / "generator" / "hall.py") in rig.handouts("hall")[0].read_text(encoding="utf-8")
+    own = rig.campaign / "design" / "generator" / "lower" / "yard.py"
+    own.parent.mkdir(parents=True)
+    own.write_text("# the campaign's own\n", encoding="utf-8")
+    out = rig.run(place="node/yard")
+    assert out.returncode == 0, out.stderr
+    text = rig.handouts("yard")[0].read_text(encoding="utf-8")
+    assert f"write it at `{own}`" in text
+    assert str(rig.campaign / "design" / "generator" / "yard.py") not in text
 
 
 def test_the_entry_place_is_told_it_owes_the_spawn(rig: Rig):

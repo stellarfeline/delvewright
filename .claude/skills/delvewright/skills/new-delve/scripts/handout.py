@@ -73,6 +73,21 @@ ENGINE_REFERENCES = (
     ("docs/reference/prefab-procedure.md", "the procedure a piece is made by; §3 the program, §4 the gates, §5 looking at it"),
 )
 
+# What each step of the loop costs, measured with `/usr/bin/time -l` on a
+# 16 GB Apple M2 Pro with `delvec` 1.15.0 built at engine `c965e9f38`, on a
+# 95-place town (content `demo/fresh-proof-2`): the place's own steps are
+# seconds; the two that assemble the whole scale with it. Stated where the
+# handout tells the author to loop, so the expensive check is run when the
+# cheap steps are clean, not after every edit.
+COST = {
+    "generator": "about 1.5 s",
+    "expand": "about 2.5 s and 0.4 GB",
+    "render": "about 2 s and 0.4 GB",
+    "frames": "about 3 min and 11 GB",
+    "check": "12 to 13 min, peaking at 18.8 GB",
+}
+COST_INSTRUMENT = "measured on a 16 GB machine over a 95-place town; the last two grow with the whole"
+
 # The starter generator copied beside every handout (spec-0122 §6.3): an
 # empty-but-correct program for any allocation, so an author starts from a
 # program that already passes every judgement `detail --check` makes of the
@@ -502,6 +517,34 @@ def plot_section(place: str, a: dict, plan: dict) -> tuple[list[str], int]:
     return out, len(holds)
 
 
+def generator_path(campaign_dir: pathlib.Path, stem: str) -> pathlib.Path:
+    """Where this place's generator is written: the campaign's own generator
+    for the place where one exists under `design/generator/` (the first, in
+    path order, named `<stem>.py`), else `design/generator/<stem>.py`."""
+    root = campaign_dir / "design" / "generator"
+    found = sorted(root.rglob(f"{stem}.py")) if root.is_dir() else []
+    return found[0] if found else root / f"{stem}.py"
+
+
+def container_stance(quests: dict, owed: set) -> list[str]:
+    """Whether this campaign's decoration notice covers a scenery container
+    the author stands, and which of this place's owed names a `loot` entry
+    fills — a container that matters, beside which scenery is refused."""
+    notice = (quests.get("containers") or {}).get("decoration_notice")
+    filled = sorted(str(l.get("anchor")) for l in quests.get("loot", []) or [] if l.get("anchor") in owed)
+    out = []
+    if notice:
+        text = notice.get("text", "") if isinstance(notice, dict) else ""
+        out.append(f"**This campaign declares its decoration notice** — players are told “{text}” — so a barrel, a crate or a cupboard no loot claims is scenery it covers: stand them as furniture where the trade wants them.")
+    else:
+        out.append("**This campaign declares no decoration notice**, so every container you build must be claimed by a loot entry, a collect or a device: build none as furniture (`DW1018` refuses it), and show the trade with other blocks.")
+    if filled:
+        out.append(f"This place holds containers that matter — a `loot` entry fills {', '.join(f'`{a}`' for a in filled)} — so no scenery container may stand in it (`DW1024`).")
+    elif notice:
+        out.append("No `loot` entry fills an owed name of this place, so scenery does not mix with a container that matters here.")
+    return out
+
+
 def render(
     *,
     campaign_dir: pathlib.Path,
@@ -552,25 +595,29 @@ def render(
     w("")
     w(f"Places are authored concurrently, up to the bound the engine states — `{concurrency}` — and committed one at a time by the orchestrating session. **Which neighbours are detailed is as of this handout**: your check reads the whole as it stands on disk when the check runs, so a neighbour may have landed since this file was written, and a check that passed may be answered differently once it has.")
     w("")
-    generator = campaign_dir / "design" / "generator" / f"{stem}.py"
-    w("## Step 1: start from the starter")
+    generator = generator_path(campaign_dir, stem)
+    w("## The steps, in the order you need them — each names its tool and what it costs")
     w("")
-    w(f"Beside this handout stand `{starter}` — a ready-to-run generator for this place — and `{allocation_file}`, this place's allocation as `delvec allocation` prints it. The starter reads every handed value from the allocation (datum, ground, each seam's cells and rise, the roof, the owed names, the parts) and emits an empty-but-correct program: the floor, the ring wall, the lid where the place is roofed, every seam's opening answered, every owed name marked, sconces for the light probe. **It passes every judgement `detail --check` makes of the place itself as it stands** — its gates, the bindings, the leak proof, its declared faces; the commit's battery, which `--check` runs too, may still name what the whole's story asks of this place and an empty place does not yet hold (a pressable a station names, a vista through it), and that is yours to build. So:")
+    w(f"Beside this handout stand `{starter}` — a ready-to-run generator for this place — and `{allocation_file}`, this place's allocation as `delvec allocation` prints it. The starter reads every handed value from the allocation (datum, ground, each seam's cells and rise, the roof, the owed names, the parts) and emits an empty-but-correct program: the floor, the ring wall, the lid where the place is roofed, every seam's opening answered, every owed name marked, sconces for the light probe. **It passes every judgement `detail --check` makes of the place itself as it stands** — its gates, the bindings, the leak proof, its declared faces; the commit's battery, which `--check` runs too, may still name what the whole's story asks of this place and an empty place does not yet hold (a pressable a station names, a vista through it), and that is yours to build.")
     w("")
-    w(f"1. Run it: `\"$DELVEWRIGHT_PYTHON\" \"{starter}\" --allocation \"{allocation_file}\" --out \"{program}\"`, then check it — `{delvec_p} detail --check \"{campaign_dir}\" {place}` — and see it green before you build anything.")
-    w(f"2. Write your generator at `{generator}`: it imports the starter from `$DELVEWRIGHT_SKILL/scripts` (never a copy) and draws the place into a `Model` — every building, yard and piece of life as cells in piece-local coordinates, each part's columns named with `Model.part`, an owed name stood with `Model.mark` where you want it (the starter stands any you leave). The starter's section *A building drawn as cells* is the template. Run it the same way, adding `--delvec \"{delvec}\"` — **a drawn model needs a `delvec` binary on the machine that runs the generator**, because `run` asks it what the drawing does and refuses before writing when it cannot: the starter asks the engine (`delvec grammar survey`) where a body stands and what it reaches from your ways in, and claims every cell from the answer — the floor a body reaches into the part it stands in, the floor no body reaches (a roof, a wall head, a sill) and the air sealed over it as `unwalked`, a walk edge between two parts only where a body crosses (with its `rise` where their floors differ), a part none of whose floor a body reaches declared seen and never entered; it refuses a block state the pinned game does not have, or one that leaves a property out, before it writes anything — build states with its constructors (`stairs`, `slab`, `door`, `trapdoor`, `fence`, …) and roofs with `Model.roof`; an open side's ring cell beside a wall, a hedge or a bush is your own air. **You never claim a cell or write an edge by hand.**")
-    w("3. Before it writes anything it refuses, naming the block and the cell, every block the server would drop (a lantern hung under a slab, a flower off soil) and every block the palette refuses (the list below); fix the drawing and run it again. Re-run the generator and check after every edit.")
+    w(f"Costs are {COST_INSTRUMENT}. Steps 1 to 4 are seconds: run them after every edit. Steps 5 and 6 assemble the whole: run them when the cheap steps are clean, never as the edit loop.")
+    w("")
+    w(f"1. **Start** — `starter.py`, {COST['generator']}: `\"$DELVEWRIGHT_PYTHON\" \"{starter}\" --allocation \"{allocation_file}\" --out \"{program}\"`. You may check the bare program at once (step 6's cost) to see what the whole already asks of this place before you draw; it is not needed to start.")
+    w(f"2. **Measure the palette, never guess it** — `block-appearance.py`, seconds: `python3 \"{engine / 'tools' / 'creator' / 'block-appearance.py'}\" --screen …` / `--mix …` / `--sheet` (the *new pieces* reference, step 2), before you choose a block. It needs the pinned client jar at `~/.delvewright/client/minecraft-1.21.11.jar` and says so by name when it is absent, in which case take role names from the corpus and record where each came from in your return.")
+    w(f"3. **Draw** — your generator, {COST['generator']}: write it at `{generator}`; it imports the starter from `$DELVEWRIGHT_SKILL/scripts` (never a copy) and draws the place into a `Model` — every building, yard and piece of life as cells in piece-local coordinates, each part's columns named with `Model.part`, an owed name stood with `Model.mark` where you want it (the starter stands any you leave). The starter's section *A building drawn as cells* is the template. Run it as step 1, adding `--delvec \"{delvec}\"` — **a drawn model needs a `delvec` binary on the machine that runs the generator**, because `run` asks it what the drawing does and refuses before writing when it cannot: the starter asks the engine (`delvec grammar survey`) where a body stands and what it reaches from your ways in, and claims every cell from the answer — the floor a body reaches into the part it stands in, the floor no body reaches (a roof, a wall head, a sill) and the air sealed over it as `unwalked`, a walk edge between two parts only where a body crosses (with its `rise` where their floors differ), a part none of whose floor a body reaches declared seen and never entered. **You never claim a cell or write an edge by hand.** Before it writes anything it refuses, naming the block and the cell, every block the server would drop (a lantern hung under a slab, a flower off soil), every block the palette refuses (the list below), a block state the pinned game does not have or one that leaves a property out — build states with its constructors (`stairs`, `slab`, `door`, `trapdoor`, `fence`, …) and roofs with `Model.roof` — and an opening with something standing behind it. It prints each part's claimed columns against the band `DW1074` judges, and every column you named for a part that the claim leaves out, with why: a part out of band is seen here, before the check.")
+    w(f"4. **Look at the piece alone** — `grammar expand`, {COST['expand']}, then `render piece`, {COST['render']}: `{delvec_p} grammar expand --file \"{program}\" --region {ex}x{ey}x{ez} -o \"{work}/expand\"` (your `handed/…` defaults are the handed values, so no `--param` is needed; the piece's files are named for the program's filename up to its first `.`, so a working copy `{stem}.json.new` writes `{stem}.nbt`, and `--id` names them otherwise), then `{delvec_p} render piece \"{work}/expand/{stem}.nbt\" -o \"{work}/render\"` with a `--view` of your own — `face=up,cutaway=<y>` takes every course from piece-local `y` up off, so `cutaway={a['datum_y'] + 3}` shows the rooms under a roof; `cutaway=true` takes off only the top course that holds a block. **A `face=up` picture has south at its top and west at its right** (the camera looks straight down facing south), so east is on its left.")
+    w(f"5. **Look at it in its surroundings** — `frames --campaign`, {COST['frames']}: `\"{delvec}\" --prefabs \"{prefabs}\" frames --campaign \"{campaign_dir}\" --program {place} --at {place} -o \"{work}/look/{stem}.png\"` draws your program as it stands in place of the committed piece, committed or not and its gates passing or not, the camera outside the place's box on bearing `--orbit` — degrees, 0 standing due south of the place looking north, 90 due west looking east, 180 due north, 270 due east: the bearing turns clockwise seen from above — looking at it whole with its neighbours. To stand the camera yourself, give `--camera x,y,z,yaw,pitch[,fov]` with `--frame <place>`: x, y and z are then read in that place's own frame — this place's piece-local coordinates (`--frame {place}`), or a neighbour's, whose frame `\"{delvec}\" allocation \"{campaign_dir}\" <neighbour>` prints — never world arithmetic; yaw 0 faces south (+z), 90 west, 180 north, 270 east, and a positive pitch looks down.")
+    w(f"6. **Check** — `detail --check`, {COST['check']}: `{delvec_p} detail --check \"{campaign_dir}\" {place}`, the one verb that judges a place. Run it when steps 3 to 5 are clean, and again after you repair what it named. Exit 0 is your finished state.")
     w("")
     w("**Nothing outside this handout's reading list is needed, and nothing outside it is read**: not the engine's source, not the engine's gallery, not another campaign. Everything the starter does not already do is in the references listed below.")
     w("")
     w("## What you may do, and what you may not")
     w("")
-    w(f"- **Write** exactly one document: `{program}` (and, if you emit it from a script, that script beside it under `{campaign_dir / 'design' / 'generator'}` — the JSON is the artifact of record). Create the `{PROGRAMS_DIR}/` directory if it is absent.")
+    w(f"- **Write** exactly one document: `{program}` (and your generator at `{generator}` — the JSON is the artifact of record). Create the `{PROGRAMS_DIR}/` directory if it is absent.")
     w(f"- **Read**: this handout; your own program; the authoring references below; the engine's grammar corpus through `\"{delvec}\" grammar list` and `{delvec_p} grammar show --program <id>`.")
     w(f"- **Ask the tool again whenever you want it**: `\"{delvec}\" allocation \"{campaign_dir}\" {place}` prints the same allocation this handout carries; type nothing from it anywhere — your program reads every handed value through a `handed/…` parameter (below).")
-    w(f"- **Check** with the one verb that judges a place: `{delvec_p} detail --check \"{campaign_dir}\" {place}`. It binds the handing into your program, expands it at the frame, voids every cell you do not own, runs every gate of the place and the bindings check over the whole as committed, then writes the commit into a scratch copy of the campaign and runs the commit's own battery over the whole it would leave, and refuses with the cause named — every refusal the commit can give, it gives; it **writes nothing** to the campaign or the library. Run it as often as you like. Exit 0 says your program would commit against the whole as it stands now — that is your finished state. The commit, `delvec detail` without `--check`, is the orchestrating session's, never yours.")
-    w(f"- **Look** at the piece alone with `{delvec_p} grammar expand --file \"{program}\" --region {ex}x{ey}x{ez} -o \"{work}/expand\"` (your `handed/…` defaults are the handed values, so no `--param` is needed; the piece's files are named for the program's filename up to its first `.`, so a working copy `{stem}.json.new` writes `{stem}.nbt`, and `--id` names them otherwise), then `{delvec_p} render piece \"{work}/expand/{stem}.nbt\" -o \"{work}/render\"` with a `--view` of your own — `face=up,cutaway=<y>` takes every course from piece-local `y` up off, so `cutaway={a['datum_y'] + 3}` shows the rooms under a roof; `cutaway=true` takes off only the top course that holds a block. **Look at it in its surroundings**, committed or not and its gates passing or not, with `\"{delvec}\" --prefabs \"{prefabs}\" frames --campaign \"{campaign_dir}\" --program {place} --at {place} -o \"{work}/look/{stem}.png\"`: your program drawn as it stands in place of the committed piece, the camera outside the place's box on bearing `--orbit` (degrees, 0 from the south), looking at it whole with its neighbours. Scratch goes under `{work}/`, never `/tmp`.")
-    w(f"- **Measure the palette, never guess it**: `python3 \"{engine / 'tools' / 'creator' / 'block-appearance.py'}\" --screen …` / `--mix …` / `--sheet` is yours to run (the *new pieces* reference, step 2); it needs the pinned client jar at `~/.delvewright/client/minecraft-1.21.11.jar` and says so by name when it is absent, in which case take role names from the corpus and record where each came from in your return.")
+    w(f"- **What the check does** (step 6): `{delvec_p} detail --check \"{campaign_dir}\" {place}` binds the handing into your program, expands it at the frame, voids every cell you do not own, runs every gate of the place and the bindings check over the whole as committed, then writes the commit into a scratch copy of the campaign and runs the commit's own battery over the whole it would leave, and refuses with the cause named — every refusal the commit can give, it gives; it **writes nothing** to the campaign or the library. Exit 0 says your program would commit against the whole as it stands now. The commit, `delvec detail` without `--check`, is the orchestrating session's, never yours.")
+    w(f"- Scratch goes under `{work}/`, never `/tmp`.")
     w("- **The engine's operating half is absent here, and binds you in nothing**: the engine constitution names a `CLAUDE.local.md` beside it; on a creator's machine that file does not exist, and nothing in it governs a place program. Do not stop on its absence and do not ask about it.")
     w("- **Never**: read another place's program, the design record (`DESIGN.md`, `GENERATION.md`, `design.json`, `design/`), the site plan, the layout graph, the quest documents or another handout — what you need of them is quoted here, and the rest is the whole's; edit any document but your program; run `delvec detail` without `--check`, `delvec detail --all`, `delvec build`, a server, or `git`; retype a handed number as a literal; weaken a check or reroll a seed to get green.")
     w("- **A capability you need and the grammar lacks** is reported in your return in one sentence, with the closest thing you could build; it is never faked with adjacent constructs.")
@@ -592,7 +639,9 @@ def render(
             w(f"- `{r['block']}` is had another way: {r['route']}")
     containers = blocks.get("containers", [])
     w("")
-    w(f"**Containers** ({len(containers)}): " + ", ".join(f"`{c.removeprefix('minecraft:')}`" for c in containers) + ". Each one you build is a holder the census counts: claimed by no loot and no device it is scenery, which the campaign must declare (`DW1018`), and a place may not mix scenery containers with ones that matter (`DW1024`).")
+    w(f"**Containers** ({len(containers)}): " + ", ".join(f"`{c.removeprefix('minecraft:')}`" for c in containers) + ". Each one you build is a holder the census counts: one no loot, collect or device claims is scenery, and scenery is allowed only where the campaign declares its decoration notice (`DW1018`); a place may not mix scenery containers with ones that matter (`DW1024`).")
+    w("")
+    lines.extend(container_stance(quests, owed))
     w("")
     w("The *detail* reference's section *The program's contract* is the contract your program has to meet: every handed value used is declared as a parameter under the `handed/` prefix with the allocation's value as its default (`handed/datum-y`; `handed/ground/{min-y,max-y,bottom-y}`; `handed/roof/…` on a declared roof; `handed/seam/<edge stem>/{x0,y0,z0,x1,y1,z1,rise}`); every seam is answered with an opening at the handed cells and a contract edge to `exterior` whose `via` is that opening; every owed name is answered with a `mark` of that stem; a bar this place owns is a `barred` contract edge over exactly the bar's cells, its region named by the seam's stem; the piece is EXACTLY the frame's shape. `delvec detail --check` names every handed name it offers when your program asks for one it does not (`DW0882`).")
     w("")

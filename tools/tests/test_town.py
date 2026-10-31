@@ -138,12 +138,33 @@ def test_a_bracket_hangs_the_sign_on_the_streets_own_post_and_names_its_cell():
 
 def test_a_way_is_paved_flush_with_its_kennel_down_the_middle():
     m = model(allocation(9, 6, 9))
-    town.pave_way(m, 1, 7, 1, 7, "z", {"verge": "V", "kennel": "K", "kerb": "S", "paving": "P"})
+    town.pave_way(m, 1, 7, 1, 7, "z", {"verge": "V", "kennel": "K", "kerb": "S", "paving": "P"}, clear=(2, 6))
     assert [m.get(x, 0, 3) for x in range(1, 8)] == ["V", "S", "P", "K", "P", "S", "V"]
     m2 = model(allocation(9, 6, 9))
     town.pave_way(m2, 1, 4, 1, 7, "z", {"verge": "V", "kennel": "K", "kerb": "S", "paving": "P"})
     assert "S" not in {m2.get(x, 0, 3) for x in range(1, 5)}  # narrower than five: no kerb
     assert all(m.get(x, 1, z) is None for x in range(1, 8) for z in range(1, 8))
+
+
+ROLES = {"verge": "V", "kennel": "K", "kerb": "S", "paving": "P"}
+
+
+def test_the_clear_way_is_the_handed_columns_and_holds_paving_at_any_width():
+    """The verge lies outside the clear columns and nowhere else, and a clear
+    way of every width from one to the whole span holds paving: the lane the
+    plan hands four clear columns of five (`lane-5`) is paving, kennel,
+    paving, paving and a verge, not verge, kerb, kennel, kerb, verge."""
+    m = model(allocation(9, 6, 9))
+    town.pave_way(m, 1, 7, 1, 5, "x", ROLES, clear=(1, 4))
+    assert [m.get(3, 0, z) for z in range(1, 6)] == ["P", "K", "P", "P", "V"]
+    for width in range(1, 8):
+        for c0 in range(1, 8 - width + 1):
+            c1 = c0 + width - 1
+            m = model(allocation(9, 6, 9))
+            town.pave_way(m, 1, 7, 1, 7, "z", ROLES, clear=(c0, c1))
+            across = [m.get(x, 0, 3) for x in range(1, 8)]
+            assert "P" in across, (c0, c1, across)
+            assert [x for x in range(1, 8) if across[x - 1] == "V"] == [x for x in range(1, 8) if x < c0 or x > c1]
 
 
 def street_alloc():
@@ -203,7 +224,7 @@ def test_no_default_verge_or_lane_thing_is_a_container():
     for seed in range(8):
         m = model(a)
         town.stretch(m, starter.Place(a), "z", seed, clear=5)
-        town.lane(m, starter.Place(a), "z")
+        town.lane(m, starter.Place(a), "z", clear=3)
         assert not [r for r in m.v.values() if "barrel" in r], seed
 
 
@@ -270,25 +291,86 @@ def test_a_flight_climbs_toward_the_opening_that_rises():
     for face, top_row in (("north", 1), ("south", 8)):
         a = flight_alloc(face)
         m = model(a)
-        town.flight(m, starter.Place(a), {"verge": "V", "kennel": "K", "kerb": "S", "paving": "P"})
+        town.flight(m, starter.Place(a), {"verge": "V", "kennel": "K", "kerb": "S", "paving": "P"}, clear=3)
         assert m.get(3, 1, top_row) == "S" and m.get(3, 2, top_row) == "S"
         step = 1 + 2 if face == "north" else 8 - 2
         assert m.get(3, 1, step) == starter.stairs("minecraft:stone_brick", face)
 
 
-def test_a_lanes_furniture_stands_on_the_edge_it_is_given():
+def lane_alloc(cols) -> dict:
     a = allocation(30, 6, 7)
-    for edge, col in (("high", 5), ("low", 1)):
+    a["way"] = {"axis": "x", "clear": cols[1] - cols[0] + 1, "cols": list(cols)}
+    return a
+
+
+def test_a_lanes_furniture_stands_on_the_verge_outside_the_clear_way():
+    """A lane's things stand on the verge column just outside the clear way
+    the plan hands — never on the clear way's own outer column — on the
+    `edge` side only where it is stated, and nothing above the walk plane's
+    ground stands in the clear way."""
+    for cols, edge, want in (((1, 4), None, {5}), ((2, 5), None, {1}), ((2, 4), None, {1, 5}),
+                             ((2, 4), "high", {5}), ((2, 4), "low", {1})):
+        a = lane_alloc(cols)
         m = model(a)
-        town.lane(m, starter.Place(a), "x", edge=edge)
-        placed = {c[2] for c in m.v if c[1] == 1}
-        assert placed == {col}
+        f = town.lane(m, starter.Place(a), edge=edge)
+        assert (f["c0"], f["c1"]) == cols
+        placed = {c[2] for c in m.v if c[1] >= 1}
+        assert placed == want, (cols, edge, placed)
+    a = allocation(30, 6, 7)
+    m = model(a)
+    town.lane(m, starter.Place(a), "x", clear=3)
+    assert {c[2] for c in m.v if c[1] >= 1} == {1, 5}
+
+
+def test_one_verge_mechanism_dresses_every_way():
+    """`stretch`, `lane`, `ramp` and `flight` each return the frame
+    `way_verge` builds, and `verge_life` furnishes any of them: a lamp it is
+    asked for stands on that way's verge outside the clear way."""
+    lane = lane_alloc((1, 4))
+    ramp = allocation(7, 8, 14, [seam("up", "north", [[1, 1, 0], [5, 6, 0]], "node/up", rise=3)])
+    ramp["way"] = {"axis": "z", "clear": 3, "cols": [2, 4]}
+    flight = flight_alloc("north")
+    flight["way"] = {"axis": "z", "clear": 3, "cols": [2, 4]}
+    street = way_alloc(cols=(4, 6))
+    for name, a, draw in (
+        ("lane", lane, lambda m, p: town.lane(m, p, things=())),
+        ("ramp", ramp, lambda m, p: town.ramp(m, p)),
+        ("flight", flight, lambda m, p: town.flight(m, p)),
+        ("stretch", street, lambda m, p: town.stretch(m, p, seed=2, verge=lambda m, f: None)),
+    ):
+        m = model(a)
+        f = draw(m, starter.Place(a))
+        assert f is not None and f["free"], name
+        assert all(not f["c0"] <= (x if f["axis"] == "z" else z) <= f["c1"] for x, z in f["free"]), name
+        row = next(r for r in f["rows"] if f["cell"](r, f["c1"] + 1) in f["free"]) if f["c1"] + 1 <= f["cols"][-1] else None
+        side = "high"
+        if row is None:
+            row, side = next(r for r in f["rows"] if f["cell"](r, f["c0"] - 1) in f["free"]), "low"
+        placed = town.verge_life(m, f, things=(), at=[("lamp", row, side)])
+        (_, _, _, x, z), = placed
+        assert m.get(x, f["walk"][(x, z)], z).startswith("minecraft:oak_fence"), name
+        if name == "ramp":
+            # the ramp's verge climbs with it: free columns on its raised
+            # landings stand things on the landing, none on a stair
+            assert max(f["walk"].values()) > 1
+            assert all(not m.get(x, y - 1, z).startswith("minecraft:stone_brick_stairs") for (x, z), y in f["walk"].items())
+        across = x if f["axis"] == "z" else z
+        assert across == (f["c1"] + 1 if side == "high" else f["c0"] - 1), name
+
+
+def test_a_verge_hedge_and_a_cart_with_no_load():
+    a = lane_alloc((1, 4))
+    m = model(a)
+    town.lane(m, starter.Place(a), verge=lambda m, f: town.verge_life(m, f, things=("hedge", "cart"), cart_load=None))
+    blocks = set(m.v.values())
+    assert any(b.startswith("minecraft:oak_leaves[") and "persistent=true" in b for b in blocks)
+    assert not any("hay_block" in b for b in blocks)
 
 
 def test_a_ramp_climbs_its_rise_a_stair_then_a_landing():
     a = allocation(7, 8, 14, [seam("up", "north", [[1, 1, 0], [5, 6, 0]], "node/up", rise=3)])
     m = model(a)
-    assert town.ramp(m, starter.Place(a), "z", {"kerb": "S"}, fill="F")
+    assert town.ramp(m, starter.Place(a), "z", {"kerb": "S"}, fill="F", clear=5)
     heights = [max(y for (x, y, z) in m.v if x == 3 and z == row) for row in range(12, 0, -1)]
     assert heights == sorted(heights) and heights[-1] == 3
     assert m.get(3, 1, 10) == starter.stairs("minecraft:stone_brick", "north")
@@ -366,9 +448,32 @@ def test_a_street_front_closes_the_edge_but_its_doorway():
     m.part(15, 18, 1, 10, "yard")
     town.street_front(m, 18, 1, 10, {5, 6, 7}, 4, roles, door_h=3, inward=-1)
     assert [m.get(18, y, 6) for y in (1, 2, 3)] == [AIR] * 3 and m.get(18, 4, 6) == "L"
-    assert [m.get(18, y, 9) for y in (1, 2, 3, 4)] == ["W", "W", "W", "C"] and m.get(18, 7, 9) is None
+    assert m.get(18, 7, 9) is None
     assert m.get(18, 3, 3) == "house"
     assert (18, 9) not in m.region and (17, 6) not in m.region and (17, 9) in m.region
+    # rows 8..10 and row 1 are yard runs shorter than the wall is tall (four
+    # courses): the front is carried over them, no coping, no pier
+    assert [m.get(18, y, 9) for y in (1, 2, 3, 4)] == ["W"] * 4 and m.get(18, 4, 1) == "W"
+    assert "C" not in m.v.values()
+
+
+def test_a_yard_wall_reads_as_a_wall_and_a_shorter_run_carries_the_front():
+    """A building set back one cell from the lot's side edges leaves a one-cell
+    run of edge either side of it: the front is carried to the corner over it,
+    never a one-cell stub of yard wall with coping (a pier). A run at least as
+    long as the wall is tall stays a yard wall with its coping. The columns
+    handed back from a part are recorded with why."""
+    roles = {"wall": "W", "lintel": "L", "coping": "C"}
+    a = allocation(20, 12, 18, [seam("street-to-lot", "east", [[19, 1, 5], [19, 3, 7]], "node/street")],
+                   voids=[{"cells": [[20, 0, 0], [20, 4, 17]]}])
+    m = model(a)
+    m.box(18, 18, 1, 6, 2, 4, "house")
+    m.part(12, 18, 1, 16, "yard")
+    town.street_front(m, 18, 1, 16, {5, 6, 7}, 4, roles, door_h=3, inward=-1)
+    assert [m.get(18, y, 1) for y in (1, 2, 3, 4)] == ["W"] * 4, "row 1, a one-cell run beside the house"
+    assert [m.get(18, y, 12) for y in (1, 2, 3, 4)] == ["W", "W", "W", "C"], "rows 8..16, a yard wall"
+    assert m.unparted[(18, 12)][0] == "yard" and "street edge" in m.unparted[(18, 12)][1]
+    assert m.unparted[(17, 6)][0] == "yard" and "doorway" in m.unparted[(17, 6)][1]
 
 
 def test_a_street_front_on_a_north_or_south_face_is_the_same_closure_turned():
@@ -539,7 +644,7 @@ def test_a_seed_draws_the_way_it_drew():
     for name, draw in (
         ("stretch", lambda m, p: town.stretch(m, p, "z", 3, clear=5, fronts={"node/bakery": "minecraft:spruce_hanging_sign"})),
         ("market", lambda m, p: town.stretch(m, p, "z", 4, clear=5, verge=town.market)),
-        ("lane", lambda m, p: town.lane(m, p, "z")),
+        ("lane", lambda m, p: town.lane(m, p, "z", clear=7)),
         ("rail", lambda m, p: town.rail(m, p, "z", "high", 7, ["A", "B"], lamp_at=lambda i, n: i % 9 == 4, gap=0.28)),
     ):
         m = model(a)
@@ -547,7 +652,7 @@ def test_a_seed_draws_the_way_it_drew():
         got[name] = digest(m)
     f = flight_alloc("south")
     m = model(f)
-    town.flight(m, starter.Place(f), lamp_side="high", flower="minecraft:poppy")
+    town.flight(m, starter.Place(f), lamp_side="high", flower="minecraft:poppy", clear=3)
     got["flight"] = digest(m)
     assert got == EXPECTED_DIGESTS
 
@@ -565,6 +670,7 @@ def test_a_verge_bench_turns_its_back_to_the_lot():
 
 # measured with the helpers that regenerated the town's 72 street programs
 # equal; `stretch` re-measured when the default verge stopped standing a
-# barrel (no default is a container the census counts)
-EXPECTED_DIGESTS = {"stretch": "7d172f1355545fe4", "market": "1a568c6a8f4968d1", "lane": "150a4d074863c337",
+# barrel (no default is a container the census counts); `lane` re-measured
+# when its things moved onto the verge outside the clear way (`verge_life`)
+EXPECTED_DIGESTS = {"stretch": "7d172f1355545fe4", "market": "1a568c6a8f4968d1", "lane": "14c5c4ebb8d61380",
                     "rail": "4f53cda18c2baa0c", "flight": "e9fed371a5aa6448"}

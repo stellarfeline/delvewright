@@ -106,9 +106,18 @@ pub enum ViewCommand {
         #[arg(long)]
         campaign: Option<PathBuf>,
         /// The camera, `x,y,z,yaw,pitch[,fov]` in Minecraft degrees (yaw 0 =
-        /// south/+Z, 90 = west/−X; pitch positive looks down).
+        /// south/+Z, 90 = west/−X, 180 = north, 270 = east; pitch positive
+        /// looks down). `x,y,z` are world coordinates, or with `--frame` a
+        /// place's own piece-local ones.
         #[arg(long, requires = "campaign", conflicts_with = "at")]
         camera: Option<String>,
+        /// Read `--camera`'s `x,y,z` in this place's frame (`node/street-5`):
+        /// the piece-local coordinates its allocation and program use, the
+        /// frame's low corner at 0,0,0 — so a camera is stood at a cell of a
+        /// place, or on a neighbour's way, with no world arithmetic. The world
+        /// position it resolves to is printed.
+        #[arg(long, requires = "camera")]
+        frame: Option<String>,
         /// Frame an anchor (`anchor/fire-pit`, or `area/island:anchor/pen`)
         /// from `--dist` blocks away — pulled into open air toward it, so an
         /// interior anchor is framed from inside its room — or a place
@@ -117,7 +126,8 @@ pub enum ViewCommand {
         #[arg(long, requires = "campaign")]
         at: Option<String>,
         /// Compass bearing (degrees) the `--at` camera stands on: 0 = due south
-        /// of the subject looking north, 90 = due west looking east.
+        /// of the subject looking north, 90 = due west looking east, 180 =
+        /// due north, 270 = due east — clockwise seen from above.
         #[arg(long, requires = "at", default_value_t = 0.0)]
         orbit: f64,
         /// Distance in blocks from the `--at` subject.

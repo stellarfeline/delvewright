@@ -6272,7 +6272,7 @@ the mode, and returns the pixels with the renderer's own statistics.
 ```
 delvec frames <build-dir> [-o <dir>] [--shot <id>]... [--labels] [--size 1024]
     [--backend auto|cpu|metal|vulkan|dx12] [--threads N] [--textures <jar>]
-delvec frames --campaign <campaign-dir> (--camera x,y,z,yaw,pitch[,fov] | --at <anchor>
+delvec frames --campaign <campaign-dir> (--camera x,y,z,yaw,pitch[,fov] [--frame node/<place>] | --at <anchor>
     [--orbit <deg>] [--dist <n>]) [-o out.png] [--labels] [--served] [--size 1024] [draw flags]
 ```
 
@@ -6308,10 +6308,16 @@ parsed, placed and assembled in this process (no emission, no nav proofs:
 validation diagnostics are printed and never gate the frame, so a half-written
 campaign still draws), its load world written under the PNG's directory as
 `world/`, and drawn from the camera stated by hand: `--camera` in Minecraft
-degrees (`0` = south/+Z, `90` = west/−X; pitch positive looks **down**; `fov`
-vertical, default 70), or `--at <anchor>` (a bare anchor name or
-`area:anchor`) from `--dist` blocks (default 14) at compass bearing `--orbit`,
-the eye then pulled along its sight line into open air
+degrees (`0` = south/+Z, `90` = west/−X, `180` = north, `270` = east; pitch
+positive looks **down**; `fov` vertical, default 70), its `x,y,z` world
+coordinates or, with **`--frame <place>`**, the place's piece-local ones —
+the frame's low corner (`allocation`'s `world_min`, from
+`compiler::detail::allocation`) added, the resolved world position printed
+(`camera: … read in `<place>`'s frame … stands at world x,y,z`), a place the
+plan allocates no box to exit 1 before anything is drawn — or `--at <anchor>`
+(a bare anchor name or `area:anchor`) from `--dist` blocks (default 14) at
+compass bearing `--orbit` (`0` due south of the subject, `90` due west,
+turning clockwise seen from above), the eye then pulled along its sight line into open air
 (`compiler::camera::stand_in_open_air`, the render plan's own walk). A
 campaign frame lays no datapack placement — its world is the templates, the
 assembly and the load configuration — and writes the PNG, its manifest and
