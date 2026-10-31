@@ -132,3 +132,63 @@ fn a_place_is_drawn_from_its_program_as_it_stands_and_nothing_is_written() {
         text(&broken)
     );
 }
+
+/// `--camera x,y,z,… --frame <place>` reads the camera's position in the
+/// place's own frame — the piece-local coordinates its allocation hands —
+/// and prints the world position it resolved to: the frame's low corner
+/// (`delvec allocation`'s `world_min`) plus the stated cell. A place the plan
+/// allocates no box to has no frame and is refused before anything is drawn.
+#[test]
+fn a_camera_is_stood_in_a_places_own_frame() {
+    let tmp = tempdir("frame");
+    let (campaign, prefabs) = common::gallery_site_plan_detailed(&tmp);
+    let alloc = std::process::Command::new(BIN)
+        .arg("--prefabs")
+        .arg(&prefabs)
+        .args(["allocation", campaign.to_str().unwrap(), "node/annex"])
+        .output()
+        .expect("run delvec");
+    assert!(alloc.status.success(), "{}", text(&alloc));
+    let a: serde_json::Value = serde_json::from_slice(&alloc.stdout).unwrap();
+    let o: Vec<i64> = a["world_min"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_i64().unwrap())
+        .collect();
+    let (run, _) = frame(
+        &campaign,
+        &prefabs,
+        &tmp.join("local"),
+        &["--camera", "2,3,4,90,10", "--frame", "node/annex"],
+    );
+    let said = text(&run);
+    let want = format!("stands at world {},{},{}", o[0] + 2, o[1] + 3, o[2] + 4);
+    assert!(
+        said.contains("read in `node/annex`'s frame") && said.contains(&want),
+        "wanted `{want}`:\n{said}"
+    );
+    let (plain, _) = frame(
+        &campaign,
+        &prefabs,
+        &tmp.join("world"),
+        &["--camera", "2,3,4,90,10"],
+    );
+    assert!(!text(&plain).contains("read in"), "{}", text(&plain));
+
+    let none = std::process::Command::new(BIN)
+        .arg("--prefabs")
+        .arg(&prefabs)
+        .args(["frames", "--campaign", campaign.to_str().unwrap()])
+        .args(["--camera", "0,0,0,0,0", "--frame", "node/nowhere"])
+        .arg("-o")
+        .arg(tmp.join("none.png"))
+        .output()
+        .expect("run delvec");
+    assert_eq!(none.status.code(), Some(1), "{}", text(&none));
+    assert!(
+        text(&none).contains("--frame `node/nowhere`: the plan allocates no box to that place"),
+        "{}",
+        text(&none)
+    );
+}

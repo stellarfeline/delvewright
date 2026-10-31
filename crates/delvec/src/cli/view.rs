@@ -57,6 +57,8 @@ pub(crate) struct FramesCampaignArgs<'a> {
     pub(crate) served: bool,
     /// `--program <place>`: that place drawn from its program as it stands.
     pub(crate) program: Option<&'a str>,
+    /// `--frame <place>`: `--camera`'s position read in that place's frame.
+    pub(crate) frame: Option<&'a str>,
     pub(crate) draw: &'a delvec::compiler::view::cli::DrawArgs,
 }
 
@@ -123,7 +125,25 @@ pub(crate) fn run_frames_campaign(
     let base = camera_base(&plan, &assembled, &relight);
     let load = delvec::compiler::view::beat::load_blocks(&plan, &world, &base);
     let grid = framing::VoxelGrid::build(&load);
-    let cam = match resolve_camera(&plan, &grid, &args) {
+    // `--frame`: the low corner of the place's frame in the world, the
+    // origin `--camera`'s position is read from (`delvec allocation`'s
+    // `world_min`, the same answer).
+    let origin = match args.frame {
+        None => None,
+        Some(place) => {
+            let node = delvewright_dsl::NodeId(place.to_string());
+            match delvec::compiler::detail::allocation(&campaign, &node) {
+                Some(a) => Some(a.world_min),
+                None => {
+                    eprintln!(
+                        "error: --frame `{place}`: the plan allocates no box to that place, so it has no frame"
+                    );
+                    return ExitCode::from(1);
+                }
+            }
+        }
+    };
+    let cam = match resolve_camera(&plan, &grid, &args, origin) {
         Ok(c) => c,
         Err(msg) => {
             eprintln!("error: {msg}");
@@ -445,30 +465,20 @@ fn resolve_camera(
     plan: &Plan,
     grid: &delvec::compiler::framing::VoxelGrid,
     args: &FramesCampaignArgs<'_>,
+    origin: Option<[i64; 3]>,
 ) -> Result<delvec::compiler::framing::Camera, String> {
     use delvec::compiler::framing::{Camera, DEFAULT_FOV, DEFAULT_ORBIT_DIST};
 
     if let Some(spec) = args.camera {
-        let parts: Vec<&str> = spec.split(',').map(str::trim).collect();
-        if parts.len() < 5 || parts.len() > 6 {
-            return Err(format!(
-                "--camera wants `x,y,z,yaw,pitch[,fov]` (got {} field(s) in `{spec}`)",
-                parts.len()
-            ));
+        let cam = parse_camera(spec, origin)?;
+        if let (Some(place), Some(o)) = (args.frame, origin) {
+            eprintln!(
+                "camera: `{spec}` read in `{place}`'s frame (its low corner at world {},{},{}) \
+                 stands at world {},{},{}",
+                o[0], o[1], o[2], cam.pos[0], cam.pos[1], cam.pos[2]
+            );
         }
-        let mut n = [0f64; 6];
-        n[5] = DEFAULT_FOV;
-        for (i, p) in parts.iter().enumerate() {
-            n[i] = p
-                .parse()
-                .map_err(|_| format!("--camera field {} (`{p}`) is not a number", i + 1))?;
-        }
-        return Ok(Camera {
-            pos: [n[0], n[1], n[2]],
-            yaw: n[3],
-            pitch: n[4],
-            fov: n[5],
-        });
+        return Ok(cam);
     }
 
     if let Some(subject) = args.at.filter(|s| s.starts_with("node/")) {
@@ -550,6 +560,37 @@ fn resolve_camera(
         centre[2] + d * 0.75,
     ];
     Ok(Camera::looking_at(eye, centre, DEFAULT_FOV))
+}
+
+/// `--camera x,y,z,yaw,pitch[,fov]`, its position read from `origin` (a
+/// place's frame, `--frame`) where one is given and in world coordinates
+/// otherwise.
+fn parse_camera(
+    spec: &str,
+    origin: Option<[i64; 3]>,
+) -> Result<delvec::compiler::framing::Camera, String> {
+    use delvec::compiler::framing::{Camera, DEFAULT_FOV};
+    let parts: Vec<&str> = spec.split(',').map(str::trim).collect();
+    if parts.len() < 5 || parts.len() > 6 {
+        return Err(format!(
+            "--camera wants `x,y,z,yaw,pitch[,fov]` (got {} field(s) in `{spec}`)",
+            parts.len()
+        ));
+    }
+    let mut n = [0f64; 6];
+    n[5] = DEFAULT_FOV;
+    for (i, p) in parts.iter().enumerate() {
+        n[i] = p
+            .parse()
+            .map_err(|_| format!("--camera field {} (`{p}`) is not a number", i + 1))?;
+    }
+    let o = origin.map_or([0.0; 3], |o| o.map(|v| v as f64));
+    Ok(Camera {
+        pos: [n[0] + o[0], n[1] + o[1], n[2] + o[2]],
+        yaw: n[3],
+        pitch: n[4],
+        fov: n[5],
+    })
 }
 
 /// The farthest point on the segment `subject → eye` that stands in open air with
