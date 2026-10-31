@@ -226,3 +226,70 @@ def test_a_part_or_a_full_block_behind_an_opening_is_refused_before_writing(monk
 
     doc = _plot_of(st, _front_alloc(), yard_at(4), monkeypatch)
     assert {"a": "room", "b": "exterior", "class": "walk", "via": "street-to-lot-way"} in doc["contract"]["edges"]
+
+
+# ---------------------------------------------------------------- a raised opening the drawing climbs to
+
+
+def _raised_alloc() -> dict:
+    """An open 9x8x9 place whose north seam opens two courses over its walk
+    plane (a flight's top, the neighbour's floor two up), with a way out at
+    grade on the south."""
+    return {"place": "node/flight", "extent": [9, 8, 9], "space": [[1, 1, 1], [7, 7, 7]], "datum_y": 1,
+            "ground": {"base": "ground", "columns": []},
+            "seams": [{"edge": "edge/top-to-flight", "face": "north", "cells": [[1, 3, 1], [7, 6, 1]], "bar": None,
+                       "owns_plane": False, "other": "node/top", "answer_with": ["stair", "walk"], "rise": 2},
+                      {"edge": "edge/flight-to-foot", "face": "south", "cells": [[1, 1, 7], [7, 4, 7]], "bar": None,
+                       "owns_plane": True, "other": "node/foot", "answer_with": ["walk"], "rise": 0}],
+            "sides": [], "voids": [], "brief": {"kind": "open"}, "owed_anchors": [], "parts": []}
+
+
+def test_a_drawn_way_up_to_a_raised_opening_stands_no_ladder(monkeypatch):
+    """Under an opening two courses over the walk plane the starter stands a
+    pillar, a landing and a ladder (`Place.approach`). A drawing that builds
+    its own way up there is refused unless it says so with
+    `Model.climbs_to(edge)`, never overwritten; said, the program carries no
+    ladder and no `climb` edge, and the seam is the plain walk the engine
+    proves. A drawing that leaves the cells empty keeps the ladder."""
+    import pytest
+
+    st = _starter_module()
+
+    def steps(state: bool):
+        def build(place):
+            m = st.Model(place)
+            if state:
+                m.climbs_to("edge/top-to-flight")
+            for x in range(1, 8):
+                m.set(x, 1, 1, "minecraft:stone_bricks"); m.set(x, 2, 1, "minecraft:stone_bricks")
+                m.set(x, 1, 2, "minecraft:stone_bricks")
+                m.set(x, 2, 2, "minecraft:stone_brick_stairs[facing=north,half=bottom,shape=straight,waterlogged=false]")
+                m.set(x, 1, 3, "minecraft:stone_brick_stairs[facing=north,half=bottom,shape=straight,waterlogged=false]")
+            return m
+        return build
+
+    with pytest.raises(SystemExit) as e:
+        _plot_of(st, _raised_alloc(), steps(False), monkeypatch)
+    msg = str(e.value)
+    assert "edge/top-to-flight: the opening stands 2 course(s)" in msg and "Model.climbs_to(edge)" in msg, msg
+
+    doc = _plot_of(st, _raised_alloc(), steps(True), monkeypatch)
+    assert not any("ladder" in k for k in doc["palette"]), doc["palette"]
+    assert all(e["class"] != "climb" for e in doc["contract"]["edges"]), doc["contract"]["edges"]
+    assert {"a": "room", "b": "exterior", "class": "walk", "via": "top-to-flight-way"} in doc["contract"]["edges"]
+
+    def bare(place):
+        return st.Model(place)
+
+    doc = _plot_of(st, _raised_alloc(), bare, monkeypatch)
+    assert "ladder-south" in doc["palette"]
+    assert {"a": "room", "b": "top-to-flight-landing", "class": "climb", "rise": 2, "via": "top-to-flight-ladder"} in doc["contract"]["edges"]
+
+    def wrong(place):
+        m = st.Model(place)
+        m.climbs_to("edge/flight-to-foot")
+        return m
+
+    with pytest.raises(SystemExit) as e:
+        _plot_of(st, _raised_alloc(), wrong, monkeypatch)
+    assert "at most one course over the walk plane" in str(e.value)

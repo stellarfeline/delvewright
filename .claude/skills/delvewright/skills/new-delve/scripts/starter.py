@@ -1103,6 +1103,7 @@ class Model:
         self.skipped = 0
         self.shown: set[str] = set()
         self.no_touch: set[tuple[int, int, int]] = set()
+        self.climbed: set[str] = set()  # `climbs_to`: raised openings the drawing climbs to itself
         self.dx = self.dz = 0  # `shift`: where the drawing stands, moved
         for s in place.seams:
             # the ladder the starter stands up to a raised opening, bound
@@ -1115,6 +1116,22 @@ class Model:
                 for y in range(lo[1], hi[1]):
                     for z in range(lo[2], hi[2]):
                         self.no_touch.add((x, y, z))
+
+    def climbs_to(self, edge: str) -> None:
+        """The drawing carries a body up to this seam's raised opening itself
+        — a flight of stairs, a ramp — so the starter stands no pillar,
+        landing or ladder under it (`Place.approach`), and the seam's edge is
+        the plain way out the engine proves the drawing walks. `edge` is the
+        seam's edge, `edge/<stem>` or `<stem>`. Without it, a drawing that
+        writes where the starter stands that ladder is refused, never
+        overwritten."""
+        stem = edge.removeprefix("edge/")
+        s = next((s for s in self.place.seams if s["stem"] == stem), None)
+        if s is None:
+            sys.exit(f"starter.py: climbs_to(`{edge}`): the place has no seam on that edge; it has {sorted(s['stem'] for s in self.place.seams)}")
+        if s.get("approach") is None or s["approach"]["ladder"] is None:
+            sys.exit(f"starter.py: climbs_to(`{edge}`): that seam's opening stands at most one course over the walk plane, so the starter stands no ladder under it to replace")
+        self.climbed.add(stem)
 
     def shift(self, dx: int, dz: int = 0) -> None:
         """Draw moved `(dx, dz)` from here on: every write and read through
@@ -1377,6 +1394,7 @@ class Plot(Place):
         if not isinstance(self.model, Model):
             sys.exit("starter.py: the generator's build(place) returns no Model")
         self.model.shift(0)  # every read from here on is of the cells as they stand
+        self.yield_approaches()
         by_stem = {p["id"].removeprefix("part/"): p for p in parts}
         unknown = sorted(set(self.model.region.values()) - set(by_stem))
         if unknown:
@@ -1453,6 +1471,41 @@ class Plot(Place):
         if c in self.unwalked:
             return ("claim", "unwalked", None)
         return kind if kind[0] == "claim" else ("claim", "room", None)
+
+    def yield_approaches(self) -> None:
+        """Hand each raised opening the drawing climbs to itself
+        (`Model.climbs_to`) to the drawing, and refuse a drawing that writes
+        where the starter stands the pillar, landing or ladder of any other:
+        the starter's ladder never overwrites a drawn stair."""
+        m = self.model
+        clashes = []
+        for s in self.seams:
+            ap = s["approach"]
+            if ap is None or ap["ladder"] is None:
+                continue
+            if s["stem"] in m.climbed:
+                s["approach"] = None
+                continue
+            lad = ap["ladder"]
+            cells = []
+            for (x, y, z), r in sorted(m.v.items()):
+                if r == AIR or not self.datum.value <= y < ap["top"].value:
+                    continue
+                pillar = all(ap["plo"][i].value <= c < ap["phi"][i].value for i, c in ((0, x), (2, z)))
+                ladder = lad["lo"][0] <= x < lad["hi"][0] and lad["lo"][2] <= z < lad["hi"][2] and y <= ap["sill"].value
+                if pillar or ladder:
+                    cells.append((x, y, z))
+            if cells:
+                shown = ", ".join(str(c) for c in cells[:6]) + (f" and {len(cells) - 6} more" if len(cells) > 6 else "")
+                clashes.append(f"  edge/{s['stem']}: the opening stands {ap['rise']} course(s) over the walk plane, and the drawing writes {len(cells)} cell(s) where the starter stands its pillar, landing and ladder: {shown}")
+        if clashes:
+            sys.exit(
+                "starter.py: the drawing builds where the starter stands the ladder up to a raised opening:\n"
+                + "\n".join(clashes) + "\n"
+                "If the drawing climbs to the opening itself (a flight, a ramp), say so with "
+                "`Model.climbs_to(edge)` and the starter stands no ladder; otherwise leave those cells "
+                "to the starter."
+            )
 
     def in_pillar(self, x: int, y: int, z: int) -> bool:
         """A cell of the masonry pillar under a raised opening that a ladder

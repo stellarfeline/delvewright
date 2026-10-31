@@ -181,6 +181,10 @@ agent: *Reference: when the prefab library has no piece you need* and
    full block or unreached floor on the row behind it: `contract-well-formed`). Its constructors
    (`stairs`, `slab`, `door`, `trapdoor`, `fence`, …) write every property,
    and `Model.roof` lays a roof whose eave sits level with the wall heads;
+   under an opening two or more courses over the walk plane the starter
+   stands a pillar and a ladder, and a drawing that climbs there itself (a
+   flight, a ramp) says so with `Model.climbs_to(edge)` — one that builds
+   there without saying so is refused, never overwritten;
    `Model.show("up")` declares a top the drawing means to be seen (the town
    helpers that stand a lamp, a bracket or an awning on the frame's top
    course declare it themselves).
