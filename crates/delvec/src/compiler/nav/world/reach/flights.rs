@@ -234,6 +234,10 @@ struct Shard {
     leaves: Arena<Leaf>,
     outcomes: Vec<Outcome>,
     interned: HashMap<Outcome, u32, std::hash::BuildHasherDefault<Mix>>,
+    /// Every node's children by the code that picks them: the same edges as
+    /// the `child`/`sibling` lists, found by one probe rather than a walk of
+    /// the siblings, each a load from anywhere in `nodes`.
+    kids: HashMap<(u32, Code), u32, std::hash::BuildHasherDefault<Mix>>,
 }
 
 impl Shard {
@@ -264,15 +268,14 @@ impl Shard {
     /// The child of `n` reached by `code`, if any.
     #[inline]
     fn child(&self, n: u32, code: Code) -> Option<u32> {
-        let mut k = self.nodes[n as usize].child;
-        while k != NONE {
-            let node = &self.nodes[k as usize];
-            if node.code == code {
-                return Some(k);
-            }
-            k = node.sibling;
-        }
-        None
+        self.kids.get(&(n, code)).copied()
+    }
+
+    /// Make `k` the first child of `n` (its code is `nodes[k].code`).
+    fn adopt(&mut self, n: u32, k: u32) {
+        self.nodes[k as usize].sibling = self.nodes[n as usize].child;
+        self.nodes[n as usize].child = k;
+        self.kids.insert((n, self.nodes[k as usize].code), k);
     }
 }
 
@@ -634,11 +637,19 @@ pub(super) fn record<C: Codes + ?Sized>(key: Key, reads: Reads<'_, C>, flight: &
                     code: e.code,
                 };
                 let a = push(&mut shard.nodes, old);
+                // `n`'s children are the old rest's now.
+                let mut k = node.child;
+                while k != NONE {
+                    let c = shard.nodes[k as usize].code;
+                    shard.kids.remove(&(n, c));
+                    shard.kids.insert((a, c), k);
+                    k = shard.nodes[k as usize].sibling;
+                }
                 let b = path(shard, i + j + 1, code);
-                shard.nodes[b as usize].sibling = a;
-                let m = &mut shard.nodes[n as usize];
-                m.len = j as u32 + 1;
-                m.child = b;
+                shard.nodes[n as usize].len = j as u32 + 1;
+                shard.nodes[n as usize].child = NONE;
+                shard.adopt(n, a);
+                shard.adopt(n, b);
                 HELD.fetch_add((seq.len() - i - j) as u64 + 3, Relaxed);
                 return;
             }
@@ -651,8 +662,7 @@ pub(super) fn record<C: Codes + ?Sized>(key: Key, reads: Reads<'_, C>, flight: &
             }
             None => {
                 let k = path(shard, i + len, v);
-                shard.nodes[k as usize].sibling = shard.nodes[n as usize].child;
-                shard.nodes[n as usize].child = k;
+                shard.adopt(n, k);
                 HELD.fetch_add((seq.len() - i - len) as u64 + 2, Relaxed);
                 return;
             }
