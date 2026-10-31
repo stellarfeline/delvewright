@@ -256,3 +256,121 @@ def test_part_sizes_name_every_column_named_for_a_part_and_left_out(monkeypatch,
     _plot_of(st, a, whole, monkeypatch)
     err = capsys.readouterr().err
     assert "part/yard 9 of 6..12;" in err or err.rstrip().endswith("part/yard 9 of 6..12"), err
+
+
+# ---------------------------------------------------------------- a raised opening the drawing climbs to
+
+
+def _raised_alloc() -> dict:
+    """An open 9x8x9 place whose north seam opens two courses over its walk
+    plane (a flight's top, the neighbour's floor two up), with a way out at
+    grade on the south."""
+    return {"place": "node/flight", "extent": [9, 8, 9], "space": [[1, 1, 1], [7, 7, 7]], "datum_y": 1,
+            "ground": {"base": "ground", "columns": []},
+            "seams": [{"edge": "edge/top-to-flight", "face": "north", "cells": [[1, 3, 1], [7, 6, 1]], "bar": None,
+                       "owns_plane": False, "other": "node/top", "answer_with": ["stair", "walk"], "rise": 2},
+                      {"edge": "edge/flight-to-foot", "face": "south", "cells": [[1, 1, 7], [7, 4, 7]], "bar": None,
+                       "owns_plane": True, "other": "node/foot", "answer_with": ["walk"], "rise": 0}],
+            "sides": [], "voids": [], "brief": {"kind": "open"}, "owed_anchors": [], "parts": []}
+
+
+def test_a_drawn_way_up_to_a_raised_opening_stands_no_ladder(monkeypatch):
+    """Under an opening two courses over the walk plane the starter stands a
+    pillar, a landing and a ladder (`Place.approach`). A drawing that builds
+    its own way up there is refused unless it says so with
+    `Model.climbs_to(edge)`, never overwritten; said, the program carries no
+    ladder and no `climb` edge, and the seam is the plain walk the engine
+    proves. A drawing that leaves the cells empty keeps the ladder."""
+    import pytest
+
+    st = _starter_module()
+
+    def steps(state: bool):
+        def build(place):
+            m = st.Model(place)
+            if state:
+                m.climbs_to("edge/top-to-flight")
+            for x in range(1, 8):
+                m.set(x, 1, 1, "minecraft:stone_bricks"); m.set(x, 2, 1, "minecraft:stone_bricks")
+                m.set(x, 1, 2, "minecraft:stone_bricks")
+                m.set(x, 2, 2, "minecraft:stone_brick_stairs[facing=north,half=bottom,shape=straight,waterlogged=false]")
+                m.set(x, 1, 3, "minecraft:stone_brick_stairs[facing=north,half=bottom,shape=straight,waterlogged=false]")
+            return m
+        return build
+
+    with pytest.raises(SystemExit) as e:
+        _plot_of(st, _raised_alloc(), steps(False), monkeypatch)
+    msg = str(e.value)
+    assert "edge/top-to-flight: the opening stands 2 course(s)" in msg and "Model.climbs_to(edge)" in msg, msg
+
+    doc = _plot_of(st, _raised_alloc(), steps(True), monkeypatch)
+    assert not any("ladder" in k for k in doc["palette"]), doc["palette"]
+    assert all(e["class"] != "climb" for e in doc["contract"]["edges"]), doc["contract"]["edges"]
+    assert {"a": "room", "b": "exterior", "class": "walk", "via": "top-to-flight-way"} in doc["contract"]["edges"]
+
+    # beside an open side, the ring cell straight out from the opening is the
+    # neighbour's side of the way, never this place's room: claimed room it
+    # would stand the room on both sides of the opening and leave the way
+    # facing nowhere (`exterior_faces`, `DW0844`)
+    a = _raised_alloc()
+    a["sides"] = [{"face": "west", "cells": [[0, 1, 1], [0, 1, 7]]}]
+    _plot_of(st, a, steps(True), monkeypatch)
+    p = st.Plot(a)
+    assert p.cell(1, 4, 0) != ("claim", "room", None), p.cell(1, 4, 0)
+    assert p.cell(0, 4, 1)[1] == "side-west"
+
+    def bare(place):
+        return st.Model(place)
+
+    doc = _plot_of(st, _raised_alloc(), bare, monkeypatch)
+    assert "ladder-south" in doc["palette"]
+    assert {"a": "room", "b": "top-to-flight-landing", "class": "climb", "rise": 2, "via": "top-to-flight-ladder"} in doc["contract"]["edges"]
+
+    def wrong(place):
+        m = st.Model(place)
+        m.climbs_to("edge/flight-to-foot")
+        return m
+
+    with pytest.raises(SystemExit) as e:
+        _plot_of(st, _raised_alloc(), wrong, monkeypatch)
+    assert "at most one course over the walk plane" in str(e.value)
+
+
+def test_floor_that_reads_as_joined_through_a_corner_no_body_passes_is_refused(monkeypatch):
+    """A cell a body cannot reach, diagonally beside one it does at the same
+    course, with a block in each of the two cells between them, reads as a
+    gap to squeeze through (a gallery's walk pinched between a rail post and
+    the glass): the starter refuses it, naming the cells and both blocks,
+    rather than declaring that floor out of walk; with one of the blocks moved
+    the corner is open and nothing is refused."""
+    import pytest
+
+    st = _starter_module()
+    u, v = (5, 1, 4), (4, 1, 5)
+
+    def survey(_delvec, request):
+        solid = {(x, y, z) for x, y, z, _ in request["blocks"]}
+        stand = sorted([x, y, z] for (x, y, z) in {(x, y + 1, z) for x, y, z in solid} if (x, y, z) not in solid)
+        reached = [c for c in stand if tuple(c) != u] if (4, 1, 4) in solid and (5, 1, 5) in solid else stand
+        return {"standable": stand, "reached": reached, "sealed": [], "joined": [], "unsupported": [],
+                "refused": [], "containers": [], "malformed": []}
+
+    def corner(both: bool):
+        def build(place):
+            m = st.Model(place)
+            m.part(2, 4, 4, 6, "yard")
+            m.set(4, 1, 4, "minecraft:oak_fence[east=false,north=false,south=false,waterlogged=false,west=false]")
+            if both:
+                m.set(5, 1, 5, "minecraft:glass")
+            return m
+        return build
+
+    monkeypatch.setattr(st, "ask_engine", survey)
+    st.Plot.BUILD = staticmethod(corner(True))
+    with pytest.raises(SystemExit) as e:
+        st.plot_program(_front_alloc(), "seen")
+    msg = str(e.value)
+    assert f"{u} beside reached {v}" in msg and "minecraft:glass" in msg and "oak_fence" in msg, msg
+    st.Plot.BUILD = staticmethod(corner(False))
+    doc = st.plot_program(_front_alloc(), "seen")
+    assert doc["contract"]["edges"]

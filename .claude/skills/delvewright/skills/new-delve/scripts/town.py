@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import sys
 
-from starter import AIR, fence, is_full, lantern, leaves, slab, stairs
+from starter import AIR, OPP, fence, is_full, lantern, leaves, slab, stairs
 
 # ════════════════════════════════════════════════════════════════════════
 # Small shared readings
@@ -148,6 +148,29 @@ def way_verge(m, place, axis: str, c0: int, c1: int, seed: int = 0, keep: set | 
 def up_seam(place):
     """The seam a way climbs to (its `rise` above zero), or None."""
     return next((s for s in place.seams if s["seam"].get("rise", 0) > 0), None)
+
+
+def climbs_itself(m, seam) -> None:
+    """The way being drawn is the way up to `seam`'s opening: where the
+    starter would stand a ladder under it (an opening two or more courses up),
+    say so (`Model.climbs_to`), so no ladder stands in the steps."""
+    ap = seam.get("approach")
+    if ap is not None and ap["ladder"] is not None:
+        m.climbs_to(seam["stem"])
+
+
+def handcart(m, x: int, z: int, nx: int, nz: int, w: int, wood: str, along: str, load: str | None = None) -> None:
+    """A cart of `wood` on two cells along the way, `(x, z)` and `(nx, nz)`:
+    its bed two upside-down stairs back to back, each standing on its own
+    end, so the bed rests on the ground at both ends and reads as a cart
+    and never as boards floating over the street; `load` (a block; a hay
+    bale is laid `along` the way) on the first cell."""
+    dx, dz = nx - x, nz - z
+    away = {(1, 0): "east", (-1, 0): "west", (0, 1): "south", (0, -1): "north"}[(dx, dz)]
+    m.set(x, w, z, stairs(wood, OPP[away], "top"))
+    m.set(nx, w, nz, stairs(wood, away, "top"))
+    if load is not None:
+        m.set(x, w + 1, z, f"{load}[axis={along}]" if load.endswith("hay_block") else load)
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -358,8 +381,9 @@ def verge_life(m, frame: dict, things: tuple = VERGE_THINGS, every: int = 3, flo
     from the seed, wherever the verge column just outside the clear way is
     still free. A kind is `lamp`, `bed` (a flower and a tuft in turf),
     `hedge` (a leaf block of `hedge` in turf), `bench` (two stairs of
-    `bench`, their backs to the lot), `cart` (two slabs of `cart` along the
-    way, `cart_load` on one, none where it is None) or `barrel` — a
+    `bench`, their backs to the lot), `cart` (a cart of `cart` wood on two
+    cells along the way, `cart_load` on it, none where it is None:
+    `town.handcart`) or `barrel` — a
     container the holder census counts (`DW1018`), so it is never among the
     defaults and stands only where named. `things=()` places `at` alone. A
     placement in `at` on a column that is not free (an opening, a doorway, a
@@ -410,10 +434,7 @@ def verge_life(m, frame: dict, things: tuple = VERGE_THINGS, every: int = 3, flo
         elif kind == "barrel":
             m.set(x, w, z, "minecraft:barrel[facing=up,open=false]")
         elif kind == "cart" and nxt:
-            m.set(x, w, z, slab(cart, "top"))
-            m.set(nx, w, nz, slab(cart, "top"))
-            if cart_load:
-                m.set(x, w + 1, z, f"{cart_load}[axis={frame['axis']}]" if cart_load.endswith("hay_block") else cart_load)
+            handcart(m, x, z, nx, nz, w, cart, frame["axis"], cart_load)
 
     for kind, a, side in at:
         if side not in ("low", "high"):
@@ -505,6 +526,8 @@ def flight(m, place, roles: dict | None = None, step: str = "minecraft:stone_bri
     `verge_life` to furnish."""
     r = dict(WAY_ROLES, **(roles or {}))
     up = up_seam(place)
+    if up is not None:
+        climbs_itself(m, up)
     face = up["seam"]["face"] if up else "north"
     axis = "z" if face in ("north", "south") else "x"
     axis, c0, c1 = clear_cols(place, axis, clear, "flight")
@@ -554,7 +577,8 @@ def lane(m, place, axis: str | None = None, edge: str | None = None, roles: dict
     is returned); with none given, `verge_life` stands a lamp and then one
     of `things` in turn every `every` rows on the verge just outside the
     clear way — on the `edge` side only (`"low"` or `"high"` across the way)
-    where it is stated — benches and carts of `wood`. Nothing stands in the
+    where it is stated — benches and carts
+    (`town.handcart`) of `wood`. Nothing stands in the
     clear way."""
     axis, c0, c1 = clear_cols(place, axis, clear, "lane")
     (x0, _, z0), (x1, _, z1) = place.space
@@ -583,6 +607,7 @@ def ramp(m, place, axis: str | None = None, roles: dict | None = None, step: str
     up = up_seam(place)
     if up is None:
         return None
+    climbs_itself(m, up)
     axis, c0, c1 = clear_cols(place, axis, clear, "ramp")
     rows, cols, cell = way_frame(place, axis)
     face = up["seam"]["face"]

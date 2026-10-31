@@ -671,6 +671,41 @@ def test_a_verge_bench_turns_its_back_to_the_lot():
 # measured with the helpers that regenerated the town's 72 street programs
 # equal; `stretch` re-measured when the default verge stopped standing a
 # barrel (no default is a container the census counts); `lane` re-measured
-# when its things moved onto the verge outside the clear way (`verge_life`)
-EXPECTED_DIGESTS = {"stretch": "7d172f1355545fe4", "market": "1a568c6a8f4968d1", "lane": "14c5c4ebb8d61380",
+# when its things moved onto the verge outside the clear way (`verge_life`);
+# `stretch` and `lane` re-measured when a verge cart became `handcart`
+EXPECTED_DIGESTS = {"stretch": "0738cf0fee822b4a", "market": "1a568c6a8f4968d1", "lane": "f187118b3fddf836",
                     "rail": "4f53cda18c2baa0c", "flight": "e9fed371a5aa6448"}
+
+
+def test_a_cart_rests_on_its_own_ends_and_no_top_slab_floats_in_a_verge():
+    """A verge cart is two upside-down stairs back to back, each standing on
+    its own end, its load on the first: a bed that rests on the ground, never
+    a top slab with half a course of air under it (`DW1076`)."""
+    a = allocation(11, 6, 40)
+    seen = 0
+    for seed in range(8):
+        m = model(a)
+        town.stretch(m, starter.Place(a), "z", seed, clear=5, verge=lambda m, f: town.verge_life(m, f, things=("cart",)))
+        assert not [r for r in m.v.values() if "_slab[type=top" in r], seed
+        loads = [c for c, r in m.v.items() if r.startswith("minecraft:hay_block")]
+        for (x, y, z) in loads:
+            under = m.get(x, y - 1, z)
+            assert under is not None and "_stairs[" in under and "half=top" in under, (seed, under)
+            seen += 1
+    assert seen, "the binding: a cart drawn"
+
+
+def test_a_drawn_way_up_says_it_climbs_where_the_starter_would_stand_a_ladder():
+    """`town.flight` and `town.ramp` draw the way up to an opening two or more
+    courses over the walk plane, so they tell the starter (`Model.climbs_to`)
+    and no ladder stands in their steps; under an opening at the walk plane
+    there is no ladder to replace and nothing is said."""
+    raised = allocation(7, 8, 10, [seam("up", "north", [[1, 3, 0], [5, 6, 0]], "node/up", rise=2),
+                                   seam("down", "south", [[1, 1, 9], [5, 4, 9]], "node/down")])
+    for draw in (lambda m, p: town.flight(m, p, clear=3), lambda m, p: town.ramp(m, p, "z", clear=3)):
+        m = model(raised)
+        draw(m, m.place)
+        assert m.climbed == {"up"}
+    m = model(flight_alloc("north"))
+    town.flight(m, m.place, clear=3)
+    assert m.climbed == set()
