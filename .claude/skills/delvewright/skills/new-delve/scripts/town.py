@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import sys
 
-from starter import AIR, fence, lantern, slab, stairs
+from starter import AIR, OPP, fence, lantern, slab, stairs
 
 # ════════════════════════════════════════════════════════════════════════
 # Small shared readings
@@ -95,6 +95,29 @@ def handed_way(place, axis: str | None, clear: int | None, who: str) -> tuple[st
 def up_seam(place):
     """The seam a way climbs to (its `rise` above zero), or None."""
     return next((s for s in place.seams if s["seam"].get("rise", 0) > 0), None)
+
+
+def climbs_itself(m, seam) -> None:
+    """The way being drawn is the way up to `seam`'s opening: where the
+    starter would stand a ladder under it (an opening two or more courses up),
+    say so (`Model.climbs_to`), so no ladder stands in the steps."""
+    ap = seam.get("approach")
+    if ap is not None and ap["ladder"] is not None:
+        m.climbs_to(seam["stem"])
+
+
+def handcart(m, x: int, z: int, nx: int, nz: int, w: int, wood: str, along: str, load: str | None = None) -> None:
+    """A cart of `wood` on two cells along the way, `(x, z)` and `(nx, nz)`:
+    its bed two upside-down stairs back to back, each standing on its own
+    end, so the bed rests on the ground at both ends and reads as a cart
+    and never as boards floating over the street; `load` (an axis block, a
+    hay bale) on the first cell, laid `along` the way."""
+    dx, dz = nx - x, nz - z
+    away = {(1, 0): "east", (-1, 0): "west", (0, 1): "south", (0, -1): "north"}[(dx, dz)]
+    m.set(x, w, z, stairs(wood, OPP[away], "top"))
+    m.set(nx, w, nz, stairs(wood, away, "top"))
+    if load is not None:
+        m.set(x, w + 1, z, f"{load}[axis={along}]")
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -308,8 +331,8 @@ def verge_life(m, frame: dict, things: tuple = VERGE_THINGS, every: int = 3, flo
     every `every` rows on each side, taken round `things` from the seed,
     wherever the verge column is still free. A kind is `lamp`, `bed` (a
     flower and a tuft in turf), `bench` (two stairs of `bench`, their backs
-    to the lot), `cart` (two slabs of `cart` along the way, `cart_load` on
-    one) or `barrel` — a container the holder census counts (`DW1018`), so
+    to the lot), `cart` (a cart of `cart` wood along the way, `cart_load` on
+    it: `town.handcart`) or `barrel` — a container the holder census counts (`DW1018`), so
     it is never among the defaults and stands only where named. `things=()`
     places `at` alone. A placement in `at` on a column that is not free (an
     opening, a doorway, a bracket, the clear way) is refused. Returns every
@@ -352,9 +375,7 @@ def verge_life(m, frame: dict, things: tuple = VERGE_THINGS, every: int = 3, flo
         elif kind == "barrel":
             m.set(x, w, z, "minecraft:barrel[facing=up,open=false]")
         elif kind == "cart" and nxt:
-            m.set(x, w, z, slab(cart, "top"))
-            m.set(nx, w, nz, slab(cart, "top"))
-            m.set(x, w + 1, z, f"{cart_load}[axis={frame['axis']}]")
+            handcart(m, x, z, nx, nz, w, cart, frame["axis"], cart_load)
 
     for kind, a, side in at:
         if side not in ("low", "high"):
@@ -439,6 +460,8 @@ def flight(m, place, roles: dict | None = None, step: str = "minecraft:stone_bri
     block, never a full block in the walk plane's clear width."""
     r = dict(WAY_ROLES, **(roles or {}))
     up = up_seam(place)
+    if up is not None:
+        climbs_itself(m, up)
     face = up["seam"]["face"] if up else "north"
     axis = "z" if face in ("north", "south") else "x"
     rows, cols, cell = way_frame(place, axis)
@@ -478,7 +501,8 @@ LANE_THINGS = ("cart", "bench")  # no container among the defaults (`VERGE_THING
 def lane(m, place, axis: str | None = None, edge: str = "high", roles: dict | None = None, every: int = 5,
          things: tuple = LANE_THINGS, wood: str = "minecraft:spruce") -> None:
     """A side street: paved as a way (`pave_way`), a lamp and then one of
-    `things` in turn (`cart` two slabs, `bench` a stair its back to the edge,
+    `things` in turn (`cart` a cart on two cells along the edge, `town.handcart`,
+    where both are clear; `bench` a stair its back to the edge,
     `barrel` — a container the census counts, so only where named) every
     `every` cells along its `edge` column (`"high"` or `"low"` across the
     way), clear of every opening. The clear width is the way's other
@@ -501,10 +525,9 @@ def lane(m, place, axis: str | None = None, edge: str = "high", roles: dict | No
         else:
             kind = things[(n // 2) % len(things)]
             if kind == "cart":
-                m.set(x, w, z, slab(wood, "top"))
                 nx, nz = cell(a + 1, b)
-                if (nx, nz) not in keep:
-                    m.set(nx, w, nz, slab(wood, "top"))
+                if (nx, nz) not in keep and m.get(nx, w, nz) is None:
+                    handcart(m, x, z, nx, nz, w, wood, axis)
             elif kind == "barrel":
                 m.set(x, w, z, "minecraft:barrel[facing=up,open=false]")
             elif kind == "bench":
@@ -524,6 +547,7 @@ def ramp(m, place, axis: str | None = None, roles: dict | None = None, step: str
     up = up_seam(place)
     if up is None:
         return False
+    climbs_itself(m, up)
     axis, _, _ = handed_way(place, axis, None, "ramp")
     rows, cols, cell = way_frame(place, axis)
     face = up["seam"]["face"]

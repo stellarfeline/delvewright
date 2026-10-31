@@ -45,7 +45,12 @@ allocation's `way`), and a value you state that differs is refused. No
 default thing a helper stands is a container the holder census counts
 (`DW1018`): a barrel stands only where you name one. A helper that stands a
 lamp, a bracket or an awning on the frame's top course declares `up` shown
-itself. `--help`-level detail is each function's docstring.
+itself. `flight` and `ramp` tell the starter they are the way up to the
+opening above (`Model.climbs_to`), so no ladder stands in their steps. A
+cart (`handcart`) is two upside-down stairs back to back, resting on its own
+ends; nothing a helper stands shows half a course of air under itself, which
+the build reports as `DW1076` wherever a drawing does. `--help`-level detail
+is each function's docstring.
 
 | need | helpers |
 |---|---|
@@ -55,7 +60,7 @@ itself. `--help`-level detail is each function's docstring.
 | lamps, a front's sign on the street's bracket | `lamp`, `bracket`, `doorway_verge`, `seam_cols`, `way_frame`, `hsh` |
 | a lot's street edge | `street_seam(place, face)`, `street_front(m, edge, lo, hi, doorway, air, roles, axis=…)`, `Model.shift(dx, dz)` to stand a building drawn at its own coordinates on the edge |
 | a lot's other edges | `clip_beyond`, `clip_unwalled_edge`, `close_edge_gaps` |
-| small buildings and furnishing | `post_shed`, `loft`, `ring`, `window`, `flower_bed` |
+| small buildings and furnishing | `post_shed`, `loft`, `ring`, `window`, `flower_bed`, `handcart` |
 | boats and quays | `hull`, `hull_on_stocks`, `mast`, `pier`, `slipway`, `water_step` |
 | the plan's side | `front_contact(at, meets, first_row, width, height)` for a front's seam, `sign_station(street, lot, text)` for the street's station and the `signs` entry, `seen_reach`, `seen_region` |
 
