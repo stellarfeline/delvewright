@@ -1508,12 +1508,20 @@ impl ClimbHold {
 pub fn climb_holds(
     blocks: &BlockMap,
 ) -> (BTreeMap<[i32; 3], ClimbHold>, BTreeMap<[i32; 3], String>) {
+    climb_holds_with(blocks, &mut StateClasses::default())
+}
+
+/// [`climb_holds`], reading each state's collision class from `classes`.
+fn climb_holds_with(
+    blocks: &BlockMap,
+    classes: &mut StateClasses,
+) -> (BTreeMap<[i32; 3], ClimbHold>, BTreeMap<[i32; 3], String>) {
     use delvewright_dsl::blockshape::{Climbable, Face, climbable, face_is_full, face_is_sturdy};
     let add = |c: [i32; 3], d: [i32; 3]| [c[0] + d[0], c[1] + d[1], c[2] + d[2]];
     let name_at = |c: [i32; 3]| blocks.get(&c).map(|b| &**b).unwrap_or("minecraft:air");
     let mut cand: BTreeMap<[i32; 3], ClimbHold> = BTreeMap::new();
     for (cell, name) in blocks {
-        if collision_class(name) != Collision::Climbable {
+        if classes.of(*name).collision != Collision::Climbable {
             continue;
         }
         let Some(kind) = climbable(name) else {
@@ -1705,59 +1713,56 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
     let mut waterloggable: BTreeSet<[i32; 3]> = BTreeSet::new();
     let mut footprints: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Footprint16> =
         BTreeMap::new();
-    // One footprint lookup per distinct block state, not per cell.
-    let mut footprint_of: BTreeMap<String, Option<delvewright_dsl::blockshape::Footprint16>> =
-        BTreeMap::new();
     let mut hiding: BTreeSet<[i32; 3]> = BTreeSet::new();
-    // One occlusion lookup per distinct block state, not per cell.
-    let mut hides_of: BTreeMap<String, bool> = BTreeMap::new();
     let mut hurting: BTreeSet<[i32; 3]> = BTreeSet::new();
     let mut leaves: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Leaf> = BTreeMap::new();
-    let mut leaf_of: BTreeMap<String, Option<delvewright_dsl::blockshape::Leaf>> = BTreeMap::new();
+    let mut material: BTreeMap<[i32; 3], delvewright_dsl::metrics::body::Material> =
+        BTreeMap::new();
+    // Every reading below is a function of the block state alone, so it is
+    // made once per distinct state ([`StateClass`]), not once per cell.
+    let mut classes = StateClasses::default();
     for (cell, name) in blocks {
-        if delvewright_dsl::blockshape::hurts_body(name) {
+        let k = classes.of(*name);
+        if k.hurts {
             hurting.insert(*cell);
         }
         // A door's or a trapdoor's leaf per state (`blockshape::leaf`): what
         // its panels and its plate do to a body crossing its cell's faces.
         // Whether a hand one stands open is the gate model's own reading, as
         // for any door.
-        if let Some(mut h) = *leaf_of
-            .entry(name.to_string())
-            .or_insert_with(|| delvewright_dsl::blockshape::leaf(name))
-        {
+        if let Some(mut h) = k.leaf {
             if h.by_hand {
                 h.open = open_gates.contains(cell);
             }
             leaves.insert(*cell, h);
         }
-        if *hides_of
-            .entry(name.to_string())
-            .or_insert_with(|| delvewright_dsl::blockshape::hides(name))
-        {
+        if k.hides {
             hiding.insert(*cell);
         }
-        if is_waterloggable(name) {
+        if k.waterloggable {
             waterloggable.insert(*cell);
         }
         // A waterlogged block's cell holds a real water source that spreads into
         // its air neighbours — seed the flood from it, then classify
         // the host block normally below (the cell itself stays occupied).
-        if is_waterlogged(name) {
+        if k.waterlogged {
             sources.insert(*cell);
+        }
+        if k.material != delvewright_dsl::metrics::body::Material::Plain {
+            material.insert(*cell, k.material);
         }
         // The classification is not made here: it is
         // [`delvewright_dsl::blockshape::collision_class`], the one rule three
         // crates read. What IS this function's own is the world layer on top of
         // it — which cells dam a flood, which gate was authored open, and the
         // disjointness of the five sets.
-        match collision_class(name) {
+        match k.collision {
             Collision::Fluid => {
                 // Water AND lava: a body stands on neither, so neither is `solid`.
                 // A water-only test dropped lava through to the default and made
                 // a lava surface into floor a route proof walks.
                 sources.insert(*cell);
-                if delvewright_dsl::blockshape::bare_id(name) == "lava" {
+                if k.lava {
                     lava_sources.insert(*cell);
                 }
             }
@@ -1767,10 +1772,7 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
             // blocks no fluid enters — and a vine does not: water flows into its
             // cell, and the flooded cell is then no climb.
             Collision::Climbable => {
-                if matches!(
-                    delvewright_dsl::blockshape::climbable(name),
-                    Some(delvewright_dsl::blockshape::Climbable::Ladder { .. })
-                ) {
+                if k.ladder {
                     barriers.insert(*cell);
                 }
             }
@@ -1796,12 +1798,8 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
                 if let Collision::PartialFloor(h) = class {
                     partial.insert(*cell, h);
                 }
-                let fp = footprint_of.entry(name.to_string()).or_insert_with(|| {
-                    let fp = delvewright_dsl::blockshape::server_footprint(name);
-                    (fp != delvewright_dsl::blockshape::FULL_FOOTPRINT).then_some(fp)
-                });
-                if let Some(fp) = fp {
-                    footprints.insert(*cell, *fp);
+                if let Some(fp) = k.footprint {
+                    footprints.insert(*cell, fp);
                 }
             }
         }
@@ -1819,14 +1817,7 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
             .filter(|c| flooded.contains(c))
             .collect()
     };
-    let (climb, unheld_climb) = climb_holds(blocks);
-    let material = blocks
-        .iter()
-        .filter_map(|(c, name)| {
-            let m = delvewright_dsl::metrics::body::material_of_block(name);
-            (m != delvewright_dsl::metrics::body::Material::Plain).then_some((*c, m))
-        })
-        .collect();
+    let (climb, unheld_climb) = climb_holds_with(blocks, &mut classes);
     Occupancy {
         solid,
         tall,
@@ -1842,6 +1833,64 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
         hiding,
         leaves,
         hurting,
+    }
+}
+
+/// What [`occupancy_over`] and [`climb_holds`] read of one block state: each
+/// field the answer of the one `blockshape` (or registry) rule that names it,
+/// asked once per distinct state.
+#[derive(Clone, Copy)]
+struct StateClass {
+    hurts: bool,
+    leaf: Option<delvewright_dsl::blockshape::Leaf>,
+    hides: bool,
+    waterloggable: bool,
+    waterlogged: bool,
+    material: delvewright_dsl::metrics::body::Material,
+    collision: Collision,
+    lava: bool,
+    ladder: bool,
+    /// The server footprint, where the state is a floor and its footprint is
+    /// not the full cell.
+    footprint: Option<delvewright_dsl::blockshape::Footprint16>,
+}
+
+impl StateClass {
+    fn of(name: &str) -> StateClass {
+        use delvewright_dsl::blockshape as bs;
+        let collision = collision_class(name);
+        StateClass {
+            hurts: bs::hurts_body(name),
+            leaf: bs::leaf(name),
+            hides: bs::hides(name),
+            waterloggable: is_waterloggable(name),
+            waterlogged: is_waterlogged(name),
+            material: delvewright_dsl::metrics::body::material_of_block(name),
+            collision,
+            lava: collision == Collision::Fluid && bs::bare_id(name) == "lava",
+            ladder: collision == Collision::Climbable
+                && matches!(bs::climbable(name), Some(bs::Climbable::Ladder { .. })),
+            footprint: match collision {
+                Collision::PartialFloor(_) | Collision::FullCube => {
+                    let fp = bs::server_footprint(name);
+                    (fp != bs::FULL_FOOTPRINT).then_some(fp)
+                }
+                _ => None,
+            },
+        }
+    }
+}
+
+/// The [`StateClass`] of each state met so far, by the state's identity.
+#[derive(Default)]
+struct StateClasses(std::collections::HashMap<(usize, usize), StateClass>);
+
+impl StateClasses {
+    fn of(&mut self, state: BlockState) -> StateClass {
+        *self
+            .0
+            .entry(state.key())
+            .or_insert_with(|| StateClass::of(&state))
     }
 }
 

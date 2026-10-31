@@ -42,6 +42,14 @@ impl BlockState {
     pub fn as_str(&self) -> &'static str {
         self.0
     }
+
+    /// This state's identity: equal for two states exactly when their texts
+    /// are equal, since every text is interned once and never freed. A key
+    /// for a per-state memo that costs no string comparison; it says nothing
+    /// about the text's order, so nothing is ever iterated in its order.
+    pub fn key(&self) -> (usize, usize) {
+        (self.0.as_ptr() as usize, self.0.len())
+    }
 }
 
 impl std::ops::Deref for BlockState {
