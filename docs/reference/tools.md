@@ -147,7 +147,12 @@ and roof; the plan views that see the place, each with the `delvec frames --camp
 columns and no seam `ground_y`, and its bottom is its underside), the claim's bottom,
 the terrain along the perimeter with its min and max, every fixed ring cell with
 its block (the piece writes `structure_void` there), and the terrain-shaped
-columns under the plot the piece may reshape; the declared **roof** (courses,
+columns under the plot the piece may reshape, each with its blocks bottom first
+as full states (every property written, the pinned default where the fill names
+none); the walk plane is handed once, as `datum_y`; a way place's **`way`** —
+its run `axis`, `clear` width and clear `cols` across the run piece-local
+(the declared `at`, or centred) — which the town helpers read as `place.way`;
+the declared **roof** (courses,
 eaves, the lid and top `y`, every clipped eave); every seam piece-local with its
 declared `form`, the place on its other side, face, the opening (`cells`: an
 inclusive box written as its two opposite corner cells, piece-local — every cell
