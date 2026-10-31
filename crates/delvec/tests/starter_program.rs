@@ -122,54 +122,31 @@ fn judge_every_place(tmp: &Path, campaign: &Path, prefabs: &Path) -> (usize, usi
                 cs,
                 place,
             ]);
-            if !check.status.success() {
+            // `--check` runs the commit into a scratch copy, battery
+            // included. The empty place is not the building, so the
+            // battery's whole-map verdicts on it (a vista, a crossing, a
+            // pressable a station names) are the author's to answer; what the
+            // starter must never hand an author is a refusal before the
+            // commit's write — of the place's own gates, the bindings, the
+            // leak proof — or a refusal of its OWN declarations, `DW0885`.
+            let said = text(&check);
+            let reached = said.contains("detail --check: the commit written into a scratch copy");
+            let own: Vec<&str> = said
+                .lines()
+                .filter(|l| l.starts_with("DW0885 [error]"))
+                .collect();
+            if !reached {
                 Err(format!(
-                    "`detail --check` exited {:?}:\n{}",
-                    check.status.code(),
-                    text(&check)
+                    "`detail --check` refused before the commit's write (exit {:?}):\n{said}",
+                    check.status.code()
+                ))
+            } else if !own.is_empty() {
+                Err(format!(
+                    "the commit's battery refuses the starter's own `shown_faces`:\n{}",
+                    own.join("\n")
                 ))
             } else {
-                // The commit too, battery included, in a scratch copy of the
-                // campaign and the library. The empty place is not the
-                // building, so the battery's whole-map verdicts on it (a vista,
-                // a crossing, a gate the skeleton does not yet separate) are
-                // the author's to answer; what the starter must never hand an
-                // author is a refusal of its OWN declarations — `DW0885`, a
-                // shown side it leaves empty or an open-air side it does not
-                // declare.
-                let scratch = tmp.join(format!(
-                    "commit-{}-{stem}",
-                    campaign.file_name().unwrap().to_string_lossy()
-                ));
-                let _ = std::fs::remove_dir_all(&scratch);
-                common::copy_dir_all(campaign, &scratch.join("campaign"));
-                common::copy_dir_all(prefabs, &scratch.join("prefabs"));
-                let commit = delvec(&[
-                    "--prefabs",
-                    scratch.join("prefabs").to_str().unwrap(),
-                    "detail",
-                    scratch.join("campaign").to_str().unwrap(),
-                    place,
-                ]);
-                let _ = std::fs::remove_dir_all(&scratch);
-                let said = text(&commit);
-                let own: Vec<&str> = said
-                    .lines()
-                    .filter(|l| l.starts_with("DW0885 [error]"))
-                    .collect();
-                if !said.contains("written from") {
-                    Err(format!(
-                        "`detail --check` passed and the commit wrote nothing (exit {:?}):\n{said}",
-                        commit.status.code()
-                    ))
-                } else if !own.is_empty() {
-                    Err(format!(
-                        "the commit's battery refuses the starter's own `shown_faces`:\n{}",
-                        own.join("\n")
-                    ))
-                } else {
-                    Ok(())
-                }
+                Ok(())
             }
         } else {
             Err(format!(
@@ -190,7 +167,7 @@ fn judge_every_place(tmp: &Path, campaign: &Path, prefabs: &Path) -> (usize, usi
             Ok(()) => {
                 passed += 1;
                 eprintln!(
-                    "starter: {place} of `{cs}` passes `detail --check`, and its commit writes it with no `DW0885`"
+                    "starter: {place} of `{cs}` passes `detail --check` up to the commit's write, and its battery raises no `DW0885`"
                 );
             }
             Err(why) => failures.push(format!("{place}: {why}")),
@@ -214,7 +191,7 @@ fn the_starter_passes_the_check_unedited_on_every_place_of_the_gallery_site_plan
         failures.extend(f);
     }
     eprintln!(
-        "starter binding: {passed} of {places} place(s) pass --check, committed with no DW0885"
+        "starter binding: {passed} of {places} place(s) pass --check up to the write, battery with no DW0885"
     );
     assert!(places > 0, "zero places judged: the binding is vacuous");
     assert!(

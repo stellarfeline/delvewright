@@ -163,7 +163,10 @@ agent: *Reference: when the prefab library has no piece you need* and
    blocks` as printed. Run on that allocation the starter writes an
    empty-but-correct program — the ground in the blocks the whole hands each
    column (`ground.columns`), ring wall, lid, every seam answered, every owed
-   name marked, sconces — that passes `detail --check` as it stands. The handout makes it the author's step 1, and step 2 a generator
+   name marked, sconces — that passes every judgement `detail --check` makes of
+   the place itself as it stands (the commit's battery, which the check runs
+   too, may name what the whole's story asks of the place and the empty place
+   does not yet hold: a pressable a station names, a vista through it). The handout makes it the author's step 1, and step 2 a generator
    that imports the starter from `$DELVEWRIGHT_SKILL/scripts` and draws the
    place into its `Model` as cells: the starter asks the engine (`delvec
    grammar survey`) where a body stands and what it reaches, claims every cell

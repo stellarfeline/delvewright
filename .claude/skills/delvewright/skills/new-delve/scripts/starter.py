@@ -3,7 +3,9 @@
 
 `scripts/handout.py` copies this file beside every handout, with the place's
 allocation saved next to it, so a place's author starts from a program that
-already passes `delvec detail --check` and builds the place into it — never
+already passes every judgement `delvec detail --check` makes of the place
+itself (the commit's battery, which the check also runs, may still name what
+the whole's story asks of the place) and builds the place into it — never
 from research. Run it as the handout prints it:
 
     "$DELVEWRIGHT_PYTHON" starter.py --allocation allocation.json --out <campaign>/programs/<stem>.json

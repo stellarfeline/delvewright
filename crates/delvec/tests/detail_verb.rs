@@ -442,7 +442,7 @@ fn write_program(campaign: &Path, node: &str, program: &Value) {
     let stem = node.strip_prefix("node/").unwrap();
     std::fs::write(
         dir.join(format!("{stem}.json")),
-        serde_json::to_string_pretty(program).unwrap() + "\n",
+        delvewright_dsl::to_canonical_string(program).unwrap(),
     )
     .unwrap();
 }
@@ -1115,7 +1115,7 @@ fn the_handout_is_complete_and_hands_each_seams_form_to_both_sides() {
     }
     std::fs::write(
         dir.join("programs/annex.json"),
-        serde_json::to_string_pretty(&p).unwrap() + "\n",
+        delvewright_dsl::to_canonical_string(&p).unwrap(),
     )
     .unwrap();
     // The yard's piece is the gallery generator's, which this test does not
@@ -1235,7 +1235,7 @@ fn a_climb_inside_a_hung_place_proves_and_hung_scenery_states_its_zero() {
     for (name, hollow) in [("causeway", None), ("beacon", Some(1))] {
         std::fs::write(
             programs.join(format!("{name}.json")),
-            serde_json::to_string_pretty(&hung_program(name, hollow)).unwrap(),
+            delvewright_dsl::to_canonical_string(&hung_program(name, hollow)).unwrap(),
         )
         .unwrap();
     }
@@ -1403,7 +1403,7 @@ fn a_leafy_scenery_crown_owes_no_floor_and_no_light_and_a_reached_one_is_judged(
     keep_the_answering_programs(&programs);
     std::fs::write(
         programs.join("beacon.json"),
-        serde_json::to_string_pretty(&leafy_beacon()).unwrap(),
+        delvewright_dsl::to_canonical_string(&leafy_beacon()).unwrap(),
     )
     .unwrap();
     let detail_into = |prefabs: &Path| {
@@ -1569,7 +1569,7 @@ fn the_audit_judges_a_scenery_piece_as_its_writer_did_and_no_piece_vouches_for_i
     keep_the_answering_programs(&programs);
     std::fs::write(
         programs.join("beacon.json"),
-        serde_json::to_string_pretty(&leafy_beacon()).unwrap(),
+        delvewright_dsl::to_canonical_string(&leafy_beacon()).unwrap(),
     )
     .unwrap();
     let prefabs = tmp.join("prefabs");

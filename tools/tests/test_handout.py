@@ -230,7 +230,7 @@ def test_a_starter_and_its_allocation_stand_beside_the_handout(rig: Rig):
     assert "## Step 1: start from the starter" in text
     assert f'--allocation "{allocation_file}" --out "{rig.campaign / "programs" / "hall.json"}"' in text
     assert str(rig.campaign / "design" / "generator" / "hall.py") in text
-    assert "It passes `detail --check` as it stands." in text
+    assert "It passes every judgement `detail --check` makes of the place itself as it stands" in text
     assert "not the engine's source, not the engine's gallery, not another campaign" in text
     assert "gallery/overlays/site-plan/programs" not in text, "the gallery is not on the reading list"
     # The starter, run on the handed allocation, writes a program for this place.

@@ -149,6 +149,18 @@ fn run(
         prepared.push(prepare(campaign_dir, &campaign, node, json, false)?);
     }
     let binding = judge_run(&campaign, &library, &prepared, json)?;
+    // The judge's binding, before anything is written — the same line from
+    // the commit and from `--check`: the two runs say the same thing up to
+    // the write.
+    eprintln!(
+        "{verb}: {places} judged against the whole as it stands. {binding}",
+        verb = if check { "detail --check" } else { "detail" },
+        places = prepared
+            .iter()
+            .map(|p| format!("`{}`", p.place))
+            .collect::<Vec<_>>()
+            .join(", "),
+    );
     if check {
         let leaks = leak_check(&campaign, &library, &prepared, prefabs_dir, json)?;
         // `--check` is the commit's own `prepare`, `judge_run`, write and
@@ -171,16 +183,6 @@ fn run(
         );
         return Ok(());
     }
-    // The commit states the judge's binding before it writes, as `--check`
-    // states it: the two runs say the same thing up to the write.
-    eprintln!(
-        "detail: {places} judged against the whole as it stands. {binding}",
-        places = prepared
-            .iter()
-            .map(|p| format!("`{}`", p.place))
-            .collect::<Vec<_>>()
-            .join(", "),
-    );
     let mut done: Vec<String> = Vec::new();
     for p in &prepared {
         done.push(write_one(campaign_dir, &campaign, prefabs_dir, p, json)?);
