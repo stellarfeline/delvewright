@@ -249,9 +249,13 @@ impl Source {
             },
             (None, Some(path)) => {
                 let loaded = document::load(path).map_err(|e| e.to_string())?;
+                // The input filename up to its first `.`: `potter.json` and
+                // a working copy `potter.json.new` both name `potter`.
                 let id = path
-                    .file_stem()
+                    .file_name()
                     .and_then(|s| s.to_str())
+                    .and_then(|s| s.split('.').next())
+                    .filter(|s| !s.is_empty())
                     .unwrap_or("program")
                     .to_string();
                 Ok((id, loaded))
@@ -270,7 +274,7 @@ impl Source {
         match (&self.program, &self.file) {
             (Some(_), None) => "the library program id".to_string(),
             (None, Some(path)) => format!(
-                "the stem of the input filename {:?}",
+                "the input filename {:?} up to its first `.`",
                 path.file_name()
                     .and_then(|s| s.to_str())
                     .unwrap_or("(unnamed)")

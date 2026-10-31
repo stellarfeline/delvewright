@@ -55,6 +55,8 @@ pub(crate) struct FramesCampaignArgs<'a> {
     /// `--served`: draw what the client draws from the camera, not every
     /// loaded chunk.
     pub(crate) served: bool,
+    /// `--program <place>`: that place drawn from its program as it stands.
+    pub(crate) program: Option<&'a str>,
     pub(crate) draw: &'a delvec::compiler::view::cli::DrawArgs,
 }
 
@@ -83,6 +85,17 @@ pub(crate) fn run_frames_campaign(
         Ok(v) => v,
         Err(code) => return ExitCode::from(code),
     };
+    // `--program`: the place's piece made from its program in memory, standing
+    // in for the committed one (or for its stand-in) in the whole drawn.
+    let (campaign, prefabs, overlay) = match args.program {
+        Some(place) => {
+            match crate::detail::look_overlay(campaign_dir, &campaign, &prefabs, place, json) {
+                Ok(v) => v,
+                Err(code) => return ExitCode::from(code),
+            }
+        }
+        None => (campaign, prefabs, BTreeMap::new()),
+    };
     let plan = match Plan::build(&campaign, &prefabs) {
         Ok(p) => p,
         Err(e) => {
@@ -92,7 +105,13 @@ pub(crate) fn run_frames_campaign(
         }
     };
     print_diags(&plan.warnings.clone(), json);
-    let structures = match read_structures(&plan, &prefabs, prefabs_dir, json) {
+    let structures = match crate::cli::campaign::read_structures_over(
+        &plan,
+        &prefabs,
+        prefabs_dir,
+        &overlay,
+        json,
+    ) {
         Ok(s) => s,
         Err(code) => return ExitCode::from(code),
     };
@@ -450,6 +469,39 @@ fn resolve_camera(
             pitch: n[4],
             fov: n[5],
         });
+    }
+
+    if let Some(subject) = args.at.filter(|s| s.starts_with("node/")) {
+        // A place: its play space framed whole from outside, standing on
+        // bearing `orbit` far enough off that the box fills the frame — never
+        // pulled into open air toward it, which would stand the camera inside
+        // the building the author asked to see from the street.
+        let b = plan
+            .blockout
+            .as_ref()
+            .and_then(|b| b.boxes.iter().find(|x| x.node.0 == subject))
+            .ok_or_else(|| format!("--at `{subject}`: the plan allocates no box to that place"))?;
+        let (lo, hi) = b.space();
+        let centre = [
+            (lo[0] + hi[0] + 1) as f64 / 2.0,
+            (lo[1] + hi[1] + 1) as f64 / 2.0,
+            (lo[2] + hi[2] + 1) as f64 / 2.0,
+        ];
+        let radius = (0..3)
+            .map(|i| ((hi[i] - lo[i] + 1) as f64 / 2.0).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        let fit = radius / (DEFAULT_FOV.to_radians() / 2.0).tan();
+        let dist = args.dist.unwrap_or(fit * 1.1);
+        let b = args.orbit.to_radians();
+        // Raised to look down on it at about thirty degrees, so its roof,
+        // its yard and the street before it are all in the frame.
+        let eye = [
+            centre[0] - b.sin() * dist * 0.87,
+            centre[1] + dist * 0.5,
+            centre[2] + b.cos() * dist * 0.87,
+        ];
+        return Ok(Camera::looking_at(eye, centre, DEFAULT_FOV));
     }
 
     if let Some(subject) = args.at {

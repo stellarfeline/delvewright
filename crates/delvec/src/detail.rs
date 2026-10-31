@@ -146,18 +146,22 @@ fn run(
     // replace, so the order of the targets decides nothing.
     let mut prepared: Vec<Prepared> = Vec::new();
     for node in &targets {
-        prepared.push(prepare(campaign_dir, &campaign, node, json)?);
+        prepared.push(prepare(campaign_dir, &campaign, node, json, false)?);
     }
     let binding = judge_run(&campaign, &library, &prepared, json)?;
     if check {
         let leaks = leak_check(&campaign, &library, &prepared, prefabs_dir, json)?;
-        // `--check` is the commit's own `prepare` and `judge_run` with the
-        // write and the battery not called (spec-0122 §6.1): the verdict
-        // above is the one the commit would give against the whole as it
-        // stands on disk now, and nothing was written.
+        // `--check` is the commit's own `prepare`, `judge_run`, write and
+        // battery, the write landing in a scratch copy of the campaign and
+        // the library instead of in them: the battery the commit runs over
+        // the whole it leaves is run, by the same function, over that copy.
+        // So every refusal the commit can give, `--check` gives — there is no
+        // list of battery observers to keep in step — and nothing of the
+        // campaign or the library is written.
+        let built = check_battery(campaign_dir, &campaign, prefabs_dir, &prepared, lang, json)?;
         eprintln!(
             "detail --check: {places} would commit against the whole as it stands; nothing \
-             written. {binding}; {leaks}; peak rss: {rss}",
+             written. {binding}; {leaks}; {built}; peak rss: {rss}",
             places = prepared
                 .iter()
                 .map(|p| format!("`{}`", p.place))
@@ -193,7 +197,7 @@ fn run(
     // observers `delvec build` runs. A red here is the state `build` would
     // report and is left standing — the broken intermediate is a real, lookable
     // object (spec-0050 §1) — and it names the place.
-    battery(campaign_dir, prefabs_dir, lang, json)
+    battery(campaign_dir, prefabs_dir, lang, json, false)
 }
 
 /// Which places this run details, in site-plan box order.
@@ -362,6 +366,7 @@ fn prepare(
     campaign: &Campaign,
     node: &NodeId,
     json: bool,
+    look: bool,
 ) -> Result<Prepared, u8> {
     let stem = stem_of(node);
     let place = node.0.as_str();
@@ -385,6 +390,34 @@ fn prepare(
             program_path.display()
         );
         return Err(1);
+    }
+    // **A program reaches the campaign in canonical form** (`DW0773`), the
+    // one `delvec fmt` writes: refused here, where it enters, so a
+    // generator that writes another layout is named at its first check and
+    // never surfaces as a rewrite of a file nobody edited.
+    if !look
+        && let Ok(text) = std::fs::read_to_string(&program_path)
+        && let Ok(canonical) = delvewright_dsl::fmt::format_text(&text)
+        && canonical != text
+    {
+        let shown = program_path.display().to_string();
+        let d = Diagnostic::error(
+            delvewright_dsl::fmt::DW_FMT_UNFORMATTED,
+            STAGE,
+            shown.clone(),
+            format!(
+                "`{place}`'s program is not in canonical form (first difference at line {}). A \
+                 program is committed as `delvec fmt` writes it — keys sorted, two-space indent, \
+                 one value per line — so a re-run that changes nothing moves no byte. Write it \
+                 with `json.dumps(doc, indent=2, sort_keys=True, ensure_ascii=False)` plus a \
+                 newline (the starter's `run` does), or run `delvec fmt {shown}`.",
+                first_difference(&text, &canonical)
+            ),
+        );
+        print_one_diag(&d, json);
+        return Err(delvewright_dsl::fmt::DW_FMT_UNFORMATTED
+            .exit_tier()
+            .exit_status());
     }
     let loaded = match document::load(&program_path) {
         Ok(l) => l,
@@ -588,11 +621,18 @@ fn prepare(
     let report = gates::judge(&expansion, gates::Options::default());
     if report.is_fail() {
         report_to_stderr(&id, &report);
-        eprintln!(
-            "error: `{place}`: a machine gate went red on `{}`; nothing was written.",
-            program_path.display()
-        );
-        return Err(1);
+        if look {
+            eprintln!(
+                "{place}: a machine gate went red on `{}`; drawn as it stands, to be looked at.",
+                program_path.display()
+            );
+        } else {
+            eprintln!(
+                "error: `{place}`: a machine gate went red on `{}`; nothing was written.",
+                program_path.display()
+            );
+            return Err(1);
+        }
     }
 
     // ---- the plot's parts, built as declared (spec-0125 §5.3, `DW1074`) ----
@@ -625,11 +665,13 @@ fn prepare(
                 for d in &found {
                     print_one_diag(d, json);
                 }
-                eprintln!(
-                    "error: `{place}`: the piece does not build the plot as its node declares \
-                     it; nothing was written."
-                );
-                return Err(1);
+                if !look {
+                    eprintln!(
+                        "error: `{place}`: the piece does not build the plot as its node \
+                         declares it; nothing was written."
+                    );
+                    return Err(1);
+                }
             }
         }
     }
@@ -729,7 +771,7 @@ fn prepare(
     }
     let probe =
         (!scenery).then(|| light::probe_entered(&zone, DEFAULT_DARK_THRESHOLD, sky, &doors));
-    if let Some(probe) = probe.as_ref().filter(|p| p.is_unbound()) {
+    if let Some(probe) = probe.as_ref().filter(|p| p.is_unbound() && !look) {
         eprintln!(
             "{} [error] {place}: the light probe bound to ZERO cells, so nothing was measured: \
              {}. Nothing was written.",
@@ -752,7 +794,7 @@ fn prepare(
     for d in &audit_diags {
         d.print(json);
     }
-    if audit_report.verdict != "pass" {
+    if audit_report.verdict != "pass" && !look {
         eprintln!(
             "error: `{place}`: `{id}` fails the admission audit ({} forbidden, {} not \
              allowlisted, {} unknown block(s)); nothing was written.",
@@ -955,6 +997,57 @@ fn leak_check(
     Err(3)
 }
 
+/// What [`look_overlay`] hands a view: the campaign with the place's row, the
+/// library with its piece, and the piece's bytes by file.
+pub(crate) type Looked = (Campaign, PrefabRegistry, BTreeMap<String, Vec<u8>>);
+
+/// **A place drawn from its program as it stands, for a look at it in the
+/// whole** (`delvec frames --campaign … --program <place>`): the program
+/// expanded at its frame exactly as `detail` expands it, and returned as the
+/// campaign with its row, the library with its piece and the piece's bytes —
+/// what `read_structures_over` reads in place of the committed piece. The
+/// place need not be committed, and its gates need not pass: each refusal is
+/// printed and the piece is drawn as it stands. Nothing is written.
+pub(crate) fn look_overlay(
+    campaign_dir: &Path,
+    campaign: &Campaign,
+    library: &PrefabRegistry,
+    place: &str,
+    json: bool,
+) -> Result<Looked, u8> {
+    let node = NodeId(place.to_string());
+    if engine::allocation(campaign, &node).is_none() {
+        eprintln!(
+            "error: `--program {place}`: the plan allocates no box to `{place}`; `delvec \
+             allocation <campaign> --all` names every place it does."
+        );
+        return Err(1);
+    }
+    let p = prepare(campaign_dir, campaign, &node, json, true)?;
+    let mut registry = library.clone();
+    registry.insert(p.meta.clone());
+    let judged = with_row(campaign, &p.row);
+    let mut overlay: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for (part, _) in &p.tiles {
+        let bytes = match &p.exported {
+            export::ZoneExport::Single(e) => &e.nbt,
+            export::ZoneExport::Tiled(e) => {
+                &e.tiles
+                    .iter()
+                    .find(|t| t.file == part.file)
+                    .expect("every tile part has its bytes")
+                    .nbt
+            }
+        };
+        overlay.insert(part.file.clone(), bytes.clone());
+    }
+    eprintln!(
+        "{place}: drawn from `{}` as it stands, in place of its committed piece; nothing written.",
+        p.program_path.display()
+    );
+    Ok((judged, registry, overlay))
+}
+
 /// Step 8 of spec-0058 §2.2: freeze one judged place into the library and its
 /// row into the detail plan. Returns the piece id written.
 fn write_one(
@@ -964,16 +1057,26 @@ fn write_one(
     p: &Prepared,
     json: bool,
 ) -> Result<String, u8> {
+    let files = write_files(campaign_dir, campaign, prefabs_dir, p)?;
+    report_written(campaign_dir, p, &files, json);
+    Ok(p.exported.prefab_id().to_string())
+}
+
+/// The write itself: the piece's templates, its metadata and its report into
+/// `prefabs_dir`, and its row into `campaign_dir`'s detail plan. The commit
+/// calls it on the campaign and the library; `--check` on a scratch copy of
+/// both, so the battery after it judges the same bytes either way.
+fn write_files(
+    campaign_dir: &Path,
+    campaign: &Campaign,
+    prefabs_dir: &Path,
+    p: &Prepared,
+) -> Result<Vec<String>, u8> {
     let Prepared {
-        place,
-        program_path,
-        size,
-        seed,
         exported,
         meta,
         tiles,
         report,
-        probe,
         row,
         ..
     } = p;
@@ -1002,6 +1105,22 @@ fn write_one(
     write(prefabs_dir, &report_file, report.to_json().as_bytes())?;
     files.push(report_file);
     write_row(campaign_dir, campaign, row)?;
+    Ok(files)
+}
+
+/// What one commit wrote, with every count beside its denominator.
+fn report_written(campaign_dir: &Path, p: &Prepared, files: &[String], json: bool) {
+    let Prepared {
+        place,
+        program_path,
+        size,
+        seed,
+        exported,
+        meta,
+        probe,
+        row,
+        ..
+    } = p;
 
     // ---- what was done, with every count beside its denominator ----
     let faces = meta.spatial_contract.as_ref().map_or(0, |c| c.faces.len());
@@ -1058,7 +1177,6 @@ fn write_one(
             })
         );
     }
-    Ok(exported.prefab_id().to_string())
 }
 
 /// The export's bytes as structures, tile by tile, in the order the metadata
@@ -1198,6 +1316,14 @@ fn write(dir: &Path, file: &str, bytes: &[u8]) -> Result<(), u8> {
     })
 }
 
+/// The 1-based line of the first difference between two texts.
+fn first_difference(a: &str, b: &str) -> usize {
+    a.lines()
+        .zip(b.lines())
+        .position(|(x, y)| x != y)
+        .map_or_else(|| a.lines().count().min(b.lines().count()) + 1, |i| i + 1)
+}
+
 /// The process's peak resident set size (spec-0122 §6.2): every `--check`
 /// prints it, so the record carries the number that replaces the authored
 /// two-cores-per-author divisor.
@@ -1210,7 +1336,13 @@ fn peak_rss() -> String {
 
 /// The whole, validated and built in memory — the same observers `delvec
 /// build` runs, output discarded.
-fn battery(campaign_dir: &Path, prefabs_dir: &Path, lang: &str, json: bool) -> Result<(), u8> {
+fn battery(
+    campaign_dir: &Path,
+    prefabs_dir: &Path,
+    lang: &str,
+    json: bool,
+    check: bool,
+) -> Result<(), u8> {
     use delvec::compiler::analyze::analyze_campaign;
     use delvec::compiler::commands::CommandTree;
     use delvec::compiler::emit;
@@ -1218,7 +1350,11 @@ fn battery(campaign_dir: &Path, prefabs_dir: &Path, lang: &str, json: bool) -> R
 
     let v = validate_stage(campaign_dir, prefabs_dir, json)?;
     if has_error(&v.diags) {
-        eprintln!("detail: the campaign does not validate with the piece(s) this run wrote.");
+        eprintln!(
+            "{}: the campaign does not validate with the piece(s) this run {}.",
+            if check { "detail --check" } else { "detail" },
+            if check { "would write" } else { "wrote" }
+        );
         return Err(1);
     }
     let adiags = analyze_campaign(&v.campaign, &v.prefabs);
@@ -1271,7 +1407,9 @@ fn battery(campaign_dir: &Path, prefabs_dir: &Path, lang: &str, json: bool) -> R
     ) {
         Ok((_, warnings)) => {
             print_diags(&warnings, json);
-            eprintln!("detail: the whole builds with the piece(s) this run wrote.");
+            if !check {
+                eprintln!("detail: the whole builds with the piece(s) this run wrote.");
+            }
             Ok(())
         }
         Err(emit::BuildFailure::Validation(errors)) => {
@@ -1289,4 +1427,135 @@ fn battery(campaign_dir: &Path, prefabs_dir: &Path, lang: &str, json: bool) -> R
             Err(code.exit_tier().exit_status())
         }
     }
+}
+
+/// The commit's battery for `--check`: the whole the commit would leave,
+/// materialised in a scratch directory — the campaign and the library copied,
+/// the prepared pieces and their rows written into the copies by the commit's
+/// own [`write_files`] — and judged by the commit's own [`battery`]. Returns the
+/// line the check prints; a refusal is the battery's, at the battery's exit.
+fn check_battery(
+    campaign_dir: &Path,
+    campaign: &Campaign,
+    prefabs_dir: &Path,
+    prepared: &[Prepared],
+    lang: &str,
+    json: bool,
+) -> Result<String, u8> {
+    let scratch = Scratch::new(campaign_dir)?;
+    let copied = scratch.copy_in(campaign_dir, prefabs_dir)?;
+    for p in prepared {
+        write_files(&scratch.campaign, campaign, &scratch.prefabs, p)?;
+    }
+    // The point the commit's own output reaches its write: what follows is
+    // the battery's, as it follows the commit's `place(s) detailed` line.
+    eprintln!(
+        "detail --check: the commit written into a scratch copy of the campaign and the \
+         library ({copied} file(s)); the battery over the whole it leaves:"
+    );
+    battery(&scratch.campaign, &scratch.prefabs, lang, json, true).inspect_err(|_| {
+        eprintln!(
+            "error: {places}: the commit's battery refuses the whole this run would leave; \
+             nothing was written.",
+            places = prepared
+                .iter()
+                .map(|p| format!("`{}`", p.place))
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
+    })?;
+    Ok(format!(
+        "the commit's battery: the whole builds with {n} piece(s) this run would write, judged \
+         over a scratch copy of {copied} file(s)",
+        n = prepared.len()
+    ))
+}
+
+/// A scratch directory `--check` writes the commit into, removed when dropped:
+/// `<campaign>/.out/detail-check-<pid>/`, holding `prefabs/` and the campaign
+/// under its own directory name.
+struct Scratch {
+    root: PathBuf,
+    campaign: PathBuf,
+    prefabs: PathBuf,
+}
+
+impl Scratch {
+    fn new(campaign_dir: &Path) -> Result<Self, u8> {
+        let root = campaign_dir
+            .join(".out")
+            .join(format!("detail-check-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let name = campaign_dir
+            .canonicalize()
+            .ok()
+            .and_then(|p| p.file_name().map(std::ffi::OsStr::to_os_string))
+            .unwrap_or_else(|| "campaign".into());
+        let s = Scratch {
+            campaign: root.join(name),
+            prefabs: root.join("prefabs"),
+            root,
+        };
+        std::fs::create_dir_all(&s.root).map_err(|e| {
+            eprintln!("internal error: cannot create {}: {e}", s.root.display());
+            EXIT_INTERNAL
+        })?;
+        Ok(s)
+    }
+
+    /// Copy the campaign (its own `.out/` left behind) and the library in.
+    /// Returns how many files were copied.
+    fn copy_in(&self, campaign_dir: &Path, prefabs_dir: &Path) -> Result<usize, u8> {
+        // The scratch itself is never copied into itself: a library that
+        // holds the campaign would otherwise reach it.
+        let avoid = self
+            .root
+            .canonicalize()
+            .unwrap_or_else(|_| self.root.clone());
+        let a = copy_tree(campaign_dir, &self.campaign, &[".out"], &avoid)?;
+        let b = copy_tree(prefabs_dir, &self.prefabs, &[], &avoid)?;
+        Ok(a + b)
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.root);
+    }
+}
+
+/// Copy `from` into `to` recursively, following links, leaving out the
+/// top-level entries named in `skip` and the directory `avoid`. Returns the
+/// count of files copied.
+fn copy_tree(from: &Path, to: &Path, skip: &[&str], avoid: &Path) -> Result<usize, u8> {
+    let fail = |p: &Path, e: std::io::Error| {
+        eprintln!("internal error: cannot copy {}: {e}", p.display());
+        EXIT_INTERNAL
+    };
+    std::fs::create_dir_all(to).map_err(|e| fail(to, e))?;
+    let mut entries: Vec<_> = std::fs::read_dir(from)
+        .map_err(|e| fail(from, e))?
+        .filter_map(Result::ok)
+        .collect();
+    entries.sort_by_key(std::fs::DirEntry::file_name);
+    let mut n = 0;
+    for e in entries {
+        let name = e.file_name();
+        if skip.iter().any(|s| name == std::ffi::OsStr::new(s)) {
+            continue;
+        }
+        let src = e.path();
+        let dst = to.join(&name);
+        let meta = std::fs::metadata(&src).map_err(|e| fail(&src, e))?;
+        if meta.is_dir() {
+            if src.canonicalize().is_ok_and(|c| c == avoid) {
+                continue;
+            }
+            n += copy_tree(&src, &dst, &[], avoid)?;
+        } else {
+            std::fs::copy(&src, &dst).map_err(|e| fail(&src, e))?;
+            n += 1;
+        }
+    }
+    Ok(n)
 }

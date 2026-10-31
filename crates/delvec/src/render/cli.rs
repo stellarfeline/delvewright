@@ -65,7 +65,10 @@ pub enum RenderCommand {
         /// An extra camera you aim yourself, appended to the planned set.
         /// Repeatable. `key=value,…` — `face=north|south|east|west|up|down`
         /// (square-on at that face of the subject box) or `yaw=<deg>`; plus
-        /// `name=`, `pitch=`, `fov=`, `zoom=`, `of=model|<anchor>`, `cutaway=`.
+        /// `name=`, `pitch=`, `fov=`, `zoom=`, `of=model|<anchor>`, and
+        /// `cutaway=true` (the top course that holds a block comes off) or
+        /// `cutaway=<y>` (every course from piece-local `y` up comes off: a
+        /// pitched roof at its wall heads).
         /// A standing view replaces the orbit keys: `stand=anchor/<name>`
         /// (a body at that anchor, along its facing) with `look=north|south|east|west`,
         /// `name=`, `pitch=`, `fov=`.
@@ -309,8 +312,11 @@ fn render_piece(
             framing: shot.framing,
             dim: size,
         };
-        let frame = gpu::render_structure(st, pack, shot.cutaway, &params)
-            .map_err(|e| (Diagnostic::error(DW_RENDER, e), exit::RENDER))?;
+        let frame = match shot.cut_from {
+            Some(y) => gpu::render_structure_from(st, pack, y, &params),
+            None => gpu::render_structure(st, pack, shot.cutaway, &params),
+        }
+        .map_err(|e| (Diagnostic::error(DW_RENDER, e), exit::RENDER))?;
         // Advisory only: note a placeholder in a per-piece render (the gate is
         // the enforcing command).
         if let Some(m) = detect::scan_default(&frame.rgba, frame.width, frame.height) {
@@ -382,6 +388,7 @@ fn shot_manifest(
                 "pitch": s.pitch_deg,
                 "fov": s.fov_deg,
                 "cutaway": s.cutaway,
+                "cut_from": s.cut_from,
             });
             if let Some(e) = &s.eye {
                 v["eye"] = serde_json::json!({

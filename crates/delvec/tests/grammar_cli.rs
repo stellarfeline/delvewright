@@ -96,6 +96,19 @@ fn is_empty_dir(dir: &Path) -> bool {
 // Order: no `pass` above a non-zero exit, and nothing on disk after a refusal
 // ---------------------------------------------------------------------------
 
+/// A working copy of a program (`store.json.new`) expands under the name up to
+/// the filename's first `.`, so an author trying an edit beside the committed
+/// file needs no `--id`.
+#[test]
+fn a_working_copy_takes_its_id_from_the_name_before_its_first_dot() {
+    let dir = scratch("working-copy");
+    let out_dir = dir.join("out");
+    let file = program_file(&dir, "store.json.new", &store_room());
+    let out = expand(&file, &out_dir, &[]);
+    assert!(out.status.success(), "{}", combined(&out));
+    assert!(out_dir.join("store.nbt").is_file(), "{}", combined(&out));
+}
+
 /// The reproduction: a program in `var-B.json`. The id defaults to the file
 /// stem, and `var-B` is not a usable structure id.
 #[test]
@@ -116,7 +129,7 @@ fn an_unusable_id_is_refused_before_anything_is_expanded_or_written() {
     );
     // ...and where the id came from, which no document the author read mentions.
     assert!(
-        text.contains("the stem of the input filename \"var-B.json\""),
+        text.contains("the input filename \"var-B.json\" up to its first `.`"),
         "the refusal must name where the id came from:\n{text}"
     );
     assert!(

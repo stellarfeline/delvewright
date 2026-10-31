@@ -110,7 +110,10 @@ pub enum ViewCommand {
         #[arg(long, requires = "campaign", conflicts_with = "at")]
         camera: Option<String>,
         /// Frame an anchor (`anchor/fire-pit`, or `area/island:anchor/pen`)
-        /// from `--dist` blocks away.
+        /// from `--dist` blocks away — pulled into open air toward it, so an
+        /// interior anchor is framed from inside its room — or a place
+        /// (`node/potter`): its box framed whole from outside, with what
+        /// stands around it.
         #[arg(long, requires = "campaign")]
         at: Option<String>,
         /// Compass bearing (degrees) the `--at` camera stands on: 0 = due south
@@ -126,6 +129,12 @@ pub enum ViewCommand {
         /// it the frame draws every loaded chunk.
         #[arg(long, requires = "campaign")]
         served: bool,
+        /// Draw this place (`node/potter`) from its program as it stands —
+        /// expanded at its frame as `detail` expands it, in place of its
+        /// committed piece; committed or not, its gates passing or not. Writes
+        /// nothing to the campaign or the library.
+        #[arg(long, requires = "campaign")]
+        program: Option<String>,
     },
     /// Draw a frame per showcase camera a campaign states in
     /// `design/cameras.json` — a camera on the assembled world, estimated from

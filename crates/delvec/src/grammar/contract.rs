@@ -179,7 +179,7 @@ fn range_cells(r: &MetaRegion, out: &mut BTreeSet<[i32; 3]>) {
 }
 
 /// Every cell a list of ranges covers.
-fn cells(boxes: &[MetaRegion]) -> BTreeSet<[i32; 3]> {
+pub(crate) fn cells(boxes: &[MetaRegion]) -> BTreeSet<[i32; 3]> {
     let mut out = BTreeSet::new();
     for r in boxes {
         range_cells(r, &mut out);

@@ -1,15 +1,15 @@
 //! **`delvec detail --check` and the commit are two runs of one verb**
-//! (spec-0122 §6.1). `--check` is the commit's own `prepare` and `judge_run`
-//! with the write and the battery not called, so over every place and every
-//! refusal the two must say the same thing, code for code, and the check must
-//! leave the library and `detail-plan.json` byte-identical.
+//! (spec-0122 §6.1). `--check` is the commit's own `prepare`, `judge_run`,
+//! write and battery, the write landing in a scratch copy of the campaign and
+//! the library, so over every place and every refusal the two must say the
+//! same thing, code for code and exit for exit, and the check must leave the
+//! library and the campaign byte-identical.
 //!
 //! What is compared: the DW codes each run prints up to the point the commit
-//! writes — the commit's `detail: N place(s) detailed` line, after which only
-//! the battery speaks. The battery is the one stage `--check` does not run by
-//! the spec's own definition, so the codes it adds are not part of the
-//! agreement; a commit that refuses before writing prints no such line and is
-//! compared whole.
+//! writes — the commit's `detail: N place(s) detailed` line — and the exit of
+//! the whole run, the battery's included. A refusal only the battery raises
+//! (`DW1002`, a falling block over air) is `--check`'s too, at the commit's
+//! exit.
 
 mod common;
 
@@ -90,7 +90,9 @@ fn codes(out: &Output) -> (Vec<String>, Vec<String>, bool) {
     let mut said = Vec::new();
     let mut wrote = false;
     for line in stderr.lines() {
-        if line.starts_with("detail: ") && line.contains("place(s) detailed of") {
+        if (line.starts_with("detail: ") && line.contains("place(s) detailed of"))
+            || line.starts_with("detail --check: the commit written into a scratch copy")
+        {
             wrote = true;
             break;
         }
@@ -133,14 +135,20 @@ fn agree(campaign: &Path, prefabs: &Path, place: &str) -> (Vec<String>, i32, i32
     let commit_exit = commit.status.code().unwrap_or(-1);
     if check_exit == 0 {
         assert!(
-            text(&check).contains("peak rss: "),
-            "the check states its peak: {}",
+            text(&check).contains("peak rss: ") && text(&check).contains("the commit's battery: "),
+            "the check states its battery and its peak: {}",
             text(&check)
         );
-    } else {
-        // A refusal before the write is the same refusal, at the same exit.
-        assert_eq!(check_exit, commit_exit, "{place}");
     }
+    // Every refusal the commit gives, before its write or in its battery,
+    // the check gives at the same exit.
+    assert_eq!(
+        check_exit,
+        commit_exit,
+        "{place}: --check: {}\ncommit: {}",
+        text(&check),
+        text(&commit)
+    );
     let shown = format!("--check: {}\ncommit: {}", text(&check), text(&commit));
     (c, check_exit, commit_exit, shown)
 }
@@ -221,6 +229,33 @@ fn check_and_commit_agree_over_every_gallery_place_and_three_refusals() {
     });
     let (k, _, _, shown) = agree(&c, &p, "node/annex");
     assert!(k.contains(&"DW0845".to_string()), "{k:?}\n{shown}");
+
+    // DW0773 — a program not in canonical form: the annex's program written
+    // on one line, the same document. Refused where it enters, by both runs.
+    let (c, p) = copy("dw0773");
+    let path = c.join("programs/annex.json");
+    let doc: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    std::fs::write(&path, serde_json::to_string(&doc).unwrap()).unwrap();
+    let (k, check, _, shown) = agree(&c, &p, "node/annex");
+    assert!(
+        k.contains(&"DW0773".to_string()) && check != 0,
+        "{k:?}\n{shown}"
+    );
+
+    // DW1002 — a refusal only the commit's battery raises: the annex's
+    // ceiling laid in gravel, which falls into the room the moment the load
+    // writes it. Its own gates pass; the battery over the whole refuses.
+    let (c, p) = copy("dw1002");
+    patch(&c.join("programs/annex.json"), |v| {
+        v["palette"]["ceiling"] = json!("minecraft:gravel");
+    });
+    let (_, check, commit, shown) = agree(&c, &p, "node/annex");
+    assert!(check != 0 && check == commit, "{shown}");
+    let said = shown.split("\ncommit: ").next().unwrap_or_default();
+    assert!(
+        said.contains("DW1002"),
+        "`--check` names the battery's refusal: {shown}"
+    );
 }
 
 #[test]

@@ -252,8 +252,13 @@ pub struct View {
     pub zoom: f32,
     /// The box the camera is aimed at.
     pub subject: Subject,
-    /// Strip the top Y layer before meshing.
+    /// A dollhouse cutaway: leave out the top course that holds a block
+    /// (`cutaway=true`), or every course from a stated piece-local `y` up
+    /// (`cutaway=<y>`, set in [`Self::cut_from`]).
     pub cutaway: bool,
+    /// `cutaway=<y>`: every course at or above this piece-local `y` is left
+    /// out, so a pitched roof comes off at the wall heads.
+    pub cut_from: Option<i32>,
     /// Present when the view is a body standing inside the piece (`stand=`)
     /// rather than an orbit camera; `face`, `subject`, `zoom` and `cutaway` are
     /// then unused.
@@ -361,6 +366,7 @@ impl View {
         let mut zoom = 1.0f32;
         let mut subject = Subject::Model;
         let mut cutaway = false;
+        let mut cut_from: Option<i32> = None;
         let mut stand: Option<String> = None;
         let mut look: Option<Facing> = None;
         let mut fov_given = false;
@@ -437,9 +443,19 @@ impl View {
                     cutaway = match value {
                         "true" => true,
                         "false" => false,
-                        other => {
-                            return Err(format!("view `cutaway={other}`: use true or false"));
-                        }
+                        other => match other.parse::<i32>() {
+                            Ok(y) => {
+                                cut_from = Some(y);
+                                true
+                            }
+                            Err(_) => {
+                                return Err(format!(
+                                    "view `cutaway={other}`: use true (the top course that \
+                                     holds a block comes off), false, or a piece-local course \
+                                     `y` (every course from it up comes off)"
+                                ));
+                            }
+                        },
                     }
                 }
                 other => {
@@ -494,6 +510,7 @@ impl View {
                 zoom: 1.0,
                 subject: Subject::Anchor(anchor.clone()),
                 cutaway: false,
+                cut_from: None,
                 stand: Some(Standing { anchor, look }),
             });
         }
@@ -541,6 +558,7 @@ impl View {
             zoom,
             subject,
             cutaway,
+            cut_from,
             stand: None,
         })
     }
@@ -633,6 +651,15 @@ mod tests {
         assert_eq!(v.zoom, 2.5);
         assert_eq!(v.subject, Subject::Anchor("anchor/altar".into()));
         assert!(v.cutaway);
+        assert_eq!(
+            v.cut_from, None,
+            "`true` is the top course that holds a block"
+        );
+
+        // A stated cut: every course from piece-local y 5 up comes off.
+        let v = View::parse("face=up,cutaway=5").unwrap();
+        assert!(v.cutaway);
+        assert_eq!(v.cut_from, Some(5));
     }
 
     #[test]
@@ -665,7 +692,7 @@ mod tests {
             ("face=north,zoom=0", "greater than 0"),
             ("face=north,yow=3", "not a view key"),
             ("face=north,cutaway", "not `key=value`"),
-            ("face=north,cutaway=yes", "use true or false"),
+            ("face=north,cutaway=yes", "use true (the top course"),
             ("face=north,name=West Front", "not usable as a file stem"),
             ("face=north,pitch=nan", "not a finite number"),
         ] {

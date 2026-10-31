@@ -215,12 +215,28 @@ pub(crate) fn run_allocation(
         // The wave bound the orchestrator launches place authors up to
         // (spec-0122 §6.2), on stderr so stdout stays the one JSON document.
         // The orchestrator never types it: the handout carries this line.
-        let places = delvec::compiler::detail::unauthored_places(&campaign);
+        let programs = program_stems(campaign_dir);
+        let places = delvec::compiler::detail::unauthored_places(&campaign, &programs);
         let cores = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
         let n = delvec::compiler::detail::concurrency_bound(places, cores);
         eprintln!("concurrency: {n} = min({places}, max(1, {cores} / 2))");
     }
     ExitCode::SUCCESS
+}
+
+/// The stems of the programs under `<campaign>/programs/` (`<stem>.json`):
+/// what the wave bound counts a place's program as present by. A directory
+/// that is not there holds none.
+fn program_stems(campaign_dir: &Path) -> std::collections::BTreeSet<String> {
+    let Ok(rd) = std::fs::read_dir(campaign_dir.join(crate::detail::PROGRAMS_DIR)) else {
+        return std::collections::BTreeSet::new();
+    };
+    rd.filter_map(Result::ok)
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            name.strip_suffix(".json").map(str::to_string)
+        })
+        .collect()
 }
 
 /// The `--stage` help: every document `delvec schema` answers to.

@@ -366,6 +366,10 @@ pub struct Reachability {
     pub unreachable_open: usize,
     /// How many disconnected pockets the unreachable floor forms.
     pub pockets: usize,
+    /// The unreachable cells with something solid overhead, each — what the
+    /// finding reads against the out-of-walk regions a contract declares.
+    #[serde(skip)]
+    pub stranded_sheltered: BTreeSet<[i32; 3]>,
     /// The pockets worth walking to, at most five: **most sheltered cells
     /// first**, then largest, then by position so the order is total (ADR-0006).
     ///
@@ -440,6 +444,7 @@ pub(crate) fn reachability_from(
 
     let mut unreachable_sheltered = 0usize;
     let mut unreachable_open = 0usize;
+    let mut stranded_sheltered = BTreeSet::new();
     let mut pockets: Vec<Pocket> = Vec::with_capacity(stranded.len());
     for component in &stranded {
         let mut min = [i32::MAX; 3];
@@ -452,6 +457,7 @@ pub(crate) fn reachability_from(
             }
             if nav::sheltered(model, cell) {
                 sheltered += 1;
+                stranded_sheltered.insert(cell);
             }
         }
         unreachable_sheltered += sheltered;
@@ -485,6 +491,7 @@ pub(crate) fn reachability_from(
         unreachable_open,
         pockets: stranded.len(),
         largest_pockets: pockets,
+        stranded_sheltered,
     }
 }
 
@@ -712,6 +719,17 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
     // thing the author declared, and counting standable cells on a face counts
     // louvres, parapets and window sills — 47 "approaches" where 3 were doors.
     let resolved = export::contract_metadata(expansion);
+    // Unreachable floor under a roof that the contract itself declares out of
+    // walk (`no_body`): the author's stated intent, which the finding below
+    // takes as declared rather than reporting as a room nobody can enter.
+    let declared_out_sheltered = resolved.as_ref().map_or(0, |c| {
+        let out: BTreeSet<[i32; 3]> = c
+            .no_body
+            .values()
+            .flat_map(|n| contract::cells(&n.boxes))
+            .collect();
+        reach.stranded_sheltered.intersection(&out).count()
+    });
     let faces: Option<Vec<contract::ExteriorFace>> = resolved.as_ref().map(|c| {
         contract::exterior_faces(model, c)
             .into_iter()
@@ -881,7 +899,7 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
              component(s)",
             reach.standable, reach.pockets
         ));
-    } else if reach.unreachable_sheltered > 0 {
+    } else if reach.unreachable_sheltered > declared_out_sheltered {
         let named: Vec<String> = reach
             .largest_pockets
             .iter()
@@ -890,9 +908,17 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
             .collect();
         findings.push(format!(
             "{} standable cell(s) UNDER A ROOF have no walking route from the entrance — floor in \
-             a space a body cannot get to. {} pocket(s) of unreachable floor in all; the largest: \
-             {}",
-            reach.unreachable_sheltered,
+             a space a body cannot get to{}. {} pocket(s) of unreachable floor in all; the \
+             largest: {}",
+            reach.unreachable_sheltered - declared_out_sheltered,
+            if declared_out_sheltered > 0 {
+                format!(
+                    " (and {declared_out_sheltered} more in out-of-walk regions the contract \
+                     declares, taken as declared)"
+                )
+            } else {
+                String::new()
+            },
             reach.pockets,
             named.join(" · ")
         ));
@@ -1752,6 +1778,65 @@ mod tests {
                 .iter()
                 .any(|f| f.contains("open to the sky")),
             "an unreachable roof is never raised as a finding: {:?}",
+            report.findings
+        );
+    }
+
+    /// **Unreached floor the contract declares out of walk is taken as
+    /// declared.** The same upper storey no stair reaches, claimed as a
+    /// `no_body` region of a contract: the measurement still counts it, and
+    /// the finding — floor in a room nobody can enter — is not raised over it.
+    #[test]
+    fn unreached_floor_under_a_roof_declared_out_of_walk_is_no_finding() {
+        use crate::grammar::ir::{Contract, Envelope};
+        let mut program = two_storey(false);
+        let claimed = Node::Split(Split {
+            axis: Axis::Y,
+            sizes: vec![Size::abs(4), Size::abs(1), Size::rel(1)],
+            rounding: None,
+            repeat: false,
+            orient: Reorient::KEEP,
+            children: vec![
+                Node::Claim {
+                    region: "room".into(),
+                    body: Box::new(Node::Void),
+                },
+                Node::fill("stone"),
+                Node::Claim {
+                    region: "loft".into(),
+                    body: Box::new(Node::Void),
+                },
+            ],
+        });
+        // The well beside the storeys, stair-less, claimed the same way.
+        let body = Node::Split(Split {
+            axis: Axis::X,
+            sizes: vec![Size::abs(3), Size::rel(1)],
+            rounding: None,
+            repeat: false,
+            orient: Reorient::KEEP,
+            children: vec![claimed.clone(), Node::call("storeys")],
+        });
+        program = program
+            .rule("body", body)
+            .rule("storeys", claimed)
+            .contract(
+                Contract::new("room")
+                    .space("room", Envelope::Open)
+                    .no_body("loft", "the upper storey: seen, never entered"),
+            );
+        let out = crate::grammar::expand(
+            &program,
+            Box3::at_origin([9, 13, 9]),
+            &ExpandOptions::seeded(0),
+        )
+        .unwrap();
+        let report = judge(&out, Options::default());
+        let r = &report.measurements.reachability;
+        assert_eq!(r.unreachable_sheltered, 81, "still measured");
+        assert!(
+            !report.findings.iter().any(|f| f.contains("UNDER A ROOF")),
+            "{:?}",
             report.findings
         );
     }
