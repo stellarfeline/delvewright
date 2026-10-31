@@ -184,7 +184,11 @@ agent: *Reference: when the prefab library has no piece you need* and
    under an opening two or more courses over the walk plane the starter
    stands a pillar and a ladder, and a drawing that climbs there itself (a
    flight, a ramp) says so with `Model.climbs_to(edge)` — one that builds
-   there without saying so is refused, never overwritten;
+   there without saying so is refused, never overwritten; floor no body
+   reaches that sits diagonally beside reached floor, a block in each of
+   the two cells between them (a walk pinched between a rail post and the
+   glass), is refused rather than declared out of walk, because a player
+   reads the corner as a gap to squeeze through;
    `Model.show("up")` declares a top the drawing means to be seen (the town
    helpers that stand a lamp, a bracket or an awning on the frame's top
    course declare it themselves).

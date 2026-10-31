@@ -1602,6 +1602,16 @@ class Plot(Place):
             print("starter.py: containers the holder census counts (DW1018, DW1024): " + ", ".join(answer["containers"]), file=sys.stderr)
         standable = self.standable = {tuple(c) for c in answer["standable"]}
         self.reached = {tuple(c) for c in answer["reached"]}
+        pinched = self.pinches()
+        if pinched:
+            sys.exit(
+                "starter.py: floor a body cannot reach reads as running on from floor it does reach, through "
+                "the corner between two blocks that touch at their edges — a player sees a gap to squeeze "
+                "through, and a body is wider than that corner:\n" + "\n".join(pinched) + "\n"
+                "Open the corner (move one of the two blocks a cell, or widen the walk so it passes a body "
+                "wide), or make that floor read as closed (stand something on it); the starter never "
+                "declares such floor out of walk on its own."
+            )
         self.joined = [tuple(p) for p in answer["joined"]]
         unwalked = set()
         for c in standable | {tuple(c) for c in answer["sealed"]}:
@@ -1622,6 +1632,27 @@ class Plot(Place):
                 e["walked"] = False
                 self.seen_now.append(e["part"]["id"])
                 print(f"starter.py: {e['part']['id']} has no walkable column — no body reaches any of its floor from the ways in — so the program declares it seen and never entered. If it is meant to be entered, open a way into it; if not, declare it `reached: false` in the layout graph's holds[], or `detail --check` refuses it (DW1074)", file=sys.stderr)
+
+    def pinches(self) -> list[str]:
+        """Every unreached standable cell of the play space that sits
+        diagonally beside a reached one at the same course, the two cells
+        between them each holding a block a body cannot stand in: floor that
+        reads as joined through a corner no body passes. One line each."""
+        out = []
+        for (x, y, z) in sorted(self.standable - self.reached):
+            if not self.in_space_xz(x, z) or y < 1:
+                continue
+            for dx in (-1, 1):
+                for dz in (-1, 1):
+                    v = (x + dx, y, z + dz)
+                    if v not in self.reached:
+                        continue
+                    between = [(x + dx, y, z), (x, y, z + dz)]
+                    blocks = [self.block_of(self.cell(*c)) for c in between]
+                    if all(c not in self.standable and b not in ("minecraft:air", "minecraft:structure_void")
+                           for c, b in zip(between, blocks)):
+                        out.append(f"  {(x, y, z)} beside reached {v}, between {blocks[0]} at {between[0]} and {blocks[1]} at {between[1]}")
+        return out
 
     def cuts(self, axis: int) -> list[Bound]:
         out = super().cuts(axis)
