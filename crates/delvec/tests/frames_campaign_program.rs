@@ -87,9 +87,9 @@ fn frame(
 fn a_place_is_drawn_from_its_program_as_it_stands_and_nothing_is_written() {
     let tmp = tempdir("look");
     let (campaign, prefabs) = common::gallery_site_plan_detailed(&tmp);
-    // An edit no commit has taken: the annex's walls built in gold.
+    // An edit no commit has taken: the annex's ceiling laid in gold.
     common::patch_file(&campaign.join("programs/annex.json"), |v| {
-        v["palette"]["wall"] = json!("minecraft:gold_block");
+        v["palette"]["ceiling"] = json!("minecraft:gold_block");
     });
     let before = (snapshot(&campaign), snapshot(&prefabs));
 
@@ -118,7 +118,7 @@ fn a_place_is_drawn_from_its_program_as_it_stands_and_nothing_is_written() {
 
     // A program whose own gates refuse is still drawn, each refusal printed.
     common::patch_file(&campaign.join("programs/annex.json"), |v| {
-        v["palette"]["wall"] = json!("minecraft:candle[candles=1,lit=false,waterlogged=false]");
+        v["palette"]["ceiling"] = json!("minecraft:candle[candles=1,lit=false,waterlogged=false]");
     });
     let (broken, _) = frame(
         &campaign,
