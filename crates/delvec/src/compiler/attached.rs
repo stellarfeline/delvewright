@@ -62,20 +62,20 @@ const FACES: [Face; 6] = [
 ];
 
 /// What the generator puts where nothing was written.
-struct Surround {
+pub(crate) struct Surround {
     ambient: Ambient,
     built: Vec<BuiltPiece>,
 }
 
 impl Surround {
-    fn of(plan: &Plan) -> Surround {
+    pub(crate) fn of(plan: &Plan) -> Surround {
         Surround {
             ambient: Ambient::of_plan(plan),
             built: crate::compiler::nav::built_volume(plan),
         }
     }
 
-    fn inside(&self, c: [i32; 3]) -> Option<&str> {
+    pub(crate) fn inside(&self, c: [i32; 3]) -> Option<&str> {
         self.built
             .iter()
             .find(|(_, (lo, hi))| (0..3).all(|a| lo[a] <= c[a] && c[a] <= hi[a]))
@@ -85,7 +85,7 @@ impl Surround {
     /// The block at an unwritten cell: air inside a piece's box (`/place
     /// template` writes the whole box) and under the void horizon; the ocean
     /// superflat's layers outside every box.
-    fn unwritten(&self, c: [i32; 3]) -> &'static str {
+    pub(crate) fn unwritten(&self, c: [i32; 3]) -> &'static str {
         if self.inside(c).is_some() {
             "minecraft:air"
         } else {
@@ -273,9 +273,15 @@ fn judge_cell<'a>(
 /// **Judge the world the load ends in** (module header): every block of the
 /// world `DW0955` compares.
 pub fn judge(plan: &Plan, world: &World, base: &BlockMap) -> Binding {
-    let surround = Surround::of(plan);
     let load = crate::compiler::view::beat::load_blocks(plan, world, base);
-    judge_load(&load, &surround)
+    judge_over(plan, &load)
+}
+
+/// [`judge`] over the load world already laid
+/// ([`crate::compiler::view::beat::load_blocks`]), so the build lays it once
+/// for every judgement made of it.
+pub fn judge_over(plan: &Plan, load: &BlockMap) -> Binding {
+    judge_load(load, &Surround::of(plan))
 }
 
 /// [`judge`] over a load map: every non-air cell of `load`, its unwritten

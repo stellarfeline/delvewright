@@ -897,11 +897,20 @@ pub fn build_with_warnings(
     // Its refusal waits for the write-sequence arm below, so one refusal names
     // every block either arm finds.
     let picture = crate::compiler::view::beat::picture_base(plan, assembled, &relight.placements);
+    let load = crate::compiler::view::beat::load_blocks(plan, &world, &picture);
     let attached_refusal = {
-        let attached = crate::compiler::attached::judge(plan, &world, &picture);
+        let attached = crate::compiler::attached::judge_over(plan, &load);
         eprintln!("{}", attached.line());
         attached.refusal()
     };
+    // DW1076: every block of the same load world reads as resting on what
+    // holds it — reported, never refused; the binding is printed every build.
+    {
+        let resting = crate::compiler::resting::judge(plan, &load);
+        eprintln!("{}", resting.line());
+        warnings.extend(resting.warnings());
+    }
+    drop(load);
 
     // ---- datapack ----
     put_json(
