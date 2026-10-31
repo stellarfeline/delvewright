@@ -777,10 +777,14 @@ impl LightField {
 
         // Resolve each DISTINCT block id once. The assembled world is overwhelmingly
         // repeated ids, and `emission`/`passes_light` are a pair of string matches.
-        let mut resolved: BTreeMap<&str, u8> = BTreeMap::new();
+        // Keyed by the text's address and length: one interned state is one
+        // key, and two keys never name different texts (a text that is not
+        // interned only resolves again).
+        let mut resolved: std::collections::HashMap<(usize, usize), u8> =
+            std::collections::HashMap::new();
         for (c, name) in blocks {
             let Some(i) = f.index(c) else { continue };
-            let packed = *resolved.entry(name).or_insert_with(|| {
+            let packed = *resolved.entry((name.as_ptr() as usize, name.len())).or_insert_with(|| {
                 let p = Self::pack(name);
                 if emit { p } else { p & !P_EMISSION }
             });
@@ -1705,13 +1709,16 @@ impl DarkSurvey {
         sky: u8,
         below: u8,
     ) -> DarkSurvey {
-        let light = model.flood(sky);
+        // The dense field itself, read per cell: [`LightModel::flood`]'s map
+        // is this field's every lit cell copied out, and a cell it does not
+        // hold reads 0, as an unlit or outside cell reads here.
+        let light = LightField::new(model, sky);
         let mut out = DarkSurvey {
             examined: cells.len(),
             dark: BTreeMap::new(),
         };
         for &cell in cells {
-            let l = light.get(&cell).copied().unwrap_or(0);
+            let l = light.light_at(cell);
             if l < below {
                 out.dark.insert(cell, l);
             }
