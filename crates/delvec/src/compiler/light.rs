@@ -784,10 +784,12 @@ impl LightField {
             std::collections::HashMap::new();
         for (c, name) in blocks {
             let Some(i) = f.index(c) else { continue };
-            let packed = *resolved.entry((name.as_ptr() as usize, name.len())).or_insert_with(|| {
-                let p = Self::pack(name);
-                if emit { p } else { p & !P_EMISSION }
-            });
+            let packed = *resolved
+                .entry((name.as_ptr() as usize, name.len()))
+                .or_insert_with(|| {
+                    let p = Self::pack(name);
+                    if emit { p } else { p & !P_EMISSION }
+                });
             f.prop[i] = packed;
         }
 
