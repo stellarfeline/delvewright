@@ -232,7 +232,7 @@ keep the bank at `<campaign>/.out/reach-bank/`, and every other verb's bank
 lives and dies with the run; the empty string turns it off for every verb.
 Either way the bytes a build emits are the same (`tests/reach_cache.rs`); the
 gallery coverage gate sets it to a scratch directory its probe runs share.
-The town's bank (95 places) is 1.9 GB on disk.
+The cost is disk: the town's bank (95 places) is 1.9 GB after one check, and grows with each program a place is checked with, since a node keeps up to eight variants (4.4 GB after eleven checks of six programs of one place).
 
 **The output directory** holds exactly what the last build emitted: a build into a directory a previous build wrote removes every file that build emitted and this one does not, and a directory holding anything no build wrote is refused untouched (`DW0967`, §5).
 
