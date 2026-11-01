@@ -50,7 +50,7 @@ use sha2::{Digest, Sha256};
 
 use crate::EXIT_INTERNAL;
 use crate::cli::campaign::{
-    has_error, load_library, load_or_refuse, read_skins, read_structures, validate_stage,
+    has_error, load_library, load_or_refuse, read_skins, read_structures, validate_stage_noting,
 };
 use crate::cli::report::{print_build_error, print_diags, print_one_diag};
 
@@ -207,7 +207,11 @@ fn run(
     // observers `delvec build` runs. A red here is the state `build` would
     // report and is left standing — the broken intermediate is a real, lookable
     // object (spec-0050 §1) — and it names the place.
-    battery(campaign_dir, prefabs_dir, lang, json, false)
+    let notes = campaign_dir
+        .join(".out")
+        .join("detail")
+        .join("examined.txt");
+    battery(campaign_dir, prefabs_dir, lang, json, false, &notes)
 }
 
 /// Which places this run details, in site-plan box order.
@@ -1346,19 +1350,46 @@ fn peak_rss() -> String {
 
 /// The whole, validated and built in memory — the same observers `delvec
 /// build` runs, output discarded.
+///
+/// The validation funnel's binding notes ("what this run examined": every
+/// pass's count, the plan's placements) are the campaign's, the same on every
+/// run over it whichever place it details; they are written to `notes`, and
+/// one line says how many there are and where, so the run's reader meets the
+/// lines about what this run changed rather than the whole's census.
 fn battery(
     campaign_dir: &Path,
     prefabs_dir: &Path,
     lang: &str,
     json: bool,
     check: bool,
+    notes: &Path,
 ) -> Result<(), u8> {
     use delvec::compiler::analyze::analyze_campaign;
     use delvec::compiler::commands::CommandTree;
     use delvec::compiler::emit;
     use delvec::compiler::plan::Plan;
 
-    let v = validate_stage(campaign_dir, prefabs_dir, json)?;
+    let mut examined: Vec<String> = Vec::new();
+    let v = validate_stage_noting(campaign_dir, prefabs_dir, json, &mut examined);
+    if !examined.is_empty() {
+        let mut text = examined.join("\n");
+        text.push('\n');
+        let dir = notes.parent().unwrap_or(Path::new("."));
+        std::fs::create_dir_all(dir).map_err(|e| {
+            eprintln!("internal error: cannot create {}: {e}", dir.display());
+            EXIT_INTERNAL
+        })?;
+        let file = notes
+            .file_name()
+            .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+        write(dir, &file, text.as_bytes())?;
+        eprintln!(
+            "-- what the validation examined: {} line(s), written to {}",
+            examined.len(),
+            notes.display()
+        );
+    }
+    let v = v?;
     if has_error(&v.diags) {
         eprintln!(
             "{}: the campaign does not validate with the piece(s) this run {}.",
@@ -1465,7 +1496,24 @@ fn check_battery(
         "detail --check: the commit written into a scratch copy of the campaign and the \
          library ({copied} file(s)); the battery over the whole it leaves:"
     );
-    battery(&scratch.campaign, &scratch.prefabs, lang, json, true).inspect_err(|_| {
+    let stems = prepared
+        .iter()
+        .map(|p| stem_of(&NodeId(p.place.clone())).to_string())
+        .collect::<Vec<_>>()
+        .join("+");
+    let notes = campaign_dir
+        .join(".out")
+        .join("detail-check")
+        .join(format!("{stems}.examined.txt"));
+    battery(
+        &scratch.campaign,
+        &scratch.prefabs,
+        lang,
+        json,
+        true,
+        &notes,
+    )
+    .inspect_err(|_| {
         eprintln!(
             "error: {places}: the commit's battery refuses the whole this run would leave; \
              nothing was written.",

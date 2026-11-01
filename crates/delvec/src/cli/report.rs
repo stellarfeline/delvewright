@@ -71,8 +71,7 @@ pub(crate) fn print_build_error(code: DwCode, message: &str, json: bool) {
 /// had examined. They are the last thing a run says now, and they say it under a
 /// heading so a reader can see where the answers to their own question ended.
 pub(super) fn report_binding_notes(campaign: &delvewright_dsl::Campaign, collected: &[String]) {
-    let mut buf: Vec<String> = collected.to_vec();
-    layout_binding_lines(campaign, &mut buf);
+    let buf = binding_notes(campaign, collected);
     if buf.is_empty() {
         return;
     }
@@ -80,6 +79,17 @@ pub(super) fn report_binding_notes(campaign: &delvewright_dsl::Campaign, collect
     for line in &buf {
         eprintln!("{line}");
     }
+}
+
+/// The lines [`report_binding_notes`] prints under its heading: the passes'
+/// own, then the layout, plan and brief binding counts.
+pub(super) fn binding_notes(
+    campaign: &delvewright_dsl::Campaign,
+    collected: &[String],
+) -> Vec<String> {
+    let mut buf: Vec<String> = collected.to_vec();
+    layout_binding_lines(campaign, &mut buf);
+    buf
 }
 
 /// The layout, plan and brief binding counts, appended rather than printed —

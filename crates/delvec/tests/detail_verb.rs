@@ -1257,9 +1257,17 @@ fn a_climb_inside_a_hung_place_proves_and_hung_scenery_states_its_zero() {
         t.contains("detail: the whole builds with the piece(s) this run wrote."),
         "{t}"
     );
+    // The validation funnel's binding notes are written beside the campaign,
+    // and the run says how many and where.
+    let examined_at = dir.join(".out/detail/examined.txt");
     assert!(
-        t.contains("aloft binding: 4 aloft place(s) of 10"),
-        "the causeway and the beacon hang beside the gantry and the perch: {t}"
+        t.contains(&format!("written to {}", examined_at.display())),
+        "{t}"
+    );
+    let examined = std::fs::read_to_string(&examined_at).unwrap();
+    assert!(
+        examined.contains("aloft binding: 4 aloft place(s) of 10"),
+        "the causeway and the beacon hang beside the gantry and the perch: {examined}"
     );
 
     let report = |piece: &str| -> Value {
