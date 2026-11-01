@@ -5,6 +5,7 @@ use super::*;
 use crate::compiler::failure::Failure;
 use crate::compiler::plan::Plan;
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 /// How many pockets a `DW0921` report names before summarising the rest.
 const POCKET_LIST_LIMIT: usize = 6;
@@ -370,7 +371,7 @@ fn verify_bodies_can_leave(
                         rest.push(pocket);
                         continue;
                     }
-                    let how = w.way_in_words(&pocket, &trapped, &judged.preds);
+                    let how = w.way_in_words(&pocket, &trapped, &judged.reach.preds);
                     hatch_described.push(format!(
                         "{} cell(s) around {:?} ({when}): {how}, and {}",
                         pocket.len(),
@@ -386,7 +387,7 @@ fn verify_bodies_can_leave(
             let described: Vec<String> = kept
                 .iter()
                 .map(|pocket| {
-                    let how = w.way_in_words(pocket, &trapped, &judged.preds);
+                    let how = w.way_in_words(pocket, &trapped, &judged.reach.preds);
                     format!(
                         "{} cell(s) around {:?} ({when}): {how}, and no walk, fall, jump or swim \
                      leads from any of them back to the route",
@@ -571,11 +572,9 @@ pub struct TrappedPlaces {
     /// The cells of `reached` it cannot leave, split into touching places
     /// (26-neighbourhood), each sorted, in the order of their least cell.
     pub pockets: Vec<Vec<[i32; 3]>>,
-    /// Every reached cell's predecessors, with the edge that joins them, so a
-    /// report can say how a body got in.
-    pub preds: BTreeMap<[i32; 3], Vec<([i32; 3], Edge)>>,
-    /// The reach graph's closure the judgement was taken over.
-    pub reach: Reach,
+    /// The reach graph's closure the judgement was taken over; its `preds`
+    /// say how a body got in.
+    pub reach: Arc<Reach>,
 }
 
 impl World {
@@ -592,7 +591,6 @@ impl World {
         TrappedPlaces {
             reached,
             pockets: pockets_of(&trapped),
-            preds: reach.preds.clone(),
             reach,
         }
     }
@@ -768,7 +766,7 @@ impl World {
         roots: &[[i32; 3]],
         ways_out: &BTreeSet<[i32; 3]>,
         returned: Option<([i32; 3], [i32; 3])>,
-    ) -> (BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>, Reach) {
+    ) -> (BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>, Arc<Reach>) {
         let mut reach = self.body_reach(roots);
         // A node the closure did not fly has only the edges its envelope asked
         // for (spec-0113 §4.3: the envelope proves what a node reaches, never

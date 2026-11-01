@@ -439,7 +439,7 @@ fn standing_set(
 /// so the depth is taken over all of its edges.
 fn flood(
     open: &World,
-    reach: &mut crate::compiler::nav::Reach,
+    reach: &mut std::sync::Arc<crate::compiler::nav::Reach>,
     from: &BTreeSet<[i32; 3]>,
     moves: usize,
 ) -> BTreeMap<[i32; 3], usize> {

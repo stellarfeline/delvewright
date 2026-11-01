@@ -2735,7 +2735,7 @@ impl World {
 
     /// **Where a body can be** from `roots`: the closure of the reach graph
     /// (spec-0113 §4), built at the shipped launch set.
-    pub fn body_reach(&self, roots: &[[i32; 3]]) -> Reach {
+    pub fn body_reach(&self, roots: &[[i32; 3]]) -> Arc<Reach> {
         self.body_reach_at(roots, &ReachParams::shipped(self.unbounded_fall))
     }
 
@@ -3289,14 +3289,14 @@ impl World {
     /// [`World::body_reach`] from `starts` each snapped to the nearest
     /// standable cell first, as [`World::walk_region`] snaps them; a start
     /// with none within [`crate::compiler::nav::SNAP_RADIUS`] contributes nothing.
-    pub fn body_reach_snapped(&self, starts: &[[i32; 3]]) -> Reach {
+    pub fn body_reach_snapped(&self, starts: &[[i32; 3]]) -> Arc<Reach> {
         self.body_reach_snapped_within(starts, delvewright_dsl::metrics::REACH_BUDGET_STATES)
     }
 
     /// [`World::body_reach_snapped`] under a work ceiling of `budget` rather
     /// than the shipped one: the closure a proof that must refuse a partial
     /// graph (`DW1042`) reads, and the ceiling a test lowers to make one.
-    pub fn body_reach_snapped_within(&self, starts: &[[i32; 3]], budget: u64) -> Reach {
+    pub fn body_reach_snapped_within(&self, starts: &[[i32; 3]], budget: u64) -> Arc<Reach> {
         let seats: Vec<[i32; 3]> = starts
             .iter()
             .filter_map(|s| self.snap(*s, crate::compiler::nav::SNAP_RADIUS))
@@ -3335,7 +3335,12 @@ impl World {
     /// add a state by any launch, so its launches are not flown; the closure is
     /// the one every node's launches would give. Rounds end when no node is
     /// left to fly.
-    pub fn body_reach_at(&self, roots: &[[i32; 3]], params: &ReachParams) -> Reach {
+    ///
+    /// The closure is shared, never copied: every caller that asks for a
+    /// closure this graph already took gets the one the graph keeps. A caller
+    /// that must grow it (`fly_toward`, `fly_cells`) takes its own copy then,
+    /// and only then (`Arc::make_mut`).
+    pub fn body_reach_at(&self, roots: &[[i32; 3]], params: &ReachParams) -> Arc<Reach> {
         let memo = self.graph_memo(params);
         let start: Vec<[i32; 3]> = roots
             .iter()
@@ -3348,11 +3353,14 @@ impl World {
         let done: Vec<Closure> = memo.closures.lock().expect("memo").clone();
         for (from, c) in &done {
             if start.iter().all(|r| c.states.contains_key(r)) && c.reaches_all(&start, from) {
-                let mut r = (**c).clone();
-                if r.simulated + r.credited > params.budget {
+                // A lower ceiling than the closure was taken under refuses
+                // it (`DW1042`): that copy, and only that one, is its own.
+                if c.simulated + c.credited > params.budget {
+                    let mut r = (**c).clone();
                     r.over_budget = Some(params.budget);
+                    return Arc::new(r);
                 }
-                return r;
+                return Arc::clone(c);
             }
         }
         let mut reach = Reach::default();
@@ -3388,13 +3396,14 @@ impl World {
             // refuses the build.
             if reach.simulated + reach.credited > params.budget {
                 reach.over_budget = Some(params.budget);
-                return reach;
+                return Arc::new(reach);
             }
         }
+        let reach = Arc::new(reach);
         memo.closures
             .lock()
             .expect("memo")
-            .push((start, Arc::new(reach.clone())));
+            .push((start, Arc::clone(&reach)));
         reach
     }
 
@@ -3407,7 +3416,7 @@ impl World {
     /// Whether any launch was flown.
     pub fn fly_toward(
         &self,
-        reach: &mut Reach,
+        reach: &mut Arc<Reach>,
         cells: &[[i32; 3]],
         settled: &dyn Fn([i32; 3]) -> bool,
         one: bool,
@@ -3432,7 +3441,7 @@ impl World {
         if todo.is_empty() {
             return false;
         }
-        self.fly_into(&memo, &params, reach, &todo);
+        self.fly_into(&memo, &params, Arc::make_mut(reach), &todo);
         true
     }
 
@@ -3440,7 +3449,7 @@ impl World {
     /// and close over what they reach. The caller that needs a node's every
     /// edge (the moves a blinded body makes, `DW0943`) asks this of the nodes
     /// it judges.
-    pub fn fly_cells(&self, reach: &mut Reach, cells: &[[i32; 3]]) {
+    pub fn fly_cells(&self, reach: &mut Arc<Reach>, cells: &[[i32; 3]]) {
         let params = ReachParams::shipped(self.unbounded_fall);
         let memo = self.graph_memo(&params);
         let todo: Vec<([i32; 3], Quadrants)> = cells
@@ -3455,7 +3464,10 @@ impl World {
             })
             .map(|c| (c, ALL_QUADRANTS))
             .collect();
-        self.fly_into(&memo, &params, reach, &todo);
+        if todo.is_empty() {
+            return;
+        }
+        self.fly_into(&memo, &params, Arc::make_mut(reach), &todo);
     }
 
     /// The launches of the standing or holding node `c` serving `q`, flown:

@@ -969,7 +969,12 @@ pub(super) fn verify_shut_ways(
 /// eye over each way shut in it that owes one.
 /// A configuration whose reach graph passed its budget yields its closure
 /// and nothing else: a partial closure takes no verdict (spec-0113 §5.3).
-type ConfigFindings = (Vec<Met>, Vec<HiddenFinding>, Option<u64>, Reach);
+type ConfigFindings = (
+    Vec<Met>,
+    Vec<HiddenFinding>,
+    Option<u64>,
+    std::sync::Arc<Reach>,
+);
 
 #[allow(clippy::too_many_lines)]
 fn verify_with_eye(
