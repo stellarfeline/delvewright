@@ -234,7 +234,7 @@ trapdoor's leaf is the fact of the cell it stands in, so a run whose world
 moves a door takes from the bank every node that read none of its cells.
 Either way the bytes a build emits are the same (`tests/reach_cache.rs`); the
 gallery coverage gate sets it to a scratch directory its probe runs share.
-The cost is disk: the town's bank (95 places) is 1.9 GB after one check, and grows with each program a place is checked with, since a node keeps up to eight variants (4.4 GB after eleven checks of six programs of one place).
+The cost is disk: the town's bank (95 places) is 1.8 GB after one check, and grows with each program a place is checked with, since a node keeps up to eight variants.
 
 **The output directory** holds exactly what the last build emitted: a build into a directory a previous build wrote removes every file that build emitted and this one does not, and a directory holding anything no build wrote is refused untouched (`DW0967`, §5).
 
