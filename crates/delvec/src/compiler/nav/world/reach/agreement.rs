@@ -4,7 +4,8 @@
 //!
 //! The consumers are the blockout battery's place reachability (`DW0837`,
 //! [`crate::compiler::blockout::reached_from`]), its unallocated-crossing
-//! flood (`DW0838`, [`crate::compiler::blockout::crossing_flood`]), the moves
+//! flood (`DW0838`, [`crate::compiler::blockout::crossing_flood`]) and the
+//! breadth-first walk its leak route is named over ([`World::body_route`]), the moves
 //! its contact and portal crossings step out of a wall by (`DW0877`, `DW0986`,
 //! [`crate::compiler::blockout::steps_out`]), its pacing legs (`DW0822`,
 //! [`crate::compiler::blockout::leg_routed`]), the piece contract's
@@ -339,6 +340,16 @@ fn every_consumer_reaches_what_the_reach_graph_reaches() {
         assert_eq!(
             flood, states,
             "case {seed}: DW0838's flood differs from the reach graph's states"
+        );
+        // DW0838's route: the breadth-first walk `World::body_route` takes,
+        // run to the end, holds what the flood holds.
+        let route_walk =
+            jumping.confined_closure(&[case.root], &super::super::Confinement::none(), |_, _| {
+                false
+            });
+        assert_eq!(
+            route_walk, flood,
+            "case {seed}: the leak route's walk differs from the flood it names a route in"
         );
 
         // DW0877 and DW0986 step out of a cell: their one-move answers, taken
