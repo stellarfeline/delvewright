@@ -1742,9 +1742,11 @@ type FlownKey = ([i32; 3], Quadrants);
 /// Write the node banks this run grew to `DELVEC_REACH_CACHE`, when it names a
 /// directory (`reach/persist.rs`); a run that ends calls it once.
 pub fn persist_reach_cache() {
+    let (loads, records, releases) = chunks::traffic();
     eprintln!(
         "reach lists: {} byte(s) in the scratch file; {} byte(s) resident at the end, under a \
-         budget of {} (ADR-0037 §2)",
+         budget of {}; {loads} chunk read(s) back over {records} record(s), {releases} chunk(s) \
+         given up (ADR-0037 §2)",
         chunks::spilled(),
         chunks::resident(),
         chunks::budget()

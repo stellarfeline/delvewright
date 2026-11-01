@@ -50,17 +50,36 @@ impl Spill {
         Ok((at, len))
     }
 
-    /// The `len` bytes at `at`.
-    pub(super) fn read(&mut self, at: u64, len: u32) -> std::io::Result<Vec<u8>> {
-        use std::io::{Read, Seek};
-        let mut out = vec![0u8; len as usize];
-        self.file.seek(std::io::SeekFrom::Start(at))?;
-        self.file.read_exact(&mut out)?;
-        Ok(out)
+    /// The `len` bytes at `at`, read at their offset without moving the
+    /// file's cursor, so readers need no lock of their own.
+    pub(super) fn read(&self, at: u64, len: u32) -> std::io::Result<Vec<u8>> {
+        read_at(&self.file, at, len)
+    }
+
+    /// A reader of what is written, for use without the writer's lock.
+    pub(super) fn reader(&self) -> std::io::Result<std::fs::File> {
+        self.file.try_clone()
     }
 
     /// The bytes written so far.
     pub(super) fn len(&self) -> u64 {
         self.len
     }
+}
+
+/// The `len` bytes of `file` at `at`, read without moving its cursor.
+pub(super) fn read_at(file: &std::fs::File, at: u64, len: u32) -> std::io::Result<Vec<u8>> {
+    let mut out = vec![0u8; len as usize];
+    let mut done = 0;
+    while done < out.len() {
+        #[cfg(unix)]
+        let n = std::os::unix::fs::FileExt::read_at(file, &mut out[done..], at + done as u64)?;
+        #[cfg(windows)]
+        let n = std::os::windows::fs::FileExt::seek_read(file, &mut out[done..], at + done as u64)?;
+        if n == 0 {
+            return Err(std::io::ErrorKind::UnexpectedEof.into());
+        }
+        done += n;
+    }
+    Ok(out)
 }

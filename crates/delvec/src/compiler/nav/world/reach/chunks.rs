@@ -68,21 +68,54 @@ pub(super) fn resident() -> usize {
     RESIDENT.load(Ordering::Relaxed)
 }
 
-/// The one scratch file every list writes to; `None` when it could not be
-/// opened, and then every list keeps its records in memory.
-fn spill() -> &'static Mutex<Option<Spill>> {
-    static SPILL: OnceLock<Mutex<Option<Spill>>> = OnceLock::new();
-    SPILL.get_or_init(|| Mutex::new(Spill::open("lists").ok()))
+/// The one scratch file every list writes to, behind the writer's lock, and
+/// a handle every reader reads it by at an offset, unlocked; both `None` when
+/// it could not be opened, and then every list keeps its records in memory.
+struct Shared {
+    write: Mutex<Option<Spill>>,
+    read: Option<std::fs::File>,
+}
+
+fn spill() -> &'static Shared {
+    static SPILL: OnceLock<Shared> = OnceLock::new();
+    SPILL.get_or_init(|| {
+        let opened = Spill::open("lists").ok();
+        let read = opened.as_ref().and_then(|s| s.reader().ok());
+        Shared {
+            write: Mutex::new(opened.filter(|_| read.is_some())),
+            read,
+        }
+    })
 }
 
 /// The bytes the lists' scratch file holds.
 pub(super) fn spilled() -> u64 {
     spill()
+        .write
         .lock()
         .expect("spill")
         .as_ref()
         .map_or(0, Spill::len)
 }
+
+/// Chunks decoded, the records they held, and chunks given up, over the run.
+static LOADS: AtomicU64 = AtomicU64::new(0);
+static RECORDS: AtomicU64 = AtomicU64::new(0);
+static RELEASES: AtomicU64 = AtomicU64::new(0);
+
+/// How often chunks were decoded, the records decoded, and how often chunks
+/// were given up, over the run.
+pub(super) fn traffic() -> (u64, u64, u64) {
+    (
+        LOADS.load(Ordering::Relaxed),
+        RECORDS.load(Ordering::Relaxed),
+        RELEASES.load(Ordering::Relaxed),
+    )
+}
+
+/// A chunk written in more pieces than this is written whole when next given
+/// up, so a chunk read back reads a few pieces.
+const PIECES: usize = 4;
 
 /// What a list holds per cell: written as a record and read back as written.
 pub(super) trait Item: Clone + Send + 'static {
@@ -143,11 +176,13 @@ impl<V: Item> Chunk<V> {
         }
         let mut map: HashMap<[i32; 3], Vec<V>> = HashMap::new();
         let mut decoded = 0;
+        let mut records = 0;
         let mut take = |bytes: &[u8]| {
             let mut d = Dec { b: bytes, at: 0 };
             while d.at < bytes.len() {
                 let c = d.cell().expect("a list record's cell reads back");
                 let v = V::take(&mut d).expect("a list record reads back");
+                records += 1;
                 let list = map.entry(c).or_default();
                 if list.is_empty() {
                     decoded += ENTRY;
@@ -157,13 +192,12 @@ impl<V: Item> Chunk<V> {
             }
         };
         if !self.segments.is_empty() {
-            let mut sp = spill().lock().expect("spill");
-            let sp = sp
-                .as_mut()
+            let file = spill()
+                .read
+                .as_ref()
                 .expect("a list with spilled records has its file");
             for &(at, len) in &self.segments {
-                let bytes = sp
-                    .read(at, len)
+                let bytes = super::spill::read_at(file, at, len)
                     .expect("the lists' scratch file reads back");
                 take(&bytes);
             }
@@ -171,6 +205,8 @@ impl<V: Item> Chunk<V> {
         take(&self.pending);
         self.resident = Some(map);
         self.decoded = decoded;
+        LOADS.fetch_add(1, Ordering::Relaxed);
+        RECORDS.fetch_add(records, Ordering::Relaxed);
     }
 
     /// Write the buffered records to the file, when there is one.
@@ -178,7 +214,7 @@ impl<V: Item> Chunk<V> {
         if self.pending.is_empty() {
             return;
         }
-        let mut sp = spill().lock().expect("spill");
+        let mut sp = spill().write.lock().expect("spill");
         if let Some(sp) = sp.as_mut() {
             let at = sp
                 .append(&self.pending)
@@ -188,11 +224,33 @@ impl<V: Item> Chunk<V> {
         }
     }
 
-    /// Give up what the chunk holds in memory that the file can hold.
+    /// Give up what the chunk holds in memory that the file can hold: a chunk
+    /// written in more than [`PIECES`] pieces is written whole, each cell's
+    /// items in their order, and read back from that one piece.
     fn release(&mut self) {
-        self.write();
+        let pieces = self.segments.len() + usize::from(!self.pending.is_empty());
+        if let Some(map) = self.resident.as_ref().filter(|_| pieces > PIECES) {
+            let mut e = Enc::default();
+            for (c, items) in map {
+                for v in items {
+                    e.cell(*c);
+                    v.put(&mut e);
+                }
+            }
+            let mut sp = spill().write.lock().expect("spill");
+            if let Some(sp) = sp.as_mut() {
+                let at = sp
+                    .append(&e.0)
+                    .expect("the lists' scratch file takes a write");
+                self.segments = vec![at];
+                self.pending = Vec::new();
+            }
+        } else {
+            self.write();
+        }
         self.resident = None;
         self.decoded = 0;
+        RELEASES.fetch_add(1, Ordering::Relaxed);
     }
 }
 
