@@ -16,7 +16,7 @@ A build holds the whole map in memory, several times over, and the largest holdi
 | `delvec build` | town | 14.78 GB | 7 min 59 s | `/usr/bin/time -v`, Linux, 16 CPU |
 | `delvec build` | town | 15.09 GB (14.06 GiB) | 8 min 34 s | `/proc` sampler, Linux, 16 CPU |
 | `delvec detail --all` | town | 16.13 GB (15.03 GiB) | 10 min 18 s | `/proc` sampler, Linux, 16 CPU |
-| `delvec build` | town, region grown by 100 cells on every horizontal side (143 M cells, same 95 places) | «RSS_WIDE» | | `/proc` sampler |
+| `delvec build` | town, region grown by 100 cells on every horizontal side (143 M cells, same 95 places; 3,300 written chunks, 99,338,305 ground cells) | 17.09 GB (15.92 GiB) | 10 min 26 s | `/proc` sampler, Linux, 16 CPU |
 | `delvec build` | gallery | 1.34 GB | 35 s | `/usr/bin/time -l`, macOS |
 
 Where it goes, by allocation site at the peak (heaptrack, town build; the structures named are the ones that hold the bytes, not the functions that filled them):
@@ -69,7 +69,8 @@ The stages, in pass order, and what each holds whole:
 
 What grows with what:
 
-- With **region volume** (the site plan's `region`, which the horizon's ground and sea fill whether or not a place stands there): the assembled map, the judged copy, the light arrays, the reach window, the envelope index, the write judge — and, under an `ocean` horizon, the rest states themselves: 1,201,111 of the town's 1,366,129 states are submerged sea cells, carrying 7,016,576 of its 8,882,406 edges.
+- With **region volume** (the site plan's `region`, which the horizon's ground and sea fill whether or not a place stands there): the assembled map (18.4 M → 19.1 M placed cells when the region grows by 100 on every side), the review world's ground cells (58.2 M → 99.3 M) and its light arrays over the written chunks (2,014 → 3,300), the write judge. Measured, that growth is 1.86 GiB of peak for 57 M more region cells, all of it at the review-world stage. The reach graph does **not** grow with it: its window is the judged world's (the boundary's playable columns grown by 16, 270 × 512 columns for the town), and the widened town has the same 1,366,129 states and 8,882,406 edges.
+- With the **playable region** under an `ocean` horizon: the rest states themselves — 1,201,111 of the town's 1,366,129 states are submerged sea cells inside the judged columns, carrying 7,016,576 of its 8,882,406 edges — and with them every structure of the reach graph.
 - With **reached cells**: the node tables, the bank, every closure and every clone of one.
 - With **configurations**: only the differing snapshot chunks (already shared in 4,096-cell chunks, spec-0113 §7) and one set of closures per configuration — the gallery's 23 configurations cost 1.34 GB in all; the town's one configuration costs ten times that.
 
@@ -135,6 +136,18 @@ By memory saved per unit of work, from the profile:
 4. **Light**: per-section flooding over the store; the arrays are a smaller holder today (a few hundred MB) and fall with the store.
 5. **The sea summaries and the leak floods**: the plain-sea components, which take 1.2 M of the town's 1.37 M states out of the graph, and the block-wise floods.
 6. **`detail --all`'s prepared pieces**: stated, not chunked; they are the campaign's own size.
+
+## The first stage, demonstrated
+
+The largest consumer is the reach graph's retained memos, and the largest structure among them is the node bank. Landed with this record: **the bank spills its variants to an unlinked scratch file and keeps one slot per variant in memory** (`reach/bank.rs`; the town keeps 166,307 variants over 2,053,002,194 bytes of spill). Measured with the `/proc` sampler on the same Linux machine, base engine against the engine with the spill alone:
+
+| Map | Base peak RSS | Spilled bank | Saved | Output |
+|---|---|---|---|---|
+| town (86 M-cell region) | 14.06 GiB (15.09 GB) | 10.91 GiB (11.71 GB) | 3.15 GiB | byte-identical over all 267 files (sha256 of each) |
+| widened town (143 M-cell region) | 15.92 GiB (17.09 GB) | 12.92 GiB (13.87 GB) | 3.00 GiB | byte-identical over all 270 files |
+| gallery (macOS, `time -l`) | 1.34 GB | 1.36 GB | none: its bank is 80 MB and its peak lies elsewhere | byte-identical over all 1,570 files |
+
+The saving is the bank's heap plus the allocator's slack over it, and it holds at both sizes because the bank's size is the town's reached nodes, which the region does not change. The peak stays at the review-world stage; the second landed step — **the review world walks its ground cells instead of gathering them** (`view/world.rs`) — is measured in the same way in the commit that carries its numbers. Wall clock on the shared machine moved between runs by as much as a minute and a half in either direction while another round's jobs ran beside these, so no timing is claimed here beyond the fact that the spill writes 2 GB once.
 
 ## Consequences
 
