@@ -596,8 +596,19 @@ impl Bank {
 
     /// How many variants the bank holds, and the bytes they take in the spill.
     pub(super) fn census(&self) -> (usize, u64) {
-        let n = self.nodes.lock().expect("bank").values().map(Vec::len).sum();
-        let bytes = self.spill.lock().expect("spill").as_ref().map_or(0, |s| s.len);
+        let n = self
+            .nodes
+            .lock()
+            .expect("bank")
+            .values()
+            .map(Vec::len)
+            .sum();
+        let bytes = self
+            .spill
+            .lock()
+            .expect("spill")
+            .as_ref()
+            .map_or(0, |s| s.len);
         (n, bytes)
     }
 }
@@ -660,7 +671,10 @@ pub(super) fn persist_all() {
 /// Every bank's census, summed: variants kept and bytes spilled.
 pub(super) fn census_all() -> (usize, u64) {
     let banks: Vec<Arc<Bank>> = banks().lock().expect("banks").values().cloned().collect();
-    banks.iter().map(|b| b.census()).fold((0, 0), |a, b| (a.0 + b.0, a.1 + b.1))
+    banks
+        .iter()
+        .map(|b| b.census())
+        .fold((0, 0), |a, b| (a.0 + b.0, a.1 + b.1))
 }
 
 #[cfg(test)]
