@@ -509,6 +509,11 @@ impl<V: Item> Lists<V> {
     pub(super) fn get(&self, c: [i32; 3]) -> Vec<V> {
         self.with(c, <[V]>::to_vec)
     }
+
+    /// The chunk side the list is kept at.
+    pub(super) fn side(&self) -> i32 {
+        self.inner.lock().expect("lists").side
+    }
 }
 
 impl<V: Item> Clone for Lists<V> {

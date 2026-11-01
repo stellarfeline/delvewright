@@ -447,6 +447,9 @@ fn flood(
     let mut layer: Vec<[i32; 3]> = from.iter().copied().collect();
     for d in 0..moves {
         open.fly_cells(reach, &layer);
+        // A cell's depth is its layer's whatever order the layer is read in,
+        // so it is read reach chunk by reach chunk.
+        reach.in_chunk_order(&mut layer);
         let mut next: Vec<[i32; 3]> = Vec::new();
         for c in &layer {
             for n in reach.next(*c).collect::<Vec<_>>() {

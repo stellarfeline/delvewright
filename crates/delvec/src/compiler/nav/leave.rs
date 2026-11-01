@@ -807,33 +807,19 @@ impl World {
         ways_out: &BTreeSet<[i32; 3]>,
         returned: Option<([i32; 3], [i32; 3])>,
     ) -> BTreeSet<[i32; 3]> {
-        let seen = reach.cells();
         // The ways out: the cells that count as having left (the route itself,
         // for `DW0921`) that the closure reaches, and every reached cell the
-        // boundary clock carries a body back from.
-        let mut back: BTreeSet<[i32; 3]> = seen
-            .iter()
-            .copied()
-            .filter(|c| ways_out.contains(c) || returned_from(returned, *c))
-            .collect();
-        let mut queue: std::collections::VecDeque<[i32; 3]> = back.iter().copied().collect();
-        let mut sea_back = false;
-        while let Some(cur) = queue.pop_front() {
-            if !sea_back && reach.open_sea.contains(&cur) {
-                sea_back = true;
-                for s in &reach.open_sea {
-                    if back.insert(*s) {
-                        queue.push_back(*s);
-                    }
-                }
-            }
-            for (p, _) in reach.preds(cur) {
-                if back.insert(p) {
-                    queue.push_back(p);
-                }
-            }
-        }
-        back
+        // boundary clock carries a body back from — walked back from over the
+        // predecessor edges, reach chunk by reach chunk ([`Reach::reaching`]).
+        reach.reaching(
+            reach
+                .states
+                .keys()
+                .copied()
+                .filter(|c| ways_out.contains(c) || returned_from(returned, *c)),
+            |_| true,
+            true,
+        )
     }
 }
 

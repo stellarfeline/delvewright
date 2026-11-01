@@ -3959,26 +3959,138 @@ impl Reach {
     }
 
     /// Whether, over this closure's own edges, `from` reaches every one of
-    /// `targets`.
+    /// `targets` — walked reach chunk by reach chunk ([`Reach::walk`]).
     fn reaches_all(&self, from: &[[i32; 3]], targets: &[[i32; 3]]) -> bool {
         let mut want: BTreeSet<[i32; 3]> = targets.iter().copied().collect();
-        let mut seen: BTreeSet<[i32; 3]> = from.iter().copied().collect();
-        let mut queue: Vec<[i32; 3]> = from.to_vec();
         for f in from {
             want.remove(f);
         }
-        while let Some(c) = queue.pop() {
-            if want.is_empty() {
-                return true;
+        if want.is_empty() {
+            return true;
+        }
+        let mut done = false;
+        self.walk(
+            from.iter().copied(),
+            true,
+            |c| self.succ.get(c).into_iter().map(|e| e.to).collect(),
+            |n| {
+                want.remove(&n);
+                done = want.is_empty();
+                (true, done)
+            },
+        );
+        done
+    }
+
+    /// The reach chunk a cell's lists are kept in.
+    fn chunk_key(&self, c: [i32; 3]) -> chunks::Key {
+        chunks::chunk_of(c, self.succ.side())
+    }
+
+    /// Put `cells` in the order their lists are kept in: reach chunk by reach
+    /// chunk, cell order within a chunk. A reader whose answer does not
+    /// depend on the order it reads cells in reads them so.
+    pub fn in_chunk_order(&self, cells: &mut [[i32; 3]]) {
+        cells.sort_unstable_by_key(|c| (self.chunk_key(*c), *c));
+    }
+
+    /// `f` of each of `cells` and its predecessors ([`Reach::preds`]'s
+    /// order), the cells taken in chunk order ([`Reach::in_chunk_order`]).
+    pub fn preds_by_chunk(
+        &self,
+        cells: impl IntoIterator<Item = [i32; 3]>,
+        mut f: impl FnMut([i32; 3], &[([i32; 3], Edge)]),
+    ) {
+        let mut cells: Vec<[i32; 3]> = cells.into_iter().collect();
+        self.in_chunk_order(&mut cells);
+        for c in cells {
+            f(c, &self.preds(c));
+        }
+    }
+
+    /// Every state from which a movement sequence over this closure's edges
+    /// reaches one of `seeds`, `seeds` included: walked backwards over the
+    /// predecessor lists, reach chunk by reach chunk ([`Reach::walk`]). A
+    /// predecessor `admit` refuses is not entered. With `sea`, the open sea is
+    /// one place: reaching any of it reaches all of it (spec-0113 §4.7).
+    pub fn reaching(
+        &self,
+        seeds: impl IntoIterator<Item = [i32; 3]>,
+        admit: impl Fn(&[i32; 3]) -> bool,
+        sea: bool,
+    ) -> BTreeSet<[i32; 3]> {
+        let seeds: Vec<[i32; 3]> = seeds.into_iter().collect();
+        let mut out: BTreeSet<[i32; 3]> = seeds.iter().copied().collect();
+        self.walk(
+            seeds,
+            sea,
+            |c| {
+                self.preds
+                    .get(c)
+                    .into_iter()
+                    .map(|(p, _)| p)
+                    .filter(|p| admit(p))
+                    .collect()
+            },
+            |n| {
+                out.insert(n);
+                (true, false)
+            },
+        );
+        out
+    }
+
+    /// **A walk over this closure, reach chunk by reach chunk**: from
+    /// `seeds`, each cell's neighbours (`step`: its successors or its
+    /// predecessors, read from the lists kept in its chunk) are entered once;
+    /// a frontier is kept per chunk, a chunk's frontier walked to the end
+    /// before the next chunk's is taken, so each chunk's lists are read while
+    /// they are the ones in memory. With `sea`, a cell of the open sea enters
+    /// every open-sea cell, once. `enter` is told each cell entered for the
+    /// first time (seeds are not told) and answers whether to walk on from it
+    /// and whether to stop. The cells entered are the same whatever the
+    /// order, so the walk answers every question about the set it reaches.
+    fn walk(
+        &self,
+        seeds: impl IntoIterator<Item = [i32; 3]>,
+        sea: bool,
+        step: impl Fn([i32; 3]) -> Vec<[i32; 3]>,
+        mut enter: impl FnMut([i32; 3]) -> (bool, bool),
+    ) {
+        let mut seen: std::collections::HashSet<[i32; 3]> = std::collections::HashSet::new();
+        let mut fronts: BTreeMap<chunks::Key, Vec<[i32; 3]>> = BTreeMap::new();
+        for s in seeds {
+            if seen.insert(s) {
+                fronts.entry(self.chunk_key(s)).or_default().push(s);
             }
-            for n in self.next(c) {
-                if seen.insert(n) {
-                    want.remove(&n);
-                    queue.push(n);
+        }
+        let mut sea_joined = !sea;
+        while let Some((k, mut local)) = fronts.pop_first() {
+            while let Some(cur) = local.pop() {
+                let mut next = step(cur);
+                if !sea_joined && self.open_sea.contains(&cur) {
+                    sea_joined = true;
+                    next.extend(self.open_sea.iter().copied());
+                }
+                for n in next {
+                    if !seen.insert(n) {
+                        continue;
+                    }
+                    let (on, stop) = enter(n);
+                    if stop {
+                        return;
+                    }
+                    if on {
+                        let kn = self.chunk_key(n);
+                        if kn == k {
+                            local.push(n);
+                        } else {
+                            fronts.entry(kn).or_default().push(n);
+                        }
+                    }
                 }
             }
         }
-        want.is_empty()
     }
 
     fn flown_mask(&self, c: [i32; 3]) -> Quadrants {

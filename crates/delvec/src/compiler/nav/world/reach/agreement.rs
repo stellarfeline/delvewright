@@ -1012,3 +1012,89 @@ fn the_chunked_closure_is_the_one_every_launch_gives() {
         "the cases bind nothing: no launch was left unflown"
     );
 }
+
+/// What a plain queue walking the predecessor lists backwards from `seeds`
+/// reaches — the walk the readers took before they read by chunk — with the
+/// open sea joined when `sea`.
+fn reaching_plainly(
+    r: &super::Reach,
+    seeds: &BTreeSet<[i32; 3]>,
+    admit: impl Fn(&[i32; 3]) -> bool,
+    sea: bool,
+) -> BTreeSet<[i32; 3]> {
+    let mut out = seeds.clone();
+    let mut queue: std::collections::VecDeque<[i32; 3]> = seeds.iter().copied().collect();
+    let mut joined = !sea;
+    while let Some(cur) = queue.pop_front() {
+        if !joined && r.open_sea.contains(&cur) {
+            joined = true;
+            for s in &r.open_sea {
+                if out.insert(*s) {
+                    queue.push_back(*s);
+                }
+            }
+        }
+        for (p, _) in r.preds(cur) {
+            if admit(&p) && out.insert(p) {
+                queue.push_back(p);
+            }
+        }
+    }
+    out
+}
+
+/// **A walk read reach chunk by reach chunk answers what a plain walk
+/// answers** (ADR-0037 §2, the readers): over every invariance world, at
+/// chunk sides of sixteen, seven and two columns, the backward walk the
+/// boundary and leave proofs read ([`super::Reach::reaching`]) — from the
+/// standing states with the open sea joined, and from the open sea through
+/// wet states only — and the predecessor reading by chunk
+/// ([`super::Reach::preds_by_chunk`]) equal a plain queue's answers. Red on
+/// any cell either way.
+#[test]
+fn a_walk_by_chunk_answers_what_a_plain_walk_answers() {
+    let (mut walked, mut sea_walked) = (0usize, 0usize);
+    for (name, w, roots) in invariance_worlds() {
+        for side in [16, 7, 2] {
+            super::chunks::at_side(side, || {
+                let r = w.body_reach(&roots);
+                let standing = r.standing();
+                let back = r.reaching(standing.iter().copied(), |_| true, true);
+                assert_eq!(
+                    back,
+                    reaching_plainly(&r, &standing, |_| true, true),
+                    "{name} (side {side}): the backward walk by chunk reaches otherwise"
+                );
+                let wet = |c: &[i32; 3]| {
+                    matches!(
+                        r.states.get(c),
+                        Some(super::RestKind::Afloat | super::RestKind::Submerged)
+                    )
+                };
+                let sea = r.reaching(r.open_sea.iter().copied(), wet, false);
+                assert_eq!(
+                    sea,
+                    reaching_plainly(&r, &r.open_sea, wet, false),
+                    "{name} (side {side}): the walk through the sea by chunk reaches otherwise"
+                );
+                let mut by_chunk: Vec<([i32; 3], Vec<([i32; 3], super::Edge)>)> = Vec::new();
+                r.preds_by_chunk(r.states.keys().copied(), |c, ps| {
+                    by_chunk.push((c, ps.to_vec()))
+                });
+                by_chunk.sort_by_key(|(c, _)| *c);
+                let plain: Vec<([i32; 3], Vec<([i32; 3], super::Edge)>)> =
+                    r.states.keys().map(|c| (*c, r.preds(*c))).collect();
+                assert_eq!(
+                    by_chunk, plain,
+                    "{name} (side {side}): the predecessors read by chunk differ"
+                );
+                if side == 2 {
+                    walked += back.len();
+                    sea_walked += sea.len();
+                }
+            });
+        }
+    }
+    eprintln!("walks by chunk: {walked} cell(s) walked back, {sea_walked} through the sea");
+    assert!(walked > 0 && sea_walked > 0, "the walks bind nothing");
+}
