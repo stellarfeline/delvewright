@@ -74,17 +74,21 @@ ENGINE_REFERENCES = (
 )
 
 # What each step of the loop costs, measured with `/usr/bin/time -l` on a
-# 16 GB Apple M2 Pro with `delvec` 1.15.0 built at engine `c965e9f38`, on a
-# 95-place town (content `demo/fresh-proof-2`): the place's own steps are
-# seconds; the two that assemble the whole scale with it. Stated where the
-# handout tells the author to loop, so the expensive check is run when the
-# cheap steps are clean, not after every edit.
+# 16 GB Apple M2 Pro with `delvec` 1.15.0 built at engine `4e8ff4e01`, on the
+# 95-place town (content `demo/authoring-cost` at `7fb8a92`, place
+# `node/fishmonger`): the place's own steps are seconds; the two that
+# assemble the whole scale with it. The check keeps the reach graph's node
+# bank under the campaign's `.out/`: a check after an earlier check or commit
+# takes the "again" figure, whatever the program moved, doors included; the
+# first check a `delvec` runs takes the "first" one. Stated where the handout
+# tells the author to loop, so the expensive check is run when the cheap
+# steps are clean, not after every edit.
 COST = {
     "generator": "about 1.5 s",
-    "expand": "about 2.5 s and 0.4 GB",
-    "render": "about 2 s and 0.4 GB",
-    "frames": "about 3 min and 11 GB",
-    "check": "12 to 13 min, peaking at 18.8 GB",
+    "expand": "about 1.5 s and 0.4 GB",
+    "render": "about 1.5 s and 0.4 GB",
+    "frames": "about 2 min and 10 GB",
+    "check": "about 5.5 min and 15 GB the first time, about 3 min and 13 GB again",
 }
 COST_INSTRUMENT = "measured on a 16 GB machine over a 95-place town; the last two grow with the whole"
 
@@ -220,43 +224,6 @@ def owed_answer(name: str) -> str:
     if stem.startswith("node-"):
         return f"`mark` `{stem}` — where this place's body stands: the cast and the objectives quoted above are put there"
     return f"`mark` `{stem}` — a station the graph declares; a body is put there"
-
-
-def allocation_json(a: dict) -> str:
-    """The allocation verbatim, one line per ground column and perimeter cell.
-
-    `ground.columns` and `ground.perimeter` are one entry per plot cell; pretty
-    JSON spends five lines on each. Nothing is dropped and nothing is
-    re-derived: every value is the one `delvec allocation` printed.
-    """
-    a = json.loads(json.dumps(a))  # a private copy to re-render
-    ground = a.get("ground", {})
-    columns = ground.pop("columns", None)
-    perimeter = ground.pop("perimeter", None)
-    fixed = ground.pop("fixed", None)
-    out = [json.dumps(a, indent=2, ensure_ascii=False)]
-    if columns is not None:
-        out.append("")
-        out.append(
-            f"ground.columns ({len(columns)}; the terrain-shaped column under each plot cell, "
-            f"piece-local `x z top blocks`):"
-        )
-        for c in columns:
-            out.append(f"  {c['x']} {c['z']} {c['top']} {' '.join(c['blocks'])}")
-    if perimeter is not None:
-        out.append("")
-        out.append(f"ground.perimeter ({len(perimeter)}; the terrain along the ring, piece-local):")
-        out.append("  " + " ".join(f"[{p[0]},{p[1]},{p[2]}]" for p in perimeter))
-    if fixed is not None:
-        out.append("")
-        out.append(
-            f"ground.fixed ({len(fixed)}; ring cells the whole has already written — a void "
-            f"to you, never paint one):"
-        )
-        for f in fixed:
-            c = f["cell"]
-            out.append(f"  [{c[0]},{c[1]},{c[2]}] {f['block']}")
-    return "\n".join(out)
 
 
 def design_rows(
@@ -607,7 +574,7 @@ def render(
     w(f"3. **Draw** — your generator, {COST['generator']}: write it at `{generator}`; it imports the starter from `$DELVEWRIGHT_SKILL/scripts` (never a copy) and draws the place into a `Model` — every building, yard and piece of life as cells in piece-local coordinates, each part's columns named with `Model.part`, an owed name stood with `Model.mark` where you want it (the starter stands any you leave). The starter's section *A building drawn as cells* is the template. Run it as step 1, adding `--delvec \"{delvec}\"` — **a drawn model needs a `delvec` binary on the machine that runs the generator**, because `run` asks it what the drawing does and refuses before writing when it cannot: the starter asks the engine (`delvec grammar survey`) where a body stands and what it reaches from your ways in, and claims every cell from the answer — the floor a body reaches into the part it stands in, the floor no body reaches (a roof, a wall head, a sill) and the air sealed over it as `unwalked`, a walk edge between two parts only where a body crosses (with its `rise` where their floors differ), a part none of whose floor a body reaches declared seen and never entered. **You never claim a cell or write an edge by hand.** Before it writes anything it refuses, naming the block and the cell, every block the server would drop (a lantern hung under a slab, a flower off soil), every block the palette refuses (the list below), a block state the pinned game does not have or one that leaves a property out — build states with its constructors (`stairs`, `slab`, `door`, `trapdoor`, `fence`, …) and roofs with `Model.roof` — and an opening with something standing behind it. It prints each part's claimed columns against the band `DW1074` judges, and every column you named for a part that the claim leaves out, with why: a part out of band is seen here, before the check.")
     w(f"4. **Look at the piece alone** — `grammar expand`, {COST['expand']}, then `render piece`, {COST['render']}: `{delvec_p} grammar expand --file \"{program}\" --region {ex}x{ey}x{ez} -o \"{work}/expand\"` (your `handed/…` defaults are the handed values, so no `--param` is needed; the piece's files are named for the program's filename up to its first `.`, so a working copy `{stem}.json.new` writes `{stem}.nbt`, and `--id` names them otherwise), then `{delvec_p} render piece \"{work}/expand/{stem}.nbt\" -o \"{work}/render\"` with a `--view` of your own — `face=up,cutaway=<y>` takes every course from piece-local `y` up off, so `cutaway={a['datum_y'] + 3}` shows the rooms under a roof; `cutaway=true` takes off only the top course that holds a block. **A `face=up` picture has south at its top and west at its right** (the camera looks straight down facing south), so east is on its left.")
     w(f"5. **Look at it in its surroundings** — `frames --campaign`, {COST['frames']}: `\"{delvec}\" --prefabs \"{prefabs}\" frames --campaign \"{campaign_dir}\" --program {place} --at {place} -o \"{work}/look/{stem}.png\"` draws your program as it stands in place of the committed piece, committed or not and its gates passing or not, the camera outside the place's box on bearing `--orbit` — degrees, 0 standing due south of the place looking north, 90 due west looking east, 180 due north, 270 due east: the bearing turns clockwise seen from above — looking at it whole with its neighbours. To stand the camera yourself, give `--camera x,y,z,yaw,pitch[,fov]` with `--frame <place>`: x, y and z are then read in that place's own frame — this place's piece-local coordinates (`--frame {place}`), or a neighbour's, whose frame `\"{delvec}\" allocation \"{campaign_dir}\" <neighbour>` prints — never world arithmetic; yaw 0 faces south (+z), 90 west, 180 north, 270 east, and a positive pitch looks down.")
-    w(f"6. **Check** — `detail --check`, {COST['check']}: `{delvec_p} detail --check \"{campaign_dir}\" {place}`, the one verb that judges a place. Run it when steps 3 to 5 are clean, and again after you repair what it named. Exit 0 is your finished state.")
+    w(f"6. **Check** — `detail --check`, {COST['check']}: `{delvec_p} detail --check \"{campaign_dir}\" {place}`, the one verb that judges a place. Run it when steps 3 to 5 are clean, and again after you repair what it named. A check after an earlier one takes the shorter figure while your doors, trapdoors and climbables stay where they were (the engine keeps what it worked out under the campaign's `.out/`). Exit 0 is your finished state.")
     w("")
     w("**Nothing outside this handout's reading list is needed, and nothing outside it is read**: not the engine's source, not the engine's gallery, not another campaign. Everything the starter does not already do is in the references listed below.")
     w("")
@@ -748,13 +715,9 @@ def render(
         lines.extend(refusal.rstrip("\n").split("\n"))
         w("```")
         w("")
-    w("## The allocation, verbatim")
+    w("## The allocation")
     w("")
-    w("What `delvec allocation` hands this place. Every number your program needs is here and is read through a `handed/…` parameter, never copied.")
-    w("")
-    w("```json")
-    lines.extend(allocation_json(a).split("\n"))
-    w("```")
+    w(f"`{allocation_file}` is what `delvec allocation` hands this place, as it prints it; the starter reads it, and the frame above is drawn from it. Every number your program needs is in it and is read through a `handed/…` parameter, never copied. Open it when you need a value the frame does not show (a ground column's blocks, a perimeter cell).")
     w("")
     w("## Your return")
     w("")

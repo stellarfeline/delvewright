@@ -449,7 +449,7 @@ fn a_snapshot_shares_every_chunk_its_lineage_holds_alike() {
         (1..=2).contains(&mine),
         "the doorway's two cells lie in one or two chunks; the snapshot holds {mine} of its own"
     );
-    assert!(memo.extra.own_chunks(&base.extra) <= 2);
+    assert!(memo.extra.cells.own_chunks(&base.extra.cells) <= 2);
     assert_eq!(own.cells.len(), memo.dense.cells.len());
     for i in 0..own.cells.len() {
         assert_eq!(
@@ -461,7 +461,7 @@ fn a_snapshot_shares_every_chunk_its_lineage_holds_alike() {
     }
     let raw = raw_membership(&opened, &own);
     for i in 0..raw.len() {
-        assert_eq!(raw[i], memo.extra[i], "cell {:?}", own.coords(i));
+        assert_eq!(raw[i], memo.extra.cells[i], "cell {:?}", own.coords(i));
     }
     // The lineage's diff is exactly the doorway.
     let (_, diff) = memo
@@ -561,4 +561,193 @@ fn a_column_with_only_an_overhead_block_is_a_way_out_of_the_world() {
     let c = World::from_solid_cells(closed);
     assert_eq!(c.fatal_launch(root), None);
     assert!(!c.body_reach(&[root]).leaves_world.contains(&root));
+}
+
+/// What a bank of `before` answers for every node `after`'s graph flew,
+/// against the node flying gives in `after`: each node the bank answers is
+/// the node flying gives (`hits`), each node whose edges `before` and `after`
+/// give differently (`changed`) is one it does not answer, and each node
+/// `after`'s graph holds — from its lineage (`before`'s graph), the bank or
+/// flown — is the node flying gives.
+fn bank_against_an_edit(
+    before: &World,
+    after: &World,
+    root: &[[i32; 3]],
+) -> (usize, usize, usize, Arc<Reach>) {
+    let params = ReachParams::shipped(before.unbounded_fall);
+    let _ = before.body_reach(root);
+    let mb = before.graph_memo(&params);
+    let back = bank::Bank::holding(mb.bank.held());
+    let reach = after.body_reach(root);
+    let ma = after.graph_memo(&params);
+    assert!(
+        Arc::ptr_eq(&mb.bank, &ma.bank),
+        "the two worlds share one bank: the edit is not the bank's key"
+    );
+    let held_nodes: BTreeMap<FlownKey, NodeEdges> = ma
+        .flown
+        .entries()
+        .into_iter()
+        .flat_map(|(c, v)| v.into_iter().map(move |(q, e)| ((c, q), e)))
+        .collect();
+    let flown: Vec<FlownKey> = held_nodes.keys().copied().collect();
+    let (mut hits, mut changed) = (0, 0);
+    for key in &flown {
+        let fresh = after.expand(&ma, &params, key.0, key.1, None);
+        let was = before.expand(&mb, &params, key.0, key.1, None);
+        let volumes = |bx| after.volumes_near(bx);
+        let jumps = after.jumps_from(key.0);
+        let hit = back.find(key, &ma.dense, &ma.extra, &jumps, &volumes);
+        let held = &held_nodes[key];
+        assert_eq!(
+            fresh.edges, held.edges,
+            "{key:?}: the graph holds a stale node"
+        );
+        assert_eq!(fresh.read, held.read, "{key:?}");
+        if was.edges != fresh.edges {
+            changed += 1;
+            assert!(
+                hit.is_none(),
+                "{key:?}: the edit moved its edges and the bank answered"
+            );
+        }
+        if let Some(e) = hit {
+            hits += 1;
+            assert_eq!(fresh.kind, e.kind, "{key:?}");
+            assert_eq!(fresh.edges, e.edges, "{key:?}");
+            assert_eq!(fresh.leaves_world, e.leaves_world, "{key:?}");
+            assert_eq!(fresh.dies, e.dies, "{key:?}");
+            assert_eq!(fresh.read, e.read, "{key:?}");
+        }
+    }
+    (flown.len(), hits, changed, reach)
+}
+
+/// A walled yard, floored past its walls, with nothing to climb: the way out
+/// is the doorway at `(7, 0)` alone.
+fn walled_yard(floor: ([i32; 3], [i32; 3])) -> Build {
+    let mut b = Build::default();
+    b.fill(floor.0, floor.1);
+    for i in 0..=14 {
+        for (x, z) in [(i, 0), (i, 14), (0, i), (14, i)] {
+            b.fill([x, 1, z], [x, 3, z]);
+        }
+    }
+    b.solid.remove(&[7, 1, 0]);
+    b.solid.remove(&[7, 2, 0]);
+    b
+}
+
+/// **A door edit misses exactly the nodes that read the door.** Two worlds
+/// that differ only in a door's leaf — the doorway of a walled yard with a
+/// shut iron door's leaf in it, and without — key one bank: a leaf is its
+/// cell's fact, not the bank's. The leaf stops the walk through the doorway
+/// (no snapshot code carries a shut leaf: the cell relation reads it from the
+/// leaf alone); every node whose edges it moves misses the bank built over
+/// the open doorway, and every node the bank answers is the node flying
+/// gives. The lineage (the open yard's graph) re-flies those nodes too.
+#[test]
+fn a_leaf_edit_misses_the_nodes_that_read_it_and_no_other() {
+    let shut = delvewright_dsl::blockshape::leaf(
+        "minecraft:iron_door[facing=south,half=lower,hinge=left,open=false]",
+    )
+    .expect("an iron door's leaf");
+    let b = walled_yard(([-3, 0, -3], [17, 0, 17]));
+    // A leaf far from the doorway stands in both worlds.
+    let mut open = b.world(Ambient::Void, Vec::new());
+    open.floors.leaves.insert([16, 1, 16], shut);
+    let mut closed = open.clone_world();
+    closed.floors.leaves.insert([7, 1, 0], shut);
+    closed.floors.leaves.insert([7, 2, 0], shut);
+    let root = [[5, 1, 5]];
+    let (flown, hits, changed, _) = bank_against_an_edit(&open, &closed, &root);
+    eprintln!("leaf edit: {flown} node(s) flown, {hits} answered by the bank, {changed} moved");
+    assert!(
+        changed > 0,
+        "the edit moved no node: the test binds nothing"
+    );
+    assert!(
+        hits > 0,
+        "the bank answered no node: it misses where nothing changed"
+    );
+}
+
+/// **A door edit misses the nodes beside it.** The walled yard, through the
+/// real classifier, with an oak door in its doorway that the story has
+/// opened, and then with a shut iron door there instead: the way out is
+/// gone, every node the edit moves misses the bank the oak door left, and
+/// every node the bank answers is the node flying gives.
+#[test]
+fn a_door_edit_misses_the_nodes_beside_it() {
+    let yard = |oak: bool| -> World {
+        let b = walled_yard(([-5, 0, -5], [19, 0, 19]));
+        let mut cells: Vec<([i32; 3], String)> = b
+            .solid
+            .iter()
+            .map(|c| (*c, "minecraft:stone".to_string()))
+            .collect();
+        let door = if oak { "oak_door" } else { "iron_door" };
+        for (y, half) in [(1, "lower"), (2, "upper")] {
+            cells.push((
+                [7, y, 0],
+                format!("minecraft:{door}[facing=south,half={half},hinge=left,open=false]"),
+            ));
+        }
+        let opened: BTreeSet<[i32; 3]> = if oak {
+            [[7, 1, 0], [7, 2, 0]].into_iter().collect()
+        } else {
+            BTreeSet::new()
+        };
+        World::from_occupancy(
+            crate::compiler::assembled::occupancy_of(cells.into_iter().collect(), &opened),
+            Premises::geometry_only(),
+        )
+    };
+    let root = [[5, 1, 5]];
+    let (flown, hits, changed, reach) = bank_against_an_edit(&yard(true), &yard(false), &root);
+    eprintln!("door edit: {flown} node(s) flown, {hits} answered by the bank, {changed} moved");
+    assert!(
+        yard(true)
+            .body_reach(&root)
+            .states
+            .contains_key(&[7, 1, -1]),
+        "the opened oak door is walked through"
+    );
+    assert!(
+        !reach.states.contains_key(&[7, 1, -1]),
+        "the shut iron door stops the way out"
+    );
+    assert!(
+        changed > 0,
+        "the edit moved no node: the test binds nothing"
+    );
+    assert!(
+        hits > 0,
+        "the bank answered no node: it misses where nothing changed"
+    );
+}
+
+/// **Two worlds whose tallest blocks differ by a course share a window**,
+/// and so one node bank and a lineage: a block set on the walled yard's wall
+/// raises its highest cell and moves no other, and the yard with it re-flies
+/// only the nodes beside it.
+#[test]
+fn a_taller_block_keeps_the_window() {
+    let root = [[5, 1, 5]];
+    let low = walled_yard(([-2, 0, -2], [16, 0, 16]));
+    let mut high = walled_yard(([-2, 0, -2], [16, 0, 16]));
+    high.fill([3, 4, 14], [3, 4, 14]);
+    let (a, b) = (
+        low.world(Ambient::Void, Vec::new()),
+        high.world(Ambient::Void, Vec::new()),
+    );
+    let params = ReachParams::shipped(a.unbounded_fall);
+    let _ = a.body_reach(&root);
+    let _ = b.body_reach(&root);
+    let (ma, mb) = (a.graph_memo(&params), b.graph_memo(&params));
+    assert_eq!((ma.dense.lo, ma.dense.dims), (mb.dense.lo, mb.dense.dims));
+    assert!(Arc::ptr_eq(&ma.bank, &mb.bank), "one bank");
+    let (base, diff) = mb.lineage.as_ref().expect("the low yard is the lineage");
+    assert!(Arc::ptr_eq(base, &ma));
+    assert_eq!(diff, &vec![[3, 4, 14]]);
 }

@@ -18,7 +18,7 @@ use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabReg
 use delvewright_dsl::{Diagnostic, DwCode, validate_campaign_with};
 
 use crate::EXIT_INTERNAL;
-use crate::cli::report::{print_build_error, print_diags, report_binding_notes};
+use crate::cli::report::{binding_notes, print_build_error, print_diags, report_binding_notes};
 
 /// `DW0309`: a staged **body** — a stage-2 npc or a stage-5 actor alike —
 /// declares a `skin.texture_id` for which the campaign ships no
@@ -225,6 +225,45 @@ pub(crate) fn validate_stage(
     validate_loaded(loaded, prefabs_dir, json)
 }
 
+/// [`validate_stage`], its binding notes handed to the caller in `notes`
+/// rather than printed: the same validation, the same diagnostics printed,
+/// the same lines under "what this run examined". `delvec detail`'s battery
+/// writes them to a file beside the campaign.
+pub(crate) fn validate_stage_noting(
+    campaign_dir: &Path,
+    prefabs_dir: &Path,
+    json: bool,
+    notes: &mut Vec<String>,
+) -> Result<Validated, u8> {
+    let loaded = load_or_refuse(campaign_dir, json)?;
+    validate_loaded_with(loaded, prefabs_dir, json, Some(notes))
+}
+
+/// [`validate_stage_noting`], its notes counted rather than printed: one
+/// line states how many there are and the command that prints them for the
+/// campaign `named` over the library `library`. What a verb that judges one place or draws one view prints in
+/// place of the campaign's whole census, which is the same on every run over
+/// it and about nothing that run changed.
+pub(crate) fn validate_stage_counted(
+    campaign_dir: &Path,
+    prefabs_dir: &Path,
+    json: bool,
+    (named, library): (&Path, &Path),
+) -> Result<Validated, u8> {
+    let mut examined: Vec<String> = Vec::new();
+    let v = validate_stage_noting(campaign_dir, prefabs_dir, json, &mut examined);
+    if !examined.is_empty() {
+        eprintln!(
+            "-- what the validation examined: {} line(s), the campaign's census; `delvec \
+             --prefabs {} validate {}` prints them",
+            examined.len(),
+            library.display(),
+            named.display()
+        );
+    }
+    v
+}
+
 /// [`validate_stage`] over an already-loaded (possibly augmented) campaign —
 /// split out so `delvec edit` can validate a script with a candidate batch
 /// appended before anything touches the campaign directory.
@@ -232,6 +271,15 @@ pub(super) fn validate_loaded(
     loaded: delvec::compiler::load::LoadedCampaign,
     prefabs_dir: &Path,
     json: bool,
+) -> Result<Validated, u8> {
+    validate_loaded_with(loaded, prefabs_dir, json, None)
+}
+
+fn validate_loaded_with(
+    loaded: delvec::compiler::load::LoadedCampaign,
+    prefabs_dir: &Path,
+    json: bool,
+    notes: Option<&mut Vec<String>>,
 ) -> Result<Validated, u8> {
     let prefabs = load_library(prefabs_dir, json)?;
     let items = FullItemRegistry::v1_21_11();
@@ -655,7 +703,10 @@ pub(super) fn validate_loaded(
             // against it (the diagnostics were raised in `validate_campaign_with`).
             examined.push(delvewright_dsl::viewdistance::checks(&campaign, &mut Vec::new()).line());
             print_diags(&diags, json);
-            report_binding_notes(&campaign, &examined);
+            match notes {
+                Some(notes) => *notes = binding_notes(&campaign, &examined),
+                None => report_binding_notes(&campaign, &examined),
+            }
             Ok(Validated {
                 campaign,
                 prefabs,

@@ -224,10 +224,17 @@ run over a world of the same window takes every node whose read cells hold
 the same, unflown (`docs/reference/delvec/compiler/nav.md`, the node bank). A
 file is named for the bank's key and the sha256 of the running executable's
 own bytes, so a run reads only what its own binary wrote; a file that does not
-decode is read as empty, and a file is replaced whole by a rename. Unset, the
-bank lives and dies with the run. Either way the bytes a build emits are the
-same (`tests/reach_cache.rs`); the gallery coverage gate sets it to a scratch
-directory its probe runs share. Within a run the bank lives in a scratch file
+decode is read as empty, and a file is replaced whole by a rename. A file's
+name starts with the executable's hash, and a run that writes a bank removes
+the bank files in the directory another executable wrote. Unset, `delvec
+detail` (the commit, `--all` and `--check`) keeps the bank at
+`<campaign>/.out/reach-bank/`, and every other verb's bank lives and dies with
+the run; the empty string turns it off for every verb. A door's or a
+trapdoor's leaf is the fact of the cell it stands in, so a run whose world
+moves a door takes from the bank every node that read none of its cells.
+Either way the bytes a build emits are the same (`tests/reach_cache.rs`); the
+gallery coverage gate sets it to a scratch directory its probe runs share.
+Within a run the bank lives in a scratch file
 in the system's temporary directory, unlinked as soon as it is open: each
 variant is appended as the file format encodes it and read back when a later
 graph asks, and the bank holds one offset and length per variant in memory, so
@@ -252,6 +259,7 @@ chunks of the largest decoded, C byte(s), and their buffered pushes); L chunk
 read(s) back over D record(s), E chunk(s) given up (ADR-0037 §2)` and `reach
 closures: V chunk visit(s) over P (closure, chunk) pair(s), at most M for one
 chunk in one closure [NxK …]` as it ends.
+The cost is disk: the town's bank (95 places) is 1.8 GB after one check, and grows with each program a place is checked with, since a node keeps up to eight variants.
 
 **The output directory** holds exactly what the last build emitted: a build into a directory a previous build wrote removes every file that build emitted and this one does not, and a directory holding anything no build wrote is refused untouched (`DW0967`, §5).
 

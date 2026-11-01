@@ -73,7 +73,10 @@ stitch (`DW0990`) and the exposure check (`DW0885`) for that place over the whol
 assembled in memory — each named with its cell or the route a body takes — prints
 each part's size against its band (`DW1074`), then writes the commit into a
 scratch copy of the campaign and the library and runs the commit's own battery
-over the whole it leaves, and writes nothing to either; `delvec --prefabs "$DELVEWRIGHT_PREFABS" detail
+over the whole it leaves, and writes nothing to either (under the campaign's
+uncommitted `.out/` it keeps the reach graph's node bank, `reach-bank/`, which
+makes a check after the first cheaper: it re-reads only what the place's
+edit touched, a moved door included); `delvec --prefabs "$DELVEWRIGHT_PREFABS" detail
 <campaign-dir> <place>` runs the same judge, then writes the piece, its report
 and the plan row — each through a temporary file renamed into place, so a check
 running at that instant reads the old file or the new one, never a torn one —
