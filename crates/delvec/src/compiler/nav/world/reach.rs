@@ -3399,6 +3399,7 @@ impl World {
                 return Arc::new(reach);
             }
         }
+        reach.shrink();
         let reach = Arc::new(reach);
         memo.closures
             .lock()
@@ -3789,6 +3790,18 @@ impl Reach {
             }
         }
         want.is_empty()
+    }
+
+    /// Drop the spare capacity the edge lists grew while the closure was
+    /// taken: the closure is kept for the run, and a list grown by pushing
+    /// holds up to twice its edges.
+    fn shrink(&mut self) {
+        for es in self.succ.values_mut() {
+            es.shrink_to_fit();
+        }
+        for ps in self.preds.values_mut() {
+            ps.shrink_to_fit();
+        }
     }
 
     fn flown_mask(&self, c: [i32; 3]) -> Quadrants {
