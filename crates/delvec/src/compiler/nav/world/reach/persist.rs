@@ -85,14 +85,15 @@ pub(super) fn store(key: &str, nodes: &[(FlownKey, Vec<Arc<Variant>>)]) {
 
 // --------------------------------------------------------------- the format
 
+/// The writer of the format; [`super::chunks`] writes its records with it too.
 #[derive(Default)]
-struct Enc(Vec<u8>);
+pub(super) struct Enc(pub(super) Vec<u8>);
 
 impl Enc {
     fn u8(&mut self, v: u8) {
         self.0.push(v);
     }
-    fn u16(&mut self, v: u16) {
+    pub(super) fn u16(&mut self, v: u16) {
         self.0.extend_from_slice(&v.to_le_bytes());
     }
     fn u32(&mut self, v: u32) {
@@ -110,7 +111,7 @@ impl Enc {
     fn bool(&mut self, v: bool) {
         self.u8(u8::from(v));
     }
-    fn cell(&mut self, c: [i32; 3]) {
+    pub(super) fn cell(&mut self, c: [i32; 3]) {
         for v in c {
             self.i32(v);
         }
@@ -146,7 +147,13 @@ impl Enc {
     fn edge_kind(&mut self, k: EdgeKind) {
         self.u8(EdgeKind::ALL.iter().position(|x| *x == k).expect("a kind") as u8);
     }
-    fn node_edges(&mut self, e: &NodeEdges) {
+    pub(super) fn edge(&mut self, x: &Edge) {
+        self.cell(x.to);
+        self.edge_kind(x.kind);
+        self.yaw(x.yaw);
+        self.bool(x.sprint);
+    }
+    pub(super) fn node_edges(&mut self, e: &NodeEdges) {
         self.u8(match e.kind {
             None => 0,
             Some(RestKind::Standing) => 1,
@@ -156,10 +163,7 @@ impl Enc {
         });
         self.len(e.edges.len());
         for x in &e.edges {
-            self.cell(x.to);
-            self.edge_kind(x.kind);
-            self.yaw(x.yaw);
-            self.bool(x.sprint);
+            self.edge(x);
         }
         self.bool(e.leaves_world);
         self.bool(e.open_sea);
@@ -239,9 +243,10 @@ fn encode(key: &str, nodes: &[(FlownKey, Vec<Arc<Variant>>)]) -> Vec<u8> {
     e.0
 }
 
-struct Dec<'a> {
-    b: &'a [u8],
-    at: usize,
+/// The reader of the format; [`super::chunks`] reads its records with it too.
+pub(super) struct Dec<'a> {
+    pub(super) b: &'a [u8],
+    pub(super) at: usize,
 }
 
 impl Dec<'_> {
@@ -253,7 +258,7 @@ impl Dec<'_> {
     fn u8(&mut self) -> Option<u8> {
         Some(self.take(1)?[0])
     }
-    fn u16(&mut self) -> Option<u16> {
+    pub(super) fn u16(&mut self) -> Option<u16> {
         Some(u16::from_le_bytes(self.take(2)?.try_into().ok()?))
     }
     fn u32(&mut self) -> Option<u32> {
@@ -277,7 +282,7 @@ impl Dec<'_> {
             _ => None,
         }
     }
-    fn cell(&mut self) -> Option<[i32; 3]> {
+    pub(super) fn cell(&mut self) -> Option<[i32; 3]> {
         Some([self.i32()?, self.i32()?, self.i32()?])
     }
     fn box3(&mut self) -> Option<Option<([i32; 3], [i32; 3])>> {
@@ -307,7 +312,15 @@ impl Dec<'_> {
     fn edge_kind(&mut self) -> Option<EdgeKind> {
         EdgeKind::ALL.get(usize::from(self.u8()?)).copied()
     }
-    fn node_edges(&mut self) -> Option<NodeEdges> {
+    pub(super) fn edge(&mut self) -> Option<Edge> {
+        Some(Edge {
+            to: self.cell()?,
+            kind: self.edge_kind()?,
+            yaw: self.yaw()?,
+            sprint: self.bool()?,
+        })
+    }
+    pub(super) fn node_edges(&mut self) -> Option<NodeEdges> {
         let kind = match self.u8()? {
             0 => None,
             1 => Some(RestKind::Standing),
@@ -319,12 +332,7 @@ impl Dec<'_> {
         let n = self.len()?;
         let mut edges = Vec::with_capacity(n);
         for _ in 0..n {
-            edges.push(Edge {
-                to: self.cell()?,
-                kind: self.edge_kind()?,
-                yaw: self.yaw()?,
-                sprint: self.bool()?,
-            });
+            edges.push(self.edge()?);
         }
         Some(NodeEdges {
             kind,

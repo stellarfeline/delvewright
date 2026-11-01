@@ -122,10 +122,9 @@ fn a_node_from_the_memo_and_the_bank_is_the_node_flying_gives() {
     let memo = opened.graph_memo(&params);
     let flown: Vec<(FlownKey, Arc<NodeEdges>)> = memo
         .flown
-        .lock()
-        .expect("memo")
-        .iter()
-        .map(|(k, e)| (*k, Arc::clone(e)))
+        .entries()
+        .into_iter()
+        .flat_map(|(c, l)| l.into_iter().map(move |(q, e)| ((c, q), Arc::new(e))))
         .collect();
     for (key, e) in &flown {
         let fresh = opened.expand(&memo, &params, key.0, key.1, None);
@@ -490,7 +489,12 @@ fn a_bank_read_back_from_its_file_answers_what_flying_gives() {
     let read = super::persist::round_trip("key", &held).expect("the file decodes");
     assert_eq!(read.len(), held.len());
     let back = bank::Bank::holding(read);
-    let flown: Vec<FlownKey> = memo.flown.lock().expect("memo").keys().copied().collect();
+    let flown: Vec<FlownKey> = memo
+        .flown
+        .entries()
+        .into_iter()
+        .flat_map(|(c, l)| l.into_iter().map(move |(q, _)| (c, q)))
+        .collect();
     assert!(!flown.is_empty());
     let mut answered = 0;
     for key in flown {

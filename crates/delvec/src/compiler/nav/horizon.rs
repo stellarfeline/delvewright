@@ -232,9 +232,9 @@ fn boundary_ocean_reach(world: &World, reach: &Reach) -> Result<(), Failure> {
                 }
             }
         }
-        for (p, _) in reach.preds.get(&cur).into_iter().flatten() {
-            if back.insert(*p) {
-                queue.push_back(*p);
+        for (p, _) in reach.preds(cur) {
+            if back.insert(p) {
+                queue.push_back(p);
             }
         }
     }
@@ -251,9 +251,9 @@ fn boundary_ocean_reach(world: &World, reach: &Reach) -> Result<(), Failure> {
     let mut open: BTreeSet<[i32; 3]> = reach.open_sea.clone();
     let mut queue: Vec<[i32; 3]> = open.iter().copied().collect();
     while let Some(c) = queue.pop() {
-        for (p, _) in reach.preds.get(&c).into_iter().flatten() {
-            if reach.states.get(p).is_some_and(wet) && open.insert(*p) {
-                queue.push(*p);
+        for (p, _) in reach.preds(c) {
+            if reach.states.get(&p).is_some_and(wet) && open.insert(p) {
+                queue.push(p);
             }
         }
     }
@@ -261,10 +261,10 @@ fn boundary_ocean_reach(world: &World, reach: &Reach) -> Result<(), Failure> {
     // edge into it, once, with the first such edge in words.
     let mut shores: BTreeMap<[i32; 3], String> = BTreeMap::new();
     for c in &stranded {
-        for (p, e) in reach.preds.get(c).into_iter().flatten() {
-            if reach.states.get(p).is_some_and(|k| !wet(k)) && !shores.contains_key(p) {
+        for (p, e) in reach.preds(*c) {
+            if reach.states.get(&p).is_some_and(|k| !wet(k)) && !shores.contains_key(&p) {
                 shores.insert(
-                    *p,
+                    p,
                     format!(
                         "\n  - {p:?} → {} at {c:?}, by {}",
                         if open.contains(c) {
@@ -272,7 +272,7 @@ fn boundary_ocean_reach(world: &World, reach: &Reach) -> Result<(), Failure> {
                         } else {
                             "enclosed water"
                         },
-                        super::leave::movement_words(world, *p, e)
+                        super::leave::movement_words(world, p, &e)
                     ),
                 );
             }
@@ -324,15 +324,15 @@ pub fn open_sea_entry(world: &World, starts: &[AnchorRoot]) -> Option<[i32; 3]> 
     let mut sea: BTreeSet<[i32; 3]> = reach.open_sea.clone();
     let mut queue: Vec<[i32; 3]> = sea.iter().copied().collect();
     while let Some(c) = queue.pop() {
-        for (p, _) in reach.preds.get(&c).into_iter().flatten() {
-            if wet(p) && sea.insert(*p) {
-                queue.push(*p);
+        for (p, _) in reach.preds(c) {
+            if wet(&p) && sea.insert(p) {
+                queue.push(p);
             }
         }
     }
     sea.iter()
-        .flat_map(|c| reach.preds.get(c).into_iter().flatten())
-        .map(|(p, _)| *p)
+        .flat_map(|c| reach.preds(*c))
+        .map(|(p, _)| p)
         .filter(|p| !wet(p))
         .min()
 }

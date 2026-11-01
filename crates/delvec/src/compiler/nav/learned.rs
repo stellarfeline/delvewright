@@ -578,12 +578,7 @@ pub(super) fn route_tree(graph: &Reach, route: &[[i32; 3]]) -> (Tree, Vec<[i32; 
         if best.get(&cur).is_some_and(|b| *b < (leaps, moves)) {
             continue;
         }
-        let edges = graph
-            .succ
-            .get(&cur)
-            .into_iter()
-            .flatten()
-            .map(|e| (e.to, e.yaw.is_none()));
+        let edges = graph.succ(cur).into_iter().map(|e| (e.to, e.yaw.is_none()));
         let sea = graph
             .open_sea
             .contains(&cur)

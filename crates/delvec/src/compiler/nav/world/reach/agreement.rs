@@ -824,3 +824,125 @@ fn water_at_a_box_edge_leaves_no_way_round_the_piece() {
         "the light probe's floor and the piece's own world disagree"
     );
 }
+
+/// A node table's every list, in cell order.
+type Table = Vec<([i32; 3], Vec<(super::Quadrants, super::NodeEdges)>)>;
+
+/// Everything a closure answers, read through its own API: the states, every
+/// state's successors and predecessors in order, the flags and the counts —
+/// and the node tables of the graph it was taken over.
+#[derive(Debug, PartialEq)]
+struct Answered {
+    states: Vec<([i32; 3], super::RestKind)>,
+    succ: Vec<Vec<super::Edge>>,
+    preds: Vec<Vec<([i32; 3], super::Edge)>>,
+    census: [usize; 4],
+    edge_census: [usize; 6],
+    leaves_world: Vec<[i32; 3]>,
+    open_sea: Vec<[i32; 3]>,
+    fatal: Vec<([i32; 3], super::Death)>,
+    work: (u64, u64),
+    unflown: Vec<bool>,
+    nodes: Table,
+    flown: Table,
+}
+
+/// What `w`'s closure from `roots` answers, grown by every launch of its
+/// standing states (a copy taken to grow, [`World::fly_cells`]), taken with
+/// new lists at chunk side `side` (`None`: the whole map).
+fn answered(w: &World, roots: &[[i32; 3]], side: Option<i32>) -> Answered {
+    super::chunks::at_side(side, || {
+        let mut r = w.body_reach(roots);
+        let standing: Vec<[i32; 3]> = r.standing().into_iter().collect();
+        w.fly_cells(&mut r, &standing);
+        let memo = w.graph_memo(&super::ReachParams::shipped(w.unbounded_fall));
+        let cells: Vec<[i32; 3]> = r.states.keys().copied().collect();
+        let strip = |l: Table| {
+            l.into_iter()
+                .map(|(c, v)| {
+                    let mut v = v;
+                    v.sort_by_key(|(q, _)| *q);
+                    (c, v)
+                })
+                .collect::<Vec<_>>()
+        };
+        Answered {
+            states: r.states.iter().map(|(c, k)| (*c, *k)).collect(),
+            succ: cells.iter().map(|c| r.succ(*c)).collect(),
+            preds: cells.iter().map(|c| r.preds(*c)).collect(),
+            census: r.census(),
+            edge_census: r.edge_census(),
+            leaves_world: r.leaves_world.iter().copied().collect(),
+            open_sea: r.open_sea.iter().copied().collect(),
+            fatal: r.fatal.iter().map(|(c, d)| (*c, *d)).collect(),
+            work: (r.simulated, r.credited),
+            unflown: cells.iter().map(|c| r.unflown(*c)).collect(),
+            nodes: strip(memo.nodes.entries()),
+            flown: strip(memo.flown.entries()),
+        }
+    })
+}
+
+/// **The chunked graph answers what the whole-window graph answers** (ADR-0037
+/// §2): every generated course, the Bell yard (a void's edge), the jetty (the
+/// open sea) and the garden, asked of a closure whose edge lists and node
+/// tables are kept whole and of one kept by reach chunk — at the game's
+/// sixteen-column side, and at a side of two columns under a budget of one
+/// byte, so every list is
+/// cut across chunks and every chunk is written out and read back on every
+/// use. Red on any difference in any answer. (The sides are this test's own:
+/// a graph is kept per side, and the node tables of one other tests share
+/// hold what those tests flew.)
+#[test]
+fn the_chunked_graph_answers_what_the_whole_graph_answers() {
+    let mut worlds: Vec<(String, World, Vec<[i32; 3]>)> = Vec::new();
+    for seed in 0..12 {
+        let case = generate(seed);
+        let mut p = Premises::geometry_only();
+        p.declared_jumps = case.jumps.clone();
+        let w = World::from_solid_cells(case.solid.clone()).with_premises(p);
+        worlds.push((format!("course {seed}"), w, vec![case.root]));
+    }
+    worlds.push((
+        "the Bell yard".into(),
+        super::tests::bell_yard(),
+        vec![[5, 1, 5]],
+    ));
+    worlds.push(("the jetty".into(), super::tests::jetty(), vec![[2, 65, 2]]));
+    worlds.push(("the garden".into(), super::tests::garden(), vec![[1, 1, 1]]));
+    let (mut states, mut edges, mut sea, mut crossing) = (0, 0, 0, 0);
+    for (name, w, roots) in &worlds {
+        let whole = answered(w, roots, None);
+        let shipped = answered(w, roots, Some(16));
+        let cut = super::chunks::with_budget(1, || answered(w, roots, Some(2)));
+        assert_eq!(
+            whole, shipped,
+            "{name}: the chunked graph answers otherwise"
+        );
+        assert_eq!(
+            whole, cut,
+            "{name}: the graph cut in two-column chunks answers otherwise"
+        );
+        states += whole.states.len();
+        edges += whole.succ.iter().map(Vec::len).sum::<usize>();
+        sea += whole.open_sea.len();
+        crossing += whole
+            .states
+            .iter()
+            .zip(&whole.succ)
+            .flat_map(|((c, _), es)| es.iter().map(move |e| (*c, e.to)))
+            .filter(|(a, b)| {
+                (a[0].div_euclid(2), a[2].div_euclid(2)) != (b[0].div_euclid(2), b[2].div_euclid(2))
+            })
+            .count();
+    }
+    eprintln!(
+        "chunked agreement: {} world(s), {states} state(s), {edges} edge(s) ({crossing} crossing a \
+         two-column chunk face), {sea} open-sea state(s)",
+        worlds.len()
+    );
+    assert!(
+        states > 0 && edges > 0 && crossing > 0 && sea > 0,
+        "the cases bind nothing"
+    );
+}

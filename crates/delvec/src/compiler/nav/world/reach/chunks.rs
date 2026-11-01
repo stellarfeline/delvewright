@@ -1,0 +1,624 @@
+//! **The per-chunk lists** (ADR-0037 §2): the reach graph's edge lists — every
+//! node table's expansions and every closure's successors and predecessors —
+//! kept by **reach chunk**, a full-height column of [`SIDE`] × [`SIDE`] cells,
+//! and read back from the scratch file ([`super::spill`]) when a proof asks.
+//!
+//! A list is keyed by a cell and holds its items in the order they were pushed;
+//! the cell's chunk holds it. A chunk is **resident** while it is being read:
+//! its records decoded into a map from cell to items. Every chunk of every list
+//! counts against one process-wide budget of resident bytes ([`budget`]); past
+//! it, the least recently used chunks give their decoded maps up, and the
+//! records not yet written go to the file first. Records pushed to a chunk that
+//! is not resident are buffered and written once they pass [`PENDING`] bytes,
+//! so a closure being built never decodes the chunks it only adds to.
+//!
+//! What a list answers never depends on the chunk side, the budget or which
+//! chunks are resident: a chunk's items are its spilled records, in the order
+//! they were written, then its buffered ones. A copy of a list
+//! ([`Lists::clone`]) shares the spilled records, which are never rewritten,
+//! and copies only the buffered ones.
+
+use super::persist::{Dec, Enc};
+use super::spill::Spill;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
+
+/// A reach chunk's side, in columns: a multiple of the game's 16 and at least
+/// the window margin, so a node's launches land in its chunk or the eight
+/// round it.
+pub(super) const SIDE: i32 = 32;
+
+/// Records not yet written are written once a chunk buffers this many bytes.
+const PENDING: usize = 64 << 10;
+
+/// The resident budget the engine ships: decoded chunks of every list,
+/// together, in bytes — a constant of the engine, never of the map.
+const BUDGET: usize = 256 << 20;
+
+/// The resident budget in force on this thread ([`BUDGET`], or what a test
+/// set).
+pub(super) fn budget() -> usize {
+    match BUDGET_HERE.with(std::cell::Cell::get) {
+        0 => BUDGET,
+        b => b,
+    }
+}
+
+thread_local! {
+    static BUDGET_HERE: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+/// Bytes every list holds in memory now: decoded chunks and buffered records.
+static RESIDENT: AtomicUsize = AtomicUsize::new(0);
+/// The use clock.
+static TICK: AtomicU64 = AtomicU64::new(0);
+
+/// Run `f` with the resident budget at `bytes` on this thread: every list
+/// this thread uses gives up what it holds past it.
+#[cfg(test)]
+pub(super) fn with_budget<R>(bytes: usize, f: impl FnOnce() -> R) -> R {
+    let was = BUDGET_HERE.with(|b| b.replace(bytes));
+    let out = f();
+    BUDGET_HERE.with(|b| b.set(was));
+    out
+}
+
+/// The bytes every list holds in memory now.
+pub(super) fn resident() -> usize {
+    RESIDENT.load(Ordering::Relaxed)
+}
+
+/// The one scratch file every list writes to; `None` when it could not be
+/// opened, and then every list keeps its records in memory.
+fn spill() -> &'static Mutex<Option<Spill>> {
+    static SPILL: OnceLock<Mutex<Option<Spill>>> = OnceLock::new();
+    SPILL.get_or_init(|| Mutex::new(Spill::open("lists").ok()))
+}
+
+/// The bytes the lists' scratch file holds.
+pub(super) fn spilled() -> u64 {
+    spill()
+        .lock()
+        .expect("spill")
+        .as_ref()
+        .map_or(0, Spill::len)
+}
+
+/// What a list holds per cell: written as a record and read back as written.
+pub(super) trait Item: Clone + Send + 'static {
+    fn put(&self, e: &mut Enc);
+    fn take(d: &mut Dec<'_>) -> Option<Self>;
+    /// The heap bytes one decoded item holds beyond its own size.
+    fn heap(&self) -> usize {
+        0
+    }
+}
+
+type Key = (i32, i32);
+
+/// The chunk a cell lies in, at side `side`.
+fn chunk_of(c: [i32; 3], side: i32) -> Key {
+    (c[0].div_euclid(side), c[2].div_euclid(side))
+}
+
+/// One chunk of a list.
+struct Chunk<V> {
+    /// The records written to the file, in order.
+    segments: Vec<(u64, u32)>,
+    /// The records pushed since, encoded.
+    pending: Vec<u8>,
+    /// Every record decoded, while the chunk is resident.
+    resident: Option<HashMap<[i32; 3], Vec<V>>>,
+    /// The bytes `resident` holds, estimated.
+    decoded: usize,
+    /// When it was last used.
+    used: u64,
+}
+
+impl<V> Default for Chunk<V> {
+    fn default() -> Self {
+        Chunk {
+            segments: Vec::new(),
+            pending: Vec::new(),
+            resident: None,
+            decoded: 0,
+            used: 0,
+        }
+    }
+}
+
+/// Bytes a decoded entry costs beyond its items: the key, the vector and the
+/// map's slot.
+const ENTRY: usize = 64;
+
+impl<V: Item> Chunk<V> {
+    fn held(&self) -> usize {
+        self.pending.capacity() + self.decoded
+    }
+
+    /// Decode every record into the resident map.
+    fn load(&mut self) {
+        if self.resident.is_some() {
+            return;
+        }
+        let mut map: HashMap<[i32; 3], Vec<V>> = HashMap::new();
+        let mut decoded = 0;
+        let mut take = |bytes: &[u8]| {
+            let mut d = Dec { b: bytes, at: 0 };
+            while d.at < bytes.len() {
+                let c = d.cell().expect("a list record's cell reads back");
+                let v = V::take(&mut d).expect("a list record reads back");
+                let list = map.entry(c).or_default();
+                if list.is_empty() {
+                    decoded += ENTRY;
+                }
+                decoded += std::mem::size_of::<V>() + v.heap();
+                list.push(v);
+            }
+        };
+        if !self.segments.is_empty() {
+            let mut sp = spill().lock().expect("spill");
+            let sp = sp
+                .as_mut()
+                .expect("a list with spilled records has its file");
+            for &(at, len) in &self.segments {
+                let bytes = sp
+                    .read(at, len)
+                    .expect("the lists' scratch file reads back");
+                take(&bytes);
+            }
+        }
+        take(&self.pending);
+        self.resident = Some(map);
+        self.decoded = decoded;
+    }
+
+    /// Write the buffered records to the file, when there is one.
+    fn write(&mut self) {
+        if self.pending.is_empty() {
+            return;
+        }
+        let mut sp = spill().lock().expect("spill");
+        if let Some(sp) = sp.as_mut() {
+            let at = sp
+                .append(&self.pending)
+                .expect("the lists' scratch file takes a write");
+            self.segments.push(at);
+            self.pending = Vec::new();
+        }
+    }
+
+    /// Give up what the chunk holds in memory that the file can hold.
+    fn release(&mut self) {
+        self.write();
+        self.resident = None;
+        self.decoded = 0;
+    }
+}
+
+struct Inner<V> {
+    side: i32,
+    chunks: HashMap<Key, Chunk<V>>,
+    /// Bytes counted against [`RESIDENT`] for this list.
+    held: usize,
+    items: usize,
+}
+
+impl<V> Drop for Inner<V> {
+    fn drop(&mut self) {
+        RESIDENT.fetch_sub(self.held, Ordering::Relaxed);
+    }
+}
+
+impl<V: Item> Inner<V> {
+    /// Push `v` onto `c`'s list; the chunk it went to.
+    fn push(&mut self, c: [i32; 3], v: V) -> Key {
+        let k = chunk_of(c, self.side);
+        let tick = TICK.fetch_add(1, Ordering::Relaxed);
+        let ch = self.chunks.entry(k).or_default();
+        let before = ch.held();
+        let mut e = Enc(std::mem::take(&mut ch.pending));
+        e.cell(c);
+        v.put(&mut e);
+        ch.pending = e.0;
+        ch.used = tick;
+        if let Some(map) = ch.resident.as_mut() {
+            let list = map.entry(c).or_default();
+            if list.is_empty() {
+                ch.decoded += ENTRY;
+            }
+            ch.decoded += std::mem::size_of::<V>() + v.heap();
+            list.push(v);
+        } else if ch.pending.len() >= PENDING {
+            ch.write();
+        }
+        self.items += 1;
+        self.recount(k, before);
+        k
+    }
+
+    /// Re-count chunk `k`'s bytes after a change.
+    fn recount(&mut self, k: Key, before: usize) {
+        let after = self.chunks.get(&k).map_or(0, Chunk::held);
+        if after >= before {
+            RESIDENT.fetch_add(after - before, Ordering::Relaxed);
+            self.held += after - before;
+        } else {
+            RESIDENT.fetch_sub(before - after, Ordering::Relaxed);
+            self.held -= before - after;
+        }
+    }
+
+    /// Release the least recently used chunks but `keep` until `want` bytes
+    /// are freed; the bytes freed.
+    fn evict(&mut self, want: usize, keep: Option<Key>) -> usize {
+        let mut order: Vec<(u64, Key)> = self
+            .chunks
+            .iter()
+            .filter(|(k, ch)| Some(**k) != keep && ch.held() > 0)
+            .map(|(k, ch)| (ch.used, *k))
+            .collect();
+        order.sort_unstable();
+        let mut freed = 0;
+        for (_, k) in order {
+            if freed >= want {
+                break;
+            }
+            let ch = self.chunks.get_mut(&k).expect("listed");
+            let before = ch.held();
+            ch.release();
+            let after = ch.held();
+            freed += before - after;
+            self.recount(k, before);
+        }
+        freed
+    }
+}
+
+/// A list another list can ask to give memory up.
+trait Evict: Send + Sync {
+    fn evict(&self, want: usize) -> usize;
+}
+
+impl<V: Item> Evict for Mutex<Inner<V>> {
+    fn evict(&self, want: usize) -> usize {
+        match self.try_lock() {
+            Ok(mut g) => g.evict(want, None),
+            Err(_) => 0,
+        }
+    }
+}
+
+type Registry = Mutex<Vec<(usize, Weak<dyn Evict>)>>;
+
+fn registry() -> &'static Registry {
+    static R: OnceLock<Registry> = OnceLock::new();
+    R.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+/// **A list per cell, kept by reach chunk.**
+pub(super) struct Lists<V: Item> {
+    inner: Arc<Mutex<Inner<V>>>,
+}
+
+impl<V: Item> Lists<V> {
+    /// An empty list at chunk side `side`.
+    pub(super) fn new(side: i32) -> Lists<V> {
+        Self::of(Inner {
+            side,
+            chunks: HashMap::new(),
+            held: 0,
+            items: 0,
+        })
+    }
+
+    fn of(inner: Inner<V>) -> Lists<V> {
+        let inner = Arc::new(Mutex::new(inner));
+        let weak: Weak<dyn Evict> = {
+            let w: Weak<Mutex<Inner<V>>> = Arc::downgrade(&inner);
+            w
+        };
+        let id = Arc::as_ptr(&inner) as usize;
+        let mut r = registry().lock().expect("registry");
+        r.retain(|(_, w)| w.strong_count() > 0);
+        r.push((id, weak));
+        Lists { inner }
+    }
+
+    /// Ask every list, this one first, to give up bytes past the budget.
+    fn relieve(&self, g: &mut Inner<V>, keep: Key) {
+        let over = |b: usize| RESIDENT.load(Ordering::Relaxed).saturating_sub(b);
+        if over(budget()) == 0 {
+            return;
+        }
+        let target = budget() / 4 * 3;
+        g.evict(over(target), Some(keep));
+        if over(target) == 0 {
+            return;
+        }
+        let me = Arc::as_ptr(&self.inner) as usize;
+        let others: Vec<Arc<dyn Evict>> = registry()
+            .lock()
+            .expect("registry")
+            .iter()
+            .filter(|(id, _)| *id != me)
+            .filter_map(|(_, w)| w.upgrade())
+            .collect();
+        for o in others {
+            let want = over(target);
+            if want == 0 {
+                break;
+            }
+            o.evict(want);
+        }
+    }
+
+    /// Push `v` onto `c`'s list.
+    pub(super) fn push(&self, c: [i32; 3], v: V) {
+        let mut g = self.inner.lock().expect("lists");
+        let k = g.push(c, v);
+        self.relieve(&mut g, k);
+    }
+
+    /// What `f` makes of `c`'s list.
+    pub(super) fn with<R>(&self, c: [i32; 3], f: impl FnOnce(&[V]) -> R) -> R {
+        let mut g = self.inner.lock().expect("lists");
+        let k = chunk_of(c, g.side);
+        let tick = TICK.fetch_add(1, Ordering::Relaxed);
+        let Some(ch) = g.chunks.get_mut(&k) else {
+            return f(&[]);
+        };
+        let before = ch.held();
+        ch.load();
+        ch.used = tick;
+        let out = f(ch
+            .resident
+            .as_ref()
+            .and_then(|m| m.get(&c))
+            .map_or(&[][..], Vec::as_slice));
+        g.recount(k, before);
+        self.relieve(&mut g, k);
+        out
+    }
+
+    /// The first item of `c`'s list `matches` holds for, or `v` pushed onto it
+    /// when none does — one step under the list's lock, so two threads asking
+    /// at once keep one item.
+    pub(super) fn find_or_push(&self, c: [i32; 3], matches: impl Fn(&V) -> bool, v: V) -> V {
+        {
+            let mut g = self.inner.lock().expect("lists");
+            let k = chunk_of(c, g.side);
+            if let Some(ch) = g.chunks.get_mut(&k) {
+                let before = ch.held();
+                ch.load();
+                let held = ch
+                    .resident
+                    .as_ref()
+                    .and_then(|m| m.get(&c))
+                    .and_then(|l| l.iter().find(|x| matches(x)).cloned());
+                g.recount(k, before);
+                if let Some(h) = held {
+                    return h;
+                }
+            }
+            // Pushed under the same lock: nobody else can push between.
+            let k = g.push(c, v.clone());
+            self.relieve(&mut g, k);
+        }
+        v
+    }
+
+    /// Every cell's list, in cell order: each chunk read in turn and given up
+    /// again unless it was resident.
+    #[cfg(test)]
+    pub(super) fn entries(&self) -> Vec<([i32; 3], Vec<V>)> {
+        let mut g = self.inner.lock().expect("lists");
+        let keys: Vec<Key> = g.chunks.keys().copied().collect();
+        let mut out = Vec::new();
+        for k in keys {
+            let ch = g.chunks.get_mut(&k).expect("listed");
+            let was = ch.resident.is_some();
+            let before = ch.held();
+            ch.load();
+            out.extend(
+                ch.resident
+                    .as_ref()
+                    .expect("loaded")
+                    .iter()
+                    .map(|(c, l)| (*c, l.clone())),
+            );
+            if !was {
+                ch.resident = None;
+                ch.decoded = 0;
+            }
+            g.recount(k, before);
+        }
+        out.sort_by_key(|e| e.0);
+        out
+    }
+}
+
+impl<V: Item> Clone for Lists<V> {
+    /// A copy sharing the spilled records and copying the buffered ones; no
+    /// chunk of it is resident.
+    fn clone(&self) -> Lists<V> {
+        let g = self.inner.lock().expect("lists");
+        let mut held = 0;
+        let chunks = g
+            .chunks
+            .iter()
+            .map(|(k, ch)| {
+                let c = Chunk {
+                    segments: ch.segments.clone(),
+                    pending: ch.pending.clone(),
+                    resident: None,
+                    decoded: 0,
+                    used: 0,
+                };
+                held += c.held();
+                (*k, c)
+            })
+            .collect();
+        RESIDENT.fetch_add(held, Ordering::Relaxed);
+        let inner = Inner {
+            side: g.side,
+            chunks,
+            held,
+            items: g.items,
+        };
+        drop(g);
+        Lists::of(inner)
+    }
+}
+
+impl<V: Item> std::fmt::Debug for Lists<V> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let g = self.inner.lock().expect("lists");
+        write!(
+            f,
+            "Lists {{ side: {}, chunks: {}, items: {} }}",
+            g.side,
+            g.chunks.len(),
+            g.items
+        )
+    }
+}
+
+/// **Where a list lives** while the whole-window form and the chunked one are
+/// held to one answer by the agreement test: the whole map, as the graph kept
+/// it before ADR-0037 §2, or the chunked lists.
+pub(super) enum Store<V: Item> {
+    Whole(Mutex<std::collections::BTreeMap<[i32; 3], Vec<V>>>),
+    Chunked(Lists<V>),
+}
+
+thread_local! {
+    /// The chunk side new stores on this thread take; `None`: the whole map.
+    static SIDE_HERE: std::cell::Cell<Option<i32>> = const { std::cell::Cell::new(Some(SIDE)) };
+}
+
+/// The chunk side new stores on this thread take (`None`: the whole map).
+pub(super) fn side_here() -> Option<i32> {
+    SIDE_HERE.with(std::cell::Cell::get)
+}
+
+/// Run `f` with new stores on this thread at `side`.
+#[cfg(test)]
+pub(super) fn at_side<R>(side: Option<i32>, f: impl FnOnce() -> R) -> R {
+    let was = SIDE_HERE.with(|s| s.replace(side));
+    let out = f();
+    SIDE_HERE.with(|s| s.set(was));
+    out
+}
+
+impl<V: Item> Store<V> {
+    /// An empty store in this thread's form ([`side_here`]).
+    pub(super) fn new() -> Store<V> {
+        match side_here() {
+            None => Store::Whole(Mutex::new(std::collections::BTreeMap::new())),
+            Some(side) => Store::Chunked(Lists::new(side)),
+        }
+    }
+
+    pub(super) fn push(&self, c: [i32; 3], v: V) {
+        match self {
+            Store::Whole(m) => m.lock().expect("store").entry(c).or_default().push(v),
+            Store::Chunked(l) => l.push(c, v),
+        }
+    }
+
+    pub(super) fn with<R>(&self, c: [i32; 3], f: impl FnOnce(&[V]) -> R) -> R {
+        match self {
+            Store::Whole(m) => f(m
+                .lock()
+                .expect("store")
+                .get(&c)
+                .map_or(&[][..], Vec::as_slice)),
+            Store::Chunked(l) => l.with(c, f),
+        }
+    }
+
+    pub(super) fn get(&self, c: [i32; 3]) -> Vec<V> {
+        self.with(c, <[V]>::to_vec)
+    }
+
+    pub(super) fn find_or_push(&self, c: [i32; 3], matches: impl Fn(&V) -> bool, v: V) -> V {
+        match self {
+            Store::Whole(m) => {
+                let mut m = m.lock().expect("store");
+                let l = m.entry(c).or_default();
+                if let Some(h) = l.iter().find(|x| matches(x)) {
+                    return h.clone();
+                }
+                l.push(v.clone());
+                v
+            }
+            Store::Chunked(l) => l.find_or_push(c, matches, v),
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn entries(&self) -> Vec<([i32; 3], Vec<V>)> {
+        match self {
+            Store::Whole(m) => m
+                .lock()
+                .expect("store")
+                .iter()
+                .map(|(c, l)| (*c, l.clone()))
+                .collect(),
+            Store::Chunked(l) => l.entries(),
+        }
+    }
+}
+
+impl<V: Item> Clone for Store<V> {
+    fn clone(&self) -> Store<V> {
+        match self {
+            Store::Whole(m) => Store::Whole(Mutex::new(m.lock().expect("store").clone())),
+            Store::Chunked(l) => Store::Chunked(l.clone()),
+        }
+    }
+}
+
+impl<V: Item> std::fmt::Debug for Store<V> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Store::Whole(m) => write!(f, "Whole({} cells)", m.lock().expect("store").len()),
+            Store::Chunked(l) => l.fmt(f),
+        }
+    }
+}
+
+// ------------------------------------------------------------- the records
+
+impl Item for super::Edge {
+    fn put(&self, e: &mut Enc) {
+        e.edge(self);
+    }
+    fn take(d: &mut Dec<'_>) -> Option<Self> {
+        d.edge()
+    }
+}
+
+impl Item for ([i32; 3], super::Edge) {
+    fn put(&self, e: &mut Enc) {
+        e.cell(self.0);
+        e.edge(&self.1);
+    }
+    fn take(d: &mut Dec<'_>) -> Option<Self> {
+        Some((d.cell()?, d.edge()?))
+    }
+}
+
+impl Item for (super::Quadrants, super::NodeEdges) {
+    fn put(&self, e: &mut Enc) {
+        e.u16(self.0);
+        e.node_edges(&self.1);
+    }
+    fn take(d: &mut Dec<'_>) -> Option<Self> {
+        Some((d.u16()?, d.node_edges()?))
+    }
+    fn heap(&self) -> usize {
+        self.1.edges.capacity() * std::mem::size_of::<super::Edge>()
+    }
+}

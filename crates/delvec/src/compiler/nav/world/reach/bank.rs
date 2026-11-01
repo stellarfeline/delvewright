@@ -315,80 +315,22 @@ impl Expansion<'_> {
     }
 }
 
-/// Where a bank's variants live: a scratch file, appended as nodes are kept
-/// and read back by offset when a later graph asks. What a node's expansion
-/// read is the bulk of a variant — every window cell, at twelve bytes — and a
-/// build keeps one variant per node it flew for the life of the process,
-/// so held in memory the bank grew with the cells the reached nodes read:
-/// 2.3 GB of the town's 9.4 GB heap, measured by allocation site. Spilled,
-/// the bank holds one [`Slot`] per variant in memory and the file holds the
-/// rest; a build that never asks the bank again (one configuration, no edit
-/// batch) pays the write and nothing else.
-///
-/// The file is unlinked the moment it is open (Unix) or marked to be deleted
-/// when it closes (Windows), so no run leaves one behind. Nothing a build
-/// emits depends on it: a variant read back is the variant written
-/// ([`super::persist`] round-trips it), and the bank was never a premise.
-struct Spill {
-    file: std::fs::File,
-    len: u64,
-}
-
-/// One kept variant: where it lies in the spill, or the variant itself for a
-/// bank whose spill could not be opened.
+/// One kept variant: where it lies in the spill ([`super::spill`]), or the
+/// variant itself for a bank whose spill could not be opened. What a node's
+/// expansion read is the bulk of a variant — every window cell, at twelve
+/// bytes — and a build keeps one variant per node it flew for the life of the
+/// process, so the bank keeps a slot per variant in memory and the file
+/// holds the rest.
 #[derive(Clone)]
 enum Slot {
     Disk { at: u64, len: u32 },
     Held(Arc<Variant>),
 }
 
-impl Spill {
-    fn open() -> std::io::Result<Spill> {
-        static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "delvec-reach-bank-{}-{n}.spill",
-            std::process::id()
-        ));
-        let mut o = std::fs::OpenOptions::new();
-        o.read(true).write(true).create_new(true);
-        #[cfg(windows)]
-        {
-            use std::os::windows::fs::OpenOptionsExt;
-            // FILE_FLAG_DELETE_ON_CLOSE
-            o.custom_flags(0x0400_0000);
-        }
-        let file = o.open(&path)?;
-        #[cfg(unix)]
-        std::fs::remove_file(&path)?;
-        Ok(Spill { file, len: 0 })
-    }
-
-    fn append(&mut self, bytes: &[u8]) -> std::io::Result<Slot> {
-        use std::io::{Seek, Write};
-        let at = self.len;
-        self.file.seek(std::io::SeekFrom::Start(at))?;
-        self.file.write_all(bytes)?;
-        self.len += bytes.len() as u64;
-        Ok(Slot::Disk {
-            at,
-            len: u32::try_from(bytes.len()).expect("a variant under 4 GiB"),
-        })
-    }
-
-    fn read(&mut self, at: u64, len: u32) -> std::io::Result<Vec<u8>> {
-        use std::io::{Read, Seek};
-        let mut out = vec![0u8; len as usize];
-        self.file.seek(std::io::SeekFrom::Start(at))?;
-        self.file.read_exact(&mut out)?;
-        Ok(out)
-    }
-}
-
 /// The bank of one window, ambient, launch set and non-local world facts.
 pub(super) struct Bank {
     nodes: Mutex<HashMap<super::FlownKey, Vec<Slot>>>,
-    spill: Mutex<Option<Spill>>,
+    spill: Mutex<Option<super::spill::Spill>>,
     /// Runs taken as written, for the agreement test's binding.
     reused: std::sync::atomic::AtomicU64,
     /// The bank's key, which names its file ([`super::persist`]).
@@ -408,7 +350,7 @@ impl Bank {
         let loaded = nodes.iter().map(|(_, vs)| vs.len()).sum();
         let b = Bank {
             nodes: Mutex::new(HashMap::new()),
-            spill: Mutex::new(Spill::open().ok()),
+            spill: Mutex::new(super::spill::Spill::open("bank").ok()),
             reused: Default::default(),
             key,
             loaded,
@@ -427,7 +369,7 @@ impl Bank {
             let mut spill = self.spill.lock().expect("spill");
             match spill.as_mut() {
                 Some(s) => match s.append(&super::persist::encode_variant(v)) {
-                    Ok(slot) => slot,
+                    Ok((at, len)) => Slot::Disk { at, len },
                     Err(_) => {
                         // The spill failed: hold this one, and every later
                         // one, in memory rather than lose an accelerator.
@@ -608,7 +550,7 @@ impl Bank {
             .lock()
             .expect("spill")
             .as_ref()
-            .map_or(0, |s| s.len);
+            .map_or(0, |s| s.len());
         (n, bytes)
     }
 }

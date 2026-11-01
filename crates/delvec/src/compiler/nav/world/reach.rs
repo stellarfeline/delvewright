@@ -1675,7 +1675,7 @@ fn union(a: Option<Aabb>, b: Option<Aabb>) -> Option<Aabb> {
 type Edges = BTreeMap<([i32; 3], EdgeKind), (Option<i16>, bool)>;
 
 /// Everything one node of the graph leads to.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(in crate::compiler::nav) struct NodeEdges {
     /// The node's own rest state.
     pub kind: Option<RestKind>,
@@ -1707,6 +1707,13 @@ type FlownKey = ([i32; 3], Quadrants);
 /// Write the node banks this run grew to `DELVEC_REACH_CACHE`, when it names a
 /// directory (`reach/persist.rs`); a run that ends calls it once.
 pub fn persist_reach_cache() {
+    eprintln!(
+        "reach lists: {} byte(s) in the scratch file; {} byte(s) resident at the end, under a \
+         budget of {} (ADR-0037 §2)",
+        chunks::spilled(),
+        chunks::resident(),
+        chunks::budget()
+    );
     let (variants, bytes) = bank::census_all();
     if variants > 0 {
         eprintln!(
@@ -1720,10 +1727,12 @@ pub fn persist_reach_cache() {
 /// The memo of one world's graph: its snapshot and every node expanded so far.
 pub(in crate::compiler::nav) struct GraphMemo {
     dense: Dense,
-    /// Each node's cell-relation edges (and, for water, its climbs out).
-    nodes: Mutex<HashMap<[i32; 3], Arc<NodeEdges>>>,
-    /// Each standing or holding node's launches, flown.
-    flown: Mutex<HashMap<FlownKey, Arc<NodeEdges>>>,
+    /// Each node's cell-relation edges (and, for water, its climbs out), kept
+    /// by reach chunk ([`chunks`]) under the quadrants `0`.
+    nodes: chunks::Store<(Quadrants, NodeEdges)>,
+    /// Each standing or holding node's launches, flown, under the quadrants
+    /// flown, kept by reach chunk.
+    flown: chunks::Store<(Quadrants, NodeEdges)>,
     /// Per column of the window, the cells a body could rest in, and whether
     /// nothing in it arrests a fall (under a void).
     columns: Columns,
@@ -1746,10 +1755,19 @@ pub(in crate::compiler::nav) struct GraphMemo {
 }
 
 impl GraphMemo {
+    /// The launches of `key` this graph flew, if it flew them.
+    fn flown_at(&self, key: &FlownKey) -> Option<Arc<NodeEdges>> {
+        self.flown.with(key.0, |l| {
+            l.iter()
+                .find(|(q, _)| *q == key.1)
+                .map(|(_, e)| Arc::new(e.clone()))
+        })
+    }
+
     /// A node of the lineage's graph whose read box this world leaves alone.
     fn inherited(&self, key: &FlownKey) -> Option<Arc<NodeEdges>> {
         let (base, diff) = self.lineage.as_ref()?;
-        let e = Arc::clone(base.flown.lock().expect("memo").get(key)?);
+        let e = base.flown_at(key)?;
         let (lo, hi) = e.read?;
         let lo_i = diff.partition_point(|c| c[0] < lo[0]);
         let clear = diff[lo_i..]
@@ -2043,7 +2061,10 @@ impl World {
         // nodes the kept one goes on to fly.
         type Graphs = Mutex<HashMap<([u8; 32], String), Arc<OnceLock<Arc<GraphMemo>>>>>;
         static MEMO: OnceLock<Graphs> = OnceLock::new();
-        let key = (self.fingerprint(), params.key());
+        let key = (
+            self.fingerprint(),
+            format!("{}:{:?}", params.key(), chunks::side_here()),
+        );
         let cell = Arc::clone(
             MEMO.get_or_init(|| Mutex::new(HashMap::new()))
                 .lock()
@@ -2070,8 +2091,9 @@ impl World {
         // and launch set.
         static SEEDS: OnceLock<Mutex<HashMap<String, Arc<GraphMemo>>>> = OnceLock::new();
         let seed_key = format!(
-            "{}:{}:{:?}:{:?}:{}:{}",
+            "{}:{:?}:{}:{:?}:{:?}:{}:{}",
             params.key(),
+            chunks::side_here(),
             self.ambient.name(),
             dense.lo,
             dense.dims,
@@ -2115,8 +2137,8 @@ impl World {
             extra,
             bank,
             dense,
-            nodes: Mutex::new(HashMap::new()),
-            flown: Mutex::new(HashMap::new()),
+            nodes: chunks::Store::new(),
+            flown: chunks::Store::new(),
             lineage,
             premise_cells,
             closures: Mutex::new(Vec::new()),
@@ -2971,10 +2993,13 @@ impl World {
         params: &ReachParams,
         cells: &[[i32; 3]],
     ) -> Vec<Arc<NodeEdges>> {
-        let mut out: Vec<Option<Arc<NodeEdges>>> = {
-            let held = memo.nodes.lock().expect("memo");
-            cells.iter().map(|c| held.get(c).cloned()).collect()
-        };
+        let mut out: Vec<Option<Arc<NodeEdges>>> = cells
+            .iter()
+            .map(|c| {
+                memo.nodes
+                    .with(*c, |l| l.first().map(|(_, e)| Arc::new(e.clone())))
+            })
+            .collect();
         let missing: Vec<[i32; 3]> = cells
             .iter()
             .zip(&out)
@@ -2982,23 +3007,21 @@ impl World {
             .map(|(c, _)| *c)
             .collect();
         if !missing.is_empty() {
-            let fresh: Vec<Arc<NodeEdges>> = if missing.len() >= 64 {
-                crate::par::map(&missing, |c| {
-                    Arc::new(self.expand(memo, params, *c, 0, None))
-                })
+            let fresh: Vec<NodeEdges> = if missing.len() >= 64 {
+                crate::par::map(&missing, |c| self.expand(memo, params, *c, 0, None))
             } else {
                 missing
                     .iter()
-                    .map(|c| Arc::new(self.expand(memo, params, *c, 0, None)))
+                    .map(|c| self.expand(memo, params, *c, 0, None))
                     .collect()
             };
-            let mut held = memo.nodes.lock().expect("memo");
             let mut fresh = missing.iter().zip(fresh);
             for (c, slot) in cells.iter().zip(out.iter_mut()) {
                 if slot.is_none() {
                     let (m, e) = fresh.next().expect("one per missing node");
                     debug_assert_eq!(m, c);
-                    *slot = Some(Arc::clone(held.entry(*c).or_insert(e)));
+                    let (_, kept) = memo.nodes.find_or_push(*c, |_| true, (0, e));
+                    *slot = Some(Arc::new(kept));
                 }
             }
         }
@@ -3483,8 +3506,8 @@ impl World {
         q: Quadrants,
     ) -> Arc<NodeEdges> {
         let key = (c, q);
-        if let Some(e) = memo.flown.lock().expect("memo").get(&key) {
-            return Arc::clone(e);
+        if let Some(e) = memo.flown_at(&key) {
+            return e;
         }
         let volumes = |b| self.volumes_near(b);
         let jumps = self.jumps_from(c);
@@ -3510,12 +3533,10 @@ impl World {
                 }
                 e
             });
-        memo.flown
-            .lock()
-            .expect("memo")
-            .entry(key)
-            .or_insert_with(|| Arc::clone(&e))
-            .clone()
+        let (_, kept) = memo
+            .flown
+            .find_or_push(c, |(k, _)| *k == q, (q, (*e).clone()));
+        Arc::new(kept)
     }
 
     fn fly_into(
@@ -3540,21 +3561,12 @@ impl World {
             }
             let have: BTreeSet<([i32; 3], EdgeKind)> = reach
                 .succ
-                .get(c)
-                .into_iter()
-                .flatten()
-                .map(|x| (x.to, x.kind))
-                .collect();
+                .with(*c, |l| l.iter().map(|x| (x.to, x.kind)).collect());
             for edge in &e.edges {
                 if have.contains(&(edge.to, edge.kind)) {
                     continue;
                 }
-                reach
-                    .preds
-                    .entry(edge.to)
-                    .or_default()
-                    .push((*c, edge.clone()));
-                reach.succ.entry(*c).or_default().push(edge.clone());
+                reach.join(*c, edge);
                 if !reach.states.contains_key(&edge.to) {
                     new.push(edge.to);
                 }
@@ -3598,20 +3610,11 @@ impl World {
                     reach.open_sea.insert(*c);
                 }
                 for edge in &e.edges {
-                    reach
-                        .preds
-                        .entry(edge.to)
-                        .or_default()
-                        .push((*c, edge.clone()));
+                    reach.join(*c, edge);
                     if !reach.states.contains_key(&edge.to) && queued.insert(edge.to) {
                         next.push(edge.to);
                     }
                 }
-                reach
-                    .succ
-                    .entry(*c)
-                    .or_default()
-                    .extend(e.edges.iter().cloned());
             }
             next.sort_unstable();
             frontier = next;
@@ -3740,14 +3743,21 @@ pub struct JumpMiss {
 }
 
 /// The closure of the reach graph from a set of roots.
-#[derive(Debug, Clone, Default)]
+///
+/// Its edge lists are kept by reach chunk ([`chunks`], ADR-0037 §2) and read
+/// back when asked for ([`Reach::succ`], [`Reach::preds`]); the states and the
+/// flags stay in memory.
+#[derive(Debug, Clone)]
 pub struct Reach {
     /// Every rest state reached, roots included.
     pub states: BTreeMap<[i32; 3], RestKind>,
-    /// Every reached state's edges.
-    pub succ: BTreeMap<[i32; 3], Vec<Edge>>,
-    /// Every reached state's predecessors, with the edge that joins them.
-    pub preds: BTreeMap<[i32; 3], Vec<([i32; 3], Edge)>>,
+    /// Every reached state's edges, in the order they were found.
+    succ: chunks::Store<Edge>,
+    /// Every reached state's predecessors, with the edge that joins them, in
+    /// the order they were found.
+    preds: chunks::Store<([i32; 3], Edge)>,
+    /// How many edges of each kind `succ` holds, in [`EdgeKind::ALL`]'s order.
+    kinds: [usize; 6],
     /// The states some launch from which leaves the world.
     pub leaves_world: BTreeSet<[i32; 3]>,
     /// The states in the open sea.
@@ -3769,7 +3779,54 @@ pub struct Reach {
     bits: Vec<u64>,
 }
 
+impl Default for Reach {
+    fn default() -> Reach {
+        Reach {
+            states: BTreeMap::new(),
+            succ: chunks::Store::new(),
+            preds: chunks::Store::new(),
+            kinds: [0; 6],
+            leaves_world: BTreeSet::new(),
+            open_sea: BTreeSet::new(),
+            fatal: BTreeMap::new(),
+            simulated: 0,
+            credited: 0,
+            flown: BTreeMap::new(),
+            over_budget: None,
+            bits: Vec::new(),
+        }
+    }
+}
+
 impl Reach {
+    /// The edges out of `c`, in the order they were found.
+    pub fn succ(&self, c: [i32; 3]) -> Vec<Edge> {
+        self.succ.get(c)
+    }
+
+    /// The predecessors of `c`, each with the edge that joins it to `c`, in
+    /// the order they were found.
+    pub fn preds(&self, c: [i32; 3]) -> Vec<([i32; 3], Edge)> {
+        self.preds.get(c)
+    }
+
+    /// The first predecessor of `c` `pick` holds for, with its edge.
+    pub fn first_pred(
+        &self,
+        c: [i32; 3],
+        pick: impl Fn(&[i32; 3]) -> bool,
+    ) -> Option<([i32; 3], Edge)> {
+        self.preds
+            .with(c, |ps| ps.iter().find(|(p, _)| pick(p)).cloned())
+    }
+
+    /// Add the edge `from` → `edge.to`.
+    fn join(&mut self, from: [i32; 3], edge: &Edge) {
+        self.preds.push(edge.to, (from, edge.clone()));
+        self.succ.push(from, edge.clone());
+        self.kinds[edge.kind as usize] += 1;
+    }
+
     /// Whether, over this closure's own edges, `from` reaches every one of
     /// `targets`.
     fn reaches_all(&self, from: &[[i32; 3]], targets: &[[i32; 3]]) -> bool {
@@ -3842,7 +3899,7 @@ impl Reach {
     /// The successors of `c`, open-sea states joined to one another.
     pub fn next(&self, c: [i32; 3]) -> impl Iterator<Item = [i32; 3]> + '_ {
         let sea = self.open_sea.contains(&c);
-        self.succ.get(&c).into_iter().flatten().map(|e| e.to).chain(
+        self.succ(c).into_iter().map(|e| e.to).chain(
             sea.then(|| self.open_sea.iter().copied())
                 .into_iter()
                 .flatten(),
@@ -3861,12 +3918,7 @@ impl Reach {
     /// How many edges of each kind, in [`EdgeKind::ALL`]'s order; the exit
     /// edges are the states that leave the world or lie in the open sea.
     pub fn edge_census(&self) -> [usize; 6] {
-        let mut n = [0; 6];
-        for es in self.succ.values() {
-            for e in es {
-                n[e.kind as usize] += 1;
-            }
-        }
+        let mut n = self.kinds;
         n[EdgeKind::Exit as usize] += self.leaves_world.len() + self.open_sea.len();
         n
     }
@@ -3967,8 +4019,10 @@ impl ReachBinding {
 }
 
 mod bank;
+mod chunks;
 mod flights;
 mod persist;
+mod spill;
 
 #[cfg(test)]
 mod tests;

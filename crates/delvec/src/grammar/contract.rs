@@ -2518,11 +2518,7 @@ fn fall_in_pockets(ix: &Index, model: &VoxelModel, start: &BTreeSet<[i32; 3]>) -
         let mouths: BTreeSet<[i32; 3]> = roots
             .iter()
             .filter(|c| {
-                seeds.contains(c)
-                    || reach
-                        .preds
-                        .get(*c)
-                        .is_some_and(|ps| ps.iter().any(|(p, _)| !space.contains(p)))
+                seeds.contains(c) || reach.first_pred(**c, |p| !space.contains(p)).is_some()
             })
             .copied()
             .collect();

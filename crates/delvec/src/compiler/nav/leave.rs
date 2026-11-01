@@ -371,7 +371,7 @@ fn verify_bodies_can_leave(
                         rest.push(pocket);
                         continue;
                     }
-                    let how = w.way_in_words(&pocket, &trapped, &judged.reach.preds);
+                    let how = w.way_in_words(&pocket, &trapped, &judged.reach);
                     hatch_described.push(format!(
                         "{} cell(s) around {:?} ({when}): {how}, and {}",
                         pocket.len(),
@@ -387,7 +387,7 @@ fn verify_bodies_can_leave(
             let described: Vec<String> = kept
                 .iter()
                 .map(|pocket| {
-                    let how = w.way_in_words(pocket, &trapped, &judged.reach.preds);
+                    let how = w.way_in_words(pocket, &trapped, &judged.reach);
                     format!(
                         "{} cell(s) around {:?} ({when}): {how}, and no walk, fall, jump or swim \
                      leads from any of them back to the route",
@@ -601,18 +601,17 @@ impl World {
         &self,
         pocket: &[[i32; 3]],
         trapped: &BTreeSet<[i32; 3]>,
-        preds: &BTreeMap<[i32; 3], Vec<([i32; 3], Edge)>>,
+        reach: &Reach,
     ) -> String {
         let entry = pocket.iter().find_map(|c| {
-            preds
-                .get(c)
-                .and_then(|ps| ps.iter().find(|(p, _)| !trapped.contains(p)))
-                .map(|(p, e)| (*p, *c, e))
+            reach
+                .first_pred(*c, |p| !trapped.contains(p))
+                .map(|(p, e)| (p, *c, e))
         });
         match entry {
             Some((from, to, edge)) => format!(
                 "a body gets in from {from:?} to {to:?} by {}",
-                movement_words(self, from, edge)
+                movement_words(self, from, &edge)
             ),
             None => "a body gets in".to_string(),
         }
@@ -828,11 +827,9 @@ impl World {
                     }
                 }
             }
-            if let Some(ps) = reach.preds.get(&cur) {
-                for (p, _) in ps {
-                    if back.insert(*p) {
-                        queue.push_back(*p);
-                    }
+            for (p, _) in reach.preds(cur) {
+                if back.insert(p) {
+                    queue.push_back(p);
                 }
             }
         }
