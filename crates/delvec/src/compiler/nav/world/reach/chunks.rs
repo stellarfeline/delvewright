@@ -1,13 +1,15 @@
-//! **The per-chunk lists** (ADR-0037 §2): the reach graph's edge lists — every
-//! node table's expansions and every closure's successors and predecessors —
-//! kept by **reach chunk**, a full-height column of [`SIDE`] × [`SIDE`] cells,
-//! and read back from the scratch file ([`super::spill`]) when a proof asks.
+//! **Where the reach graph keeps what it keeps for the life of the process**
+//! (ADR-0037 §2): every closure's successor and predecessor lists, by **reach
+//! chunk** ([`Lists`]), and every graph's node tables, one slot per entry
+//! ([`Table`]) — both in one scratch file ([`super::spill`]), read back when a
+//! proof asks.
 //!
-//! A list is keyed by a cell and holds its items in the order they were pushed;
-//! the cell's chunk holds it. A chunk is **resident** while it is being read:
-//! its records decoded into a map from cell to items. Every chunk of every list
-//! counts against one process-wide budget of resident bytes ([`budget`]); past
-//! it, the least recently used chunks give their decoded maps up, and the
+//! A list is keyed by a cell and holds its items in the order they were
+//! pushed; the cell's chunk — a full-height column of [`SIDE`] × [`SIDE`]
+//! cells — holds it. A chunk is **resident** while it is being read: its
+//! records decoded into a map from cell to items. Every chunk of every list
+//! counts against one process-wide budget of resident bytes ([`budget`]);
+//! past it, the least recently used chunks give their decoded maps up, and the
 //! records not yet written go to the file first. Records pushed to a chunk that
 //! is not resident are buffered and written once they pass [`PENDING`] bytes,
 //! so a closure being built never decodes the chunks it only adds to.
@@ -17,6 +19,10 @@
 //! they were written, then its buffered ones. A copy of a list
 //! ([`Lists::clone`]) shares the spilled records, which are never rewritten,
 //! and copies only the buffered ones.
+//!
+//! A node table is read one entry at a time by many threads at once, so its
+//! entries are not chunked: each is one record at an offset, read back alone
+//! outside the table's lock.
 
 use super::persist::{Dec, Enc};
 use super::spill::Spill;
@@ -443,62 +449,6 @@ impl<V: Item> Lists<V> {
     pub(super) fn get(&self, c: [i32; 3]) -> Vec<V> {
         self.with(c, <[V]>::to_vec)
     }
-
-    /// The first item of `c`'s list `matches` holds for, or `v` pushed onto it
-    /// when none does — one step under the list's lock, so two threads asking
-    /// at once keep one item.
-    pub(super) fn find_or_push(&self, c: [i32; 3], matches: impl Fn(&V) -> bool, v: V) -> V {
-        {
-            let mut g = self.inner.lock().expect("lists");
-            let k = chunk_of(c, g.side);
-            if let Some(ch) = g.chunks.get_mut(&k) {
-                let before = ch.held();
-                ch.load();
-                let held = ch
-                    .resident
-                    .as_ref()
-                    .and_then(|m| m.get(&c))
-                    .and_then(|l| l.iter().find(|x| matches(x)).cloned());
-                g.recount(k, before);
-                if let Some(h) = held {
-                    return h;
-                }
-            }
-            // Pushed under the same lock: nobody else can push between.
-            let k = g.push(c, v.clone());
-            self.relieve(&mut g, k);
-        }
-        v
-    }
-
-    /// Every cell's list, in cell order: each chunk read in turn and given up
-    /// again unless it was resident.
-    #[cfg(test)]
-    pub(super) fn entries(&self) -> Vec<([i32; 3], Vec<V>)> {
-        let mut g = self.inner.lock().expect("lists");
-        let keys: Vec<Key> = g.chunks.keys().copied().collect();
-        let mut out = Vec::new();
-        for k in keys {
-            let ch = g.chunks.get_mut(&k).expect("listed");
-            let was = ch.resident.is_some();
-            let before = ch.held();
-            ch.load();
-            out.extend(
-                ch.resident
-                    .as_ref()
-                    .expect("loaded")
-                    .iter()
-                    .map(|(c, l)| (*c, l.clone())),
-            );
-            if !was {
-                ch.resident = None;
-                ch.decoded = 0;
-            }
-            g.recount(k, before);
-        }
-        out.sort_by_key(|e| e.0);
-        out
-    }
 }
 
 impl<V: Item> Clone for Lists<V> {
@@ -571,6 +521,152 @@ impl<V: Item> Default for Lists<V> {
     /// An empty list at this thread's side ([`side_here`]).
     fn default() -> Lists<V> {
         Lists::new(side_here())
+    }
+}
+
+// ---------------------------------------------------------- the node tables
+
+/// Where one record lies in the scratch file, or in memory when the file
+/// could not be opened.
+#[derive(Clone, Copy)]
+struct Slot {
+    at: u64,
+    len: u32,
+}
+
+/// **A node table**: what a graph's expansion of a node gave, one record per
+/// entry in the scratch file and one slot per entry in memory — the shape the
+/// node bank keeps its variants in ([`super::bank`]). A table is read one entry
+/// at a time from many threads at once (a closure's expansions run in
+/// parallel), so an entry is read back by itself, at its offset, outside the
+/// table's lock; a chunk of a table is never decoded whole.
+pub(super) struct Table<V: Item> {
+    index: Mutex<TableIndex>,
+    _items: std::marker::PhantomData<fn() -> V>,
+}
+
+#[derive(Default)]
+struct TableIndex {
+    /// Each cell's first entry: almost every cell has one.
+    first: HashMap<[i32; 3], Slot>,
+    /// Each cell's later entries, in order.
+    more: HashMap<[i32; 3], Vec<Slot>>,
+    /// The records, when the scratch file could not be opened.
+    held: Vec<u8>,
+}
+
+impl TableIndex {
+    fn slots(&self, c: [i32; 3]) -> Vec<Slot> {
+        let mut out: Vec<Slot> = self.first.get(&c).copied().into_iter().collect();
+        if let Some(m) = self.more.get(&c) {
+            out.extend_from_slice(m);
+        }
+        out
+    }
+
+    fn put(&mut self, c: [i32; 3], bytes: &[u8]) {
+        let slot = {
+            let mut sp = spill().write.lock().expect("spill");
+            match sp.as_mut() {
+                Some(sp) => {
+                    let (at, len) = sp
+                        .append(bytes)
+                        .expect("the lists' scratch file takes a write");
+                    Slot { at, len }
+                }
+                None => {
+                    let at = self.held.len() as u64;
+                    self.held.extend_from_slice(bytes);
+                    Slot {
+                        at,
+                        len: u32::try_from(bytes.len()).expect("one record under 4 GiB"),
+                    }
+                }
+            }
+        };
+        match self.first.entry(c) {
+            std::collections::hash_map::Entry::Vacant(v) => {
+                v.insert(slot);
+            }
+            std::collections::hash_map::Entry::Occupied(_) => {
+                self.more.entry(c).or_default().push(slot);
+            }
+        }
+    }
+
+    /// The records at `slots`, read back: from the held bytes, or from the
+    /// file at their offsets.
+    fn read<V: Item>(&self, slots: &[Slot]) -> Vec<V> {
+        slots.iter().map(|s| read_slot(&self.held, *s)).collect()
+    }
+}
+
+fn read_slot<V: Item>(held: &[u8], s: Slot) -> V {
+    let decode = |b: &[u8]| {
+        let mut d = Dec { b, at: 0 };
+        V::take(&mut d).expect("a node-table record reads back")
+    };
+    match spill().read.as_ref() {
+        Some(file) if held.is_empty() => decode(
+            &super::spill::read_at(file, s.at, s.len).expect("the lists' scratch file reads back"),
+        ),
+        _ => decode(&held[s.at as usize..s.at as usize + s.len as usize]),
+    }
+}
+
+impl<V: Item> Default for Table<V> {
+    fn default() -> Table<V> {
+        Table {
+            index: Mutex::new(TableIndex::default()),
+            _items: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<V: Item> Table<V> {
+    /// What `f` makes of `c`'s entries, in the order they were kept.
+    pub(super) fn with<R>(&self, c: [i32; 3], f: impl FnOnce(&[V]) -> R) -> R {
+        let slots = {
+            let ix = self.index.lock().expect("table");
+            let slots = ix.slots(c);
+            if !ix.held.is_empty() {
+                // No file: the records are the index's own bytes.
+                let items: Vec<V> = ix.read(&slots);
+                drop(ix);
+                return f(&items);
+            }
+            slots
+        };
+        // Read outside the lock, each record at its offset.
+        let items: Vec<V> = slots.iter().map(|s| read_slot(&[], *s)).collect();
+        f(&items)
+    }
+
+    /// The first of `c`'s entries `matches` holds for, or `v` kept as its next
+    /// one when none does — one step under the table's lock, so two threads
+    /// keeping one entry at once keep it once.
+    pub(super) fn find_or_push(&self, c: [i32; 3], matches: impl Fn(&V) -> bool, v: V) -> V {
+        let mut ix = self.index.lock().expect("table");
+        let slots = ix.slots(c);
+        if let Some(h) = ix.read::<V>(&slots).into_iter().find(|x| matches(x)) {
+            return h;
+        }
+        let mut e = Enc::default();
+        v.put(&mut e);
+        ix.put(c, &e.0);
+        v
+    }
+
+    /// Every cell's entries, in cell order.
+    #[cfg(test)]
+    pub(super) fn entries(&self) -> Vec<([i32; 3], Vec<V>)> {
+        let ix = self.index.lock().expect("table");
+        let mut cells: Vec<[i32; 3]> = ix.first.keys().copied().collect();
+        cells.sort_unstable();
+        cells
+            .into_iter()
+            .map(|c| (c, ix.read(&ix.slots(c))))
+            .collect()
     }
 }
 

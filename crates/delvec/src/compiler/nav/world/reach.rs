@@ -1766,10 +1766,10 @@ pub(in crate::compiler::nav) struct GraphMemo {
     dense: Dense,
     /// Each node's cell-relation edges (and, for water, its climbs out), kept
     /// by reach chunk ([`chunks`]) under the quadrants `0`.
-    nodes: chunks::Lists<(Quadrants, NodeEdges)>,
+    nodes: chunks::Table<(Quadrants, NodeEdges)>,
     /// Each standing or holding node's launches, flown, under the quadrants
     /// flown, kept by reach chunk.
-    flown: chunks::Lists<(Quadrants, NodeEdges)>,
+    flown: chunks::Table<(Quadrants, NodeEdges)>,
     /// Per column of the window, the cells a body could rest in, and whether
     /// nothing in it arrests a fall (under a void).
     columns: Columns,
@@ -2186,8 +2186,8 @@ impl World {
             extra,
             bank,
             dense,
-            nodes: chunks::Lists::default(),
-            flown: chunks::Lists::default(),
+            nodes: chunks::Table::default(),
+            flown: chunks::Table::default(),
             lineage,
             premise_cells,
             closures: Mutex::new(Vec::new()),
