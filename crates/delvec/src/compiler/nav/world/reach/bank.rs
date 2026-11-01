@@ -315,10 +315,80 @@ impl Expansion<'_> {
     }
 }
 
+/// Where a bank's variants live: a scratch file, appended as nodes are kept
+/// and read back by offset when a later graph asks. What a node's expansion
+/// read is the bulk of a variant — every window cell, at twelve bytes — and a
+/// build keeps one variant per node it flew for the life of the process,
+/// so held in memory the bank grew with the cells the reached nodes read:
+/// 2.3 GB of the town's 9.4 GB heap, measured by allocation site. Spilled,
+/// the bank holds one [`Slot`] per variant in memory and the file holds the
+/// rest; a build that never asks the bank again (one configuration, no edit
+/// batch) pays the write and nothing else.
+///
+/// The file is unlinked the moment it is open (Unix) or marked to be deleted
+/// when it closes (Windows), so no run leaves one behind. Nothing a build
+/// emits depends on it: a variant read back is the variant written
+/// ([`super::persist`] round-trips it), and the bank was never a premise.
+struct Spill {
+    file: std::fs::File,
+    len: u64,
+}
+
+/// One kept variant: where it lies in the spill, or the variant itself for a
+/// bank whose spill could not be opened.
+#[derive(Clone)]
+enum Slot {
+    Disk { at: u64, len: u32 },
+    Held(Arc<Variant>),
+}
+
+impl Spill {
+    fn open() -> std::io::Result<Spill> {
+        static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!(
+            "delvec-reach-bank-{}-{n}.spill",
+            std::process::id()
+        ));
+        let mut o = std::fs::OpenOptions::new();
+        o.read(true).write(true).create_new(true);
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            // FILE_FLAG_DELETE_ON_CLOSE
+            o.custom_flags(0x0400_0000);
+        }
+        let file = o.open(&path)?;
+        #[cfg(unix)]
+        std::fs::remove_file(&path)?;
+        Ok(Spill { file, len: 0 })
+    }
+
+    fn append(&mut self, bytes: &[u8]) -> std::io::Result<Slot> {
+        use std::io::{Seek, Write};
+        let at = self.len;
+        self.file.seek(std::io::SeekFrom::Start(at))?;
+        self.file.write_all(bytes)?;
+        self.len += bytes.len() as u64;
+        Ok(Slot::Disk {
+            at,
+            len: u32::try_from(bytes.len()).expect("a variant under 4 GiB"),
+        })
+    }
+
+    fn read(&mut self, at: u64, len: u32) -> std::io::Result<Vec<u8>> {
+        use std::io::{Read, Seek};
+        let mut out = vec![0u8; len as usize];
+        self.file.seek(std::io::SeekFrom::Start(at))?;
+        self.file.read_exact(&mut out)?;
+        Ok(out)
+    }
+}
+
 /// The bank of one window, ambient, launch set and non-local world facts.
-#[derive(Default)]
 pub(super) struct Bank {
-    nodes: Mutex<HashMap<super::FlownKey, Vec<Arc<Variant>>>>,
+    nodes: Mutex<HashMap<super::FlownKey, Vec<Slot>>>,
+    spill: Mutex<Option<Spill>>,
     /// Runs taken as written, for the agreement test's binding.
     reused: std::sync::atomic::AtomicU64,
     /// The bank's key, which names its file ([`super::persist`]).
@@ -333,6 +403,76 @@ pub(super) struct Bank {
 const VARIANTS: usize = 8;
 
 impl Bank {
+    /// A bank keyed `key` holding `nodes`, spilled.
+    fn new(key: String, nodes: Vec<(super::FlownKey, Vec<Arc<Variant>>)>) -> Bank {
+        let loaded = nodes.iter().map(|(_, vs)| vs.len()).sum();
+        let b = Bank {
+            nodes: Mutex::new(HashMap::new()),
+            spill: Mutex::new(Spill::open().ok()),
+            reused: Default::default(),
+            key,
+            loaded,
+        };
+        for (k, vs) in nodes {
+            for v in vs {
+                b.put(k, &v);
+            }
+        }
+        b
+    }
+
+    /// Spill `v` and record it under `key`.
+    fn put(&self, key: super::FlownKey, v: &Arc<Variant>) {
+        let slot = {
+            let mut spill = self.spill.lock().expect("spill");
+            match spill.as_mut() {
+                Some(s) => match s.append(&super::persist::encode_variant(v)) {
+                    Ok(slot) => slot,
+                    Err(_) => {
+                        // The spill failed: hold this one, and every later
+                        // one, in memory rather than lose an accelerator.
+                        *spill = None;
+                        Slot::Held(Arc::clone(v))
+                    }
+                },
+                None => Slot::Held(Arc::clone(v)),
+            }
+        };
+        let mut nodes = self.nodes.lock().expect("bank");
+        let vs = nodes.entry(key).or_default();
+        // The bound is kept here, under the one lock, so two threads keeping
+        // one node at once cannot pass it between them.
+        if vs.len() < VARIANTS {
+            vs.push(slot);
+        }
+    }
+
+    /// Every variant kept under `key`, read back; none for a node never kept.
+    fn variants(&self, key: &super::FlownKey) -> Vec<Arc<Variant>> {
+        let slots = match self.nodes.lock().expect("bank").get(key) {
+            Some(s) => s.clone(),
+            None => return Vec::new(),
+        };
+        let mut out = Vec::with_capacity(slots.len());
+        for s in slots {
+            match s {
+                Slot::Held(v) => out.push(v),
+                Slot::Disk { at, len } => {
+                    let bytes = self
+                        .spill
+                        .lock()
+                        .expect("spill")
+                        .as_mut()
+                        .and_then(|sp| sp.read(at, len).ok());
+                    if let Some(v) = bytes.as_deref().and_then(super::persist::decode_variant) {
+                        out.push(Arc::new(v));
+                    }
+                }
+            }
+        }
+        out
+    }
+
     /// The edges a recorded expansion of `key` gives a world whose snapshot is
     /// `dense` with raw membership `extra`, if one holds; `volumes` says which
     /// killing volumes lie near a read box.
@@ -344,7 +484,7 @@ impl Bank {
         jumps: &[[i32; 3]],
         volumes: &dyn Fn(Box3) -> Volumes,
     ) -> Option<Arc<NodeEdges>> {
-        let variants = self.nodes.lock().expect("bank").get(key)?.clone();
+        let variants = self.variants(key);
         variants.iter().find_map(|v| {
             let held = v.jumps == jumps
                 && v.deps
@@ -368,13 +508,7 @@ impl Bank {
         jumps: &[[i32; 3]],
         volumes: &dyn Fn(Box3) -> Volumes,
     ) -> Expansion<'a> {
-        let variants = self
-            .nodes
-            .lock()
-            .expect("bank")
-            .get(key)
-            .cloned()
-            .unwrap_or_default();
+        let variants = self.variants(key);
         let mut best: Option<Prior> = None;
         for v in variants {
             if v.jumps != jumps {
@@ -429,19 +563,42 @@ impl Bank {
         volumes: Volumes,
         edges: &Arc<NodeEdges>,
     ) {
+        if self
+            .nodes
+            .lock()
+            .expect("bank")
+            .get(&key)
+            .is_some_and(|vs| vs.len() >= VARIANTS)
+        {
+            return;
+        }
         let deps = expansion.track.deps(extra);
         let runs = expansion.runs.into_inner();
-        let mut nodes = self.nodes.lock().expect("bank");
-        let vs = nodes.entry(key).or_default();
-        if vs.len() < VARIANTS {
-            vs.push(Arc::new(Variant {
+        self.put(
+            key,
+            &Arc::new(Variant {
                 deps,
                 jumps,
                 volumes,
                 runs,
                 edges: Arc::clone(edges),
-            }));
-        }
+            }),
+        );
+    }
+
+    /// Every variant the bank holds, read back, in key order.
+    fn held_all(&self) -> Vec<(super::FlownKey, Vec<Arc<Variant>>)> {
+        let keys: Vec<super::FlownKey> = self.nodes.lock().expect("bank").keys().copied().collect();
+        let mut v: Vec<_> = keys.into_iter().map(|k| (k, self.variants(&k))).collect();
+        v.sort_by_key(|n| n.0);
+        v
+    }
+
+    /// How many variants the bank holds, and the bytes they take in the spill.
+    pub(super) fn census(&self) -> (usize, u64) {
+        let n = self.nodes.lock().expect("bank").values().map(Vec::len).sum();
+        let bytes = self.spill.lock().expect("spill").as_ref().map_or(0, |s| s.len);
+        (n, bytes)
     }
 }
 
@@ -479,13 +636,7 @@ pub(super) fn bank(key: String) -> Arc<Bank> {
         return Arc::clone(b);
     }
     let held = super::persist::load(&key);
-    let loaded = held.iter().map(|(_, vs)| vs.len()).sum();
-    let b = Arc::new(Bank {
-        nodes: Mutex::new(held.into_iter().collect()),
-        reused: Default::default(),
-        key: key.clone(),
-        loaded,
-    });
+    let b = Arc::new(Bank::new(key.clone(), held));
     banks.insert(key, Arc::clone(&b));
     b
 }
@@ -495,41 +646,32 @@ pub(super) fn bank(key: String) -> Arc<Bank> {
 pub(super) fn persist_all() {
     let banks: Vec<Arc<Bank>> = banks().lock().expect("banks").values().cloned().collect();
     for b in banks {
-        let mut nodes: Vec<(super::FlownKey, Vec<Arc<Variant>>)> = b
-            .nodes
-            .lock()
-            .expect("bank")
-            .iter()
-            .map(|(k, v)| (*k, v.clone()))
-            .collect();
-        if nodes.iter().map(|(_, vs)| vs.len()).sum::<usize>() <= b.loaded {
+        if super::persist::file_of(&b.key).is_none() {
             continue;
         }
-        nodes.sort_by_key(|n| n.0);
+        if b.census().0 <= b.loaded {
+            continue;
+        }
+        let nodes = b.held_all();
         super::persist::store(&b.key, &nodes);
     }
+}
+
+/// Every bank's census, summed: variants kept and bytes spilled.
+pub(super) fn census_all() -> (usize, u64) {
+    let banks: Vec<Arc<Bank>> = banks().lock().expect("banks").values().cloned().collect();
+    banks.iter().map(|b| b.census()).fold((0, 0), |a, b| (a.0 + b.0, a.1 + b.1))
 }
 
 #[cfg(test)]
 impl Bank {
     /// Every variant the bank holds, in key order.
     pub(super) fn held(&self) -> Vec<(super::FlownKey, Vec<Arc<Variant>>)> {
-        let mut v: Vec<_> = self
-            .nodes
-            .lock()
-            .expect("bank")
-            .iter()
-            .map(|(k, vs)| (*k, vs.clone()))
-            .collect();
-        v.sort_by_key(|n| n.0);
-        v
+        self.held_all()
     }
 
     /// A bank holding `nodes`, as one read from a file is.
     pub(super) fn holding(nodes: Vec<(super::FlownKey, Vec<Arc<Variant>>)>) -> Bank {
-        Bank {
-            nodes: Mutex::new(nodes.into_iter().collect()),
-            ..Bank::default()
-        }
+        Bank::new(String::from("test"), nodes)
     }
 }

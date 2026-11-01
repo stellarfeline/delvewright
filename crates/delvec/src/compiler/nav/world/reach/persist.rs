@@ -207,6 +207,21 @@ impl Enc {
     }
 }
 
+/// One variant as the file writes it ([`super::bank`] spills each variant it
+/// keeps in this form and reads it back by [`decode_variant`]).
+pub(super) fn encode_variant(v: &Variant) -> Vec<u8> {
+    let mut e = Enc::default();
+    e.variant(v);
+    e.0
+}
+
+/// The variant `bytes` holds, when they are exactly one [`encode_variant`].
+pub(super) fn decode_variant(bytes: &[u8]) -> Option<Variant> {
+    let mut d = Dec { b: bytes, at: 0 };
+    let v = d.variant()?;
+    (d.at == bytes.len()).then_some(v)
+}
+
 fn encode(key: &str, nodes: &[(FlownKey, Vec<Arc<Variant>>)]) -> Vec<u8> {
     let mut e = Enc::default();
     e.0.extend_from_slice(MAGIC);

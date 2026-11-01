@@ -1707,6 +1707,13 @@ type FlownKey = ([i32; 3], Quadrants);
 /// Write the node banks this run grew to `DELVEC_REACH_CACHE`, when it names a
 /// directory (`reach/persist.rs`); a run that ends calls it once.
 pub fn persist_reach_cache() {
+    let (variants, bytes) = bank::census_all();
+    if variants > 0 {
+        eprintln!(
+            "reach bank: {variants} node variant(s) kept over {bytes} byte(s) in the spill file; \
+             in memory, one slot per variant"
+        );
+    }
     bank::persist_all();
 }
 
