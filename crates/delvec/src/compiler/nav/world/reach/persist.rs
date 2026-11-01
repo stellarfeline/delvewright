@@ -35,7 +35,7 @@ use std::sync::{Arc, OnceLock};
 /// The environment variable that names the directory.
 pub const ENV: &str = "DELVEC_REACH_CACHE";
 
-const MAGIC: &[u8; 8] = b"DWBANK01";
+const MAGIC: &[u8; 8] = b"DWBANK02";
 
 /// The directory the verb names when [`ENV`] is not set at all.
 static DEFAULT: OnceLock<PathBuf> = OnceLock::new();
@@ -238,8 +238,9 @@ impl Enc {
         for &(i, code, x) in &v.deps {
             self.u32(i);
             self.u32(code);
-            self.u16(x);
+            self.u32(x);
         }
+        self.box3(v.head);
         self.len(v.jumps.len());
         for c in &v.jumps {
             self.cell(*c);
@@ -396,8 +397,9 @@ impl Dec<'_> {
         let n = self.len()?;
         let mut deps = Vec::with_capacity(n);
         for _ in 0..n {
-            deps.push((self.u32()?, self.u32()?, self.u16()?));
+            deps.push((self.u32()?, self.u32()?, self.u32()?));
         }
+        let head = self.box3()?;
         let n = self.len()?;
         let mut jumps = Vec::with_capacity(n);
         for _ in 0..n {
@@ -418,6 +420,7 @@ impl Dec<'_> {
         }
         Some(Variant {
             deps,
+            head,
             jumps,
             volumes,
             runs,

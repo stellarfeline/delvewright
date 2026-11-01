@@ -14,10 +14,18 @@
 //! of one earlier graph over a box, and this asks it of every earlier graph
 //! over the cells themselves.
 //!
+//! A door's or a trapdoor's leaf is read cell by cell, and every point read of
+//! one goes through [`leaf_read`]: within an expansion, the cell is noted as
+//! read in the run (or scope) it was read in, and the box of the leaf cells a
+//! run read joins the box it grew the node's read box by. A cell's recorded
+//! fact ([`super::Raw::at`]) carries whether it holds a leaf and, where it
+//! does, the leaf's ordinal, so a world whose leaf differs at a cell a node
+//! read misses that node, and one whose leaves differ anywhere else takes it.
 //! What a world query reads beyond a cell's neighbourhood is part of the
-//! bank's own key (the climb holds), or of the node's variant (where the
-//! declared jumps out of it land), so two worlds that differ in it never share
-//! a node.
+//! bank's own key (whether the world holds any climb or leaf, a hand's use of
+//! a leaf, and every leaf outside the window), or of the node's variant (where
+//! the declared jumps out of it land), so two worlds that differ in it never
+//! share a node.
 //!
 //! A node no variant holds for is flown again — but not all of it. Its
 //! launches are taken in [`GROUPS`] runs of template arcs, in their order, and
@@ -32,7 +40,7 @@
 //! The bank is an accelerator, never a premise: what no variant answers is
 //! flown, and a variant that holds answers what flying would.
 
-use super::{Chunked, Code, Death, Dense, EdgeKind, NodeEdges};
+use super::{Code, Death, Dense, EdgeKind, NodeEdges, Raw};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -40,7 +48,7 @@ use std::sync::{Arc, Mutex};
 /// An inclusive cell box.
 pub(super) type Box3 = ([i32; 3], [i32; 3]);
 
-fn union(a: Option<Box3>, b: Option<Box3>) -> Option<Box3> {
+pub(super) fn union(a: Option<Box3>, b: Option<Box3>) -> Option<Box3> {
     match (a, b) {
         (Some(a), Some(b)) => Some((
             [a.0[0].min(b.0[0]), a.0[1].min(b.0[1]), a.0[2].min(b.0[2])],
@@ -82,6 +90,73 @@ pub(super) struct Track<'a> {
 
 thread_local! {
     static BITS: RefCell<Vec<Cell<u64>>> = const { RefCell::new(Vec::new()) };
+    static LEAF_READS: RefCell<Option<LeafReads>> = const { RefCell::new(None) };
+}
+
+/// The leaf cells the world was asked about within the expansion running on
+/// this thread: those its track has not yet noted, and the box of those read
+/// since the expansion last asked.
+#[derive(Default)]
+struct LeafReads {
+    tracked: bool,
+    pending: Vec<[i32; 3]>,
+    since: Option<Box3>,
+}
+
+/// Note that the world was asked for the leaf at `c` ([`super::World`]'s one
+/// point read of a leaf). Nothing outside an expansion.
+pub(super) fn leaf_read(c: [i32; 3]) {
+    LEAF_READS.with(|r| {
+        if let Some(r) = r.borrow_mut().as_mut() {
+            if r.tracked {
+                r.pending.push(c);
+            }
+            r.since = union(r.since, Some((c, c)));
+        }
+    });
+}
+
+/// One expansion's watch over the leaf cells the world is asked about, on
+/// its thread, for as long as it lives; `tracked` when a [`Track`] notes
+/// them. Expansions on one thread never nest.
+pub(super) struct LeafWatch;
+
+impl LeafWatch {
+    pub(super) fn open(tracked: bool) -> LeafWatch {
+        LEAF_READS.with(|r| {
+            let mut r = r.borrow_mut();
+            assert!(
+                r.is_none(),
+                "an expansion runs inside another on one thread"
+            );
+            *r = Some(LeafReads {
+                tracked,
+                ..LeafReads::default()
+            });
+        });
+        LeafWatch
+    }
+
+    /// The box of the leaf cells read since the last call, emptied.
+    pub(super) fn since(&self) -> Option<Box3> {
+        LEAF_READS.with(|r| r.borrow_mut().as_mut().and_then(|r| r.since.take()))
+    }
+}
+
+impl Drop for LeafWatch {
+    fn drop(&mut self) {
+        LEAF_READS.with(|r| *r.borrow_mut() = None);
+    }
+}
+
+/// The leaf cells read that no track has noted yet, emptied.
+fn pending_leaf_reads() -> Vec<[i32; 3]> {
+    LEAF_READS.with(|r| {
+        r.borrow_mut()
+            .as_mut()
+            .map(|r| std::mem::take(&mut r.pending))
+            .unwrap_or_default()
+    })
 }
 
 impl Drop for Track<'_> {
@@ -147,8 +222,21 @@ impl<'a> Track<'a> {
         }
     }
 
+    /// Note every leaf cell read since the last look: a window cell as read,
+    /// and any cell into the current box (a leaf outside the window is the
+    /// bank's key's).
+    fn note_leaf_reads(&self) {
+        for c in pending_leaf_reads() {
+            match self.dense.index(c) {
+                Some(i) => self.note(i, c),
+                None => self.extend((c, c)),
+            }
+        }
+    }
+
     /// The current run's box, emptied.
     fn take(&self) -> Option<Box3> {
+        self.note_leaf_reads();
         let b = (
             [self.lo[0].get(), self.lo[1].get(), self.lo[2].get()],
             [self.hi[0].get(), self.hi[1].get(), self.hi[2].get()],
@@ -174,9 +262,9 @@ impl<'a> Track<'a> {
         self.extend((lo, hi));
     }
 
-    /// Start a run: its box is empty.
-    pub(super) fn begin_run(&self) {
-        self.take();
+    /// Start a run: its box is empty. What was read before it.
+    pub(super) fn begin_run(&self) -> Option<Box3> {
+        self.take()
     }
 
     /// End a run: its box.
@@ -199,8 +287,9 @@ impl<'a> Track<'a> {
         inner
     }
 
-    /// The cells noted, each with its snapshot code and raw membership.
-    fn deps(&self, extra: &Chunked<u16>) -> Vec<(u32, Code, u16)> {
+    /// The cells noted, each with its snapshot code and its raw fact.
+    fn deps(&self, raw: &Raw) -> Vec<(u32, Code, u32)> {
+        self.note_leaf_reads();
         let mut out = Vec::new();
         let mut words = self.touched.borrow().clone();
         words.sort_unstable();
@@ -210,7 +299,7 @@ impl<'a> Track<'a> {
             while b != 0 {
                 let i = w * 64 + b.trailing_zeros() as usize;
                 b &= b - 1;
-                out.push((i as u32, self.dense.cells[i], extra[i]));
+                out.push((i as u32, self.dense.cells[i], raw.at(i)));
             }
         }
         out
@@ -247,7 +336,10 @@ pub(super) type Volumes = Vec<([i32; 3], [i32; 3])>;
 
 /// One recorded expansion of a node.
 pub(super) struct Variant {
-    pub(super) deps: Vec<(u32, Code, u16)>,
+    pub(super) deps: Vec<(u32, Code, u32)>,
+    /// Every cell the expansion read before its first run lies in this box:
+    /// the node's own queries.
+    pub(super) head: Option<Box3>,
     /// Where the declared jumps out of the node land.
     pub(super) jumps: Vec<[i32; 3]>,
     pub(super) volumes: Volumes,
@@ -262,6 +354,7 @@ pub(super) struct Expansion<'a> {
     prior: Option<Prior>,
     bank: &'a Bank,
     runs: RefCell<Vec<Run>>,
+    head: Cell<Option<Option<Box3>>>,
 }
 
 /// The recorded variant an expansion takes runs from, and the window cells
@@ -274,6 +367,14 @@ struct Prior {
 }
 
 impl Expansion<'_> {
+    /// Start a run; the first keeps what was read before it.
+    pub(super) fn begin_run(&self) {
+        let b = self.track.begin_run();
+        if self.head.get().is_none() {
+            self.head.set(Some(b));
+        }
+    }
+
     /// The recorded run `g` of `n`, if it holds here; its cells are noted as
     /// read and its box made the current run's.
     pub(super) fn reuse(&self, g: usize, n: usize) -> Option<Summary> {
@@ -340,16 +441,16 @@ impl Bank {
         &self,
         key: &super::FlownKey,
         dense: &Dense,
-        extra: &Chunked<u16>,
+        raw: &Raw,
         jumps: &[[i32; 3]],
         volumes: &dyn Fn(Box3) -> Volumes,
     ) -> Option<Arc<NodeEdges>> {
         let variants = self.nodes.lock().expect("bank").get(key)?.clone();
         variants.iter().find_map(|v| {
             let held = v.jumps == jumps
-                && v.deps
-                    .iter()
-                    .all(|&(i, code, x)| dense.cells[i as usize] == code && extra[i as usize] == x);
+                && v.deps.iter().all(|&(i, code, x)| {
+                    dense.cells[i as usize] == code && raw.at(i as usize) == x
+                });
             (held && v.edges.read.is_some_and(|b| volumes(b) == v.volumes))
                 .then(|| Arc::clone(&v.edges))
         })
@@ -363,7 +464,7 @@ impl Bank {
         &'a self,
         key: &super::FlownKey,
         dense: &'a Dense,
-        extra: &Chunked<u16>,
+        raw: &Raw,
         node: &[Box3],
         jumps: &[[i32; 3]],
         volumes: &dyn Fn(Box3) -> Volumes,
@@ -383,14 +484,15 @@ impl Bank {
             let diff: Vec<[i32; 3]> = v
                 .deps
                 .iter()
-                .filter(|&&(i, code, x)| dense.cells[i as usize] != code || extra[i as usize] != x)
+                .filter(|&&(i, code, x)| dense.cells[i as usize] != code || raw.at(i as usize) != x)
                 .map(|&(i, _, _)| dense.coords(i as usize))
                 .collect();
             let Some(read) = v.edges.read else {
                 continue;
             };
-            // The node's own queries: no changed cell among them, and the
-            // volumes near them the same.
+            // The node's own queries: no changed cell among them or in what
+            // it read before its first run, and the volumes near them the
+            // same.
             let here = volumes(read);
             let at_node = |vs: &Volumes| -> Volumes {
                 vs.iter()
@@ -398,8 +500,9 @@ impl Bank {
                     .copied()
                     .collect()
             };
-            if diff.iter().any(|d| node.iter().any(|b| inside(*d, b)))
-                || at_node(&here) != at_node(&v.volumes)
+            if diff.iter().any(|d| {
+                node.iter().any(|b| inside(*d, b)) || v.head.is_some_and(|h| inside(*d, &h))
+            }) || at_node(&here) != at_node(&v.volumes)
             {
                 continue;
             }
@@ -416,6 +519,7 @@ impl Bank {
             prior: best,
             bank: self,
             runs: RefCell::new(Vec::new()),
+            head: Cell::new(None),
         }
     }
 
@@ -424,18 +528,20 @@ impl Bank {
         &self,
         key: super::FlownKey,
         expansion: Expansion<'_>,
-        extra: &Chunked<u16>,
+        raw: &Raw,
         jumps: Vec<[i32; 3]>,
         volumes: Volumes,
         edges: &Arc<NodeEdges>,
     ) {
-        let deps = expansion.track.deps(extra);
+        let deps = expansion.track.deps(raw);
+        let head = expansion.head.get().flatten();
         let runs = expansion.runs.into_inner();
         let mut nodes = self.nodes.lock().expect("bank");
         let vs = nodes.entry(key).or_default();
         if vs.len() < VARIANTS {
             vs.push(Arc::new(Variant {
                 deps,
+                head,
                 jumps,
                 volumes,
                 runs,
@@ -531,5 +637,43 @@ impl Bank {
             nodes: Mutex::new(nodes.into_iter().collect()),
             ..Bank::default()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A leaf cell the world is asked about is a cell the expansion read,
+    /// wherever it lies: noted in the run it was read in, its box the run's,
+    /// and its fact among the deps — whether or not any box the expansion
+    /// marked holds it. Outside an expansion, nothing is noted.
+    #[test]
+    fn a_leaf_read_is_a_cell_the_run_read() {
+        let w = super::super::tests::bell_yard();
+        let dense = Dense::of(&w);
+        let raw = Raw::of(&w, &dense);
+        let at = [3, 1, 3];
+        let i = dense.index(at).expect("inside the window");
+        leaf_read(at);
+        let track = Track::new(&dense);
+        let watch = LeafWatch::open(true);
+        track.begin_run();
+        leaf_read(at);
+        assert_eq!(
+            track.end_run(),
+            Some((at, at)),
+            "the run's box is the leaf cell"
+        );
+        assert_eq!(watch.since(), Some((at, at)));
+        let deps = track.deps(&raw);
+        assert_eq!(deps, vec![(i as u32, dense.cells[i], raw.at(i))]);
+        drop(watch);
+        leaf_read([4, 1, 4]);
+        assert_eq!(
+            track.deps(&raw).len(),
+            1,
+            "a read outside an expansion is noted"
+        );
     }
 }
