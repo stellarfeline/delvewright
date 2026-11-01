@@ -83,6 +83,10 @@ pub(crate) fn run_frames_campaign(
 ) -> ExitCode {
     use delvec::compiler::view::frameset;
 
+    // The node bank `delvec detail` keeps with the campaign: the relight's
+    // reach takes the nodes a check flew, and a later check the nodes this
+    // look flies.
+    delvec::compiler::nav::default_reach_cache(campaign_dir.join(crate::detail::REACH_BANK));
     let (campaign, prefabs) = match load_for_view(campaign_dir, prefabs_dir, json) {
         Ok(v) => v,
         Err(code) => return ExitCode::from(code),

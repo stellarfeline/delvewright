@@ -69,6 +69,10 @@ delvewright_dsl::dw_code! {
 /// document at it is the creator's.
 pub const PROGRAMS_DIR: &str = "programs";
 
+/// Where a campaign keeps the reach graph's node bank when
+/// `DELVEC_REACH_CACHE` is not set: under its `.out/`, which nothing commits.
+pub const REACH_BANK: &str = ".out/reach-bank";
+
 /// The prefix a program reads a handed value through (spec-0058 §2.3).
 pub const HANDED_PREFIX: &str = "handed/";
 
@@ -111,6 +115,10 @@ fn run(
         );
         return Err(2);
     }
+    // The reach graph's node bank lives with the campaign (`DELVEC_REACH_CACHE`
+    // unset): every run after the first takes the nodes the earlier runs flew
+    // where their cells hold the same, and emits what flying them would.
+    delvec::compiler::nav::default_reach_cache(campaign_dir.join(REACH_BANK));
     let loaded = load_or_refuse(campaign_dir, json)?;
     // Parsed rather than fully validated, on `allocation`'s precedent: the
     // campaign is validated in full at the end of the run, over the pieces this

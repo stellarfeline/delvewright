@@ -1710,6 +1710,13 @@ pub fn persist_reach_cache() {
     bank::persist_all();
 }
 
+/// Name the directory the node banks live in when `DELVEC_REACH_CACHE` is not
+/// set (`reach/persist.rs`): the verb that knows its campaign calls it before
+/// any reach is asked.
+pub fn default_reach_cache(dir: std::path::PathBuf) {
+    persist::default_dir(dir);
+}
+
 /// The memo of one world's graph: its snapshot and every node expanded so far.
 pub(in crate::compiler::nav) struct GraphMemo {
     dense: Dense,
@@ -2832,33 +2839,33 @@ impl World {
                     frontier = next;
                 }
             };
-        let open = |held: &Reach, flown: &HashMap<[i32; 3], Quadrants>, c: [i32; 3]| {
-            self.envelope_open(&memo, held, c) & !flown.get(&c).copied().unwrap_or(0)
-        };
         let start: Vec<[i32; 3]> = seen.iter().copied().collect();
         close(&mut seen, &mut held, start);
         loop {
-            let todo: Vec<[i32; 3]> = seen
+            let standing: Vec<[i32; 3]> = seen
                 .iter()
                 .copied()
                 .filter(|c| {
                     matches!(
                         self.rest_kind(*c),
                         Some(RestKind::Standing | RestKind::Holding)
-                    ) && open(&held, &flown, *c) != 0
+                    )
                 })
+                .collect();
+            let todo: Vec<[i32; 3]> = self
+                .left_to_fly(&memo, &held, &standing, &|c| {
+                    flown.get(&c).copied().unwrap_or(0)
+                })
+                .into_iter()
+                .map(|(c, _)| c)
                 .collect();
             if todo.is_empty() {
                 break;
             }
             for chunk in todo.chunks(2048) {
-                let chunk: Vec<([i32; 3], Quadrants)> = chunk
-                    .iter()
-                    .filter_map(|c| {
-                        let q = open(&held, &flown, *c);
-                        (q != 0).then_some((*c, q))
-                    })
-                    .collect();
+                let chunk = self.left_to_fly(&memo, &held, chunk, &|c| {
+                    flown.get(&c).copied().unwrap_or(0)
+                });
                 let out: Vec<Arc<NodeEdges>> =
                     crate::par::map(&chunk, |(c, q)| self.flown(&memo, &params, *c, *q));
                 let mut next: Vec<[i32; 3]> = Vec::new();
@@ -3351,15 +3358,13 @@ impl World {
         let mut reach = Reach::default();
         self.close(&memo, params, &mut reach, start.clone());
         loop {
-            let todo: Vec<([i32; 3], Quadrants)> = reach
+            let standing: Vec<[i32; 3]> = reach
                 .states
                 .iter()
                 .filter(|(_, k)| matches!(k, RestKind::Standing | RestKind::Holding))
-                .filter_map(|(c, _)| {
-                    let q = self.envelope_open(&memo, &reach, *c) & !reach.flown_mask(*c);
-                    (q != 0).then_some((*c, q))
-                })
+                .map(|(c, _)| *c)
                 .collect();
+            let todo = self.left_to_fly(&memo, &reach, &standing, &|c| reach.flown_mask(c));
             if todo.is_empty() {
                 break;
             }
@@ -3367,13 +3372,8 @@ impl World {
                 if reach.simulated + reach.credited > params.budget {
                     break;
                 }
-                let chunk: Vec<([i32; 3], Quadrants)> = chunk
-                    .iter()
-                    .filter_map(|(c, _)| {
-                        let q = self.envelope_open(&memo, &reach, *c) & !reach.flown_mask(*c);
-                        (q != 0).then_some((*c, q))
-                    })
-                    .collect();
+                let cells: Vec<[i32; 3]> = chunk.iter().map(|(c, _)| *c).collect();
+                let chunk = self.left_to_fly(&memo, &reach, &cells, &|c| reach.flown_mask(c));
                 self.fly_into(&memo, params, &mut reach, &chunk);
             }
             // The budget is refused, never truncated (`DW1042`): a closure that
@@ -3607,6 +3607,38 @@ impl World {
     fn envelope_open(&self, memo: &GraphMemo, reach: &Reach, c: [i32; 3]) -> Quadrants {
         let d = &memo.dense;
         self.envelope_toward(memo, c, &|x| reach.has(d, x))
+    }
+
+    /// Each of `cells` with the directions [`World::envelope_open`] still asks
+    /// for less those `flown` says were flown, in the order of `cells`, the
+    /// cells with none left out. A cell every direction of which was flown
+    /// asks for none and is not measured; the rest are measured across the
+    /// cores, a block of cells to a task, since each answer reads `reach` and
+    /// `flown` and nothing another answer writes.
+    fn left_to_fly(
+        &self,
+        memo: &GraphMemo,
+        reach: &Reach,
+        cells: &[[i32; 3]],
+        flown: &(dyn Fn([i32; 3]) -> Quadrants + Sync),
+    ) -> Vec<([i32; 3], Quadrants)> {
+        let one = |c: &[i32; 3]| -> Option<([i32; 3], Quadrants)> {
+            let done = flown(*c);
+            if done == ALL_QUADRANTS {
+                return None;
+            }
+            let q = self.envelope_open(memo, reach, *c) & !done;
+            (q != 0).then_some((*c, q))
+        };
+        const BLOCK: usize = 4096;
+        if cells.len() <= BLOCK {
+            return cells.iter().filter_map(one).collect();
+        }
+        let blocks: Vec<&[[i32; 3]]> = cells.chunks(BLOCK).collect();
+        crate::par::map(&blocks, |b| b.iter().filter_map(one).collect::<Vec<_>>())
+            .into_iter()
+            .flatten()
+            .collect()
     }
 
     /// Which launches from `c` can carry a body toward a cell of its envelope
