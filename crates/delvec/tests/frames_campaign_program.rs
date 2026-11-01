@@ -38,10 +38,16 @@ fn text(out: &Output) -> String {
 fn snapshot(dir: &Path) -> BTreeSet<(String, String)> {
     use sha2::{Digest, Sha256};
     let mut out = BTreeSet::new();
+    // The campaign's `.out/` is the runs' own (the look keeps the reach
+    // graph's node bank and the validation's notes there by design).
+    let own = dir.join(".out");
     let mut stack = vec![dir.to_path_buf()];
     while let Some(d) = stack.pop() {
         for e in std::fs::read_dir(&d).unwrap() {
             let p = e.unwrap().path();
+            if p == own {
+                continue;
+            }
             if p.is_dir() {
                 stack.push(p);
             } else {

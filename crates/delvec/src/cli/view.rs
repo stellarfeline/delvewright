@@ -87,10 +87,17 @@ pub(crate) fn run_frames_campaign(
     // reach takes the nodes a check flew, and a later check the nodes this
     // look flies.
     delvec::compiler::nav::default_reach_cache(campaign_dir.join(crate::detail::REACH_BANK));
-    let (campaign, prefabs) = match load_for_view(campaign_dir, prefabs_dir, json) {
-        Ok(v) => v,
-        Err(code) => return ExitCode::from(code),
-    };
+    // The validation's binding notes are the campaign's census, the same on
+    // every look: written beside the campaign, one line naming them.
+    let notes = campaign_dir
+        .join(".out")
+        .join("frames")
+        .join("examined.txt");
+    let (campaign, prefabs) =
+        match crate::cli::campaign::validate_stage_into(campaign_dir, prefabs_dir, json, &notes) {
+            Ok(v) => (v.campaign, v.prefabs),
+            Err(code) => return ExitCode::from(code),
+        };
     // `--program`: the place's piece made from its program in memory, standing
     // in for the committed one (or for its stand-in) in the whole drawn.
     let (campaign, prefabs, overlay) = match args.program {

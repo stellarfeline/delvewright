@@ -239,6 +239,34 @@ pub(crate) fn validate_stage_noting(
     validate_loaded_with(loaded, prefabs_dir, json, Some(notes))
 }
 
+/// [`validate_stage_noting`], its notes written to the file `notes` (its
+/// directory made) and one line printed with their count and path: what a
+/// verb that judges one place or one view prints instead of the campaign's
+/// whole census, which is the same on every run over it.
+pub(crate) fn validate_stage_into(
+    campaign_dir: &Path,
+    prefabs_dir: &Path,
+    json: bool,
+    notes: &Path,
+) -> Result<Validated, u8> {
+    let mut examined: Vec<String> = Vec::new();
+    let v = validate_stage_noting(campaign_dir, prefabs_dir, json, &mut examined);
+    if !examined.is_empty() {
+        let mut text = examined.join("\n");
+        text.push('\n');
+        if let Err(e) = super::report::write_file(notes, text.as_bytes()) {
+            eprintln!("internal error: cannot write {}: {e}", notes.display());
+            return Err(crate::EXIT_INTERNAL);
+        }
+        eprintln!(
+            "-- what the validation examined: {} line(s), written to {}",
+            examined.len(),
+            notes.display()
+        );
+    }
+    v
+}
+
 /// [`validate_stage`] over an already-loaded (possibly augmented) campaign —
 /// split out so `delvec edit` can validate a script with a candidate batch
 /// appended before anything touches the campaign directory.

@@ -50,7 +50,7 @@ use sha2::{Digest, Sha256};
 
 use crate::EXIT_INTERNAL;
 use crate::cli::campaign::{
-    has_error, load_library, load_or_refuse, read_skins, read_structures, validate_stage_noting,
+    has_error, load_library, load_or_refuse, read_skins, read_structures, validate_stage_into,
 };
 use crate::cli::report::{print_build_error, print_diags, print_one_diag};
 
@@ -1369,27 +1369,7 @@ fn battery(
     use delvec::compiler::emit;
     use delvec::compiler::plan::Plan;
 
-    let mut examined: Vec<String> = Vec::new();
-    let v = validate_stage_noting(campaign_dir, prefabs_dir, json, &mut examined);
-    if !examined.is_empty() {
-        let mut text = examined.join("\n");
-        text.push('\n');
-        let dir = notes.parent().unwrap_or(Path::new("."));
-        std::fs::create_dir_all(dir).map_err(|e| {
-            eprintln!("internal error: cannot create {}: {e}", dir.display());
-            EXIT_INTERNAL
-        })?;
-        let file = notes
-            .file_name()
-            .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-        write(dir, &file, text.as_bytes())?;
-        eprintln!(
-            "-- what the validation examined: {} line(s), written to {}",
-            examined.len(),
-            notes.display()
-        );
-    }
-    let v = v?;
+    let v = validate_stage_into(campaign_dir, prefabs_dir, json, notes)?;
     if has_error(&v.diags) {
         eprintln!(
             "{}: the campaign does not validate with the piece(s) this run {}.",
