@@ -46,6 +46,7 @@ inputs = [
   { glob = "**/*.rs", why = "`tools/ci/fmt-workspaces.sh --check` formats every workspace's sources" },
   { glob = "gallery/**", why = "crate tests read the gallery (`detail.rs`, `remedy_reachability.rs`, `site_plan_edit_script.rs`, `prefab_*` tests)" },
   { glob = "tools/ci/fmt-workspaces.sh", why = "the formatting sweep this job runs" },
+  { glob = "tools/ci/cargo-test-concurrent.py", why = "the test step this job runs" },
   { glob = "tools/ci/check-json-canonical.py", why = "the JSON sweep this job runs" },
   { glob = "tools/ci/determinism-subject.sh", why = "`delvec-binary`'s and `gallery-pieces`' Linux digest steps and `determinism-cross-os` all run it" },
   { glob = "tools/ci/gallery-prefabs.py", why = "`determinism-subject.sh --subject gallery` generates the gallery's pieces with it on both hosts" },
@@ -109,7 +110,7 @@ inputs = [
 [[group]]
 name = "tool-tests-tree"
 inputs = [
-  { glob = "**", why = "the files `tools/tests/conftest.py` lists in `WHOLE_TREE` read the whole tracked tree: `git ls-files` sweeps (`test_check_ci_reach.py`, `test_check_eol_attributes.py`, `test_check_release_publish_gate.py`, `test_server_heap.py`, `test_version_sites.py`, `test_check_pins.py`, `test_check_shell_bash32.py`, the shell-newline and redirect sweeps, `test_gallery_baseline_tracked.py` — only `warnings.json` is tracked under `gallery/baseline/` —, and `test_check_generator_preservation.py` and `test_staging_gate.py`, whose tools discover every generator workspace over the tracked manifests), every tracked `*.md` (`test_mdtable.py`, `test_check_doc_dupes.py`), every tracked JSON (`test_check_json_canonical.py`), the plugin under `.claude/` and every engine path the page names (`test_check_skill_page.py`, `test_check_toolchain.py`, `test_fetch_delvec.py`, `test_handout.py`, `test_release_tags.py`), and documents outside the compiler reference (`test_check_stated_counts.py`, `test_check_demo_levels.py`, `test_check_numbered_doc_index.py`)" },
+  { glob = "**", why = "the files `tools/tests/conftest.py` lists in `WHOLE_TREE` read the whole tracked tree: `git ls-files` sweeps (`test_check_ci_reach.py`, `test_check_eol_attributes.py`, `test_check_release_publish_gate.py`, `test_server_heap.py`, `test_version_sites.py`, `test_check_pins.py`, `test_check_shell_bash32.py`, the shell-newline and redirect sweeps, `test_gallery_baseline_tracked.py` — only `warnings.json` is tracked under `gallery/baseline/` —, and `test_check_generator_preservation.py` and `test_staging_gate.py`, whose tools discover every generator workspace over the tracked manifests), every tracked `*.md` (`test_mdtable.py`, `test_check_doc_dupes.py`), every tracked JSON (`test_check_json_canonical.py`), the plugin under `.claude/` and every engine path the page names (`test_check_skill_page.py`, `test_check_toolchain.py`, `test_fetch_delvec.py`, `test_handout.py`, `test_release_tags.py`, and `test_starter.py` and `test_town.py`, which import the plugin's `scripts/starter.py` and `scripts/town.py`), and documents outside the compiler reference (`test_check_stated_counts.py`, `test_check_demo_levels.py`, `test_check_numbered_doc_index.py`)" },
 ]
 
 [[group]]
