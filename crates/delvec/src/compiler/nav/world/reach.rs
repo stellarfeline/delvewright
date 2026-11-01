@@ -1818,7 +1818,11 @@ impl GraphMemo {
 /// applied), and the lowest cell that stops a fall (a shape, water or lava),
 /// `None` for a column that holds nothing at all.
 struct Columns {
-    rest: Vec<Vec<i32>>,
+    /// Every column's heights, column after column ([`Columns::rest`]).
+    heights: Vec<i32>,
+    /// Where each column's heights start in `heights`, and where the last
+    /// ends.
+    starts: Vec<u32>,
     lowest: Vec<Option<i32>>,
     /// Some cell of the window holds slime, which throws a body further than
     /// any launch: the envelope proves nothing and every node is flown.
@@ -1826,14 +1830,23 @@ struct Columns {
 }
 
 impl Columns {
+    /// The heights of every cell of column `col` a body could rest in, from
+    /// the bottom.
+    fn rest(&self, col: usize) -> &[i32] {
+        &self.heights[self.starts[col] as usize..self.starts[col + 1] as usize]
+    }
+
     fn of(d: &Dense) -> Columns {
         let n = (d.dims[0].max(0) * d.dims[2].max(0)) as usize;
-        let mut rest = vec![Vec::new(); n];
+        let mut heights: Vec<i32> = Vec::new();
+        let mut starts: Vec<u32> = Vec::with_capacity(n + 1);
         let mut lowest: Vec<Option<i32>> = vec![None; n];
         let mut slime = false;
         for x in 0..d.dims[0] {
             for z in 0..d.dims[2] {
                 let col = (x * d.dims[2] + z) as usize;
+                debug_assert_eq!(col, starts.len());
+                starts.push(u32::try_from(heights.len()).expect("under 4 G rest cells"));
                 let mut below: Code = match d.outside {
                     Outside::Void => 0,
                     Outside::Ocean { .. } => 16,
@@ -1852,7 +1865,7 @@ impl Columns {
                     // hold it in one.
                     let head = d.code([c[0], c[1] + 1, c[2]]) & SHAPE == 0;
                     if open && (v & (WATER | CLIMB) != 0 || (head && top_of(below).is_some())) {
-                        rest[col].push(c[1]);
+                        heights.push(c[1]);
                     }
                     // A barrier's top stands a body in the cell over the one
                     // above it as well; a cell under a barrier is a rest cell
@@ -1861,8 +1874,11 @@ impl Columns {
                 }
             }
         }
+        starts.push(u32::try_from(heights.len()).expect("under 4 G rest cells"));
+        heights.shrink_to_fit();
         Columns {
-            rest,
+            heights,
+            starts,
             lowest,
             slime,
         }
@@ -3717,7 +3733,7 @@ impl World {
                     q |= bit;
                     continue;
                 }
-                for &y in &memo.columns.rest[col] {
+                for &y in memo.columns.rest(col) {
                     if y > c[1] + 2 {
                         break;
                     }
