@@ -224,7 +224,17 @@ campaign (its `.out/` left behind) and the library copied to
 written there by the commit's own write, and the commit's own battery run over
 that whole — so every refusal the commit can give, the check gives at the
 commit's exit, with nothing kept in step by hand. The scratch is removed when
-the run ends; nothing of the campaign or the library is written. It prints the
+the run ends; nothing of the campaign or the library is written. The battery
+(the commit's and the check's) takes the build's verdict
+(`emit::verdict_with_warnings`): every proof, refusal and advisory `build`
+raises, without encoding the review worlds no proof reads; and it writes the
+validation funnel's binding notes (every pass's count, one placement line per
+box) to `<campaign>/.out/detail-check/<stem>.examined.txt` (`--check`) or
+`<campaign>/.out/detail/examined.txt` (the commit), printing one line with
+their count and path. Every `detail` run and `frames --campaign` keep the
+reach graph's node bank at `<campaign>/.out/reach-bank/` (`compiler.md`,
+`DELVEC_REACH_CACHE`), so a check after the first takes the nodes earlier runs
+flew. It prints the
 leak proof's binding, the battery's line (`the commit's battery: the whole
 builds with N piece(s) this run would write, judged over a scratch copy of F
 file(s)`) and `peak rss: <bytes>` on its binding line; exit 0 says the program

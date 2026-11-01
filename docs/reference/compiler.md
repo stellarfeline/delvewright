@@ -224,10 +224,15 @@ run over a world of the same window takes every node whose read cells hold
 the same, unflown (`docs/reference/delvec/compiler/nav.md`, the node bank). A
 file is named for the bank's key and the sha256 of the running executable's
 own bytes, so a run reads only what its own binary wrote; a file that does not
-decode is read as empty, and a file is replaced whole by a rename. Unset, the
-bank lives and dies with the run. Either way the bytes a build emits are the
-same (`tests/reach_cache.rs`); the gallery coverage gate sets it to a scratch
-directory its probe runs share.
+decode is read as empty, and a file is replaced whole by a rename. A file's
+name starts with the executable's hash, and a run that writes a bank removes
+the bank files in the directory another executable wrote. Unset, `delvec
+detail` (the commit, `--all` and `--check`) and `delvec frames --campaign`
+keep the bank at `<campaign>/.out/reach-bank/`, and every other verb's bank
+lives and dies with the run; the empty string turns it off for every verb.
+Either way the bytes a build emits are the same (`tests/reach_cache.rs`); the
+gallery coverage gate sets it to a scratch directory its probe runs share.
+The town's bank (95 places) is 1.9 GB on disk.
 
 **The output directory** holds exactly what the last build emitted: a build into a directory a previous build wrote removes every file that build emitted and this one does not, and a directory holding anything no build wrote is refused untouched (`DW0967`, §5).
 
