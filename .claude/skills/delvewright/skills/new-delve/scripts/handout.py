@@ -74,7 +74,7 @@ ENGINE_REFERENCES = (
 )
 
 # What each step of the loop costs, measured with `/usr/bin/time -l` on a
-# 16 GB Apple M2 Pro with `delvec` 1.15.0 built at engine `57e26a3a3`, on the
+# 16 GB Apple M2 Pro with `delvec` 1.15.0 built at engine `7b703fa66`, on the
 # 95-place town (content `demo/authoring-cost` at `7fb8a92`, place
 # `node/fishmonger`): the place's own steps are seconds; the two that
 # assemble the whole scale with it. The check keeps the reach graph's node
@@ -87,8 +87,8 @@ COST = {
     "generator": "about 1.5 s",
     "expand": "about 1.5 s and 0.4 GB",
     "render": "about 1.5 s and 0.4 GB",
-    "frames": "about 3.5 min and 9.5 GB",
-    "check": "about 7 min and 12 GB the first time, about 4 min and 11 GB again",
+    "frames": "about 2.5 min and 10 GB",
+    "check": "about 6.5 min and 13 GB the first time, about 3.5 min and 14 GB again",
 }
 COST_INSTRUMENT = "measured on a 16 GB machine over a 95-place town; the last two grow with the whole"
 
