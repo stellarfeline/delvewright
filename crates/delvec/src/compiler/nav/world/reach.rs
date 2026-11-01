@@ -346,8 +346,10 @@ pub(in crate::compiler::nav) struct Dense {
 /// farthest arc a launch flies (a sprint jump carries `3.63`, a fall drifts
 /// under `4.5`), so a body that leaves the window has left the content.
 const WINDOW_MARGIN: i32 = 8;
-/// How far the window reaches over the highest modelled cell.
+/// How far the window reaches over the highest modelled cell, at least.
 const WINDOW_OVER: i32 = 6;
+/// The window's top is the course one under a multiple of this.
+const WINDOW_TOP_STEP: i32 = 16;
 
 impl Dense {
     fn of(world: &World) -> Dense {
@@ -403,6 +405,12 @@ impl Dense {
             lo[1] = lo[1].min(floor_top);
             hi[1] = hi[1].max(level + WINDOW_OVER);
         }
+        // The top is rounded up to a course one under a multiple of
+        // [`WINDOW_TOP_STEP`]: every cell over the modelled ones holds what a
+        // cell over the window holds, so the rounding answers nothing
+        // differently, and two worlds whose tallest blocks differ by a few
+        // courses share a window, and so a lineage and a node bank.
+        hi[1] |= WINDOW_TOP_STEP - 1;
         let dims = [hi[0] - lo[0] + 1, hi[1] - lo[1] + 1, hi[2] - lo[2] + 1];
         let n = dims.iter().map(|d| *d as usize).product();
         let mut d = Dense {

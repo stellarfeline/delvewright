@@ -716,3 +716,28 @@ fn a_door_edit_misses_the_nodes_beside_it() {
         "the bank answered no node: it misses where nothing changed"
     );
 }
+
+/// **Two worlds whose tallest blocks differ by a course share a window**,
+/// and so one node bank and a lineage: a block set on the walled yard's wall
+/// raises its highest cell and moves no other, and the yard with it re-flies
+/// only the nodes beside it.
+#[test]
+fn a_taller_block_keeps_the_window() {
+    let root = [[5, 1, 5]];
+    let low = walled_yard(([-2, 0, -2], [16, 0, 16]));
+    let mut high = walled_yard(([-2, 0, -2], [16, 0, 16]));
+    high.fill([3, 4, 14], [3, 4, 14]);
+    let (a, b) = (
+        low.world(Ambient::Void, Vec::new()),
+        high.world(Ambient::Void, Vec::new()),
+    );
+    let params = ReachParams::shipped(a.unbounded_fall);
+    let _ = a.body_reach(&root);
+    let _ = b.body_reach(&root);
+    let (ma, mb) = (a.graph_memo(&params), b.graph_memo(&params));
+    assert_eq!((ma.dense.lo, ma.dense.dims), (mb.dense.lo, mb.dense.dims));
+    assert!(Arc::ptr_eq(&ma.bank, &mb.bank), "one bank");
+    let (base, diff) = mb.lineage.as_ref().expect("the low yard is the lineage");
+    assert!(Arc::ptr_eq(base, &ma));
+    assert_eq!(diff, &vec![[3, 4, 14]]);
+}
