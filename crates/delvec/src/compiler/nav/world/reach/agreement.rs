@@ -895,21 +895,7 @@ fn answered(w: &World, roots: &[[i32; 3]], side: i32) -> Answered {
 /// one other tests share hold what those tests flew.)
 #[test]
 fn no_answer_depends_on_the_chunk_side_or_the_budget() {
-    let mut worlds: Vec<(String, World, Vec<[i32; 3]>)> = Vec::new();
-    for seed in 0..12 {
-        let case = generate(seed);
-        let mut p = Premises::geometry_only();
-        p.declared_jumps = case.jumps.clone();
-        let w = World::from_solid_cells(case.solid.clone()).with_premises(p);
-        worlds.push((format!("course {seed}"), w, vec![case.root]));
-    }
-    worlds.push((
-        "the Bell yard".into(),
-        super::tests::bell_yard(),
-        vec![[5, 1, 5]],
-    ));
-    worlds.push(("the jetty".into(), super::tests::jetty(), vec![[2, 65, 2]]));
-    worlds.push(("the garden".into(), super::tests::garden(), vec![[1, 1, 1]]));
+    let worlds = invariance_worlds();
     let (mut states, mut edges, mut sea, mut crossing) = (0, 0, 0, 0);
     for (name, w, roots) in &worlds {
         let whole = answered(w, roots, 16);
@@ -944,5 +930,85 @@ fn no_answer_depends_on_the_chunk_side_or_the_budget() {
     assert!(
         states > 0 && edges > 0 && crossing > 0 && sea > 0,
         "the cases bind nothing"
+    );
+}
+
+/// The worlds the chunk invariance and the closure's exactness are asked of:
+/// every generated course, the Bell yard (a void's edge), the jetty (the open
+/// sea) and the garden.
+fn invariance_worlds() -> Vec<(String, World, Vec<[i32; 3]>)> {
+    let mut worlds: Vec<(String, World, Vec<[i32; 3]>)> = Vec::new();
+    for seed in 0..12 {
+        let case = generate(seed);
+        let mut p = Premises::geometry_only();
+        p.declared_jumps = case.jumps.clone();
+        let w = World::from_solid_cells(case.solid.clone()).with_premises(p);
+        worlds.push((format!("course {seed}"), w, vec![case.root]));
+    }
+    worlds.push((
+        "the Bell yard".into(),
+        super::tests::bell_yard(),
+        vec![[5, 1, 5]],
+    ));
+    worlds.push(("the jetty".into(), super::tests::jetty(), vec![[2, 65, 2]]));
+    worlds.push(("the garden".into(), super::tests::garden(), vec![[1, 1, 1]]));
+    worlds
+}
+
+/// **The closure is the one every launch gives** (spec-0113 §4.7, ADR-0037
+/// §2): the chunked closure, whose rounds fly only the launches a node's
+/// envelope still asks for, reaches every state — and finds every way out of
+/// the world — that flying every launch of every standing and holding state,
+/// round after round until nothing new is reached, reaches; at chunk sides of
+/// sixteen columns and of two. Red on any state or exit either way, and on
+/// cases where flying everything reaches nothing the pruned rounds did not
+/// fly (which would leave the comparison binding nothing).
+#[test]
+fn the_chunked_closure_is_the_one_every_launch_gives() {
+    let (mut states, mut pruned, mut worlds_n) = (0usize, 0usize, 0usize);
+    for (name, w, roots) in invariance_worlds() {
+        for side in [16, 2] {
+            super::chunks::at_side(side, || {
+                let mut r = w.body_reach(&roots);
+                let closed: Vec<([i32; 3], super::RestKind)> =
+                    r.states.iter().map(|(c, k)| (*c, *k)).collect();
+                let exits: Vec<[i32; 3]> = r.leaves_world.iter().copied().collect();
+                let unflown = r.states.keys().filter(|c| r.unflown(**c)).count();
+                loop {
+                    let nodes: Vec<[i32; 3]> =
+                        r.states.keys().copied().filter(|c| r.unflown(*c)).collect();
+                    if nodes.is_empty() {
+                        break;
+                    }
+                    w.fly_cells(&mut r, &nodes);
+                }
+                let every: Vec<([i32; 3], super::RestKind)> =
+                    r.states.iter().map(|(c, k)| (*c, *k)).collect();
+                assert_eq!(
+                    closed, every,
+                    "{name} (side {side}): the chunked closure misses or adds a state every launch \
+                     gives"
+                );
+                assert_eq!(
+                    exits,
+                    r.leaves_world.iter().copied().collect::<Vec<_>>(),
+                    "{name} (side {side}): flying every launch finds a way out of the world the \
+                     closure does not"
+                );
+                if side == 16 {
+                    states += closed.len();
+                    pruned += unflown;
+                    worlds_n += 1;
+                }
+            });
+        }
+    }
+    eprintln!(
+        "closure exactness: {worlds_n} world(s), {states} state(s), {pruned} state(s) with a \
+         launch the rounds left unflown"
+    );
+    assert!(
+        states > 0 && pruned > 0,
+        "the cases bind nothing: no launch was left unflown"
     );
 }

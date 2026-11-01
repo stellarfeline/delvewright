@@ -1733,6 +1733,10 @@ pub(in crate::compiler::nav) struct NodeEdges {
     pub read: Option<([i32; 3], [i32; 3])>,
 }
 
+/// Nodes flown together in one parallel batch, gathered whole chunks at a
+/// time.
+const FLY_GROUP: usize = 2048;
+
 /// A closure taken over a graph, with the roots it was taken from.
 type Closure = (Vec<[i32; 3]>, Arc<Reach>);
 
@@ -1751,6 +1755,7 @@ pub fn persist_reach_cache() {
         chunks::resident(),
         chunks::budget()
     );
+    eprintln!("reach closures: {} (ADR-0037 §2)", chunks::visits());
     let (variants, bytes) = bank::census_all();
     if variants > 0 {
         eprintln!(
@@ -3436,41 +3441,31 @@ impl World {
             }
         }
         let mut reach = Reach::default();
-        self.close(&memo, params, &mut reach, start.clone());
+        let mut visits = chunks::Visits::default();
+        self.close(&memo, params, &mut reach, start.clone(), &mut visits);
         loop {
-            let todo: Vec<([i32; 3], Quadrants)> = reach
-                .states
-                .iter()
-                .filter(|(_, k)| matches!(k, RestKind::Standing | RestKind::Holding))
-                .filter_map(|(c, _)| {
-                    let q = self.envelope_open(&memo, &reach, *c) & !reach.flown_mask(*c);
-                    (q != 0).then_some((*c, q))
-                })
-                .collect();
+            // A round: every standing or holding state whose envelope holds a
+            // cell the closure has not reached flies the launches that can
+            // reach it, each judged against the closure as the round found it
+            // — so which launches are flown never depends on the order the
+            // chunks are visited in — and then the closure is taken over what
+            // they reached.
+            let todo = self.round(&memo, &reach);
             if todo.is_empty() {
                 break;
             }
-            for chunk in todo.chunks(2048) {
-                if reach.simulated + reach.credited > params.budget {
-                    break;
-                }
-                let chunk: Vec<([i32; 3], Quadrants)> = chunk
-                    .iter()
-                    .filter_map(|(c, _)| {
-                        let q = self.envelope_open(&memo, &reach, *c) & !reach.flown_mask(*c);
-                        (q != 0).then_some((*c, q))
-                    })
-                    .collect();
-                self.fly_into(&memo, params, &mut reach, &chunk);
-            }
-            // The budget is refused, never truncated (`DW1042`): a closure that
-            // passed it stops here and says so, and every proof that reads it
-            // refuses the build.
+            let new = self.fly_chunks(&memo, params, &mut reach, &todo, &mut visits);
+            // The budget is refused, never truncated (`DW1042`): a closure
+            // whose round passed it stops there and says so, and every proof
+            // that reads it refuses the build.
             if reach.simulated + reach.credited > params.budget {
                 reach.over_budget = Some(params.budget);
+                visits.report();
                 return Arc::new(reach);
             }
+            self.close(&memo, params, &mut reach, new, &mut visits);
         }
+        visits.report();
         // The closure is kept as a copy taken in one sweep, its lists at
         // their length; the one the rounds grew is dropped here.
         let reach = Arc::new(reach.clone());
@@ -3588,6 +3583,8 @@ impl World {
         Arc::new(kept)
     }
 
+    /// Fly `cells` and close over what they reach: the growth a reader asks
+    /// for ([`World::fly_toward`], [`World::fly_cells`]).
     fn fly_into(
         &self,
         memo: &GraphMemo,
@@ -3595,78 +3592,173 @@ impl World {
         reach: &mut Reach,
         cells: &[([i32; 3], Quadrants)],
     ) {
-        let flown: Vec<Arc<NodeEdges>> =
-            crate::par::map(cells, |(c, q)| self.flown(memo, params, *c, *q));
-        let mut new: Vec<[i32; 3]> = Vec::new();
-        for ((c, q), e) in cells.iter().zip(flown) {
-            *reach.flown.entry(*c).or_insert(0) |= *q;
-            reach.simulated += e.simulated;
-            reach.credited += e.credited;
-            if e.leaves_world {
-                reach.leaves_world.insert(*c);
-            }
-            if let Some(d) = e.dies {
-                reach.fatal.insert(*c, d);
-            }
-            let have: BTreeSet<([i32; 3], EdgeKind)> = reach
-                .succ
-                .with(*c, |l| l.iter().map(|x| (x.to, x.kind)).collect());
-            for edge in &e.edges {
-                if have.contains(&(edge.to, edge.kind)) {
-                    continue;
+        let mut visits = chunks::Visits::default();
+        let new = self.fly_chunks(memo, params, reach, cells, &mut visits);
+        self.close(memo, params, reach, new, &mut visits);
+        visits.report();
+    }
+
+    /// The round's work: every standing or holding state of `reach` with the
+    /// launches its envelope still asks for ([`World::envelope_open`]) and
+    /// that it has not flown, judged against `reach` as it stands — in cell
+    /// order.
+    fn round(&self, memo: &GraphMemo, reach: &Reach) -> Vec<([i32; 3], Quadrants)> {
+        let nodes: Vec<[i32; 3]> = reach
+            .states
+            .iter()
+            .filter(|(_, k)| matches!(k, RestKind::Standing | RestKind::Holding))
+            .map(|(c, _)| *c)
+            .collect();
+        let open: Vec<Quadrants> = crate::par::map(&nodes, |c| {
+            self.envelope_open(memo, reach, *c) & !reach.flown_mask(*c)
+        });
+        nodes
+            .into_iter()
+            .zip(open)
+            .filter(|(_, q)| *q != 0)
+            .collect()
+    }
+
+    /// Fly `cells` — standing or holding states of `reach`, each with the
+    /// quadrants to fly — **reach chunk by reach chunk** (ADR-0037 §2): the
+    /// launches of a chunk's nodes are flown together and joined while the
+    /// chunk's lists are the ones being read. Every edge is joined; no target
+    /// becomes a state here, so no launch of the batch is judged against
+    /// another's landing. The targets not yet states, in cell order, for
+    /// [`World::close`].
+    fn fly_chunks(
+        &self,
+        memo: &GraphMemo,
+        params: &ReachParams,
+        reach: &mut Reach,
+        cells: &[([i32; 3], Quadrants)],
+        visits: &mut chunks::Visits,
+    ) -> Vec<[i32; 3]> {
+        let side = chunks::side_here();
+        let mut by_chunk: BTreeMap<chunks::Key, Vec<([i32; 3], Quadrants)>> = BTreeMap::new();
+        for (c, q) in cells {
+            by_chunk
+                .entry(chunks::chunk_of(*c, side))
+                .or_default()
+                .push((*c, *q));
+        }
+        // Chunks are flown in groups large enough to keep the cores busy, and
+        // joined chunk by chunk.
+        let groups: Vec<Vec<(chunks::Key, Vec<([i32; 3], Quadrants)>)>> = {
+            let mut groups = Vec::new();
+            let mut group = Vec::new();
+            let mut n = 0;
+            for (k, v) in by_chunk {
+                n += v.len();
+                group.push((k, v));
+                if n >= FLY_GROUP {
+                    groups.push(std::mem::take(&mut group));
+                    n = 0;
                 }
-                reach.join(*c, edge);
-                if !reach.states.contains_key(&edge.to) {
-                    new.push(edge.to);
+            }
+            if !group.is_empty() {
+                groups.push(group);
+            }
+            groups
+        };
+        let mut new: Vec<[i32; 3]> = Vec::new();
+        for group in groups {
+            let batch: Vec<([i32; 3], Quadrants)> =
+                group.iter().flat_map(|(_, v)| v.iter().copied()).collect();
+            let flown: Vec<Arc<NodeEdges>> =
+                crate::par::map(&batch, |(c, q)| self.flown(memo, params, *c, *q));
+            let mut flown = flown.into_iter();
+            for (k, v) in &group {
+                visits.visit(*k);
+                for (c, q) in v {
+                    let e = flown.next().expect("one flight per node");
+                    *reach.flown.entry(*c).or_insert(0) |= *q;
+                    reach.simulated += e.simulated;
+                    reach.credited += e.credited;
+                    if e.leaves_world {
+                        reach.leaves_world.insert(*c);
+                    }
+                    if let Some(d) = e.dies {
+                        reach.fatal.insert(*c, d);
+                    }
+                    let have: BTreeSet<([i32; 3], EdgeKind)> = reach
+                        .succ
+                        .with(*c, |l| l.iter().map(|x| (x.to, x.kind)).collect());
+                    for edge in &e.edges {
+                        if have.contains(&(edge.to, edge.kind)) {
+                            continue;
+                        }
+                        reach.join(*c, edge);
+                        if !reach.states.contains_key(&edge.to) {
+                            new.push(edge.to);
+                        }
+                    }
                 }
             }
         }
         new.sort_unstable();
         new.dedup();
-        self.close(memo, params, reach, new);
+        new
     }
 
-    /// Close `reach` over the cheap edges from `frontier`.
+    /// Close `reach` over the cheap edges from `frontier`, **reach chunk by
+    /// reach chunk** (ADR-0037 §2): a frontier per chunk; a chunk's frontier
+    /// is closed inside the chunk, each edge that leaves it pushed onto the
+    /// frontier of the chunk it lands in, and the next chunk with a frontier
+    /// taken, until none has one. The closure is the same set whatever order
+    /// the chunks are taken in, and every reached state's cell-relation edges
+    /// are joined once.
     fn close(
         &self,
         memo: &GraphMemo,
         params: &ReachParams,
         reach: &mut Reach,
         frontier: Vec<[i32; 3]>,
+        visits: &mut chunks::Visits,
     ) {
-        let mut frontier: Vec<[i32; 3]> = frontier
-            .into_iter()
-            .filter(|c| !reach.states.contains_key(c))
-            .collect();
-        frontier.sort_unstable();
-        frontier.dedup();
-        let mut queued: BTreeSet<[i32; 3]> = frontier.iter().copied().collect();
-        while !frontier.is_empty() {
-            let expanded = self.cell_edges(memo, params, &frontier);
-            let mut next: Vec<[i32; 3]> = Vec::new();
-            for (c, e) in frontier.iter().zip(expanded) {
-                reach.simulated += e.simulated;
-                reach.credited += e.credited;
-                let Some(k) = e.kind else {
-                    continue;
-                };
-                reach.states.insert(*c, k);
-                reach.mark(&memo.dense, *c);
-                if e.leaves_world {
-                    reach.leaves_world.insert(*c);
-                }
-                if e.open_sea {
-                    reach.open_sea.insert(*c);
-                }
-                for edge in &e.edges {
-                    reach.join(*c, edge);
-                    if !reach.states.contains_key(&edge.to) && queued.insert(edge.to) {
-                        next.push(edge.to);
+        let side = chunks::side_here();
+        let mut queued: std::collections::HashSet<[i32; 3]> = std::collections::HashSet::new();
+        let mut fronts: BTreeMap<chunks::Key, Vec<[i32; 3]>> = BTreeMap::new();
+        for c in frontier {
+            if !reach.states.contains_key(&c) && queued.insert(c) {
+                fronts.entry(chunks::chunk_of(c, side)).or_default().push(c);
+            }
+        }
+        while let Some((k, mut local)) = fronts.pop_first() {
+            visits.visit(k);
+            local.sort_unstable();
+            while !local.is_empty() {
+                let expanded = self.cell_edges(memo, params, &local);
+                let mut next: Vec<[i32; 3]> = Vec::new();
+                for (c, e) in local.iter().zip(expanded) {
+                    reach.simulated += e.simulated;
+                    reach.credited += e.credited;
+                    let Some(kind) = e.kind else {
+                        continue;
+                    };
+                    reach.states.insert(*c, kind);
+                    reach.mark(&memo.dense, *c);
+                    if e.leaves_world {
+                        reach.leaves_world.insert(*c);
+                    }
+                    if e.open_sea {
+                        reach.open_sea.insert(*c);
+                    }
+                    for edge in &e.edges {
+                        reach.join(*c, edge);
+                        if !reach.states.contains_key(&edge.to) && queued.insert(edge.to) {
+                            let to = chunks::chunk_of(edge.to, side);
+                            if to == k {
+                                next.push(edge.to);
+                            } else {
+                                fronts.entry(to).or_default().push(edge.to);
+                            }
+                        }
                     }
                 }
+                next.sort_unstable();
+                local = next;
             }
-            next.sort_unstable();
-            frontier = next;
         }
     }
 
@@ -3835,19 +3927,28 @@ impl Reach {
     }
 
     /// The predecessors of `c`, each with the edge that joins it to `c`, in
-    /// the order they were found.
+    /// cell order of the predecessor and, from one predecessor, in the order
+    /// its edges were found — an order no chunk side or visit order moves,
+    /// since the closure joins edges into one cell from many chunks.
     pub fn preds(&self, c: [i32; 3]) -> Vec<([i32; 3], Edge)> {
-        self.preds.get(c)
+        let mut ps = self.preds.get(c);
+        ps.sort_by_key(|(p, _)| *p);
+        ps
     }
 
-    /// The first predecessor of `c` `pick` holds for, with its edge.
+    /// The first predecessor of `c`, in [`Reach::preds`]'s order, `pick` holds
+    /// for, with its edge.
     pub fn first_pred(
         &self,
         c: [i32; 3],
         pick: impl Fn(&[i32; 3]) -> bool,
     ) -> Option<([i32; 3], Edge)> {
-        self.preds
-            .with(c, |ps| ps.iter().find(|(p, _)| pick(p)).cloned())
+        self.preds.with(c, |ps| {
+            ps.iter()
+                .filter(|(p, _)| pick(p))
+                .min_by_key(|(p, _)| *p)
+                .cloned()
+        })
     }
 
     /// Add the edge `from` → `edge.to`.

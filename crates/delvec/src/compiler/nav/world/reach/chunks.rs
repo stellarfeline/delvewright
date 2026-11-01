@@ -133,11 +133,71 @@ pub(super) trait Item: Clone + Send + 'static {
     }
 }
 
-type Key = (i32, i32);
+/// A reach chunk: its column coordinates, the cell's x and z over the side.
+pub(super) type Key = (i32, i32);
 
 /// The chunk a cell lies in, at side `side`.
-fn chunk_of(c: [i32; 3], side: i32) -> Key {
+pub(super) fn chunk_of(c: [i32; 3], side: i32) -> Key {
     (c[0].div_euclid(side), c[2].div_euclid(side))
+}
+
+// ------------------------------------------------------------ the visits
+
+/// Visits counted per chunk, past which they are counted together.
+const VISIT_BUCKETS: usize = 64;
+
+/// Over the run: how many (closure, chunk) pairs saw each number of visits,
+/// the last bucket holding every count from [`VISIT_BUCKETS`] up; and the
+/// most visits one chunk had in one closure.
+static VISIT_HIST: [AtomicU64; VISIT_BUCKETS + 1] =
+    [const { AtomicU64::new(0) }; VISIT_BUCKETS + 1];
+static VISIT_MAX: AtomicU64 = AtomicU64::new(0);
+
+/// **How often one closure took up each reach chunk**: a chunk is visited
+/// each time the closure closes its frontier ([`super::World::close`]) or
+/// flies its nodes' launches ([`super::World::fly_chunks`]). Folded into the
+/// run's distribution when the closure ends ([`Visits::report`]).
+#[derive(Default)]
+pub(super) struct Visits {
+    counts: HashMap<Key, u64>,
+}
+
+impl Visits {
+    pub(super) fn visit(&mut self, k: Key) {
+        *self.counts.entry(k).or_insert(0) += 1;
+    }
+
+    /// Fold this closure's visits into the run's distribution.
+    pub(super) fn report(&mut self) {
+        for n in std::mem::take(&mut self.counts).into_values() {
+            let b = (n as usize).min(VISIT_BUCKETS);
+            VISIT_HIST[b].fetch_add(1, Ordering::Relaxed);
+            VISIT_MAX.fetch_max(n, Ordering::Relaxed);
+        }
+    }
+}
+
+/// The run's visit distribution as a line: `n×k` for k (closure, chunk) pairs
+/// visited n times, and the most.
+pub(super) fn visits() -> String {
+    let mut parts = Vec::new();
+    let mut pairs = 0u64;
+    let mut total = 0u64;
+    for (n, b) in VISIT_HIST.iter().enumerate() {
+        let k = b.load(Ordering::Relaxed);
+        if k > 0 {
+            pairs += k;
+            total += k * n as u64;
+            let plus = if n == VISIT_BUCKETS { "+" } else { "" };
+            parts.push(format!("{n}{plus}x{k}"));
+        }
+    }
+    format!(
+        "{total} chunk visit(s) over {pairs} (closure, chunk) pair(s), at most {} for one chunk \
+         in one closure [{}]",
+        VISIT_MAX.load(Ordering::Relaxed),
+        parts.join(" ")
+    )
 }
 
 /// One chunk of a list.
