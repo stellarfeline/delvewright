@@ -11,13 +11,13 @@
 
 A build holds the whole map in memory, several times over, and the largest holdings are proportional to the volume of the site region or to the number of cells a body can reach — never to anything a host could be asked to size in advance. Measured on the town (whole site region 86 M cells; 18.4 M placed non-air cells, 8.8 M of them inside the judged columns; 1 quest configuration; 1,366,129 rest states and 8,882,406 edges in the reach graph) and on the gallery (23 configurations, 10,441 rest states, 407,307 edges):
 
-| Command | Map | Peak RSS | Wall | Instrument |
-|---|---|---|---|---|
-| `delvec build` | town | 14.78 GB | 7 min 59 s | `/usr/bin/time -v`, Linux, 16 CPU |
-| `delvec build` | town | 15.09 GB (14.06 GiB) | 8 min 34 s | `/proc` sampler, Linux, 16 CPU |
-| `delvec detail --all` | town | 16.13 GB (15.03 GiB) | 10 min 18 s | `/proc` sampler, Linux, 16 CPU |
-| `delvec build` | town, region grown by 100 cells on every horizontal side (143 M cells, same 95 places; 3,300 written chunks, 99,338,305 ground cells) | 17.09 GB (15.92 GiB) | 10 min 26 s | `/proc` sampler, Linux, 16 CPU |
-| `delvec build` | gallery | 1.34 GB | 35 s | `/usr/bin/time -l`, macOS |
+| Run | Peak RSS | Wall | Instrument |
+|---|---|---|---|
+| `delvec build`, town, under `time` | 14.78 GB | 7 min 59 s | `/usr/bin/time -v`, Linux, 16 CPU |
+| `delvec build`, town, sampled | 15.09 GB (14.06 GiB) | 8 min 34 s | `/proc` sampler, Linux, 16 CPU |
+| `delvec detail --all`, town | 16.13 GB (15.03 GiB) | 10 min 18 s | `/proc` sampler, Linux, 16 CPU |
+| `delvec build`, the widened town: the region grown by 100 cells on every horizontal side (143 M cells, same 95 places; 3,300 written chunks, 99,338,305 ground cells) | 17.09 GB (15.92 GiB) | 10 min 26 s | `/proc` sampler, Linux, 16 CPU |
+| `delvec build`, gallery | 1.34 GB | 35 s | `/usr/bin/time -l`, macOS |
 
 Where it goes, by allocation site at the peak (heaptrack, town build; the structures named are the ones that hold the bytes, not the functions that filled them):
 
@@ -29,7 +29,7 @@ Peak heap under heaptrack was 9.38 GB (the traced run serialises its 16 threads'
 | 1.18 GB | **The assembled world**: the `BTreeMap<[i32; 3], BlockState>` of every placed cell (766 MB, `assembled::placed_blocks`) and the judged copy (403 MB, `Assembled::judged_within`) | `compiler::assembled` |
 | 1.03 GB | **Clones of the closure's predecessor map** (`Reach::preds`, one `([i32; 3], Edge)` per edge, cloned on return and again by the proofs that read it) | `nav::world::reach::body_reach_at`, `nav::leave` |
 | 764 MB | **Node edge tables**: one `Vec<Edge>` per expanded node (`nodes`, `flown`), kept for the process | `reach::expand` |
-| 638 MB | **The flight memo**: a hash map from launch to edge position, per thread | `reach::flights` |
+| 638 MB | **The flight memo**: every flight kept by its start and the cells it read, process-wide in 256 shards; it stops recording at `MEMO_ENTRIES` (2^25 entries), so its size is a constant of the engine, never of the map | `reach::flights` |
 | 468 + 176 MB | Clones of the closure's successor map (`Reach::succ`) | `body_reach_at` |
 | 426 + 213 MB | **The dense window snapshot**: 4 bytes of code and 2 of raw membership per window cell, in 4,096-cell chunks (33,652 chunks) | `reach::Dense`, `raw_membership` |
 | 343 + 168 MB | Launch simulation scratch (`Local`, `Shifted`) | `reach` |
@@ -112,7 +112,7 @@ For each stage: how the map is chunked, what crosses a chunk border, and what ma
 | **The leak floods** (`DW0851` sea seepage, piece exposure, party air, `DW0318`) | Block-wise connected components: label per section, record the labels on each face, union across faces, relabel on the second pass (Andres et al.; Isenburg and Shewchuk). | The face labels. | The union-find over face labels: one entry per distinct label on a section face, stated as "L face label(s)". |
 | **The write judge** (`DW1002`, `DW1076`) | Replay the load's writes in order over a copy-on-write view of the store: a write touches the sections it covers and their 1-cell halo; a changed cell is judged with its neighbours as it lands; a section no later write touches is released. The runtime arm judges each configuration's writes the same way. The outline check is per cell with a 1-cell halo. | The halo. | Nothing: each write's working set is its own sections. |
 | **Emission** | Already streamed: a function is written when complete. | — | — |
-| **The review world** (`view::world`) | Region file by region file (32 × 32 chunks): build one region's chunk payloads, write, release. The light it carries comes from the light stage's store, not a second flood. | Nothing. | Nothing. |
+| **The review world** (`view::world`) | Region file by region file (32 × 32 chunks): build one region's chunk payloads, write, release. The light it carries comes from the light stage's store, not a second flood. | Nothing. | No more than one region file's payloads at a time. |
 | **`detail --all`** | Each place's program is expanded, judged against the whole and written in place order as today; the pieces held until the one judgement are the campaign's own `.nbt` bytes, whose size is stated with the run. The battery is the chunked build. | — | The prepared pieces: the sum of the pieces' bytes, a property of the campaign, stated. |
 
 ### 3. The engine states a build's cost before it starts
@@ -130,7 +130,7 @@ Before stage 1, `delvec build` and `delvec detail` print one line, `resource cos
 
 By memory saved per unit of work, from the profile:
 
-1. **The reach graph's process-wide memos** — the bank (2.5 GB), the node tables (1.1 GB), the closures and their clones (1.9 GB), the flight memo (0.6 GB), the snapshot (0.6 GB): about 7.5 GB of the town's heap, held to exit. First the bank, spilled to the scratch file (one slot per variant in memory): landed with this record and measured below. Then the closures: `body_reach_at` returns the shared `Arc<Reach>` instead of a clone, `preds` is read from the chunk's edge file, and the proofs that cloned it index it in place. Then the per-chunk graph of §2, which retires the window-wide snapshot, node tables and flight memo together.
+1. **The reach graph's process-wide memos** — the bank (2.5 GB), the node tables (1.1 GB), the closures and their clones (1.9 GB), the flight memo (0.6 GB), the snapshot (0.6 GB): about 7.5 GB of the town's heap, held to exit. First the bank, spilled to the scratch file (one slot per variant in memory): landed with this record and measured below. Then the closures: `body_reach_at` returns the memo's shared `Arc<Reach>` instead of a clone, a reader that grows a closure copies it only when it has a launch to fly (`Arc::make_mut`), the leave proof reads `preds` in place instead of cloning it, and a kept closure holds its edge lists at their length: landed and measured below. Reading `preds` from the chunk's edge file belongs to the per-chunk graph, since the file does not exist before it. Then the per-chunk graph of §2, which retires the window-wide snapshot and the node tables together. The flight memo is already bounded by a constant (`MEMO_ENTRIES`) and leaves this list.
 2. **The review world** (the build's peak increment, about 3.3 GiB over the plateau): the ground cells walked rather than gathered (landed with this record), then region-by-region writing with the light taken per section.
 3. **The assembled world and its judged copy** (1.4 GB, and the write judge's own map): the section store of §1, with the judged world as a mask.
 4. **Light**: per-section flooding over the store; the arrays are a smaller holder today (a few hundred MB) and fall with the store.
@@ -156,6 +156,20 @@ The saving is the bank's heap plus the allocator's slack over it, and it holds a
 | town, `detail --all` | 15.03 GiB (16.13 GB) | 9.63 GiB (10.34 GB) | 5.40 GiB (36 %) | the content tree unchanged by the run, as before |
 
 Growing the region by 57 M cells now costs 0.51 GiB of peak instead of 1.86 GiB: what is left of that growth is the assembled map's extra placed cells and the review world's light arrays over 3,300 chunks rather than 2,014, which the store of §1 and the region-by-region writer of §2 take in turn. The peak still falls at the review-world stage (9.45 GiB there over a 7.94 GiB plateau on the town), and the plateau is the reach graph's retained memos, the next thing in the order of §5. Wall clock on the shared machine moved between runs by as much as a minute and a half in either direction while another round's jobs ran beside these, so no timing is claimed here beyond the fact that the spill writes 2 GB once and the ground is walked three times instead of listed once.
+
+## The closures, measured
+
+Measured on the remote Linux machine (16 CPU) with two instruments that share no configuration: GNU `time -v` (the kernel's maximum resident set from `wait4`, and elapsed time) wrapping the `/proc` sampler (VmRSS once a second, stderr timestamped). The two agree on the peak to within 25 MiB on every run. The tree is the branch with `main` merged in. Wall time on the shared machine moved by up to three minutes between runs of one binary while another round's jobs ran, so wall time is recorded and no timing is claimed from it.
+
+| Engine | Town peak, run 1 / run 2 | Town wall (time -v) | Widened-town peak | Output |
+|---|---|---|---|---|
+| `main`, without this record's steps | 14.12 GiB | 7 min 56 s | 15.89 GiB | — |
+| the bank spill and the walked ground, merged with `main` | 9.31 / 9.33 GiB | 7 min 9 s / 9 min 12 s | 10.15 GiB | byte-identical to `main` over all 267 (town) and 270 (widened) files |
+| closures shared, the kept closure the one the rounds grew | 9.58 / 9.54 GiB | 10 min 50 s / 9 min 17 s | 10.16 GiB | byte-identical |
+| the same, its lists shrunk in place | 9.42 / 9.43 GiB | 9 min 1 s / 9 min 21 s | 10.20 GiB | byte-identical |
+| closures shared, the memo keeping a one-sweep copy (landed) | 9.32 / 9.31 GiB | 8 min 36 s / 8 min 37 s | pending at the time of writing | byte-identical; the two town runs identical to each other |
+
+Sharing the closures saves nothing measurable at the peak or on the plateau: the copies callers took were short-lived, and the allocator reused their memory. The per-site figures of the profile above (1.03 GB of `preds` clones, 0.64 GB of `succ` clones) are each site's own peak, not memory held at the same moment. Keeping the closure the rounds grew instead of a one-sweep copy raised the peak by about 0.25 GiB; keeping a one-sweep copy returns it to the merged figure. The remaining reach-graph memory is in the bank's slots, the node tables, the snapshot and the closures themselves, which only the per-chunk graph of §2 bounds.
 
 ## Consequences
 
