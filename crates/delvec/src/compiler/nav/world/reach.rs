@@ -346,8 +346,10 @@ pub(in crate::compiler::nav) struct Dense {
 /// farthest arc a launch flies (a sprint jump carries `3.63`, a fall drifts
 /// under `4.5`), so a body that leaves the window has left the content.
 const WINDOW_MARGIN: i32 = 8;
-/// How far the window reaches over the highest modelled cell.
+/// How far the window reaches over the highest modelled cell, at least.
 const WINDOW_OVER: i32 = 6;
+/// The window's top is the course one under a multiple of this.
+const WINDOW_TOP_STEP: i32 = 16;
 
 impl Dense {
     fn of(world: &World) -> Dense {
@@ -403,6 +405,12 @@ impl Dense {
             lo[1] = lo[1].min(floor_top);
             hi[1] = hi[1].max(level + WINDOW_OVER);
         }
+        // The top is rounded up to a course one under a multiple of
+        // [`WINDOW_TOP_STEP`]: every cell over the modelled ones holds what a
+        // cell over the window holds, so the rounding answers nothing
+        // differently, and two worlds whose tallest blocks differ by a few
+        // courses share a window, and so a lineage and a node bank.
+        hi[1] |= WINDOW_TOP_STEP - 1;
         let dims = [hi[0] - lo[0] + 1, hi[1] - lo[1] + 1, hi[2] - lo[2] + 1];
         let n = dims.iter().map(|d| *d as usize).product();
         let mut d = Dense {
@@ -1710,6 +1718,13 @@ pub fn persist_reach_cache() {
     bank::persist_all();
 }
 
+/// Name the directory the node banks live in when `DELVEC_REACH_CACHE` is not
+/// set (`reach/persist.rs`): the verb that knows its campaign calls it before
+/// any reach is asked.
+pub fn default_reach_cache(dir: std::path::PathBuf) {
+    persist::default_dir(dir);
+}
+
 /// The memo of one world's graph: its snapshot and every node expanded so far.
 pub(in crate::compiler::nav) struct GraphMemo {
     dense: Dense,
@@ -1729,11 +1744,14 @@ pub(in crate::compiler::nav) struct GraphMemo {
     lineage: Option<(Arc<GraphMemo>, Vec<[i32; 3]>)>,
     /// The killing volumes' and furniture's cells, for a later graph's diff.
     premise_cells: BTreeSet<[i32; 3]>,
+    /// Every leaf's cell and ordinal, for a later graph's diff: a leaf is
+    /// read by a node's world queries, and not every leaf moves a cell's code.
+    leaf_cells: BTreeMap<[i32; 3], u16>,
     /// Every closure taken over this graph, with the roots it was taken from.
     closures: Mutex<Vec<Closure>>,
-    /// Per window cell, the world's raw membership the snapshot's code does
-    /// not carry ([`raw_membership`]).
-    extra: Chunked<u16>,
+    /// Per window cell, what the world's queries read that the snapshot's
+    /// code does not carry ([`Raw`]).
+    extra: Raw,
     /// The nodes every graph of this window flew ([`bank`]).
     bank: Arc<bank::Bank>,
 }
@@ -1877,10 +1895,11 @@ fn reach_columns(k: i32) -> i32 {
 
 /// Per window cell of `d`, the world's raw membership: bit 0 tall, 1 a
 /// use-gate, 2 a killing cell, 3 furniture, 4 waterloggable, 5 flooded, 6
-/// lava, 7 solid, bits 8..=12 the partial height plus one (`0`: none), and 13 a
-/// sieve ([`super::Floors::sieve`]: never a floor, and a fall passes it) — every
-/// cell set a world query reads, so two worlds equal here and in the snapshot
-/// answer every query about the cell alike.
+/// lava, 7 solid, bits 8..=12 the partial height plus one (`0`: none), 13 a
+/// sieve ([`super::Floors::sieve`]: never a floor, and a fall passes it), and
+/// [`LEAF_BIT`] a door's or a trapdoor's leaf — every cell set a world query
+/// reads, so two worlds equal here, in the snapshot and in their leaves
+/// ([`Raw::at`]) answer every query about the cell alike.
 fn raw_membership(w: &World, d: &Dense) -> Chunked<u16> {
     let mut x = vec![0u16; d.cells.len()];
     let mut set = |c: [i32; 3], v: u16| {
@@ -1918,7 +1937,55 @@ fn raw_membership(w: &World, d: &Dense) -> Chunked<u16> {
     for c in w.floors.sieve.iter() {
         set(*c, 1 << 13);
     }
+    for c in w.floors.leaves.keys() {
+        set(*c, LEAF_BIT);
+    }
     Chunked::new(&x)
+}
+
+/// The raw membership bit of a cell that holds a door's or a trapdoor's leaf.
+const LEAF_BIT: u16 = 1 << 14;
+
+/// Per window cell, what a world query reads of it that the snapshot's code
+/// does not carry: its raw membership ([`raw_membership`]) and, at a cell
+/// holding a leaf, the leaf's ordinal
+/// ([`delvewright_dsl::blockshape::Leaf::ordinal`]).
+pub(in crate::compiler::nav) struct Raw {
+    cells: Chunked<u16>,
+    leaves: BTreeMap<u32, u16>,
+}
+
+impl Raw {
+    fn of(w: &World, d: &Dense) -> Raw {
+        Raw {
+            cells: raw_membership(w, d),
+            leaves: w
+                .floors
+                .leaves
+                .iter()
+                .filter_map(|(c, l)| Some((d.index(*c)? as u32, l.ordinal())))
+                .collect(),
+        }
+    }
+
+    /// The cell at index `i`: its raw membership, and above it its leaf's
+    /// ordinal (`0` where it holds none).
+    #[inline]
+    pub(in crate::compiler::nav) fn at(&self, i: usize) -> u32 {
+        let x = self.cells[i];
+        let mut v = u32::from(x);
+        if x & LEAF_BIT != 0 {
+            v |= u32::from(self.leaves[&(i as u32)]) << 16;
+        }
+        v
+    }
+}
+
+/// Note that the world was asked for the leaf at `c`: the one point read of
+/// a leaf ([`World::leaf_read`]) calls it, so the node bank records every leaf
+/// cell an expansion read ([`bank`]).
+pub(in crate::compiler::nav) fn note_leaf_read(c: [i32; 3]) {
+    bank::leaf_read(c);
 }
 
 impl World {
@@ -2073,10 +2140,16 @@ impl World {
         );
         let seeds = SEEDS.get_or_init(|| Mutex::new(HashMap::new()));
         let seed = seeds.lock().expect("memo").get(&seed_key).cloned();
-        let mut extra = raw_membership(self, &dense);
+        let mut extra = Raw::of(self, &dense);
+        let leaf_cells: BTreeMap<[i32; 3], u16> = self
+            .floors
+            .leaves
+            .iter()
+            .map(|(c, l)| (*c, l.ordinal()))
+            .collect();
         if let Some(base) = &seed {
             dense.cells.share(&base.dense.cells);
-            extra.share(&base.extra);
+            extra.cells.share(&base.extra.cells);
         }
         let lineage = seed.map(|base| {
             let mut diff: Vec<[i32; 3]> = dense
@@ -2090,18 +2163,30 @@ impl World {
                     .symmetric_difference(&base.premise_cells)
                     .copied(),
             );
+            diff.extend(
+                leaf_cells
+                    .iter()
+                    .filter(|(c, l)| base.leaf_cells.get(*c) != Some(*l))
+                    .chain(
+                        base.leaf_cells
+                            .iter()
+                            .filter(|(c, _)| !leaf_cells.contains_key(*c)),
+                    )
+                    .map(|(c, _)| *c),
+            );
             diff.sort_unstable();
             diff.dedup();
             (base, diff)
         });
         // The bank's key: the lineage's, and what a node's flights and world
         // queries read that no window cell carries — the world outside the
-        // window, whether any cell is wet, and the climbs.
+        // window, whether any cell is wet, whether any climb or leaf stands,
+        // and the leaves outside the window.
         let bank = bank::bank(format!(
             "{seed_key}:{:?}:{}:{}",
             dense.outside,
             dense.wet,
-            self.bank_digest()
+            self.bank_digest(&dense)
         ));
         let g = Arc::new(GraphMemo {
             columns: Columns::of(&dense),
@@ -2112,6 +2197,7 @@ impl World {
             flown: Mutex::new(HashMap::new()),
             lineage,
             premise_cells,
+            leaf_cells,
             closures: Mutex::new(Vec::new()),
         });
         // The latest graph is the next one's lineage: configurations are asked
@@ -2141,22 +2227,31 @@ impl World {
         h.finalize().iter().map(|b| format!("{b:02x}")).collect()
     }
 
-    fn bank_digest(&self) -> String {
+    /// What a node's world queries read that no window cell's code or raw
+    /// fact ([`Raw`]) carries: whether the world keeps any climb (the climb
+    /// moves' guard); whether it holds any leaf, and whether the body may set
+    /// one a hand opens (the crossing rule's guard and premise); and every
+    /// leaf outside the window, which no window cell records. A leaf inside
+    /// the window is its cell's ([`Raw::at`]), so a door moved in one place
+    /// misses only the nodes that read its cells. Nothing else the climb
+    /// rule holds (what keeps each climbable, what the map holds and the
+    /// world does not) is read by a node: the climbables themselves are the
+    /// snapshot's codes.
+    fn bank_digest(&self, dense: &Dense) -> String {
         use sha2::{Digest, Sha256};
         let mut h = Sha256::new();
-        h.update(format!("{:?}", self.climb_holds).as_bytes());
-        h.update(format!("{:?}", self.unheld_climb).as_bytes());
         h.update([u8::from(self.has_climbs())]);
-        // A door's or a trapdoor's leaf is read by the cell relation's every
-        // crossing (`World::leaf_stopping`) and carried by no window cell's
-        // membership, so worlds whose leaves or leaf use differ share no node
-        // — the world with its leaves lifted (`World::without_leaves`, what
-        // `DW1066` compares against) included. A world with none keys as it
-        // did before.
         if !self.floors.leaves.is_empty() {
             h.update(b"leaves");
             h.update([u8::from(self.floors.leaf_use)]);
-            h.update(format!("{:?}", self.floors.leaves).as_bytes());
+            for (c, l) in &self.floors.leaves {
+                if dense.index(*c).is_none() {
+                    for x in c {
+                        h.update(x.to_le_bytes());
+                    }
+                    h.update(l.ordinal().to_le_bytes());
+                }
+            }
         }
         h.finalize().iter().map(|b| format!("{b:02x}")).collect()
     }
@@ -2280,6 +2375,7 @@ impl World {
     ) -> NodeEdges {
         let fly_launches = wanted != 0;
         let track = banked.map(|b| &b.track);
+        let leaf_watch = bank::LeafWatch::open(track.is_some());
         if let Some(t) = track {
             for (lo, hi) in self.node_boxes(c) {
                 t.mark_box(lo, hi);
@@ -2468,15 +2564,20 @@ impl World {
                 };
                 let n = class.arcs.len();
                 let runs = if banked.is_some() { bank::GROUPS } else { 1 };
+                // The leaf cells the node's own queries read are read.
+                if let Some(b) = leaf_watch.since() {
+                    read = bank::union(Some(read), Some(b)).expect("a box");
+                }
                 for g in 0..runs {
                     let (lo, hi) = (g * n / runs, (g + 1) * n / runs);
-                    if let Some(t) = track {
-                        t.begin_run();
+                    if let Some(b) = banked {
+                        b.begin_run();
                     }
                     let summary = match banked.and_then(|b| b.reuse(g, runs)) {
                         Some(s) => s,
                         None => {
                             kinds.borrow_mut().clear();
+                            leaf_watch.since();
                             let mut gedges: Edges = BTreeMap::new();
                             let mut gout = NodeEdges::default();
                             let mut gread: Option<bank::Box3> = None;
@@ -2593,13 +2694,15 @@ impl World {
                                     self.record(c, o, l, &accept, &mut gedges, &mut gout);
                                 }
                             }
+                            // The leaf cells the run's landings read grow the
+                            // node's read box as its sweeps do.
                             bank::Summary {
                                 edges: gedges.into_iter().collect(),
                                 leaves_world: gout.leaves_world,
                                 dies: gout.dies,
                                 simulated: gout.simulated,
                                 credited: gout.credited,
-                                grown: gread,
+                                grown: bank::union(gread, leaf_watch.since()),
                             }
                         }
                     };
@@ -2832,33 +2935,33 @@ impl World {
                     frontier = next;
                 }
             };
-        let open = |held: &Reach, flown: &HashMap<[i32; 3], Quadrants>, c: [i32; 3]| {
-            self.envelope_open(&memo, held, c) & !flown.get(&c).copied().unwrap_or(0)
-        };
         let start: Vec<[i32; 3]> = seen.iter().copied().collect();
         close(&mut seen, &mut held, start);
         loop {
-            let todo: Vec<[i32; 3]> = seen
+            let standing: Vec<[i32; 3]> = seen
                 .iter()
                 .copied()
                 .filter(|c| {
                     matches!(
                         self.rest_kind(*c),
                         Some(RestKind::Standing | RestKind::Holding)
-                    ) && open(&held, &flown, *c) != 0
+                    )
                 })
+                .collect();
+            let todo: Vec<[i32; 3]> = self
+                .left_to_fly(&memo, &held, &standing, &|c| {
+                    flown.get(&c).copied().unwrap_or(0)
+                })
+                .into_iter()
+                .map(|(c, _)| c)
                 .collect();
             if todo.is_empty() {
                 break;
             }
             for chunk in todo.chunks(2048) {
-                let chunk: Vec<([i32; 3], Quadrants)> = chunk
-                    .iter()
-                    .filter_map(|c| {
-                        let q = open(&held, &flown, *c);
-                        (q != 0).then_some((*c, q))
-                    })
-                    .collect();
+                let chunk = self.left_to_fly(&memo, &held, chunk, &|c| {
+                    flown.get(&c).copied().unwrap_or(0)
+                });
                 let out: Vec<Arc<NodeEdges>> =
                     crate::par::map(&chunk, |(c, q)| self.flown(&memo, &params, *c, *q));
                 let mut next: Vec<[i32; 3]> = Vec::new();
@@ -3351,15 +3454,13 @@ impl World {
         let mut reach = Reach::default();
         self.close(&memo, params, &mut reach, start.clone());
         loop {
-            let todo: Vec<([i32; 3], Quadrants)> = reach
+            let standing: Vec<[i32; 3]> = reach
                 .states
                 .iter()
                 .filter(|(_, k)| matches!(k, RestKind::Standing | RestKind::Holding))
-                .filter_map(|(c, _)| {
-                    let q = self.envelope_open(&memo, &reach, *c) & !reach.flown_mask(*c);
-                    (q != 0).then_some((*c, q))
-                })
+                .map(|(c, _)| *c)
                 .collect();
+            let todo = self.left_to_fly(&memo, &reach, &standing, &|c| reach.flown_mask(c));
             if todo.is_empty() {
                 break;
             }
@@ -3367,13 +3468,8 @@ impl World {
                 if reach.simulated + reach.credited > params.budget {
                     break;
                 }
-                let chunk: Vec<([i32; 3], Quadrants)> = chunk
-                    .iter()
-                    .filter_map(|(c, _)| {
-                        let q = self.envelope_open(&memo, &reach, *c) & !reach.flown_mask(*c);
-                        (q != 0).then_some((*c, q))
-                    })
-                    .collect();
+                let cells: Vec<[i32; 3]> = chunk.iter().map(|(c, _)| *c).collect();
+                let chunk = self.left_to_fly(&memo, &reach, &cells, &|c| reach.flown_mask(c));
                 self.fly_into(&memo, params, &mut reach, &chunk);
             }
             // The budget is refused, never truncated (`DW1042`): a closure that
@@ -3607,6 +3703,38 @@ impl World {
     fn envelope_open(&self, memo: &GraphMemo, reach: &Reach, c: [i32; 3]) -> Quadrants {
         let d = &memo.dense;
         self.envelope_toward(memo, c, &|x| reach.has(d, x))
+    }
+
+    /// Each of `cells` with the directions [`World::envelope_open`] still asks
+    /// for less those `flown` says were flown, in the order of `cells`, the
+    /// cells with none left out. A cell every direction of which was flown
+    /// asks for none and is not measured; the rest are measured across the
+    /// cores, a block of cells to a task, since each answer reads `reach` and
+    /// `flown` and nothing another answer writes.
+    fn left_to_fly(
+        &self,
+        memo: &GraphMemo,
+        reach: &Reach,
+        cells: &[[i32; 3]],
+        flown: &(dyn Fn([i32; 3]) -> Quadrants + Sync),
+    ) -> Vec<([i32; 3], Quadrants)> {
+        let one = |c: &[i32; 3]| -> Option<([i32; 3], Quadrants)> {
+            let done = flown(*c);
+            if done == ALL_QUADRANTS {
+                return None;
+            }
+            let q = self.envelope_open(memo, reach, *c) & !done;
+            (q != 0).then_some((*c, q))
+        };
+        const BLOCK: usize = 4096;
+        if cells.len() <= BLOCK {
+            return cells.iter().filter_map(one).collect();
+        }
+        let blocks: Vec<&[[i32; 3]]> = cells.chunks(BLOCK).collect();
+        crate::par::map(&blocks, |b| b.iter().filter_map(one).collect::<Vec<_>>())
+            .into_iter()
+            .flatten()
+            .collect()
     }
 
     /// Which launches from `c` can carry a body toward a cell of its envelope

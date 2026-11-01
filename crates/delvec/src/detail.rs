@@ -51,6 +51,7 @@ use sha2::{Digest, Sha256};
 use crate::EXIT_INTERNAL;
 use crate::cli::campaign::{
     has_error, load_library, load_or_refuse, read_skins, read_structures, validate_stage,
+    validate_stage_counted,
 };
 use crate::cli::report::{print_build_error, print_diags, print_one_diag};
 
@@ -68,6 +69,10 @@ delvewright_dsl::dw_code! {
 /// stem>.json`. The address is derived from the place, as the piece id is; the
 /// document at it is the creator's.
 pub const PROGRAMS_DIR: &str = "programs";
+
+/// Where a campaign keeps the reach graph's node bank when
+/// `DELVEC_REACH_CACHE` is not set: under its `.out/`, which nothing commits.
+pub const REACH_BANK: &str = ".out/reach-bank";
 
 /// The prefix a program reads a handed value through (spec-0058 §2.3).
 pub const HANDED_PREFIX: &str = "handed/";
@@ -111,6 +116,10 @@ fn run(
         );
         return Err(2);
     }
+    // The reach graph's node bank lives with the campaign (`DELVEC_REACH_CACHE`
+    // unset): every run after the first takes the nodes the earlier runs flew
+    // where their cells hold the same, and emits what flying them would.
+    delvec::compiler::nav::default_reach_cache(campaign_dir.join(REACH_BANK));
     let loaded = load_or_refuse(campaign_dir, json)?;
     // Parsed rather than fully validated, on `allocation`'s precedent: the
     // campaign is validated in full at the end of the run, over the pieces this
@@ -199,7 +208,7 @@ fn run(
     // observers `delvec build` runs. A red here is the state `build` would
     // report and is left standing — the broken intermediate is a real, lookable
     // object (spec-0050 §1) — and it names the place.
-    battery(campaign_dir, prefabs_dir, lang, json, false)
+    battery(campaign_dir, prefabs_dir, lang, json, None)
 }
 
 /// Which places this run details, in site-plan box order.
@@ -1338,19 +1347,29 @@ fn peak_rss() -> String {
 
 /// The whole, validated and built in memory — the same observers `delvec
 /// build` runs, output discarded.
+///
+/// `count_for`: `--check`'s battery counts the validation funnel's binding
+/// notes (every pass's count, one placement line per box) instead of
+/// printing them, naming the campaign whose `validate` prints them — they
+/// are the campaign's census, the same on every check of every place. The
+/// commit's battery prints them, as `build` does.
 fn battery(
     campaign_dir: &Path,
     prefabs_dir: &Path,
     lang: &str,
     json: bool,
-    check: bool,
+    count_for: Option<(&Path, &Path)>,
 ) -> Result<(), u8> {
+    let check = count_for.is_some();
     use delvec::compiler::analyze::analyze_campaign;
     use delvec::compiler::commands::CommandTree;
     use delvec::compiler::emit;
     use delvec::compiler::plan::Plan;
 
-    let v = validate_stage(campaign_dir, prefabs_dir, json)?;
+    let v = match count_for {
+        Some(named) => validate_stage_counted(campaign_dir, prefabs_dir, json, named)?,
+        None => validate_stage(campaign_dir, prefabs_dir, json)?,
+    };
     if has_error(&v.diags) {
         eprintln!(
             "{}: the campaign does not validate with the piece(s) this run {}.",
@@ -1398,7 +1417,9 @@ fn battery(
     let structures = read_structures(&plan, &v.prefabs, prefabs_dir, json)?;
     let skins = read_skins(campaign_dir, &campaign, &skin_sources, json)?;
     let tree = CommandTree::v1_21_11();
-    match emit::build_with_warnings(
+    // The verdict `build` gives, without the review worlds no proof reads: the
+    // tree is discarded here.
+    match emit::verdict_with_warnings(
         &plan,
         &v.loaded.inputs,
         &structures,
@@ -1407,7 +1428,7 @@ fn battery(
         None,
         &skins,
     ) {
-        Ok((_, warnings)) => {
+        Ok(warnings) => {
             print_diags(&warnings, json);
             if !check {
                 eprintln!("detail: the whole builds with the piece(s) this run wrote.");
@@ -1455,7 +1476,14 @@ fn check_battery(
         "detail --check: the commit written into a scratch copy of the campaign and the \
          library ({copied} file(s)); the battery over the whole it leaves:"
     );
-    battery(&scratch.campaign, &scratch.prefabs, lang, json, true).inspect_err(|_| {
+    battery(
+        &scratch.campaign,
+        &scratch.prefabs,
+        lang,
+        json,
+        Some((campaign_dir, prefabs_dir)),
+    )
+    .inspect_err(|_| {
         eprintln!(
             "error: {places}: the commit's battery refuses the whole this run would leave; \
              nothing was written.",

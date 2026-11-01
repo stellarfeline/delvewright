@@ -476,6 +476,35 @@ fn edge_band(fp: &Footprint16) -> Option<Face> {
 }
 
 impl Leaf {
+    /// **This leaf as one number**, distinct for every distinct leaf: its
+    /// block's place in [`doors_by_hand`]'s lists (passable, then held), where
+    /// it stands shut, its panel's face, and whether it stands open and opens
+    /// by hand, each in bits of its own. What the reach graph's node bank
+    /// records of a cell that holds one.
+    pub fn ordinal(self) -> u16 {
+        let d = doors_by_hand();
+        let block = d
+            .passable
+            .iter()
+            .chain(d.held.iter())
+            .position(|p| p.as_str() == self.block)
+            .expect("a leaf's block is a door-family block");
+        let block = u16::try_from(block)
+            .ok()
+            .filter(|b| *b < 1 << 8)
+            .expect("the door family fits eight bits");
+        let shut = match self.shut {
+            Shut::Plate { top: false } => 0,
+            Shut::Plate { top: true } => 1,
+            Shut::Panel(f) => 2 + f as u16,
+        };
+        block << 8
+            | shut << 5
+            | (self.panel as u16) << 2
+            | u16::from(self.open) << 1
+            | u16::from(self.by_hand)
+    }
+
     /// Whether this is a door's leaf (its shut leaf a panel), not a trapdoor's.
     pub fn is_door(self) -> bool {
         matches!(self.shut, Shut::Panel(_))
@@ -2699,6 +2728,33 @@ mod tests {
     /// The passable set is the registry's door family minus the two iron ones,
     /// counted from the registry itself rather than from a number written here
     /// (spec-0123 criterion 17), and the binding line states it.
+    /// Every leaf the registry's door family can stand as has an ordinal of
+    /// its own.
+    #[test]
+    fn a_leaf_ordinal_names_one_leaf() {
+        let d = doors_by_hand();
+        let mut seen: std::collections::BTreeMap<u16, Leaf> = std::collections::BTreeMap::new();
+        let mut leaves = 0;
+        for id in d.passable.iter().chain(d.held.iter()) {
+            for facing in ["north", "south", "west", "east"] {
+                for axis in ["half=top", "half=bottom", "hinge=left", "hinge=right"] {
+                    for open in [false, true] {
+                        let name = format!("minecraft:{id}[facing={facing},{axis},open={open}]");
+                        let Some(l) = leaf(&name) else {
+                            continue;
+                        };
+                        leaves += 1;
+                        if let Some(other) = seen.insert(l.ordinal(), l) {
+                            assert_eq!(other, l, "{name} shares an ordinal");
+                        }
+                    }
+                }
+            }
+        }
+        assert!(leaves > 0, "no leaf read");
+        assert!(seen.len() > 1, "{} distinct leaves", seen.len());
+    }
+
     #[test]
     fn doors_by_hand_is_the_registry_less_the_two_iron_ones() {
         let family = crate::blocks::BlockRegistry::v1_21_11()

@@ -7,7 +7,7 @@
 //! copy is an instrument's output frozen at one revision, so this test is what
 //! keeps it honest: the built binary's own answer over the fixture campaign must
 //! equal the recording byte for byte, and the handout the script writes with
-//! this binary must carry the place's allocation verbatim. A change to what the
+//! this binary must hand the place's allocation verbatim, in the file beside it. A change to what the
 //! engine hands a place reds here, and the fixture is re-recorded with the same
 //! command the fixture's README names.
 
@@ -83,7 +83,7 @@ fn the_recorded_block_lists_are_this_binary_s_own_answer() {
 }
 
 #[test]
-fn the_handout_carries_the_place_s_allocation_verbatim() {
+fn the_handout_hands_the_place_s_allocation_verbatim() {
     let tmp = tempdir("handout");
     let campaign = tmp.join("campaign");
     common::copy_dir_all(&fixture().join("campaign"), &campaign);
@@ -116,35 +116,22 @@ fn the_handout_carries_the_place_s_allocation_verbatim() {
     );
     let handout = std::fs::read_to_string(path).unwrap();
 
-    // The allocation the engine hands the hall, as this binary prints it, with
-    // the three per-cell lists the script renders one entry per line taken out.
+    // The allocation the engine hands the hall is this binary's answer, saved
+    // beside the handout as it prints it, and the handout names the file.
     let alloc = Command::new(BIN)
         .args(["allocation", campaign.to_str().unwrap(), "node/hall"])
         .output()
         .expect("run delvec");
     assert!(alloc.status.success());
-    let mut a: serde_json::Value = serde_json::from_slice(&alloc.stdout).unwrap();
-    let ground = a["ground"].as_object_mut().unwrap();
-    let columns = ground.remove("columns").unwrap();
-    let perimeter = ground.remove("perimeter").unwrap();
-    let fixed = ground.remove("fixed").unwrap();
-    let embedded = serde_json::to_string_pretty(&a).unwrap();
+    let printed: serde_json::Value = serde_json::from_slice(&alloc.stdout).unwrap();
+    let saved_alloc = std::path::Path::new(path).with_file_name("allocation.json");
+    let saved: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&saved_alloc).unwrap()).unwrap();
+    assert_eq!(saved, printed, "the saved allocation is not the binary's");
     assert!(
-        handout.contains(&embedded),
-        "the handout does not carry the allocation verbatim:\n{embedded}"
+        handout.contains(&format!("`{}`", saved_alloc.display())),
+        "the handout does not name the allocation's file:\n{handout}"
     );
-    assert!(handout.contains(&format!(
-        "ground.columns ({};",
-        columns.as_array().unwrap().len()
-    )));
-    assert!(handout.contains(&format!(
-        "ground.perimeter ({};",
-        perimeter.as_array().unwrap().len()
-    )));
-    assert!(handout.contains(&format!(
-        "ground.fixed ({};",
-        fixed.as_array().unwrap().len()
-    )));
     // Which blocks the place may write is this binary's answer, saved beside it.
     assert!(handout.contains("`blast_furnace`"), "{handout}");
     assert!(handout.contains("**Containers** ("), "{handout}");

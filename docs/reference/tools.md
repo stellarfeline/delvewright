@@ -81,7 +81,7 @@ The only path from DSL to datapack (ADR-0001). Full behavior:
 | `l10n-inventory <dir>` | l10n key inventory as JSON, each row with its kind, speaker, situation and staleness (transcreation input) | `--lang` |
 | `l10n-apply <dir> --table <f>` | write the `--lang` sidecar from a table of canonical English → translation (spec-0071 §4) — **the verb a translating agent has instead of addressing positional keys**. Every inventory row whose English the table carries is written with its `source`; a row already translated from unchanged English is kept; a row translated with no `source` is kept and counted apart, since nothing can say whether it still matches. The sidecar is exactly the inventory, so an orphan row is impossible and an inserted effect renumbers the `fx.` keys under the tool rather than under the translator. Prints `N of M rows translated`, every English still missing, every table entry that matched no row, and every English two keys share — the one thing a table keyed by English cannot say, so the sidecar stays directly editable for those. Exit 1 when anything is missing or unmatched, the signal `fmt --check` gives; the bytes are written either way, in canonical form | `--lang`, `--table <file\|->` |
 | `frames <build-dir>` | every review frame of a build, drawn in-process by Lumenwright from the world each shot stands in, with `shot-index.json` (spec-0112) | `-o <build-dir>/frames`, `--shot <id>`…, `--labels`, `--size 1024`, `--backend auto\|cpu\|metal\|vulkan\|dx12`, `--threads N`, `--textures <jar>` |
-| `frames --campaign <dir>` | one quick frame of a campaign's load world, assembled in-process, for placing things (spec-0015) | `--camera x,y,z,yaw,pitch[,fov]` (yaw 0 south, 90 west, 180 north, 270 east; positive pitch looks down) `[--frame node/<place>]` (x,y,z read in that place's piece-local frame, its low corner `allocation`'s `world_min`; the world position printed; a place with no box exit 1) \| `--at <anchor>\|node/<place> [--orbit <deg>] [--dist <n>]` (the bearing 0 due south of the subject, turning clockwise seen from above; an anchor's eye pulled into open air toward it; a place's box framed whole from outside at the fit distance, never pulled), `--program node/<place>` (that place drawn from its program as it stands — expanded as `detail` expands it, committed or not, its gates passing or not, each refusal printed — in place of its committed piece; nothing written), `--labels`, `--served` (draw only what the client draws from the camera at the served view distance), `--size 1024`, `-o frame.png`, draw flags |
+| `frames --campaign <dir>` | one quick frame of a campaign's load world, assembled in-process, for placing things (spec-0015) | `--camera x,y,z,yaw,pitch[,fov]` (yaw 0 south, 90 west, 180 north, 270 east; positive pitch looks down) `[--frame node/<place>]` (x,y,z read in that place's piece-local frame, its low corner `allocation`'s `world_min`; the world position printed; a place with no box exit 1) \| `--at <anchor>\|node/<place> [--orbit <deg>] [--dist <n>]` (the bearing 0 due south of the subject, turning clockwise seen from above; an anchor's eye pulled into open air toward it; a place's box framed whole from outside at the fit distance, never pulled), `--program node/<place>` (that place drawn from its program as it stands — expanded as `detail` expands it, committed or not, its gates passing or not, each refusal printed — in place of its committed piece; nothing written to the campaign or the library), `--labels`, `--served` (draw only what the client draws from the camera at the served view distance), `--size 1024`, `-o frame.png`, draw flags; the validation's binding notes are counted in one line naming the `delvec validate` that prints them, as `detail --check` counts them |
 | `blocking-chart <dir>` | per-elevation cutaway floor plans (spec-0015); the corridor tint is the build's proven critical-path route, stated in the index | `-o blocking-chart`, `--timing` |
 | `edit apply <dir>` | replay the stage-7 edit script, persist a green candidate | `--batch <file>`, `-o edit-shots` |
 | `edit preview <dir>` | same replay + renders, never writes the campaign | `--batch <file>`, `-o edit-shots` |
@@ -224,7 +224,21 @@ campaign (its `.out/` left behind) and the library copied to
 written there by the commit's own write, and the commit's own battery run over
 that whole — so every refusal the commit can give, the check gives at the
 commit's exit, with nothing kept in step by hand. The scratch is removed when
-the run ends; nothing of the campaign or the library is written. It prints the
+the run ends; nothing of the campaign or the library is written. The battery
+(the commit's and the check's) takes the build's verdict
+(`emit::verdict_with_warnings`): every proof, refusal and advisory `build`
+raises, without encoding the review worlds no proof reads. `--check` counts
+the validation funnel's binding notes (every pass's count, one placement line
+per box: the campaign's census, the same on every check) rather than printing
+them, in one line naming the `delvec validate` that prints them; the commit
+prints them. Every `detail` run keeps the reach graph's node bank at
+`<campaign>/.out/reach-bank/` (`compiler.md`, `DELVEC_REACH_CACHE`), so a
+check after the first takes every node earlier runs flew whose read cells,
+doors and trapdoors among them, hold the same. On the 95-place town (16 GB Apple M2
+Pro) the first check costs about 5.5 min and 15 GB and a check over an
+earlier one's bank about 3 min and 13 GB; `frames --campaign` about 2 min and
+10 GB (the handout's `COST`, which states them where it tells the author to
+loop). It prints the
 leak proof's binding, the battery's line (`the commit's battery: the whole
 builds with N piece(s) this run would write, judged over a scratch copy of F
 file(s)`) and `peak rss: <bytes>` on its binding line; exit 0 says the program

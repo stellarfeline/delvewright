@@ -291,6 +291,65 @@ pub fn build_with_warnings(
     language: Option<&str>,
     skins: &BTreeMap<String, Vec<u8>>,
 ) -> Result<(BuildOutput, Vec<delvewright_dsl::Diagnostic>), BuildFailure> {
+    emit_all(
+        plan,
+        input_bytes,
+        structures,
+        tree,
+        prefabs,
+        language,
+        skins,
+        Review::Written,
+    )
+}
+
+/// **The verdict [`build_with_warnings`] gives, for a caller that discards the
+/// tree**: every proof, refusal and advisory the build raises, in the same
+/// order and words, from the same function. What it leaves out is the review
+/// worlds (`validation/worlds/`, spec-0112 §5): bytes a reviewer looks at that
+/// no proof and no check of the finished tree reads, written after every
+/// refusal the camera proofs can raise. `delvec detail`'s battery is its
+/// caller: it builds the whole to judge it and keeps nothing.
+pub fn verdict_with_warnings(
+    plan: &Plan,
+    input_bytes: &BTreeMap<String, Vec<u8>>,
+    structures: &BTreeMap<String, Vec<u8>>,
+    tree: &CommandTree,
+    prefabs: &crate::compiler::registry::PrefabRegistry,
+    language: Option<&str>,
+    skins: &BTreeMap<String, Vec<u8>>,
+) -> Result<Vec<delvewright_dsl::Diagnostic>, BuildFailure> {
+    emit_all(
+        plan,
+        input_bytes,
+        structures,
+        tree,
+        prefabs,
+        language,
+        skins,
+        Review::Skipped,
+    )
+    .map(|(_, warnings)| warnings)
+}
+
+/// Whether [`emit_all`] encodes the review worlds.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Review {
+    Written,
+    Skipped,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_all(
+    plan: &Plan,
+    input_bytes: &BTreeMap<String, Vec<u8>>,
+    structures: &BTreeMap<String, Vec<u8>>,
+    tree: &CommandTree,
+    prefabs: &crate::compiler::registry::PrefabRegistry,
+    language: Option<&str>,
+    skins: &BTreeMap<String, Vec<u8>>,
+    review: Review,
+) -> Result<(BuildOutput, Vec<delvewright_dsl::Diagnostic>), BuildFailure> {
     let ns = &plan.namespace;
     let mut out: BuildOutput = BTreeMap::new();
 
@@ -1390,21 +1449,24 @@ pub fn build_with_warnings(
     )?;
     warnings.extend(camera_warnings);
     put_json(&mut out, "render-plan.json", &render_plan_doc);
-    let maker = crate::compiler::view::review::WorldMaker::new(plan, whole, picture, structures);
-    let review = crate::compiler::view::review::write_review(
-        plan,
-        picture,
-        &maker,
-        crate::compiler::view::review::ReviewOf {
-            frames: &frame_worlds,
-            ledger: &ledger,
-            cutscenes: &cutscene_proof,
-        },
-        &render_plan_doc,
-        &mut out,
-    );
-    for line in &review.lines {
-        eprintln!("{line}");
+    if review == Review::Written {
+        let maker =
+            crate::compiler::view::review::WorldMaker::new(plan, whole, picture, structures);
+        let review = crate::compiler::view::review::write_review(
+            plan,
+            picture,
+            &maker,
+            crate::compiler::view::review::ReviewOf {
+                frames: &frame_worlds,
+                ledger: &ledger,
+                cutscenes: &cutscene_proof,
+            },
+            &render_plan_doc,
+            &mut out,
+        );
+        for line in &review.lines {
+            eprintln!("{line}");
+        }
     }
     // spec-0091: the served view distance, what the build judged against it
     // (every showcase camera and cutscene shot — a refusal stopped the build

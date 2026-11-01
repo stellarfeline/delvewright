@@ -83,8 +83,15 @@ pub(crate) fn run_frames_campaign(
 ) -> ExitCode {
     use delvec::compiler::view::frameset;
 
-    let (campaign, prefabs) = match load_for_view(campaign_dir, prefabs_dir, json) {
-        Ok(v) => v,
+    // The validation's binding notes are the campaign's census, the same on
+    // every look: counted, with the command that prints them.
+    let (campaign, prefabs) = match crate::cli::campaign::validate_stage_counted(
+        campaign_dir,
+        prefabs_dir,
+        json,
+        (campaign_dir, prefabs_dir),
+    ) {
+        Ok(v) => (v.campaign, v.prefabs),
         Err(code) => return ExitCode::from(code),
     };
     // `--program`: the place's piece made from its program in memory, standing

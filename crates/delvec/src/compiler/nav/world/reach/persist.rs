@@ -13,9 +13,19 @@
 //! executable's own bytes**, and a run reads only the files its own binary
 //! wrote. A file that does not decode is read as empty.
 //!
-//! Unset, nothing is read or written. The gallery's gates set it to a
-//! directory of their own scratch, so the hundred-odd probe builds of one
-//! gate share what the first of them flew.
+//! Unset, the verb that details or looks at a campaign's places names the
+//! directory itself ([`default_dir`]): `delvec detail` (the commit, `--all`
+//! and `--check`) and `delvec frames --campaign` keep the bank at
+//! `<campaign>/.out/reach-bank/`, so every check an author runs after the
+//! first, and after the orchestrator's commit, takes the nodes those runs
+//! flew. Set to the empty string, nothing is read or written. The gallery's
+//! gates set it to a directory of their own scratch, so the hundred-odd probe
+//! builds of one gate share what the first of them flew.
+//!
+//! A file is named for the running executable first (`<exe>-<bank>.bank`),
+//! and a run that writes a bank removes every bank file in the directory
+//! another executable wrote: no run can read them, so a rebuilt or upgraded
+//! `delvec` reclaims what the last one left rather than adding to it.
 
 use super::bank::{Run, Summary, Variant};
 use super::{Death, Edge, EdgeKind, FlownKey, NodeEdges, RestKind};
@@ -25,13 +35,26 @@ use std::sync::{Arc, OnceLock};
 /// The environment variable that names the directory.
 pub const ENV: &str = "DELVEC_REACH_CACHE";
 
-const MAGIC: &[u8; 8] = b"DWBANK01";
+const MAGIC: &[u8; 8] = b"DWBANK02";
+
+/// The directory the verb names when [`ENV`] is not set at all.
+static DEFAULT: OnceLock<PathBuf> = OnceLock::new();
+
+/// Name the directory the bank lives in when [`ENV`] is not set: called by
+/// the verb that knows its campaign, before any bank is asked for. A second
+/// call, or a call after the first bank was read, changes nothing.
+pub fn default_dir(dir: PathBuf) {
+    let _ = DEFAULT.set(dir);
+}
 
 /// The directory, and the running executable's sha256, when the cache is on.
 fn root() -> Option<&'static (PathBuf, [u8; 32])> {
     static ROOT: OnceLock<Option<(PathBuf, [u8; 32])>> = OnceLock::new();
     ROOT.get_or_init(|| {
-        let dir = PathBuf::from(std::env::var_os(ENV)?);
+        let dir = match std::env::var_os(ENV) {
+            Some(v) => PathBuf::from(v),
+            None => DEFAULT.get()?.clone(),
+        };
         if dir.as_os_str().is_empty() {
             return None;
         }
@@ -50,7 +73,34 @@ pub(super) fn file_of(key: &str) -> Option<PathBuf> {
     h.update(exe);
     h.update(key.as_bytes());
     let name: String = h.finalize().iter().map(|b| format!("{b:02x}")).collect();
-    Some(dir.join(format!("{name}.bank")))
+    Some(dir.join(format!("{}-{name}.bank", exe_prefix(exe))))
+}
+
+/// The part of a bank file's name that says which executable wrote it.
+fn exe_prefix(exe: &[u8; 32]) -> String {
+    exe[..8].iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Remove, once a run, every bank file in the directory another executable
+/// wrote. A file being written (`.bank.<pid>`) is another run's and is left.
+fn reclaim_others() {
+    static DONE: OnceLock<()> = OnceLock::new();
+    DONE.get_or_init(|| {
+        let Some((dir, exe)) = root() else {
+            return;
+        };
+        let mine = format!("{}-", exe_prefix(exe));
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for e in entries.filter_map(Result::ok) {
+            let name = e.file_name();
+            let name = name.to_string_lossy();
+            if name.ends_with(".bank") && !name.starts_with(&mine) {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+    });
 }
 
 /// The variants a file holds for the bank keyed `key`; none where the cache is
@@ -77,6 +127,7 @@ pub(super) fn store(key: &str, nodes: &[(FlownKey, Vec<Arc<Variant>>)]) {
     if std::fs::create_dir_all(dir).is_err() {
         return;
     }
+    reclaim_others();
     let tmp = path.with_extension(format!("bank.{}", std::process::id()));
     if std::fs::write(&tmp, encode(key, nodes)).is_ok() && std::fs::rename(&tmp, &path).is_err() {
         let _ = std::fs::remove_file(&tmp);
@@ -187,8 +238,9 @@ impl Enc {
         for &(i, code, x) in &v.deps {
             self.u32(i);
             self.u32(code);
-            self.u16(x);
+            self.u32(x);
         }
+        self.box3(v.head);
         self.len(v.jumps.len());
         for c in &v.jumps {
             self.cell(*c);
@@ -345,8 +397,9 @@ impl Dec<'_> {
         let n = self.len()?;
         let mut deps = Vec::with_capacity(n);
         for _ in 0..n {
-            deps.push((self.u32()?, self.u32()?, self.u16()?));
+            deps.push((self.u32()?, self.u32()?, self.u32()?));
         }
+        let head = self.box3()?;
         let n = self.len()?;
         let mut jumps = Vec::with_capacity(n);
         for _ in 0..n {
@@ -367,6 +420,7 @@ impl Dec<'_> {
         }
         Some(Variant {
             deps,
+            head,
             jumps,
             volumes,
             runs,

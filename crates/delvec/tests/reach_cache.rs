@@ -120,3 +120,109 @@ fn a_build_from_an_earlier_run_s_bank_emits_what_flying_emits() {
         );
     }
 }
+
+fn check(campaign: &Path, prefabs: &Path, cache: Option<&str>) -> Output {
+    let mut cmd = Command::new(BIN);
+    cmd.args(["--prefabs"])
+        .arg(prefabs)
+        .args(["detail", "--check"])
+        .arg(campaign)
+        .arg("node/annex")
+        .env_remove("DELVEC_REACH_CACHE");
+    if let Some(c) = cache {
+        cmd.env("DELVEC_REACH_CACHE", c);
+    }
+    cmd.output().expect("run delvec")
+}
+
+/// **`delvec detail` keeps the bank with the campaign** when the variable is
+/// unset: a check leaves its banks under `<campaign>/.out/reach-bank/`, each
+/// named for the executable that wrote it, and removes a bank file another
+/// executable left there; a second check over the bank says what the first
+/// said; the empty string writes nothing.
+#[test]
+fn detail_keeps_the_bank_with_the_campaign_and_reclaims_another_binary_s() {
+    let root = tmp("reach-cache-detail");
+    let (campaign, prefabs) = common::gallery_site_plan_detailed(&root);
+    let bank = campaign.join(".out/reach-bank");
+    // The fixture is made by `detail --all`, which keeps its own bank there.
+    let _ = std::fs::remove_dir_all(&bank);
+
+    let off = check(&campaign, &prefabs, Some(""));
+    let said = String::from_utf8_lossy(&off.stderr).into_owned();
+    assert_eq!(off.status.code(), Some(0), "{said}");
+    assert!(banks(&bank).is_empty(), "the empty string writes nothing");
+    // The validation's notes are counted, naming the campaign and the library
+    // the check was given (never its scratch copy), and not printed.
+    assert!(
+        said.contains(&format!(
+            "the campaign's census; `delvec --prefabs {} validate {}` prints them",
+            prefabs.display(),
+            campaign.display()
+        )),
+        "{said}"
+    );
+    assert!(!said.contains("site-plan placing"), "{said}");
+
+    std::fs::create_dir_all(&bank).unwrap();
+    let stale = bank.join("0000000000000000-stale.bank");
+    std::fs::write(&stale, b"DWBANK01").unwrap();
+    let cold = check(&campaign, &prefabs, None);
+    assert_eq!(cold.status.code(), Some(0), "{}", text(&cold));
+    let written = banks(&bank);
+    assert!(
+        !written.is_empty(),
+        "the check left its bank with the campaign"
+    );
+    assert!(!stale.exists(), "another executable's bank file is removed");
+    let exe = {
+        use sha2::{Digest, Sha256};
+        let h = Sha256::digest(std::fs::read(BIN).unwrap());
+        h[..8]
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>()
+    };
+    for (p, _) in &written {
+        let name = p.file_name().unwrap().to_string_lossy().into_owned();
+        assert!(name.starts_with(&format!("{exe}-")), "{name}");
+    }
+
+    let warm = check(&campaign, &prefabs, None);
+    assert_eq!(warm.status.code(), Some(0), "{}", text(&warm));
+    let lines = |o: &Output| -> Vec<String> {
+        String::from_utf8_lossy(&o.stderr)
+            .lines()
+            .filter(|l| !l.contains("peak rss") && !l.contains(" ms"))
+            .map(|l| {
+                // The scratch is named for the process.
+                l.split("detail-check-")
+                    .enumerate()
+                    .map(|(i, part)| {
+                        if i == 0 {
+                            part.to_string()
+                        } else {
+                            part.trim_start_matches(|c: char| c.is_ascii_digit())
+                                .to_string()
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("detail-check-")
+            })
+            .collect()
+    };
+    assert_eq!(
+        lines(&off),
+        lines(&warm),
+        "a check over the bank says what a check that flew every node says"
+    );
+    assert_eq!(off.stdout, warm.stdout);
+}
+
+fn text(o: &Output) -> String {
+    format!(
+        "{}{}",
+        String::from_utf8_lossy(&o.stdout),
+        String::from_utf8_lossy(&o.stderr)
+    )
+}

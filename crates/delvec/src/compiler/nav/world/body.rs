@@ -616,8 +616,8 @@ impl World {
                     ([b[0] + dx, b[2] + dz], face.opposite()),
                 ] {
                     let cell = [col[0], y, col[1]];
-                    if let Some(l) = self.floors.leaves.get(&cell) {
-                        out.push((cell, *l, f, wide));
+                    if let Some(l) = self.leaf_read(cell) {
+                        out.push((cell, l, f, wide));
                     }
                 }
             }
@@ -661,6 +661,15 @@ impl World {
 
     /// The leaf of the door or trapdoor at `cell`, if one stands there.
     pub fn leaf_at(&self, cell: [i32; 3]) -> Option<delvewright_dsl::blockshape::Leaf> {
+        self.leaf_read(cell)
+    }
+
+    /// **The one point read of a leaf**: the leaf at `cell`, noted as read
+    /// for the reach graph's node bank
+    /// ([`super::reach::note_leaf_read`]), which keeps a node only while
+    /// every leaf cell it read holds the same.
+    fn leaf_read(&self, cell: [i32; 3]) -> Option<delvewright_dsl::blockshape::Leaf> {
+        super::reach::note_leaf_read(cell);
         self.floors.leaves.get(&cell).copied()
     }
 
@@ -1286,8 +1295,7 @@ impl World {
                 let col = [cx, a[1], cz];
                 if self.is_use_gate(col)
                     || (self.has_leaves()
-                        && (0..fp.height)
-                            .any(|dy| self.floors.leaves.contains_key(&[cx, a[1] + dy, cz])))
+                        && (0..fp.height).any(|dy| self.leaf_read([cx, a[1] + dy, cz]).is_some()))
                     || !self.standable_fp(col, fp)
                     || self.feet_16_fp(col, fp) != floor
                 {
