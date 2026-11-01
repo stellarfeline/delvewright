@@ -167,7 +167,7 @@ Measured on the remote Linux machine (16 CPU) with two instruments that share no
 | the bank spill and the walked ground, merged with `main` | 9.31 / 9.33 GiB | 7 min 9 s / 9 min 12 s | 10.15 GiB | byte-identical to `main` over all 267 (town) and 270 (widened) files |
 | closures shared, the kept closure the one the rounds grew | 9.58 / 9.54 GiB | 10 min 50 s / 9 min 17 s | 10.16 GiB | byte-identical |
 | the same, its lists shrunk in place | 9.42 / 9.43 GiB | 9 min 1 s / 9 min 21 s | 10.20 GiB | byte-identical |
-| closures shared, the memo keeping a one-sweep copy (landed) | 9.32 / 9.31 GiB | 8 min 36 s / 8 min 37 s | pending at the time of writing | byte-identical; the two town runs identical to each other |
+| closures shared, the memo keeping a one-sweep copy (landed) | 9.32 / 9.31 GiB | 8 min 36 s / 8 min 37 s | 9.94 GiB | byte-identical; the two town runs identical to each other |
 
 Sharing the closures saves nothing measurable at the peak or on the plateau: the copies callers took were short-lived, and the allocator reused their memory. The per-site figures of the profile above (1.03 GB of `preds` clones, 0.64 GB of `succ` clones) are each site's own peak, not memory held at the same moment. Keeping the closure the rounds grew instead of a one-sweep copy raised the peak by about 0.25 GiB; keeping a one-sweep copy returns it to the merged figure. The remaining reach-graph memory is in the bank's slots, the node tables, the snapshot and the closures themselves, which only the per-chunk graph of §2 bounds.
 
