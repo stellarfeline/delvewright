@@ -14,6 +14,14 @@
 //! is not resident are buffered and written once they pass [`PENDING`] bytes,
 //! so a closure being built never decodes the chunks it only adds to.
 //!
+//! The budget is the working set a walk by chunk needs ([`working_set`]): a
+//! closure is taken, and a proof walks it, one chunk at a time, writing what
+//! crosses into the eight chunks round it; so the budget holds the 3 × 3 ring
+//! of chunks as large as the largest one any list has been decoded to, and
+//! the ring's buffered pushes in the two lists a closure writes. It is
+//! measured from the lists, never set: a map's largest chunk depends on how
+//! densely its columns are reached, never on how many columns it has.
+//!
 //! What a list answers never depends on the chunk side, the budget or which
 //! chunks are resident: a chunk's items are its spilled records, in the order
 //! they were written, then its buffered ones. A copy of a list
@@ -38,15 +46,30 @@ pub(super) const SIDE: i32 = 32;
 /// Records not yet written are written once a chunk buffers this many bytes.
 const PENDING: usize = 64 << 10;
 
-/// The resident budget the engine ships: decoded chunks of every list,
-/// together, in bytes — a constant of the engine, never of the map.
-const BUDGET: usize = 256 << 20;
+/// The chunks a walk by chunk holds at once: the one in hand and the eight
+/// round it, which what crosses its faces is written to.
+const RING: usize = 9;
 
-/// The resident budget in force on this thread ([`BUDGET`], or what a test
-/// set).
+/// The largest any chunk of any list has been decoded to, in bytes.
+static LARGEST: AtomicUsize = AtomicUsize::new(0);
+
+/// The largest any chunk of any list has been decoded to so far, in bytes.
+pub(super) fn largest() -> usize {
+    LARGEST.load(Ordering::Relaxed)
+}
+
+/// **The working set a walk by chunk needs**, in bytes: [`RING`] chunks as
+/// large as the largest decoded so far, and [`RING`] chunks' buffered pushes
+/// in each of the two lists a closure writes (`succ` and `preds`).
+pub(super) fn working_set() -> usize {
+    RING * largest() + RING * 2 * PENDING
+}
+
+/// The resident budget in force on this thread: the working set
+/// ([`working_set`]), or what a test set.
 pub(super) fn budget() -> usize {
     match BUDGET_HERE.with(std::cell::Cell::get) {
-        0 => BUDGET,
+        0 => working_set(),
         b => b,
     }
 }
@@ -271,6 +294,7 @@ impl<V: Item> Chunk<V> {
         take(&self.pending);
         self.resident = Some(map);
         self.decoded = decoded;
+        LARGEST.fetch_max(decoded, Ordering::Relaxed);
         LOADS.fetch_add(1, Ordering::Relaxed);
         RECORDS.fetch_add(records, Ordering::Relaxed);
     }
@@ -353,6 +377,7 @@ impl<V: Item> Inner<V> {
             }
             ch.decoded += std::mem::size_of::<V>() + v.heap();
             list.push(v);
+            LARGEST.fetch_max(ch.decoded, Ordering::Relaxed);
         } else if ch.pending.len() >= PENDING {
             ch.write();
         }
