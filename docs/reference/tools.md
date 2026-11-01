@@ -234,7 +234,11 @@ them, in one line naming the `delvec validate` that prints them; the commit
 prints them. Every `detail` run keeps the reach graph's node bank at
 `<campaign>/.out/reach-bank/` (`compiler.md`, `DELVEC_REACH_CACHE`), so a
 check after the first takes every node earlier runs flew whose read cells,
-doors and trapdoors among them, hold the same. It prints the
+doors and trapdoors among them, hold the same. On the 95-place town (16 GB Apple M2
+Pro) the first check costs about 5.5 min and 15 GB and a check over an
+earlier one's bank about 3 min and 13 GB; `frames --campaign` about 2 min and
+10 GB (the handout's `COST`, which states them where it tells the author to
+loop). It prints the
 leak proof's binding, the battery's line (`the commit's battery: the whole
 builds with N piece(s) this run would write, judged over a scratch copy of F
 file(s)`) and `peak rss: <bytes>` on its binding line; exit 0 says the program

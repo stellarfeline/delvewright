@@ -74,21 +74,21 @@ ENGINE_REFERENCES = (
 )
 
 # What each step of the loop costs, measured with `/usr/bin/time -l` on a
-# 16 GB Apple M2 Pro with `delvec` 1.15.0 built at engine `7b703fa66`, on the
+# 16 GB Apple M2 Pro with `delvec` 1.15.0 built at engine `4e8ff4e01`, on the
 # 95-place town (content `demo/authoring-cost` at `7fb8a92`, place
 # `node/fishmonger`): the place's own steps are seconds; the two that
 # assemble the whole scale with it. The check keeps the reach graph's node
 # bank under the campaign's `.out/`: a check after an earlier check or commit
-# over the same doors, trapdoors and climbables takes the "again" figure; one
-# whose program moves any of them, and the first, take the "first" one.
-# Stated where the handout tells the author to loop, so the expensive check
-# is run when the cheap steps are clean, not after every edit.
+# takes the "again" figure, whatever the program moved, doors included; the
+# first check a `delvec` runs takes the "first" one. Stated where the handout
+# tells the author to loop, so the expensive check is run when the cheap
+# steps are clean, not after every edit.
 COST = {
     "generator": "about 1.5 s",
     "expand": "about 1.5 s and 0.4 GB",
     "render": "about 1.5 s and 0.4 GB",
-    "frames": "about 2.5 min and 10 GB",
-    "check": "about 6.5 min and 13 GB the first time, about 3.5 min and 14 GB again",
+    "frames": "about 2 min and 10 GB",
+    "check": "about 5.5 min and 15 GB the first time, about 3 min and 13 GB again",
 }
 COST_INSTRUMENT = "measured on a 16 GB machine over a 95-place town; the last two grow with the whole"
 

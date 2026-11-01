@@ -258,7 +258,13 @@ def test_the_steps_run_in_the_order_an_author_needs_each_naming_its_tool_and_cos
              "5. **Look at it in its surroundings** — `frames --campaign`", "6. **Check** — `detail --check`"]
     at = [steps.index(h) for h in heads]
     assert at == sorted(at), "the steps are in order"
-    for key, cost in (("check", "about 6.5 min and 13 GB the first time, about 3.5 min and 14 GB again"), ("frames", "about 2.5 min and 10 GB"), ("generator", "about 1.5 s")):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("handout_costs", SCRIPT)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert set(mod.COST) == {"generator", "expand", "render", "frames", "check"}
+    for key, cost in mod.COST.items():
+        assert cost.startswith("about "), key
         assert cost in steps, key
     assert "Steps 1 to 4 are seconds: run them after every edit." in steps
     assert "Run it as often as you like" not in text
