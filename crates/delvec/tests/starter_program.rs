@@ -46,7 +46,8 @@ fn starter() -> PathBuf {
 /// `common::gallery_site_plan_detailed` details the open one.
 fn solid_point_detailed(root: &Path, prefabs: &Path) -> PathBuf {
     let campaign = root.join("site-plan-solid");
-    let out = Command::new(python())
+    // The domain tool runs the gallery generator through `$CARGO`.
+    let out = common::build_toolchain(&mut Command::new(python()))
         .arg(common::repo_root().join("tools/ci/gallery_domain.py"))
         .args(["materialise", "--point", "site-plan-solid"])
         .arg(&campaign)

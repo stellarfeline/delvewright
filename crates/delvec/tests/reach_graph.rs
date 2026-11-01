@@ -11,7 +11,7 @@ fn gallery_hall(name: &str) -> World {
     let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
-    let out = std::process::Command::new(env!("CARGO"))
+    let out = common::nested_cargo()
         .args(["run", "-q", "--locked", "--release", "--manifest-path"])
         .arg(common::repo_root().join("gallery/prefab-generator/Cargo.toml"))
         .arg("--")

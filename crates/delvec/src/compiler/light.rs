@@ -777,13 +777,19 @@ impl LightField {
 
         // Resolve each DISTINCT block id once. The assembled world is overwhelmingly
         // repeated ids, and `emission`/`passes_light` are a pair of string matches.
-        let mut resolved: BTreeMap<&str, u8> = BTreeMap::new();
+        // Keyed by the text's address and length: one interned state is one
+        // key, and two keys never name different texts (a text that is not
+        // interned only resolves again).
+        let mut resolved: std::collections::HashMap<(usize, usize), u8> =
+            std::collections::HashMap::new();
         for (c, name) in blocks {
             let Some(i) = f.index(c) else { continue };
-            let packed = *resolved.entry(name).or_insert_with(|| {
-                let p = Self::pack(name);
-                if emit { p } else { p & !P_EMISSION }
-            });
+            let packed = *resolved
+                .entry((name.as_ptr() as usize, name.len()))
+                .or_insert_with(|| {
+                    let p = Self::pack(name);
+                    if emit { p } else { p & !P_EMISSION }
+                });
             f.prop[i] = packed;
         }
 
@@ -1747,10 +1753,12 @@ impl DarkSurvey {
         sky: u8,
         below: u8,
     ) -> DarkSurvey {
-        // The dense field is read where it lies: the map form holds one entry
-        // per lit cell of the whole field box, and a site plan whose region
-        // reaches the horizon lights tens of millions of open-air cells that
-        // nobody measures.
+        // The dense field itself, read per cell where it lies:
+        // [`LightModel::flood`]'s map is this field's every lit cell copied
+        // out — one entry per lit cell of the whole field box, tens of
+        // millions for a site plan whose region reaches the horizon — and a
+        // cell it does not hold reads 0, as an unlit or outside cell reads
+        // here.
         let light = LightField::new(model, sky);
         let mut out = DarkSurvey {
             examined: cells.len(),
