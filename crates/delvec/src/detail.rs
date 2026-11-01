@@ -1358,7 +1358,7 @@ fn battery(
     prefabs_dir: &Path,
     lang: &str,
     json: bool,
-    count_for: Option<&Path>,
+    count_for: Option<(&Path, &Path)>,
 ) -> Result<(), u8> {
     let check = count_for.is_some();
     use delvec::compiler::analyze::analyze_campaign;
@@ -1481,7 +1481,7 @@ fn check_battery(
         &scratch.prefabs,
         lang,
         json,
-        Some(campaign_dir),
+        Some((campaign_dir, prefabs_dir)),
     )
     .inspect_err(|_| {
         eprintln!(

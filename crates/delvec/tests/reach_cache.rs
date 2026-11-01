@@ -152,6 +152,17 @@ fn detail_keeps_the_bank_with_the_campaign_and_reclaims_another_binary_s() {
     let said = String::from_utf8_lossy(&off.stderr).into_owned();
     assert_eq!(off.status.code(), Some(0), "{said}");
     assert!(banks(&bank).is_empty(), "the empty string writes nothing");
+    // The validation's notes are counted, naming the campaign and the library
+    // the check was given (never its scratch copy), and not printed.
+    assert!(
+        said.contains(&format!(
+            "the campaign's census; `delvec --prefabs {} validate {}` prints them",
+            prefabs.display(),
+            campaign.display()
+        )),
+        "{said}"
+    );
+    assert!(!said.contains("site-plan placing"), "{said}");
 
     std::fs::create_dir_all(&bank).unwrap();
     let stale = bank.join("0000000000000000-stale.bank");

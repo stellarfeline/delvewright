@@ -240,15 +240,15 @@ pub(crate) fn validate_stage_noting(
 }
 
 /// [`validate_stage_noting`], its notes counted rather than printed: one
-/// line states how many there are and the command that prints them for
-/// `named`. What a verb that judges one place or draws one view prints in
+/// line states how many there are and the command that prints them for the
+/// campaign `named` over the library `library`. What a verb that judges one place or draws one view prints in
 /// place of the campaign's whole census, which is the same on every run over
 /// it and about nothing that run changed.
 pub(crate) fn validate_stage_counted(
     campaign_dir: &Path,
     prefabs_dir: &Path,
     json: bool,
-    named: &Path,
+    (named, library): (&Path, &Path),
 ) -> Result<Validated, u8> {
     let mut examined: Vec<String> = Vec::new();
     let v = validate_stage_noting(campaign_dir, prefabs_dir, json, &mut examined);
@@ -257,7 +257,7 @@ pub(crate) fn validate_stage_counted(
             "-- what the validation examined: {} line(s), the campaign's census; `delvec \
              --prefabs {} validate {}` prints them",
             examined.len(),
-            prefabs_dir.display(),
+            library.display(),
             named.display()
         );
     }

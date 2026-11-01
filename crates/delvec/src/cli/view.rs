@@ -89,7 +89,7 @@ pub(crate) fn run_frames_campaign(
         campaign_dir,
         prefabs_dir,
         json,
-        campaign_dir,
+        (campaign_dir, prefabs_dir),
     ) {
         Ok(v) => (v.campaign, v.prefabs),
         Err(code) => return ExitCode::from(code),
