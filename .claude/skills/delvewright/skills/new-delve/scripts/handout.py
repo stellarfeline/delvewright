@@ -222,43 +222,6 @@ def owed_answer(name: str) -> str:
     return f"`mark` `{stem}` — a station the graph declares; a body is put there"
 
 
-def allocation_json(a: dict) -> str:
-    """The allocation verbatim, one line per ground column and perimeter cell.
-
-    `ground.columns` and `ground.perimeter` are one entry per plot cell; pretty
-    JSON spends five lines on each. Nothing is dropped and nothing is
-    re-derived: every value is the one `delvec allocation` printed.
-    """
-    a = json.loads(json.dumps(a))  # a private copy to re-render
-    ground = a.get("ground", {})
-    columns = ground.pop("columns", None)
-    perimeter = ground.pop("perimeter", None)
-    fixed = ground.pop("fixed", None)
-    out = [json.dumps(a, indent=2, ensure_ascii=False)]
-    if columns is not None:
-        out.append("")
-        out.append(
-            f"ground.columns ({len(columns)}; the terrain-shaped column under each plot cell, "
-            f"piece-local `x z top blocks`):"
-        )
-        for c in columns:
-            out.append(f"  {c['x']} {c['z']} {c['top']} {' '.join(c['blocks'])}")
-    if perimeter is not None:
-        out.append("")
-        out.append(f"ground.perimeter ({len(perimeter)}; the terrain along the ring, piece-local):")
-        out.append("  " + " ".join(f"[{p[0]},{p[1]},{p[2]}]" for p in perimeter))
-    if fixed is not None:
-        out.append("")
-        out.append(
-            f"ground.fixed ({len(fixed)}; ring cells the whole has already written — a void "
-            f"to you, never paint one):"
-        )
-        for f in fixed:
-            c = f["cell"]
-            out.append(f"  [{c[0]},{c[1]},{c[2]}] {f['block']}")
-    return "\n".join(out)
-
-
 def design_rows(
     place: str,
     a: dict,
@@ -748,13 +711,9 @@ def render(
         lines.extend(refusal.rstrip("\n").split("\n"))
         w("```")
         w("")
-    w("## The allocation, verbatim")
+    w("## The allocation")
     w("")
-    w("What `delvec allocation` hands this place. Every number your program needs is here and is read through a `handed/…` parameter, never copied.")
-    w("")
-    w("```json")
-    lines.extend(allocation_json(a).split("\n"))
-    w("```")
+    w(f"`{allocation_file}` is what `delvec allocation` hands this place, as it prints it; the starter reads it, and the frame above is drawn from it. Every number your program needs is in it and is read through a `handed/…` parameter, never copied. Open it when you need a value the frame does not show (a ground column's blocks, a perimeter cell).")
     w("")
     w("## Your return")
     w("")

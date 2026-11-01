@@ -125,9 +125,11 @@ def test_a_first_authoring_hands_the_allocation_the_neighbours_the_seams_and_the
     assert [p.name for p in handouts] == ["handout-1.md"]
     text = handouts[0].read_text(encoding="utf-8")
     a = allocation("node/hall")
-    # The allocation, verbatim: every top-level key stands in the embedded JSON.
-    for key in a:
-        assert f'"{key}":' in text, key
+    # The allocation, verbatim: saved beside the handout as `delvec allocation`
+    # printed it, and named by the handout.
+    saved = handouts[0].with_name("allocation.json")
+    assert json.loads(saved.read_text(encoding="utf-8")) == a
+    assert f"`{saved}`" in text
     # One section per adjacent box, each with the neighbour's own design row.
     for nb in a["neighbours"]:
         assert f"### {nb['place']} — on your {nb['face']} side" in text
