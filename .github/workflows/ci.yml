@@ -331,8 +331,13 @@ jobs:
       # here is the network, never a frame.
       - name: the pinned client jar (one verified fetch)
         run: echo "DELVEWRIGHT_CLIENT_JAR=$(bash validation/client-jar-cache.sh --cache "$RUNNER_TEMP/client-jar" | tail -n 1)" >> "$GITHUB_ENV"
+      # Every test executable `cargo test --workspace` builds, run two at a
+      # time and each to its end, then the doc tests: an executable that is a
+      # sequence of `delvec` runs leaves most of the runner idle in their
+      # single-threaded stretches, and a second one fills them. The count of
+      # executables run against cargo's own listing is printed and must agree.
       - name: cargo test (incl. determinism double-build gate)
-        run: cargo test --locked --workspace
+        run: python3 tools/ci/cargo-test-concurrent.py --jobs 2 --locked
 
       # The viewer's interactive layer is JavaScript, so `cargo test` cannot run
       # it — and for as long as that was the whole story the camera had NO

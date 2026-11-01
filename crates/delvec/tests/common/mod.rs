@@ -27,6 +27,42 @@ pub const STAGE_FILES: [&str; 6] = [
     "dialogue.json",
 ];
 
+/// **The toolchain this test was built with, named exactly**, on `cmd`: `CARGO`
+/// is the cargo that built the test and `RUSTC` the rustc installed beside it,
+/// so a nested build — `cargo` run directly, or a script that runs `$CARGO` —
+/// compiles every crate with this one compiler.
+///
+/// Without it the nested cargo runs `rustc` from `PATH`, which under rustup is
+/// a proxy that resolves a toolchain per invocation from its environment and
+/// working directory. `cargo test` hands its test executables rustup's
+/// `RUSTUP_TOOLCHAIN`; any other launcher does not, and then cargo's rustc runs
+/// for registry crates (working directory in the registry) resolve to the
+/// machine's default toolchain while the workspace's path crates resolve to the
+/// pin: one target directory holds crates of two compilers (E0514), and every
+/// concurrent nested build may start installing the default toolchain at once.
+/// Every nested toolchain process a test spawns takes its toolchain here.
+#[allow(dead_code)]
+pub fn build_toolchain(cmd: &mut std::process::Command) -> &mut std::process::Command {
+    let cargo = Path::new(env!("CARGO"));
+    let rustc = cargo.with_file_name(format!("rustc{}", std::env::consts::EXE_SUFFIX));
+    assert!(
+        rustc.is_file(),
+        "no rustc beside the cargo that built this test ({}); the nested build \
+         cannot name its compiler",
+        cargo.display()
+    );
+    cmd.env("CARGO", cargo).env("RUSTC", rustc)
+}
+
+/// `cargo` — the one that built this test, with its rustc
+/// ([`build_toolchain`]) — ready for arguments.
+#[allow(dead_code)]
+pub fn nested_cargo() -> std::process::Command {
+    let mut cmd = std::process::Command::new(env!("CARGO"));
+    build_toolchain(&mut cmd);
+    cmd
+}
+
 /// Repo root (two levels up from `crates/delvec/src/compiler`).
 pub fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -282,7 +318,7 @@ fn gallery_point_at(dir: &Path, overlay: Option<&str>) -> PathBuf {
     ] {
         std::fs::create_dir_all(d).unwrap();
     }
-    let out = std::process::Command::new(env!("CARGO"))
+    let out = nested_cargo()
         .args(["run", "-q", "--locked", "--release", "--manifest-path"])
         .arg(repo_root().join("gallery/prefab-generator/Cargo.toml"))
         .arg("--")
