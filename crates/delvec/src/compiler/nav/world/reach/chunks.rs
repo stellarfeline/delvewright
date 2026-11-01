@@ -381,6 +381,11 @@ impl<V: Item> Lists<V> {
         out
     }
 
+    /// `c`'s list.
+    pub(super) fn get(&self, c: [i32; 3]) -> Vec<V> {
+        self.with(c, <[V]>::to_vec)
+    }
+
     /// The first item of `c`'s list `matches` holds for, or `v` pushed onto it
     /// when none does — one step under the list's lock, so two threads asking
     /// at once keep one item.
@@ -484,108 +489,30 @@ impl<V: Item> std::fmt::Debug for Lists<V> {
     }
 }
 
-/// **Where a list lives** while the whole-window form and the chunked one are
-/// held to one answer by the agreement test: the whole map, as the graph kept
-/// it before ADR-0037 §2, or the chunked lists.
-pub(super) enum Store<V: Item> {
-    Whole(Mutex<std::collections::BTreeMap<[i32; 3], Vec<V>>>),
-    Chunked(Lists<V>),
-}
-
 thread_local! {
-    /// The chunk side new stores on this thread take; `None`: the whole map.
-    static SIDE_HERE: std::cell::Cell<Option<i32>> = const { std::cell::Cell::new(Some(SIDE)) };
+    /// The chunk side new lists on this thread take.
+    static SIDE_HERE: std::cell::Cell<i32> = const { std::cell::Cell::new(SIDE) };
 }
 
-/// The chunk side new stores on this thread take (`None`: the whole map).
-pub(super) fn side_here() -> Option<i32> {
+/// The chunk side new lists on this thread take: [`SIDE`], or what a test
+/// set.
+pub(super) fn side_here() -> i32 {
     SIDE_HERE.with(std::cell::Cell::get)
 }
 
-/// Run `f` with new stores on this thread at `side`.
+/// Run `f` with new lists on this thread at chunk side `side`.
 #[cfg(test)]
-pub(super) fn at_side<R>(side: Option<i32>, f: impl FnOnce() -> R) -> R {
+pub(super) fn at_side<R>(side: i32, f: impl FnOnce() -> R) -> R {
     let was = SIDE_HERE.with(|s| s.replace(side));
     let out = f();
     SIDE_HERE.with(|s| s.set(was));
     out
 }
 
-impl<V: Item> Store<V> {
-    /// An empty store in this thread's form ([`side_here`]).
-    pub(super) fn new() -> Store<V> {
-        match side_here() {
-            None => Store::Whole(Mutex::new(std::collections::BTreeMap::new())),
-            Some(side) => Store::Chunked(Lists::new(side)),
-        }
-    }
-
-    pub(super) fn push(&self, c: [i32; 3], v: V) {
-        match self {
-            Store::Whole(m) => m.lock().expect("store").entry(c).or_default().push(v),
-            Store::Chunked(l) => l.push(c, v),
-        }
-    }
-
-    pub(super) fn with<R>(&self, c: [i32; 3], f: impl FnOnce(&[V]) -> R) -> R {
-        match self {
-            Store::Whole(m) => f(m
-                .lock()
-                .expect("store")
-                .get(&c)
-                .map_or(&[][..], Vec::as_slice)),
-            Store::Chunked(l) => l.with(c, f),
-        }
-    }
-
-    pub(super) fn get(&self, c: [i32; 3]) -> Vec<V> {
-        self.with(c, <[V]>::to_vec)
-    }
-
-    pub(super) fn find_or_push(&self, c: [i32; 3], matches: impl Fn(&V) -> bool, v: V) -> V {
-        match self {
-            Store::Whole(m) => {
-                let mut m = m.lock().expect("store");
-                let l = m.entry(c).or_default();
-                if let Some(h) = l.iter().find(|x| matches(x)) {
-                    return h.clone();
-                }
-                l.push(v.clone());
-                v
-            }
-            Store::Chunked(l) => l.find_or_push(c, matches, v),
-        }
-    }
-
-    #[cfg(test)]
-    pub(super) fn entries(&self) -> Vec<([i32; 3], Vec<V>)> {
-        match self {
-            Store::Whole(m) => m
-                .lock()
-                .expect("store")
-                .iter()
-                .map(|(c, l)| (*c, l.clone()))
-                .collect(),
-            Store::Chunked(l) => l.entries(),
-        }
-    }
-}
-
-impl<V: Item> Clone for Store<V> {
-    fn clone(&self) -> Store<V> {
-        match self {
-            Store::Whole(m) => Store::Whole(Mutex::new(m.lock().expect("store").clone())),
-            Store::Chunked(l) => Store::Chunked(l.clone()),
-        }
-    }
-}
-
-impl<V: Item> std::fmt::Debug for Store<V> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Store::Whole(m) => write!(f, "Whole({} cells)", m.lock().expect("store").len()),
-            Store::Chunked(l) => l.fmt(f),
-        }
+impl<V: Item> Default for Lists<V> {
+    /// An empty list at this thread's side ([`side_here`]).
+    fn default() -> Lists<V> {
+        Lists::new(side_here())
     }
 }
 

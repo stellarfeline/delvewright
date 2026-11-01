@@ -1729,10 +1729,10 @@ pub(in crate::compiler::nav) struct GraphMemo {
     dense: Dense,
     /// Each node's cell-relation edges (and, for water, its climbs out), kept
     /// by reach chunk ([`chunks`]) under the quadrants `0`.
-    nodes: chunks::Store<(Quadrants, NodeEdges)>,
+    nodes: chunks::Lists<(Quadrants, NodeEdges)>,
     /// Each standing or holding node's launches, flown, under the quadrants
     /// flown, kept by reach chunk.
-    flown: chunks::Store<(Quadrants, NodeEdges)>,
+    flown: chunks::Lists<(Quadrants, NodeEdges)>,
     /// Per column of the window, the cells a body could rest in, and whether
     /// nothing in it arrests a fall (under a void).
     columns: Columns,
@@ -2063,7 +2063,7 @@ impl World {
         static MEMO: OnceLock<Graphs> = OnceLock::new();
         let key = (
             self.fingerprint(),
-            format!("{}:{:?}", params.key(), chunks::side_here()),
+            format!("{}:{}", params.key(), chunks::side_here()),
         );
         let cell = Arc::clone(
             MEMO.get_or_init(|| Mutex::new(HashMap::new()))
@@ -2091,7 +2091,7 @@ impl World {
         // and launch set.
         static SEEDS: OnceLock<Mutex<HashMap<String, Arc<GraphMemo>>>> = OnceLock::new();
         let seed_key = format!(
-            "{}:{:?}:{}:{:?}:{:?}:{}:{}",
+            "{}:{}:{}:{:?}:{:?}:{}:{}",
             params.key(),
             chunks::side_here(),
             self.ambient.name(),
@@ -2137,8 +2137,8 @@ impl World {
             extra,
             bank,
             dense,
-            nodes: chunks::Store::new(),
-            flown: chunks::Store::new(),
+            nodes: chunks::Lists::default(),
+            flown: chunks::Lists::default(),
             lineage,
             premise_cells,
             closures: Mutex::new(Vec::new()),
@@ -3747,15 +3747,15 @@ pub struct JumpMiss {
 /// Its edge lists are kept by reach chunk ([`chunks`], ADR-0037 §2) and read
 /// back when asked for ([`Reach::succ`], [`Reach::preds`]); the states and the
 /// flags stay in memory.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Reach {
     /// Every rest state reached, roots included.
     pub states: BTreeMap<[i32; 3], RestKind>,
     /// Every reached state's edges, in the order they were found.
-    succ: chunks::Store<Edge>,
+    succ: chunks::Lists<Edge>,
     /// Every reached state's predecessors, with the edge that joins them, in
     /// the order they were found.
-    preds: chunks::Store<([i32; 3], Edge)>,
+    preds: chunks::Lists<([i32; 3], Edge)>,
     /// How many edges of each kind `succ` holds, in [`EdgeKind::ALL`]'s order.
     kinds: [usize; 6],
     /// The states some launch from which leaves the world.
@@ -3777,25 +3777,6 @@ pub struct Reach {
     pub over_budget: Option<u64>,
     /// The reached states inside the window, as a bitmap over it.
     bits: Vec<u64>,
-}
-
-impl Default for Reach {
-    fn default() -> Reach {
-        Reach {
-            states: BTreeMap::new(),
-            succ: chunks::Store::new(),
-            preds: chunks::Store::new(),
-            kinds: [0; 6],
-            leaves_world: BTreeSet::new(),
-            open_sea: BTreeSet::new(),
-            fatal: BTreeMap::new(),
-            simulated: 0,
-            credited: 0,
-            flown: BTreeMap::new(),
-            over_budget: None,
-            bits: Vec::new(),
-        }
-    }
 }
 
 impl Reach {

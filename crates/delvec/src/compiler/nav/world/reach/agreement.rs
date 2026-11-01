@@ -849,8 +849,8 @@ struct Answered {
 
 /// What `w`'s closure from `roots` answers, grown by every launch of its
 /// standing states (a copy taken to grow, [`World::fly_cells`]), taken with
-/// new lists at chunk side `side` (`None`: the whole map).
-fn answered(w: &World, roots: &[[i32; 3]], side: Option<i32>) -> Answered {
+/// new lists at chunk side `side`.
+fn answered(w: &World, roots: &[[i32; 3]], side: i32) -> Answered {
     super::chunks::at_side(side, || {
         let mut r = w.body_reach(roots);
         let standing: Vec<[i32; 3]> = r.standing().into_iter().collect();
@@ -883,18 +883,18 @@ fn answered(w: &World, roots: &[[i32; 3]], side: Option<i32>) -> Answered {
     })
 }
 
-/// **The chunked graph answers what the whole-window graph answers** (ADR-0037
-/// §2): every generated course, the Bell yard (a void's edge), the jetty (the
-/// open sea) and the garden, asked of a closure whose edge lists and node
-/// tables are kept whole and of one kept by reach chunk — at the game's
-/// sixteen-column side, and at a side of two columns under a budget of one
-/// byte, so every list is
-/// cut across chunks and every chunk is written out and read back on every
-/// use. Red on any difference in any answer. (The sides are this test's own:
-/// a graph is kept per side, and the node tables of one other tests share
-/// hold what those tests flew.)
+/// **No answer of the reach graph depends on its chunk side or its resident
+/// budget** (ADR-0037 §4): every generated course, the Bell yard (a void's
+/// edge), the jetty (the open sea) and the garden, asked of a closure whose
+/// edge lists and node tables are kept in chunks of sixteen columns, of seven,
+/// and of two under a budget of one byte — so every list is cut across chunks
+/// and every chunk is written out and read back on every use. Red on any
+/// difference in any answer: the states, every state's successors and
+/// predecessors in order, the flags, the counts and both node tables. (The
+/// sides are this test's own: a graph is kept per side, and the node tables of
+/// one other tests share hold what those tests flew.)
 #[test]
-fn the_chunked_graph_answers_what_the_whole_graph_answers() {
+fn no_answer_depends_on_the_chunk_side_or_the_budget() {
     let mut worlds: Vec<(String, World, Vec<[i32; 3]>)> = Vec::new();
     for seed in 0..12 {
         let case = generate(seed);
@@ -912,12 +912,12 @@ fn the_chunked_graph_answers_what_the_whole_graph_answers() {
     worlds.push(("the garden".into(), super::tests::garden(), vec![[1, 1, 1]]));
     let (mut states, mut edges, mut sea, mut crossing) = (0, 0, 0, 0);
     for (name, w, roots) in &worlds {
-        let whole = answered(w, roots, None);
-        let shipped = answered(w, roots, Some(16));
-        let cut = super::chunks::with_budget(1, || answered(w, roots, Some(2)));
+        let whole = answered(w, roots, 16);
+        let odd = answered(w, roots, 7);
+        let cut = super::chunks::with_budget(1, || answered(w, roots, 2));
         assert_eq!(
-            whole, shipped,
-            "{name}: the chunked graph answers otherwise"
+            whole, odd,
+            "{name}: the graph in seven-column chunks answers otherwise"
         );
         assert_eq!(
             whole, cut,
@@ -937,7 +937,7 @@ fn the_chunked_graph_answers_what_the_whole_graph_answers() {
             .count();
     }
     eprintln!(
-        "chunked agreement: {} world(s), {states} state(s), {edges} edge(s) ({crossing} crossing a \
+        "chunk invariance: {} world(s), {states} state(s), {edges} edge(s) ({crossing} crossing a \
          two-column chunk face), {sea} open-sea state(s)",
         worlds.len()
     );
