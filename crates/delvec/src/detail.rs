@@ -1406,7 +1406,9 @@ fn battery(
     let structures = read_structures(&plan, &v.prefabs, prefabs_dir, json)?;
     let skins = read_skins(campaign_dir, &campaign, &skin_sources, json)?;
     let tree = CommandTree::v1_21_11();
-    match emit::build_with_warnings(
+    // The verdict `build` gives, without the review worlds no proof reads: the
+    // tree is discarded here.
+    match emit::verdict_with_warnings(
         &plan,
         &v.loaded.inputs,
         &structures,
@@ -1415,7 +1417,7 @@ fn battery(
         None,
         &skins,
     ) {
-        Ok((_, warnings)) => {
+        Ok(warnings) => {
             print_diags(&warnings, json);
             if !check {
                 eprintln!("detail: the whole builds with the piece(s) this run wrote.");
