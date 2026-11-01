@@ -442,7 +442,7 @@ fn write_program(campaign: &Path, node: &str, program: &Value) {
     let stem = node.strip_prefix("node/").unwrap();
     std::fs::write(
         dir.join(format!("{stem}.json")),
-        serde_json::to_string_pretty(program).unwrap() + "\n",
+        delvewright_dsl::to_canonical_string(program).unwrap(),
     )
     .unwrap();
 }
@@ -1011,7 +1011,6 @@ fn the_handout_is_complete_and_hands_each_seams_form_to_both_sides() {
         for f in [
             "fill",
             "bottom_y",
-            "floor_y",
             "perimeter",
             "min_y",
             "max_y",
@@ -1024,10 +1023,38 @@ fn the_handout_is_complete_and_hands_each_seams_form_to_both_sides() {
                 h["place"]
             );
         }
+        // The walk plane is handed once, as `datum_y`.
+        assert!(h["ground"].get("floor_y").is_none(), "`{}`", h["place"]);
+        // Every handed ground block is a full state: every property written.
+        let reg = delvewright_dsl::blocks::BlockRegistry::v1_21_11();
+        for col in h["ground"]["columns"].as_array().unwrap() {
+            for b in col["blocks"].as_array().unwrap() {
+                let s = b.as_str().unwrap();
+                let st: delvec::grammar::BlockState = s.parse().unwrap();
+                assert!(
+                    reg.omitted_properties(&st.name, &st.properties).is_empty(),
+                    "`{}` hands `{s}`, a state that leaves a property out",
+                    h["place"]
+                );
+            }
+        }
         let c = &h["concept"];
         assert!(c["row"].is_object() || c["absent"].is_string(), "{c}");
     }
+    // The way a place is, handed with its clear columns resolved: the
+    // causeway's `way` (`axis z, clear 6, at 0`) — its run along z, its first
+    // clear column at the box's own low x, piece-local. A place the plan
+    // declares no way for is handed none.
+    let ways: Vec<&Value> = all.iter().filter(|h| h.get("way").is_some()).collect();
+    assert_eq!(ways.len(), 1, "the binding: one way place in the overlay");
+    let causeway = all.iter().find(|h| h["place"] == "node/causeway").unwrap();
+    let lo_x = causeway["space"][0][0].as_i64().unwrap();
+    assert_eq!(
+        causeway["way"],
+        json!({"axis": "z", "clear": 6, "cols": [lo_x, lo_x + 5]})
+    );
     let annex = all.iter().find(|h| h["place"] == "node/annex").unwrap();
+    assert!(annex.get("way").is_none());
     assert!(annex["roof"].is_object(), "the annex declares a roof");
     assert!(!annex["seams"].as_array().unwrap().is_empty());
     assert_eq!(
@@ -1088,7 +1115,7 @@ fn the_handout_is_complete_and_hands_each_seams_form_to_both_sides() {
     }
     std::fs::write(
         dir.join("programs/annex.json"),
-        serde_json::to_string_pretty(&p).unwrap() + "\n",
+        delvewright_dsl::to_canonical_string(&p).unwrap(),
     )
     .unwrap();
     // The yard's piece is the gallery generator's, which this test does not
@@ -1208,7 +1235,7 @@ fn a_climb_inside_a_hung_place_proves_and_hung_scenery_states_its_zero() {
     for (name, hollow) in [("causeway", None), ("beacon", Some(1))] {
         std::fs::write(
             programs.join(format!("{name}.json")),
-            serde_json::to_string_pretty(&hung_program(name, hollow)).unwrap(),
+            delvewright_dsl::to_canonical_string(&hung_program(name, hollow)).unwrap(),
         )
         .unwrap();
     }
@@ -1376,7 +1403,7 @@ fn a_leafy_scenery_crown_owes_no_floor_and_no_light_and_a_reached_one_is_judged(
     keep_the_answering_programs(&programs);
     std::fs::write(
         programs.join("beacon.json"),
-        serde_json::to_string_pretty(&leafy_beacon()).unwrap(),
+        delvewright_dsl::to_canonical_string(&leafy_beacon()).unwrap(),
     )
     .unwrap();
     let detail_into = |prefabs: &Path| {
@@ -1542,7 +1569,7 @@ fn the_audit_judges_a_scenery_piece_as_its_writer_did_and_no_piece_vouches_for_i
     keep_the_answering_programs(&programs);
     std::fs::write(
         programs.join("beacon.json"),
-        serde_json::to_string_pretty(&leafy_beacon()).unwrap(),
+        delvewright_dsl::to_canonical_string(&leafy_beacon()).unwrap(),
     )
     .unwrap();
     let prefabs = tmp.join("prefabs");
@@ -1759,7 +1786,8 @@ fn open_side_fixture(root: &Path, open: bool) -> (PathBuf, PathBuf, Allocation) 
         if open {
             let boxes = v["content"]["boxes"].as_array_mut().unwrap();
             let exit = boxes.iter_mut().find(|b| b["node"] == "node/exit").unwrap();
-            exit["sides"] = json!({"south": "open"});
+            exit["sides"] =
+                json!({"south": "open", "east": "wall", "west": "wall", "north": "wall"});
         }
     });
     // The exit's reach objective takes radius 1: with the commons now walked,
@@ -1921,4 +1949,35 @@ fn the_gallery_hands_the_yards_and_the_causeways_open_sides() {
             assert_eq!((lo[1], hi[1], s.walk_y), (a.datum_y, a.datum_y, a.datum_y));
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// spec-0125 — a plot's parts are handed, bound and judged
+// ---------------------------------------------------------------------------
+
+/// **spec-0125 criterion 7**: `delvec detail` hands the court its three
+/// declared parts and the annex none — the node's `holds[]`, read from the
+/// graph.
+#[test]
+fn the_gallery_hands_the_courts_parts_and_none_to_the_annex() {
+    let tmp = tempdir("gallery-parts");
+    let dir = gallery_site_plan(&tmp);
+    let c = common::campaign_at(&dir);
+    let exit = NodeId("node/exit".into());
+    let handed = delvec::compiler::plot::handed_parts(&c, &exit);
+    let declared = c
+        .layout_graph
+        .as_ref()
+        .unwrap()
+        .content
+        .nodes
+        .iter()
+        .find(|n| n.id == exit)
+        .unwrap()
+        .holds
+        .clone();
+    assert_eq!(handed, declared);
+    let ids: Vec<&str> = handed.iter().map(|p| p.id.0.as_str()).collect();
+    assert_eq!(ids, ["part/court", "part/well-house", "part/bed"]);
+    assert!(delvec::compiler::plot::handed_parts(&c, &NodeId("node/annex".into())).is_empty());
 }

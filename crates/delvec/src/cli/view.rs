@@ -52,6 +52,13 @@ pub(crate) struct FramesCampaignArgs<'a> {
     pub(crate) out: Option<&'a Path>,
     pub(crate) labels: bool,
     pub(crate) size: u32,
+    /// `--served`: draw what the client draws from the camera, not every
+    /// loaded chunk.
+    pub(crate) served: bool,
+    /// `--program <place>`: that place drawn from its program as it stands.
+    pub(crate) program: Option<&'a str>,
+    /// `--frame <place>`: `--camera`'s position read in that place's frame.
+    pub(crate) frame: Option<&'a str>,
     pub(crate) draw: &'a delvec::compiler::view::cli::DrawArgs,
 }
 
@@ -80,6 +87,17 @@ pub(crate) fn run_frames_campaign(
         Ok(v) => v,
         Err(code) => return ExitCode::from(code),
     };
+    // `--program`: the place's piece made from its program in memory, standing
+    // in for the committed one (or for its stand-in) in the whole drawn.
+    let (campaign, prefabs, overlay) = match args.program {
+        Some(place) => {
+            match crate::detail::look_overlay(campaign_dir, &campaign, &prefabs, place, json) {
+                Ok(v) => v,
+                Err(code) => return ExitCode::from(code),
+            }
+        }
+        None => (campaign, prefabs, BTreeMap::new()),
+    };
     let plan = match Plan::build(&campaign, &prefabs) {
         Ok(p) => p,
         Err(e) => {
@@ -89,7 +107,13 @@ pub(crate) fn run_frames_campaign(
         }
     };
     print_diags(&plan.warnings.clone(), json);
-    let structures = match read_structures(&plan, &prefabs, prefabs_dir, json) {
+    let structures = match crate::cli::campaign::read_structures_over(
+        &plan,
+        &prefabs,
+        prefabs_dir,
+        &overlay,
+        json,
+    ) {
         Ok(s) => s,
         Err(code) => return ExitCode::from(code),
     };
@@ -101,7 +125,25 @@ pub(crate) fn run_frames_campaign(
     let base = camera_base(&plan, &assembled, &relight);
     let load = delvec::compiler::view::beat::load_blocks(&plan, &world, &base);
     let grid = framing::VoxelGrid::build(&load);
-    let cam = match resolve_camera(&plan, &grid, &args) {
+    // `--frame`: the low corner of the place's frame in the world, the
+    // origin `--camera`'s position is read from (`delvec allocation`'s
+    // `world_min`, the same answer).
+    let origin = match args.frame {
+        None => None,
+        Some(place) => {
+            let node = delvewright_dsl::NodeId(place.to_string());
+            match delvec::compiler::detail::allocation(&campaign, &node) {
+                Some(a) => Some(a.world_min),
+                None => {
+                    eprintln!(
+                        "error: --frame `{place}`: the plan allocates no box to that place, so it has no frame"
+                    );
+                    return ExitCode::from(1);
+                }
+            }
+        }
+    };
+    let cam = match resolve_camera(&plan, &grid, &args, origin) {
         Ok(c) => c,
         Err(msg) => {
             eprintln!("error: {msg}");
@@ -161,6 +203,9 @@ pub(crate) fn run_frames_campaign(
             backend: args.draw.backend,
             width: args.size,
             height: args.size,
+            served: args
+                .served
+                .then(|| delvewright_dsl::viewdistance::chunks(&campaign)),
         },
         args.draw.threads,
     ) {
@@ -356,7 +401,12 @@ pub(crate) fn camera_world(
     delvec::compiler::nav::World,
     delvec::compiler::light::Relight,
 ) {
-    delvec::compiler::light::final_world(plan, assembled)
+    // The build's own cut: the proofs a view's world answers read the judged
+    // columns ([`delvec::compiler::assembled::Assembled::judged_within`]); the
+    // picture ([`camera_base`]) is the whole world.
+    let judged = delvec::compiler::emit::judged_columns(plan)
+        .and_then(|(lo, hi)| assembled.judged_within(lo, hi));
+    delvec::compiler::light::final_world(plan, judged.as_ref().map_or(assembled, |(a, _)| a))
 }
 
 /// See [`camera_world`]: the picture base over the relight `relight` placed.
@@ -415,30 +465,53 @@ fn resolve_camera(
     plan: &Plan,
     grid: &delvec::compiler::framing::VoxelGrid,
     args: &FramesCampaignArgs<'_>,
+    origin: Option<[i64; 3]>,
 ) -> Result<delvec::compiler::framing::Camera, String> {
     use delvec::compiler::framing::{Camera, DEFAULT_FOV, DEFAULT_ORBIT_DIST};
 
     if let Some(spec) = args.camera {
-        let parts: Vec<&str> = spec.split(',').map(str::trim).collect();
-        if parts.len() < 5 || parts.len() > 6 {
-            return Err(format!(
-                "--camera wants `x,y,z,yaw,pitch[,fov]` (got {} field(s) in `{spec}`)",
-                parts.len()
-            ));
+        let cam = parse_camera(spec, origin)?;
+        if let (Some(place), Some(o)) = (args.frame, origin) {
+            eprintln!(
+                "camera: `{spec}` read in `{place}`'s frame (its low corner at world {},{},{}) \
+                 stands at world {},{},{}",
+                o[0], o[1], o[2], cam.pos[0], cam.pos[1], cam.pos[2]
+            );
         }
-        let mut n = [0f64; 6];
-        n[5] = DEFAULT_FOV;
-        for (i, p) in parts.iter().enumerate() {
-            n[i] = p
-                .parse()
-                .map_err(|_| format!("--camera field {} (`{p}`) is not a number", i + 1))?;
-        }
-        return Ok(Camera {
-            pos: [n[0], n[1], n[2]],
-            yaw: n[3],
-            pitch: n[4],
-            fov: n[5],
-        });
+        return Ok(cam);
+    }
+
+    if let Some(subject) = args.at.filter(|s| s.starts_with("node/")) {
+        // A place: its play space framed whole from outside, standing on
+        // bearing `orbit` far enough off that the box fills the frame — never
+        // pulled into open air toward it, which would stand the camera inside
+        // the building the author asked to see from the street.
+        let b = plan
+            .blockout
+            .as_ref()
+            .and_then(|b| b.boxes.iter().find(|x| x.node.0 == subject))
+            .ok_or_else(|| format!("--at `{subject}`: the plan allocates no box to that place"))?;
+        let (lo, hi) = b.space();
+        let centre = [
+            (lo[0] + hi[0] + 1) as f64 / 2.0,
+            (lo[1] + hi[1] + 1) as f64 / 2.0,
+            (lo[2] + hi[2] + 1) as f64 / 2.0,
+        ];
+        let radius = (0..3)
+            .map(|i| ((hi[i] - lo[i] + 1) as f64 / 2.0).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        let fit = radius / (DEFAULT_FOV.to_radians() / 2.0).tan();
+        let dist = args.dist.unwrap_or(fit * 1.1);
+        let b = args.orbit.to_radians();
+        // Raised to look down on it at about thirty degrees, so its roof,
+        // its yard and the street before it are all in the frame.
+        let eye = [
+            centre[0] - b.sin() * dist * 0.87,
+            centre[1] + dist * 0.5,
+            centre[2] + b.cos() * dist * 0.87,
+        ];
+        return Ok(Camera::looking_at(eye, centre, DEFAULT_FOV));
     }
 
     if let Some(subject) = args.at {
@@ -487,6 +560,37 @@ fn resolve_camera(
         centre[2] + d * 0.75,
     ];
     Ok(Camera::looking_at(eye, centre, DEFAULT_FOV))
+}
+
+/// `--camera x,y,z,yaw,pitch[,fov]`, its position read from `origin` (a
+/// place's frame, `--frame`) where one is given and in world coordinates
+/// otherwise.
+fn parse_camera(
+    spec: &str,
+    origin: Option<[i64; 3]>,
+) -> Result<delvec::compiler::framing::Camera, String> {
+    use delvec::compiler::framing::{Camera, DEFAULT_FOV};
+    let parts: Vec<&str> = spec.split(',').map(str::trim).collect();
+    if parts.len() < 5 || parts.len() > 6 {
+        return Err(format!(
+            "--camera wants `x,y,z,yaw,pitch[,fov]` (got {} field(s) in `{spec}`)",
+            parts.len()
+        ));
+    }
+    let mut n = [0f64; 6];
+    n[5] = DEFAULT_FOV;
+    for (i, p) in parts.iter().enumerate() {
+        n[i] = p
+            .parse()
+            .map_err(|_| format!("--camera field {} (`{p}`) is not a number", i + 1))?;
+    }
+    let o = origin.map_or([0.0; 3], |o| o.map(|v| v as f64));
+    Ok(Camera {
+        pos: [n[0] + o[0], n[1] + o[1], n[2] + o[2]],
+        yaw: n[3],
+        pitch: n[4],
+        fov: n[5],
+    })
 }
 
 /// The farthest point on the segment `subject → eye` that stands in open air with

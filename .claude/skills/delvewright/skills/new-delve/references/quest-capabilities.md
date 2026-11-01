@@ -78,6 +78,17 @@ this section is what they are *for* and the traps in each.
   holds something or does something. Never hide a needed item among decoration
   — a key in one barrel of ten costs the player the other nine. A trapped chest
   among real loot is fine, because every container there pays off.
+- **A sign says what the campaign writes on it.** A `signs[]` entry (`{id,
+  anchor, front, back?}`) gives words to a sign the piece already placed — a
+  standing, wall, hanging or wall-hanging sign of any wood — one to four lines
+  on the front and up to four on the back, top to bottom (`""` is a blank
+  line); every line is translated like any other player-facing string. The
+  anchor names the sign's own cell: a station of the place (`kind: point`),
+  marked by the generator at the sign's course (`Model.mark(stem, x, z,
+  y=<course>)`). The build refuses a cell with no sign, two entries on one
+  sign, and a line wider than the board in any declared language: 90 font px
+  on a standing or wall sign (about 15 Latin or 10 Han characters), 60 on a
+  hanging one (about 10 or 6) (`DW1075`).
 - **Put an item where the scene would hold it,** and use a chest only where a
   chest belongs: the furniture the piece already places — a barrel in a
   fishmonger's, a chest at the foot of a bed — is the container the fill

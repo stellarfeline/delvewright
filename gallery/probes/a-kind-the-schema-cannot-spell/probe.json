@@ -1,0 +1,14 @@
+{
+  "code": "DW0100",
+  "patch": [
+    {
+      "doc": "layout-graph.json",
+      "op": "replace",
+      "path": "/content/nodes/5/holds/0/kind",
+      "value": "yard"
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The court's part declared `\"kind\": \"yard\"`. A part's kind is the mechanism — `structure` or `ground` — and never its use: the schema spells no third word, so the document is refused at the schema tier. It declares no unit: `Part.kind` is bound on the site-plan point."
+}

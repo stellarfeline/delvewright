@@ -75,6 +75,7 @@ mod quest;
 mod sea;
 mod seal;
 mod shortcut;
+mod sign;
 mod state;
 mod stealth;
 mod surround;
@@ -101,6 +102,7 @@ pub use quest::*;
 pub use sea::*;
 pub use seal::*;
 pub use shortcut::*;
+pub use sign::*;
 pub use state::*;
 pub use stealth::*;
 pub use surround::*;
@@ -228,6 +230,8 @@ pub struct Plan<'a> {
     /// Resolved `collect` container adoptions (DSL v0.8), campaign-
     /// ordered. Empty for a campaign whose collects keep the compiler's chest.
     pub collect_fills: Vec<CollectFillPlan>,
+    /// Resolved sign texts (spec-0128 §8), declaration-ordered.
+    pub signs: Vec<SignPlan>,
     /// Resolved ambushes (spec-0016 §3), declaration-ordered.
     pub ambushes: Vec<AmbushPlan>,
     /// Resolved timed gates (spec-0016 §4), declaration-ordered.
@@ -1051,6 +1055,9 @@ impl<'a> Plan<'a> {
         // ---- container fills (spec-0021) ----
         let loot = collect_loot(campaign, &anchors);
 
+        // ---- sign texts (spec-0128 §8) ----
+        let signs = collect_signs(campaign, &anchors);
+
         // ---- lethal volumes (spec-0031) ----
         let lethal_volumes = collect_lethal_volumes(campaign, &anchors);
 
@@ -1293,6 +1300,7 @@ impl<'a> Plan<'a> {
             shortcuts,
             loot,
             collect_fills,
+            signs,
             ambushes,
             timed_gates,
             seal_hints,

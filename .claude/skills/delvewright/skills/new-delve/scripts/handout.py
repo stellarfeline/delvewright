@@ -7,8 +7,9 @@ derived here from the campaign on every invocation and typed by nobody: the
 place's own allocation as `delvec allocation` prints it, that place's rows of
 the campaign's design, a summary of every adjacent box drawn from the
 neighbours' design rows and the seam forms, the wave bound `delvec allocation
---all` states, and — on a repair — the refusal `delvec detail --check` gives
-the program the last agent left.
+--all` states, the blocks the place may write as `delvec grammar blocks` lists
+them (saved beside the handout as `blocks.json`), and — on a repair — the
+refusal `delvec detail --check` gives the program the last agent left.
 
     "$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/handout.py" <campaign-dir> <place> \\
         --engine "$DELVEWRIGHT_ENGINE" --prefabs "$DELVEWRIGHT_PREFABS"
@@ -22,8 +23,9 @@ WHAT IT REFUSES, SO A MISTAKE IS AN ERROR WHERE IT IS ENTERED
 - a place whose program ALREADY passes `delvec detail --check` (exit 3):
   there is nothing to author, and a handout would send an agent to rewrite a
   program nobody refused — the orchestrator commits it with `delvec detail`;
-- a `delvec` whose `allocation --all` states no concurrency line (exit 2): the
-  wave bound is the engine's to state, never this tool's to assume;
+- a `delvec` whose `allocation --all` states no concurrency line, or that has
+  no `grammar blocks` (exit 2): the wave bound and the block lists are the
+  engine's to state, never this tool's to assume;
 - an engine tree or a prefab directory that is not there (exit 2).
 
 The refusal a repair hands on is never passed in by hand: when the place has a
@@ -71,9 +73,25 @@ ENGINE_REFERENCES = (
     ("docs/reference/prefab-procedure.md", "the procedure a piece is made by; §3 the program, §4 the gates, §5 looking at it"),
 )
 
+# What each step of the loop costs, measured with `/usr/bin/time -l` on a
+# 16 GB Apple M2 Pro with `delvec` 1.15.0 built at engine `c965e9f38`, on a
+# 95-place town (content `demo/fresh-proof-2`): the place's own steps are
+# seconds; the two that assemble the whole scale with it. Stated where the
+# handout tells the author to loop, so the expensive check is run when the
+# cheap steps are clean, not after every edit.
+COST = {
+    "generator": "about 1.5 s",
+    "expand": "about 2.5 s and 0.4 GB",
+    "render": "about 2 s and 0.4 GB",
+    "frames": "about 3 min and 11 GB",
+    "check": "12 to 13 min, peaking at 18.8 GB",
+}
+COST_INSTRUMENT = "measured on a 16 GB machine over a 95-place town; the last two grow with the whole"
+
 # The starter generator copied beside every handout (spec-0122 §6.3): an
 # empty-but-correct program for any allocation, so an author starts from a
-# program that already passes `detail --check` rather than from research.
+# program that already passes every judgement `detail --check` makes of the
+# place itself, rather than from research.
 STARTER = SKILL_ROOT / "scripts" / "starter.py"
 
 
@@ -103,6 +121,30 @@ STYLE_PARAGRAPH = (
 FRAME_SENTENCE = (
     "your open side stands no wall; build the frame the wall would have been one cell inside the ring, "
     "and stand what you open there in it"
+)
+# The plot section (spec-0125 §6.1): fixed text, the shapes from
+# `docs/reference/place-craft.md` §8.5 step 5.
+PLOT_RULING = (
+    "this place is a plot: it holds the parts below and the ground between them; "
+    "build them in any outline, inside the frame"
+)
+PLOT_BINDING = (
+    "Name each part on the contract spaces and out-of-walk regions that are it, with `part`; "
+    "every part is named; a walked part has a cell the body reaches; "
+    "a part's claimed columns stay inside the band each part line states "
+    "(three quarters to five quarters of its declared cells, as `delvec allocation` hands it); "
+    "the starter prints each part's claimed columns against its band, and `detail --check` prints "
+    "`part sizes:`."
+)
+PLOT_SHAPES = (
+    "the entry side is the front",
+    "an outbuilding stands behind or beside, one cell off",
+    "a yard is enclosed by the structure it serves",
+    "a precinct is a sequence from the gate",
+)
+PLOT_FRAME = (
+    "The box is sky-open, and the roof of every structure in it is yours, "
+    "within the stated courses of air."
 )
 IDEAS_ONLY = "Looked at, never copied: an unlicensed or non-commercial source is ideas only."
 
@@ -341,6 +383,11 @@ def neighbour_summary(
         if node.get("reached") is False:
             what += " — scenery, never entered"
         out.append(f"- what it is: {what}")
+        if (theirs or {}).get("parts"):
+            out.append(
+                "- it is a plot holding: "
+                + "; ".join(f"{p.get('use', '')} ({p.get('kind')})" for p in theirs["parts"])
+            )
         floor = f"its walk plane is {relative_plane(mine_y, nb['floor'])} (world y {nb['floor']})"
         if theirs:
             floor += f"; its frame is {theirs['extent'][0]}×{theirs['extent'][1]}×{theirs['extent'][2]}"
@@ -435,6 +482,69 @@ def place_section(
     return out, len(refs)
 
 
+def plot_section(place: str, a: dict, plan: dict) -> tuple[list[str], int]:
+    """*What this plot holds* (spec-0125 §6.1): the allocation's `parts`, the
+    same derivation the starter lays and `delvec detail` binds."""
+    holds = a.get("parts", []) or []
+    if not holds:
+        return [], 0
+    box = next((x for x in plan.get("boxes", []) if x.get("node") == place), None) or {}
+    ext = box.get("extent", [0, 0])
+    area = ext[0] * ext[1] if len(ext) == 2 else 0
+    out = [f"{PLOT_RULING[0].upper() + PLOT_RULING[1:]}.", ""]
+    out.append(f"{len(holds)} part(s) over {area} cell(s) of play space:")
+    out.append("")
+    bands = {b.get("part"): b for b in a.get("bands", []) or []}
+    for p in holds:
+        share = f"{100 * p.get('cells', 0) / area:.0f} %" if area else "—"
+        line = (
+            f"- `{p.get('id')}` — {p.get('kind')}: {p.get('use', '')}; "
+            f"{p.get('cells')} cell(s), {share} of the play space"
+        )
+        if p.get("height") is not None:
+            line += f"; height {p['height']} course(s) to the ridge"
+        line += "; " + ("walked" if p.get("reached", True) else "seen, never entered")
+        b = bands.get(p.get("id"))
+        if b is not None:
+            line += f"; its spaces and regions claim {b['min']} to {b['max']} column(s) (DW1074)"
+        out.append(line)
+    out.append("")
+    out.append(PLOT_BINDING)
+    out.append("")
+    out.append("Where the parts stand, as the community arranges a holding:")
+    for s in PLOT_SHAPES:
+        out.append(f"- {s};")
+    return out, len(holds)
+
+
+def generator_path(campaign_dir: pathlib.Path, stem: str) -> pathlib.Path:
+    """Where this place's generator is written: the campaign's own generator
+    for the place where one exists under `design/generator/` (the first, in
+    path order, named `<stem>.py`), else `design/generator/<stem>.py`."""
+    root = campaign_dir / "design" / "generator"
+    found = sorted(root.rglob(f"{stem}.py")) if root.is_dir() else []
+    return found[0] if found else root / f"{stem}.py"
+
+
+def container_stance(quests: dict, owed: set) -> list[str]:
+    """Whether this campaign's decoration notice covers a scenery container
+    the author stands, and which of this place's owed names a `loot` entry
+    fills — a container that matters, beside which scenery is refused."""
+    notice = (quests.get("containers") or {}).get("decoration_notice")
+    filled = sorted(str(l.get("anchor")) for l in quests.get("loot", []) or [] if l.get("anchor") in owed)
+    out = []
+    if notice:
+        text = notice.get("text", "") if isinstance(notice, dict) else ""
+        out.append(f"**This campaign declares its decoration notice** — players are told “{text}” — so a barrel, a crate or a cupboard no loot claims is scenery it covers: stand them as furniture where the trade wants them.")
+    else:
+        out.append("**This campaign declares no decoration notice**, so every container you build must be claimed by a loot entry, a collect or a device: build none as furniture (`DW1018` refuses it), and show the trade with other blocks.")
+    if filled:
+        out.append(f"This place holds containers that matter — a `loot` entry fills {', '.join(f'`{a}`' for a in filled)} — so no scenery container may stand in it (`DW1024`).")
+    elif notice:
+        out.append("No `loot` entry fills an owed name of this place, so scenery does not mix with a container that matters here.")
+    return out
+
+
 def render(
     *,
     campaign_dir: pathlib.Path,
@@ -455,6 +565,8 @@ def render(
     from_commit: bool,
     starter: pathlib.Path,
     allocation_file: pathlib.Path,
+    blocks: dict,
+    blocks_file: pathlib.Path,
 ) -> tuple[str, dict[str, int]]:
     stem = stem_of(place)
     world = content(docs.get("world"))
@@ -467,6 +579,7 @@ def render(
     rows, n_rows = design_rows(place, a, graph, plan, brief, quests, design, owed)
     nbs, n_nbs = neighbour_summary(a, all_allocations, graph, plan, detailed)
     what, n_refs = place_section(place, graph, plan, campaign_dir)
+    plot, n_parts = plot_section(place, a, plan)
     ex, ey, ez = a["extent"]
     work = handout_path.parent / "work"
     delvec_p = f'"{delvec}" --prefabs "{prefabs}"'
@@ -482,25 +595,29 @@ def render(
     w("")
     w(f"Places are authored concurrently, up to the bound the engine states — `{concurrency}` — and committed one at a time by the orchestrating session. **Which neighbours are detailed is as of this handout**: your check reads the whole as it stands on disk when the check runs, so a neighbour may have landed since this file was written, and a check that passed may be answered differently once it has.")
     w("")
-    generator = campaign_dir / "design" / "generator" / f"{stem}.py"
-    w("## Step 1: start from the starter")
+    generator = generator_path(campaign_dir, stem)
+    w("## The steps, in the order you need them — each names its tool and what it costs")
     w("")
-    w(f"Beside this handout stand `{starter}` — a ready-to-run generator for this place — and `{allocation_file}`, this place's allocation as `delvec allocation` prints it. The starter reads every handed value from the allocation (datum, ground, each seam's cells and rise, the roof, the owed names) and emits an empty-but-correct program: the floor, the ring wall, the lid where the place is roofed, every seam's opening answered, every owed name marked, sconces for the light probe. **It passes `detail --check` as it stands.** So:")
+    w(f"Beside this handout stand `{starter}` — a ready-to-run generator for this place — and `{allocation_file}`, this place's allocation as `delvec allocation` prints it. The starter reads every handed value from the allocation (datum, ground, each seam's cells and rise, the roof, the owed names, the parts) and emits an empty-but-correct program: the floor, the ring wall, the lid where the place is roofed, every seam's opening answered, every owed name marked, sconces for the light probe. **It passes every judgement `detail --check` makes of the place itself as it stands** — its gates, the bindings, the leak proof, its declared faces; the commit's battery, which `--check` runs too, may still name what the whole's story asks of this place and an empty place does not yet hold (a pressable a station names, a vista through it), and that is yours to build.")
     w("")
-    w(f"1. Copy it to `{generator}` and run it: `\"$DELVEWRIGHT_PYTHON\" \"{generator}\" --allocation \"{allocation_file}\" --out \"{program}\"`.")
-    w(f"2. Check it — `{delvec_p} detail --check \"{campaign_dir}\" {place}` — and see it green before you build anything.")
-    w("3. Build the place at the points marked `# ── BUILD HERE` in your copy, each of which names the idiom (the grammar reference's §2c) and the step of the *new pieces* reference it reaches for; re-run the generator and check after every edit.")
+    w(f"Costs are {COST_INSTRUMENT}. Steps 1 to 4 are seconds: run them after every edit. Steps 5 and 6 assemble the whole: run them when the cheap steps are clean, never as the edit loop.")
+    w("")
+    w(f"1. **Start** — `starter.py`, {COST['generator']}: `\"$DELVEWRIGHT_PYTHON\" \"{starter}\" --allocation \"{allocation_file}\" --out \"{program}\"`. You may check the bare program at once (step 6's cost) to see what the whole already asks of this place before you draw; it is not needed to start.")
+    w(f"2. **Measure the palette, never guess it** — `block-appearance.py`, seconds: `python3 \"{engine / 'tools' / 'creator' / 'block-appearance.py'}\" --screen …` / `--mix …` / `--sheet` (the *new pieces* reference, step 2), before you choose a block. It needs the pinned client jar at `~/.delvewright/client/minecraft-1.21.11.jar` and says so by name when it is absent, in which case take role names from the corpus and record where each came from in your return.")
+    w(f"3. **Draw** — your generator, {COST['generator']}: write it at `{generator}`; it imports the starter from `$DELVEWRIGHT_SKILL/scripts` (never a copy) and draws the place into a `Model` — every building, yard and piece of life as cells in piece-local coordinates, each part's columns named with `Model.part`, an owed name stood with `Model.mark` where you want it (the starter stands any you leave). The starter's section *A building drawn as cells* is the template. Run it as step 1, adding `--delvec \"{delvec}\"` — **a drawn model needs a `delvec` binary on the machine that runs the generator**, because `run` asks it what the drawing does and refuses before writing when it cannot: the starter asks the engine (`delvec grammar survey`) where a body stands and what it reaches from your ways in, and claims every cell from the answer — the floor a body reaches into the part it stands in, the floor no body reaches (a roof, a wall head, a sill) and the air sealed over it as `unwalked`, a walk edge between two parts only where a body crosses (with its `rise` where their floors differ), a part none of whose floor a body reaches declared seen and never entered. **You never claim a cell or write an edge by hand.** Before it writes anything it refuses, naming the block and the cell, every block the server would drop (a lantern hung under a slab, a flower off soil), every block the palette refuses (the list below), a block state the pinned game does not have or one that leaves a property out — build states with its constructors (`stairs`, `slab`, `door`, `trapdoor`, `fence`, …) and roofs with `Model.roof` — and an opening with something standing behind it. It prints each part's claimed columns against the band `DW1074` judges, and every column you named for a part that the claim leaves out, with why: a part out of band is seen here, before the check.")
+    w(f"4. **Look at the piece alone** — `grammar expand`, {COST['expand']}, then `render piece`, {COST['render']}: `{delvec_p} grammar expand --file \"{program}\" --region {ex}x{ey}x{ez} -o \"{work}/expand\"` (your `handed/…` defaults are the handed values, so no `--param` is needed; the piece's files are named for the program's filename up to its first `.`, so a working copy `{stem}.json.new` writes `{stem}.nbt`, and `--id` names them otherwise), then `{delvec_p} render piece \"{work}/expand/{stem}.nbt\" -o \"{work}/render\"` with a `--view` of your own — `face=up,cutaway=<y>` takes every course from piece-local `y` up off, so `cutaway={a['datum_y'] + 3}` shows the rooms under a roof; `cutaway=true` takes off only the top course that holds a block. **A `face=up` picture has south at its top and west at its right** (the camera looks straight down facing south), so east is on its left.")
+    w(f"5. **Look at it in its surroundings** — `frames --campaign`, {COST['frames']}: `\"{delvec}\" --prefabs \"{prefabs}\" frames --campaign \"{campaign_dir}\" --program {place} --at {place} -o \"{work}/look/{stem}.png\"` draws your program as it stands in place of the committed piece, committed or not and its gates passing or not, the camera outside the place's box on bearing `--orbit` — degrees, 0 standing due south of the place looking north, 90 due west looking east, 180 due north, 270 due east: the bearing turns clockwise seen from above — looking at it whole with its neighbours. To stand the camera yourself, give `--camera x,y,z,yaw,pitch[,fov]` with `--frame <place>`: x, y and z are then read in that place's own frame — this place's piece-local coordinates (`--frame {place}`), or a neighbour's, whose frame `\"{delvec}\" allocation \"{campaign_dir}\" <neighbour>` prints — never world arithmetic; yaw 0 faces south (+z), 90 west, 180 north, 270 east, and a positive pitch looks down.")
+    w(f"6. **Check** — `detail --check`, {COST['check']}: `{delvec_p} detail --check \"{campaign_dir}\" {place}`, the one verb that judges a place. Run it when steps 3 to 5 are clean, and again after you repair what it named. Exit 0 is your finished state.")
     w("")
     w("**Nothing outside this handout's reading list is needed, and nothing outside it is read**: not the engine's source, not the engine's gallery, not another campaign. Everything the starter does not already do is in the references listed below.")
     w("")
     w("## What you may do, and what you may not")
     w("")
-    w(f"- **Write** exactly one document: `{program}` (and, if you emit it from a script, that script beside it under `{campaign_dir / 'design' / 'generator'}` — the JSON is the artifact of record). Create the `{PROGRAMS_DIR}/` directory if it is absent.")
+    w(f"- **Write** exactly one document: `{program}` (and your generator at `{generator}` — the JSON is the artifact of record). Create the `{PROGRAMS_DIR}/` directory if it is absent.")
     w(f"- **Read**: this handout; your own program; the authoring references below; the engine's grammar corpus through `\"{delvec}\" grammar list` and `{delvec_p} grammar show --program <id>`.")
     w(f"- **Ask the tool again whenever you want it**: `\"{delvec}\" allocation \"{campaign_dir}\" {place}` prints the same allocation this handout carries; type nothing from it anywhere — your program reads every handed value through a `handed/…` parameter (below).")
-    w(f"- **Check** with the one verb that judges a place: `{delvec_p} detail --check \"{campaign_dir}\" {place}`. It binds the handing into your program, expands it at the frame, voids every cell you do not own, runs every gate of the place and the bindings check over the whole as committed, and refuses with the cause named; it **writes nothing**. Run it as often as you like. Exit 0 says your program would commit against the whole as it stands now — that is your finished state. The commit, `delvec detail` without `--check`, is the orchestrating session's, never yours.")
-    w(f"- **Look** with `{delvec_p} grammar expand --file \"{program}\" --region {ex}x{ey}x{ez} -o \"{work}/expand\"` (your `handed/…` defaults are the handed values, so no `--param` is needed) and the render commands the *new pieces* reference names. Scratch goes under `{work}/`, never `/tmp`.")
-    w(f"- **Measure the palette, never guess it**: `python3 \"{engine / 'tools' / 'creator' / 'block-appearance.py'}\" --screen …` / `--mix …` / `--sheet` is yours to run (the *new pieces* reference, step 2); it needs the pinned client jar at `~/.delvewright/client/minecraft-1.21.11.jar` and says so by name when it is absent, in which case take role names from the corpus and record where each came from in your return.")
+    w(f"- **What the check does** (step 6): `{delvec_p} detail --check \"{campaign_dir}\" {place}` binds the handing into your program, expands it at the frame, voids every cell you do not own, runs every gate of the place and the bindings check over the whole as committed, then writes the commit into a scratch copy of the campaign and runs the commit's own battery over the whole it would leave, and refuses with the cause named — every refusal the commit can give, it gives; it **writes nothing** to the campaign or the library. Exit 0 says your program would commit against the whole as it stands now. The commit, `delvec detail` without `--check`, is the orchestrating session's, never yours.")
+    w(f"- Scratch goes under `{work}/`, never `/tmp`.")
     w("- **The engine's operating half is absent here, and binds you in nothing**: the engine constitution names a `CLAUDE.local.md` beside it; on a creator's machine that file does not exist, and nothing in it governs a place program. Do not stop on its absence and do not ask about it.")
     w("- **Never**: read another place's program, the design record (`DESIGN.md`, `GENERATION.md`, `design.json`, `design/`), the site plan, the layout graph, the quest documents or another handout — what you need of them is quoted here, and the rest is the whole's; edit any document but your program; run `delvec detail` without `--check`, `delvec detail --all`, `delvec build`, a server, or `git`; retype a handed number as a literal; weaken a check or reroll a seed to get green.")
     w("- **A capability you need and the grammar lacks** is reported in your return in one sentence, with the closest thing you could build; it is never faked with adjacent constructs.")
@@ -512,6 +629,19 @@ def render(
     for rel, gloss in ENGINE_REFERENCES:
         w(f"- `{engine / rel}` — {gloss}")
     w(f"- `{starter}` — your starting program's generator, and the shape every generator takes")
+    w("")
+    refused = blocks.get("refused", [])
+    w(f"## The blocks you may write ({len(blocks.get('admitted', []))} admitted, {len(refused)} refused)")
+    w("")
+    w(f"`{blocks_file}` is `delvec grammar blocks`, saved: every block of the pinned game the palette admits, every one it refuses, and every one the holder census counts as a container. The palette admits every block of the game **except** these {len(refused)}, which `detail --check` refuses (`DW0730`) and your generator refuses before it writes: " + ", ".join(f"`{r['block'].removeprefix('minecraft:')}`" for r in refused) + ".")
+    for r in refused:
+        if r.get("route"):
+            w(f"- `{r['block']}` is had another way: {r['route']}")
+    containers = blocks.get("containers", [])
+    w("")
+    w(f"**Containers** ({len(containers)}): " + ", ".join(f"`{c.removeprefix('minecraft:')}`" for c in containers) + ". Each one you build is a holder the census counts: one no loot, collect or device claims is scenery, and scenery is allowed only where the campaign declares its decoration notice (`DW1018`); a place may not mix scenery containers with ones that matter (`DW1024`).")
+    w("")
+    lines.extend(container_stance(quests, owed))
     w("")
     w("The *detail* reference's section *The program's contract* is the contract your program has to meet: every handed value used is declared as a parameter under the `handed/` prefix with the allocation's value as its default (`handed/datum-y`; `handed/ground/{min-y,max-y,bottom-y}`; `handed/roof/…` on a declared roof; `handed/seam/<edge stem>/{x0,y0,z0,x1,y1,z1,rise}`); every seam is answered with an opening at the handed cells and a contract edge to `exterior` whose `via` is that opening; every owed name is answered with a `mark` of that stem; a bar this place owns is a `barred` contract edge over exactly the bar's cells, its region named by the seam's stem; the piece is EXACTLY the frame's shape. `delvec detail --check` names every handed name it offers when your program asks for one it does not (`DW0882`).")
     w("")
@@ -529,6 +659,11 @@ def render(
     w("")
     lines.extend(what)
     w("")
+    if plot:
+        w("## What this plot holds")
+        w("")
+        lines.extend(plot)
+        w("")
     w(f"## This place's rows of the design ({n_rows})")
     w("")
     lines.extend(rows or ["- (no row of any document names this place beyond its box)"])
@@ -536,9 +671,9 @@ def render(
     w("## The frame, read before anything is drawn")
     w("")
     w(f"- extent **{ex}×{ey}×{ez}** (x×y×z): the piece must be exactly this size — undersize is refused as oversize is (`DW0843`).")
-    w(f"- datum (walk plane, piece-local y) **{a['datum_y']}**; play space {cells(a['space'])}; the frame stands in the world at {a['world_min']}.")
+    w(f"- datum **{a['datum_y']}**: the walk plane, the course a body stands in (`place.datum.value`), piece-local y; play space {cells(a['space'])}; the frame stands in the world at {a['world_min']}.")
     g = a.get("ground", {})
-    w(f"- ground: fill {q(g.get('fill'))}, base {json.dumps(g.get('base'))}; the claim's bottom is piece-local y {g.get('bottom_y')}, the floor course y {g.get('floor_y')}; terrain along the ring from y {g.get('min_y')} to {g.get('max_y')}; {len(g.get('fixed', []))} ring cell(s) the whole has fixed; {len(g.get('columns', []))} ground column(s) under the plot. A ground place draws its own ground down to the terrain; an aloft one (`base: {{\"aloft\": n}}`) is handed none.")
+    w(f"- ground: fill {q(g.get('fill'))}, base {json.dumps(g.get('base'))}; piece-local y runs up from the claim's bottom at y {g.get('bottom_y')}, and the ground course — the floor a body stands on — is y {a['datum_y'] - 1}, one under the walk plane; terrain along the ring from y {g.get('min_y')} to {g.get('max_y')}; {len(g.get('fixed', []))} ring cell(s) the whole has fixed; {len(g.get('columns', []))} ground column(s) under the plot. A ground place draws its own ground down to the terrain; an aloft one (`base: {{\"aloft\": n}}`) is handed none.")
     roof = a.get("roof")
     if roof:
         w(f"- roof: **declared** — {roof['courses']} course(s), {roof['eaves']} cell(s) of eaves, lid at y {roof['lid_y']}, top at y {roof['top_y']}. **Read `roof.clipped`**: {len(roof.get('clipped', []))} eave run(s) the plan clipped at a neighbour's play space" + (": " + "; ".join(f"{cells(c[0])} at {c[1]}" for c in roof["clipped"]) if roof.get("clipped") else "") + ". A clipped cell is a void: draw no eave there.")
@@ -546,6 +681,8 @@ def render(
         w("- roof: none declared; the place is roofed by a flat lid at its ceiling, which your program draws (the lid is the frame's top course).")
     else:
         w("- roof: none — the place is open to the sky; its declared courses of air above the play space are yours to leave open.")
+    if plot:
+        w(f"- plot: {PLOT_FRAME}")
     w("")
     w(f"### Seams ({len(a.get('seams', []))}) — every one is answered, none is discovered")
     w("")
@@ -632,6 +769,9 @@ def render(
         "refusal lines": 0 if refusal is None else len(refusal.rstrip("\n").split("\n")),
         "open sides": len(a.get("sides", []) or []),
         "references": n_refs,
+        "parts": n_parts,
+        "refused blocks": len(blocks.get("refused", [])),
+        "containers": len(blocks.get("containers", [])),
     }
     return "\n".join(lines) + "\n", counts
 
@@ -708,6 +848,17 @@ def go(args: argparse.Namespace) -> int:
             "is the engine's to state (spec-0122), so this `delvec` predates the page — run Init I1b",
         )
     concurrency = bound.group(0)
+    listed = run([args.delvec, "grammar", "blocks"])
+    try:
+        blocks = json.loads(listed.stdout) if listed.returncode == 0 else None
+    except json.JSONDecodeError:
+        blocks = None
+    if not isinstance(blocks, dict) or not all(k in blocks for k in ("admitted", "refused", "containers")):
+        raise Refusal(
+            EXIT_UNUSABLE,
+            f"`{delvec} grammar blocks` exited {listed.returncode} without the block lists; which blocks a "
+            "place may write is the engine's to state, so this `delvec` predates the page — run Init I1b",
+        )
     all_allocations = {x["place"]: x for x in all_list}
     if place not in all_allocations:
         raise Refusal(
@@ -759,6 +910,8 @@ def go(args: argparse.Namespace) -> int:
     shutil.copyfile(STARTER, starter)
     allocation_file = out_dir / "allocation.json"
     allocation_file.write_text(json.dumps(a, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    blocks_file = out_dir / "blocks.json"
+    blocks_file.write_text(listed.stdout, encoding="utf-8")
     text, counts = render(
         campaign_dir=campaign_dir,
         place=place,
@@ -778,6 +931,8 @@ def go(args: argparse.Namespace) -> int:
         from_commit=args.commit_output is not None,
         starter=starter,
         allocation_file=allocation_file,
+        blocks=blocks,
+        blocks_file=blocks_file,
     )
     handout_path.write_text(text, encoding="utf-8")
     if refusal is not None:

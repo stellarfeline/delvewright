@@ -172,6 +172,15 @@ crate::dw_code! {
 }
 
 crate::dw_code! {
+    /// `DW1073`: **a plot cannot hold its parts** (spec-0125 §3.4). A node
+    /// declaring `holds[]` whose box is lidded (`clearance`), whose play space
+    /// is smaller than the parts' declared cells, or whose `open` courses are
+    /// fewer than a structure's declared `height`. Validation tier, judged on
+    /// the author's declarations against each other.
+    pub const DW_PLOT_CANNOT_HOLD: DwCode = DwCode::new("DW1073", ExitTier::Build);
+}
+
+crate::dw_code! {
     /// `DW1064`: a portal seam is cut in a side its place declares open
     /// (spec-0123 §5.4). An open side stands no wall, so there is nothing to
     /// cut an opening in; the side's crossing is a `contact`.
@@ -605,7 +614,93 @@ pub enum Fill {
         surface: String,
         /// The block state under the top course.
         below: String,
+        /// **Surface rules** (the pinned game's own `surface_rule` idea: a
+        /// column's top blocks chosen by height, steepness and a noise patch):
+        /// the first stratum whose `when` a column meets gives its `surface`
+        /// and `below`, and may grow trees on it. A column no stratum meets
+        /// takes `surface` and `below`. Empty: one surface everywhere.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        strata: Vec<Stratum>,
     },
+}
+
+/// One surface rule of an `open` fill: where it applies, what the column's
+/// top and the ground under it are made of, and what grows on it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Stratum {
+    /// Where the rule applies; every condition stated must hold.
+    #[serde(default)]
+    pub when: StratumWhen,
+    /// The block state of the top course where the rule applies.
+    pub surface: String,
+    /// The block state under the top course where the rule applies.
+    pub below: String,
+    /// Trees grown on the rule's columns, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trees: Option<Trees>,
+}
+
+/// The conditions of a stratum. An empty one holds everywhere.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct StratumWhen {
+    /// The column's surface `y` is at least this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub y_min: Option<i64>,
+    /// The column's surface `y` is at most this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub y_max: Option<i64>,
+    /// The column is steep: its surface differs from one of its four
+    /// neighbours' by at least this many blocks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub steep: Option<u32>,
+    /// The column lies in a patch of a seeded value noise: the noise, cell
+    /// size `scale` blocks, reads at least `min` per mille there.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patch: Option<Patch>,
+    /// The column lies in this rectangle, `[x, z]` corners inclusive.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub area: Option<StratumArea>,
+}
+
+/// A rectangle of columns, its two `[x, z]` corners inclusive.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct StratumArea {
+    /// The low corner.
+    pub min: [i64; 2],
+    /// The high corner.
+    pub max: [i64; 2],
+}
+
+/// A seeded value-noise patch (the world's `seed`, mixed with `salt`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Patch {
+    /// The noise's cell size, in blocks.
+    pub scale: NonZeroU32,
+    /// The least reading, per mille (0..=1000), where the patch holds.
+    pub min: u32,
+    /// Mixed into the seed, so two strata draw two patterns.
+    #[serde(default)]
+    pub salt: u32,
+}
+
+/// Trees grown on a stratum's columns: a trunk of `log` and a crown of
+/// `leaves`, at `per_mille` of its columns, seeded by the world's `seed`.
+/// A tree stands only where its crown keeps clear of every place's claim.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Trees {
+    /// Trees per thousand columns of the stratum.
+    pub per_mille: u32,
+    /// The trunk's block state.
+    pub log: String,
+    /// The crown's block state (give it `persistent=true` so it never decays).
+    pub leaves: String,
+    /// The trunk's height range, in blocks, inclusive.
+    pub height: [u32; 2],
 }
 
 /// **The site's terrain: a declared heightfield** (spec-0098 §2c).
@@ -826,8 +921,9 @@ pub struct PlanBox {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub way: Option<BoxWay>,
     /// **Which of its four sides this place stands a wall on** (spec-0123
-    /// §5.1): each horizontal side `"wall"` or `"open"`, a side absent a wall,
-    /// so a box with no `sides` is walled all round. An open side stands no
+    /// §5.1): each horizontal side `"wall"` or `"open"`, a side absent open,
+    /// so a box with no `sides` is seamless all round and a wall stands only
+    /// where the plan declares one. An open side stands no
     /// wall: its ring cells from the floor course to the top of the play space
     /// hold nothing a body cannot be in, the place's ground runs across them
     /// at the walk plane, and what lies beyond is the neighbour's or the
@@ -839,7 +935,8 @@ pub struct PlanBox {
 }
 
 /// The four horizontal sides of a place, each walled or open (spec-0123
-/// §5.1). A key absent is a wall. `up` and `down` are not sides: a lid is the
+/// §5.1). A key absent is open: a side stands a wall only where the plan
+/// declares `wall`, so a box with no `sides` is seamless all round. `up` and `down` are not sides: a lid is the
 /// `ceiling`, a floor is the `floor`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -872,9 +969,28 @@ impl Sides {
     /// The four horizontal faces, in the engine's face order.
     pub const FACES: [Face; 4] = [Face::East, Face::West, Face::South, Face::North];
 
-    /// Whether `face` is declared open. `up` and `down` never are.
+    /// Whether `face` is open: every horizontal side not declared `wall`.
+    /// `up` and `down` never are.
     #[must_use]
     pub fn is_open(&self, face: Face) -> bool {
+        let side = match face {
+            Face::East => self.east,
+            Face::West => self.west,
+            Face::South => self.south,
+            Face::North => self.north,
+            Face::Up | Face::Down => None,
+        };
+        match face {
+            Face::Up | Face::Down => false,
+            _ => side != Some(SideKind::Wall),
+        }
+    }
+
+    /// Whether `face` is declared `open` in words — the side the plan asks
+    /// to stand clear as a way (`DW1057`, `DW1065`). An undeclared side is
+    /// seamless: it stands no wall, and owes no clear width.
+    #[must_use]
+    pub fn is_declared_open(&self, face: Face) -> bool {
         let side = match face {
             Face::East => self.east,
             Face::West => self.west,
@@ -899,13 +1015,13 @@ impl PlanBox {
     /// Whether this place declares `face` open (spec-0123 §5.1).
     #[must_use]
     pub fn side_open(&self, face: Face) -> bool {
-        self.sides.is_some_and(|s| s.is_open(face))
+        self.sides.unwrap_or_default().is_open(face)
     }
 
     /// The faces this place declares open, in the engine's face order.
     #[must_use]
     pub fn open_faces(&self) -> Vec<Face> {
-        self.sides.map(|s| s.open_faces()).unwrap_or_default()
+        self.sides.unwrap_or_default().open_faces()
     }
 }
 

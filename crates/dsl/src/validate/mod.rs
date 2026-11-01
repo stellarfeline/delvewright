@@ -167,6 +167,7 @@ pub fn validate_campaign_with(
     crate::loot::loot_checks(c, items, anchors, &mut d);
     crate::loot::collect_slot_checks(c, items, &mut d);
     crate::loot::container_declaration_checks(c, &mut d);
+    crate::sign::sign_checks(c, anchors, &mut d);
     crate::quest::check::give_item_enchantment_checks(c, &mut d);
     crate::wave::lane_checks(c, anchors, &mut d);
     crate::wave::difficulty_checks(c, &mut d);

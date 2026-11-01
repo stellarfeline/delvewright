@@ -1,0 +1,46 @@
+{
+  "code": "DW0836",
+  "patch": [
+    {
+      "doc": "programs/far-hall.json",
+      "op": "replace",
+      "path": "/rules/place/0/body/body/body/body/children/10/children/4",
+      "value": {
+        "axis": "y",
+        "children": [
+          {
+            "op": "call",
+            "symbol": "wall"
+          },
+          {
+            "body": {
+              "op": "void"
+            },
+            "op": "claim",
+            "region": "room"
+          }
+        ],
+        "op": "split",
+        "sizes": [
+          {
+            "blocks": {
+              "expr": "int",
+              "value": 2
+            },
+            "size": "absolute"
+          },
+          {
+            "size": "relative",
+            "weight": {
+              "expr": "int",
+              "value": 1
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The far hall's program edited so the east end of its south wall — the twelve columns past the span the causeway front allocates (edge/causeway-front, a contact of extent [6, 6] at 15) — stands one course over the floor course, its head claimed as the hall's own floor. The piece's own gates pass (every cell is claimed, and the room's passable boundary there is the whole's to judge), and the whole refuses it: the wall the two places share carries a seam, and a passable cell of that plane outside the cells the seam allocated is the second claim of `DW0836` — a way opened where nothing was allocated — named with the plane and the cells. It declares no unit: what must not build is a hole in a party wall beside the front the plan drew."
+}

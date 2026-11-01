@@ -267,11 +267,14 @@ this needs are subcommands of the one binary Init I3 installed.
    says so in its binding count; that is step 3's `mark` still owed, not a render
    fault. The exterior orbit shots (`ext-*`, `door-*`, `anchor-*`) are fitted from
    outside, and on a roofed piece they are all the same picture of the same rock —
-   but **`top` is a cutaway plan**, the roof taken off, and on a piece whose
-   identity is a route rather than a face — a passage, a junction, a stair — it is
-   the only planned camera that sees the route. Do **not** re-aim it by hand: a
-   `--view name=…,face=up` is `"cutaway": false` at the same pitch and
-   photographs the roof. Where a loud palette flattens the plan, add a `--view`
+   but **`top` is a cutaway plan**, the top course that holds a block taken off,
+   and on a piece whose identity is a route rather than a face — a passage, a
+   junction, a stair — it is the only planned camera that sees the route. Do
+   **not** re-aim it by hand: a `--view name=…,face=up` is `"cutaway": false` at
+   the same pitch and photographs the roof. A pitched roof is more than one
+   course: `--view name=rooms,face=up,cutaway=<y>` takes every course from
+   piece-local `y` up off — the wall heads' course shows every room under the
+   roof — where `cutaway=true` takes off only the top course that holds a block. Where a loud palette flattens the plan, add a `--view`
    square at each open face (`--view name=east-mouth,face=east`) and read the two
    together. Read `<id>-shots.json` beside the images for which cell each body is
    standing in: a camera whose anchor cell held a gate or a barrel steps back
@@ -451,9 +454,11 @@ these sources or adding more of them, never by another kind of light.
 
 ## What the grammar cannot express
 
-**What the grammar cannot express — escalate, do not work around**: block
-entities of any kind (chest loot, sign text, spawners — bind those in the
-campaign against an anchor the piece declares), **smooth** curves (a smooth
+**What the grammar cannot express — escalate, do not work around**: a
+block entity's payload the campaign has no binding for (a spawner's mob, a
+banner's pattern — chest loot and sign text are bound in the campaign, `loot`
+and `signs`, against an anchor the piece declares at the block's own cell),
+**smooth** curves (a smooth
 body is the form route below, not an escalation), diagonals, a
 profile step that varies independently of the box, a vault bending on two axes at
 once, and terrain. **Neither a stepped arch nor a symmetric shape is on this

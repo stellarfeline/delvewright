@@ -169,7 +169,9 @@ They hold at every step by their nature, and nothing below repeats them.
 - **Commit only canonically formatted JSON.** The last thing before any `git add`
   of a document or sidecar is `delvec fmt <campaign-dir>`; CI runs
   `delvec fmt --check`. A diff that rewrites a file nobody edited is the defect
-  this closes.
+  this closes. A place's program is held to it where it enters: `delvec
+  detail` and `detail --check` refuse one not in canonical form (`DW0773`),
+  and the starter's `run` writes it canonical.
 - **Design for what the player experiences, never for the host.** A far view,
   a large map or a crowd is not cut to fit a server's memory or CPU; the
   hosting side is sized to the delve.
@@ -311,6 +313,12 @@ Before the brief is written, find the nearest reference work for the kind of map
 this is (a giant, an organic interior, a large single box, several levels
 joined): `references/reference-works.md`.
 Every destination is built to read as what it is: `docs/reference/game-writing.md` L1.
+A plot is planned with what it holds before its box is written — its structures
+and open ground, which are walked, each part's play space in cells — and its box
+is sized from them (`references/placement.md`).
+A settlement — streets, lots, a harbour — is laid out against the town
+checklist, and its places are drawn with the starter's town helpers:
+`references/town.md`.
 
 ## 3. The story documents — `npcs`, `classes`, `quest-plan`
 
@@ -389,7 +397,8 @@ handout — `scripts/handout.py` writes it from the campaign, and you launch the
 agent with the Agent tool on the one-line prompt the script prints. **Up to N
 at once**, N the `concurrency:` line `delvec --prefabs "$DELVEWRIGHT_PREFABS" allocation <campaign> --all` prints, in
 critical-path order then allocation order, scenery last. Each author checks
-with `detail --check`, which writes nothing; on each return **you commit,
+with `detail --check`, which runs the commit's own battery over a scratch copy
+and writes nothing; on each return **you commit,
 one at a time**, with `delvec --prefabs "$DELVEWRIGHT_PREFABS" detail <campaign> <place>`, and launch the next.
 A commit that refuses goes back into a fresh agent's handout, never into your
 own edit. **Before the first handout**, record at least two human-built
@@ -422,7 +431,7 @@ skip it and the campaign is not verified, however green the ladder is.
 
 **Needs**: step 10 green. **Produces**: your judgement of the POV sequence in
 route order, read against `campaigns/<id>/design/concept/`, scene by scene.
-Yours to do, not a checklist to hand off: judging a frame is the whole task. `delvec --prefabs "$DELVEWRIGHT_PREFABS" frames` draws the whole set from the worlds the build wrote; quote its first line. Then the threshold frames, blind: three lines under each — the trade, the front, the thing — with the place's `validation/piece-census.json` entry beside it, and the `threshold read:` line. **Read**: `references/visual-review.md`. **A POV frame that is the wrong picture** is a camera question,
+Yours to do, not a checklist to hand off: judging a frame is the whole task. `delvec --prefabs "$DELVEWRIGHT_PREFABS" frames` draws the whole set from the worlds the build wrote; quote its first line. Then the threshold frames, blind: three lines under each — the trade, the front, the thing — with the place's `validation/piece-census.json` entry beside it, a fourth on each part frame — the holding — with the plot's `validation/plot-program.json` entry beside it, and the `threshold read:` line. **Read**: `references/visual-review.md`. **A POV frame that is the wrong picture** is a camera question,
 not a render one: place that one by hand in the running game
 (`references/tools-by-symptom.md`, *a render camera nobody is satisfied with*).
 
@@ -460,6 +469,7 @@ reference means the file listed here.
 | `references/init.md` | every Init command, and what each failure means | Init |
 | `references/the-shipped-library.md` | the optional prefab library: its revision, its postconditions, what a campaign records | I6, step 9 |
 | `references/placement.md` | the three site-plan documents, in the order they compile | step 2 |
+| `references/town.md` | a settlement: the town checklist, the starter's town helpers, a plan moving under a drawn place | steps 2, 9 |
 | `references/workspace.md` | the campaign directory and every document in it | step 1 |
 | `references/map-reference.md` | drawing the map's own reference views | step 2 |
 | `references/reference-works.md` | the finished levels to start from, by kind of map, and how one is added | steps 2, 9 |
@@ -487,6 +497,7 @@ reference means the file listed here.
 | `scripts/fetch-client-jar.py` | run at I5, on the download path | I5 |
 | `scripts/handout.py` | run at step 9, once per place per attempt: the handout a fresh agent authors that place's program from | step 9 |
 | `scripts/references.py` | run at step 9 before the first handout: fetches every place's `references[]` into `.out/references/`, so its author reads the pictures | step 9 |
-| `scripts/starter.py` | copied beside every handout by `handout.py`, run by the place's author at step 9: an empty-but-correct program for that place, read off its allocation, that passes `detail --check` as it stands | step 9 |
+| `scripts/starter.py` | copied beside every handout by `handout.py`, run by the place's author at step 9: an empty-but-correct program for that place, read off its allocation, that passes every judgement `detail --check` makes of the place itself as it stands (the battery may name what the story asks of it); the place's generator imports its `Model` and `run`, draws the place as cells, and has every cell claimed from `delvec grammar survey` | step 9 |
+| `scripts/town.py` | imported through `starter.py` by a settlement's place generators at step 9: the town helpers — ways, fronts, lot edges, boats and quays, a front's seam and sign station — each parameterised by its caller | steps 2, 9 |
 | `scripts/debug-note.py` | run wherever a default is taken or a refusal, limit, workaround or departure is met: one row of `.out/technical.jsonl`, written only under `DELVEWRIGHT_DEBUG` | any step |
 | `scripts/debug-report.py` | run at step 13: the *Technical decisions and engine limits* section, rendered and appended to `GENERATION.md`, only under `DELVEWRIGHT_DEBUG` | step 13 |

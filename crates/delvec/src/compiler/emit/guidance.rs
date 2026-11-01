@@ -635,7 +635,7 @@ fn boxes_of(cells: &[[i32; 3]]) -> Vec<([i32; 3], [i32; 3])> {
 /// (`BlockRegistry::default_state`), written `minecraft:id[k=v,…]` in
 /// property order. A `block_display`'s `block_state` fills an unwritten
 /// property the same way, so this is the state the display shows.
-pub(super) fn drawn_state(state: &str) -> String {
+pub(crate) fn drawn_state(state: &str) -> String {
     let (name, written) = match state.split_once('[') {
         Some((n, rest)) => (n, rest.trim_end_matches(']')),
         None => (state, ""),

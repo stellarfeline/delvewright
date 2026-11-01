@@ -106,20 +106,45 @@ pub enum ViewCommand {
         #[arg(long)]
         campaign: Option<PathBuf>,
         /// The camera, `x,y,z,yaw,pitch[,fov]` in Minecraft degrees (yaw 0 =
-        /// south/+Z, 90 = west/−X; pitch positive looks down).
+        /// south/+Z, 90 = west/−X, 180 = north, 270 = east; pitch positive
+        /// looks down). `x,y,z` are world coordinates, or with `--frame` a
+        /// place's own piece-local ones.
         #[arg(long, requires = "campaign", conflicts_with = "at")]
         camera: Option<String>,
+        /// Read `--camera`'s `x,y,z` in this place's frame (`node/street-5`):
+        /// the piece-local coordinates its allocation and program use, the
+        /// frame's low corner at 0,0,0 — so a camera is stood at a cell of a
+        /// place, or on a neighbour's way, with no world arithmetic. The world
+        /// position it resolves to is printed.
+        #[arg(long, requires = "camera")]
+        frame: Option<String>,
         /// Frame an anchor (`anchor/fire-pit`, or `area/island:anchor/pen`)
-        /// from `--dist` blocks away.
+        /// from `--dist` blocks away — pulled into open air toward it, so an
+        /// interior anchor is framed from inside its room — or a place
+        /// (`node/potter`): its box framed whole from outside, with what
+        /// stands around it.
         #[arg(long, requires = "campaign")]
         at: Option<String>,
         /// Compass bearing (degrees) the `--at` camera stands on: 0 = due south
-        /// of the subject looking north, 90 = due west looking east.
+        /// of the subject looking north, 90 = due west looking east, 180 =
+        /// due north, 270 = due east — clockwise seen from above.
         #[arg(long, requires = "at", default_value_t = 0.0)]
         orbit: f64,
         /// Distance in blocks from the `--at` subject.
         #[arg(long, requires = "at")]
         dist: Option<f64>,
+        /// Draw only what the pinned client draws from this camera: the
+        /// square of `world.view_distance` chunks around it, the fog closing
+        /// at 16 blocks a chunk — what a player standing there sees. Without
+        /// it the frame draws every loaded chunk.
+        #[arg(long, requires = "campaign")]
+        served: bool,
+        /// Draw this place (`node/potter`) from its program as it stands —
+        /// expanded at its frame as `detail` expands it, in place of its
+        /// committed piece; committed or not, its gates passing or not. Writes
+        /// nothing to the campaign or the library.
+        #[arg(long, requires = "campaign")]
+        program: Option<String>,
     },
     /// Draw a frame per showcase camera a campaign states in
     /// `design/cameras.json` — a camera on the assembled world, estimated from
@@ -624,6 +649,7 @@ fn run_panorama(
             backend: draw.backend,
             width: pano.frame.width,
             height: pano.frame.height,
+            served: None,
         },
         draw.threads,
     ) {
@@ -1294,6 +1320,7 @@ pub fn run_cameras(
                 backend: draw.backend,
                 width,
                 height,
+                served: None,
             },
             draw.threads,
         ) {

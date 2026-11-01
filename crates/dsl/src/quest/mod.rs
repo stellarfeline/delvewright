@@ -82,6 +82,10 @@ pub struct QuestsContent {
     /// present and empty is `DW1019`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub containers: Option<crate::Containers>,
+    /// Sign texts (spec-0128 §8): the words a sign the piece placed shows,
+    /// written at world init. Empty/absent = none, byte-identical.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub signs: Vec<crate::Sign>,
     /// Runtime state data (DSL v0.10, spec-0031): named, scoped, integer-valued
     /// counters the campaign sets, adds to and clears at runtime, and compares
     /// against in any gate. A campaign that declares none emits none of it.

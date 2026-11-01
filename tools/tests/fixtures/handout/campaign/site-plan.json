@@ -17,7 +17,13 @@
           4,
           8
         ],
-        "node": "node/landing"
+        "node": "node/landing",
+        "sides": {
+          "east": "wall",
+          "north": "wall",
+          "south": "wall",
+          "west": "wall"
+        }
       },
       {
         "ceiling": {
@@ -30,7 +36,13 @@
         "floor": {
           "datum": "datum/grade"
         },
-        "node": "node/hall"
+        "node": "node/hall",
+        "sides": {
+          "east": "wall",
+          "north": "wall",
+          "south": "wall",
+          "west": "wall"
+        }
       },
       {
         "ceiling": {
@@ -45,7 +57,10 @@
         },
         "node": "node/yard",
         "sides": {
-          "south": "open"
+          "east": "wall",
+          "north": "wall",
+          "south": "open",
+          "west": "wall"
         }
       }
     ],
@@ -178,6 +193,6 @@
       }
     ]
   },
-  "dsl_version": "0.67.0",
+  "dsl_version": "0.69.0",
   "stage": "site-plan"
 }

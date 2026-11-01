@@ -423,6 +423,21 @@ pub struct HandedSide {
     pub contacts: Vec<HandedContact>,
 }
 
+/// The way this place is (spec-0120 §1.4), as the plan declares it, with its
+/// clear columns resolved piece-local: what a street's generator draws its
+/// run and its verge from, handed rather than retyped.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HandedWay {
+    /// The horizontal axis the run travels along: `x` or `z`.
+    pub axis: String,
+    /// How many columns across the run are clear.
+    pub clear: u32,
+    /// The first and last clear column on the cross axis (`x` for a run
+    /// along `z`, `z` for a run along `x`), piece-local, inclusive: the
+    /// declared `at`, or centred.
+    pub cols: [i64; 2],
+}
+
 /// A contact's cells on an open side.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct HandedContact {
@@ -455,8 +470,6 @@ pub struct HandedGround {
     /// The claim's bottom, piece-local — the lowest course of ground the piece
     /// owns under its plot; on an aloft place, the lowest underside course.
     pub bottom_y: i64,
-    /// The walk plane, piece-local.
-    pub floor_y: i64,
     /// The terrain's surface height along the plot's perimeter (the ring's
     /// columns), world `y`: each `[x, z, top]` piece-local `x`/`z`.
     pub perimeter: Vec<[i64; 3]>,
@@ -493,7 +506,8 @@ pub struct GroundColumn {
     /// the floor course).
     pub top: i64,
     /// The blocks from the claim's bottom up to `top` or the floor course,
-    /// whichever is lower, bottom first.
+    /// whichever is lower, bottom first, each a full state (every property
+    /// written, the pinned default where the fill names none).
     pub blocks: Vec<String>,
 }
 
@@ -520,6 +534,19 @@ pub struct HandedVoid {
     pub cells: [[i64; 3]; 2],
     /// Who writes them.
     pub owner: String,
+}
+
+/// One part's size band in the allocation (`DW1074`'s shape 4).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct PartBand {
+    /// The part, `part/<kebab>`.
+    pub part: String,
+    /// Its declared cells.
+    pub cells: u32,
+    /// The fewest columns its spaces and regions may claim.
+    pub min: u64,
+    /// The most.
+    pub max: u64,
 }
 
 /// **What `delvec allocation` prints — the handout**: everything the whole gives
@@ -568,6 +595,22 @@ pub struct Allocation {
     /// face order.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub sides: Vec<HandedSide>,
+    /// The way this place is, when the plan declares one (`boxes[].way`):
+    /// its axis, its clear width and its clear columns piece-local.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub way: Option<HandedWay>,
+    /// The parts a plot holds (spec-0125 §5.1), [`crate::compiler::plot::handed_parts`]:
+    /// the node's `holds[]`, in declaration order. The handout states them and
+    /// the starter lays each one; `delvec detail` binds the expansion against
+    /// these. Absent on a place that is not a plot.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<delvewright_dsl::layout::Part>,
+    /// Each part's size band (`DW1074`, [`crate::compiler::plot::size_band`]):
+    /// the built play space, in columns, its spaces and regions may claim,
+    /// inclusive, in `parts` order. The handout states it; the starter
+    /// measures what it laid against it.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub bands: Vec<PartBand>,
     /// The synthesized names this place owes, which `anchors` must bind.
     pub owed_anchors: Vec<String>,
     /// Every cell of the frame the place does not own, with who does. The
@@ -700,6 +743,37 @@ fn image(r: &delvewright_dsl::design::Reference) -> HandedImage {
 
 /// The handout for one place, or `None` when the plan has no such box.
 #[must_use]
+/// The way `b` is, resolved piece-local in `frame`, or `None` when its box
+/// declares none.
+fn handed_way(
+    c: &Campaign,
+    b: &delvewright_dsl::siteplan::PlacedBox,
+    frame: &Frame,
+) -> Option<HandedWay> {
+    use delvewright_dsl::siteplan::{PlanAxis, way_at};
+    let declared = c
+        .site_plan
+        .as_ref()?
+        .content
+        .boxes
+        .iter()
+        .find(|x| x.node == b.node)?
+        .way
+        .as_ref()?;
+    // The cross axis: `x` for a run along `z`, `z` for a run along `x`.
+    let (axis, lo, hi, i) = match declared.axis {
+        PlanAxis::X => ("x", b.foot[2], b.foot[3], 2usize),
+        PlanAxis::Z => ("z", b.foot[0], b.foot[1], 0usize),
+    };
+    let first = lo + way_at(declared, hi - lo + 1) - frame.lo[i];
+    let clear = declared.clear.get();
+    Some(HandedWay {
+        axis: axis.to_string(),
+        clear,
+        cols: [first, first + i64::from(clear) - 1],
+    })
+}
+
 pub fn allocation(c: &Campaign, node: &NodeId) -> Option<Allocation> {
     let plan = SitePlan::of(c);
     let site = plan.site();
@@ -840,10 +914,13 @@ pub fn allocation(c: &Campaign, node: &NodeId) -> Option<Allocation> {
             let from = site.column_bottom(i, x, z).unwrap_or(frame.bottom);
             let blocks: Vec<String> = (from..=top.min(b.floor_course_y()))
                 .map(|y| {
-                    plan.ground
-                        .fill_block([x, y, z])
-                        .unwrap_or("minecraft:air")
-                        .to_string()
+                    // Every property written (the pinned defaults where the
+                    // fill names none), so a program that paints the handed
+                    // ground with the block it is handed passes
+                    // `states-complete` as it stands.
+                    crate::compiler::emit::guidance::drawn_state(
+                        plan.ground.fill_block([x, y, z]).unwrap_or("minecraft:air"),
+                    )
                 })
                 .collect();
             let l = local([x, top, z]);
@@ -864,7 +941,6 @@ pub fn allocation(c: &Campaign, node: &NodeId) -> Option<Allocation> {
         .to_string(),
         base: b.base,
         bottom_y: frame.bottom - frame.lo[1],
-        floor_y: frame.datum_y(),
         perimeter,
         min_y,
         max_y,
@@ -910,6 +986,7 @@ pub fn allocation(c: &Campaign, node: &NodeId) -> Option<Allocation> {
         views,
         ground,
         roof,
+        way: handed_way(c, b, &frame),
         seams: mine
             .iter()
             .map(|(s, out)| {
@@ -946,6 +1023,19 @@ pub fn allocation(c: &Campaign, node: &NodeId) -> Option<Allocation> {
             })
             .collect(),
         sides: handed_sides(b, &plan.seams, local),
+        parts: crate::compiler::plot::handed_parts(c, node),
+        bands: crate::compiler::plot::handed_parts(c, node)
+            .iter()
+            .map(|p| {
+                let (min, max) = crate::compiler::plot::size_band(p.cells);
+                PartBand {
+                    part: p.id.0.clone(),
+                    cells: p.cells,
+                    min,
+                    max,
+                }
+            })
+            .collect(),
         owed_anchors: delvewright_dsl::owed_anchors(c, node).into_iter().collect(),
         voids: frame
             .voids
@@ -979,21 +1069,40 @@ pub fn concurrency_bound(places: usize, cores: usize) -> usize {
     places.min((cores / 2).max(1))
 }
 
-/// The places the plan allocates a box to that have no passing program: those
-/// with no `details[]` row. A row is written only by a `delvec detail` commit
-/// whose program passed the place's gates and the bindings check, so a row is
-/// the evidence a program passed that can be read without running one; a
-/// program file with no row has not passed.
+/// The places the plan allocates a box to that have no passing program.
+///
+/// A `details[]` row is written only by a `delvec detail` commit whose program
+/// passed the place's gates and the bindings check, so a row is the evidence a
+/// program passed that can be read without running one — while the program it
+/// was made from is still there. A place counts when it has **no row**, or when
+/// its row binds the piece `delvec detail` writes from a program
+/// (`prefab/<campaign>-<stem>`) and `programs` (the stems of the files under
+/// `<campaign>/programs/`) holds no program for it: the piece stands, and
+/// nothing an author holds makes it any more. A row binding any other piece
+/// is a library piece bound by hand, which no author writes.
 #[must_use]
-pub fn unauthored_places(c: &Campaign) -> usize {
-    let rows: BTreeSet<&NodeId> = c
+pub fn unauthored_places(c: &Campaign, programs: &BTreeSet<String>) -> usize {
+    let rows: BTreeMap<&NodeId, &str> = c
         .detail_plan
         .as_ref()
-        .map(|e| e.content.details.iter().map(|d| &d.place).collect())
+        .map(|e| {
+            e.content
+                .details
+                .iter()
+                .map(|d| (&d.place, d.piece.0.as_str()))
+                .collect()
+        })
         .unwrap_or_default();
     frames(c)
         .iter()
-        .filter(|(f, _)| !rows.contains(&f.node))
+        .filter(|(f, _)| match rows.get(&f.node) {
+            None => true,
+            Some(piece) => {
+                let stem = f.node.0.strip_prefix("node/").unwrap_or(&f.node.0);
+                let made = format!("prefab/{}-{stem}", c.world.campaign_id.0);
+                *piece == made && !programs.contains(stem)
+            }
+        })
         .count()
 }
 
@@ -1895,6 +2004,10 @@ pub fn check(c: &Campaign, prefabs: &PrefabRegistry) -> (Vec<Diagnostic>, Detail
 
         check_owed(c, &mut d, &mut binding, row, meta, &path, (&gates, &seats));
     }
+    // spec-0125 §5.3: a plot's parts are built as declared (`DW1074`, the
+    // shapes the metadata answers; the walk is judged where the blocks are).
+    let (parts, _) = crate::compiler::plot::check_bound(c, prefabs);
+    d.extend(parts);
     (d, binding)
 }
 
@@ -2666,6 +2779,7 @@ mod tests {
         spaces.insert(
             "strip".to_string(),
             delvewright_dsl::prefab::ContractSpace {
+                part: None,
                 envelope: "open".to_string(),
                 boxes: vec![region(space_lo, shi)],
             },

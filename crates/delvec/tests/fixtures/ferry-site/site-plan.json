@@ -17,7 +17,13 @@
           8200,
           8200
         ],
-        "node": "node/near"
+        "node": "node/near",
+        "sides": {
+          "east": "wall",
+          "north": "wall",
+          "south": "wall",
+          "west": "wall"
+        }
       },
       {
         "ceiling": {
@@ -34,7 +40,13 @@
           8240,
           8200
         ],
-        "node": "node/far"
+        "node": "node/far",
+        "sides": {
+          "east": "wall",
+          "north": "wall",
+          "south": "wall",
+          "west": "wall"
+        }
       }
     ],
     "datums": [
@@ -98,6 +110,6 @@
     },
     "seams": []
   },
-  "dsl_version": "0.67.0",
+  "dsl_version": "0.69.0",
   "stage": "site-plan"
 }

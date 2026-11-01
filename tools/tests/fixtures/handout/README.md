@@ -8,12 +8,16 @@ the bar on this side — one owed spawn, one owed gate region, one owed unlock
 footing. It validates and builds with every place a stand-in.
 
 `allocations.json` is `delvec allocation campaign --all`, recorded by the engine
-at `delvec 1.14.0`, as the stub `delvec` of
+at `delvec 1.15.0`, as the stub `delvec` of
 `tools/tests/test_handout.py` answers with. It is a copy of an instrument's
 output and never an authority: `crates/delvec/tests/handout_script.rs` holds it
 equal to the built binary's own answer, byte for byte, so a change to what the
 engine hands a place reds there and the file is re-recorded with the same
 command.
+
+`blocks.json` is `delvec grammar blocks`, recorded the same way and held equal
+to the built binary's answer by the same test file: re-record it with
+`delvec grammar blocks > tools/tests/fixtures/handout/blocks.json`.
 
 The per-place procedure of `references/detail.md` has been executed green on
 this fixture once, end to end: three fresh agents, one per place in

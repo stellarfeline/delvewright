@@ -715,7 +715,20 @@ pub(crate) fn read_structures(
     prefabs_dir: &Path,
     json: bool,
 ) -> Result<BTreeMap<String, Vec<u8>>, u8> {
-    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    read_structures_over(plan, prefabs, prefabs_dir, &BTreeMap::new(), json)
+}
+
+/// [`read_structures`] with `overlay`'s bytes standing in for the files it
+/// names: the pieces a run holds in memory and has not written (`delvec
+/// detail --check`), read in place of the library's copies.
+pub(crate) fn read_structures_over(
+    plan: &Plan,
+    prefabs: &PrefabRegistry,
+    prefabs_dir: &Path,
+    overlay: &BTreeMap<String, Vec<u8>>,
+    json: bool,
+) -> Result<BTreeMap<String, Vec<u8>>, u8> {
+    let mut structures: BTreeMap<String, Vec<u8>> = overlay.clone();
     // The horizon surround's tiles first: the compiler GENERATED those bytes, so
     // their `structure_file` keys name nothing on disk and the loop below would
     // fail to find every one of them. Inserted first so a prefab that somehow
@@ -723,7 +736,9 @@ pub(crate) fn read_structures(
     // silently replaced by one the engine made up.
     if let Some(surround) = &plan.surround {
         for (file, bytes) in &surround.structures {
-            structures.insert(file.clone(), bytes.clone());
+            structures
+                .entry(file.clone())
+                .or_insert_with(|| bytes.clone());
         }
     }
     // Placed pieces, plus any structure a stage-7 `fragment` verb stamps that

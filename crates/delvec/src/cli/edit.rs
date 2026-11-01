@@ -302,6 +302,7 @@ pub(crate) fn run_edit(
                 backend: delvec::compiler::view::frames::Backend::Auto,
                 width: FRAME_WIDTH,
                 height: FRAME_HEIGHT,
+                served: None,
             },
             None,
         ) {

@@ -236,14 +236,45 @@ pub fn solve_eye_camera(
 }
 
 /// Render a parsed structure to an RGBA frame. `strip_ceiling` builds the
-/// dollhouse cutaway for orbit interior shots. Deterministic camera + fixed light.
+/// dollhouse cutaway for orbit interior shots: the top course that holds a
+/// block is left out. Deterministic camera + fixed light.
 pub fn render_structure(
     st: &Structure,
     pack: &ResourcePackSource,
     strip_ceiling: bool,
     p: &RenderParams,
 ) -> Result<Frame, String> {
-    let schem = build_schematic(st, strip_ceiling).map_err(|e| e.to_string())?;
+    let below = strip_ceiling.then(|| top_course(st)).flatten();
+    render_below(st, pack, below, p)
+}
+
+/// [`render_structure`] with every course at or above piece-local `cut_from`
+/// left out — a stated cut, so a pitched roof comes off at the wall heads.
+pub fn render_structure_from(
+    st: &Structure,
+    pack: &ResourcePackSource,
+    cut_from: i32,
+    p: &RenderParams,
+) -> Result<Frame, String> {
+    render_below(st, pack, Some(cut_from), p)
+}
+
+/// The highest course of `st` that holds a block other than air, if any.
+fn top_course(st: &Structure) -> Option<i32> {
+    st.blocks
+        .iter()
+        .filter(|(_, idx)| st.palette[*idx] != "minecraft:air")
+        .map(|(pos, _)| pos[1])
+        .max()
+}
+
+fn render_below(
+    st: &Structure,
+    pack: &ResourcePackSource,
+    below: Option<i32>,
+    p: &RenderParams,
+) -> Result<Frame, String> {
+    let schem = build_schematic(st, below).map_err(|e| e.to_string())?;
     let mesh = schem
         .to_mesh(pack, &MeshConfig::default())
         .map_err(|e| format!("mesh: {e:?}"))?;
@@ -282,20 +313,19 @@ pub fn render_structure(
 }
 
 /// Rebuild a parsed [`Structure`](crate::render::nbt::Structure) as a Nucleation
-/// `UniversalSchematic`. When
-/// `strip_ceiling` is set, blocks at the top Y layer are omitted, yielding a
-/// "dollhouse" cutaway so an orbit camera can see the (roofed) interior — used
-/// for the per-piece interior/anchor shots (a validation artifact, never
-/// shipped). `air` states are skipped (they carry no mesh).
+/// `UniversalSchematic`. With `below`, every block at or above that course is
+/// omitted, yielding a "dollhouse" cutaway so an orbit camera can see the
+/// (roofed) interior — used for the per-piece interior/anchor shots (a
+/// validation artifact, never shipped). `air` states are skipped (they carry
+/// no mesh).
 pub fn build_schematic(
     st: &crate::render::nbt::Structure,
-    strip_ceiling: bool,
+    below: Option<i32>,
 ) -> Result<nucleation::UniversalSchematic, crate::render::nbt::NbtError> {
     use nucleation::{BlockState, UniversalSchematic};
     let mut schem = UniversalSchematic::new("delve-prefab".to_string());
-    let top_y = st.size[1] - 1;
     for (pos, idx) in &st.blocks {
-        if strip_ceiling && pos[1] >= top_y {
+        if below.is_some_and(|y| pos[1] >= y) {
             continue;
         }
         let state_str = &st.palette[*idx];
@@ -313,6 +343,41 @@ pub fn build_schematic(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A frame whose top course is air: `cutaway=true` takes off the top
+    /// course that holds a block, not the empty top of the frame, and a stated
+    /// cut takes off every course from it up.
+    #[test]
+    fn a_cutaway_takes_off_the_top_course_that_holds_a_block() {
+        let st = crate::render::nbt::Structure {
+            size: [1, 8, 1],
+            palette: vec!["minecraft:air".into(), "minecraft:stone".into()],
+            blocks: vec![
+                ([0, 0, 0], 1),
+                ([0, 2, 0], 1),
+                ([0, 3, 0], 1),
+                ([0, 7, 0], 0),
+            ],
+        };
+        assert_eq!(
+            top_course(&st),
+            Some(3),
+            "air at the frame's top is no course"
+        );
+        let kept = |below: Option<i32>| {
+            let schem = build_schematic(&st, below).unwrap();
+            (0..8)
+                .filter(|y| {
+                    schem
+                        .get_block(0, *y, 0)
+                        .is_some_and(|b| b.name != "minecraft:air")
+                })
+                .collect::<Vec<i32>>()
+        };
+        assert_eq!(kept(None), vec![0, 2, 3]);
+        assert_eq!(kept(top_course(&st)), vec![0, 2]);
+        assert_eq!(kept(Some(2)), vec![0]);
+    }
 
     const BMIN: [f32; 3] = [0.0, 0.0, 0.0];
     const BMAX: [f32; 3] = [16.0, 9.0, 26.0];

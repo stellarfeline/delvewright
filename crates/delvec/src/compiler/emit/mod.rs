@@ -81,6 +81,7 @@ mod seal;
 mod sequence;
 mod server;
 mod shortcut;
+mod sign;
 mod stake;
 mod state;
 mod stealth;
@@ -133,6 +134,7 @@ use seal::*;
 use sequence::*;
 pub use server::*;
 use shortcut::*;
+use sign::*;
 use stake::*;
 use state::*;
 pub use stealth::*;
@@ -398,6 +400,17 @@ pub fn build_with_warnings(
             .as_ref()
             .expect("an assembly the replay did not take"),
     };
+    // Ground past the boundary's playable region is placed and written and
+    // judged by nothing (`Assembled::judged_within`): every proof below reads
+    // the judged part; the picture the review worlds and the render plan are
+    // written from is the whole one.
+    let whole = assembled;
+    let judged = boundary::judged_columns(plan).and_then(|(lo, hi)| whole.judged_within(lo, hi));
+    if let Some((_, j)) = &judged {
+        eprintln!("{}", j.line());
+    }
+    let assembled: &crate::compiler::assembled::Assembled =
+        judged.as_ref().map_or(whole, |(a, _)| a);
     // Advisory findings the replay raised (`DW0353` gate-region collisions,
     // `DW0354` broken block support) — reported by the caller, never fatal.
     // Advisory findings the PLACEMENT stage raised (`DW0498`: a pool draw that
@@ -511,6 +524,36 @@ pub fn build_with_warnings(
                 message: e.message,
             },
         )?;
+    }
+
+    // spec-0128 §8 (DW1075): every sign text names a sign the assembled world
+    // really has, and every line fits that sign's board in the English and
+    // every declared translation. Off the same block map as the container
+    // proofs, with the same deferral for a place still standing in its
+    // stand-in; the binding line is printed for every campaign.
+    {
+        let sidecars: BTreeMap<String, delvewright_dsl::L10nDoc> = plan
+            .campaign
+            .world
+            .content
+            .languages
+            .iter()
+            .filter_map(|lang| {
+                let raw = input_bytes.get(&format!("l10n/{lang}.json"))?;
+                Some((lang.clone(), serde_json::from_slice(raw).ok()?))
+            })
+            .collect();
+        let (binding, proof) = crate::compiler::sign::check_signs(
+            &assembled.blocks,
+            plan.blockout.as_ref(),
+            &plan.signs,
+            &sidecars,
+        );
+        eprintln!("{}", binding.line());
+        proof.map_err(|e| BuildFailure::Diagnostic {
+            code: e.code,
+            message: e.message,
+        })?;
     }
 
     // v0.4 navigation planning over the solved voxel grid (spec-0008 addendum):
@@ -854,11 +897,20 @@ pub fn build_with_warnings(
     // Its refusal waits for the write-sequence arm below, so one refusal names
     // every block either arm finds.
     let picture = crate::compiler::view::beat::picture_base(plan, assembled, &relight.placements);
+    let load = crate::compiler::view::beat::load_blocks(plan, &world, &picture);
     let attached_refusal = {
-        let attached = crate::compiler::attached::judge(plan, &world, &picture);
+        let attached = crate::compiler::attached::judge_over(plan, &load);
         eprintln!("{}", attached.line());
         attached.refusal()
     };
+    // DW1076: every block of the same load world reads as resting on what
+    // holds it — reported, never refused; the binding is printed every build.
+    {
+        let resting = crate::compiler::resting::judge(plan, &load);
+        eprintln!("{}", resting.line());
+        warnings.extend(resting.warnings());
+    }
+    drop(load);
 
     // ---- datapack ----
     put_json(
@@ -1321,6 +1373,12 @@ pub fn build_with_warnings(
     let pov_legs: Vec<(usize, usize)> = pov_shots.iter().map(|s| (s.from_step, s.step)).collect();
     let frame_worlds =
         crate::compiler::view::review::frame_worlds_with(plan, &world, Some(&ledger), &pov_legs);
+    // The worlds a reviewer looks at hold the whole world, the ground past the
+    // judged columns included.
+    let whole_picture = judged
+        .is_some()
+        .then(|| crate::compiler::view::beat::picture_base(plan, whole, &relight.placements));
+    let picture = whole_picture.as_ref().unwrap_or(&picture);
     let (render_plan_doc, camera_warnings) = crate::compiler::render_plan::render_plan(
         plan,
         prefabs,
@@ -1328,15 +1386,14 @@ pub fn build_with_warnings(
         &cutscene_proof.frames,
         &world,
         &frame_worlds,
-        &picture,
+        picture,
     )?;
     warnings.extend(camera_warnings);
     put_json(&mut out, "render-plan.json", &render_plan_doc);
-    let maker =
-        crate::compiler::view::review::WorldMaker::new(plan, assembled, &picture, structures);
+    let maker = crate::compiler::view::review::WorldMaker::new(plan, whole, picture, structures);
     let review = crate::compiler::view::review::write_review(
         plan,
-        &picture,
+        picture,
         &maker,
         crate::compiler::view::review::ReviewOf {
             frames: &frame_worlds,

@@ -177,6 +177,11 @@ prefixed_id!(
     /// within the stage-5 loot namespace.
     LootId, "loot");
 prefixed_id!(
+    /// Sign-text id: `sign/<kebab>` (stage-5 `signs` section, spec-0128 §8).
+    /// Unique within the stage-5 sign namespace; it names the sign's l10n keys
+    /// and the text a `DW1075` refusal blames.
+    SignId, "sign");
+prefixed_id!(
     /// Lethal-volume id: `lethal/<kebab>` (stage-5 `lethal_volumes` section, DSL
     /// v0.10, spec-0031). Unique within the stage-5 lethal-volume namespace; it
     /// names the volume's emitted tick function, its l10n key, and the volume a
@@ -223,6 +228,11 @@ prefixed_id!(
     /// room, a courtyard, a stretch of shore, a cavern — named before any
     /// coordinate exists. Unique within the layout graph.
     NodeId, "node");
+prefixed_id!(
+    /// Plot part id: `part/<kebab>` (spec-0125 §3.2). One structure or one
+    /// open space a plot holds, unique within its node; what a piece's
+    /// contract names with `part`.
+    PartId, "part");
 prefixed_id!(
     /// Layout-graph edge id: `edge/<kebab>` (spec-0049 §3.1). A connection
     /// between two places, of a declared class. Unique within the layout graph.

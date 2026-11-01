@@ -287,8 +287,11 @@ fn moves(horizon: &str) -> String {
     format!(
         "{bury}; (2) PLACE something against it — a face whose outward cells fall inside another \
          placed piece's box is buried by that piece, and the two then answer to each other's face \
-         contract (`DW0780`); (3) DECLARE the side shown — add it to `shown_faces` in the prefab \
-         document, which is the piece saying this side is finished exterior surface. Do not \
+         contract (`DW0780`); (3) DECLARE the side shown — the piece saying this side is finished \
+         exterior surface: a place drawn on the skill's starter declares it in its generator \
+         with `Model.show(\"<side>\")` (a lamp, a chimney or a roof on the frame's top course \
+         is `up`), a hand-written place program adds it to the program's `shown_faces`, and a \
+         library piece to `shown_faces` in its metadata document. Do not \
          declare a side the piece was built to have covered: the slab stays in the sky and the \
          only thing that changes is that nothing says so"
     )
@@ -301,6 +304,10 @@ fn moves(horizon: &str) -> String {
 /// build writes — and `reachable` the standing cells the reachability proof
 /// already computed. Both are arguments rather than things this derives, so this
 /// check and every proof around it are reading one world.
+///
+/// `only`, when given, names the pieces (by prefab id) whose sides are judged
+/// — a place author's own check, `delvec detail --check`; the air the party
+/// can be in is still every piece's. The build passes `None`.
 pub fn check(
     plan: &Plan,
     prefabs: &PrefabRegistry,
@@ -308,6 +315,7 @@ pub fn check(
     structures: &BTreeMap<String, Vec<u8>>,
     world: &World,
     reachable: &BTreeSet<[i32; 3]>,
+    only: Option<&BTreeSet<String>>,
 ) -> (ExposureBinding, Vec<Diagnostic>) {
     let ambient = Ambient::of_plan(plan);
     let mut binding = ExposureBinding {
@@ -390,7 +398,7 @@ pub fn check(
     // whole shell, because the verdict is per side: an author repairs a face,
     // not a cell, and the declaration is spelled in sides.
     for piece in &pieces {
-        if !piece.documented {
+        if !piece.documented || only.is_some_and(|o| !o.contains(&piece.prefab)) {
             continue;
         }
         let mut examined_this = false;

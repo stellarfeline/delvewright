@@ -47,6 +47,9 @@ pub enum PlacedObject {
         slot: String,
         stack: String,
     },
+    /// `data merge block <x> <y> <z> <nbt>`: keys written into the block
+    /// entity standing at the cell — a sign's text (spec-0128 §8).
+    Data { cell: [i32; 3], nbt: String },
     /// `summon <kind> <x> <y> <z> <nbt>`: a body, a hitbox, a marker, an
     /// assembly part. `pos` is the command's own coordinate text.
     Entity {
@@ -116,9 +119,19 @@ impl Placed {
         ))
     }
 
-    /// The row a `setblock <x> <y> <z> <state>` or `item replace block <x> <y>
-    /// <z> <slot> with <stack>` line states. `None` for any other line.
+    /// The row a `setblock <x> <y> <z> <state>`, `item replace block <x> <y>
+    /// <z> <slot> with <stack>` or `data merge block <x> <y> <z> <nbt>` line
+    /// states. `None` for any other line.
     pub fn of_block_line(fired: Firing, line: &str) -> Option<Placed> {
+        if let Some(rest) = line.strip_prefix("data merge block ") {
+            let mut it = rest.splitn(4, ' ');
+            let cell = [
+                it.next()?.parse().ok()?,
+                it.next()?.parse().ok()?,
+                it.next()?.parse().ok()?,
+            ];
+            return Some(Placed::data(fired, cell, it.next()?));
+        }
         if let Some(rest) = line.strip_prefix("setblock ") {
             let mut it = rest.splitn(4, ' ');
             let c = [
@@ -148,6 +161,18 @@ impl Placed {
         })
     }
 
+    /// Keys `nbt` (`{…}`) written into the block entity at `cell`.
+    pub fn data(fired: Firing, cell: [i32; 3], nbt: &str) -> Placed {
+        Placed {
+            fired,
+            object: PlacedObject::Data {
+                cell,
+                nbt: nbt.to_string(),
+            },
+            function: String::new(),
+        }
+    }
+
     /// A removal of every body tagged `tag`, by the line `line`.
     pub fn removed(fired: Firing, tag: &str, line: &str) -> Placed {
         Placed {
@@ -170,6 +195,9 @@ impl Placed {
                 "item replace block {} {} {} {slot} with {stack}",
                 cell[0], cell[1], cell[2]
             ),
+            PlacedObject::Data { cell, nbt } => {
+                format!("data merge block {} {} {} {nbt}", cell[0], cell[1], cell[2])
+            }
             PlacedObject::Entity { kind, pos, nbt } => {
                 let line = format!("summon {kind} {} {} {}", pos[0], pos[1], pos[2]);
                 if nbt.is_empty() {
@@ -197,6 +225,7 @@ impl Placed {
             PlacedObject::Item { cell, slot, stack } => {
                 json!({"item": stack, "slot": slot, "cell": cell})
             }
+            PlacedObject::Data { cell, nbt } => json!({"data": nbt, "cell": cell}),
             PlacedObject::Entity { kind, pos, .. } => {
                 let tags = self.entity_record().map(|e| e.tags).unwrap_or_default();
                 json!({"entity": kind, "pos": pos, "tags": tags})
@@ -379,6 +408,7 @@ impl Ledger {
                 .entry(match r.object {
                     PlacedObject::Block { .. } => "block",
                     PlacedObject::Item { .. } => "item",
+                    PlacedObject::Data { .. } => "data",
                     PlacedObject::Entity { .. } => "entity",
                     PlacedObject::Removed { .. } => "removed",
                 })

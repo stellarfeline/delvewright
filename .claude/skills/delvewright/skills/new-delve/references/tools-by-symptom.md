@@ -13,7 +13,7 @@ The full inventory — every binary, script and flag that exists — is
 
 - **Judging any visual outcome** (cutscene framing, set dressing, terrain):
   `delvec --prefabs "$DELVEWRIGHT_PREFABS" frames <build-dir>` (`--shot <id>`, `--labels`), `delvec --prefabs "$DELVEWRIGHT_PREFABS" frames --campaign <dir>`
-  (`--camera x,y,z,yaw,pitch`, `--at <anchor> --dist`) and `delvec blocking-chart` (per-floor
+  (`--camera x,y,z,yaw,pitch`, `--at <anchor> --dist`; `--served` to see only what a player standing at the camera sees) and `delvec blocking-chart` (per-floor
   cutaways; the orange corridor is the route `delvec build` proves).
   *Always* for cutscenes: **look at the `cutscene/…` frames** before calling the
   step done — `DW0308` proves the path is air, not that the shot is pointed at

@@ -196,14 +196,44 @@ fn each_gated_connection_is_built_shut_at_its_kinds_cells() {
 }
 
 /// **Criterion 5, the seed half.** No bar is a function of the seed: the
-/// derivation reads no seed at all, so a world seed of another value moves no
-/// cell of the mass.
+/// derivation of every place reads no seed, so a world seed of another value
+/// moves no cell any place claims. The fill is the one thing the seed reaches
+/// (spec-0127 §2.2: a stratum's patch and its trees are seeded draws), so the
+/// cells that move are counted, and each is outside every claim.
 #[test]
 fn changing_the_seed_moves_no_bar() {
+    use delvewright_dsl::siteplan::{Ground, Site, placed_boxes, placed_seams};
     let c = gallery_stand_ins("seed");
     let mut other = c.clone();
     other.world.content.seed = other.world.content.seed.wrapping_add(1);
-    assert_eq!(mass_map(&c), mass_map(&other));
+    let (a, b) = (mass_map(&c), mass_map(&other));
+    let moved: BTreeSet<[i64; 3]> = a
+        .keys()
+        .chain(b.keys())
+        .filter(|k| a.get(*k) != b.get(*k))
+        .copied()
+        .collect();
+    let mut reads = delvewright_dsl::metrics::Reads::new();
+    let boxes = placed_boxes(&c, &mut reads);
+    let seams = placed_seams(&c, &boxes, &mut reads);
+    let ground = Ground::of(&c);
+    let site = Site::new(&boxes, &seams, &ground);
+    let claims: Vec<([i64; 3], [i64; 3])> =
+        (0..boxes.len()).map(|i| site.claim_bounds(i)).collect();
+    assert!(!claims.is_empty(), "the point places boxes");
+    for cell in &moved {
+        for (lo, hi) in &claims {
+            assert!(
+                !(0..3).all(|i| cell[i] >= lo[i] && cell[i] <= hi[i]),
+                "the seed moved {cell:?}, inside the claim {lo:?}..{hi:?}"
+            );
+        }
+    }
+    eprintln!(
+        "seed binding: {} cell(s) of the fill moved with the seed, 0 inside any of {} claim(s)",
+        moved.len(),
+        claims.len()
+    );
 }
 
 // ---------------------------------------------------------------------------

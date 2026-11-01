@@ -130,6 +130,9 @@ pub struct PieceShot {
     /// camera can see a roofed interior. Never set on an eye shot: the camera is
     /// already inside, and a body sees its own ceiling.
     pub cutaway: bool,
+    /// A declared view's `cutaway=<y>`: every course from this piece-local `y`
+    /// up is left out instead of the top course alone.
+    pub cut_from: Option<i32>,
     /// Present exactly when this is an `eye` shot.
     pub eye: Option<EyeCamera>,
     /// Present exactly when this is a `room` shot.
@@ -236,6 +239,7 @@ fn orbit(
         fov_deg: ORBIT_FOV_DEG,
         framing: Framing::Orbit { zoom, target },
         cutaway,
+        cut_from: None,
         eye: None,
         room: None,
         sight: None,
@@ -294,6 +298,7 @@ pub fn plan_piece(
                 target: Some(target),
             },
             cutaway: v.cutaway,
+            cut_from: v.cut_from,
             eye: None,
             room: None,
             sight: None,
@@ -380,6 +385,7 @@ fn plan_standing_view(
             pos: [eye[0] as f32, eye[1] as f32, eye[2] as f32],
         },
         cutaway: false,
+        cut_from: None,
         eye: None,
         room: Some(RoomCamera {
             anchor: name.clone(),
@@ -589,6 +595,7 @@ fn plan_fixed_set(st: &Structure, meta: Option<&PrefabMeta>) -> PiecePlan {
                 pos: standing.eye(),
             },
             cutaway: false,
+            cut_from: None,
             view: None,
             room: None,
             sight: Some(eye_sight),
@@ -631,6 +638,7 @@ fn plan_fixed_set(st: &Structure, meta: Option<&PrefabMeta>) -> PiecePlan {
                 pos: [eye[0] as f32, eye[1] as f32, eye[2] as f32],
             },
             cutaway: false,
+            cut_from: None,
             eye: None,
             room: Some(RoomCamera {
                 anchor: name.clone(),

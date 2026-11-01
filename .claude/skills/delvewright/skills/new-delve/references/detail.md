@@ -68,14 +68,22 @@ handout quotes — the node's `note` in `layout-graph.json`, the seam's `form` i
 **Authors run concurrently, commits run one at a time.** The check and the
 commit are two runs of one verb: `delvec --prefabs "$DELVEWRIGHT_PREFABS" detail --check <campaign-dir> <place>`
 binds, expands, voids, runs every gate of the place and the bindings check over
-the whole **as committed on disk**, and writes nothing; `delvec --prefabs "$DELVEWRIGHT_PREFABS" detail
+the whole **as committed on disk**, runs the leak proof (`DW0838`), the plot-edge
+stitch (`DW0990`) and the exposure check (`DW0885`) for that place over the whole
+assembled in memory — each named with its cell or the route a body takes — prints
+each part's size against its band (`DW1074`), then writes the commit into a
+scratch copy of the campaign and the library and runs the commit's own battery
+over the whole it leaves, and writes nothing to either; `delvec --prefabs "$DELVEWRIGHT_PREFABS" detail
 <campaign-dir> <place>` runs the same judge, then writes the piece, its report
 and the plan row — each through a temporary file renamed into place, so a check
 running at that instant reads the old file or the new one, never a torn one —
-and then runs the battery over the committed whole. Up to **N** authors are in
+and then runs the battery over the committed whole. So every refusal the
+commit can give, `--check` gives at the same exit. Up to **N** authors are in
 flight at once, N the line `delvec --prefabs "$DELVEWRIGHT_PREFABS" allocation
 <campaign-dir> --all` prints on stderr, `concurrency: N = min(P, max(1, C /
-2))` — P the places with no passing program, C the cores the machine offers.
+2))` — P the places with no passing program (no `details[]` row, or a row
+binding the piece `detail` made from a program that is no longer there), C
+the cores the machine offers.
 You never type N; the handout's header quotes the line. The order is the
 critical path from `entry`, then every other place in the order `allocation
 --all` prints them, scenery last — a spine place no program can answer is found
@@ -98,7 +106,35 @@ agent: *Reference: when the prefab library has no piece you need* and
    source states (`"none stated"` where it states nothing). This is yours and
    not the place's author's: the rows are a design document's, and an author
    holds nothing but its handout. A reference is looked at, never copied — an
-   unlicensed or non-commercial source is ideas only. Then fetch them:
+   unlicensed or non-commercial source is ideas only.
+
+   **When the community has no build of the trade, or its pages cannot be
+   read**, the question is still researched against established practice and
+   never invented (`$DELVEWRIGHT_ENGINE/CLAUDE.md`, *A craft question …*):
+
+   - *No community build of the trade.* Take the trade's real building from a
+     source that records it — a museum, a historic-environment record, an
+     encyclopedia entry on the trade or its working object (a potter's kiln and
+     wheel-house, a ropewalk) — for where the work stands and how the rooms
+     divide; and take the scale, the palette and the front from community
+     builds of the **nearest** trade that shares the arrangement (a smithy for
+     a kiln trade, a general store for a counter trade). Each row's `shows`
+     says which it is, and one row says the search found no community build
+     of this trade and what was searched for.
+   - *A page that cannot be read* — refused to an automated fetch, a video, a
+     page built by script — is not read some other way: no spoofed
+     user-agent, no scraping round the refusal. Use a source that can be read
+     instead; where a search result's own summary is all that was read, the
+     row's `shows` says so. A row whose content was never read — a title
+     alone — is not a reference: leave it out.
+   - *A picture for the author.* `references.py` fetches a picture only from
+     a URL that is the image's own address (its response an `image/…`); a
+     page is recorded as a page and its author opens it by URL. Where a
+     source offers its picture at its own URL (an encyclopedia's media file,
+     a build page's image link), that URL is the row's.
+
+   At least two rows that were read; the step is done when every building has
+   them. Then fetch them:
 
    ```sh
    "$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/references.py" <campaign-dir> --all
@@ -122,22 +158,53 @@ agent: *Reference: when the prefab library has no piece you need* and
    `<campaign-dir>/.out/handouts/<place stem>/handout-<n>.md` — `n` is the
    attempt, counted from the files already there — and prints two lines: the
    handout's path, and the one-line prompt you launch the agent with. Beside the
-   handout it writes `allocation.json`, the place's allocation, and
-   `starter.py`, the starter generator: run on that allocation it writes an
-   empty-but-correct program — floor, ring wall, lid, every seam answered,
-   every owed name marked, sconces — that passes `detail --check` as it
-   stands, with the places to build marked inside it. The handout makes it the
-   author's step 1, so an author starts from a passing program and never from
-   research: nothing outside the handout's reading list — the engine's
-   source, its gallery, another campaign — is needed or read. Where the
+   handout it writes `allocation.json`, the place's allocation,
+   `starter.py`, the starter generator, and `blocks.json`, `delvec grammar
+   blocks` as printed. Run on that allocation the starter writes an
+   empty-but-correct program — the ground in the blocks the whole hands each
+   column (`ground.columns`), ring wall, lid, every seam answered, every owed
+   name marked, sconces — that passes every judgement `detail --check` makes of
+   the place itself as it stands (the commit's battery, which the check runs
+   too, may name what the whole's story asks of the place and the empty place
+   does not yet hold: a pressable a station names, a vista through it). The handout numbers the author's steps in the order they are needed, each with its tool and its measured cost — start (the starter), measure the palette (`block-appearance.py`), draw, look at the piece alone, look at it in place, check — and step 3 is a generator
+   that imports the starter from `$DELVEWRIGHT_SKILL/scripts` and draws the
+   place into its `Model` as cells: the starter asks the engine (`delvec
+   grammar survey`) where a body stands and what it reaches, claims every cell
+   from the answer — reached floor into its part, unreached floor and the air
+   sealed over it `unwalked` (the gates' reachability measurement still counts
+   it, and the finding about floor nobody can enter takes it as declared), a walk edge only where a body crosses (with
+   its `rise` where the two floors differ), a part no body reaches declared
+   seen — and refuses before writing, naming block and cell, a block the
+   server would drop, the palette refuses, or the pinned game does not have
+   (a state that leaves a property out included), and a seam's opening a cell
+   of which touches no cell of the room a body enters by (a part's columns, a
+   full block or unreached floor on the row behind it: `contract-well-formed`). Its constructors
+   (`stairs`, `slab`, `door`, `trapdoor`, `fence`, …) write every property,
+   and `Model.roof` lays a roof whose eave sits level with the wall heads;
+   under an opening two or more courses over the walk plane the starter
+   stands a pillar and a ladder, and a drawing that climbs there itself (a
+   flight, a ramp) says so with `Model.climbs_to(edge)` — one that builds
+   there without saying so is refused, never overwritten; floor no body
+   reaches that sits diagonally beside reached floor, a block in each of
+   the two cells between them (a walk pinched between a rail post and the
+   glass), is refused rather than declared out of walk, because a player
+   reads the corner as a gap to squeeze through;
+   `Model.show("up")` declares a top the drawing means to be seen (the town
+   helpers that stand a lamp, a bracket or an awning on the frame's top
+   course declare it themselves).
+   A drawn model needs a `delvec` binary on the machine running it. The handout lists the refused blocks and the containers
+   the holder census counts. So an author starts from a passing program and
+   never from research: nothing outside the handout's reading list — the
+   engine's source, its gallery, another campaign — is needed or read. Where the
    place already has a program it runs `detail --check` on it: a program
    that passes is **exit 3** and no handout (commit it, step 3), a refused one
    puts the verdict into the handout verbatim as the refusal the next attempt
    repairs. A place the plan allocates no box to is exit 1, naming every place
    it does; a directory that is not a campaign, an engine tree or a prefab
-   directory that is not there, or a `delvec` that states no concurrency line,
-   is exit 2. Read its stderr: the handout's binding — design rows, neighbours,
-   seams, voids, owed names, refusal lines, open sides, references — and the
+   directory that is not there, or a `delvec` that states no concurrency line
+   or has no `grammar blocks`, is exit 2. Read its stderr: the handout's
+   binding — design rows, neighbours, seams, voids, owed names, refusal lines,
+   open sides, references, parts, refused blocks, containers — and the
    concurrency line. The
    handout says which neighbours are detailed **as of the handout**, and that
    the author's check reads the whole as it stands when the check runs.
@@ -151,8 +218,9 @@ agent: *Reference: when the prefab library has no piece you need* and
    other place and the design included, which is the one thing the agent must
    not hold. The handout tells the agent what it may read (the handout, its
    own program, the starter, the authoring references, the grammar corpus),
-   that it starts by copying the starter to `design/generator/<place stem>.py`,
-   running it and checking it green before it builds, what it may run
+   that it starts by running the starter and checking it green, then draws
+   the place from `design/generator/<place stem>.py` into the starter's
+   `Model`, what it may run
    (`delvec allocation` for the same facts again; `delvec grammar expand` at
    the frame and a render to look; `detail --check` to check), what it
    writes (`programs/<place stem>.json`, and a generator script beside it under
@@ -181,10 +249,12 @@ agent: *Reference: when the prefab library has no piece you need* and
    committed whole refuses. Capture every commit's output to a file
    (`… > .out/commit-<stem>.txt 2>&1`). A refusal before the write is what
    `detail --check` gives too: run step 1 for that place again and the script
-   embeds the check's verdict. **A battery refusal is one `--check` cannot
-   see** — the piece is already written, its own gates passed — so hand the
-   commit's output to the script: step 1 with `--from .out/commit-<stem>.txt`
-   embeds it verbatim. The battery names the place whose piece it judges;
+   embeds the check's verdict. A battery refusal is one `--check` gives too,
+   against the whole as it stood when it ran; one the commit raises and the
+   author's check did not is the whole having moved since — a neighbour
+   committed between them — and the piece is already written, its own gates
+   passed, so hand the commit's output to the script: step 1 with `--from
+   .out/commit-<stem>.txt` embeds it verbatim. The battery names the place whose piece it judges;
    where it names a cell, the place whose frame holds that cell is the one
    handed back. Either way the script writes `handout-<n+1>.md` and you
    launch a fresh agent on it. While a battery refusal stands, every later
@@ -256,6 +326,20 @@ is handed none. A declared roof's `clipped` runs and a neighbour's facade cells
 are voids: whatever the program paints there is replaced after expansion, so
 nothing put there survives and nothing may depend on it.
 
+**A plot's parts are named on the contract.** When the place's node declares
+what it holds (the handout's *What this plot holds*), the program names each
+part on the spaces and out-of-walk regions that are it, with `"part":
+"part/<id>"` on the `spaces` or `no_body` entry, at program version `1.14.0`;
+several spaces may name one part (two rooms of one house), and a space naming
+none is the plot's unprogrammed ground. The check prints `parts:
+B of K bound, W of R walked` and refuses four shapes, one line each:
+*unbuilt* — a declared part nothing names; *undeclared* — a part the node does
+not declare, or any `part` on a place that is not a plot; *not walked* — a walked
+part none of whose columns holds a cell the body reaches from the entry; *out of
+size* — a part whose claimed cells are under three quarters or over five
+quarters of its declared cells. How a holding is sized and arranged is
+`$DELVEWRIGHT_ENGINE/docs/reference/place-craft.md` §8.
+
 **A place reads as what it is when four things hold at once**: the working
 object stands in its working position, not stored; the rooms follow the work —
 the room a visitor enters is not the room the work is done in, and a door
@@ -303,11 +387,23 @@ the ring row to paves it, and no cell of a street's or a flight's corridor lies
 below the walk plane with higher cells before and after it — a trench a body
 walking the road falls into.
 
-The agent iterates with `delvec --prefabs "$DELVEWRIGHT_PREFABS" grammar
+The agent iterates with its generator, `delvec --prefabs "$DELVEWRIGHT_PREFABS" grammar
 expand --file … --region <the frame>` and a render until it reads as the place
-— the program's `handed/…` defaults are the handed values, so no `--param` is
-typed — and checks with `detail --check`, which is the only run that
-sees the voids, the seams and the whole.
+— each a matter of seconds, the edit loop — the program's `handed/…` defaults are the handed values, so no `--param` is
+typed; the piece is named for the program's filename up to its first `.`, so
+a working copy `potter.json.new` writes `potter.nbt`; `render piece
+--view face=up,cutaway=<y>` takes every course from piece-local `y` up off,
+and a `face=up` picture has south at its top and west at its right —
+and looks at it in the whole, uncommitted, with `delvec --prefabs
+"$DELVEWRIGHT_PREFABS" frames --campaign <campaign-dir> --program <place> --at
+<place>`: the program drawn as it stands in place of the committed piece, the
+camera outside the place's box on bearing `--orbit` (0 due south, turning
+clockwise seen from above), or stood at `--camera x,y,z,yaw,pitch --frame
+<place>` in a place's own piece-local frame. It checks with `detail --check`,
+which is the only run that sees the voids, the seams and the whole. Both
+assemble the whole and take minutes, where the generator, the expansion and
+the render take seconds (the handout states each step's measured cost): they
+run when the drawing is clean, never as the edit loop.
 
 ## After a plan or graph edit
 

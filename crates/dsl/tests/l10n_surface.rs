@@ -186,6 +186,8 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ("LootItem", "item", Reference),
     ("LootItem", "name", Inventoried),
     ("LootItem", "slot", Machine),
+    ("Sign", "front", Inventoried),
+    ("Sign", "back", Inventoried),
     ("MobEffect", "effect", Reference),
     ("MorphOp", "kind", Machine),
     ("Npc", "base_entity", Reference),

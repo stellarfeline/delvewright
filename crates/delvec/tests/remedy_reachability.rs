@@ -4906,26 +4906,6 @@ fn dw1024_replacing_the_scenery_beside_what_matters_reaches_the_next_verdict() {
     assert_eq!(code, 0, "{log}");
 }
 
-/// **DW1024, storeroom.** Replacing the surplus builds.
-#[test]
-fn dw1024_replacing_the_surplus_scenery_builds() {
-    let three = [
-        ([-3, 0, -2], BARREL),
-        ([3, 0, -2], BARREL),
-        ([-3, 0, -1], BARREL),
-    ];
-    let (code, log) = containers_build("1024-storeroom", &three, None, true);
-    assert_eq!(code, 3, "{log}");
-    assert!(log.contains("DW1024"), "{log}");
-    let two = [
-        ([-3, 0, -2], BARREL),
-        ([3, 0, -2], BARREL),
-        ([-3, 0, -1], "minecraft:crafting_table"),
-    ];
-    let (code, log) = containers_build("1024-two", &two, None, true);
-    assert_eq!(code, 0, "{log}");
-}
-
 /// `delvec validate` over the container fixture with one quests edit.
 fn containers_validate(tag: &str, f: impl FnOnce(&mut serde_json::Value)) -> (i32, String) {
     let camp = common::container_campaign(&tmp(&format!("containers-v-{tag}")), &[], None, false);

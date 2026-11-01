@@ -1,0 +1,14 @@
+{
+  "code": "DW1074",
+  "patch": [
+    {
+      "doc": "detail-plan.json",
+      "op": "replace",
+      "path": "/content/details/0/piece",
+      "value": "prefab/gallery-yard-court-undeclared"
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The court bound to the probe-only yard whose contract names its court `part/garden`, a part the node does not declare. The bindings check refuses it as undeclared — and the court's own declared part then as unbuilt — naming the region, the part and the repairs. It declares no unit: every word it writes is bound on the site-plan point."
+}

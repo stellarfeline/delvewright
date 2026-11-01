@@ -96,6 +96,19 @@ fn is_empty_dir(dir: &Path) -> bool {
 // Order: no `pass` above a non-zero exit, and nothing on disk after a refusal
 // ---------------------------------------------------------------------------
 
+/// A working copy of a program (`store.json.new`) expands under the name up to
+/// the filename's first `.`, so an author trying an edit beside the committed
+/// file needs no `--id`.
+#[test]
+fn a_working_copy_takes_its_id_from_the_name_before_its_first_dot() {
+    let dir = scratch("working-copy");
+    let out_dir = dir.join("out");
+    let file = program_file(&dir, "store.json.new", &store_room());
+    let out = expand(&file, &out_dir, &[]);
+    assert!(out.status.success(), "{}", combined(&out));
+    assert!(out_dir.join("store.nbt").is_file(), "{}", combined(&out));
+}
+
 /// The reproduction: a program in `var-B.json`. The id defaults to the file
 /// stem, and `var-B` is not a usable structure id.
 #[test]
@@ -116,7 +129,7 @@ fn an_unusable_id_is_refused_before_anything_is_expanded_or_written() {
     );
     // ...and where the id came from, which no document the author read mentions.
     assert!(
-        text.contains("the stem of the input filename \"var-B.json\""),
+        text.contains("the input filename \"var-B.json\" up to its first `.`"),
         "the refusal must name where the id came from:\n{text}"
     );
     assert!(
@@ -603,5 +616,61 @@ fn the_provenance_record_is_every_input_and_replaying_it_gives_the_same_bytes() 
     assert!(plain.get("roles").is_none(), "{plain}");
     assert_eq!(plain["region"], serde_json::json!([11, 7, 13]));
 
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// **`delvec grammar survey` refuses a request it cannot model with exit 2**
+/// (spec-0128 §3.2): a block that does not parse, and a cell outside `size`,
+/// each named with its cell; nothing is printed on stdout. The same request
+/// with the offending block removed is answered, exit 0, as JSON.
+#[test]
+fn a_survey_request_it_cannot_model_is_exit_2_naming_the_cell() {
+    let dir = scratch("survey-input");
+    let request = |extra: &str| -> PathBuf {
+        let text = format!(
+            r#"{{"size": [3, 3, 3], "blocks": [[0, 0, 0, "minecraft:stone"], [1, 0, 0, "minecraft:stone"]{extra}], "from": [[0, 1, 0]]}}"#
+        );
+        let file = dir.join("request.json");
+        std::fs::write(&file, text).unwrap();
+        file
+    };
+    let survey = |file: &Path| -> Output {
+        grammar()
+            .args(["survey", "--file"])
+            .arg(file)
+            .output()
+            .expect("run delvec")
+    };
+    let unparseable = survey(&request(r#", [2, 0, 0, "minecraft:stone["]"#));
+    assert_eq!(
+        unparseable.status.code(),
+        Some(2),
+        "{}",
+        combined(&unparseable)
+    );
+    assert!(unparseable.stdout.is_empty(), "nothing on stdout");
+    let err = String::from_utf8_lossy(&unparseable.stderr);
+    assert!(
+        err.contains("the block at [2, 0, 0] does not parse"),
+        "{err}"
+    );
+
+    let outside = survey(&request(r#", [9, 0, 0, "minecraft:stone"]"#));
+    assert_eq!(outside.status.code(), Some(2), "{}", combined(&outside));
+    assert!(outside.stdout.is_empty(), "nothing on stdout");
+    let err = String::from_utf8_lossy(&outside.stderr);
+    assert!(
+        err.contains("`minecraft:stone` at [9, 0, 0] lies outside the model's extent [3, 3, 3]"),
+        "{err}"
+    );
+
+    let answered = survey(&request(""));
+    assert_eq!(answered.status.code(), Some(0), "{}", combined(&answered));
+    let answer: serde_json::Value = serde_json::from_slice(&answered.stdout).expect("JSON");
+    assert_eq!(
+        answer["standable"].as_array().map(Vec::len),
+        Some(2),
+        "{answer}"
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }

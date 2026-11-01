@@ -17,7 +17,13 @@
           21,
           4
         ],
-        "node": "node/near-hall"
+        "node": "node/near-hall",
+        "sides": {
+          "east": "wall",
+          "north": "wall",
+          "south": "wall",
+          "west": "wall"
+        }
       },
       {
         "ceiling": {
@@ -30,7 +36,13 @@
         "floor": {
           "datum": "datum/grade"
         },
-        "node": "node/far-hall"
+        "node": "node/far-hall",
+        "sides": {
+          "east": "wall",
+          "north": "wall",
+          "south": "wall",
+          "west": "wall"
+        }
       },
       {
         "ceiling": {
@@ -47,6 +59,12 @@
         "roof": {
           "courses": 9,
           "eaves": 1
+        },
+        "sides": {
+          "east": "wall",
+          "north": "wall",
+          "south": "wall",
+          "west": "wall"
         }
       },
       {
@@ -60,7 +78,13 @@
         "floor": {
           "datum": "datum/loft"
         },
-        "node": "node/loft"
+        "node": "node/loft",
+        "sides": {
+          "east": "wall",
+          "north": "wall",
+          "south": "wall",
+          "west": "wall"
+        }
       },
       {
         "ceiling": {
@@ -73,7 +97,13 @@
         "floor": {
           "y": 60
         },
-        "node": "node/undercroft"
+        "node": "node/undercroft",
+        "sides": {
+          "east": "wall",
+          "north": "wall",
+          "south": "wall",
+          "west": "wall"
+        }
       },
       {
         "atmosphere": "atmosphere/wet-court",
@@ -110,6 +140,8 @@
         "node": "node/causeway",
         "sides": {
           "east": "open",
+          "north": "wall",
+          "south": "wall",
           "west": "open"
         },
         "way": {
@@ -133,7 +165,13 @@
           8,
           44
         ],
-        "node": "node/beacon"
+        "node": "node/beacon",
+        "sides": {
+          "east": "wall",
+          "north": "wall",
+          "south": "wall",
+          "west": "wall"
+        }
       },
       {
         "base": {
@@ -149,7 +187,13 @@
         "floor": {
           "datum": "datum/loft"
         },
-        "node": "node/gantry"
+        "node": "node/gantry",
+        "sides": {
+          "east": "wall",
+          "north": "wall",
+          "south": "wall",
+          "west": "wall"
+        }
       },
       {
         "base": {
@@ -165,7 +209,13 @@
         "floor": {
           "datum": "datum/loft"
         },
-        "node": "node/perch"
+        "node": "node/perch",
+        "sides": {
+          "east": "wall",
+          "north": "wall",
+          "south": "wall",
+          "west": "wall"
+        }
       }
     ],
     "datums": [
@@ -182,6 +232,47 @@
     "fill": {
       "below": "minecraft:dirt",
       "kind": "open",
+      "strata": [
+        {
+          "below": "minecraft:dirt",
+          "surface": "minecraft:podzol",
+          "trees": {
+            "height": [
+              5,
+              6
+            ],
+            "leaves": "minecraft:oak_leaves[persistent=true]",
+            "log": "minecraft:oak_log[axis=y]",
+            "per_mille": 400
+          },
+          "when": {
+            "area": {
+              "max": [
+                63,
+                63
+              ],
+              "min": [
+                56,
+                56
+              ]
+            },
+            "y_max": 69,
+            "y_min": 54
+          }
+        },
+        {
+          "below": "minecraft:stone",
+          "surface": "minecraft:stone",
+          "when": {
+            "patch": {
+              "min": 300,
+              "salt": 9,
+              "scale": 5
+            },
+            "steep": 2
+          }
+        }
+      ],
       "surface": "minecraft:grass_block",
       "terrain": {
         "base_y": 54,
@@ -552,6 +643,6 @@
       }
     ]
   },
-  "dsl_version": "0.67.0",
+  "dsl_version": "0.69.0",
   "stage": "site-plan"
 }

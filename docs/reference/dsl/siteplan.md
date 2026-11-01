@@ -57,6 +57,18 @@ plan-side half they are checked against.
 | `DW0835` | **A whole-owned volume enters a box.** A `volumes[]` region intersecting a box's play space, named with both and the intersection. The whole's mass may stand beside a place, under it and over it; inside it, the volume and the place are two authorities writing one cell, which the derivation must never be asked to arbitrate. |
 | `DW0883` | **A box is not placed exactly once** (spec-0059). Two shapes of one claim. A connected component of the seam graph in which no box pins its `min`: nothing places it — a box stands only where a pin puts it or where a seam hangs it off a box that already stands — named with every box in the component and the prescription to pin one of them (the entry's, when it is there). Or a pinned box a seam also reaches, at a different corner: the pin and the seam disagree, named with both corners and how each was obtained, addressed at the seam. A pin is a claim the packing verifies, never a second authority; a box the packing does not reach has no cells, so no geometric rule fires over it and the one refusal is the whole story. Validation tier (exit 1). Binding: the pinned / derived / component counts in the site-plan binding line. |
 
+### DW1073 — a plot cannot hold its parts (`dsl::siteplan`; spec-0125)
+
+A layout-graph node declaring `holds[]` is a plot: one box holding one or more
+structures and the open ground between them, each part with its play space in
+cells. Validation tier (exit 1), judged on the author's declarations against
+each other, after the plan's own rules; `delvec detail` asks the same
+function for the place it details before it judges a piece.
+
+| Code | Meaning |
+|------|---------|
+| `DW1073` | **A plot cannot hold its parts.** One code, three shapes, each named first in the message: *under a lid* — the plot's box has a `clearance` ceiling, raised at `/content/boxes/<i>/ceiling`, naming the parts and the two repairs (an `open` ceiling clearing the tallest ridge, or no `holds[]` and rooms instead); *too small* — the parts' `cells` sum past the box's play space `extent[0] × extent[1]`, at `/content/boxes/<i>/extent`, naming the sum, the area and the shortfall; *too low* — a `structure`'s `height` past the box's `open` courses, at `/content/boxes/<i>/ceiling/open`, naming the part, its use, both numbers and the shortfall. A plot whose parts fit is asked nothing, whatever its coverage: a declaration of 60 cells on 400 is stated (`validation/plot-program.json`), never refused. |
+
 ### DW1064 — a door in an open side (`dsl::siteplan`; spec-0123)
 
 A box's `sides` declares each horizontal side `wall` or `open` (absent: `wall`).

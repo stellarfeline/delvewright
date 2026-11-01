@@ -1780,6 +1780,32 @@ fn a_hollow_edge_reddens_dw0990_alone() {
         "{m}"
     );
     assert!(b.binding.cracks > 0);
+
+    // A place author's own check (`blockout::leaks`, what `detail --check`
+    // runs) names the same crack for the landing, and none for a place whose
+    // edge is whole.
+    let reg = prefabs();
+    let plan = Plan::build_with(
+        &c,
+        &reg,
+        Perturb {
+            hollow_edge: true,
+            ..Perturb::none()
+        },
+    )
+    .expect("the variant plans");
+    let blocks = delvec::compiler::assembled::assembled_blocks(&plan, &BTreeMap::new());
+    let open = blockout::open_world(&plan, &blocks);
+    let only = |n: &str| std::collections::BTreeSet::from([n.to_string()]);
+    let alone = blockout::leaks(&plan, &blocks, &open, &only("node/landing")).unwrap();
+    assert_eq!(
+        errors(&alone),
+        ["DW0990".to_string()],
+        "the check for the landing names its crack"
+    );
+    assert_eq!(message_for(&alone, "DW0990"), m, "in the battery's words");
+    let other = blockout::leaks(&plan, &blocks, &open, &only("node/tunnel")).unwrap();
+    assert!(errors(&other).is_empty(), "{:?}", errors(&other));
 }
 
 fn battery_of_with(c: &Campaign, perturb: Perturb) -> blockout::Battery {
@@ -2238,7 +2264,8 @@ fn crown_with_station(tag: &str, teleport_in: bool) -> Campaign {
                 .unwrap()
                 .push(serde_json::json!({
                     "node": "node/crown", "min": [48, 48], "extent": [8, 8],
-                    "floor": {"datum": "datum/grade"}, "ceiling": {"clearance": 3}
+                    "floor": {"datum": "datum/grade"}, "ceiling": {"clearance": 3},
+                    "sides": {"east": "wall", "west": "wall", "south": "wall", "north": "wall"}
                 }));
         },
         None,
@@ -2776,8 +2803,8 @@ fn the_mass_is_written_before_any_template() {
 /// with the walled sides beside them — holds nothing from the course over the
 /// floor course to the top of the play space, the floor course runs across it
 /// in the landing's accent, and every other cell the derivation writes is the
-/// cell it writes undeclared. Declaring all four sides `wall` derives the
-/// undeclared map byte for byte.
+/// cell it writes walled. A landing with no `sides` derives the map of one
+/// declared open all round (the seamless default).
 #[test]
 fn an_open_side_raises_no_wall_above_the_floor_course() {
     let undeclared = common::campaign_at(&variant("sides-none", |_| {}, Some(&slope)));
@@ -2793,7 +2820,7 @@ fn an_open_side_raises_no_wall_above_the_floor_course() {
         "sides-north",
         |v| {
             let i = landing_index(v);
-            v["content"]["boxes"][i]["sides"] = serde_json::json!({"north": "open"});
+            v["content"]["boxes"][i]["sides"] = serde_json::json!({"north": "open", "east": "wall", "west": "wall", "south": "wall"});
         },
         Some(&slope),
     ));
@@ -2807,12 +2834,45 @@ fn an_open_side_raises_no_wall_above_the_floor_course() {
         },
         Some(&slope),
     ));
+    // A side with no declaration is seamless: the landing with its `sides`
+    // removed derives the map of the landing declared open all round.
+    let absent = common::campaign_at(&variant(
+        "sides-absent",
+        |v| {
+            let i = landing_index(v);
+            v["content"]["boxes"][i]
+                .as_object_mut()
+                .unwrap()
+                .remove("sides");
+        },
+        Some(&slope),
+    ));
+    let all_open = common::campaign_at(&variant(
+        "sides-all-open",
+        |v| {
+            let i = landing_index(v);
+            v["content"]["boxes"][i]["sides"] = serde_json::json!({
+                "east": "open", "west": "open", "south": "open", "north": "open"
+            });
+        },
+        Some(&slope),
+    ));
+    assert_eq!(
+        mass_map(&absent),
+        mass_map(&all_open),
+        "a box with no `sides` is open all round"
+    );
+    assert_ne!(
+        mass_map(&absent),
+        mass_map(&walled),
+        "the open default stands no wall the walled box stands"
+    );
     let before = mass_map(&undeclared);
     let after = mass_map(&open);
     assert_eq!(
         mass_map(&walled),
         before,
-        "four walls are the undeclared box"
+        "the fixture declares its four walls"
     );
 
     let plan = SitePlan::of(&open);
@@ -2889,7 +2949,7 @@ fn an_open_side_is_a_stand_ins_opening_onto_the_commons() {
                 .iter_mut()
                 .find(|b| b["node"] == "node/landing")
                 .unwrap();
-            landing["sides"] = serde_json::json!({"north": "open"});
+            landing["sides"] = serde_json::json!({"north": "open", "east": "wall", "west": "wall", "south": "wall"});
         },
         None,
     ));
@@ -2914,5 +2974,103 @@ fn an_open_side_is_a_stand_ins_opening_onto_the_commons() {
         errors(&low).contains(&"DW0838".to_string()),
         "a broken shell still leaks: {:?}",
         errors(&low)
+    );
+}
+
+/// **A seamless border is a declared opening along its whole length**
+/// (`DW0838`, spec-0123 §5.1). The cell and the exit leave the face they share
+/// unwalled, so the border — the gap over the common span and the two ring
+/// corners where the rings meet, which lie in neither open run — is deleted
+/// with the seams, and the binding counts the border and the cells it adds.
+/// The proof reads the declaration and nothing else, shown by one perturbation
+/// and two spellings of the same face: with every shell wall built one course
+/// tall (`Perturb::short_walls`) a body steps onto a wall head and walks it to
+/// the ring corner, and from there into the neighbour — a leak between the cell
+/// and the exit while they wall the face they share, and no leak once both
+/// leave it unwalled, because the corner is the border's and is deleted;
+/// disable the border cells and the unwalled pair reds at the corner. A pair
+/// that walls its face still leaks under the same perturbation, so the green
+/// is the declaration's and not the perturbation failing to bite.
+#[test]
+fn a_seamless_border_is_crossed_anywhere_along_it() {
+    let named = |b: &blockout::Battery, a: &str, z: &str| -> Vec<String> {
+        b.findings
+            .iter()
+            .filter(|(_, d)| d.code == "DW0838" && d.message.contains(a) && d.message.contains(z))
+            .map(|(_, d)| d.message.clone())
+            .collect()
+    };
+    let seamless = |v: &mut serde_json::Value| {
+        let boxes = v["content"]["boxes"].as_array_mut().unwrap();
+        for b in boxes.iter_mut() {
+            if b["node"] == "node/cell" {
+                b["sides"] = serde_json::json!({"west": "open", "south": "open", "east": "wall", "north": "wall"});
+            }
+            if b["node"] == "node/exit" {
+                b["sides"] = serde_json::json!({"east": "open", "south": "open", "west": "wall", "north": "wall"});
+            }
+        }
+        // The face is open on both sides, so its crossing is a contact along
+        // the whole face and not a portal cut in an open side (`DW1064`).
+        let seams = v["content"]["seams"].as_array_mut().unwrap();
+        let seam = seams
+            .iter_mut()
+            .find(|s| s["edge"] == "edge/cell-exit")
+            .unwrap();
+        seam.as_object_mut().unwrap().remove("opening");
+        seam["contact"] = serde_json::json!({});
+    };
+    let c = common::campaign_at(&variant("seamless-face", seamless, None));
+    let b = battery_of(&c);
+    let leaks: Vec<String> = b
+        .findings
+        .iter()
+        .filter(|(_, d)| d.code == "DW0838")
+        .map(|(_, d)| d.message.clone())
+        .collect();
+    assert!(
+        leaks.is_empty(),
+        "two seamless places are no leak: {leaks:?}"
+    );
+    assert_eq!(b.binding.seamless_borders, 1, "{}", b.binding.line());
+    assert!(b.binding.border_cells > 0, "{}", b.binding.line());
+    assert!(
+        b.binding.line().contains("1 seamless border(s)"),
+        "{}",
+        b.binding.line()
+    );
+
+    let low = Perturb {
+        short_walls: true,
+        ..Perturb::none()
+    };
+    let unwalled = battery_of_with(&c, low.clone());
+    assert!(
+        named(&unwalled, "`node/cell`", "`node/exit`").is_empty(),
+        "a crossing anywhere along the border, its ring corners included, is declared: {:?}",
+        named(&unwalled, "`node/cell`", "`node/exit`")
+    );
+    let others: Vec<String> = unwalled
+        .findings
+        .iter()
+        .filter(|(_, d)| d.code == "DW0838" && d.message.contains("allocated no seam"))
+        .map(|(_, d)| d.message.clone())
+        .collect();
+    assert!(
+        !others.is_empty(),
+        "the perturbation bites: a pair that walls its face still leaks: {:?}",
+        errors(&unwalled)
+    );
+
+    // The same face, walled on both sides (the fixture as committed), under the
+    // same perturbation: the cell and the exit leak into each other.
+    let walled = battery_of_with(
+        &common::campaign_at(&variant("walled-face", |_| {}, None)),
+        low,
+    );
+    assert!(
+        !named(&walled, "`node/cell`", "`node/exit`").is_empty(),
+        "a hop over the low wall between two places that wall their face is a leak: {:?}",
+        errors(&walled)
     );
 }

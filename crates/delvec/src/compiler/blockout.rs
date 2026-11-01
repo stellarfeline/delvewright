@@ -664,6 +664,25 @@ pub fn derive_with(
     // (0) What undeclared space becomes (spec-0098 §2b): the declared fill, laid
     // over the whole region before anything is placed in it.
     lay_fill(&mut mass, &ground, plan, rlo, rhi);
+    // (0b) The trees the fill grows, clear of every place's footprint and ring.
+    let clear: Vec<[i64; 4]> = boxes
+        .iter()
+        .map(|b| {
+            let [x0, x1, z0, z1] = b.foot;
+            [x0 - 1, x1 + 1, z0 - 1, z1 + 1]
+        })
+        .collect();
+    let mut by_block: BTreeMap<&str, BTreeSet<[i64; 3]>> = BTreeMap::new();
+    for (cell, block) in ground.trees(&clear) {
+        if cell[1] <= rhi[1] {
+            by_block.entry(block).or_default().insert(cell);
+        }
+    }
+    for (block, cells) in &by_block {
+        for (lo, hi) in merge_cells(cells) {
+            mass.write(lo, hi, block);
+        }
+    }
 
     // (1) The whole's own mass, each volume of the block its kind takes from
     // the fill unless it names its own.
@@ -878,6 +897,18 @@ pub fn derive_with(
     let mut anchors: BTreeMap<String, AnchorSpec> = BTreeMap::new();
     for (k, s) in seams.iter().enumerate() {
         if s.crossing == Crossing::Contact || !cut_by_derivation(k) {
+            continue;
+        }
+        // A portal in a side either place stands open (a stair: `DW1064`
+        // admits no other) has no wall to frame: a ring there is a lintel
+        // floating over open ground.
+        let side_open = |node: &NodeId, face| {
+            boxes
+                .iter()
+                .find(|b| &b.node == node)
+                .is_some_and(|b| b.side_open(face))
+        };
+        if side_open(&s.a, s.face) || side_open(&s.b, s.face.opposite()) {
             continue;
         }
         let mask: &[Aabb] = plane_owner[k].map_or(&[], |i| owned[i].as_slice());
@@ -1264,8 +1295,12 @@ fn lay_fill(
             let Some(top) = ground.top(x, z) else {
                 continue;
             };
-            let same =
-                |xx: i64, zz: i64| !done.contains(&(xx, zz)) && ground.top(xx, zz) == Some(top);
+            let kind = ground.column_kind(x, z);
+            let same = |xx: i64, zz: i64| {
+                !done.contains(&(xx, zz))
+                    && ground.top(xx, zz) == Some(top)
+                    && ground.column_kind(xx, zz) == kind
+            };
             let mut z1 = z;
             while z1 < rhi[2] && same(x, z1 + 1) {
                 z1 += 1;
@@ -1937,6 +1972,16 @@ pub struct BatteryBinding {
     /// allocated opening and no direct crossing between them — legal, and
     /// counted, so a reader sees which places the commons joins.
     pub commons_pairs: usize,
+    /// Place pairs sharing a face neither walls — seamless borders, each a
+    /// declared opening along its whole length — `DW0838`.
+    pub seamless_borders: usize,
+    /// Cells those borders add to the deleted openings beyond the seams and
+    /// the open sides' runs: the ring corners, and the courses one place's
+    /// run stops under — `DW0838`.
+    pub border_cells: usize,
+    /// Cells the deletion of the openings made standable, kept off by every
+    /// flood — `DW0838`.
+    pub invented_floor: usize,
 }
 
 impl BatteryBinding {
@@ -1953,8 +1998,12 @@ impl BatteryBinding {
              {l} critical-path leg(s) measured; {fx} fixed ring ground cell(s) handed, {bc} \
              plot-edge column(s) examined, {ck} crack(s), {al} aloft place(s) with no ground \
              to stitch (DW0990); {uc} standable cell(s) \
-             outside every claim ({kind}), {cp} place pair(s) joined through the commons \
-             (DW0838).",
+             outside every claim ({kind}), {cp} place pair(s) joined through the commons, \
+             {sb} seamless border(s) deleted as declared openings ({brc} cell(s) beyond the \
+             open sides' runs), {inv} cell(s) of floor the deletion made kept off (DW0838).",
+            sb = self.seamless_borders,
+            brc = self.border_cells,
+            inv = self.invented_floor,
             kind = if self.commons {
                 "the commons: the site is open"
             } else {
@@ -2105,10 +2154,7 @@ pub fn check(
     // and is there a second one — so they are asked with nothing shut. It
     // carries the BODY's premises too: `DW0877`, `DW0986`, `DW0838` and the
     // pacing legs ask where a body's moves take it, and a declared jump is one.
-    let open = crate::compiler::nav::World::from_occupancy(
-        crate::compiler::assembled::occupancy_over(blocks, &BTreeSet::new()),
-        crate::compiler::nav::Premises::geometry_only().with_body_of(plan),
-    );
+    let open = open_world(plan, blocks);
     // The world with every way the graph's own gating closure never opens sealed
     // as the plan sealed it. The base assembled model deliberately holds gate
     // regions open (`crate::compiler::assembled`), so a reachability proof taken over it
@@ -2128,8 +2174,8 @@ pub fn check(
                findings: &mut Vec<(DwCode, Diagnostic)>| {
         seams_built(b, open, binding, findings);
         nodes_reached(c, b, sealed, binding, findings);
-        crossings(c, b, plan, blocks, open, binding, findings);
-        stitches(b, open, binding, findings);
+        crossings(c, b, plan, blocks, open, None, binding, findings);
+        stitches(b, open, None, binding, findings);
         sightlines(c, b, open, binding, findings);
         identities(c, b, open, binding, findings);
         pacing(c, b, open, binding, findings);
@@ -2138,6 +2184,60 @@ pub fn check(
     hatch_refusals(&open, &sealed, run, &mut findings);
     Some(Battery { findings, binding })
 }
+
+/// The world the battery's geometry questions are asked over: the assembled
+/// blocks with nothing shut, carrying the body's premises. One function, so
+/// the battery and the leak proof a place author runs alone ([`leaks`]) ask
+/// one world.
+pub fn open_world(
+    plan: &crate::compiler::plan::Plan,
+    blocks: &crate::compiler::blockstate::BlockMap,
+) -> crate::compiler::nav::World {
+    crate::compiler::nav::World::from_occupancy(
+        crate::compiler::assembled::occupancy_over(blocks, &BTreeSet::new()),
+        crate::compiler::nav::Premises::geometry_only().with_body_of(plan),
+    )
+}
+
+/// **The leak proof and the stitch alone** (`DW0838`, `DW0990`'s crack shape),
+/// for the places `only` names: the battery's own [`crossings`], flooded from
+/// those places, and its own [`stitches`] along their edges, over the
+/// battery's own world ([`open_world`], which the caller builds once and
+/// hands in). A leak is never a trapdoor's (`DW1066`, see
+/// [`hatch_refusals`]), so it stands as the battery would leave it. What
+/// `delvec detail --check` runs for the place it
+/// checks, so a leak is found without building the whole delve. The pairs
+/// joined through the commons are not counted here (the binding's
+/// `commons_pairs` is the battery's): counting them floods the commons from
+/// every place.
+#[must_use]
+pub fn leaks(
+    plan: &crate::compiler::plan::Plan,
+    blocks: &crate::compiler::blockstate::BlockMap,
+    open: &crate::compiler::nav::World,
+    only: &BTreeSet<String>,
+) -> Option<Battery> {
+    let b = plan.blockout.as_ref()?;
+    let c = plan.campaign;
+    let mut findings: Vec<(DwCode, Diagnostic)> = Vec::new();
+    let mut binding = BatteryBinding::default();
+    crossings(
+        c,
+        b,
+        plan,
+        blocks,
+        open,
+        Some(only),
+        &mut binding,
+        &mut findings,
+    );
+    stitches(b, open, Some(only), &mut binding, &mut findings);
+    Some(Battery { findings, binding })
+}
+
+/// The battery's refusals a body being stopped raises — the ones a trapdoor's
+/// shape can be the cause of ([`hatch_refusals`]).
+const STOPPED: [&str; 4] = ["DW0836", "DW0837", "DW0877", "DW0986"];
 
 /// **`DW1066` over the battery**: a refusal the battery raises only because a
 /// trapdoor's shape stops a body — the same battery, run again over the same
@@ -2148,6 +2248,13 @@ pub fn check(
 /// massing sends the author to move what is not wrong. A refusal the lifted
 /// run also raises stands as it is. A world with no trapdoor, or a battery
 /// with no refusal, is not run twice.
+///
+/// **Only a refusal that a body being stopped raises** is a trapdoor's to
+/// take ([`STOPPED`]): a seam not built through, a place not reached, a front
+/// or a portal not crossed. A leak (`DW0838`) is a body getting too far, a
+/// crack (`DW0990`) is ground and a sightline (`DW0821`) is the camera's; a
+/// trapdoor cannot be what stops a body in any of them, so they always stand,
+/// and a battery whose refusals are only those is not run twice.
 fn hatch_refusals(
     open: &crate::compiler::nav::World,
     sealed: &crate::compiler::nav::World,
@@ -2159,7 +2266,9 @@ fn hatch_refusals(
     ),
     findings: &mut Vec<(DwCode, Diagnostic)>,
 ) {
-    let refusing = |f: &(DwCode, Diagnostic)| f.1.severity == delvewright_dsl::Severity::Error;
+    let refusing = |f: &(DwCode, Diagnostic)| {
+        f.1.severity == delvewright_dsl::Severity::Error && STOPPED.contains(&f.0.id())
+    };
     if !open.has_leaves() || !findings.iter().any(refusing) {
         return;
     }
@@ -2769,10 +2878,20 @@ fn wall_openings<'a>(
     walls
         .into_iter()
         .map(|((slo, shi), group)| {
-            let allowed: BTreeSet<[i64; 3]> = group
+            // The seams' openings, and every cell of an open side either
+            // place declares: an open side stands no wall, so its run is a
+            // declared opening and never a leak (spec-0123 §5.3).
+            let mut allowed: BTreeSet<[i64; 3]> = group
                 .iter()
                 .flat_map(|s| cells_of(s.opening.0, s.opening.1))
                 .collect();
+            for node in group.iter().flat_map(|s| [&s.a, &s.b]) {
+                if let Some(pb) = b.boxes.iter().find(|p| &p.node == node) {
+                    for side in pb.open_sides() {
+                        allowed.extend(cells_of(side.cells.0, side.cells.1));
+                    }
+                }
+            }
             let open: Vec<[i64; 3]> = cells_of(slo, shi)
                 .filter(|c| !allowed.contains(c) && world.is_clear(narrow(*c)))
                 .collect();
@@ -3235,7 +3354,7 @@ fn stands_in(
     })
 }
 
-/// `DW0838`: two places are joined only through the seams the plan allocated.
+/// `DW0838`: two places are joined only through the ways the plan declared.
 ///
 /// # The spec says "every legal step", and a step-level rule cannot fire
 ///
@@ -3261,14 +3380,39 @@ fn stands_in(
 /// body's moves are the reach graph's ([`crossing_flood`]): the walk, the
 /// climb, every fall it survives and every jump, declared ones included.
 ///
-/// Departure recorded here rather than in a list, because this is where it is
-/// made.
+/// # What the author declared, read as declared
+///
+/// - **A seamless border is a declared opening along its whole length.** Two
+///   places that share a face neither walls ([`PlacedBox::seamless_border`],
+///   spec-0123 §5.1) are one open ground across that border, and a body
+///   crossing anywhere along it — the ring corners where the two rings meet
+///   included — crosses where the plan said the ground runs on. The border's
+///   cells are deleted with the seams and the open sides' runs. A crossing
+///   anywhere else is judged as before: through a side either place walls, over
+///   a wall's top, round a portal, or between two places that share no
+///   seamless border. Whether a body gets round a shut gate by any move is the
+///   separation proof's (`DW1011`).
+/// - **The deletion invents no floor.** Walling an opening puts a wall where
+///   the world has air, and the wall's top is floor nothing built: a body
+///   stepping onto the top of a deleted doorway or of a walled open side, and
+///   off it into a neighbour, crosses on geometry that exists only in the
+///   proof. A body never comes to rest on a cell the deletion made standable
+///   (one standing on a walled cell, and not standable in the world itself).
+///
+/// Each leak names the route the reach graph found, move by move, so the place
+/// can be closed where the body crosses.
+///
+/// `only` limits the places floods start from (a place author's own check,
+/// `delvec detail --check`); the battery passes `None` and floods from every
+/// place.
+#[allow(clippy::too_many_arguments)]
 fn crossings(
     c: &Campaign,
     b: &Blockout,
     plan: &crate::compiler::plan::Plan,
     blocks: &crate::compiler::blockstate::BlockMap,
     world: &crate::compiler::nav::World,
+    only: Option<&BTreeSet<String>>,
     binding: &mut BatteryBinding,
     d: &mut Vec<(DwCode, Diagnostic)>,
 ) {
@@ -3280,8 +3424,37 @@ fn crossings(
     for wall in wall_openings(b, world) {
         seam.extend(wall.well.into_iter().map(narrow));
     }
-    // Every standable cell the whole map has, minus the ways the plan cut.
-    let (rlo, rhi) = region_span(c);
+    // Every open side's run is a declared opening as a seam is (spec-0123
+    // §5.3): two seamless places meet across it by the plan's declaration, so
+    // it is walled with the seams and a join through it is never unallocated.
+    for x in &b.boxes {
+        for side in x.open_sides() {
+            seam.extend(cells_of(side.cells.0, side.cells.1).map(narrow));
+        }
+    }
+    // Every seamless border is a declared opening along its whole length,
+    // the ring corners where the two rings meet included: two places that
+    // share a face neither walls are one ground across it.
+    let declared = seam.len();
+    for (i, x) in b.boxes.iter().enumerate() {
+        for y in &b.boxes[i + 1..] {
+            if let Some((_, (lo, hi))) = x.seamless_border(y) {
+                binding.seamless_borders += 1;
+                seam.extend(cells_of(lo, hi).map(narrow));
+            }
+        }
+    }
+    binding.border_cells = seam.len() - declared;
+    // Every standable cell the whole map has, minus the ways the plan cut —
+    // over the columns a body is judged in (`emit::judged_columns`): past them
+    // the boundary returns a body, and the world the walk reads is walled.
+    let (mut rlo, mut rhi) = region_span(c);
+    if let Some((jlo, jhi)) = crate::compiler::emit::judged_columns(plan) {
+        rlo[0] = rlo[0].max(i64::from(jlo[0]) - 1);
+        rlo[2] = rlo[2].max(i64::from(jlo[1]) - 1);
+        rhi[0] = rhi[0].min(i64::from(jhi[0]) + 1);
+        rhi[2] = rhi[2].min(i64::from(jhi[1]) + 1);
+    }
     let mut open: BTreeSet<[i32; 3]> = BTreeSet::new();
     for cell in cells_of(rlo, rhi) {
         let cell = narrow(cell);
@@ -3320,6 +3493,12 @@ fn crossings(
         }
     };
     let deleted = derive(&walled);
+    // The floor the deletion made: a cell standing on a walled cell, standable
+    // in the deleted world and not in the world itself.
+    let invented_over =
+        |walls: &BTreeSet<[i32; 3]>, w: &crate::compiler::nav::World| floor_made(walls, w, world);
+    let invented = invented_over(&seam, &deleted);
+    binding.invented_floor = invented.len();
     let in_region = |cell: [i32; 3]| {
         (0..3).all(|a| i64::from(cell[a]) >= rlo[a] && i64::from(cell[a]) <= rhi[a])
     };
@@ -3381,25 +3560,40 @@ fn crossings(
             crate::compiler::nav::World::wall_tops(&walls),
         )
     });
-    let flood = |starts: &[[i32; 3]], through_commons: bool| -> BTreeSet<[i32; 3]> {
-        let (world, tops) = match (&without_commons, through_commons) {
-            (Some((shut, tops)), false) => (shut, Some(tops)),
-            _ => (&deleted, None),
-        };
-        crossing_flood(world, starts, &|next| {
-            in_region(next)
-                && (through_commons || !commons.contains(&next))
-                && tops.is_none_or(|t| !t.contains(&next))
-        })
-    };
     let inside = |c: &[i32; 3], y: &PlacedBox| {
         let (ylo, yhi) = y.space();
         (0..3).all(|i| i64::from(c[i]) >= ylo[i] && i64::from(c[i]) <= yhi[i])
     };
+    // The world a flood runs over, and the cells it may rest in: the region,
+    // off the floor the deletion made, and off the commons and the commons'
+    // wall tops unless it crosses the commons.
+    let flood_world = |through_commons: bool| -> &crate::compiler::nav::World {
+        match (&without_commons, through_commons) {
+            (Some((shut, _)), false) => shut,
+            _ => &deleted,
+        }
+    };
+    let keeps = |through_commons: bool| {
+        let tops = match (&without_commons, through_commons) {
+            (Some((_, tops)), false) => Some(tops),
+            _ => None,
+        };
+        let invented = &invented;
+        move |next: [i32; 3]| {
+            in_region(next)
+                && !invented.contains(&next)
+                && (through_commons || !commons.contains(&next))
+                && tops.is_none_or(|t| !t.contains(&next))
+        }
+    };
     let mut direct: BTreeSet<(usize, usize)> = BTreeSet::new();
     let mut via_commons: BTreeSet<(usize, usize)> = BTreeSet::new();
+    const ROUTE_MOVES: usize = 24;
 
     for (xi, x) in b.boxes.iter().enumerate() {
+        if only.is_some_and(|o| !o.contains(x.node.0.as_str())) {
+            continue;
+        }
         let (lo, hi) = x.space();
         let starts: Vec<[i32; 3]> = cells_of(lo, hi)
             .map(narrow)
@@ -3410,23 +3604,17 @@ fn crossings(
         }
         // **The leak**: what a body reaches from this place without the
         // allocated openings and without the commons — another place's
-        // space is a crossing nothing allocated.
-        // On a solid site nothing outside a claim is the commons, so the walk
-        // goes wherever the bytes let it.
-        let own = flood(&starts, !binding.commons);
-        // What it reaches when the commons is walkable ground too.
-        let wide = if binding.commons {
-            flood(&starts, true)
-        } else {
-            own.clone()
-        };
+        // space is a crossing nothing allocated. On a solid site nothing outside a claim is the commons,
+        // so the walk goes wherever the bytes let it.
+        let own_through = !binding.commons;
+        let own_keep = keeps(own_through);
+        let own = crossing_flood(flood_world(own_through), &starts, &own_keep);
         // The second shape. On a solid site there is no commons, so ground
         // outside every claim is a way out of the designed places, whoever
         // reaches it. On an open site the commons is ordinary ground a piece
         // opens onto through its own openings — but a stand-in is the
         // engine's closed shell, with no opening but the seams, so a stand-in
         // reaching the commons is the derivation's own leak.
-        let leak_out = !binding.commons || massed.contains(x.node.0.as_str());
         // A side the plan declares open is a stand-in's opening onto the
         // commons as a seam is (spec-0123 §5.4, the commons rule of spec-0098
         // §14): the leak is asked with the place's own open sides closed —
@@ -3438,7 +3626,8 @@ fn crossings(
             .flat_map(|s| cells_of(s.cells.0, s.cells.1))
             .map(narrow)
             .collect();
-        let leaking = if leak_out && binding.commons && !sides.is_empty() {
+        let leak_out = !binding.commons || massed.contains(x.node.0.as_str());
+        let shut_sides = (leak_out && binding.commons && !sides.is_empty()).then(|| {
             let mut shut = walled.clone();
             for cell in &sides {
                 shut.insert(
@@ -3446,15 +3635,54 @@ fn crossings(
                     crate::compiler::blockstate::BlockState::new(palette::WALL),
                 );
             }
-            crossing_flood(&derive(&shut), &starts, &in_region)
+            let w = derive(&shut);
+            let mut made = invented_over(&sides, &w);
+            made.extend(invented.iter().copied());
+            (w, made)
+        });
+        // What it reaches when the commons is walkable ground too: flooded
+        // only where something reads it — the pairs joined through the commons
+        // (the battery's count), and a stand-in with no open side.
+        let wide = if binding.commons && (only.is_none() || leak_out && shut_sides.is_none()) {
+            let wide_keep = keeps(true);
+            crossing_flood(&deleted, &starts, &wide_keep)
         } else {
-            wide.clone()
+            own.clone()
         };
-        if leak_out
-            && !outside_reported
-            && let Some(witness) = leaking.iter().find(|c| commons.contains(*c))
-        {
+        let witness = (leak_out && !outside_reported)
+            .then(|| match &shut_sides {
+                Some((w, made)) => {
+                    crossing_flood(w, &starts, &|c| in_region(c) && !made.contains(&c))
+                        .into_iter()
+                        .find(|c| commons.contains(c))
+                }
+                None => wide.iter().find(|c| commons.contains(*c)).copied(),
+            })
+            .flatten();
+        if let Some(witness) = witness {
             outside_reported = true;
+            let route = match &shut_sides {
+                Some((w, made)) => {
+                    let keep = |c: [i32; 3]| in_region(c) && !made.contains(&c);
+                    w.body_route(
+                        &starts,
+                        &crate::compiler::nav::Confinement::cells(&keep),
+                        &|c| c == witness,
+                    )
+                    .map(|r| r.words(w, ROUTE_MOVES))
+                }
+                None => {
+                    let keep = keeps(true);
+                    let w = flood_world(true);
+                    w.body_route(
+                        &starts,
+                        &crate::compiler::nav::Confinement::cells(&keep),
+                        &|c| c == witness,
+                    )
+                    .map(|r| r.words(w, ROUTE_MOVES))
+                }
+            }
+            .unwrap_or_else(|| "(no route found)".to_string());
             let message = if binding.commons {
                 format!(
                     "`{a}` is a stand-in — the engine's closed shell, whose only openings are \
@@ -3462,8 +3690,8 @@ fn crossings(
                      {w:?} by a walk, climb, fall or jump, ground outside every place's claim, with every allocated opening \
                      removed from the world. The stand-in leaks: its shell did not close. Detail \
                      the place (its own piece opens onto the commons where it means to), or \
-                     find what broke the shell. {u} standable cell(s) of the commons were \
-                     examined.",
+                     find what broke the shell. The route: {route}. {u} standable cell(s) of \
+                     the commons were examined.",
                     a = x.node,
                     w = witness,
                     u = unclaimed.len(),
@@ -3476,8 +3704,8 @@ fn crossings(
                      from the world, a body still leaves the designed places. Close the edge — the place draws a wall \
                      on the ring it owns; make the ground a place, with seams to the places it \
                      joins; or declare the site's fill `open`, where ground outside every claim \
-                     is the commons every place may open onto. {u} standable cell(s) outside \
-                     every claim were examined.",
+                     is the commons every place may open onto. The route: {route}. {u} \
+                     standable cell(s) outside every claim were examined.",
                     a = x.node,
                     w = witness,
                     u = unclaimed.len(),
@@ -3498,7 +3726,7 @@ fn crossings(
             continue; // one place cannot be joined to another; the pair count says so.
         }
         for (yi, y) in b.boxes.iter().enumerate() {
-            if y.node == x.node {
+            if yi == xi {
                 continue;
             }
             let key = (xi.min(yi), xi.max(yi));
@@ -3506,6 +3734,15 @@ fn crossings(
                 if !direct.insert(key) {
                     continue;
                 }
+                let w = flood_world(own_through);
+                let route = w
+                    .body_route(
+                        &starts,
+                        &crate::compiler::nav::Confinement::cells(&own_keep),
+                        &|c| inside(&c, y),
+                    )
+                    .map(|r| r.words(w, ROUTE_MOVES))
+                    .unwrap_or_else(|| "(no route found)".to_string());
                 raise(
                     d,
                     DW_CROSSING_UNALLOCATED,
@@ -3521,8 +3758,10 @@ fn crossings(
                              fall or jump. **Seams are allocated, not discovered**: a way that exists because a wall came \
                              out low, a corner did not close or a roof turned out to be \
                              standable is a connection nothing in the design agreed to and \
-                             nothing downstream can name. Close the wall, or allocate a seam \
-                             between them. {n} standable cell(s) were classified over {p} place \
+                             nothing downstream can name. Close the wall where the route \
+                             crosses, allocate a seam between them, or leave the face they \
+                             share unwalled on both sides so they meet seamlessly. The route: \
+                             {route}. {n} standable cell(s) were classified over {p} place \
                              pair(s) to find this.",
                             a = x.node,
                             b = y.node,
@@ -3533,12 +3772,29 @@ fn crossings(
                         ),
                     ),
                 );
-            } else if binding.commons && wide.iter().any(|c| inside(c, y)) {
+            } else if binding.commons && only.is_none() && wide.iter().any(|c| inside(c, y)) {
                 via_commons.insert(key);
             }
         }
     }
     binding.commons_pairs = via_commons.difference(&direct).count();
+}
+
+/// **The floor a deletion made**: each cell standing on a cell of `walls`
+/// (and not itself one) that is standable in `deleted` — the world with
+/// `walls` walled — and not in `world`, the world itself. A body never comes
+/// to rest on one in `DW0838`'s floods: the wall stands where the world has
+/// air, and its top is floor nothing built.
+fn floor_made(
+    walls: &BTreeSet<[i32; 3]>,
+    deleted: &crate::compiler::nav::World,
+    world: &crate::compiler::nav::World,
+) -> BTreeSet<[i32; 3]> {
+    walls
+        .iter()
+        .map(|c| [c[0], c[1] + 1, c[2]])
+        .filter(|t| !walls.contains(t) && deleted.is_standable(*t) && !world.is_standable(*t))
+        .collect()
 }
 
 /// `DW0990`'s second shape: **a crack along a claim boundary**, read off the
@@ -3560,11 +3816,15 @@ fn crossings(
 fn stitches(
     b: &Blockout,
     world: &crate::compiler::nav::World,
+    only: Option<&BTreeSet<String>>,
     binding: &mut BatteryBinding,
     d: &mut Vec<(DwCode, Diagnostic)>,
 ) {
     let site = Site::new(&b.boxes, &b.seams, &b.ground);
     for (i, p) in b.boxes.iter().enumerate() {
+        if only.is_some_and(|o| !o.contains(p.node.0.as_str())) {
+            continue;
+        }
         if site.is_aloft(i) {
             binding.aloft += 1;
             continue;
@@ -4529,6 +4789,48 @@ impl clap::ValueEnum for Knob {
 }
 
 #[cfg(test)]
+mod floor_made_tests {
+    use super::*;
+    use crate::compiler::nav::World;
+
+    /// A doorway two high in a wall three high, walled by the deletion: the
+    /// cell over the doorway's walled top is the lintel's own top course, not
+    /// floor (the wall goes on), and nothing is made there; an open run two
+    /// high with sky over it, walled, makes its top standable, and that cell
+    /// is floor the deletion made. A cell over a walled cell that was already
+    /// solid in the world stood on a floor the world had: not made.
+    #[test]
+    fn the_top_of_a_walled_opening_is_floor_only_where_the_world_had_none() {
+        let mut solid: BTreeSet<[i32; 3]> = BTreeSet::new();
+        for x in 0..6 {
+            for z in 0..4 {
+                solid.insert([x, 0, z]); // the ground
+            }
+        }
+        // A wall three high at z = 2 with a doorway two high at x = 1.
+        for x in 0..3 {
+            for y in 1..=3 {
+                if !(x == 1 && y <= 2) {
+                    solid.insert([x, y, 2]);
+                }
+            }
+        }
+        // A solid block at x = 5 that the deletion also lists.
+        solid.insert([5, 1, 2]);
+        let world = World::from_solid_cells(solid.clone());
+        // The doorway, an open run two high at x = 4 with sky over it, and the
+        // solid block.
+        let walls: BTreeSet<[i32; 3]> =
+            BTreeSet::from([[1, 1, 2], [1, 2, 2], [4, 1, 2], [4, 2, 2], [5, 1, 2]]);
+        let mut shut = solid.clone();
+        shut.extend(walls.iter().copied());
+        let deleted = World::from_solid_cells(shut);
+        let made = floor_made(&walls, &deleted, &world);
+        assert_eq!(made, BTreeSet::from([[4, 3, 2]]), "{made:?}");
+    }
+}
+
+#[cfg(test)]
 mod hatch_refusal_tests {
     use super::*;
     use crate::compiler::nav::{Premises, World};
@@ -4591,5 +4893,31 @@ mod hatch_refusal_tests {
         );
         assert_eq!(kept.len(), 1);
         assert_eq!(kept[0].0.id(), DW_PORTAL_UNCROSSABLE.id());
+    }
+
+    /// A leak is a body getting too far, never one a trapdoor stops: a
+    /// battery whose only refusal is `DW0838` is not run again over the lifted
+    /// world, even with a trapdoor standing, and the leak stands. Beside a
+    /// stop-shaped refusal it is still never replaced.
+    #[test]
+    fn a_leak_is_never_a_trapdoors_and_is_not_run_twice() {
+        let w = hatched("north");
+        let mut leak = vec![refusal(DW_CROSSING_UNALLOCATED, "/content/seams")];
+        hatch_refusals(&w, &w, |_, _, _, _| unreachable!("run twice"), &mut leak);
+        assert_eq!(leak.len(), 1);
+        assert_eq!(leak[0].0.id(), "DW0838");
+
+        let run =
+            |open: &World, _: &World, _: &mut BatteryBinding, f: &mut Vec<(DwCode, Diagnostic)>| {
+                if open.has_leaves() {
+                    f.push(refusal(DW_PORTAL_UNCROSSABLE, "/content/seams[edge/a]"));
+                    f.push(refusal(DW_CROSSING_UNALLOCATED, "/content/seams"));
+                }
+            };
+        let mut findings = Vec::new();
+        run(&w, &w, &mut BatteryBinding::default(), &mut findings);
+        hatch_refusals(&w, &w, run, &mut findings);
+        let codes: Vec<&str> = findings.iter().map(|(c, _)| c.id()).collect();
+        assert_eq!(codes, ["DW1066", "DW0838"], "{codes:?}");
     }
 }

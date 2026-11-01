@@ -21,7 +21,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::envelope::Campaign;
 use crate::ids::NodeId;
 
-use super::{Ground, PlacedBox, PlacedSeam};
+use super::{Face, Ground, PlacedBox, PlacedSeam};
 
 /// An inclusive world AABB, `(lo, hi)`.
 pub type Aabb = ([i64; 3], [i64; 3]);
@@ -140,6 +140,30 @@ impl PlacedBox {
         let in_shell = x >= x0 - 1 && x <= x1 + 1 && z >= z0 - 1 && z <= z1 + 1;
         let in_foot = x >= x0 && x <= x1 && z >= z0 && z <= z1;
         in_shell && !in_foot
+    }
+
+    /// Whether ring column `(x, z)` stands on an open side: on a side the
+    /// place stands no wall on, or a corner both of whose sides are open.
+    #[must_use]
+    pub fn is_open_ring_column(&self, x: i64, z: i64) -> bool {
+        if !self.is_ring_column(x, z) {
+            return false;
+        }
+        let [x0, x1, z0, z1] = self.foot;
+        let mut faces = Vec::new();
+        if x == x0 - 1 {
+            faces.push(Face::West);
+        }
+        if x == x1 + 1 {
+            faces.push(Face::East);
+        }
+        if z == z0 - 1 {
+            faces.push(Face::North);
+        }
+        if z == z1 + 1 {
+            faces.push(Face::South);
+        }
+        !faces.is_empty() && faces.iter().all(|f| self.side_open(*f))
     }
 }
 
@@ -378,7 +402,24 @@ impl<'a> Site<'a> {
         !self.is_aloft(i)
             && self.in_shell(i, cell)
             && self.boxes[i].is_ring_column(cell[0], cell[2])
-            && cell[1] <= self.ground_height(i, cell[0], cell[2])
+            && cell[1] <= self.fixed_top(i, cell[0], cell[2])
+    }
+
+    /// The highest fixed ground cell of place `i`'s ring column `(x, z)`:
+    /// the column's ground height, except on an open side, where it stops
+    /// under the floor course — the floor course and everything over it are
+    /// the place's own, so its ground runs across the seam in its paving and
+    /// no strip of the fill's surface shows between two places meeting there.
+    /// The one answer [`Site::is_fixed`] and [`Site::fixed_cells`] read.
+    #[must_use]
+    pub fn fixed_top(&self, i: usize, x: i64, z: i64) -> i64 {
+        let b = &self.boxes[i];
+        let g = self.ground_height(i, x, z);
+        if b.is_open_ring_column(x, z) {
+            g.min(b.floor - 2)
+        } else {
+            g
+        }
     }
 
     /// True when `cell` is **sky ring** of place `i`: a ring cell of an open
@@ -572,7 +613,8 @@ impl<'a> Site<'a> {
                 }
                 let g = self.ground_height(i, x, z);
                 let from = self.column_bottom(i, x, z).unwrap_or(lo[1]);
-                for y in from..=g.min(hi[1]) {
+                let cap = self.fixed_top(i, x, z);
+                for y in from..=cap.min(hi[1]) {
                     out.push(([x, y, z], g));
                 }
             }
@@ -831,7 +873,14 @@ mod tests {
             open,
             base: crate::siteplan::Base::Ground,
             roof: None,
-            sides: Default::default(),
+            // Walled all round, the frame these tests were written for: a
+            // side with no declaration is open.
+            sides: crate::siteplan::Sides {
+                east: Some(crate::siteplan::SideKind::Wall),
+                west: Some(crate::siteplan::SideKind::Wall),
+                south: Some(crate::siteplan::SideKind::Wall),
+                north: Some(crate::siteplan::SideKind::Wall),
+            },
         }
     }
 
@@ -905,6 +954,75 @@ mod tests {
             "one step up: levelled to the sill"
         );
         assert!(site.is_fixed(0, [8, 63, 2]));
+    }
+
+    /// **The open side's floor course is the place's** (spec-0127 §3): on a
+    /// ring column of a side the place leaves unwalled — and on a corner both
+    /// of whose sides are open — the fixed ground stops under the floor
+    /// course, at `floor − 2`; on a walled side, and on a corner with a walled
+    /// side beside it, it is the column's ground height. `is_fixed` and
+    /// `fixed_cells` read the one answer. The ground stands at the floor
+    /// course here, so the two readings differ by exactly the course the
+    /// place's paving takes.
+    #[test]
+    fn fixed_ground_stops_under_the_floor_course_on_an_open_side() {
+        let mut house = a_box("node/house", [0, 7, 0, 7], 64, 4, false);
+        house.sides.east = None;
+        house.sides.south = None;
+        let boxes = vec![house];
+        let seams: Vec<PlacedSeam> = Vec::new();
+        let ground = Ground::open_flat(63, "minecraft:grass_block", "minecraft:dirt");
+        let site = Site::new(&boxes, &seams, &ground);
+        assert_eq!(
+            site.ground_height(0, 8, 3),
+            63,
+            "the ground stands at the floor course"
+        );
+        assert_eq!(
+            site.fixed_top(0, 8, 3),
+            62,
+            "an open east side stops under the floor course"
+        );
+        assert_eq!(site.fixed_top(0, 3, 8), 62, "an open south side too");
+        assert_eq!(
+            site.fixed_top(0, -1, 3),
+            63,
+            "a walled west side is the ground"
+        );
+        assert_eq!(
+            site.fixed_top(0, 8, 8),
+            62,
+            "a corner both of whose sides are open"
+        );
+        assert_eq!(
+            site.fixed_top(0, 8, -1),
+            63,
+            "a corner with a walled side beside it"
+        );
+        assert!(
+            !site.is_fixed(0, [8, 63, 3]),
+            "the floor course on an open side is the place's, not fixed ground"
+        );
+        assert!(
+            site.is_fixed(0, [-1, 63, 3]),
+            "on a walled side it is the ground's"
+        );
+        let cells = site.fixed_cells(0);
+        let east_run_top = cells
+            .iter()
+            .filter(|(c, _)| c[0] == 8 && (0..=7).contains(&c[2]))
+            .map(|(c, _)| c[1])
+            .max();
+        assert!(
+            east_run_top.is_none_or(|y| y <= 62),
+            "fixed_cells reads the same answer: {east_run_top:?}"
+        );
+        let west_run_top = cells
+            .iter()
+            .filter(|(c, _)| c[0] == -1 && (0..=7).contains(&c[2]))
+            .map(|(c, _)| c[1])
+            .max();
+        assert_eq!(west_run_top, Some(63));
     }
 
     #[test]

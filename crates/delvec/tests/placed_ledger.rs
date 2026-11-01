@@ -79,7 +79,7 @@ fn tmp(name: &str) -> PathBuf {
 
 /// Whether a shipped line places or removes, by the server's own reading of
 /// the command it runs: the command after an `execute … run` is a `summon`, a
-/// `setblock`, an `item replace block`, a `kill` of a tagged set, or the unseen
+/// `setblock`, an `item replace block`, a `data merge block`, a `kill` of a tagged set, or the unseen
 /// hand-off of a tagged set.
 fn placing(line: &str) -> Option<&str> {
     let cmd = match line.rfind(" run ") {
@@ -89,6 +89,7 @@ fn placing(line: &str) -> Option<&str> {
     let places = cmd.starts_with("summon ")
         || cmd.starts_with("setblock ")
         || cmd.starts_with("item replace block ")
+        || cmd.starts_with("data merge block ")
         || (cmd.starts_with("kill @e[tag=") && !cmd.contains(','));
     let unseen = line.starts_with("execute as @e[tag=")
         && cmd.starts_with("data merge entity @s {Tags:[\"dw_unseen\"");

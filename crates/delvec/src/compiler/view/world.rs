@@ -214,6 +214,26 @@ impl Nbt {
                 }
             }
             Nbt::List(items) => {
+                // A list of more than one tag type (a sign's messages: a
+                // plain string beside a `translate` compound) is written as
+                // the 1.21.11 game writes one (`ListTag.wrapIfNeeded`): a
+                // list of compounds, every element that is not a compound —
+                // or is a compound whose one key is `""` — wrapped as
+                // `{"": element}`.
+                if items.iter().any(|t| t.id() != items[0].id()) {
+                    out.push(10);
+                    out.extend_from_slice(&(items.len() as i32).to_be_bytes());
+                    for t in items {
+                        let bare =
+                            matches!(t, Nbt::Compound(e) if !(e.len() == 1 && e[0].0.is_empty()));
+                        if bare {
+                            t.write_payload(out);
+                        } else {
+                            Nbt::Compound(vec![(String::new(), t.clone())]).write_payload(out);
+                        }
+                    }
+                    return;
+                }
                 // An empty list is written with element type End, as the game does.
                 out.push(items.first().map_or(0, Nbt::id));
                 out.extend_from_slice(&(items.len() as i32).to_be_bytes());
@@ -924,6 +944,30 @@ pub fn block_entities_omitted(
 mod tests {
     use super::*;
     use crate::compiler::blockstate::BlockState;
+
+    /// A list of two tag types — a sign's messages, a string beside a
+    /// `translate` compound — is written as the game writes one: a list of
+    /// compounds, the string wrapped under the empty key, the compound bare.
+    #[test]
+    fn a_list_of_two_tag_types_is_written_wrapped() {
+        let list = Nbt::List(vec![
+            Nbt::Str(String::new()),
+            Nbt::Compound(vec![("translate".into(), Nbt::Str("k".into()))]),
+        ]);
+        let mut out = Vec::new();
+        list.write_payload(&mut out);
+        let mut want = vec![10u8, 0, 0, 0, 2];
+        // {"": ""}
+        want.extend([8, 0, 0, 0, 0, 0]);
+        // {translate: "k"}
+        want.extend([8, 0, 9]);
+        want.extend(b"translate");
+        want.extend([0, 1, b'k', 0]);
+        assert_eq!(out, want);
+        let mut same = Vec::new();
+        Nbt::List(vec![Nbt::Str("a".into()), Nbt::Str("b".into())]).write_payload(&mut same);
+        assert_eq!(same[0], 8, "a list of one type is written as it is");
+    }
 
     #[test]
     fn bits_follow_the_chunk_format() {

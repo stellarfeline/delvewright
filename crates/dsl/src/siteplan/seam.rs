@@ -68,6 +68,39 @@ impl PlacedBox {
     }
 }
 
+/// An inclusive world AABB of cells, `(min, max)`.
+pub type CellSpan = ([i64; 3], [i64; 3]);
+
+impl PlacedBox {
+    /// **The border this place meets `other` across seamlessly**, if any: a
+    /// horizontal face the two share (the one-cell gap, a common span on the
+    /// face's axis and a common vertical span) that neither declares `wall`
+    /// (spec-0123 §5.1). Two such places are one open ground across that
+    /// border by the plan's declaration. Returned as the face of this place
+    /// and the border's cells, inclusive: the gap plane over the common span
+    /// grown by one cell at each end — the ring corners where the two rings
+    /// meet — from the lower walk plane to the higher top of the two play
+    /// spaces. What the leak proof (`DW0838`) reads as a declared opening.
+    #[must_use]
+    pub fn seamless_border(&self, other: &PlacedBox) -> Option<(Face, CellSpan)> {
+        Sides::FACES.into_iter().find_map(|face| {
+            if !self.side_open(face) || !other.side_open(face.opposite()) {
+                return None;
+            }
+            let shared = shared_face(self.side(), other.side(), face).ok()?;
+            let (alo, ahi) = self.space();
+            let (blo, bhi) = other.space();
+            let (ylo, yhi) = (alo[1].min(blo[1]), ahi[1].max(bhi[1]));
+            let (ulo, uhi) = (shared.u.0 - 1, shared.u.1 + 1);
+            let cells = match face {
+                Face::East | Face::West => ([shared.plane, ylo, ulo], [shared.plane, yhi, uhi]),
+                _ => ([ulo, ylo, shared.plane], [uhi, yhi, shared.plane]),
+            };
+            Some((face, cells))
+        })
+    }
+}
+
 /// [`shared_face`] over two fully resolved boxes.
 pub(super) fn shared_face_of(
     a: &PlacedBox,
@@ -242,8 +275,10 @@ pub(super) fn seams(
         // ---- `DW1064`: a portal in an open side (spec-0123 §5.4). The seam
         // cuts `a`'s declared face and `b`'s opposite one; a side either place
         // declares open stands no wall to cut. A contact is that side's
-        // crossing and is admitted.
-        if s.contact.is_none() && !s.face.is_horizontal_plane() {
+        // crossing and is admitted; so is a stair, whose flight is a
+        // crossing in the open air (a contact carries no stair, so the
+        // remedy this names would be unreachable for one).
+        if s.contact.is_none() && s.stair_in.is_none() && !s.face.is_horizontal_plane() {
             let mut refused = false;
             for (place, face) in [(ctx.a, s.face), (ctx.b, s.face.opposite())] {
                 if place.plan.side_open(face) {

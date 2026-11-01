@@ -463,3 +463,58 @@ fn a_campaign_with_no_way_writes_its_zeros() {
     assert_eq!(j["states"], 1, "the world as built is the one state judged");
     let _ = std::fs::remove_dir_all(&out);
 }
+
+/// **A way place climbs where its place climbs.** The hall's way, x 13..14,
+/// built as a flight: at z 14 a stair tread in x 13 beside a ladder whose
+/// foot stands on the hall's floor course in x 14 (hung on the verge's wall),
+/// the floor raised a course under both columns at z 15..16, and back down at
+/// z 17. A body climbs the
+/// tread and passes the ladder at the treads' plane, so every station is
+/// whole — the station that judged both columns at the hall's floor took the
+/// tread and left only the ladder. A wall standing on the raised floor in
+/// x 13 still narrows the way, at the plane the climb reached.
+#[test]
+fn a_way_place_built_as_a_flight_is_judged_at_the_plane_it_climbs_to() {
+    let stair =
+        "minecraft:stone_brick_stairs[facing=south,half=bottom,shape=straight,waterlogged=false]";
+    // Facing west, the ladder hangs on the verge's wall at x 15.
+    let ladder = "minecraft:ladder[facing=west,waterlogged=false]";
+    let flight = |m: &mut delvec::compiler::blockstate::BlockMap| {
+        m.insert([13, 64, 14], BlockState::new(stair));
+        m.insert([14, 64, 14], BlockState::new(ladder));
+        m.insert([14, 65, 14], BlockState::new(ladder));
+        m.insert([15, 64, 14], BlockState::new("minecraft:stone_bricks"));
+        m.insert([15, 65, 14], BlockState::new("minecraft:stone_bricks"));
+        for z in 15..=16 {
+            for x in 13..=14 {
+                m.insert([x, 64, z], BlockState::new("minecraft:stone_bricks"));
+            }
+        }
+    };
+    let mut c = fixture();
+    hall_way(&mut c, 2, 0);
+    let (_, _, b, refused) = judged(&c, |m| flight(m));
+    assert!(refused.is_empty(), "{refused:?}");
+    assert_eq!(b.to_json()["way_places"], 1);
+
+    // A wall on the raised floor in the way: narrowed, at the climbed plane.
+    let mut c = fixture();
+    hall_way(&mut c, 2, 0);
+    let (_, _, _, refused) = judged(&c, |m| {
+        flight(m);
+        m.insert([13, 65, 15], BlockState::new("minecraft:stone_brick_wall"));
+    });
+    let f = refused.first().expect("a wall in the way is refused");
+    assert_eq!(f.code.id(), "DW1057");
+    assert!(
+        f.message.contains("11 cell(s) along `node/hall`"),
+        "{}",
+        f.message
+    );
+    assert!(
+        f.message
+            .contains("[13, 65, 15] `minecraft:stone_brick_wall`"),
+        "{}",
+        f.message
+    );
+}

@@ -3,7 +3,8 @@
 The script's whole verdict comes from `delvec` — `allocation --all` for the
 facts and the wave bound, `detail --check` for the refusal a repair hands on — so every test here runs it
 against a stub `delvec` that answers with the recorded allocations of
-`tools/tests/fixtures/handout/` (held equal to the real binary's output by
+`tools/tests/fixtures/handout/` and the recorded block lists of `blocks.json`
+(each held equal to the real binary's output by
 `crates/delvec/tests/handout_script.rs`) and with whatever `detail` verdict the
 test plants. One rig, one thing moved per test.
 """
@@ -25,7 +26,7 @@ FIXTURE = REPO / "tools" / "tests" / "fixtures" / "handout"
 ALLOCATIONS = FIXTURE / "allocations.json"
 
 STUB = r'''#!/usr/bin/env python3
-"""A `delvec` that answers `--version`, `allocation --all` and `detail` from files."""
+"""A `delvec` that answers `--version`, `allocation --all`, `grammar blocks` and `detail` from files."""
 import pathlib, sys
 here = pathlib.Path(__file__).resolve().parent
 args = sys.argv[1:]
@@ -38,6 +39,12 @@ if "allocation" in args:
     sys.stdout.write((here / "allocations.json").read_text())
     bound = here / "concurrency.txt"
     sys.stderr.write(bound.read_text() if bound.is_file() else "concurrency: 2 = min(3, max(1, 4 / 2))\n")
+    sys.exit(0)
+if args == ["grammar", "blocks"]:
+    blocks = here / "blocks.json"
+    if not blocks.is_file():
+        sys.exit(2)
+    sys.stdout.write(blocks.read_text())
     sys.exit(0)
 if "detail" in args:
     if "--check" not in args:
@@ -63,6 +70,7 @@ class Rig:
         self.delvec.write_text(STUB, encoding="utf-8")
         self.delvec.chmod(0o755)
         shutil.copy2(ALLOCATIONS, self.bin / "allocations.json")
+        shutil.copy2(FIXTURE / "blocks.json", self.bin / "blocks.json")
 
     def plant_detail(self, exit_code: int, verdict: str) -> None:
         (self.bin / "detail-exit.txt").write_text(str(exit_code), encoding="utf-8")
@@ -178,6 +186,37 @@ def test_a_delvec_that_states_no_wave_bound_is_refused(rig: Rig):
     assert rig.handouts("hall") == []
 
 
+def test_the_blocks_a_place_may_write_are_the_engine_s_lists(rig: Rig):
+    """Which blocks are refused (`DW0730`) and which are containers is read from
+    `delvec grammar blocks`, saved beside the handout, never typed."""
+    out = rig.run()
+    assert out.returncode == 0, out.stderr
+    handout = rig.handouts("hall")[0]
+    blocks = json.loads((FIXTURE / "blocks.json").read_text(encoding="utf-8"))
+    assert handout.with_name("blocks.json").read_text(encoding="utf-8") == (FIXTURE / "blocks.json").read_text(encoding="utf-8")
+    text = handout.read_text(encoding="utf-8")
+    assert f"## The blocks you may write ({len(blocks['admitted'])} admitted, {len(blocks['refused'])} refused)" in text
+    for r in blocks["refused"]:
+        assert f"`{r['block'].removeprefix('minecraft:')}`" in text
+    assert f"**Containers** ({len(blocks['containers'])}): " in text
+    assert "`smoker`" in text and "`blast_furnace`" in text
+    assert f"refused blocks {len(blocks['refused'])}; containers {len(blocks['containers'])}" in out.stderr
+    # Moved: the engine refuses one more block, and the handout says so.
+    blocks["refused"].append({"block": "minecraft:stone_bricks", "route": None})
+    (rig.bin / "blocks.json").write_text(json.dumps(blocks), encoding="utf-8")
+    out = rig.run(place="node/yard")
+    assert out.returncode == 0, out.stderr
+    assert "`stone_bricks`" in rig.handouts("yard")[0].read_text(encoding="utf-8").split("## The blocks you may write")[1].split("**Containers**")[0]
+
+
+def test_a_delvec_with_no_block_lists_is_refused(rig: Rig):
+    (rig.bin / "blocks.json").unlink()
+    out = rig.run()
+    assert out.returncode == 2
+    assert "grammar blocks` exited 2 without the block lists" in out.stderr
+    assert rig.handouts("hall") == []
+
+
 def test_a_starter_and_its_allocation_stand_beside_the_handout(rig: Rig):
     """Step 1 is a program that already passes, never research (spec-0122 §6.3)."""
     out = rig.run()
@@ -188,10 +227,10 @@ def test_a_starter_and_its_allocation_stand_beside_the_handout(rig: Rig):
     assert starter.read_bytes() == (SKILL / "scripts" / "starter.py").read_bytes()
     assert json.loads(allocation_file.read_text(encoding="utf-8")) == allocation("node/hall")
     text = handout.read_text(encoding="utf-8")
-    assert "## Step 1: start from the starter" in text
+    assert "## The steps, in the order you need them — each names its tool and what it costs" in text
     assert f'--allocation "{allocation_file}" --out "{rig.campaign / "programs" / "hall.json"}"' in text
     assert str(rig.campaign / "design" / "generator" / "hall.py") in text
-    assert "It passes `detail --check` as it stands." in text
+    assert "It passes every judgement `detail --check` makes of the place itself as it stands" in text
     assert "not the engine's source, not the engine's gallery, not another campaign" in text
     assert "gallery/overlays/site-plan/programs" not in text, "the gallery is not on the reading list"
     # The starter, run on the handed allocation, writes a program for this place.
@@ -201,6 +240,78 @@ def test_a_starter_and_its_allocation_stand_beside_the_handout(rig: Rig):
     doc = json.loads(prog.read_text(encoding="utf-8"))
     assert doc["params"]["handed/datum-y"] == allocation("node/hall")["datum_y"]
     assert {e.get("via") or e["bar"]["region"] for e in doc["contract"]["edges"]} == {"landing-hall-way", "seam-hall-yard"}
+
+
+def test_the_steps_run_in_the_order_an_author_needs_each_naming_its_tool_and_cost(rig: Rig):
+    """Start, measure the palette, draw, look alone, look in place, check: each
+    step names the tool it runs and what it costs, the palette is measured
+    before anything is drawn, and the loop is the cheap steps — the check is
+    never told to run after every edit or as often as one likes."""
+    out = rig.run()
+    assert out.returncode == 0, out.stderr
+    text = rig.handouts("hall")[0].read_text(encoding="utf-8")
+    steps = text.split("## The steps, in the order you need them")[1].split("## What you may do")[0]
+    heads = ["1. **Start** — `starter.py`", "2. **Measure the palette, never guess it** — `block-appearance.py`",
+             "3. **Draw** — your generator", "4. **Look at the piece alone** — `grammar expand`",
+             "5. **Look at it in its surroundings** — `frames --campaign`", "6. **Check** — `detail --check`"]
+    at = [steps.index(h) for h in heads]
+    assert at == sorted(at), "the steps are in order"
+    for key, cost in (("check", "12 to 13 min, peaking at 18.8 GB"), ("frames", "about 3 min and 11 GB"), ("generator", "about 1.5 s")):
+        assert cost in steps, key
+    assert "Steps 1 to 4 are seconds: run them after every edit." in steps
+    assert "Run it as often as you like" not in text
+    assert "check after every edit" not in text
+
+
+def test_the_camera_conventions_are_stated_and_a_camera_stands_in_a_places_frame(rig: Rig):
+    out = rig.run()
+    assert out.returncode == 0, out.stderr
+    text = rig.handouts("hall")[0].read_text(encoding="utf-8")
+    assert "the bearing turns clockwise seen from above" in text
+    assert "90 due west looking east" in text
+    assert "**A `face=up` picture has south at its top and west at its right**" in text
+    assert "--camera x,y,z,yaw,pitch[,fov]` with `--frame <place>`" in text
+
+
+def test_the_handout_says_whether_the_campaigns_notice_covers_scenery(rig: Rig):
+    """Scenery containers are allowed exactly where the campaign declares its
+    decoration notice (`DW1018`), and never beside a container a `loot`
+    entry fills in the place (`DW1024`): the handout reads both from the
+    quests document and says which holds here."""
+    out = rig.run()
+    assert out.returncode == 0, out.stderr
+    text = rig.handouts("hall")[0].read_text(encoding="utf-8")
+    assert "**This campaign declares no decoration notice**" in text
+    quests_path = rig.campaign / "quests.json"
+    doc = json.loads(quests_path.read_text(encoding="utf-8"))
+    body = doc.get("content", doc)
+    body["containers"] = {"decoration_notice": {"style": "chat", "text": "Not yours to open."}}
+    quests_path.write_text(json.dumps(doc), encoding="utf-8")
+    out = rig.run(place="node/yard")
+    assert out.returncode == 0, out.stderr
+    text = rig.handouts("yard")[0].read_text(encoding="utf-8")
+    assert "**This campaign declares its decoration notice** — players are told “Not yours to open.”" in text
+    assert "No `loot` entry fills an owed name of this place" in text
+    owed = allocation("node/landing")["owed_anchors"][0]
+    body["loot"] = [{"id": "loot/x", "anchor": owed, "contents": []}]
+    quests_path.write_text(json.dumps(doc), encoding="utf-8")
+    out = rig.run(place="node/landing")
+    assert out.returncode == 0, out.stderr
+    assert f"a `loot` entry fills `{owed}` — so no scenery container may stand in it (`DW1024`)" in rig.handouts("landing")[0].read_text(encoding="utf-8")
+
+
+def test_the_generator_path_is_the_campaigns_own_where_one_exists(rig: Rig):
+    out = rig.run()
+    assert out.returncode == 0, out.stderr
+    assert str(rig.campaign / "design" / "generator" / "hall.py") in rig.handouts("hall")[0].read_text(encoding="utf-8")
+    own = rig.campaign / "design" / "generator" / "lower" / "yard.py"
+    own.parent.mkdir(parents=True)
+    own.write_text("# the campaign's own\n", encoding="utf-8")
+    out = rig.run(place="node/yard")
+    assert out.returncode == 0, out.stderr
+    text = rig.handouts("yard")[0].read_text(encoding="utf-8")
+    assert f"write it at `{own}`" in text
+    assert str(rig.campaign / "design" / "generator" / "yard.py") not in text
 
 
 def test_the_entry_place_is_told_it_owes_the_spawn(rig: Rig):
@@ -337,8 +448,10 @@ def test_the_stub_answers_with_the_allocation_struct_s_own_fields():
     recorded = json.loads(ALLOCATIONS.read_text(encoding="utf-8"))
     assert len(recorded) == 3
     # `skip_serializing_if`: `Option::is_none` for `palette` and `roof`, and
-    # `Vec::is_empty` for `sides` (a place declaring no open side, spec-0123).
-    optional = {"palette", "roof", "sides"}
+    # `Vec::is_empty` for `sides` (a place declaring no open side, spec-0123)
+    # and `parts` and `bands` (a place that is not a plot, spec-0125);
+    # `Option::is_none` for `way` (a place that is not a way).
+    optional = {"palette", "roof", "sides", "parts", "bands", "way"}
     for a in recorded:
         assert set(a) <= fields, set(a) - fields
         assert fields - set(a) <= optional, fields - set(a) - optional
@@ -450,3 +563,40 @@ def test_a_neighbour_s_open_side_toward_the_place_is_named(rig: Rig):
     nb = nb[: nb.find("\n### ") if "\n### " in nb else len(nb)]
     assert "its side toward you is open" in nb
     assert text.count("its side toward you is open") == 1, "only the yard declares one"
+
+
+def test_a_plot_is_handed_what_it_holds_its_binding_rule_and_its_shapes(rig: Rig):
+    out = rig.run(place="node/yard")
+    assert out.returncode == 0, out.stderr
+    text = rig.handouts("yard")[0].read_text(encoding="utf-8")
+    body = section(text, "What this plot holds")
+    # After what the place is and what it is built from, before its design rows.
+    assert text.index("## What this place is") < text.index("## What this plot holds") < text.index("## This place's rows")
+    assert "This place is a plot: it holds the parts below and the ground between them; build them in any outline, inside the frame." in body
+    assert "3 part(s) over 64 cell(s) of play space:" in body
+    # Each part's band is the allocation's (`bands`, `plot::size_band`).
+    assert "- `part/court` — ground: the court a body crosses from the hall; 50 cell(s), 78 % of the play space; walked; its spaces and regions claim 38 to 62 column(s) (DW1074)" in body
+    assert "- `part/shed` — structure: a tool shed in the court's corner; 6 cell(s), 9 % of the play space; height 3 course(s) to the ridge; walked; its spaces and regions claim 5 to 7 column(s) (DW1074)" in body
+    assert "- `part/bed` — ground: a herb bed nobody walks; 4 cell(s), 6 % of the play space; seen, never entered; its spaces and regions claim 3 to 5 column(s) (DW1074)" in body
+    assert "a part's claimed columns stay inside the band each part line states" in body
+    for line in (
+        "- the entry side is the front;",
+        "- an outbuilding stands behind or beside, one cell off;",
+        "- a yard is enclosed by the structure it serves;",
+        "- a precinct is a sequence from the gate;",
+    ):
+        assert line in body, line
+    frame = section(text, "The frame, read before anything is drawn")
+    assert "- plot: The box is sky-open, and the roof of every structure in it is yours, within the stated courses of air." in frame
+    assert "parts 3" in out.stderr
+
+
+def test_a_place_that_is_not_a_plot_has_no_plot_section(rig: Rig):
+    out = rig.run(place="node/hall")
+    assert out.returncode == 0, out.stderr
+    text = rig.handouts("hall")[0].read_text(encoding="utf-8")
+    assert "## What this plot holds" not in text
+    assert "- plot: The box is sky-open" not in text
+    assert "parts 0" in out.stderr
+    # The hall's neighbour summary states the yard's parts by use.
+    assert "- it is a plot holding: the court a body crosses from the hall (ground); a tool shed in the court's corner (structure); a herb bed nobody walks (ground)" in text

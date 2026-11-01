@@ -1,6 +1,7 @@
 //! **The wave bound is the engine's, stated by `delvec allocation --all`**
 //! (spec-0122 §6.2): `concurrency: N = min(P, max(1, C / 2))`, P the plan's
-//! places with no passing program (no `details[]` row), C the machine's
+//! places with no passing program (no `details[]` row, or a row binding the
+//! piece `detail` writes from a program whose file is gone), C the machine's
 //! `available_parallelism()`. The line goes to stderr; stdout stays the one
 //! JSON document the handout parses.
 
@@ -72,10 +73,31 @@ fn allocation_all_prints_the_bound_on_stderr_from_the_machine_and_the_plan() {
 
     // The committed point: P counts the boxes with no `details[]` row.
     let c = common::campaign_at(&dir);
-    let p_committed = unauthored_places(&c);
+    let stems = |d: &std::path::Path| -> std::collections::BTreeSet<String> {
+        std::fs::read_dir(d.join("programs"))
+            .unwrap()
+            .map(|e| {
+                e.unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .trim_end_matches(".json")
+                    .to_string()
+            })
+            .collect()
+    };
+    let p_committed = unauthored_places(&c, &stems(&dir));
     let (n, p, cc) = state("committed");
     assert_eq!((p, cc), (p_committed, cores));
     assert_eq!(n, concurrency_bound(p_committed, cores));
+
+    // A row whose program is gone counts: the piece stands and no author
+    // holds what makes it. The row binding a library piece (`node/exit`'s
+    // `prefab/gallery-yard`) is not a program's and does not count.
+    std::fs::remove_file(dir.join("programs").join("annex.json")).unwrap();
+    let (n, p, _) = state("annex's program removed");
+    assert_eq!(p, p_committed + 1, "the place whose program is gone");
+    assert_eq!(p, unauthored_places(&c, &stems(&dir)));
+    assert!(n >= 1, "a place to author is at least one author: {n}");
 
     // No row at all: every box the plan allocates is to be authored.
     common::patch_file(&dir.join("detail-plan.json"), |v| {

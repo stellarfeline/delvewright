@@ -328,6 +328,9 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
             "extent": [b.extent[0], b.extent[1]],
             "floor": { "y": floor },
             "ceiling": { "clearance": b.clearance },
+            // A bay is a walled room between two standard openings: its walls
+            // are declared, since a side with no declaration is open.
+            "sides": { "east": "wall", "west": "wall", "south": "wall", "north": "wall" },
         });
         if b.min == entry_min && b.node == bays[0].node {
             v["min"] = json!([b.min[0], b.min[1]]);

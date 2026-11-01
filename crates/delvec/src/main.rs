@@ -466,6 +466,9 @@ fn main() -> ExitCode {
             at,
             orbit,
             dist,
+            served,
+            program,
+            frame,
             ..
         }) => run_frames_campaign(
             campaign,
@@ -478,6 +481,9 @@ fn main() -> ExitCode {
                 out: out.as_deref(),
                 labels: *labels,
                 size: *size,
+                served: *served,
+                program: program.as_deref(),
+                frame: frame.as_deref(),
                 draw,
             },
             cli.json,

@@ -1,0 +1,14 @@
+{
+  "code": "DW1074",
+  "patch": [
+    {
+      "doc": "detail-plan.json",
+      "op": "replace",
+      "path": "/content/details/0/piece",
+      "value": "prefab/gallery-yard-well-unnamed"
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The court bound to the probe-only yard whose contract leaves the well-house's space without its `part`: the plan declares `part/well-house` and no space or out-of-walk region of the piece names it. The bindings check refuses the part as unbuilt, naming its use and the two repairs. It declares no unit: the part is bound on the site-plan point, and what must not bind is a declared part the piece never built."
+}

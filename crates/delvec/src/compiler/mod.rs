@@ -82,6 +82,7 @@
 //! - [`onkill`]: whether a fight comes back, and the `on_kill.fires` judgement it owes (`DW0914`/`DW0915`).
 //! - [`placed`]: the placements ledger — every block, container item and body the datapack places outside the templates, and every removal, one record each, the command written from the record (spec-0112 §4).
 //! - [`plan`]: resolve a validated campaign into the placement + naming model emission reads.
+//! - [`plot`]: a plot is built as it was planned — its parts bound, judged (`DW1074`) and measured into `validation/plot-program.json` (spec-0125).
 //! - [`png`]: the deterministic hand-rolled PNG writer.
 //! - [`pool`]: a pool draw that seats the same anchored prefab twice (`DW0498`).
 //! - [`presence`]: one named character is one body in every story state (`DW1026`).
@@ -96,10 +97,12 @@
 //! - [`render_plan`]: `render-plan.json` emission.
 //! - [`resourcepack`]: the per-delve skin resource pack.
 //! - [`respawn`]: what separates a retry from a soft-lock — the evidence `DW0478` accepts.
+//! - [`resting`]: every block the build writes reads as resting on what holds it, by the jar's outlines (`DW1076`, reported).
 //! - [`sculk`]: the sculk family works — at rest (`DW0998`/`DW0999`), a sensor's power reaching nothing (`DW1000`), a catalyst hearing no death (`DW1001`), and the walk's vibrations — spec-0100.
 //! - [`seating`]: a horizon and a piece set are a pair — this base cannot seat this pool (`DW0886`), and a declared waterline is not in the bytes (`DW0887`).
 //! - [`seeding`]: no emitted comparison reads a score entry the emitted pack never creates (`DW0495`).
 //! - [`served`]: what the declared view distance costs the host — the pinned server's chunk set, the fitted live heap, the ceiling stated in `server/resources.properties` (spec-0091).
+//! - [`sign`]: the sign at a `signs` entry's anchor shows its text (`DW1075`).
 //! - [`skinparts`]: the model-part table every skin and entity texture is drawn to, and the one rule that refuses paint no box samples (`DW0978`) or nobody standing level sees (`DW0979`) — spec-0097.
 //! - [`solo`]: a generated PackTest whose drive takes every player's body runs alone, in its own test environment.
 //! - [`solver`]: the jigsaw layout solver.
@@ -199,6 +202,7 @@ pub mod observer;
 pub mod onkill;
 pub mod placed;
 pub mod plan;
+pub mod plot;
 pub mod png;
 pub mod pool;
 pub mod presence;
@@ -213,10 +217,12 @@ pub mod rehearsal;
 pub mod render_plan;
 pub mod resourcepack;
 pub mod respawn;
+pub mod resting;
 pub mod sculk;
 pub mod seating;
 pub mod seeding;
 pub mod served;
+pub mod sign;
 pub mod skinparts;
 pub mod solo;
 pub mod solver;

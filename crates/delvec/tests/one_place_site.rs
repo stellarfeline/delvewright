@@ -80,7 +80,8 @@ fn campaign(dir: &Path) {
             "region": {"min": [0, 63, 0], "extent": [SIZE[0], SIZE[1], SIZE[2]]},
             "boxes": [{
                 "node": "node/house", "min": [1, 1], "extent": [16, 16],
-                "floor": {"y": 64}, "ceiling": {"clearance": 8}
+                "floor": {"y": 64}, "ceiling": {"clearance": 8},
+                "sides": {"east": "wall", "west": "wall", "south": "wall", "north": "wall"}
             }],
             "seams": [],
             "fill": {"kind": "solid", "block": "minecraft:deepslate"}

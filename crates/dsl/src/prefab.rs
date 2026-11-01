@@ -322,6 +322,10 @@ pub struct ContractSpace {
     pub envelope: String,
     /// The cells it covers.
     pub boxes: Vec<Region>,
+    /// The plot part this space is (spec-0125 §5.1): a `part/<id>` the
+    /// place's node declares in `holds[]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub part: Option<String>,
 }
 
 /// One entry of `spatial_contract.no_body`.
@@ -333,6 +337,9 @@ pub struct ContractNoBody {
     pub reason: String,
     /// The cells it covers.
     pub boxes: Vec<Region>,
+    /// The plot part this region is (spec-0125 §5.1), as on a space.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub part: Option<String>,
 }
 
 /// One entry of `spatial_contract.edges`.

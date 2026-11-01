@@ -93,8 +93,8 @@ pub struct PlacedBox {
     /// The roof the plan reserves over this place (spec-0098 §3), when it
     /// declares one. Never present on an open box (`DW0988`).
     pub roof: Option<super::Roof>,
-    /// Which of its four sides stand a wall (spec-0123 §5.1); every side a
-    /// wall when the plan declares none.
+    /// Which of its four sides stand a wall (spec-0123 §5.1); every side
+    /// open when the plan declares none.
     pub sides: super::Sides,
 }
 
@@ -141,6 +141,17 @@ impl PlacedBox {
                     walk_y: self.floor,
                 }
             })
+            .collect()
+    }
+
+    /// The open sides the plan declares `open` in words (spec-0123 §5.1):
+    /// the ones the clear-width check judges as ways. An undeclared side is
+    /// seamless and is not among them.
+    #[must_use]
+    pub fn declared_open_sides(&self) -> Vec<OpenSide> {
+        self.open_sides()
+            .into_iter()
+            .filter(|s| self.sides.is_declared_open(s.face))
             .collect()
     }
 

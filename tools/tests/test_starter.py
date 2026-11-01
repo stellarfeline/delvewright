@@ -51,3 +51,326 @@ def test_a_place_with_no_open_side_has_no_side_region(tmp_path: pathlib.Path):
     p = program(tmp_path, "node/hall")
     assert not [e for e in p["contract"]["edges"] if str(e.get("via", "")).startswith("side-")]
     assert not [r for r in regions(p["rules"]) if r.startswith("side-")]
+
+
+def program_of(tmp: pathlib.Path, a: dict) -> dict:
+    src, out = tmp / "allocation.json", tmp / "program.json"
+    src.write_text(json.dumps(a), encoding="utf-8")
+    r = subprocess.run([sys.executable, "-I", str(STARTER), "--allocation", str(src), "--out", str(out)], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    return json.loads(out.read_text(encoding="utf-8"))
+
+
+def test_a_side_with_nothing_of_its_own_to_claim_is_not_declared(tmp_path: pathlib.Path):
+    """A side whose run lies outside the frame (or is every cell a seam's
+    opening) has no ring cell of its own: the starter does not declare it,
+    so no `side-*` edge names a region nothing claims."""
+    a = next(x for x in json.loads(ALLOCATIONS.read_text(encoding="utf-8")) if x["place"] == "node/yard")
+    ex = a["extent"][0]
+    a = dict(a)
+    a["sides"] = list(a["sides"]) + [{"face": "north", "cells": [[1, a["datum_y"], -1], [ex - 2, a["datum_y"], -1]], "contacts": [], "walk_y": a["datum_y"]}]
+    p = program_of(tmp_path, a)
+    assert "side-north" not in regions(p["rules"])
+    assert not [e for e in p["contract"]["edges"] if e.get("via") == "side-north"]
+    # the side it does own is still declared
+    assert {"a": "room", "b": "exterior", "class": "walk", "via": "side-south"} in p["contract"]["edges"]
+
+
+def _starter_module():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("starter_under_test", STARTER)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class _Datum:
+    value = 1
+    expr = {"expr": "int", "value": 1}
+
+
+class _Place:
+    """The fields `marks` reads, over a place whose floor no body reaches."""
+
+    a = {"space": [[0, 0, 0], [4, 3, 4]], "owed_anchors": ["anchor/sign-bakery"]}
+    ex = ez = 5
+    datum = _Datum()
+    gates: list = []
+    seams: list = []
+
+    def __init__(self, drawn: dict):
+        self.model = type("M", (), {"marks": drawn})()
+
+    def walkable(self, cell) -> bool:
+        return False
+
+    def cell(self, x, y, z):
+        return ("fill", None, None)
+
+
+def test_a_mark_given_a_course_names_the_block_at_that_cell():
+    """`Model.mark(stem, x, z, y=…)` names a block's own cell — a sign a
+    `signs` entry writes — so no floor is asked of it (spec-0128 §8); the
+    same name with no course is refused off walkable floor."""
+    st = _starter_module()
+    out = st.marks(_Place({"sign-bakery": (2, 3, "south", 3)}), {"op": "skip"})
+    assert out["mark"] == {
+        "anchor": "sign-bakery",
+        "at": "offset",
+        "facing": "south",
+        "y": {"expr": "int", "value": 3},
+        "x": {"expr": "int", "value": 2},
+        "z": {"expr": "int", "value": 3},
+    }
+    import pytest
+
+    with pytest.raises(SystemExit) as e:
+        st.marks(_Place({"sign-bakery": (2, 3, "south", None)}), {"op": "skip"})
+    assert "not on floor a body reaches" in str(e.value)
+
+
+# ---------------------------------------------------------------- the handed ground
+
+
+def test_the_ground_course_is_the_ground_the_whole_hands_each_column():
+    """`ground.columns` hands each column's blocks (spec-0128): the starter
+    paints the ground course in them — a ring column from its nearest
+    column inside — and falls back to the `floor` role only where nothing is
+    handed."""
+    st = _starter_module()
+    a = next(x for x in json.loads(ALLOCATIONS.read_text(encoding="utf-8")) if x["place"] == "node/yard")
+    a = json.loads(json.dumps(a))
+    lo, hi = a["space"]
+    cols = a["ground"]["columns"]
+    assert cols, "the binding: a handed column"
+    for c in cols:
+        c["blocks"] = ["minecraft:coarse_dirt" if (c["x"] + c["z"]) % 2 else "minecraft:grass_block[snowy=false]"]
+    p = st.Place(a)
+    d = a["datum_y"]
+    assert p.ground_roles == {"minecraft:coarse_dirt": "ground-0", "minecraft:grass_block[snowy=false]": "ground-1"}
+    by = {(c["x"], c["z"]): c["blocks"][0] for c in cols}
+    for (x, z), b in by.items():
+        assert p.cell(x, d - 1, z) == ("fill", p.ground_roles[b]), (x, z)
+    # a ring column takes its nearest column inside
+    x, z = lo[0] - 1, lo[2]
+    assert p.cell(x, d - 1, z) == ("fill", p.ground_roles[by[(lo[0], lo[2])]])
+    # nothing handed: the `floor` role, as before
+    a["ground"]["columns"] = []
+    assert st.Place(a).cell(lo[0], d - 1, lo[2]) == ("fill", "floor")
+
+
+# ---------------------------------------------------------------- an opening touches the room
+
+
+def _plot_of(st, a: dict, build, monkeypatch):
+    """A drawn plot over `a`, the engine's survey answered without a binary:
+    every air cell over a solid one in the play space is standable and
+    reached, nothing sealed."""
+
+    def survey(_delvec, request):
+        solid = {(x, y, z) for x, y, z, _ in request["blocks"]}
+        stand = sorted([x, y, z] for (x, y, z) in {(x, y + 1, z) for x, y, z in solid} if (x, y, z) not in solid)
+        return {"standable": stand, "reached": stand, "sealed": [], "joined": [], "unsupported": [],
+                "refused": [], "containers": [], "malformed": []}
+
+    monkeypatch.setattr(st, "ask_engine", survey)
+    st.Plot.BUILD = staticmethod(build)
+    return st.plot_program(a, "seen")
+
+
+def _front_alloc() -> dict:
+    """An open 9x6x9 plot whose north seam opens its whole first row,
+    owned by the street, with one part to lay."""
+    return {"place": "node/lot", "extent": [9, 6, 9], "space": [[1, 1, 1], [7, 5, 7]], "datum_y": 1,
+            "ground": {"base": "ground", "columns": []},
+            "seams": [{"edge": "edge/street-to-lot", "face": "north", "cells": [[2, 1, 1], [6, 3, 1]], "bar": None,
+                       "owns_plane": False, "other": "node/street", "answer_with": ["walk"], "rise": 0}],
+            "sides": [], "voids": [], "brief": {"kind": "open"}, "owed_anchors": [],
+            "parts": [{"id": "part/yard", "cells": 9, "kind": "ground", "use": "the yard"}]}
+
+
+def test_a_part_or_a_full_block_behind_an_opening_is_refused_before_writing(monkeypatch):
+    """Every cell of a seam's opening touches the room its edge enters
+    (`contract-well-formed`): a part named on the row behind it, or a full
+    block standing there, is refused by the starter with the cell and what is
+    behind it; the same part one row in passes."""
+    import pytest
+
+    st = _starter_module()
+
+    def yard_at(z0):
+        def build(place):
+            m = st.Model(place)
+            m.part(2, 4, z0, z0 + 2, "yard")
+            return m
+        return build
+
+    with pytest.raises(SystemExit) as e:
+        _plot_of(st, _front_alloc(), yard_at(2), monkeypatch)
+    msg = str(e.value)
+    # the opening's end column touches the room beside it, and its top course
+    # the room above it: what is refused is what the engine would refuse
+    assert "`edge/street-to-lot`: 4 cell(s)" in msg and "(3, 1, 1) (behind it, (3, 1, 2): the columns of part/yard)" in msg, msg
+
+    def cauldron(place):
+        m = st.Model(place)
+        m.part(2, 4, 4, 6, "yard")
+        m.set(5, 1, 2, "minecraft:water_cauldron[level=3]")
+        return m
+
+    with pytest.raises(SystemExit) as e:
+        _plot_of(st, _front_alloc(), cauldron, monkeypatch)
+    msg = str(e.value)
+    assert "(5, 1, 1)" in msg and "minecraft:water_cauldron" in msg, msg
+
+    doc = _plot_of(st, _front_alloc(), yard_at(4), monkeypatch)
+    assert {"a": "room", "b": "exterior", "class": "walk", "via": "street-to-lot-way"} in doc["contract"]["edges"]
+
+
+def test_part_sizes_name_every_column_named_for_a_part_and_left_out(monkeypatch, capsys):
+    """The generator's part sizes are the count `DW1074` judges, and beside
+    it every column the drawing named for the part that the claim leaves
+    out, with why (`Model.unpart`): an author reads a band against what was
+    drawn before running the check. A part with nothing left out is the
+    count alone."""
+    st = _starter_module()
+    a = _front_alloc()
+    a["bands"] = [{"part": "part/yard", "min": 6, "max": 12}]
+
+    def build(place):
+        m = st.Model(place)
+        m.part(2, 4, 4, 6, "yard")
+        m.unpart(3, 5, why="handed back for the test")
+        return m
+
+    _plot_of(st, a, build, monkeypatch)
+    err = capsys.readouterr().err
+    assert "part/yard 8 of 6..12 (9 named, 1 left out: 1 handed back for the test — (3,5))" in err, err
+
+    def whole(place):
+        m = st.Model(place)
+        m.part(2, 4, 4, 6, "yard")
+        return m
+
+    _plot_of(st, a, whole, monkeypatch)
+    err = capsys.readouterr().err
+    assert "part/yard 9 of 6..12;" in err or err.rstrip().endswith("part/yard 9 of 6..12"), err
+
+
+# ---------------------------------------------------------------- a raised opening the drawing climbs to
+
+
+def _raised_alloc() -> dict:
+    """An open 9x8x9 place whose north seam opens two courses over its walk
+    plane (a flight's top, the neighbour's floor two up), with a way out at
+    grade on the south."""
+    return {"place": "node/flight", "extent": [9, 8, 9], "space": [[1, 1, 1], [7, 7, 7]], "datum_y": 1,
+            "ground": {"base": "ground", "columns": []},
+            "seams": [{"edge": "edge/top-to-flight", "face": "north", "cells": [[1, 3, 1], [7, 6, 1]], "bar": None,
+                       "owns_plane": False, "other": "node/top", "answer_with": ["stair", "walk"], "rise": 2},
+                      {"edge": "edge/flight-to-foot", "face": "south", "cells": [[1, 1, 7], [7, 4, 7]], "bar": None,
+                       "owns_plane": True, "other": "node/foot", "answer_with": ["walk"], "rise": 0}],
+            "sides": [], "voids": [], "brief": {"kind": "open"}, "owed_anchors": [], "parts": []}
+
+
+def test_a_drawn_way_up_to_a_raised_opening_stands_no_ladder(monkeypatch):
+    """Under an opening two courses over the walk plane the starter stands a
+    pillar, a landing and a ladder (`Place.approach`). A drawing that builds
+    its own way up there is refused unless it says so with
+    `Model.climbs_to(edge)`, never overwritten; said, the program carries no
+    ladder and no `climb` edge, and the seam is the plain walk the engine
+    proves. A drawing that leaves the cells empty keeps the ladder."""
+    import pytest
+
+    st = _starter_module()
+
+    def steps(state: bool):
+        def build(place):
+            m = st.Model(place)
+            if state:
+                m.climbs_to("edge/top-to-flight")
+            for x in range(1, 8):
+                m.set(x, 1, 1, "minecraft:stone_bricks"); m.set(x, 2, 1, "minecraft:stone_bricks")
+                m.set(x, 1, 2, "minecraft:stone_bricks")
+                m.set(x, 2, 2, "minecraft:stone_brick_stairs[facing=north,half=bottom,shape=straight,waterlogged=false]")
+                m.set(x, 1, 3, "minecraft:stone_brick_stairs[facing=north,half=bottom,shape=straight,waterlogged=false]")
+            return m
+        return build
+
+    with pytest.raises(SystemExit) as e:
+        _plot_of(st, _raised_alloc(), steps(False), monkeypatch)
+    msg = str(e.value)
+    assert "edge/top-to-flight: the opening stands 2 course(s)" in msg and "Model.climbs_to(edge)" in msg, msg
+
+    doc = _plot_of(st, _raised_alloc(), steps(True), monkeypatch)
+    assert not any("ladder" in k for k in doc["palette"]), doc["palette"]
+    assert all(e["class"] != "climb" for e in doc["contract"]["edges"]), doc["contract"]["edges"]
+    assert {"a": "room", "b": "exterior", "class": "walk", "via": "top-to-flight-way"} in doc["contract"]["edges"]
+
+    # beside an open side, the ring cell straight out from the opening is the
+    # neighbour's side of the way, never this place's room: claimed room it
+    # would stand the room on both sides of the opening and leave the way
+    # facing nowhere (`exterior_faces`, `DW0844`)
+    a = _raised_alloc()
+    a["sides"] = [{"face": "west", "cells": [[0, 1, 1], [0, 1, 7]]}]
+    _plot_of(st, a, steps(True), monkeypatch)
+    p = st.Plot(a)
+    assert p.cell(1, 4, 0) != ("claim", "room", None), p.cell(1, 4, 0)
+    assert p.cell(0, 4, 1)[1] == "side-west"
+
+    def bare(place):
+        return st.Model(place)
+
+    doc = _plot_of(st, _raised_alloc(), bare, monkeypatch)
+    assert "ladder-south" in doc["palette"]
+    assert {"a": "room", "b": "top-to-flight-landing", "class": "climb", "rise": 2, "via": "top-to-flight-ladder"} in doc["contract"]["edges"]
+
+    def wrong(place):
+        m = st.Model(place)
+        m.climbs_to("edge/flight-to-foot")
+        return m
+
+    with pytest.raises(SystemExit) as e:
+        _plot_of(st, _raised_alloc(), wrong, monkeypatch)
+    assert "at most one course over the walk plane" in str(e.value)
+
+
+def test_floor_that_reads_as_joined_through_a_corner_no_body_passes_is_refused(monkeypatch):
+    """A cell a body cannot reach, diagonally beside one it does at the same
+    course, with a block in each of the two cells between them, reads as a
+    gap to squeeze through (a gallery's walk pinched between a rail post and
+    the glass): the starter refuses it, naming the cells and both blocks,
+    rather than declaring that floor out of walk; with one of the blocks moved
+    the corner is open and nothing is refused."""
+    import pytest
+
+    st = _starter_module()
+    u, v = (5, 1, 4), (4, 1, 5)
+
+    def survey(_delvec, request):
+        solid = {(x, y, z) for x, y, z, _ in request["blocks"]}
+        stand = sorted([x, y, z] for (x, y, z) in {(x, y + 1, z) for x, y, z in solid} if (x, y, z) not in solid)
+        reached = [c for c in stand if tuple(c) != u] if (4, 1, 4) in solid and (5, 1, 5) in solid else stand
+        return {"standable": stand, "reached": reached, "sealed": [], "joined": [], "unsupported": [],
+                "refused": [], "containers": [], "malformed": []}
+
+    def corner(both: bool):
+        def build(place):
+            m = st.Model(place)
+            m.part(2, 4, 4, 6, "yard")
+            m.set(4, 1, 4, "minecraft:oak_fence[east=false,north=false,south=false,waterlogged=false,west=false]")
+            if both:
+                m.set(5, 1, 5, "minecraft:glass")
+            return m
+        return build
+
+    monkeypatch.setattr(st, "ask_engine", survey)
+    st.Plot.BUILD = staticmethod(corner(True))
+    with pytest.raises(SystemExit) as e:
+        st.plot_program(_front_alloc(), "seen")
+    msg = str(e.value)
+    assert f"{u} beside reached {v}" in msg and "minecraft:glass" in msg and "oak_fence" in msg, msg
+    st.Plot.BUILD = staticmethod(corner(False))
+    doc = st.plot_program(_front_alloc(), "seen")
+    assert doc["contract"]["edges"]

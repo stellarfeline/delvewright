@@ -60,6 +60,28 @@ fn the_recorded_allocations_are_this_binary_s_own_answer() {
     );
 }
 
+/// The block lists the stub `delvec` of `tools/tests/test_handout.py` answers
+/// `grammar blocks` with are this binary's own.
+#[test]
+fn the_recorded_block_lists_are_this_binary_s_own_answer() {
+    let out = Command::new(BIN)
+        .args(["grammar", "blocks"])
+        .output()
+        .expect("run delvec");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let recorded = std::fs::read_to_string(fixture().join("blocks.json")).unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        recorded,
+        "tools/tests/fixtures/handout/blocks.json is not what this binary prints; re-record it: \
+         `delvec grammar blocks > tools/tests/fixtures/handout/blocks.json`"
+    );
+}
+
 #[test]
 fn the_handout_carries_the_place_s_allocation_verbatim() {
     let tmp = tempdir("handout");
@@ -123,6 +145,15 @@ fn the_handout_carries_the_place_s_allocation_verbatim() {
         "ground.fixed ({};",
         fixed.as_array().unwrap().len()
     )));
+    // Which blocks the place may write is this binary's answer, saved beside it.
+    assert!(handout.contains("`blast_furnace`"), "{handout}");
+    assert!(handout.contains("**Containers** ("), "{handout}");
+    let saved = std::path::Path::new(path).with_file_name("blocks.json");
+    let listed = Command::new(BIN)
+        .args(["grammar", "blocks"])
+        .output()
+        .expect("run delvec");
+    assert_eq!(std::fs::read(&saved).unwrap(), listed.stdout);
     // The frame and the check command name this binary by its absolute path.
     assert!(handout.contains("extent **14×10×18**"), "{handout}");
     assert!(handout.contains(&format!(
