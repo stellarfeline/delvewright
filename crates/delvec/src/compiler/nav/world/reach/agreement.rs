@@ -1100,3 +1100,40 @@ fn a_walk_by_chunk_answers_what_a_plain_walk_answers() {
     eprintln!("walks by chunk: {walked} cell(s) walked back, {sea_walked} through the sea");
     assert!(walked > 0 && sea_walked > 0, "the walks bind nothing");
 }
+
+/// **The learned route tree read by chunk is the tree one least-cost search
+/// gives** (ADR-0037 §2, the readers): over every invariance world, from its
+/// root and from its standing states with an odd coordinate sum as a route,
+/// at chunk sides of sixteen, seven and two columns, the tree and the order
+/// `nav::learned::route_tree` answers equal those of one search over the
+/// whole closure in (cost, cell) order. Red on any predecessor or position.
+#[test]
+fn the_route_tree_by_chunk_is_the_one_search_gives() {
+    let (mut cells, mut joined) = (0usize, 0usize);
+    for (name, w, roots) in invariance_worlds() {
+        for side in [16, 7, 2] {
+            super::chunks::at_side(side, || {
+                let r = w.body_reach(&roots);
+                let odd: Vec<[i32; 3]> = r
+                    .standing()
+                    .into_iter()
+                    .filter(|c| (c[0] + c[1] + c[2]).rem_euclid(5) == 0)
+                    .collect();
+                for route in [roots.clone(), odd] {
+                    let chunked = crate::compiler::nav::learned::route_tree(&r, &route);
+                    let plain = crate::compiler::nav::learned::route_tree_plainly(&r, &route);
+                    assert_eq!(
+                        chunked, plain,
+                        "{name} (side {side}): the route tree read by chunk differs"
+                    );
+                    if side == 2 {
+                        cells += chunked.1.len();
+                        joined += chunked.0.values().filter(|p| p.is_some()).count();
+                    }
+                }
+            });
+        }
+    }
+    eprintln!("route trees by chunk: {cells} cell(s) ordered, {joined} with a predecessor");
+    assert!(cells > 0 && joined > 0, "the route trees bind nothing");
+}

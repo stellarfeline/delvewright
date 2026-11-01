@@ -563,6 +563,117 @@ pub fn check_shut_ways_learned(
 /// is where a body walking off the route leaves it, and a jump is on the path
 /// only where the walk cannot go.
 pub(super) fn route_tree(graph: &Reach, route: &[[i32; 3]]) -> (Tree, Vec<[i32; 3]>) {
+    // Read reach chunk by reach chunk (ADR-0037 §2): first every cell's cost
+    // — (leaps, moves), the least over every path — by a least-cost search
+    // kept per chunk, a chunk's cells settled before the next chunk's are
+    // taken and a cost a later chunk lowers taken again; the costs are the
+    // least whatever the order. Then each cell's predecessor, in one sweep of
+    // the chunks: of the cells whose cost and edge give the cell its cost,
+    // the least by (cost, cell) — the one a search popping cells in that
+    // order would have taken first.
+    type Cost = (u32, u32);
+    let step_cost = |c: Cost, step: bool| (c.0 + u32::from(!step), c.1 + 1);
+    let out_of = |cur: [i32; 3]| -> Vec<([i32; 3], bool)> {
+        graph
+            .succ(cur)
+            .into_iter()
+            .map(|e| (e.to, e.yaw.is_none()))
+            .filter(|(n, _)| *n != cur && graph.states.contains_key(n))
+            .collect()
+    };
+    let mut best: BTreeMap<[i32; 3], Cost> = BTreeMap::new();
+    let mut seeds: BTreeSet<[i32; 3]> = BTreeSet::new();
+    let mut fronts: BTreeMap<(i32, i32), Vec<[i32; 3]>> = BTreeMap::new();
+    for c in route {
+        if seeds.insert(*c) {
+            best.insert(*c, (0, 0));
+            fronts.entry(graph.chunk(*c)).or_default().push(*c);
+        }
+    }
+    // The least cost an open-sea cell was settled at: the open sea is one
+    // water, so every open-sea cell is one leap from it.
+    let mut sea_at: Option<Cost> = None;
+    while let Some((k, cells)) = fronts.pop_first() {
+        let mut heap: std::collections::BinaryHeap<std::cmp::Reverse<(Cost, [i32; 3])>> = cells
+            .into_iter()
+            .map(|c| std::cmp::Reverse((best[&c], c)))
+            .collect();
+        while let Some(std::cmp::Reverse((cost, cur))) = heap.pop() {
+            if best.get(&cur).is_some_and(|b| *b < cost) {
+                continue;
+            }
+            let mut next = out_of(cur);
+            if graph.open_sea.contains(&cur) && sea_at.is_none_or(|s| cost < s) {
+                sea_at = Some(cost);
+                next.extend(
+                    graph
+                        .open_sea
+                        .iter()
+                        .filter(|c| **c != cur)
+                        .map(|&c| (c, false)),
+                );
+            }
+            for (n, step) in next {
+                let c = step_cost(cost, step);
+                if best.get(&n).is_none_or(|b| c < *b) {
+                    best.insert(n, c);
+                    let kn = graph.chunk(n);
+                    if kn == k {
+                        heap.push(std::cmp::Reverse((c, n)));
+                    } else {
+                        fronts.entry(kn).or_default().push(n);
+                    }
+                }
+            }
+        }
+    }
+    // The predecessors, one sweep of the chunks.
+    let mut pred: Tree = seeds.iter().map(|c| (*c, None)).collect();
+    let mut chosen: BTreeMap<[i32; 3], (Cost, [i32; 3])> = BTreeMap::new();
+    let mut cells: Vec<[i32; 3]> = best.keys().copied().collect();
+    graph.in_chunk_order(&mut cells);
+    for cur in cells {
+        let cost = best[&cur];
+        for (n, step) in out_of(cur) {
+            if seeds.contains(&n) || step_cost(cost, step) != best[&n] {
+                continue;
+            }
+            if chosen.get(&n).is_none_or(|b| (cost, cur) < *b) {
+                chosen.insert(n, (cost, cur));
+            }
+        }
+    }
+    // Over the open sea, the least open-sea cell by (cost, cell), or the
+    // next least for itself.
+    let mut sea: Vec<(Cost, [i32; 3])> = graph
+        .open_sea
+        .iter()
+        .filter_map(|c| best.get(c).map(|b| (*b, *c)))
+        .collect();
+    sea.sort_unstable();
+    for &(cost, n) in &sea {
+        if seeds.contains(&n) {
+            continue;
+        }
+        let Some(&(sc, sp)) = sea.iter().find(|(_, c)| *c != n) else {
+            continue;
+        };
+        if step_cost(sc, false) == cost && chosen.get(&n).is_none_or(|b| (sc, sp) < *b) {
+            chosen.insert(n, (sc, sp));
+        }
+    }
+    for (n, (_, p)) in chosen {
+        pred.insert(n, Some(p));
+    }
+    let mut order: Vec<[i32; 3]> = best.keys().copied().collect();
+    order.sort_by_key(|c| (best[c], *c));
+    (pred, order)
+}
+
+/// The tree [`route_tree`] answers, taken by one least-cost search over the
+/// whole closure in (cost, cell) order: the agreement test's reference.
+#[cfg(test)]
+pub(super) fn route_tree_plainly(graph: &Reach, route: &[[i32; 3]]) -> (Tree, Vec<[i32; 3]>) {
     use std::cmp::Reverse;
     use std::collections::BinaryHeap;
     let mut pred: Tree = BTreeMap::new();

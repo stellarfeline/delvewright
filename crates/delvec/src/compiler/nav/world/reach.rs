@@ -3989,6 +3989,12 @@ impl Reach {
         chunks::chunk_of(c, self.succ.side())
     }
 
+    /// The reach chunk `c`'s lists are kept in: a reader that keeps a
+    /// frontier per chunk keys it by this.
+    pub fn chunk(&self, c: [i32; 3]) -> (i32, i32) {
+        self.chunk_key(c)
+    }
+
     /// Put `cells` in the order their lists are kept in: reach chunk by reach
     /// chunk, cell order within a chunk. A reader whose answer does not
     /// depend on the order it reads cells in reads them so.
