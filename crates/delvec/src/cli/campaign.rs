@@ -239,29 +239,26 @@ pub(crate) fn validate_stage_noting(
     validate_loaded_with(loaded, prefabs_dir, json, Some(notes))
 }
 
-/// [`validate_stage_noting`], its notes written to the file `notes` (its
-/// directory made) and one line printed with their count and path: what a
-/// verb that judges one place or one view prints instead of the campaign's
-/// whole census, which is the same on every run over it.
-pub(crate) fn validate_stage_into(
+/// [`validate_stage_noting`], its notes counted rather than printed: one
+/// line states how many there are and the command that prints them for
+/// `named`. What a verb that judges one place or draws one view prints in
+/// place of the campaign's whole census, which is the same on every run over
+/// it and about nothing that run changed.
+pub(crate) fn validate_stage_counted(
     campaign_dir: &Path,
     prefabs_dir: &Path,
     json: bool,
-    notes: &Path,
+    named: &Path,
 ) -> Result<Validated, u8> {
     let mut examined: Vec<String> = Vec::new();
     let v = validate_stage_noting(campaign_dir, prefabs_dir, json, &mut examined);
     if !examined.is_empty() {
-        let mut text = examined.join("\n");
-        text.push('\n');
-        if let Err(e) = super::report::write_file(notes, text.as_bytes()) {
-            eprintln!("internal error: cannot write {}: {e}", notes.display());
-            return Err(crate::EXIT_INTERNAL);
-        }
         eprintln!(
-            "-- what the validation examined: {} line(s), written to {}",
+            "-- what the validation examined: {} line(s), the campaign's census; `delvec \
+             --prefabs {} validate {}` prints them",
             examined.len(),
-            notes.display()
+            prefabs_dir.display(),
+            named.display()
         );
     }
     v

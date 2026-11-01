@@ -46,8 +46,7 @@ fn snapshot(dir: &Path) -> BTreeSet<(String, String)> {
     let mut out = BTreeSet::new();
     // The campaign's `.out/` is the runs' own, and no copy of the campaign
     // carries it (`detail`'s scratch copy leaves it behind): it holds the
-    // reach graph's node bank and the battery's validation notes, which a
-    // check keeps there by design.
+    // reach graph's node bank, which a check keeps there by design.
     let own = dir.join(".out");
     let mut stack = vec![dir.to_path_buf()];
     while let Some(d) = stack.pop() {

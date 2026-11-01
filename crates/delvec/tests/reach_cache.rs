@@ -145,6 +145,8 @@ fn detail_keeps_the_bank_with_the_campaign_and_reclaims_another_binary_s() {
     let root = tmp("reach-cache-detail");
     let (campaign, prefabs) = common::gallery_site_plan_detailed(&root);
     let bank = campaign.join(".out/reach-bank");
+    // The fixture is made by `detail --all`, which keeps its own bank there.
+    let _ = std::fs::remove_dir_all(&bank);
 
     let off = check(&campaign, &prefabs, Some(""));
     let said = String::from_utf8_lossy(&off.stderr).into_owned();

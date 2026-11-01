@@ -227,9 +227,11 @@ own bytes, so a run reads only what its own binary wrote; a file that does not
 decode is read as empty, and a file is replaced whole by a rename. A file's
 name starts with the executable's hash, and a run that writes a bank removes
 the bank files in the directory another executable wrote. Unset, `delvec
-detail` (the commit, `--all` and `--check`) and `delvec frames --campaign`
-keep the bank at `<campaign>/.out/reach-bank/`, and every other verb's bank
-lives and dies with the run; the empty string turns it off for every verb.
+detail` (the commit, `--all` and `--check`) keeps the bank at
+`<campaign>/.out/reach-bank/`, and every other verb's bank lives and dies with
+the run; the empty string turns it off for every verb. A bank is keyed by the
+whole world's climb holds and door and trapdoor leaves, so a run whose world
+moves any of them takes nothing from a bank its predecessors wrote.
 Either way the bytes a build emits are the same (`tests/reach_cache.rs`); the
 gallery coverage gate sets it to a scratch directory its probe runs share.
 The cost is disk: the town's bank (95 places) is 1.9 GB after one check, and grows with each program a place is checked with, since a node keeps up to eight variants (4.4 GB after eleven checks of six programs of one place).

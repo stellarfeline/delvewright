@@ -50,7 +50,8 @@ use sha2::{Digest, Sha256};
 
 use crate::EXIT_INTERNAL;
 use crate::cli::campaign::{
-    has_error, load_library, load_or_refuse, read_skins, read_structures, validate_stage_into,
+    has_error, load_library, load_or_refuse, read_skins, read_structures, validate_stage,
+    validate_stage_counted,
 };
 use crate::cli::report::{print_build_error, print_diags, print_one_diag};
 
@@ -207,11 +208,7 @@ fn run(
     // observers `delvec build` runs. A red here is the state `build` would
     // report and is left standing — the broken intermediate is a real, lookable
     // object (spec-0050 §1) — and it names the place.
-    let notes = campaign_dir
-        .join(".out")
-        .join("detail")
-        .join("examined.txt");
-    battery(campaign_dir, prefabs_dir, lang, json, false, &notes)
+    battery(campaign_dir, prefabs_dir, lang, json, None)
 }
 
 /// Which places this run details, in site-plan box order.
@@ -1351,25 +1348,28 @@ fn peak_rss() -> String {
 /// The whole, validated and built in memory — the same observers `delvec
 /// build` runs, output discarded.
 ///
-/// The validation funnel's binding notes ("what this run examined": every
-/// pass's count, the plan's placements) are the campaign's, the same on every
-/// run over it whichever place it details; they are written to `notes`, and
-/// one line says how many there are and where, so the run's reader meets the
-/// lines about what this run changed rather than the whole's census.
+/// `count_for`: `--check`'s battery counts the validation funnel's binding
+/// notes (every pass's count, one placement line per box) instead of
+/// printing them, naming the campaign whose `validate` prints them — they
+/// are the campaign's census, the same on every check of every place. The
+/// commit's battery prints them, as `build` does.
 fn battery(
     campaign_dir: &Path,
     prefabs_dir: &Path,
     lang: &str,
     json: bool,
-    check: bool,
-    notes: &Path,
+    count_for: Option<&Path>,
 ) -> Result<(), u8> {
+    let check = count_for.is_some();
     use delvec::compiler::analyze::analyze_campaign;
     use delvec::compiler::commands::CommandTree;
     use delvec::compiler::emit;
     use delvec::compiler::plan::Plan;
 
-    let v = validate_stage_into(campaign_dir, prefabs_dir, json, notes)?;
+    let v = match count_for {
+        Some(named) => validate_stage_counted(campaign_dir, prefabs_dir, json, named)?,
+        None => validate_stage(campaign_dir, prefabs_dir, json)?,
+    };
     if has_error(&v.diags) {
         eprintln!(
             "{}: the campaign does not validate with the piece(s) this run {}.",
@@ -1476,22 +1476,12 @@ fn check_battery(
         "detail --check: the commit written into a scratch copy of the campaign and the \
          library ({copied} file(s)); the battery over the whole it leaves:"
     );
-    let stems = prepared
-        .iter()
-        .map(|p| stem_of(&NodeId(p.place.clone())).to_string())
-        .collect::<Vec<_>>()
-        .join("+");
-    let notes = campaign_dir
-        .join(".out")
-        .join("detail-check")
-        .join(format!("{stems}.examined.txt"));
     battery(
         &scratch.campaign,
         &scratch.prefabs,
         lang,
         json,
-        true,
-        &notes,
+        Some(campaign_dir),
     )
     .inspect_err(|_| {
         eprintln!(

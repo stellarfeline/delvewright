@@ -75,8 +75,8 @@ each part's size against its band (`DW1074`), then writes the commit into a
 scratch copy of the campaign and the library and runs the commit's own battery
 over the whole it leaves, and writes nothing to either (under the campaign's
 uncommitted `.out/` it keeps the reach graph's node bank, `reach-bank/`, which
-makes every check after the first cheaper, and the battery's validation notes,
-`detail-check/<stem>.examined.txt`, which the run names); `delvec --prefabs "$DELVEWRIGHT_PREFABS" detail
+makes a check after the first cheaper while the place's doors, trapdoors and
+climbables stay where they were); `delvec --prefabs "$DELVEWRIGHT_PREFABS" detail
 <campaign-dir> <place>` runs the same judge, then writes the piece, its report
 and the plan row — each through a temporary file renamed into place, so a check
 running at that instant reads the old file or the new one, never a torn one —
