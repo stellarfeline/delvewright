@@ -251,13 +251,16 @@ enum Outside {
     Ocean { level: i32, floor_top: i32 },
 }
 
-/// A window-long array held in chunks, which a later snapshot of a world
-/// like this one shares wherever it holds the same values. The quest
-/// configurations of one campaign are worlds that differ in a few cells, and
-/// every graph a build takes is kept for the build's life (a proof asking the
-/// same world again is answered from it), so each keeps its own copy of only
-/// the chunks those cells lie in. Held only in memory, read only by index:
-/// what a build emits never depends on which snapshot owns a chunk.
+/// A window-long array held in chunks, each chunk **interned**: every array of
+/// one value type in the process holds one copy of a chunk's values however
+/// many chunks hold them (ADR-0037 §2). The quest configurations of one
+/// campaign are worlds that differ in a few cells, and every graph a build
+/// takes is kept for the build's life (a proof asking the same world again is
+/// answered from it), so each keeps its own copy of only the chunks those
+/// cells lie in; and within one window the open sea, the air over it and the
+/// sea floor repeat column after column, so a chunk of them is held once.
+/// Held only in memory, read only by index: what a build emits never depends
+/// on which array owns a chunk.
 pub(in crate::compiler::nav) struct Chunked<T> {
     chunks: Vec<Arc<[T]>>,
     len: usize,
@@ -267,29 +270,61 @@ pub(in crate::compiler::nav) struct Chunked<T> {
 const CHUNK_CELLS_BITS: u32 = 12;
 const CHUNK_CELLS_MASK: usize = (1 << CHUNK_CELLS_BITS) - 1;
 
-impl<T: Copy + PartialEq> Chunked<T> {
+/// The chunks every [`Chunked`] array of one value type holds, by the hash of
+/// their values: looked up, never iterated.
+pub(in crate::compiler::nav) type Interned<T> = Mutex<HashMap<u64, Vec<std::sync::Weak<[T]>>>>;
+
+/// A value a [`Chunked`] array interns its chunks of.
+pub(in crate::compiler::nav) trait Intern:
+    Copy + PartialEq + std::hash::Hash + 'static
+{
+    fn interned() -> &'static Interned<Self>;
+}
+
+impl Intern for Code {
+    fn interned() -> &'static Interned<Code> {
+        static I: OnceLock<Interned<Code>> = OnceLock::new();
+        I.get_or_init(Default::default)
+    }
+}
+
+impl Intern for u16 {
+    fn interned() -> &'static Interned<u16> {
+        static I: OnceLock<Interned<u16>> = OnceLock::new();
+        I.get_or_init(Default::default)
+    }
+}
+
+impl<T: Intern> Chunked<T> {
     fn new(values: &[T]) -> Chunked<T> {
+        use std::hash::{BuildHasher, BuildHasherDefault};
+        let mut held = T::interned().lock().expect("interned");
+        let chunks = values
+            .chunks(1 << CHUNK_CELLS_BITS)
+            .map(|v| {
+                let h = BuildHasherDefault::<flights::Mix>::default().hash_one(v);
+                let bucket = held.entry(h).or_default();
+                bucket.retain(|w| w.strong_count() > 0);
+                if let Some(a) = bucket
+                    .iter()
+                    .filter_map(std::sync::Weak::upgrade)
+                    .find(|a| **a == *v)
+                {
+                    return a;
+                }
+                let a: Arc<[T]> = Arc::from(v);
+                bucket.push(Arc::downgrade(&a));
+                a
+            })
+            .collect();
         Chunked {
-            chunks: values
-                .chunks(1 << CHUNK_CELLS_BITS)
-                .map(Arc::from)
-                .collect(),
+            chunks,
             len: values.len(),
         }
     }
+}
 
-    /// Take `base`'s chunk wherever it holds what this one holds.
-    fn share(&mut self, base: &Chunked<T>) {
-        if base.len != self.len {
-            return;
-        }
-        for (mine, theirs) in self.chunks.iter_mut().zip(&base.chunks) {
-            if !Arc::ptr_eq(mine, theirs) && **mine == **theirs {
-                *mine = Arc::clone(theirs);
-            }
-        }
-    }
-
+impl<T: Copy + PartialEq> Chunked<T> {
     #[inline(always)]
     fn len(&self) -> usize {
         self.len
@@ -2078,7 +2113,7 @@ impl World {
     /// A new graph memo over this world at `params`, with the latest graph of
     /// its window as its lineage; it becomes the next one's.
     fn build_graph(&self, params: &ReachParams) -> Arc<GraphMemo> {
-        let mut dense = Dense::of(self);
+        let dense = Dense::of(self);
         // A declared jump's launch cell is a premise cell too: a node whose
         // jumps differ from the lineage's is not the lineage's node.
         let premise_cells: BTreeSet<[i32; 3]> = self
@@ -2102,11 +2137,7 @@ impl World {
         );
         let seeds = SEEDS.get_or_init(|| Mutex::new(HashMap::new()));
         let seed = seeds.lock().expect("memo").get(&seed_key).cloned();
-        let mut extra = raw_membership(self, &dense);
-        if let Some(base) = &seed {
-            dense.cells.share(&base.dense.cells);
-            extra.share(&base.extra);
-        }
+        let extra = raw_membership(self, &dense);
         let lineage = seed.map(|base| {
             let mut diff: Vec<[i32; 3]> = dense
                 .cells
