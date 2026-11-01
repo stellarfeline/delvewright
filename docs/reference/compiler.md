@@ -227,7 +227,13 @@ own bytes, so a run reads only what its own binary wrote; a file that does not
 decode is read as empty, and a file is replaced whole by a rename. Unset, the
 bank lives and dies with the run. Either way the bytes a build emits are the
 same (`tests/reach_cache.rs`); the gallery coverage gate sets it to a scratch
-directory its probe runs share.
+directory its probe runs share. Within a run the bank lives in a scratch file
+in the system's temporary directory, unlinked as soon as it is open: each
+variant is appended as the file format encodes it and read back when a later
+graph asks, and the bank holds one offset and length per variant in memory, so
+what it costs grows with the nodes flown by a few words each and never with
+the cells they read (ADR-0037). A run that kept any prints `reach bank: N node
+variant(s) kept over B byte(s) in the spill file` as it ends.
 
 **The output directory** holds exactly what the last build emitted: a build into a directory a previous build wrote removes every file that build emitted and this one does not, and a directory holding anything no build wrote is refused untouched (`DW0967`, §5).
 
