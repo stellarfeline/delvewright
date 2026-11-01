@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-11-01
-- **Source**: the owner's ruling that a larger map must not need more memory and that every whole-map stage processes the map in bounded chunks; the memory profile of `delvec build` and `delvec detail --all` over the town campaign (95 places, site region 588 × 176 × 830) and the gallery, taken with two instruments that share no configuration — heaptrack (allocation sites, Linux) and the process's own resident set read from `/proc` once a second beside its timestamped stderr, with `/usr/bin/time -v` and macOS `/usr/bin/time -l` as the whole-run figures; the engine tree at the revision this record lands with; CLAUDE.md "Host hardware never caps a capability", "Debug doctrine", "A craft question … is researched"; ADR-0006; spec-0113 §4.7 and §7; the sources cited in §4.
+- **Source**: the requirement that a larger map need no more memory and that every whole-map stage process the map in bounded chunks; the memory profile of `delvec build` and `delvec detail --all` over the town campaign (95 places, site region 588 × 176 × 830) and the gallery, taken with two instruments that share no configuration — heaptrack (allocation sites, Linux) and the process's own resident set read from `/proc` once a second beside its timestamped stderr, with `/usr/bin/time -v` and macOS `/usr/bin/time -l` as the whole-run figures; the engine tree at the revision this record lands with; CLAUDE.md "Host hardware never caps a capability", "Debug doctrine", "A craft question … is researched"; ADR-0006; spec-0113 §4.7 and §7; the sources cited in §4.
 - **Supersedes**: nothing. Refines spec-0113 §7 (cost and caching of the reach graph) by naming the structures it keeps and bounding them.
 
 ## Context

@@ -234,6 +234,15 @@ graph asks, and the bank holds one offset and length per variant in memory, so
 what it costs grows with the nodes flown by a few words each and never with
 the cells they read (ADR-0037). A run that kept any prints `reach bank: N node
 variant(s) kept over B byte(s) in the spill file` as it ends.
+Every closure's successor and predecessor lists live in a second scratch file
+of the same kind, by reach chunk (a full-height column of 32 × 32 cells): a
+chunk is decoded while a proof reads it, under one budget of 256 MiB resident
+for every list in the process, and written back out past it, so they cost the
+budget and never the reached cells (ADR-0037 §2). The graphs' node tables live
+in the same file, one record per entry with one slot each in memory, as the
+bank's variants do. Every run prints `reach lists: B byte(s) in the scratch
+file; R byte(s) resident at the end, under a budget of N; L chunk read(s) back
+over D record(s), E chunk(s) given up (ADR-0037 §2)` as it ends.
 
 **The output directory** holds exactly what the last build emitted: a build into a directory a previous build wrote removes every file that build emitted and this one does not, and a directory holding anything no build wrote is refused untouched (`DW0967`, §5).
 
