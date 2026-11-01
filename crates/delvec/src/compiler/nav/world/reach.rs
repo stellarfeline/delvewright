@@ -3635,7 +3635,7 @@ impl World {
         visits: &mut chunks::Visits,
     ) -> Vec<[i32; 3]> {
         let side = chunks::side_here();
-        let mut by_chunk: BTreeMap<chunks::Key, Vec<([i32; 3], Quadrants)>> = BTreeMap::new();
+        let mut by_chunk: BTreeMap<chunks::Key, Vec<FlownKey>> = BTreeMap::new();
         for (c, q) in cells {
             by_chunk
                 .entry(chunks::chunk_of(*c, side))
@@ -3644,7 +3644,7 @@ impl World {
         }
         // Chunks are flown in groups large enough to keep the cores busy, and
         // joined chunk by chunk.
-        let groups: Vec<Vec<(chunks::Key, Vec<([i32; 3], Quadrants)>)>> = {
+        let groups: Vec<Vec<(chunks::Key, Vec<FlownKey>)>> = {
             let mut groups = Vec::new();
             let mut group = Vec::new();
             let mut n = 0;

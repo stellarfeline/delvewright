@@ -1013,6 +1013,9 @@ fn the_chunked_closure_is_the_one_every_launch_gives() {
     );
 }
 
+/// A cell and its predecessors, each with its edge.
+type Preds = ([i32; 3], Vec<([i32; 3], super::Edge)>);
+
 /// What a plain queue walking the predecessor lists backwards from `seeds`
 /// reaches — the walk the readers took before they read by chunk — with the
 /// open sea joined when `sea`.
@@ -1077,13 +1080,12 @@ fn a_walk_by_chunk_answers_what_a_plain_walk_answers() {
                     reaching_plainly(&r, &r.open_sea, wet, false),
                     "{name} (side {side}): the walk through the sea by chunk reaches otherwise"
                 );
-                let mut by_chunk: Vec<([i32; 3], Vec<([i32; 3], super::Edge)>)> = Vec::new();
+                let mut by_chunk: Vec<Preds> = Vec::new();
                 r.preds_by_chunk(r.states.keys().copied(), |c, ps| {
                     by_chunk.push((c, ps.to_vec()))
                 });
                 by_chunk.sort_by_key(|(c, _)| *c);
-                let plain: Vec<([i32; 3], Vec<([i32; 3], super::Edge)>)> =
-                    r.states.keys().map(|c| (*c, r.preds(*c))).collect();
+                let plain: Vec<Preds> = r.states.keys().map(|c| (*c, r.preds(*c))).collect();
                 assert_eq!(
                     by_chunk, plain,
                     "{name} (side {side}): the predecessors read by chunk differ"
