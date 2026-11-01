@@ -147,7 +147,15 @@ The largest consumer is the reach graph's retained memos, and the largest struct
 | widened town (143 M-cell region) | 15.92 GiB (17.09 GB) | 12.92 GiB (13.87 GB) | 3.00 GiB | byte-identical over all 270 files |
 | gallery (macOS, `time -l`) | 1.34 GB | 1.36 GB | none: its bank is 80 MB and its peak lies elsewhere | byte-identical over all 1,570 files |
 
-The saving is the bank's heap plus the allocator's slack over it, and it holds at both sizes because the bank's size is the town's reached nodes, which the region does not change. The peak stays at the review-world stage; the second landed step — **the review world walks its ground cells instead of gathering them** (`view/world.rs`) — is measured in the same way in the commit that carries its numbers. Wall clock on the shared machine moved between runs by as much as a minute and a half in either direction while another round's jobs ran beside these, so no timing is claimed here beyond the fact that the spill writes 2 GB once.
+The saving is the bank's heap plus the allocator's slack over it, and it holds at both sizes because the bank's size is the town's reached nodes, which the region does not change. The peak stays at the review-world stage, so the second landed step is there: **the review world walks its ground cells instead of gathering them** (`view/world.rs`), measured the same way with both steps in:
+
+| Map | Base peak RSS | Both steps | Saved | Output |
+|---|---|---|---|---|
+| town | 14.06 GiB (15.09 GB) | 9.45 GiB (10.14 GB) | 4.61 GiB (33 %) | byte-identical over all 267 files |
+| widened town | 15.92 GiB (17.09 GB) | 9.96 GiB (10.69 GB) | 5.96 GiB (37 %) | byte-identical over all 270 files |
+| town, `detail --all` | 15.03 GiB (16.13 GB) | 9.63 GiB (10.34 GB) | 5.40 GiB (36 %) | the content tree unchanged by the run, as before |
+
+Growing the region by 57 M cells now costs 0.51 GiB of peak instead of 1.86 GiB: what is left of that growth is the assembled map's extra placed cells and the review world's light arrays over 3,300 chunks rather than 2,014, which the store of §1 and the region-by-region writer of §2 take in turn. The peak still falls at the review-world stage (9.45 GiB there over a 7.94 GiB plateau on the town), and the plateau is the reach graph's retained memos, the next thing in the order of §5. Wall clock on the shared machine moved between runs by as much as a minute and a half in either direction while another round's jobs ran beside these, so no timing is claimed here beyond the fact that the spill writes 2 GB once and the ground is walked three times instead of listed once.
 
 ## Consequences
 
