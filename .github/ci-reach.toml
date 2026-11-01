@@ -46,6 +46,7 @@ inputs = [
   { glob = "**/*.rs", why = "`tools/ci/fmt-workspaces.sh --check` formats every workspace's sources" },
   { glob = "gallery/**", why = "crate tests read the gallery (`detail.rs`, `remedy_reachability.rs`, `site_plan_edit_script.rs`, `prefab_*` tests)" },
   { glob = "tools/ci/fmt-workspaces.sh", why = "the formatting sweep this job runs" },
+  { glob = "tools/ci/cargo-test-concurrent.py", why = "the test step this job runs" },
   { glob = "tools/ci/check-json-canonical.py", why = "the JSON sweep this job runs" },
   { glob = "tools/ci/determinism-subject.sh", why = "`delvec-binary`'s and `gallery-pieces`' Linux digest steps and `determinism-cross-os` all run it" },
   { glob = "tools/ci/gallery-prefabs.py", why = "`determinism-subject.sh --subject gallery` generates the gallery's pieces with it on both hosts" },
