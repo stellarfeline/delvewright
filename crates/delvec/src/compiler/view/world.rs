@@ -658,34 +658,39 @@ pub fn encode_world(input: &WorldInput<'_>) -> WrittenWorld {
         }
         _ => ([0, 0, 0], [0, 0, 0]),
     };
-    let mut ground_cells: Vec<([i32; 3], &str)> = Vec::new();
-    for (cx, cz) in &chunk_set {
-        for sy in &gsecs {
-            for i in 0..4096 {
-                let c = [
-                    cx * 16 + (i % 16),
-                    sy * 16 + i / 256,
-                    cz * 16 + ((i / 16) % 16),
-                ];
-                if blocks.contains_key(&c) {
-                    continue;
-                }
-                if let Some(g) = ground.at(c) {
-                    ground_cells.push((c, g));
-                }
-            }
-        }
-    }
+    // The ground's cells — every cell of the written chunks' ground sections
+    // that no block holds — are walked, never gathered: under an ocean they
+    // outnumber the placed cells three to one (58 M for a 95-place town), and
+    // held as a list at 32 bytes each they were the largest single allocation
+    // of the build. The light flood reads the walk twice and the count once,
+    // in the same order a list would have given, so what it writes does not
+    // move.
+    let ground_cells = || {
+        chunk_set.iter().flat_map(|(cx, cz)| {
+            gsecs.iter().flat_map(move |sy| {
+                (0..4096).filter_map(move |i| {
+                    let c = [
+                        cx * 16 + (i % 16),
+                        sy * 16 + i / 256,
+                        cz * 16 + ((i / 16) % 16),
+                    ];
+                    if blocks.contains_key(&c) {
+                        return None;
+                    }
+                    ground.at(c).map(|g| (c, g))
+                })
+            })
+        })
+    };
+    let ground_count = ground_cells().count();
     let light = crate::compiler::light::LightArrays::over(
         box_lo,
         box_hi,
         blocks
             .iter()
             .map(|(c, s)| (*c, s.as_str()))
-            .chain(ground_cells.iter().copied()),
+            .chain(ground_cells()),
     );
-    let ground_count = ground_cells.len();
-    drop(ground_cells);
     let mut light_hash = Sha256::new();
     let mut light_cells = 0usize;
     let mut block_entities = 0usize;
