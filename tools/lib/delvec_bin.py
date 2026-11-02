@@ -30,13 +30,25 @@ answer be about a tree that no longer exists, in the reassuring direction.
 2. **A binary older than the tree it is supposed to be built from is a
    REFUSAL**, not a warning. The remedy is one command and it is printed.
 
-The staleness key is the newest mtime among the compiler's own tracked sources —
-`git ls-files` over `crates/`, plus the workspace manifest and lockfile.
-`git ls-files` rather than a directory walk because tracked-files-only is git's
-ignore rule rather than a hand-written exclusion list, which `CLAUDE.md` refuses
-("never add an ignore list to make an audit green") — a build artifact under a
-crate would otherwise make every run refuse forever. Where git cannot answer, the walk is used and skips directories
-named `target`, and the printed line says which method decided.
+The staleness key is the newest mtime among the files that reach the binary.
+Cargo records them: every build writes a dep-info file beside the binary
+(`target/<profile>/delvec.d`) listing each source and `include_str!` input the
+build read, across the workspace's own crates. Those files, plus every tracked
+`Cargo.toml` under `crates/` and the workspace manifest and lockfile (which
+decide what the binary links against and are not in dep-info), are the key. A
+file the build never read — an integration test under `tests/`, a
+`#[cfg(test)]` module — cannot change the binary and cannot make it stale; a new
+source file reaches the build only through a `mod` line in a file dep-info
+already lists, so it moves that file's mtime.
+
+Where no dep-info sits beside the binary (a binary copied out of `target/`),
+the key falls back to every tracked file under `crates/`, plus the manifest and
+lockfile: `git ls-files` rather than a directory walk because tracked-files-only
+is git's ignore rule rather than a hand-written exclusion list, which `CLAUDE.md`
+refuses ("never add an ignore list to make an audit green") — a build artifact
+under a crate would otherwise make every run refuse forever. Where git cannot
+answer, the walk is used and skips directories named `target`. The printed line
+says which method decided.
 
 There is deliberately **no override**. An opt-out here would be secured by
 exactly the property the defect supplies — "I know my binary is fine" is what
@@ -53,6 +65,7 @@ binary; the `cargo build` step does, at the moment it runs.
 from __future__ import annotations
 
 import datetime as _dt
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -112,9 +125,55 @@ def tracked_sources(repo: Path) -> tuple[list[Path], str]:
     return paths, "directory walk (git could not answer)"
 
 
-def newest_source(repo: Path) -> tuple[Path | None, float, int, str]:
-    """The most recently modified compiler source, its mtime, the population, method."""
-    paths, method = tracked_sources(repo)
+def _dep_info_paths(dep_info: Path) -> list[Path]:
+    """The prerequisites of a Makefile-style dep-info file, as cargo writes it.
+
+    Cargo writes `target: dep dep ...`, escaping a space in a path as `\\ `.
+    Every target line's prerequisites are kept; a line continuation is joined.
+    """
+    text = dep_info.read_text(encoding="utf-8").replace("\\\n", " ")
+    paths: list[Path] = []
+    for line in text.splitlines():
+        # The target ends at the first `: ` that is not escaped.
+        m = re.search(r"(?<!\\): ", line)
+        if not m:
+            continue
+        for tok in re.split(r"(?<!\\)\s+", line[m.end():].strip()):
+            if tok:
+                paths.append(Path(tok.replace("\\ ", " ")))
+    return paths
+
+
+def build_inputs(delvec: Path, repo: Path) -> tuple[list[Path], str]:
+    """Every file whose change could change `delvec`, and how they were found.
+
+    Cargo's dep-info beside the binary when it exists, plus the manifests and
+    lockfile; otherwise every tracked compiler source (`tracked_sources`).
+    """
+    dep_info = delvec.with_name(delvec.name + ".d")
+    if dep_info.is_file():
+        # Cargo writes absolute paths unless `build.dep-info-basedir` is set,
+        # which makes them relative to the workspace root.
+        listed = [q if q.is_absolute() else repo / q for q in _dep_info_paths(dep_info)]
+        if listed:
+            r = subprocess.run(
+                ["git", "-C", str(repo), "ls-files", "-z", "--",
+                 "Cargo.toml", "Cargo.lock", "crates/**/Cargo.toml"],
+                capture_output=True,
+                text=True,
+            )
+            manifests = (
+                [repo / p for p in r.stdout.split("\0") if p]
+                if r.returncode == 0
+                else [repo / "Cargo.toml", repo / "Cargo.lock"]
+            )
+            return listed + manifests, f"cargo dep-info `{dep_info.name}` plus manifests"
+    return tracked_sources(repo)
+
+
+def newest_source(delvec: Path, repo: Path) -> tuple[Path | None, float, int, str]:
+    """The most recently modified build input, its mtime, the population, method."""
+    paths, method = build_inputs(delvec, repo)
     newest, newest_ts = None, 0.0
     for p in paths:
         try:
@@ -124,6 +183,13 @@ def newest_source(repo: Path) -> tuple[Path | None, float, int, str]:
         if ts > newest_ts:
             newest, newest_ts = p, ts
     return newest, newest_ts, len(paths), method
+
+
+def _rel(p: Path, repo: Path) -> Path:
+    try:
+        return p.resolve().relative_to(repo.resolve())
+    except ValueError:
+        return p
 
 
 def version_line(delvec: Path) -> str:
@@ -181,13 +247,13 @@ def resolve(
         delvec = found[0]
 
     built = delvec.stat().st_mtime
-    newest, newest_ts, population, method = newest_source(repo)
+    newest, newest_ts, population, method = newest_source(delvec, repo)
 
     print(
         f"{caller}: instrument {delvec} "
         f"(built {_stamp(built)}, {version_line(delvec)}); "
-        f"newest of {population} tracked compiler source(s) via {method}: "
-        + (f"{newest.relative_to(repo) if newest else '(none)'} at {_stamp(newest_ts)}"
+        f"newest of {population} build input(s) via {method}: "
+        + (f"{_rel(newest, repo) if newest else '(none)'} at {_stamp(newest_ts)}"
            if newest
            else "(none found)"),
         file=out,
@@ -196,7 +262,7 @@ def resolve(
     if newest is not None and built < newest_ts:
         die(
             f"STALE INSTRUMENT — `{delvec}` was built at {_stamp(built)} and "
-            f"`{newest.relative_to(repo)}` was modified at {_stamp(newest_ts)}, "
+            f"`{_rel(newest, repo)}` was modified at {_stamp(newest_ts)}, "
             "which is later.\n"
             "    This tool's answer is a property of the compiler in this tree. A "
             "binary older than the tree answers about a tree that no longer "
