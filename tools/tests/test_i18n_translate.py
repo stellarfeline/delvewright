@@ -1273,3 +1273,35 @@ def test_fact_check_keeps_a_key_span_whole():
     assert any("key|use" in f for f in failures), failures
     failures = t.check_row(row, "这里的东西一碰就有回应：对它们按右键。", NAMES, "zh-cn")
     assert failures, failures
+
+
+# ---------------------------------------------------------------- art titles --
+
+#: The set `delvec l10n-inventory` hands an art row (`atmos::covered_chars`),
+#: abridged to what these cases draw.
+ART_GLYPHS = " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!\"'(),-./:;?"
+
+
+def _art_inventory():
+    doc = json.loads(json.dumps(INVENTORY_DOC))
+    doc["entries"].append(
+        {"key": "fx.q.oc.o.0.narrate", "en": "THE WAKE", "kind": "narration", "glyphs": ART_GLYPHS}
+    )
+    return t.parse_inventory(doc)
+
+
+def test_an_art_title_in_a_script_its_font_cannot_draw_is_refused():
+    art = _art_inventory().entries[-1]
+    failures = t.check_row(art, "守夜", NAMES, "zh-cn")
+    assert failures and "守" in failures[0] and "夜" in failures[0], failures
+    assert t.check_row(art, "THE WAKE", NAMES, "zh-cn") == []
+    assert t.check_row(art, "Shou Ye", NAMES, "zh-cn") == []
+
+
+def test_an_art_title_is_sent_with_the_glyphs_it_may_use():
+    inv = _art_inventory()
+    rows = t._items(inv.entries)
+    assert rows[-1]["glyphs"] == ART_GLYPHS
+    assert all("glyphs" not in r for r in rows[:-1]), "only an art row carries a set"
+    brief = t.translate_step(inv, inv.entries, "zh-cn", {}).messages[0]["content"]
+    assert "`glyphs`" in brief

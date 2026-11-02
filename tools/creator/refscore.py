@@ -73,7 +73,10 @@ import sys
 import tomllib
 from pathlib import Path
 
-LOCAL_CONFIG_FILE = "delvewright.local.toml"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+from local_config import LOCAL_CONFIG_FILE, local_config_path  # noqa: E402
+
+sys.path.pop(0)
 SECTION = "refscore"
 SCHEMA = "delvewright.refscore/1"
 SHEET_SCHEMA = "delvewright.contact-sheet/1"
@@ -129,7 +132,7 @@ def load_config(path: Path | None = None) -> dict:
     """Read `[refscore]`. Returns `{}` when the file or section is absent —
     absence is not an error here (a `--backend` flag alone is enough to run);
     MALFORMED is."""
-    path = path or repo_root() / LOCAL_CONFIG_FILE
+    path = path or local_config_path(repo_root())
     if not path.exists():
         return {}
     with path.open("rb") as fh:
