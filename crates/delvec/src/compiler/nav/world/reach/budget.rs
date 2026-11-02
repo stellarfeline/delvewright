@@ -211,14 +211,3 @@ pub(super) fn relieve(me: Id, held: usize, mut own: impl FnMut(usize) -> usize) 
         o.give_up(want);
     }
 }
-
-/// How many registered structures are alive.
-#[cfg(test)]
-pub(super) fn registered() -> usize {
-    registry()
-        .lock()
-        .expect("registry")
-        .iter()
-        .filter(|(_, w)| w.strong_count() > 0)
-        .count()
-}

@@ -189,8 +189,9 @@ mod tests {
         let spill = Spill::open("test-spill").expect("a scratch file opens in the temp dir");
         let reader = spill.reader().expect("a reader");
         let writer = Arc::new(Mutex::new(spill));
-        // (offset, length, writer, record index): what each slot holds.
-        let published: Arc<Mutex<Vec<(u64, u32, u8, u32)>>> = Default::default();
+        /// Offset, length, writer, record index: what each slot holds.
+        type Slot = (u64, u32, u8, u32);
+        let published: Arc<Mutex<Vec<Slot>>> = Default::default();
         let writing = Arc::new(std::sync::atomic::AtomicUsize::new(4));
         let overlapped = Arc::new(std::sync::atomic::AtomicU64::new(0));
         let record = |w: u8, i: u32| -> Vec<u8> {

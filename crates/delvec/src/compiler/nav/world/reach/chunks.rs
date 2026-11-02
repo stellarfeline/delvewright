@@ -852,6 +852,9 @@ mod table_tests {
         }
     }
 
+    /// A list beside the map of the same pushes it is held to.
+    type Pair = (Lists<Fat>, BTreeMap<[i32; 3], Vec<Fat>>);
+
     /// A record with a payload, so a chunk's buffered bytes pass [`PENDING`].
     #[derive(Clone, Debug, PartialEq)]
     struct Fat(u16, Vec<i32>);
@@ -902,7 +905,7 @@ mod table_tests {
                 };
                 let l: Lists<Fat> = Lists::new(2);
                 let mut m: BTreeMap<[i32; 3], Vec<Fat>> = BTreeMap::new();
-                let mut copy: Option<(Lists<Fat>, BTreeMap<[i32; 3], Vec<Fat>>)> = None;
+                let mut copy: Option<Pair> = None;
                 let (mut most_pieces, releases0) = (0usize, super::traffic().2);
                 let cells: Vec<[i32; 3]> = (0..24)
                     .map(|i| [i % 5 - 2, (i * 7) % 4 - 1, (i * 3) % 5 - 2])
