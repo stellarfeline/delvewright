@@ -349,9 +349,12 @@ jobs:
       # gate runs inside it (`cli.rs`). Every test runs to its end.
       - name: cargo nextest, instrumented (incl. determinism double-build gate)
         run: cargo llvm-cov --no-report nextest --workspace --locked --no-fail-fast --profile ci
+      # Absolute file names: cargo-llvm-cov 0.9.1's `--json --remap-path-prefix`
+      # writes an export with an empty `files` list (measured), and the floor
+      # strips the workspace root the export itself names.
       - name: the coverage report (region, line, function)
         if: always()
-        run: cargo llvm-cov report --json --remap-path-prefix --output-path target/coverage.json
+        run: cargo llvm-cov report --json --output-path target/coverage.json
       - name: the run's measurements (JUnit per-test times, coverage export)
         if: always()
         uses: actions/upload-artifact@v4

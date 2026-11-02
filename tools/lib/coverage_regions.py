@@ -300,9 +300,15 @@ def _line_stats(segments: list[list]) -> tuple[int, int]:
 def read_report(report: pathlib.Path, filt: Filter, prefix: str = "") -> dict:
     """The production view of one export: rows, region set, and what was dropped.
 
-    `prefix` is stripped from every file name first: an export written without
-    `--remap-path-prefix` names files by absolute path."""
+    `prefix` is stripped from every file name first: the export names files by
+    absolute path. When it is not given, it is the workspace root the export
+    itself names (`cargo_llvm_cov.manifest_path`)."""
     data = json.loads(report.read_text(encoding="utf-8"))
+    if not prefix:
+        # cargo-llvm-cov names the workspace it measured; its files are under it.
+        manifest = data.get("cargo_llvm_cov", {}).get("manifest_path", "")
+        if manifest:
+            prefix = manifest.replace("\\", "/").rsplit("/", 1)[0] + "/"
     return read_export(data["data"][0], filt, prefix)
 
 

@@ -51,10 +51,12 @@ fn spawn(cache: &Path, key: &str) -> std::process::Child {
 fn dir_of(child: std::process::Child) -> PathBuf {
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success(), "the child probe failed");
+    // libtest writes `test built_child ... ` before the child's own output on
+    // the same line, so the marker is found wherever it stands in a line.
     let text = String::from_utf8_lossy(&out.stdout).to_string();
     let line = text
         .lines()
-        .find_map(|l| l.strip_prefix("DIR="))
+        .find_map(|l| l.split_once("DIR=").map(|(_, d)| d.trim()))
         .unwrap_or_else(|| panic!("the child printed no DIR line:\n{text}"));
     PathBuf::from(line)
 }

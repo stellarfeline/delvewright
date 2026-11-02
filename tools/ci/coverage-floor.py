@@ -3,8 +3,9 @@
 
 spec-0126 §1.2, §2. The `rust` job runs the whole suite once, instrumented
 (`cargo llvm-cov --no-report nextest …`), and exports the counters
-(`cargo llvm-cov report --json --remap-path-prefix`). This gate reads that
-export, keeps the regions of production source, and judges them against the
+(`cargo llvm-cov report --json`; its file names are absolute, and the reader
+strips the workspace root the export names in `cargo_llvm_cov.manifest_path`).
+This gate reads that export, keeps the regions of production source, and judges them against the
 record at `.github/coverage-baseline.json`.
 
 WHAT IS PRODUCTION SOURCE
@@ -63,7 +64,7 @@ from lib.coverage_regions import Filter, production, production_sources, read_re
 RECORD = ".github/coverage-baseline.json"
 COMMANDS = [
     "cargo llvm-cov --no-report nextest --workspace --locked --no-fail-fast --profile ci",
-    "cargo llvm-cov report --json --remap-path-prefix --output-path target/coverage.json",
+    "cargo llvm-cov report --json --output-path target/coverage.json",
 ]
 # The opt-outs an author can write (spec-0126 §1.3): each hides exactly the
 # region a weak test fails to check, so the count in production source is zero.
