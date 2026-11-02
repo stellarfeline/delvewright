@@ -115,7 +115,7 @@ reads, in both directions, by `(code, constant name)` and by exit tier — so th
 source reading here, the doc catalog and the binary all agree. A declaration
 written outside `dw_code!` is in the source and absent from the registry, and
 reds. `crates/delvec/tests/it/codes.rs` runs this with the binary cargo built, so
-`cargo test --workspace` binds it; without `--delvec` the run prints that the
+the workspace test run binds it; without `--delvec` the run prints that the
 registry was not compared.
 
 Deterministic, offline, no dependencies (Python 3 stdlib). Run from the repo root:

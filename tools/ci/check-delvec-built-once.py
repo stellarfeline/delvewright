@@ -70,7 +70,7 @@ BINARY = "target/debug/delvec"
 # The jobs that compile the root workspace for a reason of their own.
 COMPILES: dict[str, str] = {
     PRODUCER: "it is the one build every other job takes",
-    "rust": "clippy and `cargo test --workspace` compile every target of every member, which no binary stands in for",
+    "rust": "clippy and the instrumented nextest run compile every target of every member, which no binary stands in for",
     "determinism-cross-os": "the macOS half of the comparison is a binary built by macOS's toolchain; a Linux artifact cannot be it",
     "engine-shelf": "`cargo check` of `delvec` for every release target is the whole of what it proves",
     "publishable": "it builds the packaged crates the way `cargo install` does, outside the workspace",

@@ -3479,5 +3479,5 @@ life at zero bindings — a surface nothing demonstrates is a finding on the day
 lands. The check is bound to two events rather than to a line in this document:
 an IR change cannot compile past it, and a corpus change cannot be pushed past
 the `#[test]` in `crates/delvec/src/grammar/coverage.rs` that carries the same
-assertion inside `cargo test --workspace`. CI runs the command as its own step so
+assertion inside the workspace test run. CI runs the command as its own step so
 the table reaches the log.
