@@ -149,17 +149,28 @@ fn the_output_is_the_same_at_every_thread_count() {
     }
 }
 
-/// A diagnostic stream with each written world's wall time (`written in <n>
-/// ms`, spec-0112 §9) taken out: the time the writer took is a measurement of
-/// the machine, the one part of a binding line no thread count decides. Every
-/// other byte is compared, and the count of lines stripped is asserted equal
-/// by the comparison itself.
+/// A diagnostic stream with the two measurements of the machine taken out:
+/// each written world's wall time (`written in <n> ms`, spec-0112 §9), and
+/// the snapshot's count of page reads served by a thread's recent pages
+/// (`reach snapshot: … H of T page read(s) served …`, ADR-0037 §2), which a
+/// per-thread cache answers differently at every thread count. Every other
+/// byte is compared, and the count of lines stripped is asserted equal by the
+/// comparison itself.
 fn without_wall_time(text: &str) -> String {
     text.lines()
         .map(|l| match l.rfind(", written in ") {
             Some(i) if l.ends_with(" ms") && l.starts_with("world: ") => {
                 format!("{}, written in <ms>", &l[..i])
             }
+            _ if l.starts_with("reach snapshot: ") => match l.rfind("; ") {
+                Some(i) if l[i..].contains(" served by a thread's recent pages") => {
+                    format!(
+                        "{}; <hits> served by a thread's recent pages (ADR-0037 §2)",
+                        &l[..i]
+                    )
+                }
+                _ => l.to_string(),
+            },
             _ => l.to_string(),
         })
         .collect::<Vec<_>>()
