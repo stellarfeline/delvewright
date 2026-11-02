@@ -3,6 +3,7 @@
 ## Contents
 
 - [The three documents, in order](#the-three-documents-in-order)
+- [The plan is a web, not a chain](#the-plan-is-a-web-not-a-chain)
 - [Where step 3 ends](#where-step-3-ends)
 
 
@@ -51,8 +52,10 @@ and looping against them is the one way to spend an afternoon here.
 - **Classes**: pre-provided gear, no grind. If the campaign places a bonfire,
   **every class kit must declare a flask** (`DW0476`) — see *Reference:
   authoring pitfalls*.
-- **Quest plan**: acts, dependencies, which area each quest belongs to,
-  mandatory-only quests, paced to `target_minutes`.
+- **Quest plan**: acts, dependencies, which area each quest belongs to, which
+  quests are optional, the endings and what they read, paced to
+  `target_minutes`. Its shape is a web: read *The plan is a web, not a chain*,
+  below, before you write it.
 - **Declare every story fork here.** If a choice forks who lives, where the
   party ends up, or which ending plays, it is a `branch_points` entry:
   `{id, opens_at, forks_on:[flags], branches:[{id, flags, leads_to}]}`.
@@ -62,7 +65,57 @@ and looping against them is the one way to spend an afternoon here.
   that gates casts, staging or quest structure and is not set on every
   playthrough must belong to a declared point (`DW0480`). Every declared branch
   must reach an ending (`DW0482`) and must be exclusive: no sibling's flag may
-  be producible on it (`DW0484`).
+  be producible on it (`DW0484`). A fork may be made by a deed rather than a
+  line: a branch whose `flags` is `[]` is the side where the deed was not done.
+
+
+## The plan is a web, not a chain
+
+A plan in which every quest `depends_on` the one before it is a chain: one
+order, one story, and an ending that can only read the last scene. The engine
+expresses a web, and these steps lead to one. The research behind each rule,
+with its sources, is `$DELVEWRIGHT_ENGINE/docs/reference/web-narrative.md`:
+§4 for the shape, §3 for the endings.
+
+1. **One hub, two to four spokes.** The hub is a quest every run starts with
+   (`depends_on: []`). Each spoke `depends_on: ["quest/<hub>"]`, so all of them
+   open together when the hub completes and the party takes them in any order.
+   The finale `depends_on` every spoke. Keep the spokes in different places,
+   and let no spoke shut, fill or rebuild a way another spoke's route crosses:
+   the hub owns every shared door. Inside one quest, objectives with no `after`
+   are open together, and one with `after: [a, b]` waits for both.
+2. **At least one optional strand** (spec-0051): `"mandatory": false`, with
+   `depends_on` naming the hub or a spoke. Nothing on the mainline may need it.
+   The finale's `depends_on` closure may not reach it (`DW0866`), and no
+   mandatory quest may wait on it by `depends_on` or by its stage-5 trigger
+   (`DW0867`). What it writes feeds casts, dialogue and endings, never a
+   mandatory objective's gate (`DW0868`).
+3. **Declare what every ending reads**, on the plan:
+   `"endings_read": {"at_least": 3, "deeds_at_least": 1}`. The numbers are
+   yours; three inputs from different threads with a deed among them is the
+   research page's rule (§3). An input is any flag or datum a gate in the
+   ending's final scene reads, and it counts when something outside that scene
+   writes it (`DW1029` refuses an ending below either number). A deed is a
+   thing done in the world or a quest finished, not a line chosen.
+4. **Plan two or more endings and what decides between them.** At least one
+   deciding input must have an **elective** writer: an optional quest
+   finished, a trigger or kill the mainline never needs. An act every run
+   performs (a mandatory quest, a mandatory kill, a press the route needs) is
+   the same in every run, so it cannot tell two endings apart; `DW1030` refuses
+   an ending no run reaches and names each such writer *a mandatory or forced
+   writer*. A dialogue choice the ending reads sets a flag on **each** of its
+   options (`flag/asked` and `flag/did-not-ask`): an option that sets a flag
+   beside one that sets nothing is counted as forced.
+5. **Name the endings here and write them at step 5**: each `ending/<slug>` is
+   the `ending` of a `campaign-complete` in the finale's `on_complete`, with
+   `when` gates that exclude each other. *Reference: what a quest can do*,
+   *A web in stage 5*, has the shapes and the checks.
+6. **A strand's flag that changes who stands where is a fork.** Gating a cast
+   placement on a flag only an optional quest writes is `DW0480` until a
+   `branch_points` entry owns it: `opens_at` the strand, one branch holding the
+   flag and one with `flags: []`, both `leads_to` the quest they rejoin at.
+   Gating an ending, an epilogue line or a dialogue option on it needs no
+   declaration.
 
 
 ## Where step 3 ends
