@@ -67,11 +67,15 @@ def main() -> int:
     root = pathlib.Path(args.root).resolve()
     out = pathlib.Path(args.out).resolve()
     listing = json.loads(pathlib.Path(args.list).read_text(encoding="utf-8"))
-    target = pathlib.Path(listing["rust-build-meta"]["target-directory"])
+    # The `delvec` binary the tests spawn sits beside the profile's `deps/`, where
+    # every test binary is built.
+    profile_dirs = {pathlib.Path(s["binary-path"]).parent.parent for s in listing["rust-suites"].values()}
     delvec = next(
-        (str(p) for p in (target / "debug" / "delvec", target / "debug" / "delvec.exe") if p.is_file()),
+        (str(d / n) for d in sorted(profile_dirs) for n in ("delvec", "delvec.exe") if (d / n).is_file()),
         None,
     )
+    if delvec is None:
+        sys.exit("coverage_map: no delvec binary beside the test binaries — its coverage would be unknown")
     profdata = llvm_tool("llvm-profdata")
     llvm_cov = llvm_tool("llvm-cov")
     filt = Filter(root)
