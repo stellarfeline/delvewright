@@ -1608,7 +1608,7 @@ fn template_class(key: &ClassKey, params: &ReachParams) -> Arc<TemplateClass> {
     let holding = key.2;
     let launches = shared_launch_set(holding, params);
     // The template's floor is endless, so a body never leaves the world over it.
-    let flown: Vec<(ReadSet, Outcome, Option<Aabb>, Launch)> = crate::par::map(&launches, |l| {
+    let flown: Vec<(ReadSet, Outcome, Option<Aabb>, Launch)> = par_map(&launches, |l| {
         let rec = Recorder {
             inner: &template,
             seen: std::cell::RefCell::new(Vec::new()),
@@ -1713,31 +1713,54 @@ type Closure = (Vec<[i32; 3]>, Arc<Reach>);
 /// A node and the quadrants of its launch set that were flown.
 type FlownKey = ([i32; 3], Quadrants);
 
+/// [`crate::par::map`] with this thread's chunk side ([`chunks::side_here`])
+/// and resident budget ([`budget::override_here`]) in force on every worker:
+/// the one way the reach graph spreads work over cores, so a test's side or
+/// budget binds the lists and pages its workers grow as it binds its own.
+fn par_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Vec<R> {
+    let side = chunks::side_here();
+    let b = budget::override_here();
+    crate::par::map(items, |x| {
+        chunks::at_side(side, || budget::with_budget(b, || f(x)))
+    })
+}
+
 /// Write the node banks this run grew to `DELVEC_REACH_CACHE`, when it names a
 /// directory (`reach/persist.rs`); a run that ends calls it once.
 pub fn persist_reach_cache() {
     let (loads, records, releases) = chunks::traffic();
     // A run that took no closure and read no list back says nothing of them.
     if chunks::visited() > 0 || loads > 0 {
+        let needs: Vec<String> = budget::needs_stated()
+            .iter()
+            .map(|(name, b)| format!("{name} {b} byte(s)"))
+            .collect();
         eprintln!(
-            "reach lists: {} byte(s) in the scratch file; {} byte(s) resident at the end, under \
-             a budget of {} (the working set: 3 x 3 chunks of the largest decoded, {} byte(s), \
-             and their buffered pushes); {loads} chunk read(s) back over {records} record(s), \
-             {releases} chunk(s) given up (ADR-0037 §2)",
+            "reach budget: {} byte(s) resident at the end, under one budget of {} byte(s), the \
+             sum of the working sets stated: {} (ADR-0037 §1)",
+            budget::resident(),
+            budget::budget(),
+            needs.join(", ")
+        );
+        eprintln!(
+            "reach lists: {} byte(s) in the scratch file; working set {} byte(s) (3 x 3 chunks of \
+             the largest decoded, {} byte(s), and their buffered pushes); {loads} chunk read(s) \
+             back over {records} record(s), {releases} chunk(s) given up (ADR-0037 §2)",
             chunks::spilled(),
-            chunks::resident(),
-            chunks::budget(),
+            chunks::working_set(),
             chunks::largest()
         );
         eprintln!("reach closures: {} (ADR-0037 §2)", chunks::visits());
-        let (pages, bytes, loads, budget) = pages::traffic();
+        let (pages, bytes, loads, hits, misses) = pages::traffic();
         eprintln!(
             "reach snapshot: {pages} distinct page(s) of {} cell(s) over {bytes} byte(s) in the \
-             scratch file; {} resident at the end, under a budget of {budget} per value type \
-             (the 3 x 3 rings of the tallest window, 4 times over); {loads} page(s) read back \
-             (ADR-0037 §2)",
+             scratch file; {} resident at the end, working set {} byte(s) (the 3 x 3 rings of the \
+             tallest window, 4 times over); {loads} page(s) read back; {hits} of {} page read(s) \
+             served by a thread's recent pages (ADR-0037 §2)",
             pages::PAGE_CELLS,
-            pages::resident()
+            pages::resident(),
+            pages::need(),
+            hits + misses
         );
         let (portals, faces) = chunks::portals();
         eprintln!(
@@ -3026,7 +3049,7 @@ impl World {
                     flown.get(&c).copied().unwrap_or(0)
                 });
                 let out: Vec<Arc<NodeEdges>> =
-                    crate::par::map(&chunk, |(c, q)| self.flown(&memo, &params, *c, *q));
+                    par_map(&chunk, |(c, q)| self.flown(&memo, &params, *c, *q));
                 let mut next: Vec<[i32; 3]> = Vec::new();
                 for ((c, q), e) in chunk.iter().zip(out) {
                     *flown.entry(*c).or_insert(0) |= *q;
@@ -3099,7 +3122,7 @@ impl World {
         let mut seen: BTreeSet<[i32; 3]> = seeds.iter().copied().collect();
         let mut frontier: Vec<[i32; 3]> = seen.iter().copied().collect();
         while !frontier.is_empty() {
-            let edges: Vec<Vec<Edge>> = crate::par::map(&frontier, |c| self.body_edges(*c));
+            let edges: Vec<Vec<Edge>> = par_map(&frontier, |c| self.body_edges(*c));
             let mut next: BTreeSet<[i32; 3]> = BTreeSet::new();
             for (cur, out) in frontier.iter().zip(edges) {
                 for edge in out {
@@ -3145,7 +3168,7 @@ impl World {
             .collect();
         if !missing.is_empty() {
             let fresh: Vec<NodeEdges> = if missing.len() >= 64 {
-                crate::par::map(&missing, |c| self.expand(memo, params, *c, 0, None))
+                par_map(&missing, |c| self.expand(memo, params, *c, 0, None))
             } else {
                 missing
                     .iter()
@@ -3744,7 +3767,7 @@ impl World {
             let batch: Vec<([i32; 3], Quadrants)> =
                 group.iter().flat_map(|(_, v)| v.iter().copied()).collect();
             let flown: Vec<Arc<NodeEdges>> =
-                crate::par::map(&batch, |(c, q)| self.flown(memo, params, *c, *q));
+                par_map(&batch, |(c, q)| self.flown(memo, params, *c, *q));
             let mut flown = flown.into_iter();
             for (k, v) in &group {
                 visits.visit(*k);
@@ -3878,7 +3901,7 @@ impl World {
             return cells.iter().filter_map(one).collect();
         }
         let blocks: Vec<&[[i32; 3]]> = cells.chunks(BLOCK).collect();
-        crate::par::map(&blocks, |b| b.iter().filter_map(one).collect::<Vec<_>>())
+        par_map(&blocks, |b| b.iter().filter_map(one).collect::<Vec<_>>())
             .into_iter()
             .flatten()
             .collect()
@@ -4363,6 +4386,7 @@ impl ReachBinding {
 }
 
 mod bank;
+mod budget;
 mod chunks;
 mod flights;
 pub(in crate::compiler::nav) mod pages;

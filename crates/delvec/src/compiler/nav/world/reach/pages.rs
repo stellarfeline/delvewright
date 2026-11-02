@@ -6,22 +6,25 @@
 //! one copy of a page however many arrays hold it.
 //!
 //! A page is written to a scratch file ([`super::spill`]) when it is first
-//! made, and at most a budget of pages is **resident** ([`budget`]); past it
-//! the least recently read is given up and read back from the file when it is
-//! next asked for. The budget is the working set an expansion needs: a node's
-//! launches read its reach chunk and the eight round it, so the budget holds
-//! that 3 × 3 ring of the tallest window built, several times over for the
-//! threads that expand chunks at once. Each thread keeps the last few pages it
-//! read, so a launch that reads round one cell does not take the lock.
+//! made, and the pages **resident** count against the one resident budget
+//! ([`super::budget`]); past it the least recently read is given up and read
+//! back from the file when it is next asked for. The store's stated need is
+//! the working set an expansion needs: a node's launches read its reach chunk
+//! and the eight round it, so the need holds that 3 × 3 ring of the tallest
+//! window built, [`RINGS`] times over for the threads that expand chunks at
+//! once. Each thread keeps the last few pages it read ([`Recent`]), so a
+//! launch that reads round one cell does not take the lock; how often that
+//! serves a read is counted and printed with the run.
 //!
 //! What an array answers never depends on the budget or on which pages are
 //! resident: a page read back is the bytes it was written as. A store whose
 //! file cannot be opened keeps every page in memory.
 
+use super::budget;
 use super::spill::Spill;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, Weak};
 
 /// A page holds `1 << PAGE_BITS` values.
 pub(super) const PAGE_BITS: u32 = 12;
@@ -32,17 +35,22 @@ pub(in crate::compiler::nav) trait Paged:
     Copy + PartialEq + std::hash::Hash + Send + Sync + 'static
 {
     const BYTES: usize;
-    fn store() -> &'static Store<Self>;
+    fn store() -> &'static Arc<Store<Self>>;
     fn put(v: &[Self], out: &mut Vec<u8>);
     fn take(b: &[u8]) -> Vec<Self>;
     /// Run `f` over this thread's recently read pages.
     fn recent<R>(f: impl FnOnce(&mut Recent<Self>) -> R) -> R;
 }
 
-/// The pages a thread read last, by id.
+/// The pages a thread read last, by id, and how often they served a read
+/// ([`Recent::hits`]) against how often the store was asked
+/// ([`Recent::misses`]) — counted here, on the thread, and folded into the
+/// run's figures when the thread ends or the run reports ([`traffic`]).
 pub(in crate::compiler::nav) struct Recent<T> {
     slots: [(u32, Option<Arc<[T]>>); RECENT],
     next: usize,
+    hits: u64,
+    misses: u64,
 }
 
 const RECENT: usize = 8;
@@ -52,23 +60,49 @@ impl<T> Default for Recent<T> {
         Recent {
             slots: std::array::from_fn(|_| (u32::MAX, None)),
             next: 0,
+            hits: 0,
+            misses: 0,
         }
     }
 }
 
+impl<T> Drop for Recent<T> {
+    fn drop(&mut self) {
+        self.flush();
+    }
+}
+
 impl<T> Recent<T> {
-    fn get(&self, id: u32) -> Option<&Arc<[T]>> {
-        self.slots
-            .iter()
-            .find(|(i, p)| *i == id && p.is_some())
-            .and_then(|(_, p)| p.as_ref())
+    fn get(&mut self, id: u32) -> Option<&Arc<[T]>> {
+        let hit = self.slots.iter().position(|(i, p)| *i == id && p.is_some());
+        match hit {
+            Some(i) => {
+                self.hits += 1;
+                self.slots[i].1.as_ref()
+            }
+            None => {
+                self.misses += 1;
+                None
+            }
+        }
     }
 
     fn keep(&mut self, id: u32, p: Arc<[T]>) {
         self.slots[self.next] = (id, Some(p));
         self.next = (self.next + 1) % RECENT;
     }
+
+    /// Fold this thread's counts into the run's.
+    fn flush(&mut self) {
+        HITS.fetch_add(std::mem::take(&mut self.hits), Ordering::Relaxed);
+        MISSES.fetch_add(std::mem::take(&mut self.misses), Ordering::Relaxed);
+    }
 }
+
+/// Reads served by a thread's recent pages, and reads that went to the store,
+/// over the run, as folded so far.
+static HITS: AtomicU64 = AtomicU64::new(0);
+static MISSES: AtomicU64 = AtomicU64::new(0);
 
 /// Every page of one value type.
 pub(in crate::compiler::nav) struct Store<T> {
@@ -110,52 +144,48 @@ const HELD: u64 = u64::MAX;
 
 /// Pages read back from the file, over the run.
 static LOADS: AtomicU64 = AtomicU64::new(0);
-/// The resident budget, in pages of either type; `0` until a window sets it.
-static BUDGET: AtomicUsize = AtomicUsize::new(0);
 /// Pages written, and the bytes, over the run.
 static PAGES: AtomicU64 = AtomicU64::new(0);
 static BYTES: AtomicU64 = AtomicU64::new(0);
 
-/// The fewest pages the budget holds.
+/// The fewest pages the need holds, per value type.
 const FLOOR: usize = 64;
-/// How many 3 × 3 rings the budget holds: one per thread expanding a chunk.
+/// How many 3 × 3 rings the need holds: one per thread expanding a chunk.
 const RINGS: usize = 4;
+/// The bytes a cell costs over both value types.
+const CELL_BYTES: usize = 4 + 2;
 
-/// A budget a test set, in force on every thread while it is set: the pages
-/// are read on the threads that expand nodes, and no answer depends on it.
-static OVERRIDE: AtomicUsize = AtomicUsize::new(0);
+/// The snapshot's stated need: [`RINGS`] 3 × 3 rings of the tallest window,
+/// over both value types.
+static NEED: budget::Need = budget::Need::new(
+    "the window snapshot's pages",
+    FLOOR * PAGE_CELLS * CELL_BYTES,
+);
 
-/// The resident budget in force, in pages per value type.
-pub(super) fn budget() -> usize {
-    match OVERRIDE.load(Ordering::Relaxed) {
-        0 => BUDGET.load(Ordering::Relaxed).max(FLOOR),
-        b => b,
-    }
-}
-
-/// Run `f` with the resident budget at `pages` on every thread.
-#[cfg(test)]
-pub(super) fn with_budget<R>(pages: usize, f: impl FnOnce() -> R) -> R {
-    let was = OVERRIDE.swap(pages, Ordering::Relaxed);
-    let out = f();
-    OVERRIDE.store(was, Ordering::Relaxed);
-    out
-}
-
-/// Note a window `height` cells tall: the budget holds [`RINGS`] of its 3 × 3
+/// Note a window `height` cells tall: the need holds [`RINGS`] of its 3 × 3
 /// rings of reach chunks of side `side`.
 pub(super) fn window(height: usize, side: usize) {
     let ring = (3 * side) * (3 * side) * height;
-    BUDGET.fetch_max(RINGS * ring.div_ceil(PAGE_CELLS), Ordering::Relaxed);
+    NEED.raise(RINGS * ring.div_ceil(PAGE_CELLS) * PAGE_CELLS * CELL_BYTES);
 }
 
-/// Pages written, bytes written, pages read back, and the budget.
-pub(super) fn traffic() -> (u64, u64, u64, usize) {
+/// The snapshot's stated need, in bytes.
+pub(super) fn need() -> usize {
+    NEED.bytes()
+}
+
+/// Pages written, bytes written, pages read back, reads served by a thread's
+/// recent pages, and reads that went to the store — this thread's counts
+/// folded in first (the threads that expand chunks fold theirs as they end).
+pub(super) fn traffic() -> (u64, u64, u64, u64, u64) {
+    <u32 as Paged>::recent(Recent::flush);
+    <u16 as Paged>::recent(Recent::flush);
     (
         PAGES.load(Ordering::Relaxed),
         BYTES.load(Ordering::Relaxed),
         LOADS.load(Ordering::Relaxed),
-        budget(),
+        HITS.load(Ordering::Relaxed),
+        MISSES.load(Ordering::Relaxed),
     )
 }
 
@@ -169,9 +199,16 @@ fn resident_of<T: Paged>() -> usize {
 }
 
 impl<T: Paged> Inner<T> {
-    fn evict(&mut self) {
-        let budget = budget();
-        while self.resident.len() > budget {
+    /// The bytes the resident pages hold.
+    fn held(&self) -> usize {
+        self.resident.len() * PAGE_CELLS * T::BYTES
+    }
+
+    /// Give up the least recently read pages the file holds until `want`
+    /// bytes are freed; the bytes freed.
+    fn evict(&mut self, want: usize) -> usize {
+        let mut freed = 0;
+        while freed < want {
             let at = &self.at;
             let Some(oldest) = self
                 .resident
@@ -181,10 +218,13 @@ impl<T: Paged> Inner<T> {
                 .map(|(id, _)| *id)
             else {
                 // Every resident page is one the file did not take.
-                return;
+                break;
             };
             self.resident.remove(&oldest);
+            freed += PAGE_CELLS * T::BYTES;
         }
+        budget::release(freed);
+        freed
     }
 
     /// Page `id`, resident or read back.
@@ -199,18 +239,46 @@ impl<T: Paged> Inner<T> {
             .spill
             .as_ref()
             .expect("a page given up was written to the file");
-        let bytes = sp
-            .read(self.at[id as usize], (PAGE_CELLS * T::BYTES) as u32)
-            .expect("the snapshot's scratch file reads back");
+        let bytes = sp.or_fail(
+            "read a page back",
+            sp.read(self.at[id as usize], (PAGE_CELLS * T::BYTES) as u32),
+        );
         LOADS.fetch_add(1, Ordering::Relaxed);
         let p: Arc<[T]> = Arc::from(T::take(&bytes));
         self.resident.insert(id, (Arc::clone(&p), tick));
-        self.evict();
+        budget::hold(PAGE_CELLS * T::BYTES);
         p
     }
 }
 
+impl<T: Paged> budget::Pageable for Store<T> {
+    fn give_up(&self, want: usize) -> usize {
+        match self.inner.try_lock() {
+            Ok(mut g) => g.evict(want),
+            Err(_) => 0,
+        }
+    }
+}
+
 impl<T: Paged> Store<T> {
+    /// The store of this value type, registered with the budget when made.
+    fn shared() -> Arc<Store<T>> {
+        let s = Arc::new(Store::default());
+        let w: Weak<dyn budget::Pageable> = {
+            let w: Weak<Store<T>> = Arc::downgrade(&s);
+            w
+        };
+        budget::join(budget::id_of(&*s), w);
+        s
+    }
+
+    /// Bring the resident bytes under the budget, this store first
+    /// ([`budget::relieve`]).
+    fn relieve(&self, g: &mut Inner<T>) {
+        let held = g.held();
+        budget::relieve(budget::id_of(self), held, |want| g.evict(want));
+    }
+
     /// The id of the page holding `values` (at most [`PAGE_CELLS`]; a short
     /// last page is padded with its first value), made when none holds them.
     pub(super) fn intern(&self, values: &[T]) -> u32 {
@@ -234,9 +302,15 @@ impl<T: Paged> Store<T> {
         T::put(&v, &mut bytes);
         // A page the file does not take (none opened, or a write failed)
         // stays resident; the pages it took before can still be read back.
-        let at = match g.spill.as_mut().map(|s| s.append(&bytes)) {
-            Some(Ok((at, _))) => at,
-            _ => HELD,
+        // A page the file does not take because none opened stays resident;
+        // a file that opened and refuses the write stops the run
+        // (`spill::Spill::fail`).
+        let at = match g.spill.as_mut() {
+            Some(s) => {
+                let r = s.append(&bytes);
+                s.or_fail("take a page", r).0
+            }
+            None => HELD,
         };
         PAGES.fetch_add(1, Ordering::Relaxed);
         BYTES.fetch_add(bytes.len() as u64, Ordering::Relaxed);
@@ -245,7 +319,8 @@ impl<T: Paged> Store<T> {
         g.tick += 1;
         let tick = g.tick;
         g.resident.insert(id, (Arc::from(v), tick));
-        g.evict();
+        budget::hold(PAGE_CELLS * T::BYTES);
+        self.relieve(&mut g);
         id
     }
 
@@ -256,7 +331,7 @@ impl<T: Paged> Store<T> {
             if let Some(p) = r.get(id) {
                 return Arc::clone(p);
             }
-            let p = self.inner.lock().expect("pages").page(id);
+            let p = self.fetch(id);
             r.keep(id, Arc::clone(&p));
             p
         })
@@ -269,11 +344,19 @@ impl<T: Paged> Store<T> {
             if let Some(p) = r.get(id) {
                 return p[j];
             }
-            let p = self.inner.lock().expect("pages").page(id);
+            let p = self.fetch(id);
             let v = p[j];
             r.keep(id, p);
             v
         })
+    }
+
+    /// Page `id` from the store, under its lock, the budget relieved after.
+    fn fetch(&self, id: u32) -> Arc<[T]> {
+        let mut g = self.inner.lock().expect("pages");
+        let p = g.page(id);
+        self.relieve(&mut g);
+        p
     }
 }
 
@@ -281,9 +364,9 @@ macro_rules! paged {
     ($t:ty, $n:expr) => {
         impl Paged for $t {
             const BYTES: usize = $n;
-            fn store() -> &'static Store<$t> {
-                static S: std::sync::OnceLock<Store<$t>> = std::sync::OnceLock::new();
-                S.get_or_init(Store::default)
+            fn store() -> &'static Arc<Store<$t>> {
+                static S: std::sync::OnceLock<Arc<Store<$t>>> = std::sync::OnceLock::new();
+                S.get_or_init(Store::shared)
             }
             fn put(v: &[$t], out: &mut Vec<u8>) {
                 for x in v {
@@ -313,7 +396,7 @@ mod tests {
     use super::*;
 
     /// **A page the file did not take is never given up**: a store with no
-    /// file, under a budget of one page, keeps every page it made and answers
+    /// file, under a budget of one byte, keeps every page it made and answers
     /// each as made, hash-consing a repeat; with a file, the same pages are
     /// given up past the budget and read back as made.
     #[test]
@@ -326,7 +409,7 @@ mod tests {
             })
             .collect();
         for file in [false, true] {
-            let store: Store<u16> = Store::default();
+            let store: Arc<Store<u16>> = Store::shared();
             {
                 let mut g = store.inner.lock().expect("pages");
                 g.opened = true;
@@ -336,19 +419,22 @@ mod tests {
                     None
                 };
             }
-            let (ids, resident, back) = with_budget(1, || {
+            let (ids, resident, back) = budget::with_budget(1, || {
                 let loads = LOADS.load(Ordering::Relaxed);
                 let ids: Vec<u32> = pages.iter().map(|p| store.intern(p)).collect();
                 assert_eq!(store.intern(&pages[2]), ids[2], "a repeat is the page made");
-                let mut g = store.inner.lock().expect("pages");
                 for (id, p) in ids.iter().zip(&pages) {
-                    assert_eq!(&*g.page(*id), &p[..], "page {id} (file: {file})");
+                    assert_eq!(&*store.fetch(*id), &p[..], "page {id} (file: {file})");
                 }
-                (ids, g.resident.len(), LOADS.load(Ordering::Relaxed) - loads)
+                let resident = store.inner.lock().expect("pages").resident.len();
+                (ids, resident, LOADS.load(Ordering::Relaxed) - loads)
             });
             assert_eq!(ids, vec![0, 1, 2, 3, 4]);
             if file {
-                assert_eq!(resident, 1, "with a file, the budget holds");
+                assert_eq!(
+                    resident, 0,
+                    "with a file, a budget of one byte holds nothing"
+                );
                 assert!(back > 0, "with a file, pages are read back");
             } else {
                 assert_eq!(resident, 5, "without a file, every page stays");

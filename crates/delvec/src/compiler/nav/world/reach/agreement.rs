@@ -866,10 +866,27 @@ fn answered(w: &World, roots: &[[i32; 3]], side: i32) -> Answered {
                 })
                 .collect::<Vec<_>>()
         };
+        let succ: Vec<Vec<super::Edge>> = cells.iter().map(|c| r.succ(*c)).collect();
+        let preds: Vec<Vec<([i32; 3], super::Edge)>> = cells.iter().map(|c| r.preds(*c)).collect();
+        // The records read back from the lists are the edges counted at join
+        // (ADR-0037 §2): a list that lost or doubled a record at every side
+        // alike would otherwise answer the same at every side.
+        let joined: usize =
+            r.edge_census().iter().sum::<usize>() - r.leaves_world.len() - r.open_sea.len();
+        assert_eq!(
+            succ.iter().map(Vec::len).sum::<usize>(),
+            joined,
+            "the successor records read back are not the edges counted at join"
+        );
+        assert_eq!(
+            preds.iter().map(Vec::len).sum::<usize>(),
+            joined,
+            "the predecessor records read back are not the edges counted at join"
+        );
         Answered {
             states: r.states.iter().collect(),
-            succ: cells.iter().map(|c| r.succ(*c)).collect(),
-            preds: cells.iter().map(|c| r.preds(*c)).collect(),
+            succ,
+            preds,
             census: r.census(),
             edge_census: r.edge_census(),
             leaves_world: r.leaves_world.iter().copied().collect(),
@@ -901,12 +918,12 @@ fn no_answer_depends_on_the_chunk_side_or_the_budget() {
     for (name, w, roots) in &worlds {
         let whole = answered(w, roots, 16);
         let odd = answered(w, roots, 7);
-        let cut = super::chunks::with_budget(1, || answered(w, roots, 2));
+        let cut = super::budget::with_budget(1, || answered(w, roots, 2));
         // The snapshot cut to one resident page of each type, over a graph of
         // its own (a side no other case takes): every read past a thread's
         // recent pages goes back to the file.
         let loads = super::pages::traffic().2;
-        let paged = super::pages::with_budget(1, || answered(w, roots, 5));
+        let paged = super::budget::with_budget(1, || answered(w, roots, 5));
         read_back += super::pages::traffic().2 - loads;
         assert_eq!(
             whole, paged,

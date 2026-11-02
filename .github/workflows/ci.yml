@@ -1179,6 +1179,40 @@ jobs:
           python --version
           python tools/ci/check-eol-attributes.py --working-tree
 
+  # The reach graph keeps its edge lists, node tables, bank and snapshot pages
+  # in scratch files that many threads read while one appends (ADR-0037 §2).
+  # Whether that is safe differs by platform: a handle duplicated from the
+  # writer shares the file pointer on Windows, and `seek_read` moves it, so a
+  # write that trusted the cursor would land at a reader's offset — a wrong
+  # edge list decoded cleanly into a closure, with no diagnostic. The writes
+  # are positional for that reason, and this job is where the claim is tested
+  # on the platform whose semantics differ: the reach module's tests, which
+  # include the concurrent append/read-back case, on the Windows release
+  # target (ADR-0023). The test count is asserted so a filter that matched
+  # nothing cannot read as green.
+  rust-windows:
+    name: rust (Windows, reach module)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: rust-windows-reach
+      - name: the reach module's tests, on the Windows target
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked -p delvec --lib -- compiler::nav::world::reach --list > reach-tests.txt
+          n="$(grep -c ': test$' reach-tests.txt)"
+          echo "reach tests on this target: $n"
+          if [ "$n" -lt 1 ]; then
+            echo "the filter matched no test: the job proves nothing" >&2
+            exit 1
+          fi
+          cargo test --locked -p delvec --lib -- compiler::nav::world::reach
+
   # A released campaign is never edited and is built only by the engine
   # revision it pins (spec-0039): the engine never builds old campaigns to
   # prove compatibility, and no gate, exclusion list or migration exists for

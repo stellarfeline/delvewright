@@ -8,19 +8,20 @@
 //! pushed; the cell's chunk — a full-height column of [`SIDE`] × [`SIDE`]
 //! cells — holds it. A chunk is **resident** while it is being read: its
 //! records decoded into a map from cell to items. Every chunk of every list
-//! counts against one process-wide budget of resident bytes ([`budget`]);
-//! past it, the least recently used chunks give their decoded maps up, and the
-//! records not yet written go to the file first. Records pushed to a chunk that
-//! is not resident are buffered and written once they pass [`PENDING`] bytes,
-//! so a closure being built never decodes the chunks it only adds to.
+//! counts against the one resident budget ([`super::budget`]); past it, the
+//! least recently used chunks give their decoded maps up, and the records not
+//! yet written go to the file first. Records pushed to a chunk that is not
+//! resident are buffered and written once they pass [`PENDING`] bytes, so a
+//! closure being built never decodes the chunks it only adds to.
 //!
-//! The budget is the working set a walk by chunk needs ([`working_set`]): a
-//! closure is taken, and a proof walks it, one chunk at a time, writing what
-//! crosses into the eight chunks round it; so the budget holds the 3 × 3 ring
-//! of chunks as large as the largest one any list has been decoded to, and
-//! the ring's buffered pushes in the two lists a closure writes. It is
-//! measured from the lists, never set: a map's largest chunk depends on how
-//! densely its columns are reached, never on how many columns it has.
+//! The lists' stated need is the working set a walk by chunk needs
+//! ([`working_set`]): a closure is taken, and a proof walks it, one chunk at
+//! a time, writing what crosses into the eight chunks round it; so the need
+//! holds the 3 × 3 ring of chunks as large as the largest one any list has
+//! been decoded to, and the ring's buffered pushes in the two lists a closure
+//! writes. It is measured from the lists, never set: a map's largest chunk
+//! depends on how densely its columns are reached, never on how many columns
+//! it has.
 //!
 //! What a list answers never depends on the chunk side, the budget or which
 //! chunks are resident: a chunk's items are its spilled records, in the order
@@ -32,8 +33,9 @@
 //! entries are not chunked: each is one record at an offset, read back alone
 //! outside the table's lock.
 
+use super::budget;
 use super::persist::{Dec, Enc};
-use super::spill::Spill;
+use super::spill::{Reader, Spill};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
@@ -65,44 +67,22 @@ pub(super) fn working_set() -> usize {
     RING * largest() + RING * 2 * PENDING
 }
 
-/// The resident budget in force on this thread: the working set
-/// ([`working_set`]), or what a test set.
-pub(super) fn budget() -> usize {
-    match BUDGET_HERE.with(std::cell::Cell::get) {
-        0 => working_set(),
-        b => b,
+/// The lists' stated need: their working set ([`working_set`]).
+static NEED: budget::Need = budget::Need::new("the closures' edge lists", RING * 2 * PENDING);
+
+/// Note a chunk decoded to `bytes`: the largest, and the need, grow with it.
+fn decoded_to(bytes: usize) {
+    if LARGEST.fetch_max(bytes, Ordering::Relaxed) < bytes {
+        NEED.raise(working_set());
     }
 }
 
-thread_local! {
-    static BUDGET_HERE: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
-/// Bytes every list holds in memory now: decoded chunks and buffered records.
-static RESIDENT: AtomicUsize = AtomicUsize::new(0);
-/// The use clock.
-static TICK: AtomicU64 = AtomicU64::new(0);
-
-/// Run `f` with the resident budget at `bytes` on this thread: every list
-/// this thread uses gives up what it holds past it.
-#[cfg(test)]
-pub(super) fn with_budget<R>(bytes: usize, f: impl FnOnce() -> R) -> R {
-    let was = BUDGET_HERE.with(|b| b.replace(bytes));
-    let out = f();
-    BUDGET_HERE.with(|b| b.set(was));
-    out
-}
-
-/// The bytes every list holds in memory now.
-pub(super) fn resident() -> usize {
-    RESIDENT.load(Ordering::Relaxed)
-}
-
 /// The one scratch file every list writes to, behind the writer's lock, and
-/// a handle every reader reads it by at an offset, unlocked; both `None` when
+/// a reader every reader reads it by at an offset, unlocked; both `None` when
 /// it could not be opened, and then every list keeps its records in memory.
 struct Shared {
     write: Mutex<Option<Spill>>,
-    read: Option<std::fs::File>,
+    read: Option<Reader>,
 }
 
 fn spill() -> &'static Shared {
@@ -324,15 +304,13 @@ impl<V: Item> Chunk<V> {
                 .as_ref()
                 .expect("a list with spilled records has its file");
             for &(at, len) in &self.segments {
-                let bytes = super::spill::read_at(file, at, len)
-                    .expect("the lists' scratch file reads back");
-                take(&bytes);
+                take(&file.read(at, len));
             }
         }
         take(&self.pending);
         self.resident = Some(map);
         self.decoded = decoded;
-        LARGEST.fetch_max(decoded, Ordering::Relaxed);
+        decoded_to(decoded);
         LOADS.fetch_add(1, Ordering::Relaxed);
         RECORDS.fetch_add(records, Ordering::Relaxed);
     }
@@ -344,33 +322,33 @@ impl<V: Item> Chunk<V> {
         }
         let mut sp = spill().write.lock().expect("spill");
         if let Some(sp) = sp.as_mut() {
-            let at = sp
-                .append(&self.pending)
-                .expect("the lists' scratch file takes a write");
-            self.segments.push(at);
+            let r = sp.append(&self.pending);
+            self.segments.push(sp.or_fail("take a write", r));
             self.pending = Vec::new();
         }
     }
 
     /// Give up what the chunk holds in memory that the file can hold: a chunk
-    /// written in more than [`PIECES`] pieces is written whole, each cell's
-    /// items in their order, and read back from that one piece.
+    /// written in more than [`PIECES`] pieces is written whole, cell by cell
+    /// in cell order and each cell's items in their order (never in the
+    /// resident map's order, which is a hash's), and read back from that one
+    /// piece.
     fn release(&mut self) {
         let pieces = self.segments.len() + usize::from(!self.pending.is_empty());
         if let Some(map) = self.resident.as_ref().filter(|_| pieces > PIECES) {
+            let mut cells: Vec<&[i32; 3]> = map.keys().collect();
+            cells.sort_unstable();
             let mut e = Enc::default();
-            for (c, items) in map {
-                for v in items {
+            for c in cells {
+                for v in &map[c] {
                     e.cell(*c);
                     v.put(&mut e);
                 }
             }
             let mut sp = spill().write.lock().expect("spill");
             if let Some(sp) = sp.as_mut() {
-                let at = sp
-                    .append(&e.0)
-                    .expect("the lists' scratch file takes a write");
-                self.segments = vec![at];
+                let r = sp.append(&e.0);
+                self.segments = vec![sp.or_fail("take a write", r)];
                 self.pending = Vec::new();
             }
         } else {
@@ -385,14 +363,14 @@ impl<V: Item> Chunk<V> {
 struct Inner<V> {
     side: i32,
     chunks: HashMap<Key, Chunk<V>>,
-    /// Bytes counted against [`RESIDENT`] for this list.
+    /// Bytes this list counts as held ([`budget::hold`]).
     held: usize,
     items: usize,
 }
 
 impl<V> Drop for Inner<V> {
     fn drop(&mut self) {
-        RESIDENT.fetch_sub(self.held, Ordering::Relaxed);
+        budget::release(self.held);
     }
 }
 
@@ -400,7 +378,7 @@ impl<V: Item> Inner<V> {
     /// Push `v` onto `c`'s list; the chunk it went to.
     fn push(&mut self, c: [i32; 3], v: V) -> Key {
         let k = chunk_of(c, self.side);
-        let tick = TICK.fetch_add(1, Ordering::Relaxed);
+        let tick = budget::tick();
         let ch = self.chunks.entry(k).or_default();
         let before = ch.held();
         let mut e = Enc(std::mem::take(&mut ch.pending));
@@ -415,7 +393,7 @@ impl<V: Item> Inner<V> {
             }
             ch.decoded += std::mem::size_of::<V>() + v.heap();
             list.push(v);
-            LARGEST.fetch_max(ch.decoded, Ordering::Relaxed);
+            decoded_to(ch.decoded);
         } else if ch.pending.len() >= PENDING {
             ch.write();
         }
@@ -428,10 +406,10 @@ impl<V: Item> Inner<V> {
     fn recount(&mut self, k: Key, before: usize) {
         let after = self.chunks.get(&k).map_or(0, Chunk::held);
         if after >= before {
-            RESIDENT.fetch_add(after - before, Ordering::Relaxed);
+            budget::hold(after - before);
             self.held += after - before;
         } else {
-            RESIDENT.fetch_sub(before - after, Ordering::Relaxed);
+            budget::release(before - after);
             self.held -= before - after;
         }
     }
@@ -462,25 +440,13 @@ impl<V: Item> Inner<V> {
     }
 }
 
-/// A list another list can ask to give memory up.
-trait Evict: Send + Sync {
-    fn evict(&self, want: usize) -> usize;
-}
-
-impl<V: Item> Evict for Mutex<Inner<V>> {
-    fn evict(&self, want: usize) -> usize {
+impl<V: Item> budget::Pageable for Mutex<Inner<V>> {
+    fn give_up(&self, want: usize) -> usize {
         match self.try_lock() {
             Ok(mut g) => g.evict(want, None),
             Err(_) => 0,
         }
     }
-}
-
-type Registry = Mutex<Vec<(usize, Weak<dyn Evict>)>>;
-
-fn registry() -> &'static Registry {
-    static R: OnceLock<Registry> = OnceLock::new();
-    R.get_or_init(|| Mutex::new(Vec::new()))
 }
 
 /// **A list per cell, kept by reach chunk.**
@@ -501,43 +467,21 @@ impl<V: Item> Lists<V> {
 
     fn of(inner: Inner<V>) -> Lists<V> {
         let inner = Arc::new(Mutex::new(inner));
-        let weak: Weak<dyn Evict> = {
+        let weak: Weak<dyn budget::Pageable> = {
             let w: Weak<Mutex<Inner<V>>> = Arc::downgrade(&inner);
             w
         };
-        let id = Arc::as_ptr(&inner) as usize;
-        let mut r = registry().lock().expect("registry");
-        r.retain(|(_, w)| w.strong_count() > 0);
-        r.push((id, weak));
+        budget::join(budget::id_of(&*inner), weak);
         Lists { inner }
     }
 
-    /// Ask every list, this one first, to give up bytes past the budget.
+    /// Bring the resident bytes under the budget, this list first, keeping
+    /// chunk `keep` ([`budget::relieve`]).
     fn relieve(&self, g: &mut Inner<V>, keep: Key) {
-        let over = |b: usize| RESIDENT.load(Ordering::Relaxed).saturating_sub(b);
-        if over(budget()) == 0 {
-            return;
-        }
-        let target = budget() / 4 * 3;
-        g.evict(over(target), Some(keep));
-        if over(target) == 0 {
-            return;
-        }
-        let me = Arc::as_ptr(&self.inner) as usize;
-        let others: Vec<Arc<dyn Evict>> = registry()
-            .lock()
-            .expect("registry")
-            .iter()
-            .filter(|(id, _)| *id != me)
-            .filter_map(|(_, w)| w.upgrade())
-            .collect();
-        for o in others {
-            let want = over(target);
-            if want == 0 {
-                break;
-            }
-            o.evict(want);
-        }
+        let held = g.held;
+        budget::relieve(budget::id_of(&*self.inner), held, |want| {
+            g.evict(want, Some(keep))
+        });
     }
 
     /// Push `v` onto `c`'s list.
@@ -551,7 +495,7 @@ impl<V: Item> Lists<V> {
     pub(super) fn with<R>(&self, c: [i32; 3], f: impl FnOnce(&[V]) -> R) -> R {
         let mut g = self.inner.lock().expect("lists");
         let k = chunk_of(c, g.side);
-        let tick = TICK.fetch_add(1, Ordering::Relaxed);
+        let tick = budget::tick();
         let Some(ch) = g.chunks.get_mut(&k) else {
             return f(&[]);
         };
@@ -577,6 +521,16 @@ impl<V: Item> Lists<V> {
     pub(super) fn side(&self) -> i32 {
         self.inner.lock().expect("lists").side
     }
+
+    /// How many pieces `c`'s chunk is written in, buffered records counted
+    /// as one.
+    #[cfg(test)]
+    fn pieces_of(&self, c: [i32; 3]) -> usize {
+        let g = self.inner.lock().expect("lists");
+        g.chunks.get(&chunk_of(c, g.side)).map_or(0, |ch| {
+            ch.segments.len() + usize::from(!ch.pending.is_empty())
+        })
+    }
 }
 
 impl<V: Item> Clone for Lists<V> {
@@ -600,7 +554,7 @@ impl<V: Item> Clone for Lists<V> {
                 (*k, c)
             })
             .collect();
-        RESIDENT.fetch_add(held, Ordering::Relaxed);
+        budget::hold(held);
         let inner = Inner {
             side: g.side,
             chunks,
@@ -637,7 +591,6 @@ pub(super) fn side_here() -> i32 {
 }
 
 /// Run `f` with new lists on this thread at chunk side `side`.
-#[cfg(test)]
 pub(super) fn at_side<R>(side: i32, f: impl FnOnce() -> R) -> R {
     let was = SIDE_HERE.with(|s| s.replace(side));
     let out = f();
@@ -732,9 +685,8 @@ impl TableIndex {
             let mut sp = spill().write.lock().expect("spill");
             match sp.as_mut() {
                 Some(sp) => {
-                    let (at, len) = sp
-                        .append(bytes)
-                        .expect("the lists' scratch file takes a write");
+                    let r = sp.append(bytes);
+                    let (at, len) = sp.or_fail("take a write", r);
                     Slot { at, len }
                 }
                 None => {
@@ -774,9 +726,7 @@ fn read_slot<V: Item>(held: &[u8], s: Slot) -> V {
         V::take(&mut d).expect("a node-table record reads back")
     };
     match spill().read.as_ref() {
-        Some(file) if held.is_empty() => decode(
-            &super::spill::read_at(file, s.at, s.len).expect("the lists' scratch file reads back"),
-        ),
+        Some(file) if held.is_empty() => decode(&file.read(s.at, s.len)),
         _ => decode(&held[s.at as usize..s.at as usize + s.len as usize]),
     }
 }
@@ -887,7 +837,7 @@ impl Item for (super::Quadrants, super::NodeEdges) {
 
 #[cfg(test)]
 mod table_tests {
-    use super::{Dec, Enc, Item, Table};
+    use super::{Dec, Enc, Item, Lists, PENDING, PIECES, Table};
     use std::collections::BTreeMap;
 
     #[derive(Clone, Debug, PartialEq)]
@@ -899,6 +849,138 @@ mod table_tests {
         }
         fn take(d: &mut Dec<'_>) -> Option<Self> {
             Some(Rec(d.cell()?))
+        }
+    }
+
+    /// A record with a payload, so a chunk's buffered bytes pass [`PENDING`].
+    #[derive(Clone, Debug, PartialEq)]
+    struct Fat(u16, Vec<i32>);
+
+    impl Item for Fat {
+        fn put(&self, e: &mut Enc) {
+            e.u16(self.0);
+            e.u16(self.1.len() as u16);
+            for v in &self.1 {
+                e.cell([*v, 0, 0]);
+            }
+        }
+        fn take(d: &mut Dec<'_>) -> Option<Self> {
+            let tag = d.u16()?;
+            let n = d.u16()?;
+            let mut v = Vec::with_capacity(n as usize);
+            for _ in 0..n {
+                v.push(d.cell()?[0]);
+            }
+            Some(Fat(tag, v))
+        }
+        fn heap(&self) -> usize {
+            self.1.capacity() * 4
+        }
+    }
+
+    /// **A list kept by chunk answers what a map of its pushes answers**
+    /// (ADR-0037 §2): records pushed in a generated order at cells on both
+    /// sides of zero and across two-column chunk faces, several per cell and
+    /// more than [`PENDING`] bytes per chunk, read back between pushes so
+    /// every chunk is given up and written out more than [`PIECES`] times —
+    /// taking the rewrite branch of `Chunk::release` — with a copy taken
+    /// mid-stream and pushed to on both sides; under the default budget and
+    /// under a budget of one byte. Every present cell and a cell beside each
+    /// answer exactly as a `BTreeMap<[i32; 3], Vec<_>>` of the same pushes.
+    /// Red on any difference, and on a run whose chunks never passed
+    /// [`PIECES`] pieces or were never given up (which would bind nothing).
+    #[test]
+    fn a_list_kept_by_chunk_answers_what_a_map_answers() {
+        for cut in [false, true] {
+            let run = || {
+                let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+                let mut next = |n: u64| {
+                    seed ^= seed << 13;
+                    seed ^= seed >> 7;
+                    seed ^= seed << 17;
+                    seed % n
+                };
+                let l: Lists<Fat> = Lists::new(2);
+                let mut m: BTreeMap<[i32; 3], Vec<Fat>> = BTreeMap::new();
+                let mut copy: Option<(Lists<Fat>, BTreeMap<[i32; 3], Vec<Fat>>)> = None;
+                let (mut most_pieces, releases0) = (0usize, super::traffic().2);
+                let cells: Vec<[i32; 3]> = (0..24)
+                    .map(|i| [i % 5 - 2, (i * 7) % 4 - 1, (i * 3) % 5 - 2])
+                    .collect();
+                for step in 0..6000u32 {
+                    let c = cells[next(cells.len() as u64) as usize];
+                    let v = Fat(
+                        next(1000) as u16,
+                        (0..next(40)).map(|k| k as i32 - 20).collect(),
+                    );
+                    l.push(c, v.clone());
+                    m.entry(c).or_default().push(v.clone());
+                    if let Some((cl, cm)) = copy.as_mut() {
+                        // The copy takes a different stream.
+                        if next(2) == 0 {
+                            let v2 = Fat(v.0 ^ 1, v.1.clone());
+                            cl.push(c, v2.clone());
+                            cm.entry(c).or_default().push(v2);
+                        }
+                    }
+                    if step == 2500 {
+                        copy = Some((l.clone(), m.clone()));
+                    }
+                    // Read a cell back now and then, so chunks are loaded,
+                    // given up and written out piece by piece.
+                    if next(5) == 0 {
+                        let q = cells[next(cells.len() as u64) as usize];
+                        most_pieces = most_pieces.max(l.pieces_of(q));
+                        assert_eq!(&l.get(q), m.get(&q).map_or(&[][..], Vec::as_slice), "{q:?}");
+                        if let Some((cl, cm)) = copy.as_ref() {
+                            assert_eq!(&cl.get(q), cm.get(&q).map_or(&[][..], Vec::as_slice));
+                        }
+                    }
+                }
+                let check = |l: &Lists<Fat>, m: &BTreeMap<[i32; 3], Vec<Fat>>| {
+                    for (c, vs) in m {
+                        assert_eq!(&l.get(*c), vs, "{c:?}");
+                        let beside = [c[0] + 100, c[1], c[2]];
+                        assert!(l.get(beside).is_empty());
+                    }
+                    l.with([0, 0, 0], |x| assert_eq!(x, m[&[0, 0, 0]].as_slice()));
+                };
+                check(&l, &m);
+                let (cl, cm) = copy.expect("a copy was taken");
+                check(&cl, &cm);
+                let bytes: usize = m.values().flatten().map(|f| 4 + 12 * f.1.len()).sum();
+                (
+                    most_pieces,
+                    super::traffic().2 - releases0,
+                    bytes
+                        / m.keys()
+                            .map(|c| super::chunk_of(*c, 2))
+                            .collect::<std::collections::BTreeSet<_>>()
+                            .len(),
+                    m.values().map(Vec::len).sum::<usize>(),
+                )
+            };
+            let (pieces, releases, per_chunk, records) = if cut {
+                super::budget::with_budget(1, run)
+            } else {
+                run()
+            };
+            eprintln!(
+                "lists (budget {}): {records} record(s), about {per_chunk} byte(s) per chunk, at most \
+                 {pieces} piece(s) before a read, {releases} chunk(s) given up",
+                if cut { "one byte" } else { "default" }
+            );
+            assert!(
+                per_chunk > PENDING,
+                "a chunk never passed its buffer: the case binds nothing"
+            );
+            if cut {
+                assert!(
+                    pieces > PIECES,
+                    "no chunk passed {PIECES} pieces: the rewrite branch was never taken"
+                );
+                assert!(releases > 0, "no chunk was given up");
+            }
         }
     }
 
