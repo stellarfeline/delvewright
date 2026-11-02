@@ -278,10 +278,8 @@ Step 3 planned a hub, spokes, an optional strand and endings that read the run
 - **A final choice whose options the run decides.** The last `talk-to` offers
   options gated on what the run wrote
   (`"requires_state": [{"state": "state/<deeds>", "op": "at-least", "value": 1}]`)
-  beside **one completing option with no gate of any kind**. `DW0191` refuses
-  a talk-to whose every completing option carries a flag gate, but it does not
-  count `requires_state`: a final talk-to whose only completing option is
-  gated on a datum builds, and the run where the datum is short cannot finish.
+  beside **one completing option with no gate of any kind**; `DW0191` refuses
+  a talk-to without one.
 - **Three rules of composition**, each standing in for a defect the engine has
   not closed:
   - **Gate walls, not floors.** Shut a story way on a `walk` or `stair` edge,
@@ -305,7 +303,7 @@ Run each of these; each names what it judges and how many objects it bound.
 1. **At step 5**, `delvec --prefabs "$DELVEWRIGHT_PREFABS" validate <campaign-dir>`
    is clean of `DW0866`, `DW0867`, `DW0868` (the optional strand is outside
    the mainline), `DW0480` (every flag that moves a body has a declared fork),
-   `DW0191` (every talk-to has a completing option with no flag gate) and
+   `DW0191` (every talk-to has a completing option with no gate) and
    `DW1077` (every quest's trigger agrees with its plan's `depends_on`).
 2. **At step 8**, `delvec build` prints `ending binding: N ending(s); …;
    K story world(s) enumerated` and then one line per ending:
