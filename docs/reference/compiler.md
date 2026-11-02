@@ -783,7 +783,11 @@ Exit 0 says the program would commit against the whole as it stands now; any
 other exit is the verdict the commit would give, in the same words. Its
 binding line carries the battery's (`the commit's battery: the whole builds
 with N piece(s) this run would write, judged over a scratch copy of F
-file(s)`) and ends `peak rss: <n> bytes` (`getrusage`). **A program reaches the
+file(s)`) and ends `peak rss: <n> bytes` (`getrusage`). Before the judgement,
+check and commit alike print `detail prepared: N place(s) held until the one
+judgement, B byte(s) of structure template over F file(s) — the campaign's own
+size, stated and not chunked (ADR-0037 §5)`: the pieces a run holds in memory
+are its own output, so their size is stated, never reduced. **A program reaches the
 campaign in canonical form**: one that is not what `delvec fmt` writes is
 refused by the commit and the check alike before it is read (`DW0773`, naming
 the line of the first difference). `--check` beside `--all`
@@ -4435,7 +4439,22 @@ campaign with an edit script hands it to the replay (`edit::replay_taking`),
 which edits it in place, and every pass after reads the edited copy. The map is
 `Arc<BlockMap>` (`blockstate::BlockMap`, interned values) so a reader that needs
 it whole — the light model — shares it instead of copying it; the replay is its
-only writer. The geometry is classified once too: `light::geometry_world` is
+only writer. `BlockMap` is **the section store** (`compiler::sections`,
+ADR-0037 §1): 16 × 16 × 16 sections by section coordinate, each a palette of
+the states it holds and one index per cell (a byte while the palette holds at
+most 255 states, two after; the palette is compacted before the index widens),
+so a cell costs a byte instead of a tree entry and a section nothing wrote
+costs nothing. It answers what a `BTreeMap<[i32; 3], _>` answers and iterates
+in the same cell order; `in_box(lo, hi)` walks one inclusive box in that order.
+Every whole-world `CellMap<V>` (the light model's blocks, the nav world's
+`partial` and `material`) keeps its shared part in a `SectionMap<V>` the same
+way. The judged copy (`judged_within`), the write judge's map and the review
+world's block map are `BlockMap`s too. Every build prints `world store: N
+placed cell(s) in S section(s) of 16 x 16 x 16, B byte(s)[; the judged copy N
+cell(s) in S section(s), B byte(s)] (ADR-0037 §1)` after the judged-world
+line: the store's resident cost, which the reach graph's budget does not
+count. `sections::tests::a_section_store_answers_what_a_map_answers` holds the
+store to a map over generated edit sequences. The geometry is classified once too: `light::geometry_world` is
 the premise-free nav world relight surveys, and the campaign's own world is that
 world's cells under `nav::Premises::of_plan` (`World::with_premises`) with
 relight's fixtures standing in it (`light::lit_world`): the map with the

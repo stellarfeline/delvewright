@@ -468,6 +468,7 @@ fn emit_all(
     if let Some((_, j)) = &judged {
         eprintln!("{}", j.line());
     }
+    eprintln!("{}", whole.store_line(judged.as_ref().map(|(a, _)| a)));
     let assembled: &crate::compiler::assembled::Assembled =
         judged.as_ref().map_or(whole, |(a, _)| a);
     // Advisory findings the replay raised (`DW0353` gate-region collisions,

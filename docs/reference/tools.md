@@ -241,8 +241,10 @@ earlier one's bank about 3 min and 13 GB; `frames --campaign` about 2 min and
 loop). It prints the
 leak proof's binding, the battery's line (`the commit's battery: the whole
 builds with N piece(s) this run would write, judged over a scratch copy of F
-file(s)`) and `peak rss: <bytes>` on its binding line; exit 0 says the program
-would commit now. A program not in canonical form is refused by both runs
+file(s)`) and `peak rss: <bytes>` on its binding line, and, before the
+judgement, `detail prepared: N place(s) held until the one judgement, B byte(s)
+of structure template over F file(s) …` (the pieces' own size, stated); exit 0
+says the program would commit now. A program not in canonical form is refused by both runs
 before it is read (`DW0773`, the line of the first difference). It is the per-place author's check at step 9; the commit is the
 orchestrator's, one at a time (spec-0122 §6). `--check --all` is refused (exit
 2). A program declaring a `handed/…` name the allocation does not hand is `DW0882`,

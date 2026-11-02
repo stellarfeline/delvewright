@@ -1371,6 +1371,29 @@ impl Judged {
 }
 
 impl Assembled {
+    /// **The store's size, stated** (ADR-0037 §1): how many sections hold the
+    /// world's placed cells and the bytes they cost, with the judged copy's
+    /// when one was taken. The resident cost of the assembled world, which
+    /// the budget of the reach graph does not count.
+    pub fn store_line(&self, judged: Option<&Assembled>) -> String {
+        let mut s = format!(
+            "world store: {} placed cell(s) in {} section(s) of 16 x 16 x 16, {} byte(s)",
+            self.blocks.len(),
+            self.blocks.sections(),
+            self.blocks.bytes()
+        );
+        if let Some(j) = judged {
+            s.push_str(&format!(
+                "; the judged copy {} cell(s) in {} section(s), {} byte(s)",
+                j.blocks.len(),
+                j.blocks.sections(),
+                j.blocks.bytes()
+            ));
+        }
+        s.push_str(" (ADR-0037 §1)");
+        s
+    }
+
     /// **The part of the world the body-judging analyses read**: the cells of
     /// the inclusive columns `lo..=hi` (`[x, z]`), every height, with a
     /// [`JUDGED_WALL`] standing on each face one column out, from the lowest
@@ -3700,6 +3723,35 @@ mod judged_tests {
             gate_seals: Vec::new(),
             reached: Reached::default(),
         }
+    }
+
+    /// The store's line states the cells, the sections and the bytes of the
+    /// whole and of the judged copy: two cells in two sections, one of them
+    /// judged, each section its index array and its palette.
+    #[test]
+    fn the_store_line_states_the_sections_and_their_bytes() {
+        let a = world(&[
+            ([0, 64, 0], "minecraft:stone"),
+            ([40, 64, 0], "minecraft:stone"),
+        ]);
+        assert_eq!(a.blocks.sections(), 2);
+        assert!(a.blocks.bytes() >= 2 * 4096);
+        let (j, _) = a
+            .judged_within([0, 0], [2, 2])
+            .expect("one cell lies outside");
+        let line = a.store_line(Some(&j));
+        assert!(
+            line.starts_with(&format!(
+                "world store: 2 placed cell(s) in 2 section(s) of 16 x 16 x 16, {} byte(s); the \
+                 judged copy {} cell(s) in {} section(s), {} byte(s)",
+                a.blocks.bytes(),
+                j.blocks.len(),
+                j.blocks.sections(),
+                j.blocks.bytes()
+            )),
+            "{line}"
+        );
+        assert!(a.store_line(None).ends_with("byte(s) (ADR-0037 §1)"));
     }
 
     /// Nothing outside the columns: the world is judged whole, unchanged.

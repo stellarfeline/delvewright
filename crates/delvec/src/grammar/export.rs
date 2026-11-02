@@ -282,6 +282,24 @@ impl ZoneExport {
         }
     }
 
+    /// The structure template bytes this export writes, over every tile: the
+    /// size a prepared piece is held at until the run's one judgement
+    /// (ADR-0037 §5).
+    pub fn nbt_bytes(&self) -> usize {
+        match self {
+            ZoneExport::Single(e) => e.nbt.len(),
+            ZoneExport::Tiled(e) => e.tiles.iter().map(|t| t.nbt.len()).sum(),
+        }
+    }
+
+    /// The `.nbt` files this export writes: one, or one per tile.
+    pub fn nbt_files(&self) -> usize {
+        match self {
+            ZoneExport::Single(_) => 1,
+            ZoneExport::Tiled(e) => e.tiles.len(),
+        }
+    }
+
     /// The one file a consumer opens to learn what this zone is.
     pub fn metadata_file(&self) -> &str {
         match self {
