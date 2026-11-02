@@ -40,6 +40,13 @@ crate::dw_code! {
 }
 
 crate::dw_code! {
+    /// A stage-5 quest's `trigger` disagrees with its stage-4 `depends_on`: a
+    /// `quest-complete` trigger names a quest the plan does not list, or a
+    /// quest the plan says depends on others is armed at `campaign-start`.
+    pub const TRIGGER_DISAGREES_WITH_PLAN: DwCode = DwCode::new("DW1077", ExitTier::Build);
+}
+
+crate::dw_code! {
     /// (v0.3) A declared wave is referenced by a `kill` objective but is never
     /// spawned by any `spawn-wave` effect (referenced-but-never-spawned). A wave
     /// must be spawned by some effect before its kill objective is reachable.
@@ -700,6 +707,7 @@ pub(crate) fn cross_stage(c: &Campaign, d: &mut Vec<Diagnostic>) {
             }
         }
     }
+    trigger_agrees_with_plan(c, d);
     for (i, q) in c.quests.content.quests.iter().enumerate() {
         if !planned_ids.contains(q.id.as_str()) {
             d.push(Diagnostic::error(
@@ -712,6 +720,87 @@ pub(crate) fn cross_stage(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     q.id, q.id
                 ),
             ));
+        }
+    }
+}
+
+/// `DW1077`: a quest's stage-5 `trigger` agrees with its stage-4 `depends_on`.
+///
+/// The plan orders the quests and the trigger arms one at runtime; neither is
+/// derived from the other, because a trigger waits on one quest and a join
+/// `depends_on` several. So the two are held to each other where they can
+/// disagree: a `quest-complete` trigger names a quest the plan's `depends_on`
+/// lists, and a quest whose `depends_on` is non-empty is not armed at
+/// `campaign-start`. A `depends_on` entry the trigger does not name is a join's
+/// other arm, which the quest's own gates hold (a flag each arm sets), and is
+/// not judged here. A quest the plan does not hold is `DW0151`'s, and a trigger
+/// naming no stage-5 quest is `DW0112`'s.
+fn trigger_agrees_with_plan(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let plan: BTreeMap<&str, &PlannedQuest> = c
+        .quest_plan
+        .content
+        .quests
+        .iter()
+        .map(|q| (q.id.as_str(), q))
+        .collect();
+    for (i, q) in c.quests.content.quests.iter().enumerate() {
+        let Some(planned) = plan.get(q.id.as_str()) else {
+            continue;
+        };
+        let deps: Vec<&str> = planned.depends_on.iter().map(|x| x.as_str()).collect();
+        match &q.trigger {
+            crate::Trigger::QuestComplete { quest } => {
+                if deps.contains(&quest.as_str()) {
+                    continue;
+                }
+                let listed = if deps.is_empty() {
+                    "lists none, so the plan says it opens at the start".to_string()
+                } else {
+                    format!(
+                        "lists {}",
+                        deps.iter()
+                            .map(|x| format!("`{x}`"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                };
+                d.push(Diagnostic::error(
+                    TRIGGER_DISAGREES_WITH_PLAN,
+                    "quests",
+                    format!("/content/quests/{i}/trigger/quest"),
+                    format!(
+                        "quest `{}` is armed when `{quest}` completes, but its stage-4 \
+                         `depends_on` {listed} — the plan and the run would put this quest at \
+                         different points of the story. Arm it from a quest its `depends_on` \
+                         lists, or add `{quest}` to its `depends_on`",
+                        q.id
+                    ),
+                ));
+            }
+            crate::Trigger::CampaignStart => {
+                if deps.is_empty() {
+                    continue;
+                }
+                d.push(Diagnostic::error(
+                    TRIGGER_DISAGREES_WITH_PLAN,
+                    "quests",
+                    format!("/content/quests/{i}/trigger"),
+                    format!(
+                        "quest `{}` is armed at `campaign-start`, but its stage-4 `depends_on` \
+                         lists {} — nothing at runtime waits for {}, so the party can take this \
+                         quest before the ones the plan puts first. Arm it with \
+                         `{{\"type\": \"quest-complete\", \"quest\": \"{}\"}}` (a quest its \
+                         `depends_on` lists), or empty its `depends_on`",
+                        q.id,
+                        deps.iter()
+                            .map(|x| format!("`{x}`"))
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                        if deps.len() == 1 { "it" } else { "them" },
+                        deps[deps.len() - 1],
+                    ),
+                ));
+            }
         }
     }
 }

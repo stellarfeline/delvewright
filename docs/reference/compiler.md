@@ -475,7 +475,10 @@ closure, so a mandatory quest the closure does not reach is the convergence
 refusal `DW0132` and an optional quest the closure does reach is `DW0866`.
 A mandatory quest may not wait on an optional one, by `depends_on` or by
 stage-5 `quest-complete` trigger (`DW0867`); the reverse directions are the
-ordinary way a strand attaches to the spine. A mainline objective keyed on a
+ordinary way a strand attaches to the spine. A quest's stage-5 trigger agrees with
+its `depends_on`: a `quest-complete` trigger names a quest the plan lists for
+it, and a quest with a non-empty `depends_on` is not armed at `campaign-start`
+(`DW1077`); a join is armed by one of its arms. A mainline objective keyed on a
 flag only optional content produces is `DW0868`. The closure is
 `QuestPlanContent::spine` and the declaration is `QuestPlanContent::optional`
 — one authority each. `goal` → l10n `quest.<q>.goal`.
