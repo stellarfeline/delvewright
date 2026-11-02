@@ -78,6 +78,7 @@ impl Join {
                         "radius": 2,
                         "type": "reach-anchor",
                     }],
+                    "on_complete": [],
                     "trigger": trigger,
                 }));
             }
@@ -120,7 +121,10 @@ fn a_quest_with_depends_on_armed_at_the_start_is_dw1077() {
         ..Join::default()
     };
     assert_eq!(j.codes(), set(&["DW1077"]));
-    assert_eq!(j.dw1077_paths(), vec!["/content/quests/0/trigger".to_string()]);
+    assert_eq!(
+        j.dw1077_paths(),
+        vec!["/content/quests/0/trigger".to_string()]
+    );
 }
 
 /// A trigger naming a quest the plan's `depends_on` does not list, and its
@@ -190,6 +194,12 @@ fn dw1077_counts_exactly_the_disagreeing_quests() {
             }
         }
     }
-    assert_eq!(examined, 27, "population swept: 3 x 3 x 3 non-self triggers");
-    assert!(refused > 0, "the sweep refused nothing: {refused} of {examined}");
+    assert_eq!(
+        examined, 27,
+        "population swept: 3 x 3 x 3 non-self triggers"
+    );
+    assert!(
+        refused > 0,
+        "the sweep refused nothing: {refused} of {examined}"
+    );
 }

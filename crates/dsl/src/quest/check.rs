@@ -734,7 +734,9 @@ pub(crate) fn cross_stage(c: &Campaign, d: &mut Vec<Diagnostic>) {
 /// `campaign-start`. A `depends_on` entry the trigger does not name is a join's
 /// other arm, which the quest's own gates hold (a flag each arm sets), and is
 /// not judged here. A quest the plan does not hold is `DW0151`'s, and a trigger
-/// naming no stage-5 quest is `DW0112`'s.
+/// naming no stage-5 quest, or a `depends_on` entry naming no planned quest, is
+/// `DW0112`'s, one naming a quest stage 5 does not expand is `DW0150`'s, and
+/// one naming the quest itself is `DW0130`'s.
 fn trigger_agrees_with_plan(c: &Campaign, d: &mut Vec<Diagnostic>) {
     let plan: BTreeMap<&str, &PlannedQuest> = c
         .quest_plan
@@ -743,11 +745,27 @@ fn trigger_agrees_with_plan(c: &Campaign, d: &mut Vec<Diagnostic>) {
         .iter()
         .map(|q| (q.id.as_str(), q))
         .collect();
+    let expanded: BTreeSet<&str> = c
+        .quests
+        .content
+        .quests
+        .iter()
+        .map(|q| q.id.as_str())
+        .collect();
     for (i, q) in c.quests.content.quests.iter().enumerate() {
         let Some(planned) = plan.get(q.id.as_str()) else {
             continue;
         };
-        let deps: Vec<&str> = planned.depends_on.iter().map(|x| x.as_str()).collect();
+        // A `depends_on` entry naming no planned quest is `DW0112`'s finding,
+        // one naming a quest stage 5 does not expand is `DW0150`'s (no trigger
+        // can name it), and one naming the quest itself is the cycle `DW0130`
+        // refuses; only the other entries are held to the trigger.
+        let deps: Vec<&str> = planned
+            .depends_on
+            .iter()
+            .map(|x| x.as_str())
+            .filter(|x| plan.contains_key(x) && expanded.contains(x) && *x != q.id.as_str())
+            .collect();
         match &q.trigger {
             crate::Trigger::QuestComplete { quest } => {
                 if deps.contains(&quest.as_str()) {
