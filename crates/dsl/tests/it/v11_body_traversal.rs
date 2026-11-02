@@ -10,10 +10,10 @@
 //! and a value the compiler could never
 //! hold a body to is refused at declaration time (`DW0455`) rather than accepted
 //! and silently ignored. The proof half — a declaration must change a verdict
-//! (`DW0454`) — lives in `delvec`'s `tests/traversal.rs`, where there is a world
+//! (`DW0454`) — lives in `delvec`'s `tests/it/traversal.rs`, where there is a world
 //! to be held to.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
 

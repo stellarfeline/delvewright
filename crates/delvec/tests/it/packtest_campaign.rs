@@ -16,7 +16,7 @@
 //! is exported on the terminal `assert-complete` step (`ending_tail_ticks`) so
 //! the harness completion window covers it too.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::Path;

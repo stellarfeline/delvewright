@@ -48,7 +48,7 @@
 //! set by an EARLIER step. Without it the fixture could quietly drift back into
 //! the state every other campaign is in, and the ladder would go on passing.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

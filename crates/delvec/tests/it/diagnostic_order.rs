@@ -13,7 +13,7 @@
 //! run's binding counts are all still stated. A test that let a line disappear
 //! would be the vacuity this repository names by name.
 
-mod common;
+use crate::common;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

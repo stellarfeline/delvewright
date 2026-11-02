@@ -49,9 +49,9 @@
 //!    property of today's source.
 //!
 //! Sections 1–2 are unit-level; section 3 drives the real `delvec` binary, like
-//! `tests/cli.rs`.
+//! `tests/it/cli.rs`.
 
-mod common;
+use crate::common;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};

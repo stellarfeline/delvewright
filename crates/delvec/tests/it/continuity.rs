@@ -16,7 +16,7 @@
 //! * *exclusion*: an NPC whose lifecycle is touched from a trigger (no DAG
 //!   position) is untracked — no warning, however discontinuous.
 
-mod common;
+use crate::common;
 
 use delvec::compiler::continuity::check_npc_continuity;
 use delvewright_dsl::{Campaign, RawCampaign, Severity, parse_campaign};

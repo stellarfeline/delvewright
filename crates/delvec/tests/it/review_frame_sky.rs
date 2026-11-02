@@ -1,7 +1,7 @@
 //! **Every shot states its world, its clock and its mode, and the sky a frame
 //! is drawn under is the engine's** (spec-0112 §7.6, §6.1; criterion 6).
 
-mod common;
+use crate::common;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

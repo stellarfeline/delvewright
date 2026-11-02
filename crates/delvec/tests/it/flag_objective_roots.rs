@@ -21,7 +21,7 @@
 //! asserted the declaration alone would pass just as happily if the root stopped
 //! being lowered at all.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

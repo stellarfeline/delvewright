@@ -28,7 +28,7 @@ use delvec::admit::socket::{SocketDecl, carve, opening_cells};
 use delvec::admit::structure::{PaletteEntry, Structure};
 use delvec::compiler::claims::DW_CLAIM_DENIED;
 
-mod common;
+use crate::common;
 
 fn delvec_bin() -> Proc {
     Proc::new(env!("CARGO_BIN_EXE_delvec"))

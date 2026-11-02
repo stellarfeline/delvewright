@@ -18,7 +18,7 @@
 //! flow-proven, not yet nav-proven — see the "Known gap" note in
 //! `docs/reference/compiler.md` §"The branch artifacts".
 
-mod common;
+use crate::common;
 
 use delvec::compiler::branch;
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};

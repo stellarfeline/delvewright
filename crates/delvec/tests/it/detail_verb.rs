@@ -8,7 +8,7 @@
 //! a program — and every refusal below is produced by perturbing a program that
 //! was green, never by hand-authoring a broken one.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};

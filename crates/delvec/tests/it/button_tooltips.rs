@@ -6,7 +6,7 @@
 //! two buttons, which gained theirs here, and that a campaign stating none emits
 //! the same bytes it emitted before the field existed.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

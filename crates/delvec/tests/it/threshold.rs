@@ -16,7 +16,7 @@
 //! The remedy rows (widen the range, move the anchor into the only way
 //! through, close the way round) are in `remedy_reachability.rs`.
 
-mod common;
+use crate::common;
 
 use common::threshold::{approach, bar_the_door, doorway_campaign, second_door};
 use std::path::{Path, PathBuf};

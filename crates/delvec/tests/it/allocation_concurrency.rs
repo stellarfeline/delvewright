@@ -5,7 +5,7 @@
 //! `available_parallelism()`. The line goes to stderr; stdout stays the one
 //! JSON document the handout parses.
 
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 use std::process::{Command, Output};

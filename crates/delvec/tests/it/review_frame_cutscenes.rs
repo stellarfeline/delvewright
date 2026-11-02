@@ -3,7 +3,7 @@
 //! it ends, standing in the configuration the firing step arrives under; one
 //! no critical step fires gets no frame and is named.
 
-mod common;
+use crate::common;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

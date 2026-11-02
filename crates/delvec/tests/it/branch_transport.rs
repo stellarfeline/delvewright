@@ -13,7 +13,7 @@
 //! (`area/landing`) that only the bolt branch ever enters. The default (hold)
 //! path never leaves the keep, so the crossing is branch-only by construction.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::Path;

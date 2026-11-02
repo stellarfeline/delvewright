@@ -1503,7 +1503,7 @@ fn see(
 /// floor course beside its west wall 42 blocks past the slab, where the next
 /// lamp a bay beyond is missing, from the eye at the landing's east corner;
 /// the constant is that reading rounded up at the fourth decimal. The test
-/// `station_4_calibrates_the_far_field_threshold` in `tests/endless_corridor.rs`
+/// `station_4_calibrates_the_far_field_threshold` in `tests/it/endless_corridor.rs`
 /// rebuilds the geometry and reads the shift back off the binding, so a change
 /// to the measure that moves the reading reds it; the second method,
 /// `crates/delvec/tests/measured/far_field.py`, computes it from the spike's own

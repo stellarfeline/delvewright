@@ -26,7 +26,7 @@
 //! than restate — a door list copied into a second crate is the same defect the
 //! enumeration exists to end.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

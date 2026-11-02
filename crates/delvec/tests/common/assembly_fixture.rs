@@ -94,7 +94,7 @@ pub fn rig() -> Rig {
             .collect(),
         clips,
         provenance: RigProvenance {
-            generator: "crates/delvec/tests/assembly.rs".into(),
+            generator: "crates/delvec/tests/it/assembly.rs".into(),
             source: "original".into(),
             spdx: "GPL-3.0-or-later".into(),
         },

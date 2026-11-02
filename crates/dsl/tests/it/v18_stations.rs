@@ -16,7 +16,7 @@
 //! `synthesized_anchor_kinds` to decide what to assert: the names each place
 //! owes are read off the graph written below by hand.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{RawCampaign, check_campaign};
 use serde_json::{Value, json};

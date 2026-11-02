@@ -11,7 +11,7 @@
 //! exclusive (`DW0194` either way), the target must be a declared NPC
 //! (`DW0112`), and the whole form is a v0.6 surface.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
 

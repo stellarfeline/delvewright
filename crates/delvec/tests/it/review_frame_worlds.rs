@@ -4,7 +4,7 @@
 //! Every world is read back through `tools/lib/anvil.py`, the one reader every
 //! gate reads a world save with, so what is asserted is what a gate sees.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

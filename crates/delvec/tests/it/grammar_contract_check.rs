@@ -12,7 +12,7 @@
 //! the same pair `delvec prefab` hands it for a piece nobody generated, so the
 //! fixtures are written in that vocabulary and not in the one door's. The
 //! corpus example goes through the other door end to end in `tests/contract.rs`
-//! and through the CLI in `tests/cli.rs`.
+//! and through the CLI in `tests/it/cli.rs`.
 
 use std::collections::{BTreeMap, BTreeSet};
 

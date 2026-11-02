@@ -11,7 +11,7 @@
 //! Every assertion here runs the real binary over a real campaign directory and
 //! reads the file it wrote: the question is what lands on disk.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

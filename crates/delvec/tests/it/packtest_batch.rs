@@ -51,7 +51,7 @@
 //! on the drive's path as a gate, counts `await` as an assertion, and inlines a
 //! template's own hoisted helper functions before judging.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::Path;

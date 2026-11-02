@@ -15,7 +15,7 @@
 //! `declared_difficulty` PackTest. A campaign that declares nothing keeps the
 //! derivation and emits none of it (byte-identity, ADR-0006).
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::Path;

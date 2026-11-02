@@ -15,7 +15,7 @@
 //! * a tight-but-satisfiable multi-term gate is NOT refused — the check is
 //!   satisfiability, never strictness.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
 

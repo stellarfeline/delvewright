@@ -2,7 +2,7 @@
 //! (`DW0361`), the dialogue variant cap (`DW0362`), the campaign-derived
 //! completion outro, and the mannequin `pose` NBT.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

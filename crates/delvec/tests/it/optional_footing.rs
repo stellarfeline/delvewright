@@ -15,7 +15,7 @@
 //!
 //! The party that never opens the trapped chest walks to the doorway and finds void.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

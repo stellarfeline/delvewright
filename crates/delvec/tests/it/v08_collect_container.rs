@@ -7,7 +7,7 @@
 //! barrel at the anchor is the positive one (the same edited-model path `DW0431`
 //! already honours: a batch can legitimately be what puts the barrel there).
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

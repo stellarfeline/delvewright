@@ -5,7 +5,7 @@
 //! diagnostics the validation stage raises, with the compiler's full item and
 //! entity registries injected exactly as `delvec validate` injects them.
 
-mod common;
+use crate::common;
 
 use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};

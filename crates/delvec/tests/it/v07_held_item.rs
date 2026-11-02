@@ -13,7 +13,7 @@
 //! held on a real server); the narration itself has no game state to assert
 //! against, so its exact emitted line is asserted here instead.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

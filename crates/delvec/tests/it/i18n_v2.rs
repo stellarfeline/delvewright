@@ -10,7 +10,7 @@
 //! A gate here that examined zero objects fails rather than passes, and the count
 //! is printed so a reader of the CI log sees what the green covered.
 
-mod common;
+use crate::common;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;

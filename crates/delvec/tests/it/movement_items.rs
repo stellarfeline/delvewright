@@ -4,7 +4,7 @@
 //! configurations from the first step are unjudged and the stranding proof
 //! says so; the same campaign without it reads zero unbounded.
 
-mod common;
+use crate::common;
 
 fn build(dir: &std::path::Path, out: &std::path::Path) -> (bool, String) {
     let o = std::process::Command::new(env!("CARGO_BIN_EXE_delvec"))

@@ -12,7 +12,7 @@
 //! does NOT claim: a datum no ordered walk can date is never refused, and a
 //! failure some play order avoids is withheld rather than reported.
 
-mod common;
+use crate::common;
 
 use std::path::{Path, PathBuf};
 

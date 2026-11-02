@@ -14,7 +14,7 @@ use delvec::compiler::view::camera::{self, ApprovedRow, Camera, CameraSky, Sourc
 use delvec::compiler::view::scene;
 use delvewright_dsl::{Stage, WorldTime, WorldWeather, stage_schema, validate_campaign};
 
-mod common;
+use crate::common;
 
 const BIN: &str = env!("CARGO_BIN_EXE_delvec");
 
@@ -500,7 +500,7 @@ fn the_design_record_compares_clocks_not_spellings() {
 
 #[test]
 fn a_celestial_camera_renders_its_positions_sun_and_its_days_moon() {
-    let plan = include_bytes!("fixtures/view/render-plan-ocean.json");
+    let plan = include_bytes!("../fixtures/view/render-plan-ocean.json");
     let sky = CameraSky {
         time: time(r#"{"moon":"just-risen"}"#),
         weather: WorldWeather::Clear,

@@ -28,7 +28,7 @@
 //! wiring that carries a campaign's posts into it is asserted separately by
 //! `the_posts_are_dw0511s_own_enumeration`.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

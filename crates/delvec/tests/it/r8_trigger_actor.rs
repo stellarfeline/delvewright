@@ -19,7 +19,7 @@
 //! 4. **`despawn-actor` `vanish`** relocated to the command source's column (world
 //!    spawn), not the actor's own.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::Path;

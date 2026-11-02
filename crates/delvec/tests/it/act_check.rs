@@ -5,7 +5,7 @@
 //! test states exactly the objectives it judges; the Muster Loft shape and its
 //! repairs are read and built over the v0.4 showcase, which carries a `collect`.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

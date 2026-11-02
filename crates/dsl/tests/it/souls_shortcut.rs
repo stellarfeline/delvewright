@@ -7,7 +7,7 @@
 //! and opening the gate pays) is geometric and lives in the compiler's nav proofs
 //! (`DW0373`/`DW0374`).
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{RawCampaign, check_campaign};
 use std::sync::LazyLock;

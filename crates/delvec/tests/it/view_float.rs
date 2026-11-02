@@ -3,7 +3,7 @@
 //! handed `delvec frames` invocation draws the float pose, and a whole-number
 //! view keeps its bytes through `delvec fmt` and through the typed writer.
 
-mod common;
+use crate::common;
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};

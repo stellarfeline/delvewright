@@ -22,7 +22,7 @@
 //!   walk the same `talk-to` afterwards. Each branch path must carry its own
 //!   cast position.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

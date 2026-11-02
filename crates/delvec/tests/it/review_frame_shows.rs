@@ -9,7 +9,7 @@
 //! renderer cannot draw, is taken out of its hand by the test's one declared
 //! edit, so a frame's `undrawn` is about the holders alone.
 
-mod common;
+use crate::common;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

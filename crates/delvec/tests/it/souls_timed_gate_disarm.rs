@@ -4,7 +4,7 @@
 //! given a jam lever, with the same stage-7 `carve` bypass that makes the lever
 //! reachable while the gate is shut — which is what `DW0393` proves.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

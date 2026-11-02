@@ -12,7 +12,7 @@
 //! Every case is the `souls-bonfire` fixture with its one rest point respelled or
 //! moved, so what the diagnostic reacts to is unambiguous.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::Path;

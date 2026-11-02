@@ -2,7 +2,7 @@
 //! day, with the moon's phase where the moon shows, and emits through the one
 //! `time set` token every other spelling goes through.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{WorldTime, parse_campaign, validate_campaign};
 use serde_json::{Value, json};

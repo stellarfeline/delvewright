@@ -5,7 +5,7 @@
 //! **saturation ruling**: a volley BLANKETS its kill zone, and that
 //! is proven at compile time rather than hoped for at runtime.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

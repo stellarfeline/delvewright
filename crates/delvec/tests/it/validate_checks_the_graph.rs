@@ -1,7 +1,7 @@
 //! **`delvec validate` checks the graph as a graph** — the promise the
 //! authoring page makes at the site-plan step, asserted at the process level.
 //!
-//! `crates/delvec/tests/layout_graph.rs` asserts the in-process binding: the
+//! `crates/delvec/tests/it/layout_graph.rs` asserts the in-process binding: the
 //! validation pass raises the reachability proofs and the analysis pass no
 //! longer raises them a second time. This file asserts the thing an author
 //! actually does. The page tells them to loop `delvec validate` while the
@@ -24,7 +24,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-mod common;
+use crate::common;
 
 const BIN: &str = env!("CARGO_BIN_EXE_delvec");
 

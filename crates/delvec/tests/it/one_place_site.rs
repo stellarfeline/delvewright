@@ -7,7 +7,7 @@
 //! campaign below is an ordinary site-plan campaign whose layout graph has one
 //! node.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -162,7 +162,7 @@ fn piece(prefabs: &Path) {
         "prefab_id": "prefab/house",
         "structure": {
             "file": "house.nbt", "id": "house", "size": SIZE, "data_version": 4671,
-            "generator": "crates/delvec/tests/one_place_site.rs"
+            "generator": "crates/delvec/tests/it/one_place_site.rs"
         },
         "anchors": {
             "seat": {"pos": [9, 1, 4], "facing": "south", "resolves_to": "space:middle"},
@@ -173,7 +173,7 @@ fn piece(prefabs: &Path) {
         "lighting": {"profile": "lit", "measured_min_light": 8, "measured": "2026-10-09"},
         "license": {
             "source": "original", "spdx": "GPL-3.0-or-later", "note": "Test fixture.",
-            "provenance": "Written by crates/delvec/tests/one_place_site.rs."
+            "provenance": "Written by crates/delvec/tests/it/one_place_site.rs."
         },
         "spatial_contract": {
             "entry": "middle",

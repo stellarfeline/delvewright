@@ -3,9 +3,9 @@
 //! the per-batch invariant re-proofs (`DW0322` boundary safety, `DW0323`
 //! frame/region resolution), and the `delvec edit apply|preview` loop.
 //!
-//! Process-level (the real `delvec` binary), like `tests/cli.rs`.
+//! Process-level (the real `delvec` binary), like `tests/it/cli.rs`.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::DSL_VERSION;
 use std::collections::BTreeMap;
@@ -1773,7 +1773,7 @@ fn prefabs_with_a_yaw_invariant_piece() -> PathBuf {
                 "id": "yaw-invariant-box",
                 "size": [sx, sy, sz],
                 "data_version": 4671,
-                "generator": "crates/delvec/tests/edit.rs (test fixture)"
+                "generator": "crates/delvec/tests/it/edit.rs (test fixture)"
             },
             "anchors": {},
             "connectors": []

@@ -13,7 +13,7 @@
 //! carries `structure_void` cells; the datapack's template must list none of
 //! them, and the placement sentinel must be a block the world holds.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

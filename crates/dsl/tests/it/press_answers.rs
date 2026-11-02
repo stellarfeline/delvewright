@@ -3,7 +3,7 @@
 //! owed in every state a press can be in (`DW1051`), refused in a state it never
 //! has (`DW1052`), the l10n keys and the schema export.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign, l10n, parse_campaign};
 

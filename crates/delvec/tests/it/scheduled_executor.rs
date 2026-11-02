@@ -27,7 +27,7 @@
 //! future verb that forgets the seam fails here, in a unit test, not on the
 //! owner's server.
 
-mod common;
+use crate::common;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;

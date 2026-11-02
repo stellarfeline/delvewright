@@ -10,7 +10,7 @@
 //! advancement never fired (round-6 soft-lock). The NPC's hitbox is now the
 //! trigger's SOLE carrier: one cell, one hitbox.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

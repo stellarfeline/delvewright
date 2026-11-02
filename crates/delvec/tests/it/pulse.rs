@@ -9,7 +9,7 @@
 //! compares the engine's measurement with a second reading that shares none
 //! of its configuration.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

@@ -18,7 +18,7 @@
 //!    provenance, so it must move when the sources are rewritten — a formatter
 //!    that left it alone would have broken the provenance record instead.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

@@ -11,7 +11,7 @@
 //! The repair is a tick clause keyed on the stuck state itself — tagged while no
 //! cutscene is playing — plus a per-player (`@s`) restore to the live checkpoint.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

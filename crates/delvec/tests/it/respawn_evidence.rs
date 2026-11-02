@@ -17,7 +17,7 @@
 //! plus — for the one route that must NOT credit — `souls-td-lanes`, whose squad
 //! marches a corridor the forced path crosses.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::Path;

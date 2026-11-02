@@ -9,7 +9,7 @@
 //! `test_level: true`, the other carries no such key, and every emitted path
 //! hashes the same — nothing a player meets moves.
 
-mod common;
+use crate::common;
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};

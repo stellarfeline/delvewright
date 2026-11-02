@@ -6,7 +6,7 @@
 //! with. Every test drives `cast::check_cast` on a parsed campaign, so the proofs
 //! are exercised exactly as `delvec validate` runs them.
 
-mod common;
+use crate::common;
 
 use delvec::compiler::cast;
 use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};

@@ -10,7 +10,7 @@
 //! anchor *names* only; the dispenser socket + completability proof are the
 //! compiler's job (`DW0342`), covered in the compiler crate.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
 

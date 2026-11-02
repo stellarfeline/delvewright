@@ -7,7 +7,7 @@
 //! (`watch_<class>_<id>`, `watch_yield_<class>_<id>`) and by the bot; the
 //! supersession half of the yield by the interpreter in `move_supersede.rs`.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

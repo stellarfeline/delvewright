@@ -16,7 +16,7 @@
 //! each rule's SAFETY: made vacuous, the rule refuses the green document and the
 //! test reports it.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{RawCampaign, check_campaign};
 use serde_json::{Value, json};

@@ -7,7 +7,7 @@
 //! fixture (`node/hall` at `[13, 4]`, 12 × 16, grade 64; `node/undercroft` at
 //! `[13, 21]`, floor 59), never from the check's own arithmetic.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;

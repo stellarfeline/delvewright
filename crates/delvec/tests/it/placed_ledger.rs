@@ -18,7 +18,7 @@
 //! re-seat), or the sweep of bodies an unseen hand-off already removed. A placing
 //! function in no class reds the audit by name.
 
-mod common;
+use crate::common;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};

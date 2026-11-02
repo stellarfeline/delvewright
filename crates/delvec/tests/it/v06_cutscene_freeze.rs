@@ -7,7 +7,7 @@
 //! skips them. Driven by the `v06-checkpoints` fixture, which carries both a
 //! stealth beat and a cutscene.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

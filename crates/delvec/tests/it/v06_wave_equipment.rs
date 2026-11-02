@@ -5,7 +5,7 @@
 //! `main_hand` overrides the armed-mob default; a mob without the field is
 //! byte-identical to the pre-equipment emission.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

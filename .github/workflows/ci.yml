@@ -2272,7 +2272,7 @@ jobs:
       # spec-0031 acceptance criterion 9 — the LIFT, authored entirely in campaign
       # JSON. The compiler gains nothing for it: `tests/fixtures/lift` is the
       # owner's timing table written as the steps of one `sequence` over the five
-      # v0.10 primitives, and `tests/v10_lift.rs` reads it back off the emission.
+      # v0.10 primitives, and `tests/it/v10_lift.rs` reads it back off the emission.
       # This pass is what stops that from being a compile-time-only green: the
       # campaign really loads, and BOTH rides' `teleport_<key>` templates — step 5
       # of the table, the only step this tier has a generated template for — run

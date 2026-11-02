@@ -11,7 +11,7 @@
 //! witness steps. Each document's index is held to the step it must name, read
 //! off the emitted path itself — never off the arithmetic that produced it.
 
-mod common;
+use crate::common;
 
 use std::path::Path;
 use std::process::Command;

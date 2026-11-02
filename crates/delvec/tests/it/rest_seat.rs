@@ -25,7 +25,7 @@
 //! the seat is beside the fire, and the save, the re-seat and the safe zone
 //! read it.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

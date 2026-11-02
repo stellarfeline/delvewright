@@ -14,7 +14,7 @@
 //! `anchor/door` bars six cells of the doorway between the keeper and the exit,
 //! and the only thing that lifts them is a `strike` trigger on the bars.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

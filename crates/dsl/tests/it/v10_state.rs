@@ -15,7 +15,7 @@
 //! "each player has their own purse" and "the party shares one" are the same
 //! JSON everywhere else, and the difference decides the whole design.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
 

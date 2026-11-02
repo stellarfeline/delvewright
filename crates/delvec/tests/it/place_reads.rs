@@ -13,7 +13,7 @@
 //! iron door, both under one head course; the yard's trough is two sources in
 //! the paving course; the far hall's screen holds an oak door in a wall.
 
-mod common;
+use crate::common;
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};

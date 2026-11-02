@@ -16,7 +16,7 @@
 //! * the stable `Debug` rendering: an effect using none of the new fields prints
 //!   byte-identically to the pre-addition derive (`payload_verb_key`'s content key).
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{RawCampaign, check_campaign, parse_campaign};
 use std::sync::LazyLock;

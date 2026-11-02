@@ -1,7 +1,7 @@
 //! Process-level CLI tests: exit-code + diagnostic matrix, and the ADR-0006
 //! double-build byte-identity determinism gate.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::DSL_VERSION;
 use std::collections::{BTreeMap, BTreeSet};

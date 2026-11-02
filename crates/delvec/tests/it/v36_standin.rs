@@ -4,7 +4,7 @@
 //! player in play before the party goes to spectator and removes it, unseen, at
 //! its end; one declared `absent` places none and is a function of its own.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

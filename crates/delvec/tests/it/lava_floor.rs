@@ -18,7 +18,7 @@
 //! lava it is a hall with a moat, and a moat is not a bridge. Nothing else in the
 //! two worlds differs, which is what makes the red a statement about the block.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

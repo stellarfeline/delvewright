@@ -9,7 +9,7 @@
 //!   the fire gamerule and the blocks the bolt rewrites — so a re-pin is one
 //!   diff in `crates/dsl/src/lightning.rs` and this file.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::envelope::Stage;
 use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign, lightning, stage_schema};

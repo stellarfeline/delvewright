@@ -7,7 +7,7 @@
 //! seeds from the compiled DSL values, and that nothing leaks into the shipped
 //! datapack.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

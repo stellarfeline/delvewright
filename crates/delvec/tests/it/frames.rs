@@ -8,7 +8,7 @@
 //! textures, found the way a creator's run finds them
 //! (`$DELVEWRIGHT_CLIENT_JAR`, or Init I5's location).
 
-mod common;
+use crate::common;
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};

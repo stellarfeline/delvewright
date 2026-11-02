@@ -8,7 +8,7 @@
 //! wave declaring `respawns_on_rest` with no bonfire to fire it is a **loud**
 //! defect (`DW0370`), never a silent no-op.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign, l10n, parse_campaign};
 use std::sync::LazyLock;

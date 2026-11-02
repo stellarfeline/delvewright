@@ -3,7 +3,7 @@
 //! words a hidden way keeps, and `DW0818` holds the two together — over the
 //! blockout fixture's gated cell door and the ferry fixture's carry.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::Diagnostic;
 use serde_json::{Value, json};

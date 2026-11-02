@@ -7,7 +7,7 @@
 //! and weather commands are emitted, and the whole tree is byte-identical across
 //! builds (ADR-0006), and the mitigation gate maps to exit 2.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

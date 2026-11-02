@@ -3,7 +3,7 @@
 //! matches 1 run …` guard, and a block field carries a vanilla blockstate suffix
 //! verbatim into `setblock`. Driven by the `v06-flags` fixture campaign.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

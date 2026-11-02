@@ -8,7 +8,7 @@
 //! `delvec build` entry point, so the validation funnel (`DW0949`) and the build
 //! (`DW0945`–`DW0948`, `DW0311`) are each reached the way an author reaches them.
 
-mod common;
+use crate::common;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

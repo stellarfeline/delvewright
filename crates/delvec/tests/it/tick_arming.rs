@@ -17,7 +17,7 @@
 //! requires a quest to be declared after the quest that arms it; `quest-complete`
 //! is a reference, not an ordering constraint.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

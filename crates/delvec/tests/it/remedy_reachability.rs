@@ -43,7 +43,7 @@ use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::DSL_VERSION;
 use delvewright_dsl::parse_campaign;
 
-mod common;
+use crate::common;
 
 // ---------------------------------------------------------------------------
 // Running a whole campaign through the binary
@@ -1676,7 +1676,7 @@ fn pit_campaign(tag: &str, bound: &str, extent: [i32; 3]) -> (PathBuf, PathBuf) 
         "prefab_id": "prefab/pit-house",
         "structure": {
             "file": "pit-house.nbt", "id": "pit-house", "size": PIT_SIZE, "data_version": 4671,
-            "generator": "crates/delvec/tests/remedy_reachability.rs"
+            "generator": "crates/delvec/tests/it/remedy_reachability.rs"
         },
         "anchors": {
             "seat": {"pos": [8, PIT_FLOOR, 9], "facing": "south", "resolves_to": "space:hall"},
@@ -1689,7 +1689,7 @@ fn pit_campaign(tag: &str, bound: &str, extent: [i32; 3]) -> (PathBuf, PathBuf) 
         "lighting": {"profile": "lit", "measured_min_light": 8, "measured": "2026-10-14"},
         "license": {
             "source": "original", "spdx": "GPL-3.0-or-later", "note": "Test fixture.",
-            "provenance": "Written by crates/delvec/tests/remedy_reachability.rs."
+            "provenance": "Written by crates/delvec/tests/it/remedy_reachability.rs."
         },
         "spatial_contract": {
             "entry": "hall",
@@ -4689,7 +4689,7 @@ fn dw1028_removing_the_gating_reaches_another_verdict() {
 // for a lever, an effect for a sound or a moving wall, a wave for a spawner. Each
 // row below is one routed block: the palette that carries it is refused with the
 // route in the message, and the campaign that takes the route builds. The
-// dispenser's route, a trap `volley`, builds in `tests/v06_trap_payloads.rs`,
+// dispenser's route, a trap `volley`, builds in `tests/it/v06_trap_payloads.rs`,
 // where the trap fixture lives.
 
 /// The message `DW0730` gives a prefab whose one non-allowlisted cell is `id`.

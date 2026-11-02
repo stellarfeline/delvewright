@@ -9,7 +9,7 @@
 //! (v0.6-gated), the trap PackTest, and the DW0342 completability proof (a lethal
 //! forced-path trap with no discharge fails the build).
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

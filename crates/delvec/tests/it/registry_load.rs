@@ -14,7 +14,7 @@
 //! model, and the only thing a consumer does about an unknown key is say it saw
 //! one.
 
-mod common;
+use crate::common;
 
 use delvec::compiler::registry::{
     DW_PREFAB_META_INVALID, DW_PREFAB_META_UNKNOWN_KEY, PrefabRegistry,

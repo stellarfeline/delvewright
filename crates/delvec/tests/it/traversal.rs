@@ -19,7 +19,7 @@
 //! editor is deliberate (as in `clearance.rs`): it writes the geometry the
 //! shipped delve actually gets.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

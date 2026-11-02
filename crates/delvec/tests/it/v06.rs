@@ -3,7 +3,7 @@
 //! over source + l10n translations (`DW0328`), and the `delve:art` resource-pack
 //! font — baked deterministically into the pack, byte-identical across builds.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

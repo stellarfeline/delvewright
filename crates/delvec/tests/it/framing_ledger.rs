@@ -3,7 +3,7 @@
 //! `validation/shot-subjects.json` naming what is unchecked and the digest of
 //! the shot list measured; a cutscene-less campaign prints and writes neither.
 
-mod common;
+use crate::common;
 
 use std::process::Command;
 

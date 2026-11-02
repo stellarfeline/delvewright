@@ -13,7 +13,7 @@
 //! a piece that holds it by construction is the only one whose geometry a
 //! reader can check from this file.
 
-mod common;
+use crate::common;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

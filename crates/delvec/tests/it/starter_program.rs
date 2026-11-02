@@ -6,7 +6,7 @@
 //! --check`. A place class the starter cannot answer reds here, naming the
 //! place and the verdict — it is fixed in the starter, never excluded.
 
-mod common;
+use crate::common;
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};

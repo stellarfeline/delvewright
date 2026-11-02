@@ -15,9 +15,9 @@
 //! `DW0460` and `DW0481` live in this crate (`compiler::cast`,
 //! `compiler::branch`) rather than in the DSL, which is why the claim is
 //! established here and the wording is asserted in
-//! `crates/dsl/tests/dw0150_plan_awaiting_expansion.rs`.
+//! `crates/dsl/tests/it/dw0150_plan_awaiting_expansion.rs`.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 use std::sync::LazyLock;

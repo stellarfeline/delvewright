@@ -6,7 +6,7 @@
 //! here, against a hello-world-shaped campaign built from its plan, or against
 //! a synthetic world and synthetic acts where the criterion asks for one.
 
-mod common;
+use crate::common;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};

@@ -22,7 +22,7 @@
 //! to fail. If a check stopped working its perturbation would go green, and the
 //! test would say so.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
 use serde_json::{Value, json};

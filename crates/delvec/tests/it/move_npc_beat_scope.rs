@@ -24,7 +24,7 @@
 //! in `area/keep` (matching the effect history, so `DW0461` stays silent) while
 //! `anchor/exit` becomes a name two areas answer to.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeSet;
 

@@ -8,7 +8,7 @@
 //! `traps[].payload` or a dialogue option's `set-checkpoint` `on_respawn` bundle
 //! through exactly that hole.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

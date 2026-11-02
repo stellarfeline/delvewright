@@ -21,7 +21,7 @@
 //! private prefab copy, exactly as `v06_traps` does — an `anchor/trap` so the
 //! trap consumer can be bound too.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

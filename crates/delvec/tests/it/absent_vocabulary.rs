@@ -19,7 +19,7 @@
 //! goes quiet in one test is made to fire in another, on the same fixture with
 //! the graph restored.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

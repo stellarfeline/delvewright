@@ -11,7 +11,7 @@
 //! absence emits byte-identically to a campaign
 //! written before them.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign, l10n, parse_campaign};
 

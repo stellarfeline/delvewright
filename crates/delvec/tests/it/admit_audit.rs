@@ -595,7 +595,7 @@ fn dirt_path_and_mycelium_pass_and_farmland_is_shown() {
 /// **A refusal names where the block is had instead, or says there is no such
 /// place.** Every block with a row in `ROUTES` is refused with that row's text
 /// in the message; a block with none is refused with the sentence that says so.
-/// The campaign that takes each route builds in `tests/remedy_reachability.rs`.
+/// The campaign that takes each route builds in `tests/it/remedy_reachability.rs`.
 #[test]
 fn a_refused_block_names_its_route_or_says_it_has_none() {
     use delvec::admit::allowlist::ROUTES;

@@ -6,7 +6,7 @@
 //! save/restore bracket, and that the two single-shot spellings are byte-
 //! identical.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

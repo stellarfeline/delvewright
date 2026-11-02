@@ -13,7 +13,7 @@
 //! clear). The rule's own shape — the shot, the cell, the world key and the
 //! block — is held by `compiler::nav::view`'s unit tests.
 
-mod common;
+use crate::common;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

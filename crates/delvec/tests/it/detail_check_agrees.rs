@@ -11,7 +11,7 @@
 //! (`DW1002`, a falling block over air) is `--check`'s too, at the commit's
 //! exit.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};

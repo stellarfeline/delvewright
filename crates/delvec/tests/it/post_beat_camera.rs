@@ -15,7 +15,7 @@
 //! back by `tools/lib/anvil.py`, the reader `tools/ci/check-written-world.py`
 //! uses, so what is asserted is what the renderer is handed.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

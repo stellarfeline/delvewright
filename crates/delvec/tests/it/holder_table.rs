@@ -7,7 +7,7 @@
 #[test]
 fn every_holder_kind_is_a_pinned_entity_type() {
     let ids: Vec<String> =
-        serde_json::from_str(include_str!("../data/entities-1.21.11.json")).unwrap();
+        serde_json::from_str(include_str!("../../data/entities-1.21.11.json")).unwrap();
     let table = &delvewright_dsl::holders::ENTITY_HOLDERS_1_21_11;
     assert_eq!(table.len(), 3);
     for k in table {

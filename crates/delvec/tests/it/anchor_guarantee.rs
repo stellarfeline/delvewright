@@ -12,7 +12,7 @@
 //! so what is being tested is a fact about the pool's shape rather than a lucky
 //! seed.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};

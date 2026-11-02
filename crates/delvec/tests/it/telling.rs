@@ -1,7 +1,7 @@
 //! `DW0981` — a question gets an answer; `DW0982` — a name is told before it is
 //! used. Both over the hello-world fixture with one document edited.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

@@ -15,7 +15,7 @@
 //!   radius and the `FireworksItem` key — are asserted here, so a re-pin is one
 //!   diff in `crates/dsl/src/firework.rs` and this file (criterion 7).
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::envelope::Stage;
 use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign, firework, stage_schema};

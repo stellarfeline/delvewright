@@ -17,7 +17,7 @@
 //! Actor `attributes` is the same v0.4 [`MobAttributes`] shape a wave mob takes,
 //! fenced on the stage actors themselves are fenced on.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{
     Campaign, DSL_VERSION, EntityRegistry, RawCampaign, Severity, VendoredAnchorRegistry,

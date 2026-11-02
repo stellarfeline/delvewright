@@ -1,7 +1,7 @@
 //! **What invokes the layout graph's reachability proofs** (spec-0049 §3.3).
 //!
 //! The rules themselves are `delvewright_dsl::layout::reachability` and are
-//! tested against hand-drawn maps in `crates/dsl/tests/v13_layout_graph.rs`.
+//! tested against hand-drawn maps in `crates/dsl/tests/it/v13_layout_graph.rs`.
 //! What that file cannot show is the half CLAUDE.md calls UNRUN: a check can be
 //! correct in every reviewable way and still protect nothing, because the
 //! obligation to run it lives in a doc line.
@@ -25,7 +25,7 @@ use delvewright_dsl::validate::validate_campaign;
 use delvewright_dsl::{RawCampaign, parse_campaign};
 use std::sync::LazyLock;
 
-mod common;
+use crate::common;
 
 /// A two-place map with a one-way drop into a room that has no way out. Drawn by
 /// hand; the fault is stated in the comment above it, not computed.

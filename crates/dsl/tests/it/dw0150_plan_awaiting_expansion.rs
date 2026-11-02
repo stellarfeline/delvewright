@@ -21,9 +21,9 @@
 //! The claim the grouped message makes about there being no cheaper way out —
 //! that the schema-minimal stage-5 quest is refused again by `DW0481` and
 //! `DW0460` — is a claim about the compiler tier and is established there:
-//! `crates/delvec/tests/plan_awaiting_expansion.rs`.
+//! `crates/delvec/tests/it/plan_awaiting_expansion.rs`.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{Diagnostic, RawCampaign, check_campaign};
 use serde_json::{Value, json};

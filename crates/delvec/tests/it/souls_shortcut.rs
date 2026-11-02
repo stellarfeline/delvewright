@@ -5,7 +5,7 @@
 //! souls loop rather than a locked door — and a clean build is exactly the
 //! DW0373 (long route exists) + DW0374 (opening it pays) proof.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

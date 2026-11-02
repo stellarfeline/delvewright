@@ -4,7 +4,7 @@
 //! showcase, so the whole pipeline — validation, the DW0315/DW0316/DW0327 proofs,
 //! and emission — is exercised on a real campaign.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::Verb;
 use std::collections::BTreeMap;
@@ -315,7 +315,7 @@ fn reseat_packtest_drives_the_death_edge_from_the_entrance() {
 /// count: this asserts the audit ran, bound to something, and passed — the pass
 /// being a number rather than a silence.
 ///
-/// The rule itself, and its red demos, live in `tests/emission_guards.rs`, where a
+/// The rule itself, and its red demos, live in `tests/it/emission_guards.rs`, where a
 /// judge can be perturbed without touching the emitter.
 #[test]
 fn the_emitted_stealth_judge_is_audited_and_the_ledger_says_what_it_examined() {

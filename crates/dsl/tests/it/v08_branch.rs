@@ -4,9 +4,9 @@
 //! This file owns the **structural** half — the
 //! ordinary id/reference rules a branch declaration obeys like every other
 //! declaration in the DSL. The proofs *about* branches (`DW0480`–`DW0485`) are
-//! compiler-tier and live in `crates/delvec/tests/branch.rs`.
+//! compiler-tier and live in `crates/delvec/tests/it/branch.rs`.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{DSL_VERSION, Diagnostic, RawCampaign, check_campaign};
 use std::sync::LazyLock;

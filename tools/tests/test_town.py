@@ -6,7 +6,7 @@ lose — a way stated along x draws the transpose of the same way along z, a
 doorway stays open, a seed moves the wear and nothing else — on a synthetic
 allocation read through the starter's own `Place` and `Model`, with no
 binary. The starter's order guard (`order_guard`) is pinned here on its
-inputs, and on a real expansion by `crates/delvec/tests/starter_program.rs`.
+inputs, and on a real expansion by `crates/delvec/tests/it/starter_program.rs`.
 """
 
 from __future__ import annotations

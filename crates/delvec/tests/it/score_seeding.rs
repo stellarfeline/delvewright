@@ -15,7 +15,7 @@
 //! vacuous, not a pass*) — that the check examines a stated, non-zero number of
 //! real comparisons on each of them.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

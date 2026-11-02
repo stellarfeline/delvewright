@@ -11,7 +11,7 @@
 //! no-hack rule forbids; when content needs to say something, the DSL gets a
 //! word for it.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
 

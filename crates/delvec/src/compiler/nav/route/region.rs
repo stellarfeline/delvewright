@@ -1092,7 +1092,7 @@ mod tests {
     /// unforced leg here is constructed rather than routed: `route_walked_legs`
     /// over an unforced plank correctly produces no leg at all, which is asserted
     /// too. The campaign-scale statement of the same junction is
-    /// `crates/delvec/tests/laid_footing_root.rs`.
+    /// `crates/delvec/tests/it/laid_footing_root.rs`.
     #[test]
     fn the_export_self_check_reads_a_legs_world_with_the_unforced_reading() {
         let world = chasm();

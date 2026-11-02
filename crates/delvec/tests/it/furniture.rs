@@ -11,7 +11,7 @@
 //! bench on either side: the released castle's own construction) across the far
 //! half, between the door and the exit.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -162,7 +162,7 @@ fn hall_meta(s: &Structure, table: Table, declared: bool) -> serde_json::Value {
             "source": "original",
             "spdx": "GPL-3.0-or-later",
             "note": "Test fixture.",
-            "provenance": "Synthesised by crates/delvec/tests/furniture.rs.",
+            "provenance": "Synthesised by crates/delvec/tests/it/furniture.rs.",
         },
     })
 }

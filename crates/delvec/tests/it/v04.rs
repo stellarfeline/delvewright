@@ -3,7 +3,7 @@
 //! skinned (mannequin) NPC, props, narration, wave tuning, NPC move/despawn,
 //! environment triggers, a cutscene, named given items, and flag-gated dialogue.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

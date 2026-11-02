@@ -1,6 +1,6 @@
 //! **The long gallery** (spec-0086): a synthesised corridor of identical bays,
-//! shared by the loop tests (`tests/endless_corridor.rs`) and the remedy rows
-//! that take DW0945–DW0948's moves (`tests/remedy_reachability.rs`). Every
+//! shared by the loop tests (`tests/it/endless_corridor.rs`) and the remedy rows
+//! that take DW0945–DW0948's moves (`tests/it/remedy_reachability.rs`). Every
 //! fixture built over it is `tests/fixtures/long-gallery` plus one edit.
 //!
 //! The piece is synthesised rather than drawn from the content library: the

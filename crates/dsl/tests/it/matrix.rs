@@ -1,7 +1,7 @@
 //! The validation matrix: the valid campaign yields zero diagnostics, and every
 //! invalid fixture yields exactly its expected diagnostic code.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeSet;
 

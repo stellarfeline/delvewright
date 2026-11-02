@@ -1206,7 +1206,7 @@ def test_the_live_item_gate_precondition_counts_item_gates_not_interacts(gate, t
 
 def test_the_item_gate_precondition_reads_the_spelling_the_emitter_is_held_to(gate):
     """The precondition is a build-side probe, so it is only as good as its
-    agreement with the emitter. `crates/delvec/tests/v07_held_item.rs` is what
+    agreement with the emitter. `crates/delvec/tests/it/v07_held_item.rs` is what
     holds the emitter to the spelling of the held-item completion gate; the
     probe has to match that exact sentence, or a change to the emitter would
     silently turn every precondition zero and every demo-shaped zero into a

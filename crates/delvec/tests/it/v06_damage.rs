@@ -2,7 +2,7 @@
 //! effect lowers to, the default + explicit damage type, the `in` box filter, and
 //! the generated PackTest that drives the damage on a dummy and asserts it lands.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

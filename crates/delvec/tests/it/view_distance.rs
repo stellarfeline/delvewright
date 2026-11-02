@@ -6,7 +6,7 @@
 //! (`a_showcase_camera_whose_subject_is_past_the_served_radius_is_refused`);
 //! the cutscene shape is proven here through a real build.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

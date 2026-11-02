@@ -8,7 +8,7 @@
 //! `first-kill` pass and an absent `fires` reds `DW0915`; on one that does not,
 //! `every-kill` reds `DW0914` and the other two pass.
 
-mod common;
+use crate::common;
 
 use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::onkill::{ComesBack, check_on_kill_fires, fight_comes_back};

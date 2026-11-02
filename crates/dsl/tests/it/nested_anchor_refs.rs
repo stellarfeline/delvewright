@@ -15,7 +15,7 @@
 //!   nested `despawn-npc`s, while staying honest about branches (a flag-gated or
 //!   lifecycle-reaction despawn is not guaranteed to run).
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
 

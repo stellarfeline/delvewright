@@ -5,7 +5,7 @@
 //!
 //! ```sh
 //! DELVEWRIGHT_CLIENT_JAR=~/.delvewright/client/minecraft-1.21.11.jar \
-//!   cargo test -p delvec --test render_gpu -- --ignored --nocapture
+//!   cargo test -p delvec --test it render_gpu:: -- --ignored --nocapture
 //! ```
 //!
 //! ## Double-render stability finding (measured 2026-07-30, macOS/Metal)
@@ -26,7 +26,7 @@ use delvec::render::fidelity;
 use delvec::render::gpu::{self, RenderParams};
 use delvec::render::shots;
 
-mod common;
+use crate::common;
 
 /// Resolve textures the way the CLI does; `None` → skip the test.
 fn textures() -> Option<String> {

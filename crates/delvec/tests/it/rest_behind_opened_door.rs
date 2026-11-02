@@ -30,7 +30,7 @@
 //! (`CARGO_TARGET_TMPDIR`) carrying one extra anchor, for the reason
 //! [`open_gate_prefabs`] gives.
 
-mod common;
+use crate::common;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};

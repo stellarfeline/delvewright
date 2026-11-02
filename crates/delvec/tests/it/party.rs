@@ -14,7 +14,7 @@
 //! party (player A's objective set, player B's guard still shut), and it is
 //! invisible to any single-player test.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

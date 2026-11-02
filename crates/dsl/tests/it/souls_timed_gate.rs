@@ -5,7 +5,7 @@
 //! half — that the gate is a timing *read* and not a coin flip — needs the nav
 //! model's crossing time and lives in `compiler::nav` (`DW0378`).
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{RawCampaign, check_campaign};
 use std::sync::LazyLock;

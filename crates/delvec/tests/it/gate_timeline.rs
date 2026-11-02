@@ -12,7 +12,7 @@
 //! where the ordering does *not* establish a seal — the no-false-certainty stance
 //! `crate::timeline` inherits from `crate::continuity`.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::Verb;
 use std::collections::BTreeMap;

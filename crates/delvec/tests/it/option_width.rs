@@ -6,7 +6,7 @@
 //! budget is the widget's geometry, not the player's window — so unlike `DW0330`
 //! this rejects rather than advises.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

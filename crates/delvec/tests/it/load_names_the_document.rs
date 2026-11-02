@@ -19,7 +19,7 @@
 //! * they assert the [`std::io::ErrorKind`] survives, so *absent* and
 //!   *unreadable* stay different findings.
 
-mod common;
+use crate::common;
 
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};

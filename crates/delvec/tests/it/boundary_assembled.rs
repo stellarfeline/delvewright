@@ -3,7 +3,7 @@
 //! the stage-7 edit replay.
 //!
 //! Every other `DW0322` test drives a campaign that HAS an edit script and so
-//! proves the per-batch call (`tests/edit.rs`). That is exactly the gap the
+//! proves the per-batch call (`tests/it/edit.rs`). That is exactly the gap the
 //! unconditional proof was written to close: a campaign that only places pieces
 //! skips stage 8 entirely, and used to ship a reachable walkable cell one step
 //! from a void drop with nothing having looked. These tests bind to a campaign
@@ -14,7 +14,7 @@
 //! synthetic prefab whose outer wall is missing on one side, which is what a
 //! stripped berm or an unclosed pool seam looks like to the compiler.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

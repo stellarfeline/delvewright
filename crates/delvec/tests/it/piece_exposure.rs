@@ -17,7 +17,7 @@
 //! through the real `emit::build`, so nothing here is a unit test of a private
 //! function: the diagnostic is raised where a creator would meet it.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::Path;

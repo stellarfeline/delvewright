@@ -17,7 +17,7 @@
 //!   `the_reach_is_judged_over_the_lethality_free_world`,
 //!   `the_binding_line_prints_zeroes`.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

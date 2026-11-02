@@ -191,7 +191,7 @@ answer `Incorrect argument for command` and change nothing. Several were also
 reworded: `doMobSpawning` → `spawn_mobs`, `doDaylightCycle` → `advance_time`,
 `doWeatherCycle` → `advance_weather`, `naturalRegeneration` →
 `natural_health_regeneration`. The compiler already emits the new names
-(`crates/delvec/tests/emit.rs` asserts them). **Two places in this repo still
+(`crates/delvec/tests/it/emit.rs` asserts them). **Two places in this repo still
 emit the old ones and neither can notice:**
 
 - `crates/delvec/src/admit/gallery.rs` — the gallery's `load` function emits

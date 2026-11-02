@@ -7,7 +7,7 @@
 //! ([`common::container_campaign`]): hello-room carries no container of its
 //! own, so every container a test counts is one the test placed.
 
-mod common;
+use crate::common;
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};

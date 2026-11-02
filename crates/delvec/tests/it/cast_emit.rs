@@ -5,7 +5,7 @@
 //! race-free (the PackTest suite cannot assert an absence across interleaved
 //! templates; see `emit_cast_packtests`).
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

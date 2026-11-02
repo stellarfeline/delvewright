@@ -7,7 +7,7 @@
 //! long way the shortcut shortens. The three tests differ in one declaration
 //! each, and the ledger says which population each one fell into.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

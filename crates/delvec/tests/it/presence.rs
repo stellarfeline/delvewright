@@ -8,7 +8,7 @@
 //! the same once markup is dropped, and whether the spawn is a line the play
 //! order can date at all.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 use serde_json::{Value, json};

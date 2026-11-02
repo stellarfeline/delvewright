@@ -184,7 +184,7 @@ fn the_trigger_union_gains_strike_assembly() {
 /// The surface is stated at the `dsl_version` the crate manifest states.
 #[test]
 fn at_the_manifest_version() {
-    let manifest = include_str!("../Cargo.toml");
+    let manifest = include_str!("../../Cargo.toml");
     let version = manifest
         .lines()
         .find_map(|l| l.strip_prefix("version = \""))

@@ -18,7 +18,7 @@
 //! outright when it is also billed `boss` (`DW0499`), regardless of whether a
 //! bonfire exists to fire the re-seat.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
 use std::sync::LazyLock;

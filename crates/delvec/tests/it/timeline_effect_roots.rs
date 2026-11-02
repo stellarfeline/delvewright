@@ -20,7 +20,7 @@
 //! impossible from the moment the bundle runs — `DW0410`, exactly as it is when
 //! the same two effects sit in a quest's `on_complete`.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

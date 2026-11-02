@@ -1,7 +1,7 @@
 //! Exported JSON Schemas accept every valid fixture and reject the schema-level
 //! invalid fixtures (proves the LLM-facing schema matches the Rust truth).
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{Stage, stage_schema};
 

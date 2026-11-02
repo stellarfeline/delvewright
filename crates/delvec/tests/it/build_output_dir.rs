@@ -6,7 +6,7 @@
 //! not — live advancements and the PackTests of removed objectives among them —
 //! and the server booted from it loaded both.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};

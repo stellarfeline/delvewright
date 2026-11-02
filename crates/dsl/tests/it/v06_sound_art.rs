@@ -4,7 +4,7 @@
 //! art-glyph coverage (`DW0328`) are compiler-side checks (see the compiler's
 //! `v06` tests) — the DSL only carries the schema and the version gate.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
 

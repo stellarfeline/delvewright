@@ -18,7 +18,7 @@
 //!   them all, and stood against the north wall (offset `[0, 0, -3]`) the
 //!   `south` facing does and the `north` one does not.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;

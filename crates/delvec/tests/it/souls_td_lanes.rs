@@ -13,7 +13,7 @@
 //! walks and is longer than 10 blocks) and the DW0387 proof (both husks find
 //! a standable, reachable, line-of-sight cell on their ring).
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::Path;

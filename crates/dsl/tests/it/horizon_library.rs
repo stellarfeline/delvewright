@@ -11,7 +11,7 @@
 //!   string shorthands stay writable at the version that introduced them, which
 //!   is what makes this a widening rather than a break.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
 

@@ -1,7 +1,7 @@
 //! DSL v0.7 (spec-0020): the per-quest `cast` ledger — version gating, schema
 //! export, dialogue reachability through ledger roots, and bark l10n.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign, l10n, parse_campaign};
 

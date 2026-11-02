@@ -6,7 +6,7 @@
 //! the Rust types by `schemars`, never from a list written here — so a third
 //! class declaring a `watch` of its own, or a second watch type, reds this file.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeSet;
 

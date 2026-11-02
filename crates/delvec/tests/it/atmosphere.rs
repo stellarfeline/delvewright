@@ -5,7 +5,7 @@
 //! piece) with atmospheres added by each case, so what each case changes is
 //! exactly the thing it names.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::Path;

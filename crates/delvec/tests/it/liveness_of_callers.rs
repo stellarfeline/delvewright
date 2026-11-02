@@ -7,7 +7,7 @@
 //! function its call sits in, so a new reader reds this test until it is
 //! added here.
 
-mod common;
+use crate::common;
 
 use common::source_scan;
 use std::path::Path;

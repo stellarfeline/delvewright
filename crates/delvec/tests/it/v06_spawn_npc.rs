@@ -5,7 +5,7 @@
 //! the beat that introduces him. `deferred: true` keeps him out of `setup_finish`;
 //! `spawn-npc` runs the very same summon commands when the beat fires.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

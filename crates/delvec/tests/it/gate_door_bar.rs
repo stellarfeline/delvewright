@@ -19,7 +19,7 @@
 //! The planted red: the old shape, the declared state in every cell, is refused
 //! by `DW1002` where the derived shape is held.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

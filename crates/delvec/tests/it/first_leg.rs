@@ -26,7 +26,7 @@
 //! between each pair — which piece the vault binds (`DW0872` → green) and which
 //! area the first beat plays in (green → `DW0873`).
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

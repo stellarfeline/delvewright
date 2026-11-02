@@ -8,7 +8,7 @@
 //! override — and two diagnostics keep it honest: `DW0487` refuses the
 //! placeholder, `DW0486` refuses contents 1.21.11 cannot pour.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
 use serde_json::{Value, json};

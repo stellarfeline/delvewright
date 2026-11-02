@@ -1,8 +1,8 @@
 //! spec-0110 criterion 7, build half: a body subject is present at the shot's
 //! first tick (`DW1034` otherwise), judged by the one ordering rule the DSL's
-//! `DW0195`/`DW0198` share (`crates/dsl/tests/npc_lifecycle_shared.rs`).
+//! `DW0195`/`DW0198` share (`crates/dsl/tests/it/npc_lifecycle_shared.rs`).
 
-mod common;
+use crate::common;
 
 use common::framing_fixture as ff;
 use serde_json::{Value, json};

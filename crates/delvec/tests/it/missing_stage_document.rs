@@ -23,7 +23,7 @@
 //!    directory is there and incomplete; making it fire for a mistyped path
 //!    would be a true sentence about a campaign that does not exist.
 
-mod common;
+use crate::common;
 
 use std::path::Path;
 use std::process::{Command, Output};

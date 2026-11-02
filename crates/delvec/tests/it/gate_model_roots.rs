@@ -13,7 +13,7 @@
 //! must walk through — from a root the old scan could not see, and assert the
 //! model now refuses the build.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

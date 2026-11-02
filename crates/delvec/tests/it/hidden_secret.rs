@@ -7,7 +7,7 @@
 //! play order's placement of every string ([`delvec::compiler::telling`]),
 //! never a placement of its own.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

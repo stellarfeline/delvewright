@@ -9,7 +9,7 @@
 //! `--program`, an edit to the program that no commit has taken shows in it;
 //! without, it does not.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};

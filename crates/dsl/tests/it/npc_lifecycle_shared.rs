@@ -2,7 +2,7 @@
 //! ordering rule, `ordering::Order::ordered_before`, which `DW0195`, `DW0198`
 //! and the build's `DW1034` (through `Order::presence`) all call.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::ordering::{Beat, Order, Presence};
 use delvewright_dsl::{Campaign, RawCampaign, Verb, parse_campaign};

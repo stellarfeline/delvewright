@@ -11,7 +11,7 @@
 //! engine hands a place reds here, and the fixture is re-recorded with the same
 //! command the fixture's README names.
 
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 use std::process::Command;

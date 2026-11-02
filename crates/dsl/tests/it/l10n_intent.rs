@@ -1,7 +1,7 @@
 //! The intent an inventory row carries for a transcreator: its kind of text
 //! (`key_kind`) and the situation it is said in (`key_situations`).
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{TextKind, key_kind, key_situations, parse_campaign};
 

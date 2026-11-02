@@ -5,7 +5,7 @@
 //! the way the engine parses one, judged by the one entry the validation funnel
 //! calls ([`ending::check_bound`]) and its parts.
 
-mod common;
+use crate::common;
 
 use delvec::compiler::ending;
 use delvec::compiler::flow::Flow;

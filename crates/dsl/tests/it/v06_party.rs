@@ -7,7 +7,7 @@
 //! `min_players` outside `1..=4` is `DW0356`; a `carrier: "one"` in a bundle only
 //! the scheduler ever runs is `DW0357`.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
 

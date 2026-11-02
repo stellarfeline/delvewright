@@ -14,7 +14,7 @@
 //! FIRST is the one that must be pressed SECOND, so a plan that pressed the
 //! writers in declaration order would not open the gate.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

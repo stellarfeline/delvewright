@@ -28,7 +28,7 @@
 //!
 //! Three builds of one campaign, differing only in where that fill hangs.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

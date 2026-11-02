@@ -7,12 +7,12 @@
 //!
 //! The CPU arms these used to sit beside are `delvec` subcommands now
 //! (ADR-0021 §1); their CLI tests moved with them, to
-//! `crates/delvec/tests/view_cli.rs`.
+//! `crates/delvec/tests/it/view_cli.rs`.
 
 use std::path::PathBuf;
 use std::process::Command;
 
-mod common;
+use crate::common;
 
 /// `delvec render …`: the one binary, entered at the GPU-render surface.
 fn render() -> Command {

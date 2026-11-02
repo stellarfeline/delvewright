@@ -12,7 +12,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-mod common;
+use crate::common;
 
 /// A scratch directory under the test binary's own target tmp — never `/tmp`,
 /// which a session or a reboot considers disposable.

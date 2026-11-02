@@ -5,7 +5,7 @@ facts and the wave bound, `detail --check` for the refusal a repair hands on —
 against a stub `delvec` that answers with the recorded allocations of
 `tools/tests/fixtures/handout/` and the recorded block lists of `blocks.json`
 (each held equal to the real binary's output by
-`crates/delvec/tests/handout_script.rs`) and with whatever `detail` verdict the
+`crates/delvec/tests/it/handout_script.rs`) and with whatever `detail` verdict the
 test plants. One rig, one thing moved per test.
 """
 

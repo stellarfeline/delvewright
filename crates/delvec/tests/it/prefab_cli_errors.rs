@@ -1,5 +1,5 @@
 //! CLI-level error-path tests: input, tooling, dark-lighting-advisory, and
-//! gallery-write diagnostics. Complements `tests/cli.rs` (happy-path chains)
+//! gallery-write diagnostics. Complements `tests/it/cli.rs` (happy-path chains)
 //! and `tests/audit.rs`/`tests/catalog.rs` (already cover `DW0730`/`DW0731`/
 //! `DW0740`/`DW0741` at the library level).
 

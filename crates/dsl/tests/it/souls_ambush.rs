@@ -11,7 +11,7 @@
 //! (`DW0375`) never ask for one. What the engine owes the player is counterplay
 //! on the retry, which is geometric and lives in `compiler::nav` (`DW0376`).
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{RawCampaign, TriggerOn, check_campaign, l10n, parse_campaign};
 use std::sync::LazyLock;

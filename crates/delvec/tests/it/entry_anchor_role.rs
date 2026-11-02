@@ -20,7 +20,7 @@
 //! the_crossing` is the control that keeps every case below from passing
 //! vacuously.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

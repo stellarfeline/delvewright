@@ -5,7 +5,7 @@
 //! accessor at all. That gate is exercised in `light.rs` (assembled-light unit
 //! tests) and `relight.rs` (spec-0010 acceptance criteria).
 
-mod common;
+use crate::common;
 
 use delvec::compiler::analyze::analyze_campaign;
 use delvec::compiler::load::load_campaign_dir;

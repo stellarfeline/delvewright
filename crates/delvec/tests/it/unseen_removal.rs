@@ -12,7 +12,7 @@
 //! carries every removal kind: no line kills a body tag in place, and the only
 //! kill of a removed body is the unseen sweep, under the world.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

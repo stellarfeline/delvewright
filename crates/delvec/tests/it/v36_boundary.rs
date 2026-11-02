@@ -5,7 +5,7 @@
 //! The rule is asked of `bound::judge` over real places and regions; the
 //! emission is read off a hello-world build with a boundary declared.
 
-mod common;
+use crate::common;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};

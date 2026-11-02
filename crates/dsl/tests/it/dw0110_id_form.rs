@@ -20,7 +20,7 @@
 //! that was reported: several id types from four different stage documents,
 //! each of which must see its own form and no other type's.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{Diagnostic, RawCampaign, check_campaign};
 use serde_json::{Value, json};

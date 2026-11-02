@@ -4,7 +4,7 @@
 //! spelling stays valid forever. A cutscene that mixes the two spellings,
 //! declares neither, or gives a shot with no camera waypoint is `DW0199`.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
 

@@ -8,7 +8,7 @@
 //! places. Each surface is proven in both directions: the bytes move when the
 //! declaration moves, and the rule reds on the perturbation only it could catch.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

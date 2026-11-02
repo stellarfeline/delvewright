@@ -419,7 +419,7 @@ pub(super) fn effect_audience(eff: &QuestEffect, aud: Audience) -> Audience {
 }
 
 /// **One effect's emitted commands, under a party or a solo bundle** — the
-/// instrument `crates/delvec/tests/v35_perception.rs` binds
+/// instrument `crates/delvec/tests/it/v35_perception.rs` binds
 /// [`delvewright_dsl::Verb::addresses_players`] to the emitter with: a verb's
 /// commands differ between the two exactly when it addresses players.
 ///
@@ -924,7 +924,7 @@ pub(super) fn emit_quest_effect(
         // the six box terms plus the one class exclusion every box-narrowed
         // entity selector in this engine carries — `tag=!dw_fixture`, and no
         // `type=`, no `limit=`, no `sort=`. That is what makes the selection
-        // total over BODIES, and `crates/delvec/tests/v10_teleport.rs` asserts
+        // total over BODIES, and `crates/delvec/tests/it/v10_teleport.rs` asserts
         // exactly that against the emitted string. See `Verb::Teleport`
         // for why a machinery-TYPE exemption (which `lethal_volumes[]` must
         // carry) would be wrong here, and `crate::compiler::affordance` for the class that

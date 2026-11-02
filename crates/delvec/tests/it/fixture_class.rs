@@ -34,7 +34,7 @@
 //! non-vacuous (it moves a body out of the same box it holds the marker in), and
 //! executed by the `packtest` profile.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -287,7 +287,7 @@ fn the_runtime_template_is_generated_and_not_one_directional() {
 
 /// A campaign with a teleport and no stake generates no such template, and one
 /// with a stake and no teleport generates none either — the pair is the
-/// obligation. `crates/delvec/tests/v10_teleport.rs` and `economy` are those
+/// obligation. `crates/delvec/tests/it/v10_teleport.rs` and `economy` are those
 /// two campaigns, so this states the third case: the fixture that has both emits
 /// exactly one template per teleport.
 ///

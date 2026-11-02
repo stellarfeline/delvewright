@@ -5,7 +5,7 @@
 //! DW0315 (no-stranding) and DW0316 (standable placement) obligations — a
 //! bonfire IS a checkpoint to those proofs.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

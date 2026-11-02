@@ -5,7 +5,7 @@
 //! whether the ground under it is ground the runtime rewrites — is deliberately not
 //! here. Those are questions about the solved layout, which this crate does not
 //! have; they live in `crates/delvec/src/compiler/stake.rs` and are exercised by
-//! `crates/delvec/tests/v10_economy.rs`, exactly as a lethal volume's geometry is.
+//! `crates/delvec/tests/it/v10_economy.rs`, exactly as a lethal volume's geometry is.
 
 use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign, validate_campaign};
 

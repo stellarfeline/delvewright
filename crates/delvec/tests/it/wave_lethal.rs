@@ -19,7 +19,7 @@
 //! south of the keeper, shuts the entry strip off from the rest of the keep; its
 //! middle cell is what each case changes, and nothing else.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

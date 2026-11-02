@@ -25,7 +25,7 @@
 //! gives: the defect it catches is in the **compiler**, not in a campaign, so
 //! there is no campaign input for a build-time diagnostic to fire on.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeSet;
 

@@ -15,7 +15,7 @@
 //! Same contract every v0.8 field carries:
 //! absence is byte-identical to every campaign written before it.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign, l10n, parse_campaign};
 

@@ -28,7 +28,7 @@ use delvewright_dsl::DSL_VERSION;
 use std::path::{Path, PathBuf};
 use std::process::{Command as Proc, Output};
 
-mod common;
+use crate::common;
 
 /// The sea plane this whole contract is stated against.
 const SEA_LEVEL: i32 = 62;

@@ -21,7 +21,7 @@
 //! separates the two branches from each other and nothing more. Each test says
 //! which question it answers.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

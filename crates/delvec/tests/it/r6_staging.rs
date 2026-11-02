@@ -8,7 +8,7 @@
 //!
 //! Built on the hello-world fixture with a v0.6 quests/dialogue overlay.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 
@@ -148,7 +148,7 @@ fn move_npc_on_arrive_fires_on_final_waypoint_tick() {
     let arrive = file(&out, &format!("{FN_DIR}/mv_arrive_keeper_exit.mcfunction"));
     // The arrive bundle is reached ONLY through `schedule` (the walk driver), so
     // it may name no `@s` at all — that executor does not exist (AUDIT-P0; the
-    // full invariant lives in `tests/scheduled_executor.rs`). Under party
+    // full invariant lives in `tests/it/scheduled_executor.rs`). Under party
     // progression (spec-0018) the set-flag needs no executor: it writes the party
     // holder, which is immune to the seam by construction.
     assert!(

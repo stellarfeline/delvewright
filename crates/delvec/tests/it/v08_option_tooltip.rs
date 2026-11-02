@@ -13,7 +13,7 @@
 //! already proves the codec accepts it on every PR; this test pins the *dialogue*
 //! surface's use of it.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

@@ -15,7 +15,7 @@
 //! That is what makes the campaign-side question the only open one: **does
 //! anything lay it, and in time?**
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

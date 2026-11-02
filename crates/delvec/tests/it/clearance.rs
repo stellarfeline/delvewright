@@ -12,7 +12,7 @@
 //! writes the geometry the shipped delve actually gets, so these also pin that
 //! the proof reads the **edited** assembled world rather than the raw prefab.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

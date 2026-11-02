@@ -3,7 +3,7 @@
 //! detection on a real vertical campaign, the partial-build guarantee, and the
 //! ADR-0006 double-run byte-identity gate over every written file.
 
-mod common;
+use crate::common;
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};

@@ -8,7 +8,7 @@
 //! shortcut's `answers.not_yet`. Which side is which is derived from the
 //! geometry (`DW0425` when it cannot be), never typed.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

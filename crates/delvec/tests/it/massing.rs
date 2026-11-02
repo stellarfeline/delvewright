@@ -3,9 +3,9 @@
 //! application failures, and the full-assembly-revalidation proof (a massing
 //! edit that seals the critical path fails `DW0311`, not QA).
 //!
-//! Process-level (the real `delvec` binary), like `tests/edit.rs`.
+//! Process-level (the real `delvec` binary), like `tests/it/edit.rs`.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::DSL_VERSION;
 use std::collections::BTreeMap;

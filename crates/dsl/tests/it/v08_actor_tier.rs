@@ -11,7 +11,7 @@
 //! absence is byte-identical to a campaign that declares none,
 //! and it never reaches emission.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
 

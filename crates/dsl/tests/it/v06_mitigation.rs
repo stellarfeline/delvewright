@@ -2,7 +2,7 @@
 //! replaced the `DW0210` display-name heuristic. Validates under `dsl_version
 //! 0.6.0`.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
 

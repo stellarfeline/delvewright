@@ -5,7 +5,7 @@
 //! Built on the hello-world casting/quests/dialogue (unchanged, 0.2.0) with a
 //! v0.5 stage-1 `world` document — additive fields, so the rest is untouched.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{RawCampaign, check_campaign};
 use std::sync::LazyLock;

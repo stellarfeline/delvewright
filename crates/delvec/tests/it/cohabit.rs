@@ -12,7 +12,7 @@
 //! the compiler cannot prove is still standing must withhold the error rather
 //! than invent one.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

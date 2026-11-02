@@ -4,10 +4,10 @@
 //! tripwire tells the player to walk onto it, and walking onto it does nothing,
 //! so a prop that fires on a step is refused where it is written. Which blocks
 //! fire on a step is read from the pinned block registry
-//! ([`delvewright_dsl::stepped_blocks`]); `crates/delvec/tests/stepped_blocks_tag.rs`
+//! ([`delvewright_dsl::stepped_blocks`]); `crates/delvec/tests/it/stepped_blocks_tag.rs`
 //! cross-checks that set against vanilla's own `#pressure_plates` tag.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
 

@@ -26,7 +26,7 @@
 //! the diagnostic at both. A check keyed off a surface the fixture's version
 //! never reached would pass that test only by accident, and this one cannot.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
 use std::sync::LazyLock;

@@ -16,7 +16,7 @@
 //! ([`common::source_scan`]): a synthetic world in a unit test has no
 //! campaign behind it and nothing to state.
 
-mod common;
+use crate::common;
 
 #[test]
 fn premise_declines_are_enumerated() {

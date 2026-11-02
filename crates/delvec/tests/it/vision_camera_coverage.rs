@@ -13,7 +13,7 @@
 //! campaign's own longest cutscene, because the compiler cannot know which camera
 //! a player stepping out of a mitigated area will land in.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

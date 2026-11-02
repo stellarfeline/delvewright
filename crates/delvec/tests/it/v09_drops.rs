@@ -16,7 +16,7 @@
 //! * a campaign that declares no drops emits no `loot_table` directory, no strip
 //!   line and the same `0.0f` chances it always did.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

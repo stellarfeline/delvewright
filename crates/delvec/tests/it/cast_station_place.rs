@@ -20,7 +20,7 @@
 //! Keeper's one station. A test with only the first half would pass on a
 //! compiler that had simply stopped letting a cast row reach another area.
 
-mod common;
+use crate::common;
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::load::load_campaign_dir;

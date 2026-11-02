@@ -8,7 +8,7 @@
 //! use-gate or climb end the corridor lacks, is a chart drawn over a
 //! route the build never proved.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};

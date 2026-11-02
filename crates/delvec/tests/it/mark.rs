@@ -16,7 +16,7 @@
 //! `anchor/exit` at `[5, 1, 8]`; every cell named below is read from the plan,
 //! never typed as a world coordinate.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

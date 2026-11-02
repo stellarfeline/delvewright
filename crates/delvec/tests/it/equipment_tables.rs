@@ -146,7 +146,7 @@ fn borrowed(row: &BodyRow) -> BorrowedRow {
 fn the_body_table_has_a_row_per_living_entity_type_in_the_stated_groups() {
     let table = body_table();
     let registry: Vec<String> =
-        serde_json::from_str(include_str!("../data/entities-1.21.11.json")).unwrap();
+        serde_json::from_str(include_str!("../../data/entities-1.21.11.json")).unwrap();
     let entities = FullEntityRegistry::v1_21_11();
     for (id, row) in table {
         assert!(entities.contains(id), "{id} is not a pinned entity type");

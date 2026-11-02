@@ -9,7 +9,7 @@
 //!    an unstyled shot is accepted; an unknown assembly or place is `DW0112`;
 //!    two kinds at once is `DW0100`.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{DSL_VERSION, Diagnostic, RawCampaign, Stage, check_campaign, stage_schema};
 use serde_json::Value;

@@ -133,7 +133,7 @@ not third-party reconstructions.
   derive-block-appearance`, which calls the one derivation rather than owning a
   second) and then **proves the result against the same jar**: the jar-gated
   half of
-  `crates/delvec/tests/preview_palette.rs` re-derives every entry and compares,
+  `crates/delvec/tests/it/preview_palette.rs` re-derives every entry and compares,
   and the command fails if any differs. That comparison runs here and nowhere
   else, because the one occasion a jar is in hand is the occasion this file
   changes. The derivation is an example rather than a `delvec` subcommand because
@@ -370,7 +370,7 @@ not third-party reconstructions.
   staging-time written-world comparison (`DW0955`). Consumed by
   `delvewright_dsl::support`, which `DW1002` (its write arms read the falls-into
   flag too), the relight pass's fixture rule and `DW0354` judge by. Cross-checked against a sample of the Minecraft Wiki's
-  placement statements (`crates/dsl/tests/support_wiki.rs`, 57 assertions; one
+  placement statements (`crates/dsl/tests/it/support_wiki.rs`, 57 assertions; one
   disagreement, settled for the jar and written there).
   **Reproduce it**: `python3 tools/maintenance/dump-support.py [--check]
   [--work DIR]` (JDK ≥ 21 on `PATH`, network for the mappings). Its pin, fetch
@@ -639,7 +639,7 @@ not third-party reconstructions.
   second reading by script over the same classes' `addLayer` calls agrees on every
   per-slot count; the one row it cannot reach by class chain is the ender dragon,
   whose renderer is not a `LivingEntityRenderer` and whose row draws nothing. Held
-  every day by `crates/delvec/tests/equipment_tables.rs` to the entity-type tags
+  every day by `crates/delvec/tests/it/equipment_tables.rs` to the entity-type tags
   (the saddle rows equal `#minecraft:can_equip_saddle`), to the item table (the body
   rows are the body items' allowed lists plus `minecraft:skeleton_horse`) and to the
   equipment assets (the 15 body/saddle layer types). Nothing in the tree renders an
@@ -712,7 +712,7 @@ and `ArmorStand.readAdditionalSaveData`; the slot names from `SlotRanges`; the
 filter bits from `EquipmentSlot.<clinit>`; the bands from
 `ArmorStand.getClickedSlot`; the hitboxes from `EntityType.<clinit>`. Every
 entity id is held to the vendored `entities-1.21.11.json` by a test
-(`crates/delvec/tests/holder_table.rs`) that shares no configuration with that
+(`crates/delvec/tests/it/holder_table.rs`) that shares no configuration with that
 reading.
 
 ### What vanilla data does NOT provide (and what the compiler does about it)

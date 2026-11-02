@@ -22,15 +22,15 @@
 //! `minecraft:interaction` and the type says nothing about which of the two it
 //! is. The reasoning is in `compiler::teleport`; the test that makes the
 //! compile-time half real is `a_teleport_over_a_bound_affordance_is_dw0542`, and
-//! the runtime half is `crates/delvec/tests/fixture_class.rs`.
+//! the runtime half is `crates/delvec/tests/it/fixture_class.rs`.
 //!
 //! The status-effect half asserts the emitted `effect give` / `effect clear`, and
 //! — more importantly — that the *engine's own* night-vision grant now goes
 //! through the same formatter. Its byte-for-byte stability is proven by
-//! `crates/delvec/tests/relight.rs` and `vision_camera_coverage.rs`, which
+//! `crates/delvec/tests/it/relight.rs` and `vision_camera_coverage.rs`, which
 //! assert the exact pre-existing line and were not touched.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

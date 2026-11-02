@@ -15,7 +15,7 @@
 //!   gamerule that decides it at `0`;
 //! * **the binding line** (criterion 7) and the artifact.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

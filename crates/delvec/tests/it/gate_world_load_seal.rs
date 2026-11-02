@@ -12,7 +12,7 @@
 //! nothing. The pair below is that red→green, on the in-repo `hello-world`
 //! fixture: `hello-room`'s `anchor/door` bars all six cells of its doorway.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

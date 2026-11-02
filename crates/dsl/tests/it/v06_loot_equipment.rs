@@ -10,7 +10,7 @@
 //! The container-ness of the anchor's cell needs the assembled world, so it is
 //! a build-tier proof (`DW0431`) covered in the compiler crate.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
 

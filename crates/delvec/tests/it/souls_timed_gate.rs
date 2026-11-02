@@ -4,7 +4,7 @@
 //! half of every cycle never strands the critical path). A clean build is the
 //! `DW0378` ≥20%-of-cycle proof on real prefab geometry.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

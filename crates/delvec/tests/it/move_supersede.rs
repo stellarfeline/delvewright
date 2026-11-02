@@ -31,7 +31,7 @@
 //! a body that cannot be superseded would change pre-existing campaigns' output, which
 //! ADR-0006 forbids, so those two assert the exact bytes.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

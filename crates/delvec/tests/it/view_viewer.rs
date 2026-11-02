@@ -12,7 +12,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-mod common;
+use crate::common;
 
 const BIN: &str = env!("CARGO_BIN_EXE_delvec");
 

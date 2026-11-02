@@ -199,7 +199,7 @@ pub fn prefabs_dir() -> PathBuf {
         // is the state that impersonates a naming problem. A warning (`DW0543`,
         // a key newer than this engine) leaves the prefab loaded and usable, so
         // it cannot produce that impersonation — and it has its own test, which
-        // states its binding count, in `tests/registry_load.rs`.
+        // states its binding count, in `tests/it/registry_load.rs`.
         let diags: Vec<_> = reg
             .load_diagnostics()
             .iter()
@@ -1290,7 +1290,7 @@ fn read3(v: &serde_json::Value) -> [i64; 3] {
 /// out of the room, so the piece's own outside becomes something a body can be
 /// in front of (`DW0885`).
 ///
-/// Shared rather than copied. It lived in `tests/boundary_assembled.rs` and was
+/// Shared rather than copied. It lived in `tests/it/boundary_assembled.rs` and was
 /// copied verbatim into a second file, which
 /// `tools/ci/check-structure-emitters.py` caught in the only way it can: the copy
 /// was a new site naming `fastnbt::to_bytes` that judged no palette, and the

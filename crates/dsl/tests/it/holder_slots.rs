@@ -6,9 +6,9 @@
 //! (`DW0431` / `DW0438`), and so are a stand fill with an unnamed stack and a
 //! `collect` padding a frame or a stand (`DW1035` at the build tier). An
 //! armour slot's `equippable` arm reads the pinned item data, which only the
-//! compiler's registry carries; it is held in `crates/delvec/tests/holders.rs`.
+//! compiler's registry carries; it is held in `crates/delvec/tests/it/holders.rs`.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
 

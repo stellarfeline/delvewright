@@ -16,7 +16,7 @@
 //! during a wait leaves the waiter waiting and releases them onto the fire) is
 //! `harness/probe/respawn-wait-party.ts`, step 8.
 
-mod common;
+use crate::common;
 
 use std::collections::{BTreeMap, BTreeSet};
 

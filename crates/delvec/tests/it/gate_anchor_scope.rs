@@ -25,7 +25,7 @@
 //! because a same-area duplicate and a cross-area one must come out differently
 //! and only a two-area campaign can tell them apart.
 
-mod common;
+use crate::common;
 
 use delvec::compiler::gates;
 use delvec::compiler::registry::PrefabRegistry;

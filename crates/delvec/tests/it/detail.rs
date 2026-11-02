@@ -15,14 +15,14 @@
 //!
 //! It also means every red below is produced by **perturbing a piece that was
 //! green**, never by hand-authoring a broken one: the same discipline
-//! `tests/blockout.rs` applies to the derivation, one layer out.
+//! `tests/it/blockout.rs` applies to the derivation, one layer out.
 //!
 //! The generator is fed by `delvec allocation` and nothing else — the frame, the
 //! seams, the answering-face classes and the owed names all come from the
 //! handing. So the file doubles as the demonstration that the handing is
 //! *sufficient*: a piece written against it alone satisfies every gate.
 
-mod common;
+use crate::common;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -221,7 +221,7 @@ fn write_piece(dir: &Path, id: &str, a: &Allocation, cells: &[([i32; 3], String)
             "id": id,
             "size": size,
             "data_version": 4671,
-            "generator": "crates/delvec/tests/detail.rs",
+            "generator": "crates/delvec/tests/it/detail.rs",
         },
         "anchors": anchors,
         "connectors": [],
@@ -230,7 +230,7 @@ fn write_piece(dir: &Path, id: &str, a: &Allocation, cells: &[([i32; 3], String)
             "source": "original",
             "spdx": "GPL-3.0-or-later",
             "note": "Test fixture.",
-            "provenance": "Cut out of the derived massing by crates/delvec/tests/detail.rs."
+            "provenance": "Cut out of the derived massing by crates/delvec/tests/it/detail.rs."
         },
         "spatial_contract": {
             "entry": "room",
@@ -1684,7 +1684,7 @@ fn the_bot_is_handed_the_same_path_with_one_cell_moved_inside_the_detailed_place
             // against the massing's cell — and refuses one that changed shape on
             // the way. What it deliberately does NOT judge is the extent rule
             // itself, which is the same on both sides of this comparison;
-            // `tests/reach_completion.rs` owns that.
+            // `tests/it/reach_completion.rs` owns that.
             if k == "completion" {
                 assert_eq!(
                     Some(v),
@@ -1815,7 +1815,7 @@ fn tempdir(name: &str) -> PathBuf {
 }
 
 /// The perturbation surface is an ARGUMENT, never a switch — asserted here for
-/// the same reason `tests/blockout.rs` asserts it of the derivation: a
+/// the same reason `tests/it/blockout.rs` asserts it of the derivation: a
 /// production path that could acquire a defect from a global is a production
 /// path nothing can measure.
 #[test]

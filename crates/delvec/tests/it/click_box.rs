@@ -11,7 +11,7 @@
 //! naming the face; and a box moved over a cell `setup_finish` leaves as air is
 //! refused naming the cell.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

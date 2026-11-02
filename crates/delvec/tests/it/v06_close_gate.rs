@@ -2,7 +2,7 @@
 //! Covers the gate-block validation (`DW0343`), the fill-with-declared-block
 //! emission, and that a `close-gate` on a block-bearing gate validates + builds.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

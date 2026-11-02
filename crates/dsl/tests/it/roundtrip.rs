@@ -3,7 +3,7 @@
 //!
 //! Run with `DW_BLESS=1` to rewrite the fixtures into canonical form.
 
-mod common;
+use crate::common;
 
 use std::fs;
 

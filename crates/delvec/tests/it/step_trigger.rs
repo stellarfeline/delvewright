@@ -9,7 +9,7 @@
 //! holds no plate), and the validation it unlocks (`audience: presser` on a
 //! step, an `audience: actor` effect under it).
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

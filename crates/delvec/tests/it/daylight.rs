@@ -17,7 +17,7 @@
 //! exactly ONE thing about it, so what the diagnostic reacts to is
 //! unambiguous.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::Path;

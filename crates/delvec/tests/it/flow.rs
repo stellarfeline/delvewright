@@ -17,7 +17,7 @@
 //! bundle re-sets each flag gated on itself (the island's idiom — the exact
 //! shape that made the old union fixpoint call both branches producible).
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};

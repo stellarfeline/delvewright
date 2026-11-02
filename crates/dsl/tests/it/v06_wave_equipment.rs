@@ -5,7 +5,7 @@
 //! registry (`DW0143`, the give-item family); an unknown slot name is a schema
 //! rejection (`DW0100`).
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{RawCampaign, check_campaign};
 use std::sync::LazyLock;

@@ -6,7 +6,7 @@
 //! is itself a case: it must stay green, and it must warn `DW0475` because its
 //! guards run on vanilla stats no vanilla data publishes.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::Path;

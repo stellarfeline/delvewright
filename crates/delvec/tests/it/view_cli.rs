@@ -4,7 +4,7 @@
 //! Every frame here is drawn on the CPU backend with the pinned client jar's
 //! textures (`$DELVEWRIGHT_CLIENT_JAR`, or Init I5's location).
 
-mod common;
+use crate::common;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

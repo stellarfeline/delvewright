@@ -20,7 +20,7 @@
 //! open, and a descent that read the leaf's own gate alone would hand the bot an
 //! unconditional promise the campaign never made.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

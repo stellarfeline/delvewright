@@ -4,7 +4,7 @@
 //! `look_at`'s; a `"landscape"` keeps the travel aim the unstyled shot always
 //! had, byte for byte.
 
-mod common;
+use crate::common;
 
 use common::framing_fixture as ff;
 use serde_json::json;

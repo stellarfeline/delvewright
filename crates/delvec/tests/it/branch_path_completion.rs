@@ -17,7 +17,7 @@
 //!   puts objective steps past the ending is refused at build time, named by
 //!   branch and by the file the harness would have walked.
 
-mod common;
+use crate::common;
 
 use std::path::{Path, PathBuf};
 

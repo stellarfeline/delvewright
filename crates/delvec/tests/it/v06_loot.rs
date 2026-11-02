@@ -6,7 +6,7 @@
 //! entry pointed at a real, resolvable anchor must still fail the build rather
 //! than emit an `item replace block` that would fail SILENTLY on the server.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

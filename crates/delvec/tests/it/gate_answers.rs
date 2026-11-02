@@ -10,7 +10,7 @@
 //! forms are reachable; a trigger id in the compiler's `dw-` namespace is
 //! `DW0428`; and another box in the door's cell is `DW0422`.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

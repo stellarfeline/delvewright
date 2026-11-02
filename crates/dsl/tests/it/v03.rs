@@ -7,7 +7,7 @@
 //! verb-rich stage-5 replacement, so it resolves against the vendored registries
 //! (hello-room anchors, the item/entity subsets).
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{Envelope, QuestsContent, RawCampaign, check_campaign, to_canonical_string};
 use std::sync::LazyLock;

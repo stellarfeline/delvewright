@@ -3,7 +3,7 @@
 //! anchor is `DW0142` (the fill-block declaration is a compiler-side check,
 //! `DW0343`). Built on the hello-world casting/dialogue (unchanged).
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{RawCampaign, check_campaign};
 use std::sync::LazyLock;

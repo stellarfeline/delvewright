@@ -35,7 +35,7 @@
 //!   bundle**, so it is never a producer — the stance `collect_flags` already
 //!   takes for the identical bundle rooted in the quests stage.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeSet;
 

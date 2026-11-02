@@ -53,7 +53,7 @@
 //! one fixture per member of `EffectRootKind::ALL` — a run that examined fewer
 //! roots than exist is a vacuous green, not a pass (CLAUDE.md).
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::Verb;
 use std::collections::{BTreeMap, BTreeSet};
@@ -222,7 +222,7 @@ fn prefabs_with_trap() -> PathBuf {
                 "rig_version": 1,
                 "parts": [ { "id": "block", "kind": "block", "block": "minecraft:stone" } ],
                 "clips": { "idle": { "ticks_per_frame": 5, "loop": false, "frames": [[cube]] } },
-                "provenance": { "generator": "crates/delvec/tests/effect_root_walkers.rs",
+                "provenance": { "generator": "crates/delvec/tests/it/effect_root_walkers.rs",
                                 "source": "original", "spdx": "GPL-3.0-or-later" }
             }))
             .unwrap(),

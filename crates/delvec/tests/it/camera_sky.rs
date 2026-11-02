@@ -18,9 +18,9 @@ use delvewright_dsl::{WorldTime, WorldWeather};
 
 const BIN: &str = env!("CARGO_BIN_EXE_delvec");
 /// A plan of a delve played at `day` in the `clear`.
-const OCEAN: &[u8] = include_bytes!("fixtures/view/render-plan-ocean.json");
+const OCEAN: &[u8] = include_bytes!("../fixtures/view/render-plan-ocean.json");
 /// The mini fixture played at `dusk` in the `clear`.
-const MINI: &[u8] = include_bytes!("fixtures/view/render-plan-mini.json");
+const MINI: &[u8] = include_bytes!("../fixtures/view/render-plan-mini.json");
 
 fn tmp(tag: &str) -> PathBuf {
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("camera-sky-{tag}"));

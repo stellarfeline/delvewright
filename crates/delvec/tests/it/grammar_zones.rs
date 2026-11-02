@@ -20,7 +20,7 @@
 //! a finding, not a pass (`docs/reference/playtest-methodology.md` rule 1), so
 //! the fixture tests pin those counts rather than leaving them to prose.
 
-mod support;
+use crate::support;
 
 use std::collections::{BTreeMap, BTreeSet};
 

@@ -17,7 +17,7 @@
 //! only thing standing between that campaign and a clean bill of health. Delete
 //! the refusal and that test does not merely lose a code — it goes silent.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{DSL_VERSION, Diagnostic, RawCampaign, check_campaign};
 

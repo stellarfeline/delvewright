@@ -6,7 +6,7 @@
 //! second parse rule here. A declaration written outside `dw_code!` is in the
 //! source and missing from the registry, and this test reds.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeSet;
 use std::path::Path;

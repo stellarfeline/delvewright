@@ -30,7 +30,7 @@
 //! an alive player never fires the beat, and the edge stays armed for the tick
 //! the player is actually a corpse.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

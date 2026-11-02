@@ -22,7 +22,7 @@
 //!    own drivers, each planned from its own origin;
 //! 3. a campaign that gates no walk emits exactly the names it always did.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

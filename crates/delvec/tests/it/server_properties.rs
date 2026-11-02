@@ -24,7 +24,7 @@
 //! base image's ENV — a key emitted here but not derived there would be pinned
 //! in a file nothing reads.
 
-mod common;
+use crate::common;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;

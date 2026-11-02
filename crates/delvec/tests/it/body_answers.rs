@@ -8,7 +8,7 @@
 //! re-arming — are the generated PackTests (`v119_answer_box_<id>`,
 //! `env_trigger_<id>`), run on a server by the ladder.
 
-mod common;
+use crate::common;
 
 use std::collections::{BTreeMap, BTreeSet};
 

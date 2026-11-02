@@ -19,7 +19,7 @@
 //! diagnosed. `the_grant_surface_has_no_infinite_form` asserts that from the
 //! generated schema, so a future field cannot quietly reintroduce it.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::envelope::Stage;
 use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign, stage_schema};

@@ -2,7 +2,7 @@
 //! launch set has converged — a half-degree facing step and a half strafe add
 //! no rest state to the closure the build takes.
 
-mod common;
+use crate::common;
 
 use delvec::compiler::nav::{Premises, ReachParams, World};
 

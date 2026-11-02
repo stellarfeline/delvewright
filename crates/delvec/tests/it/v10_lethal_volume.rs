@@ -6,7 +6,7 @@
 //! `[4,1,6]..[5,3,6]`), which makes "the only route runs through the volume" a
 //! two-line declaration rather than a synthetic world.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

@@ -15,7 +15,7 @@
 //! * a completing dialogue option gated only by `forbids_flags` counts as gated
 //!   for the `DW0191` deadlock guard (conservative: no temporal flag reasoning).
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{RawCampaign, check_campaign};
 use std::sync::LazyLock;

@@ -7,7 +7,7 @@
 //! exactly one doorway (`anchor/door`, gate region `[4,1,6]..[5,3,6]`), which makes
 //! "the only route runs through this box" a two-line declaration.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

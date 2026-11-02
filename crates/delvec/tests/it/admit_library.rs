@@ -38,7 +38,7 @@ use delvec::admit::structure::Structure;
 use delvec::schem::blocks::{BlockRegistry, StateJudgement};
 use delvec::schem::convert::DATA_VERSION as PINNED_DATA_VERSION;
 
-mod common;
+use crate::common;
 
 /// The shipped prefab library at the pinned content commit, read out of the
 /// content repository's object store (`common::pinned`), never a working tree.

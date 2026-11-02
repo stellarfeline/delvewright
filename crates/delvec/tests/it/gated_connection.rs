@@ -7,7 +7,7 @@
 //! allocation (`delvec allocation`, the frame's `world_min` plus the handed
 //! piece-local cells), never from the function that places the bar.
 
-mod common;
+use crate::common;
 
 use std::collections::{BTreeMap, BTreeSet};
 

@@ -12,7 +12,7 @@
 //! member and that member carries anchors, so every filler slot the area's
 //! `pieces` budget opens can only be filled by it.
 
-mod common;
+use crate::common;
 
 use std::path::{Path, PathBuf};
 

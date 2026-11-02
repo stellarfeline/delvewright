@@ -9,7 +9,7 @@
 //! piece) with each case's edits, so what each case changes is exactly the
 //! thing it names.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

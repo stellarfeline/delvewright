@@ -8,7 +8,7 @@
 //!   `DW0979` — so the composer cannot produce either refusal, and the claim is
 //!   checked through the rule rather than a second copy of it.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeSet;
 use std::path::Path;

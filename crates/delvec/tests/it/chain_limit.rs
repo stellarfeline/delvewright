@@ -14,7 +14,7 @@
 //! they carry block writes and nothing else, and only the function they end in
 //! latches the world placed.
 
-mod common;
+use crate::common;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

@@ -2,7 +2,7 @@
 //! The `DW1046` pairing rule, the byte-identical round trip of a document that
 //! omits it, and the schema export.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign, parse_campaign};
 

@@ -2,7 +2,7 @@
 //! `critical-path.json` matches its documented shape with its `/trigger`
 //! commands backed by enabled trigger objectives.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

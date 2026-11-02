@@ -15,7 +15,7 @@
 //! weapon.mainhand`, `if|unless entity @s[tag=…]`, `run`) and refuses any other,
 //! so a new clause kind cannot be skipped in silence.
 
-mod common;
+use crate::common;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};

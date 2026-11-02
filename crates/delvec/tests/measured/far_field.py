@@ -6,7 +6,7 @@ constants (`tools/spike-eldritch-visuals/gen.py` on branch
 `research/eldritch-visuals` at `2bbb1f28`) with this file's own block-light
 flood and voxel walk. It shares no code with `delvec`: the engine's reading is
 `station_4_calibrates_the_far_field_threshold` in
-`crates/delvec/tests/endless_corridor.rs`, and the two are compared in
+`crates/delvec/tests/it/endless_corridor.rs`, and the two are compared in
 `tools/tests/test_far_field.py`.
 
 The hall is the spike's: stone-brick walls `x 4094..4098`, a three-wide

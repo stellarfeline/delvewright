@@ -4,7 +4,7 @@
 //! naming the term that won — and an NPC or actor is judged at the proof
 //! frame against its type's cull radius.
 
-mod common;
+use crate::common;
 
 use common::framing_fixture as ff;
 use delvec::compiler::framing::{

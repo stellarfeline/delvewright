@@ -13,7 +13,7 @@
 //!    every campaign gate sealed and asserts puppet-out / NPC-in (body + exactly
 //!    one hitbox).
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

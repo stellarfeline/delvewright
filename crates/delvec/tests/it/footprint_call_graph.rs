@@ -14,7 +14,7 @@
 //! own. Both reach the one per-part cell set, `Transform::cells`, through
 //! `frame_footprint_turned`.
 
-mod common;
+use crate::common;
 
 use common::source_scan;
 use std::path::Path;

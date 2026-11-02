@@ -3,7 +3,7 @@
 //!
 //! Both rules are measured against the pinned server rather than reasoned out
 //! (`tools/spike-block-settling/ at 84f364997d24`, replayed cell for cell by
-//! `crates/delvec/tests/schem_stair_shape_measured.rs`). What this file covers is the
+//! `crates/delvec/tests/it/schem_stair_shape_measured.rs`). What this file covers is the
 //! other half: that the gates BIND — that they examine the objects a piece
 //! actually contains, red in the direction that ships, and green one course
 //! away.

@@ -7,7 +7,7 @@
 //! proof — that the wave really yields the item (`DW0492`) and that the fight is
 //! proven to happen first (`DW0493`).
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{RawCampaign, check_campaign};
 use std::sync::LazyLock;

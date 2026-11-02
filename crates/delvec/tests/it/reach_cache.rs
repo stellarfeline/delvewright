@@ -4,7 +4,7 @@
 //! leaves the file as it found it, and a file that does not decode is read as
 //! empty (ADR-0006).
 
-mod common;
+use crate::common;
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};

@@ -24,7 +24,7 @@
 //! refused). A test with only the first half would pass on a compiler that had
 //! simply stopped resolving across areas at all.
 
-mod common;
+use crate::common;
 
 use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::{Plan, ResolvedAnchor, Step};

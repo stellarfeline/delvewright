@@ -20,7 +20,7 @@
 //! with the actor surface and the wave tier declared in-test — one build per
 //! shape, so each claim is read off a whole real emission.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

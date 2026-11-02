@@ -7,7 +7,7 @@
 //! and at any nesting depth. Before this surface existed the key was an unknown
 //! field of the verb (`DW0100`).
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{
     DSL_VERSION, ItemRegistry, QuestEffect, RawCampaign, VendoredAnchorRegistry,

@@ -14,7 +14,7 @@
 //! Keeper in the keep, be carried to the landing, the landing's arrival sets the
 //! checkpoint, walk to the exit. A stake is declared.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

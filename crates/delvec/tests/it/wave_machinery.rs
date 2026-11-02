@@ -16,7 +16,7 @@
 //! tree so the whole class (any future emitter split-brain, not only waves) is a
 //! loud build error instead of a missing enemy.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

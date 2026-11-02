@@ -1,5 +1,5 @@
-//! The chapel-door fixture for `DW1044` (`tests/threshold.rs`, and its remedy
-//! rows in `tests/remedy_reachability.rs`): `hello-world`, whose keep has an
+//! The chapel-door fixture for `DW1044` (`tests/it/threshold.rs`, and its remedy
+//! rows in `tests/it/remedy_reachability.rs`): `hello-world`, whose keep has an
 //! inner wall at piece-local z 6 with a two-wide doorway (`anchor/door`,
 //! x 4..5), opened by the Keeper, and an environment trigger at `at` that pays
 //! the flag the exit objective reads.

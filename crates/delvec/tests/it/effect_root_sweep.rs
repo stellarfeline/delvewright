@@ -23,7 +23,7 @@
 //! `timeline_effect_roots`, `flow_effect_roots`, `flag_objective_roots`,
 //! `anchor_seal`, `l10n_effect_roots`.
 
-mod common;
+use crate::common;
 
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_dsl::{Campaign, DSL_VERSION, EffectRootKind, RawCampaign, parse_campaign};

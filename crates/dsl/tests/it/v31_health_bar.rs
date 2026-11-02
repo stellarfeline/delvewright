@@ -17,9 +17,9 @@
 //!
 //! `DW0911` — a colour or style the pinned game does not draw — is judged
 //! against the pinned command tree, which is `delvec`'s data, so its red
-//! fixture lives beside the compiler (`crates/delvec/tests/emit.rs`).
+//! fixture lives beside the compiler (`crates/delvec/tests/it/emit.rs`).
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::envelope::Stage;
 use delvewright_dsl::{

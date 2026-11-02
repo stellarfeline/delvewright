@@ -34,7 +34,7 @@ use std::process::{Command as Proc, Output};
 
 use delvec::compiler::registry::is_prefab_document;
 
-mod common;
+use crate::common;
 
 fn delvec(args: &[&str]) -> Output {
     Proc::new(env!("CARGO_BIN_EXE_delvec"))

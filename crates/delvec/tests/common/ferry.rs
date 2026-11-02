@@ -1,7 +1,7 @@
 //! **The ferry's strait** (spec-0083): a synthesised piece with two places of
 //! one area and no walk between them, shared by the link tests
-//! (`tests/teleport_link.rs`) and the remedy rows that take DW0932/DW0933/DW0934's
-//! moves (`tests/remedy_reachability.rs`). Every fixture built over it is
+//! (`tests/it/teleport_link.rs`) and the remedy rows that take DW0932/DW0933/DW0934's
+//! moves (`tests/it/remedy_reachability.rs`). Every fixture built over it is
 //! `tests/fixtures/ferry` plus one edit.
 
 #![allow(dead_code)]

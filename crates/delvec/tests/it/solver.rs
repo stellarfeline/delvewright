@@ -2,7 +2,7 @@
 //! assembly, the socket seal/clear strategy, inter-area transport, and the
 //! `DW03xx` build/solver diagnostics.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 
@@ -468,7 +468,7 @@ fn keep_trial_m2_presentation_fixes() {
     // and aiming outside the box. `keep-trial` authors `radius: 2`, so the region
     // is now ±2 — strictly larger than the cube this line used to pin, so nothing
     // that passed before can fail now. The sphere half of the fix is untouched.
-    // See `tests/reach_completion.rs` for the rule itself.
+    // See `tests/it/reach_completion.rs` for the rule itself.
     assert!(
         tick.contains("dx=4,y=")
             && tick.contains("dz=4] run function keep-trial:complete_o_shrine"),

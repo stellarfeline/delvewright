@@ -13,7 +13,7 @@
 //! demands and check the gate goes red rather than quiet), and — for `DW0860` —
 //! the arithmetic pinned to the released campaign that motivated it.
 
-mod common;
+use crate::common;
 
 use delvec::compiler::promise;
 use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};

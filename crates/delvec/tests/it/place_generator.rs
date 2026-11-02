@@ -6,7 +6,7 @@
 //! program that stops being the script's output reds here; so does a script
 //! whose output stops passing the check.
 
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 use std::process::{Command, Output};

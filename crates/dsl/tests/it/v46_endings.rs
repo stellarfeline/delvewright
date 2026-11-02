@@ -2,7 +2,7 @@
 //! dispatched from the server source (§3.6), the campaign may declare what every
 //! ending reads (§3.5), and every verb says whether it changes the world (§3.7).
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{
     Diagnostic, NestedDispatch, QuestEffect, RawCampaign, Stage, check_campaign, stage_schema,

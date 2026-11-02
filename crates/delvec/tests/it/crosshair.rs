@@ -13,7 +13,7 @@
 //! rule excludes it, exactly as it excluded the island's crew), and a cast ledger
 //! that declares them sharing a scene.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

@@ -8,7 +8,7 @@
 //! **Every coverage set states its binding count** (CLAUDE.md): a set that bound
 //! zero objects fails rather than passes.
 
-mod common;
+use crate::common;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};

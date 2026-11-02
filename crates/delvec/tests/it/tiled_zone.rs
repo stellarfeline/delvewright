@@ -14,7 +14,7 @@
 //! the cut; and the world it gets is the world the piece would have produced if
 //! the cap did not exist.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

@@ -3,7 +3,7 @@
 //! bundle no credited kill can reach) and `DW0100` (an empty bundle).
 //!
 //! The pair that needs the rest points (`DW0914`/`DW0915`) is compiler-side and
-//! is exercised in `crates/delvec/tests/on_kill.rs`.
+//! is exercised in `crates/delvec/tests/it/on_kill.rs`.
 
 use delvewright_dsl::{
     Campaign, DSL_VERSION, Diagnostic, RawCampaign, Stage, parse_campaign, stage_schema,

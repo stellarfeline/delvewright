@@ -395,7 +395,7 @@ pub fn erosion() -> Program {
 /// choice.** Thirteen courses do not divide by three, so one band is a course
 /// deeper than the other two. The rounding is [`Rounding::End`] so the odd
 /// course goes to the band that should absorb it, the ruined one.
-/// `tests/grammar_idioms.rs` drives the split through every mode and demands
+/// `tests/it/grammar_idioms.rs` drives the split through every mode and demands
 /// the top course back from each — the perturbation of the hole upstream's
 /// truncating layout left there, which made the pieces 4, 4, 4 and never wrote
 /// the thirteenth course at all.

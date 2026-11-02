@@ -10,7 +10,7 @@
 //! hello-world`), matching the `v03.rs`/`v05.rs` pattern (literal JSON +
 //! `check_campaign`, `.any(|d| d.code == "DWxxxx")`).
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{RawCampaign, check_campaign};
 use std::sync::LazyLock;

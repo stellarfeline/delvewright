@@ -6,7 +6,7 @@
 //! Built on the hello-world fixture, extended with a second quest (`quest/second`,
 //! depending on the first) and a second, deferred NPC.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{RawCampaign, check_campaign};
 use std::sync::LazyLock;

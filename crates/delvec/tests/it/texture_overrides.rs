@@ -10,7 +10,7 @@ use std::process::{Command as Proc, Output};
 
 use delvewright_dsl::DSL_VERSION;
 
-mod common;
+use crate::common;
 
 fn tmp(name: &str) -> PathBuf {
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("textures-{name}"));

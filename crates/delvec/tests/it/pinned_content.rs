@@ -8,7 +8,7 @@
 //! * several materialisations of one pin at once, from threads holding their
 //!   own lock handles, all return the one verified tree.
 
-mod common;
+use crate::common;
 
 use std::path::{Path, PathBuf};
 

@@ -5,7 +5,7 @@
 //! every refusal is that form plus one declared edit, the way the gallery's own
 //! probes are written.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeSet;
 use std::path::Path;

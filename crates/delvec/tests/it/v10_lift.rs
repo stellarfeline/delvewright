@@ -82,7 +82,7 @@
 //!   change that moves `packtest-datapack/` bytes for every campaign, and this
 //!   PR's whole claim is that it changes no engine source at all.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

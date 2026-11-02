@@ -8,7 +8,7 @@
 //! the DSL can see (an area's declared anchor set); this seal makes the rule total
 //! by re-asking the question of the *assembled* world, at every nesting depth.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

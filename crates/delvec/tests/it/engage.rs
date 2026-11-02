@@ -12,7 +12,7 @@
 //! miniature once its garrison is a helmeted drowned — the helmet keeps `DW0496`,
 //! which runs first, out of the way. Each case changes exactly one thing.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::Path;

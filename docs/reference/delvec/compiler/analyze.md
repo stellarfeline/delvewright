@@ -30,7 +30,7 @@ campfire, redstone torch) still evaluate bright from a bare id, so the compiler'
 own relight fixtures are unaffected.
 
 **The values are measured against the pinned game, not cited.** Every entry is
-checked by `crates/delvec/tests/emission_table.rs` against
+checked by `crates/delvec/tests/it/emission_table.rs` against
 `crates/delvec/tests/fixtures/light/emission-1.21.11.tsv` — 1419 rows that
 collapse all **29,671** blockstates of the pinned 1.21.11 server jar onto the
 properties that can change their light, every value being what the game's own

@@ -11,7 +11,7 @@
 //! (same anchor name). These fixtures pin the geometric statement: bodies and
 //! affordances are boxes with real sizes, and the boxes may not overlap.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

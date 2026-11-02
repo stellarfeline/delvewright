@@ -3,9 +3,9 @@
 //! (`DW0143`) or unknown-block (`DW0193`) reference nested inside a `sequence` step
 //! (or a lifecycle bundle) is caught by the deep consumer scan, not shipped
 //! unvalidated. The compiler-side sound (`DW0326`) / art-glyph (`DW0328`) halves are
-//! in `crates/delvec/tests/v06.rs` (they run in the compiler's validate stage).
+//! in `crates/delvec/tests/it/v06.rs` (they run in the compiler's validate stage).
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
 

@@ -18,7 +18,7 @@
 //! perturbation test asserts three things: that the code fires under the defect,
 //! that it does NOT fire without it, and what the check bound to while deciding.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

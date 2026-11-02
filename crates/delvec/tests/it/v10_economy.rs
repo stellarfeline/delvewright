@@ -10,7 +10,7 @@
 //! offers of a shop, would pass while proving nothing — which is the vacuity rule
 //! CLAUDE.md names, and the reason `stake-gate.json` exists at all.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 
@@ -524,7 +524,7 @@ fn a_displayed_datum_is_addressed_by_its_own_objective() {
 /// `price` field added tomorrow is red here even if nothing else notices.
 ///
 /// The positive half (the shop offer carries the whole gate, all three fields) is
-/// `crates/dsl/tests/gate_consumers.rs`, which enumerates the consumers from the
+/// `crates/dsl/tests/it/gate_consumers.rs`, which enumerates the consumers from the
 /// same schema; this is the negative half.
 #[test]
 fn a_shop_offer_declares_no_comparison_field_of_its_own() {

@@ -5,7 +5,7 @@
 //! and inside the admission surface's input diagnostic at its own exit, and
 //! never reports `internal error: cannot read prefabs dir`.
 
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 use std::process::{Command, Output};

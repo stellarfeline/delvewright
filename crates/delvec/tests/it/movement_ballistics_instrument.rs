@@ -6,7 +6,7 @@
 //! tree holding the instrument, to be run against the pinned server:
 //!
 //! ```text
-//! cargo test -p delvec --test movement_ballistics_instrument -- --ignored
+//! cargo test -p delvec --test it movement_ballistics_instrument:: -- --ignored
 //! EULA=TRUE validation/packtest-run.sh --project dw-ballistics \
 //!   --output ./delve-output-ballistics
 //! ```
@@ -16,7 +16,7 @@
 //! datapack. The result and the revision it was measured at live in
 //! `docs/reference/body-movement.md`.
 
-mod common;
+use crate::common;
 
 #[test]
 #[ignore = "a one-time instrument against the pinned jar, run by hand"]

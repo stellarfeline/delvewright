@@ -637,7 +637,7 @@ fn writing_an_export_uses_the_names_the_metadata_declares() {
 }
 
 /// Not an assertion — a way to read the exact metadata the exporter writes,
-/// for docs and review: `cargo test -p delvec --test grammar_export -- \
+/// for docs and review: `cargo test -p delvec --test it grammar_export:: -- \
 /// --ignored --nocapture show_the_metadata`.
 #[test]
 #[ignore = "prints the exported metadata for review; asserts nothing"]

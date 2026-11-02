@@ -22,7 +22,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-mod common;
+use crate::common;
 
 /// The scene side that reaches the ceiling under a default `valley` horizon.
 ///
@@ -133,7 +133,7 @@ fn write_wide_room(dir: &Path, id: &str) {
             "part_max": PART_MAX,
             "grid": [xs.len() as i32, 1, zs.len() as i32],
             "data_version": 4671,
-            "generator": "crates/delvec/tests/forceload_span.rs",
+            "generator": "crates/delvec/tests/it/forceload_span.rs",
             "parts": parts,
         },
         "anchors": {
@@ -151,7 +151,7 @@ fn write_wide_room(dir: &Path, id: &str) {
             "source": "original",
             "spdx": "GPL-3.0-or-later",
             "note": "Test fixture.",
-            "provenance": "Synthesised by crates/delvec/tests/forceload_span.rs."
+            "provenance": "Synthesised by crates/delvec/tests/it/forceload_span.rs."
         }
     });
     std::fs::write(

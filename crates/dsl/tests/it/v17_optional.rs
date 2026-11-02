@@ -9,7 +9,7 @@
 //! nothing — a textual splice that silently no-ops would leave the assertion
 //! running against an unpatched document and passing for the wrong reason.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeSet;
 

@@ -7,7 +7,7 @@
 //! rule is "a call has a callee", which needs no knowledge of waves, cutscenes
 //! or traps, and therefore guards every future emitter split-brain too.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

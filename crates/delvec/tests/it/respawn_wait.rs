@@ -5,7 +5,7 @@
 //! `harness/probe/respawn-wait-party.ts`; these pin what the build emits and
 //! what it refuses.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 

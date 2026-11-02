@@ -4,7 +4,7 @@
 //! prefab does not provide is `DW0142`; per-effect `requires_flags` is allowed
 //! (it is a per-`@s` verb) and resolves against declared flags (`DW0172`).
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{RawCampaign, check_campaign};
 use std::sync::LazyLock;

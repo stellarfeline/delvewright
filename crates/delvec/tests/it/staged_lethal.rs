@@ -15,7 +15,7 @@
 //! magma across the hall's waist, a seat for a checkpoint, a world-edits batch
 //! that puts the campaign on the edit-replay arm.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

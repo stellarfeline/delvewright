@@ -7,7 +7,7 @@
 //! each line fits its board, need the assembled world: the build-tier proof
 //! `DW1075` is covered in the compiler crate (`compiler::sign`).
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{
     DSL_VERSION, RawCampaign, TextKind, check_campaign, key_kind, key_situations, parse_campaign,

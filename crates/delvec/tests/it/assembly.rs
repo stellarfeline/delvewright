@@ -6,7 +6,7 @@
 //! `flag/struck`, which the exit's `reach-anchor` waits on, so the critical
 //! path performs the trigger three times.
 
-mod common;
+use crate::common;
 
 use common::assembly_fixture::*;
 use delvec::compiler::emit::BuildOutput;

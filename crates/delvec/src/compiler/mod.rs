@@ -5,7 +5,7 @@
 //! none: it reads as an index, so a module missing from it reads as a module
 //! that does not exist, and the twenty-four names this list used to carry
 //! were the ones a reader happened to add. `the_module_list_names_every_module`
-//! (`tests/module_list.rs`) is what keeps it whole.
+//! (`tests/it/module_list.rs`) is what keeps it whole.
 //!
 //! - [`acts`]: the acts on every walked path — what the party must do, where, and from where it stands (spec-0104), read by `DW0863`.
 //! - [`affordance`]: the engine-fixture class tags and the region-selector exclusion (`DW0545`).

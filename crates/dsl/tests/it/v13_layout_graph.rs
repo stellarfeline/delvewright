@@ -20,7 +20,7 @@
 //! and the test would say so — which is the property a fixture built by the code
 //! under test cannot have.
 
-mod common;
+use crate::common;
 
 use delvewright_dsl::{RawCampaign, check_campaign};
 use serde_json::{Value, json};
@@ -133,7 +133,7 @@ fn validate(graph: Option<String>) -> Vec<String> {
 /// closure's own verdict from the rest of the validation battery `validate`
 /// above runs. Both are the same tier now: `layout::check` is the only caller
 /// of `reachability`, and the compiler side of that binding is
-/// `crates/delvec/tests/layout_graph.rs`.
+/// `crates/delvec/tests/it/layout_graph.rs`.
 fn reachability(graph: Option<String>) -> Vec<String> {
     let raw = campaign(graph, Some(BRIEF.to_string()));
     let c = delvewright_dsl::parse_campaign(&raw).expect("the fixture parses");
