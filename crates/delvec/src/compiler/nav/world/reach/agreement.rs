@@ -847,14 +847,23 @@ struct Answered {
     flown: Table,
 }
 
-/// What `w`'s closure from `roots` answers, grown by every launch of its
-/// standing states (a copy taken to grow, [`World::fly_cells`]), taken with
-/// new lists at chunk side `side`.
+/// What `w`'s closure from `roots` answers, grown by every launch of every
+/// standing and holding state until none is left unflown (a copy taken to
+/// grow, [`World::fly_cells`]), taken with new lists at chunk side `side`.
+/// Flying to that fixpoint is what makes the node tables comparable across
+/// sides: a graph's memo is shared by every test that asks for the world at
+/// that side, and one that flew a node this reading had not would otherwise
+/// show in the tables of one side and not the other.
 fn answered(w: &World, roots: &[[i32; 3]], side: i32) -> Answered {
     super::chunks::at_side(side, || {
         let mut r = w.body_reach(roots);
-        let standing: Vec<[i32; 3]> = r.standing().into_iter().collect();
-        w.fly_cells(&mut r, &standing);
+        loop {
+            let unflown: Vec<[i32; 3]> = r.states.keys().filter(|c| r.unflown(*c)).collect();
+            if unflown.is_empty() {
+                break;
+            }
+            w.fly_cells(&mut r, &unflown);
+        }
         let memo = w.graph_memo(&super::ReachParams::shipped(w.unbounded_fall));
         let cells: Vec<[i32; 3]> = r.states.keys().collect();
         let strip = |l: Table| {
@@ -962,9 +971,30 @@ fn no_answer_depends_on_the_chunk_side_or_the_budget() {
     );
 }
 
+/// A floor at y = 64 over x 0..=6, z 0..=2, a solid mass at x 3..=6 up to
+/// y = 68 (stood on at y = 69), and a ladder hanging on its west face at
+/// x = 2, z = 1, y 65..=68: the one way up is four holding states.
+fn ladder_cliff() -> World {
+    let mut cells: Vec<([i32; 3], &str)> = Vec::new();
+    for x in 0..=6 {
+        for z in 0..=2 {
+            cells.push(([x, 64, z], "minecraft:stone"));
+            if x >= 3 {
+                for y in 65..=68 {
+                    cells.push(([x, y, z], "minecraft:stone"));
+                }
+            }
+        }
+    }
+    for y in 65..=68 {
+        cells.push(([2, y, 1], "minecraft:ladder[facing=west]"));
+    }
+    crate::compiler::nav::testkit::blocks_world(&cells)
+}
+
 /// The worlds the chunk invariance and the closure's exactness are asked of:
 /// every generated course, the Bell yard (a void's edge), the jetty (the open
-/// sea) and the garden.
+/// sea), the garden and the ladder cliff (holding states).
 fn invariance_worlds() -> Vec<(String, World, Vec<[i32; 3]>)> {
     let mut worlds: Vec<(String, World, Vec<[i32; 3]>)> = Vec::new();
     for seed in 0..12 {
@@ -981,6 +1011,7 @@ fn invariance_worlds() -> Vec<(String, World, Vec<[i32; 3]>)> {
     ));
     worlds.push(("the jetty".into(), super::tests::jetty(), vec![[2, 65, 2]]));
     worlds.push(("the garden".into(), super::tests::garden(), vec![[1, 1, 1]]));
+    worlds.push(("the ladder cliff".into(), ladder_cliff(), vec![[0, 65, 1]]));
     worlds
 }
 
@@ -991,10 +1022,12 @@ fn invariance_worlds() -> Vec<(String, World, Vec<[i32; 3]>)> {
 /// round after round until nothing new is reached, reaches; at chunk sides of
 /// sixteen columns and of two. Red on any state or exit either way, and on
 /// cases where flying everything reaches nothing the pruned rounds did not
-/// fly (which would leave the comparison binding nothing).
+/// fly, or where no holding state flew (either would leave the comparison
+/// binding nothing: the ladder cliff is reached only through its holding
+/// states, so a round that left them unflown is red here).
 #[test]
 fn the_chunked_closure_is_the_one_every_launch_gives() {
-    let (mut states, mut pruned, mut worlds_n) = (0usize, 0usize, 0usize);
+    let (mut states, mut pruned, mut worlds_n, mut holding) = (0usize, 0usize, 0usize, 0usize);
     for (name, w, roots) in invariance_worlds() {
         for side in [16, 2] {
             super::chunks::at_side(side, || {
@@ -1024,18 +1057,19 @@ fn the_chunked_closure_is_the_one_every_launch_gives() {
                 if side == 16 {
                     states += closed.len();
                     pruned += unflown;
+                    holding += r.census()[3];
                     worlds_n += 1;
                 }
             });
         }
     }
     eprintln!(
-        "closure exactness: {worlds_n} world(s), {states} state(s), {pruned} state(s) with a \
-         launch the rounds left unflown"
+        "closure exactness: {worlds_n} world(s), {states} state(s), {holding} holding, {pruned} \
+         state(s) with a launch the rounds left unflown"
     );
     assert!(
-        states > 0 && pruned > 0,
-        "the cases bind nothing: no launch was left unflown"
+        states > 0 && pruned > 0 && holding > 0,
+        "the cases bind nothing: no launch was left unflown, or no state was a holding one"
     );
 }
 
