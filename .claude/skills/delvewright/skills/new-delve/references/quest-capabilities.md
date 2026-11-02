@@ -245,8 +245,10 @@ Step 3 planned a hub, spokes, an optional strand and endings that read the run
 (*Step 3*, *The plan is a web, not a chain*). This is how stage 5 writes it.
 
 - **Each spoke and strand is armed by the hub**:
-  `"trigger": {"type": "quest-complete", "quest": "quest/<hub>"}`. Write the
-  trigger to match the plan's `depends_on`; nothing compares the two.
+  `"trigger": {"type": "quest-complete", "quest": "quest/<hub>"}`. The trigger
+  must agree with the plan's `depends_on`: `DW1077` refuses a `quest-complete`
+  trigger naming a quest the plan's `depends_on` for that quest does not list,
+  and a quest whose `depends_on` is non-empty armed at `campaign-start`.
 - **The join.** No trigger waits for several quests, so the finale is armed by
   one spoke (the last one the plan declares) and its first objective waits for
   every mandatory spoke: each spoke's `on_complete` carries
@@ -302,8 +304,9 @@ Run each of these; each names what it judges and how many objects it bound.
 
 1. **At step 5**, `delvec --prefabs "$DELVEWRIGHT_PREFABS" validate <campaign-dir>`
    is clean of `DW0866`, `DW0867`, `DW0868` (the optional strand is outside
-   the mainline), `DW0480` (every flag that moves a body has a declared fork)
-   and `DW0191` (every talk-to has an ungated completing option).
+   the mainline), `DW0480` (every flag that moves a body has a declared fork),
+   `DW0191` (every talk-to has a completing option with no flag gate) and
+   `DW1077` (every quest's trigger agrees with its plan's `depends_on`).
 2. **At step 8**, `delvec build` prints `ending binding: N ending(s); …;
    K story world(s) enumerated` and then one line per ending:
    `ending/<slug>: reads M input(s) — <key>: <said|did|finished>, seeded,
