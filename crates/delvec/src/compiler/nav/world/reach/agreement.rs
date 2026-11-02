@@ -897,10 +897,21 @@ fn answered(w: &World, roots: &[[i32; 3]], side: i32) -> Answered {
 fn no_answer_depends_on_the_chunk_side_or_the_budget() {
     let worlds = invariance_worlds();
     let (mut states, mut edges, mut sea, mut crossing) = (0, 0, 0, 0);
+    let mut read_back = 0u64;
     for (name, w, roots) in &worlds {
         let whole = answered(w, roots, 16);
         let odd = answered(w, roots, 7);
         let cut = super::chunks::with_budget(1, || answered(w, roots, 2));
+        // The snapshot cut to one resident page of each type, over a graph of
+        // its own (a side no other case takes): every read past a thread's
+        // recent pages goes back to the file.
+        let loads = super::pages::traffic().2;
+        let paged = super::pages::with_budget(1, || answered(w, roots, 5));
+        read_back += super::pages::traffic().2 - loads;
+        assert_eq!(
+            whole, paged,
+            "{name}: the graph over a snapshot of one resident page answers otherwise"
+        );
         assert_eq!(
             whole, odd,
             "{name}: the graph in seven-column chunks answers otherwise"
@@ -924,11 +935,12 @@ fn no_answer_depends_on_the_chunk_side_or_the_budget() {
     }
     eprintln!(
         "chunk invariance: {} world(s), {states} state(s), {edges} edge(s) ({crossing} crossing a \
-         two-column chunk face), {sea} open-sea state(s)",
+         two-column chunk face), {sea} open-sea state(s); {read_back} snapshot page(s) read back \
+         under a budget of one",
         worlds.len()
     );
     assert!(
-        states > 0 && edges > 0 && crossing > 0 && sea > 0,
+        states > 0 && edges > 0 && crossing > 0 && sea > 0 && read_back > 0,
         "the cases bind nothing"
     );
 }

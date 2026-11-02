@@ -266,7 +266,16 @@ chunk in one closure [NxK …]` and `reach portals: N portal edge(s) over F face
 cell(s), summed over the closures taken, at a chunk side of S (ADR-0037 §2)` as
 it ends: a portal edge is one whose two ends lie in different reach chunks, a
 face cell a cell one lands on. The portal counts depend on the chunk side and
-are written nowhere in the output tree.
+are written nowhere in the output tree. The window snapshot every graph reads
+(its cells' codes and raw membership) is held as pages of 4,096 cells, each
+distinct page once in the process and written to a scratch file when made; at
+most a budget of pages per value type is in memory (4 × the 3 × 3 ring of
+reach chunks of the tallest window built, at least 64), the rest read back on
+demand, and each thread keeps the last eight pages it read. The run prints
+`reach snapshot: P distinct page(s) of 4096 cell(s) over B byte(s) in the
+scratch file; R resident at the end, under a budget of N per value type …; L
+page(s) read back (ADR-0037 §2)`. A node table keeps each cell's first entry
+by reach chunk, the cell and its slot packed in a word each.
 The cost is disk: the town's bank (95 places) is 1.8 GB after one check, and grows with each program a place is checked with, since a node keeps up to eight variants.
 
 **The output directory** holds exactly what the last build emitted: a build into a directory a previous build wrote removes every file that build emitted and this one does not, and a directory holding anything no build wrote is refused untouched (`DW0967`, §5).

@@ -299,7 +299,7 @@ impl<'a> Track<'a> {
             while b != 0 {
                 let i = w * 64 + b.trailing_zeros() as usize;
                 b &= b - 1;
-                out.push((i as u32, self.dense.cells[i], raw.at(i)));
+                out.push((i as u32, self.dense.cells.get(i), raw.at(i)));
             }
         }
         out
@@ -531,7 +531,7 @@ impl Bank {
         variants.iter().find_map(|v| {
             let held = v.jumps == jumps
                 && v.deps.iter().all(|&(i, code, x)| {
-                    dense.cells[i as usize] == code && raw.at(i as usize) == x
+                    dense.cells.get(i as usize) == code && raw.at(i as usize) == x
                 });
             (held && v.edges.read.is_some_and(|b| volumes(b) == v.volumes))
                 .then(|| Arc::clone(&v.edges))
@@ -560,7 +560,9 @@ impl Bank {
             let diff: Vec<[i32; 3]> = v
                 .deps
                 .iter()
-                .filter(|&&(i, code, x)| dense.cells[i as usize] != code || raw.at(i as usize) != x)
+                .filter(|&&(i, code, x)| {
+                    dense.cells.get(i as usize) != code || raw.at(i as usize) != x
+                })
                 .map(|&(i, _, _)| dense.coords(i as usize))
                 .collect();
             let Some(read) = v.edges.read else {
@@ -806,7 +808,7 @@ mod tests {
         );
         assert_eq!(watch.since(), Some((at, at)));
         let deps = track.deps(&raw);
-        assert_eq!(deps, vec![(i as u32, dense.cells[i], raw.at(i))]);
+        assert_eq!(deps, vec![(i as u32, dense.cells.get(i), raw.at(i))]);
         drop(watch);
         leaf_read([4, 1, 4]);
         assert_eq!(

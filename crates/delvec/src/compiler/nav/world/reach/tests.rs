@@ -433,9 +433,9 @@ fn a_snapshot_shares_every_chunk_its_lineage_holds_alike() {
     let memo = opened.graph_memo(&params);
     let own = Dense::of(&opened);
     assert!(
-        own.cells.chunks.len() > 2,
+        own.cells.pages.len() > 2,
         "the window spans {} chunk(s); a test of sharing needs several",
-        own.cells.chunks.len()
+        own.cells.pages.len()
     );
     // Perturbed toward the vacuous shape: a snapshot that shared nothing, or
     // shared a chunk it holds otherwise, reds one of these.
@@ -448,15 +448,20 @@ fn a_snapshot_shares_every_chunk_its_lineage_holds_alike() {
     assert_eq!(own.cells.len(), memo.dense.cells.len());
     for i in 0..own.cells.len() {
         assert_eq!(
-            own.cells[i],
-            memo.dense.cells[i],
+            own.cells.get(i),
+            memo.dense.cells.get(i),
             "cell {:?}",
             own.coords(i)
         );
     }
     let raw = raw_membership(&opened, &own);
     for i in 0..raw.len() {
-        assert_eq!(raw[i], memo.extra.cells[i], "cell {:?}", own.coords(i));
+        assert_eq!(
+            raw.get(i),
+            memo.extra.cells.get(i),
+            "cell {:?}",
+            own.coords(i)
+        );
     }
     // The lineage's diff is exactly the doorway.
     let (_, diff) = memo

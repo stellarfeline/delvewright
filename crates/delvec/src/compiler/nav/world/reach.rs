@@ -251,94 +251,62 @@ enum Outside {
     Ocean { level: i32, floor_top: i32 },
 }
 
-/// A window-long array held in chunks, each chunk **interned**: every array of
-/// one value type in the process holds one copy of a chunk's values however
-/// many chunks hold them (ADR-0037 §2). The quest configurations of one
-/// campaign are worlds that differ in a few cells, and every graph a build
-/// takes is kept for the build's life (a proof asking the same world again is
-/// answered from it), so each keeps its own copy of only the chunks those
-/// cells lie in; and within one window the open sea, the air over it and the
-/// sea floor repeat column after column, so a chunk of them is held once.
-/// Held only in memory, read only by index: what a build emits never depends
-/// on which array owns a chunk.
+/// A window-long array held in pages, each page **hash-consed and paged**
+/// ([`pages`], ADR-0037 §2): every array of one value type in the process
+/// holds one copy of a page's values however many arrays hold it, and at most
+/// a budget of pages is in memory at once, the rest read back from a scratch
+/// file when asked. The quest configurations of one campaign are worlds that
+/// differ in a few cells, and every graph a build takes is kept for the
+/// build's life, so each keeps its own copy of only the pages those cells lie
+/// in; and within one window the open sea, the air over it and the sea floor
+/// repeat column after column, so a page of them is held once. Read only by
+/// index: what a build emits never depends on which pages are resident.
 pub(in crate::compiler::nav) struct Chunked<T> {
-    chunks: Vec<Arc<[T]>>,
+    pages: Vec<u32>,
     len: usize,
+    _t: std::marker::PhantomData<T>,
 }
 
-/// A chunk of a [`Chunked`] array holds `1 << CHUNK_CELLS_BITS` values.
-const CHUNK_CELLS_BITS: u32 = 12;
+/// A page of a [`Chunked`] array holds `1 << CHUNK_CELLS_BITS` values.
+const CHUNK_CELLS_BITS: u32 = pages::PAGE_BITS;
 const CHUNK_CELLS_MASK: usize = (1 << CHUNK_CELLS_BITS) - 1;
 
-/// The chunks every [`Chunked`] array of one value type holds, by the hash of
-/// their values: looked up, never iterated.
-pub(in crate::compiler::nav) type Interned<T> = Mutex<HashMap<u64, Vec<std::sync::Weak<[T]>>>>;
-
-/// A value a [`Chunked`] array interns its chunks of.
-pub(in crate::compiler::nav) trait Intern:
-    Copy + PartialEq + std::hash::Hash + 'static
-{
-    fn interned() -> &'static Interned<Self>;
-}
-
-impl Intern for Code {
-    fn interned() -> &'static Interned<Code> {
-        static I: OnceLock<Interned<Code>> = OnceLock::new();
-        I.get_or_init(Default::default)
-    }
-}
-
-impl Intern for u16 {
-    fn interned() -> &'static Interned<u16> {
-        static I: OnceLock<Interned<u16>> = OnceLock::new();
-        I.get_or_init(Default::default)
-    }
-}
-
-impl<T: Intern> Chunked<T> {
+impl<T: pages::Paged> Chunked<T> {
     fn new(values: &[T]) -> Chunked<T> {
-        use std::hash::{BuildHasher, BuildHasherDefault};
-        let mut held = T::interned().lock().expect("interned");
-        let chunks = values
-            .chunks(1 << CHUNK_CELLS_BITS)
-            .map(|v| {
-                let h = BuildHasherDefault::<flights::Mix>::default().hash_one(v);
-                let bucket = held.entry(h).or_default();
-                bucket.retain(|w| w.strong_count() > 0);
-                if let Some(a) = bucket
-                    .iter()
-                    .filter_map(std::sync::Weak::upgrade)
-                    .find(|a| **a == *v)
-                {
-                    return a;
-                }
-                let a: Arc<[T]> = Arc::from(v);
-                bucket.push(Arc::downgrade(&a));
-                a
-            })
-            .collect();
+        let store = T::store();
         Chunked {
-            chunks,
+            pages: values
+                .chunks(1 << CHUNK_CELLS_BITS)
+                .map(|v| store.intern(v))
+                .collect(),
             len: values.len(),
+            _t: std::marker::PhantomData,
         }
     }
-}
 
-impl<T: Copy + PartialEq> Chunked<T> {
     #[inline(always)]
     fn len(&self) -> usize {
         self.len
     }
 
+    /// The value at index `i`.
+    #[inline(always)]
+    fn get(&self, i: usize) -> T {
+        T::store().at(self.pages[i >> CHUNK_CELLS_BITS], i & CHUNK_CELLS_MASK)
+    }
+
     /// The indices at which this array and `other`, of one length, differ —
-    /// a shared chunk is skipped unread.
+    /// a page both hold is skipped unread.
     fn differences(&self, other: &Chunked<T>) -> Vec<usize> {
+        let store = T::store();
         let mut out = Vec::new();
-        for (k, (a, b)) in self.chunks.iter().zip(&other.chunks).enumerate() {
-            if Arc::ptr_eq(a, b) {
+        for (k, (a, b)) in self.pages.iter().zip(&other.pages).enumerate() {
+            if a == b {
                 continue;
             }
-            for (j, (x, y)) in a.iter().zip(b.iter()).enumerate() {
+            let (pa, pb) = (store.page(*a), store.page(*b));
+            let n = (self.len - (k << CHUNK_CELLS_BITS)).min(1 << CHUNK_CELLS_BITS);
+            for (j, (x, y)) in pa.iter().zip(pb.iter()).take(n).enumerate() {
                 if x != y {
                     out.push((k << CHUNK_CELLS_BITS) | j);
                 }
@@ -347,22 +315,14 @@ impl<T: Copy + PartialEq> Chunked<T> {
         out
     }
 
-    /// How many chunks this array holds that `other` does not share.
+    /// How many pages this array holds that `other` does not share.
     #[cfg(test)]
     fn own_chunks(&self, other: &Chunked<T>) -> usize {
-        self.chunks
+        self.pages
             .iter()
-            .zip(&other.chunks)
-            .filter(|(a, b)| !Arc::ptr_eq(a, b))
+            .zip(&other.pages)
+            .filter(|(a, b)| a != b)
             .count()
-    }
-}
-
-impl<T> std::ops::Index<usize> for Chunked<T> {
-    type Output = T;
-    #[inline(always)]
-    fn index(&self, i: usize) -> &T {
-        &self.chunks[i >> CHUNK_CELLS_BITS][i & CHUNK_CELLS_MASK]
     }
 }
 
@@ -448,6 +408,8 @@ impl Dense {
         hi[1] |= WINDOW_TOP_STEP - 1;
         let dims = [hi[0] - lo[0] + 1, hi[1] - lo[1] + 1, hi[2] - lo[2] + 1];
         let n = dims.iter().map(|d| *d as usize).product();
+        // The snapshot's resident budget holds this window's 3 x 3 rings.
+        pages::window(dims[1] as usize, chunks::SIDE as usize);
         let mut d = Dense {
             lo,
             dims,
@@ -583,7 +545,7 @@ impl Dense {
     #[inline]
     fn code(&self, c: [i32; 3]) -> Code {
         match self.index(c) {
-            Some(i) => self.cells[i],
+            Some(i) => self.cells.get(i),
             None => match self.outside {
                 Outside::Void => 0,
                 Outside::Ocean { level, floor_top } => {
@@ -834,7 +796,7 @@ impl Codes for Shifted<'_> {
                 if let Some(t) = self.track {
                     t.note(i, a);
                 }
-                self.dense.cells[i]
+                self.dense.cells.get(i)
             }
             None => self.dense.code(a),
         }
@@ -1768,6 +1730,15 @@ pub fn persist_reach_cache() {
             chunks::largest()
         );
         eprintln!("reach closures: {} (ADR-0037 §2)", chunks::visits());
+        let (pages, bytes, loads, budget) = pages::traffic();
+        eprintln!(
+            "reach snapshot: {pages} distinct page(s) of {} cell(s) over {bytes} byte(s) in the \
+             scratch file; {} resident at the end, under a budget of {budget} per value type \
+             (the 3 x 3 rings of the tallest window, 4 times over); {loads} page(s) read back \
+             (ADR-0037 §2)",
+            pages::PAGE_CELLS,
+            pages::resident()
+        );
         let (portals, faces) = chunks::portals();
         eprintln!(
             "reach portals: {portals} portal edge(s) over {faces} face cell(s), summed over the \
@@ -2066,7 +2037,7 @@ impl Raw {
     /// ordinal (`0` where it holds none).
     #[inline]
     pub(in crate::compiler::nav) fn at(&self, i: usize) -> u32 {
-        let x = self.cells[i];
+        let x = self.cells.get(i);
         let mut v = u32::from(x);
         if x & LEAF_BIT != 0 {
             v |= u32::from(self.leaves[&(i as u32)]) << 16;
@@ -4394,6 +4365,7 @@ impl ReachBinding {
 mod bank;
 mod chunks;
 mod flights;
+pub(in crate::compiler::nav) mod pages;
 mod persist;
 mod spill;
 pub mod states;

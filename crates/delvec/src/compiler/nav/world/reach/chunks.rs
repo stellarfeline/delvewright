@@ -675,17 +675,52 @@ pub(super) struct Table<V: Item> {
 
 #[derive(Default)]
 struct TableIndex {
-    /// Each cell's first entry: almost every cell has one.
-    first: HashMap<[i32; 3], Slot>,
-    /// Each cell's later entries, in order.
+    /// Each cell's first entry, kept by reach chunk of [`TABLE_SIDE`]: the
+    /// cell packed within its chunk ([`local`]) and the slot packed in one
+    /// word ([`pack`]) — almost every cell has one.
+    first: HashMap<Key, HashMap<u64, u64>>,
+    /// A first entry whose slot does not pack, and each cell's later entries,
+    /// in order.
     more: HashMap<[i32; 3], Vec<Slot>>,
     /// The records, when the scratch file could not be opened.
     held: Vec<u8>,
 }
 
+/// The chunk side a node table keys its entries by: what it answers never
+/// depends on it.
+const TABLE_SIDE: i32 = 32;
+
+/// A cell as a word within its chunk of [`TABLE_SIDE`]: its `x` and `z`
+/// offsets in the chunk and its whole `y`.
+fn local(c: [i32; 3]) -> u64 {
+    let lx = c[0].rem_euclid(TABLE_SIDE) as u64;
+    let lz = c[2].rem_euclid(TABLE_SIDE) as u64;
+    (lx << 37) | (lz << 32) | u64::from(c[1] as u32)
+}
+
+/// A slot as one word, offset in the low 40 bits and length above; `None`
+/// past a terabyte of file or a record of 16 MiB.
+fn pack(s: Slot) -> Option<u64> {
+    (s.at < 1 << 40 && s.len < 1 << 24).then(|| s.at | (u64::from(s.len) << 40))
+}
+
+fn unpack(w: u64) -> Slot {
+    Slot {
+        at: w & ((1 << 40) - 1),
+        len: (w >> 40) as u32,
+    }
+}
+
 impl TableIndex {
+    fn first_of(&self, c: [i32; 3]) -> Option<Slot> {
+        self.first
+            .get(&chunk_of(c, TABLE_SIDE))
+            .and_then(|m| m.get(&local(c)))
+            .map(|w| unpack(*w))
+    }
+
     fn slots(&self, c: [i32; 3]) -> Vec<Slot> {
-        let mut out: Vec<Slot> = self.first.get(&c).copied().into_iter().collect();
+        let mut out: Vec<Slot> = self.first_of(c).into_iter().collect();
         if let Some(m) = self.more.get(&c) {
             out.extend_from_slice(m);
         }
@@ -712,13 +747,17 @@ impl TableIndex {
                 }
             }
         };
-        match self.first.entry(c) {
-            std::collections::hash_map::Entry::Vacant(v) => {
-                v.insert(slot);
+        // A cell's entries are its first, then `more` in order; a first
+        // entry that does not pack opens `more` instead, and is first there.
+        let fresh = self.first_of(c).is_none() && !self.more.contains_key(&c);
+        match pack(slot).filter(|_| fresh) {
+            Some(w) => {
+                self.first
+                    .entry(chunk_of(c, TABLE_SIDE))
+                    .or_default()
+                    .insert(local(c), w);
             }
-            std::collections::hash_map::Entry::Occupied(_) => {
-                self.more.entry(c).or_default().push(slot);
-            }
+            None => self.more.entry(c).or_default().push(slot),
         }
     }
 
@@ -789,8 +828,22 @@ impl<V: Item> Table<V> {
     #[cfg(test)]
     pub(super) fn entries(&self) -> Vec<([i32; 3], Vec<V>)> {
         let ix = self.index.lock().expect("table");
-        let mut cells: Vec<[i32; 3]> = ix.first.keys().copied().collect();
+        let mut cells: Vec<[i32; 3]> = ix
+            .first
+            .iter()
+            .flat_map(|((kx, kz), m)| {
+                m.keys().map(move |w| {
+                    [
+                        kx * TABLE_SIDE + ((w >> 37) & 31) as i32,
+                        *w as u32 as i32,
+                        kz * TABLE_SIDE + ((w >> 32) & 31) as i32,
+                    ]
+                })
+            })
+            .chain(ix.more.keys().copied())
+            .collect();
         cells.sort_unstable();
+        cells.dedup();
         cells
             .into_iter()
             .map(|c| (c, ix.read(&ix.slots(c))))
@@ -829,5 +882,88 @@ impl Item for (super::Quadrants, super::NodeEdges) {
     }
     fn heap(&self) -> usize {
         self.1.edges.capacity() * std::mem::size_of::<super::Edge>()
+    }
+}
+
+#[cfg(test)]
+mod table_tests {
+    use super::{Dec, Enc, Item, Table};
+    use std::collections::BTreeMap;
+
+    #[derive(Clone, Debug, PartialEq)]
+    struct Rec([i32; 3]);
+
+    impl Item for Rec {
+        fn put(&self, e: &mut Enc) {
+            e.cell(self.0);
+        }
+        fn take(d: &mut Dec<'_>) -> Option<Self> {
+            Some(Rec(d.cell()?))
+        }
+    }
+
+    /// **A node table keyed by chunk answers what a map of its entries
+    /// answers** (ADR-0037 §2): entries kept in a generated order at cells on
+    /// both sides of zero, chunk faces and the `y` extremes included, some
+    /// cells kept several times and some refused as already held, read back
+    /// per cell in the order kept and listed whole in cell order exactly as a
+    /// `BTreeMap<[i32; 3], Vec<_>>` of the same keeps. Red on any difference.
+    #[test]
+    fn a_table_keyed_by_chunk_answers_what_a_map_answers() {
+        let mut seed = 0x6a09_e667_f3bc_c909u64;
+        let mut next = |n: u64| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed % n
+        };
+        let t: Table<Rec> = Table::default();
+        let mut m: BTreeMap<[i32; 3], Vec<Rec>> = BTreeMap::new();
+        let ys = [i32::MIN, -65, -1, 0, 63, 319, i32::MAX];
+        let (mut kept, mut refused) = (0usize, 0usize);
+        for _ in 0..4000 {
+            let faces = [-33, -32, -31, -1, 0, 1, 31, 32, 33];
+            let mut h = || {
+                if next(2) == 0 {
+                    faces[next(9) as usize]
+                } else {
+                    next(12) as i32 - 6
+                }
+            };
+            let (x, z) = (h(), h());
+            let y = if next(4) == 0 {
+                ys[next(7) as usize]
+            } else {
+                next(6) as i32 - 3
+            };
+            let c = [x, y, z];
+            let v = Rec([next(3) as i32, 0, 0]);
+            let have = m.entry(c).or_default();
+            let got = t.find_or_push(c, |x| *x == v, v.clone());
+            assert_eq!(got, v);
+            if have.contains(&v) {
+                refused += 1;
+            } else {
+                have.push(v);
+                kept += 1;
+            }
+        }
+        for (c, vs) in &m {
+            assert_eq!(&t.with(*c, |l| l.to_vec()), vs, "{c:?}");
+        }
+        assert_eq!(t.with([1000, 0, 1000], |l| l.len()), 0);
+        assert_eq!(
+            t.entries(),
+            m.iter().map(|(c, v)| (*c, v.clone())).collect::<Vec<_>>()
+        );
+        let several = m.values().filter(|v| v.len() > 1).count();
+        eprintln!(
+            "table: {kept} entr(ies) kept over {} cell(s), {several} with several, {refused} refused as held",
+            m.len()
+        );
+        assert!(
+            kept > 0 && refused > 0 && several > 0,
+            "the cases bind nothing"
+        );
     }
 }
