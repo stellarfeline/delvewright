@@ -13,7 +13,7 @@ for every NPC live in it, `{at, doing, dialogue}` — position first, story
 second. `guidance` is usually omitted: write it only to hide the compass or
 announcements by default, or to give the journal a `manual`.
 
-Then `dialogue.json`. Three rules that are not style preferences:
+Then `dialogue.json`. Four rules that are not style preferences:
 
 - **A dialogue option is a button caption, not a sentence.** Vanilla draws each
   option on a fixed 150-GUI-px button and *scrolls* a label that does not fit.
@@ -26,6 +26,7 @@ Then `dialogue.json`. Three rules that are not style preferences:
   leads (`next`) to a node in which the speaker answers it plainly; an option
   with no `next` closes the dialog, so a question there is asked into silence.
   Its `complete-objective` still fires when it is chosen.
+- **Every `talk-to` keeps one completing option with no gate.** An option carrying `requires_flags`, `forbids_flags` or `requires_state` may be hidden the moment the beat needs it, so a gated completing option (an ending that reads the run, say) stands beside an ungated one, never alone. `validate` refuses a `talk-to` whose every completing option is gated (`DW0191`).
 
 **A line names a thing as the player sees it.** Every title, hint, notice and dialogue line calls a built object by the word a player would use for the block or build in front of them: a vanilla sign is a sign or a notice, never a slate. Where the story needs a noun the vanilla block does not read as, build the thing out of blocks so it reads as that noun, or change the noun. This rule is authored, not cited; the engine does not check it and the playtest judges it.
 

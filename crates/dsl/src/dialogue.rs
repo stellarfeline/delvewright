@@ -136,7 +136,7 @@ pub struct DialogueOption {
     /// objective's `requires_flags`: an ungated option (empty) is unchanged; a
     /// gated option is hidden until every referenced flag has been set by a
     /// `set-flag` effect (quest or dialogue). Validation guarantees a flag-gated
-    /// option cannot make a critical-path node unreachable (`DW0191`).
+    /// option cannot be the only way to complete a `talk-to` (`DW0191`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub requires_flags: Vec<FlagId>,
     /// Negative flag gate (DSL v0.6): the option is
@@ -149,7 +149,8 @@ pub struct DialogueOption {
     /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison must
     /// hold for this gate to be open. The third field of the one gate, carried by
     /// every gate consumer — never by the verb that first wanted it. Default
-    /// empty: no numeric term.
+    /// empty: no numeric term. A `requires_state`-gated option counts as
+    /// *gated* for `DW0191`, as a flag-gated one does.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub requires_state: Vec<StateCompare>,
     /// Effects fired when this option is chosen.
@@ -352,11 +353,12 @@ crate::dw_code! {
 }
 
 crate::dw_code! {
-    /// (v0.4) A `talk-to` objective has no **ungated** reachable completing
-    /// dialogue option — every completing option is `requires_flags`-gated, so
-    /// the objective can deadlock the moment it activates (spec-0008 §1). Keep at
-    /// least one ungated completing path.
-    pub const DIALOGUE_FLAG_DEADLOCK: DwCode = DwCode::new("DW0191", ExitTier::Build);
+    /// A `talk-to` objective has no **ungated** completing dialogue option —
+    /// every completing option carries a gate of its own (`requires_flags`,
+    /// `forbids_flags` or `requires_state`), so the objective can deadlock the
+    /// moment it activates (spec-0008 §1). Keep at least one ungated completing
+    /// option.
+    pub const DIALOGUE_GATED_COMPLETION: DwCode = DwCode::new("DW0191", ExitTier::Build);
 }
 
 crate::dw_code! {
@@ -551,9 +553,10 @@ pub(crate) fn dialogue_graph_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     }
 }
 
-/// Dialogue v0.4: option `requires_flags` resolve against declared flags
-/// (`DW0172`); a `talk-to` whose completing options are all flag-gated is a
-/// potential deadlock (`DW0191`, spec-0008 §1).
+/// Dialogue option `requires_flags` and `forbids_flags` resolve against
+/// declared flags (`DW0172`); a `talk-to` whose completing options all carry a
+/// gate — any of the option's three gate fields — is a potential deadlock
+/// (`DW0191`, spec-0008 §1).
 pub(crate) fn dialogue_flag_checks(c: &Campaign, flags: &BTreeSet<&str>, d: &mut Vec<Diagnostic>) {
     use crate::DialogueEffect;
     // Option requires_flags resolution.
@@ -605,10 +608,11 @@ pub(crate) fn dialogue_flag_checks(c: &Campaign, flags: &BTreeSet<&str>, d: &mut
         }
     }
     // Per-NPC: objectives completed by an UNGATED option in that npc's tree. An
-    // option gated either way — `requires_flags` (hidden until set) or, v0.6,
-    // `forbids_flags` (hidden once set) — counts as gated: the static analysis
-    // does no temporal reasoning about which flags end up set, so any
-    // conditionally-visible option may be unavailable exactly when needed.
+    // option carrying any gate field — `requires_flags` (hidden until set),
+    // `forbids_flags` (hidden once set) or `requires_state` (hidden while a
+    // comparison fails) — counts as gated: the static analysis does no temporal
+    // reasoning about which flags end up set or which values a datum holds, so
+    // any conditionally-drawn option may be unavailable exactly when needed.
     let mut ungated_completes: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
     let mut any_completes: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
     for tree in &c.dialogue.content.dialogues {
@@ -621,7 +625,7 @@ pub(crate) fn dialogue_flag_checks(c: &Campaign, flags: &BTreeSet<&str>, d: &mut
                             .entry(npc)
                             .or_default()
                             .insert(objective.as_str());
-                        if opt.requires_flags.is_empty() && opt.forbids_flags.is_empty() {
+                        if opt.gate().is_empty() {
                             ungated_completes
                                 .entry(npc)
                                 .or_default()
@@ -640,17 +644,18 @@ pub(crate) fn dialogue_flag_checks(c: &Campaign, flags: &BTreeSet<&str>, d: &mut
                 let completed = any_completes.get(npc).is_some_and(|s| s.contains(oid));
                 let ungated = ungated_completes.get(npc).is_some_and(|s| s.contains(oid));
                 // Only when it IS completed somewhere (else DW0123 fires) but every
-                // completing option is flag-gated.
+                // completing option is gated.
                 if completed && !ungated {
                     d.push(Diagnostic::error(
-                        DIALOGUE_FLAG_DEADLOCK,
+                        DIALOGUE_GATED_COMPLETION,
                         "quests",
                         format!("/content/quests/{qi}/objectives/{oi}"),
                         format!(
                             "`talk-to` objective `{id}` has no ungated completing dialogue option \
-                             in npc `{npc}`'s tree — every completing option is `requires_flags`- \
-                             or `forbids_flags`-gated, so it can be unavailable the moment it is \
-                             needed; keep at least one completing option with no flag gate"
+                             in npc `{npc}`'s tree — every completing option carries \
+                             `requires_flags`, `forbids_flags` or `requires_state`, so it can be \
+                             unavailable the moment it is needed; keep at least one completing \
+                             option with no gate"
                         ),
                     ));
                 }
