@@ -60,6 +60,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import tomllib
 import urllib.error
@@ -750,14 +751,38 @@ def parse_translations(content: str) -> dict[str, str]:
 Poster = Callable[[str, dict[str, Any], dict[str, str], int], dict[str, Any]]
 
 
+class ReplyDeadline(TimeoutError):
+    """The whole request, reply included, did not finish inside its deadline."""
+
+
 def post_json(
     url: str, body: dict[str, Any], headers: dict[str, str], timeout: int
 ) -> dict[str, Any]:
-    """POST a JSON body and return the parsed JSON response."""
+    """POST a JSON body and return the parsed JSON response.
+
+    `timeout` is the deadline for the WHOLE request. `urlopen(timeout=)` bounds
+    each socket wait, so a reply that trickles in a byte at a time never trips it;
+    the request therefore runs on a worker thread the caller stops waiting for.
+    """
     data = json.dumps(body, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(url, data=data, headers=headers, method="POST")
-    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 (configured URL)
-        return json.loads(resp.read().decode("utf-8"))
+    outcome: dict[str, Any] = {}
+
+    def run() -> None:
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 (configured URL)
+                outcome["value"] = json.loads(resp.read().decode("utf-8"))
+        except BaseException as exc:  # noqa: BLE001 — re-raised on the caller's thread
+            outcome["error"] = exc
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(timeout)
+    if worker.is_alive():
+        raise ReplyDeadline(f"no complete reply within {timeout}s")
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome["value"]
 
 
 #: How much of a provider's error body reaches the diagnostic. Enough for the
@@ -820,6 +845,8 @@ def chat_once(
             )
             if exc.code in (400, 401, 403, 404, 422):
                 raise last from None  # not transient: bad key/model/url
+        except ReplyDeadline as exc:
+            last = TranslateError(f"{cfg.endpoint} on step `{step.name}`: {exc}")
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             last = TranslateError(f"{cfg.endpoint} unreachable: {exc}")
         except (KeyError, IndexError, TypeError) as exc:
@@ -1443,6 +1470,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         except TranslateError as exc:
             print(f"error: {exc}", file=sys.stderr)
+            print(
+                f"{len(pending)} row(s) not translated, no sidecar written "
+                f"(batch {i} of {len(chunks)} failed): " + ", ".join(e.key for e in pending),
+                file=sys.stderr,
+            )
             return 1
         translated.update(result.accepted)
         refused.update(result.refused)
