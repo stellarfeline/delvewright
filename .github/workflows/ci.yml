@@ -349,6 +349,12 @@ jobs:
       # gate runs inside it (`cli.rs`). Every test runs to its end.
       - name: cargo nextest, instrumented (incl. determinism double-build gate)
         run: cargo llvm-cov --no-report nextest --workspace --locked --no-fail-fast --profile ci
+      # The doc tests, which nextest cannot run (it lists only test binaries):
+      # ten on this tree, eight of them `compile_fail` proofs that a private
+      # surface stays private (`compiler::framing`). Uninstrumented: doc-test
+      # coverage needs nightly.
+      - name: cargo test --doc (the doc tests nextest does not run)
+        run: cargo test --doc --workspace --locked
       # Absolute file names: cargo-llvm-cov 0.9.1's `--json --remap-path-prefix`
       # writes an export with an empty `files` list (measured), and the floor
       # strips the workspace root the export itself names.
