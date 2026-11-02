@@ -29,13 +29,18 @@
 
 use super::bank::{Run, Summary, Variant};
 use super::{Death, Edge, EdgeKind, FlownKey, NodeEdges, RestKind};
+use std::io::Read as _;
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
 /// The environment variable that names the directory.
 pub const ENV: &str = "DELVEC_REACH_CACHE";
 
-const MAGIC: &[u8; 8] = b"DWBANK02";
+const MAGIC: &[u8; 8] = b"DWBANK03";
+
+/// The nodes of one reach chunk ([`super::chunks::SIDE`]): a file holds the
+/// bank chunk after chunk, and a run reads and writes it one chunk at a time.
+pub(super) type Section = Vec<(FlownKey, Vec<Arc<Variant>>)>;
 
 /// The directory the verb names when [`ENV`] is not set at all.
 static DEFAULT: OnceLock<PathBuf> = OnceLock::new();
@@ -103,21 +108,24 @@ fn reclaim_others() {
     });
 }
 
-/// The variants a file holds for the bank keyed `key`; none where the cache is
-/// off, the file is absent, or it does not decode.
-pub(super) fn load(key: &str) -> Vec<(FlownKey, Vec<Arc<Variant>>)> {
+/// Hand each chunk's nodes the file of the bank keyed `key` holds to `put`,
+/// one chunk at a time (ADR-0037 §2); whether the whole file read. `false`
+/// where the cache is off, the file is absent, or it does not decode — and
+/// then whatever `put` was handed before the failure is not the bank's.
+pub(super) fn load(key: &str, put: &mut dyn FnMut(Section)) -> bool {
     let Some(path) = file_of(key) else {
-        return Vec::new();
+        return false;
     };
-    let Ok(bytes) = std::fs::read(&path) else {
-        return Vec::new();
+    let Ok(file) = std::fs::File::open(&path) else {
+        return false;
     };
-    decode(key, &bytes).unwrap_or_default()
+    read_from(&mut std::io::BufReader::new(file), key, put).is_some()
 }
 
-/// Write the bank keyed `key` to its file, replacing it whole: a sibling
-/// written first and renamed over it, so a reader never sees half of one.
-pub(super) fn store(key: &str, nodes: &[(FlownKey, Vec<Arc<Variant>>)]) {
+/// Write the bank keyed `key` to its file, chunk by chunk as `sections`
+/// gives them, replacing it whole: a sibling written first and renamed over
+/// it, so a reader never sees half of one.
+pub(super) fn store(key: &str, sections: &mut dyn Iterator<Item = Section>) {
     let Some(path) = file_of(key) else {
         return;
     };
@@ -129,7 +137,13 @@ pub(super) fn store(key: &str, nodes: &[(FlownKey, Vec<Arc<Variant>>)]) {
     }
     reclaim_others();
     let tmp = path.with_extension(format!("bank.{}", std::process::id()));
-    if std::fs::write(&tmp, encode(key, nodes)).is_ok() && std::fs::rename(&tmp, &path).is_err() {
+    let written = std::fs::File::create(&tmp).and_then(|f| {
+        let mut w = std::io::BufWriter::new(f);
+        write_to(&mut w, key, sections)?;
+        use std::io::Write as _;
+        w.flush()
+    });
+    if written.is_err() || std::fs::rename(&tmp, &path).is_err() {
         let _ = std::fs::remove_file(&tmp);
     }
 }
@@ -278,21 +292,36 @@ pub(super) fn decode_variant(bytes: &[u8]) -> Option<Variant> {
     (d.at == bytes.len()).then_some(v)
 }
 
-fn encode(key: &str, nodes: &[(FlownKey, Vec<Arc<Variant>>)]) -> Vec<u8> {
+/// The file: the magic, the key, then each section as its byte length and
+/// its nodes, then a length of zero — so a file cut short is refused.
+fn write_to(
+    w: &mut dyn std::io::Write,
+    key: &str,
+    sections: &mut dyn Iterator<Item = Section>,
+) -> std::io::Result<()> {
     let mut e = Enc::default();
     e.0.extend_from_slice(MAGIC);
     e.len(key.len());
     e.0.extend_from_slice(key.as_bytes());
-    e.len(nodes.len());
-    for ((c, q), vs) in nodes {
-        e.cell(*c);
-        e.u16(*q);
-        e.len(vs.len());
-        for v in vs {
-            e.variant(v);
+    w.write_all(&e.0)?;
+    for nodes in sections {
+        if nodes.is_empty() {
+            continue;
         }
+        let mut e = Enc::default();
+        e.len(nodes.len());
+        for ((c, q), vs) in &nodes {
+            e.cell(*c);
+            e.u16(*q);
+            e.len(vs.len());
+            for v in vs {
+                e.variant(v);
+            }
+        }
+        w.write_all(&(e.0.len() as u64).to_le_bytes())?;
+        w.write_all(&e.0)?;
     }
-    e.0
+    w.write_all(&0u64.to_le_bytes())
 }
 
 /// The reader of the format; [`super::chunks`] reads its records with it too.
@@ -452,34 +481,87 @@ impl Dec<'_> {
     }
 }
 
-fn decode(key: &str, bytes: &[u8]) -> Option<Vec<(FlownKey, Vec<Arc<Variant>>)>> {
-    let mut d = Dec { b: bytes, at: 0 };
-    if d.take(MAGIC.len())? != MAGIC {
+/// Read a file [`write_to`] wrote for `key`, handing each section to `put`
+/// as it is read; `None` where it does not decode whole.
+fn read_from(r: &mut dyn std::io::Read, key: &str, put: &mut dyn FnMut(Section)) -> Option<()> {
+    let u64_of = |r: &mut dyn std::io::Read| {
+        let mut b = [0u8; 8];
+        r.read_exact(&mut b).ok().map(|_| u64::from_le_bytes(b))
+    };
+    let mut magic = [0u8; 8];
+    r.read_exact(&mut magic).ok()?;
+    if &magic != MAGIC {
         return None;
     }
-    let n = d.len()?;
-    if d.take(n)? != key.as_bytes() {
+    let n = usize::try_from(u64_of(r)?).ok()?;
+    if n != key.len() {
         return None;
     }
-    let n = d.len()?;
-    let mut out = Vec::with_capacity(n.min(1 << 20));
-    for _ in 0..n {
-        let c = d.cell()?;
-        let q = d.u16()?;
-        let m = d.len()?;
-        let mut vs = Vec::with_capacity(m.min(64));
-        for _ in 0..m {
-            vs.push(Arc::new(d.variant()?));
+    let mut k = vec![0u8; n];
+    r.read_exact(&mut k).ok()?;
+    if k != key.as_bytes() {
+        return None;
+    }
+    let mut buf: Vec<u8> = Vec::new();
+    loop {
+        let len = usize::try_from(u64_of(r)?).ok()?;
+        if len == 0 {
+            // The end: nothing may follow it.
+            let mut rest = [0u8; 1];
+            return (r.read(&mut rest).ok()? == 0).then_some(());
         }
-        out.push(((c, q), vs));
+        // Read as far as the file goes, never allocated ahead of it: a
+        // damaged length is refused at the file's end.
+        buf.clear();
+        std::io::Read::take(&mut *r, len as u64)
+            .read_to_end(&mut buf)
+            .ok()?;
+        if buf.len() != len {
+            return None;
+        }
+        let mut d = Dec { b: &buf, at: 0 };
+        let n = d.len()?;
+        let mut out = Vec::with_capacity(n.min(1 << 16));
+        for _ in 0..n {
+            let c = d.cell()?;
+            let q = d.u16()?;
+            let m = d.len()?;
+            let mut vs = Vec::with_capacity(m.min(64));
+            for _ in 0..m {
+                vs.push(Arc::new(d.variant()?));
+            }
+            out.push(((c, q), vs));
+        }
+        if d.at != buf.len() {
+            return None;
+        }
+        put(out);
     }
-    (d.at == bytes.len()).then_some(out)
 }
 
+/// `sections` written as a file and read back, section by section; `None`
+/// where it does not decode.
 #[cfg(test)]
-pub(super) fn round_trip(
-    key: &str,
-    nodes: &[(FlownKey, Vec<Arc<Variant>>)],
-) -> Option<Vec<(FlownKey, Vec<Arc<Variant>>)>> {
-    decode(key, &encode(key, nodes))
+pub(super) fn round_trip(key: &str, sections: Vec<Section>) -> Option<Vec<Section>> {
+    let mut bytes = Vec::new();
+    write_to(&mut bytes, key, &mut sections.into_iter()).ok()?;
+    let mut out = Vec::new();
+    read_from(&mut bytes.as_slice(), key, &mut |s| out.push(s))?;
+    Some(out)
+}
+
+/// The bytes `sections` take as a file, for a test that cuts one short.
+#[cfg(test)]
+pub(super) fn file_bytes(key: &str, sections: Vec<Section>) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    write_to(&mut bytes, key, &mut sections.into_iter()).expect("into memory");
+    bytes
+}
+
+/// Whether `bytes` read whole as the file of `key`, and the nodes they hold.
+#[cfg(test)]
+pub(super) fn read_bytes(key: &str, bytes: &[u8]) -> Option<usize> {
+    let mut n = 0;
+    read_from(&mut &bytes[..], key, &mut |s| n += s.len())?;
+    Some(n)
 }

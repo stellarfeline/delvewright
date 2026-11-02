@@ -224,7 +224,11 @@ run over a world of the same window takes every node whose read cells hold
 the same, unflown (`docs/reference/delvec/compiler/nav.md`, the node bank). A
 file is named for the bank's key and the sha256 of the running executable's
 own bytes, so a run reads only what its own binary wrote; a file that does not
-decode is read as empty, and a file is replaced whole by a rename. A file's
+decode is read as empty, and a file is replaced whole by a rename. A file
+holds the bank reach chunk by reach chunk (32 × 32 columns), each section
+length-prefixed and the last followed by a zero length, and a run reads and
+writes it one chunk's nodes at a time, so neither costs more memory than the
+largest chunk's variants (ADR-0037 §2). A file's
 name starts with the executable's hash, and a run that writes a bank removes
 the bank files in the directory another executable wrote. Unset, `delvec
 detail` (the commit, `--all` and `--check`) keeps the bank at

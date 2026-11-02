@@ -481,8 +481,33 @@ fn a_bank_read_back_from_its_file_answers_what_flying_gives() {
     let params = ReachParams::shipped(opened.unbounded_fall);
     let memo = opened.graph_memo(&params);
     let held = memo.bank.held();
-    let read = super::persist::round_trip("key", &held).expect("the file decodes");
+    // Written in two sections and in one, the bank reads back alike; a file
+    // cut short anywhere, or carrying a byte past its end, reads as nothing.
+    let half = held.len() / 2;
+    let sections = vec![held[..half].to_vec(), held[half..].to_vec()];
+    let read: Vec<_> = super::persist::round_trip("key", sections.clone())
+        .expect("the file decodes")
+        .into_iter()
+        .flatten()
+        .collect();
     assert_eq!(read.len(), held.len());
+    for (a, b) in read.iter().zip(&held) {
+        assert_eq!(a.0, b.0);
+        assert_eq!(a.1.len(), b.1.len());
+    }
+    let bytes = super::persist::file_bytes("key", sections);
+    assert_eq!(super::persist::read_bytes("key", &bytes), Some(held.len()));
+    assert_eq!(super::persist::read_bytes("other", &bytes), None);
+    for cut in [8, bytes.len() / 3, bytes.len() / 2, bytes.len() - 1] {
+        assert_eq!(
+            super::persist::read_bytes("key", &bytes[..cut]),
+            None,
+            "cut at {cut}"
+        );
+    }
+    let mut longer = bytes.clone();
+    longer.push(0);
+    assert_eq!(super::persist::read_bytes("key", &longer), None);
     let back = bank::Bank::holding(read);
     let flown: Vec<FlownKey> = memo
         .flown

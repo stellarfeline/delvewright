@@ -635,6 +635,31 @@ impl Bank {
     }
 
     /// Every variant the bank holds, read back, in key order.
+    /// Every variant, chunk by chunk ([`super::chunks::SIDE`]) and in key
+    /// order within a chunk, read back from the spill one chunk at a time.
+    fn held_by_chunk(&self) -> impl Iterator<Item = super::persist::Section> + '_ {
+        let mut keys: Vec<super::FlownKey> =
+            self.nodes.lock().expect("bank").keys().copied().collect();
+        let side = super::chunks::SIDE;
+        keys.sort_by_key(|k| (super::chunks::chunk_of(k.0, side), *k));
+        let mut groups: Vec<Vec<super::FlownKey>> = Vec::new();
+        for k in keys {
+            match groups.last_mut() {
+                Some(g)
+                    if super::chunks::chunk_of(g[0].0, side)
+                        == super::chunks::chunk_of(k.0, side) =>
+                {
+                    g.push(k)
+                }
+                _ => groups.push(vec![k]),
+            }
+        }
+        groups
+            .into_iter()
+            .map(|g| g.into_iter().map(|k| (k, self.variants(&k))).collect())
+    }
+
+    #[cfg(test)]
     fn held_all(&self) -> Vec<(super::FlownKey, Vec<Arc<Variant>>)> {
         let keys: Vec<super::FlownKey> = self.nodes.lock().expect("bank").keys().copied().collect();
         let mut v: Vec<_> = keys.into_iter().map(|k| (k, self.variants(&k))).collect();
@@ -694,8 +719,25 @@ pub(super) fn bank(key: String) -> Arc<Bank> {
     if let Some(b) = banks.get(&key) {
         return Arc::clone(b);
     }
-    let held = super::persist::load(&key);
-    let b = Arc::new(Bank::new(key.clone(), held));
+    // Read chunk by chunk into the bank's spill; a file that does not
+    // decode whole leaves an empty bank, never part of one.
+    let mut b = Bank::new(key.clone(), Vec::new());
+    let mut read = 0usize;
+    let whole = super::persist::load(&key, &mut |section| {
+        for (k, vs) in section {
+            read += vs.len();
+            for v in vs {
+                b.put(k, &v);
+            }
+        }
+    });
+    if !whole && read > 0 {
+        b = Bank::new(key.clone(), Vec::new());
+    }
+    if whole {
+        b.loaded = b.census().0;
+    }
+    let b = Arc::new(b);
     banks.insert(key, Arc::clone(&b));
     b
 }
@@ -711,8 +753,7 @@ pub(super) fn persist_all() {
         if b.census().0 <= b.loaded {
             continue;
         }
-        let nodes = b.held_all();
-        super::persist::store(&b.key, &nodes);
+        super::persist::store(&b.key, &mut b.held_by_chunk());
     }
 }
 
