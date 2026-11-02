@@ -66,6 +66,7 @@ inputs = [
   { glob = "docs/reference/dsl/**", why = "the catalog pages of the `dsl` crate's modules, which `check-dw-codes.py` (run by `crates/delvec/tests/codes.rs`) holds to the declarations" },
   { glob = "tools/creator/i18n-translate.py", why = "`crates/delvec/tests/i18n_sidecar.rs` runs the fixture driver, which loads this tool's writer" },
   { glob = "tools/tests/fixtures/i18n-sidecar/**", why = "`crates/delvec/tests/i18n_sidecar.rs` runs `write_sidecar.py`" },
+  { glob = "tools/lib/local_config.py", why = "`tools/creator/refscore.py` and `tools/creator/i18n-translate.py`, which crate tests run, import it to find the local config" },
   { glob = "tools/maintenance/probe-drowned-engagement.py", why = "`crates/delvec/src/compiler/engage.rs`'s `the_probe_measures_this_table` reads it" },
   { glob = "docs/reference/compiler.md", why = "`crates/delvec/tests/hand_camera.rs` reads the camera record's field paragraph" },
   { glob = "tools/ci/check-written-world.py", why = "`crates/delvec/tests/post_beat_camera.rs` runs it against perturbed written worlds (`DW0955`)" },

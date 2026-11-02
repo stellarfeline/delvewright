@@ -406,7 +406,7 @@ The subcommand tree is the whole surface, and this page uses all of it:
 | `delvec prefab` | admits a prefab into the library |
 | `delvec schem` | converts an outside schematic |
 | `delvec harvest` | turns in-game playtest notes into a report |
-| `delvec l10n-inventory` | the transcreation input: each row's English, kind, speaker and situation |
+| `delvec l10n-inventory` | the transcreation input: each row's English, kind, speaker and situation, and an art title's `glyphs` |
 | `delvec l10n-apply` | writes a language's sidecar from a table of English → translation |
 
 Ask the binary rather than this table when you need the exact shape:

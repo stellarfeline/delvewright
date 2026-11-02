@@ -72,7 +72,11 @@ from typing import Any, Callable, Iterable, Sequence
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 CONFIG_FILE = "delvewright.toml"
-LOCAL_CONFIG_FILE = "delvewright.local.toml"
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+from local_config import LOCAL_CONFIG_FILE, local_config_path  # noqa: E402
+
+sys.path.pop(0)
 
 #: The only provider protocol implemented: POST <base_url>/chat/completions with
 #: an OpenAI-shaped body. DeepSeek, Moonshot/Kimi, OpenAI and most self-hosted
@@ -152,7 +156,8 @@ def load_config(
     root: Path = REPO_ROOT, explicit: Path | None = None
 ) -> I18nConfig | None:
     """Resolve `[i18n]` from `delvewright.toml`, overridden key-by-key by the
-    gitignored `delvewright.local.toml`.
+    gitignored `delvewright.local.toml` (`tools/lib/local_config.py`: a linked
+    worktree without its own reads its main checkout's).
 
     Returns `None` when neither file declares an `[i18n]` section — the documented
     fallback (the `/new-delve` skill then translates in-agent). Raises
@@ -166,7 +171,7 @@ def load_config(
         merged = dict(section)
     else:
         base = _read_toml(root / CONFIG_FILE).get("i18n") or {}
-        local = _read_toml(root / LOCAL_CONFIG_FILE).get("i18n") or {}
+        local = _read_toml(local_config_path(root)).get("i18n") or {}
         if not base and not local:
             return None
         merged = {**base, **local}
@@ -217,6 +222,9 @@ class Entry:
     existing: str | None = None
     #: `existing` was made from English the line no longer reads (DW0187).
     stale: bool = False
+    #: Every character the row's font can draw, when the inventory restricts it:
+    #: an art title's `delve:art` set (`DW0328`). `None` = any.
+    glyphs: str | None = None
 
     @property
     def is_name(self) -> bool:
@@ -278,6 +286,7 @@ def parse_inventory(doc: dict[str, Any]) -> Inventory:
                 situation=tuple(e.get("situation", ())),
                 existing=e.get("existing"),
                 stale=bool(e.get("stale", False)),
+                glyphs=e.get("glyphs"),
             )
             for e in doc["entries"]
         ]
@@ -338,6 +347,9 @@ Rules:
     line, never the whole sign, and keep it to the board.
 - `situation` is context, never text to render: use it to understand what the
   line must do, then write only the line.
+- A row with `glyphs` is drawn in a title font that has only those characters.
+  Write it using no other character; where {lang} has no letters among them,
+  write a Latin rendition (its romanization, or the English).
 - Every name in the glossary is written exactly as the glossary renders it, every
   time it appears. One name, one rendering; two names never share one.
 - Preserve every placeholder (`%s`, `%1$s`), formatting code and digit exactly.
@@ -524,6 +536,8 @@ def _intent(e: Entry) -> dict[str, Any]:
         row["speaker"] = e.speaker
     if e.situation:
         row["situation"] = list(e.situation)
+    if e.glyphs is not None:
+        row["glyphs"] = e.glyphs
     return row
 
 
@@ -1008,6 +1022,13 @@ def check_row(e: Entry, text: str, names: dict[str, str], lang: str) -> list[str
         for name in mentioned_names(e.en, names):
             if names[name] not in text:
                 failures.append(f"the name `{name}` must be written `{names[name]}`")
+    if e.glyphs is not None:
+        undrawn = sorted({c for c in PLACEHOLDER_RE.sub("", text) if c not in e.glyphs})
+        if undrawn:
+            failures.append(
+                f"the title font draws only the row's `glyphs`; it cannot draw "
+                f"{' '.join(undrawn)}"
+            )
     return failures
 
 
