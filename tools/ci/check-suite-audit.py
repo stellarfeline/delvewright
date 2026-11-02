@@ -145,7 +145,7 @@ def measure(args, root: pathlib.Path) -> int:
 
     `unique_regions`: production regions executed by a test of the file and by
     no test of any other file or binary. `subsumed_tests`: the file's tests
-    whose region set is a subset of one test's set in another binary — the
+    whose region set is a subset of another test's set (in any binary) — the
     HGS candidates of spec-0126 §3.2, never a verdict. A row's verdict and
     proof are carried over from the existing table when it has one, else
     `keep`."""
@@ -189,7 +189,7 @@ def measure(args, root: pathlib.Path) -> int:
         byte, bit = rare >> 3, 1 << (rare & 7)
         mine = ints[k]
         for u in keys:
-            if u[0] == k[0]:
+            if u == k:
                 continue
             if bitmaps[u][byte] & bit and mine & ~ints[u] == 0:
                 return True
