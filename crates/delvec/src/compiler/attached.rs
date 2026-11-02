@@ -305,13 +305,13 @@ fn judge_load(load: &BlockMap, surround: &Surround) -> Binding {
             Some(Needs::Free) => {}
             Some(Needs::Support(_)) => {
                 b.attached += 1;
-                match judge_cell(*cell, name, &at_load) {
+                match judge_cell(cell, name, &at_load) {
                     Some(Ok(())) => b.held += 1,
                     Some(Err(wants)) => b.dropped.push(Dropped {
-                        cell: *cell,
+                        cell,
                         block: name.to_string(),
                         wants,
-                        piece: surround.inside(*cell).map(str::to_string),
+                        piece: surround.inside(cell).map(str::to_string),
                     }),
                     None => {}
                 }

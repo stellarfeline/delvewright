@@ -478,7 +478,7 @@ pub struct LightModel {
 
 /// The inclusive box `cells` occupy, or the unit box at the origin when there
 /// are none.
-fn occupied_box<'a>(cells: impl Iterator<Item = &'a [i32; 3]>) -> ([i32; 3], [i32; 3]) {
+fn occupied_box(cells: impl Iterator<Item = [i32; 3]>) -> ([i32; 3], [i32; 3]) {
     let mut min = [i32::MAX; 3];
     let mut max = [i32::MIN; 3];
     let mut any = false;
@@ -511,7 +511,7 @@ impl LightModel {
     /// Build directly from a cell→block map (test entry point; no plan needed),
     /// over the box the given cells occupy.
     pub fn from_blocks(blocks: BTreeMap<[i32; 3], String>) -> Self {
-        let (min, max) = occupied_box(blocks.keys());
+        let (min, max) = occupied_box(blocks.keys().copied());
         LightModel::from_blocks_within(blocks, min, max)
     }
 
@@ -742,7 +742,7 @@ impl LightField {
             max,
             effective_sky,
             true,
-            model.blocks.iter().map(|(c, b)| (*c, b.as_str())),
+            model.blocks.iter().map(|(c, b)| (c, b.as_str())),
         )
     }
 

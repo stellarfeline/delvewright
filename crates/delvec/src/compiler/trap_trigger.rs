@@ -186,8 +186,12 @@ mod tests {
     /// cell; over a plate or a tripwire it is not.
     #[test]
     fn a_step_trigger_over_air_is_dw0917() {
-        let e = check_step_triggers(&BTreeMap::new(), &[step([4, 1, 7])], &BTreeMap::new())
-            .unwrap_err();
+        let e = check_step_triggers(
+            &crate::compiler::blockstate::BlockMap::new(),
+            &[step([4, 1, 7])],
+            &BTreeMap::new(),
+        )
+        .unwrap_err();
         assert_eq!(e.code, "DW0917");
         assert!(e.message.contains("trigger/doormat"), "{}", e.message);
         assert!(e.message.contains("[4, 1, 7]"), "{}", e.message);
@@ -243,7 +247,7 @@ mod tests {
     #[test]
     fn a_trapped_chest_trap_over_air_is_dw0917() {
         let e = check_trap_triggers(
-            &BTreeMap::new(),
+            &crate::compiler::blockstate::BlockMap::new(),
             &[trap(TrapTrigger::TrappedChest, [4, 1, 7])],
             &BTreeMap::new(),
         )

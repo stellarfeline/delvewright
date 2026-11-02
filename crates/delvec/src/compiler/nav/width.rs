@@ -585,9 +585,8 @@ pub fn judge(way: Way, ground: &Ground<'_>) -> WayRecord {
     };
     let mut base: BlockMap = ground
         .shipped
-        .range(wlo..=whi)
-        .filter(|(c, _)| inside(c))
-        .map(|(c, b)| (*c, *b))
+        .in_box(wlo, whi)
+        .map(|(c, b)| (c, *b))
         .collect();
     own_open(&mut base);
     let open_gates: BTreeSet<[i32; 3]> = ground
@@ -2847,11 +2846,7 @@ mod tests {
                     let (lo, _) = column_reach(&column(1));
                     let (_, hi) = column_reach(&column(2));
                     let (wlo, whi) = window(lo, hi);
-                    let local_map: BlockMap = m
-                        .range(wlo..=whi)
-                        .filter(|(k, _)| (0..3).all(|i| wlo[i] <= k[i] && k[i] <= whi[i]))
-                        .map(|(k, v)| (*k, *v))
-                        .collect();
+                    let local_map: BlockMap = m.in_box(wlo, whi).map(|(k, v)| (k, *v)).collect();
                     let local = World::from_occupancy(
                         crate::compiler::assembled::occupancy_over(&local_map, &open),
                         Premises::geometry_only(),

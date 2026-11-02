@@ -409,7 +409,7 @@ impl WorldMaker {
             assembled.reached.clone(),
         );
         for c in picture.keys() {
-            ground.mark(*c);
+            ground.mark(c);
         }
         WorldMaker {
             biome: crate::compiler::horizon::biome_map(plan),
@@ -435,11 +435,11 @@ impl WorldMaker {
                 let kind = crate::compiler::registry::block_entity_type(
                     crate::compiler::assembled::base_id(state.as_str()),
                 )?;
-                let nbt = match self.template_block_entities.get(c) {
+                let nbt = match self.template_block_entities.get(&c) {
                     Some((placed, nbt)) if placed == state => nbt.clone(),
                     _ => Nbt::Compound(vec![("id".to_string(), Nbt::Str(kind.to_string()))]),
                 };
-                Some((*c, nbt))
+                Some((c, nbt))
             })
             .collect()
     }

@@ -220,6 +220,7 @@ pub mod respawn;
 pub mod resting;
 pub mod sculk;
 pub mod seating;
+pub mod sections;
 pub mod seeding;
 pub mod served;
 pub mod sign;

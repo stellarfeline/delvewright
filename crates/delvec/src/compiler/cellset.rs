@@ -18,13 +18,15 @@ use std::collections::{BTreeMap, BTreeSet, btree_map};
 use std::iter::Peekable;
 use std::sync::Arc;
 
+use crate::compiler::sections::SectionMap;
+
 type Cell = [i32; 3];
 
 /// A cell→value map whose bulk is shared between copies; see the module docs.
-#[derive(Debug)]
 pub struct CellMap<V> {
-    /// The shared map. Never mutated once shared.
-    base: Arc<BTreeMap<Cell, V>>,
+    /// The shared map, the section store of ADR-0037 §1. Never mutated once
+    /// shared.
+    base: Arc<SectionMap<V>>,
     /// This copy's edits: `Some(v)` sets a cell, `None` removes a cell `base`
     /// holds. A key whose overlay entry would restate `base` is not stored.
     over: BTreeMap<Cell, Option<V>>,
@@ -48,15 +50,21 @@ where
 impl<V> Default for CellMap<V> {
     fn default() -> Self {
         CellMap {
-            base: Arc::new(BTreeMap::new()),
+            base: Arc::new(SectionMap::default()),
             over: BTreeMap::new(),
             len: 0,
         }
     }
 }
 
-impl<V> From<BTreeMap<Cell, V>> for CellMap<V> {
+impl<V: Copy + Eq> From<BTreeMap<Cell, V>> for CellMap<V> {
     fn from(map: BTreeMap<Cell, V>) -> Self {
+        CellMap::from(SectionMap::from(map))
+    }
+}
+
+impl<V: Copy + Eq> From<SectionMap<V>> for CellMap<V> {
+    fn from(map: SectionMap<V>) -> Self {
         CellMap {
             len: map.len(),
             base: Arc::new(map),
@@ -65,9 +73,9 @@ impl<V> From<BTreeMap<Cell, V>> for CellMap<V> {
     }
 }
 
-impl<V> CellMap<V> {
+impl<V: Copy + Eq> CellMap<V> {
     /// A map whose shared part is `base`, with no edits of its own.
-    pub fn from_shared(base: Arc<BTreeMap<Cell, V>>) -> Self {
+    pub fn from_shared(base: Arc<SectionMap<V>>) -> Self {
         CellMap {
             len: base.len(),
             base,
@@ -78,7 +86,7 @@ impl<V> CellMap<V> {
 
 impl<V> CellMap<V>
 where
-    V: Clone + PartialEq,
+    V: Copy + Eq,
 {
     /// An empty map.
     pub fn new() -> Self {
@@ -145,7 +153,7 @@ where
     }
 
     /// Every cell, in cell order.
-    pub fn keys(&self) -> impl Iterator<Item = &Cell> {
+    pub fn keys(&self) -> impl Iterator<Item = Cell> + '_ {
         self.iter().map(|(c, _)| c)
     }
 
@@ -155,14 +163,20 @@ where
         if self.over.is_empty() {
             return;
         }
-        let map: BTreeMap<Cell, V> = self.iter().map(|(c, v)| (*c, v.clone())).collect();
+        let map: SectionMap<V> = self.iter().map(|(c, v)| (c, *v)).collect();
         *self = CellMap::from(map);
+    }
+}
+
+impl<V: Copy + Eq + std::fmt::Debug> std::fmt::Debug for CellMap<V> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_map().entries(self.iter()).finish()
     }
 }
 
 impl<V> PartialEq for CellMap<V>
 where
-    V: Clone + PartialEq,
+    V: Copy + Eq,
 {
     fn eq(&self, other: &Self) -> bool {
         self.len == other.len && self.iter().eq(other.iter())
@@ -170,13 +184,13 @@ where
 }
 
 /// The merged, cell-ordered iterator of a [`CellMap`].
-pub struct Iter<'a, V> {
-    base: Peekable<btree_map::Iter<'a, Cell, V>>,
-    over: Peekable<btree_map::Iter<'a, Cell, Option<V>>>,
+pub struct Iter<'a, V: Copy + Eq> {
+    base: Peekable<crate::compiler::sections::Iter<'a, V>>,
+    over: Peekable<crate::compiler::sections::OverlayIter<'a, V>>,
 }
 
-impl<'a, V> Iterator for Iter<'a, V> {
-    type Item = (&'a Cell, &'a V);
+impl<'a, V: Copy + Eq> Iterator for Iter<'a, V> {
+    type Item = (Cell, &'a V);
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -194,7 +208,7 @@ impl<'a, V> Iterator for Iter<'a, V> {
             }
             let (c, edit) = self.over.next().expect("peeked");
             if let Some(v) = edit {
-                return Some((c, v));
+                return Some((*c, v));
             }
         }
     }
@@ -683,7 +697,7 @@ mod tests {
         assert_eq!(m.remove(&[0, 0, 1]), Some(4));
         assert_eq!(m.len(), 1);
         assert_eq!(
-            m.iter().map(|(c, v)| (*c, *v)).collect::<Vec<_>>(),
+            m.iter().map(|(c, v)| (c, *v)).collect::<Vec<_>>(),
             vec![([0, 0, 0], 8)]
         );
         assert!(m != n);

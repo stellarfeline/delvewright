@@ -102,11 +102,15 @@ pub fn show_contents(loot: &[LootPlan], m: &mut crate::compiler::blockstate::Blo
                 &l.items,
             ));
     }
-    for (cell, state) in m.iter_mut() {
-        let slots = filled.get(cell).map_or(&[][..], Vec::as_slice);
-        if let Some(shown) = shown_state(state.as_str(), slots) {
-            *state = crate::compiler::blockstate::BlockState::new(&shown);
-        }
+    let shown: Vec<([i32; 3], String)> = m
+        .iter()
+        .filter_map(|(cell, state)| {
+            let slots = filled.get(&cell).map_or(&[][..], Vec::as_slice);
+            shown_state(state.as_str(), slots).map(|s| (cell, s))
+        })
+        .collect();
+    for (cell, state) in shown {
+        m.insert(cell, crate::compiler::blockstate::BlockState::new(&state));
     }
 }
 
@@ -794,8 +798,13 @@ mod tests {
     /// An anchor over thin air is the same defect, and must not be silent.
     #[test]
     fn an_empty_cell_is_also_dw0431() {
-        let e = check_loot_containers(&BTreeMap::new(), &[], &[mk("stores", [0, 0, 0], 1)], &[])
-            .unwrap_err();
+        let e = check_loot_containers(
+            &crate::compiler::blockstate::BlockMap::new(),
+            &[],
+            &[mk("stores", [0, 0, 0], 1)],
+            &[],
+        )
+        .unwrap_err();
         assert_eq!(e.code, "DW0431");
     }
 
@@ -863,8 +872,13 @@ mod tests {
     /// was never authored.
     #[test]
     fn adopting_an_empty_cell_is_also_dw0438() {
-        let e = check_collect_containers(&BTreeMap::new(), &[], &[fill([0, 0, 0], 1)], &[])
-            .unwrap_err();
+        let e = check_collect_containers(
+            &crate::compiler::blockstate::BlockMap::new(),
+            &[],
+            &[fill([0, 0, 0], 1)],
+            &[],
+        )
+        .unwrap_err();
         assert_eq!(e.code, "DW0438");
     }
 
@@ -888,7 +902,10 @@ mod tests {
     /// content.
     #[test]
     fn no_adoptions_is_vacuously_ok() {
-        assert!(check_collect_containers(&BTreeMap::new(), &[], &[], &[]).is_ok());
+        assert!(
+            check_collect_containers(&crate::compiler::blockstate::BlockMap::new(), &[], &[], &[])
+                .is_ok()
+        );
     }
 
     /// spec-0105 §2.1: the container class is the table's twelve kinds — a
@@ -965,7 +982,7 @@ mod tests {
     #[test]
     fn a_free_container_is_named_in_the_refusal() {
         let e = check_collect_containers(
-            &BTreeMap::new(),
+            &crate::compiler::blockstate::BlockMap::new(),
             &[],
             &[fill([0, 0, 0], 1)],
             &[anchor("anchor/case", None)],
@@ -983,7 +1000,7 @@ mod tests {
     #[test]
     fn a_claimed_container_is_never_offered_as_the_remedy() {
         let e = check_collect_containers(
-            &BTreeMap::new(),
+            &crate::compiler::blockstate::BlockMap::new(),
             &[],
             &[fill([0, 0, 0], 1)],
             &[anchor("anchor/reliquary", Some("loot `loot/stores`"))],
@@ -1005,10 +1022,20 @@ mod tests {
     #[test]
     fn with_no_container_anywhere_the_refusal_says_so_and_names_the_piece() {
         for e in [
-            check_collect_containers(&BTreeMap::new(), &[], &[fill([0, 0, 0], 1)], &[])
-                .unwrap_err(),
-            check_loot_containers(&BTreeMap::new(), &[], &[mk("stores", [0, 0, 0], 1)], &[])
-                .unwrap_err(),
+            check_collect_containers(
+                &crate::compiler::blockstate::BlockMap::new(),
+                &[],
+                &[fill([0, 0, 0], 1)],
+                &[],
+            )
+            .unwrap_err(),
+            check_loot_containers(
+                &crate::compiler::blockstate::BlockMap::new(),
+                &[],
+                &[mk("stores", [0, 0, 0], 1)],
+                &[],
+            )
+            .unwrap_err(),
         ] {
             assert!(
                 e.message

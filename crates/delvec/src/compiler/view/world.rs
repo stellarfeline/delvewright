@@ -709,8 +709,8 @@ pub fn encode_world(input: &WorldInput<'_>) -> WrittenWorld {
                 })
             });
         blocks
-            .range([x0, i32::MIN, i32::MIN]..=[x1, i32::MAX, i32::MAX])
-            .map(|(c, s)| (*c, s.as_str()))
+            .in_box([x0, i32::MIN, i32::MIN], [x1, i32::MAX, i32::MAX])
+            .map(|(c, s)| (c, s.as_str()))
             .chain(generated)
     };
     let mut strip: Option<(i32, crate::compiler::light::LightArrays)> = None;
@@ -1004,7 +1004,7 @@ pub fn block_entities_omitted(
                 || id.ends_with("_head")
                 || id.ends_with("_skull")
                 || id == "lectern")
-                && !block_entities.contains_key(*c)
+                && !block_entities.contains_key(c)
         })
         .count()
 }

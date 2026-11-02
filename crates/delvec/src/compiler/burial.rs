@@ -777,7 +777,7 @@ mod tests {
             piece([0, 0, 0], [4, 4, 4], &[]),
             piece([5, 0, 0], [9, 4, 4], &[]),
         ];
-        let blocks = BTreeMap::new();
+        let blocks = crate::compiler::blockstate::BlockMap::new();
         assert!(
             covered(&pieces, &blocks, &Ambient::Void, [5, 2, 2]),
             "the neighbour's box"

@@ -883,7 +883,7 @@ pub fn template_block_entities(
 }
 
 fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed {
-    let mut blocks: BlockMap = BTreeMap::new();
+    let mut blocks = BlockMap::new();
     let mut open_gates: BTreeSet<[i32; 3]> = BTreeSet::new();
     let mut reached = Reached::default();
     for area in &plan.areas {
@@ -1095,7 +1095,9 @@ fn settle(blocks: &mut BlockMap) -> Vec<Settled> {
         let mut fixed: Vec<i32> = Vec::new();
         let mut falling: Vec<(i32, BlockState)> = Vec::new();
         for y in &ys {
-            let name = blocks[&[x, *y, z]];
+            let name = *blocks
+                .get(&[x, *y, z])
+                .expect("a listed cell holds a block");
             if is_falling_block(&name) {
                 falling.push((*y, name));
             } else if !is_fluid(&name) {
@@ -1271,11 +1273,7 @@ pub fn shipped_blocks(
         })
     };
     let mut m: BlockMap = match clip {
-        Some((lo, hi)) => blocks
-            .range(lo..=hi)
-            .filter(|(c, _)| inside(**c))
-            .map(|(c, b)| (*c, *b))
-            .collect(),
+        Some((lo, hi)) => blocks.in_box(lo, hi).map(|(c, b)| (c, *b)).collect(),
         None => blocks.clone(),
     };
     for s in seals.iter().filter(|s| s.sealed()) {
@@ -1395,8 +1393,8 @@ impl Assembled {
         for (c, b) in self.blocks.iter() {
             ymin = ymin.min(c[1]);
             ymax = ymax.max(c[1]);
-            if inside(c) {
-                blocks.insert(*c, *b);
+            if inside(&c) {
+                blocks.insert(c, *b);
             } else {
                 left_out += 1;
             }
@@ -1642,7 +1640,7 @@ fn climb_holds_with(
         let mut holds = Vec::new();
         match kind {
             Climbable::Ladder { facing } => {
-                let behind = add(*cell, facing.opposite().offset());
+                let behind = add(cell, facing.opposite().offset());
                 if face_is_sturdy(name_at(behind), facing) {
                     holds.push((None, Hold::Block(behind)));
                 }
@@ -1652,12 +1650,12 @@ fn climb_holds_with(
                     if !set {
                         continue;
                     }
-                    let n = add(*cell, f.offset());
+                    let n = add(cell, f.offset());
                     let nb = name_at(n);
                     if face_is_sturdy(nb, f.opposite()) || face_is_full(nb, f.opposite()) {
                         holds.push((Some(f), Hold::Block(n)));
                     }
-                    let above = add(*cell, Face::Up.offset());
+                    let above = add(cell, Face::Up.offset());
                     if matches!(
                         climbable(name_at(above)),
                         Some(Climbable::Vine { faces: up }) if up[Face::HORIZONTAL.iter().position(|h| *h == f).expect("horizontal")]
@@ -1667,7 +1665,7 @@ fn climb_holds_with(
                 }
             }
             Climbable::Growing(plant) => {
-                let from = add(*cell, plant.growth().opposite().offset());
+                let from = add(cell, plant.growth().opposite().offset());
                 let fb = name_at(from);
                 if plant
                     .members()
@@ -1681,7 +1679,7 @@ fn climb_holds_with(
             Climbable::Scaffolding => continue,
         }
         cand.insert(
-            *cell,
+            cell,
             ClimbHold {
                 block: name.to_string(),
                 kind,
@@ -1837,7 +1835,7 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
     for (cell, name) in blocks {
         let k = classes.of(*name);
         if k.hurts {
-            hurting.push(*cell);
+            hurting.push(cell);
         }
         // A door's or a trapdoor's leaf per state (`blockshape::leaf`): what
         // its panels and its plate do to a body crossing its cell's faces.
@@ -1845,24 +1843,24 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
         // for any door.
         if let Some(mut h) = k.leaf {
             if h.by_hand {
-                h.open = open_gates.contains(cell);
+                h.open = open_gates.contains(&cell);
             }
-            leaves.push((*cell, h));
+            leaves.push((cell, h));
         }
         if k.hides {
-            hiding.push(*cell);
+            hiding.push(cell);
         }
         if k.waterloggable {
-            waterloggable.push(*cell);
+            waterloggable.push(cell);
         }
         // A waterlogged block's cell holds a real water source that spreads into
         // its air neighbours — seed the flood from it, then classify
         // the host block normally below (the cell itself stays occupied).
         if k.waterlogged {
-            sources.push(*cell);
+            sources.push(cell);
         }
         if k.material != delvewright_dsl::metrics::body::Material::Plain {
-            material.push((*cell, k.material));
+            material.push((cell, k.material));
         }
         // The classification is not made here: it is
         // [`delvewright_dsl::blockshape::collision_class`], the one rule three
@@ -1874,9 +1872,9 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
                 // Water AND lava: a body stands on neither, so neither is `solid`.
                 // A water-only test dropped lava through to the default and made
                 // a lava surface into floor a route proof walks.
-                sources.push(*cell);
+                sources.push(cell);
                 if k.lava {
-                    lava_sources.push(*cell);
+                    lava_sources.push(cell);
                 }
             }
             // A climbable's cell is empty to a body (spec-0099); whether a body in
@@ -1886,7 +1884,7 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
             // cell, and the flooded cell is then no climb.
             Collision::Climbable => {
                 if k.ladder {
-                    barriers.push(*cell);
+                    barriers.push(cell);
                 }
             }
             // A pressure plate / tripwire / carpet / candle / torch / thin snow
@@ -1896,23 +1894,23 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
             // Air reaches this arm too, and its cell is likewise not a floor.
             Collision::Air | Collision::Thin(_) => {}
             Collision::OpensByHand => {
-                barriers.push(*cell);
-                if !open_gates.contains(cell) {
-                    use_gates.push(*cell); // closed: passable-with-use
+                barriers.push(cell);
+                if !open_gates.contains(&cell) {
+                    use_gates.push(cell); // closed: passable-with-use
                 } // open: a passable threshold (still dams water)
             }
             Collision::TallBarrier => {
-                barriers.push(*cell);
-                tall.push(*cell);
+                barriers.push(cell);
+                tall.push(cell);
             }
             class @ (Collision::PartialFloor(_) | Collision::FullCube) => {
-                barriers.push(*cell);
-                solid.push(*cell);
+                barriers.push(cell);
+                solid.push(cell);
                 if let Collision::PartialFloor(h) = class {
-                    partial.push((*cell, h));
+                    partial.push((cell, h));
                 }
                 if let Some(fp) = k.footprint {
-                    footprints.push((*cell, fp));
+                    footprints.push((cell, fp));
                 }
             }
         }
@@ -2312,7 +2310,7 @@ mod tests {
     #[test]
     fn a_gate_is_sealed_or_open_by_what_the_world_puts_in_it() {
         let anchors = gate_anchors("minecraft:iron_bars");
-        let open = measure_gate_seals(&anchors, &BTreeMap::new());
+        let open = measure_gate_seals(&anchors, &BlockMap::new());
         assert_eq!(open.len(), 1, "the gate is examined either way");
         assert_eq!(open[0].cells, 4);
         assert_eq!(open[0].blocked, 0);
@@ -2379,7 +2377,7 @@ mod tests {
     #[test]
     fn the_ledger_reports_an_unbound_measurement_as_unbound() {
         let anchors = gate_anchors("minecraft:iron_bars");
-        let seals = measure_gate_seals(&anchors, &BTreeMap::new());
+        let seals = measure_gate_seals(&anchors, &BlockMap::new());
         let j = gate_seal_ledger(&seals, 0);
         assert_eq!(j["gates_examined"], 1);
         assert_eq!(j["sealed_at_world_load"], 0);

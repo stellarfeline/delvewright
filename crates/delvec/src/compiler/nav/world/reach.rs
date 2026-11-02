@@ -474,7 +474,7 @@ impl Dense {
         }
         for (c, m) in world.material.iter() {
             let m = material_code(*m);
-            set(*c, &|v| (v & !MATERIAL) | m);
+            set(c, &|v| (v & !MATERIAL) | m);
         }
         // A sieve is read at its posts (main's floor rule, the nav model's
         // `Floors`): a body over it falls between them and one walking into it
@@ -2020,7 +2020,7 @@ fn raw_membership(w: &World, d: &Dense) -> Chunked<u16> {
         set(c, 1 << 7);
     }
     for (c, v) in w.partial.iter() {
-        set(*c, (u16::from(*v) + 1) << 8);
+        set(c, (u16::from(*v) + 1) << 8);
     }
     for c in w.floors.sieve.iter() {
         set(*c, 1 << 13);
