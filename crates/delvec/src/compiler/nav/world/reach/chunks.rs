@@ -183,6 +183,10 @@ static VISIT_MAX: AtomicU64 = AtomicU64::new(0);
 #[derive(Default)]
 pub(super) struct Visits {
     counts: HashMap<Key, u64>,
+    /// The edges this closure joined whose two ends lie in different chunks.
+    portals: u64,
+    /// The cells those edges land on.
+    faces: std::collections::HashSet<[i32; 3]>,
 }
 
 impl Visits {
@@ -190,14 +194,43 @@ impl Visits {
         *self.counts.entry(k).or_insert(0) += 1;
     }
 
-    /// Fold this closure's visits into the run's distribution.
-    pub(super) fn report(&mut self) {
+    /// Note an edge joined from `from` to `to`: a **portal edge** when the
+    /// two lie in different chunks of side `side` (ADR-0037 §2).
+    pub(super) fn joined(&mut self, from: [i32; 3], to: [i32; 3], side: i32) {
+        if chunk_of(from, side) != chunk_of(to, side) {
+            self.portals += 1;
+            self.faces.insert(to);
+        }
+    }
+
+    /// Fold this closure's visits and portal edges into the run's figures;
+    /// its portal edges and the face cells they land on.
+    pub(super) fn report(&mut self) -> [u64; 2] {
         for n in std::mem::take(&mut self.counts).into_values() {
             let b = (n as usize).min(VISIT_BUCKETS);
             VISIT_HIST[b].fetch_add(1, Ordering::Relaxed);
             VISIT_MAX.fetch_max(n, Ordering::Relaxed);
         }
+        let out = [
+            std::mem::take(&mut self.portals),
+            std::mem::take(&mut self.faces).len() as u64,
+        ];
+        PORTALS.fetch_add(out[0], Ordering::Relaxed);
+        FACES.fetch_add(out[1], Ordering::Relaxed);
+        out
     }
+}
+
+static PORTALS: AtomicU64 = AtomicU64::new(0);
+static FACES: AtomicU64 = AtomicU64::new(0);
+
+/// The run's portal edges and the face cells they land on, summed over the
+/// closures taken: what crosses a chunk border (ADR-0037 §2).
+pub(super) fn portals() -> (u64, u64) {
+    (
+        PORTALS.load(Ordering::Relaxed),
+        FACES.load(Ordering::Relaxed),
+    )
 }
 
 /// How many (closure, chunk) pairs the run's closures visited.

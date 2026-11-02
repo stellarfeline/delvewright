@@ -258,7 +258,11 @@ byte(s) resident at the end, under a budget of N (the working set: 3 x 3
 chunks of the largest decoded, C byte(s), and their buffered pushes); L chunk
 read(s) back over D record(s), E chunk(s) given up (ADR-0037 §2)` and `reach
 closures: V chunk visit(s) over P (closure, chunk) pair(s), at most M for one
-chunk in one closure [NxK …]` as it ends.
+chunk in one closure [NxK …]` and `reach portals: N portal edge(s) over F face
+cell(s), summed over the closures taken, at a chunk side of S (ADR-0037 §2)` as
+it ends: a portal edge is one whose two ends lie in different reach chunks, a
+face cell a cell one lands on. The portal counts depend on the chunk side and
+are written nowhere in the output tree.
 The cost is disk: the town's bank (95 places) is 1.8 GB after one check, and grows with each program a place is checked with, since a node keeps up to eight variants.
 
 **The output directory** holds exactly what the last build emitted: a build into a directory a previous build wrote removes every file that build emitted and this one does not, and a directory holding anything no build wrote is refused untouched (`DW0967`, §5).

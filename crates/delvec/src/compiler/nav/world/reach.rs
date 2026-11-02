@@ -1768,6 +1768,12 @@ pub fn persist_reach_cache() {
             chunks::largest()
         );
         eprintln!("reach closures: {} (ADR-0037 §2)", chunks::visits());
+        let (portals, faces) = chunks::portals();
+        eprintln!(
+            "reach portals: {portals} portal edge(s) over {faces} face cell(s), summed over the \
+             closures taken, at a chunk side of {} (ADR-0037 §2)",
+            chunks::side_here()
+        );
     }
     let (variants, bytes) = bank::census_all();
     if variants > 0 {
@@ -3570,12 +3576,12 @@ impl World {
             // that reads it refuses the build.
             if reach.simulated + reach.credited > params.budget {
                 reach.over_budget = Some(params.budget);
-                visits.report();
+                reach.portals = visits.report();
                 return Arc::new(reach);
             }
             self.close(&memo, params, &mut reach, new, &mut visits);
         }
-        visits.report();
+        reach.portals = visits.report();
         // The closure is kept as a copy taken in one sweep, its lists at
         // their length; the one the rounds grew is dropped here.
         let reach = Arc::new(reach.clone());
@@ -3705,7 +3711,9 @@ impl World {
         let mut visits = chunks::Visits::default();
         let new = self.fly_chunks(memo, params, reach, cells, &mut visits);
         self.close(memo, params, reach, new, &mut visits);
-        visits.report();
+        let [p, f] = visits.report();
+        reach.portals[0] += p;
+        reach.portals[1] += f;
     }
 
     /// The round's work: every standing or holding state of `reach` with the
@@ -3792,6 +3800,7 @@ impl World {
                             continue;
                         }
                         reach.join(*c, edge);
+                        visits.joined(*c, edge.to, side);
                         if !reach.states.contains_key(&edge.to) {
                             new.push(edge.to);
                         }
@@ -3849,6 +3858,7 @@ impl World {
                     }
                     for edge in &e.edges {
                         reach.join(*c, edge);
+                        visits.joined(*c, edge.to, side);
                         if !reach.states.contains_key(&edge.to) && queued.insert(edge.to) {
                             let to = chunks::chunk_of(edge.to, side);
                             if to == k {
@@ -4053,6 +4063,11 @@ pub struct Reach {
     pub over_budget: Option<u64>,
     /// The reached states inside the window, as a bitmap over it.
     bits: Vec<u64>,
+    /// The portal edges the closure joined — edges whose ends lie in
+    /// different reach chunks — and the face cells they land on, at the chunk
+    /// side it was taken at (ADR-0037 §2); a reader's growth adds its own.
+    /// Never read by a proof: the counts depend on the side.
+    pub portals: [u64; 2],
 }
 
 impl Reach {

@@ -1137,3 +1137,51 @@ fn the_route_tree_by_chunk_is_the_one_search_gives() {
     eprintln!("route trees by chunk: {cells} cell(s) ordered, {joined} with a predecessor");
     assert!(cells > 0 && joined > 0, "the route trees bind nothing");
 }
+
+/// **The portal-edge count is what crosses a chunk face** (ADR-0037 §2): over
+/// every invariance world, at chunk sides of sixteen, seven and two columns,
+/// the portal edges a closure states equal the edges of its own successor
+/// lists whose two ends lie in different chunks of that side, and its face
+/// cells the distinct cells those edges land on — counted here by reading the
+/// lists back, a second method that shares nothing with the count taken as
+/// the edges were joined. Red on any difference; perturbed by miscounting a
+/// portal edge in [`super::chunks::Visits::joined`].
+#[test]
+fn the_portal_edges_are_the_edges_that_cross_a_chunk_face() {
+    let (mut portals, mut sides_moved) = (0u64, 0usize);
+    for (name, w, roots) in invariance_worlds() {
+        let mut by_side = Vec::new();
+        for side in [16, 7, 2] {
+            super::chunks::at_side(side, || {
+                let r = w.body_reach(&roots);
+                let key = |c: [i32; 3]| (c[0].div_euclid(side), c[2].div_euclid(side));
+                let mut crossing = 0u64;
+                let mut faces: BTreeSet<[i32; 3]> = BTreeSet::new();
+                for c in r.states.keys() {
+                    for e in r.succ(*c) {
+                        if key(*c) != key(e.to) {
+                            crossing += 1;
+                            faces.insert(e.to);
+                        }
+                    }
+                }
+                assert_eq!(
+                    r.portals,
+                    [crossing, faces.len() as u64],
+                    "{name} (side {side}): the stated portal edges and face cells are not the \
+                     ones the lists cross"
+                );
+                portals += crossing;
+                by_side.push(crossing);
+            });
+        }
+        if by_side.windows(2).any(|p| p[0] != p[1]) {
+            sides_moved += 1;
+        }
+    }
+    eprintln!(
+        "portal edges: {portals} over the invariance worlds at three sides; the count moved with \
+         the side on {sides_moved} world(s)"
+    );
+    assert!(portals > 0 && sides_moved > 0, "the cases bind nothing");
+}
