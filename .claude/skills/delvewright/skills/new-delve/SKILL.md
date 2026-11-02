@@ -366,7 +366,7 @@ dead quest is a design bug. **Read**: `references/build.md`.
 
 **Needs**: step 7 clean. **Produces**: the datapack tree at
 `"$DELVE_OUTPUT"`, `critical-path.json` and
-`render-plan.json` and the pacing line. Must exit 0. **Read**: `references/build.md`.
+`render-plan.json` and the pacing line. Must exit 0. **Read**: `references/build.md`, and *Checking a web* in `references/quest-capabilities.md` for the endings and the gates.
 
 ## 8b. The showcase cameras
 
