@@ -79,7 +79,10 @@ import urllib.request
 from pathlib import Path
 from typing import NamedTuple
 
-LOCAL_CONFIG_FILE = "delvewright.local.toml"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+from local_config import LOCAL_CONFIG_FILE, local_config_path  # noqa: E402
+
+sys.path.pop(0)
 SECTION = "refimg"
 
 # Only providers whose wire shape AND capability set have been verified belong
@@ -192,7 +195,7 @@ def repo_root() -> Path:
 
 
 def load_config() -> dict:
-    path = repo_root() / LOCAL_CONFIG_FILE
+    path = local_config_path(repo_root())
     if not path.exists():
         raise MissingConfig(
             f"no {LOCAL_CONFIG_FILE} — create it with a [{SECTION}] section.\n"

@@ -13,6 +13,8 @@ for every NPC live in it, `{at, doing, dialogue}` — position first, story
 second. `guidance` is usually omitted: write it only to hide the compass or
 announcements by default, or to give the journal a `manual`.
 
+**Each quest's `trigger` agrees with its plan entry.** A quest with an empty `depends_on` is armed at `{"type": "campaign-start"}`; any other is armed by `{"type": "quest-complete", "quest": …}` naming one quest its `depends_on` lists. A join (a quest that `depends_on` several) is armed by one of them, and its first objective waits for the rest by a flag each of them sets. `validate` refuses a trigger that disagrees with the plan (`DW1077`).
+
 Then `dialogue.json`. Three rules that are not style preferences:
 
 - **A dialogue option is a button caption, not a sentence.** Vanilla draws each

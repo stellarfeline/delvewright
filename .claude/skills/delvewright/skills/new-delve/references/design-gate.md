@@ -155,7 +155,25 @@ record costs. A test level — a small level built to try something — is the o
 campaign that skips the record: it declares `test_level: true` in `world.json`,
 carries no `design.json`, and its cameras name what they frame in `note` with
 no `answers` (`hand-over.md`, *The staging gate*). It still passes this gate:
-the user says yes to its walkthrough.
+the user says yes to its walkthrough. `test_level` removes the record, never the
+yes.
+
+**A demo level passes steps 2 and 4 this way.** A level off the engine's
+`$DELVEWRIGHT_ENGINE/docs/demo-levels.md` queue is a test level whose queue row
+is its design: the row says in words what the level is, and stands where
+`design.json` would. Neither step is skipped:
+
+- **Step 2** draws its map's reference as `map-reference.md` says. One mechanic
+  and a minimum cast make the series short, never absent.
+- **Step 4** hands over the walkthrough — the row's text first, then each
+  scene's near and far view under its hour and weather — and waits for the
+  user's explicit yes. The row is not that yes. Never write that the row, the
+  queue or anyone else approved the level, and never pass the gate on the
+  level's size.
+- **On the yes, nothing is copied into `design/`**: the confirmed views and
+  scenes stay where `refimg.py` wrote them, and the row is the level's only
+  record. An image under `design/` with no row in `design.json` is `DW0890`,
+  and `design.json` beside `test_level: true` is `DW1061`.
 
 **Every later step that asks anyone to choose reads `design/` first**, and
 presents the choice beside that scene's image, under the approved name, saying
