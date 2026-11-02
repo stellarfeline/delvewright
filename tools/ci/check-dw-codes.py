@@ -781,7 +781,7 @@ def tested_codes() -> set[str]:
 # ---------------------------------------------------------------------------
 
 # The test that takes each move and asserts it reaches a different verdict.
-REMEDY_TEST = REPO_ROOT / "crates" / "delvec" / "tests" / "remedy_reachability.rs"
+REMEDY_TEST = REPO_ROOT / "crates" / "delvec" / "tests" / "it" / "remedy_reachability.rs"
 
 # **What makes a sentence a MOVE rather than an explanation.**
 #
