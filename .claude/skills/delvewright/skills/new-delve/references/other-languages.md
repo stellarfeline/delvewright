@@ -47,7 +47,8 @@ languages are delivered as sidecars.
    and 4 below, and say at the hand-over that the text is the fallback quality.
 3. Yourself: `delvec --prefabs "$DELVEWRIGHT_PREFABS" l10n-inventory <campaign-dir> --lang <code>` gives the exact
    key inventory as JSON (key, English, kind, speaking NPC, situation, existing
-   translation, stale). Hand your lines back with `delvec --prefabs "$DELVEWRIGHT_PREFABS" l10n-apply <campaign-dir> --lang <code> --table <file>`:
+   translation, stale, and on an art title the `glyphs` its font draws: write
+   that line only in them). Hand your lines back with `delvec --prefabs "$DELVEWRIGHT_PREFABS" l10n-apply <campaign-dir> --lang <code> --table <file>`:
    a table of canonical English → your line, from which the tool writes
    `l10n/<code>.json` — it addresses the keys, so an inserted effect that shifts
    an `fx.` key cannot re-attach a line to the wrong English. It prints `N of M rows

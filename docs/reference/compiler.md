@@ -1258,7 +1258,7 @@ writing an empty sidecar and reading the coverage diagnostics back:
 ```
 { campaign_id, dsl_version, lang, declared, sidecar_present, world_title,
   npcs:    [{id, name, archetype, speech_style, demeanor?, motivation}],
-  entries: [{key, en, kind, speaker?, situation?, existing?, stale?}] }
+  entries: [{key, en, kind, speaker?, situation?, existing?, stale?, glyphs?}] }
 ```
 
 `entries` is the inventory itself (a CLI test asserts the key set equals what
@@ -1277,7 +1277,7 @@ line is said in, derived from the stage documents: the quest goal and its
 `happening`, the objective and what completing it does, a cast placement's
 `doing`, the NPC line a dialogue option answers and what choosing it does, the
 shop an offer sits in, the nearest enclosing effect's `happening`, and — on an objective's `title` row — `act: <acts>`, the acts its completion performs (`dsl::Objective::completion_acts`, spec-0114 §5). Together
-they are the intent a transcreator writes from. Persona rows carry voice, never plot
+they are the intent a transcreator writes from. `glyphs` is on an art title's row only (an art-styled `narrate`, `dsl::art_narrates`): every character the `delve:art` font draws (`compiler::atmos::covered_chars`, held to `atmos::covers` over the whole Basic Multilingual Plane by a unit test), so a translation is written in what the font draws rather than refused by `DW0328` at build. Persona rows carry voice, never plot
 (`secret`/`backstory`/`relationships` are excluded). Runs **before** validation
 gating — an incomplete sidecar is the normal state when you ask — and needs no
 prefab library; only an unparseable campaign fails (exit 1). See

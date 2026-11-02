@@ -2497,6 +2497,47 @@ fn l10n_inventory_rows_carry_kind_and_situation() {
     }
 }
 
+/// An art title's row carries every character the `delve:art` font draws, and
+/// only a narrate row carries a set (`tools/creator/i18n-translate.py` holds a row
+/// to it, so a translation in a script the font lacks is refused before `DW0328`).
+/// Bound over the gallery, which declares an art `narrate`.
+#[test]
+fn l10n_inventory_hands_an_art_row_the_glyphs_its_font_draws() {
+    let gallery = common::repo_root().join("gallery");
+    let doc = inventory_doc(&gallery, "zh-cn");
+    let mut art = 0;
+    for e in doc["entries"].as_array().unwrap() {
+        let key = e["key"].as_str().unwrap();
+        let Some(glyphs) = e.get("glyphs") else {
+            continue;
+        };
+        art += 1;
+        let glyphs = glyphs.as_str().unwrap();
+        assert!(
+            key.ends_with(".narrate") || key.starts_with("containers."),
+            "{key}"
+        );
+        assert!(glyphs.contains('A') && glyphs.contains('a') && glyphs.contains(' '));
+        assert!(
+            !glyphs.contains('\u{6C34}'),
+            "{key}: Han is not an art glyph"
+        );
+        let en = e["en"].as_str().unwrap();
+        assert!(
+            en.chars()
+                .filter(|c| !"[]|".contains(*c))
+                .all(|c| glyphs.contains(c))
+                || en.contains("[["),
+            "{key}: the English art title `{en}` passes DW0328, so its set covers it"
+        );
+    }
+    assert!(
+        art > 0,
+        "the gallery declares an art narrate: 0 art rows bound"
+    );
+    println!("art rows bound: {art}");
+}
+
 /// A row whose recorded `source` differs from the English it reads now is
 /// `stale` — the `DW0187` condition — so a translating tool redoes it instead of
 /// re-recording the new English against the old translation.

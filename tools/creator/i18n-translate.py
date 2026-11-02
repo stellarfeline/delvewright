@@ -60,6 +60,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import tomllib
 import urllib.error
@@ -71,7 +72,11 @@ from typing import Any, Callable, Iterable, Sequence
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 CONFIG_FILE = "delvewright.toml"
-LOCAL_CONFIG_FILE = "delvewright.local.toml"
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+from local_config import LOCAL_CONFIG_FILE, local_config_path  # noqa: E402
+
+sys.path.pop(0)
 
 #: The only provider protocol implemented: POST <base_url>/chat/completions with
 #: an OpenAI-shaped body. DeepSeek, Moonshot/Kimi, OpenAI and most self-hosted
@@ -151,7 +156,8 @@ def load_config(
     root: Path = REPO_ROOT, explicit: Path | None = None
 ) -> I18nConfig | None:
     """Resolve `[i18n]` from `delvewright.toml`, overridden key-by-key by the
-    gitignored `delvewright.local.toml`.
+    gitignored `delvewright.local.toml` (`tools/lib/local_config.py`: a linked
+    worktree without its own reads its main checkout's).
 
     Returns `None` when neither file declares an `[i18n]` section — the documented
     fallback (the `/new-delve` skill then translates in-agent). Raises
@@ -165,7 +171,7 @@ def load_config(
         merged = dict(section)
     else:
         base = _read_toml(root / CONFIG_FILE).get("i18n") or {}
-        local = _read_toml(root / LOCAL_CONFIG_FILE).get("i18n") or {}
+        local = _read_toml(local_config_path(root)).get("i18n") or {}
         if not base and not local:
             return None
         merged = {**base, **local}
@@ -216,6 +222,9 @@ class Entry:
     existing: str | None = None
     #: `existing` was made from English the line no longer reads (DW0187).
     stale: bool = False
+    #: Every character the row's font can draw, when the inventory restricts it:
+    #: an art title's `delve:art` set (`DW0328`). `None` = any.
+    glyphs: str | None = None
 
     @property
     def is_name(self) -> bool:
@@ -277,6 +286,7 @@ def parse_inventory(doc: dict[str, Any]) -> Inventory:
                 situation=tuple(e.get("situation", ())),
                 existing=e.get("existing"),
                 stale=bool(e.get("stale", False)),
+                glyphs=e.get("glyphs"),
             )
             for e in doc["entries"]
         ]
@@ -337,6 +347,9 @@ Rules:
     line, never the whole sign, and keep it to the board.
 - `situation` is context, never text to render: use it to understand what the
   line must do, then write only the line.
+- A row with `glyphs` is drawn in a title font that has only those characters.
+  Write it using no other character; where {lang} has no letters among them,
+  write a Latin rendition (its romanization, or the English).
 - Every name in the glossary is written exactly as the glossary renders it, every
   time it appears. One name, one rendering; two names never share one.
 - Preserve every placeholder (`%s`, `%1$s`), formatting code and digit exactly.
@@ -523,6 +536,8 @@ def _intent(e: Entry) -> dict[str, Any]:
         row["speaker"] = e.speaker
     if e.situation:
         row["situation"] = list(e.situation)
+    if e.glyphs is not None:
+        row["glyphs"] = e.glyphs
     return row
 
 
@@ -750,14 +765,38 @@ def parse_translations(content: str) -> dict[str, str]:
 Poster = Callable[[str, dict[str, Any], dict[str, str], int], dict[str, Any]]
 
 
+class ReplyDeadline(TimeoutError):
+    """The whole request, reply included, did not finish inside its deadline."""
+
+
 def post_json(
     url: str, body: dict[str, Any], headers: dict[str, str], timeout: int
 ) -> dict[str, Any]:
-    """POST a JSON body and return the parsed JSON response."""
+    """POST a JSON body and return the parsed JSON response.
+
+    `timeout` is the deadline for the WHOLE request. `urlopen(timeout=)` bounds
+    each socket wait, so a reply that trickles in a byte at a time never trips it;
+    the request therefore runs on a worker thread the caller stops waiting for.
+    """
     data = json.dumps(body, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(url, data=data, headers=headers, method="POST")
-    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 (configured URL)
-        return json.loads(resp.read().decode("utf-8"))
+    outcome: dict[str, Any] = {}
+
+    def run() -> None:
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 (configured URL)
+                outcome["value"] = json.loads(resp.read().decode("utf-8"))
+        except BaseException as exc:  # noqa: BLE001 — re-raised on the caller's thread
+            outcome["error"] = exc
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(timeout)
+    if worker.is_alive():
+        raise ReplyDeadline(f"no complete reply within {timeout}s")
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome["value"]
 
 
 #: How much of a provider's error body reaches the diagnostic. Enough for the
@@ -820,6 +859,8 @@ def chat_once(
             )
             if exc.code in (400, 401, 403, 404, 422):
                 raise last from None  # not transient: bad key/model/url
+        except ReplyDeadline as exc:
+            last = TranslateError(f"{cfg.endpoint} on step `{step.name}`: {exc}")
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             last = TranslateError(f"{cfg.endpoint} unreachable: {exc}")
         except (KeyError, IndexError, TypeError) as exc:
@@ -981,6 +1022,13 @@ def check_row(e: Entry, text: str, names: dict[str, str], lang: str) -> list[str
         for name in mentioned_names(e.en, names):
             if names[name] not in text:
                 failures.append(f"the name `{name}` must be written `{names[name]}`")
+    if e.glyphs is not None:
+        undrawn = sorted({c for c in PLACEHOLDER_RE.sub("", text) if c not in e.glyphs})
+        if undrawn:
+            failures.append(
+                f"the title font draws only the row's `glyphs`; it cannot draw "
+                f"{' '.join(undrawn)}"
+            )
     return failures
 
 
@@ -1443,6 +1491,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         except TranslateError as exc:
             print(f"error: {exc}", file=sys.stderr)
+            print(
+                f"{len(pending)} row(s) not translated, no sidecar written "
+                f"(batch {i} of {len(chunks)} failed): " + ", ".join(e.key for e in pending),
+                file=sys.stderr,
+            )
             return 1
         translated.update(result.accepted)
         refused.update(result.refused)

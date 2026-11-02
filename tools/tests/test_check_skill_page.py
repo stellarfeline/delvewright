@@ -492,7 +492,7 @@ def test_a_template_placeholder_in_a_shipped_file_reds(mod, tree, engine):
 def test_a_placeholder_in_a_script_reds_too(mod, tree, engine):
     """The rule binds to the whole shipped plugin, not to the two directories
     rule 7 enumerates: a creator reads what ships, whatever its suffix."""
-    path = tree / "scripts" / "find-jdk.py"
+    path = tree / "scripts" / "debug-note.py"
     path.write_text(
         "# {{SUMMARY}}\n" + path.read_text(encoding="utf-8"), encoding="utf-8"
     )
