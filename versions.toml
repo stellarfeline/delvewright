@@ -395,6 +395,20 @@ beet_version = "0.116.0"
 # collection or assertion behaviour moves a required check's verdict.
 # Consumed by: .github/workflows/ci.yml (skin toolchain, both tool-test jobs).
 pytest_version = "9.1.1"
+# The Rust suite's three instruments (spec-0126). cargo-nextest runs the suite
+# one process per test and writes the JUnit report whose per-test times judge the
+# budget; cargo-llvm-cov reads region coverage out of that same run, which the
+# coverage floor (`tools/ci/coverage-floor.py`) judges; cargo-mutants is the
+# second instrument a test removal is proven by (spec-0126 §3.3), run by
+# `tools/ci/test-kill-set.sh`. Each is an instrument of a required check or of
+# the proof a removal commits, so each is named literally.
+# Consumed by: .github/workflows/ci.yml (the `rust` job installs nextest and
+# llvm-cov), tools/ci/test-coverage-map.sh and tools/ci/test-kill-set.sh (each
+# refuses an installed version other than these), and the `instrument` block of
+# .github/coverage-baseline.json.
+nextest_version = "0.9.148"
+llvm_cov_version = "0.9.1"
+mutants_version = "27.1.0"
 
 # The two READINGS OF THE PLUGIN BY THE FORMAT'S OWN IMPLEMENTATIONS
 # (spec-0063 §8). `tools/ci/check-skill-page.py` is this project's judgement of the

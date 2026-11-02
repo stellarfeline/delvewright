@@ -297,7 +297,11 @@ jobs:
     if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     steps:
+      # Whole history: the coverage floor proves its record's tree is an
+      # ancestor of the commit it judges (spec-0126 §2.2).
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       # The compiler tests read the prefab library (`campaigns/prefabs/*.nbt`,
       # git-lfs); it lives in the content repo now (spec-0007 Step 0), checked out
       # at the pinned SHA into ./campaigns. The ADR-0006 double-build byte-identity
@@ -331,13 +335,32 @@ jobs:
       # here is the network, never a frame.
       - name: the pinned client jar (one verified fetch)
         run: echo "DELVEWRIGHT_CLIENT_JAR=$(bash validation/client-jar-cache.sh --cache "$RUNNER_TEMP/client-jar" | tail -n 1)" >> "$GITHUB_ENV"
-      # Every test executable `cargo test --workspace` builds, run two at a
-      # time and each to its end, then the doc tests: an executable that is a
-      # sequence of `delvec` runs leaves most of the runner idle in their
-      # single-threaded stretches, and a second one fills them. The count of
-      # executables run against cargo's own listing is printed and must agree.
-      - name: cargo test (incl. determinism double-build gate)
-        run: python3 tools/ci/cargo-test-concurrent.py --jobs 2 --locked
+      # The suite's instruments (spec-0126 §1): cargo-nextest runs every test
+      # as its own process and writes one JUnit <testcase> per test with its
+      # time; cargo-llvm-cov reads region coverage out of that same run. Both
+      # at the literal versions.toml [ci] records (validation/check-versions.sh
+      # holds these two sites to it); the toolchain's own llvm-tools is the only
+      # LLVM the counters may be read with.
+      - name: the suite's instruments (pinned nextest, llvm-cov, llvm-tools)
+        run: |
+          rustup component add llvm-tools
+          cargo install --locked cargo-nextest@0.9.148 cargo-llvm-cov@0.9.1
+      # One run of the whole suite, instrumented: the determinism double-build
+      # gate runs inside it (`cli.rs`). Every test runs to its end.
+      - name: cargo nextest, instrumented (incl. determinism double-build gate)
+        run: cargo llvm-cov --no-report nextest --workspace --locked --no-fail-fast --profile ci
+      - name: the coverage report (region, line, function)
+        if: always()
+        run: cargo llvm-cov report --json --remap-path-prefix --output-path target/coverage.json
+      - name: the run's measurements (JUnit per-test times, coverage export)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-suite-measurements
+          path: |
+            target/llvm-cov-target/nextest/ci/junit.xml
+            target/coverage.json
+          if-no-files-found: warn
 
       # The viewer's interactive layer is JavaScript, so `cargo test` cannot run
       # it — and for as long as that was the whole story the camera had NO
@@ -361,6 +384,11 @@ jobs:
       # the line above.
       - name: a label belongs to the model that drew it (node --test)
         run: node --test crates/delvec/tests/labels.test.mjs
+      # The coverage floor (spec-0126 §2.2), over the report this job produced:
+      # region coverage of production source may not fall below the record's
+      # floor by more than its measured run-to-run instability.
+      - name: the coverage floor (region coverage of production source)
+        run: python3 tools/ci/coverage-floor.py --report target/coverage.json
 
   # What crates.io would receive, built the way a stranger's `cargo install`
   # builds it. Its own job rather than steps of `rust`: it shares no build with

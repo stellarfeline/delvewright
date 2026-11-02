@@ -66,6 +66,9 @@ emit("MECHA_REQUIRES_PYTHON", d["ci"]["mecha_requires_python"])
 emit("MECHA_REQUIRES_BEET",   d["ci"]["mecha_requires_beet"])
 emit("BEET_VERSION",         d["ci"]["beet_version"])
 emit("PYTEST_VERSION",       d["ci"]["pytest_version"])
+emit("NEXTEST_VERSION",      d["ci"]["nextest_version"])
+emit("LLVM_COV_VERSION",     d["ci"]["llvm_cov_version"])
+emit("MUTANTS_VERSION",      d["ci"]["mutants_version"])
 emit("SKILLS_REF_VERSION",   d["ci"]["skills_ref_version"])
 emit("CLAUDE_CODE_VERSION",  d["ci"]["claude_code_version"])
 emit("SKINPY_EXTENDED",      d["skin"]["skinpy_extended"])
@@ -575,6 +578,41 @@ done <<< "$floor_report"
 all_stated "mecha -> ci.yml"  'mecha==[0-9A-Za-z.*+!-]*'  "mecha==$MECHA_VERSION"   1 "$CI_WF"
 all_stated "beet -> ci.yml"   'beet==[0-9A-Za-z.*+!-]*'   "beet==$BEET_VERSION"     1 "$CI_WF"
 all_stated "pytest -> ci.yml" 'pytest==[0-9A-Za-z.*+!-]*' "pytest==$PYTEST_VERSION" 3 "$CI_WF"
+
+# The Rust suite's instruments (spec-0126 §1). nextest and llvm-cov are installed
+# by the `rust` job at the literal versions.toml records; the two scripts that run
+# them outside CI, and the kill-set proof that runs cargo-mutants, hold no copy:
+# each reads its key and refuses any other installed version. The coverage
+# record names the instruments it was measured with, and they are these.
+all_stated "cargo-nextest -> ci.yml"  'cargo-nextest@[0-9A-Za-z.+-]*'  "cargo-nextest@$NEXTEST_VERSION"   1 "$CI_WF"
+all_stated "cargo-llvm-cov -> ci.yml" 'cargo-llvm-cov@[0-9A-Za-z.+-]*' "cargo-llvm-cov@$LLVM_COV_VERSION" 1 "$CI_WF"
+for pair in "tools/ci/test-coverage-map.sh:llvm_cov_version" "tools/ci/test-coverage-map.sh:nextest_version" "tools/ci/test-kill-set.sh:mutants_version"; do
+  f="${pair%%:*}"; key="${pair##*:}"
+  if grep -qF -- "$key" "$ROOT/$f"; then
+    pass "$f reads [ci].$key from versions.toml"
+  else
+    fail "$f never reads [ci].$key — the instrument it runs is then pinned by nothing"
+  fi
+done
+baseline_report="$(python3 - "$ROOT" "$NEXTEST_VERSION" "$LLVM_COV_VERSION" <<'PY'
+import json, pathlib, sys, tomllib
+sys.stdout.reconfigure(newline="\n")
+root, nextest, llvm_cov = pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+rec = root / ".github/coverage-baseline.json"
+if not rec.is_file():
+    print("ok\tno coverage record yet (.github/coverage-baseline.json)")
+    raise SystemExit
+inst = json.loads(rec.read_text(encoding="utf-8")).get("instrument", {})
+rustc = tomllib.load((root / "rust-toolchain.toml").open("rb"))["toolchain"]["channel"]
+for key, want in (("rustc", rustc), ("cargo_llvm_cov", llvm_cov), ("nextest", nextest)):
+    got = inst.get(key)
+    print(("ok" if got == want else "bad") + f"\tcoverage record instrument.{key} {got!r} (pin: {want!r})")
+PY
+)"
+while IFS=$'\t' read -r status msg; do
+  [ -n "$status" ] || continue
+  if [ "$status" = "ok" ]; then pass "$msg"; else fail "$msg"; fi
+done <<< "$baseline_report"
 
 echo "== Skin toolchain ([skin], spec-0009) =="
 # Four statements of one library version, and the fourth is the one that matters

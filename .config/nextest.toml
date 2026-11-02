@@ -1,0 +1,15 @@
+# cargo-nextest's configuration (spec-0126 §1.1). The `rust` CI job runs the
+# whole suite as `cargo llvm-cov --no-report nextest --workspace --locked
+# --no-fail-fast --profile ci`: every test in its own process, each to its end.
+
+[profile.ci]
+fail-fast = false
+failure-output = "immediate-final"
+status-level = "fail"
+final-status-level = "slow"
+
+# One <testcase> per test with its `time`: the runner's own clock, which the
+# budget is judged by beside the Actions step duration. Written under the
+# target directory's `nextest/ci/`, and uploaded by the job on every run.
+[profile.ci.junit]
+path = "junit.xml"
