@@ -497,9 +497,10 @@ fn unreachable_finale_exits_2_with_dw0201() {
     assert_eq!(code(&a), 2, "analyze should exit 2");
     let stdout = String::from_utf8_lossy(&a.stdout);
     assert!(stdout.contains("DW0201"), "expected DW0201:\n{stdout}");
-    // The finale's own trigger names itself, so it never activates — the same
-    // deep fixpoint that proves the finale unreachable also proves the quest
-    // itself is a dead branch (DW0202): the two codes are companions here.
+    // The finale is armed by a quest that waits on the finale's own flag, so it
+    // never activates — the same deep fixpoint that proves the finale
+    // unreachable also proves the quest itself is a dead branch (DW0202): the
+    // two codes are companions here.
     assert!(stdout.contains("DW0202"), "expected DW0202:\n{stdout}");
 
     // build also stops at analysis (exit 2), never emitting.

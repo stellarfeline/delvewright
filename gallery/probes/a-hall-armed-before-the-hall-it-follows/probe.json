@@ -1,0 +1,15 @@
+{
+  "code": "DW1077",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/3/trigger",
+      "value": {
+        "type": "campaign-start"
+      }
+    }
+  ],
+  "units": [],
+  "why": "The long hall armed at `campaign-start`, while the plan says it `depends_on` the near hall. The plan and the run would put the long hall at different points of the story: the party could take it before the near hall. The trigger is held to the plan, not derived from it, because a join waits on several quests and a trigger on one; the check names the quest and the quest its trigger should name."
+}
