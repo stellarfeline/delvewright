@@ -27,7 +27,7 @@ flowchart LR
 flowchart TD
     U["🖐 /plugin marketplace add stellarfeline/delvewright<br/>/plugin install delvewright@delvewright<br/>/delvewright:new-delve，再加上提示"]:::human
     U --> CC["Claude Code 加载 new-delve skill<br/>SKILL.md · references/ · scripts/ · versions.toml"]
-    CC --> I1["I0–I1 · 机器上已经有的<br/>git · Python 3.11+ · 由 find-jdk.py 找到 Java 21+<br/>docker info · docker compose version"]
+    CC --> I1["I0–I1 · 机器上已经有的<br/>git · Python 3.11+<br/>docker info · docker compose version"]
     I1 --> I1B{"I1b · check-toolchain.py<br/>二进制、引擎源码树和 env.sh<br/>对照 versions.toml 的钉住版本"}
     I1B -->|"退出码 3：修复 · 退出码 4：首次运行"| I2["I2 · 在钉住的标签 delvec--v‹version›<br/>处克隆引擎到 ~/.delvewright/engine"]
     I2 --> I3A["I3a · fetch-delvec.py<br/>从引擎的 GitHub Release 获取<br/>发布归档和 SHA256SUMS"]

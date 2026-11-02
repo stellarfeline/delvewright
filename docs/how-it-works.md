@@ -27,7 +27,7 @@ The product is a Claude Code plugin ([ADR-0012](adr/0012-product-form-claude-cod
 flowchart TD
     U["🖐 /plugin marketplace add stellarfeline/delvewright<br/>/plugin install delvewright@delvewright<br/>/delvewright:new-delve, then the prompt"]:::human
     U --> CC["Claude Code loads the new-delve skill<br/>SKILL.md · references/ · scripts/ · versions.toml"]
-    CC --> I1["I0–I1 · already here?<br/>git · Python 3.11+ · Java 21+ via find-jdk.py<br/>docker info · docker compose version"]
+    CC --> I1["I0–I1 · already here?<br/>git · Python 3.11+<br/>docker info · docker compose version"]
     I1 --> I1B{"I1b · check-toolchain.py<br/>the binary, the engine tree and env.sh<br/>against the versions.toml pin"}
     I1B -->|"exit 3: repair · exit 4: first run"| I2["I2 · clone the engine at the pinned tag<br/>delvec--v‹version› into ~/.delvewright/engine"]
     I2 --> I3A["I3a · fetch-delvec.py<br/>the release archive and SHA256SUMS<br/>from the engine's GitHub Release"]

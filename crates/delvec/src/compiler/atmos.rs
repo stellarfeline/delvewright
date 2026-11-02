@@ -101,6 +101,22 @@ pub fn covers(ch: char) -> bool {
     ch == ' ' || glyph_for(ch).is_some()
 }
 
+/// Every character the `delve:art` font draws, as one string in a fixed order:
+/// space, then each glyph's character and, for a letter, its lowercase (drawn
+/// through the uppercase glyph). It is [`covers`] as a set, for a reader outside
+/// the compiler: `delvec l10n-inventory` hands it with every art row, so a
+/// translator writes an art title only in what the font can draw.
+pub fn covered_chars() -> String {
+    let mut out = String::from(" ");
+    for (c, _) in ART_GLYPHS {
+        out.push(*c);
+        if c.is_ascii_uppercase() {
+            out.push(c.to_ascii_lowercase());
+        }
+    }
+    out
+}
+
 fn glyph_for(ch: char) -> Option<&'static [&'static str; 7]> {
     let up = ch.to_ascii_uppercase();
     ART_GLYPHS.iter().find(|(c, _)| *c == up).map(|(_, g)| g)
@@ -391,6 +407,20 @@ const ART_GLYPHS: &[(char, [&str; 7])] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The set the inventory hands a translator is [`covers`] itself: every
+    /// character of the Basic Multilingual Plane answers the same from both.
+    #[test]
+    fn covered_chars_is_exactly_what_the_font_covers() {
+        let set = covered_chars();
+        let mut agreed = 0;
+        for ch in (0..=0xFFFFu32).filter_map(char::from_u32) {
+            assert_eq!(covers(ch), set.contains(ch), "U+{:04X}", ch as u32);
+            agreed += 1;
+        }
+        assert_eq!(agreed, 0xFFFF + 1 - 0x800, "every non-surrogate BMP scalar");
+        assert_eq!(set.chars().count(), 1 + ART_GLYPHS.len() + 26);
+    }
 
     /// spec-0096 §3.4: a styled art title is judged by the glyphs it draws. The
     /// markup's brackets are not art glyphs, and are not flagged; a character
