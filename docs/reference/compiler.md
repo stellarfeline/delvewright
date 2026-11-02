@@ -253,7 +253,7 @@ plus 9 × 2 × 64 KiB for those nine chunks' buffered pushes in the two lists a
 closure writes. The largest chunk depends on how densely a map's columns are
 reached, never on how many columns it has. The graphs' node tables live in the
 same file, one record per entry with one slot each in memory, as the bank's
-variants do. Every run prints `reach lists: B byte(s) in the scratch file; R
+variants do. A run that took a closure prints `reach lists: B byte(s) in the scratch file; R
 byte(s) resident at the end, under a budget of N (the working set: 3 x 3
 chunks of the largest decoded, C byte(s), and their buffered pushes); L chunk
 read(s) back over D record(s), E chunk(s) given up (ADR-0037 §2)` and `reach

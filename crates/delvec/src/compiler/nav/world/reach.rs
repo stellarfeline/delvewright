@@ -1755,17 +1755,20 @@ type FlownKey = ([i32; 3], Quadrants);
 /// directory (`reach/persist.rs`); a run that ends calls it once.
 pub fn persist_reach_cache() {
     let (loads, records, releases) = chunks::traffic();
-    eprintln!(
-        "reach lists: {} byte(s) in the scratch file; {} byte(s) resident at the end, under a \
-         budget of {} (the working set: 3 x 3 chunks of the largest decoded, {} byte(s), and \
-         their buffered pushes); {loads} chunk read(s) back over {records} record(s), \
-         {releases} chunk(s) given up (ADR-0037 §2)",
-        chunks::spilled(),
-        chunks::resident(),
-        chunks::budget(),
-        chunks::largest()
-    );
-    eprintln!("reach closures: {} (ADR-0037 §2)", chunks::visits());
+    // A run that took no closure and read no list back says nothing of them.
+    if chunks::visited() > 0 || loads > 0 {
+        eprintln!(
+            "reach lists: {} byte(s) in the scratch file; {} byte(s) resident at the end, under \
+             a budget of {} (the working set: 3 x 3 chunks of the largest decoded, {} byte(s), \
+             and their buffered pushes); {loads} chunk read(s) back over {records} record(s), \
+             {releases} chunk(s) given up (ADR-0037 §2)",
+            chunks::spilled(),
+            chunks::resident(),
+            chunks::budget(),
+            chunks::largest()
+        );
+        eprintln!("reach closures: {} (ADR-0037 §2)", chunks::visits());
+    }
     let (variants, bytes) = bank::census_all();
     if variants > 0 {
         eprintln!(

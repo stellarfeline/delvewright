@@ -200,6 +200,11 @@ impl Visits {
     }
 }
 
+/// How many (closure, chunk) pairs the run's closures visited.
+pub(super) fn visited() -> u64 {
+    VISIT_HIST.iter().map(|b| b.load(Ordering::Relaxed)).sum()
+}
+
 /// The run's visit distribution as a line: `n×k` for k (closure, chunk) pairs
 /// visited n times, and the most.
 pub(super) fn visits() -> String {
