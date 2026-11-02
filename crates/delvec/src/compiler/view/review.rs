@@ -841,6 +841,9 @@ pub fn write_review(
         // What each shot standing in this world shows: one grid, one sight
         // rule.
         let grid = crate::compiler::framing::VoxelGrid::build(&blocks);
+        // The grid answers every sight question the shots ask; the world's
+        // block map is not read again.
+        drop(blocks);
         for (i, s) in shots.iter().enumerate() {
             if s["world"].as_str() != Some(key.as_str()) {
                 continue;
