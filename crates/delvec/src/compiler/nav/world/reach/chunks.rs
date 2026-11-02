@@ -946,7 +946,8 @@ mod table_tests {
                         let beside = [c[0] + 100, c[1], c[2]];
                         assert!(l.get(beside).is_empty());
                     }
-                    l.with([0, 0, 0], |x| assert_eq!(x, m[&[0, 0, 0]].as_slice()));
+                    let (first, items) = m.first_key_value().expect("a push was made");
+                    l.with(*first, |x| assert_eq!(x, items.as_slice()));
                 };
                 check(&l, &m);
                 let (cl, cm) = copy.expect("a copy was taken");
