@@ -78,13 +78,14 @@ pub(in crate::compiler::nav) struct Store<T> {
 struct Inner<T> {
     /// The ids of the pages by the hash of their values.
     by_hash: HashMap<u64, Vec<u32>>,
-    /// Each page's offset in the file.
+    /// Each page's offset in the file; [`HELD`] for a page the file did
+    /// not take, which is never given up.
     at: Vec<u64>,
     /// The resident pages and when each was last read.
     resident: HashMap<u32, (Arc<[T]>, u64)>,
     tick: u64,
     /// The file; `None` when it could not be opened, and then every page
-    /// stays resident.
+    /// stays resident ([`HELD`]).
     spill: Option<Spill>,
     opened: bool,
 }
@@ -103,6 +104,9 @@ impl<T> Default for Store<T> {
         }
     }
 }
+
+/// The offset of a page the file did not take.
+const HELD: u64 = u64::MAX;
 
 /// Pages read back from the file, over the run.
 static LOADS: AtomicU64 = AtomicU64::new(0);
@@ -166,17 +170,19 @@ fn resident_of<T: Paged>() -> usize {
 
 impl<T: Paged> Inner<T> {
     fn evict(&mut self) {
-        if self.spill.is_none() {
-            return;
-        }
         let budget = budget();
         while self.resident.len() > budget {
-            let oldest = self
+            let at = &self.at;
+            let Some(oldest) = self
                 .resident
                 .iter()
+                .filter(|(id, _)| at[**id as usize] != HELD)
                 .min_by_key(|(id, (_, t))| (*t, **id))
                 .map(|(id, _)| *id)
-                .expect("over budget means non-empty");
+            else {
+                // Every resident page is one the file did not take.
+                return;
+            };
             self.resident.remove(&oldest);
         }
     }
@@ -226,14 +232,11 @@ impl<T: Paged> Store<T> {
         let id = u32::try_from(g.at.len()).expect("under 4 G pages");
         let mut bytes = Vec::with_capacity(PAGE_CELLS * T::BYTES);
         T::put(&v, &mut bytes);
+        // A page the file does not take (none opened, or a write failed)
+        // stays resident; the pages it took before can still be read back.
         let at = match g.spill.as_mut().map(|s| s.append(&bytes)) {
             Some(Ok((at, _))) => at,
-            Some(Err(_)) => {
-                // The file failed: every page stays resident from here.
-                g.spill = None;
-                0
-            }
-            None => 0,
+            _ => HELD,
         };
         PAGES.fetch_add(1, Ordering::Relaxed);
         BYTES.fetch_add(bytes.len() as u64, Ordering::Relaxed);
@@ -304,3 +307,52 @@ macro_rules! paged {
 
 paged!(u32, 4);
 paged!(u16, 2);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// **A page the file did not take is never given up**: a store with no
+    /// file, under a budget of one page, keeps every page it made and answers
+    /// each as made, hash-consing a repeat; with a file, the same pages are
+    /// given up past the budget and read back as made.
+    #[test]
+    fn a_page_is_given_up_only_when_the_file_holds_it() {
+        let pages: Vec<Vec<u16>> = (0..5u16)
+            .map(|k| {
+                (0..PAGE_CELLS as u16)
+                    .map(|i| i.wrapping_mul(k + 1))
+                    .collect()
+            })
+            .collect();
+        for file in [false, true] {
+            let store: Store<u16> = Store::default();
+            {
+                let mut g = store.inner.lock().expect("pages");
+                g.opened = true;
+                g.spill = if file {
+                    Spill::open("test-pages").ok()
+                } else {
+                    None
+                };
+            }
+            let (ids, resident, back) = with_budget(1, || {
+                let loads = LOADS.load(Ordering::Relaxed);
+                let ids: Vec<u32> = pages.iter().map(|p| store.intern(p)).collect();
+                assert_eq!(store.intern(&pages[2]), ids[2], "a repeat is the page made");
+                let mut g = store.inner.lock().expect("pages");
+                for (id, p) in ids.iter().zip(&pages) {
+                    assert_eq!(&*g.page(*id), &p[..], "page {id} (file: {file})");
+                }
+                (ids, g.resident.len(), LOADS.load(Ordering::Relaxed) - loads)
+            });
+            assert_eq!(ids, vec![0, 1, 2, 3, 4]);
+            if file {
+                assert_eq!(resident, 1, "with a file, the budget holds");
+                assert!(back > 0, "with a file, pages are read back");
+            } else {
+                assert_eq!(resident, 5, "without a file, every page stays");
+            }
+        }
+    }
+}
