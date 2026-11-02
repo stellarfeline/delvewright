@@ -88,7 +88,6 @@ without it.
 |---|---|---|
 | `git` | I2 clones the engine tree, in creator mode | `git --version` |
 | **Python 3.11+** | `tomllib` is stdlib from 3.11, and I3a's selector reads the pin with it. The five scripts in the skill root are stdlib Python | see below |
-| **Java 21+** | **the pinned game's own requirement** — 1.21.11 declares `javaVersion.majorVersion: 21` in Mojang's version manifest, and every jar-reading checker runs under it | `java -version` |
 | Docker | the play server at step 13, which drives `docker run` directly | `docker info` |
 | **Compose v2** | **a second install, and the whole of step 10 needs it** — every ladder entry point builds a `docker compose -p …` command line | `docker compose version` |
 
@@ -156,37 +155,6 @@ glob would silently run a page other than the one you are reading. A non-zero
 exit here is a **stop**: say what it printed. Nothing below can be run by hand
 around it, because a wrong skill root means a wrong pin, and a wrong pin means an
 engine nobody proved this page against.
-
-**Java is a stop — but look before you halt.** A machine whose default `java`
-answers below 21 very often *has* a 21 sitting beside it, unselected. Installing
-a JDK is the user's action; **choosing among the ones already on their disk is
-yours**, and halting for something already present spends the user's session on
-a `PATH` line:
-
-```sh
-"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/find-jdk.py"
-```
-
-It prints the highest JDK 21+ it found, as `<major> <path>`, and exits 1 having
-printed nothing when there is none. It asks each binary its own version and
-never reads one off a directory name: on a Homebrew machine `openjdk@20`, `@22`
-and `@23` are all symlinks to whatever `openjdk` currently is, so the name says
-20 and the binary answers 26 — and `openjdk@21`, the one that is genuinely 21,
-is keg-only and does not appear in `/usr/libexec/java_home -V` at all.
-
-Found one, export it for the session and say which you took:
-
-```sh
-export JAVA_HOME=<the path it printed>
-export PATH="$JAVA_HOME/bin:$PATH"
-java -version                            # confirm it, do not assume it
-```
-
-**Only if it prints nothing, halt** and tell the user a JDK 21 has to be
-installed — that, and not the selection, is their action. The failure you avoid
-by stopping is silent: a jar-reading tool whose Java is too old exits non-zero
-with a traceback that never names the version, several hours into the run, and
-reads as a broken gate.
 
 **Docker absent: halt.** Steps 10 and 13 cannot run at all without it.
 
@@ -432,10 +400,9 @@ git rev-parse --git-dir >/dev/null 2>&1 && ! git check-ignore -q .out/env.sh \
 E="$PWD/.out/env.sh"
 touch "$E"
 {
-  grep -Ev '^export (JAVA_HOME|DELVEWRIGHT_MODE|DELVEWRIGHT_ENGINE|DELVEWRIGHT_PYTHON|DELVEWRIGHT_SKILL|DELVEWRIGHT_DEBUG|DELVE_OUTPUT|DELVE_DOCKERFILE|PATH)=' "$E"
+  grep -Ev '^export (DELVEWRIGHT_MODE|DELVEWRIGHT_ENGINE|DELVEWRIGHT_PYTHON|DELVEWRIGHT_SKILL|DELVEWRIGHT_DEBUG|DELVE_OUTPUT|DELVE_DOCKERFILE|PATH)=' "$E"
   grep -q '^export DELVEWRIGHT_PREFABS=' "$E" || echo 'export DELVEWRIGHT_PREFABS=""'
   cat <<EOF
-export JAVA_HOME="$JAVA_HOME"
 export DELVEWRIGHT_MODE="$DELVEWRIGHT_MODE"
 export DELVEWRIGHT_ENGINE="$DELVEWRIGHT_ENGINE"
 export DELVEWRIGHT_PYTHON="$DELVEWRIGHT_PYTHON"
@@ -443,7 +410,7 @@ export DELVEWRIGHT_SKILL="$DELVEWRIGHT_SKILL"
 export DELVEWRIGHT_DEBUG="$DELVEWRIGHT_DEBUG"
 export DELVE_OUTPUT="$PWD/.out/delve"
 export DELVE_DOCKERFILE="$DELVEWRIGHT_ENGINE/validation/Dockerfile.delve"
-export PATH="\$JAVA_HOME/bin:<the bin or target/release directory>:\$PATH"
+export PATH="<the bin or target/release directory>:\$PATH"
 EOF
 } > "$E.next" && mv "$E.next" "$E"
 ```
@@ -461,7 +428,7 @@ wrote is stale**: I1b names it, and it is deleted, never sourced.
 **Do not reach for the shorter-looking remedy of calling `delvec` by absolute
 path**: it carries `delvec` and nothing else, while later steps need
 `$DELVEWRIGHT_ENGINE` for every Python tool and compose file, `$DELVEWRIGHT_SKILL`
-for every bundled script, `JAVA_HOME` for every jar-reading tool, and `DELVEWRIGHT_PREFABS` for
+for every bundled script, and `DELVEWRIGHT_PREFABS` for
 every invocation that reads a piece. A run that takes it reaches step 10 with
 `DELVEWRIGHT_ENGINE` empty and reads the failure as a broken harness.
 
@@ -684,7 +651,6 @@ read-only or full disk), not a missing prefab.
 
 | the line | a non-zero, and what it actually means |
 |---|---|
-| `java -version` | `JAVA_HOME` never reached `env.sh`, or the JDK I1 chose is not the one on `PATH`. Re-read I1; do not install anything |
 | `echo "$DELVEWRIGHT_ENGINE"` | empty means `env.sh` was not sourced, or I4 wrote it before I2 set the value |
 | the I1b line | anything but exit 0 means the toolchain is not the pin's: take I1b's table, not this one |
 | `delvec --version` | no answer: the binary on `PATH` is not the one I3a unpacked or I3b built — check the `PATH` line `env.sh` carries. **An answer whose number is not the pin's is the same failure**, and I1b's line above has already said which step repairs it |

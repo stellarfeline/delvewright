@@ -336,10 +336,12 @@ def test_the_i4_the_page_carries_repairs_env_sh_and_keeps_every_other_line(machi
     assert 'export DELVEWRIGHT_PREFABS="/the/library"' in text
     assert 'export SOME_PROVIDER_KEY="k"' in text
     for key in (
-        "JAVA_HOME", "DELVEWRIGHT_MODE", "DELVEWRIGHT_SKILL", "DELVEWRIGHT_PREFABS", "PATH",
+        "DELVEWRIGHT_MODE", "DELVEWRIGHT_SKILL", "DELVEWRIGHT_PREFABS", "PATH",
         "DELVEWRIGHT_DEBUG", "DELVE_OUTPUT", "DELVE_DOCKERFILE",
     ):
         assert len(re.findall(rf"^export {key}=", text, re.M)) == 1, (key, text)
+    # Init asks for no JDK, so the caller's JAVA_HOME never reaches the file.
+    assert not re.search(r"JAVA_HOME", text), text
     # The pair that travels together, the build tree under this working directory,
     # and the flag off by default (spec-0122 §4.1, §7.5).
     out = re.search(r'^export DELVE_OUTPUT="(.*)/\.out/delve"$', text, re.M)
