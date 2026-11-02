@@ -605,10 +605,11 @@ reuses `DW0193`.
 Exactly one tree per stage-2 NPC (`DW0152`/`DW0153`). Nodes reachable from `root`
 (`DW0120`/`DW0121`); `complete-objective` effects target a `talk-to` on the same
 NPC (`DW0122`); every `talk-to` has ≥1 reachable (`DW0123`) and ≥1 **ungated**
-(`DW0191`) completing option — where "gated" means `requires_flags` OR
-`forbids_flags`: either kind of flag gate can make the option unavailable exactly
-when it is needed, and the static analysis does no temporal reasoning about which
-flags end up set. **A completing option is drawn, and its click completes, under the
+(`DW0191`) completing option — where "gated" means the option carries any of
+its gate's three fields, `requires_flags`, `forbids_flags` or `requires_state`:
+each can make the option unavailable exactly when it is needed, and the static
+analysis does no temporal reasoning about which flags end up set or which value a
+datum holds. **A completing option is drawn, and its click completes, under the
 objective's whole pending guard** (spec-0093 §6.3) — quest active ∧ every `after`
 complete ∧ `requires_flags` ∧ `forbids_flags` ∧ `requires_state` ∧ not yet
 complete — the same `pending_guard` every other objective driver goes through, so
