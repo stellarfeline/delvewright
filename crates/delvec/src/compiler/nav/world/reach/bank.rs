@@ -417,7 +417,9 @@ impl Expansion<'_> {
 }
 
 /// One kept variant: where it lies in the spill ([`super::spill`]), or the
-/// variant itself for a bank whose spill could not be opened. What a node's
+/// variant itself for a bank whose spill could not be opened (a spill that
+/// opened and then fails stops the run: one policy for every scratch file,
+/// `spill::Spill::fail`). What a node's
 /// expansion read is the bulk of a variant — every window cell, at twelve
 /// bytes — and a build keeps one variant per node it flew for the life of the
 /// process, so the bank keeps a slot per variant in memory and the file
@@ -469,15 +471,11 @@ impl Bank {
         let slot = {
             let mut spill = self.spill.lock().expect("spill");
             match spill.as_mut() {
-                Some(s) => match s.append(&super::persist::encode_variant(v)) {
-                    Ok((at, len)) => Slot::Disk { at, len },
-                    Err(_) => {
-                        // The spill failed: hold this one, and every later
-                        // one, in memory rather than lose an accelerator.
-                        *spill = None;
-                        Slot::Held(Arc::clone(v))
-                    }
-                },
+                Some(s) => {
+                    let r = s.append(&super::persist::encode_variant(v));
+                    let (at, len) = s.or_fail("take a write", r);
+                    Slot::Disk { at, len }
+                }
                 None => Slot::Held(Arc::clone(v)),
             }
         };
@@ -501,15 +499,14 @@ impl Bank {
             match s {
                 Slot::Held(v) => out.push(v),
                 Slot::Disk { at, len } => {
-                    let bytes = self
-                        .spill
-                        .lock()
-                        .expect("spill")
-                        .as_mut()
-                        .and_then(|sp| sp.read(at, len).ok());
-                    if let Some(v) = bytes.as_deref().and_then(super::persist::decode_variant) {
-                        out.push(Arc::new(v));
-                    }
+                    let bytes = {
+                        let g = self.spill.lock().expect("spill");
+                        let sp = g.as_ref().expect("a variant on disk has its spill");
+                        sp.or_fail("read a variant back", sp.read(at, len))
+                    };
+                    let v = super::persist::decode_variant(&bytes)
+                        .expect("a variant reads back as it was written");
+                    out.push(Arc::new(v));
                 }
             }
         }
