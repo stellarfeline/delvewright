@@ -129,7 +129,8 @@ pub fn gallery_anchors() -> Value {
 /// Write the corridor into a fresh prefab directory under the test's temp
 /// root, and return it.
 pub fn gallery_prefabs(tag: &str, cuts: &Cuts) -> PathBuf {
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("long-gallery-prefabs-{tag}"));
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("long-gallery-prefabs-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     super::write_single_prefab(
         &dir,

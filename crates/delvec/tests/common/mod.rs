@@ -915,7 +915,7 @@ pub enum OceanRoom {
 ///
 /// Returns the directory, which is a temp copy: nothing here touches the library.
 pub fn ocean_prefabs_dir(tag: &str, room: OceanRoom) -> PathBuf {
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(tag);
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     copy_dir_all(&prefabs_dir(), &dir);

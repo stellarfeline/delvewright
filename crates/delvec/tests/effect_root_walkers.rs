@@ -238,10 +238,7 @@ fn prefabs_with_trap() -> PathBuf {
 fn corridor_prefabs() -> PathBuf {
     static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
     DIR.get_or_init(|| {
-        common::corridor::gallery_prefabs(
-            &format!("effect-root-walkers-{}", std::process::id()),
-            &common::corridor::Cuts::default(),
-        )
+        common::corridor::gallery_prefabs("effect-root-walkers", &common::corridor::Cuts::default())
     })
     .clone()
 }

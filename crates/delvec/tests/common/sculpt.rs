@@ -96,7 +96,8 @@ impl Run {
 
 /// Write `form` under the test's own scratch directory `tag` and sculpt it.
 pub fn sculpt(form: &serde_json::Value, tag: &str, extra: &[&str]) -> Run {
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("sculpt-{tag}"));
+    let dir =
+        Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("sculpt-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("form.json");
