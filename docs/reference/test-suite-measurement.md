@@ -26,7 +26,29 @@ The figures below are read from the tree and from one CI log, by the commands in
 
 What the shape says: the suite's cost is concentrated. Five binaries hold half the test time and run 65 tests between them; the slowest, `starter_program`, runs one test for 1,834 s. Those five all exercise one feature line (place authoring and its check) on the integrated tree; their engine-side cost is a separate round's work. The other 368 binaries hold the remaining half, spread over 5,000 tests whose overlap nobody has measured.
 
-What is **not** measured anywhere in the tree: code coverage by line, region or branch. What exists is surface coverage — gallery units (spec-0039, `tools/ci/check-gallery-coverage.py`), DW-diagnostic coverage (`tools/ci/check-dw-codes.py`) and grammar demonstration (`delvec grammar coverage`). Each proves a *surface* is exercised; none says which source regions a test executes, so none can say whether two tests execute the same ones. Verified by `grep -rilE 'llvm-cov|instrument-coverage|grcov|tarpaulin|cargo-mutants|nextest'` over the tree: one hit, a sentence in ADR-0031 that names `cargo-nextest` as a step not decided there.
+### Re-read on the post-audit tree **[authored, measured]**
+
+The same readings on the tree spec-0126's audit leaves (`feat/spec-0126` at `14924f389`), beside the runs that measured it. The suite runs as one nextest run per package's two crates (the library's unit tests and `tests/it/`); every run is on the remote build machine (16 cores) unless it names the Actions runner.
+
+| Reading | Value | Where read |
+|---|---|---|
+| `#[test]` functions | 5,213 in 585 `.rs` files (`dsl`: 227 unit + 653 integration in 82 modules; `delvec`: 1,351 unit + 2,982 integration in 292 modules) | `grep -rE '^\s*#\[test\]' crates` |
+| `#[ignore]` tests | 12 | the same tree |
+| Test binaries | 5 (`delvec` library, `delvec` binary, `delvec::it`, `delvewright-dsl` library, `delvewright-dsl::it`) | nextest's `Starting … across 5 binaries` |
+| Tests run | 5,201 run, 5,201 passed, 12 skipped; and 10 doc tests (`cargo test --doc`) | uninstrumented nextest run at `74167bd9b` |
+| Uninstrumented run (`cargo nextest run --workspace --profile ci`) | 1,581 s wall, 2 m 09 s of it the build; per-test JUnit times sum to 20,479 s; the longest test 1,190 s | the same run |
+| The old test step at the branch point (`cargo-test-concurrent.py --jobs 2`, 375 executables) | 1,791 s wall, 3 m 18 s of it the build; the executables' own times sum to 3,022 s; 5,207 passed + 10 doc tests | `80fdb68d2` |
+| Instrumented run, the `rust` job's step (`cargo llvm-cov --no-report nextest …`) | 5,294 s wall, 3 m 03 s of it the build; JUnit sum 64,982 s; the longest test, `detail_check_agrees::check_and_commit_agree_over_every_gallery_place_and_three_refusals`, 3,917 s; 54 tests over 120 s, 127 over 60 s | run D at `5111f07a0` |
+| The same instrumented run before consolidation (374 binaries) | 5,200 s wall, 5 m 02 s build; JUnit sum 63,926 s | run C at `d262886ea` |
+| Region coverage of production source | 231,890 of 246,511 (94.07 %); lines 93.51 %; functions 94.27 %; 51,823 regions in 206 files excluded as `cfg(test)` items | `.github/coverage-baseline.json` |
+| Per-test coverage map | 5,201 tests over 426,217 production region entries; two passes differ on 56 tests by 11,005 regions; 0 tests whose region set is a subset of another test's | `crates/delvec/tests/measured/suite-audit.json` `measured` |
+| Integration modules that spawn the built `delvec` | 103 of 292 (`delvec`; the regex above with `CARGO_BIN_EXE_delvec` added, 103 at the branch point too) | `grep -lE` over `crates/delvec/tests/it` |
+| Shared test helpers | 4,171 lines in 13 files under `crates/*/tests/{common,support}/` | `wc -l` |
+| Files holding in-process shared state | 54 (the 53 above and `common/built.rs`) | `grep -l` over `crates/*/tests` |
+
+What the re-read says: instrumentation is the cost. The same tree runs in 1,581 s uninstrumented and 5,294 s instrumented, and the instrumented run's critical path is one test of 3,917 s, so no arrangement of the suite brings the instrumented run under spec-0126's 25-minute bound on this tree; consolidation into five binaries took the build from 5 m 02 s to 3 m 03 s and left the run's wall clock where it was, because the run is bound by its longest tests, not by linking.
+
+What was **not** measured anywhere in the tree read first: code coverage by line, region or branch (the re-read tree measures region, line and function coverage; branch coverage stays nightly-only). What exists is surface coverage — gallery units (spec-0039, `tools/ci/check-gallery-coverage.py`), DW-diagnostic coverage (`tools/ci/check-dw-codes.py`) and grammar demonstration (`delvec grammar coverage`). Each proves a *surface* is exercised; none says which source regions a test executes, so none can say whether two tests execute the same ones. Verified by `grep -rilE 'llvm-cov|instrument-coverage|grcov|tarpaulin|cargo-mutants|nextest'` over the tree: one hit, a sentence in ADR-0031 that names `cargo-nextest` as a step not decided there.
 
 ## 2. Code coverage in Rust
 
@@ -179,4 +201,4 @@ What the trial settles, each a rule the spec takes:
 
 - The exact fault-detection loss Rothermel et al. report per subject: the article's full text was not retrieved; the finding is cited at the strength of its abstract and of the studies that cite it.
 - Whether cargo-nextest's experimental wrapper scripts can set a per-test `LLVM_PROFILE_FILE` (§2.4 construction 1): not tried; construction 2 is the one measured.
-- The overhead of `-C instrument-coverage` on this suite's run time beyond the `dsl` crate (§6 measures one crate); the audit round measures the whole.
+- Whether the instrumented run's overhead (5,294 s instrumented against 1,581 s uninstrumented on one tree, §1's re-read) is the same on the Actions runner: measured on the build machine only.
