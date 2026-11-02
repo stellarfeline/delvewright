@@ -245,10 +245,8 @@ Step 3 planned a hub, spokes, an optional strand and endings that read the run
 (*Step 3*, *The plan is a web, not a chain*). This is how stage 5 writes it.
 
 - **Each spoke and strand is armed by the hub**:
-  `"trigger": {"type": "quest-complete", "quest": "quest/<hub>"}`. The trigger
-  must agree with the plan's `depends_on`: `DW1077` refuses a `quest-complete`
-  trigger naming a quest the plan's `depends_on` for that quest does not list,
-  and a quest whose `depends_on` is non-empty armed at `campaign-start`.
+  `"trigger": {"type": "quest-complete", "quest": "quest/<hub>"}`, agreeing
+  with the plan's `depends_on` as `content.md` requires (`DW1077`).
 - **The join.** No trigger waits for several quests, so the finale is armed by
   one spoke (the last one the plan declares) and its first objective waits for
   every mandatory spoke: each spoke's `on_complete` carries
