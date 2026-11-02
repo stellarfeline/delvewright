@@ -3050,22 +3050,30 @@ fn a_campaign_without_branches_emits_no_branch_path() {
 // depend on a second repository.
 
 /// The gym, and the empty prefab library it is built against — generated once
-/// for the whole test binary, because it is a pure function of the engine.
+/// for every test that reads it, in whichever process asks first
+/// (`common::built`), because it is a pure function of the engine.
 fn gym() -> &'static (std::path::PathBuf, std::path::PathBuf) {
     static GYM: std::sync::OnceLock<(std::path::PathBuf, std::path::PathBuf)> =
         std::sync::OnceLock::new();
     GYM.get_or_init(|| {
-        let dir = tmp("perturb-gym");
-        let prefabs = tmp("perturb-gym-prefabs");
-        let out = delvec(&["metrics", "--gym", dir.to_str().unwrap()]);
-        assert_eq!(
-            code(&out),
-            0,
-            "the gym must generate: {}",
-            String::from_utf8_lossy(&out.stderr)
+        let root = common::built::built(
+            "perturb-gym",
+            common::built::Inputs::new().text("the metrics gym, and an empty prefab library"),
+            |root| {
+                let dir = root.join("gym");
+                std::fs::create_dir_all(root.join("prefabs")).unwrap();
+                let out = delvec(&["metrics", "--gym", dir.to_str().unwrap()]);
+                assert_eq!(
+                    code(&out),
+                    0,
+                    "the gym must generate: {}",
+                    String::from_utf8_lossy(&out.stderr)
+                );
+            },
         );
+        let dir = root.join("gym");
         assert!(dir.join("site-plan.json").is_file(), "the gym has a plan");
-        (dir, prefabs)
+        (dir, root.join("prefabs"))
     })
 }
 

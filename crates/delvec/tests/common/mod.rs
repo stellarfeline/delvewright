@@ -8,6 +8,7 @@
 use std::path::{Path, PathBuf};
 
 pub mod assembly_fixture;
+pub mod built;
 pub mod corridor;
 pub mod ferry;
 pub mod framing_fixture;

@@ -28,13 +28,6 @@ fn text(out: &Output) -> String {
     )
 }
 
-fn tempdir(name: &str) -> PathBuf {
-    let p = std::env::temp_dir().join(format!("dw-place-reads-{}-{name}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&p);
-    std::fs::create_dir_all(&p).unwrap();
-    p
-}
-
 fn build(campaign: &Path, prefabs: &Path, out: &Path) -> Output {
     let run = Command::new(BIN)
         .arg("--prefabs")
@@ -61,22 +54,34 @@ struct Point {
     stderr: String,
 }
 
-/// Built once per test process: every test below reads the same point.
+/// Built once for every test below, in whichever process asks first
+/// (`common::built`): every test reads the same point.
 fn point(_name: &str) -> &'static Point {
     static POINT: std::sync::OnceLock<Point> = std::sync::OnceLock::new();
-    POINT.get_or_init(|| built_point("point"))
+    POINT.get_or_init(built_point)
 }
 
-fn built_point(name: &str) -> Point {
-    let tmp = tempdir(name);
-    let (campaign, prefabs) = common::gallery_site_plan_detailed(&tmp);
-    let out = tmp.join("out");
-    let run = build(&campaign, &prefabs, &out);
+fn built_point() -> Point {
+    let root = common::repo_root();
+    let dir = common::built::built(
+        "place-reads-point",
+        common::built::Inputs::new()
+            .text("the gallery site-plan point, detailed and built")
+            .tracked(&root, "gallery")
+            .tracked(&root, "crates/delvec/tests/fixtures"),
+        |dir| {
+            let (campaign, prefabs) = common::gallery_site_plan_detailed(dir);
+            assert_eq!(campaign, dir.join("site-plan"));
+            assert_eq!(prefabs, dir.join("prefabs"));
+            let run = build(&campaign, &prefabs, &dir.join("out"));
+            std::fs::write(dir.join("build.stderr"), &run.stderr).unwrap();
+        },
+    );
     Point {
-        campaign,
-        prefabs,
-        out,
-        stderr: String::from_utf8_lossy(&run.stderr).to_string(),
+        campaign: dir.join("site-plan"),
+        prefabs: dir.join("prefabs"),
+        out: dir.join("out"),
+        stderr: std::fs::read_to_string(dir.join("build.stderr")).unwrap(),
     }
 }
 

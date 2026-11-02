@@ -23,13 +23,6 @@ use std::process::Command;
 
 const BIN: &str = env!("CARGO_BIN_EXE_delvec");
 
-fn tmp(name: &str) -> PathBuf {
-    let d = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(name);
-    let _ = std::fs::remove_dir_all(&d);
-    std::fs::create_dir_all(&d).unwrap();
-    d
-}
-
 /// A score range as `matches` writes it: `N`, `..N`, `N..`, `A..B`.
 fn in_range(v: i64, r: &str) -> bool {
     match r.split_once("..") {
@@ -151,24 +144,32 @@ fn read(dir: &Path, name: &str) -> String {
         .unwrap_or_else(|e| panic!("{name}: {e}"))
 }
 
-/// The gallery's primary, built once per process: its output directory.
+/// The gallery's primary, built once for every test below in whichever
+/// process asks first (`common::built`): its output directory.
 fn gallery() -> &'static Path {
     static OUT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
     OUT.get_or_init(|| {
-        let dir = tmp("press-agreement");
-        let (campaign, prefabs) = common::gallery_primary_at(&dir.join("gallery"));
-        let out = dir.join("build");
-        let r = Command::new(BIN)
-            .arg("build")
-            .arg(&campaign)
-            .arg("-o")
-            .arg(&out)
-            .arg("--prefabs")
-            .arg(&prefabs)
-            .output()
-            .unwrap();
-        assert!(r.status.success(), "{}", String::from_utf8_lossy(&r.stderr));
-        out
+        let root = common::repo_root();
+        common::built::built(
+            "press-agreement-gallery",
+            common::built::Inputs::new()
+                .text("the gallery primary, built")
+                .tracked(&root, "gallery"),
+            |dir| {
+                let (campaign, prefabs) = common::gallery_primary_at(&dir.join("gallery"));
+                let r = Command::new(BIN)
+                    .arg("build")
+                    .arg(&campaign)
+                    .arg("-o")
+                    .arg(dir.join("build"))
+                    .arg("--prefabs")
+                    .arg(&prefabs)
+                    .output()
+                    .unwrap();
+                assert!(r.status.success(), "{}", String::from_utf8_lossy(&r.stderr));
+            },
+        )
+        .join("build")
     })
 }
 

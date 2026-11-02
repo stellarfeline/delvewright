@@ -65,7 +65,9 @@ fn tmp(name: &str) -> PathBuf {
 fn patched_prefabs() -> PathBuf {
     static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
     DIR.get_or_init(|| {
-        let dir = tmp("v10-state-prefabs");
+        // One copy per process: under a runner that runs each test as its own
+        // process, a fixed name would be rebuilt under another reader.
+        let dir = tmp(&format!("v10-state-prefabs-{}", std::process::id()));
         common::copy_dir_all(&common::prefabs_dir(), &dir);
         let path = dir.join("hello-room.json");
         let mut meta: serde_json::Value =
