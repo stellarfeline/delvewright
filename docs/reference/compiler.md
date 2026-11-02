@@ -238,44 +238,61 @@ trapdoor's leaf is the fact of the cell it stands in, so a run whose world
 moves a door takes from the bank every node that read none of its cells.
 Either way the bytes a build emits are the same (`tests/reach_cache.rs`); the
 gallery coverage gate sets it to a scratch directory its probe runs share.
-Within a run the bank lives in a scratch file
-in the system's temporary directory, unlinked as soon as it is open: each
-variant is appended as the file format encodes it and read back when a later
-graph asks, and the bank holds one offset and length per variant in memory, so
-what it costs grows with the nodes flown by a few words each and never with
-the cells they read (ADR-0037). A run that kept any prints `reach bank: N node
-variant(s) kept over B byte(s) in the spill file` as it ends.
+Within a run the bank lives in a **scratch file**
+in the system's temporary directory (`TMPDIR`; never the output tree, which
+is the deliverable the determinism gates hash), unlinked as soon as it is
+open: each variant is appended as the file format encodes it and read back
+when a later graph asks, and the bank holds one offset and length per variant
+in memory, so what it costs grows with the nodes flown by a few words each and
+never with the cells they read (ADR-0037). A run that kept any prints `reach
+bank: N node variant(s) kept over B byte(s) in the spill file` as it ends.
+**One policy for every scratch file**: one that cannot be opened is no file,
+and the structure holds its records in memory instead (the same answers,
+slower); one that was opened and then refuses a write or a read back stops
+the run where it stands with a message naming the file, the operation, the
+error and the bytes written (exit `≥10`), since nothing it emits could stand
+without the record. Writes and reads are both positional, so a reader needs
+no lock against the writer, on Windows too (where a duplicated handle shares
+the file pointer); the reach module's tests run on the Windows target in CI
+for that reason.
 Every closure's successor and predecessor lists live in a second scratch file
 of the same kind, by reach chunk (a full-height column of 32 × 32 cells): a
-chunk is decoded while a proof reads it, under one resident budget for every
-list in the process, and written back out past it, so they cost the budget and
-never the reached cells (ADR-0037 §2). **The budget is the working set a walk
-by chunk needs**, measured, never set: the closure is taken and a proof walks
-it one chunk at a time, writing what crosses into the eight chunks round it,
-so the budget is 9 × the largest any chunk of any list has been decoded to,
-plus 9 × 2 × 64 KiB for those nine chunks' buffered pushes in the two lists a
-closure writes. The largest chunk depends on how densely a map's columns are
-reached, never on how many columns it has. The graphs' node tables live in the
-same file, one record per entry with one slot each in memory, as the bank's
-variants do. A run that took a closure prints `reach lists: B byte(s) in the scratch file; R
-byte(s) resident at the end, under a budget of N (the working set: 3 x 3
-chunks of the largest decoded, C byte(s), and their buffered pushes); L chunk
-read(s) back over D record(s), E chunk(s) given up (ADR-0037 §2)` and `reach
-closures: V chunk visit(s) over P (closure, chunk) pair(s), at most M for one
-chunk in one closure [NxK …]` and `reach portals: N portal edge(s) over F face
-cell(s), summed over the closures taken, at a chunk side of S (ADR-0037 §2)` as
-it ends: a portal edge is one whose two ends lie in different reach chunks, a
-face cell a cell one lands on. The portal counts depend on the chunk side and
-are written nowhere in the output tree. The window snapshot every graph reads
-(its cells' codes and raw membership) is held as pages of 4,096 cells, each
-distinct page once in the process and written to a scratch file when made; at
-most a budget of pages per value type is in memory (4 × the 3 × 3 ring of
-reach chunks of the tallest window built, at least 64), the rest read back on
-demand, and each thread keeps the last eight pages it read. The run prints
-`reach snapshot: P distinct page(s) of 4096 cell(s) over B byte(s) in the
-scratch file; R resident at the end, under a budget of N per value type …; L
-page(s) read back (ADR-0037 §2)`. A node table keeps each cell's first entry
-by reach chunk, the cell and its slot packed in a word each.
+chunk is decoded while a proof reads it and written back out when the budget
+asks, so they cost the budget and never the reached cells (ADR-0037 §2). The
+graphs' node tables live in the same file, one record per entry with one slot
+each in memory, as the bank's variants do; a node table keeps each cell's
+first entry by reach chunk, the cell and its slot packed in a word each. The
+window snapshot every graph reads (its cells' codes and raw membership) is
+held as pages of 4,096 cells, each distinct page once in the process and
+written to a third scratch file when made, the rest read back on demand, and
+each thread keeps the last eight pages it read.
+**One resident budget** holds every structure that pages (ADR-0037 §1): each
+states the working set its walk needs, in bytes, measured from what it has
+had to hold and never set by a host, and the budget is the sum of the needs
+stated. The lists' need is 9 × the largest any chunk of any list has been
+decoded to, plus 9 × 2 × 64 KiB for those nine chunks' buffered pushes in the
+two lists a closure writes (a closure is taken and a proof walks it one chunk
+at a time, writing what crosses into the eight chunks round it); the largest
+chunk depends on how densely a map's columns are reached, never on how many
+columns it has. The snapshot's need is 4 × the 3 × 3 ring of reach chunks of
+the tallest window built, over both value types, at least 64 pages' worth.
+Past the budget, the structure that just grew gives up its least recently
+used chunks or pages first, then every other, until the total stands at three
+quarters of the budget; what any of them answers never depends on what is
+resident. A run that took a closure prints `reach budget: R byte(s) resident
+at the end, under one budget of N byte(s), the sum of the working sets stated:
+… (ADR-0037 §1)`, `reach lists: B byte(s) in the scratch file; working set W
+byte(s) (3 x 3 chunks of the largest decoded, C byte(s), and their buffered
+pushes); L chunk read(s) back over D record(s), E chunk(s) given up (ADR-0037
+§2)`, `reach closures: V chunk visit(s) over P (closure, chunk) pair(s), at
+most M for one chunk in one closure [NxK …]`, `reach snapshot: P distinct
+page(s) of 4096 cell(s) over B byte(s) in the scratch file; R resident at the
+end, working set W byte(s) …; L page(s) read back; H of T page read(s) served
+by a thread's recent pages (ADR-0037 §2)` and `reach portals: N portal edge(s)
+over F face cell(s), summed over the closures taken, at a chunk side of S
+(ADR-0037 §2)` as it ends: a portal edge is one whose two ends lie in
+different reach chunks, a face cell a cell one lands on. The portal counts
+depend on the chunk side and are written nowhere in the output tree.
 The cost is disk: the town's bank (95 places) is 1.8 GB after one check, and grows with each program a place is checked with, since a node keeps up to eight variants.
 
 **The output directory** holds exactly what the last build emitted: a build into a directory a previous build wrote removes every file that build emitted and this one does not, and a directory holding anything no build wrote is refused untouched (`DW0967`, §5).

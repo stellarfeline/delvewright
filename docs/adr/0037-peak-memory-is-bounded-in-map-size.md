@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-11-01
-- **Source**: the requirement that a larger map need no more memory and that every whole-map stage process the map in bounded chunks; the memory profile of `delvec build` and `delvec detail --all` over the town campaign (95 places, site region 588 × 176 × 830) and the gallery, taken with two instruments that share no configuration — heaptrack (allocation sites, Linux) and the process's own resident set read from `/proc` once a second beside its timestamped stderr, with `/usr/bin/time -v` and macOS `/usr/bin/time -l` as the whole-run figures; the engine tree at the revision this record lands with; CLAUDE.md "Host hardware never caps a capability", "Debug doctrine", "A craft question … is researched"; ADR-0006; spec-0113 §4.7 and §7; the sources cited in §4.
+- **Source**: the requirement that a larger map need no more memory and that every whole-map stage process the map in bounded chunks; the memory profile of `delvec build` and `delvec detail --all` over the town campaign (95 places, site region 588 × 176 × 830) and the gallery, taken with two instruments that share no configuration — heaptrack (allocation sites, Linux) and the process's own resident set read from `/proc` once a second beside its timestamped stderr (`tools/maintenance/rss-sample.sh`, committed with the round that landed §5 item 1's rest; the rows before it were taken with the same script before it was committed, as their commit bodies say), with GNU `/usr/bin/time -v` (Ubuntu's `time` package) and macOS `/usr/bin/time -l` as the whole-run figures; the engine tree at the revision this record lands with; CLAUDE.md "Host hardware never caps a capability", "Debug doctrine", "A craft question … is researched"; ADR-0006; spec-0113 §4.7 and §7; the sources cited in §4.
 - **Supersedes**: nothing. Refines spec-0113 §7 (cost and caching of the reach graph) by naming the structures it keeps and bounding them.
 
 ## Context
@@ -93,7 +93,7 @@ Peak memory is about constant in map size: a fixed working set, with every whole
 
 The assembled world is held in **one section store**: 16 × 16 × 16-cell sections, each a palette of `BlockState`s and a packed index array, addressed by section coordinate; a section nothing wrote is absent and reads as what the level generator lays there (`plan::ocean_layer_at` under an ocean, air otherwise — the `Reached` distinction `Assembled` already keeps, now a property of the store). The `BTreeMap<[i32; 3], BlockState>` world and every whole-world `BTreeSet`/`BTreeMap` of cells derived from it (stages 1–3 above) are retired; the nav codes, the light bytes and the cell classes are **computed per section from the store** when a section is loaded, by the same per-cell functions that compute them today, and cached per section.
 
-The store holds at most **B resident sections** (the budget; the engine's default is stated in `docs/reference/compiler.md` and sized so that the working set of every stage below fits in it); a section past the budget is written to a scratch file beside the output tree and read back on demand, least recently used first. The budget is a number of sections, so the working set is the budget times the per-section cost of the stage, independent of the map. **Neither the budget nor the section size is an input to any emitted byte** — proven in §4.
+**One resident budget, in bytes, holds every structure that pages** — the section store, the reach graph's edge lists and node tables, the snapshot's pages, and whatever pages next (`reach/budget.rs`). Each states the **working set its walk needs**, measured from what it has had to hold and never set by a host: the lists' is the 3 × 3 ring of reach chunks as large as the largest any list has decoded, with the ring's buffered pushes; the snapshot's is four 3 × 3 rings of the tallest window's pages; the store's is the ring of section columns a stage's walk holds, times the per-section cost of the stage. The budget is the sum of the needs stated, so it is independent of the map. Every structure counts the bytes it holds against one process-wide total; past the budget, the structure that just grew gives up its least recently used holdings first, then every other is asked, until the total stands at three quarters of the budget. A holding given up is written to a scratch file in the system's temporary directory (never the output tree, which is the deliverable the determinism gates hash; a `--perturb` build has none) and read back on demand. A scratch file that cannot be opened is no file, and the structure holds its records in memory; one that was opened and then refuses a write or a read back stops the run with a message naming the file, the operation, the error and the bytes written — one policy for every spill (`reach/spill.rs`). **Neither the budget nor the section size is an input to any emitted byte** — proven in §4.
 
 The judged world is a **column mask** over the store (the boundary's playable columns grown by 16, with the barrier wall as a rule of the mask's faces), not a copy.
 
@@ -117,14 +117,16 @@ For each stage: how the map is chunked, what crosses a chunk border, and what ma
 
 ### 3. The engine states a build's cost before it starts
 
-Before stage 1, `delvec build` and `delvec detail` print one line, `resource cost:`, computed from the documents alone — the site plan's region, the horizon, the configurations the quest plan enumerates, and the budget — stating the working set (budget × the largest per-section cost of any stage), each summary's bound (reached bitmap: window cells / 8; portal edges and face labels: an upper bound from the window's chunk-face area and the launch set; the plain-sea summaries: at most one per water body of the horizon), and the scratch file's size (placed sections × section bytes). The line is part of the build's binding output and is written into `validation/resource-cost.json` beside the actual peak the process measured at exit (`frameset::peak_rss_bytes`), so a stated bound that was passed is a red the test suite can see. The hosting side meets the stated cost; the engine does not refuse a map for it.
+Before stage 1, `delvec build` and `delvec detail` print one line, `resource cost:`, **computed** from the documents and the store alone — the site plan's region, the horizon, the configurations the quest plan enumerates, and the budget of §1 — stating the working set (the budget, by the needs that sum to it), each summary's bound (reached bitmap: window cells / 8; portal edges and face labels: an upper bound from the window's chunk-face area and the launch set; the plain-sea summaries: at most one per water body of the horizon), and the scratch files' size (placed sections × section bytes; the reach graph's records). The line is part of the build's binding output and is written into `validation/resource-cost.json`, which holds the computed cost and nothing measured, so it is byte-identical across builds (ADR-0006). A measured peak never enters the output tree: it is the second instrument that cross-checks the computed figure, taken with GNU `time -v` and the `/proc` sampler, and goes in the commit bodies and this record. The hosting side meets the stated cost (CLAUDE.md "Host hardware never caps a capability"); the engine does not refuse a map for it.
 
 ### 4. Determinism, and how it is proven
 
-- No output byte depends on the section size, the reach-chunk size or the resident budget: a test builds the gallery at the smallest budget the engine accepts and at an unbounded one, and at two reach-chunk sizes, and asserts the output trees' hashes equal (the shape of the existing `--perturb` derivation check: vary what must not matter, assert nothing moved).
-- The chunked reach graph agrees with the whole-window one on generated worlds: the agreement test `reach/agreement.rs` already asks the same cases of several consumers; it gains the chunked expansion as one more consumer, red on any difference in states, edges or binding counts.
-- The chunked light field agrees with the whole-box flood on generated boxes, cell for cell, over several section orders.
-- The double-build hash comparison of ADR-0006 stays as it is, and the town is built once on the unchunked engine and once on the chunked one with the output trees compared byte for byte before the first chunked stage merges; the comparison is recorded in the commit body that lands it.
+What the tree proves, test by test, and what it owes:
+
+- **No answer of the reach graph depends on its chunk side or the resident budget** (`reach/agreement.rs`, `no_answer_depends_on_the_chunk_side_or_the_budget`): fifteen worlds asked of a closure kept in chunks of sixteen columns, of seven, and of two under a budget of one byte, and of one over a snapshot paged to nothing — every state, every state's successors and predecessors in order, the flags, the counts and both node tables equal; and in every reading the records read back from the lists are the edges counted at join. The closure is the one every launch gives (`the_chunked_closure_is_the_one_every_launch_gives`); each reader by chunk is held to its plain form over the same closure (`a_walk_by_chunk_answers_what_a_plain_walk_answers`, `the_route_tree_by_chunk_is_the_one_search_gives`, `the_portal_edges_are_the_edges_that_cross_a_chunk_face`); each store is held to a map (`a_list_kept_by_chunk_answers_what_a_map_answers`, taking the rewrite branch and a copy mid-stream under a budget of one byte; `a_table_keyed_by_chunk_answers_what_a_map_answers`; `the_states_answer_what_a_map_of_them_answers`); records read back while writers append are the records written (`spill::tests`, run on the Windows target in CI).
+- **The review world's light by strip is the whole-box flood** (`view/world.rs`, `a_strip_of_light_is_lit_as_the_whole_box_lights_it`): generated boxes, cell for cell, across straddling strips, with the halo one below the exact one shown to fail.
+- **The town, built on each landed engine and on the `main` it was measured against, with the output trees compared file by file** (per-directory hashes, two runs of each engine identical): recorded in the commit bodies and the tables below. The double-build hash comparison of ADR-0006 stays as it is.
+- **Owed, not built** (recorded as debt, in these words): no test builds the gallery at two budgets and two reach-chunk sides and asserts the output trees' hashes equal — the side and the budget have no knob outside the test module, so the invariance above is proven on the generated worlds and the town, not on the gallery's output bytes; the per-section light field of item 4 is not built, so no test compares it with the whole-box flood over several section orders; the `resource cost:` line of §3 is not built.
 
 ### 5. Implementation order
 
@@ -139,7 +141,7 @@ By memory saved per unit of work, from the profile:
 
 ## The first stage, demonstrated
 
-The largest consumer is the reach graph's retained memos, and the largest structure among them is the node bank. Landed with this record: **the bank spills its variants to an unlinked scratch file and keeps one slot per variant in memory** (`reach/bank.rs`; the town keeps 166,307 variants over 2,053,002,194 bytes of spill). Measured with the `/proc` sampler on the same Linux machine, base engine against the engine with the spill alone:
+The largest consumer is the reach graph's retained memos, and the largest structure among them is the node bank. Landed with this record: **the bank spills its variants to an unlinked scratch file and keeps one slot per variant in memory** (`reach/bank.rs`, 9808f6548; the town keeps 166,307 variants over 2,053,002,194 bytes of spill). Measured with the `/proc` sampler on the same Linux machine, the base engine (the branch point on `main`) against the engine with the spill alone (9808f6548):
 
 | Map | Base peak RSS | Spilled bank | Saved | Output |
 |---|---|---|---|---|
@@ -147,7 +149,7 @@ The largest consumer is the reach graph's retained memos, and the largest struct
 | widened town (143 M-cell region) | 15.92 GiB (17.09 GB) | 12.92 GiB (13.87 GB) | 3.00 GiB | byte-identical over all 270 files |
 | gallery (macOS, `time -l`) | 1.34 GB | 1.36 GB | none: its bank is 80 MB and its peak lies elsewhere | byte-identical over all 1,570 files |
 
-The saving is the bank's heap plus the allocator's slack over it, and it holds at both sizes because the bank's size is the town's reached nodes, which the region does not change. The peak stays at the review-world stage, so the second landed step is there: **the review world walks its ground cells instead of gathering them** (`view/world.rs`), measured the same way with both steps in:
+The saving is the bank's heap plus the allocator's slack over it, and it holds at both sizes because the bank's size is the town's reached nodes, which the region does not change. The peak stays at the review-world stage, so the second landed step is there: **the review world walks its ground cells instead of gathering them** (`view/world.rs`, c59392baa), measured the same way with both steps in (686fa7216):
 
 | Map | Base peak RSS | Both steps | Saved | Output |
 |---|---|---|---|---|
@@ -159,15 +161,15 @@ Growing the region by 57 M cells now costs 0.51 GiB of peak instead of 1.86 GiB:
 
 ## The closures, measured
 
-Measured on the remote Linux machine (16 CPU) with two instruments that share no configuration: GNU `time -v` (the kernel's maximum resident set from `wait4`, and elapsed time) wrapping the `/proc` sampler (VmRSS once a second, stderr timestamped). The two agree on the peak to within 25 MiB on every run. The tree is the branch with `main` merged in. Wall time on the shared machine moved by up to three minutes between runs of one binary while another round's jobs ran, so wall time is recorded and no timing is claimed from it.
+Measured on the remote Linux machine (16 CPU) with two instruments: GNU `time -v` (the kernel's maximum resident set from `wait4`, and elapsed time) wrapping the `/proc` sampler (VmRSS once a second, stderr timestamped). The two read one run and cross-check each other as instruments; the second method the measurement doctrine asks for is the file-by-file comparison of the output trees, which shares nothing with either. The two agree on the peak to within 25 MiB on every run. The tree is the branch at ea1179cbc (`main` merged in), with the rows' changes on top in order; the content is the town at the content revision the `campaigns/` link resolved to on the remote. Wall time on the shared machine moved by up to three minutes between runs of one binary while another round's jobs ran, so wall time is recorded and no timing is claimed from it.
 
 | Engine | Town peak, run 1 / run 2 | Town wall (time -v) | Widened-town peak | Output |
 |---|---|---|---|---|
 | `main`, without this record's steps | 14.12 GiB | 7 min 56 s | 15.89 GiB | — |
-| the bank spill and the walked ground, merged with `main` | 9.31 / 9.33 GiB | 7 min 9 s / 9 min 12 s | 10.15 GiB | byte-identical to `main` over all 267 (town) and 270 (widened) files |
-| closures shared, the kept closure the one the rounds grew | 9.58 / 9.54 GiB | 10 min 50 s / 9 min 17 s | 10.16 GiB | byte-identical |
-| the same, its lists shrunk in place | 9.42 / 9.43 GiB | 9 min 1 s / 9 min 21 s | 10.20 GiB | byte-identical |
-| closures shared, the memo keeping a one-sweep copy (landed) | 9.32 / 9.31 GiB | 8 min 36 s / 8 min 37 s | 9.94 GiB | byte-identical; the two town runs identical to each other |
+| the bank spill and the walked ground, merged with `main`, ea1179cbc | 9.31 / 9.33 GiB | 7 min 9 s / 9 min 12 s | 10.15 GiB | byte-identical to `main` over all 267 (town) and 270 (widened) files |
+| closures shared, the kept closure the one the rounds grew, 8f244e9a9 | 9.58 / 9.54 GiB | 10 min 50 s / 9 min 17 s | 10.16 GiB | byte-identical |
+| the same, its lists shrunk in place, cdd5d7110 | 9.42 / 9.43 GiB | 9 min 1 s / 9 min 21 s | 10.20 GiB | byte-identical |
+| closures shared, the memo keeping a one-sweep copy (landed), c4e6975d1 | 9.32 / 9.31 GiB | 8 min 36 s / 8 min 37 s | 9.94 GiB | byte-identical; the two town runs identical to each other |
 
 Sharing the closures saves nothing measurable at the peak or on the plateau: the copies callers took were short-lived, and the allocator reused their memory. The per-site figures of the profile above (1.03 GB of `preds` clones, 0.64 GB of `succ` clones) are each site's own peak, not memory held at the same moment. Keeping the closure the rounds grew instead of a one-sweep copy raised the peak by about 0.25 GiB; keeping a one-sweep copy returns it to the merged figure. The remaining reach-graph memory is in the bank's slots, the node tables, the snapshot and the closures themselves, which only the per-chunk graph of §2 bounds.
 
@@ -178,19 +180,19 @@ The closure is taken as the breadth-first search over reach chunks of §2 (`Worl
 
 **The one change §4 allows, declared.** Before, a round's nodes were flown in batches of 2,048 in cell order, each batch re-judged against what the batches before it had grown, so which launches were flown — and with them the edges joined, the launches simulated and the arcs credited — depended on that global order. Every launch is now judged against the closure at the start of its round. The reached states are the same set (`reach::agreement::the_chunked_closure_is_the_one_every_launch_gives`: the closure equals flying every launch of every node, on 15 worlds at two sides); the binding line and `validation/reach-graph.json` now count the launches this definition flies. On the town: 1,366,129 states either way; 9,024,330 edges against 8,882,406 (walk +4,403, fall +30,323, jump +107,198; dive, climb and exit unchanged); 130,843,256 launches simulated against 121,972,219 (+7.3 %); 86,855 arcs credited against 86,799. A predecessor list reads in cell order of the predecessor, since edges into one cell are joined from many chunks. No player-facing byte moved: of the 267 town files and 270 widened-town files, only `validation/reach-graph.json` and the manifest line that hashes it differ from `main`, and the datapack, creator datapack, PackTest datapack and server directories hash alike (a build emits no world or resource pack of its own).
 
-Measured on the remote Linux machine (16 CPU) with GNU `time -v` (the kernel's maximum resident set and elapsed time) wrapping the `/proc` sampler (VmRSS and `/proc/<pid>/io` once a second); the two agree on every peak below. Each engine force-rebuilt from its revision with cargo's status asserted.
+Measured on the remote Linux machine (16 CPU) with GNU `time -v` (the kernel's maximum resident set and elapsed time) wrapping the `/proc` sampler (VmRSS and `/proc/<pid>/io` once a second); the two agree on every peak below. Each engine force-rebuilt from its revision with cargo's status asserted; the content is the town at content revision 7fb8a921a (the whole town on the assembled town engine), the widened town derived from it by the measurement's own script.
 
 | Engine | Town peak | Town wall | Widened-town peak | Widened-town wall |
 |---|---|---|---|---|
 | `main` fa77f6431 | 14.09 GiB | 7 min 5 s | 15.91 GiB | 7 min 21 s |
 | the landed closures, 70e1b4744 | 9.41 GiB | 7 min 3 s | 10.01 GiB | 7 min 27 s |
 | lists by chunk, closure whole-window, c5c7a1246 (from the branch's earlier round) | 8.07 GiB | 11 min 21 s | — | — |
-| the closure by chunk, readers not yet by chunk, 256 MiB budget | 8.02 GiB | 8 min 49 s | 8.75 GiB | 9 min 8 s |
-| and the set readers by chunk, 256 MiB budget | 7.98 GiB | 6 min 18 s | — | — |
-| and the working-set budget, route tree not yet by chunk | 7.88 GiB | 6 min 54 s | — | — |
-| **and the route tree by chunk (landed), run 1 / run 2** | **7.88 / 7.99 GiB** | **5 min 59 s / 6 min 1 s** | **8.49 / 8.50 GiB** | **6 min 22 s / 6 min 23 s** |
+| the closure by chunk, readers not yet by chunk, 256 MiB budget, 198b4f595 | 8.02 GiB | 8 min 49 s | 8.75 GiB | 9 min 8 s |
+| and the set readers by chunk, 256 MiB budget, 173efa21e | 7.98 GiB | 6 min 18 s | — | — |
+| and the working-set budget, route tree not yet by chunk, 5b29a3378 | 7.88 GiB | 6 min 54 s | — | — |
+| **and the route tree by chunk (landed), 4efa76bf0 (measured at 63f34a0c1, which adds only docs), run 1 / run 2** | **7.88 / 7.99 GiB** | **5 min 59 s / 6 min 1 s** | **8.49 / 8.50 GiB** | **6 min 22 s / 6 min 23 s** |
 | `main` 80fdb68d2 (the bank kept with the campaign, leaves per cell), run 1 / run 2 | 13.26 / 13.34 GiB | 5 min 27 s / 5 min 27 s | 15.16 / 15.31 GiB | 5 min 44 s / 5 min 44 s |
-| **the same, merged with that `main` (landed), run 1 / run 2** | **7.71 / 7.74 GiB** | **5 min 23 s / 5 min 23 s** | **8.41 / 8.35 GiB** | **5 min 46 s / 5 min 46 s** |
+| **the same, merged with that `main` (landed), bba2fa009, run 1 / run 2** | **7.71 / 7.74 GiB** | **5 min 23 s / 5 min 23 s** | **8.41 / 8.35 GiB** | **5 min 46 s / 5 min 46 s** |
 
 The two landed runs of each map are byte-identical to each other over every file, before and after the merge; against each `main` only `validation/reach-graph.json` and its manifest line differ. Growing the region by 57 M cells costs 0.51–0.61 GiB of peak, the same as before: none of it is the reach graph's.
 
@@ -230,10 +232,11 @@ What the town's plateau still holds is outside item 1: the assembled world and i
 
 - A build's resident memory is the budget plus the stated summaries; a map twice the size takes twice the disk under the scratch file and the same memory. The hosting side reads the `resource cost:` line.
 - Every whole-world `BTreeMap<[i32; 3], _>` and `BTreeSet<[i32; 3]>` in the compiler becomes a per-section array or a declared list; a new pass that wants the whole world asks the store for it section by section, and a pass that collects cells into a whole-world set is the shape to refuse in review.
-- The reach graph's edge lists leave process memory: a proof that walks `preds` or `succ` reads them from the chunk's file through the same `Reach` API; the API keeps its shape and loses its `Clone`.
+- The reach graph's edge lists leave process memory: a proof that walks `preds` or `succ` reads them from the chunk's file through the same `Reach` API; the API keeps its shape and its `Clone`, a copy sharing the spilled records and copying the buffered ones.
 - The node bank is per chunk, persisted per chunk; a run that sets `DELVEC_REACH_CACHE` keeps the same hit rule (every read cell equal) at a chunk's granularity.
 - `spec-0113` §7's baseline table gains the memory column and the chunk-size invariance criterion.
-- The scratch file is written under the output directory (`-o`) and removed at exit; a `--perturb` build, which has no output directory, uses the system temporary directory for it and nothing else.
+- Every scratch file is written in the system's temporary directory, unlinked as soon as it is open, and read and written positionally; its one failure after opening stops the run (§1). A build's disk is the map's size there, never under `-o`.
+- One budget module is the only place a working set is summed or a holding given up; a new paged structure states a `Need` and registers, and adds no budget of its own.
 
 ## Revisit triggers
 
