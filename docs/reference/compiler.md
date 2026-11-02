@@ -475,7 +475,10 @@ closure, so a mandatory quest the closure does not reach is the convergence
 refusal `DW0132` and an optional quest the closure does reach is `DW0866`.
 A mandatory quest may not wait on an optional one, by `depends_on` or by
 stage-5 `quest-complete` trigger (`DW0867`); the reverse directions are the
-ordinary way a strand attaches to the spine. A mainline objective keyed on a
+ordinary way a strand attaches to the spine. A quest's stage-5 trigger agrees with
+its `depends_on`: a `quest-complete` trigger names a quest the plan lists for
+it, and a quest with a non-empty `depends_on` is not armed at `campaign-start`
+(`DW1077`); a join is armed by one of its arms. A mainline objective keyed on a
 flag only optional content produces is `DW0868`. The closure is
 `QuestPlanContent::spine` and the declaration is `QuestPlanContent::optional`
 — one authority each. `goal` → l10n `quest.<q>.goal`.
@@ -1255,7 +1258,7 @@ writing an empty sidecar and reading the coverage diagnostics back:
 ```
 { campaign_id, dsl_version, lang, declared, sidecar_present, world_title,
   npcs:    [{id, name, archetype, speech_style, demeanor?, motivation}],
-  entries: [{key, en, kind, speaker?, situation?, existing?, stale?}] }
+  entries: [{key, en, kind, speaker?, situation?, existing?, stale?, glyphs?}] }
 ```
 
 `entries` is the inventory itself (a CLI test asserts the key set equals what
@@ -1274,7 +1277,7 @@ line is said in, derived from the stage documents: the quest goal and its
 `happening`, the objective and what completing it does, a cast placement's
 `doing`, the NPC line a dialogue option answers and what choosing it does, the
 shop an offer sits in, the nearest enclosing effect's `happening`, and — on an objective's `title` row — `act: <acts>`, the acts its completion performs (`dsl::Objective::completion_acts`, spec-0114 §5). Together
-they are the intent a transcreator writes from. Persona rows carry voice, never plot
+they are the intent a transcreator writes from. `glyphs` is on an art title's row only (an art-styled `narrate`, `dsl::art_narrates`): every character the `delve:art` font draws (`compiler::atmos::covered_chars`, held to `atmos::covers` over the whole Basic Multilingual Plane by a unit test), so a translation is written in what the font draws rather than refused by `DW0328` at build. Persona rows carry voice, never plot
 (`secret`/`backstory`/`relationships` are excluded). Runs **before** validation
 gating — an incomplete sidecar is the normal state when you ask — and needs no
 prefab library; only an unparseable campaign fails (exit 1). See
