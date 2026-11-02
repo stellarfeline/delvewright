@@ -220,16 +220,16 @@ fn boundary_ocean_reach(world: &World, reach: &Reach) -> Result<(), Failure> {
         reach
             .states
             .iter()
-            .filter(|(c, k)| !wet(k) || world.wades(**c))
-            .map(|(c, _)| *c),
+            .filter(|(c, k)| !wet(k) || world.wades(*c))
+            .map(|(c, _)| c),
         |_| true,
         true,
     );
     let stranded: BTreeSet<[i32; 3]> = reach
         .states
         .iter()
-        .filter(|(c, k)| wet(k) && !back.contains(*c))
-        .map(|(c, _)| *c)
+        .filter(|(c, k)| wet(k) && !back.contains(c))
+        .map(|(c, _)| c)
         .collect();
     if stranded.is_empty() {
         return Ok(());

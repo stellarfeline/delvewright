@@ -856,7 +856,7 @@ fn answered(w: &World, roots: &[[i32; 3]], side: i32) -> Answered {
         let standing: Vec<[i32; 3]> = r.standing().into_iter().collect();
         w.fly_cells(&mut r, &standing);
         let memo = w.graph_memo(&super::ReachParams::shipped(w.unbounded_fall));
-        let cells: Vec<[i32; 3]> = r.states.keys().copied().collect();
+        let cells: Vec<[i32; 3]> = r.states.keys().collect();
         let strip = |l: Table| {
             l.into_iter()
                 .map(|(c, v)| {
@@ -867,7 +867,7 @@ fn answered(w: &World, roots: &[[i32; 3]], side: i32) -> Answered {
                 .collect::<Vec<_>>()
         };
         Answered {
-            states: r.states.iter().map(|(c, k)| (*c, *k)).collect(),
+            states: r.states.iter().collect(),
             succ: cells.iter().map(|c| r.succ(*c)).collect(),
             preds: cells.iter().map(|c| r.preds(*c)).collect(),
             census: r.census(),
@@ -970,20 +970,17 @@ fn the_chunked_closure_is_the_one_every_launch_gives() {
         for side in [16, 2] {
             super::chunks::at_side(side, || {
                 let mut r = w.body_reach(&roots);
-                let closed: Vec<([i32; 3], super::RestKind)> =
-                    r.states.iter().map(|(c, k)| (*c, *k)).collect();
+                let closed: Vec<([i32; 3], super::RestKind)> = r.states.iter().collect();
                 let exits: Vec<[i32; 3]> = r.leaves_world.iter().copied().collect();
-                let unflown = r.states.keys().filter(|c| r.unflown(**c)).count();
+                let unflown = r.states.keys().filter(|c| r.unflown(*c)).count();
                 loop {
-                    let nodes: Vec<[i32; 3]> =
-                        r.states.keys().copied().filter(|c| r.unflown(*c)).collect();
+                    let nodes: Vec<[i32; 3]> = r.states.keys().filter(|c| r.unflown(*c)).collect();
                     if nodes.is_empty() {
                         break;
                     }
                     w.fly_cells(&mut r, &nodes);
                 }
-                let every: Vec<([i32; 3], super::RestKind)> =
-                    r.states.iter().map(|(c, k)| (*c, *k)).collect();
+                let every: Vec<([i32; 3], super::RestKind)> = r.states.iter().collect();
                 assert_eq!(
                     closed, every,
                     "{name} (side {side}): the chunked closure misses or adds a state every launch \
@@ -1081,11 +1078,9 @@ fn a_walk_by_chunk_answers_what_a_plain_walk_answers() {
                     "{name} (side {side}): the walk through the sea by chunk reaches otherwise"
                 );
                 let mut by_chunk: Vec<Preds> = Vec::new();
-                r.preds_by_chunk(r.states.keys().copied(), |c, ps| {
-                    by_chunk.push((c, ps.to_vec()))
-                });
+                r.preds_by_chunk(r.states.keys(), |c, ps| by_chunk.push((c, ps.to_vec())));
                 by_chunk.sort_by_key(|(c, _)| *c);
-                let plain: Vec<Preds> = r.states.keys().map(|c| (*c, r.preds(*c))).collect();
+                let plain: Vec<Preds> = r.states.keys().map(|c| (c, r.preds(c))).collect();
                 assert_eq!(
                     by_chunk, plain,
                     "{name} (side {side}): the predecessors read by chunk differ"
@@ -1158,8 +1153,8 @@ fn the_portal_edges_are_the_edges_that_cross_a_chunk_face() {
                 let mut crossing = 0u64;
                 let mut faces: BTreeSet<[i32; 3]> = BTreeSet::new();
                 for c in r.states.keys() {
-                    for e in r.succ(*c) {
-                        if key(*c) != key(e.to) {
+                    for e in r.succ(c) {
+                        if key(c) != key(e.to) {
                             crossing += 1;
                             faces.insert(e.to);
                         }

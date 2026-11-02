@@ -2993,11 +2993,7 @@ impl World {
         // bitmap, and the cells outside the window by name.
         let mut held = Reach::default();
         let hold = |held: &mut Reach, c: [i32; 3]| {
-            if memo.dense.index(c).is_some() {
-                held.mark(&memo.dense, c);
-            } else {
-                held.states.insert(c, RestKind::Standing);
-            }
+            held.states.insert(&memo.dense, c, RestKind::Standing);
         };
         for c in &seen {
             hold(&mut held, *c);
@@ -3725,7 +3721,7 @@ impl World {
             .states
             .iter()
             .filter(|(_, k)| matches!(k, RestKind::Standing | RestKind::Holding))
-            .map(|(c, _)| *c)
+            .map(|(c, _)| c)
             .collect();
         self.left_to_fly(memo, reach, &nodes, &|c| reach.flown_mask(c))
     }
@@ -3848,8 +3844,7 @@ impl World {
                     let Some(kind) = e.kind else {
                         continue;
                     };
-                    reach.states.insert(*c, kind);
-                    reach.mark(&memo.dense, *c);
+                    reach.states.insert(&memo.dense, *c, kind);
                     if e.leaves_world {
                         reach.leaves_world.insert(*c);
                     }
@@ -3883,8 +3878,7 @@ impl World {
     /// cliff's lip), which a body walks or jumps under and falls out of the
     /// world through. `0` when there is none.
     fn envelope_open(&self, memo: &GraphMemo, reach: &Reach, c: [i32; 3]) -> Quadrants {
-        let d = &memo.dense;
-        self.envelope_toward(memo, c, &|x| reach.has(d, x))
+        self.envelope_toward(memo, c, &|x| reach.states.contains_key(&x))
     }
 
     /// Each of `cells` with the directions [`World::envelope_open`] still asks
@@ -4035,8 +4029,9 @@ pub struct JumpMiss {
 /// flags stay in memory.
 #[derive(Debug, Clone, Default)]
 pub struct Reach {
-    /// Every rest state reached, roots included.
-    pub states: BTreeMap<[i32; 3], RestKind>,
+    /// Every rest state reached, roots included: a bit per window cell and
+    /// the kinds by block ([`states::States`]).
+    pub states: states::States,
     /// Every reached state's edges, in the order they were found.
     succ: chunks::Lists<Edge>,
     /// Every reached state's predecessors, with the edge that joins them, in
@@ -4061,8 +4056,6 @@ pub struct Reach {
     /// Set to the budget when the closure's work passed it (`DW1042`): the
     /// closure is then partial, and no proof may take a verdict over it.
     pub over_budget: Option<u64>,
-    /// The reached states inside the window, as a bitmap over it.
-    bits: Vec<u64>,
     /// The portal edges the closure joined — edges whose ends lie in
     /// different reach chunks — and the face cells they land on, at the chunk
     /// side it was taken at (ADR-0037 §2); a reader's growth adds its own.
@@ -4262,36 +4255,17 @@ impl Reach {
         ) && self.flown_mask(c) != ALL_QUADRANTS
     }
 
-    fn mark(&mut self, d: &Dense, c: [i32; 3]) {
-        if let Some(i) = d.index(c) {
-            if self.bits.is_empty() {
-                self.bits = vec![0; d.cells.len().div_ceil(64)];
-            }
-            self.bits[i / 64] |= 1 << (i % 64);
-        }
-    }
-
-    fn has(&self, d: &Dense, c: [i32; 3]) -> bool {
-        match d.index(c) {
-            Some(i) => self
-                .bits
-                .get(i / 64)
-                .is_some_and(|w| w & (1 << (i % 64)) != 0),
-            None => self.states.contains_key(&c),
-        }
-    }
-
     /// The reached cells.
     pub fn cells(&self) -> BTreeSet<[i32; 3]> {
-        self.states.keys().copied().collect()
+        self.states.keys().collect()
     }
 
     /// The reached standing states.
     pub fn standing(&self) -> BTreeSet<[i32; 3]> {
         self.states
             .iter()
-            .filter(|(_, k)| **k == RestKind::Standing)
-            .map(|(c, _)| *c)
+            .filter(|(_, k)| *k == RestKind::Standing)
+            .map(|(c, _)| c)
             .collect()
     }
 
@@ -4309,7 +4283,7 @@ impl Reach {
     pub fn census(&self) -> [usize; 4] {
         let mut n = [0; 4];
         for k in self.states.values() {
-            n[*k as usize] += 1;
+            n[k as usize] += 1;
         }
         n
     }
@@ -4422,6 +4396,7 @@ mod chunks;
 mod flights;
 mod persist;
 mod spill;
+pub mod states;
 
 #[cfg(test)]
 mod tests;

@@ -815,7 +815,6 @@ impl World {
             reach
                 .states
                 .keys()
-                .copied()
                 .filter(|c| ways_out.contains(c) || returned_from(returned, *c)),
             |_| true,
             true,

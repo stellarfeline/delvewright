@@ -217,12 +217,7 @@ fn the_jetty_is_left_into_the_sea_by_a_jump_and_not_returned_to() {
         r.credited,
         t.elapsed()
     );
-    let sea: Vec<[i32; 3]> = r
-        .states
-        .keys()
-        .copied()
-        .filter(|c| w.ambient_water(*c))
-        .collect();
+    let sea: Vec<[i32; 3]> = r.states.keys().filter(|c| w.ambient_water(*c)).collect();
     assert!(!sea.is_empty(), "the graph did not enter the sea");
     assert!(!r.open_sea.is_empty(), "the sea is open");
 }
