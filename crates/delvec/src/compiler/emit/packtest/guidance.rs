@@ -953,6 +953,9 @@ pub(super) fn emit_highlight_spent_packtests(plan: &Plan, out: &mut BuildOutput,
     }
 }
 
+/// The wave compass template's two bodies and their height above the player.
+const COMPASS_WAVE_BODIES: [(&str, i32); 2] = [("near", 2), ("far", 4)];
+
 /// A compass following a `kill` points at the nearest living body of its
 /// wave, and moves to the next when that one dies (spec-0104 §6.3).
 pub(super) fn emit_compass_wave_packtest(plan: &Plan, out: &mut BuildOutput, g: &Guide) {
@@ -992,12 +995,17 @@ pub(super) fn emit_compass_wave_packtest(plan: &Plan, out: &mut BuildOutput, g: 
         "tag @e[tag={tag},tag=!dw_pt_cmpw] add dw_pt_cmpw_held"
     ));
     b.push(format!("tag @e[tag=dw_pt_cmpw_held] remove {tag}"));
-    // Two bodies of the wave's tag, two and four blocks from the player: mobs
-    // that die as a wave's do, so the one killed lies in its death animation
-    // while the compass is re-aimed.
-    for (name, dx) in [("near", 2), ("far", 4)] {
+    // Two bodies of the wave's tag, two and four blocks straight above the
+    // player: mobs that die as a wave's do, so the one killed lies in its death
+    // animation while the compass is re-aimed. Above, never beside: the test
+    // forces only the chunk its structure stands in, and an entity summoned into
+    // a chunk nobody loaded is invisible to `@e`, so a body beside the player
+    // lands in an unloaded neighbour whenever the random test origin sits near a
+    // chunk edge (`docs/reference/compiler.md`, the `compass` row). The
+    // player's own column is always in the test's chunk.
+    for (name, dy) in COMPASS_WAVE_BODIES {
         b.push(format!(
-            "execute at @s run summon minecraft:zombie ~{dx} ~ ~ {{NoAI:1b,Silent:1b,PersistenceRequired:1b,DeathLootTable:\"minecraft:empty\",Tags:[\"{tag}\",\"dw_pt_cmpw\",\"dw_pt_cmpw_{name}\"]}}"
+            "execute at @s run summon minecraft:zombie ~ ~{dy} ~ {{NoAI:1b,Silent:1b,PersistenceRequired:1b,DeathLootTable:\"minecraft:empty\",Tags:[\"{tag}\",\"dw_pt_cmpw\",\"dw_pt_cmpw_{name}\"]}}"
         ));
     }
     b.push(format!("function {ns}:compass_refresh"));
