@@ -466,8 +466,19 @@ impl Bank {
         b
     }
 
-    /// Spill `v` and record it under `key`.
+    /// Spill `v` and record it under `key`, unless the node already holds
+    /// its [`VARIANTS`].
     fn put(&self, key: super::FlownKey, v: &Arc<Variant>) {
+        // The bound is judged and the record written under the one lock, so
+        // two threads keeping one node at once cannot pass it between them,
+        // and no record lands in the spill that no slot names: the spill's
+        // bytes are the variants kept, the same in every run that keeps the
+        // same variants.
+        let mut nodes = self.nodes.lock().expect("bank");
+        let vs = nodes.entry(key).or_default();
+        if vs.len() >= VARIANTS {
+            return;
+        }
         let slot = {
             let mut spill = self.spill.lock().expect("spill");
             match spill.as_mut() {
@@ -479,13 +490,7 @@ impl Bank {
                 None => Slot::Held(Arc::clone(v)),
             }
         };
-        let mut nodes = self.nodes.lock().expect("bank");
-        let vs = nodes.entry(key).or_default();
-        // The bound is kept here, under the one lock, so two threads keeping
-        // one node at once cannot pass it between them.
-        if vs.len() < VARIANTS {
-            vs.push(slot);
-        }
+        vs.push(slot);
     }
 
     /// Every variant kept under `key`, read back; none for a node never kept.
@@ -781,6 +786,32 @@ impl Bank {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A node keeps its [`VARIANTS`] and no more, and the spill holds exactly
+    /// the records the slots name: the bound is judged before the write, so
+    /// the bank's bytes are the variants kept, whatever order threads keep
+    /// them in. (A record written past the bound and then dropped made two
+    /// runs that kept the same variants report different spill sizes.)
+    #[test]
+    fn a_variant_past_the_bound_is_never_written_to_the_spill() {
+        let b = Bank::holding(Vec::new());
+        let v = Arc::new(Variant {
+            deps: vec![(1, 0, 2), (3, 0, 4)],
+            head: None,
+            jumps: vec![[1, 2, 3]],
+            volumes: Vec::new(),
+            runs: Vec::new(),
+            edges: Arc::new(NodeEdges::default()),
+        });
+        let one = super::super::persist::encode_variant(&v).len() as u64;
+        assert!(one > 0);
+        let key: super::super::FlownKey = ([0, 0, 0], 0);
+        for _ in 0..VARIANTS + 3 {
+            b.put(key, &v);
+        }
+        assert_eq!(b.census(), (VARIANTS, one * VARIANTS as u64));
+        assert_eq!(b.variants(&key).len(), VARIANTS);
+    }
 
     /// A leaf cell the world is asked about is a cell the expansion read,
     /// wherever it lies: noted in the run it was read in, its box the run's,
