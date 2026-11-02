@@ -241,7 +241,7 @@ jobs:
       # ADR-0006's LINUX HALF. The determinism promise is "same DSL + same seed
       # -> byte-identical datapack and world", and until this step every gate
       # holding it ran on one machine: the double-build gate inside `rust`'s
-      # `cargo test` builds twice on THIS runner, and the prefab-generator job
+      # test run builds twice on THIS runner, and the prefab-generator job
       # runs each generator twice on THIS runner. Both catch an unseeded RNG or a
       # hash-ordered iteration; neither can catch a libm difference, a
       # float-formatting difference, or a directory-ordering difference between
@@ -305,7 +305,7 @@ jobs:
       # The compiler tests read the prefab library (`campaigns/prefabs/*.nbt`,
       # git-lfs); it lives in the content repo now (spec-0007 Step 0), checked out
       # at the pinned SHA into ./campaigns. The ADR-0006 double-build byte-identity
-      # gate runs inside `cargo test --workspace` (tests/cli.rs).
+      # gate runs inside the suite's one nextest run (`cli.rs`).
       - uses: ./.github/actions/checkout-content
       # rust-toolchain.toml pins the channel + clippy/rustfmt components,
       # which rustup on the runner installs automatically.
@@ -365,7 +365,7 @@ jobs:
             target/coverage.json
           if-no-files-found: warn
 
-      # The viewer's interactive layer is JavaScript, so `cargo test` cannot run
+      # The viewer's interactive layer is JavaScript, so the Rust test run cannot run
       # it — and for as long as that was the whole story the camera had NO
       # executable coverage at all. A and D shipped swapped; the mapping was
       # reported wrong a second time by the owner, from her own hands, because
@@ -1338,8 +1338,8 @@ jobs:
       #     build`, `clippy`, `test` and this step alike until it is classified,
       #     and it then begins life at zero bindings.
       #   * a CORPUS change cannot be pushed past it. The same assertion is a
-      #     `#[test]` in that module, so it runs inside `rust`'s `cargo test
-      #     --workspace` as well as here. This step exists on top of the test
+      #     `#[test]` in that module, so it runs inside `rust`'s nextest run
+      #     of the workspace as well as here. This step exists on top of the test
       #     because a table is what a reader acts on and an assertion message is
       #     not.
       # It sits in this job because this job already runs the grammar through
