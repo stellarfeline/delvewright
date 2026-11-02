@@ -855,7 +855,14 @@ fn judge_writes_over(
     for f in b.functions.clone() {
         let mut queue: Vec<(String, String)> = Vec::new();
         expand(ns, &f, &bodies, &mut Vec::new(), &mut at_load, &mut queue);
-        let mut falls: BTreeMap<[i32; 3], SequenceWrite> = BTreeMap::new();
+        // The cells a falling block may stand in once the function has run,
+        // each with the first write that changed it or the cell under it:
+        // kept as the section store (ADR-0037 §1) over the writes the
+        // function made, a byte per cell, never a tree entry carrying the
+        // write's text.
+        let mut falls: crate::compiler::sections::SectionMap<u32> =
+            crate::compiler::sections::SectionMap::new();
+        let mut fall_writes: Vec<SequenceWrite> = Vec::new();
         for (at, line) in queue {
             let write = SequenceWrite {
                 at,
@@ -893,11 +900,18 @@ fn judge_writes_over(
                 continue;
             }
             b.changed += changed.len();
+            let wi = u32::try_from(fall_writes.len()).expect("fewer than 2^32 writes");
+            let mut first_for_some = false;
             for c in &changed {
-                falls.entry(*c).or_insert_with(|| write.clone());
-                falls
-                    .entry(step(*c, Face::Up))
-                    .or_insert_with(|| write.clone());
+                for cell in [*c, step(*c, Face::Up)] {
+                    if !falls.contains_key(&cell) {
+                        falls.insert(cell, wi);
+                        first_for_some = true;
+                    }
+                }
+            }
+            if first_for_some {
+                fall_writes.push(write.clone());
             }
             // Who is asked `canSurvive` as the write lands (measured from the
             // pinned jar's bytes): a template asks every block it placed
@@ -957,11 +971,12 @@ fn judge_writes_over(
                 }
             }
         }
-        for (cell, write) in falls {
+        for (cell, &wi) in falls.iter() {
             let name = sim.at(cell);
             if !crate::compiler::assembled::is_falling_block(name) {
                 continue;
             }
+            let write = fall_writes[wi as usize].clone();
             b.falling += 1;
             let below = step(cell, Face::Down);
             let under = sim.at(below);
