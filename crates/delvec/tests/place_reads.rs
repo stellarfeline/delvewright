@@ -28,6 +28,13 @@ fn text(out: &Output) -> String {
     )
 }
 
+fn tempdir(name: &str) -> PathBuf {
+    let p = std::env::temp_dir().join(format!("dw-place-reads-{}-{name}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&p);
+    std::fs::create_dir_all(&p).unwrap();
+    p
+}
+
 fn build(campaign: &Path, prefabs: &Path, out: &Path) -> Output {
     let run = Command::new(BIN)
         .arg("--prefabs")

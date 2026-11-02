@@ -66,13 +66,13 @@ fn generate(rng: &mut Lcg) -> String {
     let mut text = String::new();
     let parts = 2 + (rng.next() % 6) as usize;
     for _ in 0..parts {
-        if rng.next() % 3 == 0 {
+        if rng.next().is_multiple_of(3) {
             text.push_str("#[cfg(test)]\n");
             text.push_str(rng.pick(TEST_ITEMS));
         } else {
             text.push_str(rng.pick(PRODUCTION));
         }
-        if rng.next() % 4 == 0 {
+        if rng.next().is_multiple_of(4) {
             text.push('\n');
         }
     }

@@ -58,7 +58,11 @@ impl Inputs {
             .output()
             .expect("git runs");
         assert!(out.status.success(), "git ls-files {pathspec} failed");
-        let listed: Vec<&[u8]> = out.stdout.split(|b| *b == 0).filter(|p| !p.is_empty()).collect();
+        let listed: Vec<&[u8]> = out
+            .stdout
+            .split(|b| *b == 0)
+            .filter(|p| !p.is_empty())
+            .collect();
         assert!(!listed.is_empty(), "git tracks nothing under {pathspec}");
         for rel in listed {
             let rel = String::from_utf8_lossy(rel).to_string();
@@ -76,7 +80,11 @@ impl Inputs {
         walk(dir, &mut files);
         files.sort();
         for f in files {
-            let rel = f.strip_prefix(dir).unwrap().to_string_lossy().replace('\\', "/");
+            let rel = f
+                .strip_prefix(dir)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
             let bytes = std::fs::read(&f).unwrap_or_else(|e| panic!("{}: {e}", f.display()));
             self = self.field("path", rel.as_bytes()).field("bytes", &bytes);
         }

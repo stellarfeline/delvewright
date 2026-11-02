@@ -179,8 +179,10 @@ fn prefabs_with_trap() -> PathBuf {
     DIR.get_or_init(|| {
         // One copy per process: under a runner that runs each test as its own
         // process, a fixed name would be rebuilt under another reader.
-        let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
-            .join(format!("effect_root_walkers_prefabs-{}", std::process::id()));
+        let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!(
+            "effect_root_walkers_prefabs-{}",
+            std::process::id()
+        ));
         let _ = std::fs::remove_dir_all(&dir);
         common::copy_dir_all(&common::prefabs_dir(), &dir);
         let path = dir.join("hello-room.json");

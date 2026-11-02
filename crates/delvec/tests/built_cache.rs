@@ -6,7 +6,7 @@ use std::process::Command;
 
 mod common;
 
-use common::built::{Inputs, built_at, builds, key};
+use common::built::{Inputs, builds, built_at, key};
 
 const CHILD: &str = "DW_BUILT_CHILD";
 
@@ -35,7 +35,13 @@ fn built_child() {
 
 fn spawn(cache: &Path, key: &str) -> std::process::Child {
     Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", &child_name(), "--nocapture", "--test-threads", "1"])
+        .args([
+            "--exact",
+            &child_name(),
+            "--nocapture",
+            "--test-threads",
+            "1",
+        ])
         .env(CHILD, format!("{}|{key}", cache.display()))
         .stdout(std::process::Stdio::piped())
         .spawn()
@@ -55,8 +61,8 @@ fn dir_of(child: std::process::Child) -> PathBuf {
 
 #[test]
 fn two_processes_with_equal_inputs_build_once_and_a_changed_input_builds_again() {
-    let cache = Path::new(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("built-probe-{}", std::process::id()));
+    let cache =
+        Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("built-probe-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&cache);
     let a = key(Inputs::new().text("probe input a"));
     let b = key(Inputs::new().text("probe input b"));
@@ -70,8 +76,16 @@ fn two_processes_with_equal_inputs_build_once_and_a_changed_input_builds_again()
 
     let d3 = dir_of(spawn(&cache, &b));
     assert_ne!(d3, d1, "a changed input is a different fixture");
-    assert_eq!(builds(&cache, "probe", &b), 1, "built once for the changed input");
-    assert_eq!(builds(&cache, "probe", &a), 1, "and the first was not rebuilt");
+    assert_eq!(
+        builds(&cache, "probe", &b),
+        1,
+        "built once for the changed input"
+    );
+    assert_eq!(
+        builds(&cache, "probe", &a),
+        1,
+        "and the first was not rebuilt"
+    );
     println!(
         "built: 3 calls in 3 processes over 2 inputs, {} builds",
         builds(&cache, "probe", &a) + builds(&cache, "probe", &b)
