@@ -171,7 +171,7 @@ pub(crate) fn run_frames_campaign(
         delvec::compiler::view::review::WorldMaker::new(&plan, &assembled, &base, &structures);
     let laid = delvec::compiler::view::beat::load_laid(&plan, &world);
     let day_time = delvec::compiler::view::review::Clock::at(&plan, 0).day_time(&plan);
-    let (_, written) = maker.encode_blocks(&load, &laid, day_time, &[]);
+    let (_, written) = maker.encode_blocks(load, &laid, day_time, &[]);
     if let Err(e) = delvec::compiler::view::world::write_files(&written, &world_dir) {
         eprintln!("internal error: cannot write {}: {e}", world_dir.display());
         return ExitCode::from(EXIT_INTERNAL);

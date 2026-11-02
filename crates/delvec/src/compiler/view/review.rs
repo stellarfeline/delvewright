@@ -451,13 +451,12 @@ impl WorldMaker {
     /// entity file), its block entities, its light and `day_time`.
     pub fn encode_blocks(
         &self,
-        blocks: &BlockMap,
+        mut blocks: BlockMap,
         laid: &[Region],
         day_time: i64,
         rows: &[&crate::compiler::placed::Placed],
     ) -> (BlockMap, WrittenWorld) {
         use crate::compiler::placed::PlacedObject;
-        let mut blocks = blocks.clone();
         let mut ground = self.ground.clone();
         for (lo, hi) in laid {
             ground.mark_box(*lo, *hi);
@@ -542,7 +541,7 @@ impl WorldMaker {
         rows: &[&crate::compiler::placed::Placed],
     ) -> (BlockMap, WrittenWorld) {
         self.encode_blocks(
-            &config.blocks(picture),
+            config.blocks(picture),
             &config.laid_regions(),
             clock.day_time(plan),
             rows,
@@ -824,18 +823,21 @@ pub fn write_review(
         let started = std::time::Instant::now();
         let rows: Vec<&crate::compiler::placed::Placed> =
             fw.rows.iter().map(|i| &ledger.rows[*i]).collect();
-        let (blocks, w) = maker.encode(plan, picture, &fw.config, &fw.clock, &rows);
+        let (blocks, mut w) = maker.encode(plan, picture, &fw.config, &fw.clock, &rows);
         let bodies = body_targets(&rows);
         let mut targets = targets.clone();
         targets.extend(bodies.iter().map(|b| b.target.clone()));
         let ms = started.elapsed().as_millis();
         let dir = format!("validation/worlds/{key}");
-        for (rel, bytes) in &w.files {
-            out.insert(format!("{dir}/{rel}"), bytes.clone());
-        }
         lines.push(world_line(key, &w, &dir, ms));
         worlds_json.push(world_json(key, &w));
         sha_of.insert(key.clone(), w.sha256.clone());
+        // The world's files move into the output; the encoded world keeps
+        // no second copy of them.
+        for (rel, bytes) in std::mem::take(&mut w.files) {
+            out.insert(format!("{dir}/{rel}"), bytes);
+        }
+        drop(w);
         // What each shot standing in this world shows: one grid, one sight
         // rule.
         let grid = crate::compiler::framing::VoxelGrid::build(&blocks);
