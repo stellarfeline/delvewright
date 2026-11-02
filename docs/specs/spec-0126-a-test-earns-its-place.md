@@ -38,9 +38,9 @@ The baseline is a measurement, so it names its instrument by exact revision and 
 | `excluded` | `{ "files": n, "regions": n }` — what the filter dropped |
 | `unstable_regions` | the size of the symmetric difference between the covered-region sets of two runs of the suite at `tree` (§2.3) |
 | `sha256` | over the canonical covered-region set of the writing run: the sorted list of `(path, line, column, covered)` for every region entry, one per line, LF — the one hash the trial showed stable across runs where the raw export's bytes are not (record §6); and `rows_sha256`, over the canonical JSON of `files`, which the gate recomputes |
+| `lowered_from` | absent, or the previous record's `regions` and `tree` when a PR lowered the floor (§2.2) |
 
 The totals — covered and count for regions, lines and functions — are derived from `files` by every reader and stored nowhere: a census derivable from the object is never hand-written.
-| `lowered_from` | absent, or the previous record's `regions` and `tree` when a PR lowered the floor (§2.2) |
 
 ### 2.2 What refuses, and what a PR that lowers it must carry **[authored]**
 

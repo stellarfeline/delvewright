@@ -1214,7 +1214,7 @@ def test_the_item_gate_precondition_reads_the_spelling_the_emitter_is_held_to(ga
     import re
 
     row = live_rows(gate, {"isl-02"})["isl-02"]
-    rust = (REPO_ROOT / "crates" / "delvec" / "tests" / "v07_held_item.rs").read_text()
+    rust = (REPO_ROOT / "crates" / "delvec" / "tests" / "it" / "v07_held_item.rs").read_text()
     asserted = re.findall(r'gate\.contains\(&format!\("([^"]*weapon\.mainhand[^"]*)"', rust)
     assert len(asserted) == 1, asserted
     item = re.search(r'const ITEM: &str = "([^"]+)"', rust).group(1)
