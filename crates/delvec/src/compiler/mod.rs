@@ -100,6 +100,7 @@
 //! - [`resting`]: every block the build writes reads as resting on what holds it, by the jar's outlines (`DW1076`, reported).
 //! - [`sculk`]: the sculk family works — at rest (`DW0998`/`DW0999`), a sensor's power reaching nothing (`DW1000`), a catalyst hearing no death (`DW1001`), and the walk's vibrations — spec-0100.
 //! - [`seating`]: a horizon and a piece set are a pair — this base cannot seat this pool (`DW0886`), and a declared waterline is not in the bytes (`DW0887`).
+//! - [`sections`]: the section store the assembled world is held in — 16 × 16 × 16 sections, a palette and one index per cell, iterated in cell order (ADR-0037 §1).
 //! - [`seeding`]: no emitted comparison reads a score entry the emitted pack never creates (`DW0495`).
 //! - [`served`]: what the declared view distance costs the host — the pinned server's chunk set, the fitted live heap, the ceiling stated in `server/resources.properties` (spec-0091).
 //! - [`sign`]: the sign at a `signs` entry's anchor shows its text (`DW1075`).
