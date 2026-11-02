@@ -13,6 +13,8 @@ import os
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
 import pytest
@@ -1273,3 +1275,79 @@ def test_fact_check_keeps_a_key_span_whole():
     assert any("key|use" in f for f in failures), failures
     failures = t.check_row(row, "这里的东西一碰就有回应：对它们按右键。", NAMES, "zh-cn")
     assert failures, failures
+
+
+# ------------------------------------------------------------ total deadline --
+
+
+def _trickling_server():
+    """A local server that answers 200 at once, then drips the body forever."""
+    import http.server
+    import threading
+    import time as _time
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            self.send_response(200)
+            self.send_header("Content-Length", "100000")
+            self.end_headers()
+            try:
+                for _ in range(200):
+                    self.wfile.write(b" ")
+                    self.wfile.flush()
+                    _time.sleep(0.25)
+            except OSError:
+                pass
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    srv.daemon_threads = True
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
+
+#: The real `urlopen`, read at import, before `conftest.no_network` replaces it.
+_REAL_URLOPEN = urllib.request.urlopen
+
+
+def _loopback_only(req, *args, **kwargs):
+    """The real `urlopen`, for a request to this machine's loopback only."""
+    host = urllib.parse.urlsplit(req.full_url).hostname
+    assert host == "127.0.0.1", f"a deadline test may reach loopback only, not {host}"
+    return _REAL_URLOPEN(req, *args, **kwargs)
+
+
+def test_a_reply_that_trickles_in_hits_the_total_deadline(monkeypatch):
+    import time as _time
+
+    monkeypatch.setattr(urllib.request, "urlopen", _loopback_only)
+    srv = _trickling_server()
+    try:
+        url = f"http://127.0.0.1:{srv.server_address[1]}/chat/completions"
+        start = _time.monotonic()
+        with pytest.raises(TimeoutError, match="no complete reply within 1s"):
+            t.post_json(url, {"x": 1}, {"Content-Type": "application/json"}, 1)
+        assert _time.monotonic() - start < 5, "the deadline bounds the whole request"
+    finally:
+        srv.shutdown()
+
+
+def test_a_deadline_names_the_rows_not_translated_and_exits_nonzero(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(t, "fetch_inventory", lambda *a, **k: inventory())
+    monkeypatch.setenv("TEST_I18N_KEY", "secret-value")
+    monkeypatch.setattr(t.time, "sleep", lambda _: None)
+
+    def slow(url, body, headers, timeout):
+        raise TimeoutError(f"no complete reply within {timeout}s")
+
+    monkeypatch.setattr(t, "post_json", slow)
+    cfg_path = write_config(tmp_path / "cfg.toml", CONFIG)
+    rc = t.main([str(tmp_path), "--lang", "zh-cn", "--config", str(cfg_path)])
+    err = capsys.readouterr().err
+    assert rc != 0
+    assert "no complete reply within" in err
+    assert "dlg.keeper.greet.text" in err and "not translated" in err
+    assert "secret-value" not in err
