@@ -132,3 +132,6 @@ them with the campaign. An approval that lives only in a gitignored working
 directory is bound to nothing, and the sidecar is what makes a view re-issuable
 with one word changed: it carries the prompt, the style note, the resolved frame
 and the anchor id.
+
+A demo level is the exception: its views are drawn and confirmed, and stay out
+of `design/` — `design-gate.md`, *`design.json`, the machine half*.
