@@ -358,7 +358,7 @@ jobs:
         with:
           name: rust-suite-measurements
           path: |
-            target/llvm-cov-target/nextest/ci/junit.xml
+            target/nextest/ci/junit.xml
             target/coverage.json
           if-no-files-found: warn
 
