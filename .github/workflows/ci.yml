@@ -387,6 +387,11 @@ jobs:
       # the line above.
       - name: a label belongs to the model that drew it (node --test)
         run: node --test crates/delvec/tests/labels.test.mjs
+      # Every test file of the audited tree has a row, and every removal its
+      # proof (spec-0126 §6): merges keep their assertions and DW codes, and the
+      # per-test time overrides are the ones the table counts.
+      - name: the suite audit table holds (rows, verdicts, proofs, overrides)
+        run: python3 tools/ci/check-suite-audit.py --merges --overrides
       # The coverage floor (spec-0126 §2.2), over the report this job produced:
       # region coverage of production source may not fall below the record's
       # floor by more than its measured run-to-run instability.

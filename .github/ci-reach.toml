@@ -48,6 +48,7 @@ inputs = [
   { glob = "tools/ci/fmt-workspaces.sh", why = "the formatting sweep this job runs" },
   { glob = ".config/nextest.toml", why = "the test step runs `cargo llvm-cov … nextest --profile ci`, whose profile (JUnit report, and the run's time bounds) this file holds" },
   { glob = ".github/coverage-baseline.json", why = "the coverage floor step (`tools/ci/coverage-floor.py`) judges the run's report against this record" },
+  { glob = "tools/ci/check-suite-audit.py", why = "the suite-audit step this job runs over `crates/delvec/tests/measured/suite-audit.json`" },
   { glob = "tools/ci/coverage-floor.py", why = "the coverage floor step this job runs, and `source_scan_agrees` asks its production rule" },
   { glob = "tools/lib/coverage_regions.py", why = "the production-region filter `coverage-floor.py` reads the report through" },
   { glob = "tools/ci/check-json-canonical.py", why = "the JSON sweep this job runs" },
