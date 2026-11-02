@@ -25,6 +25,10 @@ WHAT IT ASSERTS (exit 1 on any)
   --merges     also prints, per `merge into` row, the assertion-macro count and
                the DW-code multiset over the touched files at `tree` and now,
                and refuses a row where either differs.
+  --measure MAP --junit X --tree SHA [--second-map MAP2]
+               writes the measured columns (tests, seconds, unique_regions,
+               subsumed_tests, unknown_coverage_tests, shared_state) from a
+               coverage map and a JUnit report, keeping each row's verdict.
   --overrides  also asserts the `[[profile.ci.overrides]]` entries of
                `.config/nextest.toml` number the table's `overrides`, and each
                carries `filter = 'test(=…)'`, a `slow-timeout` and, inside its
@@ -100,17 +104,180 @@ def caught(path: pathlib.Path) -> set[str]:
     return {json.dumps(x["scenario"], sort_keys=True) for x in o.get("outcomes", []) if x.get("summary") == "CaughtMutant"}
 
 
+SHARED_STATE = re.compile(r"OnceLock|LazyLock|lazy_static|static [A-Z_0-9]+: *(std::sync::)?Mutex")
+
+
+def suite_of(file: str) -> str:
+    """The runner's binary id for a pre-audit test file: `<package>::<stem>`."""
+    parts = file.split("/")
+    pkg = {"delvec": "delvec", "dsl": "delvewright-dsl"}.get(parts[1], parts[1])
+    return f"{pkg}::{pathlib.Path(parts[-1]).stem}"
+
+
+def load_map(mapdir: pathlib.Path, index: dict) -> dict:
+    """{(binary, test): bitmap or None} from a coverage map's per-test files."""
+    out = {}
+    for p in sorted(mapdir.joinpath("tests").rglob("*.json")):
+        r = json.loads(p.read_text(encoding="utf-8"))
+        if r["regions"] is None:
+            out[(r["binary"], r["test"])] = None
+            continue
+        ids = []
+        for reg in r["regions"]:
+            key = (reg[0], reg[1], reg[2])
+            i = index.get(key)
+            if i is None:
+                i = index[key] = len(index)
+            ids.append(i)
+        out[(r["binary"], r["test"])] = ids
+    return out
+
+
+def to_bitmap(ids: list[int], size: int) -> bytearray:
+    bm = bytearray((size + 7) // 8)
+    for i in ids:
+        bm[i >> 3] |= 1 << (i & 7)
+    return bm
+
+
+def measure(args, root: pathlib.Path) -> int:
+    """Write the table's measured columns from a coverage map and a JUnit report.
+
+    `unique_regions`: production regions executed by a test of the file and by
+    no test of any other file or binary. `subsumed_tests`: the file's tests
+    whose region set is a subset of one test's set in another binary — the
+    HGS candidates of spec-0126 §3.2, never a verdict. A row's verdict and
+    proof are carried over from the existing table when it has one, else
+    `keep`."""
+    import xml.etree.ElementTree as ET
+
+    index: dict = {}
+    first = load_map(pathlib.Path(args.measure), index)
+    second = load_map(pathlib.Path(args.second_map), index) if args.second_map else None
+    size = len(index)
+    bitmaps = {k: (to_bitmap(v, size) if v is not None else None) for k, v in first.items()}
+    unstable_tests = unstable_regions = 0
+    if second is not None:
+        for k, v in second.items():
+            a, b = bitmaps.get(k), (to_bitmap(v, size) if v is not None else None)
+            if a is None or b is None:
+                continue
+            x = int.from_bytes(a, "little") ^ int.from_bytes(b, "little")
+            if x:
+                unstable_tests += 1
+                unstable_regions += bin(x).count("1")
+    ints = {k: int.from_bytes(b, "little") for k, b in bitmaps.items() if b is not None}
+    # Per region: how many tests execute it, and which binaries.
+    count = [0] * size
+    owner: list = [None] * size
+    for (binary, _), ids in first.items():
+        if ids is None:
+            continue
+        for i in ids:
+            count[i] += 1
+            if owner[i] is None:
+                owner[i] = binary
+            elif owner[i] != binary:
+                owner[i] = ""
+    keys = sorted(ints)
+
+    def subsumed(k) -> bool:
+        ids = first[k]
+        if not ids:
+            return False
+        rare = min(ids, key=lambda i: count[i])
+        byte, bit = rare >> 3, 1 << (rare & 7)
+        mine = ints[k]
+        for u in keys:
+            if u[0] == k[0]:
+                continue
+            if bitmaps[u][byte] & bit and mine & ~ints[u] == 0:
+                return True
+        return False
+
+    times: dict = collections.defaultdict(float)
+    tests: collections.Counter = collections.Counter()
+    for tc in ET.parse(args.junit).getroot().iter("testcase"):
+        times[tc.get("classname")] += float(tc.get("time"))
+        tests[tc.get("classname")] += 1
+    old = {}
+    table_path = root / args.table
+    if table_path.is_file():
+        old = {r["file"]: r for r in json.loads(table_path.read_text(encoding="utf-8"))["rows"]}
+    rows = []
+    for f in listing(root, args.tree):
+        b = suite_of(f)
+        mine = [k for k in keys if k[0] == b]
+        unknown = sum(1 for k, v in first.items() if k[0] == b and v is None)
+        uniq = len({i for k in mine for i in first[k] if owner[i] == b})
+        here = now_path(root, f)
+        text = here.read_text(encoding="utf-8") if here else ""
+        if "common::built" in text or "built::built(" in text:
+            state = "disk"
+        elif SHARED_STATE.search(show(root, args.tree, f)):
+            state = "cheap"
+        else:
+            state = "none"
+        prev = old.get(f, {})
+        rows.append({
+            "file": f,
+            "tests": tests.get(b, 0),
+            "seconds": round(times.get(b, 0.0), 3),
+            "unique_regions": uniq,
+            "subsumed_tests": sum(1 for k in mine if subsumed(k)),
+            "unknown_coverage_tests": unknown,
+            "shared_state": state,
+            "verdict": prev.get("verdict", "keep"),
+            "proof": prev.get("proof"),
+        })
+    doc = {
+        "tree": args.tree,
+        "files": len(rows),
+        "overrides": json.loads(table_path.read_text(encoding="utf-8")).get("overrides", 0) if table_path.is_file() else 0,
+        "measured": {
+            "map_tests": len(first),
+            "map_regions": size,
+            "map_exit_nonzero": sum(1 for v in first.values() if v is None),
+            "map_runs_compared": 2 if second is not None else 1,
+            "map_unstable_tests": unstable_tests,
+            "map_unstable_regions": unstable_regions,
+            "junit": pathlib.Path(args.junit).name,
+        },
+        "rows": rows,
+    }
+    table_path.parent.mkdir(parents=True, exist_ok=True)
+    table_path.write_text(json.dumps(doc, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
+    states = collections.Counter(r["shared_state"] for r in rows)
+    print(
+        f"measured: {len(rows)} rows; map {len(first)} tests over {size} regions, "
+        f"{doc['measured']['map_exit_nonzero']} without a set; second map: {unstable_tests} tests "
+        f"differ by {unstable_regions} regions; subsumed candidates "
+        f"{sum(r['subsumed_tests'] for r in rows)}; files with no unique region "
+        f"{sum(1 for r in rows if r['unique_regions'] == 0)}; shared_state "
+        + ", ".join(f"{k} {states[k]}" for k in sorted(states))
+    )
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root", default=None)
     ap.add_argument("--table", default=TABLE)
     ap.add_argument("--merges", action="store_true")
     ap.add_argument("--overrides", action="store_true")
+    ap.add_argument("--measure", help="a coverage map directory: write the table's measured columns")
+    ap.add_argument("--second-map", help="a second map of the same tree, compared for stability")
+    ap.add_argument("--junit", help="the JUnit report the seconds and test counts are read from")
+    ap.add_argument("--tree", help="the tree the audit is taken at (with --measure)")
     args = ap.parse_args()
     sys.stdout.reconfigure(newline="\n")
     root = pathlib.Path(args.root) if args.root else pathlib.Path(
         subprocess.run(["git", "rev-parse", "--show-toplevel"], stdout=subprocess.PIPE, text=True, check=True).stdout.strip()
     )
+    if args.measure:
+        if not (args.junit and args.tree):
+            ap.error("--measure needs --junit and --tree")
+        return measure(args, root)
     table = json.loads((root / args.table).read_text(encoding="utf-8"))
     tree = table["tree"]
     rows = table["rows"]
