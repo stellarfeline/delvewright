@@ -497,9 +497,10 @@ fn unreachable_finale_exits_2_with_dw0201() {
     assert_eq!(code(&a), 2, "analyze should exit 2");
     let stdout = String::from_utf8_lossy(&a.stdout);
     assert!(stdout.contains("DW0201"), "expected DW0201:\n{stdout}");
-    // The finale's own trigger names itself, so it never activates — the same
-    // deep fixpoint that proves the finale unreachable also proves the quest
-    // itself is a dead branch (DW0202): the two codes are companions here.
+    // The finale is armed by a quest that waits on the finale's own flag, so it
+    // never activates — the same deep fixpoint that proves the finale
+    // unreachable also proves the quest itself is a dead branch (DW0202): the
+    // two codes are companions here.
     assert!(stdout.contains("DW0202"), "expected DW0202:\n{stdout}");
 
     // build also stops at analysis (exit 2), never emitting.
@@ -2494,6 +2495,47 @@ fn l10n_inventory_rows_carry_kind_and_situation() {
     for k in ["dialogue", "option-label", "objective", "narration", "name"] {
         assert!(kinds.contains(k), "gallery binds no `{k}` row: {kinds:?}");
     }
+}
+
+/// An art title's row carries every character the `delve:art` font draws, and
+/// only a narrate row carries a set (`tools/creator/i18n-translate.py` holds a row
+/// to it, so a translation in a script the font lacks is refused before `DW0328`).
+/// Bound over the gallery, which declares an art `narrate`.
+#[test]
+fn l10n_inventory_hands_an_art_row_the_glyphs_its_font_draws() {
+    let gallery = common::repo_root().join("gallery");
+    let doc = inventory_doc(&gallery, "zh-cn");
+    let mut art = 0;
+    for e in doc["entries"].as_array().unwrap() {
+        let key = e["key"].as_str().unwrap();
+        let Some(glyphs) = e.get("glyphs") else {
+            continue;
+        };
+        art += 1;
+        let glyphs = glyphs.as_str().unwrap();
+        assert!(
+            key.ends_with(".narrate") || key.starts_with("containers."),
+            "{key}"
+        );
+        assert!(glyphs.contains('A') && glyphs.contains('a') && glyphs.contains(' '));
+        assert!(
+            !glyphs.contains('\u{6C34}'),
+            "{key}: Han is not an art glyph"
+        );
+        let en = e["en"].as_str().unwrap();
+        assert!(
+            en.chars()
+                .filter(|c| !"[]|".contains(*c))
+                .all(|c| glyphs.contains(c))
+                || en.contains("[["),
+            "{key}: the English art title `{en}` passes DW0328, so its set covers it"
+        );
+    }
+    assert!(
+        art > 0,
+        "the gallery declares an art narrate: 0 art rows bound"
+    );
+    println!("art rows bound: {art}");
 }
 
 /// A row whose recorded `source` differs from the English it reads now is

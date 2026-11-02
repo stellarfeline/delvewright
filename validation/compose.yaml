@@ -303,7 +303,9 @@ services:
       # `DW_BOT_OUT` scopes it per ladder: two concurrent runs from ONE checkout
       # share this host path, and the second would overwrite the first's report
       # (the same collision class as a shared container name, one layer up).
-      # `validation/bot-run.sh` and `branch-runs.sh` set it to `./run-out/<project>`;
+      # `validation/bot-run.sh` sets it to `./run-out/<project>` and `branch-runs.sh`
+      # to `./run-out/<project>/branch-bot`, so a branch run never touches the
+      # critical-path report;
       # the bare default is unchanged.
       - ${DW_BOT_OUT:-./run-out}:/delve/run-out
     command: ["/delve/critical-path.json"]

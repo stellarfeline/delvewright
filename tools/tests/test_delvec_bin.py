@@ -214,3 +214,74 @@ def test_every_tool_that_runs_an_engine_uses_the_one_resolver():
         src = (REPO / "tools" / "ci" / name).read_text(encoding="utf-8")
         assert "from delvec_bin import resolve" in src, name
         assert 'default=str(REPO / "target/release/delvec")' not in src, name
+
+
+def fake_dep_info(binary: Path, *inputs: Path) -> Path:
+    """The dep-info file cargo writes beside every binary it builds."""
+    d = binary.with_name(binary.name + ".d")
+    d.write_text(f"{binary}: " + " ".join(str(p).replace(" ", "\\ ") for p in inputs) + "\n")
+    return d
+
+
+def test_a_test_file_newer_than_the_binary_does_not_make_it_stale(delvec_bin, tmp_path):
+    """A file the build never read cannot change the binary.
+
+    `cargo build -p delvec --bin delvec` is a no-op after an edit under
+    `tests/`, so a refusal keyed on that edit cannot be cleared by the remedy it
+    prints.
+    """
+    repo = fake_repo(tmp_path)
+    main_rs = repo / "crates" / "delvec" / "src" / "main.rs"
+    test_rs = repo / "crates" / "delvec" / "tests" / "t.rs"
+    test_rs.parent.mkdir()
+    test_rs.write_text("#[test] fn t() {}\n")
+    age(main_rs, 7200)
+    for f in ("Cargo.toml", "Cargo.lock"):
+        age(repo / f, 7200)
+    binary = fake_delvec(repo)
+    age(binary, 3600)
+    fake_dep_info(binary, main_rs)
+
+    sink = Sink()
+    got = delvec_bin.resolve(None, repo=repo, caller="t", stream=sink)
+    assert got == binary
+    assert "dep-info" in sink.text
+
+
+def test_a_source_the_build_read_still_makes_it_stale(delvec_bin, tmp_path):
+    repo = fake_repo(tmp_path)
+    data = repo / "crates" / "delvec" / "data dir" / "acts.json"
+    data.parent.mkdir()
+    data.write_text("{}\n")
+    main_rs = repo / "crates" / "delvec" / "src" / "main.rs"
+    binary = fake_delvec(repo)
+    age(binary, 3600)
+    for f in ("Cargo.toml", "Cargo.lock"):
+        age(repo / f, 7200)
+    age(main_rs, 7200)
+    fake_dep_info(binary, main_rs, data)  # a path with a space, escaped as cargo does
+
+    sink = Sink()
+    with pytest.raises(SystemExit):
+        delvec_bin.resolve(None, repo=repo, caller="t", stream=sink)
+    assert "STALE INSTRUMENT" in sink.text
+    assert "acts.json" in sink.text
+
+
+def test_a_crate_manifest_is_an_input_dep_info_does_not_list(delvec_bin, tmp_path):
+    repo = fake_repo(tmp_path)
+    manifest = repo / "crates" / "delvec" / "Cargo.toml"
+    manifest.write_text("[package]\nname = \"delvec\"\n")
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    main_rs = repo / "crates" / "delvec" / "src" / "main.rs"
+    binary = fake_delvec(repo)
+    age(binary, 3600)
+    for f in ("Cargo.toml", "Cargo.lock"):
+        age(repo / f, 7200)
+    age(main_rs, 7200)
+    fake_dep_info(binary, main_rs)
+
+    sink = Sink()
+    with pytest.raises(SystemExit):
+        delvec_bin.resolve(None, repo=repo, caller="t", stream=sink)
+    assert "crates/delvec/Cargo.toml" in sink.text

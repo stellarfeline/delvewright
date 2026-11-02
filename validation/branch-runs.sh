@@ -96,8 +96,11 @@ PLAN="$OUT/validation/branch-plan.json"
 # concurrent loops from one checkout cannot overwrite each other's reports.
 # Reports are read from here and FILED under $RUN_OUT — before the split, a
 # custom DW_RUN_OUT silently lost every per-branch report.
-BOT_OUT="$here/run-out/$PROJECT"
-export DW_BOT_OUT="./run-out/$PROJECT"
+# A sub-directory this script owns: the ladder runs `bot-run.sh` under the same
+# project first, and its `run-out/<project>/run-report.json` is the record the
+# staging gate reads, so nothing here may write or delete that file.
+BOT_OUT="$here/run-out/$PROJECT/branch-bot"
+export DW_BOT_OUT="./run-out/$PROJECT/branch-bot"
 # The Dockerfile lives beside compose.yaml, never beside the build tree. Left to
 # compose's default it is resolved relative to the CONTEXT, so any tree outside
 # validation/ fails with `failed to read dockerfile`. bot-run.sh exports this;

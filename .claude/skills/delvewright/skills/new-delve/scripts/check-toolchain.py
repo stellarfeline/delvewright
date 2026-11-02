@@ -72,7 +72,6 @@ CLEARED = ENV_KEYS + (
     "DELVEWRIGHT_PREFABS",
     "DELVEWRIGHT_DEBUG",
     "DELVE_DOCKERFILE",
-    "JAVA_HOME",
 )
 
 # Where the session's environment lives, under the working directory, and the
