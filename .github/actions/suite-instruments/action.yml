@@ -25,7 +25,7 @@ runs:
         path: |
           ~/.cargo/bin/cargo-nextest
           ~/.cargo/bin/cargo-llvm-cov
-        key: suite-instruments-${{ runner.os }}-${{ runner.arch }}-cargo-nextest@0.9.148-cargo-llvm-cov@0.9.1
+        key: suite-instruments-${{ runner.os }}-${{ runner.arch }}-cargo-nextest@0.9.148_cargo-llvm-cov@0.9.1
     - name: install (cache miss)
       if: steps.cache.outputs.cache-hit != 'true'
       shell: bash

@@ -21,6 +21,7 @@ slow-timeout = { period = "60s", terminate-after = 2 }
 # measured: 300 s on the build machine; the whole gallery is its scenario.
 filter = 'test(=a::a_one)'
 slow-timeout = { period = "400s", terminate-after = 1 }
+priority = 100
 """
 
 
@@ -128,6 +129,12 @@ def test_an_override_count_the_table_does_not_state_is_red(repo):
     t = table(repo)
     write(repo, t["tree"], t["rows"], overrides=0)
     assert "the table states 0" in run(repo, "--overrides").stderr
+
+
+def test_an_override_without_a_priority_is_red(repo):
+    cfg = repo / ".config/nextest.toml"
+    cfg.write_text(cfg.read_text().replace("priority = 100\n", ""))
+    assert "carries no priority above the default" in run(repo, "--overrides").stderr
 
 
 def test_an_override_without_its_measured_time_is_red(repo):

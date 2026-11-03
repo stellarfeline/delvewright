@@ -1,15 +1,518 @@
-# cargo-nextest's configuration (spec-0126 §1.1). The `rust` CI job runs the
-# whole suite as `cargo llvm-cov --no-report nextest --workspace --locked
-# --no-fail-fast --profile ci`: every test in its own process, each to its end.
+# cargo-nextest's configuration (spec-0126 §1.1, §5). The `rust` family of CI
+# jobs runs the whole suite as N partitions of one instrumented archive:
+# `cargo llvm-cov nextest --no-report --archive-file … --profile ci
+# --partition hash:k/N` — every test in its own process, each to its end.
 
 [profile.ci]
 fail-fast = false
 failure-output = "immediate-final"
 status-level = "fail"
 final-status-level = "slow"
+# spec-0126 §5: each partition's test run is bounded at 25 minutes, and a test
+# at 120 s (printed SLOW at 60 s, terminated at the second period) unless an
+# override below declares its measured time and why it cannot be smaller.
+global-timeout = "25m"
+slow-timeout = { period = "60s", terminate-after = 2 }
 
 # One <testcase> per test with its `time`: the runner's own clock, which the
 # budget is judged by beside the Actions step duration. Written under the
-# target directory's `nextest/ci/`, and uploaded by the job on every run.
+# target directory's `nextest/ci/`, and uploaded by every partition on every run.
 [profile.ci.junit]
 path = "junit.xml"
+
+# The tests that need more than 120 s (spec-0126 §5.4), one entry each: the
+# measured time (the largest over the Actions runs named in the commit that
+# wrote the entry), why the scenario cannot be smaller, a slow-timeout of 1.5x
+# the measurement rounded up to the minute, and a priority so that a
+# partition's longest tests start first. `tools/ci/check-suite-audit.py
+# --overrides` holds the count to the audit table.
+
+[[profile.ci.overrides]]
+# measured: 554 s on the Actions runner, instrumented (the largest of 4 run(s)); both reach proofs run over generated worlds until they meet the same faces; the generated set is the test's denominator
+filter = 'test(=compiler::nav::learned::learned_tests::both_proofs_meet_the_same_faces_over_generated_worlds)'
+slow-timeout = { period = "840s", terminate-after = 1 }
+priority = 80
+
+
+[[profile.ci.overrides]]
+# measured: 962 s on the Actions runner, instrumented (the largest of 4 run(s)); every consumer of the reach graph asked the same generated cases; the denominator is every consumer, and the cases are the agreement
+filter = 'test(=compiler::nav::world::reach::agreement::every_consumer_reaches_what_the_reach_graph_reaches)'
+slow-timeout = { period = "1500s", terminate-after = 1 }
+priority = 100
+
+
+[[profile.ci.overrides]]
+# measured: 1270 s on the Actions runner, instrumented (the largest of 4 run(s)); one valley of the hollow-vigil proportions (48 by 48, a 40-step carved staircase) verified unclimbable cell by cell; a smaller rim would not hold a staircase that clears the crest
+filter = 'test(=compiler::surround::tests::a_carved_staircase_up_the_inner_slope_is_dw0369)'
+slow-timeout = { period = "1920s", terminate-after = 1 }
+priority = 100
+
+
+[[profile.ci.overrides]]
+# measured: 210 s on the Actions runner, instrumented (the largest of 4 run(s)); the admission checks re-run over every piece of the admitted library; the denominator is the library
+filter = 'test(=admit_library::the_second_door_is_opened_on_every_shipped_prefab)'
+slow-timeout = { period = "360s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 252 s on the Actions runner, instrumented (the largest of 4 run(s)); `allocation --all` over the whole site-plan point, whose wave bound is a property of the whole plan
+filter = 'test(=allocation_concurrency::allocation_all_prints_the_bound_on_stderr_from_the_machine_and_the_plan)'
+slow-timeout = { period = "420s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 143 s on the Actions runner, instrumented (the largest of 4 run(s)); a blockout derived over a whole campaign and checked by its independent observer
+filter = 'test(=blockout::a_low_wall_reddens_dw0838)'
+slow-timeout = { period = "240s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 155 s on the Actions runner, instrumented (the largest of 4 run(s)); a blockout derived over a whole campaign and checked by its independent observer
+filter = 'test(=blockout::a_seamless_border_is_crossed_anywhere_along_it)'
+slow-timeout = { period = "240s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 129 s on the Actions runner, instrumented (the largest of 4 run(s)); a blockout derived over a whole campaign and checked by its independent observer
+filter = 'test(=blockout::an_open_side_is_a_stand_ins_opening_onto_the_commons)'
+slow-timeout = { period = "240s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 121 s on the Actions runner, instrumented (the largest of 4 run(s)); a branching campaign built by the instrumented engine and its transport proof flown on each branch; the proof is over whole builds
+filter = 'test(=branch_transport::a_campaign_without_branch_only_crossings_gets_an_empty_overlay)'
+slow-timeout = { period = "240s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 127 s on the Actions runner, instrumented (the largest of 4 run(s)); a campaign built twice by the instrumented engine and the bytes compared (ADR-0006), or the exit-code matrix over whole builds
+filter = 'test(=cli::a_defect_this_campaign_has_nothing_for_is_still_refused)'
+slow-timeout = { period = "240s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 130 s on the Actions runner, instrumented (the largest of 4 run(s)); a campaign built twice by the instrumented engine and the bytes compared (ADR-0006), or the exit-code matrix over whole builds
+filter = 'test(=cli::perturb_short_walls_reddens_dw0838_beside_dw0836)'
+slow-timeout = { period = "240s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 369 s on the Actions runner, instrumented (the largest of 4 run(s)); `tools/ci/check-dw-codes.py` run against the built binary's registry over every catalog page and every test; the denominator is every code
+filter = 'test(=codes::the_registry_is_exactly_the_declared_codes)'
+slow-timeout = { period = "600s", terminate-after = 1 }
+priority = 80
+
+
+[[profile.ci.overrides]]
+# measured: 150 s on the Actions runner, instrumented (the largest of 4 run(s)); a place detailed inside the box the whole gave it, over the whole gallery point, by the instrumented engine
+filter = 'test(=detail::dw0990_refuses_a_crack_and_passes_a_faced_edge_and_a_step)'
+slow-timeout = { period = "240s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 851 s on the Actions runner, instrumented (the largest of 4 run(s)); a commit over the whole gallery point watched by a concurrent reader; the race is only visible over a commit that writes every target
+filter = 'test(=detail_atomic_write::a_commit_leaves_only_its_targets_and_a_reader_never_sees_a_torn_plan)'
+slow-timeout = { period = "1320s", terminate-after = 1 }
+priority = 100
+
+
+[[profile.ci.overrides]]
+# measured: 407 s on the Actions runner, instrumented (the largest of 4 run(s)); a place detailed inside the allocation the whole handed, by the instrumented engine, with its survey, light and battery over the whole piece
+filter = 'test(=detail_verb::a_climb_inside_a_hung_place_proves_and_hung_scenery_states_its_zero)'
+slow-timeout = { period = "660s", terminate-after = 1 }
+priority = 80
+
+
+[[profile.ci.overrides]]
+# measured: 434 s on the Actions runner, instrumented (the largest of 4 run(s)); a place detailed inside the allocation the whole handed, by the instrumented engine, with its survey, light and battery over the whole piece
+filter = 'test(=detail_verb::a_leafy_scenery_crown_owes_no_floor_and_no_light_and_a_reached_one_is_judged)'
+slow-timeout = { period = "660s", terminate-after = 1 }
+priority = 80
+
+
+[[profile.ci.overrides]]
+# measured: 159 s on the Actions runner, instrumented (the largest of 4 run(s)); a place detailed inside the allocation the whole handed, by the instrumented engine, with its survey, light and battery over the whole piece
+filter = 'test(=detail_verb::an_open_side_is_answered_by_a_frontage_or_a_counter_and_nowhere_else)'
+slow-timeout = { period = "240s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 318 s on the Actions runner, instrumented (the largest of 4 run(s)); a place detailed inside the allocation the whole handed, by the instrumented engine, with its survey, light and battery over the whole piece
+filter = 'test(=detail_verb::an_unlit_leafy_scenery_room_is_never_surveyed_for_light)'
+slow-timeout = { period = "480s", terminate-after = 1 }
+priority = 80
+
+
+[[profile.ci.overrides]]
+# measured: 364 s on the Actions runner, instrumented (the largest of 4 run(s)); a place detailed inside the allocation the whole handed, by the instrumented engine, with its survey, light and battery over the whole piece
+filter = 'test(=detail_verb::the_audit_judges_a_scenery_piece_as_its_writer_did_and_no_piece_vouches_for_itself)'
+slow-timeout = { period = "600s", terminate-after = 1 }
+priority = 80
+
+
+[[profile.ci.overrides]]
+# measured: 279 s on the Actions runner, instrumented (the largest of 4 run(s)); a place detailed inside the allocation the whole handed, by the instrumented engine, with its survey, light and battery over the whole piece
+filter = 'test(=detail_verb::the_handout_is_complete_and_hands_each_seams_form_to_both_sides)'
+slow-timeout = { period = "420s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 519 s on the Actions runner, instrumented (the largest of 4 run(s)); every harness document of a built campaign held to the exported path; the denominator is every document, over one whole build
+filter = 'test(=exported_coordinates::every_exported_index_a_harness_document_states_is_the_step_it_names)'
+slow-timeout = { period = "780s", terminate-after = 1 }
+priority = 80
+
+
+[[profile.ci.overrides]]
+# measured: 832 s on the Actions runner, instrumented (the largest of 4 run(s)); a place expanded from its program at its frame, as `detail` expands it, by the instrumented engine; the frame is of one whole place
+filter = 'test(=frames_campaign_program::a_camera_is_stood_in_a_places_own_frame)'
+slow-timeout = { period = "1260s", terminate-after = 1 }
+priority = 100
+
+
+[[profile.ci.overrides]]
+# measured: 893 s on the Actions runner, instrumented (the largest of 4 run(s)); a place expanded from its program at its frame, as `detail` expands it, by the instrumented engine; the frame is of one whole place
+filter = 'test(=frames_campaign_program::a_place_is_drawn_from_its_program_as_it_stands_and_nothing_is_written)'
+slow-timeout = { period = "1380s", terminate-after = 1 }
+priority = 100
+
+
+[[profile.ci.overrides]]
+# measured: 134 s on the Actions runner, instrumented (the largest of 4 run(s)); `grammar audit` walked over a whole program so that every gate is invoked
+filter = 'test(=grammar_audit_cli::a_library_only_audit_claims_nothing_about_campaigns)'
+slow-timeout = { period = "240s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 141 s on the Actions runner, instrumented (the largest of 4 run(s)); `grammar audit` walked over a whole program so that every gate is invoked
+filter = 'test(=grammar_audit_cli::an_empty_campaign_root_beside_the_library_is_named_not_absorbed)'
+slow-timeout = { period = "240s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 150 s on the Actions runner, instrumented (the largest of 4 run(s)); `grammar audit` walked over a whole program so that every gate is invoked
+filter = 'test(=grammar_audit_cli::each_corpus_states_its_own_binding_count)'
+slow-timeout = { period = "240s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 151 s on the Actions runner, instrumented (the largest of 4 run(s)); `grammar audit` walked over a whole program so that every gate is invoked
+filter = 'test(=grammar_audit_cli::the_rule_library_audits_to_exactly_its_record)'
+slow-timeout = { period = "240s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 150 s on the Actions runner, instrumented (the largest of 4 run(s)); `grammar audit` walked over a whole program so that every gate is invoked
+filter = 'test(=grammar_audit_cli::without_the_record_the_librarys_known_red_still_reds)'
+slow-timeout = { period = "240s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 166 s on the Actions runner, instrumented (the largest of 4 run(s)); `grammar expand` driven as an author drives it over a whole ported building
+filter = 'test(=grammar_cli::a_region_past_the_structure_cap_expands_into_a_tile_set)'
+slow-timeout = { period = "300s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 165 s on the Actions runner, instrumented (the largest of 4 run(s)); a grammar program expanded, frozen as a prefab and regenerated byte for byte by the instrumented engine; the freeze is of a whole building
+filter = 'test(=grammar_export::a_tiled_zone_carries_the_claim_on_its_manifest)'
+slow-timeout = { period = "300s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 175 s on the Actions runner, instrumented (the largest of 4 run(s)); a grammar program expanded, frozen as a prefab and regenerated byte for byte by the instrumented engine; the freeze is of a whole building
+filter = 'test(=grammar_export::exporting_a_tiled_zone_twice_gives_byte_identical_tiles_and_manifest)'
+slow-timeout = { period = "300s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 197 s on the Actions runner, instrumented (the largest of 4 run(s)); a grammar program expanded, frozen as a prefab and regenerated byte for byte by the instrumented engine; the freeze is of a whole building
+filter = 'test(=grammar_export::the_cuts_are_a_function_of_the_region_alone)'
+slow-timeout = { period = "300s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 165 s on the Actions runner, instrumented (the largest of 4 run(s)); a grammar program expanded, frozen as a prefab and regenerated byte for byte by the instrumented engine; the freeze is of a whole building
+filter = 'test(=grammar_export::the_manifest_describes_the_zone_and_not_a_tile)'
+slow-timeout = { period = "300s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 167 s on the Actions runner, instrumented (the largest of 4 run(s)); a grammar program expanded, frozen as a prefab and regenerated byte for byte by the instrumented engine; the freeze is of a whole building
+filter = 'test(=grammar_export::the_tiles_reassemble_into_exactly_the_expansion)'
+slow-timeout = { period = "300s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 168 s on the Actions runner, instrumented (the largest of 4 run(s)); a grammar program expanded, frozen as a prefab and regenerated byte for byte by the instrumented engine; the freeze is of a whole building
+filter = 'test(=grammar_export::writing_a_tile_set_lands_every_file_the_manifest_names)'
+slow-timeout = { period = "300s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 148 s on the Actions runner, instrumented (the largest of 4 run(s)); a ported rule library expanded into the building it claims by the instrumented engine; the claim is a whole building
+filter = 'test(=grammar_library::every_library_program_gives_the_recorded_verdict_at_its_declared_expansion)'
+slow-timeout = { period = "240s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 150 s on the Actions runner, instrumented (the largest of 4 run(s)); a ported rule library expanded into the building it claims by the instrumented engine; the claim is a whole building
+filter = 'test(=grammar_library::every_library_program_passes_the_settling_gates)'
+slow-timeout = { period = "240s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 149 s on the Actions runner, instrumented (the largest of 4 run(s)); a ported rule library expanded into the building it claims by the instrumented engine; the claim is a whole building
+filter = 'test(=grammar_library::every_library_program_passes_the_shape_and_orientation_gates)'
+slow-timeout = { period = "240s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 148 s on the Actions runner, instrumented (the largest of 4 run(s)); a ported rule library expanded into the building it claims by the instrumented engine; the claim is a whole building
+filter = 'test(=grammar_library::no_library_program_reports_a_gate_that_is_green_over_nothing)'
+slow-timeout = { period = "240s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 303 s on the Actions runner, instrumented (the largest of 4 run(s)); one world built four ways by the instrumented engine so that every arm of the exposure rule is reached; each build is a whole world
+filter = 'test(=piece_exposure::the_seating_answer_is_the_exposure_answer)'
+slow-timeout = { period = "480s", terminate-after = 1 }
+priority = 80
+
+
+[[profile.ci.overrides]]
+# measured: 588 s on the Actions runner, instrumented (the largest of 4 run(s)); the annex generated from its allocation, then committed and checked by the instrumented engine; the program is judged whole
+filter = 'test(=place_generator::the_annex_generator_emits_the_committed_program_and_it_passes_the_check)'
+slow-timeout = { period = "900s", terminate-after = 1 }
+priority = 80
+
+
+[[profile.ci.overrides]]
+# measured: 1062 s on the Actions runner, instrumented (the largest of 4 run(s)); a gallery place built, reviewed blind and censused by the instrumented engine; the shot and the census are read off one whole built place
+filter = 'test(=place_reads::air_over_the_annex_door_unframes_it_and_moves_the_line)'
+slow-timeout = { period = "1620s", terminate-after = 1 }
+priority = 100
+
+
+[[profile.ci.overrides]]
+# measured: 991 s on the Actions runner, instrumented (the largest of 4 run(s)); a gallery place built, reviewed blind and censused by the instrumented engine; the shot and the census are read off one whole built place
+filter = 'test(=place_reads::an_undeclared_side_owes_no_clear_width_and_has_no_front)'
+slow-timeout = { period = "1500s", terminate-after = 1 }
+priority = 100
+
+
+[[profile.ci.overrides]]
+# measured: 795 s on the Actions runner, instrumented (the largest of 4 run(s)); a gallery place built, reviewed blind and censused by the instrumented engine; the shot and the census are read off one whole built place
+filter = 'test(=place_reads::moving_one_claimed_cell_from_the_court_to_the_bed_moves_two_built_values_by_one)'
+slow-timeout = { period = "1200s", terminate-after = 1 }
+priority = 100
+
+
+[[profile.ci.overrides]]
+# measured: 473 s on the Actions runner, instrumented (the largest of 4 run(s)); a gallery place built, reviewed blind and censused by the instrumented engine; the shot and the census are read off one whole built place
+filter = 'test(=place_reads::raising_the_court_water_one_course_moves_highest_by_one)'
+slow-timeout = { period = "720s", terminate-after = 1 }
+priority = 80
+
+
+[[profile.ci.overrides]]
+# measured: 420 s on the Actions runner, instrumented (the largest of 4 run(s)); every placing line of the compiler held to the ledger's rows over a whole built campaign; the denominator is every line
+filter = 'test(=placed_ledger::every_placing_line_is_one_row_and_every_row_is_one_line)'
+slow-timeout = { period = "660s", terminate-after = 1 }
+priority = 80
+
+
+[[profile.ci.overrides]]
+# measured: 292 s on the Actions runner, instrumented (the largest of 4 run(s)); the gallery primary built once and every pressable's state and dispatch compared; the denominator is every pressable
+filter = 'test(=press_agreement::a_door_prop_is_laid_as_one_door)'
+slow-timeout = { period = "480s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 284 s on the Actions runner, instrumented (the largest of 4 run(s)); the gallery primary built once and every pressable's state and dispatch compared; the denominator is every pressable
+filter = 'test(=press_agreement::a_released_door_answers_nothing_once_open_and_the_chest_does)'
+slow-timeout = { period = "480s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 282 s on the Actions runner, instrumented (the largest of 4 run(s)); the gallery primary built once and every pressable's state and dispatch compared; the denominator is every pressable
+filter = 'test(=press_agreement::every_answer_plays_the_refusal_cue)'
+slow-timeout = { period = "480s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 1614 s on the Actions runner, instrumented (the largest of 4 run(s)); three `detail --check` runs of the gallery's annex over its reach bank (off, cold, warm) by the instrumented engine; the bank's equality is only visible across whole runs
+filter = 'test(=reach_cache::detail_keeps_the_bank_with_the_campaign_and_reclaims_another_binary_s)'
+slow-timeout = { period = "2460s", terminate-after = 1 }
+priority = 100
+
+
+[[profile.ci.overrides]]
+# measured: 179 s on the Actions runner, instrumented (the largest of 4 run(s)); every remedy a diagnostic names walked on the gallery by the instrumented engine; the denominator is every diagnostic
+filter = 'test(=remedy_reachability::dw0952_a_hull_widened_over_the_room_sculpts)'
+slow-timeout = { period = "300s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 276 s on the Actions runner, instrumented (the largest of 4 run(s)); every remedy a diagnostic names walked on the gallery by the instrumented engine; the denominator is every diagnostic
+filter = 'test(=remedy_reachability::dw0952_a_shelf_out_of_the_pocket_sculpts)'
+slow-timeout = { period = "420s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 166 s on the Actions runner, instrumented (the largest of 4 run(s)); every remedy a diagnostic names walked on the gallery by the instrumented engine; the denominator is every diagnostic
+filter = 'test(=remedy_reachability::dw0952_moving_a_buried_anchor_onto_the_ground_sculpts)'
+slow-timeout = { period = "300s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 457 s on the Actions runner, instrumented (the largest of 4 run(s)); a campaign built and its frames rendered with the pinned textures by the instrumented engine; what a frame shows is read off a whole frame
+filter = 'test(=review_frame_shows::a_holder_the_renderer_draws_leaves_undrawn_and_the_curator_is_drawn)'
+slow-timeout = { period = "720s", terminate-after = 1 }
+priority = 80
+
+
+[[profile.ci.overrides]]
+# measured: 452 s on the Actions runner, instrumented (the largest of 4 run(s)); a campaign built with its review-frame worlds, light, block entities and bodies, by the instrumented engine; a frame stands in a whole world
+filter = 'test(=review_frame_worlds::a_pov_frame_stands_in_the_world_its_leg_is_walked_in)'
+slow-timeout = { period = "720s", terminate-after = 1 }
+priority = 80
+
+
+[[profile.ci.overrides]]
+# measured: 448 s on the Actions runner, instrumented (the largest of 4 run(s)); a campaign built with its review-frame worlds, light, block entities and bodies, by the instrumented engine; a frame stands in a whole world
+filter = 'test(=review_frame_worlds::a_prop_objectives_interact_frame_stands_in_the_world_that_holds_the_prop)'
+slow-timeout = { period = "720s", terminate-after = 1 }
+priority = 80
+
+
+[[profile.ci.overrides]]
+# measured: 519 s on the Actions runner, instrumented (the largest of 4 run(s)); a campaign built with its review-frame worlds, light, block entities and bodies, by the instrumented engine; a frame stands in a whole world
+filter = 'test(=review_frame_worlds::every_block_that_carries_a_block_entity_is_written_with_one)'
+slow-timeout = { period = "780s", terminate-after = 1 }
+priority = 80
+
+
+[[profile.ci.overrides]]
+# measured: 321 s on the Actions runner, instrumented (the largest of 4 run(s)); a prefab sculpted from a declared form by the instrumented engine, its gates and pocket proof run over the whole form
+filter = 'test(=sculpt::a_box_past_the_schematic_cap_is_written_as_parts)'
+slow-timeout = { period = "540s", terminate-after = 1 }
+priority = 80
+
+
+[[profile.ci.overrides]]
+# measured: 156 s on the Actions runner, instrumented (the largest of 4 run(s)); a prefab sculpted from a declared form by the instrumented engine, its gates and pocket proof run over the whole form
+filter = 'test(=sculpt::hull_sources_are_staggered_over_walls_and_vault_never_a_grid)'
+slow-timeout = { period = "240s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 295 s on the Actions runner, instrumented (the largest of 4 run(s)); a prefab sculpted from a declared form by the instrumented engine, its gates and pocket proof run over the whole form
+filter = 'test(=sculpt::the_body_builds_lit_by_its_own_lights_and_dark_without_them)'
+slow-timeout = { period = "480s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 178 s on the Actions runner, instrumented (the largest of 4 run(s)); a prefab sculpted from a declared form by the instrumented engine, its gates and pocket proof run over the whole form
+filter = 'test(=sculpt::the_command_writes_the_same_files_twice)'
+slow-timeout = { period = "300s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 178 s on the Actions runner, instrumented (the largest of 4 run(s)); a prefab sculpted from a declared form by the instrumented engine, its gates and pocket proof run over the whole form
+filter = 'test(=sculpt::the_gallery_form_passes_the_audit_with_every_stair_examined)'
+slow-timeout = { period = "300s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 157 s on the Actions runner, instrumented (the largest of 4 run(s)); a prefab sculpted from a declared form by the instrumented engine, its gates and pocket proof run over the whole form
+filter = 'test(=sculpt::the_gallery_form_sculpts_to_the_same_bytes_and_its_provenance_reproduces_them)'
+slow-timeout = { period = "240s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 169 s on the Actions runner, instrumented (the largest of 4 run(s)); a prefab sculpted from a declared form by the instrumented engine, its gates and pocket proof run over the whole form
+filter = 'test(=sculpt::the_light_probe_binds_the_sculpted_body_and_the_metadata_carries_its_measurement)'
+slow-timeout = { period = "300s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 870 s on the Actions runner, instrumented (the largest of 4 run(s)); a prefab sculpted from a declared form by the instrumented engine, its gates and pocket proof run over the whole form
+filter = 'test(=sculpt::the_stranded_rig_s_own_form_is_refused_with_its_pockets)'
+slow-timeout = { period = "1320s", terminate-after = 1 }
+priority = 100
+
+
+[[profile.ci.overrides]]
+# measured: 165 s on the Actions runner, instrumented (the largest of 4 run(s)); a prefab sculpted from a declared form by the instrumented engine, its gates and pocket proof run over the whole form
+filter = 'test(=sculpt::the_walk_plane_is_the_ground_and_the_planes_instrument_agrees)'
+slow-timeout = { period = "300s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 138 s on the Actions runner, instrumented (the largest of 4 run(s)); a prefab sculpted from a declared form by the instrumented engine, its gates and pocket proof run over the whole form
+filter = 'test(=sculpt::without_its_shelf_the_back_is_not_walked)'
+slow-timeout = { period = "240s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 197 s on the Actions runner, instrumented (the largest of 4 run(s)); the starter's program on one allocated place of a detailed gallery point, run through `detail --check` by the instrumented engine; the check is of one whole place
+filter = 'test(=starter_program::a_building_drawn_into_the_starter_s_model_is_claimed_from_the_engine_s_survey)'
+slow-timeout = { period = "300s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 127 s on the Actions runner, instrumented (the largest of 4 run(s)); the ferry fixture built and its route proof flown with the teleport as a link, by the instrumented engine; the proof is over the whole route
+filter = 'test(=teleport_link::a_site_plan_place_only_a_link_reaches_is_reached_and_carried_to)'
+slow-timeout = { period = "240s", terminate-after = 1 }
+priority = 60
+
+
+[[profile.ci.overrides]]
+# measured: 194 s on the Actions runner, instrumented (the largest of 4 run(s)); one campaign built at several thread counts by the instrumented engine and the emissions compared; each build is a whole campaign
+filter = 'test(=thread_count::the_output_is_the_same_at_every_thread_count)'
+slow-timeout = { period = "300s", terminate-after = 1 }
+priority = 60
+
