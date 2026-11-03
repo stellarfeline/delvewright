@@ -979,14 +979,23 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
     // they ever do, the map wins the argument, because the map is the thing the
     // campaign is about. `None` for a base with no surround, so this runs zero
     // times and such a world is byte-identical.
+    //
+    // The tiles are written section column by section column
+    // (`write_by_section_column`), not tile by tile: a row of tiles shares
+    // its border sections with the next row, and tile by tile that row is
+    // the store's working set, O(width) in sections.
     if let Some(surround) = &plan.surround {
-        let _: Result<(), std::convert::Infallible> = crate::par::try_for_each_ordered(
-            &surround.piece.templates,
-            |template| {
+        let templates = &surround.piece.templates;
+        let footprints: Vec<([i32; 3], [i32; 3])> =
+            templates.iter().map(|t| (t.pos, t.size)).collect();
+        let sweep = write_by_section_column(
+            &footprints,
+            |i| {
+                let template = &templates[i];
                 let Some(bytes) = structures.get(&template.structure_file) else {
                     return Vec::new();
                 };
-                let mut cells: Vec<_> = structure_cells_interned(bytes)
+                structure_cells_interned(bytes)
                     .into_iter()
                     .map(|(local, name, open)| {
                         let cell = [
@@ -996,31 +1005,27 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
                         ];
                         (cell, name, open)
                     })
-                    .collect();
-                by_section(&mut cells);
-                cells
+                    .collect()
             },
-            |cells| {
-                for (cell, name, open) in cells {
-                    // A template's `structure_void` is a cell the game does
-                    // not place (spec-0098 §7): whatever stood there shows
-                    // through, exactly as at a cell the template omits.
-                    // Writing it as a block would model a voided cell as
-                    // passable while the server keeps the wall under it.
-                    if base_id(&name) == STRUCTURE_VOID {
-                        continue;
-                    }
-                    reached.mark(cell);
-                    if opens_by_hand(&name) && open == Some(true) {
-                        open_gates.insert(cell);
-                    } else {
-                        open_gates.remove(&cell);
-                    }
-                    blocks.insert(cell, name);
+            |cell, name, open| {
+                // A template's `structure_void` is a cell the game does
+                // not place (spec-0098 §7): whatever stood there shows
+                // through, exactly as at a cell the template omits.
+                // Writing it as a block would model a voided cell as
+                // passable while the server keeps the wall under it.
+                if base_id(&name) == STRUCTURE_VOID {
+                    return;
                 }
-                Ok(())
+                reached.mark(cell);
+                if opens_by_hand(&name) && open == Some(true) {
+                    open_gates.insert(cell);
+                } else {
+                    open_gates.remove(&cell);
+                }
+                blocks.insert(cell, name);
             },
         );
+        eprintln!("{}", sweep.line());
     }
     // **The base world holds every gate threshold open, and that is a choice about
     // the BASE world only.**
@@ -1070,6 +1075,141 @@ fn by_section<T, U>(cells: &mut [([i32; 3], T, U)]) {
 
 fn section_key(c: [i32; 3]) -> [i32; 3] {
     c.map(|v| v.div_euclid(crate::compiler::sections::SIDE))
+}
+
+/// The section column `[sz, sx]` a cell lies in: the sweep's key, `z`
+/// before `x`, so a tile row along `x` is swept within one band of `z`.
+fn column_key(c: [i32; 3]) -> [i32; 2] {
+    let s = section_key(c);
+    [s[2], s[0]]
+}
+
+/// The columns a footprint of `size` at `pos` covers: inclusive `[sz, sx]`
+/// corners, `None` for a footprint with no cells.
+fn column_span(pos: [i32; 3], size: [i32; 3]) -> Option<([i32; 2], [i32; 2])> {
+    if size[0] <= 0 || size[1] <= 0 || size[2] <= 0 {
+        return None;
+    }
+    let hi = [
+        pos[0] + size[0] - 1,
+        pos[1] + size[1] - 1,
+        pos[2] + size[2] - 1,
+    ];
+    Some((column_key(pos), column_key(hi)))
+}
+
+/// What a column sweep did: stated on every build it ran in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ColumnSweep {
+    /// Tiles listed.
+    pub tiles: usize,
+    /// Section columns some tile reaches, each written in one step.
+    pub columns: usize,
+    /// Tiles decoded: a tile once per band of sections along `z` it
+    /// crosses, never held across bands.
+    pub decodes: usize,
+    /// The most tiles held decoded at once.
+    pub held: usize,
+}
+
+impl ColumnSweep {
+    pub fn line(&self) -> String {
+        format!(
+            "surround written: {} tile(s) over {} section column(s), each column in one step; \
+             {} decode(s), at most {} tile(s) held decoded at once (ADR-0037 §2)",
+            self.tiles, self.columns, self.decodes, self.held
+        )
+    }
+}
+
+/// **Tiles written section column by section column** (ADR-0037 §2,
+/// assembly): the `(sx, sz)` section columns the footprints cover are
+/// swept once each, in `z`-band then `x` order, and at each column every
+/// tile reaching it is asked for the cells it lays there, in tile order,
+/// those cells written together, grouped by section. Every cell's writes come in the
+/// order the tiles list them, so the map written is the one tile-by-tile
+/// writing makes (`a_sweep_by_column_writes_what_tile_order_writes`), while
+/// no section is written in two steps: the store's working set is one
+/// column, whatever the row's width. A tile is decoded when the sweep
+/// first reaches it in a band and dropped when the band's sweep has passed
+/// it, so the tiles held decoded are those under the column in hand; a
+/// tile is decoded once per band it crosses. `decode(i)` gives tile `i`'s
+/// cells in world coordinates; a cell outside the footprint declared for
+/// its tile is refused, since the sweep could not have planned a step for
+/// it.
+pub(crate) fn write_by_section_column<V: Copy + Send>(
+    footprints: &[([i32; 3], [i32; 3])],
+    decode: impl Fn(usize) -> Vec<([i32; 3], V, Option<bool>)> + Sync,
+    mut write: impl FnMut([i32; 3], V, Option<bool>),
+) -> ColumnSweep {
+    type Cells<V> = Vec<([i32; 3], V, Option<bool>)>;
+    let spans: Vec<Option<([i32; 2], [i32; 2])>> = footprints
+        .iter()
+        .map(|&(pos, size)| column_span(pos, size))
+        .collect();
+    // Every column some tile reaches, with the tiles reaching it in tile
+    // order.
+    let mut columns: BTreeMap<[i32; 2], Vec<usize>> = BTreeMap::new();
+    for (i, span) in spans.iter().enumerate() {
+        let Some((lo, hi)) = span else { continue };
+        for sz in lo[0]..=hi[0] {
+            for sx in lo[1]..=hi[1] {
+                columns.entry([sz, sx]).or_default().push(i);
+            }
+        }
+    }
+    let mut sweep = ColumnSweep {
+        tiles: footprints.len(),
+        columns: columns.len(),
+        decodes: 0,
+        held: 0,
+    };
+    // The tiles decoded, each split by the column its cells lie in.
+    let mut held: BTreeMap<usize, BTreeMap<[i32; 2], Cells<V>>> = BTreeMap::new();
+    for (&[sz, sx], tiles) in &columns {
+        let fresh: Vec<usize> = tiles
+            .iter()
+            .copied()
+            .filter(|i| !held.contains_key(i))
+            .collect();
+        let decoded = crate::par::map(&fresh, |&i| {
+            let (lo, hi) = spans[i].expect("a tile the sweep reaches has a footprint");
+            let mut by: BTreeMap<[i32; 2], Cells<V>> = BTreeMap::new();
+            for cell in decode(i) {
+                let k = column_key(cell.0);
+                assert!(
+                    (lo[0]..=hi[0]).contains(&k[0]) && (lo[1]..=hi[1]).contains(&k[1]),
+                    "tile {i} lists the cell {:?} outside its declared footprint {:?}",
+                    cell.0,
+                    footprints[i]
+                );
+                by.entry(k).or_default().push(cell);
+            }
+            by
+        });
+        sweep.decodes += fresh.len();
+        held.extend(fresh.into_iter().zip(decoded));
+        sweep.held = sweep.held.max(held.len());
+        // The column's cells over every tile reaching it, in tile order,
+        // then grouped by section (a stable sort): a cell's writes keep
+        // their tile order, and each section is written in one run.
+        let mut cells: Cells<V> = Vec::new();
+        for &i in tiles {
+            if let Some(mine) = held.get_mut(&i).and_then(|by| by.remove(&[sz, sx])) {
+                cells.extend(mine);
+            }
+        }
+        by_section(&mut cells);
+        for (c, v, o) in cells {
+            write(c, v, o);
+        }
+        // A tile stays decoded only while this band's sweep still reaches it.
+        held.retain(|&i, _| {
+            let (lo, hi) = spans[i].expect("a held tile has a footprint");
+            lo[0] <= sz && sz <= hi[0] && hi[1] > sx
+        });
+    }
+    sweep
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3880,6 +4020,129 @@ mod judged_tests {
             order_in(&listed).len() >= 2,
             "the doubled cell was listed once"
         );
+    }
+
+    /// **A sweep by column writes what tile order writes** (ADR-0037 §2,
+    /// assembly): sixty generated tiles of up to 48 cells a side at
+    /// unaligned positions over a 400 × 300 field, overlapping one another,
+    /// a cell listed twice in one tile and a tile listed twice, written
+    /// by `write_by_section_column` and tile by tile; the two maps, the
+    /// open flags and the cells reached equal, cell for cell. The sweep
+    /// writes no section in two steps; the tiles it holds decoded at once
+    /// are a handful; it decodes a tile once per band of sections along
+    /// `z` the tile crosses and no more. The case refuses a zero count of
+    /// overlapping cells and of tiles crossing a column border.
+    #[test]
+    fn a_sweep_by_column_writes_what_tile_order_writes() {
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        let mut rnd = move |n: i32| -> i32 {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed % n as u64) as i32
+        };
+        let names = ["minecraft:stone", "minecraft:dirt", "minecraft:oak_door"];
+        type Tile = (
+            ([i32; 3], [i32; 3]),
+            Vec<([i32; 3], BlockState, Option<bool>)>,
+        );
+        let mut tiles: Vec<Tile> = Vec::new();
+        for _ in 0..60 {
+            let pos = [rnd(400) - 200, rnd(20) + 40, rnd(300) - 150];
+            let size = [rnd(48) + 1, rnd(48) + 1, rnd(48) + 1];
+            let mut cells = Vec::new();
+            for _ in 0..rnd(600) + 100 {
+                let c = [
+                    pos[0] + rnd(size[0]),
+                    pos[1] + rnd(size[1]),
+                    pos[2] + rnd(size[2]),
+                ];
+                let k = rnd(3) as usize;
+                let open = if k == 2 { Some(rnd(2) == 0) } else { None };
+                cells.push((c, BlockState::new(names[k]), open));
+            }
+            // A cell listed twice in one tile: the later write wins.
+            let (c, _, _) = cells[0];
+            cells.push((c, BlockState::new(names[1]), None));
+            tiles.push(((pos, size), cells));
+        }
+        // A tile listed twice.
+        let again = tiles[7].clone();
+        tiles.push(again);
+        let footprints: Vec<_> = tiles.iter().map(|(f, _)| *f).collect();
+
+        type Written = BTreeMap<[i32; 3], (BlockState, Option<bool>)>;
+        let by_tile: Written = {
+            let mut m = Written::new();
+            for (_, cells) in &tiles {
+                let mut cells = cells.clone();
+                by_section(&mut cells);
+                for (c, b, o) in cells {
+                    m.insert(c, (b, o));
+                }
+            }
+            m
+        };
+        let mut by_column = Written::new();
+        let mut steps: Vec<[i32; 3]> = Vec::new();
+        let sweep = write_by_section_column(
+            &footprints,
+            |i| tiles[i].1.clone(),
+            |c, b, o| {
+                steps.push(section_key(c));
+                by_column.insert(c, (b, o));
+            },
+        );
+        assert_eq!(by_column, by_tile);
+
+        // The binding: cells two tiles write, and tiles crossing a column.
+        let mut writers: BTreeMap<[i32; 3], usize> = BTreeMap::new();
+        for (_, cells) in &tiles {
+            for (c, _, _) in cells {
+                *writers.entry(*c).or_insert(0) += 1;
+            }
+        }
+        let overlapping = writers.values().filter(|&&n| n > 1).count();
+        assert!(overlapping > 100, "{overlapping} overlapping cell(s)");
+        let crossing = footprints
+            .iter()
+            .filter(|&&(pos, size)| {
+                let (lo, hi) = column_span(pos, size).unwrap();
+                lo != hi
+            })
+            .count();
+        assert!(crossing > 40, "{crossing} tile(s) cross a column border");
+
+        // No section is written in two steps.
+        let mut seen: BTreeSet<[i32; 3]> = BTreeSet::new();
+        let mut last: Option<[i32; 3]> = None;
+        for s in &steps {
+            if last != Some(*s) {
+                assert!(seen.insert(*s), "section {s:?} written in two steps");
+                last = Some(*s);
+            }
+        }
+        assert!(seen.len() > 200, "{} section(s)", seen.len());
+
+        // A tile is decoded once per z band it crosses, and no more.
+        let bands: usize = footprints
+            .iter()
+            .map(|&(pos, size)| {
+                let (lo, hi) = column_span(pos, size).unwrap();
+                (hi[0] - lo[0] + 1) as usize
+            })
+            .sum();
+        assert_eq!(sweep.decodes, bands);
+        assert!(
+            sweep.decodes > sweep.tiles,
+            "{sweep:?}: no tile crosses a band"
+        );
+        assert_eq!(sweep.tiles, tiles.len());
+        assert!(
+            sweep.held <= 16,
+            "{sweep:?}: the tiles held grow with the field"
+        );
+        assert!(sweep.columns > 100, "{sweep:?}");
     }
 
     #[test]

@@ -1216,7 +1216,12 @@ authored.
 **Binding.** Every surround build prints its templates, biome bands, the
 rectangle and **which authority stated it**, and the standable gap-floor cell
 count the climb proof floods from — a flood that started from nowhere passes for
-free and looks exactly like one that did not.
+free and looks exactly like one that did not. The assembly writes the tiles
+section column by section column (ADR-0037 §2): `surround written: T tile(s)
+over C section column(s), each column in one step; D decode(s), at most H
+tile(s) held decoded at once` — a tile is decoded once per band of sections
+along z it crosses, and the store's working set while the surround is written
+is one column, whatever the row's width.
 
 **Not reachable from the DSL**: the generator carries a second flora (cherry
 over `minecraft:cherry_grove`) and a second surface palette, on one code path
