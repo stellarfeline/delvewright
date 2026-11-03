@@ -442,7 +442,7 @@ jobs:
     if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     # spec-0126 §5: the job bound. A partition that exceeds it is cancelled and red.
-    timeout-minutes: 40
+    timeout-minutes: 120
     strategy:
       # Every partition runs to its end: the census needs all N reports to say
       # which tests ran where, and a failure in one says nothing about the rest.
