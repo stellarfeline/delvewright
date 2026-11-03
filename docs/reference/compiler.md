@@ -1220,12 +1220,11 @@ authored.
 **Binding.** Every surround build prints its templates, biome bands, the
 rectangle and **which authority stated it**, and the standable gap-floor cell
 count the climb proof floods from — a flood that started from nowhere passes for
-free and looks exactly like one that did not. The assembly writes the tiles
-section column by section column (ADR-0037 §2): `surround written: T tile(s)
-over C section column(s), each column in one step; D decode(s), at most H
-tile(s) held decoded at once` — a tile is decoded once per band of sections
-along z it crosses, and the store's working set while the surround is written
-is one column, whatever the row's width.
+free and looks exactly like one that did not. The tiles enter the assembly's
+one write program and are laid section column by section column with every
+area's writes (*The section store* below): a tile is decoded once per band of
+sections along z it crosses, and the store's working set while the surround is
+written is one column, whatever the row's width.
 
 **Not reachable from the DSL**: the generator carries a second flora (cherry
 over `minecraft:cherry_grove`) and a second surface palette, on one code path
@@ -4551,9 +4550,23 @@ original until one of the two writes it** (`SectionMap::clone`,
 `Section::own`): a whole-world copy — the picture a review world starts from,
 a configuration's bytes, the load world the write judge reads — costs its
 palettes and section index and the sections its own writes touch, never the
-map (`sections::tests::a_copy_shares_its_arrays_until_one_side_writes`). A
-template's cells are written grouped by section, the sections in key order and
-one section's cells in the order the template lists them
+map (`sections::tests::a_copy_shares_its_arrays_until_one_side_writes`). **The
+assembly is one write program laid section column by section column**
+(`assembled::write_by_section_column`): every area's mass, templates and seals
+in order, then the surround's tiles, each with its footprint; the section
+columns the footprints cover are swept once each, in z-band then x order, and
+at each column every write reaching it is asked for the cells it lays there,
+in write order, the column's cells grouped by section (a stable sort, so a
+cell's writes keep their order and a later write wins); the map laid is the one
+write-by-write laying makes
+(`assembled::judged_tests::a_sweep_by_column_writes_what_write_order_writes`),
+no section is written in two steps, and a write is decoded once per band it
+crosses, dropped once the band's sweep has passed it. Every build prints
+`assembly written: W write(s) — R region write(s), T template(s), S surround
+tile(s) — over C section column(s), each column in one step; D decode(s), at
+most H write(s) held decoded at once (ADR-0037 §2)`. Elsewhere a template's
+cells are written grouped by section, the sections in key order and one
+section's cells in the order the template lists them
 (`assembled::by_section`, a stable sort, so a cell listed twice keeps its
 writes in order); a list of writes over a store is laid the same way
 (`SectionMap::write_by_section`: a configuration's laid regions,

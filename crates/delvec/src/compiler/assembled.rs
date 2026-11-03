@@ -883,61 +883,154 @@ pub fn template_block_entities(
     out
 }
 
+/// One write of the assembly's program, in the order the world lays them.
+enum AssemblyWrite<'a> {
+    /// A region fill — an area's mass or seal: `None` clears to air.
+    Region {
+        from: [i32; 3],
+        to: [i32; 3],
+        block: Option<BlockState>,
+    },
+    /// A piece's template, placed with the piece's rotation; its air is
+    /// placed too, and carves what stood there.
+    Template {
+        rotation: crate::compiler::solver::Rotation,
+        template: &'a crate::compiler::plan::PlacedTemplate,
+    },
+    /// A surround tile: unrotated, its air not placed.
+    Tile(&'a crate::compiler::plan::PlacedTemplate),
+}
+
+impl AssemblyWrite<'_> {
+    /// The inclusive box the write's cells lie in.
+    fn footprint(&self) -> ([i32; 3], [i32; 3]) {
+        match self {
+            AssemblyWrite::Region { from, to, .. } => (
+                [0, 1, 2].map(|i| from[i].min(to[i])),
+                [0, 1, 2].map(|i| from[i].max(to[i])),
+            ),
+            AssemblyWrite::Template { rotation, template } => {
+                let a = rotation.transform([0, 0, 0]);
+                let b = rotation.transform(template.size.map(|n| n - 1));
+                (
+                    [0, 1, 2].map(|i| template.pos[i] + a[i].min(b[i])),
+                    [0, 1, 2].map(|i| template.pos[i] + a[i].max(b[i])),
+                )
+            }
+            AssemblyWrite::Tile(t) => (t.pos, [0, 1, 2].map(|i| t.pos[i] + t.size[i] - 1)),
+        }
+    }
+
+    /// The write's cells, each with the block it leaves (`None`: air) and,
+    /// for a fence gate, whether it stands open.
+    fn cells(
+        &self,
+        structures: &BTreeMap<String, Vec<u8>>,
+    ) -> Vec<([i32; 3], Option<BlockState>, Option<bool>)> {
+        match self {
+            AssemblyWrite::Region { from, to, block } => region_cells(*from, *to)
+                .map(|c| (c, *block, None))
+                .collect(),
+            AssemblyWrite::Template { rotation, template } => {
+                let Some(bytes) = structures.get(&template.structure_file) else {
+                    return Vec::new();
+                };
+                template_writes(*rotation, template.pos, bytes)
+                    .into_iter()
+                    .map(|(c, name, open)| (c, (!is_air(&name)).then_some(name), open))
+                    .collect()
+            }
+            AssemblyWrite::Tile(template) => {
+                let Some(bytes) = structures.get(&template.structure_file) else {
+                    return Vec::new();
+                };
+                // A template's `structure_void` is a cell the game does not
+                // place (spec-0098 §7): whatever stood there shows through,
+                // exactly as at a cell the template omits. Writing it as a
+                // block would model a voided cell as passable while the
+                // server keeps the wall under it.
+                structure_cells_interned(bytes)
+                    .into_iter()
+                    .filter(|(_, name, _)| base_id(name) != STRUCTURE_VOID)
+                    .map(|(local, name, open)| {
+                        let cell = [0, 1, 2].map(|i| template.pos[i] + local[i]);
+                        (cell, Some(name), open)
+                    })
+                    .collect()
+            }
+        }
+    }
+}
+
 fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed {
     let mut blocks = BlockMap::new();
     let mut open_gates: BTreeSet<[i32; 3]> = BTreeSet::new();
     let mut reached = Reached::default();
+    // The assembly's program: every write the world lays, in the order it
+    // lays them, so a later write wins a cell. Per area: its own mass first
+    // — a derived blockout's blocks arrive as region writes rather than in a
+    // `.nbt` (`crate::compiler::blockout`), and they are the *ground* the
+    // rest of the area stands in, so anything placed over them wins, exactly
+    // as a template placed over an earlier template does (empty for every
+    // prefab-placed area) — then its pieces' templates in order, then its
+    // seals: an air fill opens a mated socket; anything else seals an unused
+    // one, and either way the sealed cell is no longer an authored open
+    // gate. The horizon's surround after every area (spec-0026): terrain
+    // the compiler generated rather than a prefab an author bound, entering
+    // the voxel model on exactly the terms a placed piece does — so gravity
+    // settling, the occupancy model, relight, the fluid model, boundary
+    // safety and the frame worlds all see the landform without one of them
+    // being taught a new horizon. AFTER, not before: the surround stands
+    // OUTSIDE the map's declared rectangle by construction, so the two
+    // cannot contend for a cell — and if they ever do, the map wins the
+    // argument, because the map is the thing the campaign is about. `None`
+    // for a base with no surround.
+    let region = |f: &crate::compiler::solver::SealFill| AssemblyWrite::Region {
+        from: f.from,
+        to: f.to,
+        block: (!is_air(&f.block)).then(|| BlockState::new(&f.block)),
+    };
+    let mut program: Vec<AssemblyWrite> = Vec::new();
     for area in &plan.areas {
-        // The area's own mass, before its templates: a derived blockout's blocks
-        // arrive as region writes rather than in a `.nbt` (`crate::compiler::blockout`),
-        // and they are the *ground* the rest of the area stands in — so they are
-        // written first and anything placed over them wins, exactly as a
-        // template placed over an earlier template does.
-        //
-        // Empty for every prefab-placed area, so this loop runs zero times and
-        // such a world is byte-identical.
-        for m in &area.mass {
-            reached.mark_box(m.from, m.to);
-            if is_air(&m.block) {
-                for cell in region_cells(m.from, m.to) {
+        program.extend(area.mass.iter().map(region));
+        for piece in &area.pieces {
+            program.extend(
+                piece
+                    .templates
+                    .iter()
+                    .map(|template| AssemblyWrite::Template {
+                        rotation: piece.rotation,
+                        template,
+                    }),
+            );
+        }
+        program.extend(area.seals.iter().map(region));
+    }
+    let mut tiles = 0;
+    if let Some(surround) = &plan.surround {
+        tiles = surround.piece.templates.len();
+        program.extend(surround.piece.templates.iter().map(AssemblyWrite::Tile));
+    }
+    let templates = program
+        .iter()
+        .filter(|w| matches!(w, AssemblyWrite::Template { .. }))
+        .count();
+    // The program is laid section column by section column
+    // (`write_by_section_column`), not write by write: a row of places or
+    // of tiles shares its border sections with the next row, and write by
+    // write that row is the store's working set, O(width) in sections.
+    let footprints: Vec<_> = program.iter().map(AssemblyWrite::footprint).collect();
+    let sweep = write_by_section_column(
+        &footprints,
+        |i| program[i].cells(structures),
+        |cell, block, open| {
+            reached.mark(cell);
+            match block {
+                None => {
                     blocks.remove(&cell);
                     open_gates.remove(&cell);
                 }
-            } else {
-                let state = BlockState::new(&m.block);
-                for cell in region_cells(m.from, m.to) {
-                    blocks.insert(cell, state);
-                    open_gates.remove(&cell);
-                }
-            }
-        }
-        let placed: Vec<_> = area
-            .pieces
-            .iter()
-            .flat_map(|p| p.templates.iter().map(move |t| (p, t)))
-            .collect();
-        // Each template is decoded on its own (in parallel); the cells are
-        // written in template order, so a later template still wins a cell.
-        let _: Result<(), std::convert::Infallible> = crate::par::try_for_each_ordered(
-            &placed,
-            |(piece, template)| {
-                let Some(bytes) = structures.get(&template.structure_file) else {
-                    return Vec::new();
-                };
-                let mut cells = template_writes(piece.rotation, template.pos, bytes);
-                by_section(&mut cells);
-                cells
-            },
-            |cells| {
-                for (cell, name, open) in cells {
-                    reached.mark(cell);
-                    // A template's air is placed too, and carves what stood
-                    // there — the mass under it, an earlier template's block.
-                    if is_air(&name) {
-                        blocks.remove(&cell);
-                        open_gates.remove(&cell);
-                        continue;
-                    }
+                Some(name) => {
                     if opens_by_hand(&name) && open == Some(true) {
                         open_gates.insert(cell);
                     } else {
@@ -945,88 +1038,13 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
                     }
                     blocks.insert(cell, name);
                 }
-                Ok(())
-            },
-        );
-        // Seals land after placement: an air fill opens a mated socket; anything
-        // else seals an unused one. Either way the sealed cell is no longer an
-        // authored open gate.
-        for s in &area.seals {
-            reached.mark_box(s.from, s.to);
-            if is_air(&s.block) {
-                for cell in region_cells(s.from, s.to) {
-                    blocks.remove(&cell);
-                    open_gates.remove(&cell);
-                }
-            } else {
-                let state = BlockState::new(&s.block);
-                for cell in region_cells(s.from, s.to) {
-                    blocks.insert(cell, state);
-                    open_gates.remove(&cell);
-                }
             }
-        }
-    }
-    // The horizon's surround, after every area (spec-0026): terrain the compiler
-    // generated rather than a prefab an author bound, entering the voxel model
-    // on exactly the terms a placed piece does — so gravity settling, the
-    // occupancy model, relight, the fluid model, boundary safety and the
-    // frame worlds all see the landform without one of them being taught a
-    // new horizon.
-    //
-    // AFTER, not before: the surround stands OUTSIDE the map's declared
-    // rectangle by construction, so the two cannot contend for a cell — and if
-    // they ever do, the map wins the argument, because the map is the thing the
-    // campaign is about. `None` for a base with no surround, so this runs zero
-    // times and such a world is byte-identical.
-    //
-    // The tiles are written section column by section column
-    // (`write_by_section_column`), not tile by tile: a row of tiles shares
-    // its border sections with the next row, and tile by tile that row is
-    // the store's working set, O(width) in sections.
-    if let Some(surround) = &plan.surround {
-        let templates = &surround.piece.templates;
-        let footprints: Vec<([i32; 3], [i32; 3])> =
-            templates.iter().map(|t| (t.pos, t.size)).collect();
-        let sweep = write_by_section_column(
-            &footprints,
-            |i| {
-                let template = &templates[i];
-                let Some(bytes) = structures.get(&template.structure_file) else {
-                    return Vec::new();
-                };
-                structure_cells_interned(bytes)
-                    .into_iter()
-                    .map(|(local, name, open)| {
-                        let cell = [
-                            template.pos[0] + local[0],
-                            template.pos[1] + local[1],
-                            template.pos[2] + local[2],
-                        ];
-                        (cell, name, open)
-                    })
-                    .collect()
-            },
-            |cell, name, open| {
-                // A template's `structure_void` is a cell the game does
-                // not place (spec-0098 §7): whatever stood there shows
-                // through, exactly as at a cell the template omits.
-                // Writing it as a block would model a voided cell as
-                // passable while the server keeps the wall under it.
-                if base_id(&name) == STRUCTURE_VOID {
-                    return;
-                }
-                reached.mark(cell);
-                if opens_by_hand(&name) && open == Some(true) {
-                    open_gates.insert(cell);
-                } else {
-                    open_gates.remove(&cell);
-                }
-                blocks.insert(cell, name);
-            },
-        );
-        eprintln!("{}", sweep.line());
-    }
+        },
+    );
+    eprintln!(
+        "{}",
+        sweep.line(program.len() - templates - tiles, templates, tiles)
+    );
     // **The base world holds every gate threshold open, and that is a choice about
     // the BASE world only.**
     //
@@ -1084,59 +1102,57 @@ fn column_key(c: [i32; 3]) -> [i32; 2] {
     [s[2], s[0]]
 }
 
-/// The columns a footprint of `size` at `pos` covers: inclusive `[sz, sx]`
-/// corners, `None` for a footprint with no cells.
-fn column_span(pos: [i32; 3], size: [i32; 3]) -> Option<([i32; 2], [i32; 2])> {
-    if size[0] <= 0 || size[1] <= 0 || size[2] <= 0 {
+/// The columns an inclusive box `lo..=hi` covers: inclusive `[sz, sx]`
+/// corners, `None` for a box with no cells.
+fn column_span(lo: [i32; 3], hi: [i32; 3]) -> Option<([i32; 2], [i32; 2])> {
+    if lo[0] > hi[0] || lo[1] > hi[1] || lo[2] > hi[2] {
         return None;
     }
-    let hi = [
-        pos[0] + size[0] - 1,
-        pos[1] + size[1] - 1,
-        pos[2] + size[2] - 1,
-    ];
-    Some((column_key(pos), column_key(hi)))
+    Some((column_key(lo), column_key(hi)))
 }
 
-/// What a column sweep did: stated on every build it ran in.
+/// What a column sweep did: stated on every build.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ColumnSweep {
-    /// Tiles listed.
-    pub tiles: usize,
-    /// Section columns some tile reaches, each written in one step.
+    /// Writes listed.
+    pub writes: usize,
+    /// Section columns some write reaches, each written in one step.
     pub columns: usize,
-    /// Tiles decoded: a tile once per band of sections along `z` it
+    /// Writes decoded: a write once per band of sections along `z` it
     /// crosses, never held across bands.
     pub decodes: usize,
-    /// The most tiles held decoded at once.
+    /// The most writes held decoded at once.
     pub held: usize,
 }
 
 impl ColumnSweep {
-    pub fn line(&self) -> String {
+    /// The assembly's line: the writes by kind, the columns, the decodes.
+    pub fn line(&self, regions: usize, templates: usize, tiles: usize) -> String {
         format!(
-            "surround written: {} tile(s) over {} section column(s), each column in one step; \
-             {} decode(s), at most {} tile(s) held decoded at once (ADR-0037 §2)",
-            self.tiles, self.columns, self.decodes, self.held
+            "assembly written: {} write(s) — {} region write(s), {} template(s), {} surround \
+             tile(s) — over {} section column(s), each column in one step; {} decode(s), at \
+             most {} write(s) held decoded at once (ADR-0037 §2)",
+            self.writes, regions, templates, tiles, self.columns, self.decodes, self.held
         )
     }
 }
 
-/// **Tiles written section column by section column** (ADR-0037 §2,
-/// assembly): the `(sx, sz)` section columns the footprints cover are
-/// swept once each, in `z`-band then `x` order, and at each column every
-/// tile reaching it is asked for the cells it lays there, in tile order,
-/// those cells written together, grouped by section. Every cell's writes come in the
-/// order the tiles list them, so the map written is the one tile-by-tile
-/// writing makes (`a_sweep_by_column_writes_what_tile_order_writes`), while
-/// no section is written in two steps: the store's working set is one
-/// column, whatever the row's width. A tile is decoded when the sweep
-/// first reaches it in a band and dropped when the band's sweep has passed
-/// it, so the tiles held decoded are those under the column in hand; a
-/// tile is decoded once per band it crosses. `decode(i)` gives tile `i`'s
+/// **Writes laid section column by section column** (ADR-0037 §2,
+/// assembly): the `(sx, sz)` section columns the writes' footprints
+/// (inclusive boxes) cover are swept once each, in `z`-band then `x`
+/// order, and at each column every write reaching it is asked for the
+/// cells it lays there, in write order, those cells written together,
+/// grouped by section (a stable sort). Every cell's writes come in the
+/// order listed, so the map written is the one write-by-write laying makes
+/// (`a_sweep_by_column_writes_what_write_order_writes`), while no section
+/// is written in two steps: the store's working set is one column,
+/// whatever the row's width. A write is decoded when the sweep first
+/// reaches it in a band and dropped when the band's sweep has passed it,
+/// so the writes held decoded are those under the column in hand; a write
+/// is decoded once per band it crosses. `decode(i)` gives write `i`'s
 /// cells in world coordinates; a cell outside the footprint declared for
-/// its tile is refused, since the sweep could not have planned a step for
-/// it.
+/// its write is refused, since the sweep could not have planned a step
+/// for it.
 pub(crate) fn write_by_section_column<V: Copy + Send>(
     footprints: &[([i32; 3], [i32; 3])],
     decode: impl Fn(usize) -> Vec<([i32; 3], V, Option<bool>)> + Sync,
@@ -1145,9 +1161,9 @@ pub(crate) fn write_by_section_column<V: Copy + Send>(
     type Cells<V> = Vec<([i32; 3], V, Option<bool>)>;
     let spans: Vec<Option<([i32; 2], [i32; 2])>> = footprints
         .iter()
-        .map(|&(pos, size)| column_span(pos, size))
+        .map(|&(lo, hi)| column_span(lo, hi))
         .collect();
-    // Every column some tile reaches, with the tiles reaching it in tile
+    // Every column some write reaches, with the writes reaching it in
     // order.
     let mut columns: BTreeMap<[i32; 2], Vec<usize>> = BTreeMap::new();
     for (i, span) in spans.iter().enumerate() {
@@ -1159,12 +1175,12 @@ pub(crate) fn write_by_section_column<V: Copy + Send>(
         }
     }
     let mut sweep = ColumnSweep {
-        tiles: footprints.len(),
+        writes: footprints.len(),
         columns: columns.len(),
         decodes: 0,
         held: 0,
     };
-    // The tiles decoded, each split by the column its cells lie in.
+    // The writes decoded, each split by the column its cells lie in.
     let mut held: BTreeMap<usize, BTreeMap<[i32; 2], Cells<V>>> = BTreeMap::new();
     for (&[sz, sx], tiles) in &columns {
         let fresh: Vec<usize> = tiles
@@ -1173,13 +1189,13 @@ pub(crate) fn write_by_section_column<V: Copy + Send>(
             .filter(|i| !held.contains_key(i))
             .collect();
         let decoded = crate::par::map(&fresh, |&i| {
-            let (lo, hi) = spans[i].expect("a tile the sweep reaches has a footprint");
+            let (lo, hi) = spans[i].expect("a write the sweep reaches has a footprint");
             let mut by: BTreeMap<[i32; 2], Cells<V>> = BTreeMap::new();
             for cell in decode(i) {
                 let k = column_key(cell.0);
                 assert!(
                     (lo[0]..=hi[0]).contains(&k[0]) && (lo[1]..=hi[1]).contains(&k[1]),
-                    "tile {i} lists the cell {:?} outside its declared footprint {:?}",
+                    "write {i} lists the cell {:?} outside its declared footprint {:?}",
                     cell.0,
                     footprints[i]
                 );
@@ -1190,9 +1206,9 @@ pub(crate) fn write_by_section_column<V: Copy + Send>(
         sweep.decodes += fresh.len();
         held.extend(fresh.into_iter().zip(decoded));
         sweep.held = sweep.held.max(held.len());
-        // The column's cells over every tile reaching it, in tile order,
+        // The column's cells over every write reaching it, in write order,
         // then grouped by section (a stable sort): a cell's writes keep
-        // their tile order, and each section is written in one run.
+        // their order, and each section is written in one run.
         let mut cells: Cells<V> = Vec::new();
         for &i in tiles {
             if let Some(mine) = held.get_mut(&i).and_then(|by| by.remove(&[sz, sx])) {
@@ -1203,9 +1219,9 @@ pub(crate) fn write_by_section_column<V: Copy + Send>(
         for (c, v, o) in cells {
             write(c, v, o);
         }
-        // A tile stays decoded only while this band's sweep still reaches it.
+        // A write stays decoded only while this band's sweep still reaches it.
         held.retain(|&i, _| {
-            let (lo, hi) = spans[i].expect("a held tile has a footprint");
+            let (lo, hi) = spans[i].expect("a held write has a footprint");
             lo[0] <= sz && sz <= hi[0] && hi[1] > sx
         });
     }
@@ -4022,18 +4038,19 @@ mod judged_tests {
         );
     }
 
-    /// **A sweep by column writes what tile order writes** (ADR-0037 §2,
-    /// assembly): sixty generated tiles of up to 48 cells a side at
+    /// **A sweep by column writes what write order writes** (ADR-0037 §2,
+    /// assembly): sixty generated writes of up to 48 cells a side at
     /// unaligned positions over a 400 × 300 field, overlapping one another,
-    /// a cell listed twice in one tile and a tile listed twice, written
-    /// by `write_by_section_column` and tile by tile; the two maps, the
-    /// open flags and the cells reached equal, cell for cell. The sweep
-    /// writes no section in two steps; the tiles it holds decoded at once
-    /// are a handful; it decodes a tile once per band of sections along
-    /// `z` the tile crosses and no more. The case refuses a zero count of
-    /// overlapping cells and of tiles crossing a column border.
+    /// a cell listed twice in one write, a write listed twice and cells
+    /// cleared to air among them, laid by `write_by_section_column` and
+    /// write by write; the two maps and the open flags equal, cell for
+    /// cell. The sweep writes no section in two steps; the writes it holds
+    /// decoded at once are a handful; it decodes a write once per band of
+    /// sections along `z` the write crosses and no more. The case refuses
+    /// a zero count of overlapping cells and of writes crossing a column
+    /// border.
     #[test]
-    fn a_sweep_by_column_writes_what_tile_order_writes() {
+    fn a_sweep_by_column_writes_what_write_order_writes() {
         let mut seed = 0x9e37_79b9_7f4a_7c15u64;
         let mut rnd = move |n: i32| -> i32 {
             seed ^= seed << 13;
@@ -4042,11 +4059,11 @@ mod judged_tests {
             (seed % n as u64) as i32
         };
         let names = ["minecraft:stone", "minecraft:dirt", "minecraft:oak_door"];
-        type Tile = (
+        type Write = (
             ([i32; 3], [i32; 3]),
-            Vec<([i32; 3], BlockState, Option<bool>)>,
+            Vec<([i32; 3], Option<BlockState>, Option<bool>)>,
         );
-        let mut tiles: Vec<Tile> = Vec::new();
+        let mut tiles: Vec<Write> = Vec::new();
         for _ in 0..60 {
             let pos = [rnd(400) - 200, rnd(20) + 40, rnd(300) - 150];
             let size = [rnd(48) + 1, rnd(48) + 1, rnd(48) + 1];
@@ -4057,28 +4074,42 @@ mod judged_tests {
                     pos[1] + rnd(size[1]),
                     pos[2] + rnd(size[2]),
                 ];
-                let k = rnd(3) as usize;
+                let k = rnd(4) as usize;
                 let open = if k == 2 { Some(rnd(2) == 0) } else { None };
-                cells.push((c, BlockState::new(names[k]), open));
+                let block = (k < 3).then(|| BlockState::new(names[k]));
+                cells.push((c, block, open));
             }
-            // A cell listed twice in one tile: the later write wins.
+            // A cell listed twice in one write: the later write wins.
             let (c, _, _) = cells[0];
-            cells.push((c, BlockState::new(names[1]), None));
-            tiles.push(((pos, size), cells));
+            cells.push((c, Some(BlockState::new(names[1])), None));
+            let hi = [
+                pos[0] + size[0] - 1,
+                pos[1] + size[1] - 1,
+                pos[2] + size[2] - 1,
+            ];
+            tiles.push(((pos, hi), cells));
         }
-        // A tile listed twice.
+        // A write listed twice.
         let again = tiles[7].clone();
         tiles.push(again);
         let footprints: Vec<_> = tiles.iter().map(|(f, _)| *f).collect();
 
         type Written = BTreeMap<[i32; 3], (BlockState, Option<bool>)>;
+        let lay = |m: &mut Written, c: [i32; 3], b: Option<BlockState>, o: Option<bool>| match b {
+            Some(b) => {
+                m.insert(c, (b, o));
+            }
+            None => {
+                m.remove(&c);
+            }
+        };
         let by_tile: Written = {
             let mut m = Written::new();
             for (_, cells) in &tiles {
                 let mut cells = cells.clone();
                 by_section(&mut cells);
                 for (c, b, o) in cells {
-                    m.insert(c, (b, o));
+                    lay(&mut m, c, b, o);
                 }
             }
             m
@@ -4090,12 +4121,12 @@ mod judged_tests {
             |i| tiles[i].1.clone(),
             |c, b, o| {
                 steps.push(section_key(c));
-                by_column.insert(c, (b, o));
+                lay(&mut by_column, c, b, o);
             },
         );
         assert_eq!(by_column, by_tile);
 
-        // The binding: cells two tiles write, and tiles crossing a column.
+        // The binding: cells two writes lay, and writes crossing a column.
         let mut writers: BTreeMap<[i32; 3], usize> = BTreeMap::new();
         for (_, cells) in &tiles {
             for (c, _, _) in cells {
@@ -4106,12 +4137,12 @@ mod judged_tests {
         assert!(overlapping > 100, "{overlapping} overlapping cell(s)");
         let crossing = footprints
             .iter()
-            .filter(|&&(pos, size)| {
-                let (lo, hi) = column_span(pos, size).unwrap();
+            .filter(|&&(lo, hi)| {
+                let (lo, hi) = column_span(lo, hi).unwrap();
                 lo != hi
             })
             .count();
-        assert!(crossing > 40, "{crossing} tile(s) cross a column border");
+        assert!(crossing > 40, "{crossing} write(s) cross a column border");
 
         // No section is written in two steps.
         let mut seen: BTreeSet<[i32; 3]> = BTreeSet::new();
@@ -4124,23 +4155,23 @@ mod judged_tests {
         }
         assert!(seen.len() > 200, "{} section(s)", seen.len());
 
-        // A tile is decoded once per z band it crosses, and no more.
+        // A write is decoded once per z band it crosses, and no more.
         let bands: usize = footprints
             .iter()
-            .map(|&(pos, size)| {
-                let (lo, hi) = column_span(pos, size).unwrap();
+            .map(|&(lo, hi)| {
+                let (lo, hi) = column_span(lo, hi).unwrap();
                 (hi[0] - lo[0] + 1) as usize
             })
             .sum();
         assert_eq!(sweep.decodes, bands);
         assert!(
-            sweep.decodes > sweep.tiles,
-            "{sweep:?}: no tile crosses a band"
+            sweep.decodes > sweep.writes,
+            "{sweep:?}: no write crosses a band"
         );
-        assert_eq!(sweep.tiles, tiles.len());
+        assert_eq!(sweep.writes, tiles.len());
         assert!(
             sweep.held <= 16,
-            "{sweep:?}: the tiles held grow with the field"
+            "{sweep:?}: the writes held grow with the field"
         );
         assert!(sweep.columns > 100, "{sweep:?}");
     }
