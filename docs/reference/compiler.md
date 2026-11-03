@@ -3713,7 +3713,10 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   `boundary_cells` solid on the pieces' own box boundaries, `exposed_cells`
   with neither block, box nor horizon in front of them, `judged_cells` standing
   in air the party can be in, `sides_seen`, `faces_declared`, `faces_bound`,
-  `party_air_cells` and `party_air_cut_off`. `exposed_cells` beside
+  `party_air_cells` and `party_air_cut_off` (the party's air is labelled by
+  connected component one section of the store at a time, the labels joined
+  across section faces, ADR-0037 §2; `burial::tests::the_block_wise_air_is_the_flooded_air`
+  holds it to the cell-by-cell flood). `exposed_cells` beside
   `judged_cells` is the named residual: the party's air is followed two cells
   outside the content, so a piece standing well clear of everything can be
   exposed and go unasked, and the gap between the two numbers is the size of
