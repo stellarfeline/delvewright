@@ -149,6 +149,16 @@ use world::*;
 /// The emitted build tree: relative path → file bytes.
 pub type BuildOutput = BTreeMap<String, Vec<u8>>;
 
+/// **The most decompressed template decoded at once** when the shipped
+/// templates are re-encoded as placed and read for their sentinels
+/// (ADR-0037 §5 item 3): the templates are taken in waves whose decompressed
+/// sizes sum to at most this (a template larger than it is a wave of its
+/// own), so the transient — a decoded tree many times its bytes — stands at
+/// most this many bytes' worth at a time instead of once per thread. A
+/// constant of the engine, never of the map or the host; it changes how long
+/// the stage takes and never what it emits.
+pub const TEMPLATE_DECODE_BYTES: usize = 16 << 20;
+
 /// Why a build failed. Either emitted vanilla commands failed the command-tree
 /// validator, or a geometry/navigation check raised a `DW03xx` diagnostic
 /// (`DW0307` unroutable `move-npc`, `DW0308` cutscene camera clipping a solid).
@@ -1009,7 +1019,10 @@ fn emit_all(
     // shipped as `/place template` must receive it: a `structure_void` cell is
     // one the piece does not place, which is how every model above read it,
     // and the game would write the void block over whatever stands there
-    // (`admit::structure::as_placed`).
+    // (`admit::structure::as_placed`). The re-encoding decodes a template's
+    // whole tree, many times its bytes, so the templates are taken in waves
+    // holding at most `TEMPLATE_DECODE_BYTES` of decompressed template at
+    // once, never one per thread at the same moment (ADR-0037 §5 item 3).
     let placed: Vec<_> = plan.placed_pieces().flat_map(|p| &p.templates).collect();
     let shipped: BTreeMap<&str, Vec<u8>> = {
         let files: BTreeSet<&str> = placed
@@ -1018,10 +1031,25 @@ fn emit_all(
             .filter(|f| structures.contains_key(*f))
             .collect();
         let files: Vec<&str> = files.into_iter().collect();
-        let bytes = crate::par::map(&files, |f| {
-            let raw = &structures[*f];
-            crate::admit::structure::as_placed(raw).unwrap_or_else(|| raw.clone())
-        });
+        let bytes = crate::par::map_within(
+            &files,
+            |f| crate::admit::structure::decompressed_len(&structures[*f]),
+            TEMPLATE_DECODE_BYTES,
+            |f| {
+                let raw = &structures[*f];
+                crate::admit::structure::as_placed(raw).unwrap_or_else(|| raw.clone())
+            },
+        );
+        let decompressed: usize = files
+            .iter()
+            .map(|f| crate::admit::structure::decompressed_len(&structures[*f]))
+            .sum();
+        eprintln!(
+            "shipped templates: {} template(s) re-encoded as placed, {decompressed} byte(s) \
+             decompressed in all, at most {TEMPLATE_DECODE_BYTES} byte(s) (or one template) \
+             decoded at once (ADR-0037 §5 item 3)",
+            files.len()
+        );
         files.into_iter().zip(bytes).collect()
     };
     for template in &placed {
@@ -1038,11 +1066,20 @@ fn emit_all(
     // bytes that ship, so the runtime can verify each `place template` landed
     // (see `setup` emission).
     let mut sentinels: Sentinels = BTreeMap::new();
-    let picked = crate::par::map(&placed, |template| {
-        shipped
-            .get(template.structure_file.as_str())
-            .and_then(|bytes| structure_sentinel(bytes))
-    });
+    let picked = crate::par::map_within(
+        &placed,
+        |template| {
+            shipped
+                .get(template.structure_file.as_str())
+                .map_or(0, |b| crate::admit::structure::decompressed_len(b))
+        },
+        TEMPLATE_DECODE_BYTES,
+        |template| {
+            shipped
+                .get(template.structure_file.as_str())
+                .and_then(|bytes| structure_sentinel(bytes))
+        },
+    );
     for (template, picked) in placed.into_iter().zip(picked) {
         if let Some(s) = picked {
             sentinels.insert(template.structure_file.clone(), s);
