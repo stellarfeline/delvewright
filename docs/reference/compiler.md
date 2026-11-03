@@ -268,6 +268,17 @@ Every closure's successor and predecessor lists live in a second scratch file
 of the same kind, by reach chunk (a full-height column of 32 × 32 cells): a
 chunk is decoded while a proof reads it and written back out when the budget
 asks, so they cost the budget and never the reached cells (ADR-0037 §2). The
+reached states themselves are one bit per window cell with the kinds by block
+(`reach/states.rs`); a **plain-sea** cell — submerged, its six neighbours inside
+the window and water, no collision top in the 3 × 3 × 2 cells round and over it,
+so its every edge is a dive to one of the six — is flooded with its whole
+component into that bitmap (a second bit per cell, no kind byte) the moment
+the closure reaches one cell of it, and is never expanded, listed or tabled:
+its six dives are computed when a reader asks for its successors or for a
+neighbour's predecessors, the component's boundary (the water cells that are
+not plain) joins the frontier, and every answer equals the closure that
+expands the sea cell by cell (`reach::agreement`, `the_summarised_sea_is_the_closure_expanded_cell_by_cell`).
+The portal count and the chunk visits below count no plain-sea crossing. The
 graphs' node tables live in the same file, one record per entry with one slot
 each in memory, as the bank's variants do; a node table keeps each cell's
 first entry by reach chunk, the cell and its slot packed in a word each. The
@@ -311,15 +322,19 @@ page(s) of 4096 cell(s) over B byte(s) in the scratch file; R resident at the
 end, working set W byte(s) …; L page(s) read back; H of T page read(s) served
 by a thread's recent pages (ADR-0037 §2)`, `reach portals: N portal edge(s)
 over F face cell(s), summed over the closures taken, the most in one closure M,
-at a chunk side of S (ADR-0037 §2)` and `reach graphs: G graph(s) memoised over
-the run, one per distinct world and parameters: W distinct world(s), P
-parameter set(s) (ADR-0037 §3's configurations, with the premise variants and
-counterfactuals that are worlds of their own)` as it ends: a portal edge is one
-whose two ends lie in different reach chunks, a face cell a cell one lands on;
-`M` is the measured counterpart of the cost line's portal-edge bound, and `W`
-is read against its configuration bound, which counts the quest plan's region
-states and not the premise variants a proof builds beside them. The portal counts depend
-on the chunk side and are written nowhere in the output tree. A run whose
+at a chunk side of S (ADR-0037 §2)`, `reach graphs: G graph(s) memoised over
+the run, one per distinct world and parameters: W distinct world(s), B of them
+the configurations the reach binding counts (ADR-0037 §3's figure) and V
+premise variants and counterfactuals that are worlds of their own; P parameter
+set(s)` and `reach states: the most in one closure N state(s) (S standing, A
+afloat, U submerged, H holding), Q of them plain sea summarised in C
+component(s), over K closure(s) (ADR-0037 §3's rest states, per closure)` as it
+ends: a portal edge is one whose two ends lie in different reach chunks, a face
+cell a cell one lands on; `M` is the measured counterpart of the cost line's
+portal-edge bound, `B` of its configuration bound (which counts the quest
+plan's region states; the `V` variants a proof builds beside them it does not
+count), and `N` of its rest census, which bounds one closure. The portal
+counts depend on the chunk side and are written nowhere in the output tree. A run whose
 stores held a section prints `world store pages: R byte(s) resident over S
 section(s) of every store; G array(s) given up, L read back, K of them within
 one turnover of the resident arrays; the need raised T time(s) for a walk found
@@ -3720,21 +3735,21 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
 - `<out>/validation/resource-cost.json`: the build's **computed cost**
   (`compiler::cost`, ADR-0037 §3), printed before the whole-map stages start as
   `resource cost: region X x Y x Z cell(s) under a H horizon; judged columns
-  …; reach window at most W cell(s) (…), its reached bitmap B byte(s), NX x NZ
-  chunk(s) of side 32 with F face cell(s); rest census: S standing and A water
+  …; reach window at most W cell(s) (…), its reached and plain-sea bitmaps B
+  byte(s), NX x NZ chunk(s) of side 32 with F face cell(s); rest census: S standing and A water
   candidate(s) over C column(s), at most N node(s) in one chunk, E edge(s) out
   of one node and every landing within 5 column(s); at most P portal edge(s)
   in one closure; working set before any walk: the stores' ring + the
   snapshot's pages + the lists' buffered pushes = T byte(s), the lists' largest
   chunk at most L byte(s) by its candidates; summaries at most: K face
-  label(s), C configuration(s), S plain-sea summar(y/ies); scratch: the stores'
-  … (ADR-0037 §3)` and written as the same numbers. Computed from the site
+  label(s), C configuration(s); scratch: the stores' … (ADR-0037 §3)` and
+  written as the same numbers. Computed from the site
   plan's region, the horizon, the judged columns, the window those give through
   the snapshot's own rule (`nav::window_box`) and the store — never measured,
   so two builds of one campaign write one file; what a build reached is the
   end-of-run lines (`reach budget:`, `reach lists:`, `reach portals:`, `reach
-  graphs:`, `world store pages:`, the exposure line's labels), which are
-  written nowhere in the output tree. The **rest census** (`cost::RestCensus`)
+  graphs:`, `reach states:`, `world store pages:`, the exposure line's labels),
+  which are written nowhere in the output tree. The **rest census** (`cost::RestCensus`)
   reads the window from the store section by section through the one block
   classification (`blockshape::collision_class`) and counts, per column, the
   cells a body can rest in at most: one standing candidate over every surface
