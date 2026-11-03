@@ -415,8 +415,8 @@ jobs:
         run: |
           set -euo pipefail
           archive="$RUNNER_TEMP/archive/nextest-archive.tar.zst"
-          cargo nextest list --archive-file "$archive" --extract-to target/llvm-cov-target --workspace-remap . --message-format json > target/nextest-list.json
           mkdir -p target/llvm-cov-target/debug
+          cargo nextest list --archive-file "$archive" --extract-to target/llvm-cov-target --workspace-remap . --message-format json > target/nextest-list.json
           ln target/llvm-cov-target/target/debug/delvec target/llvm-cov-target/debug/delvec
           cargo llvm-cov nextest --no-report --archive-file "$archive" --extract-overwrite --workspace-remap . --profile ci -E 'test(=built_fixtures::the_gallery_points_are_built_once_per_run)'
           du -sh target/llvm-cov-target/tmp/built
@@ -491,8 +491,8 @@ jobs:
         run: |
           set -euo pipefail
           archive="$RUNNER_TEMP/archive/nextest-archive.tar.zst"
-          cargo nextest list --archive-file "$archive" --extract-to target/llvm-cov-target --workspace-remap . --message-format json > target/nextest-list.json
           mkdir -p target/llvm-cov-target/debug target/llvm-cov-target/tmp
+          cargo nextest list --archive-file "$archive" --extract-to target/llvm-cov-target --workspace-remap . --message-format json > target/nextest-list.json
           ln target/llvm-cov-target/target/debug/delvec target/llvm-cov-target/debug/delvec
           cp -a "$RUNNER_TEMP/fixtures/llvm-cov-target/tmp/built" target/llvm-cov-target/tmp/built
           ls target/llvm-cov-target/tmp/built
@@ -561,7 +561,10 @@ jobs:
       # JUnit report, and every partition must have run something. `--extract-to`
       # lays the binaries where `cargo llvm-cov report` looks for them.
       - name: the archive's listing (the census's denominator)
-        run: cargo nextest list --archive-file "$RUNNER_TEMP/archive/nextest-archive.tar.zst" --extract-to target/llvm-cov-target --workspace-remap . --message-format json > target/nextest-list.json
+        run: |
+          set -euo pipefail
+          mkdir -p target
+          cargo nextest list --archive-file "$RUNNER_TEMP/archive/nextest-archive.tar.zst" --extract-to target/llvm-cov-target --workspace-remap . --message-format json > target/nextest-list.json
       - name: the partition census (every listed test ran in exactly one partition)
         env:
           PARTITIONS: ${{ needs.rust-partition.outputs.total }}
