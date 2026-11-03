@@ -44,10 +44,11 @@ fn starter() -> PathBuf {
 /// The `site-plan-solid` point, materialised by the gallery's own domain tool
 /// and detailed into `prefabs` beside the open point's pieces, as
 /// `common::gallery_site_plan_detailed` details the open one.
-/// The gallery's solid site-plan point, every place detailed: built once per
-/// machine and engine (spec-0126 §4.2, `common::built`), copied to `root` for
-/// this process to run the starter against.
-fn solid_point_detailed(root: &Path) -> PathBuf {
+/// The gallery's solid site-plan point, every place detailed, with the
+/// library its `detail --all` committed its pieces into: built once per
+/// machine and engine (spec-0126 §4.2, `common::built`), both copied to
+/// `root` for this process to run the starter against.
+fn solid_point_detailed(root: &Path) -> (PathBuf, PathBuf) {
     let cached = common::built::built(
         "gallery-site-plan-solid-detailed",
         common::built::Inputs::new()
@@ -57,9 +58,12 @@ fn solid_point_detailed(root: &Path) -> PathBuf {
         solid_point_detailed_into,
     );
     let campaign = root.join("site-plan-solid");
+    let prefabs = root.join("prefabs-solid");
     let _ = std::fs::remove_dir_all(&campaign);
+    let _ = std::fs::remove_dir_all(&prefabs);
     common::copy_dir_all(&cached.join("site-plan-solid"), &campaign);
-    campaign
+    common::copy_dir_all(&cached.join("prefabs"), &prefabs);
+    (campaign, prefabs)
 }
 
 fn solid_point_detailed_into(dir: &Path) {
@@ -195,10 +199,9 @@ fn judge_place(
 
 /// The open and the solid site-plan points, each detailed, with the library.
 fn point(which: &str, tmp: &Path) -> (PathBuf, PathBuf) {
-    let (open, prefabs) = common::gallery_site_plan_detailed(tmp);
     match which {
-        "open" => (open, prefabs),
-        "solid" => (solid_point_detailed(tmp), prefabs),
+        "open" => common::gallery_site_plan_detailed(tmp),
+        "solid" => solid_point_detailed(tmp),
         other => panic!("no site-plan point named {other}"),
     }
 }
