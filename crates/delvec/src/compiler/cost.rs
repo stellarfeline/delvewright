@@ -12,9 +12,9 @@
 //! What is stated: the working set every paged structure asks for before any
 //! walk is measured (the stores' ring, the snapshot's pages for the window's
 //! height, the lists' ring of buffered pushes), each summary's bound (the
-//! reached bitmap, the portal edges over the window's chunk-face cells, the
-//! leak floods' face labels, the configurations, the plain-sea summaries), and
-//! the scratch files' size (the stores' arrays, and the lists' largest chunk at
+//! reached and plain-sea bitmaps, the portal edges over the window's chunk-face
+//! cells, the leak floods' face labels, the configurations), and the scratch
+//! files' size (the stores' arrays, and the lists' largest chunk at
 //! most). Every bound is an upper bound a build cannot exceed; what a build
 //! reached is printed as it ends (`reach budget:`, `reach lists:`,
 //! `reach portals:`, `world store pages:`).
@@ -378,9 +378,10 @@ impl ResourceCost {
         self.window_dims().iter().product()
     }
 
-    /// The reached bitmap: one bit per window cell.
+    /// The reached states' bitmaps: one bit per window cell for the states
+    /// reached, and one for the plain-sea states among them (ADR-0037 §2).
     pub fn reached_bitmap_bytes(&self) -> usize {
-        self.window_cells().div_ceil(8)
+        2 * self.window_cells().div_ceil(8)
     }
 
     /// The most portal edges a closure carries: the nodes within a launch's
@@ -415,16 +416,6 @@ impl ResourceCost {
         self.region_writes + 1
     }
 
-    /// Plain-sea summaries at most: one per configuration under an ocean,
-    /// none under a void.
-    pub fn plain_sea_summaries_at_most(&self) -> usize {
-        if self.horizon == "ocean" {
-            self.configurations_at_most()
-        } else {
-            0
-        }
-    }
-
     /// The working set the paged structures state before any walk: the sum
     /// the budget starts at.
     pub fn working_set_floor(&self) -> usize {
@@ -457,13 +448,14 @@ impl ResourceCost {
         let d = self.window_dims();
         format!(
             "resource cost: {region} under a {} horizon; {judged}; reach window at most {} cell(s) \
-             ({} x {} x {}), its reached bitmap {} byte(s), {} x {} chunk(s) of side {} with {} \
+             ({} x {} x {}), its reached and plain-sea bitmaps {} byte(s), {} x {} chunk(s) of \
+             side {} with {} \
              face cell(s); rest census: {} standing and {} water candidate(s) over {} column(s), \
              at most {} node(s) in one chunk, {} edge(s) out of one node and every landing within \
              {} column(s); at most {} portal edge(s) in one closure; working set before any \
              walk: the stores' ring {} + the snapshot's pages {} + the lists' buffered pushes \
              {} = {} byte(s), the lists' largest chunk at most {} byte(s) by its candidates; \
-             summaries at most: {} face label(s), {} configuration(s), {} plain-sea summar(y/ies); \
+             summaries at most: {} face label(s), {} configuration(s); \
              scratch: the stores' {} byte(s) over {} section(s) of the whole and {} of the judged \
              copy (ADR-0037 §3)",
             self.horizon,
@@ -490,7 +482,6 @@ impl ResourceCost {
             self.lists_chunk_at_most(),
             self.face_labels_at_most(),
             self.configurations_at_most(),
-            self.plain_sea_summaries_at_most(),
             self.store_scratch_bytes(),
             self.store_sections,
             self.judged_sections,
@@ -532,7 +523,6 @@ impl ResourceCost {
                 "edges_per_node": self.edges_per_node,
                 "face_labels": self.face_labels_at_most(),
                 "configurations": self.configurations_at_most(),
-                "plain_sea_summaries": self.plain_sea_summaries_at_most(),
             },
             "scratch_bytes": {
                 "stores": self.store_scratch_bytes(),
@@ -583,7 +573,10 @@ mod tests {
         };
         assert_eq!(c.window_dims(), [118, 12, 218]);
         assert_eq!(c.window_cells(), 118 * 12 * 218);
-        assert_eq!(c.reached_bitmap_bytes(), (118 * 12 * 218usize).div_ceil(8));
+        assert_eq!(
+            c.reached_bitmap_bytes(),
+            2 * (118 * 12 * 218usize).div_ceil(8)
+        );
         assert_eq!(
             c.portal_edges_at_most(),
             7_000,
@@ -597,13 +590,12 @@ mod tests {
         assert_eq!(c.census.states_at_most(), 20_500);
         assert_eq!(c.face_labels_at_most(), 8 * 6 * 128);
         assert_eq!(c.configurations_at_most(), 5);
-        assert_eq!(c.plain_sea_summaries_at_most(), 5);
         assert_eq!(c.working_set_floor(), 224_184);
         assert_eq!(c.store_scratch_bytes(), 73_728);
         let line = c.line();
         let json = c.to_json();
         for (word, n) in [
-            ("reached bitmap", c.reached_bitmap_bytes()),
+            ("reached and plain-sea bitmaps", c.reached_bitmap_bytes()),
             ("portal edge(s)", c.portal_edges_at_most()),
             ("face label(s)", c.face_labels_at_most()),
         ] {

@@ -1,7 +1,9 @@
 //! **The reached states of a closure** (ADR-0037 §2): one bit per window cell,
-//! and per block of the window the kinds of the states its bits hold, one byte
-//! each in bit order — never a map from cell to kind. A state outside the
-//! window (the open sea past its margin) is kept by name.
+//! a second bit per window cell for the plain-sea states the closure flooded
+//! rather than expanded (`World::plain_sea`), and per block of the window the
+//! kinds of the other states its bits hold, one byte each in bit order — never
+//! a map from cell to kind, and no byte for a plain-sea state. A state outside
+//! the window (the open sea past its margin) is kept by name.
 //!
 //! What it answers is what a `BTreeMap<[i32; 3], RestKind>` of the same states
 //! answers, in the same order: iteration is by cell (`x`, then `y`, then `z`),
@@ -41,8 +43,12 @@ pub struct States {
     /// One bit per window cell, in [`Dense::index`] order; empty until a
     /// state inside the window is kept.
     bits: Vec<u64>,
+    /// One bit per window cell: set where the state is a plain-sea state,
+    /// submerged and summarised ([`States::insert_plain`]); a subset of
+    /// `bits`, with no byte in `kinds`.
+    plain: Vec<u64>,
     /// Per block of [`BLOCK_WORDS`] words, the kind of each state its bits
-    /// hold, in bit order.
+    /// hold that is not plain, in bit order.
     kinds: Vec<Vec<u8>>,
     /// The states outside the window, by name.
     outside: BTreeMap<[i32; 3], u8>,
@@ -64,36 +70,50 @@ impl States {
         })
     }
 
-    /// The rank of bit `i` among the set bits of its block.
+    /// The rank of bit `i` among the set bits of its block that are not
+    /// plain: its byte's place in the block's `kinds`.
     #[inline]
     fn rank(&self, i: usize) -> usize {
         let w = i / 64;
         let first = w & !(BLOCK_WORDS - 1);
-        let below: u32 = self.bits[first..w].iter().map(|b| b.count_ones()).sum();
-        (below + (self.bits[w] & ((1u64 << (i % 64)) - 1)).count_ones()) as usize
+        let below: u32 = (first..w)
+            .map(|j| (self.bits[j] & !self.plain[j]).count_ones())
+            .sum();
+        let mask = (1u64 << (i % 64)) - 1;
+        (below + (self.bits[w] & !self.plain[w] & mask).count_ones()) as usize
+    }
+
+    /// Open the window's bitmaps over `d`, once a state inside it is kept.
+    fn open(&mut self, d: &Dense, c: [i32; 3]) {
+        if self.bits.is_empty() && d.index(c).is_some() {
+            self.lo = d.lo;
+            self.dims = d.dims;
+            self.bits = vec![0; d.cells.len().div_ceil(64)];
+            self.plain = vec![0; self.bits.len()];
+            self.kinds = vec![Vec::new(); self.bits.len().div_ceil(BLOCK_WORDS)];
+        }
     }
 
     /// Keep `c` as a state of kind `k`, over `d`'s window; a state kept
-    /// already takes the new kind.
+    /// already takes the new kind, a plain-sea state included (it is plain no
+    /// longer).
     pub(in crate::compiler::nav) fn insert(&mut self, d: &Dense, c: [i32; 3], k: RestKind) {
-        if self.bits.is_empty() && d.index(c).is_some() {
-            {
-                self.lo = d.lo;
-                self.dims = d.dims;
-                self.bits = vec![0; d.cells.len().div_ceil(64)];
-                self.kinds = vec![Vec::new(); self.bits.len().div_ceil(BLOCK_WORDS)];
-            }
-        }
+        self.open(d, c);
         match self.index(c) {
             Some(i) => {
+                let (w, bit) = (i / 64, 1u64 << (i % 64));
+                let was_plain = self.plain[w] & bit != 0;
+                self.plain[w] &= !bit;
                 let r = self.rank(i);
                 let block = &mut self.kinds[i >> BLOCK_BITS];
-                if self.bits[i / 64] & (1 << (i % 64)) != 0 {
+                if self.bits[w] & bit != 0 && !was_plain {
                     block[r] = byte_of(k);
                 } else {
-                    self.bits[i / 64] |= 1 << (i % 64);
+                    self.bits[w] |= bit;
                     block.insert(r, byte_of(k));
-                    self.len += 1;
+                    if !was_plain {
+                        self.len += 1;
+                    }
                 }
             }
             None => {
@@ -102,6 +122,45 @@ impl States {
                 }
             }
         }
+    }
+
+    /// Keep `c` as a **plain-sea state** (`World::plain_sea`): submerged, with
+    /// no byte of its own, told apart by its bit. A cell outside the window is
+    /// kept by name as submerged (no plain-sea cell lies there, since each of
+    /// its six neighbours is inside the window). A state kept already is left
+    /// as it was.
+    pub(in crate::compiler::nav) fn insert_plain(&mut self, d: &Dense, c: [i32; 3]) {
+        self.open(d, c);
+        match self.index(c) {
+            Some(i) => {
+                let (w, bit) = (i / 64, 1u64 << (i % 64));
+                if self.bits[w] & bit == 0 {
+                    self.bits[w] |= bit;
+                    self.plain[w] |= bit;
+                    self.len += 1;
+                }
+            }
+            None => {
+                if let std::collections::btree_map::Entry::Vacant(e) = self.outside.entry(c) {
+                    e.insert(byte_of(RestKind::Submerged));
+                    self.len += 1;
+                }
+            }
+        }
+    }
+
+    /// Whether `c` is a plain-sea state.
+    #[inline]
+    pub fn plain(&self, c: &[i32; 3]) -> bool {
+        match self.index(*c) {
+            Some(i) => self.plain[i / 64] & (1 << (i % 64)) != 0,
+            None => false,
+        }
+    }
+
+    /// How many plain-sea states.
+    pub fn plain_len(&self) -> usize {
+        self.plain.iter().map(|w| w.count_ones() as usize).sum()
     }
 
     /// Whether `c` is a state.
@@ -116,8 +175,16 @@ impl States {
     /// The kind of state `c` holds.
     pub fn get(&self, c: &[i32; 3]) -> Option<&'static RestKind> {
         match self.index(*c) {
-            Some(i) => (self.bits[i / 64] & (1 << (i % 64)) != 0)
-                .then(|| &KINDS[self.kinds[i >> BLOCK_BITS][self.rank(i)] as usize]),
+            Some(i) => {
+                let (w, bit) = (i / 64, 1u64 << (i % 64));
+                if self.bits[w] & bit == 0 {
+                    None
+                } else if self.plain[w] & bit != 0 {
+                    Some(&RestKind::Submerged)
+                } else {
+                    Some(&KINDS[self.kinds[i >> BLOCK_BITS][self.rank(i)] as usize])
+                }
+            }
             None => self.outside.get(c).map(|b| &KINDS[*b as usize]),
         }
     }
@@ -156,6 +223,7 @@ impl States {
     /// The bytes held, beyond the struct.
     pub fn heap(&self) -> usize {
         self.bits.capacity() * 8
+            + self.plain.capacity() * 8
             + self.kinds.capacity() * std::mem::size_of::<Vec<u8>>()
             + self.kinds.iter().map(Vec::capacity).sum::<usize>()
             + self.outside.len() * 16
@@ -201,7 +269,11 @@ impl Iter<'_> {
                 while b != 0 {
                     let i = w * 64 + b.trailing_zeros() as usize;
                     b &= b - 1;
-                    let k = KINDS[s.kinds[i >> BLOCK_BITS][s.rank(i)] as usize];
+                    let k = if s.plain[w] & (1 << (i % 64)) != 0 {
+                        RestKind::Submerged
+                    } else {
+                        KINDS[s.kinds[i >> BLOCK_BITS][s.rank(i)] as usize]
+                    };
                     let c = [
                         s.lo[0] + x as i32,
                         s.lo[1] + (i % dy) as i32,
@@ -252,7 +324,7 @@ impl Iterator for Iter<'_> {
 mod tests {
     use super::super::{Chunked, Dense, Outside, RestKind};
     use super::{KINDS, States};
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
 
     fn window(lo: [i32; 3], dims: [i32; 3]) -> Dense {
         let n = dims.iter().map(|d| *d as usize).product::<usize>();
@@ -268,10 +340,12 @@ mod tests {
     /// **The states answer what a map of them answers** (ADR-0037 §2): on
     /// windows whose slabs straddle words and blocks, states kept in a
     /// generated order — inside the window and round it, some kept twice
-    /// with a new kind — iterate, count, look up and test membership exactly
-    /// as a `BTreeMap<[i32; 3], RestKind>` of the same inserts does, over
-    /// every cell of the window grown by two. Red on any difference;
-    /// perturbed by leaving a slab unsorted.
+    /// with a new kind, one in five kept as a plain-sea state (submerged, no
+    /// byte) and some of those kept again with a kind — iterate, count, look
+    /// up and test membership exactly as a `BTreeMap<[i32; 3], RestKind>` of
+    /// the same inserts does, and answer plain-sea membership as a set of the
+    /// cells last kept plain does, over every cell of the window grown by
+    /// two. Red on any difference; perturbed by leaving a slab unsorted.
     #[test]
     fn the_states_answer_what_a_map_of_them_answers() {
         let mut seed = 0x9e37_79b9_7f4a_7c15u64;
@@ -281,7 +355,8 @@ mod tests {
             seed ^= seed << 17;
             seed % n
         };
-        let (mut kept, mut outside, mut twice) = (0usize, 0usize, 0usize);
+        let (mut kept, mut outside, mut twice, mut plain, mut unplained) =
+            (0usize, 0usize, 0usize, 0usize, 0usize);
         for (lo, dims) in [
             ([0, 0, 0], [1, 1, 1]),
             ([-3, 5, 2], [5, 13, 7]),
@@ -292,6 +367,7 @@ mod tests {
             let d = window(lo, dims);
             let mut s = States::default();
             let mut m: BTreeMap<[i32; 3], RestKind> = BTreeMap::new();
+            let mut p: BTreeSet<[i32; 3]> = BTreeSet::new();
             let cells: usize = dims.iter().map(|x| *x as usize).product();
             for _ in 0..(cells / 3 + 20) {
                 let c = [
@@ -299,17 +375,35 @@ mod tests {
                     lo[1] - 2 + next(dims[1] as u64 + 4) as i32,
                     lo[2] - 2 + next(dims[2] as u64 + 4) as i32,
                 ];
-                let k = KINDS[next(4) as usize];
                 if d.index(c).is_none() {
                     outside += 1;
                 }
-                if m.insert(c, k).is_some() {
-                    twice += 1;
+                let roll = next(5) as usize;
+                if roll == 4 {
+                    // A plain-sea state: submerged, no byte; one kept already
+                    // is left as it was.
+                    if let std::collections::btree_map::Entry::Vacant(e) = m.entry(c) {
+                        e.insert(RestKind::Submerged);
+                        if d.index(c).is_some() {
+                            p.insert(c);
+                            plain += 1;
+                        }
+                    }
+                    s.insert_plain(&d, c);
+                } else {
+                    let k = KINDS[roll];
+                    if m.insert(c, k).is_some() {
+                        twice += 1;
+                    }
+                    if p.remove(&c) {
+                        unplained += 1;
+                    }
+                    s.insert(&d, c, k);
                 }
-                s.insert(&d, c, k);
             }
             kept += m.len();
             assert_eq!(s.len(), m.len(), "{dims:?}: the count");
+            assert_eq!(s.plain_len(), p.len(), "{dims:?}: the plain-sea count");
             assert_eq!(
                 s.iter().collect::<Vec<_>>(),
                 m.iter().map(|(c, k)| (*c, *k)).collect::<Vec<_>>(),
@@ -321,16 +415,18 @@ mod tests {
                         let c = [x, y, z];
                         assert_eq!(s.get(&c), m.get(&c), "{c:?}: the kind");
                         assert_eq!(s.contains_key(&c), m.contains_key(&c), "{c:?}");
+                        assert_eq!(s.plain(&c), p.contains(&c), "{c:?}: plain");
                     }
                 }
             }
         }
         eprintln!(
             "states: {kept} state(s) kept over five windows, {outside} insert(s) outside the \
-             window, {twice} kept twice"
+             window, {twice} kept twice, {plain} kept plain, {unplained} of them kept again with \
+             a kind"
         );
         assert!(
-            kept > 0 && outside > 0 && twice > 0,
+            kept > 0 && outside > 0 && twice > 0 && plain > 0 && unplained > 0,
             "the cases bind nothing"
         );
     }

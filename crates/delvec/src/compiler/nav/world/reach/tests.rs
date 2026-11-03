@@ -937,7 +937,9 @@ fn the_costs_bounds_hold_over_the_graphs_built() {
                 );
                 let key = |c: [i32; 3]| (c[0].div_euclid(side), c[2].div_euclid(side));
                 let mut per_chunk: BTreeMap<(i32, i32), (usize, usize)> = BTreeMap::new();
-                for c in r.states.keys() {
+                // What the lists hold: a plain-sea state's dives are computed
+                // and never listed (ADR-0037 §2).
+                for c in r.states.keys().filter(|c| !r.states.plain(c)) {
                     let e = per_chunk.entry(key(c)).or_insert((0, 0));
                     e.0 += 1;
                     e.1 += r.succ(c).len();
