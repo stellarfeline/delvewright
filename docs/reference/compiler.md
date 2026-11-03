@@ -3737,9 +3737,10 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   written nowhere in the output tree. The **rest census** (`cost::RestCensus`)
   reads the window from the store section by section through the one block
   classification (`blockshape::collision_class`) and counts, per column, the
-  cells a body can rest in at most: one standing candidate over every block a
-  body stands on, every climbable cell, every fluid cell and every cell of the
-  horizon's sea band — an upper bound on the closure's states. A node's edges
+  cells a body can rest in at most: one standing candidate over every surface
+  (a block a body stands on with no such block over it), every climbable cell,
+  every fluid cell and every cell of the horizon's sea band — an upper bound on
+  the closure's states. A node's edges
   are bounded by the launch set and by the rest candidates within
   `nav::LAUNCH_REACH` (5) columns of it, where every launch lands; a water node
   by its six dives. Summed over a reach chunk that bounds what its lists decode
