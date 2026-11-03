@@ -36,8 +36,8 @@ runs:
         CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
       run: |
         set -euo pipefail
-        want_nextest="$(python3 -c 'import tomllib; print(tomllib.load(open("versions.toml","rb"))["ci"]["nextest_version"])')"
-        want_llvm_cov="$(python3 -c 'import tomllib; print(tomllib.load(open("versions.toml","rb"))["ci"]["llvm_cov_version"])')"
+        want_nextest="$(python3 -c 'import sys, tomllib; sys.stdout.reconfigure(newline="\n"); print(tomllib.load(open("versions.toml","rb"))["ci"]["nextest_version"])')"
+        want_llvm_cov="$(python3 -c 'import sys, tomllib; sys.stdout.reconfigure(newline="\n"); print(tomllib.load(open("versions.toml","rb"))["ci"]["llvm_cov_version"])')"
         got_nextest="$(cargo nextest --version | head -n 1 | awk '{print $2}')"
         got_llvm_cov="$(cargo llvm-cov --version | awk '{print $2}')"
         echo "suite-instruments: cargo-nextest $got_nextest (want $want_nextest), cargo-llvm-cov $got_llvm_cov (want $want_llvm_cov), cache hit: $CACHE_HIT"

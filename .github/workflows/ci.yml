@@ -508,7 +508,7 @@ jobs:
       - name: the coverage report (region, line, function) over every partition
         run: |
           set -euo pipefail
-          ws="$(cargo metadata --format-version 1 --no-deps | python3 -c 'import json, os, sys; print(os.path.basename(json.load(sys.stdin)["workspace_root"]))')"
+          ws="$(cargo metadata --format-version 1 --no-deps | python3 -c 'import json, os, sys; sys.stdout.reconfigure(newline="\n"); print(os.path.basename(json.load(sys.stdin)["workspace_root"]))')"
           "$LLVM_PROFDATA" merge -sparse -o "target/llvm-cov-target/$ws.profdata" partitions/*/partition.profdata
           cargo llvm-cov report --json --output-path target/coverage.json --nextest-archive-file "$RUNNER_TEMP/archive/nextest-archive.tar.zst"
       - name: the run's measurements (JUnit per-test times per partition, coverage export, listing)
