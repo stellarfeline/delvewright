@@ -72,11 +72,12 @@ pub struct ResourceCost {
 /// A cell is a **rest candidate** when a body could rest in it under
 /// `World::rest_kind`'s rules, counted from above: every cell holding a block a
 /// body stands on (a full cube, a partial floor, a fence or wall top, a door or
-/// trapdoor) puts one standing candidate in the cell over it; every climbable
-/// cell is a holding candidate; every fluid cell, and every cell of the
-/// horizon's sea band, is a water candidate. The count is an upper bound: a
-/// support whose cell above is filled, or a wall two cells thick, counts rest
-/// cells no body takes, and nothing a body rests in goes uncounted.
+/// trapdoor) whose cell above holds no such block puts one standing candidate
+/// in that cell — a surface; every climbable cell is a holding candidate; every
+/// fluid cell, and every cell of the horizon's sea band, is a water candidate.
+/// The count is an upper bound: a surface under a torch, a slab under a
+/// carpet, or a ledge a body cannot fit on counts a rest cell no body takes,
+/// and nothing a body rests in goes uncounted.
 ///
 /// A node's edges are at most the launch set's landings and the cell moves
 /// ([`crate::compiler::nav::edges_per_node_at_most`]), and no more than the rest
@@ -159,17 +160,35 @@ impl RestCensus {
         });
         let mut standing = vec![0u32; w * d];
         let mut water = vec![band; w * d];
+        // The supports of each column, one bit per height, so a surface — a
+        // support with no support over it — is counted once the column is read.
+        let words = usize::try_from(hi[1] - lo[1] + 1).unwrap_or(0).div_ceil(64);
+        let mut supports = vec![0u64; w * d * words];
         // Every reading is a function of the block state alone, made once per
         // distinct state.
         let mut kinds: BTreeMap<BlockState, Rest> = BTreeMap::new();
         for (c, b) in store.in_box(lo, hi) {
             let k = *kinds.entry(*b).or_insert_with(|| rest_of(b.as_str()));
             match k {
-                Rest::Support | Rest::Climb => standing[at(c[0], c[2])] += 1,
+                Rest::Support => {
+                    let y = (c[1] - lo[1]) as usize;
+                    supports[at(c[0], c[2]) * words + y / 64] |= 1 << (y % 64);
+                }
+                Rest::Climb => standing[at(c[0], c[2])] += 1,
                 Rest::Water => water[at(c[0], c[2])] += 1,
                 Rest::None => {}
             }
         }
+        for col in 0..w * d {
+            let bits = &supports[col * words..(col + 1) * words];
+            for (i, word) in bits.iter().enumerate() {
+                // The support one height up: the next bit, the next word's
+                // lowest bit carried in at the top.
+                let above = (word >> 1) | bits.get(i + 1).map_or(0, |n| n << 63);
+                standing[col] += (word & !above).count_ones();
+            }
+        }
+        drop(supports);
         // The rest candidates within `reach` columns of each column, by a
         // summed-area table.
         let mut sat = vec![0u64; (w + 1) * (d + 1)];
@@ -627,7 +646,7 @@ mod tests {
         for round in 0..8i32 {
             let mut store = BlockMap::new();
             let lo = [-37 - round, 50, -29];
-            let hi = [lo[0] + 70 + 3 * round, 75, lo[2] + 66];
+            let hi = [lo[0] + 70 + 3 * round, 50 + 60 + 9 * round, lo[2] + 66];
             for _ in 0..(400 + round * 300) {
                 let c = [
                     lo[0] + next((hi[0] - lo[0] + 1) as u64) as i32,
@@ -643,9 +662,12 @@ mod tests {
             let band = sea.map_or(0, |(f, l)| (l.min(hi[1]) - (f + 1).max(lo[1]) + 1).max(0));
             let col = |x: i32, z: i32| -> (usize, usize) {
                 let (mut s, mut w) = (0usize, band as usize);
+                let kind = |y: i32| store.get(&[x, y, z]).map(|b| rest_of(b.as_str()));
                 for y in lo[1]..=hi[1] {
-                    match store.get(&[x, y, z]).map(|b| rest_of(b.as_str())) {
-                        Some(Rest::Support | Rest::Climb) => s += 1,
+                    match kind(y) {
+                        // A surface: a support with no support over it.
+                        Some(Rest::Support) if kind(y + 1) != Some(Rest::Support) => s += 1,
+                        Some(Rest::Climb) => s += 1,
                         Some(Rest::Water) => w += 1,
                         _ => {}
                     }
