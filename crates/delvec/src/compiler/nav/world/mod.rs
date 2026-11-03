@@ -10,7 +10,7 @@ pub(in crate::compiler::nav) mod climb;
 pub use climb::*;
 pub(in crate::compiler::nav) mod confine;
 pub use confine::*;
-pub(in crate::compiler::nav) mod reach;
+pub(crate) mod reach;
 pub use reach::*;
 
 use crate::compiler::cellset::{CellMap, CellSet};

@@ -4386,12 +4386,12 @@ impl ReachBinding {
 }
 
 mod bank;
-mod budget;
+pub(crate) mod budget;
 mod chunks;
 mod flights;
 pub(in crate::compiler::nav) mod pages;
 mod persist;
-mod spill;
+pub(crate) mod spill;
 pub mod states;
 
 #[cfg(test)]

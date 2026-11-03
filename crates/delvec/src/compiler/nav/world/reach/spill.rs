@@ -31,14 +31,14 @@
 use std::sync::Arc;
 
 /// One scratch file, appended and read back by offset.
-pub(super) struct Spill {
+pub(crate) struct Spill {
     file: std::fs::File,
     len: u64,
     name: Arc<str>,
 }
 
 /// A reader of a [`Spill`]'s records, used without the writer's lock.
-pub(super) struct Reader {
+pub(crate) struct Reader {
     file: std::fs::File,
     name: Arc<str>,
 }
@@ -46,7 +46,7 @@ pub(super) struct Reader {
 impl Spill {
     /// A fresh scratch file in the system temporary directory, named for what
     /// it holds.
-    pub(super) fn open(what: &str) -> std::io::Result<Spill> {
+    pub(crate) fn open(what: &str) -> std::io::Result<Spill> {
         static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let path = std::env::temp_dir().join(format!(
@@ -73,7 +73,7 @@ impl Spill {
 
     /// Append `bytes`; where they lie. Positional: the file's cursor is
     /// neither moved nor read.
-    pub(super) fn append(&mut self, bytes: &[u8]) -> std::io::Result<(u64, u32)> {
+    pub(crate) fn append(&mut self, bytes: &[u8]) -> std::io::Result<(u64, u32)> {
         let at = self.len;
         let len = u32::try_from(bytes.len()).map_err(|_| {
             std::io::Error::new(std::io::ErrorKind::InvalidInput, "one record under 4 GiB")
@@ -100,12 +100,12 @@ impl Spill {
 
     /// The `len` bytes at `at`, read at their offset without moving the
     /// file's cursor.
-    pub(super) fn read(&self, at: u64, len: u32) -> std::io::Result<Vec<u8>> {
+    pub(crate) fn read(&self, at: u64, len: u32) -> std::io::Result<Vec<u8>> {
         read_at(&self.file, at, len)
     }
 
     /// A reader of what is written, for use without the writer's lock.
-    pub(super) fn reader(&self) -> std::io::Result<Reader> {
+    pub(crate) fn reader(&self) -> std::io::Result<Reader> {
         Ok(Reader {
             file: self.file.try_clone()?,
             name: Arc::clone(&self.name),
@@ -113,18 +113,18 @@ impl Spill {
     }
 
     /// The bytes written so far.
-    pub(super) fn len(&self) -> u64 {
+    pub(crate) fn len(&self) -> u64 {
         self.len
     }
 
     /// **The one failure of an open scratch file**: stop the run, naming the
     /// file, what was being done to it, the error and the bytes written.
-    pub(super) fn fail(&self, op: &str, err: &std::io::Error) -> ! {
+    pub(crate) fn fail(&self, op: &str, err: &std::io::Error) -> ! {
         fail(&self.name, op, Some(self.len), err)
     }
 
     /// `r`, or the run stopped by [`Spill::fail`].
-    pub(super) fn or_fail<T>(&self, op: &str, r: std::io::Result<T>) -> T {
+    pub(crate) fn or_fail<T>(&self, op: &str, r: std::io::Result<T>) -> T {
         match r {
             Ok(v) => v,
             Err(e) => self.fail(op, &e),
@@ -135,7 +135,7 @@ impl Spill {
 impl Reader {
     /// The `len` bytes at `at`, or the run stopped by [`Spill::fail`]'s
     /// message.
-    pub(super) fn read(&self, at: u64, len: u32) -> Vec<u8> {
+    pub(crate) fn read(&self, at: u64, len: u32) -> Vec<u8> {
         match read_at(&self.file, at, len) {
             Ok(v) => v,
             Err(e) => fail(&self.name, &format!("read {len} byte(s) at {at}"), None, &e),

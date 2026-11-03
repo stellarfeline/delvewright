@@ -1,6 +1,7 @@
-//! **The one resident budget** every structure the reach graph pages is held
-//! to (ADR-0037 §1): the closures' edge lists by chunk ([`super::chunks`]),
-//! the window snapshot's pages ([`super::pages`]) and whatever pages next.
+//! **The one resident budget** every structure the compiler pages is held to
+//! (ADR-0037 §1): the closures' edge lists by chunk ([`super::chunks`]), the
+//! window snapshot's pages ([`super::pages`]), the section store's index
+//! arrays (`crate::compiler::sections`) and whatever pages next.
 //!
 //! Each paged structure **states the working set its walk needs** as a
 //! [`Need`], in bytes, measured from what it has had to hold — never set by a
@@ -25,7 +26,7 @@ use std::sync::{Mutex, OnceLock, Weak};
 
 /// **A paged structure's stated working set**, in bytes: what its walk needs
 /// resident, with a floor below which no measurement takes it.
-pub(super) struct Need {
+pub(crate) struct Need {
     bytes: AtomicUsize,
     floor: usize,
     name: &'static str,
@@ -33,7 +34,7 @@ pub(super) struct Need {
 }
 
 impl Need {
-    pub(super) const fn new(name: &'static str, floor: usize) -> Need {
+    pub(crate) const fn new(name: &'static str, floor: usize) -> Need {
         Need {
             bytes: AtomicUsize::new(0),
             floor,
@@ -43,7 +44,7 @@ impl Need {
     }
 
     /// State the need as `bytes` when that is more than stated so far.
-    pub(super) fn raise(&'static self, bytes: usize) {
+    pub(crate) fn raise(&'static self, bytes: usize) {
         self.list();
         if self.bytes.fetch_max(bytes, Ordering::Relaxed) < bytes {
             let total = needs()
@@ -57,7 +58,7 @@ impl Need {
     }
 
     /// The need as stated, at least its floor.
-    pub(super) fn bytes(&self) -> usize {
+    pub(crate) fn bytes(&self) -> usize {
         self.bytes.load(Ordering::Relaxed).max(self.floor)
     }
 
@@ -80,7 +81,7 @@ fn needs() -> &'static Mutex<Vec<&'static Need>> {
 }
 
 /// Every need stated so far, by name, in the order first stated.
-pub(super) fn needs_stated() -> Vec<(&'static str, usize)> {
+pub(crate) fn needs_stated() -> Vec<(&'static str, usize)> {
     needs()
         .lock()
         .expect("needs")
@@ -91,7 +92,7 @@ pub(super) fn needs_stated() -> Vec<(&'static str, usize)> {
 
 /// **The resident budget in force on this thread**, in bytes: the sum of the
 /// needs stated, or what a test put in force.
-pub(super) fn budget() -> usize {
+pub(crate) fn budget() -> usize {
     match override_here() {
         0 => TOTAL.load(Ordering::Relaxed),
         b => b,
@@ -103,13 +104,13 @@ thread_local! {
 }
 
 /// The budget a test put in force on this thread; `0` for none.
-pub(super) fn override_here() -> usize {
+pub(crate) fn override_here() -> usize {
     OVERRIDE.with(std::cell::Cell::get)
 }
 
 /// Run `f` with the resident budget at `bytes` on this thread (`0`: none),
 /// binding each structure this thread grows, alone, to it.
-pub(super) fn with_budget<R>(bytes: usize, f: impl FnOnce() -> R) -> R {
+pub(crate) fn with_budget<R>(bytes: usize, f: impl FnOnce() -> R) -> R {
     let was = OVERRIDE.with(|b| b.replace(bytes));
     let out = f();
     OVERRIDE.with(|b| b.set(was));
@@ -122,36 +123,42 @@ static RESIDENT: AtomicUsize = AtomicUsize::new(0);
 static TICK: AtomicU64 = AtomicU64::new(0);
 
 /// The bytes every registered structure holds in memory now.
-pub(super) fn resident() -> usize {
+pub(crate) fn resident() -> usize {
     RESIDENT.load(Ordering::Relaxed)
 }
 
 /// Count `bytes` as held.
-pub(super) fn hold(bytes: usize) {
+pub(crate) fn hold(bytes: usize) {
     RESIDENT.fetch_add(bytes, Ordering::Relaxed);
 }
 
 /// Count `bytes` as given up.
-pub(super) fn release(bytes: usize) {
+pub(crate) fn release(bytes: usize) {
     RESIDENT.fetch_sub(bytes, Ordering::Relaxed);
 }
 
 /// The next tick of the use clock.
-pub(super) fn tick() -> u64 {
+pub(crate) fn tick() -> u64 {
     TICK.fetch_add(1, Ordering::Relaxed)
+}
+
+/// The use clock as it stands, for a holding that marks a read without
+/// advancing it (a read of one cell of a section, made millions of times).
+pub(crate) fn now() -> u64 {
+    TICK.load(Ordering::Relaxed)
 }
 
 /// **A structure that can give memory up**: asked for `want` bytes, it gives
 /// up its least recently used holdings until that many are freed or none is
 /// left to give, without waiting on a lock another thread holds, and answers
 /// the bytes freed.
-pub(super) trait Pageable: Send + Sync {
+pub(crate) trait Pageable: Send + Sync {
     fn give_up(&self, want: usize) -> usize;
 }
 
 /// A registered structure: its identity, which [`relieve`] skips when asking
 /// the others.
-pub(super) type Id = usize;
+pub(crate) type Id = usize;
 
 type Registry = Mutex<Vec<(Id, Weak<dyn Pageable>)>>;
 
@@ -162,14 +169,14 @@ fn registry() -> &'static Registry {
 
 /// Register a structure under `id` (its address, [`id_of`]); the registry
 /// forgets a structure once it is dropped.
-pub(super) fn join(id: Id, w: Weak<dyn Pageable>) {
+pub(crate) fn join(id: Id, w: Weak<dyn Pageable>) {
     let mut r = registry().lock().expect("registry");
     r.retain(|(_, w)| w.strong_count() > 0);
     r.push((id, w));
 }
 
 /// The identity a structure registers under: its address.
-pub(super) fn id_of<T: ?Sized>(t: &T) -> Id {
+pub(crate) fn id_of<T: ?Sized>(t: &T) -> Id {
     t as *const T as *const () as usize
 }
 
@@ -178,7 +185,7 @@ pub(super) fn id_of<T: ?Sized>(t: &T) -> Id {
 /// caller holds `me`'s lock, so it is asked directly), then every other
 /// registered structure is asked, until the total stands at three quarters
 /// of the budget. Under a test's budget, `me` alone is held to it.
-pub(super) fn relieve(me: Id, held: usize, mut own: impl FnMut(usize) -> usize) {
+pub(crate) fn relieve(me: Id, held: usize, mut own: impl FnMut(usize) -> usize) {
     let b = override_here();
     if b != 0 {
         if held > b {
