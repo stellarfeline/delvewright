@@ -54,7 +54,12 @@ def test_the_live_workflow_builds_delvec_once(capsys):
     code, out = run_gate(capsys)
     assert code == 0, out
     jobs = gate.load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]
-    consumers = [j for j, job in jobs.items() if j not in gate.COMPILES and gate.BINARY in str(job)]
+    # Counted by substring, the instrumented archive's own build and its link
+    # (other files under another target directory) struck out first.
+    consumers = [
+        j for j, job in jobs.items()
+        if j not in gate.COMPILES and gate.BINARY in str(job).replace("llvm-cov-target/target/debug/delvec", "").replace("llvm-cov-target/debug/delvec", "")
+    ]
     assert len(consumers) >= 4, consumers
     assert f"{len(consumers)} of them running `{gate.BINARY}`" in out
 
@@ -142,3 +147,27 @@ def test_a_printed_remedy_is_not_a_compile():
     assert gate.shell_compiles(script + "cargo build --locked -p delvec --bin delvec\n") == [
         "cargo build --locked -p delvec --bin delvec"
     ]
+
+
+def test_the_binary_is_named_from_the_workspace_root():
+    """`target/debug/delvec` bare, under `./` or under a variable is this run's
+    one build; under a literal directory it is another file (the instrumented
+    archive's `target/llvm-cov-target/target/debug/delvec`)."""
+    for named in ("target/debug/delvec build", "./target/debug/delvec x", '"$GITHUB_WORKSPACE/target/debug/delvec"',
+                  "${{ github.workspace }}/target/debug/delvec", "$W/target/debug/delvec"):
+        assert gate.runs_binary(named), named
+    for other in ("ln target/llvm-cov-target/target/debug/delvec target/llvm-cov-target/debug/delvec", "target/debug/delvec-x", "x.target/debug/delvec"):
+        assert not gate.runs_binary(other), other
+
+
+def test_a_consumer_named_through_dot_slash_is_refused(tmp_path, capsys):
+    wf = perturbed(tmp_path, MECHA_TAKE, MECHA_TAKE.replace(
+        """      - uses: ./.github/actions/delvec-binary
+        with: { sha256: "${{ needs.delvec-binary.outputs.sha256 }}" }
+""", ""))
+    text = wf.read_text(encoding="utf-8")
+    assert text.count(MECHA_BUILD) == 1
+    wf.write_text(text.replace(MECHA_BUILD, MECHA_BUILD.replace("target/debug/delvec", "./target/debug/delvec", 1)), encoding="utf-8")
+    code, out = run_gate(capsys, wf)
+    assert code == 1
+    assert "job `mecha-crosscheck` runs `target/debug/delvec` without taking it through" in out
