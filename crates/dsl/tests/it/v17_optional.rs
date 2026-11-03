@@ -201,6 +201,7 @@ fn the_optional_quest_is_off_the_spine() {
 fn an_optional_quest_may_be_triggered_by_the_mainline() {
     let f = Fixture {
         strand_after_finale: true,
+        strand_deps: vec![FINALE],
         ..Fixture::default()
     };
     assert_eq!(f.codes(), BTreeSet::new());
@@ -213,6 +214,7 @@ fn an_optional_quest_may_be_triggered_by_the_mainline() {
 fn an_optional_quest_may_depend_on_a_mandatory_one() {
     let f = Fixture {
         strand_deps: vec![FINALE],
+        strand_after_finale: true,
         ..Fixture::default()
     };
     assert_eq!(f.codes(), BTreeSet::new());
@@ -254,16 +256,18 @@ fn a_mandatory_quest_off_the_closure_keeps_dw0132() {
 /// optional quest. The party may never complete the strand, so the mainline
 /// would stop there.
 ///
-/// The trigger edge is the one that reaches this rule alone: a `depends_on`
-/// edge from a mandatory quest necessarily also puts the strand in the finale's
-/// closure, so it co-fires `DW0866` (asserted separately below).
+/// The trigger edge is the one that reaches this rule without `DW0866`: a
+/// `depends_on` edge from a mandatory quest necessarily also puts the strand in
+/// the finale's closure, so it co-fires `DW0866` (asserted separately below).
+/// Spelled with the trigger alone, the edge also disagrees with the plan, whose
+/// `depends_on` for the finale names nothing, so `DW1077` co-fires.
 #[test]
 fn a_mandatory_quest_triggered_by_an_optional_one_is_refused() {
     let f = Fixture {
         finale_triggered_by: Some(STRAND),
         ..Fixture::default()
     };
-    assert_eq!(f.codes(), set(&["DW0867"]));
+    assert_eq!(f.codes(), set(&["DW0867", "DW1077"]));
 }
 
 /// The reversed direction greens: the optional quest triggered by the mandatory
@@ -272,6 +276,7 @@ fn a_mandatory_quest_triggered_by_an_optional_one_is_refused() {
 fn the_reversed_trigger_direction_is_green() {
     let f = Fixture {
         strand_after_finale: true,
+        strand_deps: vec![FINALE],
         ..Fixture::default()
     };
     assert_eq!(f.codes(), BTreeSet::new());
@@ -284,6 +289,7 @@ fn the_reversed_trigger_direction_is_green() {
 fn a_mandatory_depends_on_edge_reports_both_the_edge_and_the_closure() {
     let f = Fixture {
         finale_deps: vec![STRAND],
+        finale_triggered_by: Some(STRAND),
         ..Fixture::default()
     };
     assert_eq!(f.codes(), set(&["DW0866", "DW0867"]));
@@ -315,6 +321,7 @@ fn the_same_gate_greens_when_the_producer_is_mandatory() {
         strand_optional: false,
         strand_deps: vec![],
         finale_deps: vec![STRAND],
+        finale_triggered_by: Some(STRAND),
         ..Fixture::default()
     };
     assert_eq!(f.codes(), BTreeSet::new());

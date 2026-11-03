@@ -126,14 +126,23 @@ fn dialogue_mask_drives_one_datum_read_by_option_and_objective_jointly() {
                 if node["id"] != "dlg/greet" {
                     continue;
                 }
-                for opt in node["options"].as_array_mut().unwrap() {
+                let opts = node["options"].as_array_mut().unwrap();
+                let mut sibling = None;
+                for opt in opts.iter_mut() {
                     if opt["label"] == "I'll clear the keep." {
+                        // The ungated completing sibling `DW0191` demands, as the
+                        // gallery's `Skip the label.` stands beside its gated one;
+                        // appended, so it takes a later bit than the one judged.
+                        let mut skip = opt.clone();
+                        skip["label"] = serde_json::json!("Skip it.");
+                        sibling = Some(skip);
                         opt["requires_state"] = serde_json::json!([
                             {"state": "state/labels-read", "op": "at-most", "value": 5}
                         ]);
                         found += 1;
                     }
                 }
+                opts.extend(sibling);
             }
         }
         assert_eq!(found, 1, "the completing option patched");

@@ -26,6 +26,10 @@ struct InventoryEntry<'a> {
     existing: Option<&'a str>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     stale: bool,
+    /// Every character the row's font can draw, when it is not the client's
+    /// full font: an art title's `delve:art` set (`DW0328`). Absent = any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    glyphs: Option<&'a str>,
 }
 
 /// The persona context a translator needs to keep a character's voice: who they
@@ -54,7 +58,10 @@ struct NpcContext<'a> {
 /// [`delvewright_dsl::key_speaker`]), the situation (via
 /// [`delvewright_dsl::key_situations`]) and any translation the current
 /// `l10n/<lang>.json` already has, marked `stale` when its recorded `source` is not
-/// today's English — so re-running only fills the gaps (idempotence).
+/// today's English — so re-running only fills the gaps (idempotence). An art
+/// title's row also carries `glyphs`, every character the `delve:art` font draws
+/// ([`delvec::compiler::atmos::covered_chars`]), so its translation is written in
+/// what the font can draw rather than discovered by `DW0328` at build.
 ///
 /// Deliberately runs **before** validation gating: an incomplete sidecar is the
 /// normal state when you ask for the inventory. Only an unparseable campaign fails
@@ -82,6 +89,11 @@ pub(crate) fn run_l10n_inventory(campaign_dir: &Path, lang: &str, json: bool) ->
 
     let inv = delvewright_dsl::l10n::inventory(&campaign);
     let situations = delvewright_dsl::key_situations(&campaign);
+    let art_keys: std::collections::BTreeSet<String> = delvewright_dsl::art_narrates(&campaign)
+        .into_iter()
+        .map(|a| a.key)
+        .collect();
+    let art_glyphs = delvec::compiler::atmos::covered_chars();
     let entries: Vec<InventoryEntry<'_>> = inv
         .iter()
         .map(|(key, en)| {
@@ -97,6 +109,7 @@ pub(crate) fn run_l10n_inventory(campaign_dir: &Path, lang: &str, json: bool) ->
                     && recorded
                         .and_then(|m| m.get(key))
                         .is_some_and(|was| was != en),
+                glyphs: art_keys.contains(key).then_some(art_glyphs.as_str()),
             }
         })
         .collect();

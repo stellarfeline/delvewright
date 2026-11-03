@@ -134,6 +134,13 @@ export DELVE_DOCKERFILE="$here/Dockerfile.delve"
 . "$here/lib/delve-image.sh"
 dw_export_delve_image "$project"
 COMPOSE=(docker compose -p "$project" -f "$here/compose.yaml" --profile play)
+# Every compose call starts from validation/. Compose builds through buildx
+# bake, which grants read access to files under the working directory it was
+# started from and refuses a Dockerfile anywhere else; `Dockerfile.delve` sits
+# beside the compose file, outside the build tree, so a call started from the
+# caller's directory is refused before it builds. A subshell, so the caller's
+# relative paths keep their meaning everywhere else in this script.
+compose() { (cd "$here" && "${COMPOSE[@]}" "$@"); }
 
 cleanup() { "$here/fresh-volumes.sh" --project "$project" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
@@ -153,15 +160,15 @@ if [ -n "$seed" ]; then
   # empty volume from the image first and the overlay lands on top — the shape
   # tier 2's datapack-load boot uses.
   echo "==> seeding the server bootstrap from $seed_abs"
-  "${COMPOSE[@]}" build server
-  "${COMPOSE[@]}" run --rm --no-deps -v "$seed_abs:/seed:ro" --entrypoint /bin/bash server \
+  compose build server
+  compose run --rm --no-deps -v "$seed_abs:/seed:ro" --entrypoint /bin/bash server \
     -c 'cp -a /seed/. /data/ && chown -R 1000:1000 /data'
 fi
 
 echo "==> booting the delve image"
-"${COMPOSE[@]}" up -d --build server
+compose up -d --build server
 
-cid="$("${COMPOSE[@]}" ps -q server)"
+cid="$(compose ps -q server)"
 [ -n "$cid" ] || { echo "world-save: the server container did not start" >&2; exit 1; }
 
 echo "==> waiting for the datapack to finish placing (#placed dw.sys = 1, over rcon)"
@@ -212,7 +219,7 @@ echo "==> flushing the world to disk"
 dw_rcon "$cid" "save-all flush" >/dev/null
 
 echo "==> stopping the server"
-"${COMPOSE[@]}" stop -t 120 server >/dev/null
+compose stop -t 120 server >/dev/null
 
 # WHICH directory under /data holds the world: `level-name`, read from the
 # server's own properties rather than assumed. itzg writes that file at boot from

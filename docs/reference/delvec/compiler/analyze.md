@@ -225,8 +225,9 @@ walk the party past a load-bearing beat is not drawn until that beat is done, an
 a press that arrives early completes nothing. The canonical instance — a button
 completing `obj/climb-out` (`after obj/surf`) beside one completing `obj/muster`
 (whose bundle spawns the drowned) from campaign start — cannot be emitted.
-`DW0191` counts an author-written gate on the one completing
-option, which could deadlock a beat; the engine's pending guard opens exactly
+`DW0191` counts an author-written gate (any of `requires_flags`,
+`forbids_flags`, `requires_state`) on the one completing option, which could
+deadlock a beat; the engine's pending guard opens exactly
 when the objective activates and cannot.
 
 **`forbids_flags` and producibility (conservative).** The reachability

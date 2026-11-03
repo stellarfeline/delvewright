@@ -209,13 +209,13 @@ Read it now and run from it. The table below is the order and the postconditions
 | step | what it establishes, and what has to be true after it |
 |---|---|
 | **I0 · mode** | `DELVEWRIGHT_MODE` is `dev` when the working directory carries **both** `crates/delvec/Cargo.toml` and `.claude/skills/delvewright/skills/new-delve/SKILL.md`, else `creator`. `DELVEWRIGHT_ENGINE` is the working directory in dev, `~/.delvewright/engine` otherwise. `DELVEWRIGHT_DEBUG` is read from the shell that started the session: unset or `0` is off — **the released default** — and any other value is on; it decides only whether the final report carries *Technical decisions and engine limits*. Dev: `campaigns/` there resolves to a directory, or **stop** |
-| **I1 · already here** | `git`; a Python ≥ 3.11 recorded as `DELVEWRIGHT_PYTHON` and used by every Python invocation on this page; the **skill root** recorded as `DELVEWRIGHT_SKILL` — every bundled path below is `"$DELVEWRIGHT_SKILL/…"`, and it is never the working directory; `java` ≥ 21, enumerated with `scripts/find-jdk.py` before halting, and exported; `docker info` exits 0, **and `docker compose version` exits 0** — Compose v2 is a separate per-user CLI plugin that `docker info` says nothing about, and every entry point of step 10 is built on it. Not here: Rust and `git-lfs` |
+| **I1 · already here** | `git`; a Python ≥ 3.11 recorded as `DELVEWRIGHT_PYTHON` and used by every Python invocation on this page; the **skill root** recorded as `DELVEWRIGHT_SKILL` — every bundled path below is `"$DELVEWRIGHT_SKILL/…"`, and it is never the working directory; `docker info` exits 0, **and `docker compose version` exits 0** — Compose v2 is a separate per-user CLI plugin that `docker info` says nothing about, and every entry point of step 10 is built on it. Not here: Rust and `git-lfs` |
 | **I1b · the pin, every run** | `"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/check-toolchain.py" --mode "$DELVEWRIGHT_MODE" --engine "$DELVEWRIGHT_ENGINE"`, with **this run's** I0 and I1 values and never `.out/env.sh`'s, exits 0: `delvec --version` through `.out/env.sh` equals the version `[engine].ref` states (dev: the checkout's `[engine].version`), the creator engine tree's `rev-parse HEAD` equals the commit `[engine].ref` resolves to, and `.out/env.sh`'s `DELVEWRIGHT_SKILL`, `DELVEWRIGHT_MODE`, `DELVEWRIGHT_ENGINE` and `DELVE_OUTPUT` are this run's, and no stale `~/.delvewright/env.sh` stands. **Exit 3 is a refusal**: run the steps it prints, in order, then I1b again. Exit 4: no toolchain, all of I2–I8. Exit 2: stop. After 0: I2–I4 are skipped and nothing is downloaded; I5 only if the jar is not at its path; I6 on every run; I7 and I8 after a repair or a first run |
 | **I2 · engine tree** | `"$DELVEWRIGHT_SKILL/versions.toml"` is read, never restated. Creator: the clone at `~/.delvewright/engine` fetches the tag `[engine].ref`, is `--detach`ed at it, and `rev-parse HEAD` equals `rev-parse "$ENGINE_REF^{commit}"`. Dev: HEAD is recorded and said out loud |
 | **I3a · `delvec`** | `"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/fetch-delvec.py" --into ~/.delvewright/bin` exits 0 having printed its target, archive, digest and version. Exit 3 or 4 → I3b. **Exit 5 is a refusal** — never the floor, never a retry. Exit 6: stop |
 | **I3b · the floor** | Only after exit 3 or 4, and in dev mode always. `cargo build --release -p delvec` **from inside** the engine tree, with `cargo --version` and `rustc --version` equal to the channel `rust-toolchain.toml` names. No `cargo`: hand over `rustup` and wait |
 | **I3c · the binary** | `delvec --version` answers **the number I1b holds it to**. **Write down the `dsl` number** — step 1 needs it on every document. The GPU arms are **not** asked here: they draw with the client jar I5 fetches, so a gate run now refuses on every clean machine there is, for a reason this page created |
-| **I4 · environment** | `$PWD/.out/env.sh` carries `JAVA_HOME`, `DELVEWRIGHT_MODE`, `DELVEWRIGHT_ENGINE`, `DELVEWRIGHT_PYTHON`, `DELVEWRIGHT_SKILL`, `DELVEWRIGHT_PREFABS`, `DELVEWRIGHT_DEBUG`, `DELVE_OUTPUT` (`$PWD/.out/delve`), `DELVE_DOCKERFILE` and `PATH`, this run's values in the lines I4 owns and every other line kept. Every later command runs as `. .out/env.sh && <command>`, from the working directory |
+| **I4 · environment** | `$PWD/.out/env.sh` carries `DELVEWRIGHT_MODE`, `DELVEWRIGHT_ENGINE`, `DELVEWRIGHT_PYTHON`, `DELVEWRIGHT_SKILL`, `DELVEWRIGHT_PREFABS`, `DELVEWRIGHT_DEBUG`, `DELVE_OUTPUT` (`$PWD/.out/delve`), `DELVE_DOCKERFILE` and `PATH`, this run's values in the lines I4 owns and every other line kept. Every later command runs as `. .out/env.sh && <command>`, from the working directory |
 | **I5 · client jar** | Downloaded by default, digest-verified; a copy only when the prompt itself names a Minecraft directory. Either way the jar lands at `~/.delvewright/client/minecraft-1.21.11.jar` and you have looked at it there. That it *reads* is I8's line |
 | **I6 · the library** | `DELVEWRIGHT_PREFABS` names a prefabs directory and you have said which of the four cases produced it. **Nothing is cloned here** — step 2 takes the shipped library, if the campaign wants one |
 | **I7 · named, not installed** | On the drawing path only: `refimg.py --dry-run` exits 0, with the key the opening check's item (c) put in `.out/env.sh` under its provider's name. The skin toolchain is not mentioned. Nothing is installed for frames: `delvec` draws them itself, with the jar I5 placed |
@@ -230,7 +230,6 @@ environment was lost is indistinguishable from a missing tool:
 mkdir -p .out
 "$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/check-toolchain.py" \
     --mode "$DELVEWRIGHT_MODE" --engine "$DELVEWRIGHT_ENGINE"   # I1b: exit 0
-java -version                            # 21 or newer
 echo "$DELVEWRIGHT_ENGINE"               # the engine checkout, non-empty
 delvec --version                         # EQUAL to the pin's number, and the dsl number
 delvec grammar list                      # the rule library, through the one binary
@@ -367,7 +366,7 @@ dead quest is a design bug. **Read**: `references/build.md`.
 
 **Needs**: step 7 clean. **Produces**: the datapack tree at
 `"$DELVE_OUTPUT"`, `critical-path.json` and
-`render-plan.json` and the pacing line. Must exit 0. **Read**: `references/build.md`.
+`render-plan.json` and the pacing line. Must exit 0. **Read**: `references/build.md`, and *Checking a web* in `references/quest-capabilities.md` for the endings and the gates.
 
 ## 8b. The showcase cameras
 
@@ -493,7 +492,6 @@ reference means the file listed here.
 | `references/pitfalls.md` | difficulty, combat, bonfires, waves, staging | steps 3, 5 |
 | `scripts/check-toolchain.py` | run at I1b on every run, and at I8: the toolchain on disk against the pin | I1b, I8 |
 | `scripts/fetch-delvec.py` | run at I3a: the archive, verified and unpacked | I3a |
-| `scripts/find-jdk.py` | run at I1: the newest JDK 21+ already on this machine | I1 |
 | `scripts/fetch-client-jar.py` | run at I5, on the download path | I5 |
 | `scripts/handout.py` | run at step 9, once per place per attempt: the handout a fresh agent authors that place's program from | step 9 |
 | `scripts/references.py` | run at step 9 before the first handout: fetches every place's `references[]` into `.out/references/`, so its author reads the pictures | step 9 |

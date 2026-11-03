@@ -419,3 +419,42 @@ fn a_gate_inside_the_newest_effect_roots_is_still_walked() {
         "a gate inside `shortcuts[].on_unlock` (root R6) must be walked: {d:#?}"
     );
 }
+
+/// The hello-world dialogue with its only completing option gated on
+/// `state/toll` and, when `sibling` is set, an ungated completing option
+/// beside it.
+fn dialogue_with_state_gated_completion(sibling: bool) -> String {
+    common::patch_doc(&common::read_valid("dialogue.json"), |d| {
+        let opts = d["content"]["dialogues"][0]["nodes"][0]["options"]
+            .as_array_mut()
+            .expect("the greeting node has options");
+        let i = opts
+            .iter()
+            .position(|o| o["effects"][0]["type"] == "complete-objective")
+            .expect("the greeting node holds the only completing option");
+        let ungated = opts[i].clone();
+        opts[i]["requires_state"] =
+            serde_json::json!([{ "state": "state/toll", "op": "at-least", "value": 1 }]);
+        if sibling {
+            opts.push(ungated);
+        }
+    })
+}
+
+/// `DW0191` judges every gate field a completing option can carry: a `talk-to`
+/// whose only completing option is `requires_state`-gated is refused exactly
+/// as a flag-gated one is, and an ungated sibling clears the same document.
+#[test]
+fn a_talk_to_completed_only_behind_a_state_gate_is_dw0191() {
+    let gated = campaign_with(
+        &quests_doc(),
+        Some(&dialogue_with_state_gated_completion(false)),
+    );
+    assert_eq!(codes(&gated), vec!["DW0191".to_string()]);
+
+    let with_sibling = campaign_with(
+        &quests_doc(),
+        Some(&dialogue_with_state_gated_completion(true)),
+    );
+    assert_eq!(codes(&with_sibling), Vec::<String>::new());
+}

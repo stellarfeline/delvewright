@@ -1318,6 +1318,21 @@ fn a_compass_following_a_kill_points_at_the_nearest_living_body() {
         .map(|b| std::str::from_utf8(b).unwrap())
         .expect("the wave compass PackTest");
     assert_eq!(pt.matches("summon minecraft:zombie").count(), 2, "{pt}");
+    // Each body stands in the player's own column: the test forces only the
+    // chunk its structure stands in, and a body summoned beside the player
+    // lands in an unloaded neighbour (invisible to `@e`) whenever the random
+    // test origin sits near a chunk edge.
+    for line in pt.lines().filter(|l| l.contains(" summon ")) {
+        let after = line.split(" summon ").nth(1).expect("summon args");
+        let pos: Vec<&str> = after.split_whitespace().skip(1).take(3).collect();
+        assert!(
+            line.starts_with("execute at @s run summon ")
+                && pos[0] == "~"
+                && pos[2] == "~"
+                && pos[1].starts_with('~'),
+            "a body off the player's column: {line}"
+        );
+    }
     assert!(
         pt.contains("kill @e[tag=dw_pt_cmpw_near]")
             && pt.contains("function keep-trial:compass_aim_followed")
