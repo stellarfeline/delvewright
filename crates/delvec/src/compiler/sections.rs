@@ -199,7 +199,7 @@ enum Slot {
     Resident(Arc<Idx>),
     /// Given up: where the record lies and its length (which says its form),
     /// and when it was given up — the arrivals clock ([`arrivals`]), the
-    /// need's generation ([`RAISED`]) and whether a test's budget was in
+    /// need's generation ([`generation`]) and whether a test's budget was in
     /// force, so the read-back is set against the same clock — `None` for a
     /// record a copy shares and never held, whose first read is cold.
     Spilled {
@@ -268,6 +268,20 @@ fn arrivals() -> u64 {
     match budget::override_here() {
         0 => ARRIVALS.load(Ordering::Relaxed),
         _ => ARRIVALS_HERE.with(std::cell::Cell::get),
+    }
+}
+
+thread_local! {
+    static RAISED_HERE: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// The need's generation in force on this thread: the count of the need's
+/// raises ([`RAISED`]), or under a test's budget the thread's own, which no
+/// other thread's raise moves — as the arrivals clock is.
+fn generation() -> u64 {
+    match budget::override_here() {
+        0 => RAISED.load(Ordering::Relaxed),
+        _ => RAISED_HERE.with(std::cell::Cell::get),
     }
 }
 
@@ -561,11 +575,7 @@ impl Paged {
         let r = sp.append(&record);
         let (at, len) = sp.or_fail("take a write", r);
         drop(w);
-        let since = Some((
-            arrivals(),
-            RAISED.load(Ordering::Relaxed),
-            budget::override_here() != 0,
-        ));
+        let since = Some((arrivals(), generation(), budget::override_here() != 0));
         *g = Slot::Spilled { at, len, since };
         release(&self.tally, bytes);
         GIVEN_UP.fetch_add(1, Ordering::Relaxed);
@@ -589,7 +599,7 @@ impl Paged {
                 let idx = Arc::new(Idx::decode(&record));
                 let now = arrivals();
                 let judged = budget::override_here() == 0;
-                let generation = RAISED.load(Ordering::Relaxed);
+                let generation = generation();
                 // Given up on another clock — by a thread under no test
                 // budget while this one is under one, or the reverse — it was
                 // not this walk's relief that gave it up: cold.
@@ -1526,34 +1536,52 @@ mod tests {
     /// smaller share, or fewer than a sample, does not. The store is read
     /// through once in order first, so the read-backs judged are the random
     /// walk's own, not the cold reload of a store written past the budget.
+    /// The walk is judged in the thread's own generation of the need, so no
+    /// other thread's raise enters either: taken again with the process's
+    /// need raised every 32 reads, it finds the same.
     #[test]
     fn a_walk_found_thrashing_raises_the_need() {
         let n = 512i32;
         let budget = (n as usize / 2) * CELLS;
-        let mut s: SectionMap<u32> = SectionMap::new();
-        let (own_read, own_thrashed, reads) = budget::with_budget(budget, || {
-            for k in 0..n {
-                s.insert([k * 16, 0, 0], 1);
-            }
-            for k in 0..n {
-                assert_eq!(s.get(&[k * 16, 0, 0]), Some(&1));
-            }
-            let (read0, thrashed0) = s.paging();
-            let mut seed = 0x1234_5678_9abc_def1u64;
-            let mut reads = 0u64;
-            for _ in 0..10 {
-                for _ in 0..n {
-                    seed ^= seed << 13;
-                    seed ^= seed >> 7;
-                    seed ^= seed << 17;
-                    let k = (seed % n as u64) as i32;
-                    assert_eq!(s.get(&[k * 16, 0, 0]), Some(&1));
-                    reads += 1;
+        // The walk, on a fresh store; with `raises`, the process's need is
+        // raised every 32 reads, as another thread's walk would raise it.
+        let walk = |raises: bool| {
+            let mut s: SectionMap<u32> = SectionMap::new();
+            budget::with_budget(budget, || {
+                for k in 0..n {
+                    s.insert([k * 16, 0, 0], 1);
                 }
-            }
-            let (read, thrashed) = s.paging();
-            (read - read0, thrashed - thrashed0, reads)
-        });
+                for k in 0..n {
+                    assert_eq!(s.get(&[k * 16, 0, 0]), Some(&1));
+                }
+                let (read0, thrashed0) = s.paging();
+                let mut seed = 0x1234_5678_9abc_def1u64;
+                let mut reads = 0u64;
+                for _ in 0..10 {
+                    for _ in 0..n {
+                        seed ^= seed << 13;
+                        seed ^= seed >> 7;
+                        seed ^= seed << 17;
+                        let k = (seed % n as u64) as i32;
+                        assert_eq!(s.get(&[k * 16, 0, 0]), Some(&1));
+                        reads += 1;
+                        if raises && reads % 32 == 0 {
+                            RAISED.fetch_add(1, Ordering::Relaxed);
+                        }
+                    }
+                }
+                let (read, thrashed) = s.paging();
+                (read - read0, thrashed - thrashed0, reads)
+            })
+        };
+        let (own_read, own_thrashed, reads) = walk(true);
+        // No other thread's raise moves what a walk under a test's budget
+        // finds: the generation it is judged in is the thread's own.
+        assert_eq!(
+            walk(false),
+            (own_read, own_thrashed, reads),
+            "the process's raises moved a walk under a test's budget"
+        );
         eprintln!(
             "thrash: {n} section(s) over a budget of {budget} byte(s); {reads} read(s), \
              {own_read} read back, {own_thrashed} of them within one turnover"
@@ -1706,9 +1734,9 @@ mod tests {
 
     /// **An array given up under an earlier need is read back cold** (the
     /// module docs): under this thread's budget, a store of twice it
-    /// written once gives up its early arrays as its later ones arrive; the
-    /// need's generation then moves on, and the arrays given up last —
-    /// fewest arrivals since — are read back first: none is thrashing,
+    /// written once gives up its early arrays as its later ones arrive; this
+    /// thread's generation of the need then moves on, and the arrays given
+    /// up last — fewest arrivals since — are read back first: none is thrashing,
     /// since the need they were given up under is not the need in force.
     /// Without the generation, the last given up come back within the
     /// turnover and are thrashing.
@@ -1722,7 +1750,7 @@ mod tests {
                 s.insert([k * 16, 0, 0], 1);
             }
             let given_up = n as usize - s.resident_sections();
-            RAISED.fetch_add(1, Ordering::Relaxed);
+            RAISED_HERE.with(|r| r.set(r.get() + 1));
             let (read_before, thrashed_before) = s.paging();
             for k in (0..n).rev() {
                 assert_eq!(s.get(&[k * 16, 0, 0]), Some(&1));
