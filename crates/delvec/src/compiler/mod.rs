@@ -39,6 +39,8 @@
 //! - [`combat`]: compile-time combat winnability — the arithmetic half of the combat proofs.
 //! - [`commands`]: the vendored 1.21.11 Brigadier command-tree validator.
 //! - [`continuity`]: the NPC location-continuity lint (`DW0351`).
+//! - [`cost`]: the build's computed cost, stated before the whole-map stages start and
+//!   written as `validation/resource-cost.json` (ADR-0037 §3); nothing measured.
 //! - [`creator`]: the playtest-only creator overlay (`creator-datapack/`).
 //! - [`crosshair`]: two things the party must click may not stand where the crosshair cannot tell them apart (`DW0489`).
 //! - [`daylight`]: a body the sun kills may not be staged where the sun reaches it (`DW0496`).
