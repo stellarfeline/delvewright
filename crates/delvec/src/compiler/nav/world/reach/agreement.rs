@@ -992,9 +992,98 @@ fn ladder_cliff() -> World {
     crate::compiler::nav::testkit::blocks_world(&cells)
 }
 
+/// A reef under an ocean (sea level 62, floor 54): a pillar rising out of the
+/// sea at x 5..=7, z 0..=2 (stood on at y 67), and beside it a walled basin,
+/// x 8..=15, z 0..=7, its walls up to y 64 and its inside water to y 63 — a
+/// second water body the sea does not touch. From the pillar a body steps
+/// onto the wall and jumps into either water: the plain sea in two
+/// components, with the surface, the floor layer and the cells beside every
+/// wall as their boundary.
+fn reef() -> World {
+    let mut b = super::tests::Build::default();
+    b.fill([5, 55, 0], [7, 66, 2]);
+    for y in 55..=64 {
+        for x in 8..=15 {
+            for z in 0..=7 {
+                if x == 8 || x == 15 || z == 0 || z == 7 {
+                    b.fill([x, y, z], [x, y, z]);
+                }
+            }
+        }
+    }
+    for y in 55..=63 {
+        for x in 9..=14 {
+            for z in 1..=6 {
+                b.water.insert([x, y, z]);
+            }
+        }
+    }
+    let built = vec![
+        ("prefab/pillar".to_string(), ([5, 55, 0], [7, 66, 2])),
+        ("prefab/basin".to_string(), ([8, 54, 0], [15, 64, 7])),
+    ];
+    b.world(
+        super::Ambient::Ocean(crate::compiler::nav::Sea {
+            level: 62,
+            floor_top: 54,
+        }),
+        built,
+    )
+}
+
+/// **The ground in the sea's band is no water** (ADR-0037 §2, the plain sea
+/// measured): under an ocean, a cell the assembly wrote a block into — the
+/// terrain's ground, outside every placed piece's box — is no rest state and
+/// is never entered, however deep in the sea's band it lies; the sea beside
+/// it is. A headland of stone through the band (y 55..=66 over x 0..=9, z
+/// 0..=9, no `built` box) with a body on top: the closure from the top holds
+/// every sea state it reaches and no cell of the stone, and no stone cell is
+/// a rest state. Refuses a run that reaches no sea. Perturbation: ambient
+/// water judged by the pieces' boxes alone → red (the stone's band cells are
+/// submerged states and the closure fills the headland).
+#[test]
+fn the_ground_in_the_seas_band_is_no_water() {
+    let mut b = super::tests::Build::default();
+    b.fill([0, 55, 0], [9, 66, 9]);
+    let w = b.world(
+        super::Ambient::Ocean(crate::compiler::nav::Sea {
+            level: 62,
+            floor_top: 54,
+        }),
+        Vec::new(),
+    );
+    let stone = |c: &[i32; 3]| {
+        (0..=9).contains(&c[0]) && (55..=66).contains(&c[1]) && (0..=9).contains(&c[2])
+    };
+    for x in 0..=9 {
+        for z in 0..=9 {
+            for y in 55..=62 {
+                assert_eq!(
+                    w.rest_kind([x, y, z]),
+                    None,
+                    "stone at {:?} rests a body",
+                    [x, y, z]
+                );
+            }
+        }
+    }
+    assert_eq!(w.rest_kind([-1, 62, 5]), Some(super::RestKind::Afloat));
+    assert_eq!(w.rest_kind([-1, 60, 5]), Some(super::RestKind::Submerged));
+    let r = w.body_reach(&[[5, 67, 5]]);
+    let sea = r.states.keys().filter(|c| w.ambient_water(*c)).count();
+    let inside = r.states.keys().filter(stone).count();
+    eprintln!(
+        "headland: {} state(s), {sea} in the sea, {inside} in the stone",
+        r.states.len()
+    );
+    assert!(sea > 0, "the case binds nothing: the sea is not reached");
+    assert_eq!(inside, 0, "the closure entered the stone");
+}
+
 /// The worlds the chunk invariance and the closure's exactness are asked of:
 /// every generated course, the Bell yard (a void's edge), the jetty (the open
-/// sea), the garden and the ladder cliff (holding states).
+/// sea), the garden, the ladder cliff (holding states) and the reef (the
+/// plain sea in two components).
 fn invariance_worlds() -> Vec<(String, World, Vec<[i32; 3]>)> {
     let mut worlds: Vec<(String, World, Vec<[i32; 3]>)> = Vec::new();
     for seed in 0..12 {
@@ -1012,7 +1101,182 @@ fn invariance_worlds() -> Vec<(String, World, Vec<[i32; 3]>)> {
     worlds.push(("the jetty".into(), super::tests::jetty(), vec![[2, 65, 2]]));
     worlds.push(("the garden".into(), super::tests::garden(), vec![[1, 1, 1]]));
     worlds.push(("the ladder cliff".into(), ladder_cliff(), vec![[0, 65, 1]]));
+    worlds.push(("the reef".into(), reef(), vec![[6, 67, 1]]));
     worlds
+}
+
+/// **The summarised sea is the closure expanded cell by cell** (ADR-0037 §2):
+/// every invariance world asked of the closure that floods the plain sea by
+/// component and computes its dives on read, and of the closure that expands
+/// every water cell as a node of its own (the test knob `unsummarised`, at a
+/// side of its own) — every state, every state's successors and predecessors
+/// in order, the flags, the counts and the work equal; the node table of the
+/// summarised graph holds no plain-sea cell, and with those cells taken out
+/// of the other's the two tables are equal. Refuses a run with no plain-sea
+/// state, no world of two components, and no boundary (a water state that is
+/// not plain).
+#[test]
+fn the_summarised_sea_is_the_closure_expanded_cell_by_cell() {
+    let worlds = invariance_worlds();
+    let (mut plain, mut boundary, mut two) = (0usize, 0usize, 0usize);
+    for (name, w, roots) in &worlds {
+        let whole = answered(w, roots, 16);
+        let expanded = super::unsummarised(|| answered(w, roots, 13));
+        let r = super::chunks::at_side(16, || w.body_reach(roots));
+        let plain_here: BTreeSet<[i32; 3]> =
+            r.states.keys().filter(|c| r.states.plain(c)).collect();
+        for (a, b, what) in [
+            (
+                format!("{:?}", whole.states),
+                format!("{:?}", expanded.states),
+                "states",
+            ),
+            (
+                format!("{:?}", whole.succ),
+                format!("{:?}", expanded.succ),
+                "succ",
+            ),
+            (
+                format!("{:?}", whole.preds),
+                format!("{:?}", expanded.preds),
+                "preds",
+            ),
+            (
+                format!("{:?}", whole.census),
+                format!("{:?}", expanded.census),
+                "census",
+            ),
+            (
+                format!("{:?}", whole.edge_census),
+                format!("{:?}", expanded.edge_census),
+                "edge census",
+            ),
+            (
+                format!("{:?}", whole.leaves_world),
+                format!("{:?}", expanded.leaves_world),
+                "leaves world",
+            ),
+            (
+                format!("{:?}", whole.open_sea),
+                format!("{:?}", expanded.open_sea),
+                "open sea",
+            ),
+            (
+                format!("{:?}", whole.fatal),
+                format!("{:?}", expanded.fatal),
+                "fatal",
+            ),
+            (
+                format!("{:?}", whole.work),
+                format!("{:?}", expanded.work),
+                "work",
+            ),
+            (
+                format!("{:?}", whole.unflown),
+                format!("{:?}", expanded.unflown),
+                "unflown",
+            ),
+            (
+                format!("{:?}", whole.flown),
+                format!("{:?}", expanded.flown),
+                "flown table",
+            ),
+        ] {
+            assert_eq!(
+                a, b,
+                "{name}: the summarised closure answers {what} otherwise"
+            );
+        }
+        assert!(
+            whole.nodes.iter().all(|(c, _)| !plain_here.contains(c)),
+            "{name}: the summarised graph's node table holds a plain-sea cell"
+        );
+        let kept: Table = expanded
+            .nodes
+            .iter()
+            .filter(|(c, _)| !plain_here.contains(c))
+            .cloned()
+            .collect();
+        assert_eq!(
+            whole.nodes, kept,
+            "{name}: the node tables differ beyond the plain-sea cells"
+        );
+        let water_not_plain = r
+            .states
+            .iter()
+            .filter(|(c, k)| {
+                matches!(k, super::RestKind::Afloat | super::RestKind::Submerged)
+                    && !plain_here.contains(c)
+            })
+            .count();
+        plain += plain_here.len();
+        boundary += water_not_plain;
+        if r.sea_components >= 2 {
+            two += 1;
+        }
+        eprintln!(
+            "{name}: {} state(s), {} plain sea in {} component(s), {water_not_plain} water \
+             state(s) not plain",
+            r.states.len(),
+            plain_here.len(),
+            r.sea_components
+        );
+    }
+    assert!(
+        plain > 0 && boundary > 0 && two > 0,
+        "the cases bind nothing: {plain} plain, {boundary} boundary, {two} world(s) of two \
+         components"
+    );
+}
+
+/// **A plain-sea cell is the one `expand` gives** (ADR-0037 §2): over every
+/// cell of the window of each invariance world under an ocean, a cell
+/// `plain_sea` holds for expands, through the general rule, to exactly
+/// `plain_node` — submerged, six dives in cell order, nothing flown, nothing
+/// flagged, nothing read; and a submerged cell it refuses expands to
+/// something else (a climb out, a dive short, or a rim's open-sea flag).
+/// Refuses a run with no plain cell and no refused submerged cell.
+#[test]
+fn a_plain_sea_cell_is_the_one_expand_gives() {
+    let params = super::ReachParams::shipped(false);
+    let (mut plain, mut refused, mut refused_otherwise) = (0usize, 0usize, 0usize);
+    for (name, w, _) in invariance_worlds() {
+        if !matches!(w.ambient, super::Ambient::Ocean(_)) {
+            continue;
+        }
+        let memo = w.graph_memo(&params);
+        let d = &memo.dense;
+        for x in d.lo[0]..d.lo[0] + d.dims[0] {
+            for y in d.lo[1]..d.lo[1] + d.dims[1] {
+                for z in d.lo[2]..d.lo[2] + d.dims[2] {
+                    let c = [x, y, z];
+                    let e = w.expand(&memo, &params, c, 0, None);
+                    if w.plain_sea(d, c) {
+                        plain += 1;
+                        assert_eq!(
+                            e,
+                            super::plain_node(c),
+                            "{name}: the plain-sea cell {c:?} expands otherwise"
+                        );
+                    } else if e.kind == Some(super::RestKind::Submerged) {
+                        refused += 1;
+                        if e != super::plain_node(c) {
+                            refused_otherwise += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    eprintln!(
+        "plain sea: {plain} cell(s) the rule holds for, {refused} submerged cell(s) it refuses, \
+         {refused_otherwise} of them expanding to something else"
+    );
+    assert!(plain > 0 && refused_otherwise > 0, "the cases bind nothing");
+    assert_eq!(
+        refused, refused_otherwise,
+        "a submerged cell the rule refuses expands to the six dives: the rule is too narrow"
+    );
 }
 
 /// **The closure is the one every launch gives** (spec-0113 §4.7, ADR-0037
@@ -1215,7 +1479,9 @@ fn the_portal_edges_are_the_edges_that_cross_a_chunk_face() {
                 let key = |c: [i32; 3]| (c[0].div_euclid(side), c[2].div_euclid(side));
                 let mut crossing = 0u64;
                 let mut faces: BTreeSet<[i32; 3]> = BTreeSet::new();
-                for c in r.states.keys() {
+                // A plain-sea state's dives are computed, never joined: no
+                // list holds them and no portal counts them (ADR-0037 §2).
+                for c in r.states.keys().filter(|c| !r.states.plain(c)) {
                     for e in r.succ(c) {
                         if key(c) != key(e.to) {
                             crossing += 1;

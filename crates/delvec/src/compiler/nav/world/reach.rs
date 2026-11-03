@@ -1831,11 +1831,21 @@ pub fn persist_reach_cache() {
             chunks::side_here()
         );
         let (graphs, worlds, params) = graphs_memoised();
+        let bound = bound_worlds_memoised();
         eprintln!(
             "reach graphs: {graphs} graph(s) memoised over the run, one per distinct world and \
-             parameters: {worlds} distinct world(s), {params} parameter set(s) (ADR-0037 §3's \
-             configurations, with the premise variants and counterfactuals that are worlds of \
-             their own)"
+             parameters: {worlds} distinct world(s), {bound} of them the configurations the \
+             reach binding counts (ADR-0037 §3's figure) and {} premise variants and \
+             counterfactuals that are worlds of their own; {params} parameter set(s)",
+            worlds.saturating_sub(bound)
+        );
+        let c = CLOSURES.lock().expect("closures");
+        let [st, af, su, ho] = c.census;
+        eprintln!(
+            "reach states: the most in one closure {} state(s) ({st} standing, {af} afloat, {su} \
+             submerged, {ho} holding), {} of them plain sea summarised in {} component(s), over {} \
+             closure(s) (ADR-0037 §3's rest states, per closure)",
+            c.most, c.plain, c.components, c.taken
         );
     }
     let (variants, bytes) = bank::census_all();
@@ -1873,6 +1883,60 @@ fn graphs_memoised() -> (usize, usize, usize) {
             (g.len(), worlds.len(), params.len())
         })
     })
+}
+
+/// The worlds the reach binding folded a closure of (`ReachBinding::add`):
+/// the configurations a build judged, by fingerprint — the worlds ADR-0037 §3's
+/// configurations figure bounds, told apart from the premise variants and
+/// counterfactuals the proofs build beside them.
+static BOUND_WORLDS: OnceLock<Mutex<std::collections::HashSet<[u8; 32]>>> = OnceLock::new();
+
+/// How many of the distinct worlds memoised are configurations the binding
+/// counts.
+fn bound_worlds_memoised() -> usize {
+    let bound = BOUND_WORLDS.get().and_then(|b| b.lock().ok());
+    let Some(bound) = bound else {
+        return 0;
+    };
+    GRAPHS.get().map_or(0, |m| {
+        m.lock().map_or(0, |g| {
+            let worlds: std::collections::HashSet<&[u8; 32]> = g.keys().map(|(w, _)| w).collect();
+            worlds.iter().filter(|w| bound.contains(**w)).count()
+        })
+    })
+}
+
+/// The run's closures: how many were taken, and the largest — its states by
+/// kind, its plain-sea states and the components they were flooded in — so
+/// the cost's per-closure bound on states (`compiler::cost`) is read against
+/// the closure it bounds.
+#[derive(Default)]
+struct ClosureStats {
+    taken: u64,
+    most: usize,
+    census: [usize; 4],
+    plain: usize,
+    components: u64,
+}
+static CLOSURES: Mutex<ClosureStats> = Mutex::new(ClosureStats {
+    taken: 0,
+    most: 0,
+    census: [0; 4],
+    plain: 0,
+    components: 0,
+});
+
+/// Note a closure taken ([`World::body_reach_at`]).
+fn closure_taken(reach: &Reach) {
+    let mut s = CLOSURES.lock().expect("closures");
+    s.taken += 1;
+    let n = reach.states.len();
+    if n > s.most {
+        s.most = n;
+        s.census = reach.census();
+        s.plain = reach.states.plain_len();
+        s.components = reach.sea_components;
+    }
 }
 
 /// The memo of one world's graph: its snapshot and every node expanded so far.
@@ -2478,6 +2542,37 @@ impl World {
             return Some(RestKind::Holding);
         }
         None
+    }
+
+    /// **Whether `c` is a plain-sea cell** (ADR-0037 §2): a submerged rest
+    /// state each of whose six neighbours lies inside the window and holds a
+    /// water rest state, with no collision top in the 3 × 3 × 2 cells round it
+    /// and over it — so [`World::expand`] gives it exactly the six dives: no
+    /// climb out, no open-sea flag, no launch. The closure keeps such a cell
+    /// as a state and nothing else: [`World::close`] floods it with its
+    /// component rather than expanding it, and [`Reach::succ`] and
+    /// [`Reach::preds`] compute its dives ([`plain_dives`]). A pure fact of
+    /// the world: no closure order enters it.
+    fn plain_sea(&self, dense: &Dense, c: [i32; 3]) -> bool {
+        if !summarising() || self.rest_kind(c) != Some(RestKind::Submerged) {
+            return false;
+        }
+        for dx in -1..=1 {
+            for dz in -1..=1 {
+                for dy in 0..=1 {
+                    if top_of(dense.code([c[0] + dx, c[1] + dy, c[2] + dz])).is_some() {
+                        return false;
+                    }
+                }
+            }
+        }
+        six_of(c).into_iter().all(|n| {
+            dense.inside(n)
+                && matches!(
+                    self.rest_kind(n),
+                    Some(RestKind::Afloat | RestKind::Submerged)
+                )
+        })
     }
 
     /// Whether a body in the water at `c` stands: the water is one cell deep
@@ -3241,9 +3336,14 @@ impl World {
         params: &ReachParams,
         cells: &[[i32; 3]],
     ) -> Vec<Arc<NodeEdges>> {
+        // A plain-sea cell's edges are computed, never kept in the table
+        // (ADR-0037 §2).
         let mut out: Vec<Option<Arc<NodeEdges>>> = cells
             .iter()
             .map(|c| {
+                if self.plain_sea(&memo.dense, *c) {
+                    return Some(Arc::new(plain_node(*c)));
+                }
                 memo.nodes
                     .with(*c, |l| l.first().map(|(_, e)| Arc::new(e.clone())))
             })
@@ -3660,6 +3760,7 @@ impl World {
             self.close(&memo, params, &mut reach, new, &mut visits);
         }
         reach.portals = visits.report();
+        closure_taken(&reach);
         // The closure is kept as a copy taken in one sweep, its lists at
         // their length; the one the rounds grew is dropped here.
         let reach = Arc::new(reach.clone());
@@ -3918,9 +4019,37 @@ impl World {
             visits.visit(k);
             local.sort_unstable();
             while !local.is_empty() {
-                let expanded = self.cell_edges(memo, params, &local);
+                // The plain sea is flooded, not expanded (ADR-0037 §2): a
+                // frontier cell that is plain takes its whole component into
+                // the states in one sweep, and the component's boundary —
+                // water cells that are not plain — joins the frontier of the
+                // chunk each lies in. The rest of the frontier is expanded as
+                // every node is.
                 let mut next: Vec<[i32; 3]> = Vec::new();
-                for (c, e) in local.iter().zip(expanded) {
+                let mut expand: Vec<[i32; 3]> = Vec::with_capacity(local.len());
+                for c in &local {
+                    if reach.states.contains_key(c) {
+                        // Flooded by a component this frontier reached first.
+                        continue;
+                    }
+                    if self.plain_sea(&memo.dense, *c) {
+                        reach.sea_components += 1;
+                        self.flood_plain(memo, reach, *c, |b| {
+                            if queued.insert(b) {
+                                let to = chunks::chunk_of(b, side);
+                                if to == k {
+                                    next.push(b);
+                                } else {
+                                    fronts.entry(to).or_default().push(b);
+                                }
+                            }
+                        });
+                    } else {
+                        expand.push(*c);
+                    }
+                }
+                let expanded = self.cell_edges(memo, params, &expand);
+                for (c, e) in expand.iter().zip(expanded) {
                     reach.simulated += e.simulated;
                     reach.credited += e.credited;
                     let Some(kind) = e.kind else {
@@ -3948,6 +4077,39 @@ impl World {
                 }
                 next.sort_unstable();
                 local = next;
+            }
+        }
+    }
+
+    /// Flood the plain-sea component of `start` ([`World::plain_sea`]) into
+    /// `reach`'s states, breadth first over the six neighbours, each plain
+    /// cell kept as a plain-sea state with its six dives counted; every
+    /// neighbour that is not plain and not yet a state — water, since a plain
+    /// cell's six neighbours are — is handed to `boundary`. The frontier held
+    /// is one layer of the flood, never the component.
+    fn flood_plain(
+        &self,
+        memo: &GraphMemo,
+        reach: &mut Reach,
+        start: [i32; 3],
+        mut boundary: impl FnMut([i32; 3]),
+    ) {
+        let dense = &memo.dense;
+        let mut front: std::collections::VecDeque<[i32; 3]> = std::collections::VecDeque::new();
+        reach.states.insert_plain(dense, start);
+        front.push_back(start);
+        while let Some(c) = front.pop_front() {
+            reach.kinds[EdgeKind::Dive as usize] += 6;
+            for n in six_of(c) {
+                if reach.states.contains_key(&n) {
+                    continue;
+                }
+                if self.plain_sea(dense, n) {
+                    reach.states.insert_plain(dense, n);
+                    front.push_back(n);
+                } else {
+                    boundary(n);
+                }
             }
         }
     }
@@ -4063,6 +4225,74 @@ impl World {
     }
 }
 
+/// The six neighbours of `c`, in the order [`World::expand`] asks about them.
+fn six_of(c: [i32; 3]) -> [[i32; 3]; 6] {
+    [
+        [c[0] + 1, c[1], c[2]],
+        [c[0] - 1, c[1], c[2]],
+        [c[0], c[1] + 1, c[2]],
+        [c[0], c[1] - 1, c[2]],
+        [c[0], c[1], c[2] + 1],
+        [c[0], c[1], c[2] - 1],
+    ]
+}
+
+/// The edges of a plain-sea cell ([`World::plain_sea`]): a dive to each of its
+/// six neighbours, in the order [`World::expand`] gathers edges (cell order of
+/// the target).
+fn plain_dives(c: [i32; 3]) -> Vec<Edge> {
+    let mut out: Vec<Edge> = six_of(c)
+        .into_iter()
+        .map(|to| Edge {
+            to,
+            kind: EdgeKind::Dive,
+            yaw: None,
+            sprint: false,
+        })
+        .collect();
+    out.sort_unstable_by_key(|e| e.to);
+    out
+}
+
+/// Everything a plain-sea cell leads to, as [`World::expand`] would give it:
+/// submerged, its six dives, nothing flown and nothing flagged
+/// (`a_plain_sea_cell_is_the_one_expand_gives` holds the two equal).
+fn plain_node(c: [i32; 3]) -> NodeEdges {
+    NodeEdges {
+        kind: Some(RestKind::Submerged),
+        edges: plain_dives(c),
+        ..NodeEdges::default()
+    }
+}
+
+/// Whether the closure summarises the plain sea ([`World::plain_sea`]):
+/// always, outside the tests that hold the summarised closure to the plain
+/// one.
+#[cfg(not(test))]
+fn summarising() -> bool {
+    true
+}
+
+#[cfg(test)]
+thread_local! {
+    static SUMMARISING: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
+}
+
+#[cfg(test)]
+fn summarising() -> bool {
+    SUMMARISING.with(|s| s.get())
+}
+
+/// Run `f` with the plain sea expanded cell by cell, as every other cell is,
+/// on this thread: the test knob the agreement test turns.
+#[cfg(test)]
+fn unsummarised<R>(f: impl FnOnce() -> R) -> R {
+    SUMMARISING.with(|s| s.set(false));
+    let out = f();
+    SUMMARISING.with(|s| s.set(true));
+    out
+}
+
 /// The cells [`World::rest_kind`] asks about for a cell `c` of the player's
 /// one column: its floor, itself and the two cells over it (head room, a perch
 /// top's third cell, the water over a swimmer).
@@ -4143,20 +4373,51 @@ pub struct Reach {
     /// side it was taken at (ADR-0037 §2); a reader's growth adds its own.
     /// Never read by a proof: the counts depend on the side.
     pub portals: [u64; 2],
+    /// How many plain-sea components the closure flooded ([`World::close`]).
+    pub sea_components: u64,
 }
 
 impl Reach {
-    /// The edges out of `c`, in the order they were found.
+    /// The edges out of `c`, in the order they were found: a plain-sea
+    /// state's are its six dives, computed ([`plain_dives`]); every other
+    /// state's are read from its chunk's list.
     pub fn succ(&self, c: [i32; 3]) -> Vec<Edge> {
+        if self.states.plain(&c) {
+            return plain_dives(c);
+        }
         self.succ.get(c)
+    }
+
+    /// The predecessors of `c`, each with the edge that joins it to `c`, in
+    /// the order the closure joined them, with the plain-sea neighbours'
+    /// dives, which were never joined, added after: the set every reader of
+    /// the predecessors asks for, in no particular order.
+    fn preds_raw(&self, c: [i32; 3]) -> Vec<([i32; 3], Edge)> {
+        let mut ps = self.preds.get(c);
+        for n in six_of(c) {
+            if self.states.plain(&n) {
+                ps.push((
+                    n,
+                    Edge {
+                        to: c,
+                        kind: EdgeKind::Dive,
+                        yaw: None,
+                        sprint: false,
+                    },
+                ));
+            }
+        }
+        ps
     }
 
     /// The predecessors of `c`, each with the edge that joins it to `c`, in
     /// cell order of the predecessor and, from one predecessor, in the order
     /// its edges were found — an order no chunk side or visit order moves,
-    /// since the closure joins edges into one cell from many chunks.
+    /// since the closure joins edges into one cell from many chunks. A
+    /// plain-sea predecessor's one edge, its dive, is computed
+    /// ([`Reach::preds_raw`]).
     pub fn preds(&self, c: [i32; 3]) -> Vec<([i32; 3], Edge)> {
-        let mut ps = self.preds.get(c);
+        let mut ps = self.preds_raw(c);
         ps.sort_by_key(|(p, _)| *p);
         ps
     }
@@ -4168,12 +4429,10 @@ impl Reach {
         c: [i32; 3],
         pick: impl Fn(&[i32; 3]) -> bool,
     ) -> Option<([i32; 3], Edge)> {
-        self.preds.with(c, |ps| {
-            ps.iter()
-                .filter(|(p, _)| pick(p))
-                .min_by_key(|(p, _)| *p)
-                .cloned()
-        })
+        self.preds_raw(c)
+            .into_iter()
+            .filter(|(p, _)| pick(p))
+            .min_by_key(|(p, _)| *p)
     }
 
     /// Add the edge `from` → `edge.to`.
@@ -4197,7 +4456,7 @@ impl Reach {
         self.walk(
             from.iter().copied(),
             true,
-            |c| self.succ.get(c).into_iter().map(|e| e.to).collect(),
+            |c| self.succ(c).into_iter().map(|e| e.to).collect(),
             |n| {
                 want.remove(&n);
                 done = want.is_empty();
@@ -4256,8 +4515,7 @@ impl Reach {
             seeds,
             sea,
             |c| {
-                self.preds
-                    .get(c)
+                self.preds_raw(c)
                     .into_iter()
                     .map(|(p, _)| p)
                     .filter(|p| admit(p))
@@ -4403,6 +4661,11 @@ impl ReachBinding {
     /// Fold one configuration's closure in.
     pub fn add(&mut self, world: &World, reach: &Reach) {
         self.configurations += 1;
+        BOUND_WORLDS
+            .get_or_init(|| Mutex::new(std::collections::HashSet::new()))
+            .lock()
+            .expect("bound worlds")
+            .insert(world.fingerprint());
         for (a, b) in self.states.iter_mut().zip(reach.census()) {
             *a += b;
         }

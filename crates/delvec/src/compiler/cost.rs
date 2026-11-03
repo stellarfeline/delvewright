@@ -12,9 +12,9 @@
 //! What is stated: the working set every paged structure asks for before any
 //! walk is measured (the stores' ring, the snapshot's pages for the window's
 //! height, the lists' ring of buffered pushes), each summary's bound (the
-//! reached bitmap, the portal edges over the window's chunk-face cells, the
-//! leak floods' face labels, the configurations, the plain-sea summaries), and
-//! the scratch files' size (the stores' arrays, and the lists' largest chunk at
+//! reached and plain-sea bitmaps, the portal edges over the window's chunk-face
+//! cells, the leak floods' face labels, the configurations), and the scratch
+//! files' size (the stores' arrays, and the lists' largest chunk at
 //! most). Every bound is an upper bound a build cannot exceed; what a build
 //! reached is printed as it ends (`reach budget:`, `reach lists:`,
 //! `reach portals:`, `world store pages:`).
@@ -74,8 +74,10 @@ pub struct ResourceCost {
 /// body stands on (a full cube, a partial floor, a fence or wall top, a door or
 /// trapdoor) whose cell above holds no such block puts one standing candidate
 /// in that cell — a surface; every climbable cell is a holding candidate; every
-/// fluid cell, and every cell of the horizon's sea band, is a water candidate.
-/// The count is an upper bound: a surface under a torch, a slab under a
+/// fluid cell, and every cell of the horizon's sea band that holds no ground
+/// (a full cube, a partial floor, a fence or wall), is a water candidate — the
+/// terrain's ground in the band is no water (`World::ambient_water`). The
+/// count is an upper bound: a surface under a torch, a slab under a
 /// carpet, or a ledge a body cannot fit on counts a rest cell no body takes,
 /// and nothing a body rests in goes uncounted.
 ///
@@ -131,6 +133,17 @@ fn rest_of(name: &str) -> Rest {
     }
 }
 
+/// Whether a block is ground: a cell of the sea's band holding one is no
+/// water (`World::ambient_water` refuses an occupied cell), so it leaves the
+/// band's count. A door or trapdoor is not: the nav world may still read the
+/// cell as water, and the census stays an upper bound.
+fn ground(name: &str) -> bool {
+    matches!(
+        collision_class(name),
+        Collision::PartialFloor(_) | Collision::FullCube | Collision::TallBarrier
+    )
+}
+
 impl RestCensus {
     /// The census of `store` over `window` (inclusive corners), under a sea
     /// whose ambient water fills `floor_top + 1 ..= level` when one is given,
@@ -158,6 +171,7 @@ impl RestCensus {
             let (a, b) = ((floor_top + 1).max(lo[1]), level.min(hi[1]));
             u32::try_from(b - a + 1).unwrap_or(0)
         });
+        let in_band = |y: i32| sea.is_some_and(|(floor_top, level)| y > floor_top && y <= level);
         let mut standing = vec![0u32; w * d];
         let mut water = vec![band; w * d];
         // The supports of each column, one bit per height, so a surface — a
@@ -166,17 +180,24 @@ impl RestCensus {
         let mut supports = vec![0u64; w * d * words];
         // Every reading is a function of the block state alone, made once per
         // distinct state.
-        let mut kinds: BTreeMap<BlockState, Rest> = BTreeMap::new();
+        let mut kinds: BTreeMap<BlockState, (Rest, bool)> = BTreeMap::new();
         for (c, b) in store.in_box(lo, hi) {
-            let k = *kinds.entry(*b).or_insert_with(|| rest_of(b.as_str()));
+            let (k, ground) = *kinds
+                .entry(*b)
+                .or_insert_with(|| (rest_of(b.as_str()), ground(b.as_str())));
             match k {
                 Rest::Support => {
                     let y = (c[1] - lo[1]) as usize;
                     supports[at(c[0], c[2]) * words + y / 64] |= 1 << (y % 64);
+                    // Ground in the sea's band is no water.
+                    if ground && in_band(c[1]) {
+                        water[at(c[0], c[2])] -= 1;
+                    }
                 }
                 Rest::Climb => standing[at(c[0], c[2])] += 1,
-                Rest::Water => water[at(c[0], c[2])] += 1,
-                Rest::None => {}
+                // A fluid cell in the band is the band's own candidate.
+                Rest::Water if !in_band(c[1]) => water[at(c[0], c[2])] += 1,
+                Rest::Water | Rest::None => {}
             }
         }
         for col in 0..w * d {
@@ -378,9 +399,10 @@ impl ResourceCost {
         self.window_dims().iter().product()
     }
 
-    /// The reached bitmap: one bit per window cell.
+    /// The reached states' bitmaps: one bit per window cell for the states
+    /// reached, and one for the plain-sea states among them (ADR-0037 §2).
     pub fn reached_bitmap_bytes(&self) -> usize {
-        self.window_cells().div_ceil(8)
+        2 * self.window_cells().div_ceil(8)
     }
 
     /// The most portal edges a closure carries: the nodes within a launch's
@@ -415,16 +437,6 @@ impl ResourceCost {
         self.region_writes + 1
     }
 
-    /// Plain-sea summaries at most: one per configuration under an ocean,
-    /// none under a void.
-    pub fn plain_sea_summaries_at_most(&self) -> usize {
-        if self.horizon == "ocean" {
-            self.configurations_at_most()
-        } else {
-            0
-        }
-    }
-
     /// The working set the paged structures state before any walk: the sum
     /// the budget starts at.
     pub fn working_set_floor(&self) -> usize {
@@ -457,13 +469,14 @@ impl ResourceCost {
         let d = self.window_dims();
         format!(
             "resource cost: {region} under a {} horizon; {judged}; reach window at most {} cell(s) \
-             ({} x {} x {}), its reached bitmap {} byte(s), {} x {} chunk(s) of side {} with {} \
+             ({} x {} x {}), its reached and plain-sea bitmaps {} byte(s), {} x {} chunk(s) of \
+             side {} with {} \
              face cell(s); rest census: {} standing and {} water candidate(s) over {} column(s), \
              at most {} node(s) in one chunk, {} edge(s) out of one node and every landing within \
              {} column(s); at most {} portal edge(s) in one closure; working set before any \
              walk: the stores' ring {} + the snapshot's pages {} + the lists' buffered pushes \
              {} = {} byte(s), the lists' largest chunk at most {} byte(s) by its candidates; \
-             summaries at most: {} face label(s), {} configuration(s), {} plain-sea summar(y/ies); \
+             summaries at most: {} face label(s), {} configuration(s); \
              scratch: the stores' {} byte(s) over {} section(s) of the whole and {} of the judged \
              copy (ADR-0037 §3)",
             self.horizon,
@@ -490,7 +503,6 @@ impl ResourceCost {
             self.lists_chunk_at_most(),
             self.face_labels_at_most(),
             self.configurations_at_most(),
-            self.plain_sea_summaries_at_most(),
             self.store_scratch_bytes(),
             self.store_sections,
             self.judged_sections,
@@ -532,7 +544,6 @@ impl ResourceCost {
                 "edges_per_node": self.edges_per_node,
                 "face_labels": self.face_labels_at_most(),
                 "configurations": self.configurations_at_most(),
-                "plain_sea_summaries": self.plain_sea_summaries_at_most(),
             },
             "scratch_bytes": {
                 "stores": self.store_scratch_bytes(),
@@ -583,7 +594,10 @@ mod tests {
         };
         assert_eq!(c.window_dims(), [118, 12, 218]);
         assert_eq!(c.window_cells(), 118 * 12 * 218);
-        assert_eq!(c.reached_bitmap_bytes(), (118 * 12 * 218usize).div_ceil(8));
+        assert_eq!(
+            c.reached_bitmap_bytes(),
+            2 * (118 * 12 * 218usize).div_ceil(8)
+        );
         assert_eq!(
             c.portal_edges_at_most(),
             7_000,
@@ -597,13 +611,12 @@ mod tests {
         assert_eq!(c.census.states_at_most(), 20_500);
         assert_eq!(c.face_labels_at_most(), 8 * 6 * 128);
         assert_eq!(c.configurations_at_most(), 5);
-        assert_eq!(c.plain_sea_summaries_at_most(), 5);
         assert_eq!(c.working_set_floor(), 224_184);
         assert_eq!(c.store_scratch_bytes(), 73_728);
         let line = c.line();
         let json = c.to_json();
         for (word, n) in [
-            ("reached bitmap", c.reached_bitmap_bytes()),
+            ("reached and plain-sea bitmaps", c.reached_bitmap_bytes()),
             ("portal edge(s)", c.portal_edges_at_most()),
             ("face label(s)", c.face_labels_at_most()),
         ] {
@@ -660,16 +673,23 @@ mod tests {
             let got = RestCensus::of(&store, (lo, hi), sea, side, reach, edges);
             // The reference: every column, cell by cell.
             let band = sea.map_or(0, |(f, l)| (l.min(hi[1]) - (f + 1).max(lo[1]) + 1).max(0));
+            let in_band = |y: i32| sea.is_some_and(|(f, l)| y > f && y <= l);
             let col = |x: i32, z: i32| -> (usize, usize) {
                 let (mut s, mut w) = (0usize, band as usize);
                 let kind = |y: i32| store.get(&[x, y, z]).map(|b| rest_of(b.as_str()));
+                let is_ground = |y: i32| store.get(&[x, y, z]).is_some_and(|b| ground(b.as_str()));
                 for y in lo[1]..=hi[1] {
                     match kind(y) {
                         // A surface: a support with no support over it.
                         Some(Rest::Support) if kind(y + 1) != Some(Rest::Support) => s += 1,
                         Some(Rest::Climb) => s += 1,
-                        Some(Rest::Water) => w += 1,
+                        // A fluid cell outside the band; inside it, the band's own.
+                        Some(Rest::Water) if !in_band(y) => w += 1,
                         _ => {}
+                    }
+                    // Ground in the band is no water.
+                    if in_band(y) && is_ground(y) {
+                        w -= 1;
                     }
                 }
                 (s, w)
