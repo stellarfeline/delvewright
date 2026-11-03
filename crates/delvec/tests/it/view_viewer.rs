@@ -224,53 +224,28 @@ fn the_same_prefab_produces_a_byte_identical_page() {
     assert!(!pages[0].is_empty());
 }
 
-/// A directory of prefabs is one page, and the order cannot depend on how the
-/// filesystem happened to hand them back.
-#[test]
-fn a_directory_of_prefabs_is_one_page_in_a_stable_order() {
-    let one = prefab("keep-gate-room.nbt");
-    let src = one.parent().unwrap().to_path_buf();
-    let dir = tmp("library");
-    let mut all: BTreeSet<String> = BTreeSet::new();
-    let mut paths: Vec<PathBuf> = std::fs::read_dir(&src)
+/// The pieces of the pinned library in the order the tool promises, and the
+/// templates its tile sets claim.
+///
+/// A piece is a template standing on its own, or a tile set, which is one
+/// piece over many templates and is shown through its manifest: a tile is
+/// never on the page as if it were a prefab (`collect_pieces`). Which `.json`
+/// is a document is the library's one rule; which templates a manifest claims
+/// is read here off the document's own `structure_set.parts`. The order is
+/// sorted by PATH, which is not the same as sorted by id
+/// (`island-greenfield-bend.nbt` precedes `island-greenfield.nbt`, because
+/// `-` sorts before `.`). The property under test is that the order is fixed
+/// and derived from the input, not that it reads alphabetically.
+fn library_pieces(src: &Path) -> (Vec<PathBuf>, BTreeSet<PathBuf>) {
+    let mut paths: Vec<PathBuf> = std::fs::read_dir(src)
         .unwrap()
         .filter_map(|e| e.ok().map(|e| e.path()))
         .filter(|p| p.extension().is_some_and(|e| e == "nbt"))
         .collect();
     paths.sort();
-    for p in &paths {
-        all.extend(blocks_in(p));
-    }
-    let pack = dir.join("pack");
-    fake_pack(&pack, &all, &[]);
-    let out = dir.join("library.html");
-
-    let r = Command::new(BIN)
-        .arg("viewer")
-        .arg("--textures")
-        .arg(&pack)
-        .arg(&src)
-        .arg("-o")
-        .arg(&out)
-        .output()
-        .unwrap();
-    assert_eq!(r.status.code(), Some(0), "{r:?}");
-    let html = std::fs::read_to_string(&out).unwrap();
-
-    // Every PIECE in the directory is on the page, in the order the tool
-    // promises: sorted by PATH, which is not the same as sorted by id
-    // (`island-greenfield-bend.nbt` precedes `island-greenfield.nbt`, because
-    // `-` sorts before `.`). The property under test is that the order is fixed
-    // and derived from the input, not that it reads alphabetically.
-    //
-    // A piece is a template standing on its own, or a tile set, which is one
-    // piece over many templates and is shown through its manifest: a tile is
-    // never on the page as if it were a prefab (`collect_pieces`). Which `.json`
-    // is a document is the library's one rule; which templates a manifest
-    // claims is read here off the document's own `structure_set.parts`.
     let mut claimed: BTreeSet<PathBuf> = BTreeSet::new();
     let mut pieces: Vec<PathBuf> = Vec::new();
-    for entry in std::fs::read_dir(&src).unwrap() {
+    for entry in std::fs::read_dir(src).unwrap() {
         let doc_path = entry.unwrap().path();
         if !delvec::compiler::registry::is_prefab_document(&doc_path) {
             continue;
@@ -286,10 +261,86 @@ fn a_directory_of_prefabs_is_one_page_in_a_stable_order() {
     }
     pieces.extend(paths.iter().filter(|p| !claimed.contains(*p)).cloned());
     pieces.sort();
+    (pieces, claimed)
+}
+
+/// A directory of prefabs is one page, and the order cannot depend on how the
+/// filesystem happened to hand them back. The pinned library is paged in
+/// `of` parts, piece `i` on part `i % of`, so that each page is its own
+/// process with its own time (spec-0126 §4.3, §5); the three parts together
+/// page every piece of the library, and each part's page holds its pieces in
+/// the promised order and none of its tile sets' tiles as prefabs.
+fn a_part_of_the_library_is_one_page_in_a_stable_order(part: usize, of: usize) {
+    let one = prefab("keep-gate-room.nbt");
+    let src = one.parent().unwrap().to_path_buf();
+    let (every_piece, claimed_all) = library_pieces(&src);
+    let pieces: Vec<PathBuf> = every_piece
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| i % of == part)
+        .map(|(_, p)| p.clone())
+        .collect();
+    assert!(
+        pieces.len() > 1,
+        "part {part} of {of} of the library holds one piece or none"
+    );
+
+    // This part's library: each piece with its own files — a template with
+    // its document, a tile set's document with the templates it claims.
+    let dir = tmp(&format!("library-{part}-of-{of}"));
+    let lib = dir.join("library");
+    std::fs::create_dir_all(&lib).unwrap();
+    let mut claimed: BTreeSet<PathBuf> = BTreeSet::new();
+    let mut templates: Vec<PathBuf> = Vec::new();
+    for piece in &pieces {
+        std::fs::copy(piece, lib.join(piece.file_name().unwrap())).unwrap();
+        if piece.extension().is_some_and(|e| e == "nbt") {
+            templates.push(piece.clone());
+            let doc = piece.with_extension("json");
+            if doc.is_file() {
+                std::fs::copy(&doc, lib.join(doc.file_name().unwrap())).unwrap();
+            }
+        } else {
+            let doc: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(piece).unwrap()).unwrap();
+            for part in doc["structure_set"]["parts"].as_array().unwrap() {
+                let tile = src.join(part["file"].as_str().unwrap());
+                assert!(
+                    claimed_all.contains(&tile),
+                    "{} is claimed by no set",
+                    tile.display()
+                );
+                std::fs::copy(&tile, lib.join(tile.file_name().unwrap())).unwrap();
+                templates.push(tile.clone());
+                claimed.insert(tile);
+            }
+        }
+    }
+    let mut all: BTreeSet<String> = BTreeSet::new();
+    for t in &templates {
+        all.extend(blocks_in(t));
+    }
+    let pack = dir.join("pack");
+    fake_pack(&pack, &all, &[]);
+    let out = dir.join("library.html");
+
+    let r = Command::new(BIN)
+        .arg("viewer")
+        .arg("--textures")
+        .arg(&pack)
+        .arg(&lib)
+        .arg("-o")
+        .arg(&out)
+        .output()
+        .unwrap();
+    assert_eq!(r.status.code(), Some(0), "{r:?}");
+    let html = std::fs::read_to_string(&out).unwrap();
+
     println!(
-        "  library page: {} piece(s) expected from {} template(s), {} of them claimed by a tile set",
+        "  library page {part} of {of}: {} piece(s) of the library's {} from {} template(s), {} of them claimed by a tile set",
         pieces.len(),
-        paths.len(),
+        every_piece.len(),
+        templates.len(),
         claimed.len()
     );
     for tile in &claimed {
@@ -299,7 +350,6 @@ fn a_directory_of_prefabs_is_one_page_in_a_stable_order() {
             "{id} is a tile of a set and is on the page as a prefab"
         );
     }
-    assert!(pieces.len() > 1, "fixture library has one prefab");
     let mut last: Option<usize> = None;
     for p in &pieces {
         let id = p.file_stem().unwrap().to_string_lossy().to_string();
@@ -312,6 +362,21 @@ fn a_directory_of_prefabs_is_one_page_in_a_stable_order() {
         }
         last = Some(at);
     }
+}
+
+#[test]
+fn a_directory_of_prefabs_is_one_page_in_a_stable_order_part_1_of_3() {
+    a_part_of_the_library_is_one_page_in_a_stable_order(0, 3);
+}
+
+#[test]
+fn a_directory_of_prefabs_is_one_page_in_a_stable_order_part_2_of_3() {
+    a_part_of_the_library_is_one_page_in_a_stable_order(1, 3);
+}
+
+#[test]
+fn a_directory_of_prefabs_is_one_page_in_a_stable_order_part_3_of_3() {
+    a_part_of_the_library_is_one_page_in_a_stable_order(2, 3);
 }
 
 /// A gate report beside a piece (`<id>.report.json`, written by `grammar

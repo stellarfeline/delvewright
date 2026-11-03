@@ -44,8 +44,29 @@ fn starter() -> PathBuf {
 /// The `site-plan-solid` point, materialised by the gallery's own domain tool
 /// and detailed into `prefabs` beside the open point's pieces, as
 /// `common::gallery_site_plan_detailed` details the open one.
-fn solid_point_detailed(root: &Path, prefabs: &Path) -> PathBuf {
+/// The gallery's solid site-plan point, every place detailed: built once per
+/// machine and engine (spec-0126 §4.2, `common::built`), copied to `root` for
+/// this process to run the starter against.
+fn solid_point_detailed(root: &Path) -> PathBuf {
+    let cached = common::built::built(
+        "gallery-site-plan-solid-detailed",
+        common::built::Inputs::new()
+            .text("the gallery's solid site-plan point, every place detailed by `detail --all`")
+            .tracked(&common::repo_root(), "gallery")
+            .tracked(&common::repo_root(), "tools/ci/gallery_domain.py"),
+        solid_point_detailed_into,
+    );
     let campaign = root.join("site-plan-solid");
+    let _ = std::fs::remove_dir_all(&campaign);
+    common::copy_dir_all(&cached.join("site-plan-solid"), &campaign);
+    campaign
+}
+
+fn solid_point_detailed_into(dir: &Path) {
+    let (_, pieces) = common::gallery_primary_at(&dir.join("primary"));
+    let prefabs = dir.join("prefabs");
+    common::copy_dir_all(&pieces, &prefabs);
+    let campaign = dir.join("site-plan-solid");
     // The domain tool runs the gallery generator through `$CARGO`.
     let out = common::build_toolchain(&mut Command::new(python()))
         .arg(common::repo_root().join("tools/ci/gallery_domain.py"))
@@ -76,131 +97,185 @@ fn solid_point_detailed(root: &Path, prefabs: &Path) -> PathBuf {
         "--all",
     ]);
     assert!(all.status.success(), "{}", text(&all));
-    campaign
 }
 
-/// Every place `campaign` allocates a box to, its starter program run unedited
-/// and checked. Returns `(passed, places, failures)`.
-fn judge_every_place(tmp: &Path, campaign: &Path, prefabs: &Path) -> (usize, usize, Vec<String>) {
-    let cs = campaign.to_str().unwrap();
+/// Every box `campaign` allocates, as `allocation --all` hands them.
+fn allocations(campaign: &Path, prefabs: &Path) -> Vec<serde_json::Value> {
     let all = delvec(&[
         "--prefabs",
         prefabs.to_str().unwrap(),
         "allocation",
-        cs,
+        campaign.to_str().unwrap(),
         "--all",
     ]);
     assert!(all.status.success(), "{}", text(&all));
     let allocations: Vec<serde_json::Value> = serde_json::from_slice(&all.stdout).unwrap();
     assert!(!allocations.is_empty(), "the point allocates no box");
-    let mut passed = 0;
-    let mut failures = Vec::new();
-    for a in &allocations {
-        let place = a["place"].as_str().unwrap();
-        let stem = place.strip_prefix("node/").unwrap();
-        let alloc_file = tmp.join(format!(
-            "{}-{stem}.allocation.json",
-            campaign.file_name().unwrap().to_string_lossy()
-        ));
-        std::fs::write(&alloc_file, serde_json::to_vec_pretty(a).unwrap()).unwrap();
-        let program = campaign.join("programs").join(format!("{stem}.json"));
-        std::fs::create_dir_all(program.parent().unwrap()).unwrap();
-        let before = std::fs::read(&program).ok();
-        let run = Command::new(python())
-            .arg(starter())
-            .arg("--allocation")
-            .arg(&alloc_file)
-            .arg("--out")
-            .arg(&program)
-            .output()
-            .expect("run the starter");
-        let verdict = if run.status.success() {
-            let check = delvec(&[
-                "--prefabs",
-                prefabs.to_str().unwrap(),
-                "detail",
-                "--check",
-                cs,
-                place,
-            ]);
-            // `--check` runs the commit into a scratch copy, battery
-            // included. The empty place is not the building, so the
-            // battery's whole-map verdicts on it (a vista, a crossing, a
-            // pressable a station names) are the author's to answer; what the
-            // starter must never hand an author is a refusal before the
-            // commit's write — of the place's own gates, the bindings, the
-            // leak proof — or a refusal of its OWN declarations, `DW0885`.
-            let said = text(&check);
-            let reached = said.contains("detail --check: the commit written into a scratch copy");
-            let own: Vec<&str> = said
-                .lines()
-                .filter(|l| l.starts_with("DW0885 [error]"))
-                .collect();
-            if !reached {
-                Err(format!(
-                    "`detail --check` refused before the commit's write (exit {:?}):\n{said}",
-                    check.status.code()
-                ))
-            } else if !own.is_empty() {
-                Err(format!(
-                    "the commit's battery refuses the starter's own `shown_faces`:\n{}",
-                    own.join("\n")
-                ))
-            } else {
-                Ok(())
-            }
-        } else {
-            Err(format!(
-                "the starter exited {:?}:\n{}",
-                run.status.code(),
-                text(&run)
-            ))
-        };
-        // The committed program goes back: each place is judged with every
-        // other place standing as the gallery commits it.
-        match before {
-            Some(bytes) => std::fs::write(&program, bytes).unwrap(),
-            // A starter that refused wrote nothing to take back.
-            None if !program.exists() => {}
-            None => std::fs::remove_file(&program).unwrap(),
-        }
-        match verdict {
-            Ok(()) => {
-                passed += 1;
-                eprintln!(
-                    "starter: {place} of `{cs}` passes `detail --check` up to the commit's write, and its battery raises no `DW0885`"
-                );
-            }
-            Err(why) => failures.push(format!("{place}: {why}")),
-        }
-    }
-    (passed, allocations.len(), failures)
+    allocations
 }
 
-#[test]
-fn the_starter_passes_the_check_unedited_on_every_place_of_the_gallery_site_plans() {
-    let tmp = tempdir("gallery");
-    let (open, prefabs) = common::gallery_site_plan_detailed(&tmp);
-    let solid = solid_point_detailed(&tmp, &prefabs);
-    let mut passed = 0;
-    let mut places = 0;
-    let mut failures = Vec::new();
-    for campaign in [&open, &solid] {
-        let (p, n, f) = judge_every_place(&tmp, campaign, &prefabs);
-        passed += p;
-        places += n;
-        failures.extend(f);
+/// One place's starter program run unedited over its allocation and checked:
+/// `detail --check` reaches the commit's write, and its battery raises no
+/// `DW0885` against the starter's own `shown_faces`.
+fn judge_place(
+    tmp: &Path,
+    campaign: &Path,
+    prefabs: &Path,
+    a: &serde_json::Value,
+) -> Result<(), String> {
+    let cs = campaign.to_str().unwrap();
+    let place = a["place"].as_str().unwrap();
+    let stem = place.strip_prefix("node/").unwrap();
+    let alloc_file = tmp.join(format!(
+        "{}-{stem}.allocation.json",
+        campaign.file_name().unwrap().to_string_lossy()
+    ));
+    std::fs::write(&alloc_file, serde_json::to_vec_pretty(a).unwrap()).unwrap();
+    let program = campaign.join("programs").join(format!("{stem}.json"));
+    std::fs::create_dir_all(program.parent().unwrap()).unwrap();
+    let before = std::fs::read(&program).ok();
+    let run = Command::new(python())
+        .arg(starter())
+        .arg("--allocation")
+        .arg(&alloc_file)
+        .arg("--out")
+        .arg(&program)
+        .output()
+        .expect("run the starter");
+    let verdict = if run.status.success() {
+        let check = delvec(&[
+            "--prefabs",
+            prefabs.to_str().unwrap(),
+            "detail",
+            "--check",
+            cs,
+            place,
+        ]);
+        let said = text(&check);
+        let reached = said.contains("detail --check: the commit written into a scratch copy");
+        let own: Vec<&str> = said
+            .lines()
+            .filter(|l| l.starts_with("DW0885 [error]"))
+            .collect();
+        if !reached {
+            Err(format!(
+                "`detail --check` refused before the commit's write (exit {:?}):\n{said}",
+                check.status.code()
+            ))
+        } else if !own.is_empty() {
+            Err(format!(
+                "the commit's battery refuses the starter's own `shown_faces`:\n{}",
+                own.join("\n")
+            ))
+        } else {
+            Ok(())
+        }
+    } else {
+        Err(format!(
+            "the starter exited {:?}:\n{}",
+            run.status.code(),
+            text(&run)
+        ))
+    };
+    // The starter's program is taken back after its judgement, leaving every
+    // other place standing as the gallery commits it.
+    match before {
+        Some(bytes) => std::fs::write(&program, bytes).unwrap(),
+        // A starter that refused wrote nothing to take back.
+        None if !program.exists() => {}
+        None => std::fs::remove_file(&program).unwrap(),
     }
-    eprintln!(
-        "starter binding: {passed} of {places} place(s) pass --check up to the write, battery with no DW0885"
-    );
-    assert!(places > 0, "zero places judged: the binding is vacuous");
-    assert!(
-        failures.is_empty(),
-        "{} of {places} place(s) refused the starter's program:\n{}",
-        failures.len(),
-        failures.join("\n\n")
-    );
+    if verdict.is_ok() {
+        eprintln!(
+            "starter: {place} of `{cs}` passes `detail --check` up to the commit's write, and its battery raises no `DW0885`"
+        );
+    }
+    verdict.map_err(|why| format!("{place}: {why}"))
+}
+
+/// The open and the solid site-plan points, each detailed, with the library.
+fn point(which: &str, tmp: &Path) -> (PathBuf, PathBuf) {
+    let (open, prefabs) = common::gallery_site_plan_detailed(tmp);
+    match which {
+        "open" => (open, prefabs),
+        "solid" => (solid_point_detailed(tmp), prefabs),
+        other => panic!("no site-plan point named {other}"),
+    }
+}
+
+/// One test per allocated place of each site-plan point: the starter's
+/// program, run unedited on that allocation, passes `detail --check` up to
+/// the commit's write with no `DW0885` from the battery. Each place is its own
+/// process with its own time (spec-0126 §4.3, §5), and the last test of each
+/// point holds the list to what `allocation --all` hands: a box added to a
+/// point reds there until it has a test of its own.
+macro_rules! starter_places {
+    ($($point:literal: $every:ident { $($name:ident => $place:literal),* $(,)? })*) => {
+        $(
+            $(
+                #[test]
+                fn $name() {
+                    let tmp = tempdir(concat!("starter-", $point, "-", $place));
+                    let (campaign, prefabs) = point($point, &tmp);
+                    let all = allocations(&campaign, &prefabs);
+                    let a = all
+                        .iter()
+                        .find(|a| a["place"] == concat!("node/", $place))
+                        .unwrap_or_else(|| panic!(
+                            "node/{} is allocated no box by the {} point",
+                            $place, $point
+                        ));
+                    if let Err(why) = judge_place(&tmp, &campaign, &prefabs, a) {
+                        panic!("the starter's program was refused:\n{why}");
+                    }
+                }
+            )*
+
+            #[test]
+            fn $every() {
+                let tmp = tempdir(concat!("starter-", $point, "-places"));
+                let (campaign, prefabs) = point($point, &tmp);
+                let mut places: Vec<String> = allocations(&campaign, &prefabs)
+                    .iter()
+                    .map(|a| a["place"].as_str().unwrap().to_string())
+                    .collect();
+                places.sort();
+                let named: Vec<String> = vec![$(concat!("node/", $place).to_string()),*];
+                assert_eq!(
+                    places, named,
+                    "the places the {} point allocates and the places tested differ", $point
+                );
+                eprintln!(
+                    "starter binding: {n} of {n} allocated place(s) of the {} point have a test",
+                    $point, n = places.len()
+                );
+            }
+        )*
+    };
+}
+
+starter_places! {
+    "open": every_allocated_place_of_the_open_point_has_its_starter_test {
+        the_starter_passes_the_check_unedited_on_the_open_annex => "annex",
+        the_starter_passes_the_check_unedited_on_the_open_beacon => "beacon",
+        the_starter_passes_the_check_unedited_on_the_open_causeway => "causeway",
+        the_starter_passes_the_check_unedited_on_the_open_exit => "exit",
+        the_starter_passes_the_check_unedited_on_the_open_far_hall => "far-hall",
+        the_starter_passes_the_check_unedited_on_the_open_gantry => "gantry",
+        the_starter_passes_the_check_unedited_on_the_open_loft => "loft",
+        the_starter_passes_the_check_unedited_on_the_open_near_hall => "near-hall",
+        the_starter_passes_the_check_unedited_on_the_open_perch => "perch",
+        the_starter_passes_the_check_unedited_on_the_open_undercroft => "undercroft",
+    }
+    "solid": every_allocated_place_of_the_solid_point_has_its_starter_test {
+        the_starter_passes_the_check_unedited_on_the_solid_annex => "annex",
+        the_starter_passes_the_check_unedited_on_the_solid_causeway => "causeway",
+        the_starter_passes_the_check_unedited_on_the_solid_exit => "exit",
+        the_starter_passes_the_check_unedited_on_the_solid_far_hall => "far-hall",
+        the_starter_passes_the_check_unedited_on_the_solid_loft => "loft",
+        the_starter_passes_the_check_unedited_on_the_solid_near_hall => "near-hall",
+        the_starter_passes_the_check_unedited_on_the_solid_undercroft => "undercroft",
+    }
 }
 
 /// The two-box `atmosphere-threshold` plan with `node/far` made a plot of

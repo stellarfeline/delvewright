@@ -177,35 +177,73 @@ fn patch(path: &Path, f: impl FnOnce(&mut Value)) {
     common::patch_file(path, f);
 }
 
-#[test]
-fn check_and_commit_agree_over_every_gallery_place_and_three_refusals() {
-    let tmp = tempdir("agree");
-    let (campaign, prefabs) = common::gallery_site_plan_detailed(&tmp);
-    let places = stems(&campaign);
-    assert!(places.len() >= 4, "the binding: {places:?}");
+/// One test per program place of the gallery's site-plan point: the place is
+/// checked, then committed, and the two agree. The places are named here so
+/// that each is its own process with its own time (spec-0126 §4.3, §5), and
+/// the last test holds the list to the point: a program added to the gallery
+/// reds there until it has a test of its own.
+macro_rules! place_agrees {
+    ($($name:ident => $place:literal),* $(,)?) => {
+        $(
+            #[test]
+            fn $name() {
+                let tmp = tempdir(concat!("agree-", $place));
+                let (campaign, prefabs) = common::gallery_site_plan_detailed(&tmp);
+                let places = stems(&campaign);
+                assert!(
+                    places.iter().any(|s| s == $place),
+                    "node/{} is not a program place of the gallery's site-plan point: {places:?}",
+                    $place
+                );
+                let (_, check, commit, shown) =
+                    agree(&campaign, &prefabs, concat!("node/", $place));
+                assert_eq!((check, commit), (0, 0), "node/{}: {shown}", $place);
+                eprintln!("agreement binding: node/{} checked and committed", $place);
+            }
+        )*
 
-    // Green: every program place of the gallery's site-plan point.
-    for stem in &places {
-        let (_, check, commit, shown) = agree(&campaign, &prefabs, &format!("node/{stem}"));
-        assert_eq!((check, commit), (0, 0), "node/{stem}: {shown}");
-    }
-    eprintln!(
-        "agreement binding: {n} of {n} program place(s) checked and committed",
-        n = places.len()
-    );
-
-    // Each refusal over its own copy of the committed whole.
-    let copy = |name: &str| -> (PathBuf, PathBuf) {
-        let root = tmp.join(name);
-        let (c, p) = (root.join("site-plan"), root.join("prefabs"));
-        common::copy_dir_all(&campaign, &c);
-        common::copy_dir_all(&prefabs, &p);
-        (c, p)
+        #[test]
+        fn every_program_place_of_the_gallery_has_its_agreement_test() {
+            let tmp = tempdir("agree-places");
+            let (campaign, _) = common::gallery_site_plan_detailed(&tmp);
+            let places = stems(&campaign);
+            assert!(places.len() >= 4, "the binding: {places:?}");
+            let named: Vec<String> = vec![$($place.to_string()),*];
+            assert_eq!(
+                places, named,
+                "the program places of the gallery's site-plan point and the places tested above differ"
+            );
+            eprintln!(
+                "agreement binding: {n} of {n} program place(s) have a check-and-commit test",
+                n = places.len()
+            );
+        }
     };
+}
 
-    // DW0843 — an undersize piece: the perch's box shrinks under its
-    // committed piece, and the annex's check judges the whole that holds it.
-    let (c, p) = copy("dw0843");
+place_agrees! {
+    check_and_commit_agree_on_annex => "annex",
+    check_and_commit_agree_on_beacon => "beacon",
+    check_and_commit_agree_on_causeway => "causeway",
+    check_and_commit_agree_on_far_hall => "far-hall",
+    check_and_commit_agree_on_gantry => "gantry",
+    check_and_commit_agree_on_loft => "loft",
+    check_and_commit_agree_on_near_hall => "near-hall",
+    check_and_commit_agree_on_perch => "perch",
+}
+
+/// Each refusal over its own copy of the committed whole (the fixture is this
+/// process's own copy already).
+fn committed_copy(name: &str) -> (PathBuf, PathBuf) {
+    let tmp = tempdir(name);
+    common::gallery_site_plan_detailed(&tmp)
+}
+
+// DW0843 — an undersize piece: the perch's box shrinks under its
+// committed piece, and the annex's check judges the whole that holds it.
+#[test]
+fn check_and_commit_agree_on_an_undersize_piece_dw0843() {
+    let (c, p) = committed_copy("dw0843");
     patch(&c.join("site-plan.json"), |v| {
         let boxes = v["content"]["boxes"].as_array_mut().unwrap();
         let b = boxes
@@ -216,10 +254,13 @@ fn check_and_commit_agree_over_every_gallery_place_and_three_refusals() {
     });
     let (k, _, _, shown) = agree(&c, &p, "node/annex");
     assert!(k.contains(&"DW0843".to_string()), "{k:?}\n{shown}");
+}
 
-    // DW0844 — an unanswered seam: the annex's arch cut one cell along the
-    // wall from where the plan hands it.
-    let (c, p) = copy("dw0844");
+// DW0844 — an unanswered seam: the annex's arch cut one cell along the
+// wall from where the plan hands it.
+#[test]
+fn check_and_commit_agree_on_an_unanswered_seam_dw0844() {
+    let (c, p) = committed_copy("dw0844");
     patch(&c.join("programs/annex.json"), |v| {
         let size = &mut v["rules"]["east_band"][0]["body"]["sizes"][0]["blocks"];
         *size = json!({"expr": "arith", "lhs": size.clone(), "op": "add",
@@ -227,19 +268,25 @@ fn check_and_commit_agree_over_every_gallery_place_and_three_refusals() {
     });
     let (k, _, _, shown) = agree(&c, &p, "node/annex");
     assert!(k.contains(&"DW0844".to_string()), "{k:?}\n{shown}");
+}
 
-    // DW0845 — an owed name unbound: the annex's own place mark removed.
-    let (c, p) = copy("dw0845");
+// DW0845 — an owed name unbound: the annex's own place mark removed.
+#[test]
+fn check_and_commit_agree_on_an_owed_name_unbound_dw0845() {
+    let (c, p) = committed_copy("dw0845");
     patch(&c.join("programs/annex.json"), |v| {
         let body = v["rules"]["room"][0]["body"]["body"].clone();
         v["rules"]["room"][0]["body"] = body;
     });
     let (k, _, _, shown) = agree(&c, &p, "node/annex");
     assert!(k.contains(&"DW0845".to_string()), "{k:?}\n{shown}");
+}
 
-    // DW0773 — a program not in canonical form: the annex's program written
-    // on one line, the same document. Refused where it enters, by both runs.
-    let (c, p) = copy("dw0773");
+// DW0773 — a program not in canonical form: the annex's program written
+// on one line, the same document. Refused where it enters, by both runs.
+#[test]
+fn check_and_commit_agree_on_a_non_canonical_program_dw0773() {
+    let (c, p) = committed_copy("dw0773");
     let path = c.join("programs/annex.json");
     let doc: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     std::fs::write(&path, serde_json::to_string(&doc).unwrap()).unwrap();
@@ -248,11 +295,14 @@ fn check_and_commit_agree_over_every_gallery_place_and_three_refusals() {
         k.contains(&"DW0773".to_string()) && check != 0,
         "{k:?}\n{shown}"
     );
+}
 
-    // DW1002 — a refusal only the commit's battery raises: the annex's
-    // ceiling laid in gravel, which falls into the room the moment the load
-    // writes it. Its own gates pass; the battery over the whole refuses.
-    let (c, p) = copy("dw1002");
+// DW1002 — a refusal only the commit's battery raises: the annex's
+// ceiling laid in gravel, which falls into the room the moment the load
+// writes it. Its own gates pass; the battery over the whole refuses.
+#[test]
+fn check_and_commit_agree_on_the_battery_s_own_refusal_dw1002() {
+    let (c, p) = committed_copy("dw1002");
     patch(&c.join("programs/annex.json"), |v| {
         v["palette"]["ceiling"] = json!("minecraft:gravel");
     });

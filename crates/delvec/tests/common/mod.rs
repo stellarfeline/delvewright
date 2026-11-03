@@ -1596,6 +1596,30 @@ pub fn horizon(base: &str) -> serde_json::Value {
 /// `(campaign, prefabs)`.
 #[allow(dead_code)]
 pub fn gallery_site_plan_detailed(root: &Path) -> (PathBuf, PathBuf) {
+    // One `detail --all` per machine and engine (spec-0126 §4.2): the detailed
+    // point is built once into the cache, keyed by the gallery's tracked files
+    // and the `delvec` that details it, and every caller gets its own copy to
+    // patch and commit into.
+    let cached = built::built(
+        "gallery-site-plan-detailed",
+        built::Inputs::new()
+            .text("the gallery's site-plan point, every place detailed by `detail --all`")
+            .tracked(&repo_root(), "gallery"),
+        gallery_site_plan_detailed_into,
+    );
+    let prefabs = root.join("prefabs");
+    let campaign = root.join("site-plan");
+    let _ = std::fs::remove_dir_all(&prefabs);
+    let _ = std::fs::remove_dir_all(&campaign);
+    copy_dir_all(&cached.join("prefabs"), &prefabs);
+    copy_dir_all(&cached.join("site-plan"), &campaign);
+    (campaign, prefabs)
+}
+
+/// The build behind `gallery_site_plan_detailed`: the gallery primary's
+/// pieces as the library, the site-plan point with its committed programs'
+/// detail rows removed, and `detail --all` over it.
+fn gallery_site_plan_detailed_into(root: &Path) {
     let (_, pieces) = gallery_primary_at(&root.join("primary"));
     let prefabs = root.join("prefabs");
     let _ = std::fs::remove_dir_all(&prefabs);
@@ -1631,5 +1655,4 @@ pub fn gallery_site_plan_detailed(root: &Path) -> (PathBuf, PathBuf) {
         out.status,
         String::from_utf8_lossy(&out.stderr)
     );
-    (campaign, prefabs)
 }
