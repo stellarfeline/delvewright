@@ -288,15 +288,18 @@ columns it has. The snapshot's need is 4 × the 3 × 3 ring of reach chunks of
 the tallest window built, over both value types, at least 64 pages' worth.
 The stores' need starts at a 3 × 3 × 3 ring of sections at the wide index
 (221,184 bytes) and is measured as the build runs: an array read back within
-one turnover of its store's arrays — fewer of them given up since it was than
-the store holds resident or the need states, whichever is more — was given up
-while a walk was still using it, and each time the stores are brought under
-the budget, a sample of 64 read-backs of which half or more were such
-re-references doubles the need, until the walk's working set stays (an array
-given up long before is read back cold however few of its cells the walk
-touches, so a sliver written into a section placed long before, a second
-sequential pass, and a copy's first read of a record it shares raise
-nothing). Past the budget, the structure that just grew gives up its least
+one turnover of the resident arrays — fewer arrays, over every store, having
+come resident (made or read back) since it was given up than the need states
+— and given up under the need now stated, was given up while a walk was still
+using it, and each time the stores are brought under the budget, a sample of
+64 read-backs of which half or more were such re-references doubles the need,
+until the walk's working set stays (an array given up long before is read
+back cold however few of its cells the walk touches, so a sliver written into
+a section placed long before, a second sequential pass, a store another
+stage's growth pushed out, a copy's first read of a record it shares, and an
+array given up under an earlier need raise nothing; the clock counts every
+store's arrivals, since the stores share one least-recently-used order and a
+store's own give-ups stop while another grows). Past the budget, the structure that just grew gives up its least
 recently used chunks, pages or arrays first — down to three quarters of its
 own stated need and no further — then every other is asked, the stores never
 below three quarters of theirs, until the total stands at three quarters of
@@ -324,10 +327,11 @@ stores held a section prints `world store pages: R byte(s) resident over S
 section(s) of every store; G array(s) given up, L read back, K of them within
 one turnover of the resident arrays; the need raised T time(s) for a walk found
 thrashing, to N byte(s); B byte(s) in the scratch file (ADR-0037 §1)` beside
-them: a read-back is thrashing when fewer of its store's arrays were given up
-since it was than the need holds, and a sample of 64 read-backs of which half
-or more are thrashing doubles the need; an array given up long before is read
-back cold, however few of its cells the walk touches. Each raise prints `world
+them: a read-back is thrashing when fewer arrays came resident, over every
+store, since it was given up than the need holds, and it was given up under
+the need now stated; a sample of 64 read-backs of which half or more are
+thrashing doubles the need; an array given up long before, or under an
+earlier need, is read back cold, however few of its cells the walk touches. Each raise prints `world
 store need: raised to N byte(s); K of the last R read-back(s) came back within
 one turnover of the resident arrays` as it happens, so the stage lines around
 it name the walk whose working set the need now states.
@@ -1216,7 +1220,11 @@ authored.
 **Binding.** Every surround build prints its templates, biome bands, the
 rectangle and **which authority stated it**, and the standable gap-floor cell
 count the climb proof floods from — a flood that started from nowhere passes for
-free and looks exactly like one that did not.
+free and looks exactly like one that did not. The tiles enter the assembly's
+one write program and are laid section column by section column with every
+area's writes (*The section store* below): a tile is decoded once per band of
+sections along z it crosses, and the store's working set while the surround is
+written is one column, whatever the row's width.
 
 **Not reachable from the DSL**: the generator carries a second flora (cherry
 over `minecraft:cherry_grove`) and a second surface palette, on one code path
@@ -2332,7 +2340,12 @@ CI-enforced over every fixture family by `tests/packtest_batch.rs`):
   `DW0921` proof's quest configurations (counts summed and pockets listed in
   configuration order), and the `DW1011` proof's (counts summed, bypassed gates
   named in first-configuration order). Gated by `tests/thread_count.rs`, which builds one
-  subject at `DELVEC_THREADS=1`, `3` and unset and compares trees and stderr.
+  subject at `DELVEC_THREADS=1`, `3` and unset and compares trees and stderr,
+  the machine's measurements excepted: a world's wall time, the snapshot's
+  page reads served by a thread's recent pages, `world store pages:` and
+  `reach budget:` are normalised, and each `world store need:` raise is
+  dropped — the need's clock counts every thread's arrivals, so where walks
+  run beside each other how many raises a run makes is the schedule's.
 - **A block state is interned, and reads as its text.** The assembled world's
   map holds `blockstate::BlockState` handles (one interned copy per distinct
   state for the life of the process); equality, order, hashing and both
@@ -4542,9 +4555,23 @@ original until one of the two writes it** (`SectionMap::clone`,
 `Section::own`): a whole-world copy — the picture a review world starts from,
 a configuration's bytes, the load world the write judge reads — costs its
 palettes and section index and the sections its own writes touch, never the
-map (`sections::tests::a_copy_shares_its_arrays_until_one_side_writes`). A
-template's cells are written grouped by section, the sections in key order and
-one section's cells in the order the template lists them
+map (`sections::tests::a_copy_shares_its_arrays_until_one_side_writes`). **The
+assembly is one write program laid section column by section column**
+(`assembled::write_by_section_column`): every area's mass, templates and seals
+in order, then the surround's tiles, each with its footprint; the section
+columns the footprints cover are swept once each, in z-band then x order, and
+at each column every write reaching it is asked for the cells it lays there,
+in write order, the column's cells grouped by section (a stable sort, so a
+cell's writes keep their order and a later write wins); the map laid is the one
+write-by-write laying makes
+(`assembled::judged_tests::a_sweep_by_column_writes_what_write_order_writes`),
+no section is written in two steps, and a write is decoded once per band it
+crosses, dropped once the band's sweep has passed it. Every build prints
+`assembly written: W write(s) — R region write(s), T template(s), S surround
+tile(s) — over C section column(s), each column in one step; D decode(s), at
+most H write(s) held decoded at once (ADR-0037 §2)`. Elsewhere a template's
+cells are written grouped by section, the sections in key order and one
+section's cells in the order the template lists them
 (`assembled::by_section`, a stable sort, so a cell listed twice keeps its
 writes in order); a list of writes over a store is laid the same way
 (`SectionMap::write_by_section`: a configuration's laid regions,

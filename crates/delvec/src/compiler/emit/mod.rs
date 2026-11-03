@@ -1221,6 +1221,7 @@ fn emit_all(
     if assembles_world(plan) {
         let writes = crate::compiler::attached::judge_writes(plan, structures, &functions);
         eprintln!("{}", writes.sequence.line());
+        eprintln!("{}", writes.by_chunk.line());
         eprintln!("{}", writes.runtime.line());
         refusals.extend(writes.sequence.refusal());
         refusals.extend(writes.runtime.refusal());
