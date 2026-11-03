@@ -2340,7 +2340,12 @@ CI-enforced over every fixture family by `tests/packtest_batch.rs`):
   `DW0921` proof's quest configurations (counts summed and pockets listed in
   configuration order), and the `DW1011` proof's (counts summed, bypassed gates
   named in first-configuration order). Gated by `tests/thread_count.rs`, which builds one
-  subject at `DELVEC_THREADS=1`, `3` and unset and compares trees and stderr.
+  subject at `DELVEC_THREADS=1`, `3` and unset and compares trees and stderr,
+  the machine's measurements excepted: a world's wall time, the snapshot's
+  page reads served by a thread's recent pages, `world store pages:` and
+  `reach budget:` are normalised, and each `world store need:` raise is
+  dropped — the need's clock counts every thread's arrivals, so where walks
+  run beside each other how many raises a run makes is the schedule's.
 - **A block state is interned, and reads as its text.** The assembled world's
   map holds `blockstate::BlockState` handles (one interned copy per distinct
   state for the life of the process); equality, order, hashing and both
