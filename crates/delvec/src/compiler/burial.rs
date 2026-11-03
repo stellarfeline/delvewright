@@ -197,6 +197,10 @@ pub struct ExposureBinding {
     /// Cells of air the party's flood filled — the size of the thing that
     /// decided which faces were judged, so a `judged: 0` can be read against it.
     pub air: usize,
+    /// Air components over the sections of the skin box, the labels joined
+    /// across section faces — the one summary of the block-wise flood that
+    /// crosses a border (ADR-0037 §2); the cost's bound is read against it.
+    pub labels: usize,
     /// Whether that flood reached the outer rim of the examined skin, which is
     /// where it was cut off rather than where it ended.
     pub cut_off: bool,
@@ -231,11 +235,15 @@ impl ExposureBinding {
             self.judged,
             if self.cut_off {
                 format!(
-                    "{} cell(s) of party air, cut off at the {SKIN}-cell skin",
-                    self.air
+                    "{} cell(s) of party air over {} section component label(s), cut off at the \
+                     {SKIN}-cell skin",
+                    self.air, self.labels
                 )
             } else {
-                format!("{} cell(s) of party air, wholly enclosed", self.air)
+                format!(
+                    "{} cell(s) of party air over {} section component label(s), wholly enclosed",
+                    self.air, self.labels
+                )
             },
             self.sides_seen,
             self.declared,
@@ -380,9 +388,10 @@ pub fn check(
     }
 
     // ---- the air the party can be in ---------------------------------------
-    let (air, cut_off) = party_air(&pieces, blocks, &ambient, reachable);
+    let (air, cut_off, labels) = party_air(&pieces, blocks, &ambient, reachable);
     binding.air = air.len();
     binding.cut_off = cut_off;
+    binding.labels = labels;
 
     // Every piece is walked, and every finding collected. Refusing at the first
     // one would tell an author to repair a face and hand them the next on the
@@ -682,11 +691,11 @@ fn party_air(
     blocks: &crate::compiler::blockstate::BlockMap,
     ambient: &Ambient,
     reachable: &BTreeSet<[i32; 3]>,
-) -> (crate::compiler::cellset::VisitSet, bool) {
+) -> (crate::compiler::cellset::VisitSet, bool, usize) {
     let (lo, hi) = skin_box(pieces);
     let mut seen = crate::compiler::cellset::VisitSet::within(lo, hi);
     if pieces.is_empty() {
-        return (seen, false);
+        return (seen, false, 0);
     }
     // The body, not the foot: a standing cell is where the feet are, and what a
     // player is IN is that cell and the one over their head. Seeding both is what
@@ -788,7 +797,10 @@ fn party_air(
             }
         }
     }
-    (seen, cut_off)
+    // The union-find's size: one entry per air component of a section, the
+    // summary that crossed the section faces (ADR-0037 §2's face labels).
+    let labels = labels.parent.len();
+    (seen, cut_off, labels)
 }
 
 /// **A flood's admission** (`party_air`): a cell holding no block (`solid`
@@ -1189,7 +1201,7 @@ mod tests {
                 ]);
             }
             let (by_cells, cut_cells) = party_air_by_cells(&pieces, &blocks, &ambient, &reachable);
-            let (by_section, cut_section) = party_air(&pieces, &blocks, &ambient, &reachable);
+            let (by_section, cut_section, _) = party_air(&pieces, &blocks, &ambient, &reachable);
             assert_eq!(
                 by_section.len(),
                 by_cells.len(),
@@ -1220,7 +1232,7 @@ mod tests {
                 blocks.remove(&[c[0], c[1] + 1, c[2]]);
                 let seeds: BTreeSet<[i32; 3]> = [c].into_iter().collect();
                 let (a, ca) = party_air_by_cells(&pieces, &blocks, &ambient, &seeds);
-                let (b, cb) = party_air(&pieces, &blocks, &ambient, &seeds);
+                let (b, cb, _) = party_air(&pieces, &blocks, &ambient, &seeds);
                 assert!(
                     !a.is_empty(),
                     "case {case}: a seed in a piece's air floods nothing"

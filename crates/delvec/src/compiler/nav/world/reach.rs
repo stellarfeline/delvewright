@@ -390,6 +390,21 @@ pub(crate) fn lists_floor_and_bound(height: usize, edges: usize) -> (usize, usiz
     )
 }
 
+/// The most a reach chunk of `states` nodes holding `items` edges in all
+/// decodes to ([`chunks::decoded_bound`]): the cost's bound over the rest
+/// census (`compiler::cost`).
+pub(crate) fn lists_bound_of(states: usize, items: usize) -> usize {
+    chunks::decoded_bound(states, items)
+}
+
+/// **How far a launch lands from its cell, horizontally, in columns**: the
+/// farthest arc flown is a sprint jump at `3.63` cells and a fall drifts under
+/// `4.5` ([`WINDOW_MARGIN`]), so a landing cell lies within this many columns
+/// of the launch cell in `x` and in `z`. The cost's envelope (`compiler::cost`):
+/// a node's distinct edges are at most the rest cells within it.
+pub(crate) const LAUNCH_REACH: i32 = 5;
+const _: () = assert!(LAUNCH_REACH <= WINDOW_MARGIN);
+
 /// The snapshot's need for a window `height` cells tall ([`pages::need_for`]).
 pub(crate) fn snapshot_need_for(height: usize) -> usize {
     pages::need_for(height, chunks::SIDE as usize)
@@ -1809,11 +1824,16 @@ pub fn persist_reach_cache() {
             pages::need(),
             hits + misses
         );
-        let (portals, faces) = chunks::portals();
+        let (portals, faces, most) = chunks::portals();
         eprintln!(
             "reach portals: {portals} portal edge(s) over {faces} face cell(s), summed over the \
-             closures taken, at a chunk side of {} (ADR-0037 §2)",
+             closures taken, the most in one closure {most}, at a chunk side of {} (ADR-0037 §2)",
             chunks::side_here()
+        );
+        eprintln!(
+            "reach graphs: {} graph(s) memoised over the run, one per distinct world and \
+             parameters (ADR-0037 §3's configurations)",
+            graphs_memoised()
         );
     }
     let (variants, bytes) = bank::census_all();
@@ -1831,6 +1851,17 @@ pub fn persist_reach_cache() {
 /// any reach is asked.
 pub fn default_reach_cache(dir: std::path::PathBuf) {
     persist::default_dir(dir);
+}
+
+/// Every graph memoised in the process, by its world's fingerprint and its
+/// parameters' key ([`World::graph_memo`]).
+type Graphs = Mutex<HashMap<([u8; 32], String), Arc<OnceLock<Arc<GraphMemo>>>>>;
+static GRAPHS: OnceLock<Graphs> = OnceLock::new();
+
+/// How many graphs the process has memoised: one per distinct (world,
+/// parameters) a closure was asked of — the configurations, as built.
+fn graphs_memoised() -> usize {
+    GRAPHS.get().map_or(0, |m| m.lock().map_or(0, |g| g.len()))
 }
 
 /// The memo of one world's graph: its snapshot and every node expanded so far.
@@ -2236,14 +2267,13 @@ impl World {
         // building a copy of its own — a copy that would be thrown away, and
         // would have been made the next graph's lineage with none of the
         // nodes the kept one goes on to fly.
-        type Graphs = Mutex<HashMap<([u8; 32], String), Arc<OnceLock<Arc<GraphMemo>>>>>;
-        static MEMO: OnceLock<Graphs> = OnceLock::new();
         let key = (
             self.fingerprint(),
             format!("{}:{}", params.key(), chunks::side_here()),
         );
         let cell = Arc::clone(
-            MEMO.get_or_init(|| Mutex::new(HashMap::new()))
+            GRAPHS
+                .get_or_init(|| Mutex::new(HashMap::new()))
                 .lock()
                 .expect("memo")
                 .entry(key)

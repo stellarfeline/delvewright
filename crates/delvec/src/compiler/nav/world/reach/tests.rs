@@ -812,3 +812,171 @@ fn a_taller_block_keeps_the_window() {
     assert!(Arc::ptr_eq(base, &ma));
     assert_eq!(diff, &vec![[3, 4, 14]]);
 }
+
+/// **The cost's bounds hold over the graphs built** (ADR-0037 §3): on the open
+/// floor, the Bell yard, the jetty (an ocean), the garden and a ladder cliff,
+/// at chunk sides of 32 and 16, the closure's states are at most the census's
+/// candidates, every chunk's lists decode to at most the census's bound for a
+/// chunk, and the portal edges joined are at most its bound — each world's
+/// store read by the census as the cost reads it, over the window the cost
+/// takes. The factor of each bound over the measure is printed.
+#[test]
+fn the_costs_bounds_hold_over_the_graphs_built() {
+    use crate::compiler::blockstate::{BlockMap, BlockState};
+    use crate::compiler::cost::RestCensus;
+    fn store_of(b: &Build) -> BlockMap {
+        let mut m = BlockMap::new();
+        for c in &b.solid {
+            m.insert(*c, BlockState::new("minecraft:stone"));
+        }
+        for c in &b.tall {
+            m.insert(*c, BlockState::new("minecraft:oak_fence"));
+        }
+        for c in &b.water {
+            m.insert(*c, BlockState::new("minecraft:water"));
+        }
+        m
+    }
+    let mut open = Build::default();
+    open.fill([0, 0, 0], [11, 0, 11]);
+    let mut jetty = Build::default();
+    jetty.fill([0, 64, 0], [9, 64, 4]);
+    for x in 0..=9 {
+        jetty.tall.insert([x, 65, 0]);
+        jetty.tall.insert([x, 65, 4]);
+    }
+    for z in 1..=3 {
+        jetty.tall.insert([9, 65, z]);
+        jetty.tall.insert([0, 65, z]);
+    }
+    jetty.fill([4, 65, 1], [4, 65, 1]);
+    let mut garden_b = Build::default();
+    garden_b.fill([0, 0, 0], [10, 0, 10]);
+    for x in 3..=6 {
+        for z in 3..=6 {
+            if x == 3 || x == 6 || z == 3 || z == 6 {
+                garden_b.tall.insert([x, 1, z]);
+            }
+        }
+    }
+    garden_b.fill([2, 1, 4], [2, 1, 4]);
+    garden_b.fill([5, 1, 5], [5, 1, 5]);
+    let mut cliff: Vec<([i32; 3], &str)> = Vec::new();
+    for x in 0..=6 {
+        for z in 0..=2 {
+            cliff.push(([x, 64, z], "minecraft:stone"));
+            if x >= 3 {
+                for y in 65..=68 {
+                    cliff.push(([x, y, z], "minecraft:stone"));
+                }
+            }
+        }
+    }
+    for y in 65..=68 {
+        cliff.push(([2, y, 1], "minecraft:ladder[facing=west]"));
+    }
+    let mut cliff_store = BlockMap::new();
+    for (c, n) in &cliff {
+        cliff_store.insert(*c, BlockState::new(n));
+    }
+    let sea = Sea {
+        level: 62,
+        floor_top: 54,
+    };
+    let band = (sea.floor_top, sea.level);
+    // Name, world, its store, its sea band, the root.
+    type Case = (&'static str, World, BlockMap, Option<(i32, i32)>, [i32; 3]);
+    let worlds: Vec<Case> = vec![
+        (
+            "the open floor",
+            open.world(Ambient::Void, Vec::new()),
+            store_of(&open),
+            None,
+            [5, 1, 5],
+        ),
+        (
+            "the Bell yard",
+            bell_yard(),
+            store_of(&bell_yard_build()),
+            None,
+            [5, 1, 5],
+        ),
+        (
+            "the jetty",
+            jetty.world(
+                Ambient::Ocean(sea),
+                vec![("prefab/jetty".to_string(), ([0, 64, 0], [9, 66, 4]))],
+            ),
+            store_of(&jetty),
+            Some(band),
+            [2, 65, 2],
+        ),
+        ("the garden", garden(), store_of(&garden_b), None, [1, 1, 1]),
+        (
+            "the ladder cliff",
+            crate::compiler::nav::testkit::blocks_world(&cliff),
+            cliff_store,
+            None,
+            [0, 65, 1],
+        ),
+    ];
+    let edges = edges_per_node_at_most();
+    let (mut bound_states, mut bound_lists, mut bound_portals) = (0usize, 0usize, 0u64);
+    for (name, w, store, sea, root) in &worlds {
+        let (slo, shi) = store.section_bounds().expect("a store with cells");
+        let window = window_box(slo, shi, *sea);
+        for side in [32, 16] {
+            let census = RestCensus::of(store, window, *sea, side, LAUNCH_REACH, edges);
+            chunks::at_side(side, || {
+                let r = w.body_reach(&[*root]);
+                let states = r.states.len();
+                assert!(
+                    states <= census.states_at_most(),
+                    "{name} (side {side}): {states} states over the census's {}",
+                    census.states_at_most()
+                );
+                let key = |c: [i32; 3]| (c[0].div_euclid(side), c[2].div_euclid(side));
+                let mut per_chunk: BTreeMap<(i32, i32), (usize, usize)> = BTreeMap::new();
+                for c in r.states.keys() {
+                    let e = per_chunk.entry(key(c)).or_insert((0, 0));
+                    e.0 += 1;
+                    e.1 += r.succ(c).len();
+                }
+                let largest = per_chunk
+                    .values()
+                    .map(|(n, i)| lists_bound_of(*n, *i))
+                    .max()
+                    .unwrap_or(0);
+                assert!(
+                    largest <= census.lists_chunk_bound,
+                    "{name} (side {side}): a chunk decodes to {largest} over the census's {}",
+                    census.lists_chunk_bound
+                );
+                assert!(
+                    r.portals[0] <= census.portal_edges_at_most as u64,
+                    "{name} (side {side}): {} portal edge(s) over the census's {}",
+                    r.portals[0],
+                    census.portal_edges_at_most
+                );
+                eprintln!(
+                    "{name} (side {side}): states {states} <= {} (x{:.1}); largest chunk {largest} <= \
+                     {} (x{:.1}); portals {} <= {} (x{:.1})",
+                    census.states_at_most(),
+                    census.states_at_most() as f64 / states.max(1) as f64,
+                    census.lists_chunk_bound,
+                    census.lists_chunk_bound as f64 / largest.max(1) as f64,
+                    r.portals[0],
+                    census.portal_edges_at_most,
+                    census.portal_edges_at_most as f64 / r.portals[0].max(1) as f64
+                );
+                bound_states += states;
+                bound_lists += largest;
+                bound_portals += r.portals[0];
+            });
+        }
+    }
+    assert!(
+        bound_states > 0 && bound_lists > 0 && bound_portals > 0,
+        "the worlds bind nothing"
+    );
+}

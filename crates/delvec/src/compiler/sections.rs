@@ -75,12 +75,24 @@ struct Section<V> {
 }
 
 impl<V: Clone> Section<V> {
-    /// A copy of this section for a store whose clock is `tally`.
-    fn duplicate(&self, tally: &Arc<Tally>) -> Self {
+    /// A copy of this section sharing its index array: a copy of a store costs
+    /// its palettes and its section index, and an array is copied when one of
+    /// the two writes it ([`Section::own`]).
+    fn share(&self) -> Self {
         Section {
             palette: self.palette.clone(),
-            idx: self.idx.duplicate(tally),
+            idx: Arc::clone(&self.idx),
             count: self.count,
+        }
+    }
+
+    /// Make this section's index array its own before a write: an array a
+    /// copy shares is duplicated for a store whose clock is `tally` — its own
+    /// array when resident, the same record when given up — so neither store
+    /// sees the other's writes.
+    fn own(&mut self, tally: &Arc<Tally>) {
+        if Arc::strong_count(&self.idx) > 1 {
+            self.idx = self.idx.duplicate(tally);
         }
     }
 }
@@ -776,15 +788,15 @@ impl<V> Default for SectionMap<V> {
 }
 
 impl<V: Clone> Clone for SectionMap<V> {
+    /// A copy sharing every index array with the original until one of the two
+    /// writes it (ADR-0037 §2): a whole-world copy costs its palettes and its
+    /// section index, and the arrays a copy's sparse writes touch, never the
+    /// map. An array shared this way keeps the original store's clock until it
+    /// is written.
     fn clone(&self) -> Self {
-        let tally: Arc<Tally> = Arc::default();
         SectionMap {
-            sections: self
-                .sections
-                .iter()
-                .map(|(k, s)| (*k, s.duplicate(&tally)))
-                .collect(),
-            tally,
+            sections: self.sections.iter().map(|(k, s)| (*k, s.share())).collect(),
+            tally: Arc::default(),
             len: self.len,
         }
     }
@@ -820,6 +832,7 @@ impl<V: Copy + Eq> SectionMap<V> {
         if before == Some(v) {
             return before;
         }
+        s.own(tally);
         let i = s.index_of(v);
         s.idx.with_mut(|idx| idx.set(at, i));
         if before.is_none() {
@@ -835,6 +848,7 @@ impl<V: Copy + Eq> SectionMap<V> {
         let s = self.sections.get_mut(&key)?;
         let at = local_of(c);
         let before = s.get(at).copied()?;
+        s.own(&self.tally);
         s.idx.with_mut(|idx| idx.set(at, 0));
         s.count -= 1;
         self.len -= 1;
@@ -1550,18 +1564,30 @@ mod tests {
             }
             // A copy shares the records given up, which it never held: its
             // first read of each is cold too.
+            // A copy shares the arrays, so its walk reads them back on the
+            // original's clock, cold as the original's own walk would be, and
+            // the copy owns no array until it writes one.
+            let (before_read, before_thrashed) = s.paging();
             let copy = s.clone();
             for k in 0..n {
                 assert_eq!(copy.get(&[k * 16, 1, 0]), Some(&4));
             }
-            let (copy_read, copy_thrashed) = copy.paging();
+            let (after_read, after_thrashed) = s.paging();
             assert!(
-                copy_read > 0,
-                "the copy read no array back: the case binds nothing"
+                after_read > before_read,
+                "the copy's walk read no array back: the case binds nothing"
             );
             assert_eq!(
-                copy_thrashed, 0,
-                "{copy_thrashed} of the copy's {copy_read} first reads were judged thrashing"
+                after_thrashed,
+                before_thrashed,
+                "{} of the copy's {} reads were judged thrashing",
+                after_thrashed - before_thrashed,
+                after_read - before_read
+            );
+            assert_eq!(
+                copy.paging(),
+                (0, 0),
+                "a copy owns no array until it writes"
             );
             s.paging()
         });
@@ -1654,5 +1680,51 @@ mod tests {
                 "round {round}: the section columns"
             );
         }
+    }
+
+    /// **A copy shares its arrays until one side writes**: the copy's sections
+    /// hold the original's arrays; a write into the copy gives that one section
+    /// its own array and no other, the original reads as before; a write into
+    /// the original after that touches no array the copy holds.
+    #[test]
+    fn a_copy_shares_its_arrays_until_one_side_writes() {
+        let mut a: SectionMap<u32> = SectionMap::new();
+        for i in 0..10 {
+            a.insert([i * 16, 0, 0], 1);
+            a.insert([i * 16 + 3, 5, 7], 2);
+        }
+        let mut b = a.clone();
+        let shared = |a: &SectionMap<u32>, b: &SectionMap<u32>| {
+            a.sections
+                .iter()
+                .filter(|(k, s)| {
+                    b.sections
+                        .get(*k)
+                        .is_some_and(|t| Arc::ptr_eq(&s.idx, &t.idx))
+                })
+                .count()
+        };
+        assert_eq!(shared(&a, &b), 10, "every array shared after the copy");
+        b.insert([3, 5, 7], 9);
+        assert_eq!(shared(&a, &b), 9, "the written section has its own array");
+        assert_eq!(a.get(&[3, 5, 7]), Some(&2), "the original reads as before");
+        assert_eq!(b.get(&[3, 5, 7]), Some(&9));
+        b.remove(&[16, 0, 0]);
+        assert_eq!(shared(&a, &b), 8);
+        assert_eq!(a.get(&[16, 0, 0]), Some(&1));
+        assert_eq!(b.get(&[16, 0, 0]), None);
+        a.insert([32, 0, 0], 7);
+        assert_eq!(
+            shared(&a, &b),
+            7,
+            "a write into the original parts that section"
+        );
+        assert_eq!(b.get(&[32, 0, 0]), Some(&1), "the copy reads as before");
+        assert_eq!(a.get(&[32, 0, 0]), Some(&7));
+        assert_eq!(
+            a.iter().count() + 1,
+            b.iter().count() + 2,
+            "the copy lost one cell, the original gained none"
+        );
     }
 }

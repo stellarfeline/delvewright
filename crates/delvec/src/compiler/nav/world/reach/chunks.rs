@@ -78,9 +78,15 @@ pub(super) fn floor() -> usize {
 /// The most a chunk of `states` nodes with `edges` edges each decodes to:
 /// each node an entry and its edges as items ([`ENTRY`], the edge's size).
 pub(super) fn chunk_bound(states: usize, edges: usize) -> usize {
-    states.saturating_mul(
-        ENTRY.saturating_add(edges.saturating_mul(std::mem::size_of::<super::Edge>())),
-    )
+    decoded_bound(states, states.saturating_mul(edges))
+}
+
+/// The most a chunk of `states` nodes holding `items` edges in all decodes to:
+/// each node an entry ([`ENTRY`]) and each edge an item (the edge's size).
+pub(super) fn decoded_bound(states: usize, items: usize) -> usize {
+    states
+        .saturating_mul(ENTRY)
+        .saturating_add(items.saturating_mul(std::mem::size_of::<super::Edge>()))
 }
 
 /// Note a chunk decoded to `bytes`: the largest, and the need, grow with it.
@@ -210,19 +216,25 @@ impl Visits {
         ];
         PORTALS.fetch_add(out[0], Ordering::Relaxed);
         FACES.fetch_add(out[1], Ordering::Relaxed);
+        PORTALS_MAX.fetch_max(out[0], Ordering::Relaxed);
         out
     }
 }
 
 static PORTALS: AtomicU64 = AtomicU64::new(0);
 static FACES: AtomicU64 = AtomicU64::new(0);
+/// The most portal edges one closure joined: the figure the cost's bound is
+/// read against (`compiler::cost`), which is per closure.
+static PORTALS_MAX: AtomicU64 = AtomicU64::new(0);
 
 /// The run's portal edges and the face cells they land on, summed over the
-/// closures taken: what crosses a chunk border (ADR-0037 §2).
-pub(super) fn portals() -> (u64, u64) {
+/// closures taken, and the most portal edges one closure joined: what crosses
+/// a chunk border (ADR-0037 §2).
+pub(super) fn portals() -> (u64, u64, u64) {
     (
         PORTALS.load(Ordering::Relaxed),
         FACES.load(Ordering::Relaxed),
+        PORTALS_MAX.load(Ordering::Relaxed),
     )
 }
 
