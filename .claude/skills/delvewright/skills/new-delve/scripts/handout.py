@@ -79,24 +79,28 @@ ENGINE_REFERENCES = (
     ("docs/reference/prefab-procedure.md", "the procedure a piece is made by; §3 the program, §4 the gates, §5 looking at it"),
 )
 
-# What each step of the loop costs, measured with `/usr/bin/time -l` on a
-# 16 GB Apple M2 Pro with `delvec` 1.15.0 built at engine `4e8ff4e01`, on the
-# 95-place town (content `demo/authoring-cost` at `7fb8a92`, place
-# `node/fishmonger`): the place's own steps are seconds; the two that
-# assemble the whole scale with it. The check keeps the reach graph's node
-# bank under the campaign's `.out/`: a check after an earlier check or commit
-# takes the "again" figure, whatever the program moved, doors included; the
-# first check a `delvec` runs takes the "first" one. Stated where the handout
-# tells the author to loop, so the expensive check is run when the cheap
-# steps are clean, not after every edit.
+# What each step of the loop costs: wall time and peak memory footprint from
+# `/usr/bin/time -l` on a 16 GB Apple M2 Pro, release `delvec` 1.15.0 built at
+# engine `81440606b`, on the 96-place town (content `demo/authoring-cost-3` at
+# `a60b0ad`, a new place `node/cottages-3` drawn on the starter's `Model`):
+# starter 0.05 s, the drawn generator 0.62 s, expand 0.58 s and 0.25 GB,
+# render 0.89 s and 0.36 GB; `frames --campaign` 117-122 s and 9.5-9.6 GB on
+# a quiet machine; `detail --check` 182 s and 12.9 GB over the node bank the
+# orchestrator's last commit left, 318 s and 13.9 GB with no bank. The check
+# keeps the reach graph's node bank under the campaign's `.out/`, in files
+# named for the `delvec` binary that wrote them: every check after the first
+# `detail` run with this binary on this campaign, the orchestrator's commits
+# included, takes the short figure; only the first one takes the long one.
+# Stated where the handout tells the author to loop, so the expensive check is
+# run when the cheap steps are clean, not after every edit.
 COST = {
-    "generator": "about 1.5 s",
-    "expand": "about 1.5 s and 0.4 GB",
-    "render": "about 1.5 s and 0.4 GB",
+    "generator": "about 1 s",
+    "expand": "about 0.6 s and 0.3 GB",
+    "render": "about 1 s and 0.4 GB",
     "frames": "about 2 min and 10 GB",
-    "check": "about 5.5 min and 15 GB the first time, about 3 min and 13 GB again",
+    "check": "about 3 min and 13 GB, or about 5.5 min and 14 GB the first time `detail` runs on this campaign with this `delvec`",
 }
-COST_INSTRUMENT = "measured on a 16 GB machine over a 95-place town; the last two grow with the whole"
+COST_INSTRUMENT = "measured on a 16 GB machine over a 96-place town; the last two grow with the whole"
 
 # The starter generator copied beside every handout (spec-0122 §6.3): an
 # empty-but-correct program for any allocation, so an author starts from a
@@ -580,7 +584,7 @@ def render(
     w(f"3. **Draw** — your generator, {COST['generator']}: write it at `{generator}`; it imports the starter from `$DELVEWRIGHT_SKILL/scripts` (never a copy) and draws the place into a `Model` — every building, yard and piece of life as cells in piece-local coordinates, each part's columns named with `Model.part`, an owed name stood with `Model.mark` where you want it (the starter stands any you leave). The starter's section *A building drawn as cells* is the template. Run it as step 1, adding `--delvec \"{delvec}\"` — **a drawn model needs a `delvec` binary on the machine that runs the generator**, because `run` asks it what the drawing does and refuses before writing when it cannot: the starter asks the engine (`delvec grammar survey`) where a body stands and what it reaches from your ways in, and claims every cell from the answer — the floor a body reaches into the part it stands in, the floor no body reaches (a roof, a wall head, a sill) and the air sealed over it as `unwalked`, a walk edge between two parts only where a body crosses (with its `rise` where their floors differ), a part none of whose floor a body reaches declared seen and never entered. **You never claim a cell or write an edge by hand.** Before it writes anything it refuses, naming the block and the cell, every block the server would drop (a lantern hung under a slab, a flower off soil), every block the palette refuses (the list below), a block state the pinned game does not have or one that leaves a property out — build states with its constructors (`stairs`, `slab`, `door`, `trapdoor`, `fence`, …) and roofs with `Model.roof` — and an opening with something standing behind it. It prints each part's claimed columns against the band `DW1074` judges, and every column you named for a part that the claim leaves out, with why: a part out of band is seen here, before the check.")
     w(f"4. **Look at the piece alone** — `grammar expand`, {COST['expand']}, then `render piece`, {COST['render']}: `{delvec_p} grammar expand --file \"{program}\" --region {ex}x{ey}x{ez} -o \"{work}/expand\"` (your `handed/…` defaults are the handed values, so no `--param` is needed; the piece's files are named for the program's filename up to its first `.`, so a working copy `{stem}.json.new` writes `{stem}.nbt`, and `--id` names them otherwise), then `{delvec_p} render piece \"{work}/expand/{stem}.nbt\" -o \"{work}/render\"` with a `--view` of your own — `face=up,cutaway=<y>` takes every course from piece-local `y` up off, so `cutaway={a['datum_y'] + 3}` shows the rooms under a roof; `cutaway=true` takes off only the top course that holds a block. **A `face=up` picture has south at its top and west at its right** (the camera looks straight down facing south), so east is on its left.")
     w(f"5. **Look at it in its surroundings** — `frames --campaign`, {COST['frames']}: `\"{delvec}\" --prefabs \"{prefabs}\" frames --campaign \"{campaign_dir}\" --program {place} --at {place} -o \"{work}/look/{stem}.png\"` draws your program as it stands in place of the committed piece, committed or not and its gates passing or not, the camera outside the place's box on bearing `--orbit` — degrees, 0 standing due south of the place looking north, 90 due west looking east, 180 due north, 270 due east: the bearing turns clockwise seen from above — looking at it whole with its neighbours. To stand the camera yourself, give `--camera x,y,z,yaw,pitch[,fov]` with `--frame <place>`: x, y and z are then read in that place's own frame — this place's piece-local coordinates (`--frame {place}`), or a neighbour's, whose frame `\"{delvec}\" allocation \"{campaign_dir}\" <neighbour>` prints — never world arithmetic; yaw 0 faces south (+z), 90 west, 180 north, 270 east, and a positive pitch looks down.")
-    w(f"6. **Check** — `detail --check`, {COST['check']}: `{delvec_p} detail --check \"{campaign_dir}\" {place}`, the one verb that judges a place. Run it when steps 3 to 5 are clean, and again after you repair what it named. A check after an earlier one takes the shorter figure while your doors, trapdoors and climbables stay where they were (the engine keeps what it worked out under the campaign's `.out/`). Exit 0 is your finished state.")
+    w(f"6. **Check** — `detail --check`, {COST['check']}: `{delvec_p} detail --check \"{campaign_dir}\" {place}`, the one verb that judges a place. Run it when steps 3 to 5 are clean, and again after you repair what it named. The engine keeps what it worked out under the campaign's `.out/`, so once the orchestrator has committed a place with this `delvec`, your first check takes the shorter figure too. Exit 0 is your finished state.")
     w("")
     w("**Nothing outside this handout's reading list is needed, and nothing outside it is read**: not the engine's source, not the engine's gallery, not another campaign. Everything the starter does not already do is in the references listed below.")
     w("")
