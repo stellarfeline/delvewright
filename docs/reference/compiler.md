@@ -72,12 +72,21 @@ Methodology; CI enforces the DW-code subset — see `tools/ci/check-dw-codes.py`
   re-verification in pass 10. Its survey reads a whole reach graph or refuses
   `DW1042` (`light::surveyed_region`): a closure that passed its budget is
   partial and is never surveyed.
-- The light field itself (`compiler::light`) is **dense**: over the assembled
-  AABB plus the layer of open air above it (the cell a body stands in on the
-  tallest block, which reads the sky and block light it really has), each cell is one byte holding whether light passes it, whether the sky is
-  above it and what it emits, resolved from its block id once. Sky exposure is one
-  top-down sweep per column; the frontier drains brightest-first, so each cell is
-  relaxed once. The greedy relight loop floods once and **extends** the field per
+- The light field itself (`compiler::light`) is **held by section** (ADR-0037
+  §2): over the assembled AABB plus the layer of open air above it (the cell a
+  body stands in on the tallest block, which reads the sky and block light it
+  really has), each cell is one byte holding whether light passes it, whether
+  the sky is above it and what it emits, resolved from its block id once, and
+  one byte of light — kept in 16 × 16 × 16 sections, each a single byte where
+  every cell of it reads alike (the open sky, the dark underground, the middle
+  of a lit room) and 4,096 bytes otherwise. Sky exposure is one top-down sweep
+  per column of sections. The flood visits one section at a time over a dense
+  scratch of it and the ring of its neighbours' cells, draining brightest-first;
+  a visit that brightens a neighbour's face cells queues that neighbour, and
+  the queue runs to the fixpoint, which is the one whole-box field whatever the
+  order (the field is the pointwise maximum over every seed of `seed −
+  distance`); `light::tests::a_field_is_held_by_section_and_floods_as_the_reference_does`
+  holds it to the cell-by-cell reference flood across sections. The greedy relight loop floods once and **extends** the field per
   fixture — a fixture written into a cell whose passability it does not change,
   emitting at least as much as what it replaced, can only make the field
   brighter, so the new field is the old one with that seed flooded into it; a

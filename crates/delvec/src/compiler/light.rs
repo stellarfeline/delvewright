@@ -658,10 +658,12 @@ impl LightArrays {
     /// The sky light at a cell (15 above the box, where nothing stands; 0
     /// beside or under it).
     pub fn sky(&self, c: [i32; 3]) -> u8 {
-        match self.sky.index(c) {
-            Some(i) => self.sky.light[i],
-            None if c[1] >= self.sky.min[1] + self.sky.dim[1] as i32 - 2 => 15,
-            None => 0,
+        if self.sky.holds(c) {
+            self.sky.light_at(c)
+        } else if c[1] > self.sky.max[1] {
+            15
+        } else {
+            0
         }
     }
 
@@ -717,20 +719,97 @@ const P_EMISSION: u8 = 0b0000_1111;
 /// permanently non-passing: light does not flow out of the field box, and
 /// that is expressed as data, so the frontier walk needs no bounds test at all.
 struct LightField {
-    /// The field box's lower corner (the cell at padded index `[1, 1, 1]`).
+    /// The field box, inclusive: every cell outside it is non-passing and dark.
     min: [i32; 3],
-    /// Padded dimensions of the field box, `dim[a] = max[a] - min[a] + 3`.
-    dim: [usize; 3],
-    /// One step along z, `dim[0]`. (One step along x is 1.)
-    stride_z: usize,
-    /// One step along y, `dim[0] * dim[2]`.
-    stride_y: usize,
+    max: [i32; 3],
     /// Effective sky light at a sky-open cell, as [`LightModel::flood`] takes it.
     sky: u8,
-    /// Per padded cell: [`P_PASSES`] | [`P_SKY`] | [`P_EMISSION`].
-    prop: Vec<u8>,
-    /// Per padded cell: the flooded light value.
-    light: Vec<u8>,
+    /// Whether a block's emission seeds the flood (`false` for a sky-only field).
+    emit: bool,
+    /// The section grid covering the box: `slo` is the section of `min`, and
+    /// `sdim` counts sections along each axis.
+    slo: [i32; 3],
+    sdim: [usize; 3],
+    /// Per section: [`P_PASSES`] | [`P_SKY`] | [`P_EMISSION`] per cell, a
+    /// uniform byte where every cell of the section reads alike.
+    prop: Vec<Sec>,
+    /// Per section: the flooded light value per cell, likewise.
+    light: Vec<Sec>,
+}
+
+/// One section of a per-cell byte field (ADR-0037 §2): a single byte where
+/// every cell reads alike — the sky over open ground, the dark under it, the
+/// air of a lit room's middle — and 4,096 bytes otherwise.
+#[derive(Clone, PartialEq, Eq, Debug)]
+enum Sec {
+    Uniform(u8),
+    Dense(Box<[u8; SEC_CELLS]>),
+}
+
+/// A section's side, in cells; its cells; the padded scratch side a visit
+/// floods (the section and one ring of its neighbours' cells).
+const SEC_SIDE: usize = 16;
+const SEC_CELLS: usize = SEC_SIDE * SEC_SIDE * SEC_SIDE;
+const PAD: usize = SEC_SIDE + 2;
+const PAD_CELLS: usize = PAD * PAD * PAD;
+/// Scratch strides: `x` by `PAD * PAD`, `y` by `PAD`, `z` by 1.
+const SX: usize = PAD * PAD;
+const SY: usize = PAD;
+
+impl Sec {
+    #[inline]
+    fn get(&self, at: usize) -> u8 {
+        match self {
+            Sec::Uniform(v) => *v,
+            Sec::Dense(a) => a[at],
+        }
+    }
+
+    /// The section as a dense array, materialised from a uniform one.
+    fn dense(&mut self) -> &mut [u8; SEC_CELLS] {
+        if let Sec::Uniform(v) = *self {
+            *self = Sec::Dense(Box::new([v; SEC_CELLS]));
+        }
+        match self {
+            Sec::Dense(a) => a,
+            Sec::Uniform(_) => unreachable!("materialised above"),
+        }
+    }
+
+    /// Fold a dense section every cell of which reads alike back to one byte.
+    fn compact(&mut self) {
+        if let Sec::Dense(a) = self {
+            let v = a[0];
+            if a.iter().all(|b| *b == v) {
+                *self = Sec::Uniform(v);
+            }
+        }
+    }
+
+    /// Bytes this section holds.
+    #[cfg(test)]
+    fn bytes(&self) -> usize {
+        match self {
+            Sec::Uniform(_) => 1,
+            Sec::Dense(_) => SEC_CELLS,
+        }
+    }
+}
+
+/// A cell's index within its section: `x` leading, then `y`, then `z`.
+#[inline]
+fn local(c: [i32; 3]) -> usize {
+    let lx = c[0].rem_euclid(SEC_SIDE as i32) as usize;
+    let ly = c[1].rem_euclid(SEC_SIDE as i32) as usize;
+    let lz = c[2].rem_euclid(SEC_SIDE as i32) as usize;
+    (lx * SEC_SIDE + ly) * SEC_SIDE + lz
+}
+
+/// The padded scratch index of local coordinates `(lx, ly, lz)`, each in
+/// `-1..=16` (`-1` and `16` are the neighbours' ring).
+#[inline]
+fn pad_index(lx: isize, ly: isize, lz: isize) -> usize {
+    ((lx + 1) as usize) * SX + ((ly + 1) as usize) * SY + (lz + 1) as usize
 }
 
 impl LightField {
@@ -756,25 +835,48 @@ impl LightField {
         emit: bool,
         blocks: impl Iterator<Item = ([i32; 3], &'c str)>,
     ) -> Self {
-        let dim = [
-            (max[0] - min[0]) as usize + 3,
-            (max[1] - min[1]) as usize + 3,
-            (max[2] - min[2]) as usize + 3,
+        let side = SEC_SIDE as i32;
+        let slo = [
+            min[0].div_euclid(side),
+            min[1].div_euclid(side),
+            min[2].div_euclid(side),
         ];
-        let cells = dim[0] * dim[1] * dim[2];
+        let shi = [
+            max[0].div_euclid(side),
+            max[1].div_euclid(side),
+            max[2].div_euclid(side),
+        ];
+        let sdim = [0, 1, 2].map(|a| (shi[a] - slo[a] + 1) as usize);
+        let n = sdim[0] * sdim[1] * sdim[2];
         let mut f = LightField {
             min,
-            dim,
-            stride_z: dim[0],
-            stride_y: dim[0] * dim[2],
+            max,
             sky: effective_sky,
-            // Every interior cell starts as air — passing, emitting nothing. The
-            // padding is overwritten to 0 (non-passing) right after.
-            prop: vec![P_PASSES; cells],
-            light: vec![0; cells],
+            emit,
+            slo,
+            sdim,
+            // Every cell starts as air — passing, emitting nothing; the sky
+            // flag is computed below.
+            prop: vec![Sec::Uniform(P_PASSES); n],
+            light: vec![Sec::Uniform(0); n],
         };
-        f.seal_border();
-
+        // A section the box cuts: its cells outside the box are non-passing.
+        for s in 0..n {
+            let (lo, hi) = f.section_box(s);
+            if (0..3).any(|a| lo[a] < min[a] || hi[a] > max[a]) {
+                let d = f.prop[s].dense();
+                for x in lo[0]..=hi[0] {
+                    for y in lo[1]..=hi[1] {
+                        for z in lo[2]..=hi[2] {
+                            let c = [x, y, z];
+                            if (0..3).any(|a| c[a] < min[a] || c[a] > max[a]) {
+                                d[local(c)] = 0;
+                            }
+                        }
+                    }
+                }
+            }
+        }
         // Resolve each DISTINCT block id once. The assembled world is overwhelmingly
         // repeated ids, and `emission`/`passes_light` are a pair of string matches.
         // Keyed by the text's address and length: one interned state is one
@@ -783,53 +885,73 @@ impl LightField {
         let mut resolved: std::collections::HashMap<(usize, usize), u8> =
             std::collections::HashMap::new();
         for (c, name) in blocks {
-            let Some(i) = f.index(c) else { continue };
+            let Some(s) = f.section_of(c) else { continue };
             let packed = *resolved
                 .entry((name.as_ptr() as usize, name.len()))
                 .or_insert_with(|| {
                     let p = Self::pack(name);
                     if emit { p } else { p & !P_EMISSION }
                 });
-            f.prop[i] = packed;
+            f.prop[s].dense()[local(c)] = packed;
         }
-
+        for s in 0..n {
+            f.prop[s].compact();
+        }
         f.compute_sky();
         f.flood();
         f
     }
 
-    /// The padding is non-passing, which is the AABB test as data.
-    fn seal_border(&mut self) {
-        let (nx, ny, nz) = (self.dim[0], self.dim[1], self.dim[2]);
-        for y in 0..ny {
-            for z in 0..nz {
-                let row = y * self.stride_y + z * self.stride_z;
-                if y == 0 || y == ny - 1 || z == 0 || z == nz - 1 {
-                    self.prop[row..row + nx].fill(0);
-                } else {
-                    self.prop[row] = 0;
-                    self.prop[row + nx - 1] = 0;
-                }
-            }
+    /// The section index of `c`, or `None` outside the field box.
+    #[inline]
+    fn section_of(&self, c: [i32; 3]) -> Option<usize> {
+        if (0..3).any(|a| c[a] < self.min[a] || c[a] > self.max[a]) {
+            return None;
         }
+        let side = SEC_SIDE as i32;
+        let sx = (c[0].div_euclid(side) - self.slo[0]) as usize;
+        let sy = (c[1].div_euclid(side) - self.slo[1]) as usize;
+        let sz = (c[2].div_euclid(side) - self.slo[2]) as usize;
+        Some((sx * self.sdim[1] + sy) * self.sdim[2] + sz)
     }
 
-    /// The padded index of a world cell, or `None` when it is outside the field box.
-    fn index(&self, c: [i32; 3]) -> Option<usize> {
-        let mut off = [0usize; 3];
-        for a in 0..3 {
-            // `+ 1` for the border; widened so a cell far outside the AABB is a
-            // `None` rather than an overflow.
-            let d = i64::from(c[a]) - i64::from(self.min[a]) + 1;
-            if d < 1 || d >= self.dim[a] as i64 - 1 {
-                return None;
-            }
-            off[a] = d as usize;
-        }
-        Some(off[1] * self.stride_y + off[2] * self.stride_z + off[0])
+    /// The section coordinates of section index `s`.
+    #[inline]
+    fn section_at(&self, s: usize) -> [i32; 3] {
+        let sz = s % self.sdim[2];
+        let rest = s / self.sdim[2];
+        let sy = rest % self.sdim[1];
+        let sx = rest / self.sdim[1];
+        [
+            self.slo[0] + sx as i32,
+            self.slo[1] + sy as i32,
+            self.slo[2] + sz as i32,
+        ]
     }
 
-    /// A block id as one cell's byte: what it passes, what it emits.
+    /// The inclusive cell box of section `s` (the whole section, box or not).
+    fn section_box(&self, s: usize) -> ([i32; 3], [i32; 3]) {
+        let k = self.section_at(s);
+        let side = SEC_SIDE as i32;
+        let lo = [k[0] * side, k[1] * side, k[2] * side];
+        (lo, [lo[0] + side - 1, lo[1] + side - 1, lo[2] + side - 1])
+    }
+
+    /// The section index of the neighbour of `s` one step along axis `a`
+    /// (`0..3`) in direction `d` (`-1` or `1`), or `None` off the grid.
+    fn neighbour(&self, s: usize, a: usize, d: i32) -> Option<usize> {
+        let mut k = self.section_at(s);
+        k[a] += d;
+        let i = (k[a] - self.slo[a]) as i64;
+        if i < 0 || i >= self.sdim[a] as i64 {
+            return None;
+        }
+        let sx = (k[0] - self.slo[0]) as usize;
+        let sy = (k[1] - self.slo[1]) as usize;
+        let sz = (k[2] - self.slo[2]) as usize;
+        Some((sx * self.sdim[1] + sy) * self.sdim[2] + sz)
+    }
+
     fn pack(block: &str) -> u8 {
         let e = emission(block);
         debug_assert!(e <= 15, "block light is 0..=15; `{block}` measured {e}");
@@ -840,33 +962,52 @@ impl LightField {
         p
     }
 
-    /// [`LightModel::sky_open`] for every cell at once: walking a column
-    /// downwards, the sky reaches a cell exactly while nothing opaque has been
-    /// passed on the way down.
+    /// The sky term: one top-down sweep per cell column, over each column of
+    /// sections (column-local: nothing crosses a column).
     fn compute_sky(&mut self) {
-        let (nx, ny, nz) = (self.dim[0], self.dim[1], self.dim[2]);
-        for z in 1..nz - 1 {
-            for x in 1..nx - 1 {
-                let mut open = true;
-                for y in (1..ny - 1).rev() {
-                    let i = y * self.stride_y + z * self.stride_z + x;
-                    if open {
-                        self.prop[i] |= P_SKY;
-                    } else {
-                        self.prop[i] &= !P_SKY;
-                    }
-                    if self.prop[i] & P_PASSES == 0 {
-                        open = false;
-                    }
-                }
+        for sx in 0..self.sdim[0] {
+            for sz in 0..self.sdim[2] {
+                self.compute_sky_column(sx, sz);
             }
         }
     }
 
-    /// A cell's seed brightness: what it emits, or the sky above it, whichever is
-    /// more.
-    fn seed_at(&self, i: usize) -> u8 {
-        let p = self.prop[i];
+    /// The sky flags of one section column `(sx, sz)` of the grid.
+    fn compute_sky_column(&mut self, sx: usize, sz: usize) {
+        // Above the box is open sky.
+        let mut open = [true; SEC_SIDE * SEC_SIDE];
+        for sy in (0..self.sdim[1]).rev() {
+            let s = (sx * self.sdim[1] + sy) * self.sdim[2] + sz;
+            let base_y = (self.slo[1] + sy as i32) * SEC_SIDE as i32;
+            let d = self.prop[s].dense();
+            for ly in (0..SEC_SIDE).rev() {
+                // A cell over the box is open sky, not a blocker: its
+                // non-passing byte is the box's wall, which the sweep starts
+                // under.
+                if base_y + ly as i32 > self.max[1] {
+                    continue;
+                }
+                for lx in 0..SEC_SIDE {
+                    for lz in 0..SEC_SIDE {
+                        let i = (lx * SEC_SIDE + ly) * SEC_SIDE + lz;
+                        let col = lx * SEC_SIDE + lz;
+                        if open[col] {
+                            d[i] |= P_SKY;
+                        } else {
+                            d[i] &= !P_SKY;
+                        }
+                        if d[i] & P_PASSES == 0 {
+                            open[col] = false;
+                        }
+                    }
+                }
+            }
+            self.prop[s].compact();
+        }
+    }
+
+    #[inline]
+    fn seed_of(&self, p: u8) -> u8 {
         let mut seed = p & P_EMISSION;
         if self.sky > 0 && p & P_PASSES != 0 && p & P_SKY != 0 {
             seed = seed.max(self.sky);
@@ -874,124 +1015,295 @@ impl LightField {
         seed
     }
 
-    /// Flood the whole field from every seed.
+    /// Flood the whole field from nothing: every section visited, and every
+    /// section a neighbour brightened visited again, to the fixpoint
+    /// (ADR-0037 §2). The field is the pointwise maximum over every seed of
+    /// `seed − distance`, so the fixpoint is the one field whatever the order.
     fn flood(&mut self) {
-        self.light.fill(0);
-        let mut buckets: [Vec<u32>; 16] = Default::default();
-        let (nx, ny, nz) = (self.dim[0], self.dim[1], self.dim[2]);
-        for y in 1..ny - 1 {
-            for z in 1..nz - 1 {
-                let row = y * self.stride_y + z * self.stride_z;
-                for i in row + 1..row + nx - 1 {
-                    let seed = self.seed_at(i);
-                    if seed > 0 {
-                        self.light[i] = seed;
-                        buckets[seed as usize].push(i as u32);
+        for l in &mut self.light {
+            *l = Sec::Uniform(0);
+        }
+        let queue: std::collections::BTreeSet<usize> = (0..self.light.len()).collect();
+        self.settle(queue);
+    }
+
+    /// Visit every queued section until none is queued.
+    fn settle(&mut self, mut queue: std::collections::BTreeSet<usize>) {
+        let mut scratch = Scratch::new();
+        while let Some(s) = queue.pop_first() {
+            for n in self.visit(s, &mut scratch) {
+                queue.insert(n);
+            }
+        }
+    }
+
+    /// Flood section `s` over the light its neighbours' face cells hold and
+    /// its own seeds; the neighbours whose face cells it brightened, which
+    /// are to be visited again.
+    fn visit(&mut self, s: usize, sc: &mut Scratch) -> Vec<usize> {
+        let r = 0..SEC_SIDE as isize;
+        // The section's own cells, then the six faces of the ring.
+        for lx in r.clone() {
+            for ly in r.clone() {
+                for lz in r.clone() {
+                    let at = ((lx as usize) * SEC_SIDE + ly as usize) * SEC_SIDE + lz as usize;
+                    let i = pad_index(lx, ly, lz);
+                    let p = self.prop[s].get(at);
+                    sc.prop[i] = p;
+                    sc.light[i] = self.light[s].get(at).max(self.seed_of(p));
+                }
+            }
+        }
+        let mut faces: [Option<usize>; 6] = [None; 6];
+        for (f, (a, d)) in [(0, -1), (0, 1), (1, -1), (1, 1), (2, -1), (2, 1)]
+            .into_iter()
+            .enumerate()
+        {
+            faces[f] = self.neighbour(s, a, d);
+            let fixed: isize = if d < 0 { -1 } else { SEC_SIDE as isize };
+            let near: isize = if d < 0 { SEC_SIDE as isize - 1 } else { 0 };
+            for u in r.clone() {
+                for v in r.clone() {
+                    let (lx, ly, lz) = match a {
+                        0 => (fixed, u, v),
+                        1 => (u, fixed, v),
+                        _ => (u, v, fixed),
+                    };
+                    let i = pad_index(lx, ly, lz);
+                    match faces[f] {
+                        Some(n) => {
+                            // The neighbour's cell on the shared face.
+                            let (nx, ny, nz) = match a {
+                                0 => (near, u, v),
+                                1 => (u, near, v),
+                                _ => (u, v, near),
+                            };
+                            let at =
+                                ((nx as usize) * SEC_SIDE + ny as usize) * SEC_SIDE + nz as usize;
+                            sc.prop[i] = self.prop[n].get(at);
+                            sc.light[i] = self.light[n].get(at);
+                        }
+                        None => {
+                            sc.prop[i] = 0;
+                            sc.light[i] = 0;
+                        }
+                    }
+                    sc.before[i] = sc.light[i];
+                }
+            }
+        }
+        sc.drain();
+        // Store what changed; say which neighbours' faces were brightened.
+        let mut changed = false;
+        for lx in r.clone() {
+            for ly in r.clone() {
+                for lz in r.clone() {
+                    let at = ((lx as usize) * SEC_SIDE + ly as usize) * SEC_SIDE + lz as usize;
+                    let l = sc.light[pad_index(lx, ly, lz)];
+                    if l != self.light[s].get(at) {
+                        if !changed {
+                            changed = true;
+                        }
+                        self.light[s].dense()[at] = l;
                     }
                 }
             }
         }
-        self.drain(buckets);
+        if changed {
+            self.light[s].compact();
+        }
+        let mut again = Vec::new();
+        for (f, (a, d)) in [(0, -1), (0, 1), (1, -1), (1, 1), (2, -1), (2, 1)]
+            .into_iter()
+            .enumerate()
+        {
+            let Some(n) = faces[f] else { continue };
+            let fixed: isize = if d < 0 { -1 } else { SEC_SIDE as isize };
+            let brighter = r.clone().any(|u| {
+                r.clone().any(|v| {
+                    let (lx, ly, lz) = match a {
+                        0 => (fixed, u, v),
+                        1 => (u, fixed, v),
+                        _ => (u, v, fixed),
+                    };
+                    let i = pad_index(lx, ly, lz);
+                    sc.light[i] > sc.before[i]
+                })
+            });
+            if brighter {
+                again.push(n);
+            }
+        }
+        again
     }
 
-    /// Drain a frontier held in per-brightness buckets, brightest first.
-    ///
-    /// Bucket order is not a tie-break: the flooded field is the pointwise
-    /// maximum over every seed of `seed − distance`, which is one value per cell
-    /// however the frontier is walked. Draining brightest-first only means each
-    /// cell is relaxed once — a cell reached at its final value can never be
-    /// improved later, because every later step is dimmer.
-    fn drain(&mut self, mut buckets: [Vec<u32>; 16]) {
+    /// The flooded light at `c` (0 outside the box).
+    fn light_at(&self, c: [i32; 3]) -> u8 {
+        match self.section_of(c) {
+            Some(s) => self.light[s].get(local(c)),
+            None => 0,
+        }
+    }
+
+    /// Whether `c` lies in the field box.
+    fn holds(&self, c: [i32; 3]) -> bool {
+        self.section_of(c).is_some()
+    }
+
+    fn set(&mut self, c: [i32; 3], block: &str) {
+        let Some(s) = self.section_of(c) else { return };
+        let at = local(c);
+        let old = self.prop[s].get(at);
+        let packed = Self::pack(block);
+        let packed = if self.emit {
+            packed
+        } else {
+            packed & !P_EMISSION
+        };
+        let new = packed | (old & P_SKY);
+        self.prop[s].dense()[at] = new;
+        self.prop[s].compact();
+        if old & P_PASSES == new & P_PASSES && new & P_EMISSION >= old & P_EMISSION {
+            // Light only rises: seed the cell and let the rise spread.
+            let seed = self.seed_of(new);
+            if seed > self.light[s].get(at) {
+                self.light[s].dense()[at] = seed;
+                self.light[s].compact();
+                let mut queue = std::collections::BTreeSet::new();
+                queue.insert(s);
+                self.settle(queue);
+            }
+        } else {
+            let k = self.section_at(s);
+            self.compute_sky_column((k[0] - self.slo[0]) as usize, (k[2] - self.slo[2]) as usize);
+            self.flood();
+        }
+    }
+
+    /// Bytes the field holds: every section's property and light bytes.
+    #[cfg(test)]
+    fn bytes(&self) -> usize {
+        self.prop
+            .iter()
+            .chain(self.light.iter())
+            .map(Sec::bytes)
+            .sum()
+    }
+
+    fn clone_map(&self) -> BTreeMap<[i32; 3], u8> {
+        let mut out = BTreeMap::new();
+        for s in 0..self.light.len() {
+            if let Sec::Uniform(0) = self.light[s] {
+                continue;
+            }
+            let (lo, hi) = self.section_box(s);
+            for x in lo[0].max(self.min[0])..=hi[0].min(self.max[0]) {
+                for y in lo[1].max(self.min[1])..=hi[1].min(self.max[1]) {
+                    for z in lo[2].max(self.min[2])..=hi[2].min(self.max[2]) {
+                        let c = [x, y, z];
+                        let l = self.light[s].get(local(c));
+                        if l > 0 {
+                            out.insert(c, l);
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+}
+
+/// One visit's scratch: the section and the ring of its neighbours' cells,
+/// flooded densely as the whole field once was.
+struct Scratch {
+    prop: Vec<u8>,
+    light: Vec<u8>,
+    /// The ring's light as loaded, to see which faces a visit brightened.
+    before: Vec<u8>,
+    buckets: [Vec<u32>; 16],
+}
+
+impl Scratch {
+    fn new() -> Scratch {
+        Scratch {
+            prop: vec![0; PAD_CELLS],
+            light: vec![0; PAD_CELLS],
+            before: vec![0; PAD_CELLS],
+            buckets: Default::default(),
+        }
+    }
+
+    /// Whether padded index `i` is one of the section's own cells.
+    #[inline]
+    fn own(i: usize) -> bool {
+        let x = i / SX;
+        let y = (i / SY) % PAD;
+        let z = i % PAD;
+        (1..=SEC_SIDE).contains(&x) && (1..=SEC_SIDE).contains(&y) && (1..=SEC_SIDE).contains(&z)
+    }
+
+    /// The bucketed walk of the dense field, over the section: every lit cell
+    /// (its own and the ring's) is a source; a value of 1 lights nothing, so
+    /// the walk stops at 2. A ring cell pushes into the section only; the
+    /// ring's own neighbours belong to the sections that hold them.
+    fn drain(&mut self) {
+        for b in &mut self.buckets {
+            b.clear();
+        }
+        for i in 0..PAD_CELLS {
+            let l = self.light[i];
+            if l > 1 {
+                self.buckets[l as usize].push(i as u32);
+            }
+        }
         let steps = [
+            SX as isize,
+            -(SX as isize),
+            SY as isize,
+            -(SY as isize),
             1isize,
             -1,
-            self.stride_y as isize,
-            -(self.stride_y as isize),
-            self.stride_z as isize,
-            -(self.stride_z as isize),
         ];
-        // A value of 1 lights nothing (its neighbours would be 0, which they
-        // already are), so the walk stops at 2.
         for l in (2..=15usize).rev() {
-            let cur = std::mem::take(&mut buckets[l]);
+            let cur = std::mem::take(&mut self.buckets[l]);
             let nl = (l - 1) as u8;
             for &i in &cur {
                 let i = i as usize;
                 if self.light[i] as usize != l {
                     continue;
                 }
+                let from_own = Self::own(i);
                 for s in steps {
-                    let j = i.wrapping_add_signed(s);
+                    let Some(j) = i.checked_add_signed(s) else {
+                        continue;
+                    };
+                    if j >= PAD_CELLS {
+                        continue;
+                    }
+                    // A step off the padded cube's edge wraps a coordinate;
+                    // such a `j` is never a face neighbour of `i`.
+                    if !Self::adjacent(i, j) {
+                        continue;
+                    }
+                    if !from_own && !Self::own(j) {
+                        continue;
+                    }
                     if self.prop[j] & P_PASSES == 0 || self.light[j] >= nl {
                         continue;
                     }
                     self.light[j] = nl;
-                    buckets[nl as usize].push(j as u32);
+                    self.buckets[nl as usize].push(j as u32);
                 }
             }
         }
     }
 
-    /// The flooded light at a world cell (0 outside the field box, as the map form's
-    /// `unwrap_or(0)` readers already treat it).
-    fn light_at(&self, c: [i32; 3]) -> u8 {
-        self.index(c).map(|i| self.light[i]).unwrap_or(0)
-    }
-
-    /// Record that `block` was written at `c`, and re-establish the field.
-    ///
-    /// Placing a block that passes light exactly as the one it replaced did, and
-    /// emits at least as much, can only make the field brighter: no distance
-    /// changes, no column's sky changes, one seed rises. The new field is then
-    /// the old one with that seed flooded into it, and every cell it does not
-    /// reach keeps the value it had.
-    ///
-    /// A placement that fails either half of that — a `shroomlight` written over
-    /// a pane of glass darkens the room behind it — is not an increase anywhere,
-    /// so the field is built again from nothing.
-    fn set(&mut self, c: [i32; 3], block: &str) {
-        let Some(i) = self.index(c) else { return };
-        let old = self.prop[i];
-        let packed = Self::pack(block);
-        self.prop[i] = packed | (old & P_SKY);
-        if old & P_PASSES == packed & P_PASSES && packed & P_EMISSION >= old & P_EMISSION {
-            let seed = self.seed_at(i);
-            if seed > self.light[i] {
-                self.light[i] = seed;
-                let mut buckets: [Vec<u32>; 16] = Default::default();
-                buckets[seed as usize].push(i as u32);
-                self.drain(buckets);
-            }
-        } else {
-            self.compute_sky();
-            self.flood();
-        }
-    }
-
-    /// The field as the map [`LightModel::flood`] hands out: one entry per lit
-    /// cell, none for a cell the flood never reached.
-    fn clone_map(&self) -> BTreeMap<[i32; 3], u8> {
-        let mut out = BTreeMap::new();
-        let (nx, ny, nz) = (self.dim[0], self.dim[1], self.dim[2]);
-        for y in 1..ny - 1 {
-            for z in 1..nz - 1 {
-                let row = y * self.stride_y + z * self.stride_z;
-                for x in 1..nx - 1 {
-                    let l = self.light[row + x];
-                    if l > 0 {
-                        out.insert(
-                            [
-                                self.min[0] + x as i32 - 1,
-                                self.min[1] + y as i32 - 1,
-                                self.min[2] + z as i32 - 1,
-                            ],
-                            l,
-                        );
-                    }
-                }
-            }
-        }
-        out
+    /// Whether padded indices `i` and `j` are face neighbours.
+    #[inline]
+    fn adjacent(i: usize, j: usize) -> bool {
+        let (xi, yi, zi) = (i / SX, (i / SY) % PAD, i % PAD);
+        let (xj, yj, zj) = (j / SX, (j / SY) % PAD, j % PAD);
+        xi.abs_diff(xj) + yi.abs_diff(yj) + zi.abs_diff(zj) == 1
     }
 }
 
@@ -2625,6 +2937,60 @@ mod tests {
     }
 
     // --- flood + sky geometry ---
+
+    /// The field is held by section, a byte where a section reads alike
+    /// (ADR-0037 §2): a box of open air over a stone floor spends dense
+    /// sections only where the floor and the one lamp lie, and the flood over
+    /// it is the reference flood, cell for cell, whatever section the lamp
+    /// stands in.
+    #[test]
+    fn a_field_is_held_by_section_and_floods_as_the_reference_does() {
+        for lamp in [[5, 1, 5], [15, 1, 16], [31, 1, 0], [16, 16, 16]] {
+            // A box of whole sections (3 x 3 x 3), so the sections the box
+            // cuts — dense by their wall — are none; a world's judged box is
+            // hundreds of sections wide and its cut sections a thin rind.
+            let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
+            for x in 0..48 {
+                for z in 0..48 {
+                    blocks.insert([x, 0, z], "minecraft:stone".to_string());
+                }
+            }
+            blocks.insert(lamp, "minecraft:glowstone".to_string());
+            // A roof over one corner, so sky light is cut in some columns.
+            for x in 32..48 {
+                for z in 32..48 {
+                    blocks.insert([x, 30, z], "minecraft:stone".to_string());
+                }
+            }
+            let model = LightModel::from_blocks_within(blocks, [0, 0, 0], [47, 46, 47]);
+            for sky in [15u8, 4, 0] {
+                let field = LightField::new(&model, sky);
+                assert_eq!(
+                    field.clone_map(),
+                    reference_flood(&model, sky),
+                    "lamp {lamp:?} sky {sky}"
+                );
+                let sections = field.light.len();
+                let dense = sections * SEC_CELLS * 2;
+                assert!(
+                    field.bytes() * 2 < dense,
+                    "lamp {lamp:?} sky {sky}: {} bytes over {sections} sections against {dense} dense",
+                    field.bytes()
+                );
+                let uniform = field
+                    .light
+                    .iter()
+                    .filter(|s| matches!(s, Sec::Uniform(_)))
+                    .count();
+                // Under a full sky the floor's and the roof's sections, and the
+                // shade under the roof, are dense; the open air is one byte.
+                assert!(
+                    uniform * 3 >= sections,
+                    "{uniform} of {sections} sections uniform"
+                );
+            }
+        }
+    }
 
     #[test]
     fn flood_block_light_falls_off_by_one() {
