@@ -5,6 +5,7 @@
 - [Items, containers and loot](#items-containers-and-loot)
 - [State, flags and gates](#state-flags-and-gates)
 - [The story layer](#the-story-layer)
+- [A web in stage 5](#a-web-in-stage-5)
 - [Dialogue](#dialogue)
 - [Things that change the world](#things-that-change-the-world)
 - [Danger, death and money](#danger-death-and-money)
@@ -237,6 +238,88 @@ this section is what they are *for* and the traps in each.
   just the first. Leaving one ungated as a fallback is `DW0483`: later
   declarations win, so the fallback keeps governing the branch that already has
   its own, and the fork moves the ledger without moving the bodies.
+
+## A web in stage 5
+
+Step 3 planned a hub, spokes, an optional strand and endings that read the run
+(*Step 3*, *The plan is a web, not a chain*). This is how stage 5 writes it.
+
+- **Each spoke and strand is armed by the hub**:
+  `"trigger": {"type": "quest-complete", "quest": "quest/<hub>"}`, agreeing
+  with the plan's `depends_on` as `content.md` requires (`DW1077`).
+- **The join.** No trigger waits for several quests, so the finale is armed by
+  one spoke (the last one the plan declares) and its first objective waits for
+  every mandatory spoke: each spoke's `on_complete` carries
+  `{"type": "set-flag", "flag": "flag/<spoke>-done"}`, and the objective
+  carries `"requires_flags": ["flag/<a>-done", "flag/<b>-done"]`. A way the
+  join opens is opened from every spoke under the same gate, so whichever
+  spoke finishes last opens it:
+  `{"type": "open-gate", "anchor": "anchor/seam-<edge>", "happening": {…}, "when": {"requires_flags": ["flag/<a>-done", "flag/<b>-done"]}}`.
+- **A scene knows the order the party came in.** A body that speaks in more
+  than one spoke takes a **list** of placements, one per order, gated on the
+  other thread's flag:
+  `"npc/<x>": [{"at": …, "doing": …, "dialogue": "dlg/after-b", "requires_flags": ["flag/<b>-done"]}, {"at": …, "doing": …, "dialogue": "dlg/before-b", "forbids_flags": ["flag/<b>-done"]}]`.
+  A dialogue option gated the same way, or a `narrate` with a `when`, does the
+  same for a line. The research page calls this defensive logic (§2, S3).
+- **The deed.** An optional strand's `on_complete` writes what the ending reads:
+  `{"type": "add-state", "state": "state/<deeds>", "amount": 1}` over a
+  `state` row `{"id": "state/<deeds>", "scope": "party", "initial": 0, "note": …}`,
+  or a `set-flag`.
+- **The endings** are `campaign-complete`s in the finale's `on_complete`, one
+  per ending, with gates that exclude each other and cover every run:
+  `{"type": "campaign-complete", "ending": "ending/<a>", "happening": {…}, "when": {"requires_state": [{"state": "state/<deeds>", "op": "at-least", "value": 1}]}}`
+  beside the same with `"op": "at-most", "value": 0`. Flags and data from other
+  threads join the same `when`.
+- **The epilogue says what each thread came to**: one `narrate` per thread in
+  the same `on_complete`, `"when": {"requires_flags": ["flag/<thread>-done"]}`.
+  Each is an input the ending reads.
+- **A final choice whose options the run decides.** The last `talk-to` offers
+  options gated on what the run wrote
+  (`"requires_state": [{"state": "state/<deeds>", "op": "at-least", "value": 1}]`)
+  beside **one completing option with no gate of any kind**; `DW0191` refuses
+  a talk-to without one.
+- **Three rules of composition**, each standing in for a defect the engine has
+  not closed:
+  - **Gate walls, not floors.** Shut a story way on a `walk` or `stair` edge,
+    where the bar is iron bars in the opening. A floor hatch is an iron
+    trapdoor, and a lever, button or plate beside it opens it; `DW1047` refuses
+    such a source, and the repair is to move the source.
+  - **Every option that completes an objective sits on the root node** of its
+    tree, gated as the story needs. An option that completed an objective is
+    hidden from then on, so a later objective reached only through the node
+    that option opened is stranded when the player leaves the conversation
+    there and comes back to the root.
+  - **Prefer `interact` with a flag or a datum to a carried item.** An item the
+    mainline needs can be dropped, swallowed by a pot or eaten, and nothing
+    gives it back. Where one must be carried, give it again at the checkpoint
+    (`give-item` in `on_death` or a bonfire's `on_rest`).
+
+### Checking a web
+
+Run each of these; each names what it judges and how many objects it bound.
+
+1. **At step 5**, `delvec --prefabs "$DELVEWRIGHT_PREFABS" validate <campaign-dir>`
+   is clean of `DW0866`, `DW0867`, `DW0868` (the optional strand is outside
+   the mainline), `DW0480` (every flag that moves a body has a declared fork),
+   `DW0191` (every talk-to has a completing option with no gate) and
+   `DW1077` (every quest's trigger agrees with its plan's `depends_on`).
+2. **At step 8**, `delvec build` prints `ending binding: N ending(s); …;
+   K story world(s) enumerated` and then one line per ending:
+   `ending/<slug>: reads M input(s) — <key>: <said|did|finished>, seeded,
+   written at quest/<q>; …`. Check every ending names the inputs you planned,
+   from the threads you planned, with a deed among them. `DW1029` refuses an
+   ending below `endings_read`; `DW1030` refuses an ending no story world
+   reaches and names each writer that kept it from one.
+3. **Read `validation/endings.json`**: every ending's `worlds` is non-empty,
+   different endings are reached by different worlds, and
+   `endings_read.holds` is `true` on each.
+4. **Read the gate lines of the same build**: `DW1011 binding: …` counts every
+   gated connection and every story configuration, and its `0 got round by
+   walking, falling, jumping or swimming` is the claim that the shut ways hold;
+   `contradiction binding: …` (`DW0485`) is every play order of every declared
+   branch searched.
+5. **At step 10**, the ladder's branch runs walk one path per story world
+   (`validation/world-path-<k>.json`) and read the ending each reaches.
 
 ## Dialogue
 
@@ -922,4 +1005,5 @@ this section is what they are *for* and the traps in each.
   before the first step is taken. The defect this prevents: the flock the player
   is told to follow leaves while they are still reading the instruction, and the
   beat then fails them for it.
-- Pace to `target_minutes`; no grind; mandatory-only quests.
+- Pace to `target_minutes`; no grind. The mainline is the mandatory quests; an
+  optional strand is paced on top of it, never inside it.

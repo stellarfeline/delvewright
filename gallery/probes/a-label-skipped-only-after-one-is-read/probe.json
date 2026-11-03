@@ -1,0 +1,19 @@
+{
+  "code": "DW0191",
+  "patch": [
+    {
+      "doc": "dialogue.json",
+      "op": "add",
+      "path": "/content/dialogues/0/nodes/0/options/2/requires_state",
+      "value": [
+        {
+          "op": "at-least",
+          "state": "state/labels-read",
+          "value": 1
+        }
+      ]
+    }
+  ],
+  "units": [],
+  "why": "The curator's two buttons that complete hearing her both carry a gate: reading a label is drawn while fewer than six are read, and skipping one, here, only after one is read. Neither is a flag gate, and both are still gates: the static check does no reasoning about which value a datum holds, so every completing option can be hidden the moment the beat needs it. `DW0191` names the objective and asks for one completing option with no gate of any kind, which the primary keeps in the skip button."
+}
