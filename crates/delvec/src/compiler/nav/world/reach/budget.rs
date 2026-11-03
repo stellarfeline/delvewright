@@ -142,12 +142,6 @@ pub(crate) fn tick() -> u64 {
     TICK.fetch_add(1, Ordering::Relaxed)
 }
 
-/// The use clock as it stands, for a holding that marks a read without
-/// advancing it (a read of one cell of a section, made millions of times).
-pub(crate) fn now() -> u64 {
-    TICK.load(Ordering::Relaxed)
-}
-
 /// **A structure that can give memory up**: asked for `want` bytes, it gives
 /// up its least recently used holdings until that many are freed or none is
 /// left to give, without waiting on a lock another thread holds, and answers

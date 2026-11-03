@@ -311,9 +311,13 @@ over F face cell(s), summed over the closures taken, at a chunk side of S
 different reach chunks, a face cell a cell one lands on. The portal counts
 depend on the chunk side and are written nowhere in the output tree. A run
 whose stores held a section prints `world store pages: R byte(s) resident over
-S section(s) of every store; G array(s) given up, L read back; the need raised
-T time(s) for a walk found thrashing, to N byte(s); B byte(s) in the scratch
-file (ADR-0037 §1)` beside them.
+S section(s) of every store; G array(s) given up, L read back, K of them within
+one turnover of the resident arrays; the need raised T time(s) for a walk found
+thrashing, to N byte(s); B byte(s) in the scratch file (ADR-0037 §1)` beside
+them: a read-back is thrashing when fewer of its store's arrays were given up
+since it was than the need holds, and a sample of 64 read-backs of which half
+or more are thrashing doubles the need; an array given up long before is read
+back cold, however few of its cells the walk touches.
 The cost is disk: the town's bank (95 places) is 1.8 GB after one check, and grows with each program a place is checked with, since a node keeps up to eight variants.
 
 **The output directory** holds exactly what the last build emitted: a build into a directory a previous build wrote removes every file that build emitted and this one does not, and a directory holding anything no build wrote is refused untouched (`DW0967`, §5).
@@ -4483,8 +4487,11 @@ section(s), B byte(s)] (ADR-0037 §1)` after the judged-world line: the bytes
 the store's arrays and palettes hold, resident or in the file.
 `sections::tests::a_section_store_answers_what_a_map_answers` holds the store
 to a map over generated edit sequences under the default budget and under a
-budget of one byte; `a_walk_found_thrashing_raises_the_need` holds the need's
-measurement. The geometry is classified once too: `light::geometry_world` is
+budget of one byte; `a_walk_found_thrashing_raises_the_need`,
+`a_sparse_walk_over_a_spilled_store_is_cold` and
+`the_capacity_is_the_need_in_arrays` hold the need's measurement: a store read
+at random over twice the need has most of its read-backs within one turnover
+and raises it, a store four times the budget walked once a round has none. The geometry is classified once too: `light::geometry_world` is
 the premise-free nav world relight surveys, and the campaign's own world is that
 world's cells under `nav::Premises::of_plan` (`World::with_premises`) with
 relight's fixtures standing in it (`light::lit_world`): the map with the

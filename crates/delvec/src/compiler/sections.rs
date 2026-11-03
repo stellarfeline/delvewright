@@ -27,14 +27,15 @@
 //! and the section index stay resident: a section's cost in memory while it
 //! is given up is its palette. What a store answers never depends on what is
 //! resident. **The stated need** is measured from what the walks have had to
-//! hold: each time the stores are brought under the budget, the reads made
-//! since the last time are set against the arrays read back for them, and a
-//! walk that read back one array in fewer than [`THRASH`] reads was given
-//! arrays it was still using — the need is doubled, and the budget with it,
-//! until the walk's working set stays. A walk that reads
-//! a section whole after reading it back (a stage over the world written at
-//! assembly) raises nothing, so a sequential pass over a spilled world
-//! streams it. The floor is a 3 × 3 × 3 ring of sections at the wide index.
+//! hold: an array read back within one turnover of its store's resident arrays
+//! — fewer of them given up since it was than the store holds resident — was
+//! given up while the walk was still using it, and each time the stores
+//! are brought under the budget, a sample of read-backs ([`SAMPLE`]) of which
+//! half or more were such re-references doubles the need, and the budget with
+//! it, until the walk's working set stays. A walk that reads back an array
+//! given up long before — a sparse write into a spilled world at assembly, a
+//! second sequential pass over it — raises nothing, however few cells it
+//! reads. The floor is a 3 × 3 × 3 ring of sections at the wide index.
 
 use crate::compiler::nav::{budget, spill};
 use std::collections::{BTreeMap, btree_map};
@@ -57,6 +58,8 @@ pub struct SectionMap<V> {
     /// Sections by section coordinate `[sx, sy, sz]`, each holding at least
     /// one cell: a section emptied by removals is dropped.
     sections: BTreeMap<Cell, Section<V>>,
+    /// This store's paging clock and its read-backs, thrashing or cold.
+    tally: Arc<Tally>,
     /// The number of cells held, over every section.
     len: usize,
 }
@@ -70,11 +73,12 @@ struct Section<V> {
     count: u32,
 }
 
-impl<V: Clone> Clone for Section<V> {
-    fn clone(&self) -> Self {
+impl<V: Clone> Section<V> {
+    /// A copy of this section for a store whose clock is `tally`.
+    fn duplicate(&self, tally: &Arc<Tally>) -> Self {
         Section {
             palette: self.palette.clone(),
-            idx: self.idx.duplicate(),
+            idx: self.idx.duplicate(tally),
             count: self.count,
         }
     }
@@ -163,20 +167,51 @@ impl Idx {
 /// giving the array up on another thread never see half an array.
 struct Paged {
     slot: Mutex<Slot>,
-    /// The use clock ([`budget::now`]) when the array was last asked for.
+    /// The use clock ([`budget::tick`]) when the array was last asked for:
+    /// every use advances it, so the arrays given up first are the least
+    /// recently used.
     used: AtomicU64,
-    /// Reads of the array so far: one per cell asked, and the cells a walk
-    /// that pinned it will read.
-    touches: AtomicU64,
+    /// The clock of the store this array belongs to.
+    tally: Arc<Tally>,
 }
 
 enum Slot {
     Resident(Arc<Idx>),
-    /// Given up: where the record lies and its length (which says its form).
+    /// Given up: where the record lies and its length (which says its form),
+    /// and the store's eviction clock when it was given up.
     Spilled {
         at: u64,
         len: u32,
+        since: u64,
     },
+}
+
+/// **One store's paging clock** (the module docs): how many of its arrays
+/// have been given up, what it holds resident, and of the arrays read back,
+/// how many came back within one turnover of the arrays the need holds
+/// (thrashing) and how many did not (cold). Each store keeps its own, so what
+/// one walk's read-backs say is not mixed with another store's traffic; the
+/// need is judged over every store's. A test's budget (`budget::with_budget`)
+/// is kept over the one store relieving itself under it, never over another
+/// thread's.
+#[derive(Default)]
+struct Tally {
+    evictions: AtomicU64,
+    /// Bytes of this store's arrays resident now.
+    held: AtomicUsize,
+    read_back: AtomicU64,
+    thrashed: AtomicU64,
+}
+
+impl Tally {
+    /// Read-backs so far and how many of them were thrashing.
+    #[cfg(test)]
+    fn read_back(&self) -> (u64, u64) {
+        (
+            self.read_back.load(Ordering::Relaxed),
+            self.thrashed.load(Ordering::Relaxed),
+        )
+    }
 }
 
 /// A 3 × 3 × 3 ring of sections at the wide index: the fewest bytes the
@@ -192,17 +227,19 @@ static HELD: AtomicUsize = AtomicUsize::new(0);
 static RESIDENT: AtomicUsize = AtomicUsize::new(0);
 /// Holds so far (an array made, or read back).
 static EVENTS: AtomicU64 = AtomicU64::new(0);
-/// Arrays given up and read back over the run, and how often the need was
-/// raised for a walk found thrashing.
+/// Arrays given up and read back over the run, how many of the read-backs
+/// were thrashing (the module docs), and how often the need was raised.
 static GIVEN_UP: AtomicU64 = AtomicU64::new(0);
 static READ_BACK: AtomicU64 = AtomicU64::new(0);
+static THRASHED: AtomicU64 = AtomicU64::new(0);
 static RAISED: AtomicU64 = AtomicU64::new(0);
-/// The reads and the read-backs as they stood when the need was last judged.
-static TOUCHES_JUDGED: AtomicU64 = AtomicU64::new(0);
+/// The read-backs the need is judged over — made under no test budget — and
+/// the thrashing ones among them, and both as they stood at the last
+/// judgement.
+static JUDGED_READ_BACK: AtomicU64 = AtomicU64::new(0);
+static JUDGED_THRASHED: AtomicU64 = AtomicU64::new(0);
 static READ_BACK_JUDGED: AtomicU64 = AtomicU64::new(0);
-/// A walk that reads back one array in fewer reads than this is thrashing: a
-/// section read whole after a read-back makes [`CELLS`] reads of it.
-const THRASH: u64 = 256;
+static THRASHED_JUDGED: AtomicU64 = AtomicU64::new(0);
 /// Read-backs between two judgements of the need.
 const SAMPLE: u64 = 64;
 
@@ -250,12 +287,12 @@ fn shared() -> &'static Shared {
 }
 
 impl Store {
-    /// Give up the least recently used resident arrays, over every store,
-    /// until `want` bytes are freed or none is left to give; the bytes freed.
-    /// An array in use is skipped, never waited for; the list of arrays is
-    /// waited for only on the stores' own relief (`wait`), never when another
-    /// structure asks.
-    fn evict(&self, want: usize, wait: bool) -> usize {
+    /// Give up the least recently used resident arrays, over every store (or
+    /// over the one store `only` names), until `want` bytes are freed or none
+    /// is left to give; the bytes freed. An array in use is skipped, never
+    /// waited for; the list of arrays is waited for only on the stores' own
+    /// relief (`wait`), never when another structure asks.
+    fn evict(&self, want: usize, wait: bool, only: Option<&Arc<Tally>>) -> usize {
         let pages = if wait {
             self.pages.lock().ok()
         } else {
@@ -268,16 +305,12 @@ impl Store {
         let mut order: Vec<(u64, Arc<Paged>)> = pages
             .iter()
             .filter_map(Weak::upgrade)
+            .filter(|p| only.is_none_or(|t| Arc::ptr_eq(&p.tally, t)))
             .map(|p| (p.used.load(Ordering::Relaxed), p))
             .collect();
         order.sort_unstable_by_key(|(used, _)| *used);
         if wait {
-            Store::judge(
-                order
-                    .iter()
-                    .map(|(_, p)| p.touches.load(Ordering::Relaxed))
-                    .sum(),
-            );
+            Store::judge();
         }
         let mut freed = 0;
         for (_, p) in order {
@@ -289,24 +322,25 @@ impl Store {
         freed
     }
 
-    /// **Measure the need** (the module docs): over the reads made since the
-    /// last judgement (`touches`, summed over every array alive), fewer than
-    /// [`THRASH`] per array read back says the walk was given arrays it was
-    /// still using, and the need doubles. Judged once per [`SAMPLE`]
-    /// read-backs, never under a test's budget.
-    fn judge(touches: u64) {
+    /// **Measure the need** (the module docs): over the read-backs since the
+    /// last judgement, half or more thrashing — read back within one turnover
+    /// of the resident arrays ([`thrashing`]) — says the walk was given up
+    /// arrays it was still using, and the need doubles. Judged once per
+    /// [`SAMPLE`] read-backs, never under a test's budget.
+    fn judge() {
         if budget::override_here() != 0 {
             return;
         }
-        let read = READ_BACK.load(Ordering::Relaxed);
+        let read = JUDGED_READ_BACK.load(Ordering::Relaxed);
         let read_since = read.saturating_sub(READ_BACK_JUDGED.load(Ordering::Relaxed));
         if read_since < SAMPLE {
             return;
         }
-        let touched_since = touches.saturating_sub(TOUCHES_JUDGED.load(Ordering::Relaxed));
-        TOUCHES_JUDGED.store(touches, Ordering::Relaxed);
+        let thrashed = JUDGED_THRASHED.load(Ordering::Relaxed);
+        let thrashed_since = thrashed.saturating_sub(THRASHED_JUDGED.load(Ordering::Relaxed));
         READ_BACK_JUDGED.store(read, Ordering::Relaxed);
-        if touched_since < read_since.saturating_mul(THRASH) {
+        THRASHED_JUDGED.store(thrashed, Ordering::Relaxed);
+        if thrashed_since.saturating_mul(2) >= read_since {
             NEED.raise(NEED.bytes().saturating_mul(2));
             RAISED.fetch_add(1, Ordering::Relaxed);
         }
@@ -315,68 +349,107 @@ impl Store {
 
 impl budget::Pageable for Store {
     fn give_up(&self, want: usize) -> usize {
-        self.evict(want, false)
+        self.evict(want, false, None)
     }
 }
 
 /// Bring the stores' resident bytes under the budget, these stores first.
-fn relieve() {
+/// Under a test's budget (`budget::with_budget`), the one store whose array
+/// just came resident is brought under it alone, out of its own arrays.
+fn relieve(tally: &Arc<Tally>) {
     let s = store();
+    if budget::override_here() != 0 {
+        budget::relieve(
+            budget::id_of(&**s),
+            tally.held.load(Ordering::Relaxed),
+            |want| s.evict(want, true, Some(tally)),
+        );
+        return;
+    }
     budget::relieve(budget::id_of(&**s), HELD.load(Ordering::Relaxed), |want| {
-        s.evict(want, true)
+        s.evict(want, true, None)
     });
 }
 
 /// Count an array of `bytes` as resident.
-fn hold(bytes: usize) {
+fn hold(tally: &Tally, bytes: usize) {
     budget::hold(bytes);
     HELD.fetch_add(bytes, Ordering::Relaxed);
+    tally.held.fetch_add(bytes, Ordering::Relaxed);
     RESIDENT.fetch_add(1, Ordering::Relaxed);
     EVENTS.fetch_add(1, Ordering::Relaxed);
 }
 
 /// Count an array of `bytes` as no longer resident.
-fn release(bytes: usize) {
+fn release(tally: &Tally, bytes: usize) {
     budget::release(bytes);
     HELD.fetch_sub(bytes, Ordering::Relaxed);
+    tally.held.fetch_sub(bytes, Ordering::Relaxed);
     RESIDENT.fetch_sub(1, Ordering::Relaxed);
+}
+
+/// **Was a read-back thrashing?** An array given up when its store's clock
+/// stood at `since` and read back at `now` came back within one turnover of
+/// the arrays the need holds when fewer of its store's arrays were given up
+/// in between than `capacity` — the need stated (or the test's budget) in
+/// arrays of its size: a need about twice as large would have kept it, so the
+/// walk was still using it. One that waited longer fell off the
+/// least-recently-used end in the ordinary course of a walk that moved on,
+/// and is cold.
+fn thrashing(since: u64, now: u64, capacity: usize) -> bool {
+    now.saturating_sub(since) < capacity as u64
+}
+
+/// The arrays of `bytes` each the need stated holds — under a test's budget,
+/// that budget.
+fn capacity(bytes: usize) -> usize {
+    match budget::override_here() {
+        0 => NEED.bytes() / bytes.max(1),
+        b => b / bytes.max(1),
+    }
 }
 
 impl Paged {
     /// A fresh resident array, counted and listed with the store.
-    fn new(idx: Idx) -> Arc<Paged> {
+    fn new(idx: Idx, tally: &Arc<Tally>) -> Arc<Paged> {
         let bytes = idx.bytes();
         let p = Arc::new(Paged {
             slot: Mutex::new(Slot::Resident(Arc::new(idx))),
-            used: AtomicU64::new(budget::now()),
-            touches: AtomicU64::new(0),
+            used: AtomicU64::new(budget::tick()),
+            tally: Arc::clone(tally),
         });
-        hold(bytes);
+        hold(tally, bytes);
         store()
             .pages
             .lock()
             .expect("pages")
             .push(Arc::downgrade(&p));
-        relieve();
+        relieve(tally);
         p
     }
 
     /// A copy: its own array when resident, the same record when given up
     /// (a record is written once and never changed, so two sections may read
     /// it).
-    fn duplicate(&self) -> Arc<Paged> {
+    /// A copy for a store whose clock is `tally`: a resident array is copied,
+    /// a spilled one shares its record, given up as of the copy's own clock.
+    fn duplicate(&self, tally: &Arc<Tally>) -> Arc<Paged> {
         let g = self.slot.lock().expect("a section's slot");
         match &*g {
             Slot::Resident(a) => {
                 let idx = (**a).clone();
                 drop(g);
-                Paged::new(idx)
+                Paged::new(idx, tally)
             }
-            Slot::Spilled { at, len } => {
+            Slot::Spilled { at, len, .. } => {
                 let p = Arc::new(Paged {
-                    slot: Mutex::new(Slot::Spilled { at: *at, len: *len }),
-                    used: AtomicU64::new(budget::now()),
-                    touches: AtomicU64::new(0),
+                    slot: Mutex::new(Slot::Spilled {
+                        at: *at,
+                        len: *len,
+                        since: tally.evictions.load(Ordering::Relaxed),
+                    }),
+                    used: AtomicU64::new(budget::tick()),
+                    tally: Arc::clone(tally),
                 });
                 drop(g);
                 store()
@@ -407,8 +480,9 @@ impl Paged {
         let r = sp.append(&record);
         let (at, len) = sp.or_fail("take a write", r);
         drop(w);
-        *g = Slot::Spilled { at, len };
-        release(bytes);
+        let since = self.tally.evictions.fetch_add(1, Ordering::Relaxed);
+        *g = Slot::Spilled { at, len, since };
+        release(&self.tally, bytes);
         GIVEN_UP.fetch_add(1, Ordering::Relaxed);
         bytes
     }
@@ -416,18 +490,33 @@ impl Paged {
     /// The array, resident: read back from the file when it was given up.
     /// The second answer says whether it was read back, so the caller
     /// relieves the budget once its own use of the array is done.
-    fn resident(g: &mut Slot) -> (Arc<Idx>, bool) {
+    /// The array, resident: read back from the record when it was given up,
+    /// and the read-back counted, thrashing or cold ([`thrashing`]).
+    fn resident(&self, g: &mut Slot) -> (Arc<Idx>, bool) {
         match &*g {
             Slot::Resident(a) => (Arc::clone(a), false),
-            Slot::Spilled { at, len } => {
+            Slot::Spilled { at, len, since } => {
                 let record = shared()
                     .read
                     .as_ref()
                     .expect("an array given up was written to an open file")
                     .read(*at, *len);
                 let idx = Arc::new(Idx::decode(&record));
-                hold(idx.bytes());
+                let now = self.tally.evictions.load(Ordering::Relaxed);
+                let judged = budget::override_here() == 0;
+                if thrashing(*since, now, capacity(idx.bytes())) {
+                    self.tally.thrashed.fetch_add(1, Ordering::Relaxed);
+                    THRASHED.fetch_add(1, Ordering::Relaxed);
+                    if judged {
+                        JUDGED_THRASHED.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+                hold(&self.tally, idx.bytes());
+                self.tally.read_back.fetch_add(1, Ordering::Relaxed);
                 READ_BACK.fetch_add(1, Ordering::Relaxed);
+                if judged {
+                    JUDGED_READ_BACK.fetch_add(1, Ordering::Relaxed);
+                }
                 *g = Slot::Resident(Arc::clone(&idx));
                 (idx, true)
             }
@@ -438,12 +527,11 @@ impl Paged {
     #[inline]
     fn with<R>(&self, f: impl FnOnce(&Idx) -> R) -> R {
         let mut g = self.slot.lock().expect("a section's slot");
-        self.used.store(budget::now(), Ordering::Relaxed);
-        self.touches.fetch_add(1, Ordering::Relaxed);
-        let (idx, read_back) = Paged::resident(&mut g);
+        self.used.store(budget::tick(), Ordering::Relaxed);
+        let (idx, read_back) = self.resident(&mut g);
         let out = f(&idx);
         if read_back {
-            relieve();
+            relieve(&self.tally);
         }
         out
     }
@@ -452,9 +540,8 @@ impl Paged {
     /// re-counted when its form changes.
     fn with_mut<R>(&self, f: impl FnOnce(&mut Idx) -> R) -> R {
         let mut g = self.slot.lock().expect("a section's slot");
-        self.used.store(budget::now(), Ordering::Relaxed);
-        self.touches.fetch_add(1, Ordering::Relaxed);
-        let (_, read_back) = Paged::resident(&mut g);
+        self.used.store(budget::tick(), Ordering::Relaxed);
+        let (_, read_back) = self.resident(&mut g);
         let Slot::Resident(a) = &mut *g else {
             unreachable!("resident after a read-back")
         };
@@ -464,25 +551,26 @@ impl Paged {
         if after > before {
             budget::hold(after - before);
             HELD.fetch_add(after - before, Ordering::Relaxed);
+            self.tally.held.fetch_add(after - before, Ordering::Relaxed);
         } else if before > after {
             budget::release(before - after);
             HELD.fetch_sub(before - after, Ordering::Relaxed);
+            self.tally.held.fetch_sub(before - after, Ordering::Relaxed);
         }
         if read_back || after > before {
-            relieve();
+            relieve(&self.tally);
         }
         out
     }
 
     /// The array pinned for a walk that will read `cells` of it: a reader
     /// iterating a section holds this and reads it without the lock.
-    fn pin(&self, cells: usize) -> Arc<Idx> {
+    fn pin(&self) -> Arc<Idx> {
         let mut g = self.slot.lock().expect("a section's slot");
-        self.used.store(budget::now(), Ordering::Relaxed);
-        self.touches.fetch_add(cells as u64, Ordering::Relaxed);
-        let (idx, read_back) = Paged::resident(&mut g);
+        self.used.store(budget::tick(), Ordering::Relaxed);
+        let (idx, read_back) = self.resident(&mut g);
         if read_back {
-            relieve();
+            relieve(&self.tally);
         }
         idx
     }
@@ -509,7 +597,7 @@ impl Drop for Paged {
         if let Ok(g) = self.slot.lock()
             && let Slot::Resident(a) = &*g
         {
-            release(a.bytes());
+            release(&self.tally, a.bytes());
         }
     }
 }
@@ -529,12 +617,14 @@ pub fn report() -> Option<String> {
         .map_or(0, spill::Spill::len);
     Some(format!(
         "world store pages: {} byte(s) resident over {} section(s) of every store; {} array(s) \
-         given up, {} read back; the need raised {} time(s) for a walk found thrashing, to {} \
-         byte(s); {} byte(s) in the scratch file (ADR-0037 §1)",
+         given up, {} read back, {} of them within one turnover of the resident arrays; the \
+         need raised {} time(s) for a walk found thrashing, to {} byte(s); {} byte(s) in the \
+         scratch file (ADR-0037 §1)",
         HELD.load(Ordering::Relaxed),
         RESIDENT.load(Ordering::Relaxed),
         GIVEN_UP.load(Ordering::Relaxed),
         READ_BACK.load(Ordering::Relaxed),
+        THRASHED.load(Ordering::Relaxed),
         RAISED.load(Ordering::Relaxed),
         NEED.bytes(),
         spilled
@@ -574,10 +664,10 @@ fn local_of(c: &Cell) -> usize {
 }
 
 impl<V: Copy + Eq> Section<V> {
-    fn new() -> Self {
+    fn new(tally: &Arc<Tally>) -> Self {
         Section {
             palette: Vec::new(),
-            idx: Paged::new(Idx::Narrow(Box::new([0u8; CELLS]))),
+            idx: Paged::new(Idx::Narrow(Box::new([0u8; CELLS])), tally),
             count: 0,
         }
     }
@@ -651,6 +741,7 @@ impl<V> Default for SectionMap<V> {
     fn default() -> Self {
         SectionMap {
             sections: BTreeMap::new(),
+            tally: Arc::default(),
             len: 0,
         }
     }
@@ -658,8 +749,14 @@ impl<V> Default for SectionMap<V> {
 
 impl<V: Clone> Clone for SectionMap<V> {
     fn clone(&self) -> Self {
+        let tally: Arc<Tally> = Arc::default();
         SectionMap {
-            sections: self.sections.clone(),
+            sections: self
+                .sections
+                .iter()
+                .map(|(k, s)| (*k, s.duplicate(&tally)))
+                .collect(),
+            tally,
             len: self.len,
         }
     }
@@ -685,10 +782,11 @@ impl<V: Copy + Eq> SectionMap<V> {
 
     /// Set `c` to `v`, returning the value it held before.
     pub fn insert(&mut self, c: Cell, v: V) -> Option<V> {
+        let tally = &self.tally;
         let s = self
             .sections
             .entry(section_of(&c))
-            .or_insert_with(Section::new);
+            .or_insert_with(|| Section::new(tally));
         let at = local_of(&c);
         let before = s.get(at).copied();
         if before == Some(v) {
@@ -771,6 +869,13 @@ impl<V: Copy + Eq> SectionMap<V> {
             .values()
             .filter(|s| s.idx.is_resident())
             .count()
+    }
+
+    /// This store's arrays read back so far, and how many of them came back
+    /// within one turnover of the resident arrays (the module docs).
+    #[cfg(test)]
+    fn paging(&self) -> (u64, u64) {
+        self.tally.read_back()
     }
 
     /// Every `(cell, value)`, in cell order.
@@ -957,12 +1062,7 @@ impl<'a, V: Copy + Eq> Iter<'a, V> {
                             .push((slab.cols.len(), slab.cols.len() + 1, ly0, ly1));
                     }
                 }
-                let (ly0, ly1) = {
-                    let g = slab.groups.last().expect("the section's group");
-                    (g.2, g.3)
-                };
-                let cells = (slab.lx1 + 1 - slab.lx0) * (ly1 + 1 - ly0) * (lz1 + 1 - lz0);
-                slab.cols.push((*key, sec, sec.idx.pin(cells), lz0, lz1));
+                slab.cols.push((*key, sec, sec.idx.pin(), lz0, lz1));
             }
             if slab.cols.is_empty() {
                 continue;
@@ -1315,21 +1415,84 @@ mod tests {
             }
         }
         let (_, read, raised) = traffic();
+        let (own_read, own_thrashed) = s.paging();
         eprintln!(
-            "thrash: {n} section(s) over a budget of {} byte(s); {reads} read(s), {} read back, the \
-             need raised {} time(s) from {need0} to {} byte(s)",
+            "thrash: {n} section(s) over a budget of {} byte(s); {reads} read(s), {} read back \
+             ({own_read} of this store, {own_thrashed} of them within one turnover), the need \
+             raised {} time(s) from {need0} to {} byte(s)",
             budget::budget(),
             read - read0,
             raised - raised0,
             NEED.bytes()
         );
         assert!(
-            read > read0,
+            read > read0 && own_read > 0,
             "no array was read back: the case binds nothing"
+        );
+        assert!(
+            own_thrashed * 2 >= own_read,
+            "{own_thrashed} of {own_read} read-backs of a store read at random over twice the \
+             budget were judged thrashing"
         );
         assert!(
             raised > raised0 && NEED.bytes() > need0,
             "a thrashing walk left the need where it stood"
+        );
+    }
+
+    /// **The capacity a read-back is judged against is the need in arrays**
+    /// (the module docs) — under a test's budget, that budget — so a need the
+    /// walks raise is what the next read-back is set against.
+    #[test]
+    fn the_capacity_is_the_need_in_arrays() {
+        assert_eq!(capacity(CELLS), NEED.bytes() / CELLS);
+        assert_eq!(capacity(2 * CELLS), NEED.bytes() / (2 * CELLS));
+        assert_eq!(budget::with_budget(8 * CELLS, || capacity(CELLS)), 8);
+        assert!(thrashing(100, 107, 8));
+        assert!(!thrashing(100, 108, 8));
+    }
+
+    /// **A sparse walk over a spilled store raises nothing** (the module
+    /// docs): a store four times the budget in force, every section written
+    /// once and then one cell of each read and one written, round after round
+    /// in one order, reads every array back cold — given up long before,
+    /// however few cells of it the walk touches — so none of its read-backs
+    /// is thrashing. The assembly's sliver writes into sections placed
+    /// earlier, and a second sequential pass over the world, are this walk.
+    #[test]
+    fn a_sparse_walk_over_a_spilled_store_is_cold() {
+        // The store under a budget of a quarter of itself, this thread's own
+        // (`budget::with_budget`, kept over this store alone), so what the
+        // other tests hold cannot change what this walk's read-backs say: a
+        // round gives up every array it reads back, so each comes back at
+        // least three quarters of the store later.
+        let n = 2048i32;
+        let budget = (n as usize / 4) * CELLS;
+        let mut s: SectionMap<u32> = SectionMap::new();
+        let (own_read, own_thrashed) = budget::with_budget(budget, || {
+            for k in 0..n {
+                s.insert([k * 16, 0, 0], 1);
+            }
+            for round in 0..3u32 {
+                for k in 0..n {
+                    assert_eq!(s.get(&[k * 16, 0, 0]), Some(&1));
+                    s.insert([k * 16, 1, 0], round + 2);
+                }
+            }
+            s.paging()
+        });
+        eprintln!(
+            "sparse: {n} section(s) over a budget of {budget} byte(s); {own_read} read back, \
+             {own_thrashed} of them within one turnover"
+        );
+        assert!(
+            own_read > 0,
+            "no array was read back: the case binds nothing"
+        );
+        assert_eq!(
+            own_thrashed, 0,
+            "{own_thrashed} read-back(s) of a walk that touched each of {n} sections once a round \
+             were judged thrashing"
         );
     }
 }
