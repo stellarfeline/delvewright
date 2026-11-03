@@ -288,15 +288,18 @@ columns it has. The snapshot's need is 4 × the 3 × 3 ring of reach chunks of
 the tallest window built, over both value types, at least 64 pages' worth.
 The stores' need starts at a 3 × 3 × 3 ring of sections at the wide index
 (221,184 bytes) and is measured as the build runs: an array read back within
-one turnover of its store's arrays — fewer of them given up since it was than
-the store holds resident or the need states, whichever is more — was given up
-while a walk was still using it, and each time the stores are brought under
-the budget, a sample of 64 read-backs of which half or more were such
-re-references doubles the need, until the walk's working set stays (an array
-given up long before is read back cold however few of its cells the walk
-touches, so a sliver written into a section placed long before, a second
-sequential pass, and a copy's first read of a record it shares raise
-nothing). Past the budget, the structure that just grew gives up its least
+one turnover of the resident arrays — fewer arrays, over every store, having
+come resident (made or read back) since it was given up than the need states
+— and given up under the need now stated, was given up while a walk was still
+using it, and each time the stores are brought under the budget, a sample of
+64 read-backs of which half or more were such re-references doubles the need,
+until the walk's working set stays (an array given up long before is read
+back cold however few of its cells the walk touches, so a sliver written into
+a section placed long before, a second sequential pass, a store another
+stage's growth pushed out, a copy's first read of a record it shares, and an
+array given up under an earlier need raise nothing; the clock counts every
+store's arrivals, since the stores share one least-recently-used order and a
+store's own give-ups stop while another grows). Past the budget, the structure that just grew gives up its least
 recently used chunks, pages or arrays first — down to three quarters of its
 own stated need and no further — then every other is asked, the stores never
 below three quarters of theirs, until the total stands at three quarters of
@@ -324,10 +327,11 @@ stores held a section prints `world store pages: R byte(s) resident over S
 section(s) of every store; G array(s) given up, L read back, K of them within
 one turnover of the resident arrays; the need raised T time(s) for a walk found
 thrashing, to N byte(s); B byte(s) in the scratch file (ADR-0037 §1)` beside
-them: a read-back is thrashing when fewer of its store's arrays were given up
-since it was than the need holds, and a sample of 64 read-backs of which half
-or more are thrashing doubles the need; an array given up long before is read
-back cold, however few of its cells the walk touches. Each raise prints `world
+them: a read-back is thrashing when fewer arrays came resident, over every
+store, since it was given up than the need holds, and it was given up under
+the need now stated; a sample of 64 read-backs of which half or more are
+thrashing doubles the need; an array given up long before, or under an
+earlier need, is read back cold, however few of its cells the walk touches. Each raise prints `world
 store need: raised to N byte(s); K of the last R read-back(s) came back within
 one turnover of the resident arrays` as it happens, so the stage lines around
 it name the walk whose working set the need now states.

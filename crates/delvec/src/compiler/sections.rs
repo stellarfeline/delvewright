@@ -27,16 +27,23 @@
 //! and the section index stay resident: a section's cost in memory while it
 //! is given up is its palette. What a store answers never depends on what is
 //! resident. **The stated need** is measured from what the walks have had to
-//! hold: an array read back within one turnover of its store's arrays — fewer
-//! of them given up since it was than the store holds resident or the need
-//! states, whichever is more — was given up while the walk was still using
-//! it, and each time the stores
+//! hold: an array read back within one turnover of the resident arrays —
+//! fewer arrays, over every store, having come resident since it was given up
+//! (made, or read back: [`arrivals`]) than the stores hold resident or the
+//! need states, whichever is more — and given up under the need now stated,
+//! was given up while the walk was still using it, and each time the stores
 //! are brought under the budget, a sample of read-backs ([`SAMPLE`]) of which
 //! half or more were such re-references doubles the need, and the budget with
 //! it, until the walk's working set stays. A walk that reads back an array
 //! given up long before — a sparse write into a spilled world at assembly, a
-//! second sequential pass over it — raises nothing, however few cells it
-//! reads. The floor is a 3 × 3 × 3 ring of sections at the wide index.
+//! second sequential pass over it, a store another stage's growth pushed out
+//! and a later stage reads again — raises nothing, however few cells it
+//! reads; nor does one given up under an earlier, smaller need, which says
+//! nothing about the need now in force. The clock is the arrivals over every
+//! store, since the stores share one least-recently-used order: a store's
+//! own give-ups stop while another store grows, and a clock of those would
+//! read every later reload of it as thrashing. The floor is a 3 × 3 × 3 ring
+//! of sections at the wide index.
 
 use crate::compiler::nav::{budget, spill};
 use std::collections::{BTreeMap, btree_map};
@@ -191,26 +198,26 @@ struct Paged {
 enum Slot {
     Resident(Arc<Idx>),
     /// Given up: where the record lies and its length (which says its form),
-    /// and the store's eviction clock when it was given up — `None` for a
+    /// and when it was given up — the arrivals clock ([`arrivals`]), the
+    /// need's generation ([`RAISED`]) and whether a test's budget was in
+    /// force, so the read-back is set against the same clock — `None` for a
     /// record a copy shares and never held, whose first read is cold.
     Spilled {
         at: u64,
         len: u32,
-        since: Option<u64>,
+        since: Option<(u64, u64, bool)>,
     },
 }
 
-/// **One store's paging clock** (the module docs): how many of its arrays
-/// have been given up, what it holds resident, and of the arrays read back,
-/// how many came back within one turnover of the arrays the need holds
-/// (thrashing) and how many did not (cold). Each store keeps its own, so what
-/// one walk's read-backs say is not mixed with another store's traffic; the
-/// need is judged over every store's. A test's budget (`budget::with_budget`)
-/// is kept over the one store relieving itself under it, never over another
-/// thread's.
+/// **One store's paging tally** (the module docs): what it holds resident,
+/// and of its arrays read back, how many came back within one turnover of
+/// the resident arrays (thrashing) and how many did not (cold). Each store
+/// keeps its own, so what one walk's read-backs say is not mixed with another
+/// store's traffic; the need is judged over every store's. A test's budget
+/// (`budget::with_budget`) is kept over the one store relieving itself under
+/// it, never over another thread's.
 #[derive(Default)]
 struct Tally {
-    evictions: AtomicU64,
     /// Bytes of this store's arrays resident now.
     held: AtomicUsize,
     read_back: AtomicU64,
@@ -246,6 +253,33 @@ static HELD: AtomicUsize = AtomicUsize::new(0);
 static RESIDENT: AtomicUsize = AtomicUsize::new(0);
 /// Holds so far (an array made, or read back).
 static EVENTS: AtomicU64 = AtomicU64::new(0);
+/// **The arrivals clock** (the module docs): arrays come resident, made or
+/// read back, over every store — what a read-back's distance from its
+/// give-up is counted in. Under a test's budget, the thread's own.
+static ARRIVALS: AtomicU64 = AtomicU64::new(0);
+
+thread_local! {
+    static ARRIVALS_HERE: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// The arrivals clock in force on this thread: the process's, or under a
+/// test's budget the thread's own, as the budget binds each store alone.
+fn arrivals() -> u64 {
+    match budget::override_here() {
+        0 => ARRIVALS.load(Ordering::Relaxed),
+        _ => ARRIVALS_HERE.with(std::cell::Cell::get),
+    }
+}
+
+/// Advance the arrivals clock in force on this thread.
+fn arrive() {
+    match budget::override_here() {
+        0 => {
+            ARRIVALS.fetch_add(1, Ordering::Relaxed);
+        }
+        _ => ARRIVALS_HERE.with(|a| a.set(a.get() + 1)),
+    }
+}
 /// Arrays given up and read back over the run, how many of the read-backs
 /// were thrashing (the module docs), and how often the need was raised.
 static GIVEN_UP: AtomicU64 = AtomicU64::new(0);
@@ -359,7 +393,7 @@ impl Store {
         let thrashed_since = thrashed.saturating_sub(THRASHED_JUDGED.load(Ordering::Relaxed));
         READ_BACK_JUDGED.store(read, Ordering::Relaxed);
         THRASHED_JUDGED.store(thrashed, Ordering::Relaxed);
-        if thrashed_since.saturating_mul(2) >= read_since {
+        if found_thrashing(read_since, thrashed_since) {
             NEED.raise(NEED.bytes().saturating_mul(2));
             RAISED.fetch_add(1, Ordering::Relaxed);
             // Said as it happens, so the stage lines around it name the walk
@@ -373,6 +407,13 @@ impl Store {
             );
         }
     }
+}
+
+/// **A sample of read-backs says the walk was found thrashing** when it is
+/// a sample's worth and half or more of them were thrashing (the module
+/// docs): what doubles the need.
+fn found_thrashing(read_since: u64, thrashed_since: u64) -> bool {
+    read_since >= SAMPLE && thrashed_since.saturating_mul(2) >= read_since
 }
 
 impl budget::Pageable for Store {
@@ -408,8 +449,9 @@ fn relieve(tally: &Arc<Tally>) {
     );
 }
 
-/// Count an array of `bytes` as resident.
+/// Count an array of `bytes` as resident: an arrival.
 fn hold(tally: &Tally, bytes: usize) {
+    arrive();
     budget::hold(bytes);
     HELD.fetch_add(bytes, Ordering::Relaxed);
     tally.held.fetch_add(bytes, Ordering::Relaxed);
@@ -425,24 +467,24 @@ fn release(tally: &Tally, bytes: usize) {
     RESIDENT.fetch_sub(1, Ordering::Relaxed);
 }
 
-/// **Was a read-back thrashing?** An array given up when its store's clock
+/// **Was a read-back thrashing?** An array given up when the arrivals clock
 /// stood at `since` and read back at `now` came back within one turnover of
-/// the store's arrays when fewer of them were given up in between than
-/// `capacity` — what the store holds, or the need stated, whichever is more
-/// (under a test's budget, that budget), in arrays of its size: a store about
-/// twice as large would have kept it, so the walk was still using it. One
-/// that waited longer fell off the least-recently-used end in the ordinary
-/// course of a walk that moved on, and is cold.
+/// the resident arrays when fewer arrays came resident in between than
+/// `capacity` — the need stated (under a test's budget, that budget), in
+/// arrays of its size: a store about twice as large would have kept it, so
+/// the walk was still using it. One that waited longer fell off the
+/// least-recently-used end in the ordinary course of a walk that moved on,
+/// and is cold. The caller first asks whether the array was given up under
+/// the need now stated and on the clock now in force ([`Paged::resident`]).
 fn thrashing(since: u64, now: u64, capacity: usize) -> bool {
     now.saturating_sub(since) < capacity as u64
 }
 
-/// The arrays of `bytes` each a store `held` bytes of resident arrays is
-/// judged to hold: the more of what it holds and the need stated — under a
-/// test's budget, that budget.
-fn capacity(bytes: usize, held: usize) -> usize {
+/// The need stated — under a test's budget, that budget — in arrays of
+/// `bytes` each: the turnover a read-back is judged against.
+fn capacity(bytes: usize) -> usize {
     match budget::override_here() {
-        0 => NEED.bytes().max(held) / bytes.max(1),
+        0 => NEED.bytes() / bytes.max(1),
         b => b / bytes.max(1),
     }
 }
@@ -519,7 +561,11 @@ impl Paged {
         let r = sp.append(&record);
         let (at, len) = sp.or_fail("take a write", r);
         drop(w);
-        let since = Some(self.tally.evictions.fetch_add(1, Ordering::Relaxed));
+        let since = Some((
+            arrivals(),
+            RAISED.load(Ordering::Relaxed),
+            budget::override_here() != 0,
+        ));
         *g = Slot::Spilled { at, len, since };
         release(&self.tally, bytes);
         GIVEN_UP.fetch_add(1, Ordering::Relaxed);
@@ -541,10 +587,17 @@ impl Paged {
                     .expect("an array given up was written to an open file")
                     .read(*at, *len);
                 let idx = Arc::new(Idx::decode(&record));
-                let now = self.tally.evictions.load(Ordering::Relaxed);
+                let now = arrivals();
                 let judged = budget::override_here() == 0;
-                let held = self.tally.held.load(Ordering::Relaxed);
-                if since.is_some_and(|since| thrashing(since, now, capacity(idx.bytes(), held))) {
+                let generation = RAISED.load(Ordering::Relaxed);
+                // Given up on another clock — by a thread under no test
+                // budget while this one is under one, or the reverse — it was
+                // not this walk's relief that gave it up: cold.
+                if since.is_some_and(|(since, under, test)| {
+                    test == !judged
+                        && under == generation
+                        && thrashing(since, now, capacity(idx.bytes()))
+                }) {
                     self.tally.thrashed.fetch_add(1, Ordering::Relaxed);
                     THRASHED.fetch_add(1, Ordering::Relaxed);
                     if judged {
@@ -1463,47 +1516,50 @@ mod tests {
         });
     }
 
-    /// **A walk found thrashing raises the need** (ADR-0037 §1): a store
-    /// twice the budget in force, read cell by cell at random, reads arrays
-    /// back with few reads between them; the need doubles until the walk's
-    /// working set stays, and the raised need is what the stores then state.
+    /// **A walk found thrashing is judged so, and such a sample raises the
+    /// need** (ADR-0037 §1): a store twice the budget in force (this
+    /// thread's own, so no other test's traffic enters), read cell by cell
+    /// at random, reads arrays back with few arrivals between them — half
+    /// or more of its read-backs are within one turnover — and a sample of
+    /// read-backs of which half or more are such doubles the need
+    /// (`found_thrashing`, the one rule the judgement applies), while a
+    /// smaller share, or fewer than a sample, does not. The store is read
+    /// through once in order first, so the read-backs judged are the random
+    /// walk's own, not the cold reload of a store written past the budget.
     #[test]
     fn a_walk_found_thrashing_raises_the_need() {
-        let (_, read0, raised0) = traffic();
-        let need0 = NEED.bytes();
+        let n = 512i32;
+        let budget = (n as usize / 2) * CELLS;
         let mut s: SectionMap<u32> = SectionMap::new();
-        let mut n = 0i32;
-        s.insert([0, 0, 0], 1);
-        n += 1;
-        while s.bytes() < 2 * budget::budget() {
-            s.insert([n * 16, 0, 0], 1);
-            n += 1;
-        }
-        let mut seed = 0x1234_5678_9abc_def1u64;
-        let mut reads = 0u64;
-        for _ in 0..40 {
-            for _ in 0..n {
-                seed ^= seed << 13;
-                seed ^= seed >> 7;
-                seed ^= seed << 17;
-                let k = (seed % n as u64) as i32;
-                assert_eq!(s.get(&[k * 16, 0, 0]), Some(&1));
-                reads += 1;
+        let (own_read, own_thrashed, reads) = budget::with_budget(budget, || {
+            for k in 0..n {
+                s.insert([k * 16, 0, 0], 1);
             }
-        }
-        let (_, read, raised) = traffic();
-        let (own_read, own_thrashed) = s.paging();
+            for k in 0..n {
+                assert_eq!(s.get(&[k * 16, 0, 0]), Some(&1));
+            }
+            let (read0, thrashed0) = s.paging();
+            let mut seed = 0x1234_5678_9abc_def1u64;
+            let mut reads = 0u64;
+            for _ in 0..10 {
+                for _ in 0..n {
+                    seed ^= seed << 13;
+                    seed ^= seed >> 7;
+                    seed ^= seed << 17;
+                    let k = (seed % n as u64) as i32;
+                    assert_eq!(s.get(&[k * 16, 0, 0]), Some(&1));
+                    reads += 1;
+                }
+            }
+            let (read, thrashed) = s.paging();
+            (read - read0, thrashed - thrashed0, reads)
+        });
         eprintln!(
-            "thrash: {n} section(s) over a budget of {} byte(s); {reads} read(s), {} read back \
-             ({own_read} of this store, {own_thrashed} of them within one turnover), the need \
-             raised {} time(s) from {need0} to {} byte(s)",
-            budget::budget(),
-            read - read0,
-            raised - raised0,
-            NEED.bytes()
+            "thrash: {n} section(s) over a budget of {budget} byte(s); {reads} read(s), \
+             {own_read} read back, {own_thrashed} of them within one turnover"
         );
         assert!(
-            read > read0 && own_read > 0,
+            own_read > 0,
             "no array was read back: the case binds nothing"
         );
         assert!(
@@ -1511,26 +1567,21 @@ mod tests {
             "{own_thrashed} of {own_read} read-backs of a store read at random over twice the \
              budget were judged thrashing"
         );
-        assert!(
-            raised > raised0 && NEED.bytes() > need0,
-            "a thrashing walk left the need where it stood"
-        );
+        assert!(found_thrashing(SAMPLE, SAMPLE / 2));
+        assert!(found_thrashing(3 * SAMPLE, 3 * SAMPLE));
+        assert!(!found_thrashing(SAMPLE, SAMPLE / 2 - 1));
+        assert!(!found_thrashing(SAMPLE - 1, SAMPLE - 1));
     }
 
-    /// **The capacity a read-back is judged against is the store's arrays or
-    /// the need in arrays, whichever is more** (the module docs) — under a
-    /// test's budget, that budget — so a need the walks raise, and a store
-    /// holding more than its need while nothing else asks, are what the next
-    /// read-back is set against.
+    /// **The capacity a read-back is judged against is the need in arrays**
+    /// (the module docs) — under a test's budget, that budget — so a need
+    /// the walks raise is what the next read-back is set against, whatever
+    /// the stores happen to hold while nothing else asks.
     #[test]
     fn the_capacity_is_the_need_in_arrays() {
-        assert_eq!(capacity(CELLS, 0), NEED.bytes() / CELLS);
-        assert_eq!(capacity(2 * CELLS, 0), NEED.bytes() / (2 * CELLS));
-        assert_eq!(capacity(CELLS, 3 * NEED.bytes()), 3 * NEED.bytes() / CELLS);
-        assert_eq!(
-            budget::with_budget(8 * CELLS, || capacity(CELLS, 100 * CELLS)),
-            8
-        );
+        assert_eq!(capacity(CELLS), NEED.bytes() / CELLS);
+        assert_eq!(capacity(2 * CELLS), NEED.bytes() / (2 * CELLS));
+        assert_eq!(budget::with_budget(8 * CELLS, || capacity(CELLS)), 8);
         assert!(thrashing(100, 107, 8));
         assert!(!thrashing(100, 108, 8));
     }
@@ -1603,6 +1654,94 @@ mod tests {
             own_thrashed, 0,
             "{own_thrashed} read-back(s) of a walk that touched each of {n} sections once a round \
              were judged thrashing"
+        );
+    }
+
+    /// **A store given up before another store's arrivals is read back
+    /// cold** (the module docs): under this thread's budget, a store of
+    /// twice it written once, whose later arrivals give its earlier arrays
+    /// up; then a second store of twice the budget written once, every
+    /// arrival of it advancing the one clock; then the first read through
+    /// once more, its last-given-up arrays first: every read-back of it
+    /// comes after more arrivals than the budget holds, and none is
+    /// thrashing. The judged copy's reload after the write judge has grown
+    /// its own world is this walk. A clock of the first store's own
+    /// give-ups, which stood still while the second grew, would call its
+    /// last-given-up arrays thrashing.
+    #[test]
+    fn a_store_another_stages_growth_pushed_out_is_read_back_cold() {
+        let n = 512i32;
+        let budget = (n as usize / 2) * CELLS;
+        let mut first: SectionMap<u32> = SectionMap::new();
+        let mut second: SectionMap<u32> = SectionMap::new();
+        let (given_up, read, thrashed) = budget::with_budget(budget, || {
+            for k in 0..n {
+                first.insert([k * 16, 0, 0], 1);
+            }
+            let given_up = n as usize - first.resident_sections();
+            for k in 0..n {
+                second.insert([k * 16, 0, 64], 2);
+            }
+            let (read_before, thrashed_before) = first.paging();
+            for k in (0..n).rev() {
+                assert_eq!(first.get(&[k * 16, 0, 0]), Some(&1));
+            }
+            let (read, thrashed) = first.paging();
+            (given_up, read - read_before, thrashed - thrashed_before)
+        });
+        eprintln!(
+            "reload: {n} section(s) twice over a budget of {budget} byte(s), {given_up} of the \
+             first given up; {read} read back, {thrashed} of them within one turnover"
+        );
+        assert!(
+            given_up > 0 && read >= given_up as u64,
+            "{read} of {given_up} arrays given up were read back: the case binds nothing"
+        );
+        assert_eq!(
+            thrashed, 0,
+            "{thrashed} read-back(s) of a store given up before another store's arrivals were \
+             judged thrashing"
+        );
+    }
+
+    /// **An array given up under an earlier need is read back cold** (the
+    /// module docs): under this thread's budget, a store of twice it
+    /// written once gives up its early arrays as its later ones arrive; the
+    /// need's generation then moves on, and the arrays given up last —
+    /// fewest arrivals since — are read back first: none is thrashing,
+    /// since the need they were given up under is not the need in force.
+    /// Without the generation, the last given up come back within the
+    /// turnover and are thrashing.
+    #[test]
+    fn an_array_given_up_under_an_earlier_need_is_read_back_cold() {
+        let n = 512i32;
+        let budget = (n as usize / 2) * CELLS;
+        let mut s: SectionMap<u32> = SectionMap::new();
+        let (given_up, read, thrashed) = budget::with_budget(budget, || {
+            for k in 0..n {
+                s.insert([k * 16, 0, 0], 1);
+            }
+            let given_up = n as usize - s.resident_sections();
+            RAISED.fetch_add(1, Ordering::Relaxed);
+            let (read_before, thrashed_before) = s.paging();
+            for k in (0..n).rev() {
+                assert_eq!(s.get(&[k * 16, 0, 0]), Some(&1));
+            }
+            let (read, thrashed) = s.paging();
+            (given_up, read - read_before, thrashed - thrashed_before)
+        });
+        eprintln!(
+            "earlier need: {n} section(s) over a budget of {budget} byte(s), {given_up} given \
+             up; {read} read back after the raise, {thrashed} of them within one turnover"
+        );
+        assert!(
+            given_up > 0 && read >= given_up as u64,
+            "{read} of {given_up} arrays given up were read back: the case binds nothing"
+        );
+        assert_eq!(
+            thrashed, 0,
+            "{thrashed} read-back(s) of arrays given up under an earlier need were judged \
+             thrashing"
         );
     }
 
