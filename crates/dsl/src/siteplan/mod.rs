@@ -479,6 +479,18 @@ pub fn synthesized_anchors(c: &Campaign) -> BTreeSet<String> {
 /// have.
 #[must_use]
 pub fn owed_anchors(c: &Campaign, node: &NodeId) -> BTreeSet<String> {
+    if c.site_plan.is_none() {
+        return BTreeSet::new();
+    }
+    owed_anchors_in(c, node, &SitePlan::of(c))
+}
+
+/// [`owed_anchors`] over a plan the caller has already resolved
+/// ([`SitePlan::of`] of the same campaign). A caller asking for every place's
+/// names resolves the plan once and asks this, rather than re-resolving the
+/// whole site — terrain columns included — once per place.
+#[must_use]
+pub fn owed_anchors_in(c: &Campaign, node: &NodeId, resolved: &SitePlan) -> BTreeSet<String> {
     let mut out: BTreeSet<String> = BTreeSet::new();
     if c.site_plan.is_none() {
         return out;
@@ -508,7 +520,6 @@ pub fn owed_anchors(c: &Campaign, node: &NodeId) -> BTreeSet<String> {
     // The gate region over a shut seam is owed by the place that owns the
     // cells its bar stands in (spec-0098 §2, spec-0107 §6): every bar lies in
     // cells some place owns, so its shut state is that piece's to ship.
-    let resolved = SitePlan::of(c);
     let site = resolved.site();
     for s in &resolved.seams {
         if &s.a != node && &s.b != node {
