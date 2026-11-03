@@ -517,9 +517,9 @@ impl Builder {
         };
         if fresh {
             self.len += 1;
-            for a in 0..3 {
-                self.lo[a] = self.lo[a].min(c[a]);
-                self.hi[a] = self.hi[a].max(c[a]);
+            for ((lo, hi), v) in self.lo.iter_mut().zip(self.hi.iter_mut()).zip(c) {
+                *lo = (*lo).min(v);
+                *hi = (*hi).max(v);
             }
         }
         fresh

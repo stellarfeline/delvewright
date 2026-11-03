@@ -506,10 +506,10 @@ impl Paged {
 
 impl Drop for Paged {
     fn drop(&mut self) {
-        if let Ok(g) = self.slot.lock() {
-            if let Slot::Resident(a) = &*g {
-                release(a.bytes());
-            }
+        if let Ok(g) = self.slot.lock()
+            && let Slot::Resident(a) = &*g
+        {
+            release(a.bytes());
         }
     }
 }
@@ -849,6 +849,10 @@ impl<V: Copy + Eq + std::fmt::Debug> std::fmt::Debug for SectionMap<V> {
     }
 }
 
+/// One section of a slab: its key, the section, its index array pinned for
+/// the walk, and the local `z` range the box clips it to.
+type Col<'a, V> = (Cell, &'a Section<V>, Arc<Idx>, usize, usize);
+
 /// The sections of one section-`x` slab, in `(sy, sz)` order, with the local
 /// ranges the iterator's box clips each to and each one's index array pinned
 /// for the walk.
@@ -856,7 +860,7 @@ impl<V: Copy + Eq + std::fmt::Debug> std::fmt::Debug for SectionMap<V> {
 struct Slab<'a, V> {
     /// `(section key, section, its pinned index array, lz0, lz1)`, in
     /// `(sy, sz)` order.
-    cols: Vec<(Cell, &'a Section<V>, Arc<Idx>, usize, usize)>,
+    cols: Vec<Col<'a, V>>,
     /// Runs of `cols` with one `sy`: `(start, end, ly0, ly1)`.
     groups: Vec<(usize, usize, usize, usize)>,
     /// The slab's `x` range, local.

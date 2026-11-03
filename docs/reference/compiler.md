@@ -275,20 +275,28 @@ window snapshot every graph reads (its cells' codes and raw membership) is
 held as pages of 4,096 cells, each distinct page once in the process and
 written to a third scratch file when made, the rest read back on demand, and
 each thread keeps the last eight pages it read.
-**One resident budget** holds every structure that pages (ADR-0037 §1): each
-states the working set its walk needs, in bytes, measured from what it has
-had to hold and never set by a host, and the budget is the sum of the needs
-stated. The lists' need is 9 × the largest any chunk of any list has been
+**One resident budget** holds every structure that pages (ADR-0037 §1) — the
+reach graph's lists and snapshot below, and the section store's index arrays
+(`compiler::sections`, the world's blocks and every `CellMap`): each states the
+working set its walk needs, in bytes, measured from what it has had to hold
+and never set by a host, and the budget is the sum of the needs stated. The lists' need is 9 × the largest any chunk of any list has been
 decoded to, plus 9 × 2 × 64 KiB for those nine chunks' buffered pushes in the
 two lists a closure writes (a closure is taken and a proof walks it one chunk
 at a time, writing what crosses into the eight chunks round it); the largest
 chunk depends on how densely a map's columns are reached, never on how many
 columns it has. The snapshot's need is 4 × the 3 × 3 ring of reach chunks of
 the tallest window built, over both value types, at least 64 pages' worth.
-Past the budget, the structure that just grew gives up its least recently
-used chunks or pages first, then every other, until the total stands at three
-quarters of the budget; what any of them answers never depends on what is
-resident. A run that took a closure prints `reach budget: R byte(s) resident
+The stores' need starts at a 3 × 3 × 3 ring of sections at the wide index
+(221,184 bytes) and is measured as the build runs: each time the stores are
+brought under the budget, the reads made since the last time are set against
+the arrays read back for them, and a walk that read back one array in fewer
+than 256 reads was given arrays it was still using, so the need doubles until
+the walk's working set stays (a section read whole makes 4,096 reads, so a
+sequential pass over a world spilled at assembly streams it and raises
+nothing). Past the budget, the structure that just grew gives up its least
+recently used chunks, pages or arrays first, then every other, until the
+total stands at three quarters of the budget; what any of them answers never
+depends on what is resident. A run that took a closure prints `reach budget: R byte(s) resident
 at the end, under one budget of N byte(s), the sum of the working sets stated:
 … (ADR-0037 §1)`, `reach lists: B byte(s) in the scratch file; working set W
 byte(s) (3 x 3 chunks of the largest decoded, C byte(s), and their buffered
@@ -301,7 +309,11 @@ by a thread's recent pages (ADR-0037 §2)` and `reach portals: N portal edge(s)
 over F face cell(s), summed over the closures taken, at a chunk side of S
 (ADR-0037 §2)` as it ends: a portal edge is one whose two ends lie in
 different reach chunks, a face cell a cell one lands on. The portal counts
-depend on the chunk side and are written nowhere in the output tree.
+depend on the chunk side and are written nowhere in the output tree. A run
+whose stores held a section prints `world store pages: R byte(s) resident over
+S section(s) of every store; G array(s) given up, L read back; the need raised
+T time(s) for a walk found thrashing, to N byte(s); B byte(s) in the scratch
+file (ADR-0037 §1)` beside them.
 The cost is disk: the town's bank (95 places) is 1.8 GB after one check, and grows with each program a place is checked with, since a node keeps up to eight variants.
 
 **The output directory** holds exactly what the last build emitted: a build into a directory a previous build wrote removes every file that build emitted and this one does not, and a directory holding anything no build wrote is refused untouched (`DW0967`, §5).
@@ -4459,12 +4471,20 @@ in the same cell order; `in_box(lo, hi)` walks one inclusive box in that order.
 Every whole-world `CellMap<V>` (the light model's blocks, the nav world's
 `partial` and `material`) keeps its shared part in a `SectionMap<V>` the same
 way. The judged copy (`judged_within`), the write judge's map and the review
-world's block map are `BlockMap`s too. Every build prints `world store: N
-placed cell(s) in S section(s) of 16 x 16 x 16, B byte(s)[; the judged copy N
-cell(s) in S section(s), B byte(s)] (ADR-0037 §1)` after the judged-world
-line: the store's resident cost, which the reach graph's budget does not
-count. `sections::tests::a_section_store_answers_what_a_map_answers` holds the
-store to a map over generated edit sequences. The geometry is classified once too: `light::geometry_world` is
+world's block map are `BlockMap`s too. A section's index array is a paged
+holding under the one resident budget (above): resident, it counts against
+the budget; past it the least recently used arrays over every store in the
+process are written to the stores' one scratch file (the same policy and place
+as the reach graph's) and read back when next asked, the palette and the
+section index staying resident; a walk over a box pins each section's array
+for the slab it reads. Every build prints `world store: N placed cell(s) in S
+section(s) of 16 x 16 x 16, B byte(s)[; the judged copy N cell(s) in S
+section(s), B byte(s)] (ADR-0037 §1)` after the judged-world line: the bytes
+the store's arrays and palettes hold, resident or in the file.
+`sections::tests::a_section_store_answers_what_a_map_answers` holds the store
+to a map over generated edit sequences under the default budget and under a
+budget of one byte; `a_walk_found_thrashing_raises_the_need` holds the need's
+measurement. The geometry is classified once too: `light::geometry_world` is
 the premise-free nav world relight surveys, and the campaign's own world is that
 world's cells under `nav::Premises::of_plan` (`World::with_premises`) with
 relight's fixtures standing in it (`light::lit_world`): the map with the
@@ -4475,7 +4495,12 @@ and no fixture carries a flag of its own saying whether it collides. The nav `Wo
 (`cellset::CellSet`/`CellMap`): a derived view — a quest configuration, a sealed
 gate, a counterfactual — shares the bulk and stores only its own edits, and a
 set that fills its bounding box is held as a bitset. Iteration over either is in
-`[i32; 3]` order, as a `BTreeSet` iterates.
+`[i32; 3]` order, as a `BTreeSet` iterates. `occupancy_over` builds every set
+in that dense form directly (`CellSet::builder`, one bit per cell of the box
+the store's sections span, finished into the set a `BTreeSet` of the same
+cells gives) and its two maps as section stores, so no whole-world list or
+tree of cells stands at the stage (ADR-0037 §2;
+`cellset::tests::a_set_built_in_the_dense_form_is_the_set_a_tree_gives`).
 
 **A template places what the game places** (spec-0098 §7). Every cell a
 template names is written — **air included**, which carves the mass and any
@@ -4498,7 +4523,15 @@ admission gallery's) therefore goes through `admit::structure::as_placed`: each
 `structure_void` cell is dropped from the block list and the palette re-indexed
 without it; everything else in the file is carried, and a template holding no
 void ships byte-identical. The placement sentinel is read off the shipped bytes
-and never picks a void.
+and never picks a void. Both reads decode a template's whole tree, many times
+its bytes, so the templates are taken in waves (`par::map_within`) whose
+decompressed sizes — the gzip trailer's ISIZE, `admit::structure::decompressed_len`
+— sum to at most `emit::TEMPLATE_DECODE_BYTES` (16 MiB; a larger template is a
+wave of its own), never one tree per thread at the same moment (ADR-0037 §5
+item 3); the build prints `shipped templates: N template(s) re-encoded as
+placed, B byte(s) decompressed in all, at most C byte(s) (or one template)
+decoded at once`. The waves change when each template is decoded and never
+what is written.
 
 **Socket sealing is a property of a placed piece, not of the layout solver.**
 `solver::seal_layout` runs over the placed pieces of **every** area, pool or
