@@ -421,21 +421,26 @@ jobs:
       # nextest `--extract-to target/llvm-cov-target`, so the binaries land
       # under `target/llvm-cov-target/target/debug/`; the tests reach `delvec`
       # by the path compiled into them, `target/llvm-cov-target/debug/delvec`,
-      # and the symlink makes that the same directory. The checkout stands at
-      # the same absolute path as the build's, so every other compiled-in path
-      # (`CARGO_MANIFEST_DIR`) resolves as built. Every test runs to its end;
-      # the determinism double-build gate (`cli.rs`) runs inside whichever
-      # partition its name hashes to. The 25-minute run bound and the per-test
-      # bound are `[profile.ci]`'s (`.config/nextest.toml`).
+      # so the archive is laid out first and `delvec` hard-linked there — a
+      # hard link, not a symlink, because a tool that canonicalises the path
+      # it was handed (`handout.py`) must still print the path the test names
+      # (measured: `handout_script` red through a symlink on run 41696974786).
+      # The checkout stands at the same absolute path as the build's, so every
+      # other compiled-in path (`CARGO_MANIFEST_DIR`) resolves as built. Every
+      # test runs to its end; the determinism double-build gate (`cli.rs`)
+      # runs inside whichever partition its name hashes to. The 25-minute run
+      # bound and the per-test bound are `[profile.ci]`'s (`.config/nextest.toml`).
       - name: cargo nextest, partition k of N, instrumented
         env:
           PARTITION: ${{ matrix.k }}
           PARTITIONS: ${{ strategy.job-total }}
         run: |
           set -euo pipefail
-          mkdir -p target/llvm-cov-target
-          ln -s target/debug target/llvm-cov-target/debug
-          cargo llvm-cov nextest --no-report --archive-file "$RUNNER_TEMP/archive/nextest-archive.tar.zst" --workspace-remap . --profile ci --partition "hash:$PARTITION/$PARTITIONS"
+          archive="$RUNNER_TEMP/archive/nextest-archive.tar.zst"
+          cargo nextest list --archive-file "$archive" --extract-to target/llvm-cov-target --workspace-remap . --message-format json > target/nextest-list.json
+          mkdir -p target/llvm-cov-target/debug
+          ln target/llvm-cov-target/target/debug/delvec target/llvm-cov-target/debug/delvec
+          cargo llvm-cov nextest --no-report --archive-file "$archive" --extract-overwrite --workspace-remap . --profile ci --partition "hash:$PARTITION/$PARTITIONS"
       # The partition's counters, merged once here into one indexed profile,
       # so the census job merges N files instead of thousands of raw ones. The
       # count of raw profiles is printed: one per test process, plus one per
