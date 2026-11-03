@@ -183,7 +183,10 @@ mod tests {
     /// the shared handle whose cursor Windows moves on every read and would
     /// move on a cursor-relative write. Red on any record read back other
     /// than as written, and on a run whose readers never read a slot while a
-    /// writer was still appending (which would bind nothing).
+    /// writer was still appending (which would bind nothing) — which the
+    /// writers make structural: each stops halfway until the readers have
+    /// taken a pass over the published slots, so an overlapping read happens
+    /// however the threads are scheduled, under a loaded machine too.
     #[test]
     fn records_read_back_as_written_while_writers_and_readers_run_at_once() {
         let spill = Spill::open("test-spill").expect("a scratch file opens in the temp dir");
@@ -194,19 +197,28 @@ mod tests {
         let published: Arc<Mutex<Vec<Slot>>> = Default::default();
         let writing = Arc::new(std::sync::atomic::AtomicUsize::new(4));
         let overlapped = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let passes = Arc::new(std::sync::atomic::AtomicU64::new(0));
         let record = |w: u8, i: u32| -> Vec<u8> {
             let n = 1 + ((i as usize * 7 + w as usize * 13) % 300);
             (0..n).map(|k| (k as u8) ^ w ^ (i as u8)).collect()
         };
         std::thread::scope(|s| {
             for w in 0..4u8 {
-                let (writer, published, writing) = (
+                let (writer, published, writing, passes) = (
                     Arc::clone(&writer),
                     Arc::clone(&published),
                     Arc::clone(&writing),
+                    Arc::clone(&passes),
                 );
                 s.spawn(move || {
                     for i in 0..600u32 {
+                        if i == 300 {
+                            // Halfway: wait until the readers have read what
+                            // is published while this writer still appends.
+                            while passes.load(std::sync::atomic::Ordering::SeqCst) == 0 {
+                                std::thread::yield_now();
+                            }
+                        }
                         let bytes = record(w, i);
                         let (at, len) = {
                             let mut g = writer.lock().expect("writer");
@@ -218,10 +230,11 @@ mod tests {
                 });
             }
             for _ in 0..4 {
-                let (published, writing, overlapped, reader) = (
+                let (published, writing, overlapped, passes, reader) = (
                     Arc::clone(&published),
                     Arc::clone(&writing),
                     Arc::clone(&overlapped),
+                    Arc::clone(&passes),
                     &reader,
                 );
                 s.spawn(move || {
@@ -240,6 +253,9 @@ mod tests {
                                 slots.len() as u64,
                                 std::sync::atomic::Ordering::Relaxed,
                             );
+                            if !slots.is_empty() {
+                                passes.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                            }
                         } else {
                             break;
                         }
