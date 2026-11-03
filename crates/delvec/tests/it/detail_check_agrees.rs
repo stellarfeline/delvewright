@@ -230,6 +230,7 @@ place_agrees! {
     check_and_commit_agree_on_loft => "loft",
     check_and_commit_agree_on_near_hall => "near-hall",
     check_and_commit_agree_on_perch => "perch",
+    check_and_commit_agree_on_undercroft => "undercroft",
 }
 
 /// Each refusal over its own copy of the committed whole (the fixture is this
