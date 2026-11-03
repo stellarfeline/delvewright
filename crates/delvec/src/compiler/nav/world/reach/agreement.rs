@@ -1031,6 +1031,55 @@ fn reef() -> World {
     )
 }
 
+/// **The ground in the sea's band is no water** (ADR-0037 §2, the plain sea
+/// measured): under an ocean, a cell the assembly wrote a block into — the
+/// terrain's ground, outside every placed piece's box — is no rest state and
+/// is never entered, however deep in the sea's band it lies; the sea beside
+/// it is. A headland of stone through the band (y 55..=66 over x 0..=9, z
+/// 0..=9, no `built` box) with a body on top: the closure from the top holds
+/// every sea state it reaches and no cell of the stone, and no stone cell is
+/// a rest state. Refuses a run that reaches no sea. Perturbation: ambient
+/// water judged by the pieces' boxes alone → red (the stone's band cells are
+/// submerged states and the closure fills the headland).
+#[test]
+fn the_ground_in_the_seas_band_is_no_water() {
+    let mut b = super::tests::Build::default();
+    b.fill([0, 55, 0], [9, 66, 9]);
+    let w = b.world(
+        super::Ambient::Ocean(crate::compiler::nav::Sea {
+            level: 62,
+            floor_top: 54,
+        }),
+        Vec::new(),
+    );
+    let stone = |c: &[i32; 3]| {
+        (0..=9).contains(&c[0]) && (55..=66).contains(&c[1]) && (0..=9).contains(&c[2])
+    };
+    for x in 0..=9 {
+        for z in 0..=9 {
+            for y in 55..=62 {
+                assert_eq!(
+                    w.rest_kind([x, y, z]),
+                    None,
+                    "stone at {:?} rests a body",
+                    [x, y, z]
+                );
+            }
+        }
+    }
+    assert_eq!(w.rest_kind([-1, 62, 5]), Some(super::RestKind::Afloat));
+    assert_eq!(w.rest_kind([-1, 60, 5]), Some(super::RestKind::Submerged));
+    let r = w.body_reach(&[[5, 67, 5]]);
+    let sea = r.states.keys().filter(|c| w.ambient_water(*c)).count();
+    let inside = r.states.keys().filter(stone).count();
+    eprintln!(
+        "headland: {} state(s), {sea} in the sea, {inside} in the stone",
+        r.states.len()
+    );
+    assert!(sea > 0, "the case binds nothing: the sea is not reached");
+    assert_eq!(inside, 0, "the closure entered the stone");
+}
+
 /// The worlds the chunk invariance and the closure's exactness are asked of:
 /// every generated course, the Bell yard (a void's edge), the jetty (the open
 /// sea), the garden, the ladder cliff (holding states) and the reef (the
