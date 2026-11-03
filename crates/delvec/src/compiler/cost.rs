@@ -83,9 +83,10 @@ pub struct ResourceCost {
 /// candidates within [`crate::compiler::nav::LAUNCH_REACH`] columns of it in
 /// `x` and `z`, which is where every launch lands; a water node has at most
 /// its six dives. Summed over a reach chunk, that bounds what its lists decode
-/// to; summed over the nodes within reach of a chunk face, it bounds the
-/// portal edges one closure joins, a water cell on the face line crossing it
-/// at most once.
+/// to; summed over the nodes within reach of a chunk face — each with the
+/// candidates in the strips across the faces it can reach, which is where a
+/// crossing edge lands — it bounds the portal edges one closure joins, a water
+/// cell on the face line crossing it at most once.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RestCensus {
     /// Columns of the window.
@@ -183,12 +184,44 @@ impl RestCensus {
             }
         }
         let r = usize::try_from(reach).unwrap_or(0);
-        let near = |x: usize, z: usize| -> u64 {
-            let (x0, x1) = (x.saturating_sub(r), (x + r + 1).min(w));
-            let (z0, z1) = (z.saturating_sub(r), (z + r + 1).min(d));
+        // Rest candidates in the inclusive column box `x0..=x1`, `z0..=z1`,
+        // clipped to the window (an empty box when it lies outside).
+        let boxed = |x0: i64, x1: i64, z0: i64, z1: i64| -> u64 {
+            let (x0, x1) = (x0.max(0) as usize, (x1 + 1).clamp(0, w as i64) as usize);
+            let (z0, z1) = (z0.max(0) as usize, (z1 + 1).clamp(0, d as i64) as usize);
+            if x0 >= x1 || z0 >= z1 {
+                return 0;
+            }
             sat[x1 + z1 * (w + 1)] + sat[x0 + z0 * (w + 1)]
                 - sat[x0 + z1 * (w + 1)]
                 - sat[x1 + z0 * (w + 1)]
+        };
+        let near = |x: usize, z: usize| -> u64 {
+            let (x, z, r) = (x as i64, z as i64, r as i64);
+            boxed(x - r, x + r, z - r, z + r)
+        };
+        // The candidates across the chunk faces a column's launches reach:
+        // for a column `i` cells into its chunk on an axis, the strip past the
+        // low face is the `reach - i` columns before the chunk, past the high
+        // face the `reach - (side - 1 - i)` columns after it, each `2 reach + 1`
+        // wide on the other axis.
+        let across = |x: usize, z: usize, ix: i32, iz: i32| -> u64 {
+            let (x, z, r, side) = (x as i64, z as i64, r as i64, i64::from(side));
+            let (ix, iz) = (i64::from(ix), i64::from(iz));
+            let mut n = 0u64;
+            if ix < r {
+                n += boxed(x - r, x - ix - 1, z - r, z + r);
+            }
+            if side - 1 - ix < r {
+                n += boxed(x + (side - ix), x + r, z - r, z + r);
+            }
+            if iz < r {
+                n += boxed(x - r, x + r, z - r, z - iz - 1);
+            }
+            if side - 1 - iz < r {
+                n += boxed(x - r, x + r, z + (side - iz), z + r);
+            }
+            n
         };
         let mut chunks: BTreeMap<(i32, i32), (usize, usize)> = BTreeMap::new();
         let mut portal = 0usize;
@@ -208,10 +241,8 @@ impl RestCensus {
                 e.0 += s + wt;
                 e.1 += items;
                 let (ix, iz) = (ax.rem_euclid(side), az.rem_euclid(side));
-                let near_face = |i: i32| i < reach || i >= side - reach;
-                if near_face(ix) || near_face(iz) {
-                    portal += s * per_node;
-                }
+                let crossing = usize::try_from(across(x, z, ix, iz)).unwrap_or(usize::MAX);
+                portal += s * per_node.min(crossing);
                 let on_line = |i: i32| usize::from(i == 0 || i == side - 1);
                 portal += wt * (on_line(ix) + on_line(iz));
             }
@@ -645,9 +676,23 @@ mod tests {
                     e.0 += s + w;
                     e.1 += s * per + 6 * w;
                     let (ix, iz) = (x.rem_euclid(side), z.rem_euclid(side));
-                    if ix < reach || ix >= side - reach || iz < reach || iz >= side - reach {
-                        portal += s * per;
+                    // Candidates in the neighbourhood that lie in another chunk
+                    // across a face this column's launches reach, strip by strip
+                    // (a corner column counts its corner twice, as the census does).
+                    let mut crossing = 0usize;
+                    for dx in -reach..=reach {
+                        for dz in -reach..=reach {
+                            let (nx, nz) = (x + dx, z + dz);
+                            if nx < lo[0] || nx > hi[0] || nz < lo[2] || nz > hi[2] {
+                                continue;
+                            }
+                            let (a, b) = col(nx, nz);
+                            let past_x = nx.div_euclid(side) != x.div_euclid(side);
+                            let past_z = nz.div_euclid(side) != z.div_euclid(side);
+                            crossing += (a + b) * (usize::from(past_x) + usize::from(past_z));
+                        }
                     }
+                    portal += s * per.min(crossing);
                     portal += w
                         * (usize::from(ix == 0 || ix == side - 1)
                             + usize::from(iz == 0 || iz == side - 1));

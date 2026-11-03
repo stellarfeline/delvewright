@@ -1830,10 +1830,12 @@ pub fn persist_reach_cache() {
              closures taken, the most in one closure {most}, at a chunk side of {} (ADR-0037 §2)",
             chunks::side_here()
         );
+        let (graphs, worlds, params) = graphs_memoised();
         eprintln!(
-            "reach graphs: {} graph(s) memoised over the run, one per distinct world and \
-             parameters (ADR-0037 §3's configurations)",
-            graphs_memoised()
+            "reach graphs: {graphs} graph(s) memoised over the run, one per distinct world and \
+             parameters: {worlds} distinct world(s), {params} parameter set(s) (ADR-0037 §3's \
+             configurations, with the premise variants and counterfactuals that are worlds of \
+             their own)"
         );
     }
     let (variants, bytes) = bank::census_all();
@@ -1858,10 +1860,19 @@ pub fn default_reach_cache(dir: std::path::PathBuf) {
 type Graphs = Mutex<HashMap<([u8; 32], String), Arc<OnceLock<Arc<GraphMemo>>>>>;
 static GRAPHS: OnceLock<Graphs> = OnceLock::new();
 
-/// How many graphs the process has memoised: one per distinct (world,
-/// parameters) a closure was asked of — the configurations, as built.
-fn graphs_memoised() -> usize {
-    GRAPHS.get().map_or(0, |m| m.lock().map_or(0, |g| g.len()))
+/// How many graphs the process has memoised — one per distinct (world,
+/// parameters) a closure was asked of — and over how many distinct worlds and
+/// parameter sets: the configurations, as built, with the premise variants and
+/// counterfactuals that are worlds of their own.
+fn graphs_memoised() -> (usize, usize, usize) {
+    use std::collections::HashSet;
+    GRAPHS.get().map_or((0, 0, 0), |m| {
+        m.lock().map_or((0, 0, 0), |g| {
+            let worlds: HashSet<&[u8; 32]> = g.keys().map(|(w, _)| w).collect();
+            let params: HashSet<&str> = g.keys().map(|(_, p)| p.as_str()).collect();
+            (g.len(), worlds.len(), params.len())
+        })
+    })
 }
 
 /// The memo of one world's graph: its snapshot and every node expanded so far.

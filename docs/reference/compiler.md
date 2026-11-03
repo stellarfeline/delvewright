@@ -309,19 +309,28 @@ pushes); L chunk read(s) back over D record(s), E chunk(s) given up (ADR-0037
 most M for one chunk in one closure [NxK …]`, `reach snapshot: P distinct
 page(s) of 4096 cell(s) over B byte(s) in the scratch file; R resident at the
 end, working set W byte(s) …; L page(s) read back; H of T page read(s) served
-by a thread's recent pages (ADR-0037 §2)` and `reach portals: N portal edge(s)
-over F face cell(s), summed over the closures taken, at a chunk side of S
-(ADR-0037 §2)` as it ends: a portal edge is one whose two ends lie in
-different reach chunks, a face cell a cell one lands on. The portal counts
-depend on the chunk side and are written nowhere in the output tree. A run
-whose stores held a section prints `world store pages: R byte(s) resident over
-S section(s) of every store; G array(s) given up, L read back, K of them within
+by a thread's recent pages (ADR-0037 §2)`, `reach portals: N portal edge(s)
+over F face cell(s), summed over the closures taken, the most in one closure M,
+at a chunk side of S (ADR-0037 §2)` and `reach graphs: G graph(s) memoised over
+the run, one per distinct world and parameters: W distinct world(s), P
+parameter set(s) (ADR-0037 §3's configurations, with the premise variants and
+counterfactuals that are worlds of their own)` as it ends: a portal edge is one
+whose two ends lie in different reach chunks, a face cell a cell one lands on;
+`M` is the measured counterpart of the cost line's portal-edge bound, and `W`
+is read against its configuration bound, which counts the quest plan's region
+states and not the premise variants a proof builds beside them. The portal counts depend
+on the chunk side and are written nowhere in the output tree. A run whose
+stores held a section prints `world store pages: R byte(s) resident over S
+section(s) of every store; G array(s) given up, L read back, K of them within
 one turnover of the resident arrays; the need raised T time(s) for a walk found
 thrashing, to N byte(s); B byte(s) in the scratch file (ADR-0037 §1)` beside
 them: a read-back is thrashing when fewer of its store's arrays were given up
 since it was than the need holds, and a sample of 64 read-backs of which half
 or more are thrashing doubles the need; an array given up long before is read
-back cold, however few of its cells the walk touches.
+back cold, however few of its cells the walk touches. Each raise prints `world
+store need: raised to N byte(s); K of the last R read-back(s) came back within
+one turnover of the resident arrays` as it happens, so the stage lines around
+it name the walk whose working set the need now states.
 The cost is disk: the town's bank (95 places) is 1.8 GB after one check, and grows with each program a place is checked with, since a node keeps up to eight variants.
 
 **The output directory** holds exactly what the last build emitted: a build into a directory a previous build wrote removes every file that build emitted and this one does not, and a directory holding anything no build wrote is refused untouched (`DW0967`, §5).
@@ -3712,21 +3721,39 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   (`compiler::cost`, ADR-0037 §3), printed before the whole-map stages start as
   `resource cost: region X x Y x Z cell(s) under a H horizon; judged columns
   …; reach window at most W cell(s) (…), its reached bitmap B byte(s), NX x NZ
-  chunk(s) of side 32 with F face cell(s), at most P portal edge(s) at E
-  edge(s) per node; working set before any walk: the stores' ring + the
+  chunk(s) of side 32 with F face cell(s); rest census: S standing and A water
+  candidate(s) over C column(s), at most N node(s) in one chunk, E edge(s) out
+  of one node and every landing within 5 column(s); at most P portal edge(s)
+  in one closure; working set before any walk: the stores' ring + the
   snapshot's pages + the lists' buffered pushes = T byte(s), the lists' largest
-  chunk at most L byte(s) by the window's height; summaries at most: K face
+  chunk at most L byte(s) by its candidates; summaries at most: K face
   label(s), C configuration(s), S plain-sea summar(y/ies); scratch: the stores'
   … (ADR-0037 §3)` and written as the same numbers. Computed from the site
   plan's region, the horizon, the judged columns, the window those give through
-  the snapshot's own rule (`nav::window_box`) and the store's sections — never
-  measured, so two builds of one campaign write one file; what a build reached
-  is the end-of-run lines (`reach budget:`, `reach lists:`, `reach portals:`,
-  `world store pages:`), which are written nowhere in the output tree. Every
-  figure is an upper bound: the lists' largest chunk is every cell of a chunk a
-  node with every edge, which on the town is three orders over the measured
-  chunk, and the hosting side reads the measured lines for what a build took.
-  `delvec detail` prints the line and writes no file.
+  the snapshot's own rule (`nav::window_box`) and the store — never measured,
+  so two builds of one campaign write one file; what a build reached is the
+  end-of-run lines (`reach budget:`, `reach lists:`, `reach portals:`, `reach
+  graphs:`, `world store pages:`, the exposure line's labels), which are
+  written nowhere in the output tree. The **rest census** (`cost::RestCensus`)
+  reads the window from the store section by section through the one block
+  classification (`blockshape::collision_class`) and counts, per column, the
+  cells a body can rest in at most: one standing candidate over every block a
+  body stands on, every climbable cell, every fluid cell and every cell of the
+  horizon's sea band — an upper bound on the closure's states. A node's edges
+  are bounded by the launch set and by the rest candidates within
+  `nav::LAUNCH_REACH` (5) columns of it, where every launch lands; a water node
+  by its six dives. Summed over a reach chunk that bounds what its lists decode
+  to; summed over the nodes within reach of a chunk face — each with the
+  candidates in the strips across the faces it reaches, where a crossing edge
+  lands — with a water cell on the face line crossing it at most once, it
+  bounds the portal edges of one closure. The line takes the tighter of the census's bound and the plain one
+  (every cell a node with every edge) for both figures.
+  `cost::tests::the_census_counts_what_a_column_walk_counts` holds the census
+  to a cell-by-cell reference; `reach::tests::the_costs_bounds_hold_over_the_graphs_built`
+  holds the states, every chunk's decoded size and the portal edges of five
+  worlds' closures under the bounds at two chunk sides. The hosting side reads
+  the measured lines for what a build took. `delvec detail` prints the line and
+  writes no file.
 - `<out>/validation/piece-exposure.json`: the `DW0885` **binding ledger**
   (`compiler::burial`). What the piece-exposure check examined, over a
   denominator taken from the placement and the bytes rather than from the
@@ -3739,7 +3766,9 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   `party_air_cells` and `party_air_cut_off` (the party's air is labelled by
   connected component one section of the store at a time, the labels joined
   across section faces, ADR-0037 §2; `burial::tests::the_block_wise_air_is_the_flooded_air`
-  holds it to the cell-by-cell flood). `exposed_cells` beside
+  holds it to the cell-by-cell flood; the stderr line states those labels as
+  `… cell(s) of party air over L section component label(s) …`, the measured
+  counterpart of the cost line's face-label bound, and the ledger does not). `exposed_cells` beside
   `judged_cells` is the named residual: the party's air is followed two cells
   outside the content, so a piece standing well clear of everything can be
   exposed and go unasked, and the gap between the two numbers is the size of
@@ -4507,12 +4536,31 @@ the budget; past it the least recently used arrays over every store in the
 process are written to the stores' one scratch file (the same policy and place
 as the reach graph's) and read back when next asked, the palette and the
 section index staying resident; a walk over a box pins each section's array
-for the slab it reads. A template's cells are written grouped by section, the
-sections in key order and one section's cells in the order the template lists
-them (`assembled::by_section`, a stable sort, so a cell listed twice keeps its
-writes in order), and the judged copy is taken section by section, so the
-store's working set while the world is assembled and cut is one section of
-each store. Every build prints `world store: N placed cell(s) in S
+for the slab it reads. **A copy of a store shares every index array with the
+original until one of the two writes it** (`SectionMap::clone`,
+`Section::own`): a whole-world copy — the picture a review world starts from,
+a configuration's bytes, the load world the write judge reads — costs its
+palettes and section index and the sections its own writes touch, never the
+map (`sections::tests::a_copy_shares_its_arrays_until_one_side_writes`). A
+template's cells are written grouped by section, the sections in key order and
+one section's cells in the order the template lists them
+(`assembled::by_section`, a stable sort, so a cell listed twice keeps its
+writes in order); a list of writes over a store is laid the same way
+(`SectionMap::write_by_section`: a configuration's laid regions,
+`RegionState::blocks_over`; setup's seals, fixtures and props over the shipped
+world, `assembled::shipped_within`); the judged copy is taken section by
+section; gravity settles one section column at a time
+(`SectionMap::section_columns`, `assembled::settle`, the outcomes returned in
+`(x, z)` order as the walk in cell order returned them,
+`the_settle_by_section_column_is_the_settle_in_cell_order`); and the
+clear-width check never copies the shipped world: setup's writes are derived
+once (`assembled::shipped_writes`) and laid inside each way's window
+(`shipped_within` with a clip — the whole world's inside that box,
+`a_clipped_shipped_world_is_the_whole_worlds_inside_the_clip`), the ways judged
+in the order of their windows' sections and reported in their own
+(`width::judge_all`). So the store's working set while the world is assembled,
+cut, judged for width and pictured is a section, a section column or a way's
+window of each store. Every build prints `world store: N placed cell(s) in S
 section(s) of 16 x 16 x 16, B byte(s)[; the judged copy N cell(s) in S
 section(s), B byte(s)] (ADR-0037 §1)` after the judged-world line: the bytes
 the store's arrays and palettes hold, resident or in the file.
