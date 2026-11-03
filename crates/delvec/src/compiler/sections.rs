@@ -27,9 +27,10 @@
 //! and the section index stay resident: a section's cost in memory while it
 //! is given up is its palette. What a store answers never depends on what is
 //! resident. **The stated need** is measured from what the walks have had to
-//! hold: an array read back within one turnover of its store's resident arrays
-//! — fewer of them given up since it was than the store holds resident — was
-//! given up while the walk was still using it, and each time the stores
+//! hold: an array read back within one turnover of its store's arrays — fewer
+//! of them given up since it was than the store holds resident or the need
+//! states, whichever is more — was given up while the walk was still using
+//! it, and each time the stores
 //! are brought under the budget, a sample of read-backs ([`SAMPLE`]) of which
 //! half or more were such re-references doubles the need, and the budget with
 //! it, until the walk's working set stays. A walk that reads back an array
@@ -46,7 +47,7 @@ use std::sync::{Arc, Mutex, OnceLock, Weak};
 type Cell = [i32; 3];
 
 /// A section's side, in cells.
-const SIDE: i32 = 16;
+pub const SIDE: i32 = 16;
 /// Cells in a section.
 const CELLS: usize = 4096;
 /// The widest palette a narrow (one-byte) index addresses: index `0` is
@@ -178,11 +179,12 @@ struct Paged {
 enum Slot {
     Resident(Arc<Idx>),
     /// Given up: where the record lies and its length (which says its form),
-    /// and the store's eviction clock when it was given up.
+    /// and the store's eviction clock when it was given up — `None` for a
+    /// record a copy shares and never held, whose first read is cold.
     Spilled {
         at: u64,
         len: u32,
-        since: u64,
+        since: Option<u64>,
     },
 }
 
@@ -390,21 +392,22 @@ fn release(tally: &Tally, bytes: usize) {
 
 /// **Was a read-back thrashing?** An array given up when its store's clock
 /// stood at `since` and read back at `now` came back within one turnover of
-/// the arrays the need holds when fewer of its store's arrays were given up
-/// in between than `capacity` — the need stated (or the test's budget) in
-/// arrays of its size: a need about twice as large would have kept it, so the
-/// walk was still using it. One that waited longer fell off the
-/// least-recently-used end in the ordinary course of a walk that moved on,
-/// and is cold.
+/// the store's arrays when fewer of them were given up in between than
+/// `capacity` — what the store holds, or the need stated, whichever is more
+/// (under a test's budget, that budget), in arrays of its size: a store about
+/// twice as large would have kept it, so the walk was still using it. One
+/// that waited longer fell off the least-recently-used end in the ordinary
+/// course of a walk that moved on, and is cold.
 fn thrashing(since: u64, now: u64, capacity: usize) -> bool {
     now.saturating_sub(since) < capacity as u64
 }
 
-/// The arrays of `bytes` each the need stated holds — under a test's budget,
-/// that budget.
-fn capacity(bytes: usize) -> usize {
+/// The arrays of `bytes` each a store `held` bytes of resident arrays is
+/// judged to hold: the more of what it holds and the need stated — under a
+/// test's budget, that budget.
+fn capacity(bytes: usize, held: usize) -> usize {
     match budget::override_here() {
-        0 => NEED.bytes() / bytes.max(1),
+        0 => NEED.bytes().max(held) / bytes.max(1),
         b => b / bytes.max(1),
     }
 }
@@ -432,7 +435,8 @@ impl Paged {
     /// (a record is written once and never changed, so two sections may read
     /// it).
     /// A copy for a store whose clock is `tally`: a resident array is copied,
-    /// a spilled one shares its record, given up as of the copy's own clock.
+    /// a spilled one shares its record, which the copy never held, so its
+    /// first read back is cold.
     fn duplicate(&self, tally: &Arc<Tally>) -> Arc<Paged> {
         let g = self.slot.lock().expect("a section's slot");
         match &*g {
@@ -446,7 +450,7 @@ impl Paged {
                     slot: Mutex::new(Slot::Spilled {
                         at: *at,
                         len: *len,
-                        since: tally.evictions.load(Ordering::Relaxed),
+                        since: None,
                     }),
                     used: AtomicU64::new(budget::tick()),
                     tally: Arc::clone(tally),
@@ -480,7 +484,7 @@ impl Paged {
         let r = sp.append(&record);
         let (at, len) = sp.or_fail("take a write", r);
         drop(w);
-        let since = self.tally.evictions.fetch_add(1, Ordering::Relaxed);
+        let since = Some(self.tally.evictions.fetch_add(1, Ordering::Relaxed));
         *g = Slot::Spilled { at, len, since };
         release(&self.tally, bytes);
         GIVEN_UP.fetch_add(1, Ordering::Relaxed);
@@ -504,7 +508,8 @@ impl Paged {
                 let idx = Arc::new(Idx::decode(&record));
                 let now = self.tally.evictions.load(Ordering::Relaxed);
                 let judged = budget::override_here() == 0;
-                if thrashing(*since, now, capacity(idx.bytes())) {
+                let held = self.tally.held.load(Ordering::Relaxed);
+                if since.is_some_and(|since| thrashing(since, now, capacity(idx.bytes(), held))) {
                     self.tally.thrashed.fetch_add(1, Ordering::Relaxed);
                     THRASHED.fetch_add(1, Ordering::Relaxed);
                     if judged {
@@ -1440,14 +1445,20 @@ mod tests {
         );
     }
 
-    /// **The capacity a read-back is judged against is the need in arrays**
-    /// (the module docs) — under a test's budget, that budget — so a need the
-    /// walks raise is what the next read-back is set against.
+    /// **The capacity a read-back is judged against is the store's arrays or
+    /// the need in arrays, whichever is more** (the module docs) — under a
+    /// test's budget, that budget — so a need the walks raise, and a store
+    /// holding more than its need while nothing else asks, are what the next
+    /// read-back is set against.
     #[test]
     fn the_capacity_is_the_need_in_arrays() {
-        assert_eq!(capacity(CELLS), NEED.bytes() / CELLS);
-        assert_eq!(capacity(2 * CELLS), NEED.bytes() / (2 * CELLS));
-        assert_eq!(budget::with_budget(8 * CELLS, || capacity(CELLS)), 8);
+        assert_eq!(capacity(CELLS, 0), NEED.bytes() / CELLS);
+        assert_eq!(capacity(2 * CELLS, 0), NEED.bytes() / (2 * CELLS));
+        assert_eq!(capacity(CELLS, 3 * NEED.bytes()), 3 * NEED.bytes() / CELLS);
+        assert_eq!(
+            budget::with_budget(8 * CELLS, || capacity(CELLS, 100 * CELLS)),
+            8
+        );
         assert!(thrashing(100, 107, 8));
         assert!(!thrashing(100, 108, 8));
     }
@@ -1479,6 +1490,21 @@ mod tests {
                     s.insert([k * 16, 1, 0], round + 2);
                 }
             }
+            // A copy shares the records given up, which it never held: its
+            // first read of each is cold too.
+            let copy = s.clone();
+            for k in 0..n {
+                assert_eq!(copy.get(&[k * 16, 1, 0]), Some(&4));
+            }
+            let (copy_read, copy_thrashed) = copy.paging();
+            assert!(
+                copy_read > 0,
+                "the copy read no array back: the case binds nothing"
+            );
+            assert_eq!(
+                copy_thrashed, 0,
+                "{copy_thrashed} of the copy's {copy_read} first reads were judged thrashing"
+            );
             s.paging()
         });
         eprintln!(
