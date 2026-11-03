@@ -159,6 +159,7 @@ pub mod cohabit;
 pub mod combat;
 pub mod commands;
 pub mod continuity;
+pub mod cost;
 pub mod creator;
 pub mod crosshair;
 pub mod daylight;

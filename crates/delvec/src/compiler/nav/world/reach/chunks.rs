@@ -70,6 +70,19 @@ pub(super) fn working_set() -> usize {
 /// The lists' stated need: their working set ([`working_set`]).
 static NEED: budget::Need = budget::Need::new("the closures' edge lists", RING * 2 * PENDING);
 
+/// The lists' need before anything is decoded: the ring's buffered pushes.
+pub(super) fn floor() -> usize {
+    RING * 2 * PENDING
+}
+
+/// The most a chunk of `states` nodes with `edges` edges each decodes to:
+/// each node an entry and its edges as items ([`ENTRY`], the edge's size).
+pub(super) fn chunk_bound(states: usize, edges: usize) -> usize {
+    states.saturating_mul(
+        ENTRY.saturating_add(edges.saturating_mul(std::mem::size_of::<super::Edge>())),
+    )
+}
+
 /// Note a chunk decoded to `bytes`: the largest, and the need, grow with it.
 fn decoded_to(bytes: usize) {
     if LARGEST.fetch_max(bytes, Ordering::Relaxed) < bytes {

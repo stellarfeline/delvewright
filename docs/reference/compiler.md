@@ -3708,6 +3708,25 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   counts pairs and not declarations deliberately: a ledger keyed on declarations
   reads a library that declares nothing as an honest zero.
   Written on every build.
+- `<out>/validation/resource-cost.json`: the build's **computed cost**
+  (`compiler::cost`, ADR-0037 §3), printed before the whole-map stages start as
+  `resource cost: region X x Y x Z cell(s) under a H horizon; judged columns
+  …; reach window at most W cell(s) (…), its reached bitmap B byte(s), NX x NZ
+  chunk(s) of side 32 with F face cell(s), at most P portal edge(s) at E
+  edge(s) per node; working set before any walk: the stores' ring + the
+  snapshot's pages + the lists' buffered pushes = T byte(s), the lists' largest
+  chunk at most L byte(s) by the window's height; summaries at most: K face
+  label(s), C configuration(s), S plain-sea summar(y/ies); scratch: the stores'
+  … (ADR-0037 §3)` and written as the same numbers. Computed from the site
+  plan's region, the horizon, the judged columns, the window those give through
+  the snapshot's own rule (`nav::window_box`) and the store's sections — never
+  measured, so two builds of one campaign write one file; what a build reached
+  is the end-of-run lines (`reach budget:`, `reach lists:`, `reach portals:`,
+  `world store pages:`), which are written nowhere in the output tree. Every
+  figure is an upper bound: the lists' largest chunk is every cell of a chunk a
+  node with every edge, which on the town is three orders over the measured
+  chunk, and the hosting side reads the measured lines for what a build took.
+  `delvec detail` prints the line and writes no file.
 - `<out>/validation/piece-exposure.json`: the `DW0885` **binding ledger**
   (`compiler::burial`). What the piece-exposure check examined, over a
   denominator taken from the placement and the bytes rather than from the

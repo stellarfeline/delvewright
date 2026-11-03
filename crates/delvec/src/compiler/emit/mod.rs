@@ -479,6 +479,11 @@ fn emit_all(
         eprintln!("{}", j.line());
     }
     eprintln!("{}", whole.store_line(judged.as_ref().map(|(a, _)| a)));
+    // The build's cost, computed before the whole-map stages start and
+    // written as a ledger that holds nothing measured (ADR-0037 §3).
+    let cost = crate::compiler::cost::ResourceCost::of(plan, whole, judged.as_ref());
+    eprintln!("{}", cost.line());
+    put_json(&mut out, "validation/resource-cost.json", &cost.to_json());
     let assembled: &crate::compiler::assembled::Assembled =
         judged.as_ref().map_or(whole, |(a, _)| a);
     // Advisory findings the replay raised (`DW0353` gate-region collisions,

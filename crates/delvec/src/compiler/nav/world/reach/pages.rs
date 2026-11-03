@@ -165,8 +165,14 @@ static NEED: budget::Need = budget::Need::new(
 /// Note a window `height` cells tall: the need holds [`RINGS`] of its 3 × 3
 /// rings of reach chunks of side `side`.
 pub(super) fn window(height: usize, side: usize) {
+    NEED.raise(need_for(height, side));
+}
+
+/// The need a window `height` cells tall states: [`RINGS`] of its 3 × 3 rings
+/// of reach chunks of side `side`, in whole pages, over both value types.
+pub(super) fn need_for(height: usize, side: usize) -> usize {
     let ring = (3 * side) * (3 * side) * height;
-    NEED.raise(RINGS * ring.div_ceil(PAGE_CELLS) * PAGE_CELLS * CELL_BYTES);
+    RINGS * ring.div_ceil(PAGE_CELLS) * PAGE_CELLS * CELL_BYTES
 }
 
 /// The snapshot's stated need, in bytes.

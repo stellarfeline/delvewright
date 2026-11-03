@@ -54,6 +54,42 @@ impl Build {
 
 /// The walk relation's closure: the relation a route proof walks, which these
 /// tests hold the reach graph against.
+/// **The snapshot's window is the one rule's** (`window_box`, ADR-0037 §3):
+/// the window `Dense::of` builds round a world's modelled cells is the box
+/// `window_box` gives for those cells' bounds, under a void and under an
+/// ocean — so the cost the engine states before the proofs, which takes the
+/// same function over the judged columns, bounds the window the proofs build.
+#[test]
+fn the_snapshot_window_is_the_one_rules() {
+    for sea in [None, Some((54, 62))] {
+        let mut b = Build::default();
+        for c in [[-3, 60, 7], [20, 63, 7], [5, 70, -9], [5, 61, 40]] {
+            b.fill(c, c);
+        }
+        let ambient = match sea {
+            None => Ambient::Void,
+            Some((floor_top, level)) => Ambient::Ocean(Sea { level, floor_top }),
+        };
+        let w = b.world(ambient, Vec::new());
+        let d = Dense::of(&w);
+        let (lo, hi) = window_box([-3, 60, -9], [20, 70, 40], sea);
+        assert_eq!(d.lo, lo, "sea {sea:?}");
+        assert_eq!(
+            d.dims,
+            [hi[0] - lo[0] + 1, hi[1] - lo[1] + 1, hi[2] - lo[2] + 1],
+            "sea {sea:?}"
+        );
+        assert_eq!(hi[1] % 16, 15, "the top is a course under a multiple of 16");
+        assert!(lo[0] == -3 - 8 && hi[2] == 40 + 8, "the margin is 8 cells");
+        if sea.is_some() {
+            assert!(
+                lo[1] <= 54 && hi[1] >= 62 + 6,
+                "an ocean's window spans the sea"
+            );
+        }
+    }
+}
+
 fn old_reach(w: &World, roots: &[[i32; 3]]) -> BTreeSet<[i32; 3]> {
     w.walk_region(roots)
 }

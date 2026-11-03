@@ -223,6 +223,11 @@ const FLOOR: usize = 27 * 2 * CELLS;
 /// The stores' stated need: measured, as the module docs say.
 static NEED: budget::Need = budget::Need::new("the world store's sections", FLOOR);
 
+/// The stores' need before any walk is measured: the ring.
+pub fn floor() -> usize {
+    FLOOR
+}
+
 /// Bytes of index arrays resident now, over every store in the process.
 static HELD: AtomicUsize = AtomicUsize::new(0);
 /// Sections whose index array is resident now, over every store.

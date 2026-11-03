@@ -337,6 +337,64 @@ pub(in crate::compiler::nav) struct Dense {
     wet: bool,
 }
 
+/// **The reach window round the modelled cells `lo..=hi`** (spec-0113 §4.7):
+/// [`WINDOW_MARGIN`] cells out in x and z, two courses under, [`WINDOW_OVER`]
+/// over, under an ocean (`sea` = the floor's top and the level) down to the
+/// sea floor and over the level, and the top rounded up to a course one under
+/// a multiple of [`WINDOW_TOP_STEP`]: every cell over the modelled ones holds
+/// what a cell over the window holds, so the rounding answers nothing
+/// differently, and two worlds whose tallest blocks differ by a few courses
+/// share a window, and so a lineage and a node bank. One rule, read by the
+/// snapshot ([`Dense`]) and by the cost the engine states before the proofs
+/// run (`compiler::cost`, ADR-0037 §3).
+pub(crate) fn window_box(
+    mut lo: [i32; 3],
+    mut hi: [i32; 3],
+    sea: Option<(i32, i32)>,
+) -> ([i32; 3], [i32; 3]) {
+    lo[0] -= WINDOW_MARGIN;
+    lo[2] -= WINDOW_MARGIN;
+    hi[0] += WINDOW_MARGIN;
+    hi[2] += WINDOW_MARGIN;
+    hi[1] += WINDOW_OVER;
+    lo[1] -= 2;
+    if let Some((floor_top, level)) = sea {
+        lo[1] = lo[1].min(floor_top);
+        hi[1] = hi[1].max(level + WINDOW_OVER);
+    }
+    hi[1] |= WINDOW_TOP_STEP - 1;
+    (lo, hi)
+}
+
+/// The reach chunk's side ([`chunks::SIDE`]), for the cost stated before the
+/// proofs run.
+pub(crate) fn chunk_side() -> i32 {
+    chunks::SIDE
+}
+
+/// How many launches the shipped launch set flies out of a standing node, and
+/// the most cell-relation moves beside them (the walk and the fall to the
+/// eight columns round a cell at three heights, two climb moves, six dives):
+/// the most edges a node's list can hold.
+pub(crate) fn edges_per_node_at_most() -> usize {
+    launch_set(false, FACING_STEP_DEG, &[-1.0, 0.0, 1.0]).len() + 8 * 3 + 2 + 6
+}
+
+/// The lists' working set when nothing has been decoded yet, and the most a
+/// reach chunk `height` cells tall can decode to when every cell of it is a
+/// node with `edges` edges ([`chunks`]).
+pub(crate) fn lists_floor_and_bound(height: usize, edges: usize) -> (usize, usize) {
+    (
+        chunks::floor(),
+        chunks::chunk_bound((chunks::SIDE as usize).pow(2) * height, edges),
+    )
+}
+
+/// The snapshot's need for a window `height` cells tall ([`pages::need_for`]).
+pub(crate) fn snapshot_need_for(height: usize) -> usize {
+    pages::need_for(height, chunks::SIDE as usize)
+}
+
 /// How far the window reaches past the built volume, horizontally: past the
 /// farthest arc a launch flies (a sprint jump carries `3.63`, a fall drifts
 /// under `4.5`), so a body that leaves the window has left the content.
@@ -390,22 +448,11 @@ impl Dense {
                 wet: matches!(outside, Outside::Ocean { .. }),
             };
         }
-        lo[0] -= WINDOW_MARGIN;
-        lo[2] -= WINDOW_MARGIN;
-        hi[0] += WINDOW_MARGIN;
-        hi[2] += WINDOW_MARGIN;
-        hi[1] += WINDOW_OVER;
-        lo[1] -= 2;
-        if let Outside::Ocean { floor_top, level } = outside {
-            lo[1] = lo[1].min(floor_top);
-            hi[1] = hi[1].max(level + WINDOW_OVER);
-        }
-        // The top is rounded up to a course one under a multiple of
-        // [`WINDOW_TOP_STEP`]: every cell over the modelled ones holds what a
-        // cell over the window holds, so the rounding answers nothing
-        // differently, and two worlds whose tallest blocks differ by a few
-        // courses share a window, and so a lineage and a node bank.
-        hi[1] |= WINDOW_TOP_STEP - 1;
+        let sea = match outside {
+            Outside::Ocean { floor_top, level } => Some((floor_top, level)),
+            Outside::Void => None,
+        };
+        let (lo, hi) = window_box(lo, hi, sea);
         let dims = [hi[0] - lo[0] + 1, hi[1] - lo[1] + 1, hi[2] - lo[2] + 1];
         let n = dims.iter().map(|d| *d as usize).product();
         // The snapshot's resident budget holds this window's 3 x 3 rings.
