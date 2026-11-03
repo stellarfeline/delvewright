@@ -64,11 +64,12 @@ from lib.coverage_regions import Filter, production, production_sources, read_re
 RECORD = ".github/coverage-baseline.json"
 # The four command lines of spec-0126 §1.2, as the `rust` family runs them:
 # the archive (`rust build`), a partition's run (`rust partition (k of N)`),
-# the merge and the report (`rust`).
+# the merge and the report (`rust`). The merge reads the fixtures job's profile
+# beside the partitions' (`rust fixtures` runs one test of the same archive).
 COMMANDS = [
     "cargo llvm-cov nextest-archive --workspace --locked --archive-file target/nextest-archive.tar.zst",
     "cargo llvm-cov nextest --no-report --archive-file target/nextest-archive.tar.zst --workspace-remap . --profile ci --partition hash:k/N",
-    "llvm-profdata merge -sparse -o target/llvm-cov-target/<workspace>.profdata partitions/*/partition.profdata",
+    "llvm-profdata merge -sparse -o target/llvm-cov-target/<workspace>.profdata partitions/*/partition.profdata fixtures/fixtures.profdata",
     "cargo llvm-cov report --json --output-path target/coverage.json --nextest-archive-file target/nextest-archive.tar.zst",
 ]
 # The opt-outs an author can write (spec-0126 §1.3): each hides exactly the
