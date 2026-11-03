@@ -62,12 +62,18 @@ PROGRAMS_DIR = "programs"
 
 # The references a per-place author may read, by their path under the skill
 # root and the engine tree. Everything else in the campaign and the skill is
-# the whole's, and the handout says so.
+# the whole's, and the handout says so. `references/detail.md` is the
+# orchestrator's page (it says so of its own contract section); what of it the
+# author owes — the contract, the trade and style rules — is in the handout.
 SKILL_REFERENCES = (
-    "references/detail.md",
     "references/new-pieces.md",
     "references/reference-works.md",
 )
+# A place that is a way (the allocation hands `way`) or a plot (it hands
+# `parts`) is a settlement's: its author is handed the town page, whose
+# checklist binds every place of a town and whose helpers draw streets, verges
+# and lot edges from the plan.
+TOWN_REFERENCE = "references/town.md"
 ENGINE_REFERENCES = (
     ("docs/reference/grammar.md", "§2 is the program surface, §2b `mark`, §2c the idiom index, §2d the spatial contract"),
     ("docs/reference/prefab-procedure.md", "the procedure a piece is made by; §3 the program, §4 the gates, §5 looking at it"),
@@ -593,6 +599,8 @@ def render(
     w("")
     for rel in SKILL_REFERENCES:
         w(f"- `{SKILL_ROOT / rel}`")
+    if a.get("way") or a.get("parts"):
+        w(f"- `{SKILL_ROOT / TOWN_REFERENCE}` — this place is a settlement's {'way' if a.get('way') else 'plot'}: the checklist every place of a town meets, and the helpers (`from starter import …`) that draw ways, verges and lot edges from the plan")
     for rel, gloss in ENGINE_REFERENCES:
         w(f"- `{engine / rel}` — {gloss}")
     w(f"- `{starter}` — your starting program's generator, and the shape every generator takes")
@@ -600,7 +608,7 @@ def render(
     refused = blocks.get("refused", [])
     w(f"## The blocks you may write ({len(blocks.get('admitted', []))} admitted, {len(refused)} refused)")
     w("")
-    w(f"`{blocks_file}` is `delvec grammar blocks`, saved: every block of the pinned game the palette admits, every one it refuses, and every one the holder census counts as a container. The palette admits every block of the game **except** these {len(refused)}, which `detail --check` refuses (`DW0730`) and your generator refuses before it writes: " + ", ".join(f"`{r['block'].removeprefix('minecraft:')}`" for r in refused) + ".")
+    w(f"`{blocks_file}` is `delvec grammar blocks`, saved: every block of the pinned game the palette admits, every one it refuses, and every one the holder census counts as a container. The palette admits every block of the game except the {len(refused)} its `refused` list names, which `detail --check` refuses (`DW0730`) and your generator refuses by name before it writes." + (f" {sum(1 for r in refused if r.get('route'))} of them are had another way:" if any(r.get("route") for r in refused) else ""))
     for r in refused:
         if r.get("route"):
             w(f"- `{r['block']}` is had another way: {r['route']}")
@@ -610,7 +618,7 @@ def render(
     w("")
     lines.extend(container_stance(quests, owed))
     w("")
-    w("The *detail* reference's section *The program's contract* is the contract your program has to meet: every handed value used is declared as a parameter under the `handed/` prefix with the allocation's value as its default (`handed/datum-y`; `handed/ground/{min-y,max-y,bottom-y}`; `handed/roof/…` on a declared roof; `handed/seam/<edge stem>/{x0,y0,z0,x1,y1,z1,rise}`); every seam is answered with an opening at the handed cells and a contract edge to `exterior` whose `via` is that opening; every owed name is answered with a `mark` of that stem; a bar this place owns is a `barred` contract edge over exactly the bar's cells, its region named by the seam's stem; the piece is EXACTLY the frame's shape. `delvec detail --check` names every handed name it offers when your program asks for one it does not (`DW0882`).")
+    w("**The program's contract** — what the starter's `run` already meets for you, and what a refusal is about: every handed value used is declared as a parameter under the `handed/` prefix with the allocation's value as its default (`handed/datum-y`; `handed/ground/{min-y,max-y,bottom-y}`; `handed/roof/…` on a declared roof; `handed/seam/<edge stem>/{x0,y0,z0,x1,y1,z1,rise}`); every seam is answered with an opening at the handed cells and a contract edge to `exterior` whose `via` is that opening; every owed name is answered with a `mark` of that stem; a bar this place owns is a `barred` contract edge over exactly the bar's cells, its region named by the seam's stem; the piece is EXACTLY the frame's shape. `delvec detail --check` names every handed name it offers when your program asks for one it does not (`DW0882`).")
     w("")
     w("## The campaign, in one breath")
     w("")
@@ -674,13 +682,15 @@ def render(
     w("")
     if not sides:
         w("- none: every side of this place is a wall.")
-    for s in sides:
-        line = (
-            f"- your **{s['face']}** side is open: cells {cells(s['cells'])}, nothing stands in them from the walk plane "
-            f"(y {s['walk_y']}) to the top of the play space, your ground runs across them. "
-            f"Answer it in the contract: a frontage a body crosses is an `exterior` edge whose `via` is these cells; a counter a body does not cross stands at the play space's edge, inside. "
+    else:
+        w(
+            "Nothing stands in an open side's cells from the walk plane to the top of the play space, and your ground runs across them. "
+            "Answer each in the contract: a frontage a body crosses is an `exterior` edge whose `via` is its cells; a counter a body does not cross stands at the play space's edge, inside. "
             f"{FRAME_SENTENCE[0].upper() + FRAME_SENTENCE[1:]}."
         )
+        w("")
+    for s in sides:
+        line = f"- your **{s['face']}** side is open: cells {cells(s['cells'])}, walk plane y {s['walk_y']}."
         for c in s.get("contacts", []) or []:
             line += f" `{c['edge']}` crosses here at {cells(c['cells'])}: that run is the connection's crossing."
         w(line)

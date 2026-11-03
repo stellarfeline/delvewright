@@ -195,8 +195,10 @@ agent: *Reference: when the prefab library has no piece you need* and
    `Model.show("up")` declares a top the drawing means to be seen (the town
    helpers that stand a lamp, a bracket or an awning on the frame's top
    course declare it themselves).
-   A drawn model needs a `delvec` binary on the machine running it. The handout lists the refused blocks and the containers
-   the holder census counts. So an author starts from a passing program and
+   A drawn model needs a `delvec` binary on the machine running it. The handout counts the refused blocks (`blocks.json` lists them),
+   names each one had another way, lists the containers the holder census
+   counts, and lists the town page for a way or a plot; this page is not on
+   the author's reading list — what of it the author owes is in the handout. So an author starts from a passing program and
    never from research: nothing outside the handout's reading list — the
    engine's source, its gallery, another campaign — is needed or read. Where the
    place already has a program it runs `detail --check` on it: a program

@@ -9,8 +9,8 @@
 
 A town is a site plan like any other map (*The map is a site plan* on the
 page): many boxes, the seams that join them, one piece per place. Use this
-page at step 2, when the plan lays out the settlement, and hand its checklist
-to every place's author at step 9. Each line's provenance — a ruling, a cited
+page at step 2, when the plan lays out the settlement; at step 9 the handout
+lists it for every way's and every plot's author. Each line's provenance — a ruling, a cited
 source, or a rule reasoned here — and its sources are
 `$DELVEWRIGHT_ENGINE/docs/reference/place-craft.md` §10, line for line.
 
