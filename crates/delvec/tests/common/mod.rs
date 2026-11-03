@@ -1616,6 +1616,76 @@ pub fn gallery_site_plan_detailed(root: &Path) -> (PathBuf, PathBuf) {
     (campaign, prefabs)
 }
 
+/// The gallery's solid site-plan point, every place detailed, with the
+/// library its `detail --all` committed its pieces into: built once per
+/// machine and engine (spec-0126 §4.2) and copied to `root`.
+pub fn gallery_site_plan_solid_detailed(root: &Path) -> (PathBuf, PathBuf) {
+    let cached = built::built(
+        "gallery-site-plan-solid-detailed",
+        built::Inputs::new()
+            .text("the gallery's solid site-plan point, every place detailed by `detail --all`")
+            .tracked(&repo_root(), "gallery")
+            .tracked(&repo_root(), "tools/ci/gallery_domain.py"),
+        gallery_site_plan_solid_detailed_into,
+    );
+    let campaign = root.join("site-plan-solid");
+    let prefabs = root.join("prefabs-solid");
+    let _ = std::fs::remove_dir_all(&campaign);
+    let _ = std::fs::remove_dir_all(&prefabs);
+    copy_dir_all(&cached.join("site-plan-solid"), &campaign);
+    copy_dir_all(&cached.join("prefabs"), &prefabs);
+    (campaign, prefabs)
+}
+
+fn gallery_site_plan_solid_detailed_into(dir: &Path) {
+    let (_, pieces) = gallery_primary_at(&dir.join("primary"));
+    let prefabs = dir.join("prefabs");
+    copy_dir_all(&pieces, &prefabs);
+    let campaign = dir.join("site-plan-solid");
+    let python = std::env::var("DELVEWRIGHT_PYTHON").unwrap_or_else(|_| "python3".to_string());
+    // The domain tool runs the gallery generator through `$CARGO`.
+    let out = build_toolchain(&mut std::process::Command::new(python))
+        .arg(repo_root().join("tools/ci/gallery_domain.py"))
+        .args(["materialise", "--point", "site-plan-solid"])
+        .arg(&campaign)
+        .output()
+        .expect("run gallery_domain.py");
+    assert!(
+        out.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stems: Vec<String> = std::fs::read_dir(campaign.join("programs"))
+        .unwrap()
+        .filter_map(|e| {
+            let p = e.unwrap().path();
+            (p.extension().and_then(|x| x.to_str()) == Some("json"))
+                .then(|| p.file_stem().unwrap().to_string_lossy().to_string())
+        })
+        .collect();
+    patch_file(&campaign.join("detail-plan.json"), |v| {
+        v["content"]["details"].as_array_mut().unwrap().retain(|r| {
+            let place = r["place"].as_str().unwrap();
+            !stems.iter().any(|s| place == format!("node/{s}"))
+        });
+    });
+    let all = std::process::Command::new(env!("CARGO_BIN_EXE_delvec"))
+        .arg("--prefabs")
+        .arg(&prefabs)
+        .arg("detail")
+        .arg(&campaign)
+        .arg("--all")
+        .output()
+        .expect("run delvec");
+    assert!(
+        all.status.success(),
+        "`detail --all` over the gallery's solid site-plan point exited {:?}: {}",
+        all.status,
+        String::from_utf8_lossy(&all.stderr)
+    );
+}
+
 /// The build behind `gallery_site_plan_detailed`: the gallery primary's
 /// pieces as the library, the site-plan point with its committed programs'
 /// detail rows removed, and `detail --all` over it.

@@ -35,6 +35,7 @@ mod branch_path_completion;
 mod branch_transport;
 mod build_output_dir;
 mod built_cache;
+mod built_fixtures;
 mod button_tooltips;
 mod calibrate_cli;
 mod call_graph_integrity;

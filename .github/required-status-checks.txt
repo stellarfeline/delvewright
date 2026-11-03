@@ -35,6 +35,7 @@
 changes (which jobs a pull request reaches)
 delvec binary (one build per run)
 rust build (fmt, clippy, instrumented archive)
+rust fixtures (the gallery points, built once)
 rust partition (1 of 32)
 rust partition (2 of 32)
 rust partition (3 of 32)

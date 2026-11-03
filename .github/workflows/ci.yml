@@ -386,9 +386,59 @@ jobs:
       - name: a label belongs to the model that drew it (node --test)
         run: node --test crates/delvec/tests/labels.test.mjs
 
+  # The gallery's two detailed points are the fixtures most of the heavy
+  # tests copy (spec-0126 §4.2, `common::built`): each costs about ten
+  # minutes of instrumented `detail --all` on this runner, and a partition
+  # that built them itself ran its first consumer at 1,400–2,000 s
+  # (measured, run 41696974786). So they are built once per run, from the
+  # same archive and binary the partitions run — the cache key is the
+  # binary's bytes and the test executable's — and shipped to every partition.
+  rust-fixtures:
+    name: rust fixtures (the gallery points, built once)
+    needs: [changes, rust-build]
+    if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/checkout-content
+      - uses: ./.github/actions/suite-instruments
+      - name: the pinned client jar (one verified fetch)
+        run: echo "DELVEWRIGHT_CLIENT_JAR=$(bash validation/client-jar-cache.sh --cache "$RUNNER_TEMP/client-jar" | tail -n 1)" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: rust-nextest-archive
+          path: ${{ runner.temp }}/archive
+      # The one test that builds both points into the cache, run exactly as a
+      # partition runs its tests (the layout below is the partition step's).
+      - name: the gallery's detailed points, built once from the archive
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/archive/nextest-archive.tar.zst"
+          cargo nextest list --archive-file "$archive" --extract-to target/llvm-cov-target --workspace-remap . --message-format json > target/nextest-list.json
+          mkdir -p target/llvm-cov-target/debug
+          ln target/llvm-cov-target/target/debug/delvec target/llvm-cov-target/debug/delvec
+          cargo llvm-cov nextest --no-report --archive-file "$archive" --extract-overwrite --workspace-remap . --profile ci -E 'test(=built_fixtures::the_gallery_points_are_built_once_per_run)'
+          du -sh target/llvm-cov-target/tmp/built
+          ls -la target/llvm-cov-target/tmp/built
+      - name: the fixtures' profile (one .profdata, merged into the report with the partitions')
+        run: |
+          set -euo pipefail
+          "$LLVM_PROFDATA" merge -sparse -o target/fixtures.profdata target/llvm-cov-target/*.profraw
+          ls -l target/fixtures.profdata
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rust-fixtures
+          path: |
+            target/llvm-cov-target/tmp/built
+            target/fixtures.profdata
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 3
+
   rust-partition:
     name: rust partition (${{ matrix.k }} of 32)
-    needs: [changes, rust-build]
+    needs: [changes, rust-build, rust-fixtures]
     if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     # spec-0126 §5: the job bound. A partition that exceeds it is cancelled and red.
@@ -417,6 +467,10 @@ jobs:
         with:
           name: rust-nextest-archive
           path: ${{ runner.temp }}/archive
+      - uses: actions/download-artifact@v4
+        with:
+          name: rust-fixtures
+          path: ${{ runner.temp }}/fixtures
       # Partition k of N of the one archive, instrumented. cargo-llvm-cov hands
       # nextest `--extract-to target/llvm-cov-target`, so the binaries land
       # under `target/llvm-cov-target/target/debug/`; the tests reach `delvec`
@@ -438,8 +492,10 @@ jobs:
           set -euo pipefail
           archive="$RUNNER_TEMP/archive/nextest-archive.tar.zst"
           cargo nextest list --archive-file "$archive" --extract-to target/llvm-cov-target --workspace-remap . --message-format json > target/nextest-list.json
-          mkdir -p target/llvm-cov-target/debug
+          mkdir -p target/llvm-cov-target/debug target/llvm-cov-target/tmp
           ln target/llvm-cov-target/target/debug/delvec target/llvm-cov-target/debug/delvec
+          cp -a "$RUNNER_TEMP/fixtures/llvm-cov-target/tmp/built" target/llvm-cov-target/tmp/built
+          ls target/llvm-cov-target/tmp/built
           cargo llvm-cov nextest --no-report --archive-file "$archive" --extract-overwrite --workspace-remap . --profile ci --partition "hash:$PARTITION/$PARTITIONS"
       # The partition's counters, merged once here into one indexed profile,
       # so the census job merges N files instead of thousands of raw ones. The
@@ -466,7 +522,7 @@ jobs:
 
   rust:
     name: rust (fmt, clippy, test)
-    needs: [changes, rust-build, rust-partition]
+    needs: [changes, rust-build, rust-fixtures, rust-partition]
     # Runs whenever the family was reached, success or not — a required context
     # that is skipped because a partition failed would PASS branch protection —
     # and its first step turns any non-green job it gathers into its own red.
@@ -477,10 +533,11 @@ jobs:
       - name: every job this one gathers is green
         env:
           BUILD: ${{ needs.rust-build.result }}
+          FIXTURES: ${{ needs.rust-fixtures.result }}
           PARTITIONS: ${{ needs.rust-partition.result }}
         run: |
-          echo "rust build: $BUILD; rust partitions: $PARTITIONS"
-          [ "$BUILD" = "success" ] && [ "$PARTITIONS" = "success" ] || { echo "a job this one gathers is not green" >&2; exit 1; }
+          echo "rust build: $BUILD; rust fixtures: $FIXTURES; rust partitions: $PARTITIONS"
+          [ "$BUILD" = "success" ] && [ "$FIXTURES" = "success" ] && [ "$PARTITIONS" = "success" ] || { echo "a job this one gathers is not green" >&2; exit 1; }
       # Whole history: the coverage floor proves its record's tree is an
       # ancestor of the commit it judges (spec-0126 §2.2).
       - uses: actions/checkout@v4
@@ -495,6 +552,10 @@ jobs:
         with:
           pattern: rust-partition-*
           path: partitions
+      - uses: actions/download-artifact@v4
+        with:
+          name: rust-fixtures
+          path: ${{ runner.temp }}/fixtures
       # The archive's own listing is the census's denominator: every test it
       # lists (ignored ones aside) must appear in exactly one partition's
       # JUnit report, and every partition must have run something. `--extract-to`
@@ -505,7 +566,9 @@ jobs:
         env:
           PARTITIONS: ${{ needs.rust-partition.outputs.total }}
         run: python3 tools/ci/check-partitions.py --list target/nextest-list.json --junit-dir partitions --partitions "$PARTITIONS"
-      # The N partition profiles merged into the one profile the report reads:
+      # The N partition profiles and the fixtures job's merged into the one
+      # profile the report reads (the fixtures' `detail --all` is engine
+      # coverage the one-job run had):
       # cargo-llvm-cov names it `<workspace directory>.profdata` under
       # `target/llvm-cov-target` and, finding no raw profiles beside it, reads
       # it as it stands (its 0.9.1 source, `merge_profraw`). The objects come
@@ -514,7 +577,7 @@ jobs:
         run: |
           set -euo pipefail
           ws="$(cargo metadata --format-version 1 --no-deps | python3 -c 'import json, os, sys; sys.stdout.reconfigure(newline="\n"); print(os.path.basename(json.load(sys.stdin)["workspace_root"]))')"
-          "$LLVM_PROFDATA" merge -sparse -o "target/llvm-cov-target/$ws.profdata" partitions/*/partition.profdata
+          "$LLVM_PROFDATA" merge -sparse -o "target/llvm-cov-target/$ws.profdata" partitions/*/partition.profdata "$RUNNER_TEMP/fixtures/fixtures.profdata"
           cargo llvm-cov report --json --output-path target/coverage.json --nextest-archive-file "$RUNNER_TEMP/archive/nextest-archive.tar.zst"
       - name: the run's measurements (JUnit per-test times per partition, coverage export, listing)
         if: always()

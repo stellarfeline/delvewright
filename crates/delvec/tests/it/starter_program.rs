@@ -41,68 +41,6 @@ fn starter() -> PathBuf {
     common::repo_root().join(".claude/skills/delvewright/skills/new-delve/scripts/starter.py")
 }
 
-/// The `site-plan-solid` point, materialised by the gallery's own domain tool
-/// and detailed into `prefabs` beside the open point's pieces, as
-/// `common::gallery_site_plan_detailed` details the open one.
-/// The gallery's solid site-plan point, every place detailed, with the
-/// library its `detail --all` committed its pieces into: built once per
-/// machine and engine (spec-0126 §4.2, `common::built`), both copied to
-/// `root` for this process to run the starter against.
-fn solid_point_detailed(root: &Path) -> (PathBuf, PathBuf) {
-    let cached = common::built::built(
-        "gallery-site-plan-solid-detailed",
-        common::built::Inputs::new()
-            .text("the gallery's solid site-plan point, every place detailed by `detail --all`")
-            .tracked(&common::repo_root(), "gallery")
-            .tracked(&common::repo_root(), "tools/ci/gallery_domain.py"),
-        solid_point_detailed_into,
-    );
-    let campaign = root.join("site-plan-solid");
-    let prefabs = root.join("prefabs-solid");
-    let _ = std::fs::remove_dir_all(&campaign);
-    let _ = std::fs::remove_dir_all(&prefabs);
-    common::copy_dir_all(&cached.join("site-plan-solid"), &campaign);
-    common::copy_dir_all(&cached.join("prefabs"), &prefabs);
-    (campaign, prefabs)
-}
-
-fn solid_point_detailed_into(dir: &Path) {
-    let (_, pieces) = common::gallery_primary_at(&dir.join("primary"));
-    let prefabs = dir.join("prefabs");
-    common::copy_dir_all(&pieces, &prefabs);
-    let campaign = dir.join("site-plan-solid");
-    // The domain tool runs the gallery generator through `$CARGO`.
-    let out = common::build_toolchain(&mut Command::new(python()))
-        .arg(common::repo_root().join("tools/ci/gallery_domain.py"))
-        .args(["materialise", "--point", "site-plan-solid"])
-        .arg(&campaign)
-        .output()
-        .expect("run gallery_domain.py");
-    assert!(out.status.success(), "{}", text(&out));
-    let stems: Vec<String> = std::fs::read_dir(campaign.join("programs"))
-        .unwrap()
-        .filter_map(|e| {
-            let p = e.unwrap().path();
-            (p.extension().and_then(|x| x.to_str()) == Some("json"))
-                .then(|| p.file_stem().unwrap().to_string_lossy().to_string())
-        })
-        .collect();
-    common::patch_file(&campaign.join("detail-plan.json"), |v| {
-        v["content"]["details"].as_array_mut().unwrap().retain(|r| {
-            let place = r["place"].as_str().unwrap();
-            !stems.iter().any(|s| place == format!("node/{s}"))
-        });
-    });
-    let all = delvec(&[
-        "--prefabs",
-        prefabs.to_str().unwrap(),
-        "detail",
-        campaign.to_str().unwrap(),
-        "--all",
-    ]);
-    assert!(all.status.success(), "{}", text(&all));
-}
-
 /// Every box `campaign` allocates, as `allocation --all` hands them.
 fn allocations(campaign: &Path, prefabs: &Path) -> Vec<serde_json::Value> {
     let all = delvec(&[
@@ -201,7 +139,7 @@ fn judge_place(
 fn point(which: &str, tmp: &Path) -> (PathBuf, PathBuf) {
     match which {
         "open" => common::gallery_site_plan_detailed(tmp),
-        "solid" => solid_point_detailed(tmp),
+        "solid" => common::gallery_site_plan_solid_detailed(tmp),
         other => panic!("no site-plan point named {other}"),
     }
 }
