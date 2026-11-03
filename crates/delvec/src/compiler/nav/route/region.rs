@@ -159,21 +159,27 @@ impl RegionState {
         base: &crate::compiler::blockstate::BlockMap,
     ) -> crate::compiler::blockstate::BlockMap {
         let mut out = base.clone();
+        // The writes, cell by cell in the order laid, are laid section by
+        // section (ADR-0037 §2): the same map, with a working set of one
+        // section at a time.
+        let mut writes: Vec<([i32; 3], Option<crate::compiler::blockstate::BlockState>)> =
+            Vec::new();
         for ((lo, hi), block) in &self.laid {
             match block {
                 // Cell by cell from the write's block (`region_fill`).
                 Some(b) => {
                     for (c, s) in crate::compiler::region_fill::cells((*lo, *hi), b) {
-                        out.insert(c, crate::compiler::blockstate::BlockState::new(&s));
+                        writes.push((c, Some(crate::compiler::blockstate::BlockState::new(&s))));
                     }
                 }
                 None => {
                     for c in crate::compiler::assembled::region_cells(*lo, *hi) {
-                        out.remove(&c);
+                        writes.push((c, None));
                     }
                 }
             }
         }
+        out.write_by_section(writes);
         out
     }
 

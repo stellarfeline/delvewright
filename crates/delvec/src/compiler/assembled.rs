@@ -1099,76 +1099,109 @@ pub struct Settled {
 /// — a floating floor the game does not have, which the flood would dam and nav
 /// would walk on. See [`is_fluid`].
 ///
-/// Deterministic (ADR-0006): columns iterate in `BTreeMap` order and blocks stack
-/// bottom-up.
+/// Deterministic (ADR-0006): the outcomes come in `(x, z)` column order and blocks
+/// stack bottom-up.
 fn settle(blocks: &mut BlockMap) -> Vec<Settled> {
-    // Group cell y's by column.
-    let mut columns: BTreeMap<(i32, i32), Vec<i32>> = BTreeMap::new();
-    for c in blocks.keys() {
-        columns.entry((c[0], c[2])).or_default().push(c[1]);
+    // Section column by section column (ADR-0037 §2, assembly): the cells of
+    // one `(sx, sz)` column of sections are read, grouped by cell column and
+    // settled, and the store's working set is that column's sections. A cell
+    // column's outcomes are the same whatever column is taken first, and the
+    // list is put back in `(x, z)` order at the end (a stable sort over a
+    // column's own order), so what is returned is what the walk in cell
+    // order returned.
+    let side = crate::compiler::sections::SIDE;
+    let mut outcomes: Vec<((i32, i32), Settled)> = Vec::new();
+    for ([sx, sz], [sy0, sy1]) in blocks.section_columns() {
+        let lo = [sx * side, sy0 * side, sz * side];
+        let hi = [
+            sx * side + side - 1,
+            sy1 * side + side - 1,
+            sz * side + side - 1,
+        ];
+        let mut columns: BTreeMap<(i32, i32), Vec<(i32, BlockState)>> = BTreeMap::new();
+        for (c, b) in blocks.in_box(lo, hi) {
+            columns.entry((c[0], c[2])).or_default().push((c[1], *b));
+        }
+        for ((x, z), cells) in columns {
+            settle_column(blocks, x, z, cells, &mut outcomes);
+        }
     }
-    let mut outcomes: Vec<Settled> = Vec::new();
-    for ((x, z), mut ys) in columns {
-        ys.sort_unstable();
-        // Split the column into immovable supports and falling blocks (ascending).
-        // A liquid cell is NEITHER: it does not hold a falling block up, and a
-        // block that lands in it replaces it.
-        let mut fixed: Vec<i32> = Vec::new();
-        let mut falling: Vec<(i32, BlockState)> = Vec::new();
-        for y in &ys {
-            let name = *blocks
-                .get(&[x, *y, z])
-                .expect("a listed cell holds a block");
-            if is_falling_block(&name) {
-                falling.push((*y, name));
-            } else if !is_fluid(&name) {
-                fixed.push(*y);
-            }
+    outcomes.sort_by_key(|(col, _)| *col);
+    outcomes.into_iter().map(|(_, s)| s).collect()
+}
+
+/// Settle one cell column `(x, z)` whose cells are `cells` (any order), writing
+/// the landed blocks into `blocks` and pushing each falling block's outcome,
+/// tagged with the column, in the order the column gives them: the despawns
+/// in ascending `y`, then each support's group from the lowest support up.
+fn settle_column(
+    blocks: &mut BlockMap,
+    x: i32,
+    z: i32,
+    mut cells: Vec<(i32, BlockState)>,
+    outcomes: &mut Vec<((i32, i32), Settled)>,
+) {
+    cells.sort_by_key(|(y, _)| *y);
+    // Split the column into immovable supports and falling blocks (ascending).
+    // A liquid cell is NEITHER: it does not hold a falling block up, and a
+    // block that lands in it replaces it.
+    let mut fixed: Vec<i32> = Vec::new();
+    let mut falling: Vec<(i32, BlockState)> = Vec::new();
+    for (y, name) in cells {
+        if is_falling_block(&name) {
+            falling.push((y, name));
+        } else if !is_fluid(&name) {
+            fixed.push(y);
         }
-        if falling.is_empty() {
-            continue; // nothing to settle in this column
-        }
-        // Lift every falling block out; re-drop onto its support.
-        for (y, _) in &falling {
-            blocks.remove(&[x, *y, z]);
-        }
-        // Group falling blocks by the nearest immovable support strictly below
-        // them; a group has no support → those blocks despawned into the void.
-        let mut by_base: BTreeMap<i32, Vec<(i32, BlockState)>> = BTreeMap::new();
-        for (y, name) in falling {
-            if let Some(base) = fixed.iter().copied().filter(|&f| f < y).max() {
-                by_base.entry(base).or_default().push((y, name));
-            } else {
-                // No support anywhere below → despawns into the void.
-                outcomes.push(Settled {
+    }
+    if falling.is_empty() {
+        return; // nothing to settle in this column
+    }
+    // Lift every falling block out; re-drop onto its support.
+    for (y, _) in &falling {
+        blocks.remove(&[x, *y, z]);
+    }
+    // Group falling blocks by the nearest immovable support strictly below
+    // them; a group has no support → those blocks despawned into the void.
+    let mut by_base: BTreeMap<i32, Vec<(i32, BlockState)>> = BTreeMap::new();
+    for (y, name) in falling {
+        if let Some(base) = fixed.iter().copied().filter(|&f| f < y).max() {
+            by_base.entry(base).or_default().push((y, name));
+        } else {
+            // No support anywhere below → despawns into the void.
+            outcomes.push((
+                (x, z),
+                Settled {
                     block: name.to_string(),
                     from: [x, y, z],
                     to: None,
-                });
-            }
+                },
+            ));
         }
-        for (base, group) in by_base {
-            // Stack from base+1 upward; the group came from the open gap above
-            // `base`, so it cannot overrun the next support — but skip any fixed
-            // cell defensively. A liquid cell in the way is deliberately NOT
-            // skipped: the landing block displaces the fluid (the insert below
-            // overwrites it), exactly as sand dropped into a pond does.
-            let mut yy = base + 1;
-            for (from_y, name) in group {
-                while fixed.binary_search(&yy).is_ok() {
-                    yy += 1;
-                }
-                outcomes.push(Settled {
+    }
+    for (base, group) in by_base {
+        // Stack from base+1 upward; the group came from the open gap above
+        // `base`, so it cannot overrun the next support — but skip any fixed
+        // cell defensively. A liquid cell in the way is deliberately NOT
+        // skipped: the landing block displaces the fluid (the insert below
+        // overwrites it), exactly as sand dropped into a pond does.
+        let mut yy = base + 1;
+        for (from_y, name) in group {
+            while fixed.binary_search(&yy).is_ok() {
+                yy += 1;
+            }
+            outcomes.push((
+                (x, z),
+                Settled {
                     block: name.to_string(),
                     from: [x, from_y, z],
                     to: Some([x, yy, z]),
-                });
-                blocks.insert([x, yy, z], name);
-                yy += 1;
-            }
+                },
+            ));
+            blocks.insert([x, yy, z], name);
+            yy += 1;
         }
     }
-    outcomes
 }
 
 /// Re-run gravity settling over an (edited) cell→block map — the map editor's
@@ -1277,10 +1310,11 @@ const _: () = assert!(
 /// trigger props the datapack sets at setup — the assembly clears a gate's region (the route model
 /// reads the gate through its seal), and the datapack's setup writes the gate's
 /// block back. Clipped to `clip` when one is given (inclusive), so a caller
-/// asking about one box does not copy the map.
+/// asking about one box does not copy the map: [`shipped_within`] over
+/// [`shipped_writes`].
 ///
-/// The one derivation of those bytes: the loop's tiling (spec-0086) and a
-/// camera's world (spec-0089) both read it.
+/// The one derivation of those bytes: the loop's tiling (spec-0086), a
+/// camera's world (spec-0089) and the clear-width check (spec-0120) all read it.
 pub fn shipped_blocks(
     plan: &Plan,
     blocks: &BlockMap,
@@ -1288,7 +1322,66 @@ pub fn shipped_blocks(
     seals: &[GateSeal],
     clip: Option<([i32; 3], [i32; 3])>,
 ) -> BlockMap {
-    let inside = |c: [i32; 3]| {
+    shipped_within(
+        blocks,
+        &shipped_writes(plan, placements, seals),
+        &plan.loot,
+        clip,
+    )
+}
+
+/// A write of the shipped world: the cell and the block it holds there, or
+/// `None` where the write clears it.
+pub type ShippedWrite = ([i32; 3], Option<BlockState>);
+
+/// **What setup lays over the assembled blocks**, in the order it lays them:
+/// every sealed gate's block cell by cell (`region_fill`: a door stands its
+/// lower half under its upper), then the relight fixtures (`setup_finish` sets
+/// them after the world-load seals stand, so a fixture inside a gate's region
+/// is what the server holds there, measured by `tools/ci/check-written-world.py`),
+/// then every pressable's block (spec-0117 §5.1, from the same list
+/// `setup_finish` reads, [`crate::compiler::pressable::props`], a door's two
+/// halves included). A cell written twice is listed twice, in order.
+pub fn shipped_writes(
+    plan: &Plan,
+    placements: &[crate::compiler::light::Placement],
+    seals: &[GateSeal],
+) -> Vec<ShippedWrite> {
+    let mut writes: Vec<ShippedWrite> = Vec::new();
+    for s in seals.iter().filter(|s| s.sealed()) {
+        if let Some((from, to, block)) =
+            crate::compiler::plan::gate_region_block_any(&plan.anchors, &s.anchor)
+        {
+            for (c, state) in crate::compiler::region_fill::cells((from, to), &block) {
+                writes.push((c, (!is_air(&state)).then(|| BlockState::new(&state))));
+            }
+        }
+    }
+    for p in placements {
+        writes.push((p.pos, Some(BlockState::new(&p.block))));
+    }
+    for (_, p) in crate::compiler::pressable::props(plan) {
+        writes.push((p.pos, Some(BlockState::new(&p.block))));
+    }
+    writes
+}
+
+/// **The shipped world inside `clip`** (the whole when `None`): the assembled
+/// blocks there, `writes` laid over them section by section
+/// ([`BlockMap::write_by_section`]: the same map the listed order lays, with a
+/// working set of one section), and last what a holder shows of its contents —
+/// `setup_finish` fills every `loot` holder, and a brewing stand's first tick
+/// then draws its bottle slots as `has_bottle_<n>` (`loot::show_contents`), a
+/// rule of each cell alone. Every step is a rule of one cell, so the world
+/// inside a clip is the whole world's inside that box
+/// (`a_clipped_shipped_world_is_the_whole_worlds_inside_the_clip`).
+pub fn shipped_within(
+    blocks: &BlockMap,
+    writes: &[ShippedWrite],
+    loot: &[crate::compiler::plan::LootPlan],
+    clip: Option<([i32; 3], [i32; 3])>,
+) -> BlockMap {
+    let inside = |c: &[i32; 3]| {
         clip.is_none_or(|(lo, hi)| {
             (0..3).all(|i| lo[i].min(hi[i]) <= c[i] && c[i] <= lo[i].max(hi[i]))
         })
@@ -1297,44 +1390,8 @@ pub fn shipped_blocks(
         Some((lo, hi)) => blocks.in_box(lo, hi).map(|(c, b)| (c, *b)).collect(),
         None => blocks.clone(),
     };
-    for s in seals.iter().filter(|s| s.sealed()) {
-        if let Some((from, to, block)) =
-            crate::compiler::plan::gate_region_block_any(&plan.anchors, &s.anchor)
-        {
-            // Cell by cell from the declared block (`region_fill`): a door
-            // stands its lower half under its upper.
-            for (c, state) in crate::compiler::region_fill::cells((from, to), &block) {
-                if !inside(c) {
-                    continue;
-                }
-                if is_air(&state) {
-                    m.remove(&c);
-                } else {
-                    m.insert(c, BlockState::new(&state));
-                }
-            }
-        }
-    }
-    // The fixtures last: the datapack sets them in `setup_finish`, after the
-    // world-load seals stand, so a fixture inside a gate's region is what the
-    // server holds there (measured by `tools/ci/check-written-world.py`).
-    for p in placements {
-        if inside(p.pos) {
-            m.insert(p.pos, BlockState::new(&p.block));
-        }
-    }
-    // Then every pressable's block (spec-0117 §5.1): `setup_finish` sets them
-    // after the relight fixtures, from the same list
-    // ([`crate::compiler::pressable::props`]), a door's two halves included.
-    for (_, p) in crate::compiler::pressable::props(plan) {
-        if inside(p.pos) {
-            m.insert(p.pos, BlockState::new(&p.block));
-        }
-    }
-    // Last, what a holder shows of its contents: `setup_finish` fills every
-    // `loot` holder, and a brewing stand's first tick then draws its bottle
-    // slots as `has_bottle_<n>` (`loot::show_contents`).
-    crate::compiler::loot::show_contents(&plan.loot, &mut m);
+    m.write_by_section(writes.iter().filter(|(c, _)| inside(c)).copied());
+    crate::compiler::loot::show_contents(loot, &mut m);
     m
 }
 
@@ -3914,5 +3971,165 @@ mod judged_tests {
             &BTreeSet::new(),
         );
         assert!(occ.hiding.is_empty());
+    }
+
+    /// **The settle by section column is the settle in cell order**: generated
+    /// worlds of supports, fluids and falling blocks across section borders and
+    /// the origin, settled by section column and by the walk in cell order
+    /// (`settle_in_cell_order`, the form before ADR-0037), the maps equal cell
+    /// for cell and the outcomes equal in order.
+    #[test]
+    fn the_settle_by_section_column_is_the_settle_in_cell_order() {
+        fn settle_in_cell_order(blocks: &mut BlockMap) -> Vec<Settled> {
+            let mut columns: BTreeMap<(i32, i32), Vec<i32>> = BTreeMap::new();
+            for c in blocks.keys() {
+                columns.entry((c[0], c[2])).or_default().push(c[1]);
+            }
+            let mut outcomes: Vec<((i32, i32), Settled)> = Vec::new();
+            for ((x, z), ys) in columns {
+                let cells = ys
+                    .iter()
+                    .map(|y| (*y, *blocks.get(&[x, *y, z]).expect("listed")))
+                    .collect();
+                settle_column(blocks, x, z, cells, &mut outcomes);
+            }
+            outcomes.into_iter().map(|(_, s)| s).collect()
+        }
+        let mut seed = 0x1234_5678_9abc_def1u64;
+        let mut next = |n: u64| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed % n
+        };
+        let kinds = [
+            "minecraft:stone",
+            "minecraft:sand",
+            "minecraft:gravel",
+            "minecraft:water",
+        ];
+        let mut despawned = 0;
+        let mut landed = 0;
+        for round in 0..24 {
+            let mut m = BlockMap::new();
+            let n = 40 + round * 25;
+            for _ in 0..n {
+                let c = [
+                    next(50) as i32 - 25,
+                    next(40) as i32 - 8,
+                    next(50) as i32 - 25,
+                ];
+                m.insert(c, BlockState::new(kinds[next(4) as usize]));
+            }
+            // Columns with several falling blocks over one support, and
+            // falling blocks with nothing under them.
+            for _ in 0..6 {
+                let (x, z) = (next(50) as i32 - 25, next(50) as i32 - 25);
+                let base = next(20) as i32 - 4;
+                m.insert([x, base, z], BlockState::new("minecraft:stone"));
+                for k in 1..=(1 + next(4) as i32) {
+                    m.insert([x, base + 2 * k, z], BlockState::new("minecraft:sand"));
+                }
+            }
+            let mut by_section = m.clone();
+            let mut in_order = m;
+            let a = settle(&mut by_section);
+            let b = settle_in_cell_order(&mut in_order);
+            assert_eq!(a, b, "round {round}: the outcomes");
+            assert_eq!(
+                by_section.iter().collect::<Vec<_>>(),
+                in_order.iter().collect::<Vec<_>>(),
+                "round {round}: the map"
+            );
+            despawned += a.iter().filter(|s| s.to.is_none()).count();
+            landed += a.iter().filter(|s| s.to.is_some()).count();
+        }
+        assert!(
+            despawned > 0 && landed > 0,
+            "{despawned} despawned, {landed} landed"
+        );
+    }
+
+    /// **A clipped shipped world is the whole world's inside the clip**: a
+    /// generated store with writes laid over it (seals' cells, fixtures, props;
+    /// cells written twice, clears among them), laid whole and laid inside
+    /// several boxes, each box's read equal cell for cell to the whole's cells
+    /// in it; and the whole equals the writes applied in order to a tree.
+    #[test]
+    fn a_clipped_shipped_world_is_the_whole_worlds_inside_the_clip() {
+        let mut seed = 0x0fed_cba9_8765_4321u64;
+        let mut next = |n: u64| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed % n
+        };
+        let kinds = [
+            "minecraft:stone",
+            "minecraft:oak_door[half=lower]",
+            "minecraft:oak_door[half=upper]",
+            "minecraft:sea_lantern",
+            "minecraft:lever",
+        ];
+        for round in 0..12 {
+            let mut blocks = BlockMap::new();
+            let mut tree: BTreeMap<[i32; 3], BlockState> = BTreeMap::new();
+            for _ in 0..(200 + round * 100) {
+                let c = [next(60) as i32 - 30, next(30) as i32, next(60) as i32 - 30];
+                let b = BlockState::new(kinds[next(5) as usize]);
+                blocks.insert(c, b);
+                tree.insert(c, b);
+            }
+            let mut writes: Vec<ShippedWrite> = Vec::new();
+            for _ in 0..(30 + round * 10) {
+                let c = [next(60) as i32 - 30, next(30) as i32, next(60) as i32 - 30];
+                let w = if next(5) == 0 {
+                    None
+                } else {
+                    Some(BlockState::new(kinds[next(5) as usize]))
+                };
+                writes.push((c, w));
+            }
+            for (c, w) in &writes {
+                match w {
+                    Some(b) => {
+                        tree.insert(*c, *b);
+                    }
+                    None => {
+                        tree.remove(c);
+                    }
+                }
+            }
+            let whole = shipped_within(&blocks, &writes, &[], None);
+            assert_eq!(
+                whole.iter().map(|(c, b)| (c, *b)).collect::<Vec<_>>(),
+                tree.iter().map(|(c, b)| (*c, *b)).collect::<Vec<_>>(),
+                "round {round}: the whole"
+            );
+            for _ in 0..6 {
+                let a = [
+                    next(70) as i32 - 35,
+                    next(36) as i32 - 3,
+                    next(70) as i32 - 35,
+                ];
+                let b = [
+                    a[0] + next(40) as i32,
+                    a[1] + next(20) as i32,
+                    a[2] + next(40) as i32,
+                ];
+                let clipped = shipped_within(&blocks, &writes, &[], Some((a, b)));
+                assert_eq!(
+                    clipped.iter().collect::<Vec<_>>(),
+                    whole.in_box(a, b).collect::<Vec<_>>(),
+                    "round {round}: the clip {a:?}..{b:?}"
+                );
+                // A clip given corner-last reads the same box.
+                let swapped = shipped_within(&blocks, &writes, &[], Some((b, a)));
+                assert_eq!(
+                    swapped, clipped,
+                    "round {round}: the clip's corners swapped"
+                );
+            }
+        }
     }
 }

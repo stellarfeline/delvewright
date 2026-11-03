@@ -350,6 +350,15 @@ impl Store {
         if thrashed_since.saturating_mul(2) >= read_since {
             NEED.raise(NEED.bytes().saturating_mul(2));
             RAISED.fetch_add(1, Ordering::Relaxed);
+            // Said as it happens, so the stage lines around it name the walk
+            // whose working set the need now states.
+            eprintln!(
+                "world store need: raised to {} byte(s); {} of the last {} read-back(s) came back \
+                 within one turnover of the resident arrays",
+                NEED.bytes(),
+                thrashed_since,
+                read_since
+            );
         }
     }
 }
@@ -845,6 +854,41 @@ impl<V: Copy + Eq> SectionMap<V> {
         for c in &gone {
             self.remove(c);
         }
+    }
+
+    /// **Apply `writes` section by section** (ADR-0037 §2, assembly): the
+    /// writes grouped by the section each lies in, the sections in key order,
+    /// the writes of one section in the order listed (a stable sort), so a
+    /// cell written twice keeps its two writes in order and the map written is
+    /// the one the listed order writes — while the store's working set is one
+    /// section at a time, whatever order the writes were listed in. `None`
+    /// removes the cell.
+    pub fn write_by_section(&mut self, writes: impl IntoIterator<Item = (Cell, Option<V>)>) {
+        let mut writes: Vec<(Cell, Option<V>)> = writes.into_iter().collect();
+        writes.sort_by_key(|(c, _)| section_of(c));
+        for (c, v) in writes {
+            match v {
+                Some(v) => {
+                    self.insert(c, v);
+                }
+                None => {
+                    self.remove(&c);
+                }
+            }
+        }
+    }
+
+    /// The section columns holding a cell — `(sx, sz)` — in key order, each
+    /// with the inclusive `sy` range its sections span: the unit a walk that
+    /// settles or sweeps columns takes up one at a time.
+    pub fn section_columns(&self) -> Vec<([i32; 2], [i32; 2])> {
+        let mut by: BTreeMap<[i32; 2], [i32; 2]> = BTreeMap::new();
+        for k in self.sections.keys() {
+            let e = by.entry([k[0], k[2]]).or_insert([k[1], k[1]]);
+            e[0] = e[0].min(k[1]);
+            e[1] = e[1].max(k[1]);
+        }
+        by.into_iter().collect()
     }
 
     /// The number of cells held.
@@ -1534,5 +1578,81 @@ mod tests {
             "{own_thrashed} read-back(s) of a walk that touched each of {n} sections once a round \
              were judged thrashing"
         );
+    }
+
+    /// **Writes by section lay the map the listed order lays**: generated
+    /// writes over several sections, cells written more than once (a later
+    /// write winning, a removal among them), applied section by section and
+    /// in the order listed, read alike cell for cell; and the section columns
+    /// listed are the sections' columns with their `sy` spans.
+    #[test]
+    fn writes_by_section_lay_the_map_the_listed_order_lays() {
+        let mut seed = 0x2545_f491_4f6c_dd1du64;
+        let mut next = |n: u64| xorshift(&mut seed) % n;
+        for round in 0..20 {
+            let mut writes: Vec<(Cell, Option<u32>)> = Vec::new();
+            let n = 50 + round * 40;
+            for _ in 0..n {
+                let c = [
+                    next(70) as i32 - 35,
+                    next(40) as i32 - 20,
+                    next(70) as i32 - 35,
+                ];
+                let v = if next(4) == 0 {
+                    None
+                } else {
+                    Some(next(6) as u32)
+                };
+                writes.push((c, v));
+            }
+            // A base the writes land on: some cells held before.
+            let mut listed: SectionMap<u32> = SectionMap::new();
+            let mut tree: BTreeMap<Cell, u32> = BTreeMap::new();
+            for _ in 0..n / 2 {
+                let c = [
+                    next(70) as i32 - 35,
+                    next(40) as i32 - 20,
+                    next(70) as i32 - 35,
+                ];
+                listed.insert(c, 9);
+                tree.insert(c, 9);
+            }
+            let mut by_section = listed.clone();
+            for (c, v) in &writes {
+                match v {
+                    Some(v) => {
+                        listed.insert(*c, *v);
+                        tree.insert(*c, *v);
+                    }
+                    None => {
+                        listed.remove(c);
+                        tree.remove(c);
+                    }
+                }
+            }
+            by_section.write_by_section(writes.iter().copied());
+            assert_eq!(
+                by_section.iter().collect::<Vec<_>>(),
+                listed.iter().collect::<Vec<_>>(),
+                "round {round}"
+            );
+            assert_eq!(
+                by_section.iter().map(|(c, v)| (c, *v)).collect::<Vec<_>>(),
+                tree.iter().map(|(c, v)| (*c, *v)).collect::<Vec<_>>(),
+                "round {round} against the tree"
+            );
+            let mut columns: BTreeMap<[i32; 2], [i32; 2]> = BTreeMap::new();
+            for c in tree.keys() {
+                let k = section_of(c);
+                let e = columns.entry([k[0], k[2]]).or_insert([k[1], k[1]]);
+                e[0] = e[0].min(k[1]);
+                e[1] = e[1].max(k[1]);
+            }
+            assert_eq!(
+                by_section.section_columns(),
+                columns.into_iter().collect::<Vec<_>>(),
+                "round {round}: the section columns"
+            );
+        }
     }
 }
