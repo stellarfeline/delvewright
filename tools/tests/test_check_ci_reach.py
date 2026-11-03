@@ -283,6 +283,16 @@ def test_a_function_call_is_refused_by_name(tmp_path, capsys):
     assert "`always(…)` is not evaluated" in out
 
 
+def test_not_cancelled_is_evaluated_as_the_reach_condition_alone(tmp_path, capsys):
+    wf = perturbed(
+        tmp_path,
+        HARNESS_IF,
+        "    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.harness == 'true') }}\n",
+    )
+    code, out = run_gate(capsys, wf)
+    assert code == 0, out
+
+
 def test_a_group_no_job_reads_is_refused(tmp_path, capsys):
     text = TABLE.read_text(encoding="utf-8") + '\n[[group]]\nname = "orphan"\ninputs = [\n  { glob = "README.md", why = "t" },\n]\n'
     table = tmp_path / "ci-reach.toml"

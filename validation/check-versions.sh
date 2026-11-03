@@ -580,12 +580,17 @@ all_stated "beet -> ci.yml"   'beet==[0-9A-Za-z.*+!-]*'   "beet==$BEET_VERSION" 
 all_stated "pytest -> ci.yml" 'pytest==[0-9A-Za-z.*+!-]*' "pytest==$PYTEST_VERSION" 3 "$CI_WF"
 
 # The Rust suite's instruments (spec-0126 §1). nextest and llvm-cov are installed
-# by the `rust` job at the literal versions.toml records; the two scripts that run
-# them outside CI, and the kill-set proof that runs cargo-mutants, hold no copy:
-# each reads its key and refuses any other installed version. The coverage
-# record names the instruments it was measured with, and they are these.
-all_stated "cargo-nextest -> ci.yml"  'cargo-nextest@[0-9A-Za-z.+-]*'  "cargo-nextest@$NEXTEST_VERSION"   1 "$CI_WF"
-all_stated "cargo-llvm-cov -> ci.yml" 'cargo-llvm-cov@[0-9A-Za-z.+-]*' "cargo-llvm-cov@$LLVM_COV_VERSION" 1 "$CI_WF"
+# by every job of the `rust` family through one composite action at the literal
+# versions.toml records — twice each in that file: the cache key and the install
+# line — and by nothing in ci.yml itself; the two scripts that run them outside
+# CI, and the kill-set proof that runs cargo-mutants, hold no copy: each reads
+# its key and refuses any other installed version. The coverage record names
+# the instruments it was measured with, and they are these.
+INSTRUMENTS_ACTION="$ROOT/.github/actions/suite-instruments/action.yml"
+all_stated "cargo-nextest -> suite-instruments"  'cargo-nextest@[0-9A-Za-z.+-]*'  "cargo-nextest@$NEXTEST_VERSION"   2 "$INSTRUMENTS_ACTION"
+all_stated "cargo-llvm-cov -> suite-instruments" 'cargo-llvm-cov@[0-9A-Za-z.+-]*' "cargo-llvm-cov@$LLVM_COV_VERSION" 2 "$INSTRUMENTS_ACTION"
+all_stated "cargo-nextest -> ci.yml"  'cargo-nextest@[0-9A-Za-z.+-]*'  "cargo-nextest@$NEXTEST_VERSION"   0 "$CI_WF"
+all_stated "cargo-llvm-cov -> ci.yml" 'cargo-llvm-cov@[0-9A-Za-z.+-]*' "cargo-llvm-cov@$LLVM_COV_VERSION" 0 "$CI_WF"
 for pair in "tools/ci/test-coverage-map.sh:llvm_cov_version" "tools/ci/test-coverage-map.sh:nextest_version" "tools/ci/test-kill-set.sh:mutants_version"; do
   f="${pair%%:*}"; key="${pair##*:}"
   if grep -qF -- "$key" "$ROOT/$f"; then

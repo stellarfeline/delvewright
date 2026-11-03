@@ -291,22 +291,34 @@ jobs:
       - name: every JSON document this repository holds is canonical
         run: python3 tools/ci/check-json-canonical.py --delvec target/debug/delvec
 
-  rust:
-    name: rust (fmt, clippy, test)
+  # THE RUST SUITE IS ONE BUILD, N PARTITION RUNS, ONE CENSUS (spec-0126 §5).
+  #
+  # Instrumented, the whole suite's per-test times sum to 55,000–61,000 s and
+  # the hosted runner runs about 3.6 tests at once, so no single job reaches
+  # the 25-minute test-run bound: measured at 4 h 22 m – 4 h 47 m, and once
+  # cancelled at GitHub's 6-hour job limit. The suite is therefore built once
+  # — `rust-build` archives every instrumented test binary — and run as N
+  # partition jobs, each `cargo nextest … --partition hash:k/N` over that one
+  # archive, each bound by the 40-minute job and 25-minute run limits of §5.
+  # The `rust` job gathers them: the partition census proves every listed test
+  # ran in exactly one partition (a sharding that can drop a test is the
+  # unbound vacuity mode), merges the N profiles into the one coverage report,
+  # and judges the floor over it. `rust` is the required context the merge
+  # waits on, and it is red whenever any job it gathers is not green.
+  rust-build:
+    name: rust build (fmt, clippy, instrumented archive)
     needs: changes
     if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
-      # Whole history: the coverage floor proves its record's tree is an
-      # ancestor of the commit it judges (spec-0126 §2.2).
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       # The compiler tests read the prefab library (`campaigns/prefabs/*.nbt`,
       # git-lfs); it lives in the content repo now (spec-0007 Step 0), checked out
-      # at the pinned SHA into ./campaigns. The ADR-0006 double-build byte-identity
-      # gate runs inside the suite's one nextest run (`cli.rs`).
+      # at the pinned SHA into ./campaigns. The build needs the tree's shape only;
+      # the partitions check the payloads out again where the tests read them.
       - uses: ./.github/actions/checkout-content
+        with: { lfs: "false" }
       # rust-toolchain.toml pins the channel + clippy/rustfmt components,
       # which rustup on the runner installs automatically.
       - uses: Swatinem/rust-cache@v2
@@ -328,49 +340,29 @@ jobs:
         run: bash tools/ci/fmt-workspaces.sh --check
       - name: cargo clippy -D warnings
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
-      # Every frame a test draws is drawn with Minecraft's own textures, read
-      # out of the pinned client jar (spec-0112 §6.1). The jar is never
-      # committed or cached in the repository: this is the job's one live
-      # Mojang fetch, checked on its bytes against versions.toml, and a red
-      # here is the network, never a frame.
-      - name: the pinned client jar (one verified fetch)
-        run: echo "DELVEWRIGHT_CLIENT_JAR=$(bash validation/client-jar-cache.sh --cache "$RUNNER_TEMP/client-jar" | tail -n 1)" >> "$GITHUB_ENV"
-      # The suite's instruments (spec-0126 §1): cargo-nextest runs every test
-      # as its own process and writes one JUnit <testcase> per test with its
-      # time; cargo-llvm-cov reads region coverage out of that same run. Both
-      # at the literal versions.toml [ci] records (validation/check-versions.sh
-      # holds these two sites to it); the toolchain's own llvm-tools is the only
-      # LLVM the counters may be read with.
-      - name: the suite's instruments (pinned nextest, llvm-cov, llvm-tools)
-        run: |
-          rustup component add llvm-tools
-          cargo install --locked cargo-nextest@0.9.148 cargo-llvm-cov@0.9.1
-      # One run of the whole suite, instrumented: the determinism double-build
-      # gate runs inside it (`cli.rs`). Every test runs to its end.
-      - name: cargo nextest, instrumented (incl. determinism double-build gate)
-        run: cargo llvm-cov --no-report nextest --workspace --locked --no-fail-fast --profile ci
+      # The suite's instruments (spec-0126 §1), at the literal versions the
+      # composite action carries and validation/check-versions.sh holds.
+      - uses: ./.github/actions/suite-instruments
+      # One instrumented build of every test binary, archived for the
+      # partitions: `cargo llvm-cov nextest-archive` is `cargo nextest archive`
+      # under cargo-llvm-cov's instrumentation flags (its 0.9.1 source,
+      # `archive_nextest`). The archive carries the test binaries, the
+      # `delvec` binary the tests spawn (`CARGO_BIN_EXE_delvec`), and the
+      # build-script outputs; nothing in it is rebuilt by a partition.
+      - name: the instrumented archive (every test binary, built once)
+        run: cargo llvm-cov nextest-archive --workspace --locked --archive-file target/nextest-archive.tar.zst
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rust-nextest-archive
+          path: target/nextest-archive.tar.zst
+          if-no-files-found: error
+          retention-days: 3
       # The doc tests, which nextest cannot run (it lists only test binaries):
       # ten on this tree, eight of them `compile_fail` proofs that a private
       # surface stays private (`compiler::framing`). Uninstrumented: doc-test
       # coverage needs nightly.
       - name: cargo test --doc (the doc tests nextest does not run)
         run: cargo test --doc --workspace --locked
-      # Absolute file names: cargo-llvm-cov 0.9.1's `--json --remap-path-prefix`
-      # writes an export with an empty `files` list (measured), and the floor
-      # strips the workspace root the export itself names.
-      - name: the coverage report (region, line, function)
-        if: always()
-        run: cargo llvm-cov report --json --output-path target/coverage.json
-      - name: the run's measurements (JUnit per-test times, coverage export)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: rust-suite-measurements
-          path: |
-            target/nextest/ci/junit.xml
-            target/coverage.json
-          if-no-files-found: warn
-
       # The viewer's interactive layer is JavaScript, so the Rust test run cannot run
       # it — and for as long as that was the whole story the camera had NO
       # executable coverage at all. A and D shipped swapped; the mapping was
@@ -393,14 +385,150 @@ jobs:
       # the line above.
       - name: a label belongs to the model that drew it (node --test)
         run: node --test crates/delvec/tests/labels.test.mjs
+
+  rust-partition:
+    name: rust partition (${{ matrix.k }} of 24)
+    needs: [changes, rust-build]
+    if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    # spec-0126 §5: the job bound. A partition that exceeds it is cancelled and red.
+    timeout-minutes: 40
+    strategy:
+      # Every partition runs to its end: the census needs all N reports to say
+      # which tests ran where, and a failure in one says nothing about the rest.
+      fail-fast: false
+      matrix:
+        k: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
+    outputs:
+      # N, read by the census from the matrix itself rather than typed again.
+      total: ${{ strategy.job-total }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/checkout-content
+      - uses: ./.github/actions/suite-instruments
+      # Every frame a test draws is drawn with Minecraft's own textures, read
+      # out of the pinned client jar (spec-0112 §6.1). The jar is never
+      # committed or cached in the repository: this is the job's one live
+      # Mojang fetch, checked on its bytes against versions.toml, and a red
+      # here is the network, never a frame.
+      - name: the pinned client jar (one verified fetch)
+        run: echo "DELVEWRIGHT_CLIENT_JAR=$(bash validation/client-jar-cache.sh --cache "$RUNNER_TEMP/client-jar" | tail -n 1)" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: rust-nextest-archive
+          path: ${{ runner.temp }}/archive
+      # Partition k of N of the one archive, instrumented. cargo-llvm-cov hands
+      # nextest `--extract-to target/llvm-cov-target`, so the binaries land
+      # under `target/llvm-cov-target/target/debug/`; the tests reach `delvec`
+      # by the path compiled into them, `target/llvm-cov-target/debug/delvec`,
+      # and the symlink makes that the same directory. The checkout stands at
+      # the same absolute path as the build's, so every other compiled-in path
+      # (`CARGO_MANIFEST_DIR`) resolves as built. Every test runs to its end;
+      # the determinism double-build gate (`cli.rs`) runs inside whichever
+      # partition its name hashes to. The 25-minute run bound and the per-test
+      # bound are `[profile.ci]`'s (`.config/nextest.toml`).
+      - name: cargo nextest, partition k of N, instrumented
+        env:
+          PARTITION: ${{ matrix.k }}
+          PARTITIONS: ${{ strategy.job-total }}
+        run: |
+          set -euo pipefail
+          mkdir -p target/llvm-cov-target
+          ln -s target/debug target/llvm-cov-target/debug
+          cargo llvm-cov nextest --no-report --archive-file "$RUNNER_TEMP/archive/nextest-archive.tar.zst" --workspace-remap . --profile ci --partition "hash:$PARTITION/$PARTITIONS"
+      # The partition's counters, merged once here into one indexed profile,
+      # so the census job merges N files instead of thousands of raw ones. The
+      # count of raw profiles is printed: one per test process, plus one per
+      # instrumented `delvec` a test spawned.
+      - name: the partition's profile (one .profdata) and its JUnit report
+        if: always()
+        run: |
+          set -euo pipefail
+          n="$(ls target/llvm-cov-target/*.profraw 2>/dev/null | wc -l | tr -d ' ')"
+          echo "partition: $n raw profiles"
+          [ "$n" -gt 0 ] || { echo "no raw profile was written: the partition ran nothing instrumented" >&2; exit 1; }
+          "$LLVM_PROFDATA" merge -sparse -o target/partition.profdata target/llvm-cov-target/*.profraw
+          ls -l target/partition.profdata target/nextest/ci/junit.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rust-partition-${{ matrix.k }}
+          path: |
+            target/nextest/ci/junit.xml
+            target/partition.profdata
+          if-no-files-found: error
+          retention-days: 3
+
+  rust:
+    name: rust (fmt, clippy, test)
+    needs: [changes, rust-build, rust-partition]
+    # Runs whenever the family was reached, success or not — a required context
+    # that is skipped because a partition failed would PASS branch protection —
+    # and its first step turns any non-green job it gathers into its own red.
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: every job this one gathers is green
+        env:
+          BUILD: ${{ needs.rust-build.result }}
+          PARTITIONS: ${{ needs.rust-partition.result }}
+        run: |
+          echo "rust build: $BUILD; rust partitions: $PARTITIONS"
+          [ "$BUILD" = "success" ] && [ "$PARTITIONS" = "success" ] || { echo "a job this one gathers is not green" >&2; exit 1; }
+      # Whole history: the coverage floor proves its record's tree is an
+      # ancestor of the commit it judges (spec-0126 §2.2).
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/suite-instruments
+      - uses: actions/download-artifact@v4
+        with:
+          name: rust-nextest-archive
+          path: ${{ runner.temp }}/archive
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: rust-partition-*
+          path: partitions
+      # The archive's own listing is the census's denominator: every test it
+      # lists (ignored ones aside) must appear in exactly one partition's
+      # JUnit report, and every partition must have run something. `--extract-to`
+      # lays the binaries where `cargo llvm-cov report` looks for them.
+      - name: the archive's listing (the census's denominator)
+        run: cargo nextest list --archive-file "$RUNNER_TEMP/archive/nextest-archive.tar.zst" --extract-to target/llvm-cov-target --workspace-remap . --message-format json > target/nextest-list.json
+      - name: the partition census (every listed test ran in exactly one partition)
+        env:
+          PARTITIONS: ${{ needs.rust-partition.outputs.total }}
+        run: python3 tools/ci/check-partitions.py --list target/nextest-list.json --junit-dir partitions --partitions "$PARTITIONS"
+      # The N partition profiles merged into the one profile the report reads:
+      # cargo-llvm-cov names it `<workspace directory>.profdata` under
+      # `target/llvm-cov-target` and, finding no raw profiles beside it, reads
+      # it as it stands (its 0.9.1 source, `merge_profraw`). The objects come
+      # from the archive's `binaries-metadata.json`.
+      - name: the coverage report (region, line, function) over every partition
+        run: |
+          set -euo pipefail
+          ws="$(cargo metadata --format-version 1 --no-deps | python3 -c 'import json, os, sys; print(os.path.basename(json.load(sys.stdin)["workspace_root"]))')"
+          "$LLVM_PROFDATA" merge -sparse -o "target/llvm-cov-target/$ws.profdata" partitions/*/partition.profdata
+          cargo llvm-cov report --json --output-path target/coverage.json --nextest-archive-file "$RUNNER_TEMP/archive/nextest-archive.tar.zst"
+      - name: the run's measurements (JUnit per-test times per partition, coverage export, listing)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-suite-measurements
+          path: |
+            partitions/*/junit.xml
+            target/nextest-list.json
+            target/coverage.json
+          if-no-files-found: warn
       # Every test file of the audited tree has a row, and every removal its
       # proof (spec-0126 §6): merges keep their assertions and DW codes, and the
       # per-test time overrides are the ones the table counts.
       - name: the suite audit table holds (rows, verdicts, proofs, overrides)
         run: python3 tools/ci/check-suite-audit.py --merges --overrides
-      # The coverage floor (spec-0126 §2.2), over the report this job produced:
-      # region coverage of production source may not fall below the record's
-      # floor by more than its measured run-to-run instability.
+      # The coverage floor (spec-0126 §2.2), over the merged report: region
+      # coverage of production source may not fall below the record's floor by
+      # more than its measured run-to-run instability.
       - name: the coverage floor (region coverage of production source)
         run: python3 tools/ci/coverage-floor.py --report target/coverage.json
 

@@ -6,9 +6,10 @@ A gate over `.github/workflows/*.yml` has to answer a STRUCTURAL question — fo
 this job, in order, what are its steps — and the checkers already in this tree
 answer structural questions with line regexes because there is no YAML parser
 here to reach for: CI checks are Python, stdlib-only (ADR-0018 §2), and the
-stdlib has no YAML. `check-required-contexts.py` keys off `^    name:` at
-exactly four spaces; `check-shell-bash32.py` re-derives `run:` blocks from
-indentation. Each is a private copy of a partial parse rule, and this project's
+stdlib has no YAML. `check-required-contexts.py` keyed off `^    name:` at
+exactly four spaces until it read job names (and their matrix expansions)
+through this module; `check-shell-bash32.py` re-derives `run:` blocks from
+indentation. Each was a private copy of a partial parse rule, and this project's
 own rule is that a checker reads a document the way its consumer reads it, with
 ONE shared parse rule and no private copy per gate.
 
