@@ -150,6 +150,22 @@ pub(crate) trait Pageable: Send + Sync {
     fn give_up(&self, want: usize) -> usize;
 }
 
+/// **What a structure may be asked to give up**: what it holds over three
+/// quarters of its stated need. A structure brought under the budget gives up
+/// its own excess first and only that; what another structure's growth pushed
+/// the total over is asked of that structure in its turn, so no structure is
+/// emptied for another's growth, and a paged walk within its need keeps its
+/// working set.
+pub(crate) fn spare(held: usize, need: usize) -> usize {
+    held.saturating_sub(need / 4 * 3)
+}
+
+/// What the structure that just grew is asked for: the total's excess over
+/// the target, and no more than its own spare.
+fn asked(over: usize, held: usize, need: usize) -> usize {
+    over.min(spare(held, need))
+}
+
 /// A registered structure: its identity, which [`relieve`] skips when asking
 /// the others.
 pub(crate) type Id = usize;
@@ -179,7 +195,7 @@ pub(crate) fn id_of<T: ?Sized>(t: &T) -> Id {
 /// caller holds `me`'s lock, so it is asked directly), then every other
 /// registered structure is asked, until the total stands at three quarters
 /// of the budget. Under a test's budget, `me` alone is held to it.
-pub(crate) fn relieve(me: Id, held: usize, mut own: impl FnMut(usize) -> usize) {
+pub(crate) fn relieve(me: Id, held: usize, need: usize, mut own: impl FnMut(usize) -> usize) {
     let b = override_here();
     if b != 0 {
         if held > b {
@@ -193,7 +209,10 @@ pub(crate) fn relieve(me: Id, held: usize, mut own: impl FnMut(usize) -> usize) 
         return;
     }
     let target = b / 4 * 3;
-    own(over(target));
+    let want = asked(over(target), held, need);
+    if want > 0 {
+        own(want);
+    }
     if over(target) == 0 {
         return;
     }
@@ -210,5 +229,25 @@ pub(crate) fn relieve(me: Id, held: usize, mut own: impl FnMut(usize) -> usize) 
             break;
         }
         o.give_up(want);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// **A structure is asked for its own excess and no more** (ADR-0037 §1):
+    /// what it holds over three quarters of its need, capped by the total's
+    /// excess; one within three quarters of its need is asked for nothing,
+    /// however far over the total stands.
+    #[test]
+    fn a_structure_gives_up_its_own_excess_and_no_more() {
+        assert_eq!(spare(100, 80), 40);
+        assert_eq!(spare(60, 80), 0);
+        assert_eq!(spare(0, 0), 0);
+        assert_eq!(asked(1_000_000, 100, 80), 40);
+        assert_eq!(asked(10, 100, 80), 10);
+        assert_eq!(asked(1_000_000, 60, 80), 0);
+        assert_eq!(asked(1_000_000, 100, 0), 100);
     }
 }

@@ -276,7 +276,7 @@ impl<T: Paged> Store<T> {
     /// ([`budget::relieve`]).
     fn relieve(&self, g: &mut Inner<T>) {
         let held = g.held();
-        budget::relieve(budget::id_of(self), held, |want| g.evict(want));
+        budget::relieve(budget::id_of(self), held, need(), |want| g.evict(want));
     }
 
     /// The id of the page holding `values` (at most [`PAGE_CELLS`]; a short

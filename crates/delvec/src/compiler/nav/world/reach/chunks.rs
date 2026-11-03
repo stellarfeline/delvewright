@@ -479,7 +479,7 @@ impl<V: Item> Lists<V> {
     /// chunk `keep` ([`budget::relieve`]).
     fn relieve(&self, g: &mut Inner<V>, keep: Key) {
         let held = g.held;
-        budget::relieve(budget::id_of(&*self.inner), held, |want| {
+        budget::relieve(budget::id_of(&*self.inner), held, NEED.bytes(), |want| {
             g.evict(want, Some(keep))
         });
     }

@@ -287,16 +287,20 @@ chunk depends on how densely a map's columns are reached, never on how many
 columns it has. The snapshot's need is 4 × the 3 × 3 ring of reach chunks of
 the tallest window built, over both value types, at least 64 pages' worth.
 The stores' need starts at a 3 × 3 × 3 ring of sections at the wide index
-(221,184 bytes) and is measured as the build runs: each time the stores are
-brought under the budget, the reads made since the last time are set against
-the arrays read back for them, and a walk that read back one array in fewer
-than 256 reads was given arrays it was still using, so the need doubles until
-the walk's working set stays (a section read whole makes 4,096 reads, so a
-sequential pass over a world spilled at assembly streams it and raises
+(221,184 bytes) and is measured as the build runs: an array read back within
+one turnover of its store's arrays — fewer of them given up since it was than
+the store holds resident or the need states, whichever is more — was given up
+while a walk was still using it, and each time the stores are brought under
+the budget, a sample of 64 read-backs of which half or more were such
+re-references doubles the need, until the walk's working set stays (an array
+given up long before is read back cold however few of its cells the walk
+touches, so a sliver written into a section placed long before, a second
+sequential pass, and a copy's first read of a record it shares raise
 nothing). Past the budget, the structure that just grew gives up its least
-recently used chunks, pages or arrays first, then every other, until the
-total stands at three quarters of the budget; what any of them answers never
-depends on what is resident. A run that took a closure prints `reach budget: R byte(s) resident
+recently used chunks, pages or arrays first — down to three quarters of its
+own stated need and no further — then every other is asked, the stores never
+below three quarters of theirs, until the total stands at three quarters of
+the budget; what any of them answers never depends on what is resident. A run that took a closure prints `reach budget: R byte(s) resident
 at the end, under one budget of N byte(s), the sum of the working sets stated:
 … (ADR-0037 §1)`, `reach lists: B byte(s) in the scratch file; working set W
 byte(s) (3 x 3 chunks of the largest decoded, C byte(s), and their buffered

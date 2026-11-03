@@ -350,8 +350,13 @@ impl Store {
 }
 
 impl budget::Pageable for Store {
+    /// Asked by another structure's relief: the stores give up what they
+    /// hold over three quarters of their need ([`budget::spare`]) and no
+    /// more, so a walk within the stores' need is not emptied for the
+    /// reach graph's growth.
     fn give_up(&self, want: usize) -> usize {
-        self.evict(want, false, None)
+        let spare = budget::spare(HELD.load(Ordering::Relaxed), NEED.bytes());
+        self.evict(want.min(spare), false, None)
     }
 }
 
@@ -364,13 +369,17 @@ fn relieve(tally: &Arc<Tally>) {
         budget::relieve(
             budget::id_of(&**s),
             tally.held.load(Ordering::Relaxed),
+            0,
             |want| s.evict(want, true, Some(tally)),
         );
         return;
     }
-    budget::relieve(budget::id_of(&**s), HELD.load(Ordering::Relaxed), |want| {
-        s.evict(want, true, None)
-    });
+    budget::relieve(
+        budget::id_of(&**s),
+        HELD.load(Ordering::Relaxed),
+        NEED.bytes(),
+        |want| s.evict(want, true, None),
+    );
 }
 
 /// Count an array of `bytes` as resident.
