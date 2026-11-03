@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -188,6 +189,22 @@ def test_a_delvec_that_states_no_wave_bound_is_refused(rig: Rig):
     assert rig.handouts("hall") == []
 
 
+def refused_reachable_from(text: str) -> set[str]:
+    """The refused block names an author reaches from a handout: the file the
+    blocks section points at, read as the author reads it."""
+    section_text = text.split("## The blocks you may write")[1]
+    m = re.search(r"^`([^`]+)` is `delvec grammar blocks`, saved", section_text, re.M)
+    assert m, "the blocks section names the saved list"
+    saved = json.loads(pathlib.Path(m.group(1)).read_text(encoding="utf-8"))
+    return {r["block"] for r in saved["refused"]}
+
+
+def engine_refused(rig: Rig) -> set[str]:
+    """The refused set as the engine states it: what the `delvec grammar blocks`
+    this rig's `delvec` answers with lists, the list the generator refuses by."""
+    return {r["block"] for r in json.loads((rig.bin / "blocks.json").read_text(encoding="utf-8"))["refused"]}
+
+
 def test_the_blocks_a_place_may_write_are_the_engine_s_lists(rig: Rig):
     """Which blocks are refused (`DW0730`) and which are containers is read from
     `delvec grammar blocks`, saved beside the handout, never typed."""
@@ -197,9 +214,17 @@ def test_the_blocks_a_place_may_write_are_the_engine_s_lists(rig: Rig):
     blocks = json.loads((FIXTURE / "blocks.json").read_text(encoding="utf-8"))
     assert handout.with_name("blocks.json").read_text(encoding="utf-8") == (FIXTURE / "blocks.json").read_text(encoding="utf-8")
     text = handout.read_text(encoding="utf-8")
+    # Every refused name is reachable from the handout: the file it points at
+    # lists exactly the engine's refused set.
+    assert refused_reachable_from(text) == engine_refused(rig)
     assert f"## The blocks you may write ({len(blocks['admitted'])} admitted, {len(blocks['refused'])} refused)" in text
+    # The refused list itself is the saved `blocks.json` (and the generator
+    # refuses each by name before it writes); the handout states its count and
+    # names every refused block that is had another way, with that way.
+    assert f"except the {len(blocks['refused'])} its `refused` list names" in text
     for r in blocks["refused"]:
-        assert f"`{r['block'].removeprefix('minecraft:')}`" in text
+        if r.get("route"):
+            assert f"- `{r['block']}` is had another way: {r['route']}" in text
     assert f"**Containers** ({len(blocks['containers'])}): " in text
     assert "`smoker`" in text and "`blast_furnace`" in text
     assert f"refused blocks {len(blocks['refused'])}; containers {len(blocks['containers'])}" in out.stderr
@@ -208,7 +233,11 @@ def test_the_blocks_a_place_may_write_are_the_engine_s_lists(rig: Rig):
     (rig.bin / "blocks.json").write_text(json.dumps(blocks), encoding="utf-8")
     out = rig.run(place="node/yard")
     assert out.returncode == 0, out.stderr
-    assert "`stone_bricks`" in rig.handouts("yard")[0].read_text(encoding="utf-8").split("## The blocks you may write")[1].split("**Containers**")[0]
+    yard = rig.handouts("yard")[0].read_text(encoding="utf-8")
+    assert "minecraft:stone_bricks" in refused_reachable_from(yard)
+    assert refused_reachable_from(yard) == engine_refused(rig)
+    moved = yard.split("## The blocks you may write")[1].split("**Containers**")[0]
+    assert f"except the {len(blocks['refused'])} its `refused` list names" in moved
 
 
 def test_a_delvec_with_no_block_lists_is_refused(rig: Rig):
@@ -537,10 +566,12 @@ def test_an_open_side_is_stated_with_its_cells_and_the_frame_sentence(rig: Rig):
     side = next(s for s in allocation("node/yard")["sides"] if s["face"] == "south")
     lo, hi = side["cells"]
     assert (
-        f"- your **south** side is open: cells [{lo[0]},{lo[1]},{lo[2]}]..[{hi[0]},{hi[1]},{hi[2]}], "
-        f"nothing stands in them from the walk plane (y {side['walk_y']}) to the top of the play space, your ground runs across them."
+        f"- your **south** side is open: cells [{lo[0]},{lo[1]},{lo[2]}]..[{hi[0]},{hi[1]},{hi[2]}], walk plane y {side['walk_y']}."
     ) in text
-    assert FRAME_SENTENCE[0].upper() + FRAME_SENTENCE[1:] + "." in text
+    sides = section(text, "The frame, read before anything is drawn").split("### Open sides")[1].split("\n### ")[0]
+    # What every open side means is said once, before the sides are listed.
+    assert sides.count("Nothing stands in an open side's cells from the walk plane to the top of the play space, and your ground runs across them.") == 1
+    assert sides.count(FRAME_SENTENCE[0].upper() + FRAME_SENTENCE[1:] + ".") == 1
     # A place open to the sky takes the outside paragraph, not the trade rule.
     body = section(text, "What this place is, and what it is built from")
     assert "**This place is outside" in body and "four things hold at once" not in body
@@ -608,3 +639,24 @@ def test_a_place_that_is_not_a_plot_has_no_plot_section(rig: Rig):
     assert "parts 0" in out.stderr
     # The hall's neighbour summary states the yard's parts by use.
     assert "- it is a plot holding: the court a body crosses from the hall (ground); a tool shed in the court's corner (structure); a herb bed nobody walks (ground)" in text
+
+
+def test_the_reading_list_is_the_author_s_and_a_settlement_place_takes_the_town_page(rig: Rig):
+    """The per-place author reads only what is written for it: the step 9 page
+    (`references/detail.md`) is the orchestrator's, and what of it the author
+    owes is in the handout. A plot or a way is a settlement's place, and its
+    author is handed the town page (its checklist and its helpers); a place
+    that is neither is not."""
+    def listed(place: str, stem: str) -> str:
+        out = rig.run(place=place)
+        assert out.returncode == 0, out.stderr
+        return section(rig.handouts(stem)[0].read_text(encoding="utf-8"), "The authoring references")
+
+    plot = listed("node/yard", "yard")
+    assert "references/town.md` — this place is a settlement's plot" in plot
+    assert "references/detail.md" not in plot
+    hall = listed("node/hall", "hall")
+    assert "references/town.md" not in hall
+    assert "references/detail.md" not in hall
+    for rel in ("references/new-pieces.md", "references/reference-works.md"):
+        assert rel in hall and rel in plot, rel

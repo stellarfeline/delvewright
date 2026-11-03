@@ -775,7 +775,13 @@ fn handed_way(
 }
 
 pub fn allocation(c: &Campaign, node: &NodeId) -> Option<Allocation> {
-    let plan = SitePlan::of(c);
+    allocation_in(c, node, &SitePlan::of(c))
+}
+
+/// [`allocation`] over a plan the caller has already resolved
+/// ([`SitePlan::of`] of the same campaign): [`allocations`] resolves the site
+/// once for every place rather than once per place.
+fn allocation_in(c: &Campaign, node: &NodeId, plan: &SitePlan) -> Option<Allocation> {
     let site = plan.site();
     let i = site.index_of(node)?;
     let b = &plan.boxes[i];
@@ -1036,7 +1042,9 @@ pub fn allocation(c: &Campaign, node: &NodeId) -> Option<Allocation> {
                 }
             })
             .collect(),
-        owed_anchors: delvewright_dsl::owed_anchors(c, node).into_iter().collect(),
+        owed_anchors: delvewright_dsl::owed_anchors_in(c, node, plan)
+            .into_iter()
+            .collect(),
         voids: frame
             .voids
             .iter()
@@ -1051,9 +1059,10 @@ pub fn allocation(c: &Campaign, node: &NodeId) -> Option<Allocation> {
 /// Every place's allocation, in plan document order — `delvec allocation --all`.
 #[must_use]
 pub fn allocations(c: &Campaign) -> Vec<Allocation> {
+    let plan = SitePlan::of(c);
     frames(c)
         .iter()
-        .filter_map(|(f, _)| allocation(c, &f.node))
+        .filter_map(|(f, _)| allocation_in(c, &f.node, &plan))
         .collect()
 }
 
@@ -1374,7 +1383,7 @@ type SeamGates = BTreeMap<String, ([i64; 3], [i64; 3])>;
 /// refusals nobody had been shown, and the owed names of that place were missing
 /// from the binding count while it happened.
 fn check_owed(
-    c: &Campaign,
+    (c, plan): (&Campaign, &SitePlan),
     d: &mut Vec<Diagnostic>,
     binding: &mut DetailBinding,
     row: &delvewright_dsl::Detail,
@@ -1383,7 +1392,7 @@ fn check_owed(
     (gates, seats): (&SeamGates, &KillingSeats),
 ) {
     // ---- DW0842 / DW0845: the owed names ----
-    let owed = delvewright_dsl::owed_anchors(c, &row.place);
+    let owed = delvewright_dsl::owed_anchors_in(c, &row.place, plan);
     for key in row.anchors.keys() {
         if !owed.contains(key) {
             d.push(Diagnostic::error(
@@ -1868,7 +1877,15 @@ pub fn check(c: &Campaign, prefabs: &PrefabRegistry) -> (Vec<Diagnostic>, Detail
             }
         }
         let Some(contract) = contract.filter(|_| got64 == want) else {
-            check_owed(c, &mut d, &mut binding, row, meta, &path, (&gates, &seats));
+            check_owed(
+                (c, &plan),
+                &mut d,
+                &mut binding,
+                row,
+                meta,
+                &path,
+                (&gates, &seats),
+            );
             continue;
         };
         for (s, out) in &mine {
@@ -2002,7 +2019,15 @@ pub fn check(c: &Campaign, prefabs: &PrefabRegistry) -> (Vec<Diagnostic>, Detail
             ));
         }
 
-        check_owed(c, &mut d, &mut binding, row, meta, &path, (&gates, &seats));
+        check_owed(
+            (c, &plan),
+            &mut d,
+            &mut binding,
+            row,
+            meta,
+            &path,
+            (&gates, &seats),
+        );
     }
     // spec-0125 §5.3: a plot's parts are built as declared (`DW1074`, the
     // shapes the metadata answers; the walk is judged where the blocks are).
