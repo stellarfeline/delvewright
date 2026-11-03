@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -188,6 +189,22 @@ def test_a_delvec_that_states_no_wave_bound_is_refused(rig: Rig):
     assert rig.handouts("hall") == []
 
 
+def refused_reachable_from(text: str) -> set[str]:
+    """The refused block names an author reaches from a handout: the file the
+    blocks section points at, read as the author reads it."""
+    section_text = text.split("## The blocks you may write")[1]
+    m = re.search(r"^`([^`]+)` is `delvec grammar blocks`, saved", section_text, re.M)
+    assert m, "the blocks section names the saved list"
+    saved = json.loads(pathlib.Path(m.group(1)).read_text(encoding="utf-8"))
+    return {r["block"] for r in saved["refused"]}
+
+
+def engine_refused(rig: Rig) -> set[str]:
+    """The refused set as the engine states it: what the `delvec grammar blocks`
+    this rig's `delvec` answers with lists, the list the generator refuses by."""
+    return {r["block"] for r in json.loads((rig.bin / "blocks.json").read_text(encoding="utf-8"))["refused"]}
+
+
 def test_the_blocks_a_place_may_write_are_the_engine_s_lists(rig: Rig):
     """Which blocks are refused (`DW0730`) and which are containers is read from
     `delvec grammar blocks`, saved beside the handout, never typed."""
@@ -197,6 +214,9 @@ def test_the_blocks_a_place_may_write_are_the_engine_s_lists(rig: Rig):
     blocks = json.loads((FIXTURE / "blocks.json").read_text(encoding="utf-8"))
     assert handout.with_name("blocks.json").read_text(encoding="utf-8") == (FIXTURE / "blocks.json").read_text(encoding="utf-8")
     text = handout.read_text(encoding="utf-8")
+    # Every refused name is reachable from the handout: the file it points at
+    # lists exactly the engine's refused set.
+    assert refused_reachable_from(text) == engine_refused(rig)
     assert f"## The blocks you may write ({len(blocks['admitted'])} admitted, {len(blocks['refused'])} refused)" in text
     # The refused list itself is the saved `blocks.json` (and the generator
     # refuses each by name before it writes); the handout states its count and
@@ -213,7 +233,10 @@ def test_the_blocks_a_place_may_write_are_the_engine_s_lists(rig: Rig):
     (rig.bin / "blocks.json").write_text(json.dumps(blocks), encoding="utf-8")
     out = rig.run(place="node/yard")
     assert out.returncode == 0, out.stderr
-    moved = rig.handouts("yard")[0].read_text(encoding="utf-8").split("## The blocks you may write")[1].split("**Containers**")[0]
+    yard = rig.handouts("yard")[0].read_text(encoding="utf-8")
+    assert "minecraft:stone_bricks" in refused_reachable_from(yard)
+    assert refused_reachable_from(yard) == engine_refused(rig)
+    moved = yard.split("## The blocks you may write")[1].split("**Containers**")[0]
     assert f"except the {len(blocks['refused'])} its `refused` list names" in moved
 
 
