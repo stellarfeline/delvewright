@@ -74,8 +74,10 @@ pub struct ResourceCost {
 /// body stands on (a full cube, a partial floor, a fence or wall top, a door or
 /// trapdoor) whose cell above holds no such block puts one standing candidate
 /// in that cell — a surface; every climbable cell is a holding candidate; every
-/// fluid cell, and every cell of the horizon's sea band, is a water candidate.
-/// The count is an upper bound: a surface under a torch, a slab under a
+/// fluid cell, and every cell of the horizon's sea band that holds no ground
+/// (a full cube, a partial floor, a fence or wall), is a water candidate — the
+/// terrain's ground in the band is no water (`World::ambient_water`). The
+/// count is an upper bound: a surface under a torch, a slab under a
 /// carpet, or a ledge a body cannot fit on counts a rest cell no body takes,
 /// and nothing a body rests in goes uncounted.
 ///
@@ -131,6 +133,17 @@ fn rest_of(name: &str) -> Rest {
     }
 }
 
+/// Whether a block is ground: a cell of the sea's band holding one is no
+/// water (`World::ambient_water` refuses an occupied cell), so it leaves the
+/// band's count. A door or trapdoor is not: the nav world may still read the
+/// cell as water, and the census stays an upper bound.
+fn ground(name: &str) -> bool {
+    matches!(
+        collision_class(name),
+        Collision::PartialFloor(_) | Collision::FullCube | Collision::TallBarrier
+    )
+}
+
 impl RestCensus {
     /// The census of `store` over `window` (inclusive corners), under a sea
     /// whose ambient water fills `floor_top + 1 ..= level` when one is given,
@@ -158,6 +171,7 @@ impl RestCensus {
             let (a, b) = ((floor_top + 1).max(lo[1]), level.min(hi[1]));
             u32::try_from(b - a + 1).unwrap_or(0)
         });
+        let in_band = |y: i32| sea.is_some_and(|(floor_top, level)| y > floor_top && y <= level);
         let mut standing = vec![0u32; w * d];
         let mut water = vec![band; w * d];
         // The supports of each column, one bit per height, so a surface — a
@@ -166,17 +180,24 @@ impl RestCensus {
         let mut supports = vec![0u64; w * d * words];
         // Every reading is a function of the block state alone, made once per
         // distinct state.
-        let mut kinds: BTreeMap<BlockState, Rest> = BTreeMap::new();
+        let mut kinds: BTreeMap<BlockState, (Rest, bool)> = BTreeMap::new();
         for (c, b) in store.in_box(lo, hi) {
-            let k = *kinds.entry(*b).or_insert_with(|| rest_of(b.as_str()));
+            let (k, ground) = *kinds
+                .entry(*b)
+                .or_insert_with(|| (rest_of(b.as_str()), ground(b.as_str())));
             match k {
                 Rest::Support => {
                     let y = (c[1] - lo[1]) as usize;
                     supports[at(c[0], c[2]) * words + y / 64] |= 1 << (y % 64);
+                    // Ground in the sea's band is no water.
+                    if ground && in_band(c[1]) {
+                        water[at(c[0], c[2])] -= 1;
+                    }
                 }
                 Rest::Climb => standing[at(c[0], c[2])] += 1,
-                Rest::Water => water[at(c[0], c[2])] += 1,
-                Rest::None => {}
+                // A fluid cell in the band is the band's own candidate.
+                Rest::Water if !in_band(c[1]) => water[at(c[0], c[2])] += 1,
+                Rest::Water | Rest::None => {}
             }
         }
         for col in 0..w * d {
@@ -652,16 +673,23 @@ mod tests {
             let got = RestCensus::of(&store, (lo, hi), sea, side, reach, edges);
             // The reference: every column, cell by cell.
             let band = sea.map_or(0, |(f, l)| (l.min(hi[1]) - (f + 1).max(lo[1]) + 1).max(0));
+            let in_band = |y: i32| sea.is_some_and(|(f, l)| y > f && y <= l);
             let col = |x: i32, z: i32| -> (usize, usize) {
                 let (mut s, mut w) = (0usize, band as usize);
                 let kind = |y: i32| store.get(&[x, y, z]).map(|b| rest_of(b.as_str()));
+                let is_ground = |y: i32| store.get(&[x, y, z]).is_some_and(|b| ground(b.as_str()));
                 for y in lo[1]..=hi[1] {
                     match kind(y) {
                         // A surface: a support with no support over it.
                         Some(Rest::Support) if kind(y + 1) != Some(Rest::Support) => s += 1,
                         Some(Rest::Climb) => s += 1,
-                        Some(Rest::Water) => w += 1,
+                        // A fluid cell outside the band; inside it, the band's own.
+                        Some(Rest::Water) if !in_band(y) => w += 1,
                         _ => {}
+                    }
+                    // Ground in the band is no water.
+                    if in_band(y) && is_ground(y) {
+                        w -= 1;
                     }
                 }
                 (s, w)
