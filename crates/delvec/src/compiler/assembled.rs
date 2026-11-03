@@ -924,7 +924,9 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
                 let Some(bytes) = structures.get(&template.structure_file) else {
                     return Vec::new();
                 };
-                template_writes(piece.rotation, template.pos, bytes)
+                let mut cells = template_writes(piece.rotation, template.pos, bytes);
+                by_section(&mut cells);
+                cells
             },
             |cells| {
                 for (cell, name, open) in cells {
@@ -984,7 +986,7 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
                 let Some(bytes) = structures.get(&template.structure_file) else {
                     return Vec::new();
                 };
-                structure_cells_interned(bytes)
+                let mut cells: Vec<_> = structure_cells_interned(bytes)
                     .into_iter()
                     .map(|(local, name, open)| {
                         let cell = [
@@ -994,7 +996,9 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
                         ];
                         (cell, name, open)
                     })
-                    .collect::<Vec<_>>()
+                    .collect();
+                by_section(&mut cells);
+                cells
             },
             |cells| {
                 for (cell, name, open) in cells {
@@ -1052,6 +1056,22 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
 
 /// The outcome of gravity settling for one falling block: the world cell it ended
 /// up at (or `None` if it despawned into the void), tagged with its original cell.
+/// **A template's cells in section order** (ADR-0037 §2, assembly): the
+/// cells grouped by the store section each lies in, the sections in key
+/// order, and the cells of one section in the order the template listed them
+/// (a stable sort), so a template is written section by section and the
+/// store's working set while it is written is one section, whatever order
+/// the template's bytes list its cells in. A cell a template lists twice
+/// keeps its two writes in order, so the map written is the one the listed
+/// order writes.
+fn by_section<T, U>(cells: &mut [([i32; 3], T, U)]) {
+    cells.sort_by_key(|(c, _, _)| section_key(*c));
+}
+
+fn section_key(c: [i32; 3]) -> [i32; 3] {
+    c.map(|v| v.div_euclid(crate::compiler::sections::SIDE))
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settled {
     /// The falling block's id (e.g. `minecraft:sand`).
@@ -1414,13 +1434,29 @@ impl Assembled {
         let mut ymax = i32::MIN;
         let mut left_out = 0usize;
         let mut blocks = BlockMap::new();
-        for (c, b) in self.blocks.iter() {
-            ymin = ymin.min(c[1]);
-            ymax = ymax.max(c[1]);
-            if inside(&c) {
-                blocks.insert(c, *b);
-            } else {
-                left_out += 1;
+        // Section by section (ADR-0037 §2): the copy's section is written
+        // whole while the whole's is read, so the two stores' working set is
+        // one section each, not a slab; the cells land in the copy in the
+        // same order a walk of the whole lists them within each section.
+        let side = crate::compiler::sections::SIDE;
+        if let Some((slo, shi)) = self.blocks.section_bounds() {
+            let (slo, shi) = (section_key(slo), section_key(shi));
+            for sx in slo[0]..=shi[0] {
+                for sy in slo[1]..=shi[1] {
+                    for sz in slo[2]..=shi[2] {
+                        let lo = [sx * side, sy * side, sz * side];
+                        let hi = [lo[0] + side - 1, lo[1] + side - 1, lo[2] + side - 1];
+                        for (c, b) in self.blocks.in_box(lo, hi) {
+                            ymin = ymin.min(c[1]);
+                            ymax = ymax.max(c[1]);
+                            if inside(&c) {
+                                blocks.insert(c, *b);
+                            } else {
+                                left_out += 1;
+                            }
+                        }
+                    }
+                }
             }
         }
         if left_out == 0 {
@@ -3722,6 +3758,73 @@ mod judged_tests {
     /// The store's line states the cells, the sections and the bytes of the
     /// whole and of the judged copy: two cells in two sections, one of them
     /// judged, each section its index array and its palette.
+    /// **A template is written section by section** (`by_section`): cells
+    /// listed in a scrambled order over several sections come out grouped by
+    /// section, the sections in key order, each section's cells in the order
+    /// listed — a cell listed twice keeps its two writes in order, so the map
+    /// the writes make is the map the listed order makes.
+    #[test]
+    fn a_template_is_written_section_by_section() {
+        let mut seed = 0x2545_f491_4f6c_dd1du64;
+        let mut rnd = move |n: i32| -> i32 {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed % n as u64) as i32
+        };
+        let stone = BlockState::new("minecraft:stone");
+        let dirt = BlockState::new("minecraft:dirt");
+        let mut listed: Vec<([i32; 3], BlockState, Option<bool>)> = Vec::new();
+        for k in 0..3000 {
+            let c = [rnd(50) - 20, rnd(40), rnd(50) - 20];
+            listed.push((c, if k % 3 == 0 { stone } else { dirt }, None));
+        }
+        // The same cell twice, with different blocks: the later write wins
+        // in both orders only if the sort is stable.
+        for k in 0..200 {
+            let c = listed[k * 7].0;
+            listed.push((c, if k % 2 == 0 { dirt } else { stone }, Some(true)));
+        }
+        let mut sorted = listed.clone();
+        by_section(&mut sorted);
+        let mut seen: BTreeSet<[i32; 3]> = BTreeSet::new();
+        let mut last: Option<[i32; 3]> = None;
+        for (c, _, _) in &sorted {
+            let s = section_key(*c);
+            if last != Some(s) {
+                assert!(seen.insert(s), "section {s:?} appears in two runs");
+                last = Some(s);
+            }
+        }
+        assert!(
+            seen.len() > 20,
+            "{} section(s): the case binds nothing",
+            seen.len()
+        );
+        let replay = |cells: &[([i32; 3], BlockState, Option<bool>)]| {
+            let mut m: BTreeMap<[i32; 3], (BlockState, Option<bool>)> = BTreeMap::new();
+            for (c, b, o) in cells {
+                m.insert(*c, (*b, *o));
+            }
+            m
+        };
+        assert_eq!(replay(&sorted), replay(&listed));
+        // The listed order of one cell's writes is kept.
+        let twice = listed[0].0;
+        let order_in = |cells: &[([i32; 3], BlockState, Option<bool>)]| {
+            cells
+                .iter()
+                .filter(|(c, _, _)| *c == twice)
+                .map(|(_, b, o)| (*b, *o))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(order_in(&sorted), order_in(&listed));
+        assert!(
+            order_in(&listed).len() >= 2,
+            "the doubled cell was listed once"
+        );
+    }
+
     #[test]
     fn the_store_line_states_the_sections_and_their_bytes() {
         let a = world(&[

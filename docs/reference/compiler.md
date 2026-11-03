@@ -4484,7 +4484,12 @@ the budget; past it the least recently used arrays over every store in the
 process are written to the stores' one scratch file (the same policy and place
 as the reach graph's) and read back when next asked, the palette and the
 section index staying resident; a walk over a box pins each section's array
-for the slab it reads. Every build prints `world store: N placed cell(s) in S
+for the slab it reads. A template's cells are written grouped by section, the
+sections in key order and one section's cells in the order the template lists
+them (`assembled::by_section`, a stable sort, so a cell listed twice keeps its
+writes in order), and the judged copy is taken section by section, so the
+store's working set while the world is assembled and cut is one section of
+each store. Every build prints `world store: N placed cell(s) in S
 section(s) of 16 x 16 x 16, B byte(s)[; the judged copy N cell(s) in S
 section(s), B byte(s)] (ADR-0037 §1)` after the judged-world line: the bytes
 the store's arrays and palettes hold, resident or in the file.
