@@ -437,7 +437,7 @@ jobs:
           retention-days: 3
 
   rust-partition:
-    name: rust partition (${{ matrix.k }} of 32)
+    name: rust partition (${{ matrix.k }} of 41)
     needs: [changes, rust-build, rust-fixtures]
     if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
@@ -448,7 +448,7 @@ jobs:
       # which tests ran where, and a failure in one says nothing about the rest.
       fail-fast: false
       matrix:
-        k: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]
+        k: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41]
     outputs:
       # N, read by the census from the matrix itself rather than typed again.
       total: ${{ strategy.job-total }}
@@ -563,7 +563,7 @@ jobs:
       - name: the archive's listing (the census's denominator)
         run: |
           set -euo pipefail
-          mkdir -p target
+          mkdir -p target/llvm-cov-target
           cargo nextest list --archive-file "$RUNNER_TEMP/archive/nextest-archive.tar.zst" --extract-to target/llvm-cov-target --workspace-remap . --message-format json > target/nextest-list.json
       - name: the partition census (every listed test ran in exactly one partition)
         env:
