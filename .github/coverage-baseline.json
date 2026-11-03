@@ -4451,16 +4451,16 @@
     {
       "functions": {
         "count": 129,
-        "covered": 120
+        "covered": 121
       },
       "lines": {
         "count": 1074,
-        "covered": 1018
+        "covered": 1021
       },
       "path": "crates/delvec/src/compiler/telling.rs",
       "regions": {
         "count": 2057,
-        "covered": 1963
+        "covered": 1966
       }
     },
     {
@@ -5156,16 +5156,16 @@
     {
       "functions": {
         "count": 123,
-        "covered": 122
+        "covered": 121
       },
       "lines": {
         "count": 1068,
-        "covered": 936
+        "covered": 932
       },
       "path": "crates/delvec/src/grammar/ir.rs",
       "regions": {
         "count": 1387,
-        "covered": 1255
+        "covered": 1251
       }
     },
     {
@@ -5940,12 +5940,12 @@
       },
       "lines": {
         "count": 398,
-        "covered": 99
+        "covered": 94
       },
       "path": "crates/delvec/src/render/cli.rs",
       "regions": {
         "count": 693,
-        "covered": 181
+        "covered": 177
       }
     },
     {
@@ -5966,16 +5966,16 @@
     {
       "functions": {
         "count": 23,
-        "covered": 14
+        "covered": 15
       },
       "lines": {
         "count": 199,
-        "covered": 168
+        "covered": 160
       },
       "path": "crates/delvec/src/render/gpu.rs",
       "regions": {
         "count": 296,
-        "covered": 251
+        "covered": 245
       }
     },
     {
@@ -6326,16 +6326,16 @@
     {
       "functions": {
         "count": 44,
-        "covered": 44
+        "covered": 43
       },
       "lines": {
         "count": 304,
-        "covered": 302
+        "covered": 297
       },
       "path": "crates/dsl/src/body.rs",
       "regions": {
         "count": 402,
-        "covered": 399
+        "covered": 394
       }
     },
     {
@@ -7575,8 +7575,8 @@
     "nextest": "0.9.148",
     "rustc": "1.97.1"
   },
-  "rows_sha256": "ae5f6784b1d8f37fb06815eef954f40c5da89e24faa1e36b53991d8b0f52a00f",
-  "sha256": "d7152a35e23e13d244100a634adbd75fdc23fc477242e7d8c335f107ed59b7b3",
-  "tree": "5111f07a0654247fe694cff63bd6d30fd63219e2",
+  "rows_sha256": "21ba10daa2b819d7bd7ea354d26a13ef8884704957c2993af636bf857cf05d30",
+  "sha256": "0ba53b04054e5294d2da6449eb360e7c603acad0d0337073826a0f05b67eb2ab",
+  "tree": "e39566796c78151f8f19d78778bb686e87653fd1",
   "unstable_regions": 0
 }
