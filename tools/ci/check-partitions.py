@@ -23,7 +23,8 @@ USAGE
 
 `LIST.json` is `cargo nextest list … --message-format json` over the archive
 (`rust-suites` → binary id → `testcases` → test name → `ignored`); `DIR` holds
-one `junit.xml` per partition, each under its own directory. Stdlib only.
+one `junit.xml` per partition, each under its own directory (the partition's
+name), at any depth inside it. Stdlib only.
 """
 
 from __future__ import annotations
@@ -82,13 +83,18 @@ def main() -> int:
     if n <= 0:
         refusals.append(f"partition count {n}: a test run in no partition")
     want, ignored = listed(pathlib.Path(args.list))
-    reports = [report(p) for p in sorted(pathlib.Path(args.junit_dir).glob("**/junit.xml"))]
+    junit_dir = pathlib.Path(args.junit_dir)
+    reports = [report(p) for p in sorted(junit_dir.glob("**/junit.xml"))]
+    for r in reports:
+        # The partition is the directory its artifact was downloaded into,
+        # whatever the report's path inside the artifact.
+        r["label"] = r["path"].relative_to(junit_dir).parts[0]
     if len(reports) != n:
         refusals.append(f"{len(reports)} partition report(s) found and {n} partition(s) were declared")
 
     seen: dict[tuple[str, str], list[str]] = {}
     for r in reports:
-        label = r["path"].parent.name
+        label = r["label"]
         if not r["cases"]:
             refusals.append(f"partition {label} ran zero tests")
         if r["failures"]:
@@ -126,7 +132,7 @@ def main() -> int:
     )
     for r in reports:
         print(
-            f"  {r['path'].parent.name}: {len(r['cases'])} tests, JUnit sum {r['seconds']:.0f} s, "
+            f"  {r['label']}: {len(r['cases'])} tests, JUnit sum {r['seconds']:.0f} s, "
             f"nextest wall {r['wall']:.0f} s, failures {r['failures']}"
         )
     if reports:

@@ -517,7 +517,7 @@ jobs:
         with:
           name: rust-suite-measurements
           path: |
-            partitions/*/junit.xml
+            partitions/*/nextest/ci/junit.xml
             target/nextest-list.json
             target/coverage.json
           if-no-files-found: warn
