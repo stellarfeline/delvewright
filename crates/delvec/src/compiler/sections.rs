@@ -751,6 +751,20 @@ impl<V: Copy + Eq> SectionMap<V> {
         self.sections.values().map(Section::bytes).sum()
     }
 
+    /// The inclusive box the store's sections span, in cells (section-aligned,
+    /// so every cell held lies in it); `None` when no cell is held.
+    pub fn section_bounds(&self) -> Option<(Cell, Cell)> {
+        let mut lo = [i32::MAX; 3];
+        let mut hi = [i32::MIN; 3];
+        for k in self.sections.keys() {
+            for a in 0..3 {
+                lo[a] = lo[a].min(k[a] * SIDE);
+                hi[a] = hi[a].max(k[a] * SIDE + SIDE - 1);
+            }
+        }
+        (!self.sections.is_empty()).then_some((lo, hi))
+    }
+
     /// The sections whose index array is resident now.
     pub fn resident_sections(&self) -> usize {
         self.sections

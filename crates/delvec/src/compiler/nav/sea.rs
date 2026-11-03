@@ -356,7 +356,10 @@ pub fn measure_sea_seepage(world: &World, reachable: &BTreeSet<[i32; 3]>) -> Sea
 
     // Flow (model step 2), through the block map's own flood — never a second
     // physics.
-    let mut wet = crate::compiler::assembled::flood(&barriers, &seeds);
+    let mut wet = crate::compiler::assembled::flood(
+        &crate::compiler::cellset::CellSet::from(barriers.clone()),
+        &crate::compiler::cellset::CellSet::from(seeds),
+    );
     wet.retain(|c| !barriers.contains(c) && world.is_built(*c));
 
     // Verdict (model step 4): the FOOT cell decides, and the population is the

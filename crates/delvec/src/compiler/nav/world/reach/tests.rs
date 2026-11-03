@@ -32,13 +32,13 @@ impl Build {
         p.built = built;
         World::from_occupancy(
             crate::compiler::assembled::Occupancy {
-                solid: self.solid.clone(),
-                tall: self.tall.clone(),
-                use_gates: BTreeSet::new(),
-                flooded: self.water.clone(),
+                solid: (self.solid.clone()).into(),
+                tall: (self.tall.clone()).into(),
+                use_gates: (BTreeSet::new()).into(),
+                flooded: (self.water.clone()).into(),
                 partial: Default::default(),
-                waterloggable: BTreeSet::new(),
-                lava: BTreeSet::new(),
+                waterloggable: (BTreeSet::new()).into(),
+                lava: (BTreeSet::new()).into(),
                 climb: Default::default(),
                 unheld_climb: Default::default(),
                 material: Default::default(),

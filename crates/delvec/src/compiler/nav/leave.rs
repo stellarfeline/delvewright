@@ -1047,12 +1047,12 @@ mod leave_tests {
         solid.remove(&[3, 0, 3]);
         solid.insert([3, -1, 3]);
         let occ = crate::compiler::assembled::Occupancy {
-            solid,
-            tall: BTreeSet::new(),
-            use_gates: BTreeSet::new(),
+            solid: solid.into(),
+            tall: (BTreeSet::new()).into(),
+            use_gates: (BTreeSet::new()).into(),
             flooded: [[3, 0, 3]].into_iter().collect(),
-            partial: BTreeMap::new(),
-            waterloggable: BTreeSet::new(),
+            partial: (BTreeMap::new()).into(),
+            waterloggable: (BTreeSet::new()).into(),
             lava: [[3, 0, 3]].into_iter().collect(),
             climb: Default::default(),
             unheld_climb: Default::default(),
@@ -1077,12 +1077,12 @@ mod leave_tests {
         solid.remove(&[12, 0, 12]);
         solid.insert([12, -1, 12]);
         let occ = crate::compiler::assembled::Occupancy {
-            solid,
-            tall: BTreeSet::new(),
-            use_gates: BTreeSet::new(),
+            solid: solid.into(),
+            tall: (BTreeSet::new()).into(),
+            use_gates: (BTreeSet::new()).into(),
             flooded: [[12, 0, 12]].into_iter().collect(),
-            partial: BTreeMap::new(),
-            waterloggable: BTreeSet::new(),
+            partial: (BTreeMap::new()).into(),
+            waterloggable: (BTreeSet::new()).into(),
             lava: [[12, 0, 12]].into_iter().collect(),
             climb: Default::default(),
             unheld_climb: Default::default(),

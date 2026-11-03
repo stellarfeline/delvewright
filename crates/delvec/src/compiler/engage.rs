@@ -393,19 +393,19 @@ mod tests {
         edit: impl FnOnce(&mut crate::compiler::assembled::Occupancy, &mut BTreeMap<[i32; 3], String>),
     ) -> (World, BTreeMap<[i32; 3], String>) {
         let mut occ = crate::compiler::assembled::Occupancy {
-            solid: std::collections::BTreeSet::new(),
-            tall: std::collections::BTreeSet::new(),
-            use_gates: std::collections::BTreeSet::new(),
-            flooded: std::collections::BTreeSet::new(),
-            lava: std::collections::BTreeSet::new(),
+            solid: (std::collections::BTreeSet::new()).into(),
+            tall: (std::collections::BTreeSet::new()).into(),
+            use_gates: (std::collections::BTreeSet::new()).into(),
+            flooded: (std::collections::BTreeSet::new()).into(),
+            lava: (std::collections::BTreeSet::new()).into(),
             climb: Default::default(),
             unheld_climb: Default::default(),
             material: Default::default(),
             footprints: Default::default(),
             leaves: Default::default(),
             hiding: Default::default(),
-            partial: BTreeMap::new(),
-            waterloggable: std::collections::BTreeSet::new(),
+            partial: (BTreeMap::new()).into(),
+            waterloggable: (std::collections::BTreeSet::new()).into(),
             hurting: Default::default(),
         };
         let mut blocks = BTreeMap::new();

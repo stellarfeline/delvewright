@@ -92,13 +92,13 @@ fn two_ledges(rise: i64) -> (World, [i32; 3], [i32; 3]) {
 
     let world = World::from_occupancy(
         Occupancy {
-            solid,
-            tall: BTreeSet::new(),
-            use_gates: BTreeSet::new(),
-            flooded: BTreeSet::new(),
-            partial,
-            waterloggable: BTreeSet::new(),
-            lava: BTreeSet::new(),
+            solid: solid.into(),
+            tall: (BTreeSet::new()).into(),
+            use_gates: (BTreeSet::new()).into(),
+            flooded: (BTreeSet::new()).into(),
+            partial: partial.into(),
+            waterloggable: (BTreeSet::new()).into(),
+            lava: (BTreeSet::new()).into(),
             climb: Default::default(),
             unheld_climb: Default::default(),
             material: Default::default(),
