@@ -1565,7 +1565,7 @@ mod tests {
                         let k = (seed % n as u64) as i32;
                         assert_eq!(s.get(&[k * 16, 0, 0]), Some(&1));
                         reads += 1;
-                        if raises && reads % 32 == 0 {
+                        if raises && reads.is_multiple_of(32) {
                             RAISED.fetch_add(1, Ordering::Relaxed);
                         }
                     }
