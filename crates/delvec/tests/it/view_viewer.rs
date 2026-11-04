@@ -264,18 +264,33 @@ fn library_pieces(src: &Path) -> (Vec<PathBuf>, BTreeSet<PathBuf>) {
     (pieces, claimed)
 }
 
-/// A directory of prefabs is one page, and the order cannot depend on how the
-/// filesystem happened to hand them back. The pinned library is paged in
-/// `of` parts, piece `i` on part `i % of`, so that each page is its own
-/// process with its own time (spec-0126 §4.3, §5); the three parts together
-/// page every piece of the library, and each part's page holds its pieces in
-/// the promised order and none of its tile sets' tiles as prefabs.
-fn a_part_of_the_library_is_one_page_in_a_stable_order(part: usize, of: usize) {
+/// The pinned library's directory, its pieces in order, and the tiles its
+/// sets claim.
+fn pinned_library() -> (PathBuf, Vec<PathBuf>, BTreeSet<PathBuf>) {
     let one = prefab("keep-gate-room.nbt");
     let src = one.parent().unwrap().to_path_buf();
     let (every_piece, claimed_all) = library_pieces(&src);
+    (src, every_piece, claimed_all)
+}
+
+/// Whether `piece` is a tile set's document (a piece whose tiles it claims).
+fn is_tile_set(piece: &Path) -> bool {
+    piece.extension().is_some_and(|e| e == "json")
+}
+
+/// A directory of prefabs is one page, and the order cannot depend on how the
+/// filesystem happened to hand them back. The pinned library is paged so that
+/// each page is its own process with its own time (spec-0126 §4.3, §5): its
+/// single templates in `of` parts, template `i` on part `i % of`, and each tile
+/// set on a page of its own (a set's tiles are paged together or not at all,
+/// and the largest set alone is most of the library's cost). The parts and the
+/// sets together page every piece of the library, and each page holds its
+/// pieces in the promised order and none of its tile sets' tiles as prefabs.
+fn a_part_of_the_library_is_one_page_in_a_stable_order(part: usize, of: usize) {
+    let (src, every_piece, claimed_all) = pinned_library();
     let pieces: Vec<PathBuf> = every_piece
         .iter()
+        .filter(|p| !is_tile_set(p))
         .enumerate()
         .filter(|(i, _)| i % of == part)
         .map(|(_, p)| p.clone())
@@ -284,15 +299,50 @@ fn a_part_of_the_library_is_one_page_in_a_stable_order(part: usize, of: usize) {
         pieces.len() > 1,
         "part {part} of {of} of the library holds one piece or none"
     );
+    library_page_holds(
+        &src,
+        &every_piece,
+        &claimed_all,
+        &pieces,
+        &format!("{part}-of-{of}"),
+    );
+}
 
+/// The tile set `id` of the pinned library, paged alone.
+fn a_tile_set_is_one_page(id: &str) {
+    let (src, every_piece, claimed_all) = pinned_library();
+    let pieces: Vec<PathBuf> = every_piece
+        .iter()
+        .filter(|p| is_tile_set(p) && p.file_stem().is_some_and(|s| s == id))
+        .cloned()
+        .collect();
+    assert_eq!(pieces.len(), 1, "the library holds no tile set {id}");
+    library_page_holds(
+        &src,
+        &every_piece,
+        &claimed_all,
+        &pieces,
+        &format!("set-{id}"),
+    );
+}
+
+/// `pieces` of the library at `src`, paged as one library, hold the promised
+/// order and none of their sets' tiles as prefabs.
+fn library_page_holds(
+    src: &Path,
+    every_piece: &[PathBuf],
+    claimed_all: &BTreeSet<PathBuf>,
+    pieces: &[PathBuf],
+    tag: &str,
+) {
     // This part's library: each piece with its own files — a template with
     // its document, a tile set's document with the templates it claims.
-    let dir = tmp(&format!("library-{part}-of-{of}"));
+    let dir = tmp(&format!("library-{tag}"));
     let lib = dir.join("library");
     std::fs::create_dir_all(&lib).unwrap();
     let mut claimed: BTreeSet<PathBuf> = BTreeSet::new();
     let mut templates: Vec<PathBuf> = Vec::new();
-    for piece in &pieces {
+    for piece in pieces {
         std::fs::copy(piece, lib.join(piece.file_name().unwrap())).unwrap();
         if piece.extension().is_some_and(|e| e == "nbt") {
             templates.push(piece.clone());
@@ -337,7 +387,7 @@ fn a_part_of_the_library_is_one_page_in_a_stable_order(part: usize, of: usize) {
     let html = std::fs::read_to_string(&out).unwrap();
 
     println!(
-        "  library page {part} of {of}: {} piece(s) of the library's {} from {} template(s), {} of them claimed by a tile set",
+        "  library page {tag}: {} piece(s) of the library's {} from {} template(s), {} of them claimed by a tile set",
         pieces.len(),
         every_piece.len(),
         templates.len(),
@@ -351,7 +401,7 @@ fn a_part_of_the_library_is_one_page_in_a_stable_order(part: usize, of: usize) {
         );
     }
     let mut last: Option<usize> = None;
-    for p in &pieces {
+    for p in pieces {
         let id = p.file_stem().unwrap().to_string_lossy().to_string();
         let needle = format!("\"id\":\"{id}\"");
         let at = html
@@ -377,6 +427,43 @@ fn a_directory_of_prefabs_is_one_page_in_a_stable_order_part_2_of_3() {
 #[test]
 fn a_directory_of_prefabs_is_one_page_in_a_stable_order_part_3_of_3() {
     a_part_of_the_library_is_one_page_in_a_stable_order(2, 3);
+}
+
+#[test]
+fn a_tile_set_is_one_page_doune_castle() {
+    a_tile_set_is_one_page("doune-castle");
+}
+
+#[test]
+fn a_tile_set_is_one_page_vesperhold() {
+    a_tile_set_is_one_page("vesperhold");
+}
+
+/// Every tile set of the pinned library has its page test above, and the parts
+/// and the sets together page every piece: the binding of the paged tests.
+#[test]
+fn every_piece_of_the_library_is_on_one_page_test() {
+    let (_, every_piece, _) = pinned_library();
+    let sets: Vec<String> = every_piece
+        .iter()
+        .filter(|p| is_tile_set(p))
+        .map(|p| p.file_stem().unwrap().to_string_lossy().to_string())
+        .collect();
+    assert_eq!(
+        sets,
+        vec!["doune-castle".to_string(), "vesperhold".to_string()],
+        "the library's tile sets and the sets paged above differ"
+    );
+    let singles = every_piece.iter().filter(|p| !is_tile_set(p)).count();
+    assert!(
+        singles >= 6,
+        "three parts of two or more singles each: {singles}"
+    );
+    eprintln!(
+        "library pages: {} piece(s), {singles} single template(s) on 3 parts and {} tile set(s) on a page each",
+        every_piece.len(),
+        sets.len()
+    );
 }
 
 /// A gate report beside a piece (`<id>.report.json`, written by `grammar
