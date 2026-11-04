@@ -202,13 +202,14 @@ fn detail_keeps_the_bank_with_the_campaign_and_reclaims_another_binary_s() {
         String::from_utf8_lossy(&o.stderr)
             .lines()
             // What the run cost — its peak, its times, and what its reach
-            // lists, snapshot and section stores spilled, read back and held
+            // lists, snapshot, bank and section stores spilled, read back and held
             // under the budget, and each raise of the stores' need — is the
             // machine's, not the check's.
             .filter(|l| {
                 !l.contains("peak rss")
                     && !l.contains(" ms")
                     && !l.starts_with("reach lists:")
+                    && !l.starts_with("reach scratch:")
                     && !l.starts_with("reach snapshot:")
                     && !l.starts_with("reach budget:")
                     && !l.starts_with("world store pages:")

@@ -1817,10 +1817,10 @@ pub fn persist_reach_cache() {
             needs.join(", ")
         );
         eprintln!(
-            "reach lists: {} byte(s) in the scratch file; working set {} byte(s) (3 x 3 chunks of \
+            "reach lists: {} byte(s) held in the scratch file; working set {} byte(s) (3 x 3 chunks of \
              the largest decoded, {} byte(s), and their buffered pushes); {loads} chunk read(s) \
              back over {records} record(s), {releases} chunk(s) given up (ADR-0037 §2)",
-            chunks::spilled(),
+            chunks::spilled().kept,
             chunks::working_set(),
             chunks::largest()
         );
@@ -1865,6 +1865,33 @@ pub fn persist_reach_cache() {
         eprintln!(
             "reach bank: {variants} node variant(s) kept over {bytes} byte(s) in the spill file; \
              in memory, one slot per variant"
+        );
+    }
+    let files = [
+        ("the lists' and tables'", chunks::spilled()),
+        ("the bank's", bank::usage_all()),
+        ("the snapshot's", pages::usage()),
+    ];
+    let all = files
+        .iter()
+        .fold(spill::Usage::default(), |a, (_, u)| a + *u);
+    if all.written > 0 {
+        let parts: Vec<String> = files
+            .iter()
+            .map(|(name, u)| {
+                format!(
+                    "{name} {} written, at most {} long, {} kept at the end",
+                    u.written, u.longest, u.kept
+                )
+            })
+            .collect();
+        eprintln!(
+            "reach scratch: {} byte(s) written to the scratch files, at most {} byte(s) on disk \
+             (the sum of each file's longest), {} kept at the end; {} (ADR-0037 §2)",
+            all.written,
+            all.longest,
+            all.kept,
+            parts.join("; ")
         );
     }
     bank::persist_all();

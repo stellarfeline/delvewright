@@ -251,7 +251,7 @@ gallery coverage gate sets it to a scratch directory its probe runs share.
 Within a run the bank lives in a **scratch file**
 in the system's temporary directory (`TMPDIR`; never the output tree, which
 is the deliverable the determinism gates hash), unlinked as soon as it is
-open: each variant is appended as the file format encodes it and read back
+open: each variant is written as the file format encodes it and read back
 when a later graph asks, and the bank holds one offset and length per variant
 in memory, so what it costs grows with the nodes flown by a few words each and
 never with the cells they read (ADR-0037). A run that kept any prints `reach
@@ -260,8 +260,24 @@ bank: N node variant(s) kept over B byte(s) in the spill file` as it ends.
 and the structure holds its records in memory instead (the same answers,
 slower); one that was opened and then refuses a write or a read back stops
 the run where it stands with a message naming the file, the operation, the
-error and the bytes written (exit `≥10`), since nothing it emits could stand
-without the record. Writes and reads are both positional, so a reader needs
+error, the file's length and the bytes written to it over the run (exit
+`≥10`), since nothing it emits could stand without the record. **A record the
+structure no longer holds frees its room** (`reach/spill.rs`, `Extent`): a
+list chunk rewritten whole once it passes four pieces, a list or node table
+dropped, a variant the bank lets go; the next record that fits is written into
+the smallest free range, and a free range that reaches the file's end
+shortens the file on disk. So a reach scratch file is as long as what its
+structure holds at once, plus the free ranges no record has fitted since —
+never the sum of what it wrote (the lists write many times what they hold).
+The snapshot's pages and the section stores' records are kept for the file's
+life. Every scratch file is unlinked when opened (deleted on close on
+Windows), so the system takes its disk back when the process ends, a panic
+included; within a process the bank, the graphs and the snapshot are kept to
+its end. **The disk a build needs** in the temporary directory is the sum of
+its scratch files' longest, measured and printed as the run ends (`reach
+scratch:` below, the section stores' file on `world store pages:`); the cost
+line (`resource cost:`) states the section stores' file and does not compute
+the reach graph's. Writes and reads are both positional, so a reader needs
 no lock against the writer, on Windows too (where a duplicated handle shares
 the file pointer); the reach module's tests run on the Windows target in CI
 for that reason.
@@ -317,7 +333,7 @@ own stated need and no further — then every other is asked, the stores never
 below three quarters of theirs, until the total stands at three quarters of
 the budget; what any of them answers never depends on what is resident. A run that took a closure prints `reach budget: R byte(s) resident
 at the end, under one budget of N byte(s), the sum of the working sets stated:
-… (ADR-0037 §1)`, `reach lists: B byte(s) in the scratch file; working set W
+… (ADR-0037 §1)`, `reach lists: B byte(s) held in the scratch file; working set W
 byte(s) (3 x 3 chunks of the largest decoded, C byte(s), and their buffered
 pushes); L chunk read(s) back over D record(s), E chunk(s) given up (ADR-0037
 §2)`, `reach closures: V chunk visit(s) over P (closure, chunk) pair(s), at
@@ -333,7 +349,10 @@ premise variants and counterfactuals that are worlds of their own; P parameter
 set(s)` and `reach states: the most in one closure N state(s) (S standing, A
 afloat, U submerged, H holding), Q of them plain sea summarised in C
 component(s), over K closure(s) (ADR-0037 §3's rest states, per closure)` as it
-ends: a portal edge is one whose two ends lie in different reach chunks, a face
+ends, and a run that wrote to a reach scratch file `reach scratch: W byte(s)
+written to the scratch files, at most L byte(s) on disk (the sum of each
+file's longest), K kept at the end; the lists' and tables' W written, at most
+L long, K kept at the end; the bank's …; the snapshot's … (ADR-0037 §2)`: a portal edge is one whose two ends lie in different reach chunks, a face
 cell a cell one lands on; `M` is the measured counterpart of the cost line's
 portal-edge bound, `B` of its configuration bound (which counts the quest
 plan's region states; the `V` variants a proof builds beside them it does not
@@ -3779,8 +3798,11 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   the snapshot's own rule (`nav::window_box`) and the store — never measured,
   so two builds of one campaign write one file; what a build reached is the
   end-of-run lines (`reach budget:`, `reach lists:`, `reach portals:`, `reach
-  graphs:`, `reach states:`, `world store pages:`, the exposure line's labels),
-  which are written nowhere in the output tree. The **rest census** (`cost::RestCensus`)
+  graphs:`, `reach states:`, `reach scratch:`, `world store pages:`, the
+  exposure line's labels), which are written nowhere in the output tree. The
+  scratch the line states is the section stores' file; the reach graph's
+  scratch files are not computed there, and `reach scratch:` states what they
+  took. The **rest census** (`cost::RestCensus`)
   reads the window from the store section by section through the one block
   classification (`blockshape::collision_class`) and counts, per column, the
   cells a body can rest in at most: one standing candidate over every surface

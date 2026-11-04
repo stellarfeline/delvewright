@@ -297,6 +297,24 @@ jobs:
     if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     steps:
+      # The job's disk, met by the host (CLAUDE.md, "Host hardware never caps
+      # a capability"). The build takes most of the root filesystem, and the
+      # test executables then fill it with the output trees they leave and the
+      # builds' scratch files (ADR-0037: the reach graph's lists, tables, bank
+      # and snapshot, and the section stores' records, in the system's
+      # temporary directory, several builds at once). Read off this runner
+      # image: 94.2 GB free at the start, 12.8 GB left when the executables
+      # began, 13.1 GB taken by them. The preinstalled toolchains this job
+      # never uses are removed first (27.2 GB on that image), each only if
+      # present, with the free bytes printed before and after.
+      - name: the job's disk (toolchains it never uses removed)
+        run: |
+          set -euo pipefail
+          df -B1 --output=target,size,avail /
+          for d in /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/swift; do
+            if [ -d "$d" ]; then echo "removing $d"; sudo rm -rf "$d"; fi
+          done
+          df -B1 --output=target,size,avail /
       - uses: actions/checkout@v4
       # The compiler tests read the prefab library (`campaigns/prefabs/*.nbt`,
       # git-lfs); it lives in the content repo now (spec-0007 Step 0), checked out
