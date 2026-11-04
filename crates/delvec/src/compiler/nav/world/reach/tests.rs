@@ -1090,8 +1090,8 @@ fn a_bank_past_its_cap_keeps_no_more_and_answers_the_same() {
     );
     for c in &states_a {
         assert_eq!(
-            a.succ(c),
-            b.succ(c),
+            a.succ(*c),
+            b.succ(*c),
             "the edges out of {c:?} differ under the cap"
         );
     }
