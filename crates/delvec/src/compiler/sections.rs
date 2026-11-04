@@ -2115,6 +2115,10 @@ mod tests {
     /// and the give-ups outnumber the appends several times, so the
     /// old shape (a record appended at every give-up) is what the case
     /// refuses. Red if a give-up could grow the file past the arrays alive.
+    /// And the stores' file gives nothing back to the spill (a region is
+    /// served to the next array by the store's own list), so its kept bytes,
+    /// its bytes written and its length are one figure, in whole regions:
+    /// red if the spill's free list or its shortening reached this file.
     #[test]
     fn the_scratch_file_holds_one_region_per_array_alive() {
         let mut seed = 0x51ab_9e2c_7d03_f4a1u64;
@@ -2194,6 +2198,27 @@ mod tests {
             given_up >= 4 * appended,
             "{given_up} give-up(s) against {appended} append(s): the walk gave up too little to \
              tell a region reused from a record appended at every give-up"
+        );
+        // The stores' file gives no room back to the spill: a region is the
+        // store's for the file's life and served to the next array by the
+        // store's own list, so the spill's free list and its shortening at
+        // the end (the reach files' reclaim) have nothing of this file to
+        // touch — what it keeps is what it wrote, and that is its length,
+        // in whole regions.
+        let u = shared()
+            .write
+            .lock()
+            .expect("the stores' spill")
+            .as_ref()
+            .map(spill::Spill::usage)
+            .expect("the stores' scratch file opened");
+        assert_eq!(
+            (u.kept, u.len, u.len % REGION as u64),
+            (u.written, u.written, 0),
+            "the stores' file gave room back or was shortened: kept {}, written {}, long {}",
+            u.kept,
+            u.written,
+            u.len
         );
     }
 }

@@ -576,4 +576,100 @@ mod tests {
         drop(kept);
         assert_eq!(s.len(), 0);
     }
+
+    /// **A record kept for the file's life is never reached by the room
+    /// given back** (ADR-0037 §1, §3; the section stores' regions): regions
+    /// appended and rewritten in place ([`Spill::append`], [`Spill::write_at`])
+    /// interleaved with records put and dropped ([`Spill::put`]) — the room
+    /// the dropped records free is taken by later records and the file
+    /// shortens behind the last record kept, and no free range, no later
+    /// record and no shortening touches a region: every region reads back as
+    /// it was last rewritten, the file never ends under a region, and a
+    /// rewrite past the file's end is refused. Red on a region overwritten,
+    /// a file shortened under one, or a rewrite past the end accepted.
+    #[test]
+    fn a_region_kept_for_the_files_life_is_never_reached_by_the_room_given_back() {
+        let mut s = Spill::open("test-regions").expect("a scratch file opens in the temp dir");
+        let on_disk = |s: &Spill| s.file.metadata().expect("metadata").len();
+        const REGION: usize = 256;
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = |n: u64| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed % n
+        };
+        // (offset, the byte the region was last rewritten with)
+        let mut regions: Vec<(u64, u8)> = Vec::new();
+        let mut dropped: Vec<super::Extent> = Vec::new();
+        let (mut rewrites, mut given_back, mut reused) = (0u32, 0u32, 0u32);
+        for i in 0..4_000u32 {
+            match next(4) {
+                0 => {
+                    let b = i as u8;
+                    let (at, _) = s.append(&[b; REGION]).expect("an append");
+                    regions.push((at, b));
+                }
+                1 if !regions.is_empty() => {
+                    let k = next(regions.len() as u64) as usize;
+                    let b = i as u8;
+                    s.write_at(regions[k].0, &[b; REGION]).expect("a rewrite");
+                    regions[k].1 = b;
+                    rewrites += 1;
+                }
+                2 => {
+                    let len = 1 + next(3 * REGION as u64) as usize;
+                    let e = s.put(&vec![i as u8; len]).expect("a put");
+                    // A record written into room given back lies under the end.
+                    if e.at().0 + u64::from(e.at().1) < s.len() {
+                        reused += 1;
+                    }
+                    dropped.push(e);
+                }
+                _ if !dropped.is_empty() => {
+                    drop(dropped.swap_remove(next(dropped.len() as u64) as usize));
+                    given_back += 1;
+                }
+                _ => {}
+            }
+            let end = s.len();
+            for (at, _) in &regions {
+                assert!(
+                    at + REGION as u64 <= end,
+                    "step {i}: the file ends at {end}, under the region at {at}"
+                );
+            }
+        }
+        assert!(
+            regions.len() > 100 && rewrites > 100 && given_back > 100 && reused > 100,
+            "the case binds nothing: {} region(s), {rewrites} rewrite(s), {given_back} given \
+             back, {reused} reused",
+            regions.len()
+        );
+        for (at, b) in &regions {
+            assert_eq!(
+                s.read(*at, REGION as u32).expect("a read"),
+                vec![*b; REGION],
+                "the region at {at} reads back other than as last rewritten"
+            );
+        }
+        drop(dropped);
+        let last = regions.iter().map(|(at, _)| at + REGION as u64).max().unwrap_or(0);
+        assert_eq!(
+            (s.len(), on_disk(&s)),
+            (last, last),
+            "with every put record dropped, the file ends at the last region kept"
+        );
+        assert!(
+            s.write_at(last - 1, &[0; 2]).is_err(),
+            "a rewrite past the end is refused"
+        );
+        assert_eq!(s.read(last - 1, 1).expect("a read"), vec![regions.iter().find(|(at, _)| at + REGION as u64 == last).expect("the last region").1]);
+        eprintln!(
+            "regions: {} kept, {rewrites} rewrite(s), {given_back} record(s) given back, {reused} \
+             written into room given back, the file at most {} long",
+            regions.len(),
+            s.usage().longest
+        );
+    }
 }
