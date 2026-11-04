@@ -1817,10 +1817,10 @@ pub fn persist_reach_cache() {
             needs.join(", ")
         );
         eprintln!(
-            "reach lists: {} byte(s) in the scratch file; working set {} byte(s) (3 x 3 chunks of \
+            "reach lists: {} byte(s) held in the scratch file; working set {} byte(s) (3 x 3 chunks of \
              the largest decoded, {} byte(s), and their buffered pushes); {loads} chunk read(s) \
              back over {records} record(s), {releases} chunk(s) given up (ADR-0037 §2)",
-            chunks::spilled().len,
+            chunks::spilled().kept,
             chunks::working_set(),
             chunks::largest()
         );
