@@ -770,7 +770,9 @@ mod tests {
             (reach.snapshot, reach.tables, reach.lists, reach.total()),
             (
                 (118 * 12 * 218usize).div_ceil(4096) * 4096 * 6,
-                2 * 20_500 * 55 + (120_000 + 120_000.min(20_500 * 32)) * 17,
+                // The cell moves in one table are at most the edges (120,000
+                // under 20,500 x 32).
+                2 * 20_500 * 55 + (120_000 + 120_000) * 17,
                 (120_000 + 30_000) * (29 + 41),
                 reach.snapshot + reach.tables + reach.lists
             ),

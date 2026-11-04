@@ -389,7 +389,7 @@ pub(crate) fn edges_per_node_at_most() -> usize {
 /// rest candidate with every edge its envelope allows — the figure the cost
 /// states per configuration (`compiler::cost`), never measured.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) struct ScratchBound {
+pub struct ScratchBound {
     /// The snapshot's pages: every page of the window's two arrays, once.
     pub snapshot: usize,
     /// The node tables: an entry per candidate in each of the two, the
@@ -402,7 +402,8 @@ pub(crate) struct ScratchBound {
 }
 
 impl ScratchBound {
-    pub(crate) fn total(&self) -> usize {
+    /// The three terms summed.
+    pub fn total(&self) -> usize {
         self.snapshot
             .saturating_add(self.tables)
             .saturating_add(self.lists)
