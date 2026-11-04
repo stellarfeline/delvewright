@@ -1121,7 +1121,9 @@ fn a_second_world_and_a_second_closure_stay_under_one_configurations_bound() {
     });
     let params = ReachParams::shipped(base.unbounded_fall);
     let _ = base.body_reach(&[[5, 1, 5]]);
-    let _ = base.body_reach(&[[10, 1, 3]]);
+    // A root the first closure does not reach: the wall's top, three courses
+    // over the floor, which no jump from it climbs.
+    let _ = base.body_reach(&[[0, 4, 0]]);
     let _ = edited.body_reach(&[[5, 1, 5]]);
     let (ma, me) = (base.graph_memo(&params), edited.graph_memo(&params));
     assert!(
