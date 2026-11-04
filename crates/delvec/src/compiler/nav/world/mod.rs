@@ -1391,12 +1391,26 @@ impl World {
     }
 
     /// Whether `c` is ambient sea water: inside the ocean generator's water
-    /// layers and not overwritten by a placed piece. Always `false` under
+    /// layers, not overwritten by a placed piece, and holding no block the
+    /// assembly wrote there — a solid (the terrain's ground in the sea's band
+    /// is one), a 1.5-tall barrier, a fence gate, lava, or a killing volume.
+    /// Water the assembly wrote outside every box stays water. This is what
+    /// the reach snapshot reads as water, so a rest state the cell relation
+    /// gives is one the launches fly over. Always `false` under
     /// [`Ambient::Void`], which has no water anywhere.
     pub(in crate::compiler::nav) fn ambient_water(&self, c: [i32; 3]) -> bool {
         match &self.ambient {
             Ambient::Void => false,
-            Ambient::Ocean(sea) => c[1] > sea.floor_top && c[1] <= sea.level && !self.is_built(c),
+            Ambient::Ocean(sea) => {
+                c[1] > sea.floor_top
+                    && c[1] <= sea.level
+                    && !self.is_built(c)
+                    && !self.solid.contains(&c)
+                    && !self.tall.contains(&c)
+                    && !self.use_gates.contains(&c)
+                    && !self.lava.contains(&c)
+                    && !self.lethal.contains(&c)
+            }
         }
     }
 
