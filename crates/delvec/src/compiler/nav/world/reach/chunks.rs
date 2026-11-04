@@ -1089,7 +1089,9 @@ mod table_tests {
             let stray = seen
                 .iter()
                 .filter(|w| w.strong_count() > 0 && !held.contains(&(w.as_ptr() as usize)))
-                .count();
+                .map(|w| w.as_ptr() as usize)
+                .collect::<std::collections::BTreeSet<_>>()
+                .len();
             eprintln!(
                 "lists' file: {} distinct piece(s) written over the run, {} held by the list \
                  and its copy, {stray} held by neither",

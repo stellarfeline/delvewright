@@ -543,7 +543,8 @@ mod tests {
             let b = i as u8;
             let len = 1 + next(4096) as usize;
             kept.push((s.put(&vec![b; len]).expect("a write"), b));
-            most = most.max(s.usage().kept);
+            // Counted by the test, never by the file's own accounting.
+            most = most.max(kept.iter().map(|(e, _)| u64::from(e.at().1)).sum::<u64>());
         }
         let u = s.usage();
         eprintln!(
