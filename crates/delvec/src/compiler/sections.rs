@@ -215,13 +215,17 @@ enum Slot {
 /// keeps its own, so what one walk's read-backs say is not mixed with another
 /// store's traffic; the need is judged over every store's. A test's budget
 /// (`budget::with_budget`) is kept over the one store relieving itself under
-/// it, never over another thread's.
+/// it, never over another thread's; and a store that held an array under a
+/// test's budget is given up by that relief alone, never by another thread's
+/// relief over every store.
 #[derive(Default)]
 struct Tally {
     /// Bytes of this store's arrays resident now.
     held: AtomicUsize,
     read_back: AtomicU64,
     thrashed: AtomicU64,
+    /// Whether an array of this store came resident under a test's budget.
+    fenced: std::sync::atomic::AtomicBool,
 }
 
 impl Tally {
@@ -372,7 +376,10 @@ impl Store {
         let mut order: Vec<(u64, Arc<Paged>)> = pages
             .iter()
             .filter_map(Weak::upgrade)
-            .filter(|p| only.is_none_or(|t| Arc::ptr_eq(&p.tally, t)))
+            .filter(|p| match only {
+                Some(t) => Arc::ptr_eq(&p.tally, t),
+                None => !p.tally.fenced.load(Ordering::Relaxed),
+            })
             .map(|p| (p.used.load(Ordering::Relaxed), p))
             .collect();
         order.sort_unstable_by_key(|(used, _)| *used);
@@ -465,6 +472,9 @@ fn relieve(tally: &Arc<Tally>) {
 
 /// Count an array of `bytes` as resident: an arrival.
 fn hold(tally: &Tally, bytes: usize) {
+    if budget::override_here() != 0 {
+        tally.fenced.store(true, Ordering::Relaxed);
+    }
     arrive();
     budget::hold(bytes);
     HELD.fetch_add(bytes, Ordering::Relaxed);
@@ -1538,14 +1548,18 @@ mod tests {
     /// walk's own, not the cold reload of a store written past the budget.
     /// The walk is judged in the thread's own generation of the need, so no
     /// other thread's raise enters either: taken again with the process's
-    /// need raised every 32 reads, it finds the same.
+    /// need raised every 32 reads, it finds the same; and its store is given
+    /// up by its own relief alone, so taken again while another thread
+    /// relieves every store in the process, it finds the same.
     #[test]
     fn a_walk_found_thrashing_raises_the_need() {
         let n = 512i32;
         let budget = (n as usize / 2) * CELLS;
         // The walk, on a fresh store; with `raises`, the process's need is
-        // raised every 32 reads, as another thread's walk would raise it.
-        let walk = |raises: bool| {
+        // raised every 32 reads, as another thread's walk would raise it;
+        // with `relieved`, another thread asks every store in the process to
+        // give up all it holds every 256 reads, as a build's relief does.
+        let walk = |raises: bool, relieved: bool| {
             let mut s: SectionMap<u32> = SectionMap::new();
             budget::with_budget(budget, || {
                 for k in 0..n {
@@ -1568,19 +1582,30 @@ mod tests {
                         if raises && reads.is_multiple_of(32) {
                             RAISED.fetch_add(1, Ordering::Relaxed);
                         }
+                        if relieved && reads.is_multiple_of(256) {
+                            std::thread::spawn(|| store().evict(usize::MAX, true, None))
+                                .join()
+                                .expect("the other thread's relief");
+                        }
                     }
                 }
                 let (read, thrashed) = s.paging();
                 (read - read0, thrashed - thrashed0, reads)
             })
         };
-        let (own_read, own_thrashed, reads) = walk(true);
+        let (own_read, own_thrashed, reads) = walk(false, false);
         // No other thread's raise moves what a walk under a test's budget
         // finds: the generation it is judged in is the thread's own.
         assert_eq!(
-            walk(false),
+            walk(true, false),
             (own_read, own_thrashed, reads),
             "the process's raises moved a walk under a test's budget"
+        );
+        // Nor does another thread's relief: it never gives up this store.
+        assert_eq!(
+            walk(false, true),
+            (own_read, own_thrashed, reads),
+            "another thread's relief moved a walk under a test's budget"
         );
         eprintln!(
             "thrash: {n} section(s) over a budget of {budget} byte(s); {reads} read(s), \
