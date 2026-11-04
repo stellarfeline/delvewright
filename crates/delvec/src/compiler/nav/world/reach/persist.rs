@@ -636,7 +636,10 @@ mod record_sizes {
                     grown: Some(([0, 0, 0], [1, 1, 1])),
                 },
             }],
-            edges: std::sync::Arc::new(NodeEdges::default()),
+            edges: std::sync::Arc::new(NodeEdges {
+                read: Some(([0, 0, 0], [1, 1, 1])),
+                ..NodeEdges::default()
+            }),
         };
         assert_eq!(
             super::encode_variant(&v).len(),
@@ -648,7 +651,7 @@ mod record_sizes {
                 + EDGE_RECORD
                 + NODE_EDGES_RECORD,
             "a variant's fixed part, a dependency, a jump, a volume, a run with one edge, the \
-             node's edges with none"
+             node's edges with none and a read box"
         );
     }
 }

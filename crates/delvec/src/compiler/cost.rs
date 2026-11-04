@@ -510,16 +510,16 @@ impl ResourceCost {
     /// beside its pieces; and the bank's variants, the most a node keeps for
     /// every candidate, each holding every cell its arcs could read.
     pub fn reach_scratch_per_configuration(&self) -> crate::compiler::nav::ScratchBound {
-        crate::compiler::nav::scratch_bound_of(
-            self.census.states_at_most(),
-            self.census.items_at_most,
-            self.census.chunk_items_at_most,
-            self.window_cells(),
-            self.window_dims()[1],
-            self.launches,
-            self.jumps,
-            self.lethal_volumes,
-        )
+        crate::compiler::nav::scratch_bound_of(crate::compiler::nav::ScratchInputs {
+            states: self.census.states_at_most(),
+            items: self.census.items_at_most,
+            chunk_items: self.census.chunk_items_at_most,
+            cells: self.window_cells(),
+            height: self.window_dims()[1],
+            launches: self.launches,
+            jumps: self.jumps,
+            volumes: self.lethal_volumes,
+        })
     }
 
     /// **The reach graph's scratch files at most**: one configuration's
@@ -790,16 +790,16 @@ mod tests {
         let reach = c.reach_scratch_per_configuration();
         assert_eq!(
             reach,
-            crate::compiler::nav::scratch_bound_of(
-                20_500,
-                120_000,
-                30_000,
-                118 * 12 * 218,
-                12,
-                100,
-                3,
-                2
-            ),
+            crate::compiler::nav::scratch_bound_of(crate::compiler::nav::ScratchInputs {
+                states: 20_500,
+                items: 120_000,
+                chunk_items: 30_000,
+                cells: 118 * 12 * 218,
+                height: 12,
+                launches: 100,
+                jumps: 3,
+                volumes: 2,
+            }),
             "the census's candidates and edges over the window's cells and height, the \
              launches, the plan's jumps and volumes"
         );

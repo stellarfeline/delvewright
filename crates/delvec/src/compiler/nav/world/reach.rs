@@ -435,21 +435,36 @@ const RUN_FIXED: usize =
 /// A dependency: the cell's index, its code, what was read and the runs.
 const DEP_RECORD: usize = 4 * 4;
 
-/// The bound for a world of `cells` window cells, `height` cells tall, whose
-/// census holds `states` rest candidates with `items` edges in all, at most
-/// `chunk_items` of them in one reach chunk, under `launches` per node and a
-/// plan of `jumps` declared jumps and `volumes` killing volumes
-/// ([`ScratchBound`]).
-pub(crate) fn scratch_bound_of(
-    states: usize,
-    items: usize,
-    chunk_items: usize,
-    cells: usize,
-    height: usize,
-    launches: usize,
-    jumps: usize,
-    volumes: usize,
-) -> ScratchBound {
+/// What the reach scratch bound is computed from ([`scratch_bound_of`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ScratchInputs {
+    /// Rest candidates over the window, and their edges at most, in all
+    /// and in the fullest reach chunk (the rest census).
+    pub states: usize,
+    pub items: usize,
+    pub chunk_items: usize,
+    /// The window's cells and its height.
+    pub cells: usize,
+    pub height: usize,
+    /// Launches flown out of one node; the plan's declared jumps and
+    /// killing volumes.
+    pub launches: usize,
+    pub jumps: usize,
+    pub volumes: usize,
+}
+
+/// The bound for one world from `i` ([`ScratchBound`]).
+pub(crate) fn scratch_bound_of(i: ScratchInputs) -> ScratchBound {
+    let ScratchInputs {
+        states,
+        items,
+        chunk_items,
+        cells,
+        height,
+        launches,
+        jumps,
+        volumes,
+    } = i;
     let snapshot = cells
         .div_ceil(pages::PAGE_CELLS)
         .saturating_mul(pages::PAGE_CELLS * pages::CELL_BYTES);

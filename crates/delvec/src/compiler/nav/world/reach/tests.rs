@@ -963,16 +963,16 @@ fn the_costs_bounds_hold_over_the_graphs_built() {
                     "{name} (side {side}): the graph's window ({graph_cells} cells) is not inside \
                      the cost's ({cells})"
                 );
-                let bound = scratch_bound_of(
-                    census.states_at_most(),
-                    census.items_at_most,
-                    census.chunk_items_at_most,
+                let bound = scratch_bound_of(ScratchInputs {
+                    states: census.states_at_most(),
+                    items: census.items_at_most,
+                    chunk_items: census.chunk_items_at_most,
                     cells,
-                    (window.1[1] - window.0[1] + 1) as usize,
-                    launches_per_node(),
-                    w.declared_jumps.len(),
-                    w.lethal_regions.len(),
-                );
+                    height: (window.1[1] - window.0[1] + 1) as usize,
+                    launches: launches_per_node(),
+                    jumps: w.declared_jumps.len(),
+                    volumes: w.lethal_regions.len(),
+                });
                 for (what, got, at_most) in [
                     ("the snapshot's pages", held.snapshot, bound.snapshot),
                     ("the node tables", held.tables, bound.tables),
@@ -1068,7 +1068,7 @@ fn the_costs_bounds_hold_over_the_graphs_built() {
 
 /// **What the reach scratch bound does not count by name is covered by its
 /// terms' slack** (ADR-0037 §3, the cost line's declaration): a second world
-/// of the same window — the Bell yard with a block set on its wall, a
+/// of the same window — the walled yard with a block set on its wall, a
 /// premise variant in substance, with its own pages, tables and bank
 /// variants — and a second closure over the base world from other roots,
 /// both built, and what the two graphs hold in the files together (every
@@ -1080,12 +1080,12 @@ fn the_costs_bounds_hold_over_the_graphs_built() {
 fn a_second_world_and_a_second_closure_stay_under_one_configurations_bound() {
     use crate::compiler::blockstate::{BlockMap, BlockState};
     use crate::compiler::cost::RestCensus;
-    let base = bell_yard();
-    let mut edited = bell_yard_build();
-    edited.fill([3, 1, 14], [3, 2, 14]);
+    let b = walled_yard(([-2, 0, -2], [16, 0, 16]));
+    let base = b.world(Ambient::Void, Vec::new());
+    let mut edited = walled_yard(([-2, 0, -2], [16, 0, 16]));
+    edited.fill([3, 4, 14], [3, 4, 14]);
     let edited = edited.world(Ambient::Void, Vec::new());
     let mut store = BlockMap::new();
-    let b = bell_yard_build();
     for (cells, name) in [
         (&b.solid, "minecraft:stone"),
         (&b.tall, "minecraft:oak_fence"),
@@ -1109,19 +1109,19 @@ fn a_second_world_and_a_second_closure_stay_under_one_configurations_bound() {
         .map(|a| (window.1[a] - window.0[a] + 1) as usize)
         .iter()
         .product::<usize>();
-    let bound = scratch_bound_of(
-        census.states_at_most(),
-        census.items_at_most,
-        census.chunk_items_at_most,
+    let bound = scratch_bound_of(ScratchInputs {
+        states: census.states_at_most(),
+        items: census.items_at_most,
+        chunk_items: census.chunk_items_at_most,
         cells,
-        (window.1[1] - window.0[1] + 1) as usize,
-        launches_per_node(),
-        0,
-        0,
-    );
+        height: (window.1[1] - window.0[1] + 1) as usize,
+        launches: launches_per_node(),
+        jumps: 0,
+        volumes: 0,
+    });
     let params = ReachParams::shipped(base.unbounded_fall);
     let _ = base.body_reach(&[[5, 1, 5]]);
-    let _ = base.body_reach(&[[15, 1, 15]]);
+    let _ = base.body_reach(&[[10, 1, 3]]);
     let _ = edited.body_reach(&[[5, 1, 5]]);
     let (ma, me) = (base.graph_memo(&params), edited.graph_memo(&params));
     assert!(
