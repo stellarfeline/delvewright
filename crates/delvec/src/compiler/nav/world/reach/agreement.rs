@@ -1602,6 +1602,7 @@ fn the_sea_the_launches_read_is_the_sea_the_rest_relation_reads() {
                 material: Default::default(),
                 footprints: Default::default(),
                 hiding: Default::default(),
+                hurting: Default::default(),
                 leaves: Default::default(),
             },
             p,
