@@ -887,11 +887,26 @@ mod tests {
             assert!(m.walk_cells > 0, "{fill}: the case binds no walk");
             seen.push((fill, m.contact_cells, m.submerged.len()));
         }
-        assert_eq!(seen[0].1, opening.len(), "authored water: the opening is contact face: {seen:?}");
-        assert!(seen[0].2 > 0, "authored water: the walk plane is wet: {seen:?}");
-        assert_eq!(seen[1].1, opening.len(), "the plain sea: the control binds: {seen:?}");
+        assert_eq!(
+            seen[0].1,
+            opening.len(),
+            "authored water: the opening is contact face: {seen:?}"
+        );
+        assert!(
+            seen[0].2 > 0,
+            "authored water: the walk plane is wet: {seen:?}"
+        );
+        assert_eq!(
+            seen[1].1,
+            opening.len(),
+            "the plain sea: the control binds: {seen:?}"
+        );
         assert!(seen[1].2 > 0, "the plain sea: the control binds: {seen:?}");
-        assert_eq!((seen[2].1, seen[2].2), (0, 0), "stone: nothing comes in: {seen:?}");
+        assert_eq!(
+            (seen[2].1, seen[2].2),
+            (0, 0),
+            "stone: nothing comes in: {seen:?}"
+        );
     }
 
     /// The finding itself: a room whose walk plane is under the sea, with its west
