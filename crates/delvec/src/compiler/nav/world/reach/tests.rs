@@ -949,14 +949,19 @@ fn the_costs_bounds_hold_over_the_graphs_built() {
                     .map(|a| (window.1[a] - window.0[a] + 1) as usize)
                     .iter()
                     .product::<usize>();
-                assert_eq!(
-                    memo.dense
-                        .dims
-                        .iter()
-                        .map(|d| *d as usize)
-                        .product::<usize>(),
-                    cells,
-                    "{name} (side {side}): the window the cost takes is the graph's"
+                // The cost's window is the store's sections with the margins,
+                // the graph's the modelled cells with them: the first holds
+                // the second, which is what makes the pages term a bound.
+                let graph_cells = memo
+                    .dense
+                    .dims
+                    .iter()
+                    .map(|d| *d as usize)
+                    .product::<usize>();
+                assert!(
+                    graph_cells <= cells,
+                    "{name} (side {side}): the graph's window ({graph_cells} cells) is not inside \
+                     the cost's ({cells})"
                 );
                 let bound = scratch_bound_of(
                     census.states_at_most(),
