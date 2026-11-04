@@ -381,14 +381,7 @@ const CELL_MOVES: usize = 8 * 3 + 2 + 6;
 /// the most cell-relation moves beside them ([`CELL_MOVES`]): the most edges a
 /// node's list can hold.
 pub(crate) fn edges_per_node_at_most() -> usize {
-    launches_per_node() + CELL_MOVES
-}
-
-/// How many launches the shipped launch set flies out of a standing node:
-/// the most runs the bank records of one expansion, and the most arcs that
-/// name an edge in them.
-pub(crate) fn launches_per_node() -> usize {
-    launch_set(false, FACING_STEP_DEG, &[-1.0, 0.0, 1.0]).len()
+    launch_set(false, FACING_STEP_DEG, &[-1.0, 0.0, 1.0]).len() + CELL_MOVES
 }
 
 /// **The reach graph's scratch files for one world, bounded** (ADR-0037 §3):
@@ -406,11 +399,9 @@ pub struct ScratchBound {
     /// each, and one chunk's records once more (a chunk rewritten whole takes
     /// its room before its pieces free).
     pub lists: usize,
-    /// The bank's variants: for every candidate, the most variants a node
-    /// keeps ([`bank::VARIANTS`]), each holding every cell of the envelope
-    /// box its arcs could read (the launch margin round the node, the
-    /// window's whole height), the declared jumps and killing volumes, a run
-    /// per launch with an edge named per arc, and the node's own edges.
+    /// The bank's file: the cap the build sets on what the banks keep
+    /// (`set_bank_cap`), the graph's own tables and lists — a variant past it
+    /// is not kept, and the next world that asks re-flies the node.
     pub bank: usize,
 }
 
@@ -424,17 +415,6 @@ impl ScratchBound {
     }
 }
 
-/// What a variant's record holds beside its cells, runs and edges: the
-/// counts, the head box, the flags and the two tallies
-/// ([`persist::Enc::variant`]).
-const VARIANT_FIXED: usize = 8 + (1 + 2 * persist::CELL_RECORD) + 8 + 8 + 8;
-/// A run's record beside its named edges: its box, the count, the flags, the
-/// two tallies and the grown box.
-const RUN_FIXED: usize =
-    (1 + 2 * persist::CELL_RECORD) + 8 + 1 + 1 + 8 + 8 + (1 + 2 * persist::CELL_RECORD);
-/// A dependency: the cell's index, its code, what was read and the runs.
-const DEP_RECORD: usize = 4 * 4;
-
 /// What the reach scratch bound is computed from ([`scratch_bound_of`]).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ScratchInputs {
@@ -443,14 +423,8 @@ pub struct ScratchInputs {
     pub states: usize,
     pub items: usize,
     pub chunk_items: usize,
-    /// The window's cells and its height.
+    /// The window's cells.
     pub cells: usize,
-    pub height: usize,
-    /// Launches flown out of one node; the plan's declared jumps and
-    /// killing volumes.
-    pub launches: usize,
-    pub jumps: usize,
-    pub volumes: usize,
 }
 
 /// The bound for one world from `i` ([`ScratchBound`]).
@@ -460,10 +434,6 @@ pub(crate) fn scratch_bound_of(i: ScratchInputs) -> ScratchBound {
         items,
         chunk_items,
         cells,
-        height,
-        launches,
-        jumps,
-        volumes,
     } = i;
     let snapshot = cells
         .div_ceil(pages::PAGE_CELLS)
@@ -479,25 +449,7 @@ pub(crate) fn scratch_bound_of(i: ScratchInputs) -> ScratchBound {
     let lists = items
         .saturating_add(chunk_items)
         .saturating_mul(chunks::SUCC_RECORD + chunks::PRED_RECORD);
-    // What a node's arcs could read: the launch margin round it, at every
-    // height of the window (a fall reaches the window's floor).
-    let envelope = (2 * WINDOW_MARGIN as usize + 1)
-        .pow(2)
-        .saturating_mul(height);
-    let variant = VARIANT_FIXED
-        .saturating_add(envelope.saturating_mul(DEP_RECORD))
-        .saturating_add(jumps.saturating_mul(persist::CELL_RECORD))
-        .saturating_add(volumes.saturating_mul(2 * persist::CELL_RECORD))
-        .saturating_add(launches.saturating_mul(RUN_FIXED + persist::EDGE_RECORD))
-        .saturating_add(persist::NODE_EDGES_RECORD);
-    let bank = states
-        .saturating_mul(bank::VARIANTS)
-        .saturating_mul(variant)
-        .saturating_add(
-            bank::VARIANTS
-                .saturating_mul(items)
-                .saturating_mul(persist::EDGE_RECORD),
-        );
+    let bank = tables.saturating_add(lists);
     ScratchBound {
         snapshot,
         tables,
@@ -1920,9 +1872,19 @@ type FlownKey = ([i32; 3], Quadrants);
 fn par_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Vec<R> {
     let side = chunks::side_here();
     let b = budget::override_here();
+    let cap = bank::cap_here();
     crate::par::map(items, |x| {
-        chunks::at_side(side, || budget::with_budget(b, || f(x)))
+        chunks::at_side(side, || {
+            budget::with_budget(b, || bank::with_cap(cap, || f(x)))
+        })
     })
+}
+
+/// **The build's cap on the banks' files** (ADR-0037 §3): set from the cost
+/// before the proofs run; a variant that would pass it is not kept
+/// (`bank::set_cap`).
+pub fn set_bank_cap(bytes: u64) {
+    bank::set_cap(bytes);
 }
 
 /// Write the node banks this run grew to `DELVEC_REACH_CACHE`, when it names a
@@ -2002,12 +1964,22 @@ pub fn persist_reach_cache() {
         .iter()
         .fold(spill::Usage::default(), |a, (_, u)| a + *u);
     if all.written > 0 {
+        let cap = bank::cap_stated().map_or(String::new(), |(c, refused)| {
+            format!(", under a cap of {c} byte(s) with {refused} variant(s) refused")
+        });
         let parts: Vec<String> = files
             .iter()
             .map(|(name, u)| {
                 format!(
-                    "{name} {} written, at most {} long, {} kept at the end",
-                    u.written, u.longest, u.kept
+                    "{name} {} written, at most {} long, {} kept at the end{}",
+                    u.written,
+                    u.longest,
+                    u.kept,
+                    if *name == "the bank's" {
+                        cap.as_str()
+                    } else {
+                        ""
+                    }
                 )
             })
             .collect();

@@ -54,6 +54,7 @@
 use super::{Code, Death, Dense, EdgeKind, NodeEdges, Raw};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 /// An inclusive cell box.
@@ -535,6 +536,84 @@ pub(super) struct Bank {
 /// on what a build answers.
 pub(super) const VARIANTS: usize = 8;
 
+/// **The bank's cap** (ADR-0037 §3): the bytes every bank of the process may
+/// keep in its file between them, set by the build from its cost before the
+/// proofs run ([`set_cap`]: the graph's own tables' and lists' bound) and
+/// unbounded where no build set one. A variant that would pass it is not
+/// kept — the expansion's answer is the same, the next world that asks
+/// re-flies the node, and no output byte reads the bank — so the file is
+/// bounded by what the plan states, never by the nodes a run flew. Under a
+/// test's cap ([`with_cap`]) each variant is judged alone against it, and
+/// what the thread's expansions refused is counted for the test.
+static CAP: AtomicU64 = AtomicU64::new(u64::MAX);
+/// Bytes the variants kept hold, over every bank, under the cap.
+static KEPT: AtomicU64 = AtomicU64::new(0);
+/// Variants refused at the cap, over the run.
+static REFUSED: AtomicU64 = AtomicU64::new(0);
+
+thread_local! {
+    static CAP_HERE: Cell<u64> = const { Cell::new(0) };
+    static REFUSED_HERE: Cell<u64> = const { Cell::new(0) };
+}
+
+/// The build's cap on what the banks keep, in bytes.
+pub(super) fn set_cap(bytes: u64) {
+    CAP.store(bytes, Ordering::Relaxed);
+}
+
+/// The cap stated and the variants refused at it over the run; `None` where
+/// no build set one.
+pub(super) fn cap_stated() -> Option<(u64, u64)> {
+    let c = CAP.load(Ordering::Relaxed);
+    (c != u64::MAX).then(|| (c, REFUSED.load(Ordering::Relaxed)))
+}
+
+/// A test's cap in force on this thread, `0` for none.
+pub(super) fn cap_here() -> u64 {
+    CAP_HERE.with(Cell::get)
+}
+
+/// `f` with a test's cap of `bytes` in force on this thread (`0`: none).
+pub(super) fn with_cap<R>(bytes: u64, f: impl FnOnce() -> R) -> R {
+    let was = CAP_HERE.with(|c| c.replace(bytes));
+    let out = f();
+    CAP_HERE.with(|c| c.set(was));
+    out
+}
+
+/// Variants this thread's expansions refused under a test's cap.
+#[cfg(test)]
+pub(super) fn refused_here() -> u64 {
+    REFUSED_HERE.with(Cell::get)
+}
+
+/// Whether a variant of `len` bytes may be kept now: counted against the
+/// cap in force, and counted back if it may not.
+fn admit(len: u64) -> bool {
+    let here = cap_here();
+    if here != 0 {
+        if len > here {
+            REFUSED_HERE.with(|r| r.set(r.get() + 1));
+            return false;
+        }
+        return true;
+    }
+    let cap = CAP.load(Ordering::Relaxed);
+    if KEPT.fetch_add(len, Ordering::Relaxed) + len > cap {
+        KEPT.fetch_sub(len, Ordering::Relaxed);
+        REFUSED.fetch_add(1, Ordering::Relaxed);
+        return false;
+    }
+    true
+}
+
+/// A variant kept under the cap let go: its bytes counted back.
+fn released(len: u64) {
+    if cap_here() == 0 {
+        KEPT.fetch_sub(len, Ordering::Relaxed);
+    }
+}
+
 impl Bank {
     /// A bank keyed `key` holding `nodes`, spilled.
     fn new(key: String, nodes: Vec<(super::FlownKey, Vec<Arc<Variant>>)>) -> Bank {
@@ -571,6 +650,9 @@ impl Bank {
         if at >= VARIANTS {
             return;
         }
+        if !admit(bytes.len() as u64) {
+            return;
+        }
         let slot = {
             let mut spill = self.spill.lock().expect("spill");
             match spill.as_mut() {
@@ -589,7 +671,11 @@ impl Bank {
             }
         };
         vs.insert(at, slot);
-        vs.truncate(VARIANTS);
+        if vs.len() > VARIANTS {
+            for gone in vs.drain(VARIANTS..) {
+                released(gone.len());
+            }
+        }
         self.changed
             .store(true, std::sync::atomic::Ordering::Relaxed);
     }

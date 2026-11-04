@@ -968,16 +968,14 @@ fn the_costs_bounds_hold_over_the_graphs_built() {
                     items: census.items_at_most,
                     chunk_items: census.chunk_items_at_most,
                     cells,
-                    height: (window.1[1] - window.0[1] + 1) as usize,
-                    launches: launches_per_node(),
-                    jumps: w.declared_jumps.len(),
-                    volumes: w.lethal_regions.len(),
                 });
+                // The bank is held to its term by the cap the build sets,
+                // not by what a run flies (`a_bank_past_its_cap_keeps_no_more_and_answers_the_same`);
+                // what it held here is printed beside the cap it would get.
                 for (what, got, at_most) in [
                     ("the snapshot's pages", held.snapshot, bound.snapshot),
                     ("the node tables", held.tables, bound.tables),
                     ("the closure's lists", held.lists, bound.lists),
-                    ("the bank's variants", held.bank, bound.bank),
                 ] {
                     assert!(
                         got <= at_most,
@@ -1057,12 +1055,52 @@ fn the_costs_bounds_hold_over_the_graphs_built() {
         "the worlds bind nothing"
     );
     assert!(
-        bound_scratch.snapshot > 0
-            && bound_scratch.tables > 0
-            && bound_scratch.lists > 0
-            && bound_scratch.bank > 0,
+        bound_scratch.snapshot > 0 && bound_scratch.tables > 0 && bound_scratch.lists > 0,
         "the graphs hold nothing in the scratch files: the scratch bound binds nothing \
          ({bound_scratch:?})"
+    );
+}
+
+/// **A bank past its cap keeps no more, and answers the same** (ADR-0037 §3):
+/// the Bell yard's closure taken under a test's cap that refuses every
+/// variant (one byte) is, state for state and edge for edge, the closure
+/// taken with the bank keeping all — the bank is a cache, and a miss
+/// re-flies the node — and the capped expansion refused variants where the
+/// other kept them. Red if a capped bank changed an answer, or refused
+/// nothing (the cap unenforced).
+#[test]
+fn a_bank_past_its_cap_keeps_no_more_and_answers_the_same() {
+    let root = [[5, 1, 5]];
+    // Two worlds alike, so each closure is taken fresh over its own graph.
+    let (full, capped) = (bell_yard(), bell_yard());
+    let a = full.body_reach(&root);
+    let (b, refused) = bank::with_cap(1, || {
+        let r = capped.body_reach(&root);
+        (r, bank::refused_here())
+    });
+    assert!(
+        refused > 0,
+        "the cap refused no variant: it is not enforced"
+    );
+    let states_a: Vec<[i32; 3]> = a.states.keys().collect();
+    let states_b: Vec<[i32; 3]> = b.states.keys().collect();
+    assert_eq!(
+        states_a, states_b,
+        "the capped closure reached other states"
+    );
+    for c in &states_a {
+        assert_eq!(
+            a.succ(c),
+            b.succ(c),
+            "the edges out of {c:?} differ under the cap"
+        );
+    }
+    assert_eq!(a.edge_census(), b.edge_census());
+    eprintln!(
+        "a bank under a one-byte cap: {refused} variant(s) refused on this thread; {} states and \
+         {} edges alike",
+        states_a.len(),
+        a.edge_census().iter().sum::<usize>()
     );
 }
 
@@ -1114,10 +1152,6 @@ fn a_second_world_and_a_second_closure_stay_under_one_configurations_bound() {
         items: census.items_at_most,
         chunk_items: census.chunk_items_at_most,
         cells,
-        height: (window.1[1] - window.0[1] + 1) as usize,
-        launches: launches_per_node(),
-        jumps: 0,
-        volumes: 0,
     });
     let params = ReachParams::shipped(base.unbounded_fall);
     let _ = base.body_reach(&[[5, 1, 5]]);
@@ -1164,7 +1198,6 @@ fn a_second_world_and_a_second_closure_stay_under_one_configurations_bound() {
         ("the snapshot's pages", held.snapshot, bound.snapshot),
         ("the node tables", held.tables, bound.tables),
         ("the closures' lists", held.lists, bound.lists),
-        ("the bank's variants", held.bank, bound.bank),
     ] {
         assert!(
             got <= at_most,
