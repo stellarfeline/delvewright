@@ -200,6 +200,21 @@ pub(super) fn resident() -> usize {
     resident_of::<u32>() + resident_of::<u16>()
 }
 
+/// What the snapshot's scratch files have held, over both stores.
+pub(super) fn usage() -> super::spill::Usage {
+    usage_of::<u32>() + usage_of::<u16>()
+}
+
+fn usage_of<T: Paged>() -> super::spill::Usage {
+    T::store()
+        .inner
+        .lock()
+        .expect("pages")
+        .spill
+        .as_ref()
+        .map_or_else(Default::default, super::spill::Spill::usage)
+}
+
 fn resident_of<T: Paged>() -> usize {
     T::store().inner.lock().expect("pages").resident.len()
 }

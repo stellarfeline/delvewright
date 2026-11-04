@@ -35,7 +35,7 @@
 
 use super::budget;
 use super::persist::{Dec, Enc};
-use super::spill::{Reader, Spill};
+use super::spill::{Extent, Reader, Spill, Usage};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
@@ -116,14 +116,14 @@ fn spill() -> &'static Shared {
     })
 }
 
-/// The bytes the lists' scratch file holds.
-pub(super) fn spilled() -> u64 {
+/// What the lists' and tables' scratch file has held ([`Usage`]).
+pub(super) fn spilled() -> Usage {
     spill()
         .write
         .lock()
         .expect("spill")
         .as_ref()
-        .map_or(0, Spill::len)
+        .map_or(Usage::default(), Spill::usage)
 }
 
 /// Chunks decoded, the records they held, and chunks given up, over the run.
@@ -268,8 +268,9 @@ pub(super) fn visits() -> String {
 
 /// One chunk of a list.
 struct Chunk<V> {
-    /// The records written to the file, in order.
-    segments: Vec<(u64, u32)>,
+    /// The records written to the file, in order: shared with every copy of
+    /// the list, and free in the file once none holds them.
+    segments: Vec<Arc<Extent>>,
     /// The records pushed since, encoded.
     pending: Vec<u8>,
     /// Every record decoded, while the chunk is resident.
@@ -328,7 +329,8 @@ impl<V: Item> Chunk<V> {
                 .read
                 .as_ref()
                 .expect("a list with spilled records has its file");
-            for &(at, len) in &self.segments {
+            for seg in &self.segments {
+                let (at, len) = seg.at();
                 take(&file.read(at, len));
             }
         }
@@ -347,8 +349,8 @@ impl<V: Item> Chunk<V> {
         }
         let mut sp = spill().write.lock().expect("spill");
         if let Some(sp) = sp.as_mut() {
-            let r = sp.append(&self.pending);
-            self.segments.push(sp.or_fail("take a write", r));
+            let r = sp.put(&self.pending);
+            self.segments.push(Arc::new(sp.or_fail("take a write", r)));
             self.pending = Vec::new();
         }
     }
@@ -372,8 +374,10 @@ impl<V: Item> Chunk<V> {
             }
             let mut sp = spill().write.lock().expect("spill");
             if let Some(sp) = sp.as_mut() {
-                let r = sp.append(&e.0);
-                self.segments = vec![sp.or_fail("take a write", r)];
+                let r = sp.put(&e.0);
+                let whole = Arc::new(sp.or_fail("take a write", r));
+                // The pieces it replaces are free once no copy holds them.
+                drop(std::mem::replace(&mut self.segments, vec![whole]));
                 self.pending = Vec::new();
             }
         } else {
@@ -547,6 +551,16 @@ impl<V: Item> Lists<V> {
         self.inner.lock().expect("lists").side
     }
 
+    /// Every record of every chunk written to the file now.
+    #[cfg(test)]
+    fn segments(&self) -> Vec<Weak<Extent>> {
+        let g = self.inner.lock().expect("lists");
+        g.chunks
+            .values()
+            .flat_map(|ch| ch.segments.iter().map(Arc::downgrade))
+            .collect()
+    }
+
     /// How many pieces `c`'s chunk is written in, buffered records counted
     /// as one.
     #[cfg(test)]
@@ -686,6 +700,27 @@ fn unpack(w: u64) -> Slot {
     Slot {
         at: w & ((1 << 40) - 1),
         len: (w >> 40) as u32,
+    }
+}
+
+impl Drop for TableIndex {
+    /// A table dropped gives its records' room in the file back: nothing
+    /// reads them again, every read going through the table.
+    fn drop(&mut self) {
+        let Some(file) = spill().read.as_ref().filter(|_| self.held.is_empty()) else {
+            return;
+        };
+        for m in self.first.values() {
+            for w in m.values() {
+                let s = unpack(*w);
+                file.give_back(s.at, s.len);
+            }
+        }
+        for slots in self.more.values() {
+            for s in slots {
+                file.give_back(s.at, s.len);
+            }
+        }
     }
 }
 
@@ -862,7 +897,7 @@ impl Item for (super::Quadrants, super::NodeEdges) {
 
 #[cfg(test)]
 mod table_tests {
-    use super::{Dec, Enc, Item, Lists, PENDING, PIECES, Table};
+    use super::{Dec, Enc, Extent, Item, Lists, PENDING, PIECES, Table, Weak};
     use std::collections::BTreeMap;
 
     #[derive(Clone, Debug, PartialEq)]
@@ -1011,6 +1046,65 @@ mod table_tests {
                 assert!(releases > 0, "no chunk was given up");
             }
         }
+    }
+
+    /// **A list's file holds what the list holds, not what it wrote**
+    /// (ADR-0037 §2): pushes to a few cells under a budget of one byte, read
+    /// back between pushes, so chunks are given up, written out piece by
+    /// piece and rewritten whole past [`PIECES`] pieces; a copy taken
+    /// mid-stream shares the pieces written so far. A piece the list no
+    /// longer holds is free in the file once no copy holds it, and every
+    /// piece is free once the list and its copy are gone. Red on a piece
+    /// kept after its chunk was rewritten (the file would grow with every
+    /// rewrite), and on a run that rewrote nothing (which would bind
+    /// nothing).
+    #[test]
+    fn a_lists_file_holds_what_the_list_holds_not_what_it_wrote() {
+        super::budget::with_budget(1, || {
+            let l: Lists<Fat> = Lists::new(2);
+            let cells = [[0, 0, 0], [4, 1, 0], [8, 0, 1], [1, 2, 4]];
+            let mut seen: Vec<Weak<Extent>> = Vec::new();
+            let mut copy = None;
+            for step in 0..3000u32 {
+                let c = cells[step as usize % cells.len()];
+                l.push(c, Fat(step as u16, (0..30).collect()));
+                if step % 7 == 0 {
+                    l.get(cells[(step as usize / 7) % cells.len()]);
+                    seen.extend(l.segments());
+                }
+                if step == 1500 {
+                    copy = Some(l.clone());
+                }
+            }
+            seen.extend(l.segments());
+            let alive = |w: &[Weak<Extent>]| w.iter().filter(|w| w.strong_count() > 0).count();
+            let ptrs = |ws: Vec<Weak<Extent>>| -> std::collections::BTreeSet<usize> {
+                ws.iter().map(|w| w.as_ptr() as usize).collect()
+            };
+            let held: std::collections::BTreeSet<usize> = ptrs(l.segments())
+                .union(&ptrs(copy.as_ref().expect("a copy").segments()))
+                .copied()
+                .collect();
+            let distinct = ptrs(seen.clone());
+            let stray = seen
+                .iter()
+                .filter(|w| w.strong_count() > 0 && !held.contains(&(w.as_ptr() as usize)))
+                .count();
+            eprintln!(
+                "lists' file: {} distinct piece(s) written over the run, {} held by the list \
+                 and its copy, {stray} held by neither",
+                distinct.len(),
+                held.len()
+            );
+            assert!(
+                distinct.len() > held.len() + cells.len(),
+                "no chunk was rewritten: the case binds nothing"
+            );
+            assert_eq!(stray, 0, "a piece nothing holds is still kept in the file");
+            drop(l);
+            drop(copy);
+            assert_eq!(alive(&seen), 0, "a piece outlived its list");
+        });
     }
 
     /// **A node table keyed by chunk answers what a map of its entries

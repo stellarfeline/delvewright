@@ -480,11 +480,13 @@ impl Expansion<'_> {
 /// bytes — and a build keeps one variant per node it flew for the life of the
 /// process, so the bank keeps a slot per variant in memory and the file
 /// holds the rest.
+/// A slot on disk shares its record with every copy taken to read it, so a
+/// variant that leaves the bank frees its room in the file only once no read
+/// of it is under way.
 #[derive(Clone)]
 enum Slot {
     Disk {
-        at: u64,
-        len: u32,
+        ext: Arc<super::spill::Extent>,
         digest: u64,
     },
     Held {
@@ -502,7 +504,8 @@ impl Slot {
     }
     fn len(&self) -> u64 {
         match self {
-            Slot::Disk { len, .. } | Slot::Held { len, .. } => u64::from(*len),
+            Slot::Disk { ext, .. } => u64::from(ext.at().1),
+            Slot::Held { len, .. } => u64::from(*len),
         }
     }
 }
@@ -572,9 +575,11 @@ impl Bank {
             let mut spill = self.spill.lock().expect("spill");
             match spill.as_mut() {
                 Some(s) => {
-                    let r = s.append(&bytes);
-                    let (at, len) = s.or_fail("take a write", r);
-                    Slot::Disk { at, len, digest: d }
+                    let r = s.put(&bytes);
+                    Slot::Disk {
+                        ext: Arc::new(s.or_fail("take a write", r)),
+                        digest: d,
+                    }
                 }
                 None => Slot::Held {
                     v: Arc::clone(v),
@@ -599,7 +604,8 @@ impl Bank {
         for s in slots {
             match s {
                 Slot::Held { v, .. } => out.push(v),
-                Slot::Disk { at, len, .. } => {
+                Slot::Disk { ext, .. } => {
+                    let (at, len) = ext.at();
                     let bytes = {
                         let g = self.spill.lock().expect("spill");
                         let sp = g.as_ref().expect("a variant on disk has its spill");
@@ -839,6 +845,21 @@ pub(super) fn persist_all() {
 }
 
 /// Every bank's census, summed: variants kept and bytes spilled.
+/// What every bank's scratch file has held.
+pub(super) fn usage_all() -> super::spill::Usage {
+    let banks: Vec<Arc<Bank>> = banks().lock().expect("banks").values().cloned().collect();
+    banks
+        .iter()
+        .filter_map(|b| {
+            b.spill
+                .lock()
+                .expect("spill")
+                .as_ref()
+                .map(super::spill::Spill::usage)
+        })
+        .fold(Default::default(), |a, b| a + b)
+}
+
 pub(super) fn census_all() -> (usize, u64) {
     let banks: Vec<Arc<Bank>> = banks().lock().expect("banks").values().cloned().collect();
     banks
