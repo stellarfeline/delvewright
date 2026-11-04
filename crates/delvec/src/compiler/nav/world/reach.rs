@@ -381,7 +381,14 @@ const CELL_MOVES: usize = 8 * 3 + 2 + 6;
 /// the most cell-relation moves beside them ([`CELL_MOVES`]): the most edges a
 /// node's list can hold.
 pub(crate) fn edges_per_node_at_most() -> usize {
-    launch_set(false, FACING_STEP_DEG, &[-1.0, 0.0, 1.0]).len() + CELL_MOVES
+    launches_per_node() + CELL_MOVES
+}
+
+/// How many launches the shipped launch set flies out of a standing node:
+/// the most runs the bank records of one expansion, and the most arcs that
+/// name an edge in them.
+pub(crate) fn launches_per_node() -> usize {
+    launch_set(false, FACING_STEP_DEG, &[-1.0, 0.0, 1.0]).len()
 }
 
 /// **The reach graph's scratch files for one world, bounded** (ADR-0037 §3):
@@ -399,25 +406,49 @@ pub struct ScratchBound {
     /// each, and one chunk's records once more (a chunk rewritten whole takes
     /// its room before its pieces free).
     pub lists: usize,
+    /// The bank's variants: for every candidate, the most variants a node
+    /// keeps ([`bank::VARIANTS`]), each holding every cell of the envelope
+    /// box its arcs could read (the launch margin round the node, the
+    /// window's whole height), the declared jumps and killing volumes, a run
+    /// per launch with an edge named per arc, and the node's own edges.
+    pub bank: usize,
 }
 
 impl ScratchBound {
-    /// The three terms summed.
+    /// The four terms summed.
     pub fn total(&self) -> usize {
         self.snapshot
             .saturating_add(self.tables)
             .saturating_add(self.lists)
+            .saturating_add(self.bank)
     }
 }
 
-/// The bound for a world of `cells` window cells whose census holds `states`
-/// rest candidates with `items` edges in all, at most `chunk_items` of them
-/// in one reach chunk ([`ScratchBound`]).
+/// What a variant's record holds beside its cells, runs and edges: the
+/// counts, the head box, the flags and the two tallies
+/// ([`persist::Enc::variant`]).
+const VARIANT_FIXED: usize = 8 + (1 + 2 * persist::CELL_RECORD) + 8 + 8 + 8;
+/// A run's record beside its named edges: its box, the count, the flags, the
+/// two tallies and the grown box.
+const RUN_FIXED: usize =
+    (1 + 2 * persist::CELL_RECORD) + 8 + 1 + 1 + 8 + 8 + (1 + 2 * persist::CELL_RECORD);
+/// A dependency: the cell's index, its code, what was read and the runs.
+const DEP_RECORD: usize = 4 * 4;
+
+/// The bound for a world of `cells` window cells, `height` cells tall, whose
+/// census holds `states` rest candidates with `items` edges in all, at most
+/// `chunk_items` of them in one reach chunk, under `launches` per node and a
+/// plan of `jumps` declared jumps and `volumes` killing volumes
+/// ([`ScratchBound`]).
 pub(crate) fn scratch_bound_of(
     states: usize,
     items: usize,
     chunk_items: usize,
     cells: usize,
+    height: usize,
+    launches: usize,
+    jumps: usize,
+    volumes: usize,
 ) -> ScratchBound {
     let snapshot = cells
         .div_ceil(pages::PAGE_CELLS)
@@ -433,10 +464,30 @@ pub(crate) fn scratch_bound_of(
     let lists = items
         .saturating_add(chunk_items)
         .saturating_mul(chunks::SUCC_RECORD + chunks::PRED_RECORD);
+    // What a node's arcs could read: the launch margin round it, at every
+    // height of the window (a fall reaches the window's floor).
+    let envelope = (2 * WINDOW_MARGIN as usize + 1)
+        .pow(2)
+        .saturating_mul(height);
+    let variant = VARIANT_FIXED
+        .saturating_add(envelope.saturating_mul(DEP_RECORD))
+        .saturating_add(jumps.saturating_mul(persist::CELL_RECORD))
+        .saturating_add(volumes.saturating_mul(2 * persist::CELL_RECORD))
+        .saturating_add(launches.saturating_mul(RUN_FIXED + persist::EDGE_RECORD))
+        .saturating_add(persist::NODE_EDGES_RECORD);
+    let bank = states
+        .saturating_mul(bank::VARIANTS)
+        .saturating_mul(variant)
+        .saturating_add(
+            bank::VARIANTS
+                .saturating_mul(items)
+                .saturating_mul(persist::EDGE_RECORD),
+        );
     ScratchBound {
         snapshot,
         tables,
         lists,
+        bank,
     }
 }
 
@@ -2091,6 +2142,7 @@ impl GraphMemo {
             snapshot,
             tables,
             lists,
+            bank: self.bank.usage().kept as usize,
         }
     }
 

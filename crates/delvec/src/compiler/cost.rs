@@ -66,6 +66,12 @@ pub struct ResourceCost {
     /// The sections the path's region writes cover: what a configuration's
     /// own arrays lie over.
     pub region_sections: usize,
+    /// The launches flown out of one node, the plan's declared jumps and its
+    /// killing volumes: what a bank variant's record holds beside the cells
+    /// its arcs read.
+    pub launches: usize,
+    pub jumps: usize,
+    pub lethal_volumes: usize,
     /// The rest census over the store: where a body can rest at most, per
     /// column, and the bounds it gives the lists and the portal edges.
     pub census: RestCensus,
@@ -423,6 +429,9 @@ impl ResourceCost {
             region_writes: plan.region_events.writes(),
             written_sections: whole.reached.sections_written(),
             region_sections: region_sections(plan.region_events.iter().map(|e| e.region)),
+            launches: crate::compiler::nav::launches_per_node(),
+            jumps: plan.jumps.len(),
+            lethal_volumes: plan.lethal_volumes.len(),
             census,
         }
     }
@@ -496,27 +505,34 @@ impl ResourceCost {
     /// **The reach graph's scratch files for one configuration, at most**
     /// (ADR-0037 §3, `nav::scratch_bound_of`): the snapshot's pages over the
     /// window, once; the two node tables, an entry per rest candidate and an
-    /// edge per candidate's envelope; and one closure's two lists, a record
-    /// per edge, with one chunk's records once more for a chunk rewritten
-    /// whole beside its pieces.
+    /// edge per candidate's envelope; one closure's two lists, a record per
+    /// edge, with one chunk's records once more for a chunk rewritten whole
+    /// beside its pieces; and the bank's variants, the most a node keeps for
+    /// every candidate, each holding every cell its arcs could read.
     pub fn reach_scratch_per_configuration(&self) -> crate::compiler::nav::ScratchBound {
         crate::compiler::nav::scratch_bound_of(
             self.census.states_at_most(),
             self.census.items_at_most,
             self.census.chunk_items_at_most,
             self.window_cells(),
+            self.window_dims()[1],
+            self.launches,
+            self.jumps,
+            self.lethal_volumes,
         )
     }
 
     /// **The reach graph's scratch files at most**: one configuration's
     /// ([`Self::reach_scratch_per_configuration`]) for each configuration
-    /// the proofs judge. Not counted, declared: the premise variants and
-    /// counterfactuals the proofs build beside the configurations, as the
-    /// configurations figure declares; a second closure taken over one
-    /// configuration from other roots; a node's second table entry under
-    /// another set of launch quadrants; and the bank's file, which holds what
-    /// the launches' simulation read of each node flown — the `reach
-    /// scratch:` line states each file as the run ends.
+    /// the proofs judge. What the terms do not count by name is covered by
+    /// their slack, held so by test on generated cases and on the gallery:
+    /// the premise variants and counterfactuals the proofs build beside the
+    /// configurations (worlds of their own, whose pages, tables, closures and
+    /// variants the snapshot's, tables', lists' and bank's terms cover), a
+    /// second closure taken over one configuration from other roots (the
+    /// lists' term) and a node's second table entry under another set of
+    /// launch quadrants (the tables' term). The `reach scratch:` line states
+    /// each file as the run ends.
     pub fn reach_scratch_bytes(&self) -> usize {
         self.reach_scratch_per_configuration()
             .total()
@@ -579,8 +595,9 @@ impl ResourceCost {
              write sequence judge's {} stores, and {} region section(s) per configuration; the \
              reach graph's {} byte(s) over the configuration(s), {} per configuration — the \
              snapshot's pages {}, the node tables {} over {} edge(s) at most, one closure's lists \
-             {} — the bank's file, the variants' worlds and a second closure not counted \
-             (ADR-0037 §3)",
+             {}, the bank's variants {} ({} launch(es), {} declared jump(s), {} killing \
+             volume(s) per variant) — the variants' worlds, a second closure and a second table \
+             entry covered by those terms' slack (ADR-0037 §3)",
             self.horizon,
             self.window_cells(),
             d[0],
@@ -619,6 +636,10 @@ impl ResourceCost {
             reach.tables,
             self.census.items_at_most,
             reach.lists,
+            reach.bank,
+            self.launches,
+            self.jumps,
+            self.lethal_volumes,
         )
     }
 
@@ -678,12 +699,15 @@ impl ResourceCost {
                     "snapshot_pages": reach.snapshot,
                     "node_tables": reach.tables,
                     "one_closures_lists": reach.lists,
+                    "bank_variants": reach.bank,
+                    "launches_per_node": self.launches,
+                    "declared_jumps": self.jumps,
+                    "killing_volumes": self.lethal_volumes,
                 },
-                "reach_graph_not_counted": [
-                    "the bank's file (what the launches' simulation read)",
-                    "the premise variants' and counterfactuals' worlds",
-                    "a second closure over one configuration",
-                    "a node's second table entry under other launch quadrants",
+                "reach_graph_covered_by_slack": [
+                    "the premise variants' and counterfactuals' worlds (every term)",
+                    "a second closure over one configuration (the lists)",
+                    "a node's second table entry under other launch quadrants (the tables)",
                 ],
             },
         })
@@ -718,6 +742,9 @@ mod tests {
             region_writes: 4,
             written_sections: 12,
             region_sections: 3,
+            launches: 100,
+            jumps: 3,
+            lethal_volumes: 2,
             census: RestCensus {
                 columns: 118 * 218,
                 standing: 500,
@@ -763,22 +790,45 @@ mod tests {
         let reach = c.reach_scratch_per_configuration();
         assert_eq!(
             reach,
-            crate::compiler::nav::scratch_bound_of(20_500, 120_000, 30_000, 118 * 12 * 218),
-            "the census's candidates and edges over the window's cells"
+            crate::compiler::nav::scratch_bound_of(
+                20_500,
+                120_000,
+                30_000,
+                118 * 12 * 218,
+                12,
+                100,
+                3,
+                2
+            ),
+            "the census's candidates and edges over the window's cells and height, the \
+             launches, the plan's jumps and volumes"
         );
+        // A variant: the counts, the head box and the tallies (57), a
+        // dependency per cell of the envelope box (17 x 17 columns at every
+        // height, 16 bytes each), the jumps (12 each), the volumes (24 each),
+        // a run per launch (76 and one edge of 17 each) and the node's edges
+        // (53); eight per candidate, and the node's edges once more per edge.
+        let variant = 57 + 17 * 17 * 12 * 16 + 3 * 12 + 2 * 24 + 100 * (76 + 17) + 53;
         assert_eq!(
-            (reach.snapshot, reach.tables, reach.lists, reach.total()),
+            (
+                reach.snapshot,
+                reach.tables,
+                reach.lists,
+                reach.bank,
+                reach.total()
+            ),
             (
                 (118 * 12 * 218usize).div_ceil(4096) * 4096 * 6,
                 // The cell moves in one table are at most the edges (120,000
                 // under 20,500 x 32).
                 2 * 20_500 * 55 + (120_000 + 120_000) * 17,
                 (120_000 + 30_000) * (29 + 41),
-                reach.snapshot + reach.tables + reach.lists
+                20_500 * 8 * variant + 8 * 120_000 * 17,
+                reach.snapshot + reach.tables + reach.lists + reach.bank
             ),
             "every page of the two arrays; two tables of an entry per candidate, the cell moves \
              in one and every edge in the other; a record per edge in each of two lists and one \
-             chunk's once more"
+             chunk's once more; eight variants per candidate over the envelope box"
         );
         assert_eq!(
             c.reach_scratch_bytes(),
@@ -824,6 +874,10 @@ mod tests {
             reach.total()
         );
         assert_eq!(json["rest_census"]["edges_at_most"], 120_000);
+        assert_eq!(
+            json["scratch_bytes"]["reach_graph_per_configuration"]["bank_variants"],
+            reach.bank
+        );
         assert_eq!(json["computed_never_measured"], true);
     }
 

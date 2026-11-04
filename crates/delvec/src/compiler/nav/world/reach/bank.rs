@@ -533,7 +533,7 @@ pub(super) struct Bank {
 
 /// How many variants of one node the bank keeps: a bound on its memory, never
 /// on what a build answers.
-const VARIANTS: usize = 8;
+pub(super) const VARIANTS: usize = 8;
 
 impl Bank {
     /// A bank keyed `key` holding `nodes`, spilled.
@@ -841,6 +841,18 @@ pub(super) fn persist_all() {
             continue;
         }
         super::persist::store(&b.key, &mut b.held_by_chunk());
+    }
+}
+
+impl Bank {
+    /// What this bank's scratch file has held.
+    #[cfg(test)]
+    pub(super) fn usage(&self) -> super::spill::Usage {
+        self.spill
+            .lock()
+            .expect("spill")
+            .as_ref()
+            .map_or(Default::default(), super::spill::Spill::usage)
     }
 }
 

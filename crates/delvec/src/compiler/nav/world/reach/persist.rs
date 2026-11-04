@@ -616,5 +616,39 @@ mod record_sizes {
             read: Some(([0, 0, 0], [1, 1, 1])),
         });
         assert_eq!(e.0.len(), NODE_EDGES_RECORD + 3 * EDGE_RECORD);
+        // A variant with one dependency, one jump, one volume and one run
+        // naming one edge, over a node with no edges.
+        use crate::compiler::nav::world::reach::bank::{Run, Summary, Variant};
+        use crate::compiler::nav::world::reach::{DEP_RECORD, RUN_FIXED, VARIANT_FIXED};
+        let v = Variant {
+            deps: vec![(1, 2, 3, 4)],
+            head: Some(([0, 0, 0], [1, 1, 1])),
+            jumps: vec![[1, 2, 3]],
+            volumes: vec![([0, 0, 0], [1, 1, 1])],
+            runs: vec![Run {
+                bbox: Some(([0, 0, 0], [1, 1, 1])),
+                summary: Summary {
+                    edges: vec![(([1, 2, 3], EdgeKind::Jump), (Some(-90), true))],
+                    leaves_world: false,
+                    dies: None,
+                    simulated: 1,
+                    credited: 0,
+                    grown: Some(([0, 0, 0], [1, 1, 1])),
+                },
+            }],
+            edges: std::sync::Arc::new(NodeEdges::default()),
+        };
+        assert_eq!(
+            super::encode_variant(&v).len(),
+            VARIANT_FIXED
+                + DEP_RECORD
+                + CELL_RECORD
+                + 2 * CELL_RECORD
+                + RUN_FIXED
+                + EDGE_RECORD
+                + NODE_EDGES_RECORD,
+            "a variant's fixed part, a dependency, a jump, a volume, a run with one edge, the \
+             node's edges with none"
+        );
     }
 }

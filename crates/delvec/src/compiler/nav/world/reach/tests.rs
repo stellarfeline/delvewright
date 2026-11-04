@@ -968,11 +968,16 @@ fn the_costs_bounds_hold_over_the_graphs_built() {
                     census.items_at_most,
                     census.chunk_items_at_most,
                     cells,
+                    (window.1[1] - window.0[1] + 1) as usize,
+                    launches_per_node(),
+                    w.declared_jumps.len(),
+                    w.lethal_regions.len(),
                 );
                 for (what, got, at_most) in [
                     ("the snapshot's pages", held.snapshot, bound.snapshot),
                     ("the node tables", held.tables, bound.tables),
                     ("the closure's lists", held.lists, bound.lists),
+                    ("the bank's variants", held.bank, bound.bank),
                 ] {
                     assert!(
                         got <= at_most,
@@ -982,7 +987,7 @@ fn the_costs_bounds_hold_over_the_graphs_built() {
                 }
                 eprintln!(
                     "{name} (side {side}): scratch snapshot {} <= {} (x{:.1}); tables {} <= {} \
-                     (x{:.1}); lists {} <= {} (x{:.1})",
+                     (x{:.1}); lists {} <= {} (x{:.1}); bank {} <= {} (x{:.1})",
                     held.snapshot,
                     bound.snapshot,
                     bound.snapshot as f64 / held.snapshot.max(1) as f64,
@@ -992,10 +997,14 @@ fn the_costs_bounds_hold_over_the_graphs_built() {
                     held.lists,
                     bound.lists,
                     bound.lists as f64 / held.lists.max(1) as f64,
+                    held.bank,
+                    bound.bank,
+                    bound.bank as f64 / held.bank.max(1) as f64,
                 );
                 bound_scratch.snapshot += held.snapshot;
                 bound_scratch.tables += held.tables;
                 bound_scratch.lists += held.lists;
+                bound_scratch.bank += held.bank;
                 assert!(
                     states <= census.states_at_most(),
                     "{name} (side {side}): {states} states over the census's {}",
@@ -1048,10 +1057,116 @@ fn the_costs_bounds_hold_over_the_graphs_built() {
         "the worlds bind nothing"
     );
     assert!(
-        bound_scratch.snapshot > 0 && bound_scratch.tables > 0 && bound_scratch.lists > 0,
+        bound_scratch.snapshot > 0
+            && bound_scratch.tables > 0
+            && bound_scratch.lists > 0
+            && bound_scratch.bank > 0,
         "the graphs hold nothing in the scratch files: the scratch bound binds nothing \
          ({bound_scratch:?})"
     );
+}
+
+/// **What the reach scratch bound does not count by name is covered by its
+/// terms' slack** (ADR-0037 §3, the cost line's declaration): a second world
+/// of the same window — the Bell yard with a block set on its wall, a
+/// premise variant in substance, with its own pages, tables and bank
+/// variants — and a second closure over the base world from other roots,
+/// both built, and what the two graphs hold in the files together (every
+/// closure of both, every table entry, the one bank) is at most the bound for
+/// one configuration computed over the base store. Red if a second world or
+/// a second closure passes one configuration's bound; the case refuses a run
+/// where the second world built no graph of its own.
+#[test]
+fn a_second_world_and_a_second_closure_stay_under_one_configurations_bound() {
+    use crate::compiler::blockstate::{BlockMap, BlockState};
+    use crate::compiler::cost::RestCensus;
+    let base = bell_yard();
+    let mut edited = bell_yard_build();
+    edited.fill([3, 1, 14], [3, 2, 14]);
+    let edited = edited.world(Ambient::Void, Vec::new());
+    let mut store = BlockMap::new();
+    for c in &bell_yard_build().solid {
+        store.insert(*c, BlockState::new("minecraft:stone"));
+    }
+    let (slo, shi) = store.section_bounds().expect("a store with cells");
+    let window = window_box(slo, shi, None);
+    let census = RestCensus::of(
+        &store,
+        window,
+        None,
+        32,
+        LAUNCH_REACH,
+        edges_per_node_at_most(),
+    );
+    let cells = [0, 1, 2]
+        .map(|a| (window.1[a] - window.0[a] + 1) as usize)
+        .iter()
+        .product::<usize>();
+    let bound = scratch_bound_of(
+        census.states_at_most(),
+        census.items_at_most,
+        census.chunk_items_at_most,
+        cells,
+        (window.1[1] - window.0[1] + 1) as usize,
+        launches_per_node(),
+        0,
+        0,
+    );
+    let params = ReachParams::shipped(base.unbounded_fall);
+    let _ = base.body_reach(&[[5, 1, 5]]);
+    let _ = base.body_reach(&[[15, 1, 15]]);
+    let _ = edited.body_reach(&[[5, 1, 5]]);
+    let (ma, me) = (base.graph_memo(&params), edited.graph_memo(&params));
+    assert!(
+        !Arc::ptr_eq(&ma, &me),
+        "the edited yard is a graph of its own"
+    );
+    assert!(Arc::ptr_eq(&ma.bank, &me.bank), "one bank over one window");
+    let (a, e) = (ma.scratch_held(), me.scratch_held());
+    // A page both hold is held once; the bank is one, counted once.
+    let pages = |m: &GraphMemo| -> BTreeSet<(bool, u32)> {
+        m.dense
+            .cells
+            .pages
+            .iter()
+            .map(|p| (true, *p))
+            .chain(m.extra.cells.pages.iter().map(|p| (false, *p)))
+            .collect()
+    };
+    let shared: usize = pages(&ma)
+        .intersection(&pages(&me))
+        .map(|(code, _)| if *code { 4096 * 4 } else { 4096 * 2 })
+        .sum();
+    let held = ScratchBound {
+        snapshot: a.snapshot + e.snapshot - shared,
+        tables: a.tables + e.tables,
+        lists: a.lists + e.lists,
+        bank: a.bank,
+    };
+    let closures = ma.closures.lock().expect("closures").len();
+    assert!(
+        closures >= 2 && e.tables > 0 && e.lists > 0,
+        "the case binds nothing: {closures} closure(s) over the base, the edited yard's tables \
+         {} and lists {}",
+        e.tables,
+        e.lists
+    );
+    for (what, got, at_most) in [
+        ("the snapshot's pages", held.snapshot, bound.snapshot),
+        ("the node tables", held.tables, bound.tables),
+        ("the closures' lists", held.lists, bound.lists),
+        ("the bank's variants", held.bank, bound.bank),
+    ] {
+        assert!(
+            got <= at_most,
+            "two worlds and two closures: {what} hold {got} byte(s) over one configuration's \
+             {at_most}"
+        );
+        eprintln!(
+            "two worlds and two closures: {what} {got} <= {at_most} (x{:.1})",
+            at_most as f64 / got.max(1) as f64
+        );
+    }
 }
 
 /// **What the bank records of a node is the same in every schedule**
