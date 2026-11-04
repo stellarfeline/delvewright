@@ -342,16 +342,6 @@ fn place(own: Option<Arc<Region>>, record: &[u8]) -> Option<Arc<Region>> {
     Some(region)
 }
 
-/// The most arrays alive at once over every store so far, and the most
-/// regions of the scratch file holding one at once.
-#[cfg(test)]
-fn peaks() -> (u64, u64) {
-    (
-        ARRAYS_PEAK.load(Ordering::Relaxed),
-        REGIONS_PEAK.load(Ordering::Relaxed),
-    )
-}
-
 /// Under a test's budget: the regions this thread appended, and the most
 /// arrays alive at once over its stores.
 #[cfg(test)]
@@ -2151,7 +2141,7 @@ mod tests {
                 assert_eq!(n, m.len());
                 // Writes into a third of the held cells: those arrays change.
                 for (i, c) in held.iter().enumerate() {
-                    if (i as u64 + round) % 3 == 0 {
+                    if (i as u64 + round).is_multiple_of(3) {
                         m.insert(*c, (xorshift(&mut seed) % 50) as u32);
                     }
                 }
