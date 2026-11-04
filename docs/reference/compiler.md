@@ -342,8 +342,11 @@ counts depend on the chunk side and are written nowhere in the output tree. A ru
 stores held a section prints `world store pages: R byte(s) resident over S
 section(s) of every store; G array(s) given up, L read back, K of them within
 one turnover of the resident arrays; the need raised T time(s) for a walk found
-thrashing, to N byte(s); B byte(s) in the scratch file (ADR-0037 §1)` beside
-them: a read-back is thrashing when fewer arrays came resident, over every
+thrashing, to N byte(s); B byte(s) in the scratch file in regions of 8192
+byte(s), at most R of them holding a live array at once; at most A array(s)
+alive at once over every store (ADR-0037 §1)` beside them — `B` is what the
+`resource cost:` line's scratch figure bounds, and `A` is the measure of the
+arrays-alive figure it is computed from: a read-back is thrashing when fewer arrays came resident, over every
 store, since it was given up than the need holds, and it was given up under
 the need now stated; a sample of 64 read-backs of which half or more are
 thrashing doubles the need; an array given up long before, or under an
@@ -351,7 +354,7 @@ earlier need, is read back cold, however few of its cells the walk touches. Each
 store need: raised to N byte(s); K of the last R read-back(s) came back within
 one turnover of the resident arrays` as it happens, so the stage lines around
 it name the walk whose working set the need now states.
-The cost is disk: the town's bank (95 places) is 1.8 GB after one check, and grows with each program a place is checked with, since a node keeps up to eight variants.
+The cost is disk: a campaign's bank grows with each program a place is checked with, since a node keeps up to eight variants; what a campaign's bank takes is measured in ADR-0037's record, never stated here.
 
 **The output directory** holds exactly what the last build emitted: a build into a directory a previous build wrote removes every file that build emitted and this one does not, and a directory holding anything no build wrote is refused untouched (`DW0967`, §5).
 
@@ -3756,8 +3759,22 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   in one closure; working set before any walk: the stores' ring + the
   snapshot's pages + the lists' buffered pushes = T byte(s), the lists' largest
   chunk at most L byte(s) by its candidates; summaries at most: K face
-  label(s), C configuration(s); scratch: the stores' … (ADR-0037 §3)` and
-  written as the same numbers. Computed from the site
+  label(s), C configuration(s); scratch: the stores' B byte(s), one region of
+  8192 per array alive at once, at most A — W section(s) of the whole, J of
+  the judged copy, S written section(s) under the write sequence judge's 4
+  stores, and R region section(s) per configuration (ADR-0037 §3)` and
+  written as the same numbers. The scratch figure is an upper bound on the
+  stores' scratch file: the file holds one region per index array alive at
+  once over every store (below), and the arrays alive at once are at most the
+  whole's and the judged copy's sections, the write sequence judge's four
+  stores (the cells the load leaves, kept; one replay's world, its read faces
+  and a function's fall cells) over the sections a build write covers
+  (`Reached::sections_written`, every height), and each configuration's own
+  arrays over the sections its region writes cover (`cost::region_sections`)
+  — a copy of a store shares every array it does not write. The premise
+  variants and counterfactuals the proofs build beside the configurations
+  (`reach graphs:`) are not counted, as the configurations figure declares;
+  each owns at most the region sections it writes. Computed from the site
   plan's region, the horizon, the judged columns, the window those give through
   the snapshot's own rule (`nav::window_box`) and the store — never measured,
   so two builds of one campaign write one file; what a build reached is the
@@ -4566,7 +4583,16 @@ the budget; past it the least recently used arrays over every store in the
 process are written to the stores' one scratch file (the same policy and place
 as the reach graph's) and read back when next asked, the palette and the
 section index staying resident; a walk over a box pins each section's array
-for the slab it reads. **A copy of a store shares every index array with the
+for the slab it reads. **The scratch file holds one region per array alive**
+(`sections::Region`): every region is one size, the wide record's (8192
+bytes); an array keeps its region across read-backs and give-ups — given up
+unchanged, its record stays and nothing is written; changed, the record is
+rewritten into its own region; a region a copy shares is never rewritten
+while the copy holds it — and a region whose last holder drops it serves the
+next array before the file grows. So the file's size is bounded by the most
+arrays alive at once over every store, which the `resource cost:` line bounds
+from the stores before the whole-map stages start, and never by the give-ups
+a run made (`the_scratch_file_holds_one_region_per_array_alive`). **A copy of a store shares every index array with the
 original until one of the two writes it** (`SectionMap::clone`,
 `Section::own`): a whole-world copy — the picture a review world starts from,
 a configuration's bytes, the load world the write judge reads — costs its

@@ -58,6 +58,13 @@ pub struct ResourceCost {
     pub lists_chunk_bound: usize,
     /// How many region writes the path carries.
     pub region_writes: usize,
+    /// The sections a build write covers, at every height
+    /// (`Reached::sections_written`): what the write sequence judge's stores
+    /// lie over.
+    pub written_sections: usize,
+    /// The sections the path's region writes cover: what a configuration's
+    /// own arrays lie over.
+    pub region_sections: usize,
     /// The rest census over the store: where a body can rest at most, per
     /// column, and the bounds it gives the lists and the portal edges.
     pub census: RestCensus,
@@ -314,6 +321,29 @@ impl RestCensus {
 /// checkerboard, half its cells.
 const FACE_LABELS_AT_MOST: usize = 128;
 
+/// The write sequence judge's stores over the written sections at most
+/// (`compiler::attached`): the cells the load leaves, kept; and one replay's
+/// world, its read faces and a function's fall cells.
+const JUDGE_STORES: usize = 4;
+
+/// How many sections the inclusive boxes `regions` cover between them.
+pub fn region_sections(regions: impl IntoIterator<Item = ([i32; 3], [i32; 3])>) -> usize {
+    use crate::compiler::sections::SIDE;
+    let mut sections: std::collections::BTreeSet<[i32; 3]> = std::collections::BTreeSet::new();
+    for (a, b) in regions {
+        let lo = [0, 1, 2].map(|i| a[i].min(b[i]).div_euclid(SIDE));
+        let hi = [0, 1, 2].map(|i| a[i].max(b[i]).div_euclid(SIDE));
+        for sx in lo[0]..=hi[0] {
+            for sy in lo[1]..=hi[1] {
+                for sz in lo[2]..=hi[2] {
+                    sections.insert([sx, sy, sz]);
+                }
+            }
+        }
+    }
+    sections.len()
+}
+
 impl ResourceCost {
     /// The cost of building `plan` over `whole`, cut to `judged` when the
     /// boundary cuts it.
@@ -383,6 +413,8 @@ impl ResourceCost {
             lists_floor,
             lists_chunk_bound,
             region_writes: plan.region_events.writes(),
+            written_sections: whole.reached.sections_written(),
+            region_sections: region_sections(plan.region_events.iter().map(|e| e.region)),
             census,
         }
     }
@@ -443,9 +475,35 @@ impl ResourceCost {
         self.store_ring + self.snapshot_need + self.lists_floor
     }
 
-    /// The stores' scratch file at most: every array of both stores given up.
+    /// **The stores' scratch file at most** (ADR-0037 §1, §3): the file holds
+    /// one region of [`crate::compiler::sections::REGION`] bytes per array
+    /// alive at once over every store, so its size is bounded by the most
+    /// arrays the build holds at once — [`Self::arrays_at_most`] — and never
+    /// by the give-ups a run made.
     pub fn store_scratch_bytes(&self) -> usize {
-        self.store_bytes + self.judged_bytes
+        self.arrays_at_most()
+            .saturating_mul(crate::compiler::sections::REGION)
+    }
+
+    /// **The most index arrays alive at once over every store**, from the
+    /// stores the stages lay over the written world: the whole and the judged
+    /// copy, held throughout; the write sequence judge's stores — the cells
+    /// the load leaves, kept for the runtime arm, and one replay's world, its
+    /// read faces and a function's fall cells, each over the sections a build
+    /// write covers at most (a replay grown to the whole load holds them
+    /// all); and each configuration's own arrays, which lie over the sections
+    /// its region writes cover. A copy of a store shares every array it does
+    /// not write (ADR-0037 §1), so a configuration costs its writes and a
+    /// light model or review world over a shared picture costs nothing here.
+    /// Not counted, declared: the premise variants and counterfactuals the
+    /// proofs build beside the configurations (`reach graphs:`), each owning
+    /// at most the region sections it writes — a residue of the same kind the
+    /// configurations figure declares.
+    pub fn arrays_at_most(&self) -> usize {
+        self.store_sections
+            + self.judged_sections
+            + JUDGE_STORES * self.written_sections
+            + self.configurations_at_most() * self.region_sections
     }
 
     /// The one line, printed before the whole-map stages start.
@@ -477,8 +535,10 @@ impl ResourceCost {
              walk: the stores' ring {} + the snapshot's pages {} + the lists' buffered pushes \
              {} = {} byte(s), the lists' largest chunk at most {} byte(s) by its candidates; \
              summaries at most: {} face label(s), {} configuration(s); \
-             scratch: the stores' {} byte(s) over {} section(s) of the whole and {} of the judged \
-             copy (ADR-0037 §3)",
+             scratch: the stores' {} byte(s), one region of {} per array alive at once, at most {} \
+             — {} section(s) of the whole, {} of the judged copy, {} written section(s) under the \
+             write sequence judge's {} stores, and {} region section(s) per configuration \
+             (ADR-0037 §3)",
             self.horizon,
             self.window_cells(),
             d[0],
@@ -504,8 +564,13 @@ impl ResourceCost {
             self.face_labels_at_most(),
             self.configurations_at_most(),
             self.store_scratch_bytes(),
+            crate::compiler::sections::REGION,
+            self.arrays_at_most(),
             self.store_sections,
             self.judged_sections,
+            self.written_sections,
+            JUDGE_STORES,
+            self.region_sections,
         )
     }
 
@@ -547,10 +612,15 @@ impl ResourceCost {
             },
             "scratch_bytes": {
                 "stores": self.store_scratch_bytes(),
+                "region_bytes": crate::compiler::sections::REGION,
+                "arrays_at_most": self.arrays_at_most(),
                 "store_sections": self.store_sections,
                 "store_bytes": self.store_bytes,
                 "judged_sections": self.judged_sections,
                 "judged_bytes": self.judged_bytes,
+                "written_sections": self.written_sections,
+                "judge_stores": JUDGE_STORES,
+                "region_sections": self.region_sections,
             },
         })
     }
@@ -582,6 +652,8 @@ mod tests {
             lists_floor: 2_000,
             lists_chunk_bound: 3_000,
             region_writes: 4,
+            written_sections: 12,
+            region_sections: 3,
             census: RestCensus {
                 columns: 118 * 218,
                 standing: 500,
@@ -612,13 +684,32 @@ mod tests {
         assert_eq!(c.face_labels_at_most(), 8 * 6 * 128);
         assert_eq!(c.configurations_at_most(), 5);
         assert_eq!(c.working_set_floor(), 224_184);
-        assert_eq!(c.store_scratch_bytes(), 73_728);
+        assert_eq!(
+            c.arrays_at_most(),
+            10 + 8 + 4 * 12 + 5 * 3,
+            "the whole, the judged copy, the judge's four stores over the written sections, \
+             a configuration's region sections each"
+        );
+        assert_eq!(
+            c.store_scratch_bytes(),
+            81 * crate::compiler::sections::REGION
+        );
+        assert_eq!(
+            region_sections([
+                ([0, 0, 0], [15, 15, 15]),
+                ([15, 0, 15], [16, 0, 16]),
+                ([3, 3, 3], [4, 4, 4])
+            ]),
+            4,
+            "two boxes sharing a section, one straddling three more"
+        );
         let line = c.line();
         let json = c.to_json();
         for (word, n) in [
             ("reached and plain-sea bitmaps", c.reached_bitmap_bytes()),
             ("portal edge(s)", c.portal_edges_at_most()),
             ("face label(s)", c.face_labels_at_most()),
+            ("scratch: the stores'", c.store_scratch_bytes()),
         ] {
             assert!(
                 line.contains(&n.to_string()),
@@ -630,6 +721,8 @@ mod tests {
             c.portal_edges_at_most()
         );
         assert_eq!(json["working_set_bytes"]["total_before_any_walk"], 224_184);
+        assert_eq!(json["scratch_bytes"]["stores"], c.store_scratch_bytes());
+        assert_eq!(json["scratch_bytes"]["arrays_at_most"], 81);
         assert_eq!(json["computed_never_measured"], true);
     }
 

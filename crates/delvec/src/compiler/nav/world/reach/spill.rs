@@ -98,6 +98,37 @@ impl Spill {
         Ok((at, len))
     }
 
+    /// Write `bytes` over a region written before, at `at`: the region's
+    /// owner reuses it for a new record of the same array, so the file holds
+    /// one region per array and not one per give-up. The region must lie
+    /// within what was appended; positional, as [`Spill::append`] is.
+    pub(crate) fn write_at(&mut self, at: u64, bytes: &[u8]) -> std::io::Result<()> {
+        let end = at.saturating_add(bytes.len() as u64);
+        if end > self.len {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "a region rewritten lies within the file",
+            ));
+        }
+        let mut done = 0;
+        while done < bytes.len() {
+            #[cfg(unix)]
+            let n =
+                std::os::unix::fs::FileExt::write_at(&self.file, &bytes[done..], at + done as u64)?;
+            #[cfg(windows)]
+            let n = std::os::windows::fs::FileExt::seek_write(
+                &self.file,
+                &bytes[done..],
+                at + done as u64,
+            )?;
+            if n == 0 {
+                return Err(std::io::ErrorKind::WriteZero.into());
+            }
+            done += n;
+        }
+        Ok(())
+    }
+
     /// The `len` bytes at `at`, read at their offset without moving the
     /// file's cursor.
     pub(crate) fn read(&self, at: u64, len: u32) -> std::io::Result<Vec<u8>> {

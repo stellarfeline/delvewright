@@ -253,3 +253,37 @@ def test_the_rebuild_refuses_a_point_the_run_did_not_measure(tmp_path, capsys):
 def test_the_report_names_the_commit_it_measured():
     src = (TOOLS / "ci" / "gallery-baseline.py").read_text()
     assert '{"tree": head["header"]["commit"], "manifests": head["manifests"]}' in src
+
+
+PAGES = (
+    "world store pages: 0 byte(s) resident over 0 section(s) of every store; 1200 array(s) given "
+    "up, 1100 read back, 9 of them within one turnover of the resident arrays; the need raised 2 "
+    "time(s) for a walk found thrashing, to 884736 byte(s); 65536 byte(s) in the scratch file in "
+    "regions of 8192 byte(s), at most 8 of them holding a live array at once; at most 9 array(s) "
+    "alive at once over every store (ADR-0037 §1)"
+)
+LEDGER = {"computed_never_measured": True, "scratch_bytes": {"stores": 81920}}
+
+
+def test_a_scratch_file_within_the_stated_cost_is_green():
+    assert BUILD.scratch_within_stated("other: line\n" + PAGES + "\n", LEDGER) == []
+
+
+def test_a_scratch_file_past_the_stated_cost_is_red():
+    reds = BUILD.scratch_within_stated(PAGES, {"computed_never_measured": True, "scratch_bytes": {"stores": 65535}})
+    assert len(reds) == 1 and "65536 byte(s) against the 65535" in reds[0]
+
+
+def test_a_build_without_the_pages_line_binds_nothing_and_is_red():
+    assert BUILD.scratch_within_stated("reach budget: nothing\n", LEDGER) == [
+        "0 `world store pages:` line(s) on stderr; one is read"
+    ]
+    assert BUILD.scratch_within_stated(PAGES + "\n" + PAGES, LEDGER)[0].startswith("2 `world store pages:`")
+
+
+def test_a_ledger_without_the_figure_or_measured_is_red():
+    assert BUILD.scratch_within_stated(PAGES, {"computed_never_measured": True}) == [
+        "`validation/resource-cost.json` carries no `scratch_bytes.stores`"
+    ]
+    reds = BUILD.scratch_within_stated(PAGES, {"computed_never_measured": False, "scratch_bytes": {"stores": 0}})
+    assert len(reds) == 2 and "computed_never_measured" in reds[0] and "not a positive" in reds[1]
