@@ -296,25 +296,26 @@ SCRATCH = (
     "98316170 kept at the end; the snapshot's 5865472 written, at most 5865472 long, 5865472 kept at the end "
     "(ADR-0037 §2)"
 )
-REACH_LEDGER = {"computed_never_measured": True, "scratch_bytes": {"reach_graph": 334115289 + 5865472}}
+REACH_USED = 334115289 + 98383836 + 5865472
+REACH_LEDGER = {"computed_never_measured": True, "scratch_bytes": {"reach_graph": REACH_USED}}
 
 
-def test_the_reach_files_within_the_stated_cost_are_green_and_the_bank_is_beside():
+def test_the_three_reach_files_within_the_stated_cost_are_green():
     reds, binding = BUILD.reach_scratch_within_stated("other: line\n" + SCRATCH + "\n", REACH_LEDGER)
     assert reds == []
-    assert "339980761 byte(s) at most on disk" in binding and "the bank's 98383836 beside, not bounded" in binding
+    assert f"{REACH_USED} byte(s) at most on disk" in binding and "the bank's 98383836" in binding
 
 
 def test_the_reach_files_past_the_stated_cost_are_red_by_one_byte():
-    ledger = {"computed_never_measured": True, "scratch_bytes": {"reach_graph": 334115289 + 5865472 - 1}}
+    ledger = {"computed_never_measured": True, "scratch_bytes": {"reach_graph": REACH_USED - 1}}
     reds, _ = BUILD.reach_scratch_within_stated(SCRATCH, ledger)
-    assert len(reds) == 1 and reds[0].startswith("the reach graph's scratch files took 339980761 byte(s)")
+    assert len(reds) == 1 and reds[0].startswith(f"the reach graph's scratch files took {REACH_USED} byte(s)")
 
 
-def test_the_bank_is_not_held_to_the_reach_figure():
-    ledger = {"computed_never_measured": True, "scratch_bytes": {"reach_graph": 339980761}}
-    big_bank = SCRATCH.replace("at most 98383836 long", "at most 98383836000 long")
-    assert BUILD.reach_scratch_within_stated(big_bank, ledger)[0] == []
+def test_the_bank_is_held_to_the_reach_figure():
+    big_bank = SCRATCH.replace("at most 98383836 long", "at most 98383837 long")
+    reds, _ = BUILD.reach_scratch_within_stated(big_bank, REACH_LEDGER)
+    assert len(reds) == 1 and "took " + str(REACH_USED + 1) in reds[0]
 
 
 def test_a_build_without_the_reach_scratch_line_or_a_file_binds_nothing_and_is_red():

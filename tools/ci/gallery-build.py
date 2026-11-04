@@ -206,8 +206,7 @@ def scratch_within_stated(stderr: str, ledger: dict) -> list[str]:
     return reds
 
 
-REACH_FILES = ("the lists' and tables'", "the snapshot's")
-BANK_FILE = "the bank's"
+REACH_FILES = ("the lists' and tables'", "the bank's", "the snapshot's")
 
 
 def reach_file_longest(line: str, name: str) -> int | None:
@@ -220,16 +219,14 @@ def reach_scratch_within_stated(stderr: str, ledger: dict) -> tuple[list[str], s
     """The reach graph's scratch files a build used, against the cost it stated.
 
     ADR-0037 §3: `validation/resource-cost.json` states, computed before the
-    whole-map stages start, the most bytes the reach graph's scratch files
-    the plan bounds can take (`scratch_bytes.reach_graph`: the snapshot's
-    pages, the node tables and one closure's lists, per configuration); the
-    `reach scratch:` line states, as the run ends, the longest each file was.
-    The lists' and tables' file and the snapshot's are held to the figure,
-    summed; the bank's file is not bounded by the plan (it holds what the
-    launches' simulation read) and is reported beside. Returns the red lines
-    and the binding to print: a build that printed no `reach scratch:` line,
-    a line naming no such file, or a ledger without the figure binds nothing
-    and is red.
+    whole-map stages start, the most bytes the reach graph's three scratch
+    files can take (`scratch_bytes.reach_graph`: the snapshot's pages, the
+    node tables, one closure's lists and the bank's variants, per
+    configuration); the `reach scratch:` line states, as the run ends, the
+    longest each file was. The three are held to the figure, summed. Returns
+    the red lines and the binding to print: a build that printed no `reach
+    scratch:` line, a line naming no such file, or a ledger without the
+    figure binds nothing and is red.
     """
     lines = [l for l in stderr.splitlines() if l.startswith("reach scratch: ")]
     if len(lines) != 1:
@@ -239,7 +236,6 @@ def reach_scratch_within_stated(stderr: str, ledger: dict) -> tuple[list[str], s
     if missing:
         return [f"the reach scratch line names no longest for {', '.join(missing)}: {lines[0]}"], ""
     used = sum(n for n in longest.values() if n is not None)
-    bank = reach_file_longest(lines[0], BANK_FILE)
     try:
         stated = ledger["scratch_bytes"]["reach_graph"]
         computed = ledger["computed_never_measured"] is True
@@ -258,8 +254,7 @@ def reach_scratch_within_stated(stderr: str, ledger: dict) -> tuple[list[str], s
     parts = "; ".join(f"{name} {n}" for name, n in longest.items())
     binding = (
         f"scratch within the stated cost: the reach graph's files {used} byte(s) at most on disk "
-        f"({parts}) against {stated} stated; the bank's "
-        f"{bank if bank is not None else 'none'} beside, not bounded (ADR-0037 §3)."
+        f"({parts}) against {stated} stated (ADR-0037 §3)."
     )
     return reds, binding
 
