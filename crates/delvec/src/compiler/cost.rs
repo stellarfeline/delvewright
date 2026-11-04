@@ -134,7 +134,7 @@ fn rest_of(name: &str) -> Rest {
 }
 
 /// Whether a block is ground: a cell of the sea's band holding one is no
-/// water (`World::ambient_water` refuses an occupied cell), so it leaves the
+/// water (`World::ambient_water` refuses a solid or 1.5-tall cell), so it leaves the
 /// band's count. A door or trapdoor is not: the nav world may still read the
 /// cell as water, and the census stays an upper bound.
 fn ground(name: &str) -> bool {
