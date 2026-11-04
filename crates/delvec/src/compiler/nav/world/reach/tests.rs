@@ -1085,8 +1085,15 @@ fn a_second_world_and_a_second_closure_stay_under_one_configurations_bound() {
     edited.fill([3, 1, 14], [3, 2, 14]);
     let edited = edited.world(Ambient::Void, Vec::new());
     let mut store = BlockMap::new();
-    for c in &bell_yard_build().solid {
-        store.insert(*c, BlockState::new("minecraft:stone"));
+    let b = bell_yard_build();
+    for (cells, name) in [
+        (&b.solid, "minecraft:stone"),
+        (&b.tall, "minecraft:oak_fence"),
+        (&b.water, "minecraft:water"),
+    ] {
+        for c in cells {
+            store.insert(*c, BlockState::new(name));
+        }
     }
     let (slo, shi) = store.section_bounds().expect("a store with cells");
     let window = window_box(slo, shi, None);
