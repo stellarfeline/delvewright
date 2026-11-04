@@ -34,7 +34,7 @@
 //! outside the table's lock.
 
 use super::budget;
-use super::persist::{Dec, Enc};
+use super::persist::{CELL_RECORD, Dec, EDGE_RECORD, Enc, NODE_EDGES_RECORD};
 use super::spill::{Extent, Reader, Spill, Usage};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -297,6 +297,17 @@ impl<V> Default for Chunk<V> {
 /// map's slot.
 const ENTRY: usize = 64;
 
+/// **What the scratch file holds per record** (ADR-0037 §3, the cost's
+/// reach-scratch bound): a successor list's record is the node's cell and the
+/// edge; a predecessor list's the node's cell, the predecessor's cell and the
+/// edge ([`Inner::push`] writes the cell, then the item); a node table's entry
+/// the quadrants flown and the node's edges, each edge [`TABLE_EDGE`] more.
+/// Held to the writer by `table_tests::a_record_takes_what_the_cost_counts`.
+pub(super) const SUCC_RECORD: usize = CELL_RECORD + EDGE_RECORD;
+pub(super) const PRED_RECORD: usize = 2 * CELL_RECORD + EDGE_RECORD;
+pub(super) const TABLE_ENTRY: usize = 2 + NODE_EDGES_RECORD;
+pub(super) const TABLE_EDGE: usize = EDGE_RECORD;
+
 impl<V: Item> Chunk<V> {
     fn held(&self) -> usize {
         self.pending.capacity() + self.decoded
@@ -551,6 +562,20 @@ impl<V: Item> Lists<V> {
         self.inner.lock().expect("lists").side
     }
 
+    /// The bytes this list's records take in the file, the buffered ones
+    /// counted as if written: what the cost's reach-scratch bound covers.
+    #[cfg(test)]
+    pub(super) fn spilled_bytes(&self) -> u64 {
+        let g = self.inner.lock().expect("lists");
+        g.chunks
+            .values()
+            .map(|ch| {
+                ch.segments.iter().map(|s| u64::from(s.at().1)).sum::<u64>()
+                    + ch.pending.len() as u64
+            })
+            .sum()
+    }
+
     /// Every record of every chunk written to the file now.
     #[cfg(test)]
     fn segments(&self) -> Vec<Weak<Extent>> {
@@ -801,6 +826,18 @@ impl<V: Item> Default for Table<V> {
 }
 
 impl<V: Item> Table<V> {
+    /// The bytes this table's records take in the file (or hold, without
+    /// one): what the cost's reach-scratch bound covers.
+    #[cfg(test)]
+    pub(super) fn spilled_bytes(&self) -> u64 {
+        let ix = self.index.lock().expect("table");
+        ix.first
+            .values()
+            .flat_map(|m| m.values().map(|w| u64::from(unpack(*w).len)))
+            .chain(ix.more.values().flatten().map(|s| u64::from(s.len)))
+            .sum()
+    }
+
     /// What `f` makes of `c`'s entries, in the order they were kept.
     pub(super) fn with<R>(&self, c: [i32; 3], f: impl FnOnce(&[V]) -> R) -> R {
         let slots = {
@@ -899,6 +936,41 @@ impl Item for (super::Quadrants, super::NodeEdges) {
 mod table_tests {
     use super::{Dec, Enc, Extent, Item, Lists, PENDING, PIECES, Table, Weak};
     use std::collections::BTreeMap;
+
+    /// **A record takes what the cost counts** (ADR-0037 §3): a successor
+    /// list's record, a predecessor list's and a node table's entry with two
+    /// edges, each written as the lists and the tables write it and measured
+    /// in the file. Red if the writers and the constants part.
+    #[test]
+    fn a_record_takes_what_the_cost_counts() {
+        use super::{PRED_RECORD, SUCC_RECORD, TABLE_EDGE, TABLE_ENTRY};
+        use crate::compiler::nav::world::reach::{Edge, EdgeKind, NodeEdges, RestKind};
+        let edge = Edge {
+            to: [4, 5, 6],
+            kind: EdgeKind::Jump,
+            yaw: Some(45),
+            sprint: false,
+        };
+        let succ: Lists<Edge> = Lists::new(32);
+        succ.push([1, 2, 3], edge.clone());
+        assert_eq!(succ.spilled_bytes(), SUCC_RECORD as u64);
+        let preds: Lists<([i32; 3], Edge)> = Lists::new(32);
+        preds.push([1, 2, 3], ([7, 8, 9], edge.clone()));
+        assert_eq!(preds.spilled_bytes(), PRED_RECORD as u64);
+        let table: Table<(u16, NodeEdges)> = Table::default();
+        let e = NodeEdges {
+            kind: Some(RestKind::Standing),
+            edges: vec![edge.clone(), edge],
+            leaves_world: false,
+            open_sea: false,
+            dies: None,
+            simulated: 1,
+            credited: 2,
+            read: Some(([0, 0, 0], [2, 2, 2])),
+        };
+        table.find_or_push([1, 2, 3], |_| false, (0, e));
+        assert_eq!(table.spilled_bytes(), (TABLE_ENTRY + 2 * TABLE_EDGE) as u64);
+    }
 
     #[derive(Clone, Debug, PartialEq)]
     struct Rec([i32; 3]);

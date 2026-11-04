@@ -206,6 +206,64 @@ def scratch_within_stated(stderr: str, ledger: dict) -> list[str]:
     return reds
 
 
+REACH_FILES = ("the lists' and tables'", "the snapshot's")
+BANK_FILE = "the bank's"
+
+
+def reach_file_longest(line: str, name: str) -> int | None:
+    """The `at most L long` figure of file `name` on a `reach scratch:` line; None when absent."""
+    m = re.search(re.escape(name) + r" (\d+) written, at most (\d+) long", line)
+    return int(m.group(2)) if m else None
+
+
+def reach_scratch_within_stated(stderr: str, ledger: dict) -> tuple[list[str], str]:
+    """The reach graph's scratch files a build used, against the cost it stated.
+
+    ADR-0037 §3: `validation/resource-cost.json` states, computed before the
+    whole-map stages start, the most bytes the reach graph's scratch files
+    the plan bounds can take (`scratch_bytes.reach_graph`: the snapshot's
+    pages, the node tables and one closure's lists, per configuration); the
+    `reach scratch:` line states, as the run ends, the longest each file was.
+    The lists' and tables' file and the snapshot's are held to the figure,
+    summed; the bank's file is not bounded by the plan (it holds what the
+    launches' simulation read) and is reported beside. Returns the red lines
+    and the binding to print: a build that printed no `reach scratch:` line,
+    a line naming no such file, or a ledger without the figure binds nothing
+    and is red.
+    """
+    lines = [l for l in stderr.splitlines() if l.startswith("reach scratch: ")]
+    if len(lines) != 1:
+        return [f"{len(lines)} `reach scratch:` line(s) on stderr; one is read"], ""
+    longest = {name: reach_file_longest(lines[0], name) for name in REACH_FILES}
+    missing = [name for name, n in longest.items() if n is None]
+    if missing:
+        return [f"the reach scratch line names no longest for {', '.join(missing)}: {lines[0]}"], ""
+    used = sum(n for n in longest.values() if n is not None)
+    bank = reach_file_longest(lines[0], BANK_FILE)
+    try:
+        stated = ledger["scratch_bytes"]["reach_graph"]
+        computed = ledger["computed_never_measured"] is True
+    except (KeyError, TypeError):
+        return ["`validation/resource-cost.json` carries no `scratch_bytes.reach_graph`"], ""
+    reds: list[str] = []
+    if not computed:
+        reds.append("the ledger does not say `computed_never_measured`: the bound is not the plan's")
+    if not isinstance(stated, int) or stated <= 0:
+        reds.append(f"the stated reach scratch bound is `{stated}`, not a positive byte count")
+    elif used > stated:
+        reds.append(
+            f"the reach graph's scratch files took {used} byte(s) at most on disk against the "
+            f"{stated} the cost stated: a host provisioning the stated figure runs out of disk (ADR-0037 §3)"
+        )
+    parts = "; ".join(f"{name} {n}" for name, n in longest.items())
+    binding = (
+        f"scratch within the stated cost: the reach graph's files {used} byte(s) at most on disk "
+        f"({parts}) against {stated} stated; the bank's "
+        f"{bank if bank is not None else 'none'} beside, not bounded (ADR-0037 §3)."
+    )
+    return reds, binding
+
+
 def build(delvec: Path, src: Path, out: Path, prefabs: Path, lang: str) -> str:
     # Not cleared first: `delvec build` replaces a tree it wrote and refuses
     # (`DW0967`) a directory holding anything else, which a silent `rmtree` of
@@ -293,6 +351,10 @@ def main() -> int:
         f"{re.search(r'; (\d+) byte\(s\) in the scratch file', stderr).group(1)} byte(s) against "
         f"{ledger['scratch_bytes']['stores']} stated (ADR-0037 §3)."
     )
+    reds, binding = reach_scratch_within_stated(stderr, ledger)
+    if reds:
+        die("the build's reach scratch files against its stated cost: " + "; ".join(reds))
+    print(binding)
 
     manifest_path = out / "manifest.json"
     if not manifest_path.is_file():

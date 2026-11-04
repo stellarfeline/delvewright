@@ -150,6 +150,16 @@ pub(super) fn store(key: &str, sections: &mut dyn Iterator<Item = Section>) {
 
 // --------------------------------------------------------------- the format
 
+/// **What a record takes in a scratch file**, in bytes, for the cost the
+/// engine states before the proofs run (`compiler::cost`, ADR-0037 §3): a
+/// cell is three `i32`s; an edge its cell, a kind byte, a yaw (a flag and,
+/// flown, an `i16`) and a sprint byte; a node's edges a kind byte, a count,
+/// the edges, three flags, two `u64`s and a read box (a flag and two cells).
+/// Held to the encoder by `record_sizes::the_record_sizes_are_the_encoders`.
+pub(super) const CELL_RECORD: usize = 3 * 4;
+pub(super) const EDGE_RECORD: usize = CELL_RECORD + 1 + (1 + 2) + 1;
+pub(super) const NODE_EDGES_RECORD: usize = 1 + 8 + 1 + 1 + 1 + 8 + 8 + (1 + 2 * CELL_RECORD);
+
 /// The writer of the format; [`super::chunks`] writes its records with it too.
 #[derive(Default)]
 pub(super) struct Enc(pub(super) Vec<u8>);
@@ -565,4 +575,46 @@ pub(super) fn read_bytes(key: &str, bytes: &[u8]) -> Option<usize> {
     let mut n = 0;
     read_from(&mut &bytes[..], key, &mut |s| n += s.len())?;
     Some(n)
+}
+
+#[cfg(test)]
+mod record_sizes {
+    use super::{CELL_RECORD, EDGE_RECORD, Enc, NODE_EDGES_RECORD};
+    use crate::compiler::nav::world::reach::{Edge, EdgeKind, NodeEdges, RestKind};
+
+    /// **The record sizes the cost reads are the encoder's**: a cell, an
+    /// edge flown at a yaw, and a node's edges with a read box and three
+    /// edges, each encoded and measured. Red if the format moves and the
+    /// constants do not.
+    #[test]
+    fn the_record_sizes_are_the_encoders() {
+        let edge = Edge {
+            to: [1, -2, 3],
+            kind: EdgeKind::Jump,
+            yaw: Some(-90),
+            sprint: true,
+        };
+        let mut e = Enc::default();
+        e.cell([7, 8, 9]);
+        assert_eq!(e.0.len(), CELL_RECORD);
+        let mut e = Enc::default();
+        e.edge(&edge);
+        assert_eq!(
+            e.0.len(),
+            EDGE_RECORD,
+            "an edge flown at a yaw is the widest edge"
+        );
+        let mut e = Enc::default();
+        e.node_edges(&NodeEdges {
+            kind: Some(RestKind::Standing),
+            edges: vec![edge.clone(), edge.clone(), edge],
+            leaves_world: true,
+            open_sea: false,
+            dies: None,
+            simulated: 5,
+            credited: 6,
+            read: Some(([0, 0, 0], [1, 1, 1])),
+        });
+        assert_eq!(e.0.len(), NODE_EDGES_RECORD + 3 * EDGE_RECORD);
+    }
 }

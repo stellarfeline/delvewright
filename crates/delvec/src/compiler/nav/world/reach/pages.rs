@@ -153,7 +153,7 @@ const FLOOR: usize = 64;
 /// How many 3 × 3 rings the need holds: one per thread expanding a chunk.
 const RINGS: usize = 4;
 /// The bytes a cell costs over both value types.
-const CELL_BYTES: usize = 4 + 2;
+pub(super) const CELL_BYTES: usize = 4 + 2;
 
 /// The snapshot's stated need: [`RINGS`] 3 × 3 rings of the tallest window,
 /// over both value types.

@@ -654,7 +654,11 @@ mod tests {
             );
         }
         drop(dropped);
-        let last = regions.iter().map(|(at, _)| at + REGION as u64).max().unwrap_or(0);
+        let last = regions
+            .iter()
+            .map(|(at, _)| at + REGION as u64)
+            .max()
+            .unwrap_or(0);
         assert_eq!(
             (s.len(), on_disk(&s)),
             (last, last),
@@ -664,7 +668,16 @@ mod tests {
             s.write_at(last - 1, &[0; 2]).is_err(),
             "a rewrite past the end is refused"
         );
-        assert_eq!(s.read(last - 1, 1).expect("a read"), vec![regions.iter().find(|(at, _)| at + REGION as u64 == last).expect("the last region").1]);
+        assert_eq!(
+            s.read(last - 1, 1).expect("a read"),
+            vec![
+                regions
+                    .iter()
+                    .find(|(at, _)| at + REGION as u64 == last)
+                    .expect("the last region")
+                    .1
+            ]
+        );
         eprintln!(
             "regions: {} kept, {rewrites} rewrite(s), {given_back} record(s) given back, {reused} \
              written into room given back, the file at most {} long",

@@ -819,7 +819,12 @@ fn a_taller_block_keeps_the_window() {
 /// candidates, every chunk's lists decode to at most the census's bound for a
 /// chunk, and the portal edges joined are at most its bound — each world's
 /// store read by the census as the cost reads it, over the window the cost
-/// takes. The factor of each bound over the measure is printed.
+/// takes. And what the graph holds in the reach scratch files — its
+/// snapshot's pages, its two node tables and its closure's lists, each read
+/// from the records the structures hold (`GraphMemo::scratch_held`) — is at
+/// most the cost's per-configuration bound for each (`scratch_bound_of`),
+/// red on any of the three passing its term. The factor of each bound over
+/// the measure is printed.
 #[test]
 fn the_costs_bounds_hold_over_the_graphs_built() {
     use crate::compiler::blockstate::{BlockMap, BlockState};
@@ -922,6 +927,7 @@ fn the_costs_bounds_hold_over_the_graphs_built() {
     ];
     let edges = edges_per_node_at_most();
     let (mut bound_states, mut bound_lists, mut bound_portals) = (0usize, 0usize, 0u64);
+    let mut bound_scratch = ScratchBound::default();
     for (name, w, store, sea, root) in &worlds {
         let (slo, shi) = store.section_bounds().expect("a store with cells");
         let window = window_box(slo, shi, *sea);
@@ -930,6 +936,61 @@ fn the_costs_bounds_hold_over_the_graphs_built() {
             chunks::at_side(side, || {
                 let r = w.body_reach(&[*root]);
                 let states = r.states.len();
+                // The scratch the graph holds, against the bound for one
+                // configuration (one world, one closure).
+                let memo = w.graph_memo(&ReachParams::shipped(w.unbounded_fall));
+                // The lists are this closure's own: another test's closure
+                // over the same world is kept by the same memo.
+                let held = ScratchBound {
+                    lists: r.spilled_bytes() as usize,
+                    ..memo.scratch_held()
+                };
+                let cells = [0, 1, 2]
+                    .map(|a| (window.1[a] - window.0[a] + 1) as usize)
+                    .iter()
+                    .product::<usize>();
+                assert_eq!(
+                    memo.dense
+                        .dims
+                        .iter()
+                        .map(|d| *d as usize)
+                        .product::<usize>(),
+                    cells,
+                    "{name} (side {side}): the window the cost takes is the graph's"
+                );
+                let bound = scratch_bound_of(
+                    census.states_at_most(),
+                    census.items_at_most,
+                    census.chunk_items_at_most,
+                    cells,
+                );
+                for (what, got, at_most) in [
+                    ("the snapshot's pages", held.snapshot, bound.snapshot),
+                    ("the node tables", held.tables, bound.tables),
+                    ("the closure's lists", held.lists, bound.lists),
+                ] {
+                    assert!(
+                        got <= at_most,
+                        "{name} (side {side}): {what} hold {got} byte(s) in the scratch file over \
+                         the cost's {at_most}"
+                    );
+                }
+                eprintln!(
+                    "{name} (side {side}): scratch snapshot {} <= {} (x{:.1}); tables {} <= {} \
+                     (x{:.1}); lists {} <= {} (x{:.1})",
+                    held.snapshot,
+                    bound.snapshot,
+                    bound.snapshot as f64 / held.snapshot.max(1) as f64,
+                    held.tables,
+                    bound.tables,
+                    bound.tables as f64 / held.tables.max(1) as f64,
+                    held.lists,
+                    bound.lists,
+                    bound.lists as f64 / held.lists.max(1) as f64,
+                );
+                bound_scratch.snapshot += held.snapshot;
+                bound_scratch.tables += held.tables;
+                bound_scratch.lists += held.lists;
                 assert!(
                     states <= census.states_at_most(),
                     "{name} (side {side}): {states} states over the census's {}",
@@ -980,6 +1041,11 @@ fn the_costs_bounds_hold_over_the_graphs_built() {
     assert!(
         bound_states > 0 && bound_lists > 0 && bound_portals > 0,
         "the worlds bind nothing"
+    );
+    assert!(
+        bound_scratch.snapshot > 0 && bound_scratch.tables > 0 && bound_scratch.lists > 0,
+        "the graphs hold nothing in the scratch files: the scratch bound binds nothing \
+         ({bound_scratch:?})"
     );
 }
 

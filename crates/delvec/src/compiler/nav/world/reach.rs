@@ -372,12 +372,71 @@ pub(crate) fn chunk_side() -> i32 {
     chunks::SIDE
 }
 
+/// The most cell-relation moves out of one node: the walk and the fall to
+/// the eight columns round a cell at three heights, two climb moves, six
+/// dives.
+const CELL_MOVES: usize = 8 * 3 + 2 + 6;
+
 /// How many launches the shipped launch set flies out of a standing node, and
-/// the most cell-relation moves beside them (the walk and the fall to the
-/// eight columns round a cell at three heights, two climb moves, six dives):
-/// the most edges a node's list can hold.
+/// the most cell-relation moves beside them ([`CELL_MOVES`]): the most edges a
+/// node's list can hold.
 pub(crate) fn edges_per_node_at_most() -> usize {
-    launch_set(false, FACING_STEP_DEG, &[-1.0, 0.0, 1.0]).len() + 8 * 3 + 2 + 6
+    launch_set(false, FACING_STEP_DEG, &[-1.0, 0.0, 1.0]).len() + CELL_MOVES
+}
+
+/// **The reach graph's scratch files for one world, bounded** (ADR-0037 §3):
+/// what the files hold for a graph over one world whose closure reached every
+/// rest candidate with every edge its envelope allows — the figure the cost
+/// states per configuration (`compiler::cost`), never measured.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct ScratchBound {
+    /// The snapshot's pages: every page of the window's two arrays, once.
+    pub snapshot: usize,
+    /// The node tables: an entry per candidate in each of the two, the
+    /// cell-relation edges in one and every edge in the other.
+    pub tables: usize,
+    /// One closure's successor and predecessor lists, a record per edge in
+    /// each, and one chunk's records once more (a chunk rewritten whole takes
+    /// its room before its pieces free).
+    pub lists: usize,
+}
+
+impl ScratchBound {
+    pub(crate) fn total(&self) -> usize {
+        self.snapshot
+            .saturating_add(self.tables)
+            .saturating_add(self.lists)
+    }
+}
+
+/// The bound for a world of `cells` window cells whose census holds `states`
+/// rest candidates with `items` edges in all, at most `chunk_items` of them
+/// in one reach chunk ([`ScratchBound`]).
+pub(crate) fn scratch_bound_of(
+    states: usize,
+    items: usize,
+    chunk_items: usize,
+    cells: usize,
+) -> ScratchBound {
+    let snapshot = cells
+        .div_ceil(pages::PAGE_CELLS)
+        .saturating_mul(pages::PAGE_CELLS * pages::CELL_BYTES);
+    let cell_moves = items.min(states.saturating_mul(CELL_MOVES));
+    let tables = (2 * states)
+        .saturating_mul(chunks::TABLE_ENTRY)
+        .saturating_add(
+            items
+                .saturating_add(cell_moves)
+                .saturating_mul(chunks::TABLE_EDGE),
+        );
+    let lists = items
+        .saturating_add(chunk_items)
+        .saturating_mul(chunks::SUCC_RECORD + chunks::PRED_RECORD);
+    ScratchBound {
+        snapshot,
+        tables,
+        lists,
+    }
 }
 
 /// The lists' working set when nothing has been decoded yet, and the most a
@@ -2012,6 +2071,28 @@ pub(in crate::compiler::nav) struct GraphMemo {
 }
 
 impl GraphMemo {
+    /// What this graph holds in the scratch files: its snapshot's pages
+    /// (those its two arrays hold, each once), its two node tables, and the
+    /// lists of every closure taken over it — against [`scratch_bound_of`].
+    #[cfg(test)]
+    pub(in crate::compiler::nav) fn scratch_held(&self) -> ScratchBound {
+        let snapshot = self.dense.cells.pages.len() * pages::PAGE_CELLS * 4
+            + self.extra.cells.pages.len() * pages::PAGE_CELLS * 2;
+        let tables = (self.nodes.spilled_bytes() + self.flown.spilled_bytes()) as usize;
+        let lists = self
+            .closures
+            .lock()
+            .expect("closures")
+            .iter()
+            .map(|(_, r)| r.spilled_bytes() as usize)
+            .sum();
+        ScratchBound {
+            snapshot,
+            tables,
+            lists,
+        }
+    }
+
     /// The launches of `key` this graph flew, if it flew them.
     fn flown_at(&self, key: &FlownKey) -> Option<Arc<NodeEdges>> {
         self.flown.with(key.0, |l| {
@@ -4664,6 +4745,12 @@ impl Reach {
                 .into_iter()
                 .flatten(),
         )
+    }
+
+    /// The bytes this closure's two lists take in the scratch file.
+    #[cfg(test)]
+    pub(in crate::compiler::nav) fn spilled_bytes(&self) -> u64 {
+        self.succ.spilled_bytes() + self.preds.spilled_bytes()
     }
 
     /// How many states of each kind: standing, afloat, submerged, holding.
