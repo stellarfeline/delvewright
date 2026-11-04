@@ -31,7 +31,7 @@ path = "junit.xml"
 # measured: 441 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; the admission checks re-run over every piece of the admitted library; the denominator is the library
 filter = 'test(=admit_library::the_second_door_is_opened_on_every_shipped_prefab)'
 slow-timeout = { period = "720s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 80
 
 
@@ -39,7 +39,7 @@ priority = 80
 # measured: 252 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; `allocation --all` over the whole site-plan point, whose wave bound is a property of the whole plan
 filter = 'test(=allocation_concurrency::allocation_all_prints_the_bound_on_stderr_from_the_machine_and_the_plan)'
 slow-timeout = { period = "420s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -47,7 +47,7 @@ priority = 60
 # measured: 149 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a blockout derived over a whole campaign and checked by its independent observer
 filter = 'test(=blockout::a_low_wall_reddens_dw0838)'
 slow-timeout = { period = "240s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -55,7 +55,7 @@ priority = 60
 # measured: 284 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a blockout derived over a whole campaign and checked by its independent observer
 filter = 'test(=blockout::a_seamless_border_is_crossed_anywhere_along_it)'
 slow-timeout = { period = "480s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -63,7 +63,7 @@ priority = 60
 # measured: 142 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a blockout derived over a whole campaign and checked by its independent observer
 filter = 'test(=blockout::an_open_side_is_a_stand_ins_opening_onto_the_commons)'
 slow-timeout = { period = "240s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -71,7 +71,7 @@ priority = 60
 # measured: 149 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); a blockout derived over a whole campaign and checked by its independent observer
 filter = 'test(=blockout::the_rung_in_a_hung_places_floor_hole_is_the_hung_places)'
 slow-timeout = { period = "240s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -79,7 +79,7 @@ priority = 60
 # measured: 125 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a branching campaign built by the instrumented engine and its transport proof flown on each branch; the proof is over whole builds
 filter = 'test(=branch_transport::a_campaign_without_branch_only_crossings_gets_an_empty_overlay)'
 slow-timeout = { period = "240s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -87,7 +87,7 @@ priority = 60
 # measured: 200 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); a branching campaign built by the instrumented engine and its transport proof flown on each branch; the proof is over whole builds
 filter = 'test(=branch_transport::a_door_opened_behind_a_flag_only_an_unperformed_trigger_sets_is_not_credited)'
 slow-timeout = { period = "360s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -95,7 +95,7 @@ priority = 60
 # measured: 134 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); a branching campaign built by the instrumented engine and its transport proof flown on each branch; the proof is over whole builds
 filter = 'test(=branch_transport::a_door_opened_behind_an_undatable_gate_is_not_credited)'
 slow-timeout = { period = "240s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -103,7 +103,7 @@ priority = 60
 # measured: 127 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a campaign built twice by the instrumented engine and the bytes compared (ADR-0006), or the exit-code matrix over whole builds
 filter = 'test(=cli::a_defect_this_campaign_has_nothing_for_is_still_refused)'
 slow-timeout = { period = "240s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -111,7 +111,7 @@ priority = 60
 # measured: 130 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a campaign built twice by the instrumented engine and the bytes compared (ADR-0006), or the exit-code matrix over whole builds
 filter = 'test(=cli::perturb_short_walls_reddens_dw0838_beside_dw0836)'
 slow-timeout = { period = "240s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -119,7 +119,7 @@ priority = 60
 # measured: 369 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; `tools/ci/check-dw-codes.py` run against the built binary's registry over every catalog page and every test; the denominator is every code
 filter = 'test(=codes::the_registry_is_exactly_the_declared_codes)'
 slow-timeout = { period = "600s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 80
 
 
@@ -127,7 +127,7 @@ priority = 80
 # measured: 554 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; both reach proofs run over generated worlds until they meet the same faces; the generated set is the test's denominator
 filter = 'test(=compiler::nav::learned::learned_tests::both_proofs_meet_the_same_faces_over_generated_worlds)'
 slow-timeout = { period = "840s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 80
 
 
@@ -135,7 +135,7 @@ priority = 80
 # measured: 1656 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; every consumer of the reach graph asked the same generated cases; the denominator is every consumer, and the cases are the agreement
 filter = 'test(=compiler::nav::world::reach::agreement::every_consumer_reaches_what_the_reach_graph_reaches)'
 slow-timeout = { period = "1500s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 100
 
 
@@ -143,7 +143,7 @@ priority = 100
 # measured: 1270 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; one valley of the hollow-vigil proportions (48 by 48, a 40-step carved staircase) verified unclimbable cell by cell; a smaller rim would not hold a staircase that clears the crest
 filter = 'test(=compiler::surround::tests::a_carved_staircase_up_the_inner_slope_is_dw0369)'
 slow-timeout = { period = "1500s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 100
 
 
@@ -151,7 +151,7 @@ priority = 100
 # measured: 137 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); a place detailed inside the box the whole gave it, over the whole gallery point, by the instrumented engine
 filter = 'test(=detail::a_stand_in_is_not_judged_and_its_detail_is)'
 slow-timeout = { period = "240s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -159,7 +159,7 @@ priority = 60
 # measured: 150 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a place detailed inside the box the whole gave it, over the whole gallery point, by the instrumented engine
 filter = 'test(=detail::dw0990_refuses_a_crack_and_passes_a_faced_edge_and_a_step)'
 slow-timeout = { period = "240s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -167,7 +167,7 @@ priority = 60
 # measured: 851 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a commit over the whole gallery point watched by a concurrent reader; the race is only visible over a commit that writes every target
 filter = 'test(=detail_atomic_write::a_commit_leaves_only_its_targets_and_a_reader_never_sees_a_torn_plan)'
 slow-timeout = { period = "1320s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 100
 
 
@@ -175,7 +175,7 @@ priority = 100
 # measured: 699 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); one program place of the detailed gallery point checked and then committed by the instrumented engine, or one refusal over the committed whole; the agreement is of two whole runs
 filter = 'test(=detail_check_agrees::check_and_commit_agree_on_annex)'
 slow-timeout = { period = "1080s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 100
 
 
@@ -183,7 +183,7 @@ priority = 100
 # measured: 242 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); one program place of the detailed gallery point checked and then committed by the instrumented engine, or one refusal over the committed whole; the agreement is of two whole runs
 filter = 'test(=detail_check_agrees::check_and_commit_agree_on_beacon)'
 slow-timeout = { period = "420s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -191,7 +191,7 @@ priority = 60
 # measured: 710 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); one program place of the detailed gallery point checked and then committed by the instrumented engine, or one refusal over the committed whole; the agreement is of two whole runs
 filter = 'test(=detail_check_agrees::check_and_commit_agree_on_causeway)'
 slow-timeout = { period = "1080s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 100
 
 
@@ -199,7 +199,7 @@ priority = 100
 # measured: 242 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); one program place of the detailed gallery point checked and then committed by the instrumented engine, or one refusal over the committed whole; the agreement is of two whole runs
 filter = 'test(=detail_check_agrees::check_and_commit_agree_on_far_hall)'
 slow-timeout = { period = "420s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -207,7 +207,7 @@ priority = 60
 # measured: 334 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); one program place of the detailed gallery point checked and then committed by the instrumented engine, or one refusal over the committed whole; the agreement is of two whole runs
 filter = 'test(=detail_check_agrees::check_and_commit_agree_on_gantry)'
 slow-timeout = { period = "540s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 80
 
 
@@ -215,7 +215,7 @@ priority = 80
 # measured: 346 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); one program place of the detailed gallery point checked and then committed by the instrumented engine, or one refusal over the committed whole; the agreement is of two whole runs
 filter = 'test(=detail_check_agrees::check_and_commit_agree_on_loft)'
 slow-timeout = { period = "540s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 80
 
 
@@ -223,7 +223,7 @@ priority = 80
 # measured: 291 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); one program place of the detailed gallery point checked and then committed by the instrumented engine, or one refusal over the committed whole; the agreement is of two whole runs
 filter = 'test(=detail_check_agrees::check_and_commit_agree_on_near_hall)'
 slow-timeout = { period = "480s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -231,7 +231,7 @@ priority = 60
 # measured: 865 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); one program place of the detailed gallery point checked and then committed by the instrumented engine, or one refusal over the committed whole; the agreement is of two whole runs
 filter = 'test(=detail_check_agrees::check_and_commit_agree_on_perch)'
 slow-timeout = { period = "1320s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 100
 
 
@@ -239,7 +239,7 @@ priority = 100
 # measured: 335 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); one program place of the detailed gallery point checked and then committed by the instrumented engine, or one refusal over the committed whole; the agreement is of two whole runs
 filter = 'test(=detail_check_agrees::check_and_commit_agree_on_the_battery_s_own_refusal_dw1002)'
 slow-timeout = { period = "540s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 80
 
 
@@ -247,7 +247,7 @@ priority = 80
 # measured: 350 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); one program place of the detailed gallery point checked and then committed by the instrumented engine, or one refusal over the committed whole; the agreement is of two whole runs
 filter = 'test(=detail_check_agrees::check_and_commit_agree_on_undercroft)'
 slow-timeout = { period = "540s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 80
 
 
@@ -255,7 +255,7 @@ priority = 80
 # measured: 467 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a place detailed inside the allocation the whole handed, by the instrumented engine, with its survey, light and battery over the whole piece
 filter = 'test(=detail_verb::a_climb_inside_a_hung_place_proves_and_hung_scenery_states_its_zero)'
 slow-timeout = { period = "720s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 80
 
 
@@ -263,7 +263,7 @@ priority = 80
 # measured: 446 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a place detailed inside the allocation the whole handed, by the instrumented engine, with its survey, light and battery over the whole piece
 filter = 'test(=detail_verb::a_leafy_scenery_crown_owes_no_floor_and_no_light_and_a_reached_one_is_judged)'
 slow-timeout = { period = "720s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 80
 
 
@@ -271,7 +271,7 @@ priority = 80
 # measured: 361 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a place detailed inside the allocation the whole handed, by the instrumented engine, with its survey, light and battery over the whole piece
 filter = 'test(=detail_verb::an_open_side_is_answered_by_a_frontage_or_a_counter_and_nowhere_else)'
 slow-timeout = { period = "600s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 80
 
 
@@ -279,7 +279,7 @@ priority = 80
 # measured: 636 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a place detailed inside the allocation the whole handed, by the instrumented engine, with its survey, light and battery over the whole piece
 filter = 'test(=detail_verb::an_unlit_leafy_scenery_room_is_never_surveyed_for_light)'
 slow-timeout = { period = "960s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 100
 
 
@@ -287,7 +287,7 @@ priority = 100
 # measured: 1086 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a place detailed inside the allocation the whole handed, by the instrumented engine, with its survey, light and battery over the whole piece
 filter = 'test(=detail_verb::the_audit_judges_a_scenery_piece_as_its_writer_did_and_no_piece_vouches_for_itself)'
 slow-timeout = { period = "1500s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 100
 
 
@@ -295,7 +295,7 @@ priority = 100
 # measured: 199 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); a place detailed inside the allocation the whole handed, by the instrumented engine, with its survey, light and battery over the whole piece
 filter = 'test(=detail_verb::the_gallery_hands_the_yards_and_the_causeways_open_sides)'
 slow-timeout = { period = "300s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -303,7 +303,7 @@ priority = 60
 # measured: 872 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a place detailed inside the allocation the whole handed, by the instrumented engine, with its survey, light and battery over the whole piece
 filter = 'test(=detail_verb::the_handout_is_complete_and_hands_each_seams_form_to_both_sides)'
 slow-timeout = { period = "1320s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 100
 
 
@@ -311,7 +311,7 @@ priority = 100
 # measured: 122 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); a whole campaign built by the instrumented engine to find its entry by role; the entry is only placed once the campaign is assembled
 filter = 'test(=entry_anchor_role::an_anchor_declaring_the_role_is_the_entry_point)'
 slow-timeout = { period = "240s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -319,7 +319,7 @@ priority = 60
 # measured: 566 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; every harness document of a built campaign held to the exported path; the denominator is every document, over one whole build
 filter = 'test(=exported_coordinates::every_exported_index_a_harness_document_states_is_the_step_it_names)'
 slow-timeout = { period = "900s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 80
 
 
@@ -327,7 +327,7 @@ priority = 80
 # measured: 222 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); the same campaign built twice by the instrumented engine, with and without an arrival in the vault; the leg proof runs over the whole build
 filter = 'test(=first_leg::the_same_campaign_builds_when_the_vault_can_be_arrived_in)'
 slow-timeout = { period = "360s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -335,7 +335,7 @@ priority = 60
 # measured: 127 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); a world whose placed piece spans past one forceload command, built by the instrumented engine; the span is only past the ceiling at that size
 filter = 'test(=forceload_span::a_span_past_the_ceiling_forceloads_every_chunk_of_itself)'
 slow-timeout = { period = "240s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -343,7 +343,7 @@ priority = 60
 # measured: 832 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a place expanded from its program at its frame, as `detail` expands it, by the instrumented engine; the frame is of one whole place
 filter = 'test(=frames_campaign_program::a_camera_is_stood_in_a_places_own_frame)'
 slow-timeout = { period = "1260s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 100
 
 
@@ -351,7 +351,7 @@ priority = 100
 # measured: 893 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a place expanded from its program at its frame, as `detail` expands it, by the instrumented engine; the frame is of one whole place
 filter = 'test(=frames_campaign_program::a_place_is_drawn_from_its_program_as_it_stands_and_nothing_is_written)'
 slow-timeout = { period = "1380s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 100
 
 
@@ -359,7 +359,7 @@ priority = 100
 # measured: 176 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); the campaign built twice by the instrumented engine under two seeds and the bars read from the bytes; the comparison is between whole builds
 filter = 'test(=gated_connection::changing_the_seed_moves_no_bar)'
 slow-timeout = { period = "300s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -367,7 +367,7 @@ priority = 60
 # measured: 173 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; `grammar audit` walked over a whole program so that every gate is invoked
 filter = 'test(=grammar_audit_cli::a_library_only_audit_claims_nothing_about_campaigns)'
 slow-timeout = { period = "300s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -375,7 +375,7 @@ priority = 60
 # measured: 273 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; `grammar audit` walked over a whole program so that every gate is invoked
 filter = 'test(=grammar_audit_cli::an_empty_campaign_root_beside_the_library_is_named_not_absorbed)'
 slow-timeout = { period = "420s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -383,7 +383,7 @@ priority = 60
 # measured: 150 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; `grammar audit` walked over a whole program so that every gate is invoked
 filter = 'test(=grammar_audit_cli::each_corpus_states_its_own_binding_count)'
 slow-timeout = { period = "240s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -391,7 +391,7 @@ priority = 60
 # measured: 151 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; `grammar audit` walked over a whole program so that every gate is invoked
 filter = 'test(=grammar_audit_cli::the_rule_library_audits_to_exactly_its_record)'
 slow-timeout = { period = "240s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -399,7 +399,7 @@ priority = 60
 # measured: 365 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; `grammar audit` walked over a whole program so that every gate is invoked
 filter = 'test(=grammar_audit_cli::without_the_record_the_librarys_known_red_still_reds)'
 slow-timeout = { period = "600s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 80
 
 
@@ -407,7 +407,7 @@ priority = 80
 # measured: 166 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; `grammar expand` driven as an author drives it over a whole ported building
 filter = 'test(=grammar_cli::a_region_past_the_structure_cap_expands_into_a_tile_set)'
 slow-timeout = { period = "300s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -415,7 +415,7 @@ priority = 60
 # measured: 379 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a grammar program expanded, frozen as a prefab and regenerated byte for byte by the instrumented engine; the freeze is of a whole building
 filter = 'test(=grammar_export::a_tiled_zone_carries_the_claim_on_its_manifest)'
 slow-timeout = { period = "600s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 80
 
 
@@ -423,7 +423,7 @@ priority = 80
 # measured: 175 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a grammar program expanded, frozen as a prefab and regenerated byte for byte by the instrumented engine; the freeze is of a whole building
 filter = 'test(=grammar_export::exporting_a_tiled_zone_twice_gives_byte_identical_tiles_and_manifest)'
 slow-timeout = { period = "300s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -431,7 +431,7 @@ priority = 60
 # measured: 197 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a grammar program expanded, frozen as a prefab and regenerated byte for byte by the instrumented engine; the freeze is of a whole building
 filter = 'test(=grammar_export::the_cuts_are_a_function_of_the_region_alone)'
 slow-timeout = { period = "300s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -439,7 +439,7 @@ priority = 60
 # measured: 182 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a grammar program expanded, frozen as a prefab and regenerated byte for byte by the instrumented engine; the freeze is of a whole building
 filter = 'test(=grammar_export::the_manifest_describes_the_zone_and_not_a_tile)'
 slow-timeout = { period = "300s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -447,7 +447,7 @@ priority = 60
 # measured: 167 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a grammar program expanded, frozen as a prefab and regenerated byte for byte by the instrumented engine; the freeze is of a whole building
 filter = 'test(=grammar_export::the_tiles_reassemble_into_exactly_the_expansion)'
 slow-timeout = { period = "300s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -455,7 +455,7 @@ priority = 60
 # measured: 383 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a grammar program expanded, frozen as a prefab and regenerated byte for byte by the instrumented engine; the freeze is of a whole building
 filter = 'test(=grammar_export::writing_a_tile_set_lands_every_file_the_manifest_names)'
 slow-timeout = { period = "600s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 80
 
 
@@ -463,7 +463,7 @@ priority = 80
 # measured: 148 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a ported rule library expanded into the building it claims by the instrumented engine; the claim is a whole building
 filter = 'test(=grammar_library::every_library_program_gives_the_recorded_verdict_at_its_declared_expansion)'
 slow-timeout = { period = "240s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -471,7 +471,7 @@ priority = 60
 # measured: 150 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a ported rule library expanded into the building it claims by the instrumented engine; the claim is a whole building
 filter = 'test(=grammar_library::every_library_program_passes_the_settling_gates)'
 slow-timeout = { period = "240s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -479,7 +479,7 @@ priority = 60
 # measured: 298 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a ported rule library expanded into the building it claims by the instrumented engine; the claim is a whole building
 filter = 'test(=grammar_library::every_library_program_passes_the_shape_and_orientation_gates)'
 slow-timeout = { period = "480s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -487,7 +487,7 @@ priority = 60
 # measured: 148 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a ported rule library expanded into the building it claims by the instrumented engine; the claim is a whole building
 filter = 'test(=grammar_library::no_library_program_reports_a_gate_that_is_green_over_nothing)'
 slow-timeout = { period = "240s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -495,7 +495,7 @@ priority = 60
 # measured: 160 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); every zone program of the bell remake composed and judged by the instrumented engine; a zone's defects show only when its shapes are laid end to end
 filter = 'test(=grammar_zones::every_zone_passes_the_shape_and_orientation_gates)'
 slow-timeout = { period = "240s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -503,7 +503,7 @@ priority = 60
 # measured: 370 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; one world built four ways by the instrumented engine so that every arm of the exposure rule is reached; each build is a whole world
 filter = 'test(=piece_exposure::the_seating_answer_is_the_exposure_answer)'
 slow-timeout = { period = "600s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 80
 
 
@@ -511,7 +511,7 @@ priority = 80
 # measured: 588 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; the annex generated from its allocation, then committed and checked by the instrumented engine; the program is judged whole
 filter = 'test(=place_generator::the_annex_generator_emits_the_committed_program_and_it_passes_the_check)'
 slow-timeout = { period = "900s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 80
 
 
@@ -519,7 +519,7 @@ priority = 80
 # measured: 1615 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a gallery place built, reviewed blind and censused by the instrumented engine; the shot and the census are read off one whole built place
 filter = 'test(=place_reads::air_over_the_annex_door_unframes_it_and_moves_the_line)'
 slow-timeout = { period = "1500s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 100
 
 
@@ -527,7 +527,7 @@ priority = 100
 # measured: 991 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a gallery place built, reviewed blind and censused by the instrumented engine; the shot and the census are read off one whole built place
 filter = 'test(=place_reads::an_undeclared_side_owes_no_clear_width_and_has_no_front)'
 slow-timeout = { period = "1500s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 100
 
 
@@ -535,7 +535,7 @@ priority = 100
 # measured: 795 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a gallery place built, reviewed blind and censused by the instrumented engine; the shot and the census are read off one whole built place
 filter = 'test(=place_reads::moving_one_claimed_cell_from_the_court_to_the_bed_moves_two_built_values_by_one)'
 slow-timeout = { period = "1200s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 100
 
 
@@ -543,7 +543,7 @@ priority = 100
 # measured: 558 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a gallery place built, reviewed blind and censused by the instrumented engine; the shot and the census are read off one whole built place
 filter = 'test(=place_reads::raising_the_court_water_one_course_moves_highest_by_one)'
 slow-timeout = { period = "840s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 80
 
 
@@ -551,7 +551,7 @@ priority = 80
 # measured: 319 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); a gallery place built, reviewed blind and censused by the instrumented engine; the shot and the census are read off one whole built place
 filter = 'test(=place_reads::the_census_states_the_annex_front_the_doors_and_the_court_water)'
 slow-timeout = { period = "480s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 80
 
 
@@ -559,7 +559,7 @@ priority = 80
 # measured: 291 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); a gallery place built, reviewed blind and censused by the instrumented engine; the shot and the census are read off one whole built place
 filter = 'test(=place_reads::the_court_draws_one_part_frame_per_part_from_its_crossing)'
 slow-timeout = { period = "480s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -567,7 +567,7 @@ priority = 60
 # measured: 281 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); a gallery place built, reviewed blind and censused by the instrumented engine; the shot and the census are read off one whole built place
 filter = 'test(=place_reads::the_ledger_states_the_courts_three_parts_built_inside_the_tolerance)'
 slow-timeout = { period = "480s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -575,7 +575,7 @@ priority = 60
 # measured: 745 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); a gallery place built, reviewed blind and censused by the instrumented engine; the shot and the census are read off one whole built place
 filter = 'test(=place_reads::the_site_plan_point_draws_a_threshold_shot_per_door_and_open_side)'
 slow-timeout = { period = "1140s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 100
 
 
@@ -583,7 +583,7 @@ priority = 100
 # measured: 1731 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; every placing line of the compiler held to the ledger's rows over a whole built campaign; the denominator is every line
 filter = 'test(=placed_ledger::every_placing_line_is_one_row_and_every_row_is_one_line)'
 slow-timeout = { period = "1500s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 100
 
 
@@ -591,7 +591,7 @@ priority = 100
 # measured: 529 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; the gallery primary built once and every pressable's state and dispatch compared; the denominator is every pressable
 filter = 'test(=press_agreement::a_door_prop_is_laid_as_one_door)'
 slow-timeout = { period = "840s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 80
 
 
@@ -599,7 +599,7 @@ priority = 80
 # measured: 533 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; the gallery primary built once and every pressable's state and dispatch compared; the denominator is every pressable
 filter = 'test(=press_agreement::a_released_door_answers_nothing_once_open_and_the_chest_does)'
 slow-timeout = { period = "840s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 80
 
 
@@ -607,7 +607,7 @@ priority = 80
 # measured: 512 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; the gallery primary built once and every pressable's state and dispatch compared; the denominator is every pressable
 filter = 'test(=press_agreement::every_answer_plays_the_refusal_cue)'
 slow-timeout = { period = "780s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 80
 
 
@@ -615,7 +615,7 @@ priority = 80
 # measured: 482 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); the gallery primary built once and every pressable's state and dispatch compared; the denominator is every pressable
 filter = 'test(=press_agreement::every_press_dispatches_exactly_one_thing_in_every_state)'
 slow-timeout = { period = "780s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 80
 
 
@@ -623,7 +623,7 @@ priority = 80
 # measured: 347 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); the gallery primary built once and every pressable's state and dispatch compared; the denominator is every pressable
 filter = 'test(=press_agreement::the_blow_names_its_striker)'
 slow-timeout = { period = "540s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 80
 
 
@@ -631,7 +631,7 @@ priority = 80
 # measured: 1614 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; three `detail --check` runs of the gallery's annex over its reach bank (off, cold, warm) by the instrumented engine; the bank's equality is only visible across whole runs
 filter = 'test(=reach_cache::detail_keeps_the_bank_with_the_campaign_and_reclaims_another_binary_s)'
 slow-timeout = { period = "1500s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 100
 
 
@@ -639,7 +639,7 @@ priority = 100
 # measured: 284 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); the reach graph's closure over the gallery's whole hall by the instrumented engine; convergence is a property of the whole closure
 filter = 'test(=reach_graph::the_facing_step_has_converged_over_the_gallery_hall)'
 slow-timeout = { period = "480s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -647,7 +647,7 @@ priority = 60
 # measured: 223 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); the reach graph's closure over the gallery's whole hall by the instrumented engine; convergence is a property of the whole closure
 filter = 'test(=reach_graph::the_garden_bed_is_reached_by_the_graph_and_left)'
 slow-timeout = { period = "360s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -655,7 +655,7 @@ priority = 60
 # measured: 173 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); every remedy a diagnostic names walked on the gallery by the instrumented engine; the denominator is every diagnostic
 filter = 'test(=remedy_reachability::dw0730_a_spawner_is_had_as_a_wave)'
 slow-timeout = { period = "300s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -663,7 +663,7 @@ priority = 60
 # measured: 198 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); every remedy a diagnostic names walked on the gallery by the instrumented engine; the denominator is every diagnostic
 filter = 'test(=remedy_reachability::dw0951_a_family_with_both_shapes_sculpts)'
 slow-timeout = { period = "300s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -671,7 +671,7 @@ priority = 60
 # measured: 199 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); every remedy a diagnostic names walked on the gallery by the instrumented engine; the denominator is every diagnostic
 filter = 'test(=remedy_reachability::dw0951_a_small_source_recessed_behind_a_cover_sculpts)'
 slow-timeout = { period = "300s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -679,7 +679,7 @@ priority = 60
 # measured: 179 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; every remedy a diagnostic names walked on the gallery by the instrumented engine; the denominator is every diagnostic
 filter = 'test(=remedy_reachability::dw0952_a_hull_widened_over_the_room_sculpts)'
 slow-timeout = { period = "300s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -687,7 +687,7 @@ priority = 60
 # measured: 276 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; every remedy a diagnostic names walked on the gallery by the instrumented engine; the denominator is every diagnostic
 filter = 'test(=remedy_reachability::dw0952_a_shelf_out_of_the_pocket_sculpts)'
 slow-timeout = { period = "420s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -695,7 +695,7 @@ priority = 60
 # measured: 166 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; every remedy a diagnostic names walked on the gallery by the instrumented engine; the denominator is every diagnostic
 filter = 'test(=remedy_reachability::dw0952_moving_a_buried_anchor_onto_the_ground_sculpts)'
 slow-timeout = { period = "300s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -703,7 +703,7 @@ priority = 60
 # measured: 207 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); every remedy a diagnostic names walked on the gallery by the instrumented engine; the denominator is every diagnostic
 filter = 'test(=remedy_reachability::dw1053_writing_seen_where_the_bar_is_seen_builds)'
 slow-timeout = { period = "360s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -711,7 +711,7 @@ priority = 60
 # measured: 1461 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a campaign built and its frames rendered with the pinned textures by the instrumented engine; what a frame shows is read off a whole frame
 filter = 'test(=review_frame_shows::a_holder_the_renderer_draws_leaves_undrawn_and_the_curator_is_drawn)'
 slow-timeout = { period = "1500s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 100
 
 
@@ -719,7 +719,7 @@ priority = 100
 # measured: 582 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a campaign built with its review-frame worlds, light, block entities and bodies, by the instrumented engine; a frame stands in a whole world
 filter = 'test(=review_frame_worlds::a_pov_frame_stands_in_the_world_its_leg_is_walked_in)'
 slow-timeout = { period = "900s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 80
 
 
@@ -727,7 +727,7 @@ priority = 80
 # measured: 541 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a campaign built with its review-frame worlds, light, block entities and bodies, by the instrumented engine; a frame stands in a whole world
 filter = 'test(=review_frame_worlds::a_prop_objectives_interact_frame_stands_in_the_world_that_holds_the_prop)'
 slow-timeout = { period = "840s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 80
 
 
@@ -735,7 +735,7 @@ priority = 80
 # measured: 519 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a campaign built with its review-frame worlds, light, block entities and bodies, by the instrumented engine; a frame stands in a whole world
 filter = 'test(=review_frame_worlds::every_block_that_carries_a_block_entity_is_written_with_one)'
 slow-timeout = { period = "780s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 80
 
 
@@ -743,7 +743,7 @@ priority = 80
 # measured: 321 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a prefab sculpted from a declared form by the instrumented engine, its gates and pocket proof run over the whole form
 filter = 'test(=sculpt::a_box_past_the_schematic_cap_is_written_as_parts)'
 slow-timeout = { period = "540s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 80
 
 
@@ -751,7 +751,7 @@ priority = 80
 # measured: 191 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); a prefab sculpted from a declared form by the instrumented engine, its gates and pocket proof run over the whole form
 filter = 'test(=sculpt::a_buried_entry_is_refused_naming_its_cell)'
 slow-timeout = { period = "300s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -759,7 +759,7 @@ priority = 60
 # measured: 183 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); a prefab sculpted from a declared form by the instrumented engine, its gates and pocket proof run over the whole form
 filter = 'test(=sculpt::every_hull_entry_prints_its_binding_line)'
 slow-timeout = { period = "300s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -767,7 +767,7 @@ priority = 60
 # measured: 156 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a prefab sculpted from a declared form by the instrumented engine, its gates and pocket proof run over the whole form
 filter = 'test(=sculpt::hull_sources_are_staggered_over_walls_and_vault_never_a_grid)'
 slow-timeout = { period = "240s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -775,7 +775,7 @@ priority = 60
 # measured: 234 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); a prefab sculpted from a declared form by the instrumented engine, its gates and pocket proof run over the whole form
 filter = 'test(=sculpt::shown_faces_are_the_sides_the_bytes_put_blocks_on)'
 slow-timeout = { period = "360s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -783,7 +783,7 @@ priority = 60
 # measured: 295 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a prefab sculpted from a declared form by the instrumented engine, its gates and pocket proof run over the whole form
 filter = 'test(=sculpt::the_body_builds_lit_by_its_own_lights_and_dark_without_them)'
 slow-timeout = { period = "480s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -791,7 +791,7 @@ priority = 60
 # measured: 192 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a prefab sculpted from a declared form by the instrumented engine, its gates and pocket proof run over the whole form
 filter = 'test(=sculpt::the_command_writes_the_same_files_twice)'
 slow-timeout = { period = "300s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -799,7 +799,7 @@ priority = 60
 # measured: 178 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a prefab sculpted from a declared form by the instrumented engine, its gates and pocket proof run over the whole form
 filter = 'test(=sculpt::the_gallery_form_passes_the_audit_with_every_stair_examined)'
 slow-timeout = { period = "300s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -807,7 +807,7 @@ priority = 60
 # measured: 157 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a prefab sculpted from a declared form by the instrumented engine, its gates and pocket proof run over the whole form
 filter = 'test(=sculpt::the_gallery_form_sculpts_to_the_same_bytes_and_its_provenance_reproduces_them)'
 slow-timeout = { period = "240s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -815,7 +815,7 @@ priority = 60
 # measured: 198 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); a prefab sculpted from a declared form by the instrumented engine, its gates and pocket proof run over the whole form
 filter = 'test(=sculpt::the_grammar_gates_run_over_every_sculpt_with_their_bindings)'
 slow-timeout = { period = "300s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -823,7 +823,7 @@ priority = 60
 # measured: 169 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a prefab sculpted from a declared form by the instrumented engine, its gates and pocket proof run over the whole form
 filter = 'test(=sculpt::the_light_probe_binds_the_sculpted_body_and_the_metadata_carries_its_measurement)'
 slow-timeout = { period = "300s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -831,7 +831,7 @@ priority = 60
 # measured: 2000 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a prefab sculpted from a declared form by the instrumented engine, its gates and pocket proof run over the whole form
 filter = 'test(=sculpt::the_stranded_rig_s_own_form_is_refused_with_its_pockets)'
 slow-timeout = { period = "1500s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 100
 
 
@@ -839,7 +839,7 @@ priority = 100
 # measured: 165 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a prefab sculpted from a declared form by the instrumented engine, its gates and pocket proof run over the whole form
 filter = 'test(=sculpt::the_walk_plane_is_the_ground_and_the_planes_instrument_agrees)'
 slow-timeout = { period = "300s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -847,7 +847,7 @@ priority = 60
 # measured: 138 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; a prefab sculpted from a declared form by the instrumented engine, its gates and pocket proof run over the whole form
 filter = 'test(=sculpt::without_its_shelf_the_back_is_not_walked)'
 slow-timeout = { period = "240s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -855,7 +855,7 @@ priority = 60
 # measured: 124 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); a route that crosses areas built by the instrumented engine and its stake and stranding proofs run; a crossing needs both areas built
 filter = 'test(=stake_across_areas::the_crossing_route_builds_without_a_stake)'
 slow-timeout = { period = "240s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -863,7 +863,7 @@ priority = 60
 # measured: 198 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; the starter's program on one allocated place of a detailed gallery point, run through `detail --check` by the instrumented engine; the check is of one whole place
 filter = 'test(=starter_program::a_building_drawn_into_the_starter_s_model_is_claimed_from_the_engine_s_survey)'
 slow-timeout = { period = "300s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -871,7 +871,7 @@ priority = 60
 # measured: 165 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); the starter's program on one allocated place of a detailed gallery point, run through `detail --check` by the instrumented engine; the check is of one whole place
 filter = 'test(=starter_program::the_starter_passes_the_check_unedited_on_the_open_annex)'
 slow-timeout = { period = "300s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -879,7 +879,7 @@ priority = 60
 # measured: 296 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); the starter's program on one allocated place of a detailed gallery point, run through `detail --check` by the instrumented engine; the check is of one whole place
 filter = 'test(=starter_program::the_starter_passes_the_check_unedited_on_the_open_beacon)'
 slow-timeout = { period = "480s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -887,7 +887,7 @@ priority = 60
 # measured: 198 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); the starter's program on one allocated place of a detailed gallery point, run through `detail --check` by the instrumented engine; the check is of one whole place
 filter = 'test(=starter_program::the_starter_passes_the_check_unedited_on_the_open_causeway)'
 slow-timeout = { period = "300s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -895,7 +895,7 @@ priority = 60
 # measured: 432 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); the starter's program on one allocated place of a detailed gallery point, run through `detail --check` by the instrumented engine; the check is of one whole place
 filter = 'test(=starter_program::the_starter_passes_the_check_unedited_on_the_open_exit)'
 slow-timeout = { period = "660s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 80
 
 
@@ -903,7 +903,7 @@ priority = 80
 # measured: 183 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); the starter's program on one allocated place of a detailed gallery point, run through `detail --check` by the instrumented engine; the check is of one whole place
 filter = 'test(=starter_program::the_starter_passes_the_check_unedited_on_the_open_far_hall)'
 slow-timeout = { period = "300s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -911,7 +911,7 @@ priority = 60
 # measured: 166 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); the starter's program on one allocated place of a detailed gallery point, run through `detail --check` by the instrumented engine; the check is of one whole place
 filter = 'test(=starter_program::the_starter_passes_the_check_unedited_on_the_open_gantry)'
 slow-timeout = { period = "300s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -919,7 +919,7 @@ priority = 60
 # measured: 159 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); the starter's program on one allocated place of a detailed gallery point, run through `detail --check` by the instrumented engine; the check is of one whole place
 filter = 'test(=starter_program::the_starter_passes_the_check_unedited_on_the_open_near_hall)'
 slow-timeout = { period = "240s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -927,7 +927,7 @@ priority = 60
 # measured: 123 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); the starter's program on one allocated place of a detailed gallery point, run through `detail --check` by the instrumented engine; the check is of one whole place
 filter = 'test(=starter_program::the_starter_passes_the_check_unedited_on_the_open_perch)'
 slow-timeout = { period = "240s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -935,7 +935,7 @@ priority = 60
 # measured: 143 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); the starter's program on one allocated place of a detailed gallery point, run through `detail --check` by the instrumented engine; the check is of one whole place
 filter = 'test(=starter_program::the_starter_passes_the_check_unedited_on_the_open_undercroft)'
 slow-timeout = { period = "240s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -943,7 +943,7 @@ priority = 60
 # measured: 121 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); the starter's program on one allocated place of a detailed gallery point, run through `detail --check` by the instrumented engine; the check is of one whole place
 filter = 'test(=starter_program::the_starter_passes_the_check_unedited_on_the_solid_undercroft)'
 slow-timeout = { period = "240s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -951,7 +951,7 @@ priority = 60
 # measured: 127 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; the ferry fixture built and its route proof flown with the teleport as a link, by the instrumented engine; the proof is over the whole route
 filter = 'test(=teleport_link::a_site_plan_place_only_a_link_reaches_is_reached_and_carried_to)'
 slow-timeout = { period = "240s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -959,7 +959,7 @@ priority = 60
 # measured: 194 s on the Actions runner, instrumented, the largest of 1 partitioned run(s) and the one-job runs; one campaign built at several thread counts by the instrumented engine and the emissions compared; each build is a whole campaign
 filter = 'test(=thread_count::the_output_is_the_same_at_every_thread_count)'
 slow-timeout = { period = "300s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 60
 
 
@@ -967,7 +967,7 @@ priority = 60
 # measured: 417 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); one third of the pinned prefab library rendered to one page with the pinned textures by the instrumented engine; a page is rendered whole
 filter = 'test(=view_viewer::a_directory_of_prefabs_is_one_page_in_a_stable_order_part_1_of_3)'
 slow-timeout = { period = "660s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 80
 
 
@@ -975,7 +975,7 @@ priority = 80
 # measured: 696 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); one third of the pinned prefab library rendered to one page with the pinned textures by the instrumented engine; a page is rendered whole
 filter = 'test(=view_viewer::a_directory_of_prefabs_is_one_page_in_a_stable_order_part_2_of_3)'
 slow-timeout = { period = "1080s" }
-threads-required = "num-test-threads"
+threads-required = 2
 priority = 100
 
 
@@ -983,5 +983,21 @@ priority = 100
 # measured: 1319 s on the Actions runner, instrumented, in its partition, the largest of 1 partitioned run(s); one third of the pinned prefab library rendered to one page with the pinned textures by the instrumented engine; a page is rendered whole
 filter = 'test(=view_viewer::a_directory_of_prefabs_is_one_page_in_a_stable_order_part_3_of_3)'
 slow-timeout = { period = "1500s" }
-threads-required = "num-test-threads"
+threads-required = 2
+priority = 100
+
+
+[[profile.ci.overrides]]
+# measured: 1440 s on the Actions runner, instrumented, alone (run 41743251886), for `part_2_of_3`, the page that held this set beside 18 single templates; the pinned library's tile set paged alone by the instrumented `viewer`; a set's tiles are one page or none, so the set is the unit
+filter = 'test(=view_viewer::a_tile_set_is_one_page_doune_castle)'
+slow-timeout = { period = "1500s" }
+threads-required = 2
+priority = 100
+
+
+[[profile.ci.overrides]]
+# measured: 1590 s on the Actions runner, instrumented, alone (run 41743251886), for `part_3_of_3`, the page that held this set beside 18 single templates; the pinned library's tile set paged alone by the instrumented `viewer`; a set's tiles are one page or none, so the set is the unit
+filter = 'test(=view_viewer::a_tile_set_is_one_page_vesperhold)'
+slow-timeout = { period = "1500s" }
+threads-required = 2
 priority = 100

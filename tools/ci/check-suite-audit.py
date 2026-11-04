@@ -31,7 +31,7 @@ WHAT IT ASSERTS (exit 1 on any)
                coverage map and a JUnit report, keeping each row's verdict.
   --overrides  also asserts the `[[profile.ci.overrides]]` entries of
                `.config/nextest.toml` number the table's `overrides`, and each
-               carries `filter = 'test(=…)'`, a `slow-timeout`, `threads-required = "num-test-threads"`, a `priority`
+               carries `filter = 'test(=…)'`, a `slow-timeout`, `threads-required = 2`, a `priority`
                above the default and, inside its block, a comment
                `# measured: <N> s …` with why it cannot be smaller.
 
@@ -371,8 +371,8 @@ def main() -> int:
                 errors.append(f"override {i}: carries no slow-timeout")
             if not isinstance(o.get("priority"), int) or o["priority"] <= 0:
                 errors.append(f"override {i}: carries no priority above the default (spec-0126 §5.4: the longest tests of a partition start first)")
-            if o.get("threads-required") != "num-test-threads":
-                errors.append(f"override {i} ({filt}): does not run alone (`threads-required = \"num-test-threads\"`; spec-0126 §5.4: the engine a slow test spawns takes every core)")
+            if o.get("threads-required") != 2:
+                errors.append(f"override {i} ({filt}): does not reserve two of the runner's four slots (`threads-required = 2`; spec-0126 §5.4: the engine a slow test spawns runs one thread per core)")
             if i >= len(blocks) or not re.search(r"^\s*#.*\bmeasured\b[^\n]*?\d+(\.\d+)?\s*s\b", blocks[i], re.M):
                 errors.append(f"override {i} ({filt}): no comment in its block states its measured time")
         print(f"overrides: {len(overrides)} entries in [[profile.ci.overrides]]; table states {table.get('overrides')}")
