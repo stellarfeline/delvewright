@@ -866,19 +866,19 @@ impl Codes for Shifted<'_> {
 }
 
 /// The cells round a node its launches read, each read through `inner` the
-/// first time in the node's expansion and from a slot after: a node's
-/// thousands of launches, and every flight-memo walk among them, read the
-/// same few hundred cells over and over. A slot answers what `inner`
-/// answered, and a read it answers still grows the bank's current run and
-/// scope box by the cell (its bit, being the expansion's, was set by the
-/// first read), so what the bank records of a run is what it was without
-/// the slots.
+/// first time in each run of the node's expansion ([`Local::next_run`]) and
+/// from a slot after: a node's thousands of launches, and every flight-memo
+/// walk among them, read the same few hundred cells over and over. A slot
+/// answers what `inner` answered, and a read it answers still grows the
+/// bank's current run and scope box by the cell (the run's first read of it
+/// noted it as the run's), so what the bank records of a run is what it was
+/// without the slots.
 struct Local<'a, C: Codes + ?Sized> {
     inner: &'a C,
     at: [i32; 3],
     track: Option<&'a bank::Track<'a>>,
     slots: Vec<std::cell::Cell<(u32, Code)>>,
-    stamp: u32,
+    stamp: std::cell::Cell<u32>,
 }
 
 /// A thread's slots for [`Local`], with the stamp of the last expansion.
@@ -890,28 +890,40 @@ thread_local! {
 
 impl<'a, C: Codes + ?Sized> Local<'a, C> {
     fn new(inner: &'a C, at: [i32; 3], track: Option<&'a bank::Track<'a>>) -> Self {
-        let (stamp, slots) = LOCAL.with(|l| {
-            let mut l = l.borrow_mut();
-            let mut slots = std::mem::take(&mut l.1);
+        let slots = LOCAL.with(|l| {
+            let mut slots = std::mem::take(&mut l.borrow_mut().1);
             if slots.is_empty() {
                 slots = vec![std::cell::Cell::new((0, 0)); flights::NEAR_SLOTS];
             }
-            l.0 = l.0.wrapping_add(1);
-            if l.0 == 0 {
-                for s in &slots {
-                    s.set((0, 0));
-                }
-                l.0 = 1;
-            }
-            (l.0, slots)
+            slots
         });
-        Local {
+        let local = Local {
             inner,
             at,
             track,
             slots,
-            stamp,
-        }
+            stamp: std::cell::Cell::new(0),
+        };
+        local.next_run();
+        local
+    }
+
+    /// Answer no later read from a slot filled before: each cell is read
+    /// through `inner` again the first time a run asks for it, so a run
+    /// notes every cell it reads whatever the runs before it read.
+    fn next_run(&self) {
+        let stamp = LOCAL.with(|l| {
+            let mut l = l.borrow_mut();
+            l.0 = l.0.wrapping_add(1);
+            if l.0 == 0 {
+                for s in &self.slots {
+                    s.set((0, 0));
+                }
+                l.0 = 1;
+            }
+            l.0
+        });
+        self.stamp.set(stamp);
     }
 }
 
@@ -932,7 +944,7 @@ impl<C: Codes + ?Sized> Codes for Local<'_, C> {
             return self.inner.code(c);
         };
         let (s, v) = self.slots[i].get();
-        if s == self.stamp {
+        if s == self.stamp.get() {
             if let Some(t) = self.track {
                 let a = [c[0] + self.at[0], c[1] + self.at[1], c[2] + self.at[2]];
                 t.extend((a, a));
@@ -940,7 +952,7 @@ impl<C: Codes + ?Sized> Codes for Local<'_, C> {
             return v;
         }
         let v = self.inner.code(c);
-        self.slots[i].set((self.stamp, v));
+        self.slots[i].set((self.stamp.get(), v));
         v
     }
 }
@@ -2849,7 +2861,15 @@ impl World {
                     let summary = match banked.and_then(|b| b.reuse(g, runs)) {
                         Some(s) => s,
                         None => {
+                            // A run reads what it reads whatever the runs
+                            // before it read, or took as written: the cells,
+                            // the rest states and the edge positions that
+                            // read a cell are its own (one that read only the
+                            // launch cell's box, read before the first run,
+                            // is every run's).
                             kinds.borrow_mut().clear();
+                            edge_memo.borrow_mut().retain(|_, (_, b)| b.is_none());
+                            local.next_run();
                             leaf_watch.since();
                             let mut gedges: Edges = BTreeMap::new();
                             let mut gout = NodeEdges::default();

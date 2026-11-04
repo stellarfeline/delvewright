@@ -228,7 +228,8 @@ thread. The count changes how long a build takes and never a byte it emits
 
 **The reach graph's node bank across runs.** `DELVEC_REACH_CACHE=<dir>` names
 a directory the reach graph's node banks are read from when a run first asks
-for one and written back to when the run ends, if the run grew one: a later
+for one and written back to when the run ends, if the variants it keeps
+changed: a later
 run over a world of the same window takes every node whose read cells hold
 the same, unflown (`docs/reference/delvec/compiler/nav.md`, the node bank). A
 file is named for the bank's key and the sha256 of the running executable's

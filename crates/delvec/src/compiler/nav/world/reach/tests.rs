@@ -982,3 +982,166 @@ fn the_costs_bounds_hold_over_the_graphs_built() {
         "the worlds bind nothing"
     );
 }
+
+/// **What the bank records of a node is the same in every schedule**
+/// (`bank`'s module docs): a node's variant — the cells its head and its runs
+/// read, with what each held and which runs read it, the runs' boxes and
+/// what they did — is a function of the world and the node, whichever
+/// variant the expansion took runs from, so a build's bank is the same at
+/// every thread count. Generated cases: the Bell yard and edits of it that
+/// keep its window (wall cells opened, stones set in the yard), each world's
+/// nodes expanded with a forced prior in three orders — the worlds in turn,
+/// in reverse, and each alone against an empty bank — and every variant
+/// compared byte for byte; the two shared banks hold the same variants in the
+/// same order. Bound: runs taken as written in both shared orders, and nodes
+/// whose variant is compared after one was taken.
+#[test]
+fn a_node_records_the_same_variant_whichever_graph_banked_first() {
+    let root = [[5, 1, 5]];
+    let mut worlds = vec![bell_yard()];
+    let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+    let mut next = |n: u64| {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        (seed % n) as i32
+    };
+    for _ in 0..5 {
+        let mut b = bell_yard_build();
+        for _ in 0..2 {
+            // A wall cell opened two high, on a side the seed picks.
+            let i = 1 + next(13);
+            let (x, z) = match next(4) {
+                0 => (i, 0),
+                1 => (i, 14),
+                2 => (0, i),
+                _ => (14, i),
+            };
+            b.solid.remove(&[x, 1, z]);
+            b.solid.remove(&[x, 2, z]);
+            // A stone set in the yard, clear of the root.
+            let s = [1 + next(13), 1, 1 + next(13)];
+            if s != [5, 1, 5] {
+                b.solid.insert(s);
+            }
+        }
+        worlds.push(b.world(Ambient::Void, Vec::new()));
+    }
+    let params = ReachParams::shipped(worlds[0].unbounded_fall);
+    let memos: Vec<_> = worlds
+        .iter()
+        .map(|w| {
+            let _ = w.body_reach(&root);
+            w.graph_memo(&params)
+        })
+        .collect();
+    let keys: Vec<Vec<FlownKey>> = memos
+        .iter()
+        .map(|m| {
+            let mut k: Vec<FlownKey> = m
+                .flown
+                .entries()
+                .into_iter()
+                .flat_map(|(c, l)| l.into_iter().map(move |(q, _)| (c, q)))
+                .collect();
+            k.sort();
+            k
+        })
+        .collect();
+    type Recorded = BTreeMap<(usize, FlownKey), Vec<u8>>;
+    // Every node of the worlds in `order`, each against `bank` (a fresh bank
+    // per world where `bank` is `None`): expanded, taking runs from the
+    // nearest variant held, and kept.
+    let record = |order: &[usize], shared: Option<&bank::Bank>| -> Recorded {
+        let mut out = Recorded::new();
+        for &wi in order {
+            let alone;
+            let b = match shared {
+                Some(b) => b,
+                None => {
+                    alone = bank::Bank::holding(Vec::new());
+                    &alone
+                }
+            };
+            let (w, m) = (&worlds[wi], &memos[wi]);
+            for key in &keys[wi] {
+                let volumes = |bx| w.volumes_near(bx);
+                let jumps = w.jumps_from(key.0);
+                let x = b.expansion(
+                    key,
+                    &m.dense,
+                    &m.extra,
+                    &w.node_boxes(key.0),
+                    &jumps,
+                    &volumes,
+                );
+                let e = Arc::new(w.expand(m, &params, key.0, key.1, Some(&x)));
+                let Some(rb) = e.read else { continue };
+                let v = b.keep(*key, x, &m.extra, jumps, w.volumes_near(rb), &e);
+                out.insert((wi, *key), super::persist::encode_variant(&v));
+            }
+        }
+        out
+    };
+    let forward: Vec<usize> = (0..worlds.len()).collect();
+    let reverse: Vec<usize> = forward.iter().rev().copied().collect();
+    let (fb, rb) = (
+        bank::Bank::holding(Vec::new()),
+        bank::Bank::holding(Vec::new()),
+    );
+    let alone = record(&forward, None);
+    let fwd = record(&forward, Some(&fb));
+    let rev = record(&reverse, Some(&rb));
+    let compared = alone.len();
+    assert_eq!(fwd.len(), compared);
+    assert_eq!(rev.len(), compared);
+    let mut moved = Vec::new();
+    for (k, a) in &alone {
+        for (name, other) in [("in turn", &fwd), ("in reverse", &rev)] {
+            if other[k] != *a {
+                moved.push(format!(
+                    "{name}: world {} node {:?}: {} byte(s) against {} alone",
+                    k.0,
+                    k.1,
+                    other[k].len(),
+                    a.len()
+                ));
+            }
+        }
+    }
+    assert!(
+        moved.is_empty(),
+        "{} of 2 x {compared} variant(s) moved with the order the graphs banked in: {:?}",
+        moved.len(),
+        &moved[..moved.len().min(8)]
+    );
+    let held = |b: &bank::Bank| -> Vec<(FlownKey, Vec<Vec<u8>>)> {
+        b.held()
+            .into_iter()
+            .map(|(k, vs)| {
+                (
+                    k,
+                    vs.iter()
+                        .map(|v| super::persist::encode_variant(v))
+                        .collect(),
+                )
+            })
+            .collect()
+    };
+    assert_eq!(held(&fb), held(&rb), "the two orders' banks differ");
+    assert_eq!(fb.census(), rb.census());
+    let distinct: BTreeSet<(&FlownKey, &Vec<u8>)> =
+        alone.iter().map(|((_, k), v)| (k, v)).collect();
+    eprintln!(
+        "bank schedules: {} world(s), {compared} variant(s) compared in three orders, {} distinct; \
+         runs taken as written {} in turn and {} in reverse; banks of {:?} (variants, bytes)",
+        worlds.len(),
+        distinct.len(),
+        fb.reused_runs(),
+        rb.reused_runs(),
+        fb.census()
+    );
+    // Bound, not vacuous: both shared orders took runs from a prior.
+    assert!(compared > 0);
+    assert!(fb.reused_runs() > 0 && rb.reused_runs() > 0);
+}
