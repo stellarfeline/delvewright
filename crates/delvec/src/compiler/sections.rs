@@ -467,9 +467,13 @@ static THRASHED_JUDGED: AtomicU64 = AtomicU64::new(0);
 /// Read-backs between two judgements of the need.
 const SAMPLE: u64 = 64;
 
-/// The one structure the budget asks: every store's paged arrays, weakly.
+/// The one structure the budget asks: every store's paged arrays, weakly,
+/// each with whether it was made under a test's budget — so a relief over
+/// every store passes a fenced array by without taking a strong reference
+/// to it, which, were it the last, would drop the array and free its region
+/// on the relieving thread.
 struct Store {
-    pages: Mutex<Vec<Weak<Paged>>>,
+    pages: Mutex<Vec<(bool, Weak<Paged>)>>,
 }
 
 fn store() -> &'static Arc<Store> {
@@ -525,10 +529,11 @@ impl Store {
         let Some(mut pages) = pages else {
             return 0;
         };
-        pages.retain(|w| w.strong_count() > 0);
+        pages.retain(|(_, w)| w.strong_count() > 0);
         let mut order: Vec<(u64, Arc<Paged>)> = pages
             .iter()
-            .filter_map(Weak::upgrade)
+            .filter(|(fenced, _)| only.is_some() || !fenced)
+            .filter_map(|(_, w)| w.upgrade())
             .filter(|p| match only {
                 Some(t) => Arc::ptr_eq(&p.tally, t),
                 None => !p.tally.fenced.load(Ordering::Relaxed),
@@ -692,7 +697,7 @@ impl Paged {
             .pages
             .lock()
             .expect("pages")
-            .push(Arc::downgrade(&p));
+            .push((budget::override_here() != 0, Arc::downgrade(&p)));
         relieve(tally);
         p
     }
@@ -732,7 +737,7 @@ impl Paged {
                     .pages
                     .lock()
                     .expect("pages")
-                    .push(Arc::downgrade(&p));
+                    .push((budget::override_here() != 0, Arc::downgrade(&p)));
                 p
             }
         }
