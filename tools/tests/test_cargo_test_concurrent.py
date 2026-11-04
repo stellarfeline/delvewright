@@ -99,3 +99,23 @@ def test_all_passing_is_green_and_a_doc_test_failure_is_not(monkeypatch, tmp_pat
 def test_a_listing_of_nothing_binds_nothing_and_refuses(monkeypatch):
     monkeypatch.setattr(tool, "listed", lambda a: [])
     assert tool.main(["--jobs", "2"]) == 2
+
+
+def test_the_free_disk_is_read_before_and_the_least_while_the_executables_run(
+    monkeypatch, tmp_path, capsys
+):
+    monkeypatch.setattr(tool, "listed", lambda a: targets(tmp_path, [0]))
+    monkeypatch.setattr(tool, "doc_tests", lambda a: 0)
+    readings = iter([900, 800] + [500] * 10_000)
+    monkeypatch.setattr(tool.Disk, "free", staticmethod(lambda p: next(readings)))
+    slow = tmp_path / "slow"
+    slow.write_text("#!/bin/sh\nsleep 1\n")
+    slow.chmod(0o755)
+    t = targets(tmp_path, [0])
+    t[0]["exe"] = str(slow)
+    monkeypatch.setattr(tool, "listed", lambda a: t)
+    assert tool.main(["--jobs", "1"]) == 0
+    out = capsys.readouterr().out
+    assert "disk, before the executables: 900 byte(s) free under the temporary directory" in out
+    assert "; 800 byte(s) free under the target directory" in out
+    assert "disk, the least while they ran: 500 byte(s) free under the temporary directory" in out

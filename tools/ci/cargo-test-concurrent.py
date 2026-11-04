@@ -25,6 +25,11 @@ WHAT IT DOES
 4. It prints `test executables: R run of L listed, F failed` and exits 1 when
    any executable or the doc tests failed, or when R differs from L, and 2
    when cargo listed none.
+5. It prints the free disk under the system's temporary directory (where a
+   build's scratch files go) and under the target directory (where a test's
+   output trees go) before the executables run, and the least of each seen
+   while they ran, sampled every quarter second: the job's disk footprint,
+   read off the runner it ran on.
 
 Every executable runs to its end (`--no-fail-fast`). Deterministic in what it
 runs; stdlib-only python3.
@@ -36,8 +41,11 @@ import argparse
 import concurrent.futures
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -99,6 +107,30 @@ def run_one(t: dict) -> tuple[dict, int, str, float]:
     return t, proc.returncode, proc.stdout.decode("utf-8", "replace"), took
 
 
+class Disk:
+    """The least free bytes seen under each of `paths` while it runs."""
+
+    def __init__(self, paths: dict[str, str]) -> None:
+        self.paths = paths
+        self.least = {name: self.free(p) for name, p in paths.items()}
+        self.first = dict(self.least)
+        self.stop = threading.Event()
+        self.thread = threading.Thread(target=self.sample, daemon=True)
+
+    @staticmethod
+    def free(path: str) -> int:
+        return shutil.disk_usage(path).free
+
+    def sample(self) -> None:
+        while not self.stop.wait(0.25):
+            for name, p in self.paths.items():
+                self.least[name] = min(self.least[name], self.free(p))
+
+    def line(self, when: str, figures: dict[str, int]) -> str:
+        parts = [f"{figures[n]} byte(s) free under {n} ({p})" for n, p in self.paths.items()]
+        return f"disk, {when}: " + "; ".join(parts)
+
+
 def doc_tests(cargo_args: list[str]) -> int:
     """The doc tests, through cargo; their exit status."""
     return subprocess.run(["cargo", "test", "--workspace", "--doc", *cargo_args]).returncode
@@ -119,6 +151,12 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     failed: list[str] = []
     ran = 0
+    target_dir = str(Path(targets[0]["exe"]).parent)
+    disk = Disk(
+        {"the temporary directory": tempfile.gettempdir(), "the target directory": target_dir}
+    )
+    print(disk.line("before the executables", disk.first), flush=True)
+    disk.thread.start()
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
         for t, code, text, took in pool.map(run_one, targets):
             ran += 1
@@ -127,6 +165,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"     (exit {code}, {took:.1f}s wall)", flush=True)
             if code != 0:
                 failed.append(header(t).strip())
+    disk.stop.set()
+    disk.thread.join()
+    print(disk.line("the least while they ran", disk.least), flush=True)
 
     doc = doc_tests(cargo_args)
     if doc != 0:
