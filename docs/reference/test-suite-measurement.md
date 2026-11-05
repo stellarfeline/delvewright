@@ -56,6 +56,25 @@ On the Actions runner the bound is the sum, not the longest test: 3.63–3.76 te
 
 What was **not** measured anywhere in the tree read first: code coverage by line, region or branch (the re-read tree measures region, line and function coverage; branch coverage stays nightly-only). What exists is surface coverage — gallery units (spec-0039, `tools/ci/check-gallery-coverage.py`), DW-diagnostic coverage (`tools/ci/check-dw-codes.py`) and grammar demonstration (`delvec grammar coverage`). Each proves a *surface* is exercised; none says which source regions a test executes, so none can say whether two tests execute the same ones. Verified by `grep -rilE 'llvm-cov|instrument-coverage|grcov|tarpaulin|cargo-mutants|nextest'` over the tree: one hit, a sentence in ADR-0031 that names `cargo-nextest` as a step not decided there.
 
+### Re-read partitioned, at one engine thread **[authored, measured]**
+
+The suite as `.github/workflows/ci.yml` runs it at `aaff1f312`: one instrumented archive, the `rust fixtures` job, and 13 `rust partition` jobs at `DELVEC_THREADS=1` (spec-0126 §5). Every figure is read from the Actions runs named, through `tools/ci/check-partitions.py` (the census) and each partition's JUnit report. The JUnit reports are the runner's clock; the job durations are GitHub's.
+
+| Reading | Value | Where read |
+|---|---|---|
+| Tests | 5,249 listed (12 ignored), 5,249 run, each in exactly one of 13 partitions; 381–434 per partition | the census, runs 42001300305 and 42010396034 |
+| JUnit sum, whole suite | 50,061 s and 47,130 s; at `DELVEC_THREADS` unset, 57,287 s (run 41939107132, ba7a0ad99, N = 30) | the partitions' JUnit reports |
+| The same tree with only the engine's thread count changed | JUnit sum 57,287 s → 37,005 s; tests over 120 s 92 → 48; the longest test, `compiler::surround::tests::a_carved_staircase_up_the_inner_slope_is_dw0369`, 1,010 s → 1,303 s (a unit test, so in-process at one thread) | run 41939107132 against run 41979829454 (acf099ea1), both N = 30 |
+| Partitions' nextest walls, run 42001300305 | 474–973 s for 10 of 13; p10 1,159 s; p9 2,113 s and p13 2,343 s on runners 2.44 and 2.41 times as slow as the median | the JUnit `<testsuites time>`; the ratio is the partition's median per-test time against the mean of runs 41979829454 and 41992688769 |
+| Partitions' nextest walls, run 42010396034 | 528–1,224 s for 12 of 13; p8 1,896 s on a runner 2.44 times as slow | the same |
+| Partition jobs | 8.8–20.1 min, p9 36.2 and p13 39.8 (run 42001300305); 9.6–21.2 min, p8 32.6 (run 42010396034) | the Actions job durations |
+| Build job, fixtures job | 10.4 and 13.3 min; 10.6 and 10.8 min | the same |
+| Run start to the `rust` job's end | 64.6 min and 55.2 min | the same |
+| One test's time between two runs | up to 4.44 times (68 → 300 s); one partition's median, up to 2.75 times | runs 41979829454 and 41992688769, tests above 30 s in both (217) |
+| Region coverage of production source | 232,027 of 246,664 (94.07 %); lines 141,080 of 150,881 (93.50 %); functions 14,393 of 15,267 (94.28 %); the floor 231,874 of 246,511 | `tools/ci/coverage-floor.py` over run 42001300305's export; run 42010396034's is equal |
+
+What the re-read says: one engine thread per test cut the suite's CPU time by a third, not by the two thirds a 16-core estimate gave, and made the longest in-process test slower. The partitions' walls are set by the runner more than by the partition: every run measured put one to three of 13 partitions on a runner more than twice as slow as the median. On a median runner every partition ran within 25 minutes.
+
 ## 2. Code coverage in Rust
 
 ### 2.1 The mechanism **[cited: rustc book, *Instrumentation-based code coverage*]**
