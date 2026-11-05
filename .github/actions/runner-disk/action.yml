@@ -37,7 +37,7 @@ runs:
             done
             df -B1 --output=target,size,avail /
             free > "$least"
-            nohup bash -c 'f="$1"; while sleep 0.25; do a="$(df -B1 --output=avail / | tail -n 1 | tr -d " ")"; if [ "$a" -lt "$(cat "$f")" ]; then echo "$a" > "$f.next"; mv "$f.next" "$f"; fi; done' sampler "$least" > /dev/null 2>&1 &
+            nohup bash -c 'f="$1"; while [ -f "$f" ] && sleep 0.25; do a="$(df -B1 --output=avail / | tail -n 1 | tr -d " ")"; if [ "$a" -lt "$(cat "$f")" ]; then echo "$a" > "$f.next"; mv "$f.next" "$f"; fi; done' sampler "$least" > /dev/null 2>&1 &
             echo "disk, before the job's work: $(cat "$least") byte(s) free under /"
             ;;
           report)
