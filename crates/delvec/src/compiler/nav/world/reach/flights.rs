@@ -289,6 +289,26 @@ fn shards() -> &'static [RwLock<Shard>] {
 
 static HELD: AtomicU64 = AtomicU64::new(0);
 
+#[cfg(test)]
+thread_local! {
+    static OFF: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// `f` with the memo neither asked nor written on this thread: every launch
+/// flown, as a process with an empty memo flies it.
+#[cfg(test)]
+pub(super) fn without<R>(f: impl FnOnce() -> R) -> R {
+    let was = OFF.with(|o| o.replace(true));
+    let out = f();
+    OFF.with(|o| o.set(was));
+    out
+}
+
+#[cfg(test)]
+fn off() -> bool {
+    OFF.with(std::cell::Cell::get)
+}
+
 fn small(c: [i32; 3]) -> Option<[i16; 3]> {
     Some([
         i16::try_from(c[0]).ok()?,
@@ -304,6 +324,10 @@ fn read<C: Codes + ?Sized>(codes: &C, c: [i16; 3]) -> Code {
 
 /// The recorded flight of `key` over `codes`, if one met the same cells.
 pub(super) fn lookup<C: Codes + ?Sized>(key: &Key, codes: &C) -> Option<Kept> {
+    #[cfg(test)]
+    if off() {
+        return None;
+    }
     let shard = shards()[key.shard()].read().expect("flight memo");
     let mut n = *shard.roots.get(key)?;
     loop {
@@ -531,6 +555,10 @@ impl<C: Codes + ?Sized> Codes for Reads<'_, C> {
 /// fly on.
 pub(super) fn record<C: Codes + ?Sized>(key: Key, reads: Reads<'_, C>, flight: &Flight) {
     if matches!(flight.outcome, Outcome::Dead(super::Death::Volume)) {
+        return;
+    }
+    #[cfg(test)]
+    if off() {
         return;
     }
     let Some(swept) = flight.swept else {
