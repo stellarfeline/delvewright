@@ -126,6 +126,7 @@ inputs = [
   { glob = "tools/**", why = "every file this job runs tests a tool under `tools/`, with its fixtures under `tools/tests/`" },
   { glob = "crates/**", why = "`test_check_dw_codes.py` and `test_check_source_dupes.py` scan the crate sources; `test_staging_gate.py`'s `Engine` reads every DW declaration and test; `test_block_appearance.py` reads crate data; `test_far_field.py` reads the far-field threshold in `compiler/loop.rs`; the publish-gate tests copy the crate manifests the version-site rows name" },
   { glob = "Cargo.toml", why = "the publish-gate tests copy the root manifest into their scratch tree" },
+  { glob = ".config/nextest.toml", why = "`test_suite_bounds.py` reads the live `[profile.ci]` bounds through `tools/lib/suite_bounds.py`" },
   { glob = "gallery/**", why = "the gallery tests (`test_gallery_coverage.py`, `test_gallery_domain.py`, `test_gallery_not_shippable.py`, `test_check_gallery_stageable.py`) read the gallery campaign" },
   { glob = "harness/**", why = "`test_check_source_dupes.py` scans the harness; `test_staging_gate.py` reads harness carriers; `test_block_state_parse.py` reads the shared block-state fixture under `harness/test/fixtures/`" },
   { glob = "validation/**", why = "`test_reclaim_ladder_images.py`, `test_render_shots_*.py`, `test_delvec_bin_sh.py`, `test_mutex_lock_dir_default.py`, `test_branch_runs_keeps_bot_report.py`, `test_world_save_from_outside.py` and `test_staging_gate.py` run or read scripts under `validation/`" },
