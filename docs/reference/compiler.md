@@ -254,8 +254,16 @@ is the deliverable the determinism gates hash), unlinked as soon as it is
 open: each variant is written as the file format encodes it and read back
 when a later graph asks, and the bank holds one offset and length per variant
 in memory, so what it costs grows with the nodes flown by a few words each and
-never with the cells they read (ADR-0037). A run that kept any prints `reach
-bank: N node variant(s) kept over B byte(s) in the spill file` as it ends.
+never with the cells they read (ADR-0037). **The banks keep no more than the
+cost states**: `delvec build` and `delvec detail` set a cap on what the
+banks of the process keep between them before the proofs run (the ledger's
+`scratch_bytes.bank_cap`: the graph's own tables' and lists' bound per
+configuration, over the configurations), and a variant that would pass it
+is not kept — the expansion's answer is the same, the next world that asks
+re-flies the node, and no output byte reads the bank; the `reach scratch:`
+line states the cap and the variants refused at it beside the bank's file.
+A run that kept any prints `reach bank: N node variant(s) kept over B
+byte(s) in the spill file` as it ends.
 **One policy for every scratch file**: one that cannot be opened is no file,
 and the structure holds its records in memory instead (the same answers,
 slower); one that was opened and then refuses a write or a read back stops
@@ -276,8 +284,9 @@ included; within a process the bank, the graphs and the snapshot are kept to
 its end. **The disk a build needs** in the temporary directory is the sum of
 its scratch files' longest, measured and printed as the run ends (`reach
 scratch:` below, the section stores' file on `world store pages:`); the cost
-line (`resource cost:`) states the section stores' file and does not compute
-the reach graph's. Writes and reads are both positional, so a reader needs
+line (`resource cost:`) states, before the proofs run, the section stores'
+file and the reach graph's three — the lists' and tables', the snapshot's and
+the bank's — per configuration. Writes and reads are both positional, so a reader needs
 no lock against the writer, on Windows too (where a duplicated handle shares
 the file pointer); the reach module's tests run on the Windows target in CI
 for that reason.
@@ -3781,8 +3790,13 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   label(s), C configuration(s); scratch: the stores' B byte(s), one region of
   8192 per array alive at once, at most A — W section(s) of the whole, J of
   the judged copy, S written section(s) under the write sequence judge's 4
-  stores, and R region section(s) per configuration (ADR-0037 §3)` and
-  written as the same numbers. The scratch figure is an upper bound on the
+  stores, and R region section(s) per configuration; the reach graph's G
+  byte(s) over the configuration(s), P per configuration — the snapshot's
+  pages S, the node tables T over E edge(s) at most, one closure's lists L,
+  the bank's file B (the cap the build sets: the tables and the lists, past
+  which no variant is kept) — the variants' worlds, a second closure and a
+  second table entry covered by those terms' slack (ADR-0037 §3)` and
+  written as the same numbers. The stores' scratch figure is an upper bound on the
   stores' scratch file: the file holds one region per index array alive at
   once over every store (below), and the arrays alive at once are at most the
   whole's and the judged copy's sections, the write sequence judge's four
@@ -3799,10 +3813,28 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   so two builds of one campaign write one file; what a build reached is the
   end-of-run lines (`reach budget:`, `reach lists:`, `reach portals:`, `reach
   graphs:`, `reach states:`, `reach scratch:`, `world store pages:`, the
-  exposure line's labels), which are written nowhere in the output tree. The
-  scratch the line states is the section stores' file; the reach graph's
-  scratch files are not computed there, and `reach scratch:` states what they
-  took. The **rest census** (`cost::RestCensus`)
+  exposure line's labels), which are written nowhere in the output tree. **The
+  reach graph's scratch figure** (`scratch_bytes.reach_graph`,
+  `nav::scratch_bound_of`) is an upper bound on the reach graph's three
+  scratch files together: for one configuration, every page of the window's
+  two snapshot arrays once (⌈cells / 4096⌉ × 4096 × 6 bytes); the two node
+  tables (an entry of 55 bytes per rest candidate in each, the cell-relation
+  edges at 17 bytes in one and every edge of the candidates' envelopes in the
+  other); one closure's two lists (a record of 29 and of 41 bytes per edge,
+  and one chunk's records once more, for a chunk rewritten whole beside its
+  pieces), the edges over the window being the census's `edges_at_most`
+  (every candidate's envelope, summed); and the bank's file, which is the
+  cap the build sets on it — the tables and the lists again (`bank_file_cap`
+  per configuration, `bank_cap` over them) — since the bank is a cache the
+  build stops filling at the cap; times the configurations. The record sizes
+  are the encoder's, held by a test per record. What the terms do not count by name is covered by their
+  slack, held by test on generated cases and on the gallery, and the ledger
+  says by which term (`reach_graph_covered_by_slack`): the premise variants'
+  and counterfactuals' worlds (every term), a second closure taken over one
+  configuration (the lists), a node's second table entry under another set
+  of launch quadrants (the tables). The `reach scratch:` line's longest of
+  the three files, summed, is what the figure bounds; the gallery baseline
+  job holds it there (`tools/ci/gallery-build.py`). The **rest census** (`cost::RestCensus`)
   reads the window from the store section by section through the one block
   classification (`blockshape::collision_class`) and counts, per column, the
   cells a body can rest in at most: one standing candidate over every surface
