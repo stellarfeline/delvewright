@@ -409,7 +409,7 @@ impl WorldMaker {
             assembled.reached.clone(),
         );
         for c in picture.keys() {
-            ground.mark(*c);
+            ground.mark(c);
         }
         WorldMaker {
             biome: crate::compiler::horizon::biome_map(plan),
@@ -435,11 +435,11 @@ impl WorldMaker {
                 let kind = crate::compiler::registry::block_entity_type(
                     crate::compiler::assembled::base_id(state.as_str()),
                 )?;
-                let nbt = match self.template_block_entities.get(c) {
+                let nbt = match self.template_block_entities.get(&c) {
                     Some((placed, nbt)) if placed == state => nbt.clone(),
                     _ => Nbt::Compound(vec![("id".to_string(), Nbt::Str(kind.to_string()))]),
                 };
-                Some((*c, nbt))
+                Some((c, nbt))
             })
             .collect()
     }
@@ -451,13 +451,12 @@ impl WorldMaker {
     /// entity file), its block entities, its light and `day_time`.
     pub fn encode_blocks(
         &self,
-        blocks: &BlockMap,
+        mut blocks: BlockMap,
         laid: &[Region],
         day_time: i64,
         rows: &[&crate::compiler::placed::Placed],
     ) -> (BlockMap, WrittenWorld) {
         use crate::compiler::placed::PlacedObject;
-        let mut blocks = blocks.clone();
         let mut ground = self.ground.clone();
         for (lo, hi) in laid {
             ground.mark_box(*lo, *hi);
@@ -542,7 +541,7 @@ impl WorldMaker {
         rows: &[&crate::compiler::placed::Placed],
     ) -> (BlockMap, WrittenWorld) {
         self.encode_blocks(
-            &config.blocks(picture),
+            config.blocks(picture),
             &config.laid_regions(),
             clock.day_time(plan),
             rows,
@@ -824,21 +823,27 @@ pub fn write_review(
         let started = std::time::Instant::now();
         let rows: Vec<&crate::compiler::placed::Placed> =
             fw.rows.iter().map(|i| &ledger.rows[*i]).collect();
-        let (blocks, w) = maker.encode(plan, picture, &fw.config, &fw.clock, &rows);
+        let (blocks, mut w) = maker.encode(plan, picture, &fw.config, &fw.clock, &rows);
         let bodies = body_targets(&rows);
         let mut targets = targets.clone();
         targets.extend(bodies.iter().map(|b| b.target.clone()));
         let ms = started.elapsed().as_millis();
         let dir = format!("validation/worlds/{key}");
-        for (rel, bytes) in &w.files {
-            out.insert(format!("{dir}/{rel}"), bytes.clone());
-        }
         lines.push(world_line(key, &w, &dir, ms));
         worlds_json.push(world_json(key, &w));
         sha_of.insert(key.clone(), w.sha256.clone());
+        // The world's files move into the output; the encoded world keeps
+        // no second copy of them.
+        for (rel, bytes) in std::mem::take(&mut w.files) {
+            out.insert(format!("{dir}/{rel}"), bytes);
+        }
+        drop(w);
         // What each shot standing in this world shows: one grid, one sight
         // rule.
         let grid = crate::compiler::framing::VoxelGrid::build(&blocks);
+        // The grid answers every sight question the shots ask; the world's
+        // block map is not read again.
+        drop(blocks);
         for (i, s) in shots.iter().enumerate() {
             if s["world"].as_str() != Some(key.as_str()) {
                 continue;

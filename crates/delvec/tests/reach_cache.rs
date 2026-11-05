@@ -121,16 +121,20 @@ fn a_build_from_an_earlier_run_s_bank_emits_what_flying_emits() {
     }
 }
 
-fn check(campaign: &Path, prefabs: &Path, cache: Option<&str>) -> Output {
+fn check(campaign: &Path, prefabs: &Path, cache: Option<&str>, threads: Option<&str>) -> Output {
     let mut cmd = Command::new(BIN);
     cmd.args(["--prefabs"])
         .arg(prefabs)
         .args(["detail", "--check"])
         .arg(campaign)
         .arg("node/annex")
-        .env_remove("DELVEC_REACH_CACHE");
+        .env_remove("DELVEC_REACH_CACHE")
+        .env_remove("DELVEC_THREADS");
     if let Some(c) = cache {
         cmd.env("DELVEC_REACH_CACHE", c);
+    }
+    if let Some(t) = threads {
+        cmd.env("DELVEC_THREADS", t);
     }
     cmd.output().expect("run delvec")
 }
@@ -139,7 +143,11 @@ fn check(campaign: &Path, prefabs: &Path, cache: Option<&str>) -> Output {
 /// unset: a check leaves its banks under `<campaign>/.out/reach-bank/`, each
 /// named for the executable that wrote it, and removes a bank file another
 /// executable left there; a second check over the bank says what the first
-/// said; the empty string writes nothing.
+/// said; the empty string writes nothing. The bank is the same at every
+/// thread count: the check that writes nothing runs on one thread and says
+/// what the warm check at the host's threads says, the `reach bank:` line
+/// included, and a check on one thread into a directory of its own writes
+/// the bank file the check at the host's threads wrote, byte for byte.
 #[test]
 fn detail_keeps_the_bank_with_the_campaign_and_reclaims_another_binary_s() {
     let root = tmp("reach-cache-detail");
@@ -148,7 +156,7 @@ fn detail_keeps_the_bank_with_the_campaign_and_reclaims_another_binary_s() {
     // The fixture is made by `detail --all`, which keeps its own bank there.
     let _ = std::fs::remove_dir_all(&bank);
 
-    let off = check(&campaign, &prefabs, Some(""));
+    let off = check(&campaign, &prefabs, Some(""), Some("1"));
     let said = String::from_utf8_lossy(&off.stderr).into_owned();
     assert_eq!(off.status.code(), Some(0), "{said}");
     assert!(banks(&bank).is_empty(), "the empty string writes nothing");
@@ -167,7 +175,7 @@ fn detail_keeps_the_bank_with_the_campaign_and_reclaims_another_binary_s() {
     std::fs::create_dir_all(&bank).unwrap();
     let stale = bank.join("0000000000000000-stale.bank");
     std::fs::write(&stale, b"DWBANK01").unwrap();
-    let cold = check(&campaign, &prefabs, None);
+    let cold = check(&campaign, &prefabs, None, None);
     assert_eq!(cold.status.code(), Some(0), "{}", text(&cold));
     let written = banks(&bank);
     assert!(
@@ -188,12 +196,25 @@ fn detail_keeps_the_bank_with_the_campaign_and_reclaims_another_binary_s() {
         assert!(name.starts_with(&format!("{exe}-")), "{name}");
     }
 
-    let warm = check(&campaign, &prefabs, None);
+    let warm = check(&campaign, &prefabs, None, None);
     assert_eq!(warm.status.code(), Some(0), "{}", text(&warm));
     let lines = |o: &Output| -> Vec<String> {
         String::from_utf8_lossy(&o.stderr)
             .lines()
-            .filter(|l| !l.contains("peak rss") && !l.contains(" ms"))
+            // What the run cost — its peak, its times, and what its reach
+            // lists, snapshot, bank and section stores spilled, read back and held
+            // under the budget, and each raise of the stores' need — is the
+            // machine's, not the check's.
+            .filter(|l| {
+                !l.contains("peak rss")
+                    && !l.contains(" ms")
+                    && !l.starts_with("reach lists:")
+                    && !l.starts_with("reach scratch:")
+                    && !l.starts_with("reach snapshot:")
+                    && !l.starts_with("reach budget:")
+                    && !l.starts_with("world store pages:")
+                    && !l.starts_with("world store need:")
+            })
             .map(|l| {
                 // The scratch is named for the process.
                 l.split("detail-check-")
@@ -217,6 +238,34 @@ fn detail_keeps_the_bank_with_the_campaign_and_reclaims_another_binary_s() {
         "a check over the bank says what a check that flew every node says"
     );
     assert_eq!(off.stdout, warm.stdout);
+    assert!(
+        lines(&off).iter().any(|l| l.starts_with("reach bank:")),
+        "the check states its bank"
+    );
+
+    let one = root.join("one-thread-bank");
+    let alone = check(&campaign, &prefabs, Some(one.to_str().unwrap()), Some("1"));
+    assert_eq!(alone.status.code(), Some(0), "{}", text(&alone));
+    let name = |v: &[(PathBuf, Vec<u8>)]| -> Vec<(String, Vec<u8>)> {
+        v.iter()
+            .map(|(p, b)| {
+                (
+                    p.file_name().unwrap().to_string_lossy().into_owned(),
+                    b.clone(),
+                )
+            })
+            .collect()
+    };
+    let (by_one, by_all) = (name(&banks(&one)), name(&written));
+    assert_eq!(
+        by_one.iter().map(|(n, b)| (n, b.len())).collect::<Vec<_>>(),
+        by_all.iter().map(|(n, b)| (n, b.len())).collect::<Vec<_>>(),
+        "the bank at one thread and at the host's threads"
+    );
+    assert!(
+        by_one == by_all,
+        "the bank file at one thread differs from the one at the host's threads"
+    );
 }
 
 fn text(o: &Output) -> String {

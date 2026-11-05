@@ -267,13 +267,13 @@ mod mob_reach_tests {
     ) -> World {
         World::from_occupancy(
             crate::compiler::assembled::Occupancy {
-                solid,
-                tall,
-                use_gates: BTreeSet::new(),
-                flooded,
-                partial,
-                waterloggable: BTreeSet::new(),
-                lava: BTreeSet::new(),
+                solid: solid.into(),
+                tall: tall.into(),
+                use_gates: (BTreeSet::new()).into(),
+                flooded: flooded.into(),
+                partial: partial.into(),
+                waterloggable: (BTreeSet::new()).into(),
+                lava: (BTreeSet::new()).into(),
                 climb: Default::default(),
                 unheld_climb: Default::default(),
                 material: Default::default(),

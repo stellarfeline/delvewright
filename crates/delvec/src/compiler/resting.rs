@@ -277,7 +277,7 @@ pub fn judge_with(
             continue; // it hangs, or is hung on a side: held where it is
         }
         let bottom = own.iter().map(|p| p[1]).min().unwrap_or(0);
-        let below_cell = step(*cell, Face::Down);
+        let below_cell = step(cell, Face::Down);
         let below = name_at(below_cell);
         let under = shape(below).unwrap_or_default();
         let under: &[Box96] = &under;
@@ -297,7 +297,7 @@ pub fn judge_with(
         // over air it is an overhang, which its neighbours answer for
         let half_surface = bottom >= GAP_96 || (!under.is_empty() && top <= GAP_96);
         if half_surface && gap >= GAP_96 {
-            cand.insert(*cell, (gap, below.to_string()));
+            cand.insert(cell, (gap, below.to_string()));
         }
     }
     b.candidates = cand.len();

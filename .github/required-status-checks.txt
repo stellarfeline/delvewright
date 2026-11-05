@@ -28,6 +28,7 @@
 changes (which jobs a pull request reaches)
 delvec binary (one build per run)
 rust (fmt, clippy, test)
+rust (Windows, reach module)
 published crates (package + standalone build)
 engine binaries (cross-build shelf)
 harness (typecheck, test)

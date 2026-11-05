@@ -444,8 +444,8 @@ fn view_bounds(
     // Nothing walkable and nothing marked: fall back to the drawn blocks, then
     // to the whole area, so a slice is never empty.
     if lo[0] > hi[0] {
-        for (cell, _) in blocks.range([min[0], y_lo, min[2]]..=[max[0], y_hi, max[2]]) {
-            if cell[1] >= y_lo && cell[1] <= y_hi && in_box(*cell, min, max) {
+        for (cell, _) in blocks.in_box([min[0], y_lo, min[2]], [max[0], y_hi, max[2]]) {
+            if cell[1] >= y_lo && cell[1] <= y_hi && in_box(cell, min, max) {
                 note(&mut lo, &mut hi, cell[0], cell[2]);
             }
         }

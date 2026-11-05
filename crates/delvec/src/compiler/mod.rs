@@ -39,6 +39,8 @@
 //! - [`combat`]: compile-time combat winnability — the arithmetic half of the combat proofs.
 //! - [`commands`]: the vendored 1.21.11 Brigadier command-tree validator.
 //! - [`continuity`]: the NPC location-continuity lint (`DW0351`).
+//! - [`cost`]: the build's computed cost, stated before the whole-map stages start and
+//!   written as `validation/resource-cost.json` (ADR-0037 §3); nothing measured.
 //! - [`creator`]: the playtest-only creator overlay (`creator-datapack/`).
 //! - [`crosshair`]: two things the party must click may not stand where the crosshair cannot tell them apart (`DW0489`).
 //! - [`daylight`]: a body the sun kills may not be staged where the sun reaches it (`DW0496`).
@@ -100,6 +102,7 @@
 //! - [`resting`]: every block the build writes reads as resting on what holds it, by the jar's outlines (`DW1076`, reported).
 //! - [`sculk`]: the sculk family works — at rest (`DW0998`/`DW0999`), a sensor's power reaching nothing (`DW1000`), a catalyst hearing no death (`DW1001`), and the walk's vibrations — spec-0100.
 //! - [`seating`]: a horizon and a piece set are a pair — this base cannot seat this pool (`DW0886`), and a declared waterline is not in the bytes (`DW0887`).
+//! - [`sections`]: the section store the assembled world is held in — 16 × 16 × 16 sections, a palette and one index per cell, iterated in cell order (ADR-0037 §1).
 //! - [`seeding`]: no emitted comparison reads a score entry the emitted pack never creates (`DW0495`).
 //! - [`served`]: what the declared view distance costs the host — the pinned server's chunk set, the fitted live heap, the ceiling stated in `server/resources.properties` (spec-0091).
 //! - [`sign`]: the sign at a `signs` entry's anchor shows its text (`DW1075`).
@@ -158,6 +161,7 @@ pub mod cohabit;
 pub mod combat;
 pub mod commands;
 pub mod continuity;
+pub mod cost;
 pub mod creator;
 pub mod crosshair;
 pub mod daylight;
@@ -220,6 +224,7 @@ pub mod respawn;
 pub mod resting;
 pub mod sculk;
 pub mod seating;
+pub mod sections;
 pub mod seeding;
 pub mod served;
 pub mod sign;

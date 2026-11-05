@@ -72,7 +72,7 @@ struct Case {
 const EDGE: i32 = 20;
 
 fn case(rng: &mut SplitMix) -> Case {
-    let mut blocks = BTreeMap::new();
+    let mut blocks = delvec::compiler::blockstate::BlockMap::new();
     let density = rng.real(0.0, 0.2);
     for x in 0..EDGE {
         for y in 0..EDGE {

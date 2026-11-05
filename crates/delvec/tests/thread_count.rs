@@ -149,17 +149,47 @@ fn the_output_is_the_same_at_every_thread_count() {
     }
 }
 
-/// A diagnostic stream with each written world's wall time (`written in <n>
-/// ms`, spec-0112 §9) taken out: the time the writer took is a measurement of
-/// the machine, the one part of a binding line no thread count decides. Every
-/// other byte is compared, and the count of lines stripped is asserted equal
-/// by the comparison itself.
+/// A diagnostic stream with the three measurements of the machine taken out:
+/// each written world's wall time (`written in <n> ms`, spec-0112 §9), the
+/// snapshot's count of page reads served by a thread's recent pages
+/// (`reach snapshot: … H of T page read(s) served …`, ADR-0037 §2), which a
+/// per-thread cache answers differently at every thread count, and the
+/// section stores' paging (`world store pages: …`, ADR-0037 §1), whose
+/// give-ups, read-backs and measured need fall as the threads' reads fall.
+/// The need is the machine's in every line that states it: each raise
+/// (`world store need: raised to …`) is said as it happens, on a clock of the
+/// arrivals over every thread's stores, so where walks run beside each other
+/// how many raises a run makes is the schedule's — those lines are dropped —
+/// and the budget's line (`reach budget: …`), which states that need and what
+/// is resident at the end, is normalised; so is the scratch files' line
+/// (`reach scratch: …`, ADR-0037 §2), whose lengths depend on the order the
+/// threads free records and write the next ones into their room. Every other byte is compared, and
+/// the count of lines normalised is asserted equal by the comparison itself.
 fn without_wall_time(text: &str) -> String {
     text.lines()
+        .filter(|l| !l.starts_with("world store need: "))
         .map(|l| match l.rfind(", written in ") {
             Some(i) if l.ends_with(" ms") && l.starts_with("world: ") => {
                 format!("{}, written in <ms>", &l[..i])
             }
+            _ if l.starts_with("world store pages: ") => {
+                "world store pages: <the machine's> (ADR-0037 §1)".to_string()
+            }
+            _ if l.starts_with("reach budget: ") => {
+                "reach budget: <the machine's> (ADR-0037 §1)".to_string()
+            }
+            _ if l.starts_with("reach scratch: ") => {
+                "reach scratch: <the machine's> (ADR-0037 §2)".to_string()
+            }
+            _ if l.starts_with("reach snapshot: ") => match l.rfind("; ") {
+                Some(i) if l[i..].contains(" served by a thread's recent pages") => {
+                    format!(
+                        "{}; <hits> served by a thread's recent pages (ADR-0037 §2)",
+                        &l[..i]
+                    )
+                }
+                _ => l.to_string(),
+            },
             _ => l.to_string(),
         })
         .collect::<Vec<_>>()

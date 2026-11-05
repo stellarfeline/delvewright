@@ -1069,7 +1069,7 @@ pub fn write_world(
     let laid = stood.stands.laid_in(key).to_vec();
     let (blocks, written) = stood
         .maker
-        .encode_blocks(blocks, &laid, stood.day_time, rows);
+        .encode_blocks(blocks.clone(), &laid, stood.day_time, rows);
     let blocks = &blocks;
     crate::compiler::view::world::write_files(&written, dir)
         .map_err(|e| Diagnostic::error(DW_OUTPUT, format!("write {}: {e}", dir.display())))?;

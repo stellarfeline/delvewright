@@ -2514,18 +2514,14 @@ fn fall_in_pockets(ix: &Index, model: &VoxelModel, start: &BTreeSet<[i32; 3]>) -
             continue;
         }
         // Where a body comes into the space: a seed inside it, or a reached cell
-        // of it whose predecessor stands outside it.
-        let mouths: BTreeSet<[i32; 3]> = roots
-            .iter()
-            .filter(|c| {
-                seeds.contains(c)
-                    || reach
-                        .preds
-                        .get(*c)
-                        .is_some_and(|ps| ps.iter().any(|(p, _)| !space.contains(p)))
-            })
-            .copied()
-            .collect();
+        // of it whose predecessor stands outside it — read reach chunk by reach
+        // chunk.
+        let mut mouths: BTreeSet<[i32; 3]> = BTreeSet::new();
+        reach.preds_by_chunk(roots.iter().copied(), |c, ps| {
+            if seeds.contains(&c) || ps.iter().any(|(p, _)| !space.contains(p)) {
+                mouths.insert(c);
+            }
+        });
         let places = world.trapped_places(&roots, &mouths, None);
         for pocket in places.pockets {
             let inside: Vec<[i32; 3]> = pocket.into_iter().filter(|c| space.contains(c)).collect();

@@ -643,7 +643,7 @@ fn pockets(
                      of them back to the ground at the piece's edge",
                     p.len(),
                     p[0],
-                    world.way_in_words(p, &trapped, &judged.preds)
+                    world.way_in_words(p, &trapped, &judged.reach)
                 )
             })
             .collect(),

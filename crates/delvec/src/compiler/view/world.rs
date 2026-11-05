@@ -658,40 +658,75 @@ pub fn encode_world(input: &WorldInput<'_>) -> WrittenWorld {
         }
         _ => ([0, 0, 0], [0, 0, 0]),
     };
-    let mut ground_cells: Vec<([i32; 3], &str)> = Vec::new();
-    for (cx, cz) in &chunk_set {
-        for sy in &gsecs {
-            for i in 0..4096 {
-                let c = [
-                    cx * 16 + (i % 16),
-                    sy * 16 + i / 256,
-                    cz * 16 + ((i / 16) % 16),
-                ];
-                if blocks.contains_key(&c) {
-                    continue;
-                }
-                if let Some(g) = ground.at(c) {
-                    ground_cells.push((c, g));
-                }
-            }
-        }
-    }
-    let light = crate::compiler::light::LightArrays::over(
-        box_lo,
-        box_hi,
+    // The ground's cells — every cell of the written chunks' ground sections
+    // that no block holds — are walked, never gathered: under an ocean they
+    // outnumber the placed cells three to one (58 M for a 95-place town), and
+    // held as a list at 32 bytes each they were the largest single allocation
+    // of the build. The light flood reads the walk twice and the count once,
+    // in the same order a list would have given, so what it writes does not
+    // move.
+    let ground_cells = || {
+        chunk_set.iter().flat_map(|(cx, cz)| {
+            gsecs.iter().flat_map(move |sy| {
+                (0..4096).filter_map(move |i| {
+                    let c = [
+                        cx * 16 + (i % 16),
+                        sy * 16 + i / 256,
+                        cz * 16 + ((i / 16) % 16),
+                    ];
+                    if blocks.contains_key(&c) {
+                        return None;
+                    }
+                    ground.at(c).map(|g| (c, g))
+                })
+            })
+        })
+    };
+    let ground_count = ground_cells().count();
+    // The light is flooded strip by strip of [`LIGHT_STRIP`] chunk columns,
+    // each over its own box grown by [`LIGHT_REACH`] on both `x` sides
+    // ([`strip_light`]): what the chunks of a strip carry is the whole box's
+    // light, and only one strip's arrays are held at a time (ADR-0037 §2).
+    // The chunks are taken in the same order as before, so the light hash
+    // and every payload are the same.
+    let gsecs_ref = &gsecs;
+    let strip_cells = |x0: i32, x1: i32| {
+        let generated = chunk_set
+            .range((x0.div_euclid(16), i32::MIN)..=(x1.div_euclid(16), i32::MAX))
+            .flat_map(move |(cx, cz)| {
+                gsecs_ref.iter().flat_map(move |sy| {
+                    (0..4096).filter_map(move |i| {
+                        let c = [
+                            cx * 16 + (i % 16),
+                            sy * 16 + i / 256,
+                            cz * 16 + ((i / 16) % 16),
+                        ];
+                        if c[0] < x0 || c[0] > x1 || blocks.contains_key(&c) {
+                            return None;
+                        }
+                        ground.at(c).map(|g| (c, g))
+                    })
+                })
+            });
         blocks
-            .iter()
-            .map(|(c, s)| (*c, s.as_str()))
-            .chain(ground_cells.iter().copied()),
-    );
-    let ground_count = ground_cells.len();
-    drop(ground_cells);
+            .in_box([x0, i32::MIN, i32::MIN], [x1, i32::MAX, i32::MAX])
+            .map(|(c, s)| (c, s.as_str()))
+            .chain(generated)
+    };
+    let mut strip: Option<(i32, crate::compiler::light::LightArrays)> = None;
     let mut light_hash = Sha256::new();
     let mut light_cells = 0usize;
     let mut block_entities = 0usize;
     // region (rx, rz) -> chunk index -> payload.
     let mut regions: BTreeMap<(i32, i32), BTreeMap<usize, Vec<u8>>> = BTreeMap::new();
     for (cx, cz) in &chunk_set {
+        let g = cx.div_euclid(LIGHT_STRIP);
+        if strip.as_ref().is_none_or(|(k, _)| *k != g) {
+            // The last strip's arrays are given up before the next is lit.
+            drop(strip.take());
+            strip = Some((g, strip_light(box_lo, box_hi, g, &strip_cells)));
+        }
+        let light = &strip.as_ref().expect("the strip is lit").1;
         let secs: Vec<Tag> = (sec_lo..=sec_hi)
             .map(|sy| {
                 let (x0, y0, z0) = (cx * 16, sy * 16, cz * 16);
@@ -802,6 +837,40 @@ pub fn encode_world(input: &WorldInput<'_>) -> WrittenWorld {
         sha256: format!("{:x}", hasher.finalize()),
         files,
     }
+}
+
+/// The chunk columns one strip of a world's light is flooded over.
+const LIGHT_STRIP: i32 = 4;
+
+/// How far light reaches: a seed of 15 lights nothing 15 steps away, so the
+/// light of a cell is decided by the cells within 14 of it.
+const LIGHT_REACH: i32 = 15;
+
+/// **The light of strip `g`** — the chunk columns `g * LIGHT_STRIP ..` — of a
+/// world whose written box is `box_lo..=box_hi`: one flood over the strip's
+/// columns grown by [`LIGHT_REACH`] on both `x` sides, clipped to the box,
+/// holding what `cells(x0, x1)` gives for those columns. Every cell of the
+/// strip's own columns holds the light the whole box's flood gives it: the
+/// field is the pointwise maximum over every seed of `seed − distance`, a
+/// seed lights only cells within 14 steps of it, and every path of 14 steps
+/// into the strip lies inside the grown box; the box's own faces are the
+/// whole box's.
+fn strip_light<'c, I>(
+    box_lo: [i32; 3],
+    box_hi: [i32; 3],
+    g: i32,
+    cells: &impl Fn(i32, i32) -> I,
+) -> crate::compiler::light::LightArrays
+where
+    I: Iterator<Item = ([i32; 3], &'c str)> + Clone,
+{
+    let x0 = (g * LIGHT_STRIP * 16 - LIGHT_REACH).max(box_lo[0]);
+    let x1 = ((g + 1) * LIGHT_STRIP * 16 - 1 + LIGHT_REACH).min(box_hi[0]);
+    crate::compiler::light::LightArrays::over(
+        [x0, box_lo[1], box_lo[2]],
+        [x1, box_hi[1], box_hi[2]],
+        cells(x0, x1),
+    )
 }
 
 /// zlib at [`ZLIB_LEVEL`], as every chunk is compressed.
@@ -935,7 +1004,7 @@ pub fn block_entities_omitted(
                 || id.ends_with("_head")
                 || id.ends_with("_skull")
                 || id == "lectern")
-                && !block_entities.contains_key(*c)
+                && !block_entities.contains_key(c)
         })
         .count()
 }
@@ -944,6 +1013,97 @@ pub fn block_entities_omitted(
 mod tests {
     use super::*;
     use crate::compiler::blockstate::BlockState;
+
+    /// **A world's light, flooded strip by strip, is the whole box's**
+    /// (ADR-0037 §2, the review world): on generated worlds — opaque blocks,
+    /// glass, emitters of 15, 14 and 7, open sky and overhangs, spread over
+    /// boxes whose `x` extent spans several strips and starts off a strip's
+    /// edge — every cell of every strip's own columns holds, in both terms,
+    /// the light one flood over the whole box gives it. Red on any cell;
+    /// perturbed by a reach of 13.
+    #[test]
+    fn a_strip_of_light_is_lit_as_the_whole_box_lights_it() {
+        let mut seed = 0x2545_f491_4f6c_dd1du64;
+        let mut next = |n: u64| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed % n
+        };
+        let palette = [
+            "minecraft:stone",
+            "minecraft:glass",
+            "minecraft:glowstone",
+            "minecraft:torch",
+            "minecraft:redstone_torch",
+            "minecraft:oak_leaves",
+        ];
+        let (mut cells, mut lit, mut strips) = (0usize, 0usize, 0usize);
+        for (lo, hi) in [
+            ([-40, 0, -8], [150, 30, 23]),
+            ([5, -10, 0], [200, 12, 15]),
+            ([-130, 60, -20], [-1, 80, 11]),
+        ] {
+            // A roof with a few holes in it, a floor, sparse emitters and
+            // pillars in open air: light carries its full reach under the
+            // roof, and the sky's spills in sideways through the holes.
+            let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
+            for x in lo[0]..=hi[0] {
+                for z in lo[2]..=hi[2] {
+                    blocks.insert([x, lo[1], z], palette[0].to_string());
+                    if next(40) != 0 {
+                        blocks.insert([x, hi[1] - 1, z], palette[0].to_string());
+                    }
+                }
+            }
+            for _ in 0..((hi[0] - lo[0]) * (hi[2] - lo[2]) / 40) {
+                let c = [
+                    lo[0] + next((hi[0] - lo[0] + 1) as u64) as i32,
+                    lo[1] + 1 + next((hi[1] - lo[1] - 2) as u64) as i32,
+                    lo[2] + next((hi[2] - lo[2] + 1) as u64) as i32,
+                ];
+                let b = palette[match next(10) {
+                    0 => 2,
+                    1 => 3,
+                    2 => 4,
+                    3 => 1,
+                    4 => 5,
+                    _ => 0,
+                }];
+                blocks.insert(c, b.to_string());
+            }
+            let all = || blocks.iter().map(|(c, b)| (*c, b.as_str()));
+            let whole = crate::compiler::light::LightArrays::over(lo, hi, all());
+            let cells_in = |x0: i32, x1: i32| {
+                blocks
+                    .range([x0, i32::MIN, i32::MIN]..=[x1, i32::MAX, i32::MAX])
+                    .map(|(c, b)| (*c, b.as_str()))
+            };
+            let per = LIGHT_STRIP * 16;
+            for g in lo[0].div_euclid(per)..=hi[0].div_euclid(per) {
+                strips += 1;
+                let part = strip_light(lo, hi, g, &cells_in);
+                for x in (g * per).max(lo[0])..=((g + 1) * per - 1).min(hi[0]) {
+                    for y in lo[1]..=hi[1] {
+                        for z in lo[2]..=hi[2] {
+                            let c = [x, y, z];
+                            assert_eq!(part.sky(c), whole.sky(c), "{c:?}: sky light");
+                            assert_eq!(part.block(c), whole.block(c), "{c:?}: block light");
+                            cells += 1;
+                            if whole.block(c) > 0 && whole.block(c) < 15 {
+                                lit += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        eprintln!(
+            "strip light: {cells} cell(s) over {strips} strip(s), {lit} lit by a spread of block \
+             light"
+        );
+        assert!(cells > 0 && lit > 0 && strips > 3, "the cases bind nothing");
+    }
 
     /// A list of two tag types — a sign's messages, a string beside a
     /// `translate` compound — is written as the game writes one: a list of

@@ -157,6 +157,9 @@ fn run(
     for node in &targets {
         prepared.push(prepare(campaign_dir, &campaign, node, json, false)?);
     }
+    // What the run holds until that judgement is the pieces themselves: their
+    // size is the campaign's, stated and never chunked (ADR-0037 §5).
+    eprintln!("{}", prepared_line(&prepared));
     let binding = judge_run(&campaign, &library, &prepared, json)?;
     // The judge's binding, before anything is written — the same line from
     // the commit and from `--check`: the two runs say the same thing up to
@@ -367,6 +370,25 @@ struct Prepared {
     report: gates::Report,
     probe: Option<light::LightProbe>,
     row: Detail,
+}
+
+/// **The prepared pieces, stated** (ADR-0037 §5): every place this run holds
+/// in memory until the one judgement, as the structure template bytes it
+/// will write — the campaign's own size, which no chunking reduces.
+fn prepared_line(prepared: &[Prepared]) -> String {
+    format!(
+        "detail prepared: {} place(s) held until the one judgement, {} byte(s) of structure \
+         template over {} file(s) — the campaign's own size, stated and not chunked (ADR-0037 §5)",
+        prepared.len(),
+        prepared
+            .iter()
+            .map(|p| p.exported.nbt_bytes())
+            .sum::<usize>(),
+        prepared
+            .iter()
+            .map(|p| p.exported.nbt_files())
+            .sum::<usize>()
+    )
 }
 
 /// Detail one place in memory: steps 1–5 and 7 of spec-0058 §2.2 — the
@@ -942,6 +964,9 @@ fn leak_check(
     if let Some((_, j)) = &judged {
         eprintln!("{}", j.line());
     }
+    let cost = delvec::compiler::cost::ResourceCost::of(&plan, &whole, judged.as_ref());
+    eprintln!("{}", cost.line());
+    delvec::compiler::nav::set_bank_cap(cost.bank_cap());
     let blocks = std::sync::Arc::clone(judged.as_ref().map_or(&whole.blocks, |(a, _)| &a.blocks));
     drop(judged);
     drop(whole);

@@ -1739,7 +1739,7 @@ pub fn wave_reach(
     let openable: std::collections::BTreeSet<[i32; 3]> = blocks
         .iter()
         .filter(|(_, n)| delvewright_dsl::blockshape::opens_by_hand(n.as_str()))
-        .map(|(c, _)| *c)
+        .map(|(c, _)| c)
         .collect();
     b.openable = openable.len();
     let opened_owned = (!openable.is_empty()).then(|| open.with_openings_open(&openable));

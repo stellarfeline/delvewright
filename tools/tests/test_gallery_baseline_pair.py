@@ -253,3 +253,87 @@ def test_the_rebuild_refuses_a_point_the_run_did_not_measure(tmp_path, capsys):
 def test_the_report_names_the_commit_it_measured():
     src = (TOOLS / "ci" / "gallery-baseline.py").read_text()
     assert '{"tree": head["header"]["commit"], "manifests": head["manifests"]}' in src
+
+
+PAGES = (
+    "world store pages: 0 byte(s) resident over 0 section(s) of every store; 1200 array(s) given "
+    "up, 1100 read back, 9 of them within one turnover of the resident arrays; the need raised 2 "
+    "time(s) for a walk found thrashing, to 884736 byte(s); 65536 byte(s) in the scratch file in "
+    "regions of 8192 byte(s), at most 8 of them holding a live array at once; at most 9 array(s) "
+    "alive at once over every store (ADR-0037 §1)"
+)
+LEDGER = {"computed_never_measured": True, "scratch_bytes": {"stores": 81920}}
+
+
+def test_a_scratch_file_within_the_stated_cost_is_green():
+    assert BUILD.scratch_within_stated("other: line\n" + PAGES + "\n", LEDGER) == []
+
+
+def test_a_scratch_file_past_the_stated_cost_is_red():
+    reds = BUILD.scratch_within_stated(PAGES, {"computed_never_measured": True, "scratch_bytes": {"stores": 65535}})
+    assert len(reds) == 1 and "65536 byte(s) against the 65535" in reds[0]
+
+
+def test_a_build_without_the_pages_line_binds_nothing_and_is_red():
+    assert BUILD.scratch_within_stated("reach budget: nothing\n", LEDGER) == [
+        "0 `world store pages:` line(s) on stderr; one is read"
+    ]
+    assert BUILD.scratch_within_stated(PAGES + "\n" + PAGES, LEDGER)[0].startswith("2 `world store pages:`")
+
+
+def test_a_ledger_without_the_figure_or_measured_is_red():
+    assert BUILD.scratch_within_stated(PAGES, {"computed_never_measured": True}) == [
+        "`validation/resource-cost.json` carries no `scratch_bytes.stores`"
+    ]
+    reds = BUILD.scratch_within_stated(PAGES, {"computed_never_measured": False, "scratch_bytes": {"stores": 0}})
+    assert len(reds) == 2 and "computed_never_measured" in reds[0] and "not a positive" in reds[1]
+
+
+SCRATCH = (
+    "reach scratch: 515486071 byte(s) written to the scratch files, at most 438364597 byte(s) on disk "
+    "(the sum of each file's longest), 438294121 kept at the end; the lists' and tables' 410355900 written, "
+    "at most 334115289 long, 334112479 kept at the end; the bank's 99264699 written, at most 98383836 long, "
+    "98316170 kept at the end; the snapshot's 5865472 written, at most 5865472 long, 5865472 kept at the end "
+    "(ADR-0037 §2)"
+)
+REACH_USED = 334115289 + 98383836 + 5865472
+REACH_LEDGER = {"computed_never_measured": True, "scratch_bytes": {"reach_graph": REACH_USED}}
+
+
+def test_the_three_reach_files_within_the_stated_cost_are_green():
+    reds, binding = BUILD.reach_scratch_within_stated("other: line\n" + SCRATCH + "\n", REACH_LEDGER)
+    assert reds == []
+    assert f"{REACH_USED} byte(s) at most on disk" in binding and "the bank's 98383836" in binding
+
+
+def test_the_reach_files_past_the_stated_cost_are_red_by_one_byte():
+    ledger = {"computed_never_measured": True, "scratch_bytes": {"reach_graph": REACH_USED - 1}}
+    reds, _ = BUILD.reach_scratch_within_stated(SCRATCH, ledger)
+    assert len(reds) == 1 and reds[0].startswith(f"the reach graph's scratch files took {REACH_USED} byte(s)")
+
+
+def test_the_bank_is_held_to_the_reach_figure():
+    big_bank = SCRATCH.replace("at most 98383836 long", "at most 98383837 long")
+    reds, _ = BUILD.reach_scratch_within_stated(big_bank, REACH_LEDGER)
+    assert len(reds) == 1 and "took " + str(REACH_USED + 1) in reds[0]
+
+
+def test_a_build_without_the_reach_scratch_line_or_a_file_binds_nothing_and_is_red():
+    assert BUILD.reach_scratch_within_stated("reach budget: nothing\n", REACH_LEDGER)[0] == [
+        "0 `reach scratch:` line(s) on stderr; one is read"
+    ]
+    assert BUILD.reach_scratch_within_stated(SCRATCH + "\n" + SCRATCH, REACH_LEDGER)[0][0].startswith("2 `reach scratch:`")
+    no_snapshot = SCRATCH.replace("the snapshot's", "the snapshots")
+    assert BUILD.reach_scratch_within_stated(no_snapshot, REACH_LEDGER)[0][0].startswith(
+        "the reach scratch line names no longest for the snapshot's"
+    )
+
+
+def test_a_ledger_without_the_reach_figure_or_measured_is_red():
+    assert BUILD.reach_scratch_within_stated(SCRATCH, {"computed_never_measured": True, "scratch_bytes": {}})[0] == [
+        "`validation/resource-cost.json` carries no `scratch_bytes.reach_graph`"
+    ]
+    reds, _ = BUILD.reach_scratch_within_stated(
+        SCRATCH, {"computed_never_measured": False, "scratch_bytes": {"reach_graph": 0}}
+    )
+    assert len(reds) == 2 and "computed_never_measured" in reds[0] and "not a positive" in reds[1]

@@ -212,72 +212,65 @@ fn boundary_void_reach(reach: &Reach) -> Result<(), Failure> {
 fn boundary_ocean_reach(world: &World, reach: &Reach) -> Result<(), Failure> {
     let wet = |k: &RestKind| matches!(k, RestKind::Afloat | RestKind::Submerged);
     // Every state that reaches standing, walked backwards from the standing
-    // states over the predecessor edges, the open sea joined to itself.
-    // Standing includes standing in the shallows: a water cell a body's feet
-    // reach a floor in, with air over it.
-    let mut back: BTreeSet<[i32; 3]> = reach
-        .states
-        .iter()
-        .filter(|(c, k)| !wet(k) || world.wades(**c))
-        .map(|(c, _)| *c)
-        .collect();
-    let mut queue: std::collections::VecDeque<[i32; 3]> = back.iter().copied().collect();
-    let mut sea = false;
-    while let Some(cur) = queue.pop_front() {
-        if !sea && reach.open_sea.contains(&cur) {
-            sea = true;
-            for s in &reach.open_sea {
-                if back.insert(*s) {
-                    queue.push_back(*s);
-                }
-            }
-        }
-        for (p, _) in reach.preds.get(&cur).into_iter().flatten() {
-            if back.insert(*p) {
-                queue.push_back(*p);
-            }
-        }
-    }
+    // states over the predecessor edges, the open sea joined to itself, reach
+    // chunk by reach chunk ([`Reach::reaching`]). Standing includes standing
+    // in the shallows: a water cell a body's feet reach a floor in, with air
+    // over it.
+    let back: BTreeSet<[i32; 3]> = reach.reaching(
+        reach
+            .states
+            .iter()
+            .filter(|(c, k)| !wet(k) || world.wades(*c))
+            .map(|(c, _)| c),
+        |_| true,
+        true,
+    );
     let stranded: BTreeSet<[i32; 3]> = reach
         .states
         .iter()
-        .filter(|(c, k)| wet(k) && !back.contains(*c))
-        .map(|(c, _)| *c)
+        .filter(|(c, k)| wet(k) && !back.contains(c))
+        .map(|(c, _)| c)
         .collect();
     if stranded.is_empty() {
         return Ok(());
     }
     // The water a body reaches the open sea from, swimming.
-    let mut open: BTreeSet<[i32; 3]> = reach.open_sea.clone();
-    let mut queue: Vec<[i32; 3]> = open.iter().copied().collect();
-    while let Some(c) = queue.pop() {
-        for (p, _) in reach.preds.get(&c).into_iter().flatten() {
-            if reach.states.get(p).is_some_and(wet) && open.insert(*p) {
-                queue.push(*p);
-            }
-        }
-    }
+    let open: BTreeSet<[i32; 3]> = reach.reaching(
+        reach.open_sea.iter().copied(),
+        |p| reach.states.get(p).is_some_and(wet),
+        false,
+    );
     // Where a body gets into the stranding water: each standing state with an
-    // edge into it, once, with the first such edge in words.
-    let mut shores: BTreeMap<[i32; 3], String> = BTreeMap::new();
-    for c in &stranded {
-        for (p, e) in reach.preds.get(c).into_iter().flatten() {
-            if reach.states.get(p).is_some_and(|k| !wet(k)) && !shores.contains_key(p) {
-                shores.insert(
-                    *p,
-                    format!(
-                        "\n  - {p:?} → {} at {c:?}, by {}",
-                        if open.contains(c) {
-                            "the open sea"
-                        } else {
-                            "enclosed water"
-                        },
-                        super::leave::movement_words(world, *p, e)
-                    ),
-                );
+    // edge into it, once, with its edge into the least stranded cell (in cell
+    // order) it has one into — the first such edge in words. The stranded
+    // cells are read reach chunk by reach chunk, and the least kept.
+    let mut entries: BTreeMap<[i32; 3], ([i32; 3], Edge)> = BTreeMap::new();
+    reach.preds_by_chunk(stranded.iter().copied(), |c, ps| {
+        for (p, e) in ps {
+            if reach.states.get(p).is_some_and(|k| !wet(k))
+                && entries.get(p).is_none_or(|(at, _)| c < *at)
+            {
+                entries.insert(*p, (c, e.clone()));
             }
         }
-    }
+    });
+    let shores: BTreeMap<[i32; 3], String> = entries
+        .into_iter()
+        .map(|(p, (c, e))| {
+            (
+                p,
+                format!(
+                    "\n  - {p:?} → {} at {c:?}, by {}",
+                    if open.contains(&c) {
+                        "the open sea"
+                    } else {
+                        "enclosed water"
+                    },
+                    super::leave::movement_words(world, p, &e)
+                ),
+            )
+        })
+        .collect();
     let shores_n = shores.len();
     let mut listing: String = shores.values().take(BOUNDARY_LIST_LIMIT).cloned().collect();
     if shores_n > BOUNDARY_LIST_LIMIT {
@@ -320,21 +313,18 @@ pub fn open_sea_entry(world: &World, starts: &[AnchorRoot]) -> Option<[i32; 3]> 
             Some(RestKind::Afloat | RestKind::Submerged)
         )
     };
-    // The open sea's own states, and every wet state that reaches it.
-    let mut sea: BTreeSet<[i32; 3]> = reach.open_sea.clone();
-    let mut queue: Vec<[i32; 3]> = sea.iter().copied().collect();
-    while let Some(c) = queue.pop() {
-        for (p, _) in reach.preds.get(&c).into_iter().flatten() {
-            if wet(p) && sea.insert(*p) {
-                queue.push(*p);
+    // The open sea's own states, and every wet state that reaches it, each
+    // read reach chunk by reach chunk.
+    let sea: BTreeSet<[i32; 3]> = reach.reaching(reach.open_sea.iter().copied(), wet, false);
+    let mut least: Option<[i32; 3]> = None;
+    reach.preds_by_chunk(sea, |_, ps| {
+        for (p, _) in ps {
+            if !wet(p) && least.is_none_or(|l| *p < l) {
+                least = Some(*p);
             }
         }
-    }
-    sea.iter()
-        .flat_map(|c| reach.preds.get(c).into_iter().flatten())
-        .map(|(p, _)| *p)
-        .filter(|p| !wet(p))
-        .min()
+    });
+    least
 }
 
 #[cfg(test)]

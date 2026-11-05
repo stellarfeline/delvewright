@@ -224,7 +224,7 @@ impl VoxelGrid {
         };
         for (cell, name) in blocks {
             let id = *index.get(name.as_str()).expect("palette holds every id");
-            let Some((ci, oi)) = grid.slot(*cell) else {
+            let Some((ci, oi)) = grid.slot(cell) else {
                 continue;
             };
             grid.chunks[ci].get_or_insert_with(|| Box::new([0u16; CHUNK_CELLS]))[oi] = id;
@@ -1358,7 +1358,7 @@ mod tests {
 
     #[test]
     fn empty_world_casts_nothing() {
-        let g = VoxelGrid::build(&BTreeMap::new());
+        let g = VoxelGrid::build(&crate::compiler::blockstate::BlockMap::new());
         assert!(g.bounds().is_none());
         assert!(g.cast([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 100.0).is_none());
         assert!(!g.blocked([0.0, 0.0, 0.0], [10.0, 0.0, 0.0]));

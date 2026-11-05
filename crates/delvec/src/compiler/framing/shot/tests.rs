@@ -2,7 +2,7 @@
 //! sight lines, and the sent / drawn bounds.
 
 use super::*;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 /// A lens pose facing +Z, level.
 fn pose_at(pos: [f64; 3]) -> ([f64; 3], f64, f64) {
@@ -245,7 +245,7 @@ fn every_consumer_of_in_sight_answers_alike() {
     let mut differ = Vec::new();
     for case in 0..cases {
         // A 12 × 6 × 12 room with a stone floor at y = 0, some of it filled.
-        let mut blocks: BTreeMap<[i32; 3], BlockState> = BTreeMap::new();
+        let mut blocks = crate::compiler::blockstate::BlockMap::new();
         for x in 0..12 {
             for z in 0..12 {
                 blocks.insert([x, 0, z], BlockState::new("minecraft:stone"));

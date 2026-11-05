@@ -100,8 +100,98 @@ where
     Ok(())
 }
 
+/// `items.iter().map(f).collect()`, computed on up to [`threads`] threads,
+/// **holding at most `cap` of `weight` at once**: the items are taken in
+/// order in waves, each wave the longest run whose weights sum to at most
+/// `cap` (an item heavier than `cap` is a wave of its own), each wave computed
+/// with [`map`] and its results moved out before the next starts. For work
+/// whose transient — a decoded template's tree — is many times its item and
+/// would otherwise stand once per thread at the same moment (ADR-0037 §5
+/// item 3). The results are those of [`map`], in item order, at any `cap` and
+/// any thread count.
+pub fn map_within<T, R, F, W>(items: &[T], weight: W, cap: usize, f: F) -> Vec<R>
+where
+    T: Sync,
+    R: Send,
+    F: Fn(&T) -> R + Sync,
+    W: Fn(&T) -> usize,
+{
+    let mut out = Vec::with_capacity(items.len());
+    let mut start = 0;
+    while start < items.len() {
+        let mut end = start + 1;
+        let mut held = weight(&items[start]);
+        while end < items.len() {
+            let w = weight(&items[end]);
+            if held.saturating_add(w) > cap {
+                break;
+            }
+            held += w;
+            end += 1;
+        }
+        out.extend(map(&items[start..end], &f));
+        start = end;
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
+    /// The waves of [`super::map_within`] hold at most the cap, an item over
+    /// the cap stands alone, and the results are [`super::map`]'s in order.
+    #[test]
+    fn a_map_within_a_cap_holds_no_more_at_once_and_answers_as_map_does() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let items: Vec<usize> = vec![3, 5, 9, 1, 1, 1, 1, 20, 2, 2, 7, 7, 7, 1];
+        let held = AtomicUsize::new(0);
+        let most = AtomicUsize::new(0);
+        let got = super::map_within(
+            &items,
+            |&w| w,
+            8,
+            |&w| {
+                let now = held.fetch_add(w, Ordering::SeqCst) + w;
+                most.fetch_max(now, Ordering::SeqCst);
+                std::thread::sleep(std::time::Duration::from_millis(5));
+                held.fetch_sub(w, Ordering::SeqCst);
+                w * 10
+            },
+        );
+        assert_eq!(got, super::map(&items, |&w| w * 10));
+        // At most the cap stands at once, except the one item heavier than it.
+        assert!(
+            most.load(Ordering::SeqCst) <= 20,
+            "{}",
+            most.load(Ordering::SeqCst)
+        );
+        // The waves, derived as the function derives them, by weight alone.
+        let mut seen = Vec::new();
+        let mut start = 0;
+        while start < items.len() {
+            let mut end = start + 1;
+            let mut h = items[start];
+            while end < items.len() && h + items[end] <= 8 {
+                h += items[end];
+                end += 1;
+            }
+            seen.push(items[start..end].to_vec());
+            start = end;
+        }
+        assert_eq!(
+            seen,
+            vec![
+                vec![3, 5],
+                vec![9],
+                vec![1, 1, 1, 1],
+                vec![20],
+                vec![2, 2],
+                vec![7],
+                vec![7],
+                vec![7, 1]
+            ]
+        );
+    }
+
     /// The results come back in item order however the work was scheduled:
     /// items finish out of order on purpose (later items are cheaper).
     #[test]

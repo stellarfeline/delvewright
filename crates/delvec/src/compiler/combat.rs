@@ -1712,13 +1712,13 @@ mod tests {
     /// An occupancy view holding nothing but the given solid cells.
     fn occ(solid: BTreeSet<[i32; 3]>) -> crate::compiler::assembled::Occupancy {
         crate::compiler::assembled::Occupancy {
-            solid,
-            tall: BTreeSet::new(),
-            use_gates: BTreeSet::new(),
-            flooded: BTreeSet::new(),
-            partial: BTreeMap::new(),
-            waterloggable: BTreeSet::new(),
-            lava: BTreeSet::new(),
+            solid: solid.into(),
+            tall: (BTreeSet::new()).into(),
+            use_gates: (BTreeSet::new()).into(),
+            flooded: (BTreeSet::new()).into(),
+            partial: (BTreeMap::new()).into(),
+            waterloggable: (BTreeSet::new()).into(),
+            lava: (BTreeSet::new()).into(),
             climb: BTreeMap::new(),
             unheld_climb: BTreeMap::new(),
             material: Default::default(),

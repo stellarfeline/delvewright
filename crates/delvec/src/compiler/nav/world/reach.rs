@@ -251,42 +251,36 @@ enum Outside {
     Ocean { level: i32, floor_top: i32 },
 }
 
-/// A window-long array held in chunks, which a later snapshot of a world
-/// like this one shares wherever it holds the same values. The quest
-/// configurations of one campaign are worlds that differ in a few cells, and
-/// every graph a build takes is kept for the build's life (a proof asking the
-/// same world again is answered from it), so each keeps its own copy of only
-/// the chunks those cells lie in. Held only in memory, read only by index:
-/// what a build emits never depends on which snapshot owns a chunk.
+/// A window-long array held in pages, each page **hash-consed and paged**
+/// ([`pages`], ADR-0037 §2): every array of one value type in the process
+/// holds one copy of a page's values however many arrays hold it, and at most
+/// a budget of pages is in memory at once, the rest read back from a scratch
+/// file when asked. The quest configurations of one campaign are worlds that
+/// differ in a few cells, and every graph a build takes is kept for the
+/// build's life, so each keeps its own copy of only the pages those cells lie
+/// in; and within one window the open sea, the air over it and the sea floor
+/// repeat column after column, so a page of them is held once. Read only by
+/// index: what a build emits never depends on which pages are resident.
 pub(in crate::compiler::nav) struct Chunked<T> {
-    chunks: Vec<Arc<[T]>>,
+    pages: Vec<u32>,
     len: usize,
+    _t: std::marker::PhantomData<T>,
 }
 
-/// A chunk of a [`Chunked`] array holds `1 << CHUNK_CELLS_BITS` values.
-const CHUNK_CELLS_BITS: u32 = 12;
+/// A page of a [`Chunked`] array holds `1 << CHUNK_CELLS_BITS` values.
+const CHUNK_CELLS_BITS: u32 = pages::PAGE_BITS;
 const CHUNK_CELLS_MASK: usize = (1 << CHUNK_CELLS_BITS) - 1;
 
-impl<T: Copy + PartialEq> Chunked<T> {
+impl<T: pages::Paged> Chunked<T> {
     fn new(values: &[T]) -> Chunked<T> {
+        let store = T::store();
         Chunked {
-            chunks: values
+            pages: values
                 .chunks(1 << CHUNK_CELLS_BITS)
-                .map(Arc::from)
+                .map(|v| store.intern(v))
                 .collect(),
             len: values.len(),
-        }
-    }
-
-    /// Take `base`'s chunk wherever it holds what this one holds.
-    fn share(&mut self, base: &Chunked<T>) {
-        if base.len != self.len {
-            return;
-        }
-        for (mine, theirs) in self.chunks.iter_mut().zip(&base.chunks) {
-            if !Arc::ptr_eq(mine, theirs) && **mine == **theirs {
-                *mine = Arc::clone(theirs);
-            }
+            _t: std::marker::PhantomData,
         }
     }
 
@@ -295,15 +289,24 @@ impl<T: Copy + PartialEq> Chunked<T> {
         self.len
     }
 
+    /// The value at index `i`.
+    #[inline(always)]
+    fn get(&self, i: usize) -> T {
+        T::store().at(self.pages[i >> CHUNK_CELLS_BITS], i & CHUNK_CELLS_MASK)
+    }
+
     /// The indices at which this array and `other`, of one length, differ —
-    /// a shared chunk is skipped unread.
+    /// a page both hold is skipped unread.
     fn differences(&self, other: &Chunked<T>) -> Vec<usize> {
+        let store = T::store();
         let mut out = Vec::new();
-        for (k, (a, b)) in self.chunks.iter().zip(&other.chunks).enumerate() {
-            if Arc::ptr_eq(a, b) {
+        for (k, (a, b)) in self.pages.iter().zip(&other.pages).enumerate() {
+            if a == b {
                 continue;
             }
-            for (j, (x, y)) in a.iter().zip(b.iter()).enumerate() {
+            let (pa, pb) = (store.page(*a), store.page(*b));
+            let n = (self.len - (k << CHUNK_CELLS_BITS)).min(1 << CHUNK_CELLS_BITS);
+            for (j, (x, y)) in pa.iter().zip(pb.iter()).take(n).enumerate() {
                 if x != y {
                     out.push((k << CHUNK_CELLS_BITS) | j);
                 }
@@ -312,22 +315,14 @@ impl<T: Copy + PartialEq> Chunked<T> {
         out
     }
 
-    /// How many chunks this array holds that `other` does not share.
+    /// How many pages this array holds that `other` does not share.
     #[cfg(test)]
     fn own_chunks(&self, other: &Chunked<T>) -> usize {
-        self.chunks
+        self.pages
             .iter()
-            .zip(&other.chunks)
-            .filter(|(a, b)| !Arc::ptr_eq(a, b))
+            .zip(&other.pages)
+            .filter(|(a, b)| a != b)
             .count()
-    }
-}
-
-impl<T> std::ops::Index<usize> for Chunked<T> {
-    type Output = T;
-    #[inline(always)]
-    fn index(&self, i: usize) -> &T {
-        &self.chunks[i >> CHUNK_CELLS_BITS][i & CHUNK_CELLS_MASK]
     }
 }
 
@@ -340,6 +335,157 @@ pub(in crate::compiler::nav) struct Dense {
     outside: Outside,
     /// Whether any cell holds water, lava or a cobweb, here or outside.
     wet: bool,
+}
+
+/// **The reach window round the modelled cells `lo..=hi`** (spec-0113 §4.7):
+/// [`WINDOW_MARGIN`] cells out in x and z, two courses under, [`WINDOW_OVER`]
+/// over, under an ocean (`sea` = the floor's top and the level) down to the
+/// sea floor and over the level, and the top rounded up to a course one under
+/// a multiple of [`WINDOW_TOP_STEP`]: every cell over the modelled ones holds
+/// what a cell over the window holds, so the rounding answers nothing
+/// differently, and two worlds whose tallest blocks differ by a few courses
+/// share a window, and so a lineage and a node bank. One rule, read by the
+/// snapshot ([`Dense`]) and by the cost the engine states before the proofs
+/// run (`compiler::cost`, ADR-0037 §3).
+pub(crate) fn window_box(
+    mut lo: [i32; 3],
+    mut hi: [i32; 3],
+    sea: Option<(i32, i32)>,
+) -> ([i32; 3], [i32; 3]) {
+    lo[0] -= WINDOW_MARGIN;
+    lo[2] -= WINDOW_MARGIN;
+    hi[0] += WINDOW_MARGIN;
+    hi[2] += WINDOW_MARGIN;
+    hi[1] += WINDOW_OVER;
+    lo[1] -= 2;
+    if let Some((floor_top, level)) = sea {
+        lo[1] = lo[1].min(floor_top);
+        hi[1] = hi[1].max(level + WINDOW_OVER);
+    }
+    hi[1] |= WINDOW_TOP_STEP - 1;
+    (lo, hi)
+}
+
+/// The reach chunk's side ([`chunks::SIDE`]), for the cost stated before the
+/// proofs run.
+pub(crate) fn chunk_side() -> i32 {
+    chunks::SIDE
+}
+
+/// The most cell-relation moves out of one node: the walk and the fall to
+/// the eight columns round a cell at three heights, two climb moves, six
+/// dives.
+const CELL_MOVES: usize = 8 * 3 + 2 + 6;
+
+/// How many launches the shipped launch set flies out of a standing node, and
+/// the most cell-relation moves beside them ([`CELL_MOVES`]): the most edges a
+/// node's list can hold.
+pub(crate) fn edges_per_node_at_most() -> usize {
+    launch_set(false, FACING_STEP_DEG, &[-1.0, 0.0, 1.0]).len() + CELL_MOVES
+}
+
+/// **The reach graph's scratch files for one world, bounded** (ADR-0037 §3):
+/// what the files hold for a graph over one world whose closure reached every
+/// rest candidate with every edge its envelope allows — the figure the cost
+/// states per configuration (`compiler::cost`), never measured.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ScratchBound {
+    /// The snapshot's pages: every page of the window's two arrays, once.
+    pub snapshot: usize,
+    /// The node tables: an entry per candidate in each of the two, the
+    /// cell-relation edges in one and every edge in the other.
+    pub tables: usize,
+    /// One closure's successor and predecessor lists, a record per edge in
+    /// each, and one chunk's records once more (a chunk rewritten whole takes
+    /// its room before its pieces free).
+    pub lists: usize,
+    /// The bank's file: the cap the build sets on what the banks keep
+    /// (`set_bank_cap`), the graph's own tables and lists — a variant past it
+    /// is not kept, and the next world that asks re-flies the node.
+    pub bank: usize,
+}
+
+impl ScratchBound {
+    /// The four terms summed.
+    pub fn total(&self) -> usize {
+        self.snapshot
+            .saturating_add(self.tables)
+            .saturating_add(self.lists)
+            .saturating_add(self.bank)
+    }
+}
+
+/// What the reach scratch bound is computed from ([`scratch_bound_of`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ScratchInputs {
+    /// Rest candidates over the window, and their edges at most, in all
+    /// and in the fullest reach chunk (the rest census).
+    pub states: usize,
+    pub items: usize,
+    pub chunk_items: usize,
+    /// The window's cells.
+    pub cells: usize,
+}
+
+/// The bound for one world from `i` ([`ScratchBound`]).
+pub(crate) fn scratch_bound_of(i: ScratchInputs) -> ScratchBound {
+    let ScratchInputs {
+        states,
+        items,
+        chunk_items,
+        cells,
+    } = i;
+    let snapshot = cells
+        .div_ceil(pages::PAGE_CELLS)
+        .saturating_mul(pages::PAGE_CELLS * pages::CELL_BYTES);
+    let cell_moves = items.min(states.saturating_mul(CELL_MOVES));
+    let tables = (2 * states)
+        .saturating_mul(chunks::TABLE_ENTRY)
+        .saturating_add(
+            items
+                .saturating_add(cell_moves)
+                .saturating_mul(chunks::TABLE_EDGE),
+        );
+    let lists = items
+        .saturating_add(chunk_items)
+        .saturating_mul(chunks::SUCC_RECORD + chunks::PRED_RECORD);
+    let bank = tables.saturating_add(lists);
+    ScratchBound {
+        snapshot,
+        tables,
+        lists,
+        bank,
+    }
+}
+
+/// The lists' working set when nothing has been decoded yet, and the most a
+/// reach chunk `height` cells tall can decode to when every cell of it is a
+/// node with `edges` edges ([`chunks`]).
+pub(crate) fn lists_floor_and_bound(height: usize, edges: usize) -> (usize, usize) {
+    (
+        chunks::floor(),
+        chunks::chunk_bound((chunks::SIDE as usize).pow(2) * height, edges),
+    )
+}
+
+/// The most a reach chunk of `states` nodes holding `items` edges in all
+/// decodes to ([`chunks::decoded_bound`]): the cost's bound over the rest
+/// census (`compiler::cost`).
+pub(crate) fn lists_bound_of(states: usize, items: usize) -> usize {
+    chunks::decoded_bound(states, items)
+}
+
+/// **How far a launch lands from its cell, horizontally, in columns**: the
+/// farthest arc flown is a sprint jump at `3.63` cells and a fall drifts under
+/// `4.5` ([`WINDOW_MARGIN`]), so a landing cell lies within this many columns
+/// of the launch cell in `x` and in `z`. The cost's envelope (`compiler::cost`):
+/// a node's distinct edges are at most the rest cells within it.
+pub(crate) const LAUNCH_REACH: i32 = 5;
+const _: () = assert!(LAUNCH_REACH <= WINDOW_MARGIN);
+
+/// The snapshot's need for a window `height` cells tall ([`pages::need_for`]).
+pub(crate) fn snapshot_need_for(height: usize) -> usize {
+    pages::need_for(height, chunks::SIDE as usize)
 }
 
 /// How far the window reaches past the built volume, horizontally: past the
@@ -395,24 +541,15 @@ impl Dense {
                 wet: matches!(outside, Outside::Ocean { .. }),
             };
         }
-        lo[0] -= WINDOW_MARGIN;
-        lo[2] -= WINDOW_MARGIN;
-        hi[0] += WINDOW_MARGIN;
-        hi[2] += WINDOW_MARGIN;
-        hi[1] += WINDOW_OVER;
-        lo[1] -= 2;
-        if let Outside::Ocean { floor_top, level } = outside {
-            lo[1] = lo[1].min(floor_top);
-            hi[1] = hi[1].max(level + WINDOW_OVER);
-        }
-        // The top is rounded up to a course one under a multiple of
-        // [`WINDOW_TOP_STEP`]: every cell over the modelled ones holds what a
-        // cell over the window holds, so the rounding answers nothing
-        // differently, and two worlds whose tallest blocks differ by a few
-        // courses share a window, and so a lineage and a node bank.
-        hi[1] |= WINDOW_TOP_STEP - 1;
+        let sea = match outside {
+            Outside::Ocean { floor_top, level } => Some((floor_top, level)),
+            Outside::Void => None,
+        };
+        let (lo, hi) = window_box(lo, hi, sea);
         let dims = [hi[0] - lo[0] + 1, hi[1] - lo[1] + 1, hi[2] - lo[2] + 1];
         let n = dims.iter().map(|d| *d as usize).product();
+        // The snapshot's resident budget holds this window's 3 x 3 rings.
+        pages::window(dims[1] as usize, chunks::SIDE as usize);
         let mut d = Dense {
             lo,
             dims,
@@ -477,7 +614,7 @@ impl Dense {
         }
         for (c, m) in world.material.iter() {
             let m = material_code(*m);
-            set(*c, &|v| (v & !MATERIAL) | m);
+            set(c, &|v| (v & !MATERIAL) | m);
         }
         // A sieve is read at its posts (main's floor rule, the nav model's
         // `Floors`): a body over it falls between them and one walking into it
@@ -548,7 +685,7 @@ impl Dense {
     #[inline]
     fn code(&self, c: [i32; 3]) -> Code {
         match self.index(c) {
-            Some(i) => self.cells[i],
+            Some(i) => self.cells.get(i),
             None => match self.outside {
                 Outside::Void => 0,
                 Outside::Ocean { level, floor_top } => {
@@ -799,7 +936,7 @@ impl Codes for Shifted<'_> {
                 if let Some(t) = self.track {
                     t.note(i, a);
                 }
-                self.dense.cells[i]
+                self.dense.cells.get(i)
             }
             None => self.dense.code(a),
         }
@@ -807,19 +944,19 @@ impl Codes for Shifted<'_> {
 }
 
 /// The cells round a node its launches read, each read through `inner` the
-/// first time in the node's expansion and from a slot after: a node's
-/// thousands of launches, and every flight-memo walk among them, read the
-/// same few hundred cells over and over. A slot answers what `inner`
-/// answered, and a read it answers still grows the bank's current run and
-/// scope box by the cell (its bit, being the expansion's, was set by the
-/// first read), so what the bank records of a run is what it was without
-/// the slots.
+/// first time in each run of the node's expansion ([`Local::next_run`]) and
+/// from a slot after: a node's thousands of launches, and every flight-memo
+/// walk among them, read the same few hundred cells over and over. A slot
+/// answers what `inner` answered, and a read it answers still grows the
+/// bank's current run and scope box by the cell (the run's first read of it
+/// noted it as the run's), so what the bank records of a run is what it was
+/// without the slots.
 struct Local<'a, C: Codes + ?Sized> {
     inner: &'a C,
     at: [i32; 3],
     track: Option<&'a bank::Track<'a>>,
     slots: Vec<std::cell::Cell<(u32, Code)>>,
-    stamp: u32,
+    stamp: std::cell::Cell<u32>,
 }
 
 /// A thread's slots for [`Local`], with the stamp of the last expansion.
@@ -831,28 +968,40 @@ thread_local! {
 
 impl<'a, C: Codes + ?Sized> Local<'a, C> {
     fn new(inner: &'a C, at: [i32; 3], track: Option<&'a bank::Track<'a>>) -> Self {
-        let (stamp, slots) = LOCAL.with(|l| {
-            let mut l = l.borrow_mut();
-            let mut slots = std::mem::take(&mut l.1);
+        let slots = LOCAL.with(|l| {
+            let mut slots = std::mem::take(&mut l.borrow_mut().1);
             if slots.is_empty() {
                 slots = vec![std::cell::Cell::new((0, 0)); flights::NEAR_SLOTS];
             }
-            l.0 = l.0.wrapping_add(1);
-            if l.0 == 0 {
-                for s in &slots {
-                    s.set((0, 0));
-                }
-                l.0 = 1;
-            }
-            (l.0, slots)
+            slots
         });
-        Local {
+        let local = Local {
             inner,
             at,
             track,
             slots,
-            stamp,
-        }
+            stamp: std::cell::Cell::new(0),
+        };
+        local.next_run();
+        local
+    }
+
+    /// Answer no later read from a slot filled before: each cell is read
+    /// through `inner` again the first time a run asks for it, so a run
+    /// notes every cell it reads whatever the runs before it read.
+    fn next_run(&self) {
+        let stamp = LOCAL.with(|l| {
+            let mut l = l.borrow_mut();
+            l.0 = l.0.wrapping_add(1);
+            if l.0 == 0 {
+                for s in &self.slots {
+                    s.set((0, 0));
+                }
+                l.0 = 1;
+            }
+            l.0
+        });
+        self.stamp.set(stamp);
     }
 }
 
@@ -873,7 +1022,7 @@ impl<C: Codes + ?Sized> Codes for Local<'_, C> {
             return self.inner.code(c);
         };
         let (s, v) = self.slots[i].get();
-        if s == self.stamp {
+        if s == self.stamp.get() {
             if let Some(t) = self.track {
                 let a = [c[0] + self.at[0], c[1] + self.at[1], c[2] + self.at[2]];
                 t.extend((a, a));
@@ -881,7 +1030,7 @@ impl<C: Codes + ?Sized> Codes for Local<'_, C> {
             return v;
         }
         let v = self.inner.code(c);
-        self.slots[i].set((self.stamp, v));
+        self.slots[i].set((self.stamp.get(), v));
         v
     }
 }
@@ -1611,7 +1760,7 @@ fn template_class(key: &ClassKey, params: &ReachParams) -> Arc<TemplateClass> {
     let holding = key.2;
     let launches = shared_launch_set(holding, params);
     // The template's floor is endless, so a body never leaves the world over it.
-    let flown: Vec<(ReadSet, Outcome, Option<Aabb>, Launch)> = crate::par::map(&launches, |l| {
+    let flown: Vec<(ReadSet, Outcome, Option<Aabb>, Launch)> = par_map(&launches, |l| {
         let rec = Recorder {
             inner: &template,
             seen: std::cell::RefCell::new(Vec::new()),
@@ -1683,7 +1832,7 @@ fn union(a: Option<Aabb>, b: Option<Aabb>) -> Option<Aabb> {
 type Edges = BTreeMap<([i32; 3], EdgeKind), (Option<i16>, bool)>;
 
 /// Everything one node of the graph leads to.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(in crate::compiler::nav) struct NodeEdges {
     /// The node's own rest state.
     pub kind: Option<RestKind>,
@@ -1706,15 +1855,143 @@ pub(in crate::compiler::nav) struct NodeEdges {
     pub read: Option<([i32; 3], [i32; 3])>,
 }
 
+/// Nodes flown together in one parallel batch, gathered whole chunks at a
+/// time.
+const FLY_GROUP: usize = 2048;
+
 /// A closure taken over a graph, with the roots it was taken from.
 type Closure = (Vec<[i32; 3]>, Arc<Reach>);
 
 /// A node and the quadrants of its launch set that were flown.
 type FlownKey = ([i32; 3], Quadrants);
 
+/// [`crate::par::map`] with this thread's chunk side ([`chunks::side_here`])
+/// and resident budget ([`budget::override_here`]) in force on every worker:
+/// the one way the reach graph spreads work over cores, so a test's side or
+/// budget binds the lists and pages its workers grow as it binds its own.
+fn par_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Vec<R> {
+    let side = chunks::side_here();
+    let b = budget::override_here();
+    let cap = bank::cap_here();
+    crate::par::map(items, |x| {
+        chunks::at_side(side, || {
+            budget::with_budget(b, || bank::with_cap(cap, || f(x)))
+        })
+    })
+}
+
+/// **The build's cap on the banks' files** (ADR-0037 §3): set from the cost
+/// before the proofs run; a variant that would pass it is not kept
+/// (`bank::set_cap`).
+pub fn set_bank_cap(bytes: u64) {
+    bank::set_cap(bytes);
+}
+
 /// Write the node banks this run grew to `DELVEC_REACH_CACHE`, when it names a
 /// directory (`reach/persist.rs`); a run that ends calls it once.
 pub fn persist_reach_cache() {
+    let (loads, records, releases) = chunks::traffic();
+    // A run that took no closure and read no list back says nothing of them.
+    if chunks::visited() > 0 || loads > 0 {
+        let needs: Vec<String> = budget::needs_stated()
+            .iter()
+            .map(|(name, b)| format!("{name} {b} byte(s)"))
+            .collect();
+        eprintln!(
+            "reach budget: {} byte(s) resident at the end, under one budget of {} byte(s), the \
+             sum of the working sets stated: {} (ADR-0037 §1)",
+            budget::resident(),
+            budget::budget(),
+            needs.join(", ")
+        );
+        eprintln!(
+            "reach lists: {} byte(s) held in the scratch file; working set {} byte(s) (3 x 3 chunks of \
+             the largest decoded, {} byte(s), and their buffered pushes); {loads} chunk read(s) \
+             back over {records} record(s), {releases} chunk(s) given up (ADR-0037 §2)",
+            chunks::spilled().kept,
+            chunks::working_set(),
+            chunks::largest()
+        );
+        eprintln!("reach closures: {} (ADR-0037 §2)", chunks::visits());
+        let (pages, bytes, loads, hits, misses) = pages::traffic();
+        eprintln!(
+            "reach snapshot: {pages} distinct page(s) of {} cell(s) over {bytes} byte(s) in the \
+             scratch file; {} resident at the end, working set {} byte(s) (the 3 x 3 rings of the \
+             tallest window, 4 times over); {loads} page(s) read back; {hits} of {} page read(s) \
+             served by a thread's recent pages (ADR-0037 §2)",
+            pages::PAGE_CELLS,
+            pages::resident(),
+            pages::need(),
+            hits + misses
+        );
+        let (portals, faces, most) = chunks::portals();
+        eprintln!(
+            "reach portals: {portals} portal edge(s) over {faces} face cell(s), summed over the \
+             closures taken, the most in one closure {most}, at a chunk side of {} (ADR-0037 §2)",
+            chunks::side_here()
+        );
+        let (graphs, worlds, params) = graphs_memoised();
+        let bound = bound_worlds_memoised();
+        eprintln!(
+            "reach graphs: {graphs} graph(s) memoised over the run, one per distinct world and \
+             parameters: {worlds} distinct world(s), {bound} of them the configurations the \
+             reach binding counts (ADR-0037 §3's figure) and {} premise variants and \
+             counterfactuals that are worlds of their own; {params} parameter set(s)",
+            worlds.saturating_sub(bound)
+        );
+        let c = CLOSURES.lock().expect("closures");
+        let [st, af, su, ho] = c.census;
+        eprintln!(
+            "reach states: the most in one closure {} state(s) ({st} standing, {af} afloat, {su} \
+             submerged, {ho} holding), {} of them plain sea summarised in {} component(s), over {} \
+             closure(s) (ADR-0037 §3's rest states, per closure)",
+            c.most, c.plain, c.components, c.taken
+        );
+    }
+    let (variants, bytes) = bank::census_all();
+    if variants > 0 {
+        eprintln!(
+            "reach bank: {variants} node variant(s) kept over {bytes} byte(s) in the spill file; \
+             in memory, one slot per variant"
+        );
+    }
+    let files = [
+        ("the lists' and tables'", chunks::spilled()),
+        ("the bank's", bank::usage_all()),
+        ("the snapshot's", pages::usage()),
+    ];
+    let all = files
+        .iter()
+        .fold(spill::Usage::default(), |a, (_, u)| a + *u);
+    if all.written > 0 {
+        let cap = bank::cap_stated().map_or(String::new(), |(c, refused)| {
+            format!(", under a cap of {c} byte(s) with {refused} variant(s) refused")
+        });
+        let parts: Vec<String> = files
+            .iter()
+            .map(|(name, u)| {
+                format!(
+                    "{name} {} written, at most {} long, {} kept at the end{}",
+                    u.written,
+                    u.longest,
+                    u.kept,
+                    if *name == "the bank's" {
+                        cap.as_str()
+                    } else {
+                        ""
+                    }
+                )
+            })
+            .collect();
+        eprintln!(
+            "reach scratch: {} byte(s) written to the scratch files, at most {} byte(s) on disk \
+             (the sum of each file's longest), {} kept at the end; {} (ADR-0037 §2)",
+            all.written,
+            all.longest,
+            all.kept,
+            parts.join("; ")
+        );
+    }
     bank::persist_all();
 }
 
@@ -1725,13 +2002,89 @@ pub fn default_reach_cache(dir: std::path::PathBuf) {
     persist::default_dir(dir);
 }
 
+/// Every graph memoised in the process, by its world's fingerprint and its
+/// parameters' key ([`World::graph_memo`]).
+type Graphs = Mutex<HashMap<([u8; 32], String), Arc<OnceLock<Arc<GraphMemo>>>>>;
+static GRAPHS: OnceLock<Graphs> = OnceLock::new();
+
+/// How many graphs the process has memoised — one per distinct (world,
+/// parameters) a closure was asked of — and over how many distinct worlds and
+/// parameter sets: the configurations, as built, with the premise variants and
+/// counterfactuals that are worlds of their own.
+fn graphs_memoised() -> (usize, usize, usize) {
+    use std::collections::HashSet;
+    GRAPHS.get().map_or((0, 0, 0), |m| {
+        m.lock().map_or((0, 0, 0), |g| {
+            let worlds: HashSet<&[u8; 32]> = g.keys().map(|(w, _)| w).collect();
+            let params: HashSet<&str> = g.keys().map(|(_, p)| p.as_str()).collect();
+            (g.len(), worlds.len(), params.len())
+        })
+    })
+}
+
+/// The worlds the reach binding folded a closure of (`ReachBinding::add`):
+/// the configurations a build judged, by fingerprint — the worlds ADR-0037 §3's
+/// configurations figure bounds, told apart from the premise variants and
+/// counterfactuals the proofs build beside them.
+static BOUND_WORLDS: OnceLock<Mutex<std::collections::HashSet<[u8; 32]>>> = OnceLock::new();
+
+/// How many of the distinct worlds memoised are configurations the binding
+/// counts.
+fn bound_worlds_memoised() -> usize {
+    let bound = BOUND_WORLDS.get().and_then(|b| b.lock().ok());
+    let Some(bound) = bound else {
+        return 0;
+    };
+    GRAPHS.get().map_or(0, |m| {
+        m.lock().map_or(0, |g| {
+            let worlds: std::collections::HashSet<&[u8; 32]> = g.keys().map(|(w, _)| w).collect();
+            worlds.iter().filter(|w| bound.contains(**w)).count()
+        })
+    })
+}
+
+/// The run's closures: how many were taken, and the largest — its states by
+/// kind, its plain-sea states and the components they were flooded in — so
+/// the cost's per-closure bound on states (`compiler::cost`) is read against
+/// the closure it bounds.
+#[derive(Default)]
+struct ClosureStats {
+    taken: u64,
+    most: usize,
+    census: [usize; 4],
+    plain: usize,
+    components: u64,
+}
+static CLOSURES: Mutex<ClosureStats> = Mutex::new(ClosureStats {
+    taken: 0,
+    most: 0,
+    census: [0; 4],
+    plain: 0,
+    components: 0,
+});
+
+/// Note a closure taken ([`World::body_reach_at`]).
+fn closure_taken(reach: &Reach) {
+    let mut s = CLOSURES.lock().expect("closures");
+    s.taken += 1;
+    let n = reach.states.len();
+    if n > s.most {
+        s.most = n;
+        s.census = reach.census();
+        s.plain = reach.states.plain_len();
+        s.components = reach.sea_components;
+    }
+}
+
 /// The memo of one world's graph: its snapshot and every node expanded so far.
 pub(in crate::compiler::nav) struct GraphMemo {
     dense: Dense,
-    /// Each node's cell-relation edges (and, for water, its climbs out).
-    nodes: Mutex<HashMap<[i32; 3], Arc<NodeEdges>>>,
-    /// Each standing or holding node's launches, flown.
-    flown: Mutex<HashMap<FlownKey, Arc<NodeEdges>>>,
+    /// Each node's cell-relation edges (and, for water, its climbs out), kept
+    /// by reach chunk ([`chunks`]) under the quadrants `0`.
+    nodes: chunks::Table<(Quadrants, NodeEdges)>,
+    /// Each standing or holding node's launches, flown, under the quadrants
+    /// flown, kept by reach chunk.
+    flown: chunks::Table<(Quadrants, NodeEdges)>,
     /// Per column of the window, the cells a body could rest in, and whether
     /// nothing in it arrests a fall (under a void).
     columns: Columns,
@@ -1757,10 +2110,42 @@ pub(in crate::compiler::nav) struct GraphMemo {
 }
 
 impl GraphMemo {
+    /// What this graph holds in the scratch files: its snapshot's pages
+    /// (those its two arrays hold, each once), its two node tables, and the
+    /// lists of every closure taken over it — against [`scratch_bound_of`].
+    #[cfg(test)]
+    pub(in crate::compiler::nav) fn scratch_held(&self) -> ScratchBound {
+        let snapshot = self.dense.cells.pages.len() * pages::PAGE_CELLS * 4
+            + self.extra.cells.pages.len() * pages::PAGE_CELLS * 2;
+        let tables = (self.nodes.spilled_bytes() + self.flown.spilled_bytes()) as usize;
+        let lists = self
+            .closures
+            .lock()
+            .expect("closures")
+            .iter()
+            .map(|(_, r)| r.spilled_bytes() as usize)
+            .sum();
+        ScratchBound {
+            snapshot,
+            tables,
+            lists,
+            bank: self.bank.usage().kept as usize,
+        }
+    }
+
+    /// The launches of `key` this graph flew, if it flew them.
+    fn flown_at(&self, key: &FlownKey) -> Option<Arc<NodeEdges>> {
+        self.flown.with(key.0, |l| {
+            l.iter()
+                .find(|(q, _)| *q == key.1)
+                .map(|(_, e)| Arc::new(e.clone()))
+        })
+    }
+
     /// A node of the lineage's graph whose read box this world leaves alone.
     fn inherited(&self, key: &FlownKey) -> Option<Arc<NodeEdges>> {
         let (base, diff) = self.lineage.as_ref()?;
-        let e = Arc::clone(base.flown.lock().expect("memo").get(key)?);
+        let e = base.flown_at(key)?;
         let (lo, hi) = e.read?;
         let lo_i = diff.partition_point(|c| c[0] < lo[0]);
         let clear = diff[lo_i..]
@@ -1776,7 +2161,11 @@ impl GraphMemo {
 /// applied), and the lowest cell that stops a fall (a shape, water or lava),
 /// `None` for a column that holds nothing at all.
 struct Columns {
-    rest: Vec<Vec<i32>>,
+    /// Every column's heights, column after column ([`Columns::rest`]).
+    heights: Vec<i32>,
+    /// Where each column's heights start in `heights`, and where the last
+    /// ends.
+    starts: Vec<u32>,
     lowest: Vec<Option<i32>>,
     /// Some cell of the window holds slime, which throws a body further than
     /// any launch: the envelope proves nothing and every node is flown.
@@ -1784,14 +2173,23 @@ struct Columns {
 }
 
 impl Columns {
+    /// The heights of every cell of column `col` a body could rest in, from
+    /// the bottom.
+    fn rest(&self, col: usize) -> &[i32] {
+        &self.heights[self.starts[col] as usize..self.starts[col + 1] as usize]
+    }
+
     fn of(d: &Dense) -> Columns {
         let n = (d.dims[0].max(0) * d.dims[2].max(0)) as usize;
-        let mut rest = vec![Vec::new(); n];
+        let mut heights: Vec<i32> = Vec::new();
+        let mut starts: Vec<u32> = Vec::with_capacity(n + 1);
         let mut lowest: Vec<Option<i32>> = vec![None; n];
         let mut slime = false;
         for x in 0..d.dims[0] {
             for z in 0..d.dims[2] {
                 let col = (x * d.dims[2] + z) as usize;
+                debug_assert_eq!(col, starts.len());
+                starts.push(u32::try_from(heights.len()).expect("under 4 G rest cells"));
                 let mut below: Code = match d.outside {
                     Outside::Void => 0,
                     Outside::Ocean { .. } => 16,
@@ -1810,7 +2208,7 @@ impl Columns {
                     // hold it in one.
                     let head = d.code([c[0], c[1] + 1, c[2]]) & SHAPE == 0;
                     if open && (v & (WATER | CLIMB) != 0 || (head && top_of(below).is_some())) {
-                        rest[col].push(c[1]);
+                        heights.push(c[1]);
                     }
                     // A barrier's top stands a body in the cell over the one
                     // above it as well; a cell under a barrier is a rest cell
@@ -1819,8 +2217,11 @@ impl Columns {
                 }
             }
         }
+        starts.push(u32::try_from(heights.len()).expect("under 4 G rest cells"));
+        heights.shrink_to_fit();
         Columns {
-            rest,
+            heights,
+            starts,
             lowest,
             slime,
         }
@@ -1932,7 +2333,7 @@ fn raw_membership(w: &World, d: &Dense) -> Chunked<u16> {
         set(c, 1 << 7);
     }
     for (c, v) in w.partial.iter() {
-        set(*c, (u16::from(*v) + 1) << 8);
+        set(c, (u16::from(*v) + 1) << 8);
     }
     for c in w.floors.sieve.iter() {
         set(*c, 1 << 13);
@@ -1972,7 +2373,7 @@ impl Raw {
     /// ordinal (`0` where it holds none).
     #[inline]
     pub(in crate::compiler::nav) fn at(&self, i: usize) -> u32 {
-        let x = self.cells[i];
+        let x = self.cells.get(i);
         let mut v = u32::from(x);
         if x & LEAF_BIT != 0 {
             v |= u32::from(self.leaves[&(i as u32)]) << 16;
@@ -2101,11 +2502,13 @@ impl World {
         // building a copy of its own — a copy that would be thrown away, and
         // would have been made the next graph's lineage with none of the
         // nodes the kept one goes on to fly.
-        type Graphs = Mutex<HashMap<([u8; 32], String), Arc<OnceLock<Arc<GraphMemo>>>>>;
-        static MEMO: OnceLock<Graphs> = OnceLock::new();
-        let key = (self.fingerprint(), params.key());
+        let key = (
+            self.fingerprint(),
+            format!("{}:{}", params.key(), chunks::side_here()),
+        );
         let cell = Arc::clone(
-            MEMO.get_or_init(|| Mutex::new(HashMap::new()))
+            GRAPHS
+                .get_or_init(|| Mutex::new(HashMap::new()))
                 .lock()
                 .expect("memo")
                 .entry(key)
@@ -2117,7 +2520,7 @@ impl World {
     /// A new graph memo over this world at `params`, with the latest graph of
     /// its window as its lineage; it becomes the next one's.
     fn build_graph(&self, params: &ReachParams) -> Arc<GraphMemo> {
-        let mut dense = Dense::of(self);
+        let dense = Dense::of(self);
         // A declared jump's launch cell is a premise cell too: a node whose
         // jumps differ from the lineage's is not the lineage's node.
         let premise_cells: BTreeSet<[i32; 3]> = self
@@ -2130,8 +2533,9 @@ impl World {
         // and launch set.
         static SEEDS: OnceLock<Mutex<HashMap<String, Arc<GraphMemo>>>> = OnceLock::new();
         let seed_key = format!(
-            "{}:{}:{:?}:{:?}:{}:{}",
+            "{}:{}:{}:{:?}:{:?}:{}:{}",
             params.key(),
+            chunks::side_here(),
             self.ambient.name(),
             dense.lo,
             dense.dims,
@@ -2140,17 +2544,15 @@ impl World {
         );
         let seeds = SEEDS.get_or_init(|| Mutex::new(HashMap::new()));
         let seed = seeds.lock().expect("memo").get(&seed_key).cloned();
-        let mut extra = Raw::of(self, &dense);
+        // A snapshot's chunks are interned across the process (`Chunked`), so
+        // every chunk the lineage holds alike is already its allocation.
+        let extra = Raw::of(self, &dense);
         let leaf_cells: BTreeMap<[i32; 3], u16> = self
             .floors
             .leaves
             .iter()
             .map(|(c, l)| (*c, l.ordinal()))
             .collect();
-        if let Some(base) = &seed {
-            dense.cells.share(&base.dense.cells);
-            extra.cells.share(&base.extra.cells);
-        }
         let lineage = seed.map(|base| {
             let mut diff: Vec<[i32; 3]> = dense
                 .cells
@@ -2193,8 +2595,8 @@ impl World {
             extra,
             bank,
             dense,
-            nodes: Mutex::new(HashMap::new()),
-            flown: Mutex::new(HashMap::new()),
+            nodes: chunks::Table::default(),
+            flown: chunks::Table::default(),
             lineage,
             premise_cells,
             leaf_cells,
@@ -2300,6 +2702,37 @@ impl World {
             return Some(RestKind::Holding);
         }
         None
+    }
+
+    /// **Whether `c` is a plain-sea cell** (ADR-0037 §2): a submerged rest
+    /// state each of whose six neighbours lies inside the window and holds a
+    /// water rest state, with no collision top in the 3 × 3 × 2 cells round it
+    /// and over it — so [`World::expand`] gives it exactly the six dives: no
+    /// climb out, no open-sea flag, no launch. The closure keeps such a cell
+    /// as a state and nothing else: [`World::close`] floods it with its
+    /// component rather than expanding it, and [`Reach::succ`] and
+    /// [`Reach::preds`] compute its dives ([`plain_dives`]). A pure fact of
+    /// the world: no closure order enters it.
+    fn plain_sea(&self, dense: &Dense, c: [i32; 3]) -> bool {
+        if !summarising() || self.rest_kind(c) != Some(RestKind::Submerged) {
+            return false;
+        }
+        for dx in -1..=1 {
+            for dz in -1..=1 {
+                for dy in 0..=1 {
+                    if top_of(dense.code([c[0] + dx, c[1] + dy, c[2] + dz])).is_some() {
+                        return false;
+                    }
+                }
+            }
+        }
+        six_of(c).into_iter().all(|n| {
+            dense.inside(n)
+                && matches!(
+                    self.rest_kind(n),
+                    Some(RestKind::Afloat | RestKind::Submerged)
+                )
+        })
     }
 
     /// Whether a body in the water at `c` stands: the water is one cell deep
@@ -2576,7 +3009,15 @@ impl World {
                     let summary = match banked.and_then(|b| b.reuse(g, runs)) {
                         Some(s) => s,
                         None => {
+                            // A run reads what it reads whatever the runs
+                            // before it read, or took as written: the cells,
+                            // the rest states and the edge positions that
+                            // read a cell are its own (one that read only the
+                            // launch cell's box, read before the first run,
+                            // is every run's).
                             kinds.borrow_mut().clear();
+                            edge_memo.borrow_mut().retain(|_, (_, b)| b.is_none());
+                            local.next_run();
                             leaf_watch.since();
                             let mut gedges: Edges = BTreeMap::new();
                             let mut gout = NodeEdges::default();
@@ -2831,7 +3272,7 @@ impl World {
 
     /// **Where a body can be** from `roots`: the closure of the reach graph
     /// (spec-0113 §4), built at the shipped launch set.
-    pub fn body_reach(&self, roots: &[[i32; 3]]) -> Reach {
+    pub fn body_reach(&self, roots: &[[i32; 3]]) -> Arc<Reach> {
         self.body_reach_at(roots, &ReachParams::shipped(self.unbounded_fall))
     }
 
@@ -2897,11 +3338,7 @@ impl World {
         // bitmap, and the cells outside the window by name.
         let mut held = Reach::default();
         let hold = |held: &mut Reach, c: [i32; 3]| {
-            if memo.dense.index(c).is_some() {
-                held.mark(&memo.dense, c);
-            } else {
-                held.states.insert(c, RestKind::Standing);
-            }
+            held.states.insert(&memo.dense, c, RestKind::Standing);
         };
         for c in &seen {
             hold(&mut held, *c);
@@ -2963,7 +3400,7 @@ impl World {
                     flown.get(&c).copied().unwrap_or(0)
                 });
                 let out: Vec<Arc<NodeEdges>> =
-                    crate::par::map(&chunk, |(c, q)| self.flown(&memo, &params, *c, *q));
+                    par_map(&chunk, |(c, q)| self.flown(&memo, &params, *c, *q));
                 let mut next: Vec<[i32; 3]> = Vec::new();
                 for ((c, q), e) in chunk.iter().zip(out) {
                     *flown.entry(*c).or_insert(0) |= *q;
@@ -3036,7 +3473,7 @@ impl World {
         let mut seen: BTreeSet<[i32; 3]> = seeds.iter().copied().collect();
         let mut frontier: Vec<[i32; 3]> = seen.iter().copied().collect();
         while !frontier.is_empty() {
-            let edges: Vec<Vec<Edge>> = crate::par::map(&frontier, |c| self.body_edges(*c));
+            let edges: Vec<Vec<Edge>> = par_map(&frontier, |c| self.body_edges(*c));
             let mut next: BTreeSet<[i32; 3]> = BTreeSet::new();
             for (cur, out) in frontier.iter().zip(edges) {
                 for edge in out {
@@ -3067,10 +3504,18 @@ impl World {
         params: &ReachParams,
         cells: &[[i32; 3]],
     ) -> Vec<Arc<NodeEdges>> {
-        let mut out: Vec<Option<Arc<NodeEdges>>> = {
-            let held = memo.nodes.lock().expect("memo");
-            cells.iter().map(|c| held.get(c).cloned()).collect()
-        };
+        // A plain-sea cell's edges are computed, never kept in the table
+        // (ADR-0037 §2).
+        let mut out: Vec<Option<Arc<NodeEdges>>> = cells
+            .iter()
+            .map(|c| {
+                if self.plain_sea(&memo.dense, *c) {
+                    return Some(Arc::new(plain_node(*c)));
+                }
+                memo.nodes
+                    .with(*c, |l| l.first().map(|(_, e)| Arc::new(e.clone())))
+            })
+            .collect();
         let missing: Vec<[i32; 3]> = cells
             .iter()
             .zip(&out)
@@ -3078,23 +3523,21 @@ impl World {
             .map(|(c, _)| *c)
             .collect();
         if !missing.is_empty() {
-            let fresh: Vec<Arc<NodeEdges>> = if missing.len() >= 64 {
-                crate::par::map(&missing, |c| {
-                    Arc::new(self.expand(memo, params, *c, 0, None))
-                })
+            let fresh: Vec<NodeEdges> = if missing.len() >= 64 {
+                par_map(&missing, |c| self.expand(memo, params, *c, 0, None))
             } else {
                 missing
                     .iter()
-                    .map(|c| Arc::new(self.expand(memo, params, *c, 0, None)))
+                    .map(|c| self.expand(memo, params, *c, 0, None))
                     .collect()
             };
-            let mut held = memo.nodes.lock().expect("memo");
             let mut fresh = missing.iter().zip(fresh);
             for (c, slot) in cells.iter().zip(out.iter_mut()) {
                 if slot.is_none() {
                     let (m, e) = fresh.next().expect("one per missing node");
                     debug_assert_eq!(m, c);
-                    *slot = Some(Arc::clone(held.entry(*c).or_insert(e)));
+                    let (_, kept) = memo.nodes.find_or_push(*c, |_| true, (0, e));
+                    *slot = Some(Arc::new(kept));
                 }
             }
         }
@@ -3385,14 +3828,14 @@ impl World {
     /// [`World::body_reach`] from `starts` each snapped to the nearest
     /// standable cell first, as [`World::walk_region`] snaps them; a start
     /// with none within [`crate::compiler::nav::SNAP_RADIUS`] contributes nothing.
-    pub fn body_reach_snapped(&self, starts: &[[i32; 3]]) -> Reach {
+    pub fn body_reach_snapped(&self, starts: &[[i32; 3]]) -> Arc<Reach> {
         self.body_reach_snapped_within(starts, delvewright_dsl::metrics::REACH_BUDGET_STATES)
     }
 
     /// [`World::body_reach_snapped`] under a work ceiling of `budget` rather
     /// than the shipped one: the closure a proof that must refuse a partial
     /// graph (`DW1042`) reads, and the ceiling a test lowers to make one.
-    pub fn body_reach_snapped_within(&self, starts: &[[i32; 3]], budget: u64) -> Reach {
+    pub fn body_reach_snapped_within(&self, starts: &[[i32; 3]], budget: u64) -> Arc<Reach> {
         let seats: Vec<[i32; 3]> = starts
             .iter()
             .filter_map(|s| self.snap(*s, crate::compiler::nav::SNAP_RADIUS))
@@ -3431,7 +3874,12 @@ impl World {
     /// add a state by any launch, so its launches are not flown; the closure is
     /// the one every node's launches would give. Rounds end when no node is
     /// left to fly.
-    pub fn body_reach_at(&self, roots: &[[i32; 3]], params: &ReachParams) -> Reach {
+    ///
+    /// The closure is shared, never copied: every caller that asks for a
+    /// closure this graph already took gets the one the graph keeps. A caller
+    /// that must grow it (`fly_toward`, `fly_cells`) takes its own copy then,
+    /// and only then (`Arc::make_mut`).
+    pub fn body_reach_at(&self, roots: &[[i32; 3]], params: &ReachParams) -> Arc<Reach> {
         let memo = self.graph_memo(params);
         let start: Vec<[i32; 3]> = roots
             .iter()
@@ -3444,46 +3892,50 @@ impl World {
         let done: Vec<Closure> = memo.closures.lock().expect("memo").clone();
         for (from, c) in &done {
             if start.iter().all(|r| c.states.contains_key(r)) && c.reaches_all(&start, from) {
-                let mut r = (**c).clone();
-                if r.simulated + r.credited > params.budget {
+                // A lower ceiling than the closure was taken under refuses
+                // it (`DW1042`): that copy, and only that one, is its own.
+                if c.simulated + c.credited > params.budget {
+                    let mut r = (**c).clone();
                     r.over_budget = Some(params.budget);
+                    return Arc::new(r);
                 }
-                return r;
+                return Arc::clone(c);
             }
         }
         let mut reach = Reach::default();
-        self.close(&memo, params, &mut reach, start.clone());
+        let mut visits = chunks::Visits::default();
+        self.close(&memo, params, &mut reach, start.clone(), &mut visits);
         loop {
-            let standing: Vec<[i32; 3]> = reach
-                .states
-                .iter()
-                .filter(|(_, k)| matches!(k, RestKind::Standing | RestKind::Holding))
-                .map(|(c, _)| *c)
-                .collect();
-            let todo = self.left_to_fly(&memo, &reach, &standing, &|c| reach.flown_mask(c));
+            // A round: every standing or holding state whose envelope holds a
+            // cell the closure has not reached flies the launches that can
+            // reach it, each judged against the closure as the round found it
+            // — so which launches are flown never depends on the order the
+            // chunks are visited in — and then the closure is taken over what
+            // they reached.
+            let todo = self.round(&memo, &reach);
             if todo.is_empty() {
                 break;
             }
-            for chunk in todo.chunks(2048) {
-                if reach.simulated + reach.credited > params.budget {
-                    break;
-                }
-                let cells: Vec<[i32; 3]> = chunk.iter().map(|(c, _)| *c).collect();
-                let chunk = self.left_to_fly(&memo, &reach, &cells, &|c| reach.flown_mask(c));
-                self.fly_into(&memo, params, &mut reach, &chunk);
-            }
-            // The budget is refused, never truncated (`DW1042`): a closure that
-            // passed it stops here and says so, and every proof that reads it
-            // refuses the build.
+            let new = self.fly_chunks(&memo, params, &mut reach, &todo, &mut visits);
+            // The budget is refused, never truncated (`DW1042`): a closure
+            // whose round passed it stops there and says so, and every proof
+            // that reads it refuses the build.
             if reach.simulated + reach.credited > params.budget {
                 reach.over_budget = Some(params.budget);
-                return reach;
+                reach.portals = visits.report();
+                return Arc::new(reach);
             }
+            self.close(&memo, params, &mut reach, new, &mut visits);
         }
+        reach.portals = visits.report();
+        closure_taken(&reach);
+        // The closure is kept as a copy taken in one sweep, its lists at
+        // their length; the one the rounds grew is dropped here.
+        let reach = Arc::new(reach.clone());
         memo.closures
             .lock()
             .expect("memo")
-            .push((start, Arc::new(reach.clone())));
+            .push((start, Arc::clone(&reach)));
         reach
     }
 
@@ -3496,7 +3948,7 @@ impl World {
     /// Whether any launch was flown.
     pub fn fly_toward(
         &self,
-        reach: &mut Reach,
+        reach: &mut Arc<Reach>,
         cells: &[[i32; 3]],
         settled: &dyn Fn([i32; 3]) -> bool,
         one: bool,
@@ -3521,7 +3973,7 @@ impl World {
         if todo.is_empty() {
             return false;
         }
-        self.fly_into(&memo, &params, reach, &todo);
+        self.fly_into(&memo, &params, Arc::make_mut(reach), &todo);
         true
     }
 
@@ -3529,7 +3981,7 @@ impl World {
     /// and close over what they reach. The caller that needs a node's every
     /// edge (the moves a blinded body makes, `DW0943`) asks this of the nodes
     /// it judges.
-    pub fn fly_cells(&self, reach: &mut Reach, cells: &[[i32; 3]]) {
+    pub fn fly_cells(&self, reach: &mut Arc<Reach>, cells: &[[i32; 3]]) {
         let params = ReachParams::shipped(self.unbounded_fall);
         let memo = self.graph_memo(&params);
         let todo: Vec<([i32; 3], Quadrants)> = cells
@@ -3544,7 +3996,10 @@ impl World {
             })
             .map(|c| (c, ALL_QUADRANTS))
             .collect();
-        self.fly_into(&memo, &params, reach, &todo);
+        if todo.is_empty() {
+            return;
+        }
+        self.fly_into(&memo, &params, Arc::make_mut(reach), &todo);
     }
 
     /// The launches of the standing or holding node `c` serving `q`, flown:
@@ -3558,8 +4013,8 @@ impl World {
         q: Quadrants,
     ) -> Arc<NodeEdges> {
         let key = (c, q);
-        if let Some(e) = memo.flown.lock().expect("memo").get(&key) {
-            return Arc::clone(e);
+        if let Some(e) = memo.flown_at(&key) {
+            return e;
         }
         let volumes = |b| self.volumes_near(b);
         let jumps = self.jumps_from(c);
@@ -3585,14 +4040,14 @@ impl World {
                 }
                 e
             });
-        memo.flown
-            .lock()
-            .expect("memo")
-            .entry(key)
-            .or_insert_with(|| Arc::clone(&e))
-            .clone()
+        let (_, kept) = memo
+            .flown
+            .find_or_push(c, |(k, _)| *k == q, (q, (*e).clone()));
+        Arc::new(kept)
     }
 
+    /// Fly `cells` and close over what they reach: the growth a reader asks
+    /// for ([`World::fly_toward`], [`World::fly_cells`]).
     fn fly_into(
         &self,
         memo: &GraphMemo,
@@ -3600,96 +4055,230 @@ impl World {
         reach: &mut Reach,
         cells: &[([i32; 3], Quadrants)],
     ) {
-        let flown: Vec<Arc<NodeEdges>> =
-            crate::par::map(cells, |(c, q)| self.flown(memo, params, *c, *q));
-        let mut new: Vec<[i32; 3]> = Vec::new();
-        for ((c, q), e) in cells.iter().zip(flown) {
-            *reach.flown.entry(*c).or_insert(0) |= *q;
-            reach.simulated += e.simulated;
-            reach.credited += e.credited;
-            if e.leaves_world {
-                reach.leaves_world.insert(*c);
-            }
-            if let Some(d) = e.dies {
-                reach.fatal.insert(*c, d);
-            }
-            let have: BTreeSet<([i32; 3], EdgeKind)> = reach
-                .succ
-                .get(c)
-                .into_iter()
-                .flatten()
-                .map(|x| (x.to, x.kind))
-                .collect();
-            for edge in &e.edges {
-                if have.contains(&(edge.to, edge.kind)) {
-                    continue;
+        let mut visits = chunks::Visits::default();
+        let new = self.fly_chunks(memo, params, reach, cells, &mut visits);
+        self.close(memo, params, reach, new, &mut visits);
+        let [p, f] = visits.report();
+        reach.portals[0] += p;
+        reach.portals[1] += f;
+    }
+
+    /// The round's work: every standing or holding state of `reach` with the
+    /// launches its envelope still asks for ([`World::envelope_open`]) and
+    /// that it has not flown, judged against `reach` as it stands — in cell
+    /// order.
+    fn round(&self, memo: &GraphMemo, reach: &Reach) -> Vec<([i32; 3], Quadrants)> {
+        let nodes: Vec<[i32; 3]> = reach
+            .states
+            .iter()
+            .filter(|(_, k)| matches!(k, RestKind::Standing | RestKind::Holding))
+            .map(|(c, _)| c)
+            .collect();
+        self.left_to_fly(memo, reach, &nodes, &|c| reach.flown_mask(c))
+    }
+
+    /// Fly `cells` — standing or holding states of `reach`, each with the
+    /// quadrants to fly — **reach chunk by reach chunk** (ADR-0037 §2): the
+    /// launches of a chunk's nodes are flown together and joined while the
+    /// chunk's lists are the ones being read. Every edge is joined; no target
+    /// becomes a state here, so no launch of the batch is judged against
+    /// another's landing. The targets not yet states, in cell order, for
+    /// [`World::close`].
+    fn fly_chunks(
+        &self,
+        memo: &GraphMemo,
+        params: &ReachParams,
+        reach: &mut Reach,
+        cells: &[([i32; 3], Quadrants)],
+        visits: &mut chunks::Visits,
+    ) -> Vec<[i32; 3]> {
+        let side = chunks::side_here();
+        let mut by_chunk: BTreeMap<chunks::Key, Vec<FlownKey>> = BTreeMap::new();
+        for (c, q) in cells {
+            by_chunk
+                .entry(chunks::chunk_of(*c, side))
+                .or_default()
+                .push((*c, *q));
+        }
+        // Chunks are flown in groups large enough to keep the cores busy, and
+        // joined chunk by chunk.
+        let groups: Vec<Vec<(chunks::Key, Vec<FlownKey>)>> = {
+            let mut groups = Vec::new();
+            let mut group = Vec::new();
+            let mut n = 0;
+            for (k, v) in by_chunk {
+                n += v.len();
+                group.push((k, v));
+                if n >= FLY_GROUP {
+                    groups.push(std::mem::take(&mut group));
+                    n = 0;
                 }
-                reach
-                    .preds
-                    .entry(edge.to)
-                    .or_default()
-                    .push((*c, edge.clone()));
-                reach.succ.entry(*c).or_default().push(edge.clone());
-                if !reach.states.contains_key(&edge.to) {
-                    new.push(edge.to);
+            }
+            if !group.is_empty() {
+                groups.push(group);
+            }
+            groups
+        };
+        let mut new: Vec<[i32; 3]> = Vec::new();
+        for group in groups {
+            let batch: Vec<([i32; 3], Quadrants)> =
+                group.iter().flat_map(|(_, v)| v.iter().copied()).collect();
+            let flown: Vec<Arc<NodeEdges>> =
+                par_map(&batch, |(c, q)| self.flown(memo, params, *c, *q));
+            let mut flown = flown.into_iter();
+            for (k, v) in &group {
+                visits.visit(*k);
+                for (c, q) in v {
+                    let e = flown.next().expect("one flight per node");
+                    *reach.flown.entry(*c).or_insert(0) |= *q;
+                    reach.simulated += e.simulated;
+                    reach.credited += e.credited;
+                    if e.leaves_world {
+                        reach.leaves_world.insert(*c);
+                    }
+                    if let Some(d) = e.dies {
+                        reach.fatal.insert(*c, d);
+                    }
+                    let have: BTreeSet<([i32; 3], EdgeKind)> = reach
+                        .succ
+                        .with(*c, |l| l.iter().map(|x| (x.to, x.kind)).collect());
+                    for edge in &e.edges {
+                        if have.contains(&(edge.to, edge.kind)) {
+                            continue;
+                        }
+                        reach.join(*c, edge);
+                        visits.joined(*c, edge.to, side);
+                        if !reach.states.contains_key(&edge.to) {
+                            new.push(edge.to);
+                        }
+                    }
                 }
             }
         }
         new.sort_unstable();
         new.dedup();
-        self.close(memo, params, reach, new);
+        new
     }
 
-    /// Close `reach` over the cheap edges from `frontier`.
+    /// Close `reach` over the cheap edges from `frontier`, **reach chunk by
+    /// reach chunk** (ADR-0037 §2): a frontier per chunk; a chunk's frontier
+    /// is closed inside the chunk, each edge that leaves it pushed onto the
+    /// frontier of the chunk it lands in, and the next chunk with a frontier
+    /// taken, until none has one. The closure is the same set whatever order
+    /// the chunks are taken in, and every reached state's cell-relation edges
+    /// are joined once.
     fn close(
         &self,
         memo: &GraphMemo,
         params: &ReachParams,
         reach: &mut Reach,
         frontier: Vec<[i32; 3]>,
+        visits: &mut chunks::Visits,
     ) {
-        let mut frontier: Vec<[i32; 3]> = frontier
-            .into_iter()
-            .filter(|c| !reach.states.contains_key(c))
-            .collect();
-        frontier.sort_unstable();
-        frontier.dedup();
-        let mut queued: BTreeSet<[i32; 3]> = frontier.iter().copied().collect();
-        while !frontier.is_empty() {
-            let expanded = self.cell_edges(memo, params, &frontier);
-            let mut next: Vec<[i32; 3]> = Vec::new();
-            for (c, e) in frontier.iter().zip(expanded) {
-                reach.simulated += e.simulated;
-                reach.credited += e.credited;
-                let Some(k) = e.kind else {
-                    continue;
-                };
-                reach.states.insert(*c, k);
-                reach.mark(&memo.dense, *c);
-                if e.leaves_world {
-                    reach.leaves_world.insert(*c);
-                }
-                if e.open_sea {
-                    reach.open_sea.insert(*c);
-                }
-                for edge in &e.edges {
-                    reach
-                        .preds
-                        .entry(edge.to)
-                        .or_default()
-                        .push((*c, edge.clone()));
-                    if !reach.states.contains_key(&edge.to) && queued.insert(edge.to) {
-                        next.push(edge.to);
+        let side = chunks::side_here();
+        let mut queued: std::collections::HashSet<[i32; 3]> = std::collections::HashSet::new();
+        let mut fronts: BTreeMap<chunks::Key, Vec<[i32; 3]>> = BTreeMap::new();
+        for c in frontier {
+            if !reach.states.contains_key(&c) && queued.insert(c) {
+                fronts.entry(chunks::chunk_of(c, side)).or_default().push(c);
+            }
+        }
+        while let Some((k, mut local)) = fronts.pop_first() {
+            visits.visit(k);
+            local.sort_unstable();
+            while !local.is_empty() {
+                // The plain sea is flooded, not expanded (ADR-0037 §2): a
+                // frontier cell that is plain takes its whole component into
+                // the states in one sweep, and the component's boundary —
+                // water cells that are not plain — joins the frontier of the
+                // chunk each lies in. The rest of the frontier is expanded as
+                // every node is.
+                let mut next: Vec<[i32; 3]> = Vec::new();
+                let mut expand: Vec<[i32; 3]> = Vec::with_capacity(local.len());
+                for c in &local {
+                    if reach.states.contains_key(c) {
+                        // Flooded by a component this frontier reached first.
+                        continue;
+                    }
+                    if self.plain_sea(&memo.dense, *c) {
+                        reach.sea_components += 1;
+                        self.flood_plain(memo, reach, *c, |b| {
+                            if queued.insert(b) {
+                                let to = chunks::chunk_of(b, side);
+                                if to == k {
+                                    next.push(b);
+                                } else {
+                                    fronts.entry(to).or_default().push(b);
+                                }
+                            }
+                        });
+                    } else {
+                        expand.push(*c);
                     }
                 }
-                reach
-                    .succ
-                    .entry(*c)
-                    .or_default()
-                    .extend(e.edges.iter().cloned());
+                let expanded = self.cell_edges(memo, params, &expand);
+                for (c, e) in expand.iter().zip(expanded) {
+                    reach.simulated += e.simulated;
+                    reach.credited += e.credited;
+                    let Some(kind) = e.kind else {
+                        continue;
+                    };
+                    reach.states.insert(&memo.dense, *c, kind);
+                    if e.leaves_world {
+                        reach.leaves_world.insert(*c);
+                    }
+                    if e.open_sea {
+                        reach.open_sea.insert(*c);
+                    }
+                    for edge in &e.edges {
+                        reach.join(*c, edge);
+                        visits.joined(*c, edge.to, side);
+                        if !reach.states.contains_key(&edge.to) && queued.insert(edge.to) {
+                            let to = chunks::chunk_of(edge.to, side);
+                            if to == k {
+                                next.push(edge.to);
+                            } else {
+                                fronts.entry(to).or_default().push(edge.to);
+                            }
+                        }
+                    }
+                }
+                next.sort_unstable();
+                local = next;
             }
-            next.sort_unstable();
-            frontier = next;
+        }
+    }
+
+    /// Flood the plain-sea component of `start` ([`World::plain_sea`]) into
+    /// `reach`'s states, breadth first over the six neighbours, each plain
+    /// cell kept as a plain-sea state with its six dives counted; every
+    /// neighbour that is not plain and not yet a state — water, since a plain
+    /// cell's six neighbours are — is handed to `boundary`. The frontier held
+    /// is one layer of the flood, never the component.
+    fn flood_plain(
+        &self,
+        memo: &GraphMemo,
+        reach: &mut Reach,
+        start: [i32; 3],
+        mut boundary: impl FnMut([i32; 3]),
+    ) {
+        let dense = &memo.dense;
+        let mut front: std::collections::VecDeque<[i32; 3]> = std::collections::VecDeque::new();
+        reach.states.insert_plain(dense, start);
+        front.push_back(start);
+        while let Some(c) = front.pop_front() {
+            reach.kinds[EdgeKind::Dive as usize] += 6;
+            for n in six_of(c) {
+                if reach.states.contains_key(&n) {
+                    continue;
+                }
+                if self.plain_sea(dense, n) {
+                    reach.states.insert_plain(dense, n);
+                    front.push_back(n);
+                } else {
+                    boundary(n);
+                }
+            }
         }
     }
 
@@ -3701,8 +4290,7 @@ impl World {
     /// cliff's lip), which a body walks or jumps under and falls out of the
     /// world through. `0` when there is none.
     fn envelope_open(&self, memo: &GraphMemo, reach: &Reach, c: [i32; 3]) -> Quadrants {
-        let d = &memo.dense;
-        self.envelope_toward(memo, c, &|x| reach.has(d, x))
+        self.envelope_toward(memo, c, &|x| reach.states.contains_key(&x))
     }
 
     /// Each of `cells` with the directions [`World::envelope_open`] still asks
@@ -3731,7 +4319,7 @@ impl World {
             return cells.iter().filter_map(one).collect();
         }
         let blocks: Vec<&[[i32; 3]]> = cells.chunks(BLOCK).collect();
-        crate::par::map(&blocks, |b| b.iter().filter_map(one).collect::<Vec<_>>())
+        par_map(&blocks, |b| b.iter().filter_map(one).collect::<Vec<_>>())
             .into_iter()
             .flatten()
             .collect()
@@ -3790,7 +4378,7 @@ impl World {
                     q |= bit;
                     continue;
                 }
-                for &y in &memo.columns.rest[col] {
+                for &y in memo.columns.rest(col) {
                     if y > c[1] + 2 {
                         break;
                     }
@@ -3803,6 +4391,74 @@ impl World {
         }
         q
     }
+}
+
+/// The six neighbours of `c`, in the order [`World::expand`] asks about them.
+fn six_of(c: [i32; 3]) -> [[i32; 3]; 6] {
+    [
+        [c[0] + 1, c[1], c[2]],
+        [c[0] - 1, c[1], c[2]],
+        [c[0], c[1] + 1, c[2]],
+        [c[0], c[1] - 1, c[2]],
+        [c[0], c[1], c[2] + 1],
+        [c[0], c[1], c[2] - 1],
+    ]
+}
+
+/// The edges of a plain-sea cell ([`World::plain_sea`]): a dive to each of its
+/// six neighbours, in the order [`World::expand`] gathers edges (cell order of
+/// the target).
+fn plain_dives(c: [i32; 3]) -> Vec<Edge> {
+    let mut out: Vec<Edge> = six_of(c)
+        .into_iter()
+        .map(|to| Edge {
+            to,
+            kind: EdgeKind::Dive,
+            yaw: None,
+            sprint: false,
+        })
+        .collect();
+    out.sort_unstable_by_key(|e| e.to);
+    out
+}
+
+/// Everything a plain-sea cell leads to, as [`World::expand`] would give it:
+/// submerged, its six dives, nothing flown and nothing flagged
+/// (`a_plain_sea_cell_is_the_one_expand_gives` holds the two equal).
+fn plain_node(c: [i32; 3]) -> NodeEdges {
+    NodeEdges {
+        kind: Some(RestKind::Submerged),
+        edges: plain_dives(c),
+        ..NodeEdges::default()
+    }
+}
+
+/// Whether the closure summarises the plain sea ([`World::plain_sea`]):
+/// always, outside the tests that hold the summarised closure to the plain
+/// one.
+#[cfg(not(test))]
+fn summarising() -> bool {
+    true
+}
+
+#[cfg(test)]
+thread_local! {
+    static SUMMARISING: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
+}
+
+#[cfg(test)]
+fn summarising() -> bool {
+    SUMMARISING.with(|s| s.get())
+}
+
+/// Run `f` with the plain sea expanded cell by cell, as every other cell is,
+/// on this thread: the test knob the agreement test turns.
+#[cfg(test)]
+fn unsummarised<R>(f: impl FnOnce() -> R) -> R {
+    SUMMARISING.with(|s| s.set(false));
+    let out = f();
+    SUMMARISING.with(|s| s.set(true));
+    out
 }
 
 /// The cells [`World::rest_kind`] asks about for a cell `c` of the player's
@@ -3847,14 +4503,22 @@ pub struct JumpMiss {
 }
 
 /// The closure of the reach graph from a set of roots.
+///
+/// Its edge lists are kept by reach chunk ([`chunks`], ADR-0037 §2) and read
+/// back when asked for ([`Reach::succ`], [`Reach::preds`]); the states and the
+/// flags stay in memory.
 #[derive(Debug, Clone, Default)]
 pub struct Reach {
-    /// Every rest state reached, roots included.
-    pub states: BTreeMap<[i32; 3], RestKind>,
-    /// Every reached state's edges.
-    pub succ: BTreeMap<[i32; 3], Vec<Edge>>,
-    /// Every reached state's predecessors, with the edge that joins them.
-    pub preds: BTreeMap<[i32; 3], Vec<([i32; 3], Edge)>>,
+    /// Every rest state reached, roots included: a bit per window cell and
+    /// the kinds by block ([`states::States`]).
+    pub states: states::States,
+    /// Every reached state's edges, in the order they were found.
+    succ: chunks::Lists<Edge>,
+    /// Every reached state's predecessors, with the edge that joins them, in
+    /// the order they were found.
+    preds: chunks::Lists<([i32; 3], Edge)>,
+    /// How many edges of each kind `succ` holds, in [`EdgeKind::ALL`]'s order.
+    kinds: [usize; 6],
     /// The states some launch from which leaves the world.
     pub leaves_world: BTreeSet<[i32; 3]>,
     /// The states in the open sea.
@@ -3872,32 +4536,218 @@ pub struct Reach {
     /// Set to the budget when the closure's work passed it (`DW1042`): the
     /// closure is then partial, and no proof may take a verdict over it.
     pub over_budget: Option<u64>,
-    /// The reached states inside the window, as a bitmap over it.
-    bits: Vec<u64>,
+    /// The portal edges the closure joined — edges whose ends lie in
+    /// different reach chunks — and the face cells they land on, at the chunk
+    /// side it was taken at (ADR-0037 §2); a reader's growth adds its own.
+    /// Never read by a proof: the counts depend on the side.
+    pub portals: [u64; 2],
+    /// How many plain-sea components the closure flooded ([`World::close`]).
+    pub sea_components: u64,
 }
 
 impl Reach {
+    /// The edges out of `c`, in the order they were found: a plain-sea
+    /// state's are its six dives, computed ([`plain_dives`]); every other
+    /// state's are read from its chunk's list.
+    pub fn succ(&self, c: [i32; 3]) -> Vec<Edge> {
+        if self.states.plain(&c) {
+            return plain_dives(c);
+        }
+        self.succ.get(c)
+    }
+
+    /// The predecessors of `c`, each with the edge that joins it to `c`, in
+    /// the order the closure joined them, with the plain-sea neighbours'
+    /// dives, which were never joined, added after: the set every reader of
+    /// the predecessors asks for, in no particular order.
+    fn preds_raw(&self, c: [i32; 3]) -> Vec<([i32; 3], Edge)> {
+        let mut ps = self.preds.get(c);
+        for n in six_of(c) {
+            if self.states.plain(&n) {
+                ps.push((
+                    n,
+                    Edge {
+                        to: c,
+                        kind: EdgeKind::Dive,
+                        yaw: None,
+                        sprint: false,
+                    },
+                ));
+            }
+        }
+        ps
+    }
+
+    /// The predecessors of `c`, each with the edge that joins it to `c`, in
+    /// cell order of the predecessor and, from one predecessor, in the order
+    /// its edges were found — an order no chunk side or visit order moves,
+    /// since the closure joins edges into one cell from many chunks. A
+    /// plain-sea predecessor's one edge, its dive, is computed
+    /// ([`Reach::preds_raw`]).
+    pub fn preds(&self, c: [i32; 3]) -> Vec<([i32; 3], Edge)> {
+        let mut ps = self.preds_raw(c);
+        ps.sort_by_key(|(p, _)| *p);
+        ps
+    }
+
+    /// The first predecessor of `c`, in [`Reach::preds`]'s order, `pick` holds
+    /// for, with its edge.
+    pub fn first_pred(
+        &self,
+        c: [i32; 3],
+        pick: impl Fn(&[i32; 3]) -> bool,
+    ) -> Option<([i32; 3], Edge)> {
+        self.preds_raw(c)
+            .into_iter()
+            .filter(|(p, _)| pick(p))
+            .min_by_key(|(p, _)| *p)
+    }
+
+    /// Add the edge `from` → `edge.to`.
+    fn join(&mut self, from: [i32; 3], edge: &Edge) {
+        self.preds.push(edge.to, (from, edge.clone()));
+        self.succ.push(from, edge.clone());
+        self.kinds[edge.kind as usize] += 1;
+    }
+
     /// Whether, over this closure's own edges, `from` reaches every one of
-    /// `targets`.
+    /// `targets` — walked reach chunk by reach chunk ([`Reach::walk`]).
     fn reaches_all(&self, from: &[[i32; 3]], targets: &[[i32; 3]]) -> bool {
         let mut want: BTreeSet<[i32; 3]> = targets.iter().copied().collect();
-        let mut seen: BTreeSet<[i32; 3]> = from.iter().copied().collect();
-        let mut queue: Vec<[i32; 3]> = from.to_vec();
         for f in from {
             want.remove(f);
         }
-        while let Some(c) = queue.pop() {
-            if want.is_empty() {
-                return true;
+        if want.is_empty() {
+            return true;
+        }
+        let mut done = false;
+        self.walk(
+            from.iter().copied(),
+            true,
+            |c| self.succ(c).into_iter().map(|e| e.to).collect(),
+            |n| {
+                want.remove(&n);
+                done = want.is_empty();
+                (true, done)
+            },
+        );
+        done
+    }
+
+    /// The reach chunk a cell's lists are kept in.
+    fn chunk_key(&self, c: [i32; 3]) -> chunks::Key {
+        chunks::chunk_of(c, self.succ.side())
+    }
+
+    /// The reach chunk `c`'s lists are kept in: a reader that keeps a
+    /// frontier per chunk keys it by this.
+    pub fn chunk(&self, c: [i32; 3]) -> (i32, i32) {
+        self.chunk_key(c)
+    }
+
+    /// Put `cells` in the order their lists are kept in: reach chunk by reach
+    /// chunk, cell order within a chunk. A reader whose answer does not
+    /// depend on the order it reads cells in reads them so.
+    pub fn in_chunk_order(&self, cells: &mut [[i32; 3]]) {
+        cells.sort_unstable_by_key(|c| (self.chunk_key(*c), *c));
+    }
+
+    /// `f` of each of `cells` and its predecessors ([`Reach::preds`]'s
+    /// order), the cells taken in chunk order ([`Reach::in_chunk_order`]).
+    pub fn preds_by_chunk(
+        &self,
+        cells: impl IntoIterator<Item = [i32; 3]>,
+        mut f: impl FnMut([i32; 3], &[([i32; 3], Edge)]),
+    ) {
+        let mut cells: Vec<[i32; 3]> = cells.into_iter().collect();
+        self.in_chunk_order(&mut cells);
+        for c in cells {
+            f(c, &self.preds(c));
+        }
+    }
+
+    /// Every state from which a movement sequence over this closure's edges
+    /// reaches one of `seeds`, `seeds` included: walked backwards over the
+    /// predecessor lists, reach chunk by reach chunk ([`Reach::walk`]). A
+    /// predecessor `admit` refuses is not entered. With `sea`, the open sea is
+    /// one place: reaching any of it reaches all of it (spec-0113 §4.7).
+    pub fn reaching(
+        &self,
+        seeds: impl IntoIterator<Item = [i32; 3]>,
+        admit: impl Fn(&[i32; 3]) -> bool,
+        sea: bool,
+    ) -> BTreeSet<[i32; 3]> {
+        let seeds: Vec<[i32; 3]> = seeds.into_iter().collect();
+        let mut out: BTreeSet<[i32; 3]> = seeds.iter().copied().collect();
+        self.walk(
+            seeds,
+            sea,
+            |c| {
+                self.preds_raw(c)
+                    .into_iter()
+                    .map(|(p, _)| p)
+                    .filter(|p| admit(p))
+                    .collect()
+            },
+            |n| {
+                out.insert(n);
+                (true, false)
+            },
+        );
+        out
+    }
+
+    /// **A walk over this closure, reach chunk by reach chunk**: from
+    /// `seeds`, each cell's neighbours (`step`: its successors or its
+    /// predecessors, read from the lists kept in its chunk) are entered once;
+    /// a frontier is kept per chunk, a chunk's frontier walked to the end
+    /// before the next chunk's is taken, so each chunk's lists are read while
+    /// they are the ones in memory. With `sea`, a cell of the open sea enters
+    /// every open-sea cell, once. `enter` is told each cell entered for the
+    /// first time (seeds are not told) and answers whether to walk on from it
+    /// and whether to stop. The cells entered are the same whatever the
+    /// order, so the walk answers every question about the set it reaches.
+    fn walk(
+        &self,
+        seeds: impl IntoIterator<Item = [i32; 3]>,
+        sea: bool,
+        step: impl Fn([i32; 3]) -> Vec<[i32; 3]>,
+        mut enter: impl FnMut([i32; 3]) -> (bool, bool),
+    ) {
+        let mut seen: std::collections::HashSet<[i32; 3]> = std::collections::HashSet::new();
+        let mut fronts: BTreeMap<chunks::Key, Vec<[i32; 3]>> = BTreeMap::new();
+        for s in seeds {
+            if seen.insert(s) {
+                fronts.entry(self.chunk_key(s)).or_default().push(s);
             }
-            for n in self.next(c) {
-                if seen.insert(n) {
-                    want.remove(&n);
-                    queue.push(n);
+        }
+        let mut sea_joined = !sea;
+        while let Some((k, mut local)) = fronts.pop_first() {
+            while let Some(cur) = local.pop() {
+                let mut next = step(cur);
+                if !sea_joined && self.open_sea.contains(&cur) {
+                    sea_joined = true;
+                    next.extend(self.open_sea.iter().copied());
+                }
+                for n in next {
+                    if !seen.insert(n) {
+                        continue;
+                    }
+                    let (on, stop) = enter(n);
+                    if stop {
+                        return;
+                    }
+                    if on {
+                        let kn = self.chunk_key(n);
+                        if kn == k {
+                            local.push(n);
+                        } else {
+                            fronts.entry(kn).or_default().push(n);
+                        }
+                    }
                 }
             }
         }
-        want.is_empty()
     }
 
     fn flown_mask(&self, c: [i32; 3]) -> Quadrants {
@@ -3913,54 +4763,41 @@ impl Reach {
         ) && self.flown_mask(c) != ALL_QUADRANTS
     }
 
-    fn mark(&mut self, d: &Dense, c: [i32; 3]) {
-        if let Some(i) = d.index(c) {
-            if self.bits.is_empty() {
-                self.bits = vec![0; d.cells.len().div_ceil(64)];
-            }
-            self.bits[i / 64] |= 1 << (i % 64);
-        }
-    }
-
-    fn has(&self, d: &Dense, c: [i32; 3]) -> bool {
-        match d.index(c) {
-            Some(i) => self
-                .bits
-                .get(i / 64)
-                .is_some_and(|w| w & (1 << (i % 64)) != 0),
-            None => self.states.contains_key(&c),
-        }
-    }
-
     /// The reached cells.
     pub fn cells(&self) -> BTreeSet<[i32; 3]> {
-        self.states.keys().copied().collect()
+        self.states.keys().collect()
     }
 
     /// The reached standing states.
     pub fn standing(&self) -> BTreeSet<[i32; 3]> {
         self.states
             .iter()
-            .filter(|(_, k)| **k == RestKind::Standing)
-            .map(|(c, _)| *c)
+            .filter(|(_, k)| *k == RestKind::Standing)
+            .map(|(c, _)| c)
             .collect()
     }
 
     /// The successors of `c`, open-sea states joined to one another.
     pub fn next(&self, c: [i32; 3]) -> impl Iterator<Item = [i32; 3]> + '_ {
         let sea = self.open_sea.contains(&c);
-        self.succ.get(&c).into_iter().flatten().map(|e| e.to).chain(
+        self.succ(c).into_iter().map(|e| e.to).chain(
             sea.then(|| self.open_sea.iter().copied())
                 .into_iter()
                 .flatten(),
         )
     }
 
+    /// The bytes this closure's two lists take in the scratch file.
+    #[cfg(test)]
+    pub(in crate::compiler::nav) fn spilled_bytes(&self) -> u64 {
+        self.succ.spilled_bytes() + self.preds.spilled_bytes()
+    }
+
     /// How many states of each kind: standing, afloat, submerged, holding.
     pub fn census(&self) -> [usize; 4] {
         let mut n = [0; 4];
         for k in self.states.values() {
-            n[*k as usize] += 1;
+            n[k as usize] += 1;
         }
         n
     }
@@ -3968,12 +4805,7 @@ impl Reach {
     /// How many edges of each kind, in [`EdgeKind::ALL`]'s order; the exit
     /// edges are the states that leave the world or lie in the open sea.
     pub fn edge_census(&self) -> [usize; 6] {
-        let mut n = [0; 6];
-        for es in self.succ.values() {
-            for e in es {
-                n[e.kind as usize] += 1;
-            }
-        }
+        let mut n = self.kinds;
         n[EdgeKind::Exit as usize] += self.leaves_world.len() + self.open_sea.len();
         n
     }
@@ -4003,6 +4835,11 @@ impl ReachBinding {
     /// Fold one configuration's closure in.
     pub fn add(&mut self, world: &World, reach: &Reach) {
         self.configurations += 1;
+        BOUND_WORLDS
+            .get_or_init(|| Mutex::new(std::collections::HashSet::new()))
+            .lock()
+            .expect("bound worlds")
+            .insert(world.fingerprint());
         for (a, b) in self.states.iter_mut().zip(reach.census()) {
             *a += b;
         }
@@ -4074,8 +4911,13 @@ impl ReachBinding {
 }
 
 mod bank;
+pub(crate) mod budget;
+mod chunks;
 mod flights;
+pub(in crate::compiler::nav) mod pages;
 mod persist;
+pub(crate) mod spill;
+pub mod states;
 
 #[cfg(test)]
 mod tests;
