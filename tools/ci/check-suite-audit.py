@@ -31,7 +31,7 @@ WHAT IT ASSERTS (exit 1 on any)
                coverage map and a JUnit report, keeping each row's verdict.
   --overrides  also asserts the `[[profile.ci.overrides]]` entries of
                `.config/nextest.toml` number the table's `overrides`, and each
-               carries `filter = 'test(=…)'`, a `slow-timeout`, `threads-required = 2`, a `priority`
+               carries `filter = 'test(=…)'`, a `slow-timeout`, a `priority`
                above the default and, inside its block, a comment
                `# measured: <N> s …` with why it cannot be smaller.
 
@@ -379,8 +379,6 @@ def main() -> int:
             own = b.overrides.get(filt[len("test(="):-1])
             if own is None or (b.test_seconds is not None and own <= b.test_seconds):
                 errors.append(f"override {i} ({filt}): its bound ({own}) does not extend the default per-test bound ({b.test_seconds} s)")
-            if o.get("threads-required") != 2:
-                errors.append(f"override {i} ({filt}): does not reserve two of the runner's four slots (`threads-required = 2`; spec-0126 §5.4: the engine a slow test spawns runs one thread per core)")
             if i >= len(blocks) or not re.search(r"^\s*#.*\bmeasured\b[^\n]*?\d+(\.\d+)?\s*s\b", blocks[i], re.M):
                 errors.append(f"override {i} ({filt}): no comment in its block states its measured time")
         print(

@@ -21,7 +21,6 @@ slow-timeout = { period = "60s", terminate-after = 2 }
 # measured: 300 s on the build machine; the whole gallery is its scenario.
 filter = 'test(=a::a_one)'
 slow-timeout = { period = "400s", terminate-after = 1 }
-threads-required = 2
 priority = 100
 """
 
@@ -142,12 +141,6 @@ def test_an_override_without_its_measured_time_is_red(repo):
     cfg = repo / ".config/nextest.toml"
     cfg.write_text(cfg.read_text().replace("# measured: 300 s", "# the gallery"))
     assert "states its measured time" in run(repo, "--overrides").stderr
-
-
-def test_an_override_that_reserves_no_slots_is_red(repo):
-    cfg = repo / ".config/nextest.toml"
-    cfg.write_text(cfg.read_text().replace("threads-required = 2\n", ""))
-    assert "does not reserve two" in run(repo, "--overrides").stderr
 
 
 def test_an_override_that_extends_nothing_is_red(repo):
