@@ -40,7 +40,18 @@ where
     R: Send,
     F: Fn(&T) -> R + Sync,
 {
-    let workers = threads().min(items.len());
+    map_on(threads(), items, f)
+}
+
+/// [`map`] on up to `threads` threads: the one implementation, which [`map`]
+/// calls with [`threads`] and a test calls with a count of its own.
+fn map_on<T, R, F>(threads: usize, items: &[T], f: F) -> Vec<R>
+where
+    T: Sync,
+    R: Send,
+    F: Fn(&T) -> R + Sync,
+{
+    let workers = threads.min(items.len());
     if workers <= 1 {
         return items.iter().map(f).collect();
     }
@@ -84,16 +95,33 @@ where
 /// items are taken in windows, each window computed in parallel and drained
 /// into `sink` before the next starts. This is the form for results that are
 /// large, such as a decoded template's cells.
-pub fn try_for_each_ordered<T, R, E, F, S>(items: &[T], f: F, mut sink: S) -> Result<(), E>
+pub fn try_for_each_ordered<T, R, E, F, S>(items: &[T], f: F, sink: S) -> Result<(), E>
 where
     T: Sync,
     R: Send,
     F: Fn(&T) -> R + Sync,
     S: FnMut(R) -> Result<(), E>,
 {
-    let window = (threads() * 2).max(1);
+    try_for_each_ordered_on(threads(), items, f, sink)
+}
+
+/// [`try_for_each_ordered`] on up to `threads` threads, as [`map_on`] is to
+/// [`map`].
+fn try_for_each_ordered_on<T, R, E, F, S>(
+    threads: usize,
+    items: &[T],
+    f: F,
+    mut sink: S,
+) -> Result<(), E>
+where
+    T: Sync,
+    R: Send,
+    F: Fn(&T) -> R + Sync,
+    S: FnMut(R) -> Result<(), E>,
+{
+    let window = (threads * 2).max(1);
     for chunk in items.chunks(window) {
-        for r in map(chunk, &f) {
+        for r in map_on(threads, chunk, &f) {
             sink(r)?;
         }
     }
@@ -102,12 +130,17 @@ where
 
 #[cfg(test)]
 mod tests {
+    /// The thread count these tests run the maps at, set here rather than
+    /// read from `DELVEC_THREADS`: CI runs the suite at `DELVEC_THREADS=1`
+    /// (spec-0126 §5.4), where [`super::map`] never leaves the calling thread.
+    const THREADS: usize = 4;
+
     /// The results come back in item order however the work was scheduled:
     /// items finish out of order on purpose (later items are cheaper).
     #[test]
     fn results_come_back_in_item_order() {
         let items: Vec<u64> = (0..200).collect();
-        let got = super::map(&items, |&i| {
+        let got = super::map_on(THREADS, &items, |&i| {
             let mut acc = i;
             for k in 0..(200 - i) * 500 {
                 acc = acc.wrapping_mul(6364136223846793005).wrapping_add(k);
@@ -133,7 +166,8 @@ mod tests {
     fn the_sink_sees_results_in_order_and_stops_at_its_refusal() {
         let items: Vec<usize> = (0..97).collect();
         let mut seen = Vec::new();
-        let r = super::try_for_each_ordered(
+        let r = super::try_for_each_ordered_on(
+            THREADS,
             &items,
             |&i| i * 3,
             |v| {

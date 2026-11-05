@@ -401,6 +401,13 @@ jobs:
     # spec-0126 §5.3: 40 min at the median runner speed, with the measured
     # 3.11x runner variance as headroom, as each partition has.
     timeout-minutes: 125
+    # spec-0126 §5.4: the engine every test runs or spawns runs one thread
+    # (`crates/delvec/src/par.rs`), so a test is one core of the runner and
+    # the instrumented counters are not contended across threads. The count
+    # never changes what a build emits (ADR-0006); a test that needs the
+    # engine at more than one thread sets its own count.
+    env:
+      DELVEC_THREADS: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/checkout-content
@@ -447,6 +454,13 @@ jobs:
     # the measured 3.11x runner variance as headroom (3.11 x 40, rounded up). A
     # partition that exceeds it is cancelled and red.
     timeout-minutes: 125
+    # spec-0126 §5.4: the engine every test runs or spawns runs one thread
+    # (`crates/delvec/src/par.rs`), so a test is one core of the runner and
+    # the instrumented counters are not contended across threads. The count
+    # never changes what a build emits (ADR-0006); a test that needs the
+    # engine at more than one thread sets its own count.
+    env:
+      DELVEC_THREADS: "1"
     strategy:
       # Every partition runs to its end: the census needs all N reports to say
       # which tests ran where, and a failure in one says nothing about the rest.
