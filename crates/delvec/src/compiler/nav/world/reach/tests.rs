@@ -769,7 +769,8 @@ fn past_the_cap_a_node_keeps_its_own_edges() {
 /// A node that finds no shared edge table — the process past its cap of
 /// tables — keeps its edge positions to itself, and through the bank's read
 /// tracking gives the node the shared tables give. Every node of the Bell
-/// yard's graph is expanded both ways, banked, and compared field by field.
+/// yard's graph is expanded both ways from an empty bank with its tracking
+/// on, and compared field by field.
 #[test]
 fn a_node_with_no_shared_edge_table_is_the_node_the_shared_tables_give() {
     let yard = bell_yard();
@@ -779,14 +780,14 @@ fn a_node_with_no_shared_edge_table_is_the_node_the_shared_tables_give() {
     let keys: Vec<FlownKey> = memo.flown.lock().expect("memo").keys().copied().collect();
     let volumes = |b| yard.volumes_near(b);
     let none = |_: &[Code; 45]| -> Option<Arc<EdgeTable>> { None };
+    let empty = bank::Bank::default();
     let mut read = 0;
     for key in &keys {
         let jumps = yard.jumps_from(key.0);
         let boxes = yard.node_boxes(key.0);
-        let expansion = || {
-            memo.bank
-                .expansion(key, &memo.dense, &memo.extra, &boxes, &jumps, &volumes)
-        };
+        // From an empty bank, so every launch is flown rather than taken
+        // from a run the graph already banked.
+        let expansion = || empty.expansion(key, &memo.dense, &memo.extra, &boxes, &jumps, &volumes);
         let (x, y) = (expansion(), expansion());
         let shared = yard.expand_with(&memo, &params, key.0, key.1, Some(&x), &shared_edges);
         let own = yard.expand_with(&memo, &params, key.0, key.1, Some(&y), &none);
