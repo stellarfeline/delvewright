@@ -629,6 +629,9 @@ fn a_campaign_with_no_plan_binds_nothing() {
     assert_eq!(b.plan, delvewright_dsl::PlanBinding::default());
     assert_eq!(b.plan.boxes, 0);
     assert_eq!(b.plan.box_pairs, 0);
+    // With no plan, no place owes an anchor, whatever node is named.
+    let node = delvewright_dsl::NodeId("node/porch".into());
+    assert!(delvewright_dsl::owed_anchors(&c, &node).is_empty());
 }
 
 /// The binding count, **stated by hand** from the document above and compared

@@ -148,6 +148,28 @@ fn a_trigger_naming_a_quest_absent_from_depends_on_is_dw1077() {
     assert_eq!(agreed.codes(), BTreeSet::new());
 }
 
+/// A trigger naming a quest outside a non-empty `depends_on` is refused with
+/// the entries the plan does list named, so the author sees which quest the
+/// plan says arms it.
+#[test]
+fn a_refusal_names_the_entries_depends_on_lists() {
+    let j = Join {
+        deps: [vec![PROLOGUE], vec![], vec![]],
+        triggers: [after(SIDE), start(), start()],
+    };
+    let refusals: Vec<_> = check_campaign(&j.raw())
+        .into_iter()
+        .filter(|d| d.code == "DW1077")
+        .collect();
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
+    assert_eq!(refusals[0].path, "/content/quests/0/trigger/quest");
+    assert!(
+        refusals[0].message.contains("lists `quest/prologue`"),
+        "{}",
+        refusals[0].message
+    );
+}
+
 /// Every refusal binds to the edge that disagrees and to nothing else: the
 /// count of `DW1077` equals the count of disagreeing quests, swept over every
 /// trigger the three quests could carry with the plan held at the join.
