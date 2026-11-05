@@ -161,7 +161,9 @@ fn the_output_is_the_same_at_every_thread_count() {
 /// arrivals over every thread's stores, so where walks run beside each other
 /// how many raises a run makes is the schedule's — those lines are dropped —
 /// and the budget's line (`reach budget: …`), which states that need and what
-/// is resident at the end, is normalised. Every other byte is compared, and
+/// is resident at the end, is normalised; so is the scratch files' line
+/// (`reach scratch: …`, ADR-0037 §2), whose lengths depend on the order the
+/// threads free records and write the next ones into their room. Every other byte is compared, and
 /// the count of lines normalised is asserted equal by the comparison itself.
 fn without_wall_time(text: &str) -> String {
     text.lines()
@@ -175,6 +177,9 @@ fn without_wall_time(text: &str) -> String {
             }
             _ if l.starts_with("reach budget: ") => {
                 "reach budget: <the machine's> (ADR-0037 §1)".to_string()
+            }
+            _ if l.starts_with("reach scratch: ") => {
+                "reach scratch: <the machine's> (ADR-0037 §2)".to_string()
             }
             _ if l.starts_with("reach snapshot: ") => match l.rfind("; ") {
                 Some(i) if l[i..].contains(" served by a thread's recent pages") => {

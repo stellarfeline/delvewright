@@ -54,6 +54,7 @@
 use super::{Code, Death, Dense, EdgeKind, NodeEdges, Raw};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 /// An inclusive cell box.
@@ -480,11 +481,13 @@ impl Expansion<'_> {
 /// bytes — and a build keeps one variant per node it flew for the life of the
 /// process, so the bank keeps a slot per variant in memory and the file
 /// holds the rest.
+/// A slot on disk shares its record with every copy taken to read it, so a
+/// variant that leaves the bank frees its room in the file only once no read
+/// of it is under way.
 #[derive(Clone)]
 enum Slot {
     Disk {
-        at: u64,
-        len: u32,
+        ext: Arc<super::spill::Extent>,
         digest: u64,
     },
     Held {
@@ -502,7 +505,8 @@ impl Slot {
     }
     fn len(&self) -> u64 {
         match self {
-            Slot::Disk { len, .. } | Slot::Held { len, .. } => u64::from(*len),
+            Slot::Disk { ext, .. } => u64::from(ext.at().1),
+            Slot::Held { len, .. } => u64::from(*len),
         }
     }
 }
@@ -530,7 +534,88 @@ pub(super) struct Bank {
 
 /// How many variants of one node the bank keeps: a bound on its memory, never
 /// on what a build answers.
-const VARIANTS: usize = 8;
+pub(super) const VARIANTS: usize = 8;
+
+/// **The bank's cap** (ADR-0037 §3): the bytes every bank of the process may
+/// keep in its file between them, set by the build from its cost before the
+/// proofs run ([`set_cap`]: the graph's own tables' and lists' bound) and
+/// unbounded where no build set one. A variant that would pass it is not
+/// kept — the expansion's answer is the same, the next world that asks
+/// re-flies the node, and no output byte reads the bank — so the file is
+/// bounded by what the plan states, never by the nodes a run flew. Under a
+/// test's cap ([`with_cap`], carried to the workers that expand for the
+/// thread) each variant is judged alone against it, and what was refused
+/// is counted for the test over the process.
+static CAP: AtomicU64 = AtomicU64::new(u64::MAX);
+/// Bytes the variants kept hold, over every bank, under the cap.
+static KEPT: AtomicU64 = AtomicU64::new(0);
+/// Variants refused at the cap, over the run.
+static REFUSED: AtomicU64 = AtomicU64::new(0);
+/// Variants refused under a test's cap, over the process: the expansions
+/// run on worker threads, so a test reads the count before and after.
+static REFUSED_UNDER_TEST: AtomicU64 = AtomicU64::new(0);
+
+thread_local! {
+    static CAP_HERE: Cell<u64> = const { Cell::new(0) };
+}
+
+/// The build's cap on what the banks keep, in bytes.
+pub(super) fn set_cap(bytes: u64) {
+    CAP.store(bytes, Ordering::Relaxed);
+}
+
+/// The cap stated and the variants refused at it over the run; `None` where
+/// no build set one.
+pub(super) fn cap_stated() -> Option<(u64, u64)> {
+    let c = CAP.load(Ordering::Relaxed);
+    (c != u64::MAX).then(|| (c, REFUSED.load(Ordering::Relaxed)))
+}
+
+/// A test's cap in force on this thread, `0` for none.
+pub(super) fn cap_here() -> u64 {
+    CAP_HERE.with(Cell::get)
+}
+
+/// `f` with a test's cap of `bytes` in force on this thread (`0`: none).
+pub(super) fn with_cap<R>(bytes: u64, f: impl FnOnce() -> R) -> R {
+    let was = CAP_HERE.with(|c| c.replace(bytes));
+    let out = f();
+    CAP_HERE.with(|c| c.set(was));
+    out
+}
+
+/// Variants refused under a test's cap so far, over the process.
+#[cfg(test)]
+pub(super) fn refused_under_test() -> u64 {
+    REFUSED_UNDER_TEST.load(Ordering::Relaxed)
+}
+
+/// Whether a variant of `len` bytes may be kept now: counted against the
+/// cap in force, and counted back if it may not.
+fn admit(len: u64) -> bool {
+    let here = cap_here();
+    if here != 0 {
+        if len > here {
+            REFUSED_UNDER_TEST.fetch_add(1, Ordering::Relaxed);
+            return false;
+        }
+        return true;
+    }
+    let cap = CAP.load(Ordering::Relaxed);
+    if KEPT.fetch_add(len, Ordering::Relaxed) + len > cap {
+        KEPT.fetch_sub(len, Ordering::Relaxed);
+        REFUSED.fetch_add(1, Ordering::Relaxed);
+        return false;
+    }
+    true
+}
+
+/// A variant kept under the cap let go: its bytes counted back.
+fn released(len: u64) {
+    if cap_here() == 0 {
+        KEPT.fetch_sub(len, Ordering::Relaxed);
+    }
+}
 
 impl Bank {
     /// A bank keyed `key` holding `nodes`, spilled.
@@ -568,13 +653,18 @@ impl Bank {
         if at >= VARIANTS {
             return;
         }
+        if !admit(bytes.len() as u64) {
+            return;
+        }
         let slot = {
             let mut spill = self.spill.lock().expect("spill");
             match spill.as_mut() {
                 Some(s) => {
-                    let r = s.append(&bytes);
-                    let (at, len) = s.or_fail("take a write", r);
-                    Slot::Disk { at, len, digest: d }
+                    let r = s.put(&bytes);
+                    Slot::Disk {
+                        ext: Arc::new(s.or_fail("take a write", r)),
+                        digest: d,
+                    }
                 }
                 None => Slot::Held {
                     v: Arc::clone(v),
@@ -584,7 +674,11 @@ impl Bank {
             }
         };
         vs.insert(at, slot);
-        vs.truncate(VARIANTS);
+        if vs.len() > VARIANTS {
+            for gone in vs.drain(VARIANTS..) {
+                released(gone.len());
+            }
+        }
         self.changed
             .store(true, std::sync::atomic::Ordering::Relaxed);
     }
@@ -599,7 +693,8 @@ impl Bank {
         for s in slots {
             match s {
                 Slot::Held { v, .. } => out.push(v),
-                Slot::Disk { at, len, .. } => {
+                Slot::Disk { ext, .. } => {
+                    let (at, len) = ext.at();
                     let bytes = {
                         let g = self.spill.lock().expect("spill");
                         let sp = g.as_ref().expect("a variant on disk has its spill");
@@ -838,7 +933,34 @@ pub(super) fn persist_all() {
     }
 }
 
+impl Bank {
+    /// What this bank's scratch file has held.
+    #[cfg(test)]
+    pub(super) fn usage(&self) -> super::spill::Usage {
+        self.spill
+            .lock()
+            .expect("spill")
+            .as_ref()
+            .map_or(Default::default(), super::spill::Spill::usage)
+    }
+}
+
 /// Every bank's census, summed: variants kept and bytes spilled.
+/// What every bank's scratch file has held.
+pub(super) fn usage_all() -> super::spill::Usage {
+    let banks: Vec<Arc<Bank>> = banks().lock().expect("banks").values().cloned().collect();
+    banks
+        .iter()
+        .filter_map(|b| {
+            b.spill
+                .lock()
+                .expect("spill")
+                .as_ref()
+                .map(super::spill::Spill::usage)
+        })
+        .fold(Default::default(), |a, b| a + b)
+}
+
 pub(super) fn census_all() -> (usize, u64) {
     let banks: Vec<Arc<Bank>> = banks().lock().expect("banks").values().cloned().collect();
     banks

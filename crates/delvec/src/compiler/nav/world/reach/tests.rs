@@ -819,7 +819,12 @@ fn a_taller_block_keeps_the_window() {
 /// candidates, every chunk's lists decode to at most the census's bound for a
 /// chunk, and the portal edges joined are at most its bound — each world's
 /// store read by the census as the cost reads it, over the window the cost
-/// takes. The factor of each bound over the measure is printed.
+/// takes. And what the graph holds in the reach scratch files — its
+/// snapshot's pages, its two node tables and its closure's lists, each read
+/// from the records the structures hold (`GraphMemo::scratch_held`) — is at
+/// most the cost's per-configuration bound for each (`scratch_bound_of`),
+/// red on any of the three passing its term. The factor of each bound over
+/// the measure is printed.
 #[test]
 fn the_costs_bounds_hold_over_the_graphs_built() {
     use crate::compiler::blockstate::{BlockMap, BlockState};
@@ -922,6 +927,7 @@ fn the_costs_bounds_hold_over_the_graphs_built() {
     ];
     let edges = edges_per_node_at_most();
     let (mut bound_states, mut bound_lists, mut bound_portals) = (0usize, 0usize, 0u64);
+    let mut bound_scratch = ScratchBound::default();
     for (name, w, store, sea, root) in &worlds {
         let (slo, shi) = store.section_bounds().expect("a store with cells");
         let window = window_box(slo, shi, *sea);
@@ -930,6 +936,73 @@ fn the_costs_bounds_hold_over_the_graphs_built() {
             chunks::at_side(side, || {
                 let r = w.body_reach(&[*root]);
                 let states = r.states.len();
+                // The scratch the graph holds, against the bound for one
+                // configuration (one world, one closure).
+                let memo = w.graph_memo(&ReachParams::shipped(w.unbounded_fall));
+                // The lists are this closure's own: another test's closure
+                // over the same world is kept by the same memo.
+                let held = ScratchBound {
+                    lists: r.spilled_bytes() as usize,
+                    ..memo.scratch_held()
+                };
+                let cells = [0, 1, 2]
+                    .map(|a| (window.1[a] - window.0[a] + 1) as usize)
+                    .iter()
+                    .product::<usize>();
+                // The cost's window is the store's sections with the margins,
+                // the graph's the modelled cells with them: the first holds
+                // the second, which is what makes the pages term a bound.
+                let graph_cells = memo
+                    .dense
+                    .dims
+                    .iter()
+                    .map(|d| *d as usize)
+                    .product::<usize>();
+                assert!(
+                    graph_cells <= cells,
+                    "{name} (side {side}): the graph's window ({graph_cells} cells) is not inside \
+                     the cost's ({cells})"
+                );
+                let bound = scratch_bound_of(ScratchInputs {
+                    states: census.states_at_most(),
+                    items: census.items_at_most,
+                    chunk_items: census.chunk_items_at_most,
+                    cells,
+                });
+                // The bank is held to its term by the cap the build sets,
+                // not by what a run flies (`a_bank_past_its_cap_keeps_no_more_and_answers_the_same`);
+                // what it held here is printed beside the cap it would get.
+                for (what, got, at_most) in [
+                    ("the snapshot's pages", held.snapshot, bound.snapshot),
+                    ("the node tables", held.tables, bound.tables),
+                    ("the closure's lists", held.lists, bound.lists),
+                ] {
+                    assert!(
+                        got <= at_most,
+                        "{name} (side {side}): {what} hold {got} byte(s) in the scratch file over \
+                         the cost's {at_most}"
+                    );
+                }
+                eprintln!(
+                    "{name} (side {side}): scratch snapshot {} <= {} (x{:.1}); tables {} <= {} \
+                     (x{:.1}); lists {} <= {} (x{:.1}); bank {} <= {} (x{:.1})",
+                    held.snapshot,
+                    bound.snapshot,
+                    bound.snapshot as f64 / held.snapshot.max(1) as f64,
+                    held.tables,
+                    bound.tables,
+                    bound.tables as f64 / held.tables.max(1) as f64,
+                    held.lists,
+                    bound.lists,
+                    bound.lists as f64 / held.lists.max(1) as f64,
+                    held.bank,
+                    bound.bank,
+                    bound.bank as f64 / held.bank.max(1) as f64,
+                );
+                bound_scratch.snapshot += held.snapshot;
+                bound_scratch.tables += held.tables;
+                bound_scratch.lists += held.lists;
+                bound_scratch.bank += held.bank;
                 assert!(
                     states <= census.states_at_most(),
                     "{name} (side {side}): {states} states over the census's {}",
@@ -981,6 +1054,167 @@ fn the_costs_bounds_hold_over_the_graphs_built() {
         bound_states > 0 && bound_lists > 0 && bound_portals > 0,
         "the worlds bind nothing"
     );
+    assert!(
+        bound_scratch.snapshot > 0 && bound_scratch.tables > 0 && bound_scratch.lists > 0,
+        "the graphs hold nothing in the scratch files: the scratch bound binds nothing \
+         ({bound_scratch:?})"
+    );
+}
+
+/// **A bank past its cap keeps no more, and answers the same** (ADR-0037 §3):
+/// the Bell yard's closure taken under a test's cap that refuses every
+/// variant (one byte) is, state for state and edge for edge, the closure
+/// taken with the bank keeping all — the bank is a cache, and a miss
+/// re-flies the node — and the capped expansion refused variants where the
+/// other kept them. Red if a capped bank changed an answer, or refused
+/// nothing (the cap unenforced).
+#[test]
+fn a_bank_past_its_cap_keeps_no_more_and_answers_the_same() {
+    let root = [[5, 1, 5]];
+    // Two yards of this test alone (no other case memoises them), alike in
+    // every cell a body can reach and in their window — the second's wall
+    // holds a fence post in place of one stone, under another stone, so it
+    // is a graph of its own and not the first's memo.
+    let full = walled_yard(([-3, 0, -3], [17, 0, 17])).world(Ambient::Void, Vec::new());
+    let mut fenced = walled_yard(([-3, 0, -3], [17, 0, 17]));
+    assert!(fenced.solid.remove(&[0, 2, 0]), "a wall stone to replace");
+    fenced.tall.insert([0, 2, 0]);
+    let capped = fenced.world(Ambient::Void, Vec::new());
+    let a = full.body_reach(&root);
+    let before = bank::refused_under_test();
+    let b = bank::with_cap(1, || capped.body_reach(&root));
+    let refused = bank::refused_under_test() - before;
+    assert!(
+        refused > 0,
+        "the cap refused no variant: it is not enforced"
+    );
+    let states_a: Vec<[i32; 3]> = a.states.keys().collect();
+    let states_b: Vec<[i32; 3]> = b.states.keys().collect();
+    assert_eq!(
+        states_a, states_b,
+        "the capped closure reached other states"
+    );
+    for c in &states_a {
+        assert_eq!(
+            a.succ(*c),
+            b.succ(*c),
+            "the edges out of {c:?} differ under the cap"
+        );
+    }
+    assert_eq!(a.edge_census(), b.edge_census());
+    eprintln!(
+        "a bank under a one-byte cap: {refused} variant(s) refused over the process; {} states and \
+         {} edges alike",
+        states_a.len(),
+        a.edge_census().iter().sum::<usize>()
+    );
+}
+
+/// **What the reach scratch bound does not count by name is covered by its
+/// terms' slack** (ADR-0037 §3, the cost line's declaration): a second world
+/// of the same window — the walled yard with a block set on its wall, a
+/// premise variant in substance, with its own pages, tables and bank
+/// variants — and a second closure over the base world from other roots,
+/// both built, and what the two graphs hold in the files together (every
+/// closure of both, every table entry, the one bank) is at most the bound for
+/// one configuration computed over the base store. Red if a second world or
+/// a second closure passes one configuration's bound; the case refuses a run
+/// where the second world built no graph of its own.
+#[test]
+fn a_second_world_and_a_second_closure_stay_under_one_configurations_bound() {
+    use crate::compiler::blockstate::{BlockMap, BlockState};
+    use crate::compiler::cost::RestCensus;
+    let b = walled_yard(([-2, 0, -2], [16, 0, 16]));
+    let base = b.world(Ambient::Void, Vec::new());
+    let mut edited = walled_yard(([-2, 0, -2], [16, 0, 16]));
+    edited.fill([3, 4, 14], [3, 4, 14]);
+    let edited = edited.world(Ambient::Void, Vec::new());
+    let mut store = BlockMap::new();
+    for (cells, name) in [
+        (&b.solid, "minecraft:stone"),
+        (&b.tall, "minecraft:oak_fence"),
+        (&b.water, "minecraft:water"),
+    ] {
+        for c in cells {
+            store.insert(*c, BlockState::new(name));
+        }
+    }
+    let (slo, shi) = store.section_bounds().expect("a store with cells");
+    let window = window_box(slo, shi, None);
+    let census = RestCensus::of(
+        &store,
+        window,
+        None,
+        32,
+        LAUNCH_REACH,
+        edges_per_node_at_most(),
+    );
+    let cells = [0, 1, 2]
+        .map(|a| (window.1[a] - window.0[a] + 1) as usize)
+        .iter()
+        .product::<usize>();
+    let bound = scratch_bound_of(ScratchInputs {
+        states: census.states_at_most(),
+        items: census.items_at_most,
+        chunk_items: census.chunk_items_at_most,
+        cells,
+    });
+    let params = ReachParams::shipped(base.unbounded_fall);
+    let _ = base.body_reach(&[[5, 1, 5]]);
+    // A root the first closure does not reach: the wall's top, three courses
+    // over the floor, which no jump from it climbs.
+    let _ = base.body_reach(&[[0, 4, 0]]);
+    let _ = edited.body_reach(&[[5, 1, 5]]);
+    let (ma, me) = (base.graph_memo(&params), edited.graph_memo(&params));
+    assert!(
+        !Arc::ptr_eq(&ma, &me),
+        "the edited yard is a graph of its own"
+    );
+    assert!(Arc::ptr_eq(&ma.bank, &me.bank), "one bank over one window");
+    let (a, e) = (ma.scratch_held(), me.scratch_held());
+    // A page both hold is held once; the bank is one, counted once.
+    let pages = |m: &GraphMemo| -> BTreeSet<(bool, u32)> {
+        m.dense
+            .cells
+            .pages
+            .iter()
+            .map(|p| (true, *p))
+            .chain(m.extra.cells.pages.iter().map(|p| (false, *p)))
+            .collect()
+    };
+    let shared: usize = pages(&ma)
+        .intersection(&pages(&me))
+        .map(|(code, _)| if *code { 4096 * 4 } else { 4096 * 2 })
+        .sum();
+    let held = ScratchBound {
+        snapshot: a.snapshot + e.snapshot - shared,
+        tables: a.tables + e.tables,
+        lists: a.lists + e.lists,
+        bank: a.bank,
+    };
+    let closures = ma.closures.lock().expect("closures").len();
+    assert!(
+        closures >= 2 && e.tables > 0 && e.lists > 0,
+        "the case binds nothing: {closures} closure(s) over the base, the edited yard's tables \
+         {} and lists {}",
+        e.tables,
+        e.lists
+    );
+    for (what, got, at_most) in [
+        ("the snapshot's pages", held.snapshot, bound.snapshot),
+        ("the node tables", held.tables, bound.tables),
+        ("the closures' lists", held.lists, bound.lists),
+    ] {
+        assert!(
+            got <= at_most,
+            "two worlds and two closures: {what} hold {got} byte(s) over one configuration's \
+             {at_most}"
+        );
+        eprintln!(
+            "two worlds and two closures: {what} {got} <= {at_most} (x{:.1})",
+            at_most as f64 / got.max(1) as f64
+        );
+    }
 }
 
 /// **What the bank records of a node is the same in every schedule**

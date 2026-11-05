@@ -964,10 +964,9 @@ fn leak_check(
     if let Some((_, j)) = &judged {
         eprintln!("{}", j.line());
     }
-    eprintln!(
-        "{}",
-        delvec::compiler::cost::ResourceCost::of(&plan, &whole, judged.as_ref()).line()
-    );
+    let cost = delvec::compiler::cost::ResourceCost::of(&plan, &whole, judged.as_ref());
+    eprintln!("{}", cost.line());
+    delvec::compiler::nav::set_bank_cap(cost.bank_cap());
     let blocks = std::sync::Arc::clone(judged.as_ref().map_or(&whole.blocks, |(a, _)| &a.blocks));
     drop(judged);
     drop(whole);

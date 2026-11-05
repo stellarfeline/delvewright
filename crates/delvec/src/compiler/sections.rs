@@ -196,17 +196,160 @@ struct Paged {
 }
 
 enum Slot {
-    Resident(Arc<Idx>),
-    /// Given up: where the record lies and its length (which says its form),
-    /// and when it was given up — the arrivals clock ([`arrivals`]), the
-    /// need's generation ([`generation`]) and whether a test's budget was in
-    /// force, so the read-back is set against the same clock — `None` for a
-    /// record a copy shares and never held, whose first read is cold.
+    /// Resident, with the region of the scratch file its record last lay in
+    /// when it has one, the record's length, and whether the array still
+    /// reads as that record (`clean`): a clean array is given up by dropping
+    /// it, with no write.
+    Resident {
+        idx: Arc<Idx>,
+        record: Option<(Arc<Region>, u32)>,
+        clean: bool,
+    },
+    /// Given up: the region the record lies in and its length (which says
+    /// its form), and when it was given up — the arrivals clock
+    /// ([`arrivals`]), the need's generation ([`generation`]) and whether a
+    /// test's budget was in force, so the read-back is set against the same
+    /// clock — `None` for a record a copy shares and never held, whose first
+    /// read is cold.
     Spilled {
-        at: u64,
+        record: Arc<Region>,
         len: u32,
         since: Option<(u64, u64, bool)>,
     },
+}
+
+/// **A region of the stores' scratch file** (the module docs): [`REGION`]
+/// bytes at `at`, where one array's record lies. An array keeps its region
+/// across read-backs and give-ups — a record rewritten in place when its
+/// array changed, kept as it is when it did not — and a region shared by a
+/// copy is never rewritten while the copy holds it (a record is read by
+/// every holder of its region). A region whose last holder drops it is free,
+/// and the next array that needs one takes it before the file grows. Every
+/// region is one size, the wide record's, so any free region serves any
+/// array: the file holds at most one region per array alive, and its size is
+/// bounded by the most arrays alive at once over every store — what the
+/// computed cost states from the stores (`compiler::cost`) — never by the
+/// give-ups a run made.
+struct Region {
+    at: u64,
+}
+
+/// A region's size: the wide record's. The cost the engine states counts
+/// one per array alive at once (`compiler::cost`).
+pub const REGION: usize = 2 * CELLS;
+
+impl Drop for Region {
+    fn drop(&mut self) {
+        REGIONS.fetch_sub(1, Ordering::Relaxed);
+        free_push(self.at);
+    }
+}
+
+/// Free regions of the scratch file: every region whose last holder dropped
+/// it. Under a test's budget, the thread's own, so what a test's stores
+/// append is theirs alone.
+fn free() -> &'static Mutex<Vec<u64>> {
+    static F: OnceLock<Mutex<Vec<u64>>> = OnceLock::new();
+    F.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+thread_local! {
+    static FREE_HERE: std::cell::RefCell<Vec<u64>> = const { std::cell::RefCell::new(Vec::new()) };
+    /// Regions this thread appended under a test's budget.
+    static APPENDED_HERE: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    /// Arrays alive over this thread's stores under a test's budget, and the
+    /// most at once.
+    static ARRAYS_HERE: std::cell::Cell<(u64, u64)> = const { std::cell::Cell::new((0, 0)) };
+}
+
+fn free_push(at: u64) {
+    match budget::override_here() {
+        0 => {
+            if let Ok(mut f) = free().lock() {
+                f.push(at);
+            }
+        }
+        _ => FREE_HERE.with(|f| f.borrow_mut().push(at)),
+    }
+}
+
+fn free_pop() -> Option<u64> {
+    match budget::override_here() {
+        0 => free().lock().ok()?.pop(),
+        _ => FREE_HERE.with(|f| f.borrow_mut().pop()),
+    }
+}
+
+/// A region taken or appended, counted.
+fn region_held(at: u64) -> Region {
+    let now = REGIONS.fetch_add(1, Ordering::Relaxed) + 1;
+    REGIONS_PEAK.fetch_max(now, Ordering::Relaxed);
+    Region { at }
+}
+
+/// Regions of the scratch file holding a live array now, and the most at
+/// once over the run: what the file's size is bounded by.
+static REGIONS: AtomicU64 = AtomicU64::new(0);
+static REGIONS_PEAK: AtomicU64 = AtomicU64::new(0);
+/// Index arrays alive now over every store, resident or given up, and the
+/// most at once over the run: the figure the computed scratch bound stands
+/// over.
+static ARRAYS: AtomicU64 = AtomicU64::new(0);
+static ARRAYS_PEAK: AtomicU64 = AtomicU64::new(0);
+
+/// Count an array as alive (`+1`) or no longer (`-1`).
+fn alive(delta: i64) {
+    if delta >= 0 {
+        let now = ARRAYS.fetch_add(delta as u64, Ordering::Relaxed) + delta as u64;
+        ARRAYS_PEAK.fetch_max(now, Ordering::Relaxed);
+    } else {
+        ARRAYS.fetch_sub(delta.unsigned_abs(), Ordering::Relaxed);
+    }
+    if budget::override_here() != 0 {
+        ARRAYS_HERE.with(|a| {
+            let (now, peak) = a.get();
+            let now = now.saturating_add_signed(delta);
+            a.set((now, peak.max(now)));
+        });
+    }
+}
+
+/// Where a record goes: the array's own region when it alone holds one,
+/// else a free region, else a fresh one appended; written there. `None`
+/// when the stores have no scratch file.
+fn place(own: Option<Arc<Region>>, record: &[u8]) -> Option<Arc<Region>> {
+    debug_assert!(record.len() <= REGION);
+    let mut w = shared().write.lock().expect("the stores' spill");
+    let sp = w.as_mut()?;
+    let region = match own.filter(|r| Arc::strong_count(r) == 1) {
+        Some(r) => r,
+        None => match free_pop() {
+            Some(at) => Arc::new(region_held(at)),
+            None => {
+                let mut padded = vec![0u8; REGION];
+                padded[..record.len()].copy_from_slice(record);
+                let r = sp.append(&padded);
+                let (at, _) = sp.or_fail("take a write", r);
+                if budget::override_here() != 0 {
+                    APPENDED_HERE.with(|n| n.set(n.get() + 1));
+                }
+                return Some(Arc::new(region_held(at)));
+            }
+        },
+    };
+    let r = sp.write_at(region.at, record);
+    sp.or_fail("rewrite a region", r);
+    Some(region)
+}
+
+/// Under a test's budget: the regions this thread appended, and the most
+/// arrays alive at once over its stores.
+#[cfg(test)]
+fn here() -> (u64, u64) {
+    (
+        APPENDED_HERE.with(std::cell::Cell::get),
+        ARRAYS_HERE.with(std::cell::Cell::get).1,
+    )
 }
 
 /// **One store's paging tally** (the module docs): what it holds resident,
@@ -314,9 +457,13 @@ static THRASHED_JUDGED: AtomicU64 = AtomicU64::new(0);
 /// Read-backs between two judgements of the need.
 const SAMPLE: u64 = 64;
 
-/// The one structure the budget asks: every store's paged arrays, weakly.
+/// The one structure the budget asks: every store's paged arrays, weakly,
+/// each with whether it was made under a test's budget — so a relief over
+/// every store passes a fenced array by without taking a strong reference
+/// to it, which, were it the last, would drop the array and free its region
+/// on the relieving thread.
 struct Store {
-    pages: Mutex<Vec<Weak<Paged>>>,
+    pages: Mutex<Vec<(bool, Weak<Paged>)>>,
 }
 
 fn store() -> &'static Arc<Store> {
@@ -372,10 +519,11 @@ impl Store {
         let Some(mut pages) = pages else {
             return 0;
         };
-        pages.retain(|w| w.strong_count() > 0);
+        pages.retain(|(_, w)| w.strong_count() > 0);
         let mut order: Vec<(u64, Arc<Paged>)> = pages
             .iter()
-            .filter_map(Weak::upgrade)
+            .filter(|(fenced, _)| only.is_some() || !fenced)
+            .filter_map(|(_, w)| w.upgrade())
             .filter(|p| match only {
                 Some(t) => Arc::ptr_eq(&p.tally, t),
                 None => !p.tally.fenced.load(Ordering::Relaxed),
@@ -516,18 +664,30 @@ fn capacity(bytes: usize) -> usize {
 impl Paged {
     /// A fresh resident array, counted and listed with the store.
     fn new(idx: Idx, tally: &Arc<Tally>) -> Arc<Paged> {
+        Paged::with_record(idx, None, tally)
+    }
+
+    /// A fresh resident array that reads as `record` when one is given (a
+    /// copy of a clean array shares its region), counted and listed with the
+    /// store.
+    fn with_record(idx: Idx, record: Option<(Arc<Region>, u32)>, tally: &Arc<Tally>) -> Arc<Paged> {
         let bytes = idx.bytes();
         let p = Arc::new(Paged {
-            slot: Mutex::new(Slot::Resident(Arc::new(idx))),
+            slot: Mutex::new(Slot::Resident {
+                idx: Arc::new(idx),
+                clean: record.is_some(),
+                record,
+            }),
             used: AtomicU64::new(budget::tick()),
             tally: Arc::clone(tally),
         });
+        alive(1);
         hold(tally, bytes);
         store()
             .pages
             .lock()
             .expect("pages")
-            .push(Arc::downgrade(&p));
+            .push((budget::override_here() != 0, Arc::downgrade(&p)));
         relieve(tally);
         p
     }
@@ -541,52 +701,66 @@ impl Paged {
     fn duplicate(&self, tally: &Arc<Tally>) -> Arc<Paged> {
         let g = self.slot.lock().expect("a section's slot");
         match &*g {
-            Slot::Resident(a) => {
-                let idx = (**a).clone();
+            Slot::Resident { idx, record, clean } => {
+                let idx = (**idx).clone();
+                // A clean array's copy reads as the same record: share it.
+                let record = record
+                    .as_ref()
+                    .filter(|_| *clean)
+                    .map(|(r, l)| (Arc::clone(r), *l));
                 drop(g);
-                Paged::new(idx, tally)
+                Paged::with_record(idx, record, tally)
             }
-            Slot::Spilled { at, len, .. } => {
+            Slot::Spilled { record, len, .. } => {
                 let p = Arc::new(Paged {
                     slot: Mutex::new(Slot::Spilled {
-                        at: *at,
+                        record: Arc::clone(record),
                         len: *len,
                         since: None,
                     }),
                     used: AtomicU64::new(budget::tick()),
                     tally: Arc::clone(tally),
                 });
+                alive(1);
                 drop(g);
                 store()
                     .pages
                     .lock()
                     .expect("pages")
-                    .push(Arc::downgrade(&p));
+                    .push((budget::override_here() != 0, Arc::downgrade(&p)));
                 p
             }
         }
     }
 
-    /// Write the array to the scratch file and drop it, when resident and
-    /// not in use; the bytes freed.
+    /// Give the array up, when resident and not in use: a clean one by
+    /// dropping it, its record still in its region; a changed one written
+    /// into its own region, a free one, or a fresh one ([`place`]). The bytes
+    /// freed.
     fn give_up(&self) -> usize {
         let Ok(mut g) = self.slot.try_lock() else {
             return 0;
         };
-        let Slot::Resident(a) = &*g else {
+        let Slot::Resident { idx, record, clean } = &mut *g else {
             return 0;
         };
-        let bytes = a.bytes();
-        let record = a.encode();
-        let mut w = shared().write.lock().expect("the stores' spill");
-        let Some(sp) = w.as_mut() else {
-            return 0;
+        let bytes = idx.bytes();
+        let (region, len) = if *clean && let Some((r, l)) = record.take() {
+            (r, l)
+        } else {
+            let encoded = idx.encode();
+            let own = record.take().map(|(r, _)| r);
+            let Some(region) = place(own, &encoded) else {
+                return 0;
+            };
+            (region, encoded.len() as u32)
         };
-        let r = sp.append(&record);
-        let (at, len) = sp.or_fail("take a write", r);
-        drop(w);
         let since = Some((arrivals(), generation(), budget::override_here() != 0));
-        *g = Slot::Spilled { at, len, since };
+        *g = Slot::Spilled {
+            record: region,
+            len,
+            since,
+        };
         release(&self.tally, bytes);
         GIVEN_UP.fetch_add(1, Ordering::Relaxed);
         bytes
@@ -599,14 +773,14 @@ impl Paged {
     /// and the read-back counted, thrashing or cold ([`thrashing`]).
     fn resident(&self, g: &mut Slot) -> (Arc<Idx>, bool) {
         match &*g {
-            Slot::Resident(a) => (Arc::clone(a), false),
-            Slot::Spilled { at, len, since } => {
-                let record = shared()
+            Slot::Resident { idx, .. } => (Arc::clone(idx), false),
+            Slot::Spilled { record, len, since } => {
+                let bytes = shared()
                     .read
                     .as_ref()
                     .expect("an array given up was written to an open file")
-                    .read(*at, *len);
-                let idx = Arc::new(Idx::decode(&record));
+                    .read(record.at, *len);
+                let idx = Arc::new(Idx::decode(&bytes));
                 let now = arrivals();
                 let judged = budget::override_here() == 0;
                 let generation = generation();
@@ -630,7 +804,11 @@ impl Paged {
                 if judged {
                     JUDGED_READ_BACK.fetch_add(1, Ordering::Relaxed);
                 }
-                *g = Slot::Resident(Arc::clone(&idx));
+                *g = Slot::Resident {
+                    idx: Arc::clone(&idx),
+                    record: Some((Arc::clone(record), *len)),
+                    clean: true,
+                };
                 (idx, true)
             }
         }
@@ -655,12 +833,14 @@ impl Paged {
         let mut g = self.slot.lock().expect("a section's slot");
         self.used.store(budget::tick(), Ordering::Relaxed);
         let (_, read_back) = self.resident(&mut g);
-        let Slot::Resident(a) = &mut *g else {
+        let Slot::Resident { idx: a, clean, .. } = &mut *g else {
             unreachable!("resident after a read-back")
         };
         let before = a.bytes();
         let out = f(Arc::make_mut(a));
         let after = a.bytes();
+        // Changed, or may have been: its record no longer reads as it.
+        *clean = false;
         if after > before {
             budget::hold(after - before);
             HELD.fetch_add(after - before, Ordering::Relaxed);
@@ -691,7 +871,7 @@ impl Paged {
     /// Bytes the array holds, resident or in the file.
     fn bytes(&self) -> usize {
         match &*self.slot.lock().expect("a section's slot") {
-            Slot::Resident(a) => a.bytes(),
+            Slot::Resident { idx, .. } => idx.bytes(),
             Slot::Spilled { len, .. } => *len as usize,
         }
     }
@@ -700,17 +880,18 @@ impl Paged {
     fn is_resident(&self) -> bool {
         matches!(
             &*self.slot.lock().expect("a section's slot"),
-            Slot::Resident(_)
+            Slot::Resident { .. }
         )
     }
 }
 
 impl Drop for Paged {
     fn drop(&mut self) {
-        if let Ok(g) = self.slot.lock()
-            && let Slot::Resident(a) = &*g
-        {
-            release(&self.tally, a.bytes());
+        if let Ok(g) = self.slot.lock() {
+            if let Slot::Resident { idx, .. } = &*g {
+                release(&self.tally, idx.bytes());
+            }
+            alive(-1);
         }
     }
 }
@@ -732,7 +913,8 @@ pub fn report() -> Option<String> {
         "world store pages: {} byte(s) resident over {} section(s) of every store; {} array(s) \
          given up, {} read back, {} of them within one turnover of the resident arrays; the \
          need raised {} time(s) for a walk found thrashing, to {} byte(s); {} byte(s) in the \
-         scratch file (ADR-0037 §1)",
+         scratch file in regions of {} byte(s), at most {} of them holding a live array at once; \
+         at most {} array(s) alive at once over every store (ADR-0037 §1)",
         HELD.load(Ordering::Relaxed),
         RESIDENT.load(Ordering::Relaxed),
         GIVEN_UP.load(Ordering::Relaxed),
@@ -740,7 +922,10 @@ pub fn report() -> Option<String> {
         THRASHED.load(Ordering::Relaxed),
         RAISED.load(Ordering::Relaxed),
         NEED.bytes(),
-        spilled
+        spilled,
+        REGION,
+        REGIONS_PEAK.load(Ordering::Relaxed),
+        ARRAYS_PEAK.load(Ordering::Relaxed),
     ))
 }
 
@@ -1917,6 +2102,123 @@ mod tests {
             a.iter().count() + 1,
             b.iter().count() + 2,
             "the copy lost one cell, the original gained none"
+        );
+    }
+
+    /// **The scratch file holds one region per array alive, never one per
+    /// give-up** (ADR-0037 §1, §3): under a budget of one byte every array is
+    /// given up after each use, so a store walked, written, copied and cut
+    /// over several rounds gives up arrays many times over; the regions this
+    /// thread appended to the file are at most the most arrays its stores
+    /// held alive at once — a clean array keeps its record, a changed one
+    /// rewrites its own region, a dropped array's region serves the next —
+    /// and the give-ups outnumber the appends several times, so the
+    /// old shape (a record appended at every give-up) is what the case
+    /// refuses. Red if a give-up could grow the file past the arrays alive.
+    /// And the stores' file gives nothing back to the spill (a region is
+    /// served to the next array by the store's own list), so its kept bytes,
+    /// its bytes written and its length are one figure, in whole regions:
+    /// red if the spill's free list or its shortening reached this file.
+    #[test]
+    fn the_scratch_file_holds_one_region_per_array_alive() {
+        let mut seed = 0x51ab_9e2c_7d03_f4a1u64;
+        let (appended, peak, given_up) = budget::with_budget(1, || {
+            let given_before = GIVEN_UP.load(Ordering::Relaxed);
+            let mut m: SectionMap<u32> = SectionMap::new();
+            let cell = |seed: &mut u64| -> Cell {
+                [
+                    (xorshift(seed) % 200) as i32 - 100,
+                    (xorshift(seed) % 80) as i32,
+                    (xorshift(seed) % 200) as i32 - 100,
+                ]
+            };
+            let mut held: Vec<Cell> = Vec::new();
+            for _ in 0..600 {
+                let c = cell(&mut seed);
+                m.insert(c, (xorshift(&mut seed) % 50) as u32);
+                held.push(c);
+            }
+            let mut copies: Vec<SectionMap<u32>> = Vec::new();
+            for round in 0..12u64 {
+                // A full read: every array read back, cold or not.
+                let n = m.iter().count();
+                assert_eq!(n, m.len());
+                // Writes into a third of the held cells: those arrays change.
+                for (i, c) in held.iter().enumerate() {
+                    if (i as u64 + round).is_multiple_of(3) {
+                        m.insert(*c, (xorshift(&mut seed) % 50) as u32);
+                    }
+                }
+                // A copy, written sparsely, kept for a round, then dropped.
+                let mut copy = m.clone();
+                for c in held.iter().step_by(17) {
+                    copy.insert(*c, 999);
+                }
+                assert_eq!(copy.iter().count(), copy.len());
+                copies.push(copy);
+                if copies.len() > 2 {
+                    copies.remove(0);
+                }
+                // Some sections cut, some new cells placed.
+                for c in held.iter().step_by(23) {
+                    m.remove(c);
+                }
+                for _ in 0..40 {
+                    let c = cell(&mut seed);
+                    m.insert(c, (xorshift(&mut seed) % 50) as u32);
+                    held.push(c);
+                }
+                // Twenty boxes read back: more read-backs, nothing new alive.
+                for _ in 0..20 {
+                    let a = cell(&mut seed);
+                    let b = [a[0] + 30, a[1] + 20, a[2] + 30];
+                    let _ = m.in_box(a, b).count();
+                }
+            }
+            drop(copies);
+            drop(m);
+            let (appended, peak) = here();
+            (
+                appended,
+                peak,
+                GIVEN_UP.load(Ordering::Relaxed) - given_before,
+            )
+        });
+        eprintln!(
+            "scratch regions: {appended} appended by this thread; at most {peak} array(s) alive at \
+             once over its stores; {given_up} give-up(s) over the run"
+        );
+        assert!(peak > 0 && appended > 0, "the case binds nothing");
+        assert!(
+            appended <= peak,
+            "{appended} region(s) appended for at most {peak} array(s) alive at once: the file \
+             grew past the arrays alive"
+        );
+        assert!(
+            given_up >= 4 * appended,
+            "{given_up} give-up(s) against {appended} append(s): the walk gave up too little to \
+             tell a region reused from a record appended at every give-up"
+        );
+        // The stores' file gives no room back to the spill: a region is the
+        // store's for the file's life and served to the next array by the
+        // store's own list, so the spill's free list and its shortening at
+        // the end (the reach files' reclaim) have nothing of this file to
+        // touch — what it keeps is what it wrote, and that is its length,
+        // in whole regions.
+        let u = shared()
+            .write
+            .lock()
+            .expect("the stores' spill")
+            .as_ref()
+            .map(spill::Spill::usage)
+            .expect("the stores' scratch file opened");
+        assert_eq!(
+            (u.kept, u.len, u.len % REGION as u64),
+            (u.written, u.written, 0),
+            "the stores' file gave room back or was shortened: kept {}, written {}, long {}",
+            u.kept,
+            u.written,
+            u.len
         );
     }
 }

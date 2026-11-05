@@ -484,6 +484,8 @@ fn emit_all(
     let cost = crate::compiler::cost::ResourceCost::of(plan, whole, judged.as_ref());
     eprintln!("{}", cost.line());
     put_json(&mut out, "validation/resource-cost.json", &cost.to_json());
+    // The banks keep no more than the cost states (ADR-0037 §3).
+    crate::compiler::nav::set_bank_cap(cost.bank_cap());
     let assembled: &crate::compiler::assembled::Assembled =
         judged.as_ref().map_or(whole, |(a, _)| a);
     // Advisory findings the replay raised (`DW0353` gate-region collisions,

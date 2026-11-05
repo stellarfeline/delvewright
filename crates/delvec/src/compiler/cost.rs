@@ -14,10 +14,11 @@
 //! height, the lists' ring of buffered pushes), each summary's bound (the
 //! reached and plain-sea bitmaps, the portal edges over the window's chunk-face
 //! cells, the leak floods' face labels, the configurations), and the scratch
-//! files' size (the stores' arrays, and the lists' largest chunk at
-//! most). Every bound is an upper bound a build cannot exceed; what a build
-//! reached is printed as it ends (`reach budget:`, `reach lists:`,
-//! `reach portals:`, `world store pages:`).
+//! files' size (the stores' arrays; the reach graph's snapshot pages, node
+//! tables and one closure's lists per configuration; and the lists' largest
+//! chunk at most). Every bound is an upper bound a build cannot exceed; what a
+//! build reached is printed as it ends (`reach budget:`, `reach lists:`,
+//! `reach portals:`, `reach scratch:`, `world store pages:`).
 
 use crate::compiler::assembled::{Assembled, Judged};
 use crate::compiler::blockstate::{BlockMap, BlockState};
@@ -58,6 +59,13 @@ pub struct ResourceCost {
     pub lists_chunk_bound: usize,
     /// How many region writes the path carries.
     pub region_writes: usize,
+    /// The sections a build write covers, at every height
+    /// (`Reached::sections_written`): what the write sequence judge's stores
+    /// lie over.
+    pub written_sections: usize,
+    /// The sections the path's region writes cover: what a configuration's
+    /// own arrays lie over.
+    pub region_sections: usize,
     /// The rest census over the store: where a body can rest at most, per
     /// column, and the bounds it gives the lists and the portal edges.
     pub census: RestCensus,
@@ -102,6 +110,11 @@ pub struct RestCensus {
     pub chunk_nodes_at_most: usize,
     /// The most one reach chunk's lists decode to, by its candidates.
     pub lists_chunk_bound: usize,
+    /// The most edges over the window: every candidate's envelope, summed —
+    /// what a graph's tables and a closure's lists hold at most.
+    pub items_at_most: usize,
+    /// The most edges one reach chunk's candidates hold.
+    pub chunk_items_at_most: usize,
     /// The most portal edges one closure joins.
     pub portal_edges_at_most: usize,
     /// How far a launch lands, in columns ([`crate::compiler::nav::LAUNCH_REACH`]).
@@ -296,6 +309,8 @@ impl RestCensus {
         };
         for (nodes, items) in chunks.values() {
             out.chunk_nodes_at_most = out.chunk_nodes_at_most.max(*nodes);
+            out.chunk_items_at_most = out.chunk_items_at_most.max(*items);
+            out.items_at_most = out.items_at_most.saturating_add(*items);
             out.lists_chunk_bound = out
                 .lists_chunk_bound
                 .max(crate::compiler::nav::lists_bound_of(*nodes, *items));
@@ -313,6 +328,29 @@ impl RestCensus {
 /// The most distinct labels one 16 × 16 section face can carry: a
 /// checkerboard, half its cells.
 const FACE_LABELS_AT_MOST: usize = 128;
+
+/// The write sequence judge's stores over the written sections at most
+/// (`compiler::attached`): the cells the load leaves, kept; and one replay's
+/// world, its read faces and a function's fall cells.
+const JUDGE_STORES: usize = 4;
+
+/// How many sections the inclusive boxes `regions` cover between them.
+pub fn region_sections(regions: impl IntoIterator<Item = ([i32; 3], [i32; 3])>) -> usize {
+    use crate::compiler::sections::SIDE;
+    let mut sections: std::collections::BTreeSet<[i32; 3]> = std::collections::BTreeSet::new();
+    for (a, b) in regions {
+        let lo = [0, 1, 2].map(|i| a[i].min(b[i]).div_euclid(SIDE));
+        let hi = [0, 1, 2].map(|i| a[i].max(b[i]).div_euclid(SIDE));
+        for sx in lo[0]..=hi[0] {
+            for sy in lo[1]..=hi[1] {
+                for sz in lo[2]..=hi[2] {
+                    sections.insert([sx, sy, sz]);
+                }
+            }
+        }
+    }
+    sections.len()
+}
 
 impl ResourceCost {
     /// The cost of building `plan` over `whole`, cut to `judged` when the
@@ -383,6 +421,8 @@ impl ResourceCost {
             lists_floor,
             lists_chunk_bound,
             region_writes: plan.region_events.writes(),
+            written_sections: whole.reached.sections_written(),
+            region_sections: region_sections(plan.region_events.iter().map(|e| e.region)),
             census,
         }
     }
@@ -443,9 +483,78 @@ impl ResourceCost {
         self.store_ring + self.snapshot_need + self.lists_floor
     }
 
-    /// The stores' scratch file at most: every array of both stores given up.
+    /// **The stores' scratch file at most** (ADR-0037 §1, §3): the file holds
+    /// one region of [`crate::compiler::sections::REGION`] bytes per array
+    /// alive at once over every store, so its size is bounded by the most
+    /// arrays the build holds at once — [`Self::arrays_at_most`] — and never
+    /// by the give-ups a run made.
     pub fn store_scratch_bytes(&self) -> usize {
-        self.store_bytes + self.judged_bytes
+        self.arrays_at_most()
+            .saturating_mul(crate::compiler::sections::REGION)
+    }
+
+    /// **The reach graph's scratch files for one configuration, at most**
+    /// (ADR-0037 §3, `nav::scratch_bound_of`): the snapshot's pages over the
+    /// window, once; the two node tables, an entry per rest candidate and an
+    /// edge per candidate's envelope; one closure's two lists, a record per
+    /// edge, with one chunk's records once more for a chunk rewritten whole
+    /// beside its pieces; and the bank's file, capped by the build at the
+    /// tables and the lists ([`Self::bank_cap`]).
+    pub fn reach_scratch_per_configuration(&self) -> crate::compiler::nav::ScratchBound {
+        crate::compiler::nav::scratch_bound_of(crate::compiler::nav::ScratchInputs {
+            states: self.census.states_at_most(),
+            items: self.census.items_at_most,
+            chunk_items: self.census.chunk_items_at_most,
+            cells: self.window_cells(),
+        })
+    }
+
+    /// **The cap the build sets on the banks' files** (`nav::set_bank_cap`):
+    /// the graph's own tables and lists, per configuration, over the
+    /// configurations — the bank is a cache whose miss re-flies a node and
+    /// whose bytes no output reads, so what it may keep is what the plan
+    /// states, never what a run flew.
+    pub fn bank_cap(&self) -> u64 {
+        (self.reach_scratch_per_configuration().bank as u64)
+            .saturating_mul(self.configurations_at_most() as u64)
+    }
+
+    /// **The reach graph's scratch files at most**: one configuration's
+    /// ([`Self::reach_scratch_per_configuration`]) for each configuration
+    /// the proofs judge. What the terms do not count by name is covered by
+    /// their slack, held so by test on generated cases and on the gallery:
+    /// the premise variants and counterfactuals the proofs build beside the
+    /// configurations (worlds of their own, whose pages, tables, closures and
+    /// variants the snapshot's, tables', lists' and bank's terms cover), a
+    /// second closure taken over one configuration from other roots (the
+    /// lists' term) and a node's second table entry under another set of
+    /// launch quadrants (the tables' term). The `reach scratch:` line states
+    /// each file as the run ends.
+    pub fn reach_scratch_bytes(&self) -> usize {
+        self.reach_scratch_per_configuration()
+            .total()
+            .saturating_mul(self.configurations_at_most())
+    }
+
+    /// **The most index arrays alive at once over every store**, from the
+    /// stores the stages lay over the written world: the whole and the judged
+    /// copy, held throughout; the write sequence judge's stores — the cells
+    /// the load leaves, kept for the runtime arm, and one replay's world, its
+    /// read faces and a function's fall cells, each over the sections a build
+    /// write covers at most (a replay grown to the whole load holds them
+    /// all); and each configuration's own arrays, which lie over the sections
+    /// its region writes cover. A copy of a store shares every array it does
+    /// not write (ADR-0037 §1), so a configuration costs its writes and a
+    /// light model or review world over a shared picture costs nothing here.
+    /// Not counted, declared: the premise variants and counterfactuals the
+    /// proofs build beside the configurations (`reach graphs:`), each owning
+    /// at most the region sections it writes — a residue of the same kind the
+    /// configurations figure declares.
+    pub fn arrays_at_most(&self) -> usize {
+        self.store_sections
+            + self.judged_sections
+            + JUDGE_STORES * self.written_sections
+            + self.configurations_at_most() * self.region_sections
     }
 
     /// The one line, printed before the whole-map stages start.
@@ -467,6 +576,7 @@ impl ResourceCost {
             None => "every column judged".to_string(),
         };
         let d = self.window_dims();
+        let reach = self.reach_scratch_per_configuration();
         format!(
             "resource cost: {region} under a {} horizon; {judged}; reach window at most {} cell(s) \
              ({} x {} x {}), its reached and plain-sea bitmaps {} byte(s), {} x {} chunk(s) of \
@@ -477,8 +587,14 @@ impl ResourceCost {
              walk: the stores' ring {} + the snapshot's pages {} + the lists' buffered pushes \
              {} = {} byte(s), the lists' largest chunk at most {} byte(s) by its candidates; \
              summaries at most: {} face label(s), {} configuration(s); \
-             scratch: the stores' {} byte(s) over {} section(s) of the whole and {} of the judged \
-             copy (ADR-0037 §3)",
+             scratch: the stores' {} byte(s), one region of {} per array alive at once, at most {} \
+             — {} section(s) of the whole, {} of the judged copy, {} written section(s) under the \
+             write sequence judge's {} stores, and {} region section(s) per configuration; the \
+             reach graph's {} byte(s) over the configuration(s), {} per configuration — the \
+             snapshot's pages {}, the node tables {} over {} edge(s) at most, one closure's lists \
+             {}, the bank's file {} (the cap the build sets: the tables and the lists, past \
+             which no variant is kept) — the variants' worlds, a second closure and a second \
+             table entry covered by those terms' slack (ADR-0037 §3)",
             self.horizon,
             self.window_cells(),
             d[0],
@@ -504,14 +620,27 @@ impl ResourceCost {
             self.face_labels_at_most(),
             self.configurations_at_most(),
             self.store_scratch_bytes(),
+            crate::compiler::sections::REGION,
+            self.arrays_at_most(),
             self.store_sections,
             self.judged_sections,
+            self.written_sections,
+            JUDGE_STORES,
+            self.region_sections,
+            self.reach_scratch_bytes(),
+            reach.total(),
+            reach.snapshot,
+            reach.tables,
+            self.census.items_at_most,
+            reach.lists,
+            reach.bank,
         )
     }
 
     /// The same cost as `validation/resource-cost.json`.
     pub fn to_json(&self) -> serde_json::Value {
         let d = self.window_dims();
+        let reach = self.reach_scratch_per_configuration();
         serde_json::json!({
             "adr": "ADR-0037 §3",
             "computed_never_measured": true,
@@ -535,6 +664,8 @@ impl ResourceCost {
                 "water_candidates": self.census.water,
                 "states_at_most": self.census.states_at_most(),
                 "chunk_nodes_at_most": self.census.chunk_nodes_at_most,
+                "edges_at_most": self.census.items_at_most,
+                "chunk_edges_at_most": self.census.chunk_items_at_most,
                 "launch_reach_columns": self.census.reach,
             },
             "summaries_at_most": {
@@ -547,10 +678,29 @@ impl ResourceCost {
             },
             "scratch_bytes": {
                 "stores": self.store_scratch_bytes(),
+                "region_bytes": crate::compiler::sections::REGION,
+                "arrays_at_most": self.arrays_at_most(),
                 "store_sections": self.store_sections,
                 "store_bytes": self.store_bytes,
                 "judged_sections": self.judged_sections,
                 "judged_bytes": self.judged_bytes,
+                "written_sections": self.written_sections,
+                "judge_stores": JUDGE_STORES,
+                "region_sections": self.region_sections,
+                "reach_graph": self.reach_scratch_bytes(),
+                "reach_graph_per_configuration": {
+                    "total": reach.total(),
+                    "snapshot_pages": reach.snapshot,
+                    "node_tables": reach.tables,
+                    "one_closures_lists": reach.lists,
+                    "bank_file_cap": reach.bank,
+                },
+                "bank_cap": self.bank_cap(),
+                "reach_graph_covered_by_slack": [
+                    "the premise variants' and counterfactuals' worlds (every term)",
+                    "a second closure over one configuration (the lists)",
+                    "a node's second table entry under other launch quadrants (the tables)",
+                ],
             },
         })
     }
@@ -582,12 +732,16 @@ mod tests {
             lists_floor: 2_000,
             lists_chunk_bound: 3_000,
             region_writes: 4,
+            written_sections: 12,
+            region_sections: 3,
             census: RestCensus {
                 columns: 118 * 218,
                 standing: 500,
                 water: 20_000,
                 chunk_nodes_at_most: 4_000,
                 lists_chunk_bound: 2_500,
+                items_at_most: 120_000,
+                chunk_items_at_most: 30_000,
                 portal_edges_at_most: 7_000,
                 reach: 5,
             },
@@ -612,13 +766,70 @@ mod tests {
         assert_eq!(c.face_labels_at_most(), 8 * 6 * 128);
         assert_eq!(c.configurations_at_most(), 5);
         assert_eq!(c.working_set_floor(), 224_184);
-        assert_eq!(c.store_scratch_bytes(), 73_728);
+        assert_eq!(
+            c.arrays_at_most(),
+            10 + 8 + 4 * 12 + 5 * 3,
+            "the whole, the judged copy, the judge's four stores over the written sections, \
+             a configuration's region sections each"
+        );
+        assert_eq!(
+            c.store_scratch_bytes(),
+            81 * crate::compiler::sections::REGION
+        );
+        let reach = c.reach_scratch_per_configuration();
+        assert_eq!(
+            reach,
+            crate::compiler::nav::scratch_bound_of(crate::compiler::nav::ScratchInputs {
+                states: 20_500,
+                items: 120_000,
+                chunk_items: 30_000,
+                cells: 118 * 12 * 218,
+            }),
+            "the census's candidates and edges over the window's cells"
+        );
+        assert_eq!(
+            (
+                reach.snapshot,
+                reach.tables,
+                reach.lists,
+                reach.bank,
+                reach.total()
+            ),
+            (
+                (118 * 12 * 218usize).div_ceil(4096) * 4096 * 6,
+                // The cell moves in one table are at most the edges (120,000
+                // under 20,500 x 32).
+                2 * 20_500 * 55 + (120_000 + 120_000) * 17,
+                (120_000 + 30_000) * (29 + 41),
+                reach.tables + reach.lists,
+                reach.snapshot + reach.tables + reach.lists + reach.bank
+            ),
+            "every page of the two arrays; two tables of an entry per candidate, the cell moves \
+             in one and every edge in the other; a record per edge in each of two lists and one \
+             chunk's once more; the bank's cap, the tables and the lists"
+        );
+        assert_eq!(
+            c.reach_scratch_bytes(),
+            5 * reach.total(),
+            "one configuration's scratch for each configuration"
+        );
+        assert_eq!(
+            region_sections([
+                ([0, 0, 0], [15, 15, 15]),
+                ([15, 0, 15], [16, 0, 16]),
+                ([3, 3, 3], [4, 4, 4])
+            ]),
+            4,
+            "two boxes sharing a section, one straddling three more"
+        );
         let line = c.line();
         let json = c.to_json();
         for (word, n) in [
             ("reached and plain-sea bitmaps", c.reached_bitmap_bytes()),
             ("portal edge(s)", c.portal_edges_at_most()),
             ("face label(s)", c.face_labels_at_most()),
+            ("scratch: the stores'", c.store_scratch_bytes()),
+            ("the reach graph's", c.reach_scratch_bytes()),
         ] {
             assert!(
                 line.contains(&n.to_string()),
@@ -630,6 +841,27 @@ mod tests {
             c.portal_edges_at_most()
         );
         assert_eq!(json["working_set_bytes"]["total_before_any_walk"], 224_184);
+        assert_eq!(json["scratch_bytes"]["stores"], c.store_scratch_bytes());
+        assert_eq!(json["scratch_bytes"]["arrays_at_most"], 81);
+        assert_eq!(
+            json["scratch_bytes"]["reach_graph"],
+            c.reach_scratch_bytes()
+        );
+        assert_eq!(
+            json["scratch_bytes"]["reach_graph_per_configuration"]["total"],
+            reach.total()
+        );
+        assert_eq!(json["rest_census"]["edges_at_most"], 120_000);
+        assert_eq!(
+            json["scratch_bytes"]["reach_graph_per_configuration"]["bank_file_cap"],
+            reach.bank
+        );
+        assert_eq!(json["scratch_bytes"]["bank_cap"], c.bank_cap());
+        assert_eq!(
+            c.bank_cap(),
+            5 * (reach.tables + reach.lists) as u64,
+            "the cap over the configurations"
+        );
         assert_eq!(json["computed_never_measured"], true);
     }
 
@@ -746,15 +978,19 @@ mod tests {
                 .map(|(n, i)| crate::compiler::nav::lists_bound_of(*n, *i))
                 .max()
                 .unwrap_or(0);
+            let items: usize = chunks.values().map(|(_, i)| *i).sum();
+            let chunk_items = chunks.values().map(|(_, i)| *i).max().unwrap_or(0);
             assert_eq!(
                 (
                     got.standing,
                     got.water,
                     got.chunk_nodes_at_most,
                     got.lists_chunk_bound,
+                    got.items_at_most,
+                    got.chunk_items_at_most,
                     got.portal_edges_at_most
                 ),
-                (standing, water, nodes, lists, portal),
+                (standing, water, nodes, lists, items, chunk_items, portal),
                 "round {round}"
             );
             assert_eq!(

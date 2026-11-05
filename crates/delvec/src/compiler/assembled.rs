@@ -1408,6 +1408,15 @@ pub struct Assembled {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Reached {
     columns: BTreeMap<(i32, i32), u128>,
+    /// **The sections a build write covers**, every height: one bit per
+    /// section row (from the build floor's section) per section column. What
+    /// bounds the stores a stage lays over the written world — the write
+    /// sequence judge's — in the cost the engine states (`compiler::cost`,
+    /// ADR-0037 §3): a derived fact of the write program, never of a run.
+    sections: BTreeMap<(i32, i32), u64>,
+    /// The section last marked, so a sweep that marks a section's cells in
+    /// a row looks its row up once.
+    last: Option<[i32; 3]>,
 }
 
 impl Reached {
@@ -1418,11 +1427,38 @@ impl Reached {
     /// a generator's.
     pub const CEILING: i32 = Self::FLOOR + 127;
 
-    /// Mark `c` reached (a no-op above [`Self::CEILING`] or under [`Self::FLOOR`]).
+    /// Mark `c` reached (a no-op above [`Self::CEILING`] or under [`Self::FLOOR`]
+    /// for the band; its section is marked at every height).
     pub fn mark(&mut self, c: [i32; 3]) {
         if (Self::FLOOR..=Self::CEILING).contains(&c[1]) {
             *self.columns.entry((c[0], c[2])).or_default() |= 1u128 << (c[1] - Self::FLOOR);
         }
+        self.mark_section(c.map(|v| v.div_euclid(crate::compiler::sections::SIDE)));
+    }
+
+    /// Mark `section` (by section coordinate) as one a build write covers;
+    /// the band of `Self::columns` is untouched.
+    fn mark_section(&mut self, section: [i32; 3]) {
+        if self.last == Some(section) {
+            return;
+        }
+        let row =
+            u32::try_from(section[1] - Self::FLOOR.div_euclid(crate::compiler::sections::SIDE))
+                .expect("a build write at or over the build floor");
+        assert!(
+            row < 64,
+            "a build write under the section rows a word holds"
+        );
+        *self.sections.entry((section[0], section[2])).or_default() |= 1u64 << row;
+        self.last = Some(section);
+    }
+
+    /// How many sections a build write covers, at every height.
+    pub fn sections_written(&self) -> usize {
+        self.sections
+            .values()
+            .map(|m| m.count_ones() as usize)
+            .sum()
     }
 
     /// Mark every cell of the inclusive box `a..=b` reached.
@@ -1441,6 +1477,14 @@ impl Reached {
         for x in a[0].min(b[0])..=a[0].max(b[0]) {
             for z in a[2].min(b[2])..=a[2].max(b[2]) {
                 *self.columns.entry((x, z)).or_default() |= mask;
+            }
+        }
+        let (ylo, yhi) = (a[1].min(b[1]).max(Self::FLOOR), a[1].max(b[1]));
+        for sx in a[0].min(b[0]).div_euclid(16)..=a[0].max(b[0]).div_euclid(16) {
+            for sz in a[2].min(b[2]).div_euclid(16)..=a[2].max(b[2]).div_euclid(16) {
+                for sy in ylo.div_euclid(16)..=yhi.div_euclid(16) {
+                    self.mark_section([sx, sy, sz]);
+                }
             }
         }
     }

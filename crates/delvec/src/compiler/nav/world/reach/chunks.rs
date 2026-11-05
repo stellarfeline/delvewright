@@ -34,8 +34,8 @@
 //! outside the table's lock.
 
 use super::budget;
-use super::persist::{Dec, Enc};
-use super::spill::{Reader, Spill};
+use super::persist::{CELL_RECORD, Dec, EDGE_RECORD, Enc, NODE_EDGES_RECORD};
+use super::spill::{Extent, Reader, Spill, Usage};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
@@ -116,14 +116,14 @@ fn spill() -> &'static Shared {
     })
 }
 
-/// The bytes the lists' scratch file holds.
-pub(super) fn spilled() -> u64 {
+/// What the lists' and tables' scratch file has held ([`Usage`]).
+pub(super) fn spilled() -> Usage {
     spill()
         .write
         .lock()
         .expect("spill")
         .as_ref()
-        .map_or(0, Spill::len)
+        .map_or(Usage::default(), Spill::usage)
 }
 
 /// Chunks decoded, the records they held, and chunks given up, over the run.
@@ -268,8 +268,9 @@ pub(super) fn visits() -> String {
 
 /// One chunk of a list.
 struct Chunk<V> {
-    /// The records written to the file, in order.
-    segments: Vec<(u64, u32)>,
+    /// The records written to the file, in order: shared with every copy of
+    /// the list, and free in the file once none holds them.
+    segments: Vec<Arc<Extent>>,
     /// The records pushed since, encoded.
     pending: Vec<u8>,
     /// Every record decoded, while the chunk is resident.
@@ -295,6 +296,17 @@ impl<V> Default for Chunk<V> {
 /// Bytes a decoded entry costs beyond its items: the key, the vector and the
 /// map's slot.
 const ENTRY: usize = 64;
+
+/// **What the scratch file holds per record** (ADR-0037 §3, the cost's
+/// reach-scratch bound): a successor list's record is the node's cell and the
+/// edge; a predecessor list's the node's cell, the predecessor's cell and the
+/// edge ([`Inner::push`] writes the cell, then the item); a node table's entry
+/// the quadrants flown and the node's edges, each edge [`TABLE_EDGE`] more.
+/// Held to the writer by `table_tests::a_record_takes_what_the_cost_counts`.
+pub(super) const SUCC_RECORD: usize = CELL_RECORD + EDGE_RECORD;
+pub(super) const PRED_RECORD: usize = 2 * CELL_RECORD + EDGE_RECORD;
+pub(super) const TABLE_ENTRY: usize = 2 + NODE_EDGES_RECORD;
+pub(super) const TABLE_EDGE: usize = EDGE_RECORD;
 
 impl<V: Item> Chunk<V> {
     fn held(&self) -> usize {
@@ -328,7 +340,8 @@ impl<V: Item> Chunk<V> {
                 .read
                 .as_ref()
                 .expect("a list with spilled records has its file");
-            for &(at, len) in &self.segments {
+            for seg in &self.segments {
+                let (at, len) = seg.at();
                 take(&file.read(at, len));
             }
         }
@@ -347,8 +360,8 @@ impl<V: Item> Chunk<V> {
         }
         let mut sp = spill().write.lock().expect("spill");
         if let Some(sp) = sp.as_mut() {
-            let r = sp.append(&self.pending);
-            self.segments.push(sp.or_fail("take a write", r));
+            let r = sp.put(&self.pending);
+            self.segments.push(Arc::new(sp.or_fail("take a write", r)));
             self.pending = Vec::new();
         }
     }
@@ -372,8 +385,10 @@ impl<V: Item> Chunk<V> {
             }
             let mut sp = spill().write.lock().expect("spill");
             if let Some(sp) = sp.as_mut() {
-                let r = sp.append(&e.0);
-                self.segments = vec![sp.or_fail("take a write", r)];
+                let r = sp.put(&e.0);
+                let whole = Arc::new(sp.or_fail("take a write", r));
+                // The pieces it replaces are free once no copy holds them.
+                drop(std::mem::replace(&mut self.segments, vec![whole]));
                 self.pending = Vec::new();
             }
         } else {
@@ -547,6 +562,30 @@ impl<V: Item> Lists<V> {
         self.inner.lock().expect("lists").side
     }
 
+    /// The bytes this list's records take in the file, the buffered ones
+    /// counted as if written: what the cost's reach-scratch bound covers.
+    #[cfg(test)]
+    pub(super) fn spilled_bytes(&self) -> u64 {
+        let g = self.inner.lock().expect("lists");
+        g.chunks
+            .values()
+            .map(|ch| {
+                ch.segments.iter().map(|s| u64::from(s.at().1)).sum::<u64>()
+                    + ch.pending.len() as u64
+            })
+            .sum()
+    }
+
+    /// Every record of every chunk written to the file now.
+    #[cfg(test)]
+    fn segments(&self) -> Vec<Weak<Extent>> {
+        let g = self.inner.lock().expect("lists");
+        g.chunks
+            .values()
+            .flat_map(|ch| ch.segments.iter().map(Arc::downgrade))
+            .collect()
+    }
+
     /// How many pieces `c`'s chunk is written in, buffered records counted
     /// as one.
     #[cfg(test)]
@@ -689,6 +728,27 @@ fn unpack(w: u64) -> Slot {
     }
 }
 
+impl Drop for TableIndex {
+    /// A table dropped gives its records' room in the file back: nothing
+    /// reads them again, every read going through the table.
+    fn drop(&mut self) {
+        let Some(file) = spill().read.as_ref().filter(|_| self.held.is_empty()) else {
+            return;
+        };
+        for m in self.first.values() {
+            for w in m.values() {
+                let s = unpack(*w);
+                file.give_back(s.at, s.len);
+            }
+        }
+        for slots in self.more.values() {
+            for s in slots {
+                file.give_back(s.at, s.len);
+            }
+        }
+    }
+}
+
 impl TableIndex {
     fn first_of(&self, c: [i32; 3]) -> Option<Slot> {
         self.first
@@ -766,6 +826,18 @@ impl<V: Item> Default for Table<V> {
 }
 
 impl<V: Item> Table<V> {
+    /// The bytes this table's records take in the file (or hold, without
+    /// one): what the cost's reach-scratch bound covers.
+    #[cfg(test)]
+    pub(super) fn spilled_bytes(&self) -> u64 {
+        let ix = self.index.lock().expect("table");
+        ix.first
+            .values()
+            .flat_map(|m| m.values().map(|w| u64::from(unpack(*w).len)))
+            .chain(ix.more.values().flatten().map(|s| u64::from(s.len)))
+            .sum()
+    }
+
     /// What `f` makes of `c`'s entries, in the order they were kept.
     pub(super) fn with<R>(&self, c: [i32; 3], f: impl FnOnce(&[V]) -> R) -> R {
         let slots = {
@@ -862,8 +934,43 @@ impl Item for (super::Quadrants, super::NodeEdges) {
 
 #[cfg(test)]
 mod table_tests {
-    use super::{Dec, Enc, Item, Lists, PENDING, PIECES, Table};
+    use super::{Dec, Enc, Extent, Item, Lists, PENDING, PIECES, Table, Weak};
     use std::collections::BTreeMap;
+
+    /// **A record takes what the cost counts** (ADR-0037 §3): a successor
+    /// list's record, a predecessor list's and a node table's entry with two
+    /// edges, each written as the lists and the tables write it and measured
+    /// in the file. Red if the writers and the constants part.
+    #[test]
+    fn a_record_takes_what_the_cost_counts() {
+        use super::{PRED_RECORD, SUCC_RECORD, TABLE_EDGE, TABLE_ENTRY};
+        use crate::compiler::nav::world::reach::{Edge, EdgeKind, NodeEdges, RestKind};
+        let edge = Edge {
+            to: [4, 5, 6],
+            kind: EdgeKind::Jump,
+            yaw: Some(45),
+            sprint: false,
+        };
+        let succ: Lists<Edge> = Lists::new(32);
+        succ.push([1, 2, 3], edge.clone());
+        assert_eq!(succ.spilled_bytes(), SUCC_RECORD as u64);
+        let preds: Lists<([i32; 3], Edge)> = Lists::new(32);
+        preds.push([1, 2, 3], ([7, 8, 9], edge.clone()));
+        assert_eq!(preds.spilled_bytes(), PRED_RECORD as u64);
+        let table: Table<(u16, NodeEdges)> = Table::default();
+        let e = NodeEdges {
+            kind: Some(RestKind::Standing),
+            edges: vec![edge.clone(), edge],
+            leaves_world: false,
+            open_sea: false,
+            dies: None,
+            simulated: 1,
+            credited: 2,
+            read: Some(([0, 0, 0], [2, 2, 2])),
+        };
+        table.find_or_push([1, 2, 3], |_| false, (0, e));
+        assert_eq!(table.spilled_bytes(), (TABLE_ENTRY + 2 * TABLE_EDGE) as u64);
+    }
 
     #[derive(Clone, Debug, PartialEq)]
     struct Rec([i32; 3]);
@@ -1011,6 +1118,67 @@ mod table_tests {
                 assert!(releases > 0, "no chunk was given up");
             }
         }
+    }
+
+    /// **A list's file holds what the list holds, not what it wrote**
+    /// (ADR-0037 §2): pushes to a few cells under a budget of one byte, read
+    /// back between pushes, so chunks are given up, written out piece by
+    /// piece and rewritten whole past [`PIECES`] pieces; a copy taken
+    /// mid-stream shares the pieces written so far. A piece the list no
+    /// longer holds is free in the file once no copy holds it, and every
+    /// piece is free once the list and its copy are gone. Red on a piece
+    /// kept after its chunk was rewritten (the file would grow with every
+    /// rewrite), and on a run that rewrote nothing (which would bind
+    /// nothing).
+    #[test]
+    fn a_lists_file_holds_what_the_list_holds_not_what_it_wrote() {
+        super::budget::with_budget(1, || {
+            let l: Lists<Fat> = Lists::new(2);
+            let cells = [[0, 0, 0], [4, 1, 0], [8, 0, 1], [1, 2, 4]];
+            let mut seen: Vec<Weak<Extent>> = Vec::new();
+            let mut copy = None;
+            for step in 0..3000u32 {
+                let c = cells[step as usize % cells.len()];
+                l.push(c, Fat(step as u16, (0..30).collect()));
+                if step % 7 == 0 {
+                    l.get(cells[(step as usize / 7) % cells.len()]);
+                    seen.extend(l.segments());
+                }
+                if step == 1500 {
+                    copy = Some(l.clone());
+                }
+            }
+            seen.extend(l.segments());
+            let alive = |w: &[Weak<Extent>]| w.iter().filter(|w| w.strong_count() > 0).count();
+            let ptrs = |ws: Vec<Weak<Extent>>| -> std::collections::BTreeSet<usize> {
+                ws.iter().map(|w| w.as_ptr() as usize).collect()
+            };
+            let held: std::collections::BTreeSet<usize> = ptrs(l.segments())
+                .union(&ptrs(copy.as_ref().expect("a copy").segments()))
+                .copied()
+                .collect();
+            let distinct = ptrs(seen.clone());
+            let stray = seen
+                .iter()
+                .filter(|w| w.strong_count() > 0 && !held.contains(&(w.as_ptr() as usize)))
+                .map(|w| w.as_ptr() as usize)
+                .collect::<std::collections::BTreeSet<_>>()
+                .len();
+            eprintln!(
+                "lists' file: {} distinct piece(s) written over the run, {} held by the list \
+                 and its copy, {stray} held by neither",
+                distinct.len(),
+                held.len()
+            );
+            assert!(
+                distinct.len() > held.len() + cells.len(),
+                "no chunk was rewritten: the case binds nothing"
+            );
+            assert_eq!(stray, 0, "a piece nothing holds is still kept in the file");
+            drop(l);
+            drop(copy);
+            assert_eq!(alive(&seen), 0, "a piece outlived its list");
+        });
     }
 
     /// **A node table keyed by chunk answers what a map of its entries

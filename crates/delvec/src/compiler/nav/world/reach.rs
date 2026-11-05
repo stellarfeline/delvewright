@@ -372,12 +372,90 @@ pub(crate) fn chunk_side() -> i32 {
     chunks::SIDE
 }
 
+/// The most cell-relation moves out of one node: the walk and the fall to
+/// the eight columns round a cell at three heights, two climb moves, six
+/// dives.
+const CELL_MOVES: usize = 8 * 3 + 2 + 6;
+
 /// How many launches the shipped launch set flies out of a standing node, and
-/// the most cell-relation moves beside them (the walk and the fall to the
-/// eight columns round a cell at three heights, two climb moves, six dives):
-/// the most edges a node's list can hold.
+/// the most cell-relation moves beside them ([`CELL_MOVES`]): the most edges a
+/// node's list can hold.
 pub(crate) fn edges_per_node_at_most() -> usize {
-    launch_set(false, FACING_STEP_DEG, &[-1.0, 0.0, 1.0]).len() + 8 * 3 + 2 + 6
+    launch_set(false, FACING_STEP_DEG, &[-1.0, 0.0, 1.0]).len() + CELL_MOVES
+}
+
+/// **The reach graph's scratch files for one world, bounded** (ADR-0037 §3):
+/// what the files hold for a graph over one world whose closure reached every
+/// rest candidate with every edge its envelope allows — the figure the cost
+/// states per configuration (`compiler::cost`), never measured.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ScratchBound {
+    /// The snapshot's pages: every page of the window's two arrays, once.
+    pub snapshot: usize,
+    /// The node tables: an entry per candidate in each of the two, the
+    /// cell-relation edges in one and every edge in the other.
+    pub tables: usize,
+    /// One closure's successor and predecessor lists, a record per edge in
+    /// each, and one chunk's records once more (a chunk rewritten whole takes
+    /// its room before its pieces free).
+    pub lists: usize,
+    /// The bank's file: the cap the build sets on what the banks keep
+    /// (`set_bank_cap`), the graph's own tables and lists — a variant past it
+    /// is not kept, and the next world that asks re-flies the node.
+    pub bank: usize,
+}
+
+impl ScratchBound {
+    /// The four terms summed.
+    pub fn total(&self) -> usize {
+        self.snapshot
+            .saturating_add(self.tables)
+            .saturating_add(self.lists)
+            .saturating_add(self.bank)
+    }
+}
+
+/// What the reach scratch bound is computed from ([`scratch_bound_of`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ScratchInputs {
+    /// Rest candidates over the window, and their edges at most, in all
+    /// and in the fullest reach chunk (the rest census).
+    pub states: usize,
+    pub items: usize,
+    pub chunk_items: usize,
+    /// The window's cells.
+    pub cells: usize,
+}
+
+/// The bound for one world from `i` ([`ScratchBound`]).
+pub(crate) fn scratch_bound_of(i: ScratchInputs) -> ScratchBound {
+    let ScratchInputs {
+        states,
+        items,
+        chunk_items,
+        cells,
+    } = i;
+    let snapshot = cells
+        .div_ceil(pages::PAGE_CELLS)
+        .saturating_mul(pages::PAGE_CELLS * pages::CELL_BYTES);
+    let cell_moves = items.min(states.saturating_mul(CELL_MOVES));
+    let tables = (2 * states)
+        .saturating_mul(chunks::TABLE_ENTRY)
+        .saturating_add(
+            items
+                .saturating_add(cell_moves)
+                .saturating_mul(chunks::TABLE_EDGE),
+        );
+    let lists = items
+        .saturating_add(chunk_items)
+        .saturating_mul(chunks::SUCC_RECORD + chunks::PRED_RECORD);
+    let bank = tables.saturating_add(lists);
+    ScratchBound {
+        snapshot,
+        tables,
+        lists,
+        bank,
+    }
 }
 
 /// The lists' working set when nothing has been decoded yet, and the most a
@@ -1794,9 +1872,19 @@ type FlownKey = ([i32; 3], Quadrants);
 fn par_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Vec<R> {
     let side = chunks::side_here();
     let b = budget::override_here();
+    let cap = bank::cap_here();
     crate::par::map(items, |x| {
-        chunks::at_side(side, || budget::with_budget(b, || f(x)))
+        chunks::at_side(side, || {
+            budget::with_budget(b, || bank::with_cap(cap, || f(x)))
+        })
     })
+}
+
+/// **The build's cap on the banks' files** (ADR-0037 §3): set from the cost
+/// before the proofs run; a variant that would pass it is not kept
+/// (`bank::set_cap`).
+pub fn set_bank_cap(bytes: u64) {
+    bank::set_cap(bytes);
 }
 
 /// Write the node banks this run grew to `DELVEC_REACH_CACHE`, when it names a
@@ -1817,10 +1905,10 @@ pub fn persist_reach_cache() {
             needs.join(", ")
         );
         eprintln!(
-            "reach lists: {} byte(s) in the scratch file; working set {} byte(s) (3 x 3 chunks of \
+            "reach lists: {} byte(s) held in the scratch file; working set {} byte(s) (3 x 3 chunks of \
              the largest decoded, {} byte(s), and their buffered pushes); {loads} chunk read(s) \
              back over {records} record(s), {releases} chunk(s) given up (ADR-0037 §2)",
-            chunks::spilled(),
+            chunks::spilled().kept,
             chunks::working_set(),
             chunks::largest()
         );
@@ -1865,6 +1953,43 @@ pub fn persist_reach_cache() {
         eprintln!(
             "reach bank: {variants} node variant(s) kept over {bytes} byte(s) in the spill file; \
              in memory, one slot per variant"
+        );
+    }
+    let files = [
+        ("the lists' and tables'", chunks::spilled()),
+        ("the bank's", bank::usage_all()),
+        ("the snapshot's", pages::usage()),
+    ];
+    let all = files
+        .iter()
+        .fold(spill::Usage::default(), |a, (_, u)| a + *u);
+    if all.written > 0 {
+        let cap = bank::cap_stated().map_or(String::new(), |(c, refused)| {
+            format!(", under a cap of {c} byte(s) with {refused} variant(s) refused")
+        });
+        let parts: Vec<String> = files
+            .iter()
+            .map(|(name, u)| {
+                format!(
+                    "{name} {} written, at most {} long, {} kept at the end{}",
+                    u.written,
+                    u.longest,
+                    u.kept,
+                    if *name == "the bank's" {
+                        cap.as_str()
+                    } else {
+                        ""
+                    }
+                )
+            })
+            .collect();
+        eprintln!(
+            "reach scratch: {} byte(s) written to the scratch files, at most {} byte(s) on disk \
+             (the sum of each file's longest), {} kept at the end; {} (ADR-0037 §2)",
+            all.written,
+            all.longest,
+            all.kept,
+            parts.join("; ")
         );
     }
     bank::persist_all();
@@ -1985,6 +2110,29 @@ pub(in crate::compiler::nav) struct GraphMemo {
 }
 
 impl GraphMemo {
+    /// What this graph holds in the scratch files: its snapshot's pages
+    /// (those its two arrays hold, each once), its two node tables, and the
+    /// lists of every closure taken over it — against [`scratch_bound_of`].
+    #[cfg(test)]
+    pub(in crate::compiler::nav) fn scratch_held(&self) -> ScratchBound {
+        let snapshot = self.dense.cells.pages.len() * pages::PAGE_CELLS * 4
+            + self.extra.cells.pages.len() * pages::PAGE_CELLS * 2;
+        let tables = (self.nodes.spilled_bytes() + self.flown.spilled_bytes()) as usize;
+        let lists = self
+            .closures
+            .lock()
+            .expect("closures")
+            .iter()
+            .map(|(_, r)| r.spilled_bytes() as usize)
+            .sum();
+        ScratchBound {
+            snapshot,
+            tables,
+            lists,
+            bank: self.bank.usage().kept as usize,
+        }
+    }
+
     /// The launches of `key` this graph flew, if it flew them.
     fn flown_at(&self, key: &FlownKey) -> Option<Arc<NodeEdges>> {
         self.flown.with(key.0, |l| {
@@ -4637,6 +4785,12 @@ impl Reach {
                 .into_iter()
                 .flatten(),
         )
+    }
+
+    /// The bytes this closure's two lists take in the scratch file.
+    #[cfg(test)]
+    pub(in crate::compiler::nav) fn spilled_bytes(&self) -> u64 {
+        self.succ.spilled_bytes() + self.preds.spilled_bytes()
     }
 
     /// How many states of each kind: standing, afloat, submerged, holding.

@@ -251,17 +251,42 @@ gallery coverage gate sets it to a scratch directory its probe runs share.
 Within a run the bank lives in a **scratch file**
 in the system's temporary directory (`TMPDIR`; never the output tree, which
 is the deliverable the determinism gates hash), unlinked as soon as it is
-open: each variant is appended as the file format encodes it and read back
+open: each variant is written as the file format encodes it and read back
 when a later graph asks, and the bank holds one offset and length per variant
 in memory, so what it costs grows with the nodes flown by a few words each and
-never with the cells they read (ADR-0037). A run that kept any prints `reach
-bank: N node variant(s) kept over B byte(s) in the spill file` as it ends.
+never with the cells they read (ADR-0037). **The banks keep no more than the
+cost states**: `delvec build` and `delvec detail` set a cap on what the
+banks of the process keep between them before the proofs run (the ledger's
+`scratch_bytes.bank_cap`: the graph's own tables' and lists' bound per
+configuration, over the configurations), and a variant that would pass it
+is not kept — the expansion's answer is the same, the next world that asks
+re-flies the node, and no output byte reads the bank; the `reach scratch:`
+line states the cap and the variants refused at it beside the bank's file.
+A run that kept any prints `reach bank: N node variant(s) kept over B
+byte(s) in the spill file` as it ends.
 **One policy for every scratch file**: one that cannot be opened is no file,
 and the structure holds its records in memory instead (the same answers,
 slower); one that was opened and then refuses a write or a read back stops
 the run where it stands with a message naming the file, the operation, the
-error and the bytes written (exit `≥10`), since nothing it emits could stand
-without the record. Writes and reads are both positional, so a reader needs
+error, the file's length and the bytes written to it over the run (exit
+`≥10`), since nothing it emits could stand without the record. **A record the
+structure no longer holds frees its room** (`reach/spill.rs`, `Extent`): a
+list chunk rewritten whole once it passes four pieces, a list or node table
+dropped, a variant the bank lets go; the next record that fits is written into
+the smallest free range, and a free range that reaches the file's end
+shortens the file on disk. So a reach scratch file is as long as what its
+structure holds at once, plus the free ranges no record has fitted since —
+never the sum of what it wrote (the lists write many times what they hold).
+The snapshot's pages and the section stores' records are kept for the file's
+life. Every scratch file is unlinked when opened (deleted on close on
+Windows), so the system takes its disk back when the process ends, a panic
+included; within a process the bank, the graphs and the snapshot are kept to
+its end. **The disk a build needs** in the temporary directory is the sum of
+its scratch files' longest, measured and printed as the run ends (`reach
+scratch:` below, the section stores' file on `world store pages:`); the cost
+line (`resource cost:`) states, before the proofs run, the section stores'
+file and the reach graph's three — the lists' and tables', the snapshot's and
+the bank's — per configuration. Writes and reads are both positional, so a reader needs
 no lock against the writer, on Windows too (where a duplicated handle shares
 the file pointer); the reach module's tests run on the Windows target in CI
 for that reason.
@@ -317,7 +342,7 @@ own stated need and no further — then every other is asked, the stores never
 below three quarters of theirs, until the total stands at three quarters of
 the budget; what any of them answers never depends on what is resident. A run that took a closure prints `reach budget: R byte(s) resident
 at the end, under one budget of N byte(s), the sum of the working sets stated:
-… (ADR-0037 §1)`, `reach lists: B byte(s) in the scratch file; working set W
+… (ADR-0037 §1)`, `reach lists: B byte(s) held in the scratch file; working set W
 byte(s) (3 x 3 chunks of the largest decoded, C byte(s), and their buffered
 pushes); L chunk read(s) back over D record(s), E chunk(s) given up (ADR-0037
 §2)`, `reach closures: V chunk visit(s) over P (closure, chunk) pair(s), at
@@ -333,7 +358,10 @@ premise variants and counterfactuals that are worlds of their own; P parameter
 set(s)` and `reach states: the most in one closure N state(s) (S standing, A
 afloat, U submerged, H holding), Q of them plain sea summarised in C
 component(s), over K closure(s) (ADR-0037 §3's rest states, per closure)` as it
-ends: a portal edge is one whose two ends lie in different reach chunks, a face
+ends, and a run that wrote to a reach scratch file `reach scratch: W byte(s)
+written to the scratch files, at most L byte(s) on disk (the sum of each
+file's longest), K kept at the end; the lists' and tables' W written, at most
+L long, K kept at the end; the bank's …; the snapshot's … (ADR-0037 §2)`: a portal edge is one whose two ends lie in different reach chunks, a face
 cell a cell one lands on; `M` is the measured counterpart of the cost line's
 portal-edge bound, `B` of its configuration bound (which counts the quest
 plan's region states; the `V` variants a proof builds beside them it does not
@@ -342,8 +370,11 @@ counts depend on the chunk side and are written nowhere in the output tree. A ru
 stores held a section prints `world store pages: R byte(s) resident over S
 section(s) of every store; G array(s) given up, L read back, K of them within
 one turnover of the resident arrays; the need raised T time(s) for a walk found
-thrashing, to N byte(s); B byte(s) in the scratch file (ADR-0037 §1)` beside
-them: a read-back is thrashing when fewer arrays came resident, over every
+thrashing, to N byte(s); B byte(s) in the scratch file in regions of 8192
+byte(s), at most R of them holding a live array at once; at most A array(s)
+alive at once over every store (ADR-0037 §1)` beside them — `B` is what the
+`resource cost:` line's scratch figure bounds, and `A` is the measure of the
+arrays-alive figure it is computed from: a read-back is thrashing when fewer arrays came resident, over every
 store, since it was given up than the need holds, and it was given up under
 the need now stated; a sample of 64 read-backs of which half or more are
 thrashing doubles the need; an array given up long before, or under an
@@ -351,7 +382,7 @@ earlier need, is read back cold, however few of its cells the walk touches. Each
 store need: raised to N byte(s); K of the last R read-back(s) came back within
 one turnover of the resident arrays` as it happens, so the stage lines around
 it name the walk whose working set the need now states.
-The cost is disk: the town's bank (95 places) is 1.8 GB after one check, and grows with each program a place is checked with, since a node keeps up to eight variants.
+The cost is disk: a campaign's bank grows with each program a place is checked with, since a node keeps up to eight variants; what a campaign's bank takes is measured in ADR-0037's record, never stated here.
 
 **The output directory** holds exactly what the last build emitted: a build into a directory a previous build wrote removes every file that build emitted and this one does not, and a directory holding anything no build wrote is refused untouched (`DW0967`, §5).
 
@@ -3756,14 +3787,54 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   in one closure; working set before any walk: the stores' ring + the
   snapshot's pages + the lists' buffered pushes = T byte(s), the lists' largest
   chunk at most L byte(s) by its candidates; summaries at most: K face
-  label(s), C configuration(s); scratch: the stores' … (ADR-0037 §3)` and
-  written as the same numbers. Computed from the site
+  label(s), C configuration(s); scratch: the stores' B byte(s), one region of
+  8192 per array alive at once, at most A — W section(s) of the whole, J of
+  the judged copy, S written section(s) under the write sequence judge's 4
+  stores, and R region section(s) per configuration; the reach graph's G
+  byte(s) over the configuration(s), P per configuration — the snapshot's
+  pages S, the node tables T over E edge(s) at most, one closure's lists L,
+  the bank's file B (the cap the build sets: the tables and the lists, past
+  which no variant is kept) — the variants' worlds, a second closure and a
+  second table entry covered by those terms' slack (ADR-0037 §3)` and
+  written as the same numbers. The stores' scratch figure is an upper bound on the
+  stores' scratch file: the file holds one region per index array alive at
+  once over every store (below), and the arrays alive at once are at most the
+  whole's and the judged copy's sections, the write sequence judge's four
+  stores (the cells the load leaves, kept; one replay's world, its read faces
+  and a function's fall cells) over the sections a build write covers
+  (`Reached::sections_written`, every height), and each configuration's own
+  arrays over the sections its region writes cover (`cost::region_sections`)
+  — a copy of a store shares every array it does not write. The premise
+  variants and counterfactuals the proofs build beside the configurations
+  (`reach graphs:`) are not counted, as the configurations figure declares;
+  each owns at most the region sections it writes. Computed from the site
   plan's region, the horizon, the judged columns, the window those give through
   the snapshot's own rule (`nav::window_box`) and the store — never measured,
   so two builds of one campaign write one file; what a build reached is the
   end-of-run lines (`reach budget:`, `reach lists:`, `reach portals:`, `reach
-  graphs:`, `reach states:`, `world store pages:`, the exposure line's labels),
-  which are written nowhere in the output tree. The **rest census** (`cost::RestCensus`)
+  graphs:`, `reach states:`, `reach scratch:`, `world store pages:`, the
+  exposure line's labels), which are written nowhere in the output tree. **The
+  reach graph's scratch figure** (`scratch_bytes.reach_graph`,
+  `nav::scratch_bound_of`) is an upper bound on the reach graph's three
+  scratch files together: for one configuration, every page of the window's
+  two snapshot arrays once (⌈cells / 4096⌉ × 4096 × 6 bytes); the two node
+  tables (an entry of 55 bytes per rest candidate in each, the cell-relation
+  edges at 17 bytes in one and every edge of the candidates' envelopes in the
+  other); one closure's two lists (a record of 29 and of 41 bytes per edge,
+  and one chunk's records once more, for a chunk rewritten whole beside its
+  pieces), the edges over the window being the census's `edges_at_most`
+  (every candidate's envelope, summed); and the bank's file, which is the
+  cap the build sets on it — the tables and the lists again (`bank_file_cap`
+  per configuration, `bank_cap` over them) — since the bank is a cache the
+  build stops filling at the cap; times the configurations. The record sizes
+  are the encoder's, held by a test per record. What the terms do not count by name is covered by their
+  slack, held by test on generated cases and on the gallery, and the ledger
+  says by which term (`reach_graph_covered_by_slack`): the premise variants'
+  and counterfactuals' worlds (every term), a second closure taken over one
+  configuration (the lists), a node's second table entry under another set
+  of launch quadrants (the tables). The `reach scratch:` line's longest of
+  the three files, summed, is what the figure bounds; the gallery baseline
+  job holds it there (`tools/ci/gallery-build.py`). The **rest census** (`cost::RestCensus`)
   reads the window from the store section by section through the one block
   classification (`blockshape::collision_class`) and counts, per column, the
   cells a body can rest in at most: one standing candidate over every surface
@@ -4566,7 +4637,16 @@ the budget; past it the least recently used arrays over every store in the
 process are written to the stores' one scratch file (the same policy and place
 as the reach graph's) and read back when next asked, the palette and the
 section index staying resident; a walk over a box pins each section's array
-for the slab it reads. **A copy of a store shares every index array with the
+for the slab it reads. **The scratch file holds one region per array alive**
+(`sections::Region`): every region is one size, the wide record's (8192
+bytes); an array keeps its region across read-backs and give-ups — given up
+unchanged, its record stays and nothing is written; changed, the record is
+rewritten into its own region; a region a copy shares is never rewritten
+while the copy holds it — and a region whose last holder drops it serves the
+next array before the file grows. So the file's size is bounded by the most
+arrays alive at once over every store, which the `resource cost:` line bounds
+from the stores before the whole-map stages start, and never by the give-ups
+a run made (`the_scratch_file_holds_one_region_per_array_alive`). **A copy of a store shares every index array with the
 original until one of the two writes it** (`SectionMap::clone`,
 `Section::own`): a whole-world copy — the picture a review world starts from,
 a configuration's bytes, the load world the write judge reads — costs its

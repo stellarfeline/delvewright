@@ -153,7 +153,7 @@ const FLOOR: usize = 64;
 /// How many 3 × 3 rings the need holds: one per thread expanding a chunk.
 const RINGS: usize = 4;
 /// The bytes a cell costs over both value types.
-const CELL_BYTES: usize = 4 + 2;
+pub(super) const CELL_BYTES: usize = 4 + 2;
 
 /// The snapshot's stated need: [`RINGS`] 3 × 3 rings of the tallest window,
 /// over both value types.
@@ -198,6 +198,21 @@ pub(super) fn traffic() -> (u64, u64, u64, u64, u64) {
 /// The pages resident now, over both stores.
 pub(super) fn resident() -> usize {
     resident_of::<u32>() + resident_of::<u16>()
+}
+
+/// What the snapshot's scratch files have held, over both stores.
+pub(super) fn usage() -> super::spill::Usage {
+    usage_of::<u32>() + usage_of::<u16>()
+}
+
+fn usage_of<T: Paged>() -> super::spill::Usage {
+    T::store()
+        .inner
+        .lock()
+        .expect("pages")
+        .spill
+        .as_ref()
+        .map_or_else(Default::default, super::spill::Spill::usage)
 }
 
 fn resident_of<T: Paged>() -> usize {
