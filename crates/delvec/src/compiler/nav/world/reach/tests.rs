@@ -1079,10 +1079,9 @@ fn a_bank_past_its_cap_keeps_no_more_and_answers_the_same() {
     under.fill([8, -1, 8], [8, -1, 8]);
     let capped = under.world(Ambient::Void, Vec::new());
     let a = full.body_reach(&root);
-    let (b, refused) = bank::with_cap(1, || {
-        let r = capped.body_reach(&root);
-        (r, bank::refused_here())
-    });
+    let before = bank::refused_under_test();
+    let b = bank::with_cap(1, || capped.body_reach(&root));
+    let refused = bank::refused_under_test() - before;
     assert!(
         refused > 0,
         "the cap refused no variant: it is not enforced"

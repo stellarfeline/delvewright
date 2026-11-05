@@ -543,17 +543,20 @@ pub(super) const VARIANTS: usize = 8;
 /// kept — the expansion's answer is the same, the next world that asks
 /// re-flies the node, and no output byte reads the bank — so the file is
 /// bounded by what the plan states, never by the nodes a run flew. Under a
-/// test's cap ([`with_cap`]) each variant is judged alone against it, and
-/// what the thread's expansions refused is counted for the test.
+/// test's cap ([`with_cap`], carried to the workers that expand for the
+/// thread) each variant is judged alone against it, and what was refused
+/// is counted for the test over the process.
 static CAP: AtomicU64 = AtomicU64::new(u64::MAX);
 /// Bytes the variants kept hold, over every bank, under the cap.
 static KEPT: AtomicU64 = AtomicU64::new(0);
 /// Variants refused at the cap, over the run.
 static REFUSED: AtomicU64 = AtomicU64::new(0);
+/// Variants refused under a test's cap, over the process: the expansions
+/// run on worker threads, so a test reads the count before and after.
+static REFUSED_UNDER_TEST: AtomicU64 = AtomicU64::new(0);
 
 thread_local! {
     static CAP_HERE: Cell<u64> = const { Cell::new(0) };
-    static REFUSED_HERE: Cell<u64> = const { Cell::new(0) };
 }
 
 /// The build's cap on what the banks keep, in bytes.
@@ -581,10 +584,10 @@ pub(super) fn with_cap<R>(bytes: u64, f: impl FnOnce() -> R) -> R {
     out
 }
 
-/// Variants this thread's expansions refused under a test's cap.
+/// Variants refused under a test's cap so far, over the process.
 #[cfg(test)]
-pub(super) fn refused_here() -> u64 {
-    REFUSED_HERE.with(Cell::get)
+pub(super) fn refused_under_test() -> u64 {
+    REFUSED_UNDER_TEST.load(Ordering::Relaxed)
 }
 
 /// Whether a variant of `len` bytes may be kept now: counted against the
@@ -593,7 +596,7 @@ fn admit(len: u64) -> bool {
     let here = cap_here();
     if here != 0 {
         if len > here {
-            REFUSED_HERE.with(|r| r.set(r.get() + 1));
+            REFUSED_UNDER_TEST.fetch_add(1, Ordering::Relaxed);
             return false;
         }
         return true;
