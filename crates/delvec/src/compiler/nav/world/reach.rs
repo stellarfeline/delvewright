@@ -2930,6 +2930,15 @@ impl World {
                     at: c,
                     track,
                 };
+                // The flight memo is walked through a reader that notes
+                // nothing: a kept flight may read on past where this one ends
+                // (a deeper floor, a world without this one's volumes), and
+                // what a node records is what its own flights read.
+                let quiet = Shifted {
+                    dense,
+                    at: c,
+                    track: None,
+                };
                 let killed = |st: &State| self.kills(st);
                 let edge_memo: EdgeMemo = std::cell::RefCell::new(HashMap::default());
                 // Its cells are among the node's own (`node_boxes`).
@@ -3103,13 +3112,24 @@ impl World {
                                                     )
                                                 };
                                             }
-                                            match flights::lookup(&key, &local) {
+                                            let walked = Recorder {
+                                                inner: &quiet,
+                                                seen: Default::default(),
+                                            };
+                                            match flights::lookup(&key, &walked) {
                                                 Some(leaf)
                                                     if leaf.holds_at(bottom)
                                                         && !leaf.swept.is_some_and(|b| {
                                                             self.lethal_near(&b.offset(at))
                                                         }) =>
                                                 {
+                                                    // The kept flight is this
+                                                    // one: the cells it read
+                                                    // are read here, as flying
+                                                    // would read them.
+                                                    for r in walked.seen.into_inner() {
+                                                        local.code(r);
+                                                    }
                                                     Flown::Kept(leaf)
                                                 }
                                                 Some(_) => {
