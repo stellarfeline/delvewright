@@ -505,7 +505,7 @@ jobs:
       - name: cargo nextest, partition k of N, instrumented
         env:
           PARTITION: ${{ matrix.k }}
-          PARTITIONS: ${{ strategy.job-total }}
+          PARTITIONS: "14"
         run: |
           set -euo pipefail
           archive="$RUNNER_TEMP/archive/nextest-archive.tar.zst"
