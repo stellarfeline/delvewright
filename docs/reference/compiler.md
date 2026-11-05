@@ -3810,7 +3810,8 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   each owns at most the region sections it writes. Computed from the site
   plan's region, the horizon, the judged columns, the window those give through
   the snapshot's own rule (`nav::window_box`) and the store — never measured,
-  so two builds of one campaign write one file; what a build reached is the
+  which the ledger states as `"computed_never_measured": true`, so two builds
+  of one campaign write one file; what a build reached is the
   end-of-run lines (`reach budget:`, `reach lists:`, `reach portals:`, `reach
   graphs:`, `reach states:`, `reach scratch:`, `world store pages:`, the
   exposure line's labels), which are written nowhere in the output tree. **The
