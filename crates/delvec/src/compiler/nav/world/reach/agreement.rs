@@ -922,7 +922,7 @@ fn answered(w: &World, roots: &[[i32; 3]], side: i32) -> Answered {
 #[test]
 fn no_answer_depends_on_the_chunk_side_or_the_budget() {
     let worlds = invariance_worlds();
-    let (mut states, mut edges, mut sea, mut crossing) = (0, 0, 0, 0);
+    let (mut states, mut edges, mut sea, mut crossing, mut holding) = (0, 0, 0, 0, 0);
     let mut read_back = 0u64;
     for (name, w, roots) in &worlds {
         let whole = answered(w, roots, 16);
@@ -947,6 +947,7 @@ fn no_answer_depends_on_the_chunk_side_or_the_budget() {
             "{name}: the graph cut in two-column chunks answers otherwise"
         );
         states += whole.states.len();
+        holding += whole.census[3];
         edges += whole.succ.iter().map(Vec::len).sum::<usize>();
         sea += whole.open_sea.len();
         crossing += whole
@@ -960,13 +961,19 @@ fn no_answer_depends_on_the_chunk_side_or_the_budget() {
             .count();
     }
     eprintln!(
-        "chunk invariance: {} world(s), {states} state(s), {edges} edge(s) ({crossing} crossing a \
-         two-column chunk face), {sea} open-sea state(s); {read_back} snapshot page(s) read back \
-         under a budget of one",
+        "chunk invariance: {} world(s), {states} state(s) ({holding} holding), {edges} edge(s) \
+         ({crossing} crossing a two-column chunk face), {sea} open-sea state(s); {read_back} \
+         snapshot page(s) read back under a budget of one",
         worlds.len()
     );
     assert!(
-        states > 0 && edges > 0 && crossing > 0 && sea > 0 && read_back > 0,
+        !worlds.is_empty()
+            && states > 0
+            && holding > 0
+            && edges > 0
+            && crossing > 0
+            && sea > 0
+            && read_back > 0,
         "the cases bind nothing"
     );
 }
