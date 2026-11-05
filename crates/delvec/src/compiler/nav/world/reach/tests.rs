@@ -1071,8 +1071,13 @@ fn the_costs_bounds_hold_over_the_graphs_built() {
 #[test]
 fn a_bank_past_its_cap_keeps_no_more_and_answers_the_same() {
     let root = [[5, 1, 5]];
-    // Two worlds alike, so each closure is taken fresh over its own graph.
-    let (full, capped) = (bell_yard(), bell_yard());
+    // Two yards of this test alone (no other case memoises them), alike in
+    // every cell a body can reach — the second holds one stone under its
+    // floor, so it is a graph of its own and not the first's memo.
+    let full = walled_yard(([-3, 0, -3], [17, 0, 17])).world(Ambient::Void, Vec::new());
+    let mut under = walled_yard(([-3, 0, -3], [17, 0, 17]));
+    under.fill([8, -1, 8], [8, -1, 8]);
+    let capped = under.world(Ambient::Void, Vec::new());
     let a = full.body_reach(&root);
     let (b, refused) = bank::with_cap(1, || {
         let r = capped.body_reach(&root);
