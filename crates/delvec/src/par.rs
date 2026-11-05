@@ -18,6 +18,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// The number of threads [`map`] uses; see the module docs.
 pub fn threads() -> usize {
+    #[cfg(test)]
+    if let Some(n) = HERE.with(std::cell::Cell::get) {
+        return n;
+    }
     static THREADS: OnceLock<usize> = OnceLock::new();
     *THREADS.get_or_init(|| {
         std::env::var("DELVEC_THREADS")
@@ -27,6 +31,25 @@ pub fn threads() -> usize {
             .or_else(|| std::thread::available_parallelism().ok().map(|n| n.get()))
             .unwrap_or(1)
     })
+}
+
+#[cfg(test)]
+thread_local! {
+    static HERE: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+}
+
+/// Run `f` with [`threads`] answering `n` on this thread: a unit test whose
+/// binding needs the engine at more than one thread sets its own count, as
+/// the suite runs at `DELVEC_THREADS=1` (spec-0126 §5.4). The workers a map
+/// starts read the process's count, so a map nested in one runs as the
+/// process says.
+#[cfg(test)]
+pub(crate) fn with_threads<R>(n: usize, f: impl FnOnce() -> R) -> R {
+    assert!(n > 0, "a thread count is positive");
+    let was = HERE.with(|h| h.replace(Some(n)));
+    let r = f();
+    HERE.with(|h| h.set(was));
+    r
 }
 
 /// `items.iter().map(f).collect()`, computed on up to [`threads`] threads.
