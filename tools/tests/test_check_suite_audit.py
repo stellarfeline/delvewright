@@ -148,3 +148,9 @@ def test_an_override_that_reserves_no_slots_is_red(repo):
     cfg = repo / ".config/nextest.toml"
     cfg.write_text(cfg.read_text().replace("threads-required = 2\n", ""))
     assert "does not reserve two" in run(repo, "--overrides").stderr
+
+
+def test_an_override_that_extends_nothing_is_red(repo):
+    cfg = repo / ".config/nextest.toml"
+    cfg.write_text(cfg.read_text().replace('slow-timeout = { period = "400s", terminate-after = 1 }', 'slow-timeout = { period = "100s", terminate-after = 1 }'))
+    assert "does not extend the default per-test bound" in run(repo, "--overrides").stderr

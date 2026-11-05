@@ -49,6 +49,10 @@ import subprocess
 import sys
 import tomllib
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "lib"))
+
+from suite_bounds import bounds  # noqa: E402
+
 TABLE = "crates/delvec/tests/measured/suite-audit.json"
 EXCLUDED_DIRS = ("common", "support", "fixtures", "measured")
 VERDICT = re.compile(
@@ -356,6 +360,7 @@ def main() -> int:
                 errors.append(f"{f} -> {into}: an assertion or a DW code was dropped by the merge")
 
     if args.overrides:
+        b = bounds(root)
         cfg_path = root / ".config/nextest.toml"
         text = cfg_path.read_text(encoding="utf-8")
         cfg = tomllib.loads(text)
@@ -371,11 +376,17 @@ def main() -> int:
                 errors.append(f"override {i}: carries no slow-timeout")
             if not isinstance(o.get("priority"), int) or o["priority"] <= 0:
                 errors.append(f"override {i}: carries no priority above the default (spec-0126 §5.4: the longest tests of a partition start first)")
+            own = b.overrides.get(filt[len("test(="):-1])
+            if own is None or (b.test_seconds is not None and own <= b.test_seconds):
+                errors.append(f"override {i} ({filt}): its bound ({own}) does not extend the default per-test bound ({b.test_seconds} s)")
             if o.get("threads-required") != 2:
                 errors.append(f"override {i} ({filt}): does not reserve two of the runner's four slots (`threads-required = 2`; spec-0126 §5.4: the engine a slow test spawns runs one thread per core)")
             if i >= len(blocks) or not re.search(r"^\s*#.*\bmeasured\b[^\n]*?\d+(\.\d+)?\s*s\b", blocks[i], re.M):
                 errors.append(f"override {i} ({filt}): no comment in its block states its measured time")
-        print(f"overrides: {len(overrides)} entries in [[profile.ci.overrides]]; table states {table.get('overrides')}")
+        print(
+            f"overrides: {len(overrides)} entries in [[profile.ci.overrides]]; table states {table.get('overrides')}; "
+            f"default per-test bound {b.test_seconds} s, partition run bound {b.run_seconds} s"
+        )
 
     print(
         f"suite audit: {len(rows)} rows for {len(want)} test files of {tree[:12]}; verdicts "
