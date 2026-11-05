@@ -916,6 +916,13 @@ impl<C: Codes> Codes for Recorder<'_, C> {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    /// The flight memo's answers on this thread: kept flights taken, and
+    /// kept flights refused (another floor, a volume near).
+    static MEMO_ANSWERS: std::cell::Cell<(u64, u64)> = const { std::cell::Cell::new((0, 0)) };
+}
+
 /// A [`Codes`] relative to a world cell: the template's origin put at `at`,
 /// noting every window cell it reads in `track` ([`bank`]).
 struct Shifted<'a> {
@@ -3138,9 +3145,17 @@ impl World {
                                                     for r in walked.seen.into_inner() {
                                                         local.code(r);
                                                     }
+                                                    #[cfg(test)]
+                                                    MEMO_ANSWERS.with(|m| {
+                                                        m.set((m.get().0 + 1, m.get().1))
+                                                    });
                                                     Flown::Kept(leaf)
                                                 }
                                                 Some(_) => {
+                                                    #[cfg(test)]
+                                                    MEMO_ANSWERS.with(|m| {
+                                                        m.set((m.get().0, m.get().1 + 1))
+                                                    });
                                                     let f = run_here!(&local);
                                                     Flown::Here(f.outcome, f.swept)
                                                 }

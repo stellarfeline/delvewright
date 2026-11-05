@@ -1389,8 +1389,8 @@ fn a_node_records_the_same_variant_whichever_graph_banked_first() {
 /// node of the shallow world is expanded with the memo off and then on, each
 /// against an empty bank, and every variant compared byte for byte. Red on
 /// any variant that records a cell, or a box, its flights did not read.
-/// Bound: some of the shallow world's launches leave the world, so its
-/// flights meet the floor the deep world's flights fly past.
+/// Bound: some of the shallow world's launches leave the world, and beside
+/// the memo some kept flights are taken and some refused.
 #[test]
 fn a_node_records_the_same_variant_whatever_the_flight_memo_holds() {
     // Two courses thick, with a lip of barrier on one corner: no other test's
@@ -1443,7 +1443,14 @@ fn a_node_records_the_same_variant_whatever_the_flight_memo_holds() {
         out
     };
     let flown = flights::without(record);
+    let before = MEMO_ANSWERS.with(std::cell::Cell::get);
     let memo = record();
+    let after = MEMO_ANSWERS.with(std::cell::Cell::get);
+    let (taken, refused) = (after.0 - before.0, after.1 - before.1);
+    assert!(
+        taken > 0 && refused > 0,
+        "the memo took {taken} and refused {refused} kept flight(s): the case binds nothing"
+    );
     assert!(
         !flown.is_empty(),
         "no node was expanded: the case binds nothing"
@@ -1460,7 +1467,8 @@ fn a_node_records_the_same_variant_whatever_the_flight_memo_holds() {
         })
         .collect();
     eprintln!(
-        "flight memo and the bank: {} variant(s) compared, {} moved with what the memo held",
+        "flight memo and the bank: {} variant(s) compared, {} moved with what the memo held; \
+         {taken} kept flight(s) taken and {refused} refused beside the memo",
         flown.len(),
         moved.len()
     );
