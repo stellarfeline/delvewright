@@ -446,7 +446,7 @@ jobs:
           retention-days: 3
 
   rust-partition:
-    name: rust partition (${{ matrix.k }} of 11)
+    name: rust partition (${{ matrix.k }} of 13)
     needs: [changes, rust-build, rust-fixtures]
     if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
@@ -466,7 +466,7 @@ jobs:
       # which tests ran where, and a failure in one says nothing about the rest.
       fail-fast: false
       matrix:
-        k: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+        k: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
     outputs:
       # N, read by the census from the matrix itself rather than typed again.
       total: ${{ strategy.job-total }}
