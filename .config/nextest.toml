@@ -39,6 +39,12 @@ slow-timeout = { period = "540s", terminate-after = 1 }
 priority = 60
 
 [[profile.ci.overrides]]
+# measured: 530 s on the Actions runner, instrumented, one engine thread, the rust fixtures job of run 41979829454 (nextest Summary 529.782 s; 516.800 s on run 41939107132); the gallery's two detailed site-plan points built once per run into `common::built`'s cache, which every partition's consumers read; the points are the fixture, so the test is their one build
+filter = 'test(=built_fixtures::the_gallery_points_are_built_once_per_run)'
+slow-timeout = { period = "1680s", terminate-after = 1 }
+priority = 80
+
+[[profile.ci.overrides]]
 # measured: 273 s on the Actions runner, instrumented, one engine thread, the largest of 1 run(s); both reach proofs run over generated worlds until they meet the same faces; the generated set is the test's denominator
 filter = 'test(=compiler::nav::learned::learned_tests::both_proofs_meet_the_same_faces_over_generated_worlds)'
 slow-timeout = { period = "900s", terminate-after = 1 }
