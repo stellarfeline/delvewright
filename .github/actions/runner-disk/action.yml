@@ -1,0 +1,51 @@
+name: The job's disk
+description: >
+  The job's disk, met by the host (CLAUDE.md, "Host hardware never caps a
+  capability"). The instrumented build takes most of the runner's root
+  filesystem, and the test executables then fill it with the output trees
+  they leave and the builds' scratch files (ADR-0037: the reach graph's
+  lists, tables, bank and snapshot, and the section stores' records, in the
+  system's temporary directory, several builds at once). Read off the
+  ubuntu-latest image: 94.2 GB free at the start, 12.8 GB left when the
+  executables began, 13.1 GB taken by them. `start` removes the preinstalled
+  toolchains no `rust` job uses (27.2 GB on that image), each only if
+  present, prints the free bytes of `/` before and after, and samples them
+  every quarter second for the rest of the job; `report` prints the least
+  seen, so the job's disk footprint is read off the runner it ran on, never
+  assumed. The checkout, the target directory, the system's temporary
+  directory and `$RUNNER_TEMP` all lie on `/` on that image.
+inputs:
+  step:
+    description: "`start` (free the disk and begin sampling) or `report` (the least free seen)"
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: the job's disk (${{ inputs.step }})
+      shell: bash
+      env:
+        STEP: ${{ inputs.step }}
+      run: |
+        set -euo pipefail
+        least="$RUNNER_TEMP/runner-disk-least"
+        free() { df -B1 --output=avail / | tail -n 1 | tr -d ' '; }
+        case "$STEP" in
+          start)
+            df -B1 --output=target,size,avail /
+            for d in /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/swift; do
+              if [ -d "$d" ]; then echo "removing $d"; sudo rm -rf "$d"; fi
+            done
+            df -B1 --output=target,size,avail /
+            free > "$least"
+            nohup bash -c 'f="$1"; while sleep 0.25; do a="$(df -B1 --output=avail / | tail -n 1 | tr -d " ")"; if [ "$a" -lt "$(cat "$f")" ]; then echo "$a" > "$f.next"; mv "$f.next" "$f"; fi; done' sampler "$least" > /dev/null 2>&1 &
+            echo "disk, before the job's work: $(cat "$least") byte(s) free under /"
+            ;;
+          report)
+            [ -s "$least" ] || { echo "no sample was taken: the job's start step did not run" >&2; exit 1; }
+            echo "disk, the least while the job ran: $(cat "$least") byte(s) free under /; now $(free)"
+            ;;
+          *)
+            echo "step must be start or report, not '$STEP'" >&2
+            exit 1
+            ;;
+        esac

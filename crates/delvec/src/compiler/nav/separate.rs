@@ -415,7 +415,7 @@ pub(super) fn verify_gates_separate(
         Vec<Bypass>,
         Vec<(usize, bool)>,
         Option<u64>,
-        Reach,
+        std::sync::Arc<Reach>,
     );
     let judged: Vec<Judged> = crate::par::map(configs, |(w, when, seeds, shut)| {
         let (_, graph) = party_reach(w, seeds);
@@ -514,7 +514,7 @@ pub(super) fn verify_gates_separate(
     let mut graphs: ReachBinding = ReachBinding::default();
     // A configuration's closure is kept only where a gate is got round in it:
     // the search for a way round by water reads its open sea.
-    let mut closures: Vec<Option<Reach>> = Vec::with_capacity(judged.len());
+    let mut closures: Vec<Option<std::sync::Arc<Reach>>> = Vec::with_capacity(judged.len());
     for (ci, (shut, unstood, reached, found, met, over, graph)) in judged.into_iter().enumerate() {
         over_budget = over_budget.or(over);
         graphs.add(configs[ci].0, &graph);

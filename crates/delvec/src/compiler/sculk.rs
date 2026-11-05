@@ -360,7 +360,7 @@ fn cells_of(blocks: &BlockMap, writes: &[Write], kind: Sculk) -> BTreeMap<[i32; 
     let mut out: BTreeMap<[i32; 3], String> = blocks
         .iter()
         .filter(|(_, s)| sculk_kind(s.as_str()) == Some(kind))
-        .map(|(c, s)| (*c, s.as_str().to_string()))
+        .map(|(c, s)| (c, s.as_str().to_string()))
         .collect();
     for w in writes.iter().filter(|w| sculk_kind(&w.block) == Some(kind)) {
         for c in w.cells() {
@@ -639,24 +639,24 @@ impl Listening {
                 (occludes_vibrations(n), dampens_vibrations(n), sculk_kind(n))
             });
             if occludes {
-                l.occluders.insert(*c);
+                l.occluders.insert(c);
             }
             if dampens {
-                l.dampeners.insert(*c);
+                l.dampeners.insert(c);
             }
             let Some(kind) = kind else { continue };
             if matches!(kind, Sculk::Catalyst) {
                 continue;
             }
-            if let Some(w) = writes.iter().find(|w| w.contains(*c)) {
-                l.rewritten.push((*c, w.label.clone()));
+            if let Some(w) = writes.iter().find(|w| w.contains(c)) {
+                l.rewritten.push((c, w.label.clone()));
                 continue;
             }
             match kind {
                 // The calibrated sensor hears 16 blocks; it is predicted at the
                 // plain one's margin, which is inside both.
-                Sculk::Sensor | Sculk::Calibrated => l.sensors.push((*c, PREDICTED_RADIUS_SQ)),
-                Sculk::Shrieker => l.shriekers.push(*c),
+                Sculk::Sensor | Sculk::Calibrated => l.sensors.push((c, PREDICTED_RADIUS_SQ)),
+                Sculk::Shrieker => l.shriekers.push(c),
                 Sculk::Catalyst => {}
             }
         }
@@ -800,7 +800,7 @@ pub fn check(
     let openable: BTreeSet<[i32; 3]> = blocks
         .iter()
         .filter(|(_, n)| delvewright_dsl::blockshape::opens_by_hand(n.as_str()))
-        .map(|(c, _)| *c)
+        .map(|(c, _)| c)
         .collect();
     let opened = if openable.is_empty() {
         open

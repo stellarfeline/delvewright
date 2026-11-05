@@ -32,13 +32,13 @@ impl Build {
         p.built = built;
         World::from_occupancy(
             crate::compiler::assembled::Occupancy {
-                solid: self.solid.clone(),
-                tall: self.tall.clone(),
-                use_gates: BTreeSet::new(),
-                flooded: self.water.clone(),
+                solid: (self.solid.clone()).into(),
+                tall: (self.tall.clone()).into(),
+                use_gates: (BTreeSet::new()).into(),
+                flooded: (self.water.clone()).into(),
                 partial: Default::default(),
-                waterloggable: BTreeSet::new(),
-                lava: BTreeSet::new(),
+                waterloggable: (BTreeSet::new()).into(),
+                lava: (BTreeSet::new()).into(),
                 climb: Default::default(),
                 unheld_climb: Default::default(),
                 material: Default::default(),
@@ -54,6 +54,42 @@ impl Build {
 
 /// The walk relation's closure: the relation a route proof walks, which these
 /// tests hold the reach graph against.
+/// **The snapshot's window is the one rule's** (`window_box`, ADR-0037 §3):
+/// the window `Dense::of` builds round a world's modelled cells is the box
+/// `window_box` gives for those cells' bounds, under a void and under an
+/// ocean — so the cost the engine states before the proofs, which takes the
+/// same function over the judged columns, bounds the window the proofs build.
+#[test]
+fn the_snapshot_window_is_the_one_rules() {
+    for sea in [None, Some((54, 62))] {
+        let mut b = Build::default();
+        for c in [[-3, 60, 7], [20, 63, 7], [5, 70, -9], [5, 61, 40]] {
+            b.fill(c, c);
+        }
+        let ambient = match sea {
+            None => Ambient::Void,
+            Some((floor_top, level)) => Ambient::Ocean(Sea { level, floor_top }),
+        };
+        let w = b.world(ambient, Vec::new());
+        let d = Dense::of(&w);
+        let (lo, hi) = window_box([-3, 60, -9], [20, 70, 40], sea);
+        assert_eq!(d.lo, lo, "sea {sea:?}");
+        assert_eq!(
+            d.dims,
+            [hi[0] - lo[0] + 1, hi[1] - lo[1] + 1, hi[2] - lo[2] + 1],
+            "sea {sea:?}"
+        );
+        assert_eq!(hi[1] % 16, 15, "the top is a course under a multiple of 16");
+        assert!(lo[0] == -3 - 8 && hi[2] == 40 + 8, "the margin is 8 cells");
+        if sea.is_some() {
+            assert!(
+                lo[1] <= 54 && hi[1] >= 62 + 6,
+                "an ocean's window spans the sea"
+            );
+        }
+    }
+}
+
 fn old_reach(w: &World, roots: &[[i32; 3]]) -> BTreeSet<[i32; 3]> {
     w.walk_region(roots)
 }
@@ -122,10 +158,9 @@ fn a_node_from_the_memo_and_the_bank_is_the_node_flying_gives() {
     let memo = opened.graph_memo(&params);
     let flown: Vec<(FlownKey, Arc<NodeEdges>)> = memo
         .flown
-        .lock()
-        .expect("memo")
-        .iter()
-        .map(|(k, e)| (*k, Arc::clone(e)))
+        .entries()
+        .into_iter()
+        .flat_map(|(c, l)| l.into_iter().map(move |(q, e)| ((c, q), Arc::new(e))))
         .collect();
     for (key, e) in &flown {
         let fresh = opened.expand(&memo, &params, key.0, key.1, None);
@@ -218,12 +253,7 @@ fn the_jetty_is_left_into_the_sea_by_a_jump_and_not_returned_to() {
         r.credited,
         t.elapsed()
     );
-    let sea: Vec<[i32; 3]> = r
-        .states
-        .keys()
-        .copied()
-        .filter(|c| w.ambient_water(*c))
-        .collect();
+    let sea: Vec<[i32; 3]> = r.states.keys().filter(|c| w.ambient_water(*c)).collect();
     assert!(!sea.is_empty(), "the graph did not enter the sea");
     assert!(!r.open_sea.is_empty(), "the sea is open");
 }
@@ -439,9 +469,9 @@ fn a_snapshot_shares_every_chunk_its_lineage_holds_alike() {
     let memo = opened.graph_memo(&params);
     let own = Dense::of(&opened);
     assert!(
-        own.cells.chunks.len() > 2,
+        own.cells.pages.len() > 2,
         "the window spans {} chunk(s); a test of sharing needs several",
-        own.cells.chunks.len()
+        own.cells.pages.len()
     );
     // Perturbed toward the vacuous shape: a snapshot that shared nothing, or
     // shared a chunk it holds otherwise, reds one of these.
@@ -454,15 +484,20 @@ fn a_snapshot_shares_every_chunk_its_lineage_holds_alike() {
     assert_eq!(own.cells.len(), memo.dense.cells.len());
     for i in 0..own.cells.len() {
         assert_eq!(
-            own.cells[i],
-            memo.dense.cells[i],
+            own.cells.get(i),
+            memo.dense.cells.get(i),
             "cell {:?}",
             own.coords(i)
         );
     }
     let raw = raw_membership(&opened, &own);
     for i in 0..raw.len() {
-        assert_eq!(raw[i], memo.extra.cells[i], "cell {:?}", own.coords(i));
+        assert_eq!(
+            raw.get(i),
+            memo.extra.cells.get(i),
+            "cell {:?}",
+            own.coords(i)
+        );
     }
     // The lineage's diff is exactly the doorway.
     let (_, diff) = memo
@@ -487,10 +522,40 @@ fn a_bank_read_back_from_its_file_answers_what_flying_gives() {
     let params = ReachParams::shipped(opened.unbounded_fall);
     let memo = opened.graph_memo(&params);
     let held = memo.bank.held();
-    let read = super::persist::round_trip("key", &held).expect("the file decodes");
+    // Written in two sections and in one, the bank reads back alike; a file
+    // cut short anywhere, or carrying a byte past its end, reads as nothing.
+    let half = held.len() / 2;
+    let sections = vec![held[..half].to_vec(), held[half..].to_vec()];
+    let read: Vec<_> = super::persist::round_trip("key", sections.clone())
+        .expect("the file decodes")
+        .into_iter()
+        .flatten()
+        .collect();
     assert_eq!(read.len(), held.len());
+    for (a, b) in read.iter().zip(&held) {
+        assert_eq!(a.0, b.0);
+        assert_eq!(a.1.len(), b.1.len());
+    }
+    let bytes = super::persist::file_bytes("key", sections);
+    assert_eq!(super::persist::read_bytes("key", &bytes), Some(held.len()));
+    assert_eq!(super::persist::read_bytes("other", &bytes), None);
+    for cut in [8, bytes.len() / 3, bytes.len() / 2, bytes.len() - 1] {
+        assert_eq!(
+            super::persist::read_bytes("key", &bytes[..cut]),
+            None,
+            "cut at {cut}"
+        );
+    }
+    let mut longer = bytes.clone();
+    longer.push(0);
+    assert_eq!(super::persist::read_bytes("key", &longer), None);
     let back = bank::Bank::holding(read);
-    let flown: Vec<FlownKey> = memo.flown.lock().expect("memo").keys().copied().collect();
+    let flown: Vec<FlownKey> = memo
+        .flown
+        .entries()
+        .into_iter()
+        .flat_map(|(c, l)| l.into_iter().map(move |(q, _)| (c, q)))
+        .collect();
     assert!(!flown.is_empty());
     let mut answered = 0;
     for key in flown {
@@ -569,7 +634,7 @@ fn bank_against_an_edit(
     before: &World,
     after: &World,
     root: &[[i32; 3]],
-) -> (usize, usize, usize, Reach) {
+) -> (usize, usize, usize, Arc<Reach>) {
     let params = ReachParams::shipped(before.unbounded_fall);
     let _ = before.body_reach(root);
     let mb = before.graph_memo(&params);
@@ -580,7 +645,13 @@ fn bank_against_an_edit(
         Arc::ptr_eq(&mb.bank, &ma.bank),
         "the two worlds share one bank: the edit is not the bank's key"
     );
-    let flown: Vec<FlownKey> = ma.flown.lock().expect("memo").keys().copied().collect();
+    let held_nodes: BTreeMap<FlownKey, NodeEdges> = ma
+        .flown
+        .entries()
+        .into_iter()
+        .flat_map(|(c, v)| v.into_iter().map(move |(q, e)| ((c, q), e)))
+        .collect();
+    let flown: Vec<FlownKey> = held_nodes.keys().copied().collect();
     let (mut hits, mut changed) = (0, 0);
     for key in &flown {
         let fresh = after.expand(&ma, &params, key.0, key.1, None);
@@ -588,7 +659,7 @@ fn bank_against_an_edit(
         let volumes = |bx| after.volumes_near(bx);
         let jumps = after.jumps_from(key.0);
         let hit = back.find(key, &ma.dense, &ma.extra, &jumps, &volumes);
-        let held = Arc::clone(&ma.flown.lock().expect("memo")[key]);
+        let held = &held_nodes[key];
         assert_eq!(
             fresh.edges, held.edges,
             "{key:?}: the graph holds a stale node"
@@ -808,4 +879,571 @@ fn a_node_with_no_shared_edge_table_is_the_node_the_shared_tables_give() {
         !keys.is_empty() && read > 0,
         "bound: nodes expanded, reads tracked"
     );
+}
+
+/// **The cost's bounds hold over the graphs built** (ADR-0037 §3): on the open
+/// floor, the Bell yard, the jetty (an ocean), the garden and a ladder cliff,
+/// at chunk sides of 32 and 16, the closure's states are at most the census's
+/// candidates, every chunk's lists decode to at most the census's bound for a
+/// chunk, and the portal edges joined are at most its bound — each world's
+/// store read by the census as the cost reads it, over the window the cost
+/// takes. And what the graph holds in the reach scratch files — its
+/// snapshot's pages, its two node tables and its closure's lists, each read
+/// from the records the structures hold (`GraphMemo::scratch_held`) — is at
+/// most the cost's per-configuration bound for each (`scratch_bound_of`),
+/// red on any of the three passing its term. The factor of each bound over
+/// the measure is printed.
+#[test]
+fn the_costs_bounds_hold_over_the_graphs_built() {
+    use crate::compiler::blockstate::{BlockMap, BlockState};
+    use crate::compiler::cost::RestCensus;
+    fn store_of(b: &Build) -> BlockMap {
+        let mut m = BlockMap::new();
+        for c in &b.solid {
+            m.insert(*c, BlockState::new("minecraft:stone"));
+        }
+        for c in &b.tall {
+            m.insert(*c, BlockState::new("minecraft:oak_fence"));
+        }
+        for c in &b.water {
+            m.insert(*c, BlockState::new("minecraft:water"));
+        }
+        m
+    }
+    let mut open = Build::default();
+    open.fill([0, 0, 0], [11, 0, 11]);
+    let mut jetty = Build::default();
+    jetty.fill([0, 64, 0], [9, 64, 4]);
+    for x in 0..=9 {
+        jetty.tall.insert([x, 65, 0]);
+        jetty.tall.insert([x, 65, 4]);
+    }
+    for z in 1..=3 {
+        jetty.tall.insert([9, 65, z]);
+        jetty.tall.insert([0, 65, z]);
+    }
+    jetty.fill([4, 65, 1], [4, 65, 1]);
+    let mut garden_b = Build::default();
+    garden_b.fill([0, 0, 0], [10, 0, 10]);
+    for x in 3..=6 {
+        for z in 3..=6 {
+            if x == 3 || x == 6 || z == 3 || z == 6 {
+                garden_b.tall.insert([x, 1, z]);
+            }
+        }
+    }
+    garden_b.fill([2, 1, 4], [2, 1, 4]);
+    garden_b.fill([5, 1, 5], [5, 1, 5]);
+    let mut cliff: Vec<([i32; 3], &str)> = Vec::new();
+    for x in 0..=6 {
+        for z in 0..=2 {
+            cliff.push(([x, 64, z], "minecraft:stone"));
+            if x >= 3 {
+                for y in 65..=68 {
+                    cliff.push(([x, y, z], "minecraft:stone"));
+                }
+            }
+        }
+    }
+    for y in 65..=68 {
+        cliff.push(([2, y, 1], "minecraft:ladder[facing=west]"));
+    }
+    let mut cliff_store = BlockMap::new();
+    for (c, n) in &cliff {
+        cliff_store.insert(*c, BlockState::new(n));
+    }
+    let sea = Sea {
+        level: 62,
+        floor_top: 54,
+    };
+    let band = (sea.floor_top, sea.level);
+    // Name, world, its store, its sea band, the root.
+    type Case = (&'static str, World, BlockMap, Option<(i32, i32)>, [i32; 3]);
+    let worlds: Vec<Case> = vec![
+        (
+            "the open floor",
+            open.world(Ambient::Void, Vec::new()),
+            store_of(&open),
+            None,
+            [5, 1, 5],
+        ),
+        (
+            "the Bell yard",
+            bell_yard(),
+            store_of(&bell_yard_build()),
+            None,
+            [5, 1, 5],
+        ),
+        (
+            "the jetty",
+            jetty.world(
+                Ambient::Ocean(sea),
+                vec![("prefab/jetty".to_string(), ([0, 64, 0], [9, 66, 4]))],
+            ),
+            store_of(&jetty),
+            Some(band),
+            [2, 65, 2],
+        ),
+        ("the garden", garden(), store_of(&garden_b), None, [1, 1, 1]),
+        (
+            "the ladder cliff",
+            crate::compiler::nav::testkit::blocks_world(&cliff),
+            cliff_store,
+            None,
+            [0, 65, 1],
+        ),
+    ];
+    let edges = edges_per_node_at_most();
+    let (mut bound_states, mut bound_lists, mut bound_portals) = (0usize, 0usize, 0u64);
+    let mut bound_scratch = ScratchBound::default();
+    for (name, w, store, sea, root) in &worlds {
+        let (slo, shi) = store.section_bounds().expect("a store with cells");
+        let window = window_box(slo, shi, *sea);
+        for side in [32, 16] {
+            let census = RestCensus::of(store, window, *sea, side, LAUNCH_REACH, edges);
+            chunks::at_side(side, || {
+                let r = w.body_reach(&[*root]);
+                let states = r.states.len();
+                // The scratch the graph holds, against the bound for one
+                // configuration (one world, one closure).
+                let memo = w.graph_memo(&ReachParams::shipped(w.unbounded_fall));
+                // The lists are this closure's own: another test's closure
+                // over the same world is kept by the same memo.
+                let held = ScratchBound {
+                    lists: r.spilled_bytes() as usize,
+                    ..memo.scratch_held()
+                };
+                let cells = [0, 1, 2]
+                    .map(|a| (window.1[a] - window.0[a] + 1) as usize)
+                    .iter()
+                    .product::<usize>();
+                // The cost's window is the store's sections with the margins,
+                // the graph's the modelled cells with them: the first holds
+                // the second, which is what makes the pages term a bound.
+                let graph_cells = memo
+                    .dense
+                    .dims
+                    .iter()
+                    .map(|d| *d as usize)
+                    .product::<usize>();
+                assert!(
+                    graph_cells <= cells,
+                    "{name} (side {side}): the graph's window ({graph_cells} cells) is not inside \
+                     the cost's ({cells})"
+                );
+                let bound = scratch_bound_of(ScratchInputs {
+                    states: census.states_at_most(),
+                    items: census.items_at_most,
+                    chunk_items: census.chunk_items_at_most,
+                    cells,
+                });
+                // The bank is held to its term by the cap the build sets,
+                // not by what a run flies (`a_bank_past_its_cap_keeps_no_more_and_answers_the_same`);
+                // what it held here is printed beside the cap it would get.
+                for (what, got, at_most) in [
+                    ("the snapshot's pages", held.snapshot, bound.snapshot),
+                    ("the node tables", held.tables, bound.tables),
+                    ("the closure's lists", held.lists, bound.lists),
+                ] {
+                    assert!(
+                        got <= at_most,
+                        "{name} (side {side}): {what} hold {got} byte(s) in the scratch file over \
+                         the cost's {at_most}"
+                    );
+                }
+                eprintln!(
+                    "{name} (side {side}): scratch snapshot {} <= {} (x{:.1}); tables {} <= {} \
+                     (x{:.1}); lists {} <= {} (x{:.1}); bank {} <= {} (x{:.1})",
+                    held.snapshot,
+                    bound.snapshot,
+                    bound.snapshot as f64 / held.snapshot.max(1) as f64,
+                    held.tables,
+                    bound.tables,
+                    bound.tables as f64 / held.tables.max(1) as f64,
+                    held.lists,
+                    bound.lists,
+                    bound.lists as f64 / held.lists.max(1) as f64,
+                    held.bank,
+                    bound.bank,
+                    bound.bank as f64 / held.bank.max(1) as f64,
+                );
+                bound_scratch.snapshot += held.snapshot;
+                bound_scratch.tables += held.tables;
+                bound_scratch.lists += held.lists;
+                bound_scratch.bank += held.bank;
+                assert!(
+                    states <= census.states_at_most(),
+                    "{name} (side {side}): {states} states over the census's {}",
+                    census.states_at_most()
+                );
+                let key = |c: [i32; 3]| (c[0].div_euclid(side), c[2].div_euclid(side));
+                let mut per_chunk: BTreeMap<(i32, i32), (usize, usize)> = BTreeMap::new();
+                // What the lists hold: a plain-sea state's dives are computed
+                // and never listed (ADR-0037 §2).
+                for c in r.states.keys().filter(|c| !r.states.plain(c)) {
+                    let e = per_chunk.entry(key(c)).or_insert((0, 0));
+                    e.0 += 1;
+                    e.1 += r.succ(c).len();
+                }
+                let largest = per_chunk
+                    .values()
+                    .map(|(n, i)| lists_bound_of(*n, *i))
+                    .max()
+                    .unwrap_or(0);
+                assert!(
+                    largest <= census.lists_chunk_bound,
+                    "{name} (side {side}): a chunk decodes to {largest} over the census's {}",
+                    census.lists_chunk_bound
+                );
+                assert!(
+                    r.portals[0] <= census.portal_edges_at_most as u64,
+                    "{name} (side {side}): {} portal edge(s) over the census's {}",
+                    r.portals[0],
+                    census.portal_edges_at_most
+                );
+                eprintln!(
+                    "{name} (side {side}): states {states} <= {} (x{:.1}); largest chunk {largest} <= \
+                     {} (x{:.1}); portals {} <= {} (x{:.1})",
+                    census.states_at_most(),
+                    census.states_at_most() as f64 / states.max(1) as f64,
+                    census.lists_chunk_bound,
+                    census.lists_chunk_bound as f64 / largest.max(1) as f64,
+                    r.portals[0],
+                    census.portal_edges_at_most,
+                    census.portal_edges_at_most as f64 / r.portals[0].max(1) as f64
+                );
+                bound_states += states;
+                bound_lists += largest;
+                bound_portals += r.portals[0];
+            });
+        }
+    }
+    assert!(
+        bound_states > 0 && bound_lists > 0 && bound_portals > 0,
+        "the worlds bind nothing"
+    );
+    assert!(
+        bound_scratch.snapshot > 0 && bound_scratch.tables > 0 && bound_scratch.lists > 0,
+        "the graphs hold nothing in the scratch files: the scratch bound binds nothing \
+         ({bound_scratch:?})"
+    );
+}
+
+/// **A bank past its cap keeps no more, and answers the same** (ADR-0037 §3):
+/// the Bell yard's closure taken under a test's cap that refuses every
+/// variant (one byte) is, state for state and edge for edge, the closure
+/// taken with the bank keeping all — the bank is a cache, and a miss
+/// re-flies the node — and the capped expansion refused variants where the
+/// other kept them. Red if a capped bank changed an answer, or refused
+/// nothing (the cap unenforced).
+#[test]
+fn a_bank_past_its_cap_keeps_no_more_and_answers_the_same() {
+    let root = [[5, 1, 5]];
+    // Two yards of this test alone (no other case memoises them), alike in
+    // every cell a body can reach and in their window — the second's wall
+    // holds a fence post in place of one stone, under another stone, so it
+    // is a graph of its own and not the first's memo.
+    let full = walled_yard(([-3, 0, -3], [17, 0, 17])).world(Ambient::Void, Vec::new());
+    let mut fenced = walled_yard(([-3, 0, -3], [17, 0, 17]));
+    assert!(fenced.solid.remove(&[0, 2, 0]), "a wall stone to replace");
+    fenced.tall.insert([0, 2, 0]);
+    let capped = fenced.world(Ambient::Void, Vec::new());
+    let a = full.body_reach(&root);
+    let before = bank::refused_under_test();
+    let b = bank::with_cap(1, || capped.body_reach(&root));
+    let refused = bank::refused_under_test() - before;
+    assert!(
+        refused > 0,
+        "the cap refused no variant: it is not enforced"
+    );
+    let states_a: Vec<[i32; 3]> = a.states.keys().collect();
+    let states_b: Vec<[i32; 3]> = b.states.keys().collect();
+    assert_eq!(
+        states_a, states_b,
+        "the capped closure reached other states"
+    );
+    for c in &states_a {
+        assert_eq!(
+            a.succ(*c),
+            b.succ(*c),
+            "the edges out of {c:?} differ under the cap"
+        );
+    }
+    assert_eq!(a.edge_census(), b.edge_census());
+    eprintln!(
+        "a bank under a one-byte cap: {refused} variant(s) refused over the process; {} states and \
+         {} edges alike",
+        states_a.len(),
+        a.edge_census().iter().sum::<usize>()
+    );
+}
+
+/// **What the reach scratch bound does not count by name is covered by its
+/// terms' slack** (ADR-0037 §3, the cost line's declaration): a second world
+/// of the same window — the walled yard with a block set on its wall, a
+/// premise variant in substance, with its own pages, tables and bank
+/// variants — and a second closure over the base world from other roots,
+/// both built, and what the two graphs hold in the files together (every
+/// closure of both, every table entry, the one bank) is at most the bound for
+/// one configuration computed over the base store. Red if a second world or
+/// a second closure passes one configuration's bound; the case refuses a run
+/// where the second world built no graph of its own.
+#[test]
+fn a_second_world_and_a_second_closure_stay_under_one_configurations_bound() {
+    use crate::compiler::blockstate::{BlockMap, BlockState};
+    use crate::compiler::cost::RestCensus;
+    let b = walled_yard(([-2, 0, -2], [16, 0, 16]));
+    let base = b.world(Ambient::Void, Vec::new());
+    let mut edited = walled_yard(([-2, 0, -2], [16, 0, 16]));
+    edited.fill([3, 4, 14], [3, 4, 14]);
+    let edited = edited.world(Ambient::Void, Vec::new());
+    let mut store = BlockMap::new();
+    for (cells, name) in [
+        (&b.solid, "minecraft:stone"),
+        (&b.tall, "minecraft:oak_fence"),
+        (&b.water, "minecraft:water"),
+    ] {
+        for c in cells {
+            store.insert(*c, BlockState::new(name));
+        }
+    }
+    let (slo, shi) = store.section_bounds().expect("a store with cells");
+    let window = window_box(slo, shi, None);
+    let census = RestCensus::of(
+        &store,
+        window,
+        None,
+        32,
+        LAUNCH_REACH,
+        edges_per_node_at_most(),
+    );
+    let cells = [0, 1, 2]
+        .map(|a| (window.1[a] - window.0[a] + 1) as usize)
+        .iter()
+        .product::<usize>();
+    let bound = scratch_bound_of(ScratchInputs {
+        states: census.states_at_most(),
+        items: census.items_at_most,
+        chunk_items: census.chunk_items_at_most,
+        cells,
+    });
+    let params = ReachParams::shipped(base.unbounded_fall);
+    let _ = base.body_reach(&[[5, 1, 5]]);
+    // A root the first closure does not reach: the wall's top, three courses
+    // over the floor, which no jump from it climbs.
+    let _ = base.body_reach(&[[0, 4, 0]]);
+    let _ = edited.body_reach(&[[5, 1, 5]]);
+    let (ma, me) = (base.graph_memo(&params), edited.graph_memo(&params));
+    assert!(
+        !Arc::ptr_eq(&ma, &me),
+        "the edited yard is a graph of its own"
+    );
+    assert!(Arc::ptr_eq(&ma.bank, &me.bank), "one bank over one window");
+    let (a, e) = (ma.scratch_held(), me.scratch_held());
+    // A page both hold is held once; the bank is one, counted once.
+    let pages = |m: &GraphMemo| -> BTreeSet<(bool, u32)> {
+        m.dense
+            .cells
+            .pages
+            .iter()
+            .map(|p| (true, *p))
+            .chain(m.extra.cells.pages.iter().map(|p| (false, *p)))
+            .collect()
+    };
+    let shared: usize = pages(&ma)
+        .intersection(&pages(&me))
+        .map(|(code, _)| if *code { 4096 * 4 } else { 4096 * 2 })
+        .sum();
+    let held = ScratchBound {
+        snapshot: a.snapshot + e.snapshot - shared,
+        tables: a.tables + e.tables,
+        lists: a.lists + e.lists,
+        bank: a.bank,
+    };
+    let closures = ma.closures.lock().expect("closures").len();
+    assert!(
+        closures >= 2 && e.tables > 0 && e.lists > 0,
+        "the case binds nothing: {closures} closure(s) over the base, the edited yard's tables \
+         {} and lists {}",
+        e.tables,
+        e.lists
+    );
+    for (what, got, at_most) in [
+        ("the snapshot's pages", held.snapshot, bound.snapshot),
+        ("the node tables", held.tables, bound.tables),
+        ("the closures' lists", held.lists, bound.lists),
+    ] {
+        assert!(
+            got <= at_most,
+            "two worlds and two closures: {what} hold {got} byte(s) over one configuration's \
+             {at_most}"
+        );
+        eprintln!(
+            "two worlds and two closures: {what} {got} <= {at_most} (x{:.1})",
+            at_most as f64 / got.max(1) as f64
+        );
+    }
+}
+
+/// **What the bank records of a node is the same in every schedule**
+/// (`bank`'s module docs): a node's variant — the cells its head and its runs
+/// read, with what each held and which runs read it, the runs' boxes and
+/// what they did — is a function of the world and the node, whichever
+/// variant the expansion took runs from, so a build's bank is the same at
+/// every thread count. Generated cases: the Bell yard and edits of it that
+/// keep its window (wall cells opened, stones set in the yard), each world's
+/// nodes expanded with a forced prior in three orders — the worlds in turn,
+/// in reverse, and each alone against an empty bank — and every variant
+/// compared byte for byte; the two shared banks hold the same variants in the
+/// same order. Bound: runs taken as written in both shared orders, and nodes
+/// whose variant is compared after one was taken.
+#[test]
+fn a_node_records_the_same_variant_whichever_graph_banked_first() {
+    let root = [[5, 1, 5]];
+    let mut worlds = vec![bell_yard()];
+    let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+    let mut next = |n: u64| {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        (seed % n) as i32
+    };
+    for _ in 0..5 {
+        let mut b = bell_yard_build();
+        for _ in 0..2 {
+            // A wall cell opened two high, on a side the seed picks.
+            let i = 1 + next(13);
+            let (x, z) = match next(4) {
+                0 => (i, 0),
+                1 => (i, 14),
+                2 => (0, i),
+                _ => (14, i),
+            };
+            b.solid.remove(&[x, 1, z]);
+            b.solid.remove(&[x, 2, z]);
+            // A stone set in the yard, clear of the root.
+            let s = [1 + next(13), 1, 1 + next(13)];
+            if s != [5, 1, 5] {
+                b.solid.insert(s);
+            }
+        }
+        worlds.push(b.world(Ambient::Void, Vec::new()));
+    }
+    let params = ReachParams::shipped(worlds[0].unbounded_fall);
+    let memos: Vec<_> = worlds
+        .iter()
+        .map(|w| {
+            let _ = w.body_reach(&root);
+            w.graph_memo(&params)
+        })
+        .collect();
+    let keys: Vec<Vec<FlownKey>> = memos
+        .iter()
+        .map(|m| {
+            let mut k: Vec<FlownKey> = m
+                .flown
+                .entries()
+                .into_iter()
+                .flat_map(|(c, l)| l.into_iter().map(move |(q, _)| (c, q)))
+                .collect();
+            k.sort();
+            k
+        })
+        .collect();
+    type Recorded = BTreeMap<(usize, FlownKey), Vec<u8>>;
+    // Every node of the worlds in `order`, each against `bank` (a fresh bank
+    // per world where `bank` is `None`): expanded, taking runs from the
+    // nearest variant held, and kept.
+    let record = |order: &[usize], shared: Option<&bank::Bank>| -> Recorded {
+        let mut out = Recorded::new();
+        for &wi in order {
+            let alone;
+            let b = match shared {
+                Some(b) => b,
+                None => {
+                    alone = bank::Bank::holding(Vec::new());
+                    &alone
+                }
+            };
+            let (w, m) = (&worlds[wi], &memos[wi]);
+            for key in &keys[wi] {
+                let volumes = |bx| w.volumes_near(bx);
+                let jumps = w.jumps_from(key.0);
+                let x = b.expansion(
+                    key,
+                    &m.dense,
+                    &m.extra,
+                    &w.node_boxes(key.0),
+                    &jumps,
+                    &volumes,
+                );
+                let e = Arc::new(w.expand(m, &params, key.0, key.1, Some(&x)));
+                let Some(rb) = e.read else { continue };
+                let v = b.keep(*key, x, &m.extra, jumps, w.volumes_near(rb), &e);
+                out.insert((wi, *key), super::persist::encode_variant(&v));
+            }
+        }
+        out
+    };
+    let forward: Vec<usize> = (0..worlds.len()).collect();
+    let reverse: Vec<usize> = forward.iter().rev().copied().collect();
+    let (fb, rb) = (
+        bank::Bank::holding(Vec::new()),
+        bank::Bank::holding(Vec::new()),
+    );
+    let alone = record(&forward, None);
+    let fwd = record(&forward, Some(&fb));
+    let rev = record(&reverse, Some(&rb));
+    let compared = alone.len();
+    assert_eq!(fwd.len(), compared);
+    assert_eq!(rev.len(), compared);
+    let mut moved = Vec::new();
+    for (k, a) in &alone {
+        for (name, other) in [("in turn", &fwd), ("in reverse", &rev)] {
+            if other[k] != *a {
+                moved.push(format!(
+                    "{name}: world {} node {:?}: {} byte(s) against {} alone",
+                    k.0,
+                    k.1,
+                    other[k].len(),
+                    a.len()
+                ));
+            }
+        }
+    }
+    assert!(
+        moved.is_empty(),
+        "{} of 2 x {compared} variant(s) moved with the order the graphs banked in: {:?}",
+        moved.len(),
+        &moved[..moved.len().min(8)]
+    );
+    let held = |b: &bank::Bank| -> Vec<(FlownKey, Vec<Vec<u8>>)> {
+        b.held()
+            .into_iter()
+            .map(|(k, vs)| {
+                (
+                    k,
+                    vs.iter()
+                        .map(|v| super::persist::encode_variant(v))
+                        .collect(),
+                )
+            })
+            .collect()
+    };
+    assert_eq!(held(&fb), held(&rb), "the two orders' banks differ");
+    assert_eq!(fb.census(), rb.census());
+    let distinct: BTreeSet<(&FlownKey, &Vec<u8>)> =
+        alone.iter().map(|((_, k), v)| (k, v)).collect();
+    eprintln!(
+        "bank schedules: {} world(s), {compared} variant(s) compared in three orders, {} distinct; \
+         runs taken as written {} in turn and {} in reverse; banks of {:?} (variants, bytes)",
+        worlds.len(),
+        distinct.len(),
+        fb.reused_runs(),
+        rb.reused_runs(),
+        fb.census()
+    );
+    // Bound, not vacuous: both shared orders took runs from a prior.
+    assert!(compared > 0);
+    assert!(fb.reused_runs() > 0 && rb.reused_runs() > 0);
 }

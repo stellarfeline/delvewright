@@ -5,6 +5,7 @@ use super::*;
 use crate::compiler::failure::Failure;
 use crate::compiler::plan::Plan;
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 /// How many pockets a `DW0921` report names before summarising the rest.
 const POCKET_LIST_LIMIT: usize = 6;
@@ -370,7 +371,7 @@ fn verify_bodies_can_leave(
                         rest.push(pocket);
                         continue;
                     }
-                    let how = w.way_in_words(&pocket, &trapped, &judged.preds);
+                    let how = w.way_in_words(&pocket, &trapped, &judged.reach);
                     hatch_described.push(format!(
                         "{} cell(s) around {:?} ({when}): {how}, and {}",
                         pocket.len(),
@@ -386,7 +387,7 @@ fn verify_bodies_can_leave(
             let described: Vec<String> = kept
                 .iter()
                 .map(|pocket| {
-                    let how = w.way_in_words(pocket, &trapped, &judged.preds);
+                    let how = w.way_in_words(pocket, &trapped, &judged.reach);
                     format!(
                         "{} cell(s) around {:?} ({when}): {how}, and no walk, fall, jump or swim \
                      leads from any of them back to the route",
@@ -571,11 +572,9 @@ pub struct TrappedPlaces {
     /// The cells of `reached` it cannot leave, split into touching places
     /// (26-neighbourhood), each sorted, in the order of their least cell.
     pub pockets: Vec<Vec<[i32; 3]>>,
-    /// Every reached cell's predecessors, with the edge that joins them, so a
-    /// report can say how a body got in.
-    pub preds: BTreeMap<[i32; 3], Vec<([i32; 3], Edge)>>,
-    /// The reach graph's closure the judgement was taken over.
-    pub reach: Reach,
+    /// The reach graph's closure the judgement was taken over; its `preds`
+    /// say how a body got in.
+    pub reach: Arc<Reach>,
 }
 
 impl World {
@@ -592,7 +591,6 @@ impl World {
         TrappedPlaces {
             reached,
             pockets: pockets_of(&trapped),
-            preds: reach.preds.clone(),
             reach,
         }
     }
@@ -603,18 +601,17 @@ impl World {
         &self,
         pocket: &[[i32; 3]],
         trapped: &BTreeSet<[i32; 3]>,
-        preds: &BTreeMap<[i32; 3], Vec<([i32; 3], Edge)>>,
+        reach: &Reach,
     ) -> String {
         let entry = pocket.iter().find_map(|c| {
-            preds
-                .get(c)
-                .and_then(|ps| ps.iter().find(|(p, _)| !trapped.contains(p)))
-                .map(|(p, e)| (*p, *c, e))
+            reach
+                .first_pred(*c, |p| !trapped.contains(p))
+                .map(|(p, e)| (p, *c, e))
         });
         match entry {
             Some((from, to, edge)) => format!(
                 "a body gets in from {from:?} to {to:?} by {}",
-                movement_words(self, from, edge)
+                movement_words(self, from, &edge)
             ),
             None => "a body gets in".to_string(),
         }
@@ -768,7 +765,7 @@ impl World {
         roots: &[[i32; 3]],
         ways_out: &BTreeSet<[i32; 3]>,
         returned: Option<([i32; 3], [i32; 3])>,
-    ) -> (BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>, Reach) {
+    ) -> (BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>, Arc<Reach>) {
         let mut reach = self.body_reach(roots);
         // A node the closure did not fly has only the edges its envelope asked
         // for (spec-0113 §4.3: the envelope proves what a node reaches, never
@@ -810,35 +807,18 @@ impl World {
         ways_out: &BTreeSet<[i32; 3]>,
         returned: Option<([i32; 3], [i32; 3])>,
     ) -> BTreeSet<[i32; 3]> {
-        let seen = reach.cells();
         // The ways out: the cells that count as having left (the route itself,
         // for `DW0921`) that the closure reaches, and every reached cell the
-        // boundary clock carries a body back from.
-        let mut back: BTreeSet<[i32; 3]> = seen
-            .iter()
-            .copied()
-            .filter(|c| ways_out.contains(c) || returned_from(returned, *c))
-            .collect();
-        let mut queue: std::collections::VecDeque<[i32; 3]> = back.iter().copied().collect();
-        let mut sea_back = false;
-        while let Some(cur) = queue.pop_front() {
-            if !sea_back && reach.open_sea.contains(&cur) {
-                sea_back = true;
-                for s in &reach.open_sea {
-                    if back.insert(*s) {
-                        queue.push_back(*s);
-                    }
-                }
-            }
-            if let Some(ps) = reach.preds.get(&cur) {
-                for (p, _) in ps {
-                    if back.insert(*p) {
-                        queue.push_back(*p);
-                    }
-                }
-            }
-        }
-        back
+        // boundary clock carries a body back from — walked back from over the
+        // predecessor edges, reach chunk by reach chunk ([`Reach::reaching`]).
+        reach.reaching(
+            reach
+                .states
+                .keys()
+                .filter(|c| ways_out.contains(c) || returned_from(returned, *c)),
+            |_| true,
+            true,
+        )
     }
 }
 
@@ -1067,12 +1047,12 @@ mod leave_tests {
         solid.remove(&[3, 0, 3]);
         solid.insert([3, -1, 3]);
         let occ = crate::compiler::assembled::Occupancy {
-            solid,
-            tall: BTreeSet::new(),
-            use_gates: BTreeSet::new(),
+            solid: solid.into(),
+            tall: (BTreeSet::new()).into(),
+            use_gates: (BTreeSet::new()).into(),
             flooded: [[3, 0, 3]].into_iter().collect(),
-            partial: BTreeMap::new(),
-            waterloggable: BTreeSet::new(),
+            partial: (BTreeMap::new()).into(),
+            waterloggable: (BTreeSet::new()).into(),
             lava: [[3, 0, 3]].into_iter().collect(),
             climb: Default::default(),
             unheld_climb: Default::default(),
@@ -1097,12 +1077,12 @@ mod leave_tests {
         solid.remove(&[12, 0, 12]);
         solid.insert([12, -1, 12]);
         let occ = crate::compiler::assembled::Occupancy {
-            solid,
-            tall: BTreeSet::new(),
-            use_gates: BTreeSet::new(),
+            solid: solid.into(),
+            tall: (BTreeSet::new()).into(),
+            use_gates: (BTreeSet::new()).into(),
             flooded: [[12, 0, 12]].into_iter().collect(),
-            partial: BTreeMap::new(),
-            waterloggable: BTreeSet::new(),
+            partial: (BTreeMap::new()).into(),
+            waterloggable: (BTreeSet::new()).into(),
             lava: [[12, 0, 12]].into_iter().collect(),
             climb: Default::default(),
             unheld_climb: Default::default(),

@@ -37,21 +37,21 @@ pub(in crate::compiler::nav) fn floored_with_lethal(
     let solid_hides = solid.clone();
     World::from_occupancy(
         crate::compiler::assembled::Occupancy {
-            solid,
-            tall: BTreeSet::new(),
-            use_gates: BTreeSet::new(),
-            flooded: BTreeSet::new(),
-            partial: BTreeMap::new(),
+            solid: solid.into(),
+            tall: (BTreeSet::new()).into(),
+            use_gates: (BTreeSet::new()).into(),
+            flooded: (BTreeSet::new()).into(),
+            partial: (BTreeMap::new()).into(),
             // This world has no ambient water, so nothing reads it.
-            waterloggable: BTreeSet::new(),
-            lava: BTreeSet::new(),
+            waterloggable: (BTreeSet::new()).into(),
+            lava: (BTreeSet::new()).into(),
             climb: Default::default(),
             unheld_climb: Default::default(),
             material: Default::default(),
             footprints: Default::default(),
             leaves: Default::default(),
             // A synthetic solid cell is a full cube of stone: it hides.
-            hiding: solid_hides,
+            hiding: (solid_hides).into(),
             hurting: Default::default(),
         },
         // The premises spelled out rather than derived from
@@ -194,20 +194,20 @@ pub(in crate::compiler::nav) fn classified(
     let solid_hides = solid.clone();
     World::from_occupancy(
         crate::compiler::assembled::Occupancy {
-            solid,
+            solid: solid.into(),
             tall: tall.iter().copied().collect(),
             use_gates: use_gates.iter().copied().collect(),
-            flooded: BTreeSet::new(),
-            partial: BTreeMap::new(),
-            waterloggable: BTreeSet::new(),
-            lava: BTreeSet::new(),
+            flooded: (BTreeSet::new()).into(),
+            partial: (BTreeMap::new()).into(),
+            waterloggable: (BTreeSet::new()).into(),
+            lava: (BTreeSet::new()).into(),
             climb: Default::default(),
             unheld_climb: Default::default(),
             material: Default::default(),
             footprints: Default::default(),
             leaves: Default::default(),
             // A synthetic solid cell is a full cube of stone: it hides.
-            hiding: solid_hides,
+            hiding: (solid_hides).into(),
             hurting: Default::default(),
         },
         Premises::geometry_only(),

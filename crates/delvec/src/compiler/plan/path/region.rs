@@ -437,6 +437,14 @@ impl RegionEvents {
     }
 }
 
+impl RegionEvents {
+    /// How many region writes the path carries: one more than this bounds
+    /// the distinct region states a proof judges (`nav::shutmodel`).
+    pub fn writes(&self) -> usize {
+        self.writes.len()
+    }
+}
+
 impl From<Vec<RegionEvent>> for RegionEvents {
     fn from(writes: Vec<RegionEvent>) -> Self {
         RegionEvents {

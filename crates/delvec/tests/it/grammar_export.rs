@@ -99,6 +99,9 @@ fn a_zone_that_fits_one_template_exports_exactly_as_before() {
         );
         assert_eq!(via_zone.structure_file, direct.structure_file);
         assert_eq!(via_zone.metadata_file, direct.metadata_file);
+        // The size `detail` states a prepared piece at is the template's bytes.
+        let zone = ZoneExport::Single(via_zone);
+        assert_eq!((zone.nbt_bytes(), zone.nbt_files()), (direct.nbt.len(), 1));
     }
 
     // ...including at exactly the cap, which is the boundary the arithmetic
@@ -114,13 +117,18 @@ fn a_zone_that_fits_one_template_exports_exactly_as_before() {
         "a region of exactly {cap} on every axis is one template, not four"
     );
     let over = Box3::at_origin([cap, cap, cap + 1]);
-    assert!(
-        matches!(
-            export_zone(&temple(), over, &opts, "grammar-temple").unwrap(),
-            ZoneExport::Tiled(_)
-        ),
-        "one cell past the cap is a tile set, and never a refusal"
+    let tiled = export_zone(&temple(), over, &opts, "grammar-temple").unwrap();
+    let ZoneExport::Tiled(set) = &tiled else {
+        panic!("one cell past the cap is a tile set, and never a refusal");
+    };
+    // Stated over every tile: the sum of the files a commit writes.
+    assert_eq!(tiled.nbt_files(), set.tiles.len());
+    assert!(set.tiles.len() > 1);
+    assert_eq!(
+        tiled.nbt_bytes(),
+        set.tiles.iter().map(|t| t.nbt.len()).sum::<usize>()
     );
+    assert!(tiled.nbt_bytes() > 0);
 }
 
 /// The manifest describes the ZONE: the whole region, the seed and program hash

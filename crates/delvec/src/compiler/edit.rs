@@ -1309,7 +1309,7 @@ fn resolve_shape(
                 .filter(|cell| {
                     assembled
                         .blocks
-                        .get(*cell)
+                        .get(cell)
                         .is_some_and(|name| matches.contains(strip_ns(base_id(name))))
                 })
                 .copied()

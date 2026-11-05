@@ -824,3 +824,846 @@ fn water_at_a_box_edge_leaves_no_way_round_the_piece() {
         "the light probe's floor and the piece's own world disagree"
     );
 }
+
+/// A node table's every list, in cell order.
+type Table = Vec<([i32; 3], Vec<(super::Quadrants, super::NodeEdges)>)>;
+
+/// Everything a closure answers, read through its own API: the states, every
+/// state's successors and predecessors in order, the flags and the counts —
+/// and the node tables of the graph it was taken over.
+#[derive(Debug, PartialEq)]
+struct Answered {
+    states: Vec<([i32; 3], super::RestKind)>,
+    succ: Vec<Vec<super::Edge>>,
+    preds: Vec<Vec<([i32; 3], super::Edge)>>,
+    census: [usize; 4],
+    edge_census: [usize; 6],
+    leaves_world: Vec<[i32; 3]>,
+    open_sea: Vec<[i32; 3]>,
+    fatal: Vec<([i32; 3], super::Death)>,
+    work: (u64, u64),
+    unflown: Vec<bool>,
+    nodes: Table,
+    flown: Table,
+}
+
+/// What `w`'s closure from `roots` answers, grown by every launch of every
+/// standing and holding state until none is left unflown (a copy taken to
+/// grow, [`World::fly_cells`]), taken with new lists at chunk side `side`.
+/// Flying to that fixpoint is what makes the node tables comparable across
+/// sides: a graph's memo is shared by every test that asks for the world at
+/// that side, and one that flew a node this reading had not would otherwise
+/// show in the tables of one side and not the other.
+fn answered(w: &World, roots: &[[i32; 3]], side: i32) -> Answered {
+    super::chunks::at_side(side, || {
+        let mut r = w.body_reach(roots);
+        loop {
+            let unflown: Vec<[i32; 3]> = r.states.keys().filter(|c| r.unflown(*c)).collect();
+            if unflown.is_empty() {
+                break;
+            }
+            w.fly_cells(&mut r, &unflown);
+        }
+        let memo = w.graph_memo(&super::ReachParams::shipped(w.unbounded_fall));
+        let cells: Vec<[i32; 3]> = r.states.keys().collect();
+        let strip = |l: Table| {
+            l.into_iter()
+                .map(|(c, v)| {
+                    let mut v = v;
+                    v.sort_by_key(|(q, _)| *q);
+                    (c, v)
+                })
+                .collect::<Vec<_>>()
+        };
+        let succ: Vec<Vec<super::Edge>> = cells.iter().map(|c| r.succ(*c)).collect();
+        let preds: Vec<Vec<([i32; 3], super::Edge)>> = cells.iter().map(|c| r.preds(*c)).collect();
+        // The records read back from the lists are the edges counted at join
+        // (ADR-0037 §2): a list that lost or doubled a record at every side
+        // alike would otherwise answer the same at every side.
+        let joined: usize =
+            r.edge_census().iter().sum::<usize>() - r.leaves_world.len() - r.open_sea.len();
+        assert_eq!(
+            succ.iter().map(Vec::len).sum::<usize>(),
+            joined,
+            "the successor records read back are not the edges counted at join"
+        );
+        assert_eq!(
+            preds.iter().map(Vec::len).sum::<usize>(),
+            joined,
+            "the predecessor records read back are not the edges counted at join"
+        );
+        Answered {
+            states: r.states.iter().collect(),
+            succ,
+            preds,
+            census: r.census(),
+            edge_census: r.edge_census(),
+            leaves_world: r.leaves_world.iter().copied().collect(),
+            open_sea: r.open_sea.iter().copied().collect(),
+            fatal: r.fatal.iter().map(|(c, d)| (*c, *d)).collect(),
+            work: (r.simulated, r.credited),
+            unflown: cells.iter().map(|c| r.unflown(*c)).collect(),
+            nodes: strip(memo.nodes.entries()),
+            flown: strip(memo.flown.entries()),
+        }
+    })
+}
+
+/// **No answer of the reach graph depends on its chunk side or its resident
+/// budget** (ADR-0037 §4): every generated course, the Bell yard (a void's
+/// edge), the jetty (the open sea) and the garden, asked of a closure whose
+/// edge lists and node tables are kept in chunks of sixteen columns, of seven,
+/// and of two under a budget of one byte — so every list is cut across chunks
+/// and every chunk is written out and read back on every use. Red on any
+/// difference in any answer: the states, every state's successors and
+/// predecessors in order, the flags, the counts and both node tables. (The
+/// sides are this test's own: a graph is kept per side, and the node tables of
+/// one other tests share hold what those tests flew.)
+#[test]
+fn no_answer_depends_on_the_chunk_side_or_the_budget() {
+    let worlds = invariance_worlds();
+    let (mut states, mut edges, mut sea, mut crossing, mut holding) = (0, 0, 0, 0, 0);
+    let mut read_back = 0u64;
+    for (name, w, roots) in &worlds {
+        let whole = answered(w, roots, 16);
+        let odd = answered(w, roots, 7);
+        let cut = super::budget::with_budget(1, || answered(w, roots, 2));
+        // The snapshot cut to one resident page of each type, over a graph of
+        // its own (a side no other case takes): every read past a thread's
+        // recent pages goes back to the file.
+        let loads = super::pages::traffic().2;
+        let paged = super::budget::with_budget(1, || answered(w, roots, 5));
+        read_back += super::pages::traffic().2 - loads;
+        assert_eq!(
+            whole, paged,
+            "{name}: the graph over a snapshot of one resident page answers otherwise"
+        );
+        assert_eq!(
+            whole, odd,
+            "{name}: the graph in seven-column chunks answers otherwise"
+        );
+        assert_eq!(
+            whole, cut,
+            "{name}: the graph cut in two-column chunks answers otherwise"
+        );
+        states += whole.states.len();
+        holding += whole.census[3];
+        edges += whole.succ.iter().map(Vec::len).sum::<usize>();
+        sea += whole.open_sea.len();
+        crossing += whole
+            .states
+            .iter()
+            .zip(&whole.succ)
+            .flat_map(|((c, _), es)| es.iter().map(move |e| (*c, e.to)))
+            .filter(|(a, b)| {
+                (a[0].div_euclid(2), a[2].div_euclid(2)) != (b[0].div_euclid(2), b[2].div_euclid(2))
+            })
+            .count();
+    }
+    eprintln!(
+        "chunk invariance: {} world(s), {states} state(s) ({holding} holding), {edges} edge(s) \
+         ({crossing} crossing a two-column chunk face), {sea} open-sea state(s); {read_back} \
+         snapshot page(s) read back under a budget of one",
+        worlds.len()
+    );
+    assert!(
+        !worlds.is_empty()
+            && states > 0
+            && holding > 0
+            && edges > 0
+            && crossing > 0
+            && sea > 0
+            && read_back > 0,
+        "the cases bind nothing"
+    );
+}
+
+/// A floor at y = 64 over x 0..=6, z 0..=2, a solid mass at x 3..=6 up to
+/// y = 68 (stood on at y = 69), and a ladder hanging on its west face at
+/// x = 2, z = 1, y 65..=68: the one way up is four holding states.
+fn ladder_cliff() -> World {
+    let mut cells: Vec<([i32; 3], &str)> = Vec::new();
+    for x in 0..=6 {
+        for z in 0..=2 {
+            cells.push(([x, 64, z], "minecraft:stone"));
+            if x >= 3 {
+                for y in 65..=68 {
+                    cells.push(([x, y, z], "minecraft:stone"));
+                }
+            }
+        }
+    }
+    for y in 65..=68 {
+        cells.push(([2, y, 1], "minecraft:ladder[facing=west]"));
+    }
+    crate::compiler::nav::testkit::blocks_world(&cells)
+}
+
+/// A reef under an ocean (sea level 62, floor 54): a pillar rising out of the
+/// sea at x 5..=7, z 0..=2 (stood on at y 67), and beside it a walled basin,
+/// x 8..=15, z 0..=7, its walls up to y 64 and its inside water to y 63 — a
+/// second water body the sea does not touch. From the pillar a body steps
+/// onto the wall and jumps into either water: the plain sea in two
+/// components, with the surface, the floor layer and the cells beside every
+/// wall as their boundary.
+fn reef() -> World {
+    let mut b = super::tests::Build::default();
+    b.fill([5, 55, 0], [7, 66, 2]);
+    for y in 55..=64 {
+        for x in 8..=15 {
+            for z in 0..=7 {
+                if x == 8 || x == 15 || z == 0 || z == 7 {
+                    b.fill([x, y, z], [x, y, z]);
+                }
+            }
+        }
+    }
+    for y in 55..=63 {
+        for x in 9..=14 {
+            for z in 1..=6 {
+                b.water.insert([x, y, z]);
+            }
+        }
+    }
+    let built = vec![
+        ("prefab/pillar".to_string(), ([5, 55, 0], [7, 66, 2])),
+        ("prefab/basin".to_string(), ([8, 54, 0], [15, 64, 7])),
+    ];
+    b.world(
+        super::Ambient::Ocean(crate::compiler::nav::Sea {
+            level: 62,
+            floor_top: 54,
+        }),
+        built,
+    )
+}
+
+/// **The ground in the sea's band is no water** (ADR-0037 §2, the plain sea
+/// measured): under an ocean, a cell the assembly wrote a block into — the
+/// terrain's ground, outside every placed piece's box — is no rest state and
+/// is never entered, however deep in the sea's band it lies; the sea beside
+/// it is. A headland of stone through the band (y 55..=66 over x 0..=9, z
+/// 0..=9, no `built` box) with a body on top: the closure from the top holds
+/// every sea state it reaches and no cell of the stone, and no stone cell is
+/// a rest state. Refuses a run that reaches no sea. Perturbation: ambient
+/// water judged by the pieces' boxes alone → red (the stone's band cells are
+/// submerged states and the closure fills the headland).
+#[test]
+fn the_ground_in_the_seas_band_is_no_water() {
+    let mut b = super::tests::Build::default();
+    b.fill([0, 55, 0], [9, 66, 9]);
+    let w = b.world(
+        super::Ambient::Ocean(crate::compiler::nav::Sea {
+            level: 62,
+            floor_top: 54,
+        }),
+        Vec::new(),
+    );
+    let stone = |c: &[i32; 3]| {
+        (0..=9).contains(&c[0]) && (55..=66).contains(&c[1]) && (0..=9).contains(&c[2])
+    };
+    for x in 0..=9 {
+        for z in 0..=9 {
+            for y in 55..=62 {
+                assert_eq!(
+                    w.rest_kind([x, y, z]),
+                    None,
+                    "stone at {:?} rests a body",
+                    [x, y, z]
+                );
+            }
+        }
+    }
+    assert_eq!(w.rest_kind([-1, 62, 5]), Some(super::RestKind::Afloat));
+    assert_eq!(w.rest_kind([-1, 60, 5]), Some(super::RestKind::Submerged));
+    let r = w.body_reach(&[[5, 67, 5]]);
+    let sea = r.states.keys().filter(|c| w.ambient_water(*c)).count();
+    let inside = r.states.keys().filter(stone).count();
+    eprintln!(
+        "headland: {} state(s), {sea} in the sea, {inside} in the stone",
+        r.states.len()
+    );
+    assert!(sea > 0, "the case binds nothing: the sea is not reached");
+    assert_eq!(inside, 0, "the closure entered the stone");
+}
+
+/// The worlds the chunk invariance and the closure's exactness are asked of:
+/// every generated course, the Bell yard (a void's edge), the jetty (the open
+/// sea), the garden, the ladder cliff (holding states) and the reef (the
+/// plain sea in two components).
+fn invariance_worlds() -> Vec<(String, World, Vec<[i32; 3]>)> {
+    let mut worlds: Vec<(String, World, Vec<[i32; 3]>)> = Vec::new();
+    for seed in 0..12 {
+        let case = generate(seed);
+        let mut p = Premises::geometry_only();
+        p.declared_jumps = case.jumps.clone();
+        let w = World::from_solid_cells(case.solid.clone()).with_premises(p);
+        worlds.push((format!("course {seed}"), w, vec![case.root]));
+    }
+    worlds.push((
+        "the Bell yard".into(),
+        super::tests::bell_yard(),
+        vec![[5, 1, 5]],
+    ));
+    worlds.push(("the jetty".into(), super::tests::jetty(), vec![[2, 65, 2]]));
+    worlds.push(("the garden".into(), super::tests::garden(), vec![[1, 1, 1]]));
+    worlds.push(("the ladder cliff".into(), ladder_cliff(), vec![[0, 65, 1]]));
+    worlds.push(("the reef".into(), reef(), vec![[6, 67, 1]]));
+    worlds
+}
+
+/// **The summarised sea is the closure expanded cell by cell** (ADR-0037 §2):
+/// every invariance world asked of the closure that floods the plain sea by
+/// component and computes its dives on read, and of the closure that expands
+/// every water cell as a node of its own (the test knob `unsummarised`, at a
+/// side of its own) — every state, every state's successors and predecessors
+/// in order, the flags, the counts and the work equal; the node table of the
+/// summarised graph holds no plain-sea cell, and with those cells taken out
+/// of the other's the two tables are equal. Refuses a run with no plain-sea
+/// state, no world of two components, and no boundary (a water state that is
+/// not plain).
+#[test]
+fn the_summarised_sea_is_the_closure_expanded_cell_by_cell() {
+    let worlds = invariance_worlds();
+    let (mut plain, mut boundary, mut two) = (0usize, 0usize, 0usize);
+    for (name, w, roots) in &worlds {
+        let whole = answered(w, roots, 16);
+        let expanded = super::unsummarised(|| answered(w, roots, 13));
+        let r = super::chunks::at_side(16, || w.body_reach(roots));
+        let plain_here: BTreeSet<[i32; 3]> =
+            r.states.keys().filter(|c| r.states.plain(c)).collect();
+        for (a, b, what) in [
+            (
+                format!("{:?}", whole.states),
+                format!("{:?}", expanded.states),
+                "states",
+            ),
+            (
+                format!("{:?}", whole.succ),
+                format!("{:?}", expanded.succ),
+                "succ",
+            ),
+            (
+                format!("{:?}", whole.preds),
+                format!("{:?}", expanded.preds),
+                "preds",
+            ),
+            (
+                format!("{:?}", whole.census),
+                format!("{:?}", expanded.census),
+                "census",
+            ),
+            (
+                format!("{:?}", whole.edge_census),
+                format!("{:?}", expanded.edge_census),
+                "edge census",
+            ),
+            (
+                format!("{:?}", whole.leaves_world),
+                format!("{:?}", expanded.leaves_world),
+                "leaves world",
+            ),
+            (
+                format!("{:?}", whole.open_sea),
+                format!("{:?}", expanded.open_sea),
+                "open sea",
+            ),
+            (
+                format!("{:?}", whole.fatal),
+                format!("{:?}", expanded.fatal),
+                "fatal",
+            ),
+            (
+                format!("{:?}", whole.work),
+                format!("{:?}", expanded.work),
+                "work",
+            ),
+            (
+                format!("{:?}", whole.unflown),
+                format!("{:?}", expanded.unflown),
+                "unflown",
+            ),
+            (
+                format!("{:?}", whole.flown),
+                format!("{:?}", expanded.flown),
+                "flown table",
+            ),
+        ] {
+            assert_eq!(
+                a, b,
+                "{name}: the summarised closure answers {what} otherwise"
+            );
+        }
+        assert!(
+            whole.nodes.iter().all(|(c, _)| !plain_here.contains(c)),
+            "{name}: the summarised graph's node table holds a plain-sea cell"
+        );
+        let kept: Table = expanded
+            .nodes
+            .iter()
+            .filter(|(c, _)| !plain_here.contains(c))
+            .cloned()
+            .collect();
+        assert_eq!(
+            whole.nodes, kept,
+            "{name}: the node tables differ beyond the plain-sea cells"
+        );
+        let water_not_plain = r
+            .states
+            .iter()
+            .filter(|(c, k)| {
+                matches!(k, super::RestKind::Afloat | super::RestKind::Submerged)
+                    && !plain_here.contains(c)
+            })
+            .count();
+        plain += plain_here.len();
+        boundary += water_not_plain;
+        if r.sea_components >= 2 {
+            two += 1;
+        }
+        eprintln!(
+            "{name}: {} state(s), {} plain sea in {} component(s), {water_not_plain} water \
+             state(s) not plain",
+            r.states.len(),
+            plain_here.len(),
+            r.sea_components
+        );
+    }
+    assert!(
+        plain > 0 && boundary > 0 && two > 0,
+        "the cases bind nothing: {plain} plain, {boundary} boundary, {two} world(s) of two \
+         components"
+    );
+}
+
+/// **A plain-sea cell is the one `expand` gives** (ADR-0037 §2): over every
+/// cell of the window of each invariance world under an ocean, a cell
+/// `plain_sea` holds for expands, through the general rule, to exactly
+/// `plain_node` — submerged, six dives in cell order, nothing flown, nothing
+/// flagged, nothing read; and a submerged cell it refuses expands to
+/// something else (a climb out, a dive short, or a rim's open-sea flag).
+/// Refuses a run with no plain cell and no refused submerged cell.
+#[test]
+fn a_plain_sea_cell_is_the_one_expand_gives() {
+    let params = super::ReachParams::shipped(false);
+    let (mut plain, mut refused, mut refused_otherwise) = (0usize, 0usize, 0usize);
+    for (name, w, _) in invariance_worlds() {
+        if !matches!(w.ambient, super::Ambient::Ocean(_)) {
+            continue;
+        }
+        let memo = w.graph_memo(&params);
+        let d = &memo.dense;
+        for x in d.lo[0]..d.lo[0] + d.dims[0] {
+            for y in d.lo[1]..d.lo[1] + d.dims[1] {
+                for z in d.lo[2]..d.lo[2] + d.dims[2] {
+                    let c = [x, y, z];
+                    let e = w.expand(&memo, &params, c, 0, None);
+                    if w.plain_sea(d, c) {
+                        plain += 1;
+                        assert_eq!(
+                            e,
+                            super::plain_node(c),
+                            "{name}: the plain-sea cell {c:?} expands otherwise"
+                        );
+                    } else if e.kind == Some(super::RestKind::Submerged) {
+                        refused += 1;
+                        if e != super::plain_node(c) {
+                            refused_otherwise += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    eprintln!(
+        "plain sea: {plain} cell(s) the rule holds for, {refused} submerged cell(s) it refuses, \
+         {refused_otherwise} of them expanding to something else"
+    );
+    assert!(plain > 0 && refused_otherwise > 0, "the cases bind nothing");
+    assert_eq!(
+        refused, refused_otherwise,
+        "a submerged cell the rule refuses expands to the six dives: the rule is too narrow"
+    );
+}
+
+/// **The closure is the one every launch gives** (spec-0113 §4.7, ADR-0037
+/// §2): the chunked closure, whose rounds fly only the launches a node's
+/// envelope still asks for, reaches every state — and finds every way out of
+/// the world — that flying every launch of every standing and holding state,
+/// round after round until nothing new is reached, reaches; at chunk sides of
+/// sixteen columns and of two. Red on any state or exit either way, and on
+/// cases where flying everything reaches nothing the pruned rounds did not
+/// fly, or where no holding state flew (either would leave the comparison
+/// binding nothing: the ladder cliff is reached only through its holding
+/// states, so a round that left them unflown is red here).
+#[test]
+fn the_chunked_closure_is_the_one_every_launch_gives() {
+    let (mut states, mut pruned, mut worlds_n, mut holding) = (0usize, 0usize, 0usize, 0usize);
+    for (name, w, roots) in invariance_worlds() {
+        for side in [16, 2] {
+            super::chunks::at_side(side, || {
+                let mut r = w.body_reach(&roots);
+                let closed: Vec<([i32; 3], super::RestKind)> = r.states.iter().collect();
+                let exits: Vec<[i32; 3]> = r.leaves_world.iter().copied().collect();
+                let unflown = r.states.keys().filter(|c| r.unflown(*c)).count();
+                loop {
+                    let nodes: Vec<[i32; 3]> = r.states.keys().filter(|c| r.unflown(*c)).collect();
+                    if nodes.is_empty() {
+                        break;
+                    }
+                    w.fly_cells(&mut r, &nodes);
+                }
+                let every: Vec<([i32; 3], super::RestKind)> = r.states.iter().collect();
+                assert_eq!(
+                    closed, every,
+                    "{name} (side {side}): the chunked closure misses or adds a state every launch \
+                     gives"
+                );
+                assert_eq!(
+                    exits,
+                    r.leaves_world.iter().copied().collect::<Vec<_>>(),
+                    "{name} (side {side}): flying every launch finds a way out of the world the \
+                     closure does not"
+                );
+                if side == 16 {
+                    states += closed.len();
+                    pruned += unflown;
+                    holding += r.census()[3];
+                    worlds_n += 1;
+                }
+            });
+        }
+    }
+    eprintln!(
+        "closure exactness: {worlds_n} world(s), {states} state(s), {holding} holding, {pruned} \
+         state(s) with a launch the rounds left unflown"
+    );
+    assert!(
+        states > 0 && pruned > 0 && holding > 0,
+        "the cases bind nothing: no launch was left unflown, or no state was a holding one"
+    );
+}
+
+/// A cell and its predecessors, each with its edge.
+type Preds = ([i32; 3], Vec<([i32; 3], super::Edge)>);
+
+/// What a plain queue walking the predecessor lists backwards from `seeds`
+/// reaches — the walk the readers took before they read by chunk — with the
+/// open sea joined when `sea`.
+fn reaching_plainly(
+    r: &super::Reach,
+    seeds: &BTreeSet<[i32; 3]>,
+    admit: impl Fn(&[i32; 3]) -> bool,
+    sea: bool,
+) -> BTreeSet<[i32; 3]> {
+    let mut out = seeds.clone();
+    let mut queue: std::collections::VecDeque<[i32; 3]> = seeds.iter().copied().collect();
+    let mut joined = !sea;
+    while let Some(cur) = queue.pop_front() {
+        if !joined && r.open_sea.contains(&cur) {
+            joined = true;
+            for s in &r.open_sea {
+                if out.insert(*s) {
+                    queue.push_back(*s);
+                }
+            }
+        }
+        for (p, _) in r.preds(cur) {
+            if admit(&p) && out.insert(p) {
+                queue.push_back(p);
+            }
+        }
+    }
+    out
+}
+
+/// **A walk read reach chunk by reach chunk answers what a plain walk
+/// answers** (ADR-0037 §2, the readers): over every invariance world, at
+/// chunk sides of sixteen, seven and two columns, the backward walk the
+/// boundary and leave proofs read ([`super::Reach::reaching`]) — from the
+/// standing states with the open sea joined, and from the open sea through
+/// wet states only — and the predecessor reading by chunk
+/// ([`super::Reach::preds_by_chunk`]) equal a plain queue's answers. Red on
+/// any cell either way.
+#[test]
+fn a_walk_by_chunk_answers_what_a_plain_walk_answers() {
+    let (mut walked, mut sea_walked) = (0usize, 0usize);
+    for (name, w, roots) in invariance_worlds() {
+        for side in [16, 7, 2] {
+            super::chunks::at_side(side, || {
+                let r = w.body_reach(&roots);
+                let standing = r.standing();
+                let back = r.reaching(standing.iter().copied(), |_| true, true);
+                assert_eq!(
+                    back,
+                    reaching_plainly(&r, &standing, |_| true, true),
+                    "{name} (side {side}): the backward walk by chunk reaches otherwise"
+                );
+                let wet = |c: &[i32; 3]| {
+                    matches!(
+                        r.states.get(c),
+                        Some(super::RestKind::Afloat | super::RestKind::Submerged)
+                    )
+                };
+                let sea = r.reaching(r.open_sea.iter().copied(), wet, false);
+                assert_eq!(
+                    sea,
+                    reaching_plainly(&r, &r.open_sea, wet, false),
+                    "{name} (side {side}): the walk through the sea by chunk reaches otherwise"
+                );
+                let mut by_chunk: Vec<Preds> = Vec::new();
+                r.preds_by_chunk(r.states.keys(), |c, ps| by_chunk.push((c, ps.to_vec())));
+                by_chunk.sort_by_key(|(c, _)| *c);
+                let plain: Vec<Preds> = r.states.keys().map(|c| (c, r.preds(c))).collect();
+                assert_eq!(
+                    by_chunk, plain,
+                    "{name} (side {side}): the predecessors read by chunk differ"
+                );
+                if side == 2 {
+                    walked += back.len();
+                    sea_walked += sea.len();
+                }
+            });
+        }
+    }
+    eprintln!("walks by chunk: {walked} cell(s) walked back, {sea_walked} through the sea");
+    assert!(walked > 0 && sea_walked > 0, "the walks bind nothing");
+}
+
+/// **The learned route tree read by chunk is the tree one least-cost search
+/// gives** (ADR-0037 §2, the readers): over every invariance world, from its
+/// root and from its standing states with an odd coordinate sum as a route,
+/// at chunk sides of sixteen, seven and two columns, the tree and the order
+/// `nav::learned::route_tree` answers equal those of one search over the
+/// whole closure in (cost, cell) order. Red on any predecessor or position.
+#[test]
+fn the_route_tree_by_chunk_is_the_one_search_gives() {
+    let (mut cells, mut joined) = (0usize, 0usize);
+    for (name, w, roots) in invariance_worlds() {
+        for side in [16, 7, 2] {
+            super::chunks::at_side(side, || {
+                let r = w.body_reach(&roots);
+                let odd: Vec<[i32; 3]> = r
+                    .standing()
+                    .into_iter()
+                    .filter(|c| (c[0] + c[1] + c[2]).rem_euclid(5) == 0)
+                    .collect();
+                for route in [roots.clone(), odd] {
+                    let chunked = crate::compiler::nav::learned::route_tree(&r, &route);
+                    let plain = crate::compiler::nav::learned::route_tree_plainly(&r, &route);
+                    assert_eq!(
+                        chunked, plain,
+                        "{name} (side {side}): the route tree read by chunk differs"
+                    );
+                    if side == 2 {
+                        cells += chunked.1.len();
+                        joined += chunked.0.values().filter(|p| p.is_some()).count();
+                    }
+                }
+            });
+        }
+    }
+    eprintln!("route trees by chunk: {cells} cell(s) ordered, {joined} with a predecessor");
+    assert!(cells > 0 && joined > 0, "the route trees bind nothing");
+}
+
+/// **The portal-edge count is what crosses a chunk face** (ADR-0037 §2): over
+/// every invariance world, at chunk sides of sixteen, seven and two columns,
+/// the portal edges a closure states equal the edges of its own successor
+/// lists whose two ends lie in different chunks of that side, and its face
+/// cells the distinct cells those edges land on — counted here by reading the
+/// lists back, a second method that shares nothing with the count taken as
+/// the edges were joined. Red on any difference; perturbed by miscounting a
+/// portal edge in [`super::chunks::Visits::joined`].
+#[test]
+fn the_portal_edges_are_the_edges_that_cross_a_chunk_face() {
+    let (mut portals, mut sides_moved) = (0u64, 0usize);
+    for (name, w, roots) in invariance_worlds() {
+        let mut by_side = Vec::new();
+        for side in [16, 7, 2] {
+            super::chunks::at_side(side, || {
+                let r = w.body_reach(&roots);
+                let key = |c: [i32; 3]| (c[0].div_euclid(side), c[2].div_euclid(side));
+                let mut crossing = 0u64;
+                let mut faces: BTreeSet<[i32; 3]> = BTreeSet::new();
+                // A plain-sea state's dives are computed, never joined: no
+                // list holds them and no portal counts them (ADR-0037 §2).
+                for c in r.states.keys().filter(|c| !r.states.plain(c)) {
+                    for e in r.succ(c) {
+                        if key(c) != key(e.to) {
+                            crossing += 1;
+                            faces.insert(e.to);
+                        }
+                    }
+                }
+                assert_eq!(
+                    r.portals,
+                    [crossing, faces.len() as u64],
+                    "{name} (side {side}): the stated portal edges and face cells are not the \
+                     ones the lists cross"
+                );
+                portals += crossing;
+                by_side.push(crossing);
+            });
+        }
+        if by_side.windows(2).any(|p| p[0] != p[1]) {
+            sides_moved += 1;
+        }
+    }
+    eprintln!(
+        "portal edges: {portals} over the invariance worlds at three sides; the count moved with \
+         the side on {sides_moved} world(s)"
+    );
+    assert!(portals > 0 && sides_moved > 0, "the cases bind nothing");
+}
+
+/// **One answer to "is this cell the sea"**: the rest relation's water
+/// (`World::is_water` or `World::ambient_water`) and the reach snapshot the
+/// launches fly through (`Dense`, its `WATER` bit) are asked every cell of
+/// generated ocean worlds, red on any difference. Each world is noise in and
+/// around the sea's band (y 53..=66 over x, z 0..=11, sea level 62 over a
+/// floor at 54): every cell a solid, a 1.5-tall barrier, a fence gate,
+/// authored water, lava or air, with one placed piece's box and one killing
+/// volume laid over it. A killing volume is no water to the rest relation
+/// and is not carried by the snapshot, so its cells are held to "no water,
+/// no rest state" instead. And the general form of the ground-in-the-band
+/// defect: no solid or 1.5-tall cell is a rest state, and the closure from a
+/// platform over the sea rests a body in none of them. Refuses a run whose
+/// cases hold no solid in the band outside the box, or whose closures reach
+/// no sea. Perturbation: ambient water judged by the band and the pieces'
+/// boxes alone → red (a solid outside the box is water to the rest relation
+/// and stone to the snapshot).
+#[test]
+fn the_sea_the_launches_read_is_the_sea_the_rest_relation_reads() {
+    use super::{Dense, WATER};
+    let mut band_ground = 0usize;
+    let mut compared = 0usize;
+    let mut water = 0usize;
+    let mut sea_states = 0usize;
+    for seed in 0..16u64 {
+        let mut r = Lcg(seed);
+        let mut solid = BTreeSet::new();
+        let mut tall = BTreeSet::new();
+        let mut gates = BTreeSet::new();
+        let mut flooded = BTreeSet::new();
+        let mut lava = BTreeSet::new();
+        for x in 0..12 {
+            for z in 0..12 {
+                for y in 53..=66 {
+                    let c = [x, y, z];
+                    match r.next(12) {
+                        0..=2 => {
+                            solid.insert(c);
+                        }
+                        3 => {
+                            tall.insert(c);
+                        }
+                        4 => {
+                            gates.insert(c);
+                        }
+                        5 => {
+                            flooded.insert(c);
+                        }
+                        6 => {
+                            flooded.insert(c);
+                            lava.insert(c);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        // A platform over the sea, clear over it, for the closure's root.
+        for x in 4..=6 {
+            for z in 4..=6 {
+                solid.insert([x, 67, z]);
+                for y in 68..=70 {
+                    for s in [&mut solid, &mut tall, &mut gates, &mut flooded] {
+                        s.remove(&[x, y, z]);
+                    }
+                }
+            }
+        }
+        let corner = |r: &mut Lcg| [r.next(9), 53 + r.next(10), r.next(9)];
+        let lo = corner(&mut r);
+        let built = vec![("piece".to_string(), (lo, [lo[0] + 3, lo[1] + 3, lo[2] + 3]))];
+        let lo = corner(&mut r);
+        let mut p = Premises::geometry_only();
+        p.ambient = super::Ambient::Ocean(crate::compiler::nav::Sea {
+            level: 62,
+            floor_top: 54,
+        });
+        p.built = built;
+        p.lethal_regions = vec![("pit".to_string(), (lo, [lo[0] + 2, lo[1] + 2, lo[2] + 2]))];
+        let w = World::from_occupancy(
+            crate::compiler::assembled::Occupancy {
+                solid: solid.into(),
+                tall: tall.into(),
+                use_gates: gates.into(),
+                flooded: flooded.into(),
+                partial: Default::default(),
+                waterloggable: Default::default(),
+                lava: lava.into(),
+                climb: Default::default(),
+                unheld_climb: Default::default(),
+                material: Default::default(),
+                footprints: Default::default(),
+                hiding: Default::default(),
+                hurting: Default::default(),
+                leaves: Default::default(),
+            },
+            p,
+        );
+        let d = Dense::of(&w);
+        for x in -2..14 {
+            for z in -2..14 {
+                for y in 50..=72 {
+                    let c = [x, y, z];
+                    let rest = w.is_water(c) || w.ambient_water(c);
+                    let blocked = w.solid.contains(&c) || w.tall.contains(&c);
+                    if blocked {
+                        assert_eq!(w.rest_kind(c), None, "seed {seed}: {c:?} rests a body");
+                        if (55..=62).contains(&y) && !w.is_built(c) {
+                            band_ground += 1;
+                        }
+                    }
+                    if w.lethal.contains(&c) {
+                        assert!(!rest, "seed {seed}: the killing volume at {c:?} is water");
+                        continue;
+                    }
+                    let snap = d.code(c) & WATER != 0;
+                    assert_eq!(
+                        rest, snap,
+                        "seed {seed}: {c:?} is water to the rest relation: {rest}, to the snapshot: {snap}"
+                    );
+                    compared += 1;
+                    water += usize::from(rest);
+                }
+            }
+        }
+        let reach = w.body_reach(&[[5, 68, 5]]);
+        for c in reach.states.keys() {
+            assert!(
+                !w.solid.contains(&c) && !w.tall.contains(&c),
+                "seed {seed}: the closure rests a body in the block at {c:?}"
+            );
+        }
+        sea_states += reach
+            .states
+            .values()
+            .filter(|k| matches!(k, super::RestKind::Afloat | super::RestKind::Submerged))
+            .count();
+    }
+    eprintln!(
+        "sea agreement: {compared} cell(s) compared, {water} water; {band_ground} solid or \
+         tall cell(s) in the band outside the box; {sea_states} sea state(s) reached"
+    );
+    assert!(
+        band_ground > 0,
+        "the cases bind nothing: no ground in the band"
+    );
+    assert!(
+        sea_states > 0,
+        "the cases bind nothing: no closure reaches the sea"
+    );
+}

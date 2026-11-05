@@ -13,11 +13,31 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Mutex, OnceLock};
 
 /// One block state, e.g. `minecraft:oak_stairs[facing=east,half=top]`.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialOrd, Ord)]
 pub struct BlockState(&'static str);
 
-/// A cell→block map whose values are interned.
-pub type BlockMap = BTreeMap<[i32; 3], BlockState>;
+/// Two states are equal exactly when their texts are: every text is interned
+/// once ([`BlockState::new`]), so the comparison is of the one pointer and
+/// length, never of the bytes. The order and the hash stay the text's own.
+impl PartialEq for BlockState {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.key() == other.key()
+    }
+}
+
+impl Eq for BlockState {}
+
+/// The text's own hash, as `Borrow<str>` requires.
+impl std::hash::Hash for BlockState {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.hash(state)
+    }
+}
+
+/// **The assembled world's cell→block map**: the section store of ADR-0037
+/// §1, whose values are interned.
+pub type BlockMap = crate::compiler::sections::SectionMap<BlockState>;
 
 impl BlockState {
     /// The interned state for `text`, interning it on first use.

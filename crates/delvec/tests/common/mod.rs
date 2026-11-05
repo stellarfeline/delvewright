@@ -279,8 +279,10 @@ pub fn gallery_site_plan_at(dir: &Path) {
 fn gallery_point_at(dir: &Path, overlay: Option<&str>) -> PathBuf {
     let gallery = repo_root().join("gallery");
     let _ = std::fs::remove_dir_all(dir);
-    copy_dir_all(&gallery, dir);
-    for junk in [
+    // What the point is not is never copied: `prefab-generator/target` is
+    // written by every concurrent generator run (below), so a copy of it
+    // races the cargo that writes it.
+    const NOT_THE_POINT: [&str; 8] = [
         "baseline",
         "forms",
         "overlays",
@@ -289,8 +291,23 @@ fn gallery_point_at(dir: &Path, overlay: Option<&str>) -> PathBuf {
         "skins",
         "terrain",
         "textures",
-    ] {
-        let _ = std::fs::remove_dir_all(dir.join(junk));
+    ];
+    std::fs::create_dir_all(dir).unwrap();
+    for entry in std::fs::read_dir(&gallery).unwrap() {
+        let path = entry.unwrap().path();
+        let name = path.file_name().unwrap();
+        if NOT_THE_POINT
+            .iter()
+            .any(|n| std::ffi::OsStr::new(n) == name)
+        {
+            continue;
+        }
+        let to = dir.join(name);
+        if path.is_dir() {
+            copy_dir_all(&path, &to);
+        } else {
+            std::fs::copy(&path, &to).unwrap();
+        }
     }
     // `gallery/design/*` is generated except the authored camera record
     // (`.gitignore`), so everything else under it goes.

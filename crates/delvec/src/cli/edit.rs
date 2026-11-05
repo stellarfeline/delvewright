@@ -248,7 +248,7 @@ pub(crate) fn run_edit(
         delvec::compiler::view::review::WorldMaker::new(&plan, assembled, &base, &structures);
     let clock = delvec::compiler::view::review::Clock::at(&plan, 0);
     let (_, written) = maker.encode_blocks(
-        &load,
+        load,
         &delvec::compiler::view::beat::load_laid(&plan, &nav),
         clock.day_time(&plan),
         &[],

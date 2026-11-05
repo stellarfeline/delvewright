@@ -527,6 +527,10 @@ fn main() -> ExitCode {
     };
     // A run that grew a node bank leaves it for the next (`DELVEC_REACH_CACHE`).
     delvec::compiler::nav::persist_reach_cache();
+    // What the section stores held, gave up and read back (ADR-0037 §1).
+    if let Some(line) = delvec::compiler::sections::report() {
+        eprintln!("{line}");
+    }
     status
 }
 

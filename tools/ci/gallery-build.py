@@ -67,6 +67,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -167,7 +168,98 @@ def manifest_delta(expected: dict, got: dict) -> list[str]:
     return lines
 
 
-def build(delvec: Path, src: Path, out: Path, prefabs: Path, lang: str) -> None:
+def scratch_within_stated(stderr: str, ledger: dict) -> list[str]:
+    """The stores' scratch file a build used, against the cost it stated.
+
+    ADR-0037 §3: `validation/resource-cost.json` states, computed before the
+    whole-map stages start, the most bytes the stores' scratch file can take
+    (`scratch_bytes.stores`, one region per array alive at once); the
+    `world store pages:` line states, as the run ends, what the file took.
+    A stated cost below the measured one lets a host provision too little, so
+    a build whose file passed its stated bound is red here. Each line read is
+    required: a build that printed no pages line, or a ledger without the
+    figure, binds nothing and is red too. Returns the red lines, none when
+    the file fits; the binding is stated on stdout by the caller.
+    """
+    reds: list[str] = []
+    pages = [l for l in stderr.splitlines() if l.startswith("world store pages: ")]
+    if len(pages) != 1:
+        return [f"{len(pages)} `world store pages:` line(s) on stderr; one is read"]
+    m = re.search(r"; (\d+) byte\(s\) in the scratch file", pages[0])
+    if not m:
+        return [f"the pages line names no scratch file size: {pages[0]}"]
+    used = int(m.group(1))
+    try:
+        stated = ledger["scratch_bytes"]["stores"]
+        computed = ledger["computed_never_measured"] is True
+    except (KeyError, TypeError):
+        return ["`validation/resource-cost.json` carries no `scratch_bytes.stores`"]
+    if not computed:
+        reds.append("the ledger does not say `computed_never_measured`: the bound is not the plan's")
+    if not isinstance(stated, int) or stated <= 0:
+        reds.append(f"the stated scratch bound is `{stated}`, not a positive byte count")
+    elif used > stated:
+        reds.append(
+            f"the stores' scratch file took {used} byte(s) against the {stated} the cost stated: "
+            "a host provisioning the stated figure runs out of disk (ADR-0037 §3)"
+        )
+    return reds
+
+
+REACH_FILES = ("the lists' and tables'", "the bank's", "the snapshot's")
+
+
+def reach_file_longest(line: str, name: str) -> int | None:
+    """The `at most L long` figure of file `name` on a `reach scratch:` line; None when absent."""
+    m = re.search(re.escape(name) + r" (\d+) written, at most (\d+) long", line)
+    return int(m.group(2)) if m else None
+
+
+def reach_scratch_within_stated(stderr: str, ledger: dict) -> tuple[list[str], str]:
+    """The reach graph's scratch files a build used, against the cost it stated.
+
+    ADR-0037 §3: `validation/resource-cost.json` states, computed before the
+    whole-map stages start, the most bytes the reach graph's three scratch
+    files can take (`scratch_bytes.reach_graph`: the snapshot's pages, the
+    node tables, one closure's lists and the bank's variants, per
+    configuration); the `reach scratch:` line states, as the run ends, the
+    longest each file was. The three are held to the figure, summed. Returns
+    the red lines and the binding to print: a build that printed no `reach
+    scratch:` line, a line naming no such file, or a ledger without the
+    figure binds nothing and is red.
+    """
+    lines = [l for l in stderr.splitlines() if l.startswith("reach scratch: ")]
+    if len(lines) != 1:
+        return [f"{len(lines)} `reach scratch:` line(s) on stderr; one is read"], ""
+    longest = {name: reach_file_longest(lines[0], name) for name in REACH_FILES}
+    missing = [name for name, n in longest.items() if n is None]
+    if missing:
+        return [f"the reach scratch line names no longest for {', '.join(missing)}: {lines[0]}"], ""
+    used = sum(n for n in longest.values() if n is not None)
+    try:
+        stated = ledger["scratch_bytes"]["reach_graph"]
+        computed = ledger["computed_never_measured"] is True
+    except (KeyError, TypeError):
+        return ["`validation/resource-cost.json` carries no `scratch_bytes.reach_graph`"], ""
+    reds: list[str] = []
+    if not computed:
+        reds.append("the ledger does not say `computed_never_measured`: the bound is not the plan's")
+    if not isinstance(stated, int) or stated <= 0:
+        reds.append(f"the stated reach scratch bound is `{stated}`, not a positive byte count")
+    elif used > stated:
+        reds.append(
+            f"the reach graph's scratch files took {used} byte(s) at most on disk against the "
+            f"{stated} the cost stated: a host provisioning the stated figure runs out of disk (ADR-0037 §3)"
+        )
+    parts = "; ".join(f"{name} {n}" for name, n in longest.items())
+    binding = (
+        f"scratch within the stated cost: the reach graph's files {used} byte(s) at most on disk "
+        f"({parts}) against {stated} stated (ADR-0037 §3)."
+    )
+    return reds, binding
+
+
+def build(delvec: Path, src: Path, out: Path, prefabs: Path, lang: str) -> str:
     # Not cleared first: `delvec build` replaces a tree it wrote and refuses
     # (`DW0967`) a directory holding anything else, which a silent `rmtree` of
     # a caller-supplied path would have deleted.
@@ -186,6 +278,7 @@ def build(delvec: Path, src: Path, out: Path, prefabs: Path, lang: str) -> None:
             f"`delvec build` exited {r.returncode}. A tree that does not compile is not a "
             "tree anything can walk.\n" + r.stdout
         )
+    return r.stderr
 
 
 def main() -> int:
@@ -239,7 +332,24 @@ def main() -> int:
     if n_src == 0:
         die(f"materialising `{point}` wrote ZERO files — the campaign it built is empty")
 
-    build(delvec, src, out, prefabs, args.lang)
+    stderr = build(delvec, src, out, prefabs, args.lang)
+
+    ledger_path = out / "validation" / "resource-cost.json"
+    if not ledger_path.is_file():
+        die(f"`delvec build` exited 0 and wrote no `{ledger_path.relative_to(out)}` — no stated cost to hold the run to")
+    ledger = json.loads(ledger_path.read_text())
+    reds = scratch_within_stated(stderr, ledger)
+    if reds:
+        die("the build's scratch file against its stated cost: " + "; ".join(reds))
+    print(
+        f"scratch within the stated cost: the stores' scratch file "
+        f"{re.search(r'; (\d+) byte\(s\) in the scratch file', stderr).group(1)} byte(s) against "
+        f"{ledger['scratch_bytes']['stores']} stated (ADR-0037 §3)."
+    )
+    reds, binding = reach_scratch_within_stated(stderr, ledger)
+    if reds:
+        die("the build's reach scratch files against its stated cost: " + "; ".join(reds))
+    print(binding)
 
     manifest_path = out / "manifest.json"
     if not manifest_path.is_file():

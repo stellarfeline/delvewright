@@ -75,6 +75,7 @@ COMPILES: dict[str, str] = {
     "engine-shelf": "`cargo check` of `delvec` for every release target is the whole of what it proves",
     "publishable": "it builds the packaged crates the way `cargo install` does, outside the workspace",
     "dsl-crate-version": "`cargo package` of `crates/dsl` is how it reads the bytes crates.io would receive",
+    "rust-windows": "the reach module's tests are compiled and run by Windows's toolchain, where the scratch files' file-pointer semantics differ; a Linux artifact cannot stand in for them",
 }
 
 CARGO_COMPILE = re.compile(r"\bcargo\s+(?:\+\S+\s+)?(?P<verb>build|run|test|bench|clippy|check|install|package|publish|doc)\b")

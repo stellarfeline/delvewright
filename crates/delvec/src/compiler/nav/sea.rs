@@ -356,7 +356,10 @@ pub fn measure_sea_seepage(world: &World, reachable: &BTreeSet<[i32; 3]>) -> Sea
 
     // Flow (model step 2), through the block map's own flood — never a second
     // physics.
-    let mut wet = crate::compiler::assembled::flood(&barriers, &seeds);
+    let mut wet = crate::compiler::assembled::flood(
+        &crate::compiler::cellset::CellSet::from(barriers.clone()),
+        &crate::compiler::cellset::CellSet::from(seeds),
+    );
     wet.retain(|c| !barriers.contains(c) && world.is_built(*c));
 
     // Verdict (model step 4): the FOOT cell decides, and the population is the
@@ -817,6 +820,92 @@ mod tests {
         assert!(
             m.walk_cells >= m.wading.len() + m.submerged.len(),
             "both are drawn from the walk region: {m:?}"
+        );
+    }
+
+    /// **Water the assembly wrote outside every box is the sea.** The sunken
+    /// room's west wall is open at `[0, 61..=62, 3]`, and the only cells the
+    /// opening faces outside the box hold water the assembly wrote
+    /// (`flooded`), in the sea's band, walled off from the open sea by stone.
+    /// That water is water on the cell the opening faces, so it comes in: the
+    /// opening is contact face, and the walk plane is wet. The same room with
+    /// the plain sea there is the control (contact, wet); with stone there,
+    /// nothing comes in (no contact). The rest relation reads the authored
+    /// water as water either way. Perturbation: ambient water refusing every
+    /// occupied cell (`flooded` included) → red (no contact face, no seed, a
+    /// dry verdict over a flooded room).
+    #[test]
+    fn sea_seepage_seeds_from_authored_water_outside_every_box_dw0851() {
+        let opening: Vec<[i32; 3]> = (61..=62).map(|y| [0, y, 3]).collect();
+        let outside: Vec<[i32; 3]> = (61..=62).map(|y| [-1, y, 3]).collect();
+        // The pocket outside the opening: stone round the two cells it faces.
+        let mut pocket = BTreeSet::new();
+        for y in 60..=63 {
+            for z in 2..=4 {
+                pocket.insert([-2, y, z]);
+                pocket.insert([-1, y, z]);
+            }
+        }
+        for c in &outside {
+            pocket.remove(c);
+        }
+        let room = |fill: &str| {
+            let (mut solid, covered) = sunken_room(&opening);
+            let mut flooded = BTreeSet::new();
+            match fill {
+                "authored water" => {
+                    solid.extend(pocket.iter().copied());
+                    flooded.extend(outside.iter().copied());
+                }
+                "stone" => {
+                    solid.extend(pocket.iter().copied());
+                    solid.extend(outside.iter().copied());
+                }
+                _ => {}
+            }
+            ocean(solid, flooded, covered)
+        };
+        let mut seen = Vec::new();
+        for fill in ["authored water", "the plain sea", "stone"] {
+            let world = room(fill);
+            for c in &outside {
+                assert_eq!(
+                    world.rest_kind(*c).is_some(),
+                    fill != "stone",
+                    "{fill}: the rest relation's water at {c:?}"
+                );
+            }
+            let reachable = world.body_region_rooted(&roots([3, 61, 3]));
+            let m = measure_sea_seepage(&world, &reachable);
+            eprintln!(
+                "{fill}: {} walk cell(s), {} contact, {} wet, {} submerged",
+                m.walk_cells,
+                m.contact_cells,
+                m.wet_cells,
+                m.submerged.len()
+            );
+            assert!(m.walk_cells > 0, "{fill}: the case binds no walk");
+            seen.push((fill, m.contact_cells, m.submerged.len()));
+        }
+        assert_eq!(
+            seen[0].1,
+            opening.len(),
+            "authored water: the opening is contact face: {seen:?}"
+        );
+        assert!(
+            seen[0].2 > 0,
+            "authored water: the walk plane is wet: {seen:?}"
+        );
+        assert_eq!(
+            seen[1].1,
+            opening.len(),
+            "the plain sea: the control binds: {seen:?}"
+        );
+        assert!(seen[1].2 > 0, "the plain sea: the control binds: {seen:?}");
+        assert_eq!(
+            (seen[2].1, seen[2].2),
+            (0, 0),
+            "stone: nothing comes in: {seen:?}"
         );
     }
 

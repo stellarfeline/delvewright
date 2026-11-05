@@ -122,7 +122,7 @@ pub const EYE_FOV_DEG: f64 = 70.0;
 /// The piece as the draft renderer's voxel walk sees it: every placed block with
 /// an appearance, and nothing where a structure template places nothing.
 pub fn grid_of(st: &Structure) -> VoxelGrid {
-    let mut blocks = std::collections::BTreeMap::new();
+    let mut blocks = crate::compiler::blockstate::BlockMap::new();
     for (pos, state) in &st.blocks {
         if let Some(name) = st.palette.get(*state)
             && !blockcolor::is_air(name)

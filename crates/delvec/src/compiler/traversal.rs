@@ -958,13 +958,13 @@ mod tests {
     ) -> World {
         World::from_occupancy(
             crate::compiler::assembled::Occupancy {
-                solid,
-                tall,
-                use_gates: gates,
-                flooded: BTreeSet::new(),
-                partial: BTreeMap::new(),
-                waterloggable: BTreeSet::new(),
-                lava: BTreeSet::new(),
+                solid: solid.into(),
+                tall: tall.into(),
+                use_gates: (gates).into(),
+                flooded: (BTreeSet::new()).into(),
+                partial: (BTreeMap::new()).into(),
+                waterloggable: (BTreeSet::new()).into(),
+                lava: (BTreeSet::new()).into(),
                 climb: BTreeMap::new(),
                 unheld_climb: BTreeMap::new(),
                 material: Default::default(),
@@ -1166,13 +1166,13 @@ mod tests {
         let mut solid = floor(63);
         solid.insert([4, 63, 3]);
         let mut occ = crate::compiler::assembled::Occupancy {
-            solid,
-            tall: BTreeSet::from([[5, 63, 3]]),
-            use_gates: BTreeSet::new(),
-            flooded: BTreeSet::new(),
-            partial: BTreeMap::new(),
-            waterloggable: BTreeSet::new(),
-            lava: BTreeSet::new(),
+            solid: solid.into(),
+            tall: (BTreeSet::from([[5, 63, 3]])).into(),
+            use_gates: (BTreeSet::new()).into(),
+            flooded: (BTreeSet::new()).into(),
+            partial: (BTreeMap::new()).into(),
+            waterloggable: (BTreeSet::new()).into(),
+            lava: (BTreeSet::new()).into(),
             climb: BTreeMap::new(),
             unheld_climb: BTreeMap::new(),
             material: Default::default(),

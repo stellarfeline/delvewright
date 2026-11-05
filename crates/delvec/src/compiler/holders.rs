@@ -311,7 +311,7 @@ pub fn census(
     };
     for (cell, state) in blocks {
         if let Some(slots) = delvewright_dsl::blocks::container_slots(state.as_str()) {
-            rows.insert((*cell, 0), container_row(*cell, state.as_str(), slots));
+            rows.insert((cell, 0), container_row(cell, state.as_str(), slots));
         }
     }
     for (i, e) in entities.iter().enumerate() {

@@ -10,7 +10,7 @@ pub(in crate::compiler::nav) mod climb;
 pub use climb::*;
 pub(in crate::compiler::nav) mod confine;
 pub use confine::*;
-pub(in crate::compiler::nav) mod reach;
+pub(crate) mod reach;
 pub use reach::*;
 
 use crate::compiler::cellset::{CellMap, CellSet};
@@ -1155,20 +1155,20 @@ impl World {
     pub fn from_occupancy(occ: crate::compiler::assembled::Occupancy, premises: Premises) -> Self {
         Self::from_cells(
             Cells {
-                solid: occ.solid.into(),
-                hiding: occ.hiding.into(),
-                tall: occ.tall.into(),
-                use_gates: occ.use_gates.into(),
-                flooded: occ.flooded.into(),
-                partial: occ.partial.into(),
-                waterloggable: occ.waterloggable.into(),
-                lava: occ.lava.into(),
-                material: occ.material.into(),
+                solid: occ.solid,
+                hiding: occ.hiding,
+                tall: occ.tall,
+                use_gates: occ.use_gates,
+                flooded: occ.flooded,
+                partial: occ.partial,
+                waterloggable: occ.waterloggable,
+                lava: occ.lava,
+                material: occ.material,
                 climb_holds: std::sync::Arc::new(occ.climb),
                 unheld_climb: std::sync::Arc::new(occ.unheld_climb),
                 footprints: occ.footprints,
                 leaves: occ.leaves,
-                hurting: occ.hurting.into(),
+                hurting: occ.hurting,
             },
             premises,
         )
@@ -1391,12 +1391,26 @@ impl World {
     }
 
     /// Whether `c` is ambient sea water: inside the ocean generator's water
-    /// layers and not overwritten by a placed piece. Always `false` under
+    /// layers, not overwritten by a placed piece, and holding no block the
+    /// assembly wrote there — a solid (the terrain's ground in the sea's band
+    /// is one), a 1.5-tall barrier, a fence gate, lava, or a killing volume.
+    /// Water the assembly wrote outside every box stays water. This is what
+    /// the reach snapshot reads as water, so a rest state the cell relation
+    /// gives is one the launches fly over. Always `false` under
     /// [`Ambient::Void`], which has no water anywhere.
     pub(in crate::compiler::nav) fn ambient_water(&self, c: [i32; 3]) -> bool {
         match &self.ambient {
             Ambient::Void => false,
-            Ambient::Ocean(sea) => c[1] > sea.floor_top && c[1] <= sea.level && !self.is_built(c),
+            Ambient::Ocean(sea) => {
+                c[1] > sea.floor_top
+                    && c[1] <= sea.level
+                    && !self.is_built(c)
+                    && !self.solid.contains(&c)
+                    && !self.tall.contains(&c)
+                    && !self.use_gates.contains(&c)
+                    && !self.lava.contains(&c)
+                    && !self.lethal.contains(&c)
+            }
         }
     }
 
@@ -2054,19 +2068,19 @@ impl World {
         let solid_hides = solid.clone();
         Self::from_occupancy(
             crate::compiler::assembled::Occupancy {
-                solid,
-                tall: BTreeSet::new(),
-                use_gates: BTreeSet::new(),
-                flooded,
-                partial: BTreeMap::new(),
-                waterloggable: BTreeSet::new(),
-                lava: BTreeSet::new(),
+                solid: solid.into(),
+                tall: (BTreeSet::new()).into(),
+                use_gates: (BTreeSet::new()).into(),
+                flooded: flooded.into(),
+                partial: (BTreeMap::new()).into(),
+                waterloggable: (BTreeSet::new()).into(),
+                lava: (BTreeSet::new()).into(),
                 climb: BTreeMap::new(),
                 unheld_climb: BTreeMap::new(),
                 material: Default::default(),
                 footprints: BTreeMap::new(),
                 // A synthetic solid cell is a full cube of stone: it hides.
-                hiding: solid_hides,
+                hiding: (solid_hides).into(),
                 leaves: BTreeMap::new(),
                 hurting: Default::default(),
             },

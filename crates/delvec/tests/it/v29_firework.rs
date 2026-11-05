@@ -347,7 +347,7 @@ fn the_roof_rule_reads_the_column_the_flight_needs() {
     );
     assert_eq!(gate.refused, 1);
 
-    let open = BTreeMap::new();
+    let open = delvec::compiler::blockstate::BlockMap::new();
     let (gate, findings) = judge(&[launch(1)], &[], &open);
     assert!(
         findings.is_empty(),
@@ -378,7 +378,7 @@ fn the_roof_rule_reads_the_column_the_flight_needs() {
 /// can fire on.
 #[test]
 fn a_posted_body_in_reach_of_the_burst_is_dw0899() {
-    let open = BTreeMap::new();
+    let open = delvec::compiler::blockstate::BlockMap::new();
     let burst = [0, 72, 0];
 
     let near = npc_post([4, burst[1], 0]);
@@ -413,7 +413,7 @@ fn a_posted_body_in_reach_of_the_burst_is_dw0899() {
 /// campaign this proof says nothing about.
 #[test]
 fn a_post_on_the_launch_plane_is_never_in_reach() {
-    let open = BTreeMap::new();
+    let open = delvec::compiler::blockstate::BlockMap::new();
     for dx in 0..=5 {
         let post = npc_post([dx, 64, 0]);
         let (_, findings) = judge(&[launch(1)], std::slice::from_ref(&post), &open);
@@ -455,7 +455,7 @@ fn the_binding_line_states_what_was_examined() {
     let (gate, _) = judge(
         &[launch(1)],
         std::slice::from_ref(&npc_post([20, 64, 20])),
-        &BTreeMap::new(),
+        &delvec::compiler::blockstate::BlockMap::new(),
     );
     assert_eq!(
         gate.line(),

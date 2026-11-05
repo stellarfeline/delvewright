@@ -313,6 +313,9 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+      # The job's disk, met by the host (the action states what it frees and why).
+      - uses: ./.github/actions/runner-disk
+        with: { step: start }
       # The compiler tests read the prefab library (`campaigns/prefabs/*.nbt`,
       # git-lfs); it lives in the content repo now (spec-0007 Step 0), checked out
       # at the pinned SHA into ./campaigns. The build needs the tree's shape only;
@@ -385,6 +388,9 @@ jobs:
       # the line above.
       - name: a label belongs to the model that drew it (node --test)
         run: node --test crates/delvec/tests/labels.test.mjs
+      - uses: ./.github/actions/runner-disk
+        if: always()
+        with: { step: report }
 
   # The gallery's two detailed points are the fixtures most of the heavy
   # tests copy (spec-0126 §4.2, `common::built`): each costs about ten
@@ -410,6 +416,8 @@ jobs:
       DELVEC_THREADS: "1"
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/runner-disk
+        with: { step: start }
       - uses: ./.github/actions/checkout-content
       - uses: ./.github/actions/suite-instruments
       - name: the pinned client jar (one verified fetch)
@@ -435,6 +443,9 @@ jobs:
           set -euo pipefail
           "$LLVM_PROFDATA" merge -sparse -o target/fixtures.profdata target/llvm-cov-target/*.profraw
           ls -l target/fixtures.profdata
+      - uses: ./.github/actions/runner-disk
+        if: always()
+        with: { step: report }
       - uses: actions/upload-artifact@v4
         with:
           name: rust-fixtures
@@ -472,6 +483,8 @@ jobs:
       total: ${{ strategy.job-total }}
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/runner-disk
+        with: { step: start }
       - uses: ./.github/actions/checkout-content
       - uses: ./.github/actions/suite-instruments
       # Every frame a test draws is drawn with Minecraft's own textures, read
@@ -528,6 +541,9 @@ jobs:
           [ "$n" -gt 0 ] || { echo "no raw profile was written: the partition ran nothing instrumented" >&2; exit 1; }
           "$LLVM_PROFDATA" merge -sparse -o target/partition.profdata target/llvm-cov-target/*.profraw
           ls -l target/partition.profdata target/nextest/ci/junit.xml
+      - uses: ./.github/actions/runner-disk
+        if: always()
+        with: { step: report }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -1437,6 +1453,51 @@ jobs:
           set -euo pipefail
           python --version
           python tools/ci/check-eol-attributes.py --working-tree
+
+  # The reach graph keeps its edge lists, node tables, bank and snapshot pages
+  # in scratch files that many threads read while one appends (ADR-0037 §2).
+  # Whether that is safe differs by platform: a handle duplicated from the
+  # writer shares the file pointer on Windows, and `seek_read` moves it, so a
+  # write that trusted the cursor would land at a reader's offset — a wrong
+  # edge list decoded cleanly into a closure, with no diagnostic. The writes
+  # are positional for that reason, and this job is where the claim is tested
+  # on the platform whose semantics differ: the reach module's tests, which
+  # include the concurrent append/read-back case, on the Windows release
+  # target (ADR-0023). The test count is asserted so a filter that matched
+  # nothing cannot read as green.
+  #
+  # Its place in the suite's budget (spec-0126 §5): the job is a build and
+  # one module's tests, so it carries the build job's 40-minute bound
+  # (measured: 8.3, 13.9 and 17.5 min on runs 42004265302, 41990592184 and
+  # 42015765769, the build 4.5–12.9 min of it and the 45 tests 172–226 s).
+  # It re-runs on a second platform tests the partitions already run: every
+  # test it selects is a test of the archive's listing, run in exactly one
+  # partition, under the per-test bound, at one engine thread. It is not a
+  # shard, so the census does not count it; it runs library unit tests, so
+  # the audit table, whose rows are integration-test files, has no row for it.
+  rust-windows:
+    name: rust (Windows, reach module)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: rust-windows-reach
+      - name: the reach module's tests, on the Windows target
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked -p delvec --lib -- compiler::nav::world::reach --list > reach-tests.txt
+          n="$(grep -c ': test$' reach-tests.txt)"
+          echo "reach tests on this target: $n"
+          if [ "$n" -lt 1 ]; then
+            echo "the filter matched no test: the job proves nothing" >&2
+            exit 1
+          fi
+          cargo test --locked -p delvec --lib -- compiler::nav::world::reach
 
   # A released campaign is never edited and is built only by the engine
   # revision it pins (spec-0039): the engine never builds old campaigns to
