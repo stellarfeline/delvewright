@@ -938,7 +938,15 @@ impl Codes for Shifted<'_> {
                 }
                 self.dense.cells.get(i)
             }
-            None => self.dense.code(a),
+            None => {
+                // A cell past the window grows the box as [`Local`]'s later
+                // reads of it do: the box is what the run read, however
+                // many times it read it.
+                if let Some(t) = self.track {
+                    t.extend((a, a));
+                }
+                self.dense.code(a)
+            }
         }
     }
 }
