@@ -6183,7 +6183,16 @@ world. Invariants:
     (`plan::SEA_LEVEL` = 62 water top, `plan::SEA_FLOOR_TOP_Y` = 54 sea floor,
     bedrock below), present in every column **except** inside a placed piece's
     AABB (`/place template` writes the whole box, air included; the water *under*
-    an island base is still ambient). Bedrock everywhere ⇒ the void premise is
+    an island base is still ambient). Outside every box, a band cell holds the
+    sea only where the assembly wrote nothing into it: a solid (the terrain's
+    ground in the band is one), a 1.5-tall barrier, a fence gate, lava or a
+    killing volume there is that block, and water the assembly wrote stays
+    water. `World::ambient_water` states that rule for the rest relation
+    (`rest_kind`, `wades`) and the seepage proof's contact seeds; the reach
+    snapshot the launches fly through encodes it cell by cell, and the
+    agreement test `the_sea_the_launches_read_is_the_sea_the_rest_relation_reads`
+    holds the two to one answer on generated ocean worlds.
+    Bedrock everywhere ⇒ the void premise is
     vacuous, and the real hazard is **stranding**, modelled as:
     1. **Entering.** A reachable walkable cell puts the player in the sea when a
        horizontally adjacent column is enterable at its level (feet + head clear

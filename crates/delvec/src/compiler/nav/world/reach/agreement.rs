@@ -1509,3 +1509,154 @@ fn the_portal_edges_are_the_edges_that_cross_a_chunk_face() {
     );
     assert!(portals > 0 && sides_moved > 0, "the cases bind nothing");
 }
+
+/// **One answer to "is this cell the sea"**: the rest relation's water
+/// (`World::is_water` or `World::ambient_water`) and the reach snapshot the
+/// launches fly through (`Dense`, its `WATER` bit) are asked every cell of
+/// generated ocean worlds, red on any difference. Each world is noise in and
+/// around the sea's band (y 53..=66 over x, z 0..=11, sea level 62 over a
+/// floor at 54): every cell a solid, a 1.5-tall barrier, a fence gate,
+/// authored water, lava or air, with one placed piece's box and one killing
+/// volume laid over it. A killing volume is no water to the rest relation
+/// and is not carried by the snapshot, so its cells are held to "no water,
+/// no rest state" instead. And the general form of the ground-in-the-band
+/// defect: no solid or 1.5-tall cell is a rest state, and the closure from a
+/// platform over the sea rests a body in none of them. Refuses a run whose
+/// cases hold no solid in the band outside the box, or whose closures reach
+/// no sea. Perturbation: ambient water judged by the band and the pieces'
+/// boxes alone → red (a solid outside the box is water to the rest relation
+/// and stone to the snapshot).
+#[test]
+fn the_sea_the_launches_read_is_the_sea_the_rest_relation_reads() {
+    use super::{Dense, WATER};
+    let mut band_ground = 0usize;
+    let mut compared = 0usize;
+    let mut water = 0usize;
+    let mut sea_states = 0usize;
+    for seed in 0..16u64 {
+        let mut r = Lcg(seed);
+        let mut solid = BTreeSet::new();
+        let mut tall = BTreeSet::new();
+        let mut gates = BTreeSet::new();
+        let mut flooded = BTreeSet::new();
+        let mut lava = BTreeSet::new();
+        for x in 0..12 {
+            for z in 0..12 {
+                for y in 53..=66 {
+                    let c = [x, y, z];
+                    match r.next(12) {
+                        0..=2 => {
+                            solid.insert(c);
+                        }
+                        3 => {
+                            tall.insert(c);
+                        }
+                        4 => {
+                            gates.insert(c);
+                        }
+                        5 => {
+                            flooded.insert(c);
+                        }
+                        6 => {
+                            flooded.insert(c);
+                            lava.insert(c);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        // A platform over the sea, clear over it, for the closure's root.
+        for x in 4..=6 {
+            for z in 4..=6 {
+                solid.insert([x, 67, z]);
+                for y in 68..=70 {
+                    for s in [&mut solid, &mut tall, &mut gates, &mut flooded] {
+                        s.remove(&[x, y, z]);
+                    }
+                }
+            }
+        }
+        let corner = |r: &mut Lcg| [r.next(9), 53 + r.next(10), r.next(9)];
+        let lo = corner(&mut r);
+        let built = vec![("piece".to_string(), (lo, [lo[0] + 3, lo[1] + 3, lo[2] + 3]))];
+        let lo = corner(&mut r);
+        let mut p = Premises::geometry_only();
+        p.ambient = super::Ambient::Ocean(crate::compiler::nav::Sea {
+            level: 62,
+            floor_top: 54,
+        });
+        p.built = built;
+        p.lethal_regions = vec![("pit".to_string(), (lo, [lo[0] + 2, lo[1] + 2, lo[2] + 2]))];
+        let w = World::from_occupancy(
+            crate::compiler::assembled::Occupancy {
+                solid: solid.into(),
+                tall: tall.into(),
+                use_gates: gates.into(),
+                flooded: flooded.into(),
+                partial: Default::default(),
+                waterloggable: Default::default(),
+                lava: lava.into(),
+                climb: Default::default(),
+                unheld_climb: Default::default(),
+                material: Default::default(),
+                footprints: Default::default(),
+                hiding: Default::default(),
+                hurting: Default::default(),
+                leaves: Default::default(),
+            },
+            p,
+        );
+        let d = Dense::of(&w);
+        for x in -2..14 {
+            for z in -2..14 {
+                for y in 50..=72 {
+                    let c = [x, y, z];
+                    let rest = w.is_water(c) || w.ambient_water(c);
+                    let blocked = w.solid.contains(&c) || w.tall.contains(&c);
+                    if blocked {
+                        assert_eq!(w.rest_kind(c), None, "seed {seed}: {c:?} rests a body");
+                        if (55..=62).contains(&y) && !w.is_built(c) {
+                            band_ground += 1;
+                        }
+                    }
+                    if w.lethal.contains(&c) {
+                        assert!(!rest, "seed {seed}: the killing volume at {c:?} is water");
+                        continue;
+                    }
+                    let snap = d.code(c) & WATER != 0;
+                    assert_eq!(
+                        rest, snap,
+                        "seed {seed}: {c:?} is water to the rest relation: {rest}, to the snapshot: {snap}"
+                    );
+                    compared += 1;
+                    water += usize::from(rest);
+                }
+            }
+        }
+        let reach = w.body_reach(&[[5, 68, 5]]);
+        for c in reach.states.keys() {
+            assert!(
+                !w.solid.contains(&c) && !w.tall.contains(&c),
+                "seed {seed}: the closure rests a body in the block at {c:?}"
+            );
+        }
+        sea_states += reach
+            .states
+            .values()
+            .filter(|k| matches!(k, super::RestKind::Afloat | super::RestKind::Submerged))
+            .count();
+    }
+    eprintln!(
+        "sea agreement: {compared} cell(s) compared, {water} water; {band_ground} solid or \
+         tall cell(s) in the band outside the box; {sea_states} sea state(s) reached"
+    );
+    assert!(
+        band_ground > 0,
+        "the cases bind nothing: no ground in the band"
+    );
+    assert!(
+        sea_states > 0,
+        "the cases bind nothing: no closure reaches the sea"
+    );
+}
