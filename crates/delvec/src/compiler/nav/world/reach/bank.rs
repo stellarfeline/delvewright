@@ -38,9 +38,10 @@
 //! first, so the node is the node one pass over every launch gives. Each
 //! cell a variant records carries the runs that read it, and a run taken as
 //! written notes those cells and no others: what a node records is the cells
-//! its head and its runs read, whichever variant (if any) it took runs from,
-//! so a variant is a function of the world and the node alone and never of
-//! which graph banked first.
+//! its head and its runs read, whichever variant (if any) it took runs from
+//! and whatever the flight memo held (a lookup notes nothing; a kept flight
+//! taken notes what it read, [`super::flights`]), so a variant is a function
+//! of the world and the node alone and never of which graph banked first.
 //!
 //! A node keeps at most [`VARIANTS`] variants, the same ones whatever order
 //! they arrive in: one equal to a kept variant is not kept again, and past

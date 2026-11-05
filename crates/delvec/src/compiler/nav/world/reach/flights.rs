@@ -25,9 +25,15 @@
 //! check answers the same on every tick.
 //!
 //! The memo is an accelerator, never a premise: a walk that misses flies the
-//! launch, and every answer is the answer a flight would give. Nothing in it
-//! depends on which thread asked first, so the order threads fill it in
-//! changes how long a build takes and never what it emits (ADR-0006).
+//! launch, and every answer is the answer a flight would give. What it holds
+//! depends on which world flew a start first — a flight kept under a deeper
+//! floor, or where no volume stopped it, reads on past where another world's
+//! flight of the same start ends — and what it answers never does. A lookup
+//! is walked through a reader that notes nothing for the node bank; a kept
+//! flight taken has the cells it read read again through the node's reader,
+//! so what a node records is what its own flights read. The order threads
+//! fill the memo in changes how long a build takes and never what it emits
+//! or what the bank keeps (ADR-0006).
 
 use super::{Code, Codes, Flight, Launch, Mode, Outcome};
 use delvewright_dsl::metrics::body::{Aabb, State};
