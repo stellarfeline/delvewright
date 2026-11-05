@@ -398,7 +398,9 @@ jobs:
     needs: [changes, rust-build]
     if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    # spec-0126 §5.3: 40 min at the median runner speed, with the measured
+    # 3.11x runner variance as headroom, as each partition has.
+    timeout-minutes: 125
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/checkout-content
@@ -437,18 +439,20 @@ jobs:
           retention-days: 3
 
   rust-partition:
-    name: rust partition (${{ matrix.k }} of 37)
+    name: rust partition (${{ matrix.k }} of 30)
     needs: [changes, rust-build, rust-fixtures]
     if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
-    # spec-0126 §5: the job bound. A partition that exceeds it is cancelled and red.
-    timeout-minutes: 120
+    # spec-0126 §5, §5.3: the job bound, 40 min at the median runner speed with
+    # the measured 3.11x runner variance as headroom (3.11 x 40, rounded up). A
+    # partition that exceeds it is cancelled and red.
+    timeout-minutes: 125
     strategy:
       # Every partition runs to its end: the census needs all N reports to say
       # which tests ran where, and a failure in one says nothing about the rest.
       fail-fast: false
       matrix:
-        k: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37]
+        k: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
     outputs:
       # N, read by the census from the matrix itself rather than typed again.
       total: ${{ strategy.job-total }}
