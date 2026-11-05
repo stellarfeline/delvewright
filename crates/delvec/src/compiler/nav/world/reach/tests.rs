@@ -1103,7 +1103,7 @@ fn a_bank_past_its_cap_keeps_no_more_and_answers_the_same() {
     }
     assert_eq!(a.edge_census(), b.edge_census());
     eprintln!(
-        "a bank under a one-byte cap: {refused} variant(s) refused on this thread; {} states and \
+        "a bank under a one-byte cap: {refused} variant(s) refused over the process; {} states and \
          {} edges alike",
         states_a.len(),
         a.edge_census().iter().sum::<usize>()
