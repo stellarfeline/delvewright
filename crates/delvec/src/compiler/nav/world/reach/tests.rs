@@ -848,10 +848,15 @@ fn a_node_with_no_shared_edge_table_is_the_node_the_shared_tables_give() {
     let _ = yard.body_reach(&[[5, 1, 5]]);
     let params = ReachParams::shipped(yard.unbounded_fall);
     let memo = yard.graph_memo(&params);
-    let keys: Vec<FlownKey> = memo.flown.lock().expect("memo").keys().copied().collect();
+    let keys: Vec<FlownKey> = memo
+        .flown
+        .entries()
+        .into_iter()
+        .flat_map(|(c, held)| held.into_iter().map(move |(q, _)| (c, q)))
+        .collect();
     let volumes = |b| yard.volumes_near(b);
     let none = |_: &[Code; 45]| -> Option<Arc<EdgeTable>> { None };
-    let empty = bank::Bank::default();
+    let empty = bank::Bank::holding(Vec::new());
     let mut read = 0;
     for key in &keys {
         let jumps = yard.jumps_from(key.0);
