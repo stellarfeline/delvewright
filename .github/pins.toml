@@ -506,7 +506,7 @@ why = "sha256 of the mcmeta recipe summary."
 # Third-party actions are held at their MAJOR tag, which the publisher advances.
 # That is a deliberate trade — patch fixes arrive without a PR, and the trust
 # boundary is the publisher rather than a digest. It is registered so the trade
-# is a visible count instead of an unexamined habit: eight refs, all first-party
+# is a visible count instead of an unexamined habit: thirteen refs, all first-party
 # GitHub or Docker, none reaching a repository this project builds.
 
 [[pin]]
@@ -565,9 +565,12 @@ why = "GitHub's artifact upload action, held at its major tag."
 [[pin]]
 id = "action-cache"
 value = "actions/cache@v4"
-sites = [".github/actions/suite-instruments/action.yml"]
+sites = [
+    ".github/actions/checkout-content/action.yml",
+    ".github/actions/suite-instruments/action.yml",
+]
 policy = "floating"
-why = "GitHub's cache action, held at its major tag: restores the two cargo-installed instruments by a key that carries their pinned versions, so a hit is the pinned bytes and a miss builds them once."
+why = "GitHub's cache action, held at its major tag: restores the two cargo-installed instruments by a key that carries their pinned versions, so a hit is the pinned bytes and a miss builds them once; and the content repo's LFS objects by a key of their ids, which affects transfer, not output."
 
 [[pin]]
 id = "action-download-artifact"

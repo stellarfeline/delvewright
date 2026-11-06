@@ -15,6 +15,8 @@ inputs:
       anything that BUILDS needs them. A job that only reads the content repo's
       text (campaign JSON, storybook markdown) sets this to "false" and gets LFS
       pointers instead, which is the same text at a fraction of the transfer.
+      When true the objects are restored from the Actions cache (keyed by the
+      LFS object ids at the pin) and only cache misses reach the LFS servers.
     required: false
     default: "true"
 
@@ -44,4 +46,62 @@ runs:
         repository: ${{ steps.pin.outputs.repo }}
         ref: ${{ steps.pin.outputs.sha }}
         path: campaigns
-        lfs: ${{ inputs.lfs == 'true' }}
+        lfs: false
+
+    # LFS payloads come from the Actions cache, keyed by the LFS object ids at
+    # the pinned SHA, so the LFS servers (a metered bandwidth quota) are asked
+    # only for objects the cache lacks. Pattern: actions/cache restoring the
+    # checkout's `.git/lfs` store under a hash of `git lfs ls-files --long`
+    # (GitHub docs, "Managing Git LFS in Actions", and the actions/checkout
+    # README's LFS-cache recipe); then `git lfs pull` fetches only what is missing.
+    - name: LFS cache key (hash of the LFS object ids at the pinned SHA)
+      id: lfskey
+      if: inputs.lfs == 'true'
+      shell: bash
+      working-directory: campaigns
+      run: |
+        git lfs install --local --skip-repo
+        git lfs ls-files --long | awk '{print $1}' | sort > "$RUNNER_TEMP/lfs-oids.txt"
+        echo "lfs objects at pin: $(wc -l < "$RUNNER_TEMP/lfs-oids.txt")"
+        test -s "$RUNNER_TEMP/lfs-oids.txt" || { echo "::error::no LFS objects listed at the pin; the key would bind to nothing"; exit 1; }
+        echo "oids=$(sha256sum "$RUNNER_TEMP/lfs-oids.txt" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+    - name: restore LFS objects from the Actions cache
+      id: lfscache
+      if: inputs.lfs == 'true'
+      uses: actions/cache@v4
+      with:
+        path: campaigns/.git/lfs
+        key: lfs-objects-${{ steps.lfskey.outputs.oids }}
+
+    - name: materialise LFS files (downloads only what the cache lacks)
+      if: inputs.lfs == 'true'
+      shell: bash
+      working-directory: campaigns
+      run: |
+        have() { find .git/lfs/objects -type f 2>/dev/null | wc -l | tr -d ' '; }
+        echo "LFS cache hit: ${{ steps.lfscache.outputs.cache-hit == 'true' }}"
+        echo "LFS objects in store before pull: $(have)"
+        git lfs pull
+        git lfs checkout
+        echo "LFS objects in store after pull: $(have)"
+
+    # Red on a pointer file left in the tree, or an object whose bytes do not
+    # hash to its id: the files built from are the files an `lfs: true`
+    # checkout would have written.
+    - name: verify no LFS pointer remains
+      if: inputs.lfs == 'true'
+      shell: bash
+      working-directory: campaigns
+      run: |
+        total=$(git lfs ls-files | wc -l | tr -d ' ')
+        missing=$(git lfs ls-files | grep -c ' - ' || true)
+        echo "LFS files tracked: $total; not materialised: $missing"
+        test "$total" -gt 0
+        test "$missing" -eq 0
+        git lfs ls-files --name-only | while IFS= read -r f; do
+          if head -c 40 -- "$f" | grep -q '^version https://git-lfs'; then
+            echo "::error::LFS pointer left in the tree: $f"; exit 1
+          fi
+        done
+        git lfs fsck
