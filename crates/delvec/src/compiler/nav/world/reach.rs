@@ -1909,8 +1909,18 @@ fn union(a: Option<Aabb>, b: Option<Aabb>) -> Option<Aabb> {
 // ---------------------------------------------------------------------------
 
 /// The edges out of one node as they are gathered: the first launch that
-/// reaches a cell by a kind of movement names it.
-type Edges = BTreeMap<([i32; 3], EdgeKind), (Option<i16>, bool)>;
+/// reaches a cell by a kind of movement names it. Gathered by hash and put
+/// in key order once at the end ([`sorted_edges`]): the order is the same,
+/// and a launch's landing is a probe, not a tree walk.
+type Edges =
+    HashMap<([i32; 3], EdgeKind), (Option<i16>, bool), std::hash::BuildHasherDefault<flights::Mix>>;
+
+/// `edges` in key order: cell, then kind.
+fn sorted_edges(edges: Edges) -> Vec<(([i32; 3], EdgeKind), (Option<i16>, bool))> {
+    let mut v: Vec<_> = edges.into_iter().collect();
+    v.sort_unstable_by_key(|(k, _)| *k);
+    v
+}
 
 /// Everything one node of the graph leads to.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -2904,7 +2914,7 @@ impl World {
             return out;
         };
         let dense = &memo.dense;
-        let mut edges: Edges = BTreeMap::new();
+        let mut edges: Edges = HashMap::default();
         // A node's launches land in a few cells many times over: each cell's
         // rest state is asked of the world once a run (so each run notes the
         // cells it asks about).
@@ -3105,7 +3115,7 @@ impl World {
                             edge_memo.borrow_mut().retain(|_, (_, b)| b.is_none());
                             local.next_run();
                             leaf_watch.since();
-                            let mut gedges: Edges = BTreeMap::new();
+                            let mut gedges: Edges = HashMap::default();
                             let mut gout = NodeEdges::default();
                             let mut gread: Option<bank::Box3> = None;
                             for arc in &class.arcs[lo..hi] {
@@ -3239,7 +3249,7 @@ impl World {
                             // The leaf cells the run's landings read grow the
                             // node's read box as its sweeps do.
                             bank::Summary {
-                                edges: gedges.into_iter().collect(),
+                                edges: sorted_edges(gedges),
                                 leaves_world: gout.leaves_world,
                                 dies: gout.dies,
                                 simulated: gout.simulated,
@@ -3272,7 +3282,7 @@ impl World {
                 out.read = Some(read);
             }
         }
-        out.edges = edges
+        out.edges = sorted_edges(edges)
             .into_iter()
             .map(|((to, kind), (yaw, sprint))| Edge {
                 to,
