@@ -32,9 +32,9 @@ flowchart TD
     I1B -->|"退出码 3：修复 · 退出码 4：首次运行"| I2["I2 · 在钉住的标签 delvec--v‹version›<br/>处克隆引擎到 ~/.delvewright/engine"]
     I2 --> I3A["I3a · fetch-delvec.py<br/>从引擎的 GitHub Release 获取<br/>发布归档和 SHA256SUMS"]
     I3A -->|"没有适合这台机器的归档"| I3B["I3b · 源码兜底<br/>cargo build --release -p delvec"]
-    I3A --> I4["I3c–I4 · delvec --version 与钉住版本一致<br/>写出 ~/.delvewright/env.sh"]
+    I3A --> I4["I3c–I4 · delvec --version 与钉住版本一致<br/>在工作目录写出 .out/env.sh"]
     I3B --> I4
-    I4 --> I5{{"🖐 I5 · Minecraft 客户端 jar<br/>fetch-client-jar.py，或你指定的一份副本<br/>→ ~/.delvewright/client/minecraft-1.21.11.jar"}}:::human
+    I4 --> I5["I5 · Minecraft 客户端 jar<br/>由 fetch-client-jar.py 下载；只有提示里点名了某个 Minecraft 目录时才从那里复制<br/>→ ~/.delvewright/client/minecraft-1.21.11.jar"]
     I1B -->|"退出码 0：跳过 I2–I4"| I5
     I5 --> I6["I6 · prefab 库<br/>DELVEWRIGHT_PREFABS"]
     I6 --> I7["I7 · 只点名，不安装<br/>绘图路径上运行 refimg.py --dry-run"]
@@ -248,7 +248,7 @@ flowchart TD
 | Fabric 上的 PackTest | 在工具服务器上的机制测试；从不出现在发布的 delve 里 | 4、6 | 智能体和 CI |
 | `harness/` | mineflayer 机器人（TypeScript）：关键路径、die-retry、death-loop、分支运行 | 4、6 | 智能体和 CI |
 | Lumenwright（在 `delvec` 内） | 每一张必须看起来像 Minecraft 的图 | 3、5 | 智能体 |
-| GitHub Actions | 本仓库的 `ci.yml`、`engine-release.yml`、`dsl-crate-publish.yml`、`plugin-release.yml`、`infra-images.yml`、`gpu-probe.yml`；内容仓库的 `release.yml` | 引擎流水线、6 | CI，由人触发 |
+| GitHub Actions | 本仓库的 `ci.yml`、`engine-release.yml`、`dsl-crate-publish.yml`、`plugin-release.yml`、`infra-images.yml`、`gpu-probe.yml`、`issue-kind.yml`（给 issue 打标签）；内容仓库的 `release.yml` | 引擎流水线、6 | CI，由人触发 |
 | GHCR | 多架构 delve 镜像、镜像的服务器基础镜像和工具服务器 | 6、7 | CI |
 | crates.io 与 GitHub Releases | `delvec` 和 `delvewright-dsl`；各平台的归档 | 引擎流水线、1 | CI |
 | 生产主机 | 运行 delve 镜像的一台单板计算机 | 7 | 运营者 |

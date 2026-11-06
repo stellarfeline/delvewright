@@ -73,7 +73,7 @@ one with `--prefabs <dir>`.
 | `cameras` | A frame per showcase camera the campaign's `design/cameras.json` states. |
 | `place-camera` | Write one row of `design/cameras.json`: a hand-placed pose, an estimate, or a deletion. |
 | `contact-sheet` | Many candidate renders laid out on one page to choose from. |
-| `grammar` | Prefab authoring from a rule program: `list`, `show`, `check`, `expand`, `coverage`, `audit`. |
+| `grammar` | Prefab authoring from a rule program: `list`, `show`, `check`, `expand`, `coverage`, `audit`; and what a place author plans with: `survey` (what the engine says of a drawn voxel model) and `blocks` (the blocks a place may write). |
 | `prefab` | Prefab admission: `audit`, `seating`, `anchors`, `socket`, `resolve-jigsaw`, `anchor`, `planes`, `lighting`, `catalog`, `gallery`, `curate`, `curate-merge`. |
 | `sculpt` | Sculpt a piece from a form document: a body stated as implicit solids over its own ground. |
 | `schem` | `convert` a Sponge schematic into a structure template. |

@@ -32,9 +32,9 @@ flowchart TD
     I1B -->|"exit 3: repair · exit 4: first run"| I2["I2 · clone the engine at the pinned tag<br/>delvec--v‹version› into ~/.delvewright/engine"]
     I2 --> I3A["I3a · fetch-delvec.py<br/>the release archive and SHA256SUMS<br/>from the engine's GitHub Release"]
     I3A -->|"no archive for this machine"| I3B["I3b · the source floor<br/>cargo build --release -p delvec"]
-    I3A --> I4["I3c–I4 · delvec --version answers the pin<br/>~/.delvewright/env.sh written"]
+    I3A --> I4["I3c–I4 · delvec --version answers the pin<br/>.out/env.sh written in the working directory"]
     I3B --> I4
-    I4 --> I5{{"🖐 I5 · the Minecraft client jar<br/>fetch-client-jar.py, or a copy you name<br/>→ ~/.delvewright/client/minecraft-1.21.11.jar"}}:::human
+    I4 --> I5["I5 · the Minecraft client jar<br/>fetch-client-jar.py downloads it, or a copy<br/>from a Minecraft directory the prompt names<br/>→ ~/.delvewright/client/minecraft-1.21.11.jar"]
     I1B -->|"exit 0: I2–I4 skipped"| I5
     I5 --> I6["I6 · the prefab library<br/>DELVEWRIGHT_PREFABS"]
     I6 --> I7["I7 · named, not installed<br/>refimg.py --dry-run on the drawing path"]
@@ -248,7 +248,7 @@ flowchart TD
 | PackTest on Fabric | mechanism tests on a tool server; never in a shipped delve | 4, 6 | the agent and CI |
 | `harness/` | the mineflayer bot (TypeScript): critical path, die-retry, death-loop, branch runs | 4, 6 | the agent and CI |
 | Lumenwright, inside `delvec` | every picture that has to look like Minecraft | 3, 5 | the agent |
-| GitHub Actions | `ci.yml`, `engine-release.yml`, `dsl-crate-publish.yml`, `plugin-release.yml`, `infra-images.yml`, `gpu-probe.yml` here; `release.yml` in the content repository | engine line, 6 | CI, dispatched by a human |
+| GitHub Actions | `ci.yml`, `engine-release.yml`, `dsl-crate-publish.yml`, `plugin-release.yml`, `infra-images.yml`, `gpu-probe.yml`, `issue-kind.yml` (issue labels) here; `release.yml` in the content repository | engine line, 6 | CI, dispatched by a human |
 | GHCR | multi-arch delve images, the mirrored server base and the tool server | 6, 7 | CI |
 | crates.io and GitHub Releases | `delvec` and `delvewright-dsl`; the per-platform archives | engine line, 1 | CI |
 | the production host | a single-board computer that runs the delve image | 7 | the operator |

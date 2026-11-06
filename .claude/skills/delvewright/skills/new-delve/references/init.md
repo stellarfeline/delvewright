@@ -87,7 +87,7 @@ without it.
 | | why | check |
 |---|---|---|
 | `git` | I2 clones the engine tree, in creator mode | `git --version` |
-| **Python 3.11+** | `tomllib` is stdlib from 3.11, and I3a's selector reads the pin with it. The five scripts in the skill root are stdlib Python | see below |
+| **Python 3.11+** | `tomllib` is stdlib from 3.11, and I3a's selector reads the pin with it. Every script in the skill's `scripts/` is stdlib Python | see below |
 | Docker | the play server at step 13, which drives `docker run` directly | `docker info` |
 | **Compose v2** | **a second install, and the whole of step 10 needs it** — every ladder entry point builds a `docker compose -p …` command line | `docker compose version` |
 
@@ -521,8 +521,6 @@ still owed, not four hours later.
 in-process, with the jar I5 placed — the player-POV review shots, the storybook
 art, the whole-map panorama. Its first line on every run names the renderer and
 whether a GPU or the CPU drew the frames.
-
-The 21 in I1 is the pinned game's own number.
 
 **Reference images, and only on the drawing path.** The design gate at step 4 is
 confirmed on pictures of the design, and there are two ways to have them.
