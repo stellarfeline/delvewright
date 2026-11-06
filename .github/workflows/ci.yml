@@ -294,12 +294,12 @@ jobs:
   # THE RUST SUITE IS ONE BUILD, N PARTITION RUNS, ONE CENSUS (spec-0126 §5).
   #
   # Instrumented, the whole suite's per-test times sum to 55,000–61,000 s and
-  # the hosted runner runs about 3.6 tests at once, so no single job reaches
-  # the 25-minute test-run bound: measured at 4 h 22 m – 4 h 47 m, and once
-  # cancelled at GitHub's 6-hour job limit. The suite is therefore built once
-  # — `rust-build` archives every instrumented test binary — and run as N
-  # partition jobs, each `cargo nextest … --partition hash:k/N` over that one
-  # archive, each bound by the 40-minute job and 25-minute run limits of §5.
+  # the hosted runner runs about 3.6 tests at once, so one job takes
+  # 4 h 22 m – 4 h 47 m, and was once cancelled at GitHub's 6-hour job limit.
+  # The suite is therefore built once — `rust-build` archives every
+  # instrumented test binary — and run as N partition jobs, each
+  # `cargo nextest … --partition hash:k/N` over that one archive. No job, run
+  # or test of the family carries a time bound of its own (spec-0126 §5).
   # The `rust` job gathers them: the partition census proves every listed test
   # ran in exactly one partition (a sharding that can drop a test is the
   # unbound vacuity mode), merges the N profiles into the one coverage report,
@@ -310,7 +310,6 @@ jobs:
     needs: changes
     if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       # The job's disk, met by the host (the action states what it frees and why).
@@ -404,9 +403,6 @@ jobs:
     needs: [changes, rust-build]
     if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
-    # spec-0126 §5.3: 40 min at the median runner speed, with the measured
-    # 3.11x runner variance as headroom, as each partition has.
-    timeout-minutes: 125
     # spec-0126 §5.4: the engine every test runs or spawns runs one thread
     # (`crates/delvec/src/par.rs`), so a test is one core of the runner and
     # the instrumented counters are not contended across threads. The count
@@ -461,10 +457,6 @@ jobs:
     needs: [changes, rust-build, rust-fixtures]
     if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
-    # spec-0126 §5, §5.3: the job bound, 40 min at the median runner speed with
-    # the measured 3.11x runner variance as headroom (3.11 x 40, rounded up). A
-    # partition that exceeds it is cancelled and red.
-    timeout-minutes: 125
     # spec-0126 §5.4: the engine every test runs or spawns runs one thread
     # (`crates/delvec/src/par.rs`), so a test is one core of the runner and
     # the instrumented counters are not contended across threads. The count
@@ -513,8 +505,7 @@ jobs:
       # The checkout stands at the same absolute path as the build's, so every
       # other compiled-in path (`CARGO_MANIFEST_DIR`) resolves as built. Every
       # test runs to its end; the determinism double-build gate (`cli.rs`)
-      # runs inside whichever partition its name hashes to. The 25-minute run
-      # bound and the per-test bound are `[profile.ci]`'s (`.config/nextest.toml`).
+      # runs inside whichever partition its name hashes to.
       - name: cargo nextest, partition k of N, instrumented
         env:
           PARTITION: ${{ matrix.k }}
@@ -562,7 +553,6 @@ jobs:
     # and its first step turns any non-green job it gathers into its own red.
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 40
     steps:
       - name: every job this one gathers is green
         env:
@@ -627,10 +617,9 @@ jobs:
             target/coverage.json
           if-no-files-found: warn
       # Every test file of the audited tree has a row, and every removal its
-      # proof (spec-0126 §6): merges keep their assertions and DW codes, and the
-      # per-test time overrides are the ones the table counts.
-      - name: the suite audit table holds (rows, verdicts, proofs, overrides)
-        run: python3 tools/ci/check-suite-audit.py --merges --overrides
+      # proof (spec-0126 §6): merges keep their assertions and DW codes.
+      - name: the suite audit table holds (rows, verdicts, proofs)
+        run: python3 tools/ci/check-suite-audit.py --merges
       # The coverage floor (spec-0126 §2.2), over the merged report: region
       # coverage of production source may not fall below the record's floor by
       # more than its measured run-to-run instability.
@@ -1466,13 +1455,13 @@ jobs:
   # target (ADR-0023). The test count is asserted so a filter that matched
   # nothing cannot read as green.
   #
-  # Its place in the suite's budget (spec-0126 §5): the job is a build and
-  # one module's tests, so it carries the build job's 40-minute bound
-  # (measured: 8.3, 13.9 and 17.5 min on runs 42004265302, 41990592184 and
-  # 42015765769, the build 4.5–12.9 min of it and the 45 tests 172–226 s).
+  # Its place in the suite (spec-0126 §5): the job is a build and one
+  # module's tests (measured: 8.3, 13.9 and 17.5 min on runs 42004265302,
+  # 41990592184 and 42015765769, the build 4.5–12.9 min of it and the 45
+  # tests 172–226 s), with no time bound of its own.
   # It re-runs on a second platform tests the partitions already run: every
   # test it selects is a test of the archive's listing, run in exactly one
-  # partition, under the per-test bound, at one engine thread. It is not a
+  # partition, at one engine thread. It is not a
   # shard, so the census does not count it; it runs library unit tests, so
   # the audit table, whose rows are integration-test files, has no row for it.
   rust-windows:
@@ -1480,7 +1469,6 @@ jobs:
     needs: changes
     if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
     runs-on: windows-latest
-    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2

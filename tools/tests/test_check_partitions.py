@@ -101,24 +101,3 @@ def test_a_failing_partition_reds(whole):
     r = run(whole, 2)
     assert r.returncode == 1
     assert "partition p1 reports 1 failing test(s)" in r.stderr
-
-
-def test_the_bounds_it_states_are_read_from_the_profile_the_partitions_ran_under(whole):
-    """The census states the run bound and the per-test bound from `--root`'s
-    `.config/nextest.toml`, through `tools/lib/suite_bounds.py`: moving the
-    default in the profile moves the stated bound, with no literal in the gate."""
-    root = whole / "tree"
-    (root / ".config").mkdir(parents=True)
-    profile = root / ".config/nextest.toml"
-    for period, after, want in (("60s", 2, "per test 120 s by default"), ("120s", 3, "per test 360 s by default")):
-        profile.write_text(
-            f'[profile.ci]\nglobal-timeout = "78m"\nslow-timeout = {{ period = "{period}", terminate-after = {after} }}\n',
-            encoding="utf-8",
-        )
-        r = subprocess.run(
-            [sys.executable, str(TOOL), "--list", str(whole / "list.json"), "--junit-dir", str(whole / "parts"),
-             "--partitions", "2", "--root", str(root)],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-        )
-        assert r.returncode == 0, r.stderr
-        assert "partition run 4680 s" in r.stdout and want in r.stdout, r.stdout

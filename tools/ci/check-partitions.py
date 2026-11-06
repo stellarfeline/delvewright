@@ -24,9 +24,8 @@ USAGE
 `LIST.json` is `cargo nextest list … --message-format json` over the archive
 (`rust-suites` → binary id → `testcases` → test name → `ignored`); `DIR` holds
 one `junit.xml` per partition, each under its own directory (the partition's
-name), at any depth inside it. It states every partition's wall beside the run
-bound and the per-test bound, read from the profile the partitions ran under
-(`tools/lib/suite_bounds.py`, `--root`, default this tree). Stdlib only.
+name), at any depth inside it. It states every partition's wall and per-test sum; no partition and
+no test is judged by its time. Stdlib only.
 """
 
 from __future__ import annotations
@@ -36,13 +35,6 @@ import json
 import pathlib
 import sys
 import xml.etree.ElementTree as ET
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "lib"))
-
-from suite_bounds import bounds  # noqa: E402
-
-REPO = pathlib.Path(__file__).resolve().parents[2]
-
 
 def listed(path: pathlib.Path) -> tuple[set[tuple[str, str]], int]:
     """Every non-ignored (binary id, test name) the archive lists, and the ignored count."""
@@ -84,9 +76,7 @@ def main() -> int:
     ap.add_argument("--list", required=True, help="cargo nextest list --message-format json")
     ap.add_argument("--junit-dir", required=True, help="one junit.xml per partition, each in its own directory")
     ap.add_argument("--partitions", required=True, type=int, help="N, the partition count the workflow ran")
-    ap.add_argument("--root", default=str(REPO), help="the tree whose .config/nextest.toml the partitions ran under")
     args = ap.parse_args()
-    b = bounds(pathlib.Path(args.root))
 
     refusals: list[str] = []
     n = args.partitions
@@ -140,18 +130,10 @@ def main() -> int:
         f"ran: {len(seen)} distinct in {sum(counts)} testcases; per partition: "
         f"min {min(counts) if counts else 0}, max {max(counts) if counts else 0}"
     )
-    def fmt(v: float | None) -> str:
-        return "unarmed" if v is None else f"{v:.0f} s"
-
-    print(
-        f"bounds ({args.root}/.config/nextest.toml): partition run {fmt(b.run_seconds)}; "
-        f"per test {fmt(b.test_seconds)} by default, {len(b.overrides)} test(s) with their own"
-    )
     for r in reports:
-        share = f" ({r['wall'] / b.run_seconds:.0%} of the run bound)" if b.run_seconds else ""
         print(
             f"  {r['label']}: {len(r['cases'])} tests, JUnit sum {r['seconds']:.0f} s, "
-            f"nextest wall {r['wall']:.0f} s{share}, failures {r['failures']}"
+            f"nextest wall {r['wall']:.0f} s, failures {r['failures']}"
         )
     if reports:
         print(

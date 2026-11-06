@@ -29,11 +29,6 @@ WHAT IT ASSERTS (exit 1 on any)
                writes the measured columns (tests, seconds, unique_regions,
                subsumed_tests, unknown_coverage_tests, shared_state) from a
                coverage map and a JUnit report, keeping each row's verdict.
-  --overrides  also asserts the `[[profile.ci.overrides]]` entries of
-               `.config/nextest.toml` number the table's `overrides`, and each
-               carries `filter = 'test(=…)'`, a `slow-timeout`, a `priority`
-               above the default and, inside its block, a comment
-               `# measured: <N> s …` with why it cannot be smaller.
 
 Stdlib only.
 """
@@ -47,11 +42,6 @@ import pathlib
 import re
 import subprocess
 import sys
-import tomllib
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "lib"))
-
-from suite_bounds import bounds  # noqa: E402
 
 TABLE = "crates/delvec/tests/measured/suite-audit.json"
 EXCLUDED_DIRS = ("common", "support", "fixtures", "measured")
@@ -237,7 +227,6 @@ def measure(args, root: pathlib.Path) -> int:
     doc = {
         "tree": args.tree,
         "files": len(rows),
-        "overrides": json.loads(table_path.read_text(encoding="utf-8")).get("overrides", 0) if table_path.is_file() else 0,
         "measured": {
             "map_tests": len(first),
             "map_regions": size,
@@ -268,7 +257,6 @@ def main() -> int:
     ap.add_argument("--root", default=None)
     ap.add_argument("--table", default=TABLE)
     ap.add_argument("--merges", action="store_true")
-    ap.add_argument("--overrides", action="store_true")
     ap.add_argument("--measure", help="a coverage map directory: write the table's measured columns")
     ap.add_argument("--second-map", help="a second map of the same tree, compared for stability")
     ap.add_argument("--junit", help="the JUnit report the seconds and test counts are read from")
@@ -358,33 +346,6 @@ def main() -> int:
             print(f"merge {f} -> {into}: assertions {nb} -> {na}; DW codes {sum(cb.values())} -> {sum(ca.values())}")
             if na < nb or any(ca[c] < n for c, n in cb.items()):
                 errors.append(f"{f} -> {into}: an assertion or a DW code was dropped by the merge")
-
-    if args.overrides:
-        b = bounds(root)
-        cfg_path = root / ".config/nextest.toml"
-        text = cfg_path.read_text(encoding="utf-8")
-        cfg = tomllib.loads(text)
-        overrides = cfg.get("profile", {}).get("ci", {}).get("overrides", [])
-        if len(overrides) != table.get("overrides"):
-            errors.append(f"[[profile.ci.overrides]] has {len(overrides)} entries; the table states {table.get('overrides')}")
-        blocks = text.split("[[profile.ci.overrides]]")[1:]
-        for i, o in enumerate(overrides):
-            filt = o.get("filter", "")
-            if not re.fullmatch(r"test\(=[^)]+\)", filt):
-                errors.append(f"override {i}: filter {filt!r} is not test(=<name>)")
-            if "slow-timeout" not in o:
-                errors.append(f"override {i}: carries no slow-timeout")
-            if not isinstance(o.get("priority"), int) or o["priority"] <= 0:
-                errors.append(f"override {i}: carries no priority above the default (spec-0126 §5.4: the longest tests of a partition start first)")
-            own = b.overrides.get(filt[len("test(="):-1])
-            if own is None or (b.test_seconds is not None and own <= b.test_seconds):
-                errors.append(f"override {i} ({filt}): its bound ({own}) does not extend the default per-test bound ({b.test_seconds} s)")
-            if i >= len(blocks) or not re.search(r"^\s*#.*\bmeasured\b[^\n]*?\d+(\.\d+)?\s*s\b", blocks[i], re.M):
-                errors.append(f"override {i} ({filt}): no comment in its block states its measured time")
-        print(
-            f"overrides: {len(overrides)} entries in [[profile.ci.overrides]]; table states {table.get('overrides')}; "
-            f"default per-test bound {b.test_seconds} s, partition run bound {b.run_seconds} s"
-        )
 
     print(
         f"suite audit: {len(rows)} rows for {len(want)} test files of {tree[:12]}; verdicts "

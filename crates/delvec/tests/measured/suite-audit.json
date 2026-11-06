@@ -9,7 +9,6 @@
     "map_unstable_regions": 11005,
     "map_unstable_tests": 56
   },
-  "overrides": 76,
   "rows": [
     {
       "file": "crates/delvec/tests/absent_vocabulary.rs",
