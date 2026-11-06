@@ -171,7 +171,7 @@ An opt-out an author can write (`#[mutants::skip]`, `#[coverage(off)]`) is a pro
 
 ### 5.2 One binary, not one per file **[cited: matklad, *Delete Cargo Integration Tests*]**
 
-Each file under `tests/` *"is compiled into a separate binary"*, linking the library again; cargo runs the binaries one after another, so *"the critical path is the sum of longest tests in each binary"*. Cargo's own consolidation into one `testsuite` crate: *"The time to compile the test suite decreased 3x"*, *"The size of on-disk artifacts decreased 5x"*. The recommendation is one integration crate (`tests/it/main.rs`) with a module per topic. The repository's 283 `delvec` test files are 283 link steps today.
+Each file under `tests/` *"is compiled into a separate binary"*, linking the library again; cargo runs the binaries one after another, so *"the critical path is the sum of longest tests in each binary"*. Cargo's own consolidation into one `testsuite` crate: *"The time to compile the test suite decreased 3x"*, *"The size of on-disk artifacts decreased 5x"*. The recommendation is one integration crate (`tests/it/main.rs`) with a module per topic. The repository's integration tests follow it: each package's are one crate, `tests/it/`, with a module per topic (spec-0126).
 
 ### 5.3 PR gate versus full suite **[cited: rustc-dev-guide, *Testing with CI*; GitHub Actions limits]**
 

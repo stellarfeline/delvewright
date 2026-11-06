@@ -110,7 +110,8 @@ reads:
   verbatim and not a date.** Every artifact of this campaign is
   English-first and carries no personal information, no verbatim personal
   speech, and no record of who decided something or when — the engine
-  constitution's Conventions name these generation logs explicitly. So write the
+  constitution's *Privacy in repo artifacts* convention, which holds for these
+  generation logs as for every other artifact. So write the
   constraint ("the brief pinned the tide as a story beat, never a clock"), never
   the sentence somebody typed; write the decision, never its date or its author.
   The record is for whoever authors the next round of this campaign, and a date

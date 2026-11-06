@@ -398,7 +398,7 @@ waiting for the owner to hit one. Measured latency on the island:
   later**. On its first run against the real build it immediately
   found a second instance: Antiphos at the cave mouth, separation `0.00` — which
   the owner had by then independently lost a click to.
-- Same shape for `DW0205`: its test table's first row is the owner's
+- Same shape for the optional-participation skip check: its test table's first row is the owner's
   muster/surf softlock verbatim, and on arrival it found **three** live instances
   in the campaign.
 
@@ -795,7 +795,7 @@ Not because one round fixed everything. Because:
    finally had something to bite.
 3. Round 21 is recorded as "red frames, in the order the machine produced them —
    every fix admitted by a red first": a campaign green for twenty rounds
-   produced **eight classes of machine red in one round** (`DW0205`×3, `DW0469`,
+   produced **eight classes of machine red in one round** (the optional-participation skip check ×3, `DW0469`,
    `DW0483`×3, `DW0489`, `DW0132`, `DW0180`/`DW0181`, `DW0310`, `DW0450`). Those
    eight are the findings the owner would otherwise have reported.
 4. Round 22's bot died in the storm gauntlet — the machine making a difficulty

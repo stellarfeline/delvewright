@@ -93,7 +93,7 @@ The full inventory — every binary, script and flag that exists — is
   `campaigns/<id>/skins/`. A mob's retexture is drawn to that mob's own boxes (`delve_skin parts <model>`; *NPC skins*).
 - **Cleaning up a ladder or a play session by hand**: `$DELVEWRIGHT_ENGINE/validation/fresh-volumes.sh
   --project <id>`. `--project` is required everywhere and there is no daemon-wide
-  mode. It reclaims what the project owns — containers, volumes and networks —
-  and proves it. The `--profile play` stack from step 13 pins a fixed container
+  mode. It reclaims what the project owns — containers, volumes, networks and
+  the images it built — and proves it. The `--profile play` stack from step 13 pins a fixed container
   name, so tear that one down with `docker compose … down -v` or
   `$DELVEWRIGHT_ENGINE/tools/creator/playtest-server.sh down` rather than with `fresh-volumes.sh` (`down` keeps the playtest images that make the next `up` a reopen, and their checkpoints; `down --prune` removes both).
