@@ -50,7 +50,7 @@ The entry leaves out CI, planner and documentation work that changes nothing for
 
 ### Highlights
 
-- The DSL format number is now 0.69.0; documents declare it and `delvec fmt` writes it.
+- The DSL format number moves with this release; documents declare it and `delvec fmt` writes it.
 - Place sides default to open, and fill strata let a place's ground read as a hillside.
 - Stages 2 and 5 gain the declarations that make harmless bodies and shut ways honest.
 
