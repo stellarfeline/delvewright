@@ -26,7 +26,7 @@ use super::World;
 use crate::compiler::nav::world::Ambient;
 use crate::compiler::nav::world::body::Footprint;
 use delvewright_dsl::metrics::body::{
-    self as sim, Aabb, Attributes, CollisionWorld, Fluid, Input, Material, Rules, State,
+    self as sim, Aabb, Attributes, CollisionWorld, Fluid, Input, Material, Rules, State, cell_floor,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -1282,11 +1282,7 @@ pub enum Death {
 const LAUNCH_TICKS: usize = 160;
 
 fn cell_of(p: [f64; 3]) -> [i32; 3] {
-    [
-        p[0].floor() as i32,
-        p[1].floor() as i32,
-        p[2].floor() as i32,
-    ]
+    [cell_floor(p[0]), cell_floor(p[1]), cell_floor(p[2])]
 }
 
 /// The feet height a body standing in `c` rests at, read through `codes`:
@@ -1322,11 +1318,11 @@ fn landing_cells<C: Codes + ?Sized>(codes: &C, body: &Attributes, p: [f64; 3]) -
         bb.max[1] - TOUCH,
         bb.max[2] - TOUCH,
     );
-    for x in bb.min[0].floor() as i32..=bb.max[0].floor() as i32 {
-        for z in bb.min[2].floor() as i32..=bb.max[2].floor() as i32 {
+    for x in cell_floor(bb.min[0])..=cell_floor(bb.max[0]) {
+        for z in cell_floor(bb.min[2])..=cell_floor(bb.max[2]) {
             // From the cell under the feet: a barrier there reaches half a
             // block over its own cell.
-            for y in bb.min[1].floor() as i32 - 1..=bb.max[1].floor() as i32 {
+            for y in cell_floor(bb.min[1]) - 1..=cell_floor(bb.max[1]) {
                 world.shapes([x, y, z], &mut boxes);
             }
         }
@@ -1335,12 +1331,12 @@ fn landing_cells<C: Codes + ?Sized>(codes: &C, body: &Attributes, p: [f64; 3]) -
         return Vec::new();
     }
     let mut out = Vec::new();
-    let y0 = (p[1] - 1e-7).floor() as i32;
+    let y0 = cell_floor(p[1] - 1e-7);
     // A barrier's top is half a block into the cell over it: the cell under the
     // feet cell's support is asked only for feet at a half.
-    let half = ((p[1] - p[1].floor()) - 0.5).abs() < 1e-6;
-    for x in bb.min[0].floor() as i32..=bb.max[0].floor() as i32 {
-        for z in bb.min[2].floor() as i32..=bb.max[2].floor() as i32 {
+    let half = ((p[1] - f64::from(cell_floor(p[1]))) - 0.5).abs() < 1e-6;
+    for x in cell_floor(bb.min[0])..=cell_floor(bb.max[0]) {
+        for z in cell_floor(bb.min[2])..=cell_floor(bb.max[2]) {
             for sy in [y0, y0 - 1].into_iter().take(if half { 2 } else { 1 }) {
                 boxes.clear();
                 world.shapes([x, sy, z], &mut boxes);
@@ -1401,9 +1397,9 @@ fn edge_position<C: Codes + ?Sized>(
         );
         let mut meets = false;
         let mut stands = false;
-        for x in bb.min[0].floor() as i32..=bb.max[0].floor() as i32 {
-            for z in bb.min[2].floor() as i32..=bb.max[2].floor() as i32 {
-                for y in (bb.min[1].floor() as i32 - 1)..=bb.max[1].floor() as i32 {
+        for x in cell_floor(bb.min[0])..=cell_floor(bb.max[0]) {
+            for z in cell_floor(bb.min[2])..=cell_floor(bb.max[2]) {
+                for y in (cell_floor(bb.min[1]) - 1)..=cell_floor(bb.max[1]) {
                     boxes.clear();
                     world.shapes([x, y, z], boxes);
                     for b in boxes.iter() {
@@ -2306,7 +2302,7 @@ fn carry_table() -> &'static [f64] {
 fn reach_columns(k: i32) -> i32 {
     let t = carry_table();
     let k = (k.max(0) as usize).min(t.len() - 1);
-    (t[k] + 1.0 + Attributes::PLAYER.width / 2.0).floor() as i32
+    cell_floor(t[k] + 1.0 + Attributes::PLAYER.width / 2.0)
 }
 
 /// Per window cell of `d`, the world's raw membership: bit 0 tall, 1 a
@@ -3002,14 +2998,14 @@ impl World {
                 );
                 let grow = |into: &mut Option<bank::Box3>, b: &Aabb| {
                     let lo = [
-                        b.min[0].floor() as i32 - 2,
-                        b.min[1].floor() as i32 - 3,
-                        b.min[2].floor() as i32 - 2,
+                        cell_floor(b.min[0]) - 2,
+                        cell_floor(b.min[1]) - 3,
+                        cell_floor(b.min[2]) - 2,
                     ];
                     let hi = [
-                        b.max[0].floor() as i32 + 2,
-                        b.max[1].floor() as i32 + 3,
-                        b.max[2].floor() as i32 + 2,
+                        cell_floor(b.max[0]) + 2,
+                        cell_floor(b.max[1]) + 3,
+                        cell_floor(b.max[2]) + 2,
                     ];
                     *into = Some(match *into {
                         None => (lo, hi),
