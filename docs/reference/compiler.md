@@ -350,7 +350,7 @@ at the end, under one budget of N byte(s), the sum of the working sets stated:
 byte(s) (3 x 3 chunks of the largest decoded, C byte(s), and their buffered
 pushes); L chunk read(s) back over D record(s), E chunk(s) given up (ADR-0037
 §2)`, `reach closures: V chunk visit(s) over P (closure, chunk) pair(s), at
-most M for one chunk in one closure [NxK …]`, `reach snapshot: P distinct
+most M for one chunk in one closure [NxK …] (ADR-0037 §2)`, `reach snapshot: P distinct
 page(s) of 4096 cell(s) over B byte(s) in the scratch file; R resident at the
 end, working set W byte(s) …; L page(s) read back; H of T page read(s) served
 by a thread's recent pages (ADR-0037 §2)`, `reach portals: N portal edge(s)
@@ -6204,35 +6204,19 @@ world. Invariants:
     agreement test `the_sea_the_launches_read_is_the_sea_the_rest_relation_reads`
     holds the two to one answer on generated ocean worlds.
     Bedrock everywhere ⇒ the void premise is
-    vacuous, and the real hazard is **stranding**, modelled as:
-    1. **Entering.** A reachable walkable cell puts the player in the sea when a
-       horizontally adjacent column is enterable at its level (feet + head clear
-       of solids and 1.5-tall barriers — water does *not* block walking in) and
-       that column is open, between that level and the sea surface, all the way
-       to ambient water. Walking in, wading in and falling off a cliff are the
-       same outcome: vanilla buoyancy leaves the player afloat at `sea_level`.
-    2. **The sea.** A cell at `y == sea_level` is swimmable when it is neither
-       solid nor tall and is either ambient water or *authored* water (a lagoon
-       at sea level is physically the same plane). Swimmable cells 4-connect into
-       **bodies**; a body reaching the edge of the search window (the placed
-       geometry inflated by `nav::OPEN_SEA_MARGIN`) is the open sea, and all such
-       bodies are one, since the ring beyond the window is untouched ambient
-       water in every direction. Connectivity is taken on the surface plane only
-       — a diver might swim under a land bridge into another body, which the
-       model deliberately does not count on.
-    3. **Climbing out.** A body is escapable when one of its surface cells is
-       horizontally adjacent to a **proven reachable walkable** cell whose feet
-       are at `sea_level` (a rim one block under the waterline: wade out of the
-       shallows) or `sea_level + 1` (the canonical beach — land flush with the
-       surface; this is the island tileset's own convention, waterline local y=2
-       / walk plane local y=3). A lip two blocks above the surface is a wall to a
-       swimmer, and adventure mode has neither boat nor blocks.
-
-    A body the player can enter and cannot climb out of is the violation. The
-    granularity is **per body**: an island with a perfect outer beach still fails
-    on an inner pool with 2-high walls, which a global "is there a climb-out
-    anywhere" test would pass. Requiring the climb-out cell to be in the
-    *reachable* walk region is what makes it a return, not just a landing.
+    vacuous, and the real hazard is **stranding**, judged over the reach graph
+    (spec-0113 §5.1, `nav::horizon`): a body is in the sea exactly when the
+    graph puts it afloat or submerged, and stranded when no path in the graph
+    leads from that state back to standing (standing in the shallows — a water
+    cell whose floor a body's feet reach, with air over it — counts as
+    standing). The walk back is taken backwards from the standing states over
+    the predecessor edges, the open sea joined to itself, so a climb out
+    anywhere on its rim serves all of it. The report names each standing
+    state with an edge into stranding water, whether that water is the open
+    sea or enclosed, and the movement that enters it. The judgement is **per
+    state**: an island with a perfect outer beach still fails on an inner pool
+    with walls a swimmer cannot climb, which a global "is there a climb-out
+    anywhere" test would pass.
 - **Gate-region collision (`DW0353`, advisory).** A world-edit inside a region a
   runtime write fills — a `close-gate`'s gate region, a `fill-region`'s box, a
   `set-block`'s cell, a laid way, a trigger's or an objective's prop — is
