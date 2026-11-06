@@ -1452,3 +1452,104 @@ fn a_node_records_the_same_variant_whichever_graph_banked_first() {
     assert!(compared > 0);
     assert!(fb.reused_runs() > 0 && rb.reused_runs() > 0);
 }
+
+/// **A node's variant is the same whatever the flight memo holds** (ADR-0006,
+/// `reach/flights.rs`): the memo is shared by every world of the process, and
+/// a flight it kept from a world with a deeper floor reads on past where this
+/// world's floor ends the same flight. A slab over the void, and the same slab
+/// with a stone far below it that drops the window's floor by forty courses;
+/// the deep world's graph is taken first, so the memo holds its flights. Every
+/// node of the shallow world is expanded with the memo off and then on, each
+/// against an empty bank, and every variant compared byte for byte. Red on
+/// any variant that records a cell, or a box, its flights did not read.
+/// Bound: some of the shallow world's launches leave the world, and beside
+/// the memo some kept flights are taken and some refused.
+#[test]
+fn a_node_records_the_same_variant_whatever_the_flight_memo_holds() {
+    // Two courses thick, with a lip of barrier on one corner: no other test's
+    // slab, so the memo's paths for these launches are this test's.
+    let slab = || {
+        let mut b = Build::default();
+        b.fill([0, -1, 0], [4, 0, 4]);
+        b.tall.insert([0, 1, 4]);
+        b
+    };
+    let mut deep = slab();
+    deep.fill([40, -40, 40], [40, -40, 40]);
+    let deep = deep.world(Ambient::Void, Vec::new());
+    let shallow = slab().world(Ambient::Void, Vec::new());
+    let root = [[2, 1, 2]];
+    let _ = deep.body_reach(&root);
+    let r = shallow.body_reach(&root);
+    assert!(
+        !r.leaves_world.is_empty(),
+        "the shallow slab's rim drops out of the world: the case binds nothing"
+    );
+    let params = ReachParams::shipped(shallow.unbounded_fall);
+    let m = shallow.graph_memo(&params);
+    let mut keys: Vec<FlownKey> = m
+        .flown
+        .entries()
+        .into_iter()
+        .flat_map(|(c, l)| l.into_iter().map(move |(q, _)| (c, q)))
+        .collect();
+    keys.sort();
+    let record = || -> BTreeMap<FlownKey, Vec<u8>> {
+        let mut out = BTreeMap::new();
+        for key in &keys {
+            let b = bank::Bank::holding(Vec::new());
+            let volumes = |bx| shallow.volumes_near(bx);
+            let jumps = shallow.jumps_from(key.0);
+            let x = b.expansion(
+                key,
+                &m.dense,
+                &m.extra,
+                &shallow.node_boxes(key.0),
+                &jumps,
+                &volumes,
+            );
+            let e = Arc::new(shallow.expand(&m, &params, key.0, key.1, Some(&x)));
+            let Some(rb) = e.read else { continue };
+            let v = b.keep(*key, x, &m.extra, jumps, shallow.volumes_near(rb), &e);
+            out.insert(*key, super::persist::encode_variant(&v));
+        }
+        out
+    };
+    let flown = flights::without(record);
+    let before = MEMO_ANSWERS.with(std::cell::Cell::get);
+    let memo = record();
+    let after = MEMO_ANSWERS.with(std::cell::Cell::get);
+    let (taken, refused) = (after.0 - before.0, after.1 - before.1);
+    assert!(
+        taken > 0 && refused > 0,
+        "the memo took {taken} and refused {refused} kept flight(s): the case binds nothing"
+    );
+    assert!(
+        !flown.is_empty(),
+        "no node was expanded: the case binds nothing"
+    );
+    let moved: Vec<String> = flown
+        .iter()
+        .filter(|(k, v)| memo.get(*k) != Some(*v))
+        .map(|(k, v)| {
+            format!(
+                "node {k:?}: {} byte(s) flown, {} byte(s) beside the memo",
+                v.len(),
+                memo.get(k).map_or(0, Vec::len)
+            )
+        })
+        .collect();
+    eprintln!(
+        "flight memo and the bank: {} variant(s) compared, {} moved with what the memo held; \
+         {taken} kept flight(s) taken and {refused} refused beside the memo",
+        flown.len(),
+        moved.len()
+    );
+    assert!(
+        moved.is_empty(),
+        "{} of {} variant(s) moved with what the memo held: {:?}",
+        moved.len(),
+        flown.len(),
+        &moved[..moved.len().min(8)]
+    );
+}

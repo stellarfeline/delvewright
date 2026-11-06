@@ -25,9 +25,15 @@
 //! check answers the same on every tick.
 //!
 //! The memo is an accelerator, never a premise: a walk that misses flies the
-//! launch, and every answer is the answer a flight would give. Nothing in it
-//! depends on which thread asked first, so the order threads fill it in
-//! changes how long a build takes and never what it emits (ADR-0006).
+//! launch, and every answer is the answer a flight would give. What it holds
+//! depends on which world flew a start first — a flight kept under a deeper
+//! floor, or where no volume stopped it, reads on past where another world's
+//! flight of the same start ends — and what it answers never does. A lookup
+//! is walked through a reader that notes nothing for the node bank; a kept
+//! flight taken has the cells it read read again through the node's reader,
+//! so what a node records is what its own flights read. The order threads
+//! fill the memo in changes how long a build takes and never what it emits
+//! or what the bank keeps (ADR-0006).
 
 use super::{Code, Codes, Flight, Launch, Mode, Outcome};
 use delvewright_dsl::metrics::body::{Aabb, State};
@@ -289,6 +295,26 @@ fn shards() -> &'static [RwLock<Shard>] {
 
 static HELD: AtomicU64 = AtomicU64::new(0);
 
+#[cfg(test)]
+thread_local! {
+    static OFF: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// `f` with the memo neither asked nor written on this thread: every launch
+/// flown, as a process with an empty memo flies it.
+#[cfg(test)]
+pub(super) fn without<R>(f: impl FnOnce() -> R) -> R {
+    let was = OFF.with(|o| o.replace(true));
+    let out = f();
+    OFF.with(|o| o.set(was));
+    out
+}
+
+#[cfg(test)]
+fn off() -> bool {
+    OFF.with(std::cell::Cell::get)
+}
+
 fn small(c: [i32; 3]) -> Option<[i16; 3]> {
     Some([
         i16::try_from(c[0]).ok()?,
@@ -304,6 +330,10 @@ fn read<C: Codes + ?Sized>(codes: &C, c: [i16; 3]) -> Code {
 
 /// The recorded flight of `key` over `codes`, if one met the same cells.
 pub(super) fn lookup<C: Codes + ?Sized>(key: &Key, codes: &C) -> Option<Kept> {
+    #[cfg(test)]
+    if off() {
+        return None;
+    }
     let shard = shards()[key.shard()].read().expect("flight memo");
     let mut n = *shard.roots.get(key)?;
     loop {
@@ -531,6 +561,10 @@ impl<C: Codes + ?Sized> Codes for Reads<'_, C> {
 /// fly on.
 pub(super) fn record<C: Codes + ?Sized>(key: Key, reads: Reads<'_, C>, flight: &Flight) {
     if matches!(flight.outcome, Outcome::Dead(super::Death::Volume)) {
+        return;
+    }
+    #[cfg(test)]
+    if off() {
         return;
     }
     let Some(swept) = flight.swept else {
