@@ -1483,7 +1483,7 @@ pub fn render_plan(
     for shot in thresholds.shots {
         out.push(shot);
     }
-    eprintln!("{}", thresholds.count.line());
+    crate::note!("{}", thresholds.count.line());
 
     let proven_in = out.prove_eyes(picture)?;
     let mut warnings = Vec::new();

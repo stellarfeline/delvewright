@@ -136,7 +136,24 @@ fn check(campaign: &Path, prefabs: &Path, cache: Option<&str>, threads: Option<&
     if let Some(t) = threads {
         cmd.env("DELVEC_THREADS", t);
     }
-    cmd.output().expect("run delvec")
+    let notes = campaign.join(".out/detail-check-notes.txt");
+    let _ = std::fs::remove_file(&notes);
+    let mut out = cmd.output().expect("run delvec");
+    // What the check said is its stderr and the whole's notes it wrote to the
+    // file its stderr names: both are compared.
+    let written = std::fs::read(&notes).unwrap_or_else(|e| {
+        panic!(
+            "the check wrote no notes at {}: {e}\n{}",
+            notes.display(),
+            String::from_utf8_lossy(&out.stderr)
+        )
+    });
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains(&format!("written to {}", notes.display())),
+        "the check names its notes file"
+    );
+    out.stderr.extend_from_slice(&written);
+    out
 }
 
 /// **`delvec detail` keeps the bank with the campaign** when the variable is
@@ -241,6 +258,10 @@ fn detail_keeps_the_bank_with_the_campaign_and_reclaims_another_binary_s() {
     assert!(
         lines(&off).iter().any(|l| l.starts_with("reach bank:")),
         "the check states its bank"
+    );
+    assert!(
+        lines(&off).iter().any(|l| l.starts_with("DW0210 binding:")),
+        "the whole's notes the check wrote are among what it is compared by"
     );
 
     let one = root.join("one-thread-bank");

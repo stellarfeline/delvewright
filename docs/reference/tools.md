@@ -231,7 +231,13 @@ raises, without encoding the review worlds no proof reads. `--check` counts
 the validation funnel's binding notes (every pass's count, one placement line
 per box: the campaign's census, the same on every check) rather than printing
 them, in one line naming the `delvec validate` that prints them; the commit
-prints them. Every `detail` run keeps the reach graph's node bank at
+prints them. Likewise the whole's binding notes — every line the leak proof
+and the battery's proofs print about the whole campaign, held through
+`compiler::notes` — are written, in the order said, to
+`<campaign>/.out/detail-check-notes.txt` and counted on one line naming that
+file (`-- what the whole's proofs examined: N line(s), the campaign's census;
+written to …`); a refusal is printed where it is raised. The commit prints
+them. Every `detail` run keeps the reach graph's node bank at
 `<campaign>/.out/reach-bank/` (`compiler.md`, `DELVEC_REACH_CACHE`), so a
 check after the first takes every node earlier runs flew whose read cells,
 doors and trapdoors among them, hold the same. The bank's files are named for

@@ -872,7 +872,13 @@ the piece's structure file(s), metadata, report and row) into the copies, and
 the commit's own battery (`battery`) over the whole that leaves — so every
 refusal the commit can give, the check gives, at the commit's exit, with no
 list of battery observers to keep in step. The scratch is removed when the run
-ends; nothing of the campaign or the library is written.
+ends; nothing of the campaign or the library is written. From the leak proof
+to the battery's end, the build's binding notes (`compiler::notes`: every
+proof's census line, said through `note!`) are held, not printed, and written
+in the order said to `<campaign>/.out/detail-check-notes.txt`, named on one
+counted line (`-- what the whole's proofs examined: N line(s), the campaign's
+census; written to <path>`); a refusal prints where it is raised. `build` and
+the commit print the same notes as they are said.
 Exit 0 says the program would commit against the whole as it stands now; any
 other exit is the verdict the commit would give, in the same words. Its
 binding line carries the battery's (`the commit's battery: the whole builds
