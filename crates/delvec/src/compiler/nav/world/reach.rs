@@ -1905,7 +1905,7 @@ type Edges =
     HashMap<([i32; 3], EdgeKind), (Option<i16>, bool), std::hash::BuildHasherDefault<flights::Mix>>;
 
 /// `edges` in key order: cell, then kind.
-fn sorted_edges(edges: Edges) -> Vec<(([i32; 3], EdgeKind), (Option<i16>, bool))> {
+fn sorted_edges(edges: Edges) -> Vec<bank::NamedEdge> {
     let mut v: Vec<_> = edges.into_iter().collect();
     v.sort_unstable_by_key(|(k, _)| *k);
     v
