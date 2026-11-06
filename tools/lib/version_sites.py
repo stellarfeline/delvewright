@@ -286,7 +286,14 @@ ROWS: dict[str, list[dict[str, object]]] = {
 # an entry is never a licence for the whole file. A statement the file no longer
 # contains is reported, which is how an entry keyed to a number is retired when
 # the number moves on.
-COUNTEREXAMPLES: dict[str, dict[str, object]] = {}
+COUNTEREXAMPLES: dict[str, dict[str, object]] = {
+    "RELEASE-NOTES.md": {
+        "statements": ["## delvewright-dsl {v}\n"],
+        "reason": "the heading of the release being prepared: the release workflows require the entry "
+        "titled with the crate's version, and `tools/ci/check-release-notes.py` holds that title equal "
+        "to the version the tree states (a heading ahead of or behind it is a finding there)",
+    },
+}
 
 # Documents that declare a `dsl_version` OTHER than the authority's, on purpose.
 # The sweep above only ever asks which files state the CURRENT number, so a

@@ -431,3 +431,20 @@ def test_a_declared_older_document_that_stopped_stating_it_is_reported(scratch: 
     r = run("verify", root=scratch)
     assert r.returncode == 1
     assert "OLDER_DOCUMENTS" in r.stderr and "no longer states" in r.stderr
+
+
+def test_the_release_notes_heading_is_excused_and_a_second_mention_is_not(scratch: Path) -> None:
+    """The notes heading `## delvewright-dsl <v>` is the one statement the file may make.
+
+    The perturbation is the number typed into a bullet of the same file: the
+    entry excuses the heading and nothing else in `RELEASE-NOTES.md`.
+    """
+    v = _dsl_version()
+    notes = scratch / "RELEASE-NOTES.md"
+    assert f"## delvewright-dsl {v}\n" in notes.read_text(encoding="utf-8")
+    assert run("verify", root=scratch).returncode == 0
+    notes.write_text(notes.read_text(encoding="utf-8") + f"\n- the format is {v}\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(scratch), "add", "-A"], check=True)
+    r = run("verify", root=scratch)
+    assert r.returncode == 1, r.stdout
+    assert "RELEASE-NOTES.md" in r.stderr
