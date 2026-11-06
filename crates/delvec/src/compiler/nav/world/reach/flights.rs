@@ -393,16 +393,21 @@ pub(super) struct Reads<'a, C: Codes + ?Sized> {
     /// The thread's tables, taken for this flight and handed back after.
     near: Vec<std::cell::Cell<(u32, Code)>>,
     far: std::cell::RefCell<Seen>,
+    /// The thread's room for the sequence as [`record`] stores it.
+    small: std::cell::RefCell<Vec<([i16; 3], Code)>>,
 }
 
 /// The cells near the launch cell a flight has read, with their codes, each
 /// slot stamped with the flight it belongs to, and [`Seen`] for the cells
 /// further off. A flight reads each cell many times, the first through the
-/// world and every later one from here.
+/// world and every later one from here. The two sequences a recording
+/// fills keep their room from flight to flight.
 #[derive(Default)]
 struct Tables {
     near: Vec<std::cell::Cell<(u32, Code)>>,
     seen: Seen,
+    seq: ReadSeq,
+    small: Vec<([i16; 3], Code)>,
 }
 
 /// The box round the launch cell [`Tables::near`] holds: `±NEAR_XZ` across,
@@ -493,6 +498,8 @@ impl<C: Codes + ?Sized> Drop for Reads<'_, C> {
         let t = Tables {
             near: std::mem::take(&mut self.near),
             seen: std::mem::take(&mut *self.far.borrow_mut()),
+            seq: std::mem::take(&mut *self.seen.borrow_mut()),
+            small: std::mem::take(&mut *self.small.borrow_mut()),
         };
         TABLES.with(|x| *x.borrow_mut() = t);
     }
@@ -546,12 +553,15 @@ impl<'a, C: Codes + ?Sized> Reads<'a, C> {
             s.set(v);
             v
         });
+        tables.seq.clear();
+        tables.small.clear();
         Reads {
             inner,
-            seen: std::cell::RefCell::new(Vec::new()),
+            seen: std::cell::RefCell::new(tables.seq),
             stamp,
             near: tables.near,
             far: std::cell::RefCell::new(tables.seen),
+            small: std::cell::RefCell::new(tables.small),
         }
     }
 }
@@ -599,14 +609,14 @@ pub(super) fn record<C: Codes + ?Sized>(key: Key, reads: Reads<'_, C>, flight: &
     if HELD.load(Relaxed) > MEMO_ENTRIES {
         return;
     }
-    let seq = std::mem::take(&mut *reads.seen.borrow_mut());
-    let Some(seq) = seq
-        .iter()
-        .map(|(c, v)| small(*c).map(|c| (c, *v)))
-        .collect::<Option<Vec<_>>>()
-    else {
-        return;
-    };
+    let mut small_seq = reads.small.borrow_mut();
+    for (c, v) in reads.seen.borrow().iter() {
+        let Some(c) = small(*c) else {
+            return;
+        };
+        small_seq.push((c, *v));
+    }
+    let seq: &[([i16; 3], Code)] = &small_seq;
     if seq.len() > CHUNK {
         return;
     }
