@@ -935,46 +935,50 @@ thread_local! {
 /// [`Local::next_run`]), and a read a slot answers still grows the run's and
 /// the scope's box by the cell. A read that notes nothing ([`Local::peek`]) is
 /// the flight memo's walk, which reads the same slots and leaves no mark.
-struct Local<'a> {
+pub(super) struct Local<'a> {
     dense: &'a Dense,
     at: [i32; 3],
     track: Option<&'a bank::Track<'a>>,
-    slots: Vec<std::cell::Cell<Slot>>,
+    /// Per near slot, the expansion the cell was read for and its code: what
+    /// a walk reads, kept apart from `noted` so a walk touches less.
+    codes: Vec<std::cell::Cell<(u32, Code)>>,
+    /// Per near slot, the run the cell was last noted in (`0`: not yet in
+    /// this expansion) and its window index ([`NO_INDEX`] outside it).
+    noted: Vec<std::cell::Cell<(u32, u32)>>,
     /// This expansion's stamp: a slot carrying it holds this node's reading.
     node: u32,
     /// The current run's stamp: a slot carrying it was noted this run.
     run: std::cell::Cell<u32>,
 }
 
-/// One slot of [`Local`]: the cell's code, the expansion it was read for, the
-/// run it was last noted in (`0`: not yet in this expansion), and its window
-/// index ([`NO_INDEX`] outside the window).
-#[derive(Clone, Copy, Default)]
-struct Slot {
-    node: u32,
-    run: u32,
-    index: u32,
-    code: Code,
-}
-
 /// The window index of a cell outside the window.
 const NO_INDEX: u32 = u32::MAX;
 
 /// A thread's slots for [`Local`], with the stamp of the last run.
-type LocalSlots = (u32, Vec<std::cell::Cell<Slot>>);
+type LocalSlots = (
+    u32,
+    Vec<std::cell::Cell<(u32, Code)>>,
+    Vec<std::cell::Cell<(u32, u32)>>,
+);
 
 thread_local! {
-    static LOCAL: std::cell::RefCell<LocalSlots> = const { std::cell::RefCell::new((0, Vec::new())) };
+    static LOCAL: std::cell::RefCell<LocalSlots> = const { std::cell::RefCell::new((0, Vec::new(), Vec::new())) };
 }
 
 /// The next stamp on this thread; the slots are wiped when it wraps.
-fn next_stamp(slots: &[std::cell::Cell<Slot>]) -> u32 {
+fn next_stamp(
+    codes: &[std::cell::Cell<(u32, Code)>],
+    noted: &[std::cell::Cell<(u32, u32)>],
+) -> u32 {
     LOCAL.with(|l| {
         let mut l = l.borrow_mut();
         l.0 = l.0.wrapping_add(1);
         if l.0 == 0 {
-            for s in slots {
-                s.set(Slot::default());
+            for s in codes {
+                s.set((0, 0));
+            }
+            for s in noted {
+                s.set((0, 0));
             }
             l.0 = 1;
         }
@@ -984,19 +988,23 @@ fn next_stamp(slots: &[std::cell::Cell<Slot>]) -> u32 {
 
 impl<'a> Local<'a> {
     fn new(dense: &'a Dense, at: [i32; 3], track: Option<&'a bank::Track<'a>>) -> Self {
-        let slots = LOCAL.with(|l| {
-            let mut slots = std::mem::take(&mut l.borrow_mut().1);
-            if slots.is_empty() {
-                slots = vec![std::cell::Cell::new(Slot::default()); flights::NEAR_SLOTS];
+        let (codes, noted) = LOCAL.with(|l| {
+            let mut l = l.borrow_mut();
+            let mut codes = std::mem::take(&mut l.1);
+            let mut noted = std::mem::take(&mut l.2);
+            if codes.is_empty() {
+                codes = vec![std::cell::Cell::new((0, 0)); flights::NEAR_SLOTS];
+                noted = vec![std::cell::Cell::new((0, 0)); flights::NEAR_SLOTS];
             }
-            slots
+            (codes, noted)
         });
-        let node = next_stamp(&slots);
+        let node = next_stamp(&codes, &noted);
         let local = Local {
             dense,
             at,
             track,
-            slots,
+            codes,
+            noted,
             node,
             run: std::cell::Cell::new(0),
         };
@@ -1008,7 +1016,7 @@ impl<'a> Local<'a> {
     /// first time a run asks for it, so a run notes every cell it reads
     /// whatever the runs before it read. The slots' codes stay.
     fn next_run(&self) {
-        self.run.set(next_stamp(&self.slots));
+        self.run.set(next_stamp(&self.codes, &self.noted));
     }
 
     /// The window cell `c` lies in, and its code, read from the snapshot.
@@ -1035,31 +1043,33 @@ impl<'a> Local<'a> {
 
     /// `c`'s code, noting nothing: a slot's answer, else the snapshot's,
     /// kept in the slot for the expansion.
-    #[inline]
-    fn peek(&self, c: [i32; 3]) -> Code {
-        let a = [c[0] + self.at[0], c[1] + self.at[1], c[2] + self.at[2]];
+    #[inline(always)]
+    pub(super) fn peek(&self, c: [i32; 3]) -> Code {
         let Some(s) = flights::near_slot(c) else {
+            let a = [c[0] + self.at[0], c[1] + self.at[1], c[2] + self.at[2]];
             return self.read(a).1;
         };
-        let slot = self.slots[s].get();
-        if slot.node == self.node {
-            return slot.code;
+        let (node, code) = self.codes[s].get();
+        if node == self.node {
+            return code;
         }
+        let a = [c[0] + self.at[0], c[1] + self.at[1], c[2] + self.at[2]];
         let (index, code) = self.read(a);
-        self.slots[s].set(Slot {
-            node: self.node,
-            run: 0,
-            index,
-            code,
-        });
+        self.codes[s].set((self.node, code));
+        self.noted[s].set((0, index));
         code
     }
 }
 
 impl Drop for Local<'_> {
     fn drop(&mut self) {
-        let slots = std::mem::take(&mut self.slots);
-        LOCAL.with(|l| l.borrow_mut().1 = slots);
+        let codes = std::mem::take(&mut self.codes);
+        let noted = std::mem::take(&mut self.noted);
+        LOCAL.with(|l| {
+            let mut l = l.borrow_mut();
+            l.1 = codes;
+            l.2 = noted;
+        });
     }
 }
 
@@ -1078,45 +1088,24 @@ impl Codes for Local<'_> {
             self.note(index, a);
             return code;
         };
-        let slot = self.slots[s].get();
-        if slot.node == self.node {
-            if slot.run == self.run.get() {
+        let (node, code) = self.codes[s].get();
+        if node == self.node {
+            let (run, index) = self.noted[s].get();
+            if run == self.run.get() {
                 if let Some(t) = self.track {
                     t.extend((a, a));
                 }
             } else {
-                self.note(slot.index, a);
-                self.slots[s].set(Slot {
-                    run: self.run.get(),
-                    ..slot
-                });
+                self.note(index, a);
+                self.noted[s].set((self.run.get(), index));
             }
-            return slot.code;
+            return code;
         }
         let (index, code) = self.read(a);
         self.note(index, a);
-        self.slots[s].set(Slot {
-            node: self.node,
-            run: self.run.get(),
-            index,
-            code,
-        });
+        self.codes[s].set((self.node, code));
+        self.noted[s].set((self.run.get(), index));
         code
-    }
-}
-
-/// [`Local`] read without noting: what the flight memo's walk reads through
-/// ([`flights::lookup`]); a kept flight's cells are read again, noted, as
-/// flying would read them ([`flights::replay`]).
-struct Walk<'a>(&'a Local<'a>);
-
-impl Codes for Walk<'_> {
-    fn wet(&self) -> bool {
-        self.0.wet()
-    }
-    #[inline]
-    fn code(&self, c: [i32; 3]) -> Code {
-        self.0.peek(c)
     }
 }
 
@@ -3024,8 +3013,10 @@ impl World {
                 // nothing: a kept flight may read on past where this one ends
                 // (a deeper floor, a world without this one's volumes), and
                 // what a node records is what its own flights read.
-                let walked = Walk(&local);
-                let mut path = flights::Path::new();
+                // The flight memo is walked through the slots without
+                // noting; the cells a walk read are kept for a kept
+                // flight to note.
+                let mut walked: Vec<[i32; 3]> = Vec::with_capacity(1024);
                 let near = NearStart::new(&local);
                 // An edge position read cells: a launch that takes it from the
                 // memo reads them too, for the run it is in.
@@ -3199,7 +3190,7 @@ impl World {
                                                     )
                                                 };
                                             }
-                                            match flights::lookup(&key, &walked, &mut path) {
+                                            match flights::lookup(&key, &local, &mut walked) {
                                                 Some(leaf)
                                                     if leaf.holds_at(bottom)
                                                         && !leaf.swept.is_some_and(|b| {
@@ -3210,9 +3201,9 @@ impl World {
                                                     // one: the cells it read
                                                     // are read here, as flying
                                                     // would read them.
-                                                    flights::replay(&key, &path, |r| {
-                                                        local.code(r);
-                                                    });
+                                                    for r in &walked {
+                                                        local.code(*r);
+                                                    }
                                                     #[cfg(test)]
                                                     MEMO_ANSWERS.with(|m| {
                                                         m.set((m.get().0 + 1, m.get().1))

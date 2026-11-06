@@ -323,22 +323,17 @@ fn small(c: [i32; 3]) -> Option<[i16; 3]> {
     ])
 }
 
-#[inline]
-fn read<C: Codes + ?Sized>(codes: &C, c: [i16; 3]) -> Code {
-    codes.code([i32::from(c[0]), i32::from(c[1]), i32::from(c[2])])
-}
-
-/// The runs of entries a lookup walked, in order: what [`replay`] reads
-/// again. Entries never move once stored (a run is split by shortening a
-/// node, never by moving its entries), so a path stays readable after the
-/// lock is let go.
-pub(super) type Path = Vec<(u32, u32)>;
-
-/// The recorded flight of `key` over `codes`, if one met the same cells;
-/// `path` is left holding the runs walked (those of a flight that did not
-/// match are left there too, for nothing).
-pub(super) fn lookup<C: Codes + ?Sized>(key: &Key, codes: &C, path: &mut Path) -> Option<Kept> {
-    path.clear();
+/// The recorded flight of `key` over the node's reader `local`, if one met
+/// the same cells: the tree walked reading each cell from the slots without
+/// noting ([`super::Local::peek`]), every cell read written into `seen`, in
+/// order, for a kept flight to note (a flight that did not match leaves its
+/// cells there too, for nothing).
+pub(super) fn lookup(
+    key: &Key,
+    local: &super::Local<'_>,
+    seen: &mut Vec<[i32; 3]>,
+) -> Option<Kept> {
+    seen.clear();
     #[cfg(test)]
     if off() {
         return None;
@@ -356,31 +351,28 @@ pub(super) fn lookup<C: Codes + ?Sized>(key: &Key, codes: &C, path: &mut Path) -
                 left_at: leaf.left_at,
             });
         }
-        path.push((node.start, node.len));
-        for k in 0..node.len - 1 {
-            let e = shard.entry(node.start + k);
-            if read(codes, e.cell) != e.code {
+        // A run never crosses a chunk: one slice holds it.
+        let at = node.start as usize & (CHUNK - 1);
+        let run = &shard.chunks[(node.start >> CHUNK_BITS) as usize][at..at + node.len as usize];
+        let (last, rest) = run.split_last().expect("a run holds an entry");
+        for e in rest {
+            let c = [
+                i32::from(e.cell[0]),
+                i32::from(e.cell[1]),
+                i32::from(e.cell[2]),
+            ];
+            seen.push(c);
+            if local.peek(c) != e.code {
                 return None;
             }
         }
-        let last = shard.entry(node.start + node.len - 1);
-        n = shard.child(n, read(codes, last.cell))?;
-    }
-}
-
-/// Every cell the lookup of `key` that left `path` read, in its order,
-/// handed to `f`: a kept flight taken has its cells read again through the
-/// node's own reader.
-pub(super) fn replay(key: &Key, path: &Path, mut f: impl FnMut([i32; 3])) {
-    if path.is_empty() {
-        return;
-    }
-    let shard = shards()[key.shard()].read().expect("flight memo");
-    for &(start, len) in path {
-        for k in 0..len {
-            let c = shard.entry(start + k).cell;
-            f([i32::from(c[0]), i32::from(c[1]), i32::from(c[2])]);
-        }
+        let c = [
+            i32::from(last.cell[0]),
+            i32::from(last.cell[1]),
+            i32::from(last.cell[2]),
+        ];
+        seen.push(c);
+        n = shard.child(n, local.peek(c))?;
     }
 }
 
