@@ -178,6 +178,11 @@ NOT_EMITTERS = {
         "input fixtures: builds Sponge `.schem` bytes for the round-trip tests, deliberately "
         "including under-specified states, which are the red half of the emitter's own proof."
     ),
+    "crates/delvec/src/compiler/attached.rs": (
+        "`#[cfg(test)]` fixture: `structure` frames the 3 x 3 x 3 templates the write-sequence "
+        "agreement test places, from literal ids its cases name; the bytes go straight into the "
+        "test's own load and are never written to a prefab library."
+    ),
     "crates/delvec/src/compiler/assembled.rs": (
         "`#[cfg(test)]` fixture: hand-frames a template to feed `structure_cells`. Emits "
         "nothing; reads its own bytes back in the same function."

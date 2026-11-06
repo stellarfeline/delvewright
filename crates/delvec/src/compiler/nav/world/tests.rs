@@ -25,13 +25,13 @@ fn floored_with_furniture(
     solid.extend(extra.iter().copied());
     World::from_occupancy(
         crate::compiler::assembled::Occupancy {
-            solid,
-            tall: BTreeSet::new(),
-            use_gates: BTreeSet::new(),
-            flooded: BTreeSet::new(),
-            partial: BTreeMap::new(),
-            waterloggable: BTreeSet::new(),
-            lava: BTreeSet::new(),
+            solid: solid.into(),
+            tall: (BTreeSet::new()).into(),
+            use_gates: (BTreeSet::new()).into(),
+            flooded: (BTreeSet::new()).into(),
+            partial: (BTreeMap::new()).into(),
+            waterloggable: (BTreeSet::new()).into(),
+            lava: (BTreeSet::new()).into(),
             climb: Default::default(),
             unheld_climb: Default::default(),
             material: Default::default(),

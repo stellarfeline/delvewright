@@ -305,13 +305,13 @@ fn judge_load(load: &BlockMap, surround: &Surround) -> Binding {
             Some(Needs::Free) => {}
             Some(Needs::Support(_)) => {
                 b.attached += 1;
-                match judge_cell(*cell, name, &at_load) {
+                match judge_cell(cell, name, &at_load) {
                     Some(Ok(())) => b.held += 1,
                     Some(Err(wants)) => b.dropped.push(Dropped {
-                        cell: *cell,
+                        cell,
                         block: name.to_string(),
                         wants,
-                        piece: surround.inside(*cell).map(str::to_string),
+                        piece: surround.inside(cell).map(str::to_string),
                     }),
                     None => {}
                 }
@@ -584,8 +584,95 @@ pub type TemplateIndex = BTreeMap<(String, [i32; 3]), (String, crate::compiler::
 /// One block write a command lays: each cell it reaches with the state it
 /// leaves there, over the cells its filter admits.
 struct Laid {
-    cells: Vec<([i32; 3], crate::compiler::blockstate::BlockState)>,
+    shape: Shape,
     filter: Lays,
+}
+
+/// The cells a block write reaches, before they are laid.
+enum Shape {
+    /// A `fill`: every cell of the inclusive box `lo..=hi`, one state.
+    Box([i32; 3], [i32; 3], crate::compiler::blockstate::BlockState),
+    /// A `setblock` or a template: these cells, in the order they are laid.
+    Cells(Vec<([i32; 3], crate::compiler::blockstate::BlockState)>),
+}
+
+/// An inclusive rectangle of columns, `[x0, z0]..=[x1, z1]`, every height.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Columns {
+    lo: [i32; 2],
+    hi: [i32; 2],
+}
+
+impl Columns {
+    fn holds(&self, c: [i32; 3]) -> bool {
+        self.lo[0] <= c[0] && c[0] <= self.hi[0] && self.lo[1] <= c[2] && c[2] <= self.hi[1]
+    }
+
+    fn meets(&self, lo: [i32; 3], hi: [i32; 3]) -> bool {
+        lo[0] <= self.hi[0] && self.lo[0] <= hi[0] && lo[2] <= self.hi[1] && self.lo[1] <= hi[2]
+    }
+
+    /// Grown by `r` cells on every horizontal side.
+    fn grown(&self, r: i32) -> Columns {
+        Columns {
+            lo: [self.lo[0] - r, self.lo[1] - r],
+            hi: [self.hi[0] + r, self.hi[1] + r],
+        }
+    }
+
+    fn covers(&self, o: &Columns) -> bool {
+        self.lo[0] <= o.lo[0]
+            && self.lo[1] <= o.lo[1]
+            && o.hi[0] <= self.hi[0]
+            && o.hi[1] <= self.hi[1]
+    }
+}
+
+impl Shape {
+    /// The inclusive box every cell it reaches lies in; `None` when it reaches
+    /// none.
+    fn bounds(&self) -> Option<([i32; 3], [i32; 3])> {
+        match self {
+            Shape::Box(lo, hi, _) => Some((*lo, *hi)),
+            Shape::Cells(cells) => {
+                let (first, _) = cells.first()?;
+                Some(cells.iter().fold((*first, *first), |(lo, hi), (c, _)| {
+                    (
+                        [0, 1, 2].map(|i| lo[i].min(c[i])),
+                        [0, 1, 2].map(|i| hi[i].max(c[i])),
+                    )
+                }))
+            }
+        }
+    }
+
+    /// The cells it reaches with their column in `within` (all of them when
+    /// `None`), in the order it lays them.
+    fn cells_within(
+        self,
+        within: Option<Columns>,
+    ) -> Vec<([i32; 3], crate::compiler::blockstate::BlockState)> {
+        match (self, within) {
+            (Shape::Box(lo, hi, st), None) => crate::compiler::assembled::region_cells(lo, hi)
+                .map(|c| (c, st))
+                .collect(),
+            (Shape::Box(lo, hi, st), Some(w)) => {
+                if !w.meets(lo, hi) {
+                    return Vec::new();
+                }
+                let a = [lo[0].max(w.lo[0]), lo[1], lo[2].max(w.lo[1])];
+                let b = [hi[0].min(w.hi[0]), hi[1], hi[2].min(w.hi[1])];
+                crate::compiler::assembled::region_cells(a, b)
+                    .map(|c| (c, st))
+                    .collect()
+            }
+            (Shape::Cells(cells), None) => cells,
+            (Shape::Cells(mut cells), Some(w)) => {
+                cells.retain(|(c, _)| w.holds(*c));
+                cells
+            }
+        }
+    }
 }
 
 /// What reading one command line gave.
@@ -625,9 +712,8 @@ fn read_line(
     let Some(head) = t.first().map(String::as_str) else {
         return Read::Other;
     };
-    let mut cells = Vec::new();
     let mut filter = Lays::Everywhere;
-    let kind = match head {
+    let (kind, shape) = match head {
         "place" if t.get(1).is_some_and(|w| w == "template") => {
             let pos = t.get(3..6).and_then(coords);
             let found = pos.and_then(|p| templates.get(&(t[2].clone(), p)));
@@ -636,12 +722,11 @@ fn read_line(
             else {
                 return Read::Unread;
             };
-            cells.extend(
-                crate::compiler::assembled::template_writes(rot, p, bytes)
-                    .into_iter()
-                    .map(|(c, s, _)| (c, s)),
-            );
-            "template"
+            let cells = crate::compiler::assembled::template_writes(rot, p, bytes)
+                .into_iter()
+                .map(|(c, s, _)| (c, s))
+                .collect();
+            ("template", Shape::Cells(cells))
         }
         "fill" => {
             let (Some(a), Some(z), Some(block)) = (
@@ -665,8 +750,7 @@ fn read_line(
             let state = BlockState::new(&state_of(block));
             let lo = [0, 1, 2].map(|i| a[i].min(z[i]));
             let hi = [0, 1, 2].map(|i| a[i].max(z[i]));
-            cells.extend(crate::compiler::assembled::region_cells(lo, hi).map(|c| (c, state)));
-            "fill"
+            ("fill", Shape::Box(lo, hi, state))
         }
         "setblock" => {
             let (Some(c), Some(block)) = (t.get(1..4).and_then(coords), t.get(4)) else {
@@ -677,33 +761,36 @@ fn read_line(
                 Some("keep") => filter = Lays::OverAir,
                 Some(_) => return Read::Unread,
             }
-            cells.push((c, BlockState::new(&state_of(block))));
-            "setblock"
+            (
+                "setblock",
+                Shape::Cells(vec![(c, BlockState::new(&state_of(block)))]),
+            )
         }
         "clone" => return Read::Unread,
         _ => return Read::Other,
     };
     Read::Write {
         conditional,
-        laid: Laid { cells, filter },
+        laid: Laid { shape, filter },
         kind,
     }
 }
 
 /// A function's lines with the unconditional `function` calls in it inlined,
-/// each tagged `<function>:<line>`; every function inlined is added to `seen`.
-fn expand(
+/// each as `(<function>, <line number, 1-based>, <line>)`; every function
+/// inlined is added to `seen`.
+fn expand<'a>(
     ns: &str,
     name: &str,
-    bodies: &BTreeMap<&str, &str>,
+    bodies: &BTreeMap<&'a str, &'a str>,
     stack: &mut Vec<String>,
     seen: &mut BTreeSet<String>,
-    out: &mut Vec<(String, String)>,
+    out: &mut Vec<(&'a str, usize, &'a str)>,
 ) {
     if stack.iter().any(|s| s == name) {
         return;
     }
-    let Some(body) = bodies.get(name) else {
+    let Some((&name, &body)) = bodies.get_key_value(name) else {
         return;
     };
     seen.insert(name.to_string());
@@ -718,7 +805,7 @@ fn expand(
             expand(ns, callee, bodies, stack, seen, out);
             continue;
         }
-        out.push((format!("{name}:{}", i + 1), l.to_string()));
+        out.push((name, i + 1, l));
     }
     stack.pop();
 }
@@ -804,6 +891,8 @@ impl RuntimeBinding {
 pub struct Writes {
     pub sequence: SequenceBinding,
     pub runtime: RuntimeBinding,
+    /// How the sequence arm's replay was cut.
+    pub by_chunk: ByChunk,
 }
 
 /// **Judge every block write the shipped datapack makes** (module header): the
@@ -827,7 +916,517 @@ pub fn judge_writes(
     judge_writes_over(ns, functions, &templates, structures, &Surround::of(plan))
 }
 
+/// The side of a chunk the load is replayed by, in section columns.
+const CHUNK_SIDE: i32 = 4;
+/// The halo a chunk's replay is first tried with, in cells.
+const CHUNK_HALO: i32 = 16;
+
+/// The sequence arm's binding, judged by chunk of columns
+/// ([`replay_by_chunk`]): the load replayed over each chunk and a halo.
 fn judge_writes_over(
+    ns: &str,
+    functions: &[(String, String)],
+    templates: &TemplateIndex,
+    structures: &BTreeMap<String, Vec<u8>>,
+    surround: &Surround,
+) -> Writes {
+    judge_writes_by(
+        ns, functions, templates, structures, surround, CHUNK_SIDE, CHUNK_HALO,
+    )
+}
+
+/// One block write of the load: where it is, what it says, and the box its
+/// cells lie in.
+struct LoadWrite<'a> {
+    /// The function of the load it runs in, and its place in that function's
+    /// lines with every call inlined.
+    f: usize,
+    q: usize,
+    /// The function whose line it is, and the line's number (1-based).
+    name: &'a str,
+    no: usize,
+    line: &'a str,
+    lo: [i32; 3],
+    hi: [i32; 3],
+}
+
+impl LoadWrite<'_> {
+    fn write(&self) -> SequenceWrite {
+        SequenceWrite {
+            at: format!("{}:{}", self.name, self.no),
+            command: self.line.to_string(),
+        }
+    }
+}
+
+/// How the load's replay was cut ([`replay_by_chunk`]), printed on every
+/// build that assembles a world.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct ByChunk {
+    /// A chunk's side, in section columns, and the halo first tried, in cells.
+    pub side: i32,
+    pub halo: i32,
+    /// Chunks some write reaches, and the replays run over them.
+    pub chunks: usize,
+    pub replays: usize,
+    /// Chunks replayed again over a wider halo, and the widest halo a chunk
+    /// was judged over.
+    pub regrown: usize,
+    pub widest: i32,
+    /// The generator's own blocks read a neighbour, so the load is replayed
+    /// whole.
+    pub whole: bool,
+    /// The most sections one replay's world held.
+    pub sections: usize,
+}
+
+impl ByChunk {
+    /// The binding line.
+    pub fn line(&self) -> String {
+        format!(
+            "write sequence by chunk: {} chunk(s) of {} x {} section column(s), replayed {} \
+             time(s), each over its own columns and a halo of {} cell(s), {} of them again over \
+             a wider halo (the widest {} cell(s)){}; at most {} section(s) held by one replay \
+             (ADR-0037 §2)",
+            self.chunks,
+            self.side,
+            self.side,
+            self.replays,
+            self.halo,
+            self.regrown,
+            self.widest,
+            if self.whole {
+                ", the load replayed whole: the generator's blocks read a neighbour"
+            } else {
+                ""
+            },
+            self.sections,
+        )
+    }
+}
+
+/// The faces a block state's survival reads: an attached block's rule cells,
+/// and the cell below a falling block. One bit per face of [`FACES`].
+fn reads_of(name: &str) -> u8 {
+    let mut m = 0u8;
+    let bit = |f: Face| -> u8 { 1 << FACES.iter().position(|g| *g == f).expect("a face") };
+    if let Some(Needs::Support(rules)) = needs(name) {
+        for r in rules {
+            m |= bit(r.cell);
+        }
+    }
+    if crate::compiler::assembled::is_falling_block(name) {
+        m |= bit(Face::Down);
+    }
+    m
+}
+
+/// [`judge_writes_over`] with the chunk's side and first halo given.
+fn judge_writes_by(
+    ns: &str,
+    functions: &[(String, String)],
+    templates: &TemplateIndex,
+    structures: &BTreeMap<String, Vec<u8>>,
+    surround: &Surround,
+    side: i32,
+    halo: i32,
+) -> Writes {
+    let bodies: BTreeMap<&str, &str> = functions
+        .iter()
+        .map(|(n, b)| (n.as_str(), b.as_str()))
+        .collect();
+    let mut b = SequenceBinding {
+        functions: load_order(ns, &bodies),
+        ..SequenceBinding::default()
+    };
+    let mut at_load: BTreeSet<String> = BTreeSet::new();
+    // The load's writes, each read once for its kind and its box.
+    let mut load: Vec<LoadWrite> = Vec::new();
+    for (f, outer) in b.functions.clone().iter().enumerate() {
+        let mut queue: Vec<(&str, usize, &str)> = Vec::new();
+        expand(
+            ns,
+            outer,
+            &bodies,
+            &mut Vec::new(),
+            &mut at_load,
+            &mut queue,
+        );
+        for (q, (name, no, line)) in queue.into_iter().enumerate() {
+            match read_line(line, templates, structures) {
+                Read::Other => {}
+                Read::Unread => b.unread.push(SequenceWrite {
+                    at: format!("{name}:{no}"),
+                    command: line.to_string(),
+                }),
+                Read::Write {
+                    conditional: true, ..
+                } => b.conditional += 1,
+                Read::Write { laid, kind, .. } => {
+                    match kind {
+                        "template" => b.templates += 1,
+                        "fill" => b.fills += 1,
+                        _ => b.setblocks += 1,
+                    }
+                    if let Some((lo, hi)) = laid.shape.bounds() {
+                        load.push(LoadWrite {
+                            f,
+                            q,
+                            name,
+                            no,
+                            line,
+                            lo,
+                            hi,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    let order = b.functions.clone();
+    let (cells, by_chunk) = replay_by_chunk(
+        &load, &order, templates, structures, surround, side, halo, &mut b,
+    );
+    let sim = Sim { cells, surround };
+    let runtime = judge_runtime(ns, &bodies, &at_load, &sim, templates, structures);
+    Writes {
+        sequence: b,
+        runtime,
+        by_chunk,
+    }
+}
+
+/// **The load replayed by chunk of columns** (ADR-0037 §2, "the write
+/// sequence"). Each chunk of `side` x `side` section columns some write
+/// reaches is replayed over its own columns and a halo — every write of the
+/// load, in order, laid over the columns of the chunk and the halo — and only
+/// what lands in its own columns is kept: the cells it changes, the blocks
+/// asked there, the drops there. What a replay answers for a cell is what the
+/// whole replay answers whenever no chain of reads leaves the halo: a cell's
+/// verdict reads only the cells its block's rules name (a falling block, the
+/// cell below), so a cell can come to differ from the whole replay only by a
+/// drop, and a drop only through such a read of a cell that differs. From
+/// every cell of the chunk that ever held a block that reads, the reads are
+/// followed through every cell that ever held one; if they reach a cell
+/// outside the halo that some write reaches, the chunk is replayed again over
+/// twice the halo, until none does or the halo holds every write. The drops
+/// are put back in the load's order — function, line, cell — and the cells
+/// the load leaves are kept chunk by chunk for the runtime arm.
+#[allow(clippy::too_many_arguments)]
+fn replay_by_chunk(
+    load: &[LoadWrite],
+    functions: &[String],
+    templates: &TemplateIndex,
+    structures: &BTreeMap<String, Vec<u8>>,
+    surround: &Surround,
+    side: i32,
+    halo: i32,
+    b: &mut SequenceBinding,
+) -> (BlockMap, ByChunk) {
+    assert!(side >= 1 && halo >= 1, "a chunk and a halo of one or more");
+    let mut stats = ByChunk {
+        side,
+        halo,
+        ..ByChunk::default()
+    };
+    let mut cells = BlockMap::new();
+    let Some(all) = load.iter().map(|w| (w.lo, w.hi)).reduce(|(a, b), (c, d)| {
+        (
+            [0, 1, 2].map(|i| a[i].min(c[i])),
+            [0, 1, 2].map(|i| b[i].max(d[i])),
+        )
+    }) else {
+        return (cells, stats);
+    };
+    let span = Columns {
+        lo: [all.0[0], all.0[2]],
+        hi: [all.1[0], all.1[2]],
+    };
+    // A cell no write reaches holds what the generator put there, which
+    // depends on its height alone; if any of that reads a neighbour, an
+    // unwritten cell can drop, and the chunk's own reads are not all held.
+    stats.whole =
+        (all.0[1] - 1..=all.1[1] + 1).any(|y| reads_of(surround.generated([0, y, 0])) != 0);
+    let width = side * crate::compiler::sections::SIDE;
+    let chunks: Vec<Columns> = if stats.whole {
+        vec![span]
+    } else {
+        let (cx0, cx1) = (span.lo[0].div_euclid(width), span.hi[0].div_euclid(width));
+        let (cz0, cz1) = (span.lo[1].div_euclid(width), span.hi[1].div_euclid(width));
+        (cx0..=cx1)
+            .flat_map(|cx| {
+                (cz0..=cz1).map(move |cz| Columns {
+                    lo: [cx * width, cz * width],
+                    hi: [cx * width + width - 1, cz * width + width - 1],
+                })
+            })
+            .filter(|own| load.iter().any(|w| own.meets(w.lo, w.hi)))
+            .collect()
+    };
+    let mut drops: Vec<KeyedDrop> = Vec::new();
+    for own in chunks {
+        stats.chunks += 1;
+        let mut r = if stats.whole { 0 } else { halo };
+        loop {
+            let reach = own.grown(r);
+            let held = stats.whole || reach.covers(&span);
+            stats.replays += 1;
+            let rep = replay(load, functions, own, reach, templates, structures, surround);
+            stats.sections = stats.sections.max(rep.cells.sections());
+            if held || !reaches_past(&rep.reads, own, reach, all) {
+                stats.widest = stats.widest.max(r);
+                b.changed += rep.changed;
+                b.attached += rep.attached;
+                b.falling += rep.falling;
+                drops.extend(rep.drops);
+                for (c, st) in rep.cells.in_box(
+                    [own.lo[0], i32::MIN, own.lo[1]],
+                    [own.hi[0], i32::MAX, own.hi[1]],
+                ) {
+                    cells.insert(c, *st);
+                }
+                break;
+            }
+            if r == halo {
+                stats.regrown += 1;
+            }
+            r *= 2;
+        }
+    }
+    drops.sort_by_key(|d| d.0);
+    b.dropped = drops.into_iter().map(|(_, d)| d).collect();
+    (cells, stats)
+}
+
+/// A drop with its place in the load: function, line (`usize::MAX` for the
+/// function's falls), cell.
+type KeyedDrop = ((usize, usize, [i32; 3]), SequenceDrop);
+
+/// What one chunk's replay found in its own columns, and the world it laid.
+struct Replayed {
+    changed: usize,
+    attached: usize,
+    falling: usize,
+    /// Each drop in its own columns.
+    drops: Vec<KeyedDrop>,
+    cells: BlockMap,
+    /// Every cell that ever held a block that reads: the faces read.
+    reads: crate::compiler::sections::SectionMap<u8>,
+}
+
+/// The load laid over `reach`, the replay of [`judge_writes_whole`] with
+/// every write clipped to those columns; what lands in `own` is counted.
+fn replay(
+    load: &[LoadWrite],
+    functions: &[String],
+    own: Columns,
+    reach: Columns,
+    templates: &TemplateIndex,
+    structures: &BTreeMap<String, Vec<u8>>,
+    surround: &Surround,
+) -> Replayed {
+    use crate::compiler::blockstate::BlockState;
+    let air = BlockState::new("minecraft:air");
+    let mut sim = Sim {
+        cells: BlockMap::new(),
+        surround,
+    };
+    let mut reads: crate::compiler::sections::SectionMap<u8> =
+        crate::compiler::sections::SectionMap::new();
+    let mark = |reads: &mut crate::compiler::sections::SectionMap<u8>, c: [i32; 3], m: u8| {
+        let was = reads.get(&c).copied().unwrap_or(0);
+        if was | m != was {
+            reads.insert(c, was | m);
+        }
+    };
+    let mut out = Replayed {
+        changed: 0,
+        attached: 0,
+        falling: 0,
+        drops: Vec::new(),
+        cells: BlockMap::new(),
+        reads: crate::compiler::sections::SectionMap::new(),
+    };
+    let writes: Vec<&LoadWrite> = load.iter().filter(|w| reach.meets(w.lo, w.hi)).collect();
+    let mut k = 0;
+    while k < writes.len() {
+        let f = writes[k].f;
+        // As the whole replay keeps them: each cell a falling block may stand
+        // in once the function has run, with the first write that changed it
+        // or the cell under it.
+        let mut falls: crate::compiler::sections::SectionMap<u32> =
+            crate::compiler::sections::SectionMap::new();
+        while k < writes.len() && writes[k].f == f {
+            let lw = writes[k];
+            let wk = u32::try_from(k).expect("fewer than 2^32 writes");
+            k += 1;
+            let Read::Write {
+                laid,
+                kind,
+                conditional: false,
+            } = read_line(lw.line, templates, structures)
+            else {
+                unreachable!("the load's writes were read as unconditional writes");
+            };
+            let template = kind == "template";
+            let mut changed: BTreeSet<[i32; 3]> = BTreeSet::new();
+            for (c, st) in laid.shape.cells_within(Some(reach)) {
+                let was = sim.at(c);
+                if laid.filter.lays_over(was) && sim.put(c, st) {
+                    mark(&mut reads, c, reads_of(was) | reads_of(st.as_str()));
+                    changed.insert(c);
+                }
+            }
+            if changed.is_empty() {
+                continue;
+            }
+            out.changed += changed.iter().filter(|c| own.holds(**c)).count();
+            for c in &changed {
+                for cell in [*c, step(*c, Face::Up)] {
+                    if !falls.contains_key(&cell) {
+                        falls.insert(cell, wk);
+                    }
+                }
+            }
+            let mut asked: BTreeSet<[i32; 3]> = BTreeSet::new();
+            for c in &changed {
+                asked.extend(FACES.iter().map(|f| step(*c, *f)));
+            }
+            asked.retain(|c| !changed.contains(c));
+            asked.retain(|n| match needs(sim.at(*n)) {
+                Some(Needs::Support(rules)) => {
+                    rules.iter().any(|r| changed.contains(&step(*n, r.cell)))
+                }
+                _ => false,
+            });
+            if template {
+                asked.extend(changed.iter().copied());
+            }
+            for cell in asked {
+                let name = sim.at(cell);
+                if !matches!(needs(name), Some(Needs::Support(_))) {
+                    continue;
+                }
+                let mine = own.holds(cell);
+                out.attached += usize::from(mine);
+                let look = |c: [i32; 3]| sim.at(c);
+                if let Some(Err(wants)) = judge_cell(cell, name, &look) {
+                    if mine {
+                        let placed = template && changed.contains(&cell);
+                        let why = wants
+                            .iter()
+                            .map(|(rule, [nx, ny, nz], there)| {
+                                format!(
+                                    "it needs the block {} at [{nx}, {ny}, {nz}] to {}, and \
+                                     there is `{there}` when this write lands",
+                                    beside(rule.cell),
+                                    rule.describe()
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                            .join("; or ");
+                        out.drops.push((
+                            (lw.f, lw.q, cell),
+                            SequenceDrop {
+                                cell,
+                                block: name.to_string(),
+                                why: if placed {
+                                    format!("the template's own placement removes it: {why}")
+                                } else {
+                                    format!("the server drops it as an item: {why}")
+                                },
+                                after: lw.write(),
+                            },
+                        ));
+                    }
+                    mark(&mut reads, cell, reads_of(name));
+                    sim.cells.insert(cell, air);
+                }
+            }
+        }
+        for (cell, &wk) in falls.iter() {
+            let name = sim.at(cell);
+            if !crate::compiler::assembled::is_falling_block(name) {
+                continue;
+            }
+            let mine = own.holds(cell);
+            out.falling += usize::from(mine);
+            let below = step(cell, Face::Down);
+            let under = sim.at(below);
+            if delvewright_dsl::support::falls_into(under) != Some(false) {
+                if mine {
+                    let [x, y, z] = below;
+                    out.drops.push((
+                        (f, usize::MAX, cell),
+                        SequenceDrop {
+                            cell,
+                            block: name.to_string(),
+                            why: format!(
+                                "it falls: the cell below it, [{x}, {y}, {z}], still holds \
+                                 `{under}` when `{}` has run, which a falling block falls into \
+                                 — a write that lands under it later turns it into an item on \
+                                 the ground",
+                                functions[f]
+                            ),
+                            after: writes[wk as usize].write(),
+                        },
+                    ));
+                }
+                mark(&mut reads, cell, reads_of(name));
+                sim.cells.insert(cell, air);
+            }
+        }
+    }
+    out.cells = sim.cells;
+    out.reads = reads;
+    out
+}
+
+/// Whether the reads from the cells of `own` that ever held a block that
+/// reads, followed through every cell that ever held one, reach a cell
+/// outside `reach` inside the box every write lies in (`all`): the cells a
+/// replay over `reach` may answer differently from the whole replay.
+fn reaches_past(
+    reads: &crate::compiler::sections::SectionMap<u8>,
+    own: Columns,
+    reach: Columns,
+    all: ([i32; 3], [i32; 3]),
+) -> bool {
+    let mut todo: Vec<[i32; 3]> = reads
+        .in_box(
+            [own.lo[0], i32::MIN, own.lo[1]],
+            [own.hi[0], i32::MAX, own.hi[1]],
+        )
+        .filter(|(_, m)| **m != 0)
+        .map(|(c, _)| c)
+        .collect();
+    let mut seen: BTreeSet<[i32; 3]> = todo.iter().copied().collect();
+    while let Some(c) = todo.pop() {
+        let m = reads.get(&c).copied().unwrap_or(0);
+        for (bit, face) in FACES.iter().enumerate() {
+            if m & (1 << bit) == 0 {
+                continue;
+            }
+            let n = step(c, *face);
+            if !reach.holds(n) {
+                if (0..3).all(|a| all.0[a] <= n[a] && n[a] <= all.1[a]) {
+                    return true;
+                }
+                continue;
+            }
+            if reads.get(&n).is_some_and(|m| *m != 0) && seen.insert(n) {
+                todo.push(n);
+            }
+        }
+    }
+    false
+}
+
+/// The sequence arm as one replay of the whole load: the reference
+/// [`judge_writes_over`]'s replay by chunk is held to
+/// (`a_sequence_judged_by_chunk_is_the_one_judged_whole`).
+#[cfg(test)]
+fn judge_writes_whole(
     ns: &str,
     functions: &[(String, String)],
     templates: &TemplateIndex,
@@ -853,15 +1452,22 @@ fn judge_writes_over(
     // over a cell it changes, is asked of the cell below once the function
     // has run — its scheduled tick comes after the function's other writes.
     for f in b.functions.clone() {
-        let mut queue: Vec<(String, String)> = Vec::new();
+        let mut queue: Vec<(&str, usize, &str)> = Vec::new();
         expand(ns, &f, &bodies, &mut Vec::new(), &mut at_load, &mut queue);
-        let mut falls: BTreeMap<[i32; 3], SequenceWrite> = BTreeMap::new();
-        for (at, line) in queue {
+        // The cells a falling block may stand in once the function has run,
+        // each with the first write that changed it or the cell under it:
+        // kept as the section store (ADR-0037 §1) over the writes the
+        // function made, a byte per cell, never a tree entry carrying the
+        // write's text.
+        let mut falls: crate::compiler::sections::SectionMap<u32> =
+            crate::compiler::sections::SectionMap::new();
+        let mut fall_writes: Vec<SequenceWrite> = Vec::new();
+        for (name, no, line) in queue {
             let write = SequenceWrite {
-                at,
-                command: line.clone(),
+                at: format!("{name}:{no}"),
+                command: line.to_string(),
             };
-            let read = read_line(&line, templates, structures);
+            let read = read_line(line, templates, structures);
             let (laid, template) = match read {
                 Read::Other => continue,
                 Read::Unread => {
@@ -884,7 +1490,7 @@ fn judge_writes_over(
                 }
             };
             let mut changed: BTreeSet<[i32; 3]> = BTreeSet::new();
-            for (c, st) in laid.cells {
+            for (c, st) in laid.shape.cells_within(None) {
                 if laid.filter.lays_over(sim.at(c)) && sim.put(c, st) {
                     changed.insert(c);
                 }
@@ -893,11 +1499,18 @@ fn judge_writes_over(
                 continue;
             }
             b.changed += changed.len();
+            let wi = u32::try_from(fall_writes.len()).expect("fewer than 2^32 writes");
+            let mut first_for_some = false;
             for c in &changed {
-                falls.entry(*c).or_insert_with(|| write.clone());
-                falls
-                    .entry(step(*c, Face::Up))
-                    .or_insert_with(|| write.clone());
+                for cell in [*c, step(*c, Face::Up)] {
+                    if !falls.contains_key(&cell) {
+                        falls.insert(cell, wi);
+                        first_for_some = true;
+                    }
+                }
+            }
+            if first_for_some {
+                fall_writes.push(write.clone());
             }
             // Who is asked `canSurvive` as the write lands (measured from the
             // pinned jar's bytes): a template asks every block it placed
@@ -957,11 +1570,12 @@ fn judge_writes_over(
                 }
             }
         }
-        for (cell, write) in falls {
+        for (cell, &wi) in falls.iter() {
             let name = sim.at(cell);
             if !crate::compiler::assembled::is_falling_block(name) {
                 continue;
             }
+            let write = fall_writes[wi as usize].clone();
             b.falling += 1;
             let below = step(cell, Face::Down);
             let under = sim.at(below);
@@ -985,6 +1599,7 @@ fn judge_writes_over(
     Writes {
         sequence: b,
         runtime,
+        by_chunk: ByChunk::default(),
     }
 }
 
@@ -1028,7 +1643,7 @@ fn judge_runtime(
                     r.conditional += usize::from(conditional);
                     let k = writes.len();
                     writes.push(write);
-                    for (c, s) in laid.cells {
+                    for (c, s) in laid.shape.cells_within(None) {
                         may.entry(c).or_default().push((s, k, laid.filter.clone()));
                     }
                 }
@@ -1669,6 +2284,280 @@ mod tests {
     /// The ground phase is read as the load runs it: `ground_verify`'s target
     /// and the steps it schedules, before `place_all`. Gravel the placement
     /// writes over the ground is held.
+    /// A template's gzipped bytes: each block at its local position (plain
+    /// ids).
+    fn structure(blocks: &[([i32; 3], &str)]) -> Vec<u8> {
+        use fastnbt::Value;
+        let mut names: Vec<&str> = Vec::new();
+        for (_, n) in blocks {
+            if !names.contains(n) {
+                names.push(n);
+            }
+        }
+        let compound = |pairs: Vec<(&str, Value)>| {
+            Value::Compound(pairs.into_iter().map(|(k, v)| (k.to_string(), v)).collect())
+        };
+        let palette = names
+            .iter()
+            .map(|n| compound(vec![("Name", Value::String(n.to_string()))]))
+            .collect();
+        let list = blocks
+            .iter()
+            .map(|(p, n)| {
+                let i = names.iter().position(|m| m == n).expect("named");
+                compound(vec![
+                    (
+                        "pos",
+                        Value::List(p.iter().map(|&v| Value::Int(v)).collect()),
+                    ),
+                    ("state", Value::Int(i32::try_from(i).expect("small"))),
+                ])
+            })
+            .collect();
+        let root = compound(vec![
+            ("palette", Value::List(palette)),
+            ("blocks", Value::List(list)),
+            (
+                "size",
+                Value::List(vec![Value::Int(3), Value::Int(3), Value::Int(3)]),
+            ),
+        ]);
+        let raw = fastnbt::to_bytes(&root).expect("serialize NBT");
+        let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        std::io::Write::write_all(&mut gz, &raw).expect("gzip");
+        gz.finish().expect("gzip finish")
+    }
+
+    /// One generated load: its functions, templates and structure files.
+    type Case = (
+        Vec<(String, String)>,
+        TemplateIndex,
+        BTreeMap<String, Vec<u8>>,
+    );
+
+    /// A load of `n` generated writes per function over a field crossing
+    /// several chunk borders at negative and positive coordinates — boxes of
+    /// solid, glass and air under every filter, attached and falling blocks,
+    /// templates — and, at each side of the chunk borders at 0 and 64 on
+    /// both axes, a chain of reads four cells long that leaves the chunk: a
+    /// wall torch hung on sand standing on a wall torch hung on stone, the
+    /// stone cleared by the world build, so the drop reaches back into the
+    /// chunk two functions later through cells only a halo of two or more
+    /// holds.
+    fn generated(seed: u64, n: usize) -> Case {
+        let mut s = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+        let mut next = move |lo: i32, hi: i32| -> i32 {
+            s = s
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            lo + i32::try_from((s >> 33) % u64::try_from(hi - lo + 1).expect("a range"))
+                .expect("small")
+        };
+        let mut templates = TemplateIndex::new();
+        let mut structures = BTreeMap::new();
+        structures.insert(
+            "a.nbt".to_string(),
+            structure(&[
+                ([0, 0, 0], "minecraft:stone"),
+                ([0, 1, 0], "minecraft:torch"),
+                ([1, 1, 0], "minecraft:sand"),
+                ([2, 0, 1], "minecraft:stone"),
+                ([2, 1, 1], "minecraft:lantern"),
+                ([1, 0, 2], "minecraft:air"),
+            ]),
+        );
+        structures.insert(
+            "b.nbt".to_string(),
+            structure(&[
+                ([0, 0, 0], "minecraft:glass_pane"),
+                ([0, 1, 0], "minecraft:rail"),
+                ([1, 0, 0], "minecraft:gravel"),
+                ([2, 2, 2], "minecraft:torch"),
+            ]),
+        );
+        let solids = [
+            "minecraft:stone",
+            "minecraft:packed_mud",
+            "minecraft:glass_pane",
+            "minecraft:sand",
+        ];
+        let modes = [
+            "",
+            " keep",
+            " replace minecraft:air",
+            " replace minecraft:stone",
+        ];
+        let attached = [
+            "minecraft:torch",
+            "minecraft:wall_torch[facing=north]",
+            "minecraft:wall_torch[facing=south]",
+            "minecraft:wall_torch[facing=east]",
+            "minecraft:wall_torch[facing=west]",
+            "minecraft:lantern[hanging=true]",
+            "minecraft:rail",
+            "minecraft:sand",
+            "minecraft:gravel",
+            "minecraft:red_carpet",
+        ];
+        let mut lines = |count: usize, templates: &mut TemplateIndex| -> Vec<String> {
+            (0..count)
+                .map(|_| {
+                    let (x, y, z) = (next(-50, 100), next(60, 68), next(-40, 90));
+                    match next(0, 9) {
+                        0..=2 => format!(
+                            "fill {x} {y} {z} {} {} {} {}{}",
+                            x + next(0, 8),
+                            y + next(0, 2),
+                            z + next(0, 8),
+                            solids[next(0, 3) as usize],
+                            modes[next(0, 3) as usize]
+                        ),
+                        3 => format!(
+                            "fill {x} {y} {z} {} {} {} minecraft:air{}",
+                            x + next(0, 8),
+                            y + next(0, 2),
+                            z + next(0, 8),
+                            ["", " replace minecraft:stone"][next(0, 1) as usize]
+                        ),
+                        4..=7 => format!(
+                            "setblock {x} {y} {z} {}{}",
+                            attached[next(0, 9) as usize],
+                            ["", " keep"][next(0, 1) as usize]
+                        ),
+                        8 => format!(
+                            "setblock {x} {y} {z} {}",
+                            ["minecraft:cave_air keep", "minecraft:stone"][next(0, 1) as usize]
+                        ),
+                        _ => {
+                            let (id, file, rot) = if next(0, 1) == 0 {
+                                ("t:a", "a.nbt", crate::compiler::solver::Rotation::None)
+                            } else {
+                                ("t:b", "b.nbt", crate::compiler::solver::Rotation::Cw90)
+                            };
+                            templates.insert((id.to_string(), [x, y, z]), (file.to_string(), rot));
+                            format!("place template {id} {x} {y} {z}")
+                        }
+                    }
+                })
+                .collect()
+        };
+        let place = lines(n, &mut templates);
+        let mut build = lines(n, &mut templates);
+        build.push("function t:extra".to_string());
+        let extra = lines(n / 4, &mut templates);
+        let door = lines(6, &mut templates);
+        let mut finish: Vec<String> = Vec::new();
+        let (mut place_c, mut build_c) = (Vec::new(), Vec::new());
+        // (anchor in the chunk, the step out of it, the torch's facing)
+        for (a, d, facing) in [
+            ([-1, 80, 20], [1, 0], "west"),
+            ([0, 80, 25], [-1, 0], "east"),
+            ([63, 80, 30], [1, 0], "west"),
+            ([64, 80, 35], [-1, 0], "east"),
+            ([10, 80, -1], [0, 1], "north"),
+            ([15, 80, 0], [0, -1], "south"),
+            ([40, 80, 63], [0, 1], "north"),
+            ([45, 80, 64], [0, -1], "south"),
+        ] {
+            let at =
+                |k: i32, dy: i32| format!("{} {} {}", a[0] + k * d[0], a[1] + dy, a[2] + k * d[1]);
+            let torch = format!("minecraft:wall_torch[facing={facing}]");
+            place_c.push(format!("setblock {} minecraft:stone", at(2, -1)));
+            place_c.push(format!("setblock {} {torch}", at(1, -1)));
+            place_c.push(format!("setblock {} minecraft:sand", at(1, 0)));
+            place_c.push(format!("setblock {} {torch}", at(0, 0)));
+            build_c.push(format!("setblock {} minecraft:air", at(2, -1)));
+            build_c.push(format!("setblock {} minecraft:cave_air keep", at(1, -1)));
+            finish.push(format!("setblock {} minecraft:cave_air keep", at(1, 0)));
+        }
+        let place: Vec<String> = place.into_iter().chain(place_c).collect();
+        let build: Vec<String> = build.into_iter().chain(build_c).collect();
+        let refs = |v: &[String]| v.iter().map(String::as_str).collect::<Vec<_>>().join("\n");
+        let mut f = load_with(&[], &[], &[]);
+        for (name, body) in &mut f {
+            match name.as_str() {
+                "place_all" => *body = refs(&place),
+                "world_build" => {
+                    *body = format!("{}\nschedule function t:setup_finish 1t\n", refs(&build));
+                }
+                "setup_finish" => {
+                    *body = format!("scoreboard players set #placed dw.sys 1\n{}", refs(&finish));
+                }
+                _ => {}
+            }
+        }
+        f.push(("extra".to_string(), refs(&extra)));
+        f.push(("open_door".to_string(), refs(&door)));
+        (f, templates, structures)
+    }
+
+    /// Everything both arms answer, as one string: a difference anywhere is a
+    /// difference here.
+    fn answer(w: &Writes) -> String {
+        format!("{:#?}\n{:#?}", w.sequence, w.runtime)
+    }
+
+    /// **The replay by chunk answers what the whole replay answers** (ADR-0037
+    /// §4): over generated loads under the void and the ocean horizons, at
+    /// chunk sides of one, two and four section columns and first halos of
+    /// one cell to sixteen, every verdict, count, drop and its order, and the
+    /// runtime arm judged over the world the chunks leave, equal the one
+    /// replay of the whole load. Refuses a zero count of drops, of chunks, of
+    /// regrown halos and of the chains' drops.
+    #[test]
+    fn a_sequence_judged_by_chunk_is_the_one_judged_whole() {
+        let ocean = || Surround {
+            ambient: Ambient::Ocean(crate::compiler::nav::Sea {
+                level: 62,
+                floor_top: 54,
+            }),
+            built: Vec::new(),
+        };
+        let (mut cases, mut drops, mut chained, mut regrown, mut chunks, mut runtime) =
+            (0, 0, 0, 0, 0, 0);
+        for seed in 0..6u64 {
+            let (f, templates, structures) = generated(seed, 400);
+            for surround in [void(), ocean()] {
+                let whole = judge_writes_whole("t", &f, &templates, &structures, &surround);
+                let want = answer(&whole);
+                drops += whole.sequence.dropped.len();
+                chained += whole
+                    .sequence
+                    .dropped
+                    .iter()
+                    .filter(|d| d.cell[1] == 80 && d.after.at.starts_with("setup_finish"))
+                    .count();
+                runtime += whole.runtime.writes;
+                for (side, halo) in [(1, 1), (1, 2), (2, 4), (4, 16), (CHUNK_SIDE, CHUNK_HALO)] {
+                    let by =
+                        judge_writes_by("t", &f, &templates, &structures, &surround, side, halo);
+                    assert_eq!(
+                        answer(&by),
+                        want,
+                        "seed {seed}, side {side}, halo {halo}: {}",
+                        by.by_chunk.line()
+                    );
+                    if (side, halo) == (1, 1) {
+                        regrown += by.by_chunk.regrown;
+                        chunks += by.by_chunk.chunks;
+                    }
+                    assert!(!by.by_chunk.whole);
+                    cases += 1;
+                }
+            }
+        }
+        eprintln!(
+            "{cases} case(s): {drops} drop(s) judged whole, {chained} of the chains; {chunks} \
+             chunk(s) and {regrown} regrown at side 1, halo 1; {runtime} runtime write(s)"
+        );
+        assert_eq!(cases, 60);
+        assert_eq!(chained, 6 * 2 * 8, "every chain drops its torch: {chained}");
+        assert!(drops > 500, "drops: {drops}");
+        assert!(regrown >= 6 * 2 * 8, "regrown: {regrown}");
+        assert!(chunks > 6 * 2 * 40, "chunks: {chunks}");
+        assert!(runtime > 0, "runtime writes: {runtime}");
+    }
+
     #[test]
     fn the_ground_steps_run_before_the_placement() {
         let mut f = load_with(&["setblock 0 65 0 minecraft:gravel"], &[], &[]);

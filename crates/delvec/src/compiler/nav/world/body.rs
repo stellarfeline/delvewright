@@ -290,7 +290,10 @@ impl World {
 
     /// [`World::body_reach`] from roots seated as [`World::walk_region_rooted`]
     /// seats them: each confined to the AABB that declares it.
-    pub fn body_reach_rooted(&self, roots: &[AnchorRoot]) -> crate::compiler::nav::world::Reach {
+    pub fn body_reach_rooted(
+        &self,
+        roots: &[AnchorRoot],
+    ) -> std::sync::Arc<crate::compiler::nav::world::Reach> {
         let seats: Vec<[i32; 3]> = roots.iter().filter_map(|r| self.seat(r)).collect();
         self.body_reach(&seats)
     }

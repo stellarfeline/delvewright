@@ -29,13 +29,18 @@
 
 use super::bank::{Run, Summary, Variant};
 use super::{Death, Edge, EdgeKind, FlownKey, NodeEdges, RestKind};
+use std::io::Read as _;
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
 /// The environment variable that names the directory.
 pub const ENV: &str = "DELVEC_REACH_CACHE";
 
-const MAGIC: &[u8; 8] = b"DWBANK02";
+const MAGIC: &[u8; 8] = b"DWBANK03";
+
+/// The nodes of one reach chunk ([`super::chunks::SIDE`]): a file holds the
+/// bank chunk after chunk, and a run reads and writes it one chunk at a time.
+pub(super) type Section = Vec<(FlownKey, Vec<Arc<Variant>>)>;
 
 /// The directory the verb names when [`ENV`] is not set at all.
 static DEFAULT: OnceLock<PathBuf> = OnceLock::new();
@@ -103,21 +108,24 @@ fn reclaim_others() {
     });
 }
 
-/// The variants a file holds for the bank keyed `key`; none where the cache is
-/// off, the file is absent, or it does not decode.
-pub(super) fn load(key: &str) -> Vec<(FlownKey, Vec<Arc<Variant>>)> {
+/// Hand each chunk's nodes the file of the bank keyed `key` holds to `put`,
+/// one chunk at a time (ADR-0037 §2); whether the whole file read. `false`
+/// where the cache is off, the file is absent, or it does not decode — and
+/// then whatever `put` was handed before the failure is not the bank's.
+pub(super) fn load(key: &str, put: &mut dyn FnMut(Section)) -> bool {
     let Some(path) = file_of(key) else {
-        return Vec::new();
+        return false;
     };
-    let Ok(bytes) = std::fs::read(&path) else {
-        return Vec::new();
+    let Ok(file) = std::fs::File::open(&path) else {
+        return false;
     };
-    decode(key, &bytes).unwrap_or_default()
+    read_from(&mut std::io::BufReader::new(file), key, put).is_some()
 }
 
-/// Write the bank keyed `key` to its file, replacing it whole: a sibling
-/// written first and renamed over it, so a reader never sees half of one.
-pub(super) fn store(key: &str, nodes: &[(FlownKey, Vec<Arc<Variant>>)]) {
+/// Write the bank keyed `key` to its file, chunk by chunk as `sections`
+/// gives them, replacing it whole: a sibling written first and renamed over
+/// it, so a reader never sees half of one.
+pub(super) fn store(key: &str, sections: &mut dyn Iterator<Item = Section>) {
     let Some(path) = file_of(key) else {
         return;
     };
@@ -129,21 +137,38 @@ pub(super) fn store(key: &str, nodes: &[(FlownKey, Vec<Arc<Variant>>)]) {
     }
     reclaim_others();
     let tmp = path.with_extension(format!("bank.{}", std::process::id()));
-    if std::fs::write(&tmp, encode(key, nodes)).is_ok() && std::fs::rename(&tmp, &path).is_err() {
+    let written = std::fs::File::create(&tmp).and_then(|f| {
+        let mut w = std::io::BufWriter::new(f);
+        write_to(&mut w, key, sections)?;
+        use std::io::Write as _;
+        w.flush()
+    });
+    if written.is_err() || std::fs::rename(&tmp, &path).is_err() {
         let _ = std::fs::remove_file(&tmp);
     }
 }
 
 // --------------------------------------------------------------- the format
 
+/// **What a record takes in a scratch file**, in bytes, for the cost the
+/// engine states before the proofs run (`compiler::cost`, ADR-0037 §3): a
+/// cell is three `i32`s; an edge its cell, a kind byte, a yaw (a flag and,
+/// flown, an `i16`) and a sprint byte; a node's edges a kind byte, a count,
+/// the edges, three flags, two `u64`s and a read box (a flag and two cells).
+/// Held to the encoder by `record_sizes::the_record_sizes_are_the_encoders`.
+pub(super) const CELL_RECORD: usize = 3 * 4;
+pub(super) const EDGE_RECORD: usize = CELL_RECORD + 1 + (1 + 2) + 1;
+pub(super) const NODE_EDGES_RECORD: usize = 1 + 8 + 1 + 1 + 1 + 8 + 8 + (1 + 2 * CELL_RECORD);
+
+/// The writer of the format; [`super::chunks`] writes its records with it too.
 #[derive(Default)]
-struct Enc(Vec<u8>);
+pub(super) struct Enc(pub(super) Vec<u8>);
 
 impl Enc {
     fn u8(&mut self, v: u8) {
         self.0.push(v);
     }
-    fn u16(&mut self, v: u16) {
+    pub(super) fn u16(&mut self, v: u16) {
         self.0.extend_from_slice(&v.to_le_bytes());
     }
     fn u32(&mut self, v: u32) {
@@ -161,7 +186,7 @@ impl Enc {
     fn bool(&mut self, v: bool) {
         self.u8(u8::from(v));
     }
-    fn cell(&mut self, c: [i32; 3]) {
+    pub(super) fn cell(&mut self, c: [i32; 3]) {
         for v in c {
             self.i32(v);
         }
@@ -197,7 +222,13 @@ impl Enc {
     fn edge_kind(&mut self, k: EdgeKind) {
         self.u8(EdgeKind::ALL.iter().position(|x| *x == k).expect("a kind") as u8);
     }
-    fn node_edges(&mut self, e: &NodeEdges) {
+    pub(super) fn edge(&mut self, x: &Edge) {
+        self.cell(x.to);
+        self.edge_kind(x.kind);
+        self.yaw(x.yaw);
+        self.bool(x.sprint);
+    }
+    pub(super) fn node_edges(&mut self, e: &NodeEdges) {
         self.u8(match e.kind {
             None => 0,
             Some(RestKind::Standing) => 1,
@@ -207,10 +238,7 @@ impl Enc {
         });
         self.len(e.edges.len());
         for x in &e.edges {
-            self.cell(x.to);
-            self.edge_kind(x.kind);
-            self.yaw(x.yaw);
-            self.bool(x.sprint);
+            self.edge(x);
         }
         self.bool(e.leaves_world);
         self.bool(e.open_sea);
@@ -235,10 +263,11 @@ impl Enc {
     }
     fn variant(&mut self, v: &Variant) {
         self.len(v.deps.len());
-        for &(i, code, x) in &v.deps {
+        for &(i, code, x, runs) in &v.deps {
             self.u32(i);
             self.u32(code);
             self.u32(x);
+            self.u32(runs);
         }
         self.box3(v.head);
         self.len(v.jumps.len());
@@ -259,26 +288,57 @@ impl Enc {
     }
 }
 
-fn encode(key: &str, nodes: &[(FlownKey, Vec<Arc<Variant>>)]) -> Vec<u8> {
+/// One variant as the file writes it ([`super::bank`] spills each variant it
+/// keeps in this form and reads it back by [`decode_variant`]).
+pub(super) fn encode_variant(v: &Variant) -> Vec<u8> {
+    let mut e = Enc::default();
+    e.variant(v);
+    e.0
+}
+
+/// The variant `bytes` holds, when they are exactly one [`encode_variant`].
+pub(super) fn decode_variant(bytes: &[u8]) -> Option<Variant> {
+    let mut d = Dec { b: bytes, at: 0 };
+    let v = d.variant()?;
+    (d.at == bytes.len()).then_some(v)
+}
+
+/// The file: the magic, the key, then each section as its byte length and
+/// its nodes, then a length of zero — so a file cut short is refused.
+fn write_to(
+    w: &mut dyn std::io::Write,
+    key: &str,
+    sections: &mut dyn Iterator<Item = Section>,
+) -> std::io::Result<()> {
     let mut e = Enc::default();
     e.0.extend_from_slice(MAGIC);
     e.len(key.len());
     e.0.extend_from_slice(key.as_bytes());
-    e.len(nodes.len());
-    for ((c, q), vs) in nodes {
-        e.cell(*c);
-        e.u16(*q);
-        e.len(vs.len());
-        for v in vs {
-            e.variant(v);
+    w.write_all(&e.0)?;
+    for nodes in sections {
+        if nodes.is_empty() {
+            continue;
         }
+        let mut e = Enc::default();
+        e.len(nodes.len());
+        for ((c, q), vs) in &nodes {
+            e.cell(*c);
+            e.u16(*q);
+            e.len(vs.len());
+            for v in vs {
+                e.variant(v);
+            }
+        }
+        w.write_all(&(e.0.len() as u64).to_le_bytes())?;
+        w.write_all(&e.0)?;
     }
-    e.0
+    w.write_all(&0u64.to_le_bytes())
 }
 
-struct Dec<'a> {
-    b: &'a [u8],
-    at: usize,
+/// The reader of the format; [`super::chunks`] reads its records with it too.
+pub(super) struct Dec<'a> {
+    pub(super) b: &'a [u8],
+    pub(super) at: usize,
 }
 
 impl Dec<'_> {
@@ -290,7 +350,7 @@ impl Dec<'_> {
     fn u8(&mut self) -> Option<u8> {
         Some(self.take(1)?[0])
     }
-    fn u16(&mut self) -> Option<u16> {
+    pub(super) fn u16(&mut self) -> Option<u16> {
         Some(u16::from_le_bytes(self.take(2)?.try_into().ok()?))
     }
     fn u32(&mut self) -> Option<u32> {
@@ -314,7 +374,7 @@ impl Dec<'_> {
             _ => None,
         }
     }
-    fn cell(&mut self) -> Option<[i32; 3]> {
+    pub(super) fn cell(&mut self) -> Option<[i32; 3]> {
         Some([self.i32()?, self.i32()?, self.i32()?])
     }
     fn box3(&mut self) -> Option<Option<([i32; 3], [i32; 3])>> {
@@ -344,7 +404,15 @@ impl Dec<'_> {
     fn edge_kind(&mut self) -> Option<EdgeKind> {
         EdgeKind::ALL.get(usize::from(self.u8()?)).copied()
     }
-    fn node_edges(&mut self) -> Option<NodeEdges> {
+    pub(super) fn edge(&mut self) -> Option<Edge> {
+        Some(Edge {
+            to: self.cell()?,
+            kind: self.edge_kind()?,
+            yaw: self.yaw()?,
+            sprint: self.bool()?,
+        })
+    }
+    pub(super) fn node_edges(&mut self) -> Option<NodeEdges> {
         let kind = match self.u8()? {
             0 => None,
             1 => Some(RestKind::Standing),
@@ -356,12 +424,7 @@ impl Dec<'_> {
         let n = self.len()?;
         let mut edges = Vec::with_capacity(n);
         for _ in 0..n {
-            edges.push(Edge {
-                to: self.cell()?,
-                kind: self.edge_kind()?,
-                yaw: self.yaw()?,
-                sprint: self.bool()?,
-            });
+            edges.push(self.edge()?);
         }
         Some(NodeEdges {
             kind,
@@ -397,7 +460,7 @@ impl Dec<'_> {
         let n = self.len()?;
         let mut deps = Vec::with_capacity(n);
         for _ in 0..n {
-            deps.push((self.u32()?, self.u32()?, self.u32()?));
+            deps.push((self.u32()?, self.u32()?, self.u32()?, self.u32()?));
         }
         let head = self.box3()?;
         let n = self.len()?;
@@ -429,34 +492,129 @@ impl Dec<'_> {
     }
 }
 
-fn decode(key: &str, bytes: &[u8]) -> Option<Vec<(FlownKey, Vec<Arc<Variant>>)>> {
-    let mut d = Dec { b: bytes, at: 0 };
-    if d.take(MAGIC.len())? != MAGIC {
+/// Read a file [`write_to`] wrote for `key`, handing each section to `put`
+/// as it is read; `None` where it does not decode whole.
+fn read_from(r: &mut dyn std::io::Read, key: &str, put: &mut dyn FnMut(Section)) -> Option<()> {
+    let u64_of = |r: &mut dyn std::io::Read| {
+        let mut b = [0u8; 8];
+        r.read_exact(&mut b).ok().map(|_| u64::from_le_bytes(b))
+    };
+    let mut magic = [0u8; 8];
+    r.read_exact(&mut magic).ok()?;
+    if &magic != MAGIC {
         return None;
     }
-    let n = d.len()?;
-    if d.take(n)? != key.as_bytes() {
+    let n = usize::try_from(u64_of(r)?).ok()?;
+    if n != key.len() {
         return None;
     }
-    let n = d.len()?;
-    let mut out = Vec::with_capacity(n.min(1 << 20));
-    for _ in 0..n {
-        let c = d.cell()?;
-        let q = d.u16()?;
-        let m = d.len()?;
-        let mut vs = Vec::with_capacity(m.min(64));
-        for _ in 0..m {
-            vs.push(Arc::new(d.variant()?));
+    let mut k = vec![0u8; n];
+    r.read_exact(&mut k).ok()?;
+    if k != key.as_bytes() {
+        return None;
+    }
+    let mut buf: Vec<u8> = Vec::new();
+    loop {
+        let len = usize::try_from(u64_of(r)?).ok()?;
+        if len == 0 {
+            // The end: nothing may follow it.
+            let mut rest = [0u8; 1];
+            return (r.read(&mut rest).ok()? == 0).then_some(());
         }
-        out.push(((c, q), vs));
+        // Read as far as the file goes, never allocated ahead of it: a
+        // damaged length is refused at the file's end.
+        buf.clear();
+        std::io::Read::take(&mut *r, len as u64)
+            .read_to_end(&mut buf)
+            .ok()?;
+        if buf.len() != len {
+            return None;
+        }
+        let mut d = Dec { b: &buf, at: 0 };
+        let n = d.len()?;
+        let mut out = Vec::with_capacity(n.min(1 << 16));
+        for _ in 0..n {
+            let c = d.cell()?;
+            let q = d.u16()?;
+            let m = d.len()?;
+            let mut vs = Vec::with_capacity(m.min(64));
+            for _ in 0..m {
+                vs.push(Arc::new(d.variant()?));
+            }
+            out.push(((c, q), vs));
+        }
+        if d.at != buf.len() {
+            return None;
+        }
+        put(out);
     }
-    (d.at == bytes.len()).then_some(out)
+}
+
+/// `sections` written as a file and read back, section by section; `None`
+/// where it does not decode.
+#[cfg(test)]
+pub(super) fn round_trip(key: &str, sections: Vec<Section>) -> Option<Vec<Section>> {
+    let mut bytes = Vec::new();
+    write_to(&mut bytes, key, &mut sections.into_iter()).ok()?;
+    let mut out = Vec::new();
+    read_from(&mut bytes.as_slice(), key, &mut |s| out.push(s))?;
+    Some(out)
+}
+
+/// The bytes `sections` take as a file, for a test that cuts one short.
+#[cfg(test)]
+pub(super) fn file_bytes(key: &str, sections: Vec<Section>) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    write_to(&mut bytes, key, &mut sections.into_iter()).expect("into memory");
+    bytes
+}
+
+/// Whether `bytes` read whole as the file of `key`, and the nodes they hold.
+#[cfg(test)]
+pub(super) fn read_bytes(key: &str, bytes: &[u8]) -> Option<usize> {
+    let mut n = 0;
+    read_from(&mut &bytes[..], key, &mut |s| n += s.len())?;
+    Some(n)
 }
 
 #[cfg(test)]
-pub(super) fn round_trip(
-    key: &str,
-    nodes: &[(FlownKey, Vec<Arc<Variant>>)],
-) -> Option<Vec<(FlownKey, Vec<Arc<Variant>>)>> {
-    decode(key, &encode(key, nodes))
+mod record_sizes {
+    use super::{CELL_RECORD, EDGE_RECORD, Enc, NODE_EDGES_RECORD};
+    use crate::compiler::nav::world::reach::{Edge, EdgeKind, NodeEdges, RestKind};
+
+    /// **The record sizes the cost reads are the encoder's**: a cell, an
+    /// edge flown at a yaw, and a node's edges with a read box and three
+    /// edges, each encoded and measured. Red if the format moves and the
+    /// constants do not.
+    #[test]
+    fn the_record_sizes_are_the_encoders() {
+        let edge = Edge {
+            to: [1, -2, 3],
+            kind: EdgeKind::Jump,
+            yaw: Some(-90),
+            sprint: true,
+        };
+        let mut e = Enc::default();
+        e.cell([7, 8, 9]);
+        assert_eq!(e.0.len(), CELL_RECORD);
+        let mut e = Enc::default();
+        e.edge(&edge);
+        assert_eq!(
+            e.0.len(),
+            EDGE_RECORD,
+            "an edge flown at a yaw is the widest edge"
+        );
+        let mut e = Enc::default();
+        e.node_edges(&NodeEdges {
+            kind: Some(RestKind::Standing),
+            edges: vec![edge.clone(), edge.clone(), edge],
+            leaves_world: true,
+            open_sea: false,
+            dies: None,
+            simulated: 5,
+            credited: 6,
+            read: Some(([0, 0, 0], [1, 1, 1])),
+        });
+        assert_eq!(e.0.len(), NODE_EDGES_RECORD + 3 * EDGE_RECORD);
+    }
 }

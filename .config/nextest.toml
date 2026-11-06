@@ -478,3 +478,15 @@ priority = 80
 filter = 'test(=view_viewer::a_tile_set_is_one_page_vesperhold)'
 slow-timeout = { period = "2760s", terminate-after = 1 }
 priority = 100
+
+[[profile.ci.overrides]]
+# measured: 234 s on the remote build machine (x86_64, 16 tests at once), instrumented, one engine thread, 1 run at 9ac10bb62 — not yet on the Actions runner, whose time the next CI run states; the sea the launches read is asked of every case's whole closure, cell by cell
+filter = 'test(=compiler::nav::world::reach::agreement::the_sea_the_launches_read_is_the_sea_the_rest_relation_reads)'
+slow-timeout = { period = "1080s", terminate-after = 1 }
+priority = 60
+
+[[profile.ci.overrides]]
+# measured: 122 s on the remote build machine (x86_64, 16 tests at once), instrumented, one engine thread, 1 run at 9ac10bb62 — not yet on the Actions runner, whose time the next CI run states; the section store is asked every question a map answers over generated worlds
+filter = 'test(=compiler::sections::tests::a_section_store_answers_what_a_map_answers)'
+slow-timeout = { period = "600s", terminate-after = 1 }
+priority = 60

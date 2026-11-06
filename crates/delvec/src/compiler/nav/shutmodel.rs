@@ -10,6 +10,7 @@
 use super::*;
 use crate::compiler::plan::Plan;
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 /// One gate a proof judges: how a report names it, its region, and which of
 /// its two faces opens it when a declaration says so.
@@ -157,7 +158,7 @@ pub(super) fn opens_low(g: &GateUnderTest, f: Option<&Faces>) -> Option<bool> {
 /// — the one answer to where a body can get to, which every proof over this
 /// model reads and none walks again. A closure past its budget is partial
 /// (`over_budget`), and a proof takes no verdict over it.
-pub(super) fn party_reach(w: &World, route: &[[i32; 3]]) -> (Vec<[i32; 3]>, Reach) {
+pub(super) fn party_reach(w: &World, route: &[[i32; 3]]) -> (Vec<[i32; 3]>, Arc<Reach>) {
     let seeds: Vec<[i32; 3]> = route.iter().copied().filter(|c| can_be(w, *c)).collect();
     let reach = w.body_reach(&seeds);
     (seeds, reach)

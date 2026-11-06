@@ -18,13 +18,15 @@ use std::collections::{BTreeMap, BTreeSet, btree_map};
 use std::iter::Peekable;
 use std::sync::Arc;
 
+use crate::compiler::sections::SectionMap;
+
 type Cell = [i32; 3];
 
 /// A cell→value map whose bulk is shared between copies; see the module docs.
-#[derive(Debug)]
 pub struct CellMap<V> {
-    /// The shared map. Never mutated once shared.
-    base: Arc<BTreeMap<Cell, V>>,
+    /// The shared map, the section store of ADR-0037 §1. Never mutated once
+    /// shared.
+    base: Arc<SectionMap<V>>,
     /// This copy's edits: `Some(v)` sets a cell, `None` removes a cell `base`
     /// holds. A key whose overlay entry would restate `base` is not stored.
     over: BTreeMap<Cell, Option<V>>,
@@ -48,15 +50,21 @@ where
 impl<V> Default for CellMap<V> {
     fn default() -> Self {
         CellMap {
-            base: Arc::new(BTreeMap::new()),
+            base: Arc::new(SectionMap::default()),
             over: BTreeMap::new(),
             len: 0,
         }
     }
 }
 
-impl<V> From<BTreeMap<Cell, V>> for CellMap<V> {
+impl<V: Copy + Eq> From<BTreeMap<Cell, V>> for CellMap<V> {
     fn from(map: BTreeMap<Cell, V>) -> Self {
+        CellMap::from(SectionMap::from(map))
+    }
+}
+
+impl<V: Copy + Eq> From<SectionMap<V>> for CellMap<V> {
+    fn from(map: SectionMap<V>) -> Self {
         CellMap {
             len: map.len(),
             base: Arc::new(map),
@@ -65,9 +73,9 @@ impl<V> From<BTreeMap<Cell, V>> for CellMap<V> {
     }
 }
 
-impl<V> CellMap<V> {
+impl<V: Copy + Eq> CellMap<V> {
     /// A map whose shared part is `base`, with no edits of its own.
-    pub fn from_shared(base: Arc<BTreeMap<Cell, V>>) -> Self {
+    pub fn from_shared(base: Arc<SectionMap<V>>) -> Self {
         CellMap {
             len: base.len(),
             base,
@@ -78,7 +86,7 @@ impl<V> CellMap<V> {
 
 impl<V> CellMap<V>
 where
-    V: Clone + PartialEq,
+    V: Copy + Eq,
 {
     /// An empty map.
     pub fn new() -> Self {
@@ -145,7 +153,7 @@ where
     }
 
     /// Every cell, in cell order.
-    pub fn keys(&self) -> impl Iterator<Item = &Cell> {
+    pub fn keys(&self) -> impl Iterator<Item = Cell> + '_ {
         self.iter().map(|(c, _)| c)
     }
 
@@ -155,14 +163,20 @@ where
         if self.over.is_empty() {
             return;
         }
-        let map: BTreeMap<Cell, V> = self.iter().map(|(c, v)| (*c, v.clone())).collect();
+        let map: SectionMap<V> = self.iter().map(|(c, v)| (c, *v)).collect();
         *self = CellMap::from(map);
+    }
+}
+
+impl<V: Copy + Eq + std::fmt::Debug> std::fmt::Debug for CellMap<V> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_map().entries(self.iter()).finish()
     }
 }
 
 impl<V> PartialEq for CellMap<V>
 where
-    V: Clone + PartialEq,
+    V: Copy + Eq,
 {
     fn eq(&self, other: &Self) -> bool {
         self.len == other.len && self.iter().eq(other.iter())
@@ -170,13 +184,13 @@ where
 }
 
 /// The merged, cell-ordered iterator of a [`CellMap`].
-pub struct Iter<'a, V> {
-    base: Peekable<btree_map::Iter<'a, Cell, V>>,
-    over: Peekable<btree_map::Iter<'a, Cell, Option<V>>>,
+pub struct Iter<'a, V: Copy + Eq> {
+    base: Peekable<crate::compiler::sections::Iter<'a, V>>,
+    over: Peekable<crate::compiler::sections::OverlayIter<'a, V>>,
 }
 
-impl<'a, V> Iterator for Iter<'a, V> {
-    type Item = (&'a Cell, &'a V);
+impl<'a, V: Copy + Eq> Iterator for Iter<'a, V> {
+    type Item = (Cell, &'a V);
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -194,7 +208,7 @@ impl<'a, V> Iterator for Iter<'a, V> {
             }
             let (c, edit) = self.over.next().expect("peeked");
             if let Some(v) = edit {
-                return Some((c, v));
+                return Some((*c, v));
             }
         }
     }
@@ -452,6 +466,135 @@ impl CellSet {
     }
 }
 
+/// **A set built cell by cell in the dense form** (ADR-0037 §2): a bitset
+/// over the inclusive box `lo..=hi` the cells are known to lie in (a cell
+/// outside it is kept beside the bits, so membership stays exact), finished
+/// into the [`CellSet`] a `BTreeSet` of the same cells would give — dense
+/// over the cells' own bounding box when they are dense enough for it, sparse
+/// otherwise — without a whole-world list or tree of the cells ever standing.
+pub struct Builder {
+    bits: Bits,
+    outside: BTreeSet<Cell>,
+    len: usize,
+    /// The bounding box of the cells inserted so far.
+    lo: Cell,
+    hi: Cell,
+}
+
+impl CellSet {
+    /// A [`Builder`] over the inclusive box `lo..=hi`.
+    pub fn builder(lo: Cell, hi: Cell) -> Builder {
+        let dims = [0, 1, 2].map(|a| (i64::from(hi[a]) - i64::from(lo[a]) + 1).max(0) as usize);
+        let volume = dims[0]
+            .checked_mul(dims[1])
+            .and_then(|v| v.checked_mul(dims[2]))
+            .expect("a box of cells that fits the address space");
+        Builder {
+            bits: Bits {
+                lo,
+                dims,
+                words: vec![0u64; volume.div_ceil(64)],
+            },
+            outside: BTreeSet::new(),
+            len: 0,
+            lo: [i32::MAX; 3],
+            hi: [i32::MIN; 3],
+        }
+    }
+}
+
+impl Builder {
+    /// Add `c`; whether it was absent.
+    pub fn insert(&mut self, c: Cell) -> bool {
+        let fresh = match self.bits.index(&c) {
+            Some(i) => {
+                let (w, bit) = (i / 64, 1u64 << (i % 64));
+                let fresh = self.bits.words[w] & bit == 0;
+                self.bits.words[w] |= bit;
+                fresh
+            }
+            None => self.outside.insert(c),
+        };
+        if fresh {
+            self.len += 1;
+            for ((lo, hi), v) in self.lo.iter_mut().zip(self.hi.iter_mut()).zip(c) {
+                *lo = (*lo).min(v);
+                *hi = (*hi).max(v);
+            }
+        }
+        fresh
+    }
+
+    /// Whether the set holds `c`.
+    #[inline]
+    pub fn contains(&self, c: &Cell) -> bool {
+        match self.bits.index(c) {
+            Some(i) => self.bits.words[i / 64] & (1u64 << (i % 64)) != 0,
+            None => self.outside.contains(c),
+        }
+    }
+
+    /// The number of cells held.
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Whether no cell is held.
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// Every cell, in cell order.
+    fn iter(&self) -> impl Iterator<Item = Cell> + '_ {
+        let mut dense = BaseIter::Dense {
+            bits: &self.bits,
+            word: 0,
+            cur: self.bits.words.first().copied().unwrap_or(0),
+        }
+        .peekable();
+        let mut outside = self.outside.iter().peekable();
+        std::iter::from_fn(move || match (dense.peek(), outside.peek()) {
+            (Some(a), Some(b)) if a < *b => dense.next(),
+            (Some(_), Some(_)) | (None, Some(_)) => outside.next().copied(),
+            (Some(_), None) => dense.next(),
+            (None, None) => None,
+        })
+    }
+
+    /// The set: dense over the cells' own bounding box when the box holds at
+    /// most [`DENSE_CELLS_PER_BIT`] cells per cell held (the rule a set made
+    /// from a `BTreeSet` follows), sparse otherwise.
+    pub fn finish(self) -> CellSet {
+        if self.len == 0 {
+            return CellSet::new();
+        }
+        let dims = [0, 1, 2].map(|a| (i64::from(self.hi[a]) - i64::from(self.lo[a]) + 1) as u64);
+        let volume = dims[0]
+            .checked_mul(dims[1])
+            .and_then(|v| v.checked_mul(dims[2]));
+        let base = match volume {
+            Some(v) if v <= (self.len as u64).saturating_mul(DENSE_CELLS_PER_BIT as u64) => {
+                let mut bits = Bits {
+                    lo: self.lo,
+                    dims: dims.map(|d| d as usize),
+                    words: vec![0u64; (v as usize).div_ceil(64)],
+                };
+                for c in self.iter() {
+                    let i = bits.index(&c).expect("inside its own bounding box");
+                    bits.words[i / 64] |= 1u64 << (i % 64);
+                }
+                Base::Dense(bits)
+            }
+            _ => Base::Sparse(self.iter().collect()),
+        };
+        CellSet {
+            len: self.len,
+            base: Arc::new(base),
+            over: BTreeMap::new(),
+        }
+    }
+}
+
 /// The merged, cell-ordered iterator of a [`CellSet`].
 pub struct SetIter<'a> {
     base: Peekable<BaseIter<'a>>,
@@ -596,6 +739,73 @@ impl VisitSet {
 mod tests {
     use super::*;
 
+    /// **A set built in the dense form is the set a tree gives** (ADR-0037
+    /// §2): generated cells — a dense block, a sparse spread, a cell outside
+    /// the builder's box — inserted through [`Builder`] and collected into a
+    /// `BTreeSet`, then compared: every cell in order, the count, membership
+    /// of the cells and their neighbours, and the form the finished set takes
+    /// (dense over the cells' own box, or sparse) with its box, so a builder
+    /// that kept its own larger box would read differently here.
+    #[test]
+    fn a_set_built_in_the_dense_form_is_the_set_a_tree_gives() {
+        let mut seed = 0x2545_f491_4f6c_dd1du64;
+        let mut next = |n: u64| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed % n
+        };
+        let (lo, hi) = ([-16, 0, -16], [47, 31, 47]);
+        let mut cases = 0;
+        for (dense, outside) in [(true, false), (false, false), (true, true), (false, true)] {
+            let mut b = CellSet::builder(lo, hi);
+            let mut t: BTreeSet<Cell> = BTreeSet::new();
+            let n = if dense { 6000 } else { 400 };
+            for _ in 0..n {
+                let c = if dense {
+                    [next(24) as i32 - 8, next(12) as i32, next(24) as i32 - 8]
+                } else {
+                    [next(64) as i32 - 16, next(32) as i32, next(64) as i32 - 16]
+                };
+                assert_eq!(b.insert(c), t.insert(c), "{c:?}");
+            }
+            if outside {
+                for c in [[-17, 0, 0], [48, 31, 47], [0, -1, 0], [0, 32, 0]] {
+                    assert_eq!(b.insert(c), t.insert(c));
+                }
+            }
+            assert_eq!(b.len(), t.len());
+            for c in t.iter().take(50) {
+                assert!(b.contains(c));
+                let n = [c[0] + 1, c[1], c[2]];
+                assert_eq!(b.contains(&n), t.contains(&n));
+            }
+            let from_tree = CellSet::from(t.clone());
+            let built = b.finish();
+            assert_eq!(built.len(), t.len());
+            assert!(built.iter().eq(t.iter().copied()), "cells in order");
+            assert_eq!(built, from_tree);
+            match (&*built.base, &*from_tree.base) {
+                (Base::Dense(a), Base::Dense(b)) => {
+                    assert_eq!(
+                        (a.lo, a.dims),
+                        (b.lo, b.dims),
+                        "the dense box is the cells' own"
+                    );
+                    assert_eq!(a.words, b.words);
+                    cases += 1;
+                }
+                (Base::Sparse(a), Base::Sparse(b)) => {
+                    assert_eq!(a, b);
+                    cases += 2;
+                }
+                _ => panic!("the built set took a form the tree's did not"),
+            }
+        }
+        // Both forms were met (dense twice, sparse twice).
+        assert_eq!(cases, 6, "the cases bind both forms");
+    }
+
     /// A copy's edits never reach the original, and both iterate in cell order
     /// exactly as a `BTreeSet` holding the same cells would.
     #[test]
@@ -683,7 +893,7 @@ mod tests {
         assert_eq!(m.remove(&[0, 0, 1]), Some(4));
         assert_eq!(m.len(), 1);
         assert_eq!(
-            m.iter().map(|(c, v)| (*c, *v)).collect::<Vec<_>>(),
+            m.iter().map(|(c, v)| (c, *v)).collect::<Vec<_>>(),
             vec![([0, 0, 0], 8)]
         );
         assert!(m != n);

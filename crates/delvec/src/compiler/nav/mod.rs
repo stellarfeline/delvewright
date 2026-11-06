@@ -29,6 +29,10 @@
 mod route;
 mod world;
 pub use route::*;
+/// The one resident budget and the one scratch-file policy every paged
+/// structure of the compiler shares (ADR-0037 §1): the reach graph's and the
+/// section store's (`crate::compiler::sections`).
+pub(crate) use world::reach::{budget, spill};
 pub use world::*;
 
 mod actor;

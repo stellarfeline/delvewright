@@ -368,9 +368,9 @@ impl CollapseGeometry {
 /// the first solid cell beneath it, stacking within its own column — so the
 /// post-collapse world the proof reasons over is the world the server will
 /// actually have.
-pub fn plan_collapse<V>(
+pub fn plan_collapse(
     world: &World,
-    blocks: &BTreeMap<[i32; 3], V>,
+    blocks: &crate::compiler::blockstate::BlockMap,
     region: ([i32; 3], [i32; 3]),
     label: &str,
 ) -> Result<CollapseGeometry, Failure> {

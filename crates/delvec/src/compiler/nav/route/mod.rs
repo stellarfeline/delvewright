@@ -539,7 +539,7 @@ impl Configuration {
     pub fn moved_from(&self, load: &crate::compiler::blockstate::BlockMap) -> usize {
         self.laid()
             .iter()
-            .filter(|(c, b)| load.get(*c).map(|s| s.as_str()) != b.as_deref())
+            .filter(|(c, b)| load.get(c).map(|s| s.as_str()) != b.as_deref())
             .count()
     }
 

@@ -342,7 +342,7 @@ fn add(a: [i32; 3], b: [i32; 3], k: i32) -> [i32; 3] {
 #[must_use]
 pub fn doors(r: &Reading<'_>, lo: [i32; 3], hi: [i32; 3]) -> Vec<DoorEntry> {
     let mut out = Vec::new();
-    for (&c, b) in r.blocks.range(lo..=hi) {
+    for (c, b) in r.blocks.in_box(lo, hi) {
         if !(lo[0]..=hi[0]).contains(&c[0])
             || !(lo[1]..=hi[1]).contains(&c[1])
             || !(lo[2]..=hi[2]).contains(&c[2])
@@ -537,7 +537,7 @@ pub fn face(r: &Reading<'_>, l: &Layer) -> FaceEntry {
 #[must_use]
 pub fn water(r: &Reading<'_>, lo: [i32; 3], hi: [i32; 3], walk_y: i32) -> Water {
     let mut w = Water::default();
-    for (&c, b) in r.blocks.range(lo..=hi) {
+    for (c, b) in r.blocks.in_box(lo, hi) {
         if !(lo[0]..=hi[0]).contains(&c[0])
             || !(lo[1]..=hi[1]).contains(&c[1])
             || !(lo[2]..=hi[2]).contains(&c[2])
@@ -629,12 +629,11 @@ pub fn census(
         // The piece's blocks with a margin of one, so a framing cell on the
         // frame's edge reads its neighbour.
         let window: BlockMap = blocks
-            .range([min[0] - 2, i32::MIN, i32::MIN]..=[max[0] + 2, i32::MAX, i32::MAX])
-            .filter(|(c, _)| {
-                (min[1] - 2..=max[1] + 2).contains(&c[1])
-                    && (min[2] - 2..=max[2] + 2).contains(&c[2])
-            })
-            .map(|(c, s)| (*c, *s))
+            .in_box(
+                [min[0] - 2, min[1] - 2, min[2] - 2],
+                [max[0] + 2, max[1] + 2, max[2] + 2],
+            )
+            .map(|(c, s)| (c, *s))
             .collect();
         let r = Reading::new(&window).voiding(void_cells(p, structures));
         let walk_y = narrow(pb.floor);

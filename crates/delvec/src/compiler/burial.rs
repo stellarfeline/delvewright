@@ -82,7 +82,7 @@
 //!   the PIECE, made in the prefab document, so it changes what that piece is in
 //!   every world — which is the cost that keeps it from being the cheap answer.
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
 
 use delvewright_dsl::{Diagnostic, DwCode, ExitTier, PrefabMeta};
 
@@ -197,6 +197,10 @@ pub struct ExposureBinding {
     /// Cells of air the party's flood filled — the size of the thing that
     /// decided which faces were judged, so a `judged: 0` can be read against it.
     pub air: usize,
+    /// Air components over the sections of the skin box, the labels joined
+    /// across section faces — the one summary of the block-wise flood that
+    /// crosses a border (ADR-0037 §2); the cost's bound is read against it.
+    pub labels: usize,
     /// Whether that flood reached the outer rim of the examined skin, which is
     /// where it was cut off rather than where it ended.
     pub cut_off: bool,
@@ -231,11 +235,15 @@ impl ExposureBinding {
             self.judged,
             if self.cut_off {
                 format!(
-                    "{} cell(s) of party air, cut off at the {SKIN}-cell skin",
-                    self.air
+                    "{} cell(s) of party air over {} section component label(s), cut off at the \
+                     {SKIN}-cell skin",
+                    self.air, self.labels
                 )
             } else {
-                format!("{} cell(s) of party air, wholly enclosed", self.air)
+                format!(
+                    "{} cell(s) of party air over {} section component label(s), wholly enclosed",
+                    self.air, self.labels
+                )
             },
             self.sides_seen,
             self.declared,
@@ -380,9 +388,10 @@ pub fn check(
     }
 
     // ---- the air the party can be in ---------------------------------------
-    let (air, cut_off) = party_air(&pieces, blocks, &ambient, reachable);
+    let (air, cut_off, labels) = party_air(&pieces, blocks, &ambient, reachable);
     binding.air = air.len();
     binding.cut_off = cut_off;
+    binding.labels = labels;
 
     // Every piece is walked, and every finding collected. Refusing at the first
     // one would tell an author to repair a face and hand them the next on the
@@ -545,7 +554,12 @@ fn declared_phrase(piece: &Piece) -> String {
 
 /// Is there a block in this cell?
 fn is_solid(blocks: &crate::compiler::blockstate::BlockMap, c: [i32; 3]) -> bool {
-    blocks.get(&c).is_some_and(|b| b != "minecraft:air")
+    blocks.get(&c).is_some_and(solid_state)
+}
+
+/// Whether a placed block fills its cell for this check: anything but air.
+fn solid_state(b: &crate::compiler::blockstate::BlockState) -> bool {
+    b != "minecraft:air"
 }
 
 /// **Is there anything in front of this face?** — asked of the one world the
@@ -660,30 +674,163 @@ fn own_solid_sides(
 /// its skin ([`SKIN`]). The confinement is what makes the flood finite in an
 /// open-sky world; the escape is what makes it honest, because a flood that
 /// reaches the rim has not been contained, it has been cut off.
+///
+/// **Block-wise** (ADR-0037 §2, the leak floods): the cells the flood admits
+/// ([`admitted`]) are labelled by connected component one 16 × 16 × 16
+/// section of the store at a time, each section read once in cell order
+/// ([`SectionAir`]); a label on a section's face is joined to the label across
+/// the face (a union-find over the face labels, [`Labels`]), a component is
+/// the party's when a seed — a reached cell, or the one over it — stands in
+/// it, and it is cut off when a cell of it stands on the skin's rim. A second
+/// pass over the sections writes the party's cells. What is held across
+/// sections is the faces of the slab behind the one being read and the
+/// labels' union-find, never the map. The answer is the one a flood from the
+/// seeds gives (`tests::the_block_wise_air_is_the_flooded_air`).
 fn party_air(
     pieces: &[Piece],
     blocks: &crate::compiler::blockstate::BlockMap,
     ambient: &Ambient,
     reachable: &BTreeSet<[i32; 3]>,
-) -> (crate::compiler::cellset::VisitSet, bool) {
-    let distance = |c: [i32; 3]| {
-        pieces
-            .iter()
-            .map(|p| p.distance(c))
-            .min()
-            .unwrap_or(i32::MAX)
-    };
-    let passable = |c: [i32; 3]| {
-        if is_solid(blocks, c) {
-            return false;
+) -> (crate::compiler::cellset::VisitSet, bool, usize) {
+    let (lo, hi) = skin_box(pieces);
+    let mut seen = crate::compiler::cellset::VisitSet::within(lo, hi);
+    if pieces.is_empty() {
+        return (seen, false, 0);
+    }
+    // The body, not the foot: a standing cell is where the feet are, and what a
+    // player is IN is that cell and the one over their head. Seeding both is what
+    // lets the flood leave a room through a doorway whose sill is a step up.
+    let mut seeds: BTreeMap<[i32; 3], Vec<usize>> = BTreeMap::new();
+    for cell in reachable {
+        for dy in 0..=1 {
+            let c = [cell[0], cell[1] + dy, cell[2]];
+            if (0..3).all(|a| c[a] >= lo[a] && c[a] <= hi[a]) {
+                seeds.entry(section_of(c)).or_default().push(local_of(c));
+            }
         }
-        match ambient {
-            Ambient::Ocean(sea) => pieces.iter().any(|p| p.holds(c)) || c[1] > sea.level,
-            Ambient::Void => true,
+    }
+    let (slo, shi) = (section_of(lo), section_of(hi));
+    let mut labels = Labels::default();
+    // The +x faces of the slab of sections behind this one, by `[sy, sz]`; the
+    // +y faces of the row behind this one, by `sz`; the +z face of the section
+    // before this one.
+    let mut xfaces: BTreeMap<[i32; 2], Box<Face>> = BTreeMap::new();
+    let mut yfaces: BTreeMap<i32, Box<Face>> = BTreeMap::new();
+    for sx in slo[0]..=shi[0] {
+        yfaces.clear();
+        for sy in slo[1]..=shi[1] {
+            let mut zface: Option<Box<Face>> = None;
+            for sz in slo[2]..=shi[2] {
+                let sec = [sx, sy, sz];
+                let air = SectionAir::read(sec, pieces, blocks, ambient, lo, hi);
+                let base = labels.add(air.count);
+                for (at, d) in air.rim.iter().enumerate() {
+                    if *d {
+                        labels.rim[base + usize::from(air.label[at]) - 1] = true;
+                    }
+                }
+                if let Some(local) = seeds.get(&sec) {
+                    for at in local {
+                        if air.label[*at] != 0 {
+                            labels.seeded[base + usize::from(air.label[*at]) - 1] = true;
+                        }
+                    }
+                }
+                let id = |at: usize| -> u32 {
+                    match air.label[at] {
+                        0 => 0,
+                        l => (base + usize::from(l) - 1) as u32 + 1,
+                    }
+                };
+                if let Some(behind) = xfaces.get(&[sy, sz]) {
+                    for ly in 0..SIDE {
+                        for lz in 0..SIDE {
+                            labels.join(behind[face_at(ly, lz)], id(local_at(0, ly, lz)));
+                        }
+                    }
+                }
+                if let Some(below) = yfaces.get(&sz) {
+                    for lx in 0..SIDE {
+                        for lz in 0..SIDE {
+                            labels.join(below[face_at(lx, lz)], id(local_at(lx, 0, lz)));
+                        }
+                    }
+                }
+                if let Some(before) = &zface {
+                    for lx in 0..SIDE {
+                        for ly in 0..SIDE {
+                            labels.join(before[face_at(lx, ly)], id(local_at(lx, ly, 0)));
+                        }
+                    }
+                }
+                let mut xf: Box<Face> = Box::new([0; FACE]);
+                let mut yf: Box<Face> = Box::new([0; FACE]);
+                let mut zf: Box<Face> = Box::new([0; FACE]);
+                for u in 0..SIDE {
+                    for v in 0..SIDE {
+                        xf[face_at(u, v)] = id(local_at(SIDE - 1, u, v));
+                        yf[face_at(u, v)] = id(local_at(u, SIDE - 1, v));
+                        zf[face_at(u, v)] = id(local_at(u, v, SIDE - 1));
+                    }
+                }
+                xfaces.insert([sy, sz], xf);
+                yfaces.insert(sz, yf);
+                zface = Some(zf);
+            }
         }
+    }
+    let (reached, cut_off) = labels.reached();
+    for sx in slo[0]..=shi[0] {
+        for sy in slo[1]..=shi[1] {
+            for sz in slo[2]..=shi[2] {
+                let sec = [sx, sy, sz];
+                let air = SectionAir::read(sec, pieces, blocks, ambient, lo, hi);
+                if air.count == 0 {
+                    continue;
+                }
+                let base = labels.add_read(air.count);
+                for (at, l) in air.label.iter().enumerate() {
+                    if *l != 0 && reached[labels.find(base + usize::from(*l) - 1)] {
+                        seen.insert(cell_at(sec, at));
+                    }
+                }
+            }
+        }
+    }
+    // The union-find's size: one entry per air component of a section, the
+    // summary that crossed the section faces (ADR-0037 §2's face labels).
+    let labels = labels.parent.len();
+    (seen, cut_off, labels)
+}
+
+/// **A flood's admission** (`party_air`): a cell holding no block (`solid`
+/// says whether it does), within [`SKIN`] of a piece, and not filled by the
+/// horizon — under an ocean, inside a piece or above the sea. The distance to
+/// the nearest piece when admitted, which says whether the cell stands on the
+/// skin's rim (`== SKIN`). One rule, read by the block-wise labelling and by
+/// the cell-by-cell flood the test holds it to.
+fn admitted(pieces: &[&Piece], ambient: &Ambient, solid: bool, c: [i32; 3]) -> Option<i32> {
+    if solid {
+        return None;
+    }
+    let d = pieces
+        .iter()
+        .map(|p| p.distance(c))
+        .min()
+        .unwrap_or(i32::MAX);
+    if d > SKIN {
+        return None;
+    }
+    let filled = match ambient {
+        Ambient::Ocean(sea) => !(pieces.iter().any(|p| p.holds(c)) || c[1] > sea.level),
+        Ambient::Void => false,
     };
-    // Every cell the flood admits lies within `SKIN` of a piece, so it lies in
-    // the pieces' joint box grown by `SKIN`; the set is dense over that box.
+    (!filled).then_some(d)
+}
+
+/// The pieces' joint box grown by [`SKIN`]: every cell the flood admits lies
+/// in it. Inverted (`lo > hi`) when there is no piece.
+fn skin_box(pieces: &[Piece]) -> ([i32; 3], [i32; 3]) {
     let mut lo = [i32::MAX; 3];
     let mut hi = [i32::MIN; 3];
     for p in pieces {
@@ -692,31 +839,251 @@ fn party_air(
             hi[a] = hi[a].max(p.max[a].saturating_add(SKIN));
         }
     }
+    (lo, hi)
+}
+
+/// A section's side, the store's ([`crate::compiler::sections::SIDE`]).
+const SIDE: usize = crate::compiler::sections::SIDE as usize;
+/// Cells in a section, and in one of its faces.
+const CELLS: usize = SIDE * SIDE * SIDE;
+const FACE: usize = SIDE * SIDE;
+/// The label (a union-find id plus one; 0 none) at each cell of a face.
+type Face = [u32; FACE];
+
+fn section_of(c: [i32; 3]) -> [i32; 3] {
+    c.map(|v| v.div_euclid(SIDE as i32))
+}
+
+fn local_of(c: [i32; 3]) -> usize {
+    let l = c.map(|v| v.rem_euclid(SIDE as i32) as usize);
+    local_at(l[0], l[1], l[2])
+}
+
+#[inline]
+fn local_at(lx: usize, ly: usize, lz: usize) -> usize {
+    (lx * SIDE + ly) * SIDE + lz
+}
+
+#[inline]
+fn face_at(u: usize, v: usize) -> usize {
+    u * SIDE + v
+}
+
+fn cell_at(sec: [i32; 3], at: usize) -> [i32; 3] {
+    let lz = at % SIDE;
+    let ly = (at / SIDE) % SIDE;
+    let lx = at / (SIDE * SIDE);
+    [
+        sec[0] * SIDE as i32 + lx as i32,
+        sec[1] * SIDE as i32 + ly as i32,
+        sec[2] * SIDE as i32 + lz as i32,
+    ]
+}
+
+/// **One section's admitted cells, labelled by connected component** within
+/// the section (six neighbours): the section read from the store once, in
+/// cell order, and every other cell of it air.
+struct SectionAir {
+    /// The component of each cell, 1-based; 0 for a cell not admitted.
+    label: Box<[u16; CELLS]>,
+    /// Components found.
+    count: usize,
+    /// Whether the cell stands on the skin's rim.
+    rim: Box<[bool; CELLS]>,
+}
+
+impl SectionAir {
+    fn read(
+        sec: [i32; 3],
+        pieces: &[Piece],
+        blocks: &crate::compiler::blockstate::BlockMap,
+        ambient: &Ambient,
+        lo: [i32; 3],
+        hi: [i32; 3],
+    ) -> SectionAir {
+        let slo = sec.map(|v| v * SIDE as i32);
+        let shi = slo.map(|v| v + SIDE as i32 - 1);
+        // Only a piece within the skin of this section can admit a cell of
+        // it, hold one, or be the nearest to one admitted.
+        let near: Vec<&Piece> = pieces
+            .iter()
+            .filter(|p| (0..3).all(|a| p.min[a] - SKIN <= shi[a] && p.max[a] + SKIN >= slo[a]))
+            .collect();
+        let mut solid: Box<[bool; CELLS]> = Box::new([false; CELLS]);
+        if !near.is_empty() {
+            for (c, b) in blocks.in_box(slo, shi) {
+                solid[local_of(c)] = solid_state(b);
+            }
+        }
+        let mut adm: Box<[bool; CELLS]> = Box::new([false; CELLS]);
+        let mut rim: Box<[bool; CELLS]> = Box::new([false; CELLS]);
+        if !near.is_empty() {
+            for at in 0..CELLS {
+                let c = cell_at(sec, at);
+                if (0..3).any(|a| c[a] < lo[a] || c[a] > hi[a]) {
+                    continue;
+                }
+                if let Some(d) = admitted(&near, ambient, solid[at], c) {
+                    adm[at] = true;
+                    rim[at] = d >= SKIN;
+                }
+            }
+        }
+        let mut label: Box<[u16; CELLS]> = Box::new([0; CELLS]);
+        let mut count = 0usize;
+        let mut stack: Vec<usize> = Vec::new();
+        for start in 0..CELLS {
+            if !adm[start] || label[start] != 0 {
+                continue;
+            }
+            count += 1;
+            let l = u16::try_from(count).expect("at most 4096 components in a section");
+            label[start] = l;
+            stack.push(start);
+            while let Some(at) = stack.pop() {
+                let lz = at % SIDE;
+                let ly = (at / SIDE) % SIDE;
+                let lx = at / (SIDE * SIDE);
+                let mut step = |n: usize| {
+                    if adm[n] && label[n] == 0 {
+                        label[n] = l;
+                        stack.push(n);
+                    }
+                };
+                if lx > 0 {
+                    step(at - SIDE * SIDE);
+                }
+                if lx + 1 < SIDE {
+                    step(at + SIDE * SIDE);
+                }
+                if ly > 0 {
+                    step(at - SIDE);
+                }
+                if ly + 1 < SIDE {
+                    step(at + SIDE);
+                }
+                if lz > 0 {
+                    step(at - 1);
+                }
+                if lz + 1 < SIDE {
+                    step(at + 1);
+                }
+            }
+        }
+        SectionAir { label, count, rim }
+    }
+}
+
+/// **The union-find over the sections' components**: one entry per component
+/// of a section, joined across section faces; whether a seed stands in it and
+/// whether it reaches the rim travel with the join.
+#[derive(Default)]
+struct Labels {
+    parent: Vec<usize>,
+    seeded: Vec<bool>,
+    rim: Vec<bool>,
+    /// Components handed out so far on the second pass ([`Labels::add_read`]).
+    read: usize,
+}
+
+impl Labels {
+    /// Make room for a section's `count` components; the id of its first.
+    fn add(&mut self, count: usize) -> usize {
+        let base = self.parent.len();
+        self.parent.extend(base..base + count);
+        self.seeded.resize(base + count, false);
+        self.rim.resize(base + count, false);
+        base
+    }
+
+    /// The id the first of a section's `count` components had on the first
+    /// pass, the sections read in the same order.
+    fn add_read(&mut self, count: usize) -> usize {
+        let base = self.read;
+        self.read += count;
+        assert!(
+            self.read <= self.parent.len(),
+            "the second pass over the sections found more components than the first"
+        );
+        base
+    }
+
+    fn find(&mut self, mut i: usize) -> usize {
+        while self.parent[i] != i {
+            let p = self.parent[i];
+            self.parent[i] = self.parent[p];
+            i = p;
+        }
+        i
+    }
+
+    /// Join two face labels (ids plus one; 0 joins nothing).
+    fn join(&mut self, a: u32, b: u32) {
+        if a == 0 || b == 0 {
+            return;
+        }
+        let (a, b) = (self.find(a as usize - 1), self.find(b as usize - 1));
+        if a == b {
+            return;
+        }
+        self.parent[b] = a;
+        if self.seeded[b] {
+            self.seeded[a] = true;
+        }
+        if self.rim[b] {
+            self.rim[a] = true;
+        }
+    }
+
+    /// Per id, whether its component is the party's (a seed stands in it); and
+    /// whether any party component reaches the rim.
+    fn reached(&mut self) -> (Vec<bool>, bool) {
+        let n = self.parent.len();
+        let mut cut_off = false;
+        let reached = (0..n)
+            .map(|i| {
+                let r = self.find(i);
+                cut_off |= self.seeded[r] && self.rim[r];
+                self.seeded[r]
+            })
+            .collect();
+        (reached, cut_off)
+    }
+}
+
+/// **The flood, cell by cell** (the reference `party_air` is held to): a
+/// breadth-first flood from the seeds over the admitted cells, the store read
+/// at every cell. Kept for the agreement test alone.
+#[cfg(test)]
+fn party_air_by_cells(
+    pieces: &[Piece],
+    blocks: &crate::compiler::blockstate::BlockMap,
+    ambient: &Ambient,
+    reachable: &BTreeSet<[i32; 3]>,
+) -> (crate::compiler::cellset::VisitSet, bool) {
+    let all: Vec<&Piece> = pieces.iter().collect();
+    let admit = |c: [i32; 3]| admitted(&all, ambient, is_solid(blocks, c), c);
+    let (lo, hi) = skin_box(pieces);
     let mut seen = crate::compiler::cellset::VisitSet::within(lo, hi);
-    let mut queue: VecDeque<[i32; 3]> = VecDeque::new();
+    let mut queue: std::collections::VecDeque<[i32; 3]> = std::collections::VecDeque::new();
     let mut cut_off = false;
-    // The body, not the foot: a standing cell is where the feet are, and what a
-    // player is IN is that cell and the one over their head. Seeding both is what
-    // lets the flood leave a room through a doorway whose sill is a step up.
     for cell in reachable {
         for dy in 0..=1 {
             let c = [cell[0], cell[1] + dy, cell[2]];
-            if distance(c) <= SKIN && passable(c) && seen.insert(c) {
+            if admit(c).is_some() && seen.insert(c) {
                 queue.push_back(c);
             }
         }
     }
     while let Some(c) = queue.pop_front() {
-        if distance(c) >= SKIN {
-            // The flood reached the outer rim of the examined skin: it did not
-            // end here, it was stopped here, and the line says so.
+        if admit(c).is_some_and(|d| d >= SKIN) {
             cut_off = true;
         }
         for axis in 0..3 {
             for sign in [-1i32, 1] {
                 let mut n = c;
                 n[axis] += sign;
-                if distance(n) <= SKIN && passable(n) && seen.insert(n) {
+                if admit(n).is_some() && seen.insert(n) {
                     queue.push_back(n);
                 }
             }
@@ -754,6 +1121,147 @@ mod tests {
         }
     }
 
+    /// **The block-wise air is the flooded air** (ADR-0037 §4): generated
+    /// worlds — pieces of several sizes straddling section borders and the
+    /// origin, solid cells scattered and in walls, seeds standing in air, in
+    /// blocks and off the skin, under a void and under an ocean whose level
+    /// cuts the box — the party's air by section against the cell-by-cell
+    /// flood, cell for cell over the skin box, by count, and the cut-off
+    /// verdict; each case must flood something, and across the cases both
+    /// verdicts occur.
+    #[test]
+    fn the_block_wise_air_is_the_flooded_air() {
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        let mut rnd = move |n: i32| -> i32 {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed % n as u64) as i32
+        };
+        let (mut cut, mut whole) = (0, 0);
+        for case in 0..40 {
+            let n = 1 + rnd(4);
+            let mut pieces = Vec::new();
+            for _ in 0..n {
+                let min = [rnd(40) - 20, rnd(30) + 50, rnd(40) - 20];
+                let size = [3 + rnd(20), 3 + rnd(12), 3 + rnd(20)];
+                pieces.push(piece(
+                    min,
+                    [min[0] + size[0], min[1] + size[1], min[2] + size[2]],
+                    &[],
+                ));
+            }
+            let (lo, hi) = skin_box(&pieces);
+            let mut blocks = crate::compiler::blockstate::BlockMap::new();
+            let stone = crate::compiler::blockstate::BlockState::new("minecraft:stone");
+            let air = crate::compiler::blockstate::BlockState::new("minecraft:air");
+            // Scattered solids, a few walls, and air blocks that are not solid.
+            let dims = [hi[0] - lo[0] + 1, hi[1] - lo[1] + 1, hi[2] - lo[2] + 1];
+            for _ in 0..(dims[0] * dims[1] * dims[2] / (2 + rnd(6))) {
+                let c = [
+                    lo[0] + rnd(dims[0]),
+                    lo[1] + rnd(dims[1]),
+                    lo[2] + rnd(dims[2]),
+                ];
+                blocks.insert(c, if rnd(9) == 0 { air } else { stone });
+            }
+            for _ in 0..rnd(3) {
+                let axis = rnd(3) as usize;
+                let plane = lo[axis] + rnd(dims[axis]);
+                let gap = [
+                    lo[0] + rnd(dims[0]),
+                    lo[1] + rnd(dims[1]),
+                    lo[2] + rnd(dims[2]),
+                ];
+                for x in lo[0]..=hi[0] {
+                    for y in lo[1]..=hi[1] {
+                        for z in lo[2]..=hi[2] {
+                            let c = [x, y, z];
+                            if c[axis] == plane && c != gap {
+                                blocks.insert(c, stone);
+                            }
+                        }
+                    }
+                }
+            }
+            let ambient = if case % 2 == 0 {
+                Ambient::Void
+            } else {
+                Ambient::Ocean(crate::compiler::nav::Sea {
+                    level: lo[1] + rnd(dims[1]),
+                    floor_top: lo[1] - 8,
+                })
+            };
+            let mut reachable = BTreeSet::new();
+            for _ in 0..1 + rnd(6) {
+                reachable.insert([
+                    lo[0] - 1 + rnd(dims[0] + 2),
+                    lo[1] - 1 + rnd(dims[1] + 2),
+                    lo[2] - 1 + rnd(dims[2] + 2),
+                ]);
+            }
+            let (by_cells, cut_cells) = party_air_by_cells(&pieces, &blocks, &ambient, &reachable);
+            let (by_section, cut_section, _) = party_air(&pieces, &blocks, &ambient, &reachable);
+            assert_eq!(
+                by_section.len(),
+                by_cells.len(),
+                "case {case}: the counts differ"
+            );
+            assert_eq!(
+                cut_section, cut_cells,
+                "case {case}: the cut-off verdicts differ"
+            );
+            for x in lo[0] - 1..=hi[0] + 1 {
+                for y in lo[1] - 1..=hi[1] + 1 {
+                    for z in lo[2] - 1..=hi[2] + 1 {
+                        let c = [x, y, z];
+                        assert_eq!(
+                            by_section.contains(&c),
+                            by_cells.contains(&c),
+                            "case {case}: the two floods differ at {c:?}"
+                        );
+                    }
+                }
+            }
+            if by_cells.is_empty() {
+                // A seed in a block or off the skin floods nothing: the case
+                // is redrawn with a seed in the air of a piece.
+                let p = &pieces[0];
+                let c = [p.min[0] + 1, p.min[1] + 1, p.min[2] + 1];
+                blocks.remove(&c);
+                blocks.remove(&[c[0], c[1] + 1, c[2]]);
+                let seeds: BTreeSet<[i32; 3]> = [c].into_iter().collect();
+                let (a, ca) = party_air_by_cells(&pieces, &blocks, &ambient, &seeds);
+                let (b, cb, _) = party_air(&pieces, &blocks, &ambient, &seeds);
+                assert!(
+                    !a.is_empty(),
+                    "case {case}: a seed in a piece's air floods nothing"
+                );
+                assert_eq!(
+                    (b.len(), cb),
+                    (a.len(), ca),
+                    "case {case}: redrawn, the floods differ"
+                );
+                if ca {
+                    cut += 1;
+                } else {
+                    whole += 1;
+                }
+                continue;
+            }
+            if cut_cells {
+                cut += 1;
+            } else {
+                whole += 1;
+            }
+        }
+        eprintln!("block-wise air: 40 cases, {cut} cut off at the rim, {whole} wholly enclosed");
+        assert!(
+            cut > 0 && whole > 0,
+            "both verdicts must occur: {cut} cut off, {whole} enclosed"
+        );
+    }
+
     /// The distance a flood is confined by is the box's own, and a face's
     /// outward neighbour is inside it — which is the whole reason [`SKIN`] is
     /// two and not one.
@@ -777,7 +1285,7 @@ mod tests {
             piece([0, 0, 0], [4, 4, 4], &[]),
             piece([5, 0, 0], [9, 4, 4], &[]),
         ];
-        let blocks = BTreeMap::new();
+        let blocks = crate::compiler::blockstate::BlockMap::new();
         assert!(
             covered(&pieces, &blocks, &Ambient::Void, [5, 2, 2]),
             "the neighbour's box"

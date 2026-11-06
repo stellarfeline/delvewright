@@ -604,13 +604,13 @@ mod tests {
     /// An [`crate::compiler::assembled::Occupancy`] with only its `solid` set filled.
     fn occ(solid: BTreeSet<[i32; 3]>) -> crate::compiler::assembled::Occupancy {
         crate::compiler::assembled::Occupancy {
-            solid,
-            tall: BTreeSet::new(),
-            use_gates: BTreeSet::new(),
-            flooded: BTreeSet::new(),
-            partial: std::collections::BTreeMap::new(),
-            waterloggable: std::collections::BTreeSet::new(),
-            lava: std::collections::BTreeSet::new(),
+            solid: solid.into(),
+            tall: (BTreeSet::new()).into(),
+            use_gates: (BTreeSet::new()).into(),
+            flooded: (BTreeSet::new()).into(),
+            partial: (std::collections::BTreeMap::new()).into(),
+            waterloggable: (std::collections::BTreeSet::new()).into(),
+            lava: (std::collections::BTreeSet::new()).into(),
             climb: Default::default(),
             unheld_climb: Default::default(),
             material: Default::default(),

@@ -35,7 +35,18 @@
 //! differs from this world in the fewest of its cells, a run whose box holds
 //! none of those cells did the same here and is taken as written; the rest
 //! are flown. Runs merge in their order as the launches do, first naming
-//! first, so the node is the node one pass over every launch gives.
+//! first, so the node is the node one pass over every launch gives. Each
+//! cell a variant records carries the runs that read it, and a run taken as
+//! written notes those cells and no others: what a node records is the cells
+//! its head and its runs read, whichever variant (if any) it took runs from,
+//! so a variant is a function of the world and the node alone and never of
+//! which graph banked first.
+//!
+//! A node keeps at most [`VARIANTS`] variants, the same ones whatever order
+//! they arrive in: one equal to a kept variant is not kept again, and past
+//! the bound the variants kept are those first in the order of their bytes'
+//! digest. The bank's census and its file are therefore the same in every run
+//! that asks the same nodes of the same worlds, at any thread count.
 //!
 //! The bank is an accelerator, never a premise: what no variant answers is
 //! flown, and a variant that holds answers what flying would.
@@ -43,6 +54,7 @@
 use super::{Code, Death, Dense, EdgeKind, NodeEdges, Raw};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 /// An inclusive cell box.
@@ -73,8 +85,15 @@ fn inside(c: [i32; 3], b: &Box3) -> bool {
     (0..3).all(|i| b.0[i] <= c[i] && c[i] <= b.1[i])
 }
 
-/// How many runs a node's launches are taken in.
+/// How many runs a node's launches are taken in: one bit each in a
+/// recorded cell's [`Dep`] runs.
 pub(super) const GROUPS: usize = 32;
+const _: () = assert!(GROUPS <= u32::BITS as usize);
+
+/// One cell a variant read: its window index, its snapshot code, its raw
+/// fact, and the runs that read it (bit `g` for run `g`; none for a cell only
+/// the node's head read).
+pub(super) type Dep = (u32, Code, u32, u32);
 
 /// The window cells one node's expansion read, as a bitmap over the window
 /// with the words it set, and the box of the cells the current run read. The
@@ -83,6 +102,10 @@ pub(super) struct Track<'a> {
     dense: &'a Dense,
     bits: Vec<Cell<u64>>,
     touched: RefCell<Vec<u32>>,
+    /// The cells noted since the current run began, repeats included.
+    run_cells: RefCell<Vec<u32>>,
+    /// Each run's cells, with the run's bit.
+    run_reads: RefCell<Vec<(u32, u32)>>,
     /// The current run's box, empty while `lo > hi`.
     lo: [Cell<i32>; 3],
     hi: [Cell<i32>; 3],
@@ -180,6 +203,8 @@ impl<'a> Track<'a> {
             dense,
             bits,
             touched: RefCell::new(Vec::new()),
+            run_cells: RefCell::new(Vec::new()),
+            run_reads: RefCell::new(Vec::new()),
             lo: [
                 Cell::new(i32::MAX),
                 Cell::new(i32::MAX),
@@ -201,6 +226,7 @@ impl<'a> Track<'a> {
             self.touched.borrow_mut().push((i / 64) as u32);
         }
         w.set(old | 1 << (i % 64));
+        self.run_cells.borrow_mut().push(i as u32);
     }
 
     /// Note the window cell `c`, at index `i`.
@@ -262,14 +288,26 @@ impl<'a> Track<'a> {
         self.extend((lo, hi));
     }
 
-    /// Start a run: its box is empty. What was read before it.
+    /// Start a run: its box and its cells are empty. What was read before it.
     pub(super) fn begin_run(&self) -> Option<Box3> {
-        self.take()
+        let b = self.take();
+        self.run_cells.borrow_mut().clear();
+        b
     }
 
     /// End a run: its box.
     pub(super) fn end_run(&self) -> Option<Box3> {
         self.take()
+    }
+
+    /// File the cells noted since the current run began as run `g`'s.
+    fn file_run(&self, g: usize) {
+        let mut cells = std::mem::take(&mut *self.run_cells.borrow_mut());
+        cells.sort_unstable();
+        cells.dedup();
+        self.run_reads
+            .borrow_mut()
+            .extend(cells.into_iter().map(|i| (i, 1u32 << g)));
     }
 
     /// Set the current box aside to measure what one computation reads.
@@ -287,9 +325,13 @@ impl<'a> Track<'a> {
         inner
     }
 
-    /// The cells noted, each with its snapshot code and its raw fact.
-    fn deps(&self, raw: &Raw) -> Vec<(u32, Code, u32)> {
+    /// The cells noted, each with its snapshot code, its raw fact and the
+    /// runs filed as reading it.
+    fn deps(&self, raw: &Raw) -> Vec<Dep> {
         self.note_leaf_reads();
+        let mut reads = self.run_reads.borrow().clone();
+        reads.sort_unstable();
+        let mut reads = reads.into_iter().peekable();
         let mut out = Vec::new();
         let mut words = self.touched.borrow().clone();
         words.sort_unstable();
@@ -299,7 +341,15 @@ impl<'a> Track<'a> {
             while b != 0 {
                 let i = w * 64 + b.trailing_zeros() as usize;
                 b &= b - 1;
-                out.push((i as u32, self.dense.cells[i], raw.at(i)));
+                let mut runs = 0;
+                while let Some(&(j, g)) = reads.peek() {
+                    if j as usize > i {
+                        break;
+                    }
+                    runs |= g;
+                    reads.next();
+                }
+                out.push((i as u32, self.dense.cells.get(i), raw.at(i), runs));
             }
         }
         out
@@ -336,7 +386,7 @@ pub(super) type Volumes = Vec<([i32; 3], [i32; 3])>;
 
 /// One recorded expansion of a node.
 pub(super) struct Variant {
-    pub(super) deps: Vec<(u32, Code, u32)>,
+    pub(super) deps: Vec<Dep>,
     /// Every cell the expansion read before its first run lies in this box:
     /// the node's own queries.
     pub(super) head: Option<Box3>,
@@ -375,8 +425,8 @@ impl Expansion<'_> {
         }
     }
 
-    /// The recorded run `g` of `n`, if it holds here; its cells are noted as
-    /// read and its box made the current run's.
+    /// The recorded run `g` of `n`, if it holds here; the cells it read are
+    /// noted as read and its box made the current run's.
     pub(super) fn reuse(&self, g: usize, n: usize) -> Option<Summary> {
         let p = self.prior.as_ref()?;
         if p.variant.runs.len() != n {
@@ -396,10 +446,14 @@ impl Expansion<'_> {
             if p.diff.iter().any(|d| inside(*d, &b)) {
                 return None;
             }
-            for &(i, _, _) in &p.variant.deps {
-                let c = self.track.dense.coords(i as usize);
-                if inside(c, &b) {
-                    self.track.note(i as usize, c);
+            // The cells run `g` read, and no other cell of its box: one the
+            // variant's other runs read there is this node's only where its
+            // own runs read it, so what this expansion records is the same
+            // whichever variant it took runs from.
+            for &(i, _, _, runs) in &p.variant.deps {
+                if runs & 1 << g != 0 {
+                    self.track
+                        .note(i as usize, self.track.dense.coords(i as usize));
                 }
             }
             self.track.extend(b);
@@ -410,30 +464,251 @@ impl Expansion<'_> {
         Some(run.summary.clone())
     }
 
-    /// Write down run `g`, which ended with box `bbox`.
+    /// Write down the next run, which ended with box `bbox`, and the cells
+    /// it read.
     pub(super) fn ran(&self, bbox: Option<Box3>, summary: Summary) {
-        self.runs.borrow_mut().push(Run { bbox, summary });
+        let mut runs = self.runs.borrow_mut();
+        self.track.file_run(runs.len());
+        runs.push(Run { bbox, summary });
     }
 }
 
+/// One kept variant: where it lies in the spill ([`super::spill`]), or the
+/// variant itself for a bank whose spill could not be opened (a spill that
+/// opened and then fails stops the run: one policy for every scratch file,
+/// `spill::Spill::fail`). What a node's
+/// expansion read is the bulk of a variant — every window cell, at twelve
+/// bytes — and a build keeps one variant per node it flew for the life of the
+/// process, so the bank keeps a slot per variant in memory and the file
+/// holds the rest.
+/// A slot on disk shares its record with every copy taken to read it, so a
+/// variant that leaves the bank frees its room in the file only once no read
+/// of it is under way.
+#[derive(Clone)]
+enum Slot {
+    Disk {
+        ext: Arc<super::spill::Extent>,
+        digest: u64,
+    },
+    Held {
+        v: Arc<Variant>,
+        len: u32,
+        digest: u64,
+    },
+}
+
+impl Slot {
+    fn digest(&self) -> u64 {
+        match self {
+            Slot::Disk { digest, .. } | Slot::Held { digest, .. } => *digest,
+        }
+    }
+    fn len(&self) -> u64 {
+        match self {
+            Slot::Disk { ext, .. } => u64::from(ext.at().1),
+            Slot::Held { len, .. } => u64::from(*len),
+        }
+    }
+}
+
+/// The first eight bytes of a variant's encoding's sha256: the order a
+/// node's variants are kept in, and the test of two being one.
+fn digest(bytes: &[u8]) -> u64 {
+    use sha2::{Digest, Sha256};
+    let h = Sha256::digest(bytes);
+    u64::from_le_bytes(h[..8].try_into().expect("eight bytes"))
+}
+
 /// The bank of one window, ambient, launch set and non-local world facts.
-#[derive(Default)]
 pub(super) struct Bank {
-    nodes: Mutex<HashMap<super::FlownKey, Vec<Arc<Variant>>>>,
+    nodes: Mutex<HashMap<super::FlownKey, Vec<Slot>>>,
+    spill: Mutex<Option<super::spill::Spill>>,
     /// Runs taken as written, for the agreement test's binding.
     reused: std::sync::atomic::AtomicU64,
     /// The bank's key, which names its file ([`super::persist`]).
     key: String,
-    /// The variants its file held when the run read it: a bank holding no
-    /// more is not written back.
-    loaded: usize,
+    /// Whether the variants kept changed since the bank was read from its
+    /// file: a bank that did not is not written back.
+    changed: std::sync::atomic::AtomicBool,
 }
 
 /// How many variants of one node the bank keeps: a bound on its memory, never
 /// on what a build answers.
-const VARIANTS: usize = 8;
+pub(super) const VARIANTS: usize = 8;
+
+/// **The bank's cap** (ADR-0037 §3): the bytes every bank of the process may
+/// keep in its file between them, set by the build from its cost before the
+/// proofs run ([`set_cap`]: the graph's own tables' and lists' bound) and
+/// unbounded where no build set one. A variant that would pass it is not
+/// kept — the expansion's answer is the same, the next world that asks
+/// re-flies the node, and no output byte reads the bank — so the file is
+/// bounded by what the plan states, never by the nodes a run flew. Under a
+/// test's cap ([`with_cap`], carried to the workers that expand for the
+/// thread) each variant is judged alone against it, and what was refused
+/// is counted for the test over the process.
+static CAP: AtomicU64 = AtomicU64::new(u64::MAX);
+/// Bytes the variants kept hold, over every bank, under the cap.
+static KEPT: AtomicU64 = AtomicU64::new(0);
+/// Variants refused at the cap, over the run.
+static REFUSED: AtomicU64 = AtomicU64::new(0);
+/// Variants refused under a test's cap, over the process: the expansions
+/// run on worker threads, so a test reads the count before and after.
+static REFUSED_UNDER_TEST: AtomicU64 = AtomicU64::new(0);
+
+thread_local! {
+    static CAP_HERE: Cell<u64> = const { Cell::new(0) };
+}
+
+/// The build's cap on what the banks keep, in bytes.
+pub(super) fn set_cap(bytes: u64) {
+    CAP.store(bytes, Ordering::Relaxed);
+}
+
+/// The cap stated and the variants refused at it over the run; `None` where
+/// no build set one.
+pub(super) fn cap_stated() -> Option<(u64, u64)> {
+    let c = CAP.load(Ordering::Relaxed);
+    (c != u64::MAX).then(|| (c, REFUSED.load(Ordering::Relaxed)))
+}
+
+/// A test's cap in force on this thread, `0` for none.
+pub(super) fn cap_here() -> u64 {
+    CAP_HERE.with(Cell::get)
+}
+
+/// `f` with a test's cap of `bytes` in force on this thread (`0`: none).
+pub(super) fn with_cap<R>(bytes: u64, f: impl FnOnce() -> R) -> R {
+    let was = CAP_HERE.with(|c| c.replace(bytes));
+    let out = f();
+    CAP_HERE.with(|c| c.set(was));
+    out
+}
+
+/// Variants refused under a test's cap so far, over the process.
+#[cfg(test)]
+pub(super) fn refused_under_test() -> u64 {
+    REFUSED_UNDER_TEST.load(Ordering::Relaxed)
+}
+
+/// Whether a variant of `len` bytes may be kept now: counted against the
+/// cap in force, and counted back if it may not.
+fn admit(len: u64) -> bool {
+    let here = cap_here();
+    if here != 0 {
+        if len > here {
+            REFUSED_UNDER_TEST.fetch_add(1, Ordering::Relaxed);
+            return false;
+        }
+        return true;
+    }
+    let cap = CAP.load(Ordering::Relaxed);
+    if KEPT.fetch_add(len, Ordering::Relaxed) + len > cap {
+        KEPT.fetch_sub(len, Ordering::Relaxed);
+        REFUSED.fetch_add(1, Ordering::Relaxed);
+        return false;
+    }
+    true
+}
+
+/// A variant kept under the cap let go: its bytes counted back.
+fn released(len: u64) {
+    if cap_here() == 0 {
+        KEPT.fetch_sub(len, Ordering::Relaxed);
+    }
+}
 
 impl Bank {
+    /// A bank keyed `key` holding `nodes`, spilled.
+    fn new(key: String, nodes: Vec<(super::FlownKey, Vec<Arc<Variant>>)>) -> Bank {
+        let b = Bank {
+            nodes: Mutex::new(HashMap::new()),
+            spill: Mutex::new(super::spill::Spill::open("bank").ok()),
+            reused: Default::default(),
+            key,
+            changed: Default::default(),
+        };
+        for (k, vs) in nodes {
+            for v in vs {
+                b.put(k, &v);
+            }
+        }
+        b
+    }
+
+    /// Spill `v` and record it under `key`, unless the node holds it already
+    /// or holds [`VARIANTS`] that come before it in digest order; past the
+    /// bound, the last in that order leaves.
+    fn put(&self, key: super::FlownKey, v: &Arc<Variant>) {
+        // Judged and written under the one lock, so two threads keeping one
+        // node at once cannot pass the bound between them. A node's slots
+        // stand in digest order: which variants a node keeps, and the order
+        // its file lists them in, are the same whatever order they arrive in.
+        let bytes = super::persist::encode_variant(v);
+        let d = digest(&bytes);
+        let mut nodes = self.nodes.lock().expect("bank");
+        let vs = nodes.entry(key).or_default();
+        let Err(at) = vs.binary_search_by_key(&d, Slot::digest) else {
+            return;
+        };
+        if at >= VARIANTS {
+            return;
+        }
+        if !admit(bytes.len() as u64) {
+            return;
+        }
+        let slot = {
+            let mut spill = self.spill.lock().expect("spill");
+            match spill.as_mut() {
+                Some(s) => {
+                    let r = s.put(&bytes);
+                    Slot::Disk {
+                        ext: Arc::new(s.or_fail("take a write", r)),
+                        digest: d,
+                    }
+                }
+                None => Slot::Held {
+                    v: Arc::clone(v),
+                    len: u32::try_from(bytes.len()).expect("a variant under 4 GiB"),
+                    digest: d,
+                },
+            }
+        };
+        vs.insert(at, slot);
+        if vs.len() > VARIANTS {
+            for gone in vs.drain(VARIANTS..) {
+                released(gone.len());
+            }
+        }
+        self.changed
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Every variant kept under `key`, read back; none for a node never kept.
+    fn variants(&self, key: &super::FlownKey) -> Vec<Arc<Variant>> {
+        let slots = match self.nodes.lock().expect("bank").get(key) {
+            Some(s) => s.clone(),
+            None => return Vec::new(),
+        };
+        let mut out = Vec::with_capacity(slots.len());
+        for s in slots {
+            match s {
+                Slot::Held { v, .. } => out.push(v),
+                Slot::Disk { ext, .. } => {
+                    let (at, len) = ext.at();
+                    let bytes = {
+                        let g = self.spill.lock().expect("spill");
+                        let sp = g.as_ref().expect("a variant on disk has its spill");
+                        sp.or_fail("read a variant back", sp.read(at, len))
+                    };
+                    let v = super::persist::decode_variant(&bytes)
+                        .expect("a variant reads back as it was written");
+                    out.push(Arc::new(v));
+                }
+            }
+        }
+        out
+    }
+
     /// The edges a recorded expansion of `key` gives a world whose snapshot is
     /// `dense` with raw membership `extra`, if one holds; `volumes` says which
     /// killing volumes lie near a read box.
@@ -445,11 +720,11 @@ impl Bank {
         jumps: &[[i32; 3]],
         volumes: &dyn Fn(Box3) -> Volumes,
     ) -> Option<Arc<NodeEdges>> {
-        let variants = self.nodes.lock().expect("bank").get(key)?.clone();
+        let variants = self.variants(key);
         variants.iter().find_map(|v| {
             let held = v.jumps == jumps
-                && v.deps.iter().all(|&(i, code, x)| {
-                    dense.cells[i as usize] == code && raw.at(i as usize) == x
+                && v.deps.iter().all(|&(i, code, x, _)| {
+                    dense.cells.get(i as usize) == code && raw.at(i as usize) == x
                 });
             (held && v.edges.read.is_some_and(|b| volumes(b) == v.volumes))
                 .then(|| Arc::clone(&v.edges))
@@ -469,13 +744,7 @@ impl Bank {
         jumps: &[[i32; 3]],
         volumes: &dyn Fn(Box3) -> Volumes,
     ) -> Expansion<'a> {
-        let variants = self
-            .nodes
-            .lock()
-            .expect("bank")
-            .get(key)
-            .cloned()
-            .unwrap_or_default();
+        let variants = self.variants(key);
         let mut best: Option<Prior> = None;
         for v in variants {
             if v.jumps != jumps {
@@ -484,8 +753,10 @@ impl Bank {
             let diff: Vec<[i32; 3]> = v
                 .deps
                 .iter()
-                .filter(|&&(i, code, x)| dense.cells[i as usize] != code || raw.at(i as usize) != x)
-                .map(|&(i, _, _)| dense.coords(i as usize))
+                .filter(|&&(i, code, x, _)| {
+                    dense.cells.get(i as usize) != code || raw.at(i as usize) != x
+                })
+                .map(|&(i, _, _, _)| dense.coords(i as usize))
                 .collect();
             let Some(read) = v.edges.read else {
                 continue;
@@ -523,7 +794,7 @@ impl Bank {
         }
     }
 
-    /// Record an expansion of `key`.
+    /// Record an expansion of `key`: the variant it makes.
     pub(super) fn keep(
         &self,
         key: super::FlownKey,
@@ -532,22 +803,62 @@ impl Bank {
         jumps: Vec<[i32; 3]>,
         volumes: Volumes,
         edges: &Arc<NodeEdges>,
-    ) {
+    ) -> Arc<Variant> {
         let deps = expansion.track.deps(raw);
         let head = expansion.head.get().flatten();
         let runs = expansion.runs.into_inner();
-        let mut nodes = self.nodes.lock().expect("bank");
-        let vs = nodes.entry(key).or_default();
-        if vs.len() < VARIANTS {
-            vs.push(Arc::new(Variant {
-                deps,
-                head,
-                jumps,
-                volumes,
-                runs,
-                edges: Arc::clone(edges),
-            }));
+        let v = Arc::new(Variant {
+            deps,
+            head,
+            jumps,
+            volumes,
+            runs,
+            edges: Arc::clone(edges),
+        });
+        self.put(key, &v);
+        v
+    }
+
+    /// Every variant the bank holds, read back, in key order.
+    /// Every variant, chunk by chunk ([`super::chunks::SIDE`]) and in key
+    /// order within a chunk, read back from the spill one chunk at a time.
+    fn held_by_chunk(&self) -> impl Iterator<Item = super::persist::Section> + '_ {
+        let mut keys: Vec<super::FlownKey> =
+            self.nodes.lock().expect("bank").keys().copied().collect();
+        let side = super::chunks::SIDE;
+        keys.sort_by_key(|k| (super::chunks::chunk_of(k.0, side), *k));
+        let mut groups: Vec<Vec<super::FlownKey>> = Vec::new();
+        for k in keys {
+            match groups.last_mut() {
+                Some(g)
+                    if super::chunks::chunk_of(g[0].0, side)
+                        == super::chunks::chunk_of(k.0, side) =>
+                {
+                    g.push(k)
+                }
+                _ => groups.push(vec![k]),
+            }
         }
+        groups
+            .into_iter()
+            .map(|g| g.into_iter().map(|k| (k, self.variants(&k))).collect())
+    }
+
+    #[cfg(test)]
+    fn held_all(&self) -> Vec<(super::FlownKey, Vec<Arc<Variant>>)> {
+        let keys: Vec<super::FlownKey> = self.nodes.lock().expect("bank").keys().copied().collect();
+        let mut v: Vec<_> = keys.into_iter().map(|k| (k, self.variants(&k))).collect();
+        v.sort_by_key(|n| n.0);
+        v
+    }
+
+    /// How many variants the bank holds, and the bytes they take in the spill
+    /// (a variant a node let go past its bound is not counted).
+    pub(super) fn census(&self) -> (usize, u64) {
+        let nodes = self.nodes.lock().expect("bank");
+        let n = nodes.values().map(Vec::len).sum();
+        let bytes = nodes.values().flatten().map(Slot::len).sum();
+        (n, bytes)
     }
 }
 
@@ -584,65 +895,142 @@ pub(super) fn bank(key: String) -> Arc<Bank> {
     if let Some(b) = banks.get(&key) {
         return Arc::clone(b);
     }
-    let held = super::persist::load(&key);
-    let loaded = held.iter().map(|(_, vs)| vs.len()).sum();
-    let b = Arc::new(Bank {
-        nodes: Mutex::new(held.into_iter().collect()),
-        reused: Default::default(),
-        key: key.clone(),
-        loaded,
+    // Read chunk by chunk into the bank's spill; a file that does not
+    // decode whole leaves an empty bank, never part of one.
+    let mut b = Bank::new(key.clone(), Vec::new());
+    let mut read = 0usize;
+    let whole = super::persist::load(&key, &mut |section| {
+        for (k, vs) in section {
+            read += vs.len();
+            for v in vs {
+                b.put(k, &v);
+            }
+        }
     });
+    if !whole && read > 0 {
+        b = Bank::new(key.clone(), Vec::new());
+    }
+    if whole {
+        b.changed.store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+    let b = Arc::new(b);
     banks.insert(key, Arc::clone(&b));
     b
 }
 
-/// Write every bank that gained a variant this run to the cache directory,
+/// Write every bank whose kept variants changed this run to the cache directory,
 /// in key order; nothing where the cache is off.
 pub(super) fn persist_all() {
     let banks: Vec<Arc<Bank>> = banks().lock().expect("banks").values().cloned().collect();
     for b in banks {
-        let mut nodes: Vec<(super::FlownKey, Vec<Arc<Variant>>)> = b
-            .nodes
-            .lock()
-            .expect("bank")
-            .iter()
-            .map(|(k, v)| (*k, v.clone()))
-            .collect();
-        if nodes.iter().map(|(_, vs)| vs.len()).sum::<usize>() <= b.loaded {
+        if super::persist::file_of(&b.key).is_none() {
             continue;
         }
-        nodes.sort_by_key(|n| n.0);
-        super::persist::store(&b.key, &nodes);
+        if !b.changed.load(std::sync::atomic::Ordering::Relaxed) {
+            continue;
+        }
+        super::persist::store(&b.key, &mut b.held_by_chunk());
     }
+}
+
+impl Bank {
+    /// What this bank's scratch file has held.
+    #[cfg(test)]
+    pub(super) fn usage(&self) -> super::spill::Usage {
+        self.spill
+            .lock()
+            .expect("spill")
+            .as_ref()
+            .map_or(Default::default(), super::spill::Spill::usage)
+    }
+}
+
+/// Every bank's census, summed: variants kept and bytes spilled.
+/// What every bank's scratch file has held.
+pub(super) fn usage_all() -> super::spill::Usage {
+    let banks: Vec<Arc<Bank>> = banks().lock().expect("banks").values().cloned().collect();
+    banks
+        .iter()
+        .filter_map(|b| {
+            b.spill
+                .lock()
+                .expect("spill")
+                .as_ref()
+                .map(super::spill::Spill::usage)
+        })
+        .fold(Default::default(), |a, b| a + b)
+}
+
+pub(super) fn census_all() -> (usize, u64) {
+    let banks: Vec<Arc<Bank>> = banks().lock().expect("banks").values().cloned().collect();
+    banks
+        .iter()
+        .map(|b| b.census())
+        .fold((0, 0), |a, b| (a.0 + b.0, a.1 + b.1))
 }
 
 #[cfg(test)]
 impl Bank {
     /// Every variant the bank holds, in key order.
     pub(super) fn held(&self) -> Vec<(super::FlownKey, Vec<Arc<Variant>>)> {
-        let mut v: Vec<_> = self
-            .nodes
-            .lock()
-            .expect("bank")
-            .iter()
-            .map(|(k, vs)| (*k, vs.clone()))
-            .collect();
-        v.sort_by_key(|n| n.0);
-        v
+        self.held_all()
     }
 
     /// A bank holding `nodes`, as one read from a file is.
     pub(super) fn holding(nodes: Vec<(super::FlownKey, Vec<Arc<Variant>>)>) -> Bank {
-        Bank {
-            nodes: Mutex::new(nodes.into_iter().collect()),
-            ..Bank::default()
-        }
+        Bank::new(String::from("test"), nodes)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A node keeps its [`VARIANTS`] and no more, the same ones in the same
+    /// order whatever order they arrive in: a variant equal to one kept is
+    /// not kept again, and past the bound the first in digest order stay.
+    /// The census counts the variants kept and their bytes, so two runs that
+    /// are offered the same variants report the same figures.
+    #[test]
+    fn a_node_keeps_the_same_variants_in_any_order() {
+        let key: super::super::FlownKey = ([0, 0, 0], 0);
+        let offered: Vec<Arc<Variant>> = (0..VARIANTS as u32 + 3)
+            .map(|k| {
+                Arc::new(Variant {
+                    deps: (0..=k).map(|i| (i, 0, 2, 1 << (i % 32))).collect(),
+                    head: None,
+                    jumps: vec![[1, 2, 3]],
+                    volumes: Vec::new(),
+                    runs: Vec::new(),
+                    edges: Arc::new(NodeEdges::default()),
+                })
+            })
+            .collect();
+        let bytes = |v: &Variant| super::super::persist::encode_variant(v);
+        let mut first: Vec<&Arc<Variant>> = offered.iter().collect();
+        first.sort_by_key(|v| digest(&bytes(v)));
+        first.truncate(VARIANTS);
+        let want: Vec<Vec<u8>> = first.iter().map(|v| bytes(v)).collect();
+        let want_bytes: u64 = want.iter().map(|b| b.len() as u64).sum();
+        let orders: [Vec<usize>; 3] = [
+            (0..offered.len()).collect(),
+            (0..offered.len()).rev().collect(),
+            (0..offered.len())
+                .map(|i| (i * 5) % offered.len())
+                .collect(),
+        ];
+        for order in &orders {
+            let b = Bank::holding(Vec::new());
+            for &i in order {
+                b.put(key, &offered[i]);
+                // Offered twice: kept once.
+                b.put(key, &offered[i]);
+            }
+            assert_eq!(b.census(), (VARIANTS, want_bytes), "{order:?}");
+            let kept: Vec<Vec<u8>> = b.variants(&key).iter().map(|v| bytes(v)).collect();
+            assert_eq!(kept, want, "{order:?}");
+        }
+    }
 
     /// A leaf cell the world is asked about is a cell the expansion read,
     /// wherever it lies: noted in the run it was read in, its box the run's,
@@ -667,7 +1055,7 @@ mod tests {
         );
         assert_eq!(watch.since(), Some((at, at)));
         let deps = track.deps(&raw);
-        assert_eq!(deps, vec![(i as u32, dense.cells[i], raw.at(i))]);
+        assert_eq!(deps, vec![(i as u32, dense.cells.get(i), raw.at(i), 0)]);
         drop(watch);
         leaf_read([4, 1, 4]);
         assert_eq!(

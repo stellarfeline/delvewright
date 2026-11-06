@@ -224,7 +224,7 @@ pub fn prove(
     let mut sources: BTreeSet<[i32; 3]> = blocks
         .iter()
         .filter(|(_, s)| redstone_source(s.as_str()))
-        .map(|(c, _)| *c)
+        .map(|(c, _)| c)
         .collect();
     let mut written: BTreeSet<[i32; 3]> = BTreeSet::new();
     for w in writes.iter().filter(|w| redstone_source(&w.block)) {

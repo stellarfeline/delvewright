@@ -392,6 +392,19 @@ pub const STRUCTURE_VOID: &str = "minecraft:structure_void";
 /// `None` when the template holds neither (the bytes are then already right
 /// and are shipped unchanged).
 ///
+/// **What a gzipped template decompresses to**, in bytes: the gzip trailer's
+/// `ISIZE` (RFC 1952 §2.3.1, the input size modulo 2^32), read off the last
+/// four bytes without decompressing. `0` for bytes that are not gzip. What the
+/// waves of [`crate::par::map_within`] weigh a template by (ADR-0037 §5
+/// item 3).
+pub fn decompressed_len(bytes: &[u8]) -> usize {
+    if bytes.len() < 18 || bytes[0] != 0x1f || bytes[1] != 0x8b {
+        return 0;
+    }
+    let t = &bytes[bytes.len() - 4..];
+    u32::from_le_bytes([t[0], t[1], t[2], t[3]]) as usize
+}
+
 /// A template's `structure_void` means "the piece places nothing here", and
 /// every model the engine builds reads it so (`assembled.rs`, the light and
 /// view passes). The pinned game does not: `/place template` places every
@@ -418,6 +431,9 @@ pub fn as_placed(bytes: &[u8]) -> Option<Vec<u8>> {
         .read_to_end(&mut raw)
         .ok()?;
     let value: fastnbt::Value = fastnbt::from_bytes(&raw).ok()?;
+    // The decompressed bytes are not read again: they go before the tree is
+    // built, so the two never stand together (ADR-0037 §5 item 3).
+    drop(raw);
     let Nbt::Compound(mut root) = Nbt::from(value) else {
         return None;
     };

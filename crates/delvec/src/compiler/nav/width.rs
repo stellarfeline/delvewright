@@ -251,8 +251,10 @@ impl StateWrite {
 /// gates authored open, every runtime write, and every gate region sealed at
 /// world load with its name.
 pub struct Ground<'a> {
-    /// The blocks as shipped ([`crate::compiler::assembled::shipped_blocks`]).
-    pub shipped: &'a BlockMap,
+    /// The blocks as shipped inside one inclusive box
+    /// ([`crate::compiler::assembled::shipped_within`]): a judgement reads its
+    /// window and never a copy of the map (ADR-0037 §2).
+    pub shipped: &'a dyn Fn([i32; 3], [i32; 3]) -> BlockMap,
     /// Fence-gate cells authored open.
     pub open_gates: &'a BTreeSet<[i32; 3]>,
     /// Every runtime write.
@@ -539,6 +541,66 @@ fn set(map: &mut BlockMap, c: [i32; 3], block: Option<&str>) {
     }
 }
 
+/// **The window a way's judgement reads**: every judged column's reach, grown
+/// so every cell is classified as the whole world classifies it — a sieve or a
+/// climbable with its neighbours, and a cell water reaches with the source it
+/// flows from (`WINDOW_FLOW` across and above). `None` for a way with no
+/// judged column, which is judged by nothing.
+pub fn way_window(way: &Way) -> Option<([i32; 3], [i32; 3])> {
+    let mut lo = [i32::MAX; 3];
+    let mut hi = [i32::MIN; 3];
+    let mut any = false;
+    for c in way
+        .stations
+        .iter()
+        .filter(|s| !s.deferred)
+        .flat_map(|s| s.columns.iter())
+    {
+        any = true;
+        let (a, b) = column_reach(c);
+        for i in 0..3 {
+            lo[i] = lo[i].min(a[i]);
+            hi[i] = hi[i].max(b[i]);
+        }
+    }
+    any.then(|| window(lo, hi))
+}
+
+/// **Judge every way, in window order** (ADR-0037 §2): the ways are taken in
+/// the order of their windows' sections — the section key of the window's low
+/// corner, then the corner itself — so the windows read from the store are
+/// neighbours of the last one read and the store's working set is a few
+/// sections, not the map; the records come back in the ways' own order, so
+/// nothing downstream sees the order they were judged in. A way with no
+/// window is judged where it stands (it reads nothing).
+#[must_use]
+pub fn judge_all(ways: Vec<Way>, ground: &Ground<'_>) -> Vec<WayRecord> {
+    let side = crate::compiler::sections::SIDE;
+    // The section key of a window's low corner, then the corner.
+    type WindowKey = Option<([i32; 3], [i32; 3])>;
+    let mut order: Vec<(WindowKey, usize)> = ways
+        .iter()
+        .enumerate()
+        .map(|(i, w)| {
+            (
+                way_window(w).map(|(lo, _)| (lo.map(|v| v.div_euclid(side)), lo)),
+                i,
+            )
+        })
+        .collect();
+    order.sort_by_key(|(k, i)| (*k, *i));
+    let mut slots: Vec<Option<Way>> = ways.into_iter().map(Some).collect();
+    let mut records: Vec<Option<WayRecord>> = (0..slots.len()).map(|_| None).collect();
+    for (_, i) in order {
+        let way = slots[i].take().expect("each way judged once");
+        records[i] = Some(judge(way, ground));
+    }
+    records
+        .into_iter()
+        .map(|r| r.expect("every way judged"))
+        .collect()
+}
+
 /// **Judge one way** over every state its corridor can take.
 #[must_use]
 pub fn judge(way: Way, ground: &Ground<'_>) -> WayRecord {
@@ -561,20 +623,7 @@ pub fn judge(way: Way, ground: &Ground<'_>) -> WayRecord {
     if judged.is_empty() {
         return empty;
     }
-    // The window the judgement reads: every column's reach, grown so every
-    // cell is classified as the whole world classifies it — a sieve or a
-    // climbable with its neighbours, and a cell water reaches with the source
-    // it flows from (`WINDOW_FLOW` across and above).
-    let mut lo = [i32::MAX; 3];
-    let mut hi = [i32::MIN; 3];
-    for c in &judged {
-        let (a, b) = column_reach(c);
-        for i in 0..3 {
-            lo[i] = lo[i].min(a[i]);
-            hi[i] = hi[i].max(b[i]);
-        }
-    }
-    let (wlo, whi) = window(lo, hi);
+    let (wlo, whi) = way_window(&way).expect("a way with a judged column has a window");
     let inside = |c: &[i32; 3]| (0..3).all(|i| wlo[i] <= c[i] && c[i] <= whi[i]);
     let own_open = |m: &mut BlockMap| {
         for (c, b) in &way.own {
@@ -583,12 +632,7 @@ pub fn judge(way: Way, ground: &Ground<'_>) -> WayRecord {
             }
         }
     };
-    let mut base: BlockMap = ground
-        .shipped
-        .range(wlo..=whi)
-        .filter(|(c, _)| inside(c))
-        .map(|(c, b)| (*c, *b))
-        .collect();
+    let mut base: BlockMap = (ground.shipped)(wlo, whi);
     own_open(&mut base);
     let open_gates: BTreeSet<[i32; 3]> = ground
         .open_gates
@@ -2232,13 +2276,18 @@ pub fn check(
     fixtures: &[crate::compiler::light::Placement],
 ) -> (WidthBinding, Vec<Failure>) {
     let (ways, census) = population(plan, prefabs);
-    let shipped = crate::compiler::assembled::shipped_blocks(
-        plan,
-        &assembled.blocks,
-        fixtures,
-        &assembled.gate_seals,
-        None,
-    );
+    // The shipped world is read window by window from the store, never copied
+    // whole: setup's writes are derived once and laid inside each window.
+    let shipped_writes =
+        crate::compiler::assembled::shipped_writes(plan, fixtures, &assembled.gate_seals);
+    let shipped = |lo: [i32; 3], hi: [i32; 3]| {
+        crate::compiler::assembled::shipped_within(
+            &assembled.blocks,
+            &shipped_writes,
+            &plan.loot,
+            Some((lo, hi)),
+        )
+    };
     let writes = state_writes(plan);
     let sealed: Vec<NamedRegion> = assembled
         .gate_seals
@@ -2270,7 +2319,7 @@ pub fn check(
         sealed: &sealed,
         seated: &seated,
     };
-    let records: Vec<WayRecord> = ways.into_iter().map(|w| judge(w, &ground)).collect();
+    let records: Vec<WayRecord> = judge_all(ways, &ground);
     let used: BTreeSet<&StateWrite> = writes
         .iter()
         .filter(|w| {
@@ -2366,10 +2415,11 @@ mod tests {
     ) -> WayRecord {
         let open = BTreeSet::new();
         let seated = BTreeMap::new();
+        let shipped = |lo: [i32; 3], hi: [i32; 3]| m.in_box(lo, hi).map(|(c, b)| (c, *b)).collect();
         judge(
             w,
             &Ground {
-                shipped: m,
+                shipped: &shipped,
                 open_gates: &open,
                 writes,
                 sealed,
@@ -2635,8 +2685,9 @@ mod tests {
             [10, 1, 12],
             "the relight fixture the build sets at setup".to_string(),
         );
+        let shipped = |lo: [i32; 3], hi: [i32; 3]| m.in_box(lo, hi).map(|(c, b)| (c, *b)).collect();
         let ground = Ground {
-            shipped: &m,
+            shipped: &shipped,
             open_gates: &open,
             writes: &[],
             sealed: &[],
@@ -2847,11 +2898,7 @@ mod tests {
                     let (lo, _) = column_reach(&column(1));
                     let (_, hi) = column_reach(&column(2));
                     let (wlo, whi) = window(lo, hi);
-                    let local_map: BlockMap = m
-                        .range(wlo..=whi)
-                        .filter(|(k, _)| (0..3).all(|i| wlo[i] <= k[i] && k[i] <= whi[i]))
-                        .map(|(k, v)| (*k, *v))
-                        .collect();
+                    let local_map: BlockMap = m.in_box(wlo, whi).map(|(k, v)| (k, *v)).collect();
                     let local = World::from_occupancy(
                         crate::compiler::assembled::occupancy_over(&local_map, &open),
                         Premises::geometry_only(),
@@ -3515,5 +3562,96 @@ mod tests {
     fn the_codes_are_their_numbers() {
         assert_eq!(DW_WAY_NARROWED.id(), "DW1057");
         assert_eq!(DW_OPEN_SIDE_SHUT.id(), "DW1065");
+    }
+
+    /// **The ways are judged in window order and reported in their own**:
+    /// three ways listed far-to-near, one with no judged column among them, the
+    /// windows the store is asked for come in section order, every record is
+    /// the one judging that way alone gives, and the records stand in the
+    /// ways' order.
+    #[test]
+    fn ways_are_judged_in_window_order_and_reported_in_their_own() {
+        let mut m = floor();
+        let shift = |s: Station, dz: i32| Station {
+            columns: s
+                .columns
+                .iter()
+                .map(|c| Column {
+                    z: c.z + dz,
+                    ..c.clone()
+                })
+                .collect(),
+            ..s
+        };
+        for dz in [400, 0, 96] {
+            for x in 0..=20 {
+                for z in 0..=20 {
+                    m.insert([x, 0, z + dz], BlockState::new(STONE));
+                }
+            }
+        }
+        let mut deferred = foot();
+        deferred.deferred = true;
+        let ways = vec![
+            way(vec![shift(foot(), 400)]),
+            way(vec![deferred]),
+            way(vec![shift(foot(), 0)]),
+            way(vec![shift(foot(), 96)]),
+        ];
+        let asked: std::cell::RefCell<Vec<[i32; 3]>> = std::cell::RefCell::new(Vec::new());
+        let shipped = |lo: [i32; 3], hi: [i32; 3]| {
+            asked.borrow_mut().push(lo);
+            m.in_box(lo, hi).map(|(c, b)| (c, *b)).collect()
+        };
+        let open = BTreeSet::new();
+        let seated = BTreeMap::new();
+        let ground = Ground {
+            shipped: &shipped,
+            open_gates: &open,
+            writes: &[],
+            sealed: &[],
+            seated: &seated,
+        };
+        let all = judge_all(ways.clone(), &ground);
+        let order = asked.borrow().clone();
+        assert_eq!(
+            order.len(),
+            3,
+            "the way with no judged column reads nothing"
+        );
+        let keys: Vec<[i32; 3]> = order
+            .iter()
+            .map(|lo| lo.map(|v| v.div_euclid(crate::compiler::sections::SIDE)))
+            .collect();
+        assert!(
+            keys.windows(2).all(|w| w[0] <= w[1]),
+            "section order: {keys:?}"
+        );
+        assert_eq!(order[0][2], 12 - WINDOW_FLOW, "the nearest window first");
+        assert_eq!(order[2][2], 412 - WINDOW_FLOW, "the farthest last");
+        for (i, w) in ways.into_iter().enumerate() {
+            let alone = judge(w, &ground);
+            assert_eq!(all[i].way.name, alone.way.name);
+            assert_eq!(all[i].states, alone.states, "way {i}");
+            assert_eq!(all[i].refusal.is_some(), alone.refusal.is_some(), "way {i}");
+            assert_eq!(
+                all[i]
+                    .stations
+                    .iter()
+                    .map(|v| v.clear.clone())
+                    .collect::<Vec<_>>(),
+                alone
+                    .stations
+                    .iter()
+                    .map(|v| v.clear.clone())
+                    .collect::<Vec<_>>(),
+                "way {i}"
+            );
+        }
+        assert_eq!(
+            all[0].stations[0].clear,
+            vec![3],
+            "the far way, judged over its own floor"
+        );
     }
 }
