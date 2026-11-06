@@ -813,6 +813,79 @@ fn a_taller_block_keeps_the_window() {
     assert_eq!(diff, &vec![[3, 4, 14]]);
 }
 
+/// The edge tables are bounded: past `cap` tables a node's codes find none,
+/// while codes already holding a table keep finding that table.
+#[test]
+fn past_the_cap_a_node_keeps_its_own_edges() {
+    let tables = EdgeTables::default();
+    let codes = |n: Code| -> [Code; 45] {
+        let mut c = [0; 45];
+        c[0] = n;
+        c
+    };
+    let a = edges_in(&tables, 2, &codes(1)).expect("room for the first");
+    assert!(
+        edges_in(&tables, 2, &codes(2)).is_some(),
+        "room for the second"
+    );
+    assert!(
+        edges_in(&tables, 2, &codes(3)).is_none(),
+        "no room for a third"
+    );
+    let again = edges_in(&tables, 2, &codes(1)).expect("the first is kept");
+    assert!(Arc::ptr_eq(&a, &again), "one table per codes");
+    assert_eq!(tables.read().expect("tables").len(), 2);
+}
+
+/// A node that finds no shared edge table — the process past its cap of
+/// tables — keeps its edge positions to itself, and through the bank's read
+/// tracking gives the node the shared tables give. Every node of the Bell
+/// yard's graph is expanded both ways from an empty bank with its tracking
+/// on, and compared field by field.
+#[test]
+fn a_node_with_no_shared_edge_table_is_the_node_the_shared_tables_give() {
+    let yard = bell_yard();
+    let _ = yard.body_reach(&[[5, 1, 5]]);
+    let params = ReachParams::shipped(yard.unbounded_fall);
+    let memo = yard.graph_memo(&params);
+    let keys: Vec<FlownKey> = memo
+        .flown
+        .entries()
+        .into_iter()
+        .flat_map(|(c, held)| held.into_iter().map(move |(q, _)| (c, q)))
+        .collect();
+    let volumes = |b| yard.volumes_near(b);
+    let none = |_: &[Code; 45]| -> Option<Arc<EdgeTable>> { None };
+    let empty = bank::Bank::holding(Vec::new());
+    let mut read = 0;
+    for key in &keys {
+        let jumps = yard.jumps_from(key.0);
+        let boxes = yard.node_boxes(key.0);
+        // From an empty bank, so every launch is flown rather than taken
+        // from a run the graph already banked.
+        let expansion = || empty.expansion(key, &memo.dense, &memo.extra, &boxes, &jumps, &volumes);
+        let (x, y) = (expansion(), expansion());
+        let shared = yard.expand_with(&memo, &params, key.0, key.1, Some(&x), &shared_edges);
+        let own = yard.expand_with(&memo, &params, key.0, key.1, Some(&y), &none);
+        assert_eq!(own.kind, shared.kind, "{key:?}");
+        assert_eq!(own.edges, shared.edges, "{key:?}");
+        assert_eq!(own.leaves_world, shared.leaves_world, "{key:?}");
+        assert_eq!(own.dies, shared.dies, "{key:?}");
+        assert_eq!(own.simulated, shared.simulated, "{key:?}");
+        assert_eq!(own.credited, shared.credited, "{key:?}");
+        assert_eq!(own.read, shared.read, "{key:?}");
+        read += usize::from(own.read.is_some());
+    }
+    eprintln!(
+        "agreement: {} node(s) of the Bell yard expanded with and without shared edge tables; {read} tracked a read box",
+        keys.len()
+    );
+    assert!(
+        !keys.is_empty() && read > 0,
+        "bound: nodes expanded, reads tracked"
+    );
+}
+
 /// **The cost's bounds hold over the graphs built** (ADR-0037 §3): on the open
 /// floor, the Bell yard, the jetty (an ocean), the garden and a ladder cliff,
 /// at chunk sides of 32 and 16, the closure's states are at most the census's

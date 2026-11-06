@@ -91,7 +91,7 @@ pub(super) fn emit_campaign_packtest(
         // because its template spans ticks, and the synchronous one because of
         // the pair below.
         //
-        // `tests/packtest_batch.rs::party_state_across_ticks_is_owned` reads each
+        // `tests/it/packtest_batch.rs::party_state_across_ticks_is_owned` reads each
         // template's OWN text and demands that a `#party` score awaited across
         // ticks be touched by exactly one template. The whole-ledger baseline
         // ([`campaign_progression_baseline`]) touches every progression score, so
@@ -253,7 +253,7 @@ fn campaign_progression_baseline(c: &delvewright_dsl::Campaign, comp_obj: &str) 
 /// Why one template rather than one per branch: every phase's verdict is the
 /// shared completion objective, and a template that spans ticks must be the sole
 /// owner of every `#party` score it depends on across ticks
-/// (`tests/packtest_batch.rs::party_state_across_ticks_is_owned`) — two
+/// (`tests/it/packtest_batch.rs::party_state_across_ticks_is_owned`) — two
 /// concurrently-running branch templates zeroing and awaiting `dw.campaign`
 /// would hand each other false verdicts in an order the compiler does not
 /// control. Phases are strictly ordered by construction: phase *i*'s scheduled

@@ -70,7 +70,7 @@ BINARY = "target/debug/delvec"
 # The jobs that compile the root workspace for a reason of their own.
 COMPILES: dict[str, str] = {
     PRODUCER: "it is the one build every other job takes",
-    "rust": "clippy and `cargo test --workspace` compile every target of every member, which no binary stands in for",
+    "rust-build": "clippy, the instrumented nextest archive and the doc tests compile every target of every member, which no binary stands in for; the partitions and the census run from that archive and compile nothing",
     "determinism-cross-os": "the macOS half of the comparison is a binary built by macOS's toolchain; a Linux artifact cannot be it",
     "engine-shelf": "`cargo check` of `delvec` for every release target is the whole of what it proves",
     "publishable": "it builds the packaged crates the way `cargo install` does, outside the workspace",
@@ -86,6 +86,26 @@ PY_CARGO = re.compile(
     re.S,
 )
 PY_OTHER_WORKSPACE = re.compile(r"[\"']--manifest-path[\"']")
+# `BINARY` named in a `run:` body, unless a literal directory stands before it:
+# `target/llvm-cov-target/target/debug/delvec`, the instrumented archive's own
+# build, is another file. Bare, `./` and any variable prefix still count.
+BINARY_AT = re.compile(r"(?P<dir>(?:[\w.-]+/)*)" + re.escape(BINARY) + r"(?![\w.-])")
+
+
+def runs_binary(run: str) -> bool:
+    """Whether `run` names this run's one build of `delvec`."""
+    for m in BINARY_AT.finditer(run):
+        start = m.start()
+        if start > 0 and (run[start - 1].isalnum() or run[start - 1] in "_-."):
+            continue
+        prefix = m.group("dir")
+        if prefix.strip("/") in ("", "."):
+            return True
+        if start > 0 and run[start - 1] in "$}":
+            return True  # `$VAR/a/...`: the variable may name the workspace
+    return False
+
+
 SCRIPT = re.compile(r"(?<![\w./-])(?:\./)?(?P<path>(?:tools|validation|\.github/scripts)/[\w./-]+\.(?:sh|py))\b")
 SOURCED = re.compile(r"^\s*(?:\.|source)\s+[\"']?\$[{(]?\w+[})]?/(?P<path>tools/lib/[\w.-]+\.sh)", re.M)
 
@@ -211,7 +231,7 @@ def check(workflow: dict[str, Any], repo: pathlib.Path) -> tuple[list[str], dict
                 findings.append(f"{where} compiles the root workspace: {hit}")
             for m in SCRIPT.finditer(joined(run)):
                 findings += reader.findings_for(m.group("path"), where)
-            if first_run is None and BINARY in run:
+            if first_run is None and runs_binary(run):
                 first_run = i
         if first_run is None:
             continue

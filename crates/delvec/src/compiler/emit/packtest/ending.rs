@@ -12,7 +12,7 @@ use crate::compiler::ending::{InputKey, Scenes};
 /// left its observable behind.
 ///
 /// **Driven, not awaited.** A template that `await`s must be the sole owner of
-/// every `#party` score it touches (`tests/packtest_batch.rs`), and a world's
+/// every `#party` score it touches (`tests/it/packtest_batch.rs`), and a world's
 /// readings are party flags every sibling shares; so the scheduled parts are
 /// driven inside the one atomic function instead — each schedule cleared, then
 /// its function called, in tick order — which runs the same functions the

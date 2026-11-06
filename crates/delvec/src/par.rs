@@ -18,6 +18,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// The number of threads [`map`] uses; see the module docs.
 pub fn threads() -> usize {
+    #[cfg(test)]
+    if let Some(n) = HERE.with(std::cell::Cell::get) {
+        return n;
+    }
     static THREADS: OnceLock<usize> = OnceLock::new();
     *THREADS.get_or_init(|| {
         std::env::var("DELVEC_THREADS")
@@ -27,6 +31,25 @@ pub fn threads() -> usize {
             .or_else(|| std::thread::available_parallelism().ok().map(|n| n.get()))
             .unwrap_or(1)
     })
+}
+
+#[cfg(test)]
+thread_local! {
+    static HERE: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+}
+
+/// Run `f` with [`threads`] answering `n` on this thread: a unit test whose
+/// binding needs the engine at more than one thread sets its own count, as
+/// the suite runs at `DELVEC_THREADS=1` (spec-0126 §5.4). The workers a map
+/// starts read the process's count, so a map nested in one runs as the
+/// process says.
+#[cfg(test)]
+pub(crate) fn with_threads<R>(n: usize, f: impl FnOnce() -> R) -> R {
+    assert!(n > 0, "a thread count is positive");
+    let was = HERE.with(|h| h.replace(Some(n)));
+    let r = f();
+    HERE.with(|h| h.set(was));
+    r
 }
 
 /// `items.iter().map(f).collect()`, computed on up to [`threads`] threads.
@@ -40,7 +63,18 @@ where
     R: Send,
     F: Fn(&T) -> R + Sync,
 {
-    let workers = threads().min(items.len());
+    map_on(threads(), items, f)
+}
+
+/// [`map`] on up to `threads` threads: the one implementation, which [`map`]
+/// calls with [`threads`] and a test calls with a count of its own.
+fn map_on<T, R, F>(threads: usize, items: &[T], f: F) -> Vec<R>
+where
+    T: Sync,
+    R: Send,
+    F: Fn(&T) -> R + Sync,
+{
+    let workers = threads.min(items.len());
     if workers <= 1 {
         return items.iter().map(f).collect();
     }
@@ -84,16 +118,33 @@ where
 /// items are taken in windows, each window computed in parallel and drained
 /// into `sink` before the next starts. This is the form for results that are
 /// large, such as a decoded template's cells.
-pub fn try_for_each_ordered<T, R, E, F, S>(items: &[T], f: F, mut sink: S) -> Result<(), E>
+pub fn try_for_each_ordered<T, R, E, F, S>(items: &[T], f: F, sink: S) -> Result<(), E>
 where
     T: Sync,
     R: Send,
     F: Fn(&T) -> R + Sync,
     S: FnMut(R) -> Result<(), E>,
 {
-    let window = (threads() * 2).max(1);
+    try_for_each_ordered_on(threads(), items, f, sink)
+}
+
+/// [`try_for_each_ordered`] on up to `threads` threads, as [`map_on`] is to
+/// [`map`].
+fn try_for_each_ordered_on<T, R, E, F, S>(
+    threads: usize,
+    items: &[T],
+    f: F,
+    mut sink: S,
+) -> Result<(), E>
+where
+    T: Sync,
+    R: Send,
+    F: Fn(&T) -> R + Sync,
+    S: FnMut(R) -> Result<(), E>,
+{
+    let window = (threads * 2).max(1);
     for chunk in items.chunks(window) {
-        for r in map(chunk, &f) {
+        for r in map_on(threads, chunk, &f) {
             sink(r)?;
         }
     }
@@ -116,6 +167,17 @@ where
     F: Fn(&T) -> R + Sync,
     W: Fn(&T) -> usize,
 {
+    map_within_on(threads(), items, weight, cap, f)
+}
+
+/// [`map_within`] on up to `threads` threads, as [`map_on`] is to [`map`].
+fn map_within_on<T, R, F, W>(threads: usize, items: &[T], weight: W, cap: usize, f: F) -> Vec<R>
+where
+    T: Sync,
+    R: Send,
+    F: Fn(&T) -> R + Sync,
+    W: Fn(&T) -> usize,
+{
     let mut out = Vec::with_capacity(items.len());
     let mut start = 0;
     while start < items.len() {
@@ -129,7 +191,7 @@ where
             held += w;
             end += 1;
         }
-        out.extend(map(&items[start..end], &f));
+        out.extend(map_on(threads, &items[start..end], &f));
         start = end;
     }
     out
@@ -137,6 +199,11 @@ where
 
 #[cfg(test)]
 mod tests {
+    /// The thread count these tests run the maps at, set here rather than
+    /// read from `DELVEC_THREADS`: CI runs the suite at `DELVEC_THREADS=1`
+    /// (spec-0126 §5.4), where [`super::map`] never leaves the calling thread.
+    const THREADS: usize = 4;
+
     /// The waves of [`super::map_within`] hold at most the cap, an item over
     /// the cap stands alone, and the results are [`super::map`]'s in order.
     #[test]
@@ -145,7 +212,8 @@ mod tests {
         let items: Vec<usize> = vec![3, 5, 9, 1, 1, 1, 1, 20, 2, 2, 7, 7, 7, 1];
         let held = AtomicUsize::new(0);
         let most = AtomicUsize::new(0);
-        let got = super::map_within(
+        let got = super::map_within_on(
+            THREADS,
             &items,
             |&w| w,
             8,
@@ -197,7 +265,7 @@ mod tests {
     #[test]
     fn results_come_back_in_item_order() {
         let items: Vec<u64> = (0..200).collect();
-        let got = super::map(&items, |&i| {
+        let got = super::map_on(THREADS, &items, |&i| {
             let mut acc = i;
             for k in 0..(200 - i) * 500 {
                 acc = acc.wrapping_mul(6364136223846793005).wrapping_add(k);
@@ -223,7 +291,8 @@ mod tests {
     fn the_sink_sees_results_in_order_and_stops_at_its_refusal() {
         let items: Vec<usize> = (0..97).collect();
         let mut seen = Vec::new();
-        let r = super::try_for_each_ordered(
+        let r = super::try_for_each_ordered_on(
+            THREADS,
             &items,
             |&i| i * 3,
             |v| {

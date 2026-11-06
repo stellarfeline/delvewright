@@ -570,6 +570,13 @@ policy = "floating"
 why = "GitHub's artifact upload action, held at its major tag."
 
 [[pin]]
+id = "action-cache"
+value = "actions/cache@v4"
+sites = [".github/actions/suite-instruments/action.yml"]
+policy = "floating"
+why = "GitHub's cache action, held at its major tag: restores the two cargo-installed instruments by a key that carries their pinned versions, so a hit is the pinned bytes and a miss builds them once."
+
+[[pin]]
 id = "action-download-artifact"
 value = "actions/download-artifact@v4"
 sites = [
@@ -825,6 +832,70 @@ independently, from the release index. Pinning changed nothing that was running.
 
 POLICY `immutable`, on the same published-artifact argument as `mecha`. A bump is
 an ordinary reviewed edit; what it may not be is silent.
+"""
+
+[[pin]]
+id = "cargo-nextest"
+value = "0.9.148"
+sites = [".github/actions/suite-instruments/action.yml", "versions.toml"]
+policy = "immutable"
+bound_by = "validation/check-versions.sh"
+bound_key = "nextest_version"
+why = """
+The runner of the whole Rust suite in the `rust` family of jobs (spec-0126
+§1.1, §5): the build archives every test binary once, each partition runs its
+share of the archive with every test in its own process, and each writes a
+JUnit report with one timed <testcase> per test, which the suite's time budget
+and the partition census are judged by. Installed by the composite action
+`.github/actions/suite-instruments`, the one site the literal lives at in the
+workflow tree (twice: the cache key and the install line).
+
+WHY IT IS AN INSTRUMENT: the runner decides which tests are listed and run, how
+each is isolated, and the clock the budget reads; a runner that changes any of
+these moves a required check's verdict with no test changing.
+
+CHOSEN AS the newest release at least two weeks old when it was adopted (crates.io
+publish date 2026-10-08). POLICY `immutable`: crates.io never re-publishes a
+version, so `0.9.148` names fixed bytes, on `mecha`'s argument.
+"""
+
+[[pin]]
+id = "cargo-llvm-cov"
+value = "0.9.1"
+sites = [".github/actions/suite-instruments/action.yml", "versions.toml"]
+policy = "immutable"
+bound_by = "validation/check-versions.sh"
+bound_key = "llvm_cov_version"
+why = """
+The coverage wrapper (spec-0126 §1.2): it instruments the one build of the
+suite (`nextest-archive`), runs each partition from that archive, and exports
+the region counters of the merged profile that the coverage floor
+(`tools/ci/coverage-floor.py`) judges. Installed by the composite action
+`.github/actions/suite-instruments`, the one site the literal lives at in the
+workflow tree (twice: the cache key and the install line). Also the instrument
+`tools/ci/test-coverage-map.sh` builds the per-test map with, which refuses any
+other installed version, and the version `.github/coverage-baseline.json` names.
+
+WHY IT IS AN INSTRUMENT: what counts as a region and how counters are exported
+decide the floor's verdict. POLICY `immutable`, on the published-artifact
+argument; a bump re-takes the coverage record in the same pull request.
+"""
+
+[[pin]]
+id = "cargo-mutants"
+value = "27.1.0"
+sites = ["versions.toml"]
+policy = "immutable"
+bound_by = "validation/check-versions.sh"
+bound_key = "mutants_version"
+why = """
+The second instrument a test removal is proven by (spec-0126 §1.3, §3.3 rule 3):
+`tools/ci/test-kill-set.sh` runs it twice, with and without the candidate, and a
+removal commits both outcomes. That script holds no copy of the value; it reads
+this key and refuses any other installed version. Not run in CI: a mutation run
+is a proof a removal carries, never a gate on every pull request.
+
+POLICY `immutable`, on the published-artifact argument.
 """
 
 # ---------------------------------------------------------------------------

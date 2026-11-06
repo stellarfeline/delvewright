@@ -5,7 +5,7 @@
 //! none: it reads as an index, so a module missing from it reads as a module
 //! that does not exist, and the twenty-four names this list used to carry
 //! were the ones a reader happened to add. `the_module_list_names_every_module`
-//! (`tests/module_list.rs`) is what keeps it whole.
+//! (`tests/it/module_list.rs`) is what keeps it whole.
 //!
 //! - [`acts`]: the acts on every walked path — what the party must do, where, and from where it stands (spec-0104), read by `DW0863`.
 //! - [`affordance`]: the engine-fixture class tags and the region-selector exclusion (`DW0545`).
@@ -80,6 +80,7 @@
 //! - [`music`]: what every biome a camera can stand in plays, what each cutscene hears and what each `stop-sound` cuts — the music ledger and `DW1032`.
 //! - [`muster`]: what a wave declares, phrased as questions the live bodies are asked.
 //! - [`nav`]: compile-time navigation over the solved voxel grid.
+//! - [`notes`]: the build's binding notes, printed as said or held by a caller that writes them elsewhere.
 //! - [`observer`]: a watching player is out of play everywhere — the positional-selector census a respawn wait owes (`DW0926`).
 //! - [`onkill`]: whether a fight comes back, and the `on_kill.fires` judgement it owes (`DW0914`/`DW0915`).
 //! - [`placed`]: the placements ledger — every block, container item and body the datapack places outside the templates, and every removal, one record each, the command written from the record (spec-0112 §4).
@@ -202,6 +203,7 @@ pub mod music;
 pub mod muster;
 pub mod nav;
 pub(crate) mod nbtread;
+pub mod notes;
 pub mod observer;
 pub mod onkill;
 pub mod placed;

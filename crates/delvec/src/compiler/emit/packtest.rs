@@ -379,7 +379,7 @@ fn settled_setup(ns: &str) -> [String; 2] {
 ///
 /// Decided here, over the finished templates, so that no emitter decides it,
 /// and a template written tomorrow is settled without its author knowing the
-/// rule. `tests/packtest_batch.rs` (`no_template_ticks_with_the_load_re_armed`)
+/// rule. `tests/it/packtest_batch.rs` (`no_template_ticks_with_the_load_re_armed`)
 /// judges the shipped bytes: no template ticks, awaits or ends re-armed.
 fn settle_loads(ns: &str, out: &mut BuildOutput) {
     let [setup, latch] = settled_setup(ns);
@@ -689,7 +689,7 @@ fn packtest_guards(plan: &Plan, quest_id: &str, o: &Objective, with_flags: bool)
 /// but each template is a single atomic mcfunction, so its baseline, its drive
 /// and its assert all land inside one tick with no sibling in between (the one
 /// place that stops being true is a template that `await`s, which
-/// `tests/packtest_batch.rs` polices separately). Only the ITEM still goes to the
+/// `tests/it/packtest_batch.rs` polices separately). Only the ITEM still goes to the
 /// test's own pinned dummy.
 fn packtest_preamble(
     plan: &Plan,

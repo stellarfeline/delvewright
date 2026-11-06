@@ -38,7 +38,7 @@ what each frame's manifest says, never its pixels:
   owes every weather a frame.
 
 What the sky looks like at each hour is the engine's, judged in
-`crates/delvec/tests/review_frame_sky.rs`; this gate holds that each camera
+`crates/delvec/tests/it/review_frame_sky.rs`; this gate holds that each camera
 asks for the sky its record states.
 
 ## Binding count

@@ -62,7 +62,7 @@ pub(super) fn emit_scheduled_executor_packtests(
     // spec-0018: the probe flag is party state, so the baseline and the await
     // both address `#party`. The objective is test-only (it exists solely in the
     // PackTest datapack), so this template is its sole owner in the batch — the
-    // ownership `tests/packtest_batch.rs` demands of any template that awaits.
+    // ownership `tests/it/packtest_batch.rs` demands of any template that awaits.
     t.push(format!(
         "scoreboard players set {} {probe_score} 0",
         plan::PARTY

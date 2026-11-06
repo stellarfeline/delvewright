@@ -53,8 +53,8 @@ pub(super) fn prove_assemblies(
     let open = world.without_exclusions();
     let walk = open.walk_region(&crate::compiler::lethal::put_at_roots(plan, &open, entry));
     let (binding, findings) = crate::compiler::assembly::check(plan, population, &walk, &reaches);
-    eprintln!("{}", binding.line());
-    eprintln!("{}", binding.cost_line());
+    crate::note!("{}", binding.line());
+    crate::note!("{}", binding.cost_line());
     if let Some((first, rest)) = findings.split_first() {
         for extra in rest {
             eprintln!("{} [error] build: {}", extra.code, extra.message);
@@ -87,7 +87,7 @@ pub(super) fn prove_watchers(
     population: &std::collections::BTreeSet<[i32; 3]>,
 ) -> Result<crate::compiler::watching::WatchBinding, BuildFailure> {
     let (binding, findings) = crate::compiler::watching::prove(plan, population);
-    eprintln!("{}", binding.line());
+    crate::note!("{}", binding.line());
     if let Some((first, rest)) = findings.split_first() {
         for extra in rest {
             eprintln!("{} [error] build: {}", extra.code, extra.message);
@@ -126,14 +126,14 @@ pub(super) fn prove_blockout(
     // built — and at stage 6 the difference is the whole reading: `detailed`
     // is how much of this map is a building and how much is still massing.
     if let Some(b) = &plan.blockout {
-        eprintln!("{}", b.binding.line());
+        crate::note!("{}", b.binding.line());
     }
     // What the ocean-datum invariant (`DW0344`) examined: how many placed
     // pieces declare a waterline, how many stand in the sea, and how many of
     // those were held to it. Printed on every build, ocean or not, because a
     // check that only speaks when it finds something cannot be told from one
     // that never ran.
-    eprintln!("{}", plan.waterline.line());
+    crate::note!("{}", plan.waterline.line());
     // What the horizon built, and — the half that matters — which authority
     // stated the rectangle it built around. A surround that ringed the
     // placed footprint and one that ringed the declared region look
@@ -141,7 +141,7 @@ pub(super) fn prove_blockout(
     // the mountains move. So the line names the authority, and the zeros are
     // findings rather than silences.
     if let Some(surround) = &plan.surround {
-        eprintln!("{}", surround.binding.line());
+        crate::note!("{}", surround.binding.line());
         if surround.binding.floor_cells == 0 {
             eprintln!(
                 "surround binding 0: the horizon built terrain but no standable gap-floor \
@@ -151,7 +151,7 @@ pub(super) fn prove_blockout(
         }
     }
     if let Some(battery) = crate::compiler::blockout::check(plan, blocks) {
-        eprintln!("{}", battery.binding.line());
+        crate::note!("{}", battery.binding.line());
         let refusals: Vec<&(delvewright_dsl::DwCode, delvewright_dsl::Diagnostic)> =
             battery.refusals().collect();
         if let Some(((code, refusal), rest)) = refusals.split_first() {
@@ -249,14 +249,14 @@ pub(super) fn prove_declarations(
     // place. Runs before the occupancy rules that read those cells, and prints
     // its binding line on every run, zeroes included.
     let (marks, marks_verdict) = crate::compiler::mark::check_marks_in_piece(plan);
-    eprintln!("{}", marks.line());
+    crate::note!("{}", marks.line());
     marks_verdict.map_err(|e| BuildFailure::Diagnostic {
         code: e.code,
         message: e.message,
     })?;
 
     let (one_mark, one_mark_verdict) = crate::compiler::cohabit::check_one_body_per_mark(plan);
-    eprintln!("{}", one_mark.line());
+    crate::note!("{}", one_mark.line());
     one_mark_verdict.map_err(|e| BuildFailure::Diagnostic {
         code: e.code,
         message: e.message,
@@ -366,7 +366,7 @@ pub(super) fn check_finished_tree(
         code: e.code,
         message: e.message,
     })?;
-    eprintln!("{}", chains.binding());
+    crate::note!("{}", chains.binding());
     put_json(out, "validation/chain-length.json", &chains.to_json());
 
     // ---- fixture-class self-check (DW0545) ----
@@ -397,7 +397,7 @@ pub(super) fn check_finished_tree(
             message: e.message,
         }
     })?;
-    eprintln!("{}", click_boxes.line());
+    crate::note!("{}", click_boxes.line());
     put_json(out, "validation/click-box.json", &click_boxes.to_json());
 
     // ---- the party is seen in its own cutscenes (spec-0095, DW0971) ----
@@ -407,7 +407,7 @@ pub(super) fn check_finished_tree(
     let parties = cutscene_parties(plan);
     if !parties.is_empty() {
         let gate = crate::compiler::standin::check(ns, &parties, out)?;
-        eprintln!("{}", gate.line());
+        crate::note!("{}", gate.line());
         put_json(out, "validation/stand-in-gate.json", &gate.to_json());
     }
 
@@ -422,7 +422,7 @@ pub(super) fn check_finished_tree(
         code: e.code,
         message: e.message,
     })?;
-    eprintln!("{}", census.binding());
+    crate::note!("{}", census.binding());
     put_json(out, "validation/observer-census.json", &census.to_json());
 
     // ---- the effect-root walk's own binding ledger ----

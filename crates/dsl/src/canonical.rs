@@ -15,7 +15,7 @@
 //! Methodology): the form belongs to the *format*, not to whichever writer
 //! needed it first. So there is one definition and this routes through it.
 //!
-//! The round-trip fixture gate (`tests/roundtrip.rs`) is unchanged and now
+//! The round-trip fixture gate (`tests/it/roundtrip.rs`) is unchanged and now
 //! proves both properties at once: serde loses no field, **and** the fixture on
 //! disk is in `delvec fmt` canonical form.
 

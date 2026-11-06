@@ -562,3 +562,48 @@ fn the_ballistic_trajectories_are_committed() {
         slab[TICKS - 1]
     );
 }
+
+/// `cell_floor` is `v.floor() as i32` on every value a coordinate takes:
+/// integers, halves and thirds either side of zero, the cast's saturation at
+/// both ends, and a NaN; a generated sweep of 200,000 values across the
+/// window a map can span.
+#[test]
+fn cell_floor_is_the_library_floor_cast() {
+    let mut cases: Vec<f64> = vec![
+        0.0,
+        -0.0,
+        0.5,
+        -0.5,
+        1.0,
+        -1.0,
+        1.999_999_9,
+        -1.999_999_9,
+        2.0 / 3.0,
+        -2.0 / 3.0,
+        1e-7,
+        -1e-7,
+        64.0 - 1e-7,
+        -64.0 + 1e-7,
+        f64::from(i32::MAX) + 10.0,
+        f64::from(i32::MIN) - 10.0,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::NAN,
+    ];
+    let mut x: u64 = 0x9e37_79b9_7f4a_7c15;
+    for _ in 0..200_000 {
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        // Across ±2^20, at every fraction, and a few exact integers.
+        let v = ((x >> 11) as f64 / (1u64 << 53) as f64 - 0.5) * 2_097_152.0;
+        cases.push(if x & 7 == 0 { v.round() } else { v });
+    }
+    for v in cases {
+        assert_eq!(
+            super::cell_floor(v),
+            v.floor() as i32,
+            "cell_floor({v}) is not the library floor cast"
+        );
+    }
+}

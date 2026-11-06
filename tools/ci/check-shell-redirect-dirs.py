@@ -155,17 +155,27 @@ def literal_assignments(lines: list[str]) -> tuple[dict[str, str], set[str]]:
     """name -> literal value, plus the set of names holding a `mktemp -d` path."""
     values: dict[str, str] = {}
     tempdirs: set[str] = set()
+    # A name assigned more than once holds whichever value the flow reached, so
+    # no one literal stands for it: `OUT=""` then `OUT="$(cd "$OUT" && pwd)"`
+    # is not the empty path at a later redirect. It keeps its `$NAME` identity.
+    reassigned: set[str] = set()
+    seen: set[str] = set()
     for line in lines:
         m = ASSIGN.match(line.split("#", 1)[0] if not line.lstrip().startswith("#") else "")
         if not m:
             continue
         name, rhs = m.group(1), m.group(2).strip()
+        if name in seen:
+            reassigned.add(name)
+        seen.add(name)
         if MKTEMP_DIR.search(rhs):
             tempdirs.add(name)
             continue
         if "$(" in rhs or "`" in rhs:
             continue  # opaque: keep the `$NAME` token itself as the identity
         values[name] = rhs.strip('"').strip("'")
+    for name in reassigned:
+        values.pop(name, None)
     return values, tempdirs
 
 

@@ -581,7 +581,7 @@ def test_merge_keeps_existing_applies_new_and_cannot_produce_orphans():
 
 #: A `delvec` that exits 0 and touches nothing. Canonical form is the compiler's
 #: to decide and is proven against the real binary over a real written file in
-#: `crates/delvec/tests/i18n_sidecar.rs`; what these tests own is the document
+#: `crates/delvec/tests/it/i18n_sidecar.rs`; what these tests own is the document
 #: the writer hands it and the fact that it hands it over at all.
 INERT_DELVEC = ["true"]
 

@@ -1269,17 +1269,24 @@ fn replay(
                 unreachable!("the load's writes were read as unconditional writes");
             };
             let template = kind == "template";
-            let mut changed: BTreeSet<[i32; 3]> = BTreeSet::new();
+            // The cells the write changed, and below the cells it asks, are
+            // sets kept as ascending, deduplicated vectors: the same cells in
+            // the same order as the whole replay's ordered sets, without a
+            // tree node per cell of a fill that lays a hundred thousand.
+            let mut changed: Vec<[i32; 3]> = Vec::new();
             for (c, st) in laid.shape.cells_within(Some(reach)) {
                 let was = sim.at(c);
                 if laid.filter.lays_over(was) && sim.put(c, st) {
                     mark(&mut reads, c, reads_of(was) | reads_of(st.as_str()));
-                    changed.insert(c);
+                    changed.push(c);
                 }
             }
             if changed.is_empty() {
                 continue;
             }
+            changed.sort_unstable();
+            changed.dedup();
+            let is_changed = |c: &[i32; 3]| changed.binary_search(c).is_ok();
             out.changed += changed.iter().filter(|c| own.holds(**c)).count();
             for c in &changed {
                 for cell in [*c, step(*c, Face::Up)] {
@@ -1288,19 +1295,25 @@ fn replay(
                     }
                 }
             }
-            let mut asked: BTreeSet<[i32; 3]> = BTreeSet::new();
+            let mut asked: Vec<[i32; 3]> = Vec::with_capacity(changed.len() * FACES.len());
             for c in &changed {
                 asked.extend(FACES.iter().map(|f| step(*c, *f)));
             }
-            asked.retain(|c| !changed.contains(c));
-            asked.retain(|n| match needs(sim.at(*n)) {
-                Some(Needs::Support(rules)) => {
-                    rules.iter().any(|r| changed.contains(&step(*n, r.cell)))
-                }
-                _ => false,
+            asked.sort_unstable();
+            asked.dedup();
+            asked.retain(|n| {
+                !is_changed(n)
+                    && match needs(sim.at(*n)) {
+                        Some(Needs::Support(rules)) => {
+                            rules.iter().any(|r| is_changed(&step(*n, r.cell)))
+                        }
+                        _ => false,
+                    }
             });
             if template {
                 asked.extend(changed.iter().copied());
+                asked.sort_unstable();
+                asked.dedup();
             }
             for cell in asked {
                 let name = sim.at(cell);
@@ -1312,7 +1325,7 @@ fn replay(
                 let look = |c: [i32; 3]| sim.at(c);
                 if let Some(Err(wants)) = judge_cell(cell, name, &look) {
                     if mine {
-                        let placed = template && changed.contains(&cell);
+                        let placed = template && is_changed(&cell);
                         let why = wants
                             .iter()
                             .map(|(rule, [nx, ny, nz], there)| {

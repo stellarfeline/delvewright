@@ -323,13 +323,17 @@ fn small(c: [i32; 3]) -> Option<[i16; 3]> {
     ])
 }
 
-#[inline]
-fn read<C: Codes + ?Sized>(codes: &C, c: [i16; 3]) -> Code {
-    codes.code([i32::from(c[0]), i32::from(c[1]), i32::from(c[2])])
-}
-
-/// The recorded flight of `key` over `codes`, if one met the same cells.
-pub(super) fn lookup<C: Codes + ?Sized>(key: &Key, codes: &C) -> Option<Kept> {
+/// The recorded flight of `key` over the node's reader `local`, if one met
+/// the same cells: the tree walked reading each cell from the slots without
+/// noting ([`super::Local::peek`]), every cell read written into `seen`, in
+/// order, for a kept flight to note (a flight that did not match leaves its
+/// cells there too, for nothing).
+pub(super) fn lookup(
+    key: &Key,
+    local: &super::Local<'_>,
+    seen: &mut Vec<[i32; 3]>,
+) -> Option<Kept> {
+    seen.clear();
     #[cfg(test)]
     if off() {
         return None;
@@ -347,14 +351,28 @@ pub(super) fn lookup<C: Codes + ?Sized>(key: &Key, codes: &C) -> Option<Kept> {
                 left_at: leaf.left_at,
             });
         }
-        for k in 0..node.len - 1 {
-            let e = shard.entry(node.start + k);
-            if read(codes, e.cell) != e.code {
+        // A run never crosses a chunk: one slice holds it.
+        let at = node.start as usize & (CHUNK - 1);
+        let run = &shard.chunks[(node.start >> CHUNK_BITS) as usize][at..at + node.len as usize];
+        let (last, rest) = run.split_last().expect("a run holds an entry");
+        for e in rest {
+            let c = [
+                i32::from(e.cell[0]),
+                i32::from(e.cell[1]),
+                i32::from(e.cell[2]),
+            ];
+            seen.push(c);
+            if local.peek(c) != e.code {
                 return None;
             }
         }
-        let last = shard.entry(node.start + node.len - 1);
-        n = shard.child(n, read(codes, last.cell))?;
+        let c = [
+            i32::from(last.cell[0]),
+            i32::from(last.cell[1]),
+            i32::from(last.cell[2]),
+        ];
+        seen.push(c);
+        n = shard.child(n, local.peek(c))?;
     }
 }
 
@@ -367,16 +385,21 @@ pub(super) struct Reads<'a, C: Codes + ?Sized> {
     /// The thread's tables, taken for this flight and handed back after.
     near: Vec<std::cell::Cell<(u32, Code)>>,
     far: std::cell::RefCell<Seen>,
+    /// The thread's room for the sequence as [`record`] stores it.
+    small: std::cell::RefCell<Vec<([i16; 3], Code)>>,
 }
 
 /// The cells near the launch cell a flight has read, with their codes, each
 /// slot stamped with the flight it belongs to, and [`Seen`] for the cells
 /// further off. A flight reads each cell many times, the first through the
-/// world and every later one from here.
+/// world and every later one from here. The two sequences a recording
+/// fills keep their room from flight to flight.
 #[derive(Default)]
 struct Tables {
     near: Vec<std::cell::Cell<(u32, Code)>>,
     seen: Seen,
+    seq: ReadSeq,
+    small: Vec<([i16; 3], Code)>,
 }
 
 /// The box round the launch cell [`Tables::near`] holds: `±NEAR_XZ` across,
@@ -467,6 +490,8 @@ impl<C: Codes + ?Sized> Drop for Reads<'_, C> {
         let t = Tables {
             near: std::mem::take(&mut self.near),
             seen: std::mem::take(&mut *self.far.borrow_mut()),
+            seq: std::mem::take(&mut *self.seen.borrow_mut()),
+            small: std::mem::take(&mut *self.small.borrow_mut()),
         };
         TABLES.with(|x| *x.borrow_mut() = t);
     }
@@ -520,12 +545,15 @@ impl<'a, C: Codes + ?Sized> Reads<'a, C> {
             s.set(v);
             v
         });
+        tables.seq.clear();
+        tables.small.clear();
         Reads {
             inner,
-            seen: std::cell::RefCell::new(Vec::new()),
+            seen: std::cell::RefCell::new(tables.seq),
             stamp,
             near: tables.near,
             far: std::cell::RefCell::new(tables.seen),
+            small: std::cell::RefCell::new(tables.small),
         }
     }
 }
@@ -573,14 +601,14 @@ pub(super) fn record<C: Codes + ?Sized>(key: Key, reads: Reads<'_, C>, flight: &
     if HELD.load(Relaxed) > MEMO_ENTRIES {
         return;
     }
-    let seq = std::mem::take(&mut *reads.seen.borrow_mut());
-    let Some(seq) = seq
-        .iter()
-        .map(|(c, v)| small(*c).map(|c| (c, *v)))
-        .collect::<Option<Vec<_>>>()
-    else {
-        return;
-    };
+    let mut small_seq = reads.small.borrow_mut();
+    for (c, v) in reads.seen.borrow().iter() {
+        let Some(c) = small(*c) else {
+            return;
+        };
+        small_seq.push((c, *v));
+    }
+    let seq: &[([i16; 3], Code)] = &small_seq;
     if seq.len() > CHUNK {
         return;
     }

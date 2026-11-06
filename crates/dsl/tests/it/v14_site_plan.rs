@@ -1,0 +1,2812 @@
+//! DSL v0.14 (spec-0049 §4): the site plan — the geometric embedding of the
+//! layout graph.
+//!
+//! # How these tests are kept falsifiable
+//!
+//! Geometry is where a self-agreeing fixture hides best. A partition, a
+//! face-sharing relation and a reachable rise are all things the checker can
+//! compute — so a fixture BUILT by that arithmetic agrees with it by
+//! construction, and perturbing the rule leaves every assertion green. The
+//! metrics round walked into that trap and the layout-graph round named it.
+//!
+//! So the map below is **drawn by hand and its answers are written by hand**.
+//! The comment over [`PLAN`] is a plan view with every box's cell range spelled
+//! out, and every number the tests assert — which pairs are disjoint, which
+//! faces are shared and at what gap, what each stair's rise is — is read off
+//! that drawing rather than out of the code. Nothing in this file calls
+//! `shared_face`, `overlap` or any other checker function to decide what to
+//! assert.
+//!
+//! And every red is a **one-field perturbation of that same green document**,
+//! so each assertion is half of a red→green pair rather than a document written
+//! to fail. If a check stopped working its perturbation would go green, and the
+//! test would say so.
+
+use crate::common;
+
+use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
+use serde_json::{Value, json};
+use std::sync::LazyLock;
+
+/// The graph the plan embeds. Six places, seven ways a body passes and one line
+/// of sight, bound to the hello-world campaign's one quest.
+///
+/// ```text
+///                              edge/porch-vault-sightline (vision)
+///        ┌───────────────────────────────────────────────────────┐
+///        │                                                       │
+///   [porch] ──walk── [hall] ══gated (quest)═══ [vault] ──walk── [yard]
+///        │             ║                                           ║ ╲
+///       drop        stair (shortcut)                             drop stair
+///        ╲             ║                                           ╲ ╱
+///         ╲────────► [cellar]                                     [pit]
+/// ```
+static GRAPH: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "campaign_id": "hello-world",
+  "dsl_version": "%dsl_version%",
+  "stage": "layout-graph",
+  "content": {
+    "nodes": [
+      { "id": "node/porch", "intent": "threshold" },
+      { "id": "node/hall", "intent": "hub" },
+      { "id": "node/vault", "intent": "goal-chamber" },
+      { "id": "node/cellar", "intent": "cache" },
+      { "id": "node/yard", "intent": "vista" },
+      { "id": "node/pit", "intent": "sump" }
+    ],
+    "edges": [
+      { "id": "edge/porch-hall", "class": "walk", "a": "node/porch", "b": "node/hall" },
+      { "id": "edge/hall-vault", "class": "walk", "a": "node/hall", "b": "node/vault",
+        "gating": { "quest": "quest/open-the-door", "opens_from": "a" } },
+      { "id": "edge/hall-cellar", "class": "stair", "a": "node/hall", "b": "node/cellar",
+        "shortcut": true },
+      { "id": "edge/porch-cellar", "class": "drop", "a": "node/porch", "b": "node/cellar",
+        "falls": "a-to-b" },
+      { "id": "edge/vault-yard", "class": "walk", "a": "node/vault", "b": "node/yard" },
+      { "id": "edge/yard-pit", "class": "drop", "a": "node/yard", "b": "node/pit",
+        "falls": "a-to-b" },
+      { "id": "edge/pit-yard", "class": "stair", "a": "node/pit", "b": "node/yard" },
+      { "id": "edge/porch-vault-sightline", "class": "vision", "a": "node/porch",
+        "b": "node/vault" }
+    ],
+    "entry": "node/porch",
+    "goal": "node/vault",
+    "critical_path": ["node/porch", "node/hall", "node/vault"],
+    "beats": [
+      { "quest": "quest/open-the-door", "objective": "obj/talk", "node": "node/porch" },
+      { "quest": "quest/open-the-door", "objective": "obj/exit", "node": "node/hall" }
+    ]
+  }
+}"#,
+    )
+});
+
+static BRIEF: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "campaign_id": "hello-world",
+  "dsl_version": "%dsl_version%",
+  "stage": "geometry-brief",
+  "content": {
+    "facts": [
+      { "id": "fact/region-span", "value": 64.0, "unit": "blocks",
+        "note": "The site is sixty-four blocks across." },
+      { "id": "fact/hall-span", "value": 16.0, "unit": "blocks",
+        "note": "The hall is sixteen wall to wall." },
+      { "id": "fact/hall-height", "value": 8.0, "unit": "blocks",
+        "note": "Eight blocks of headroom in the hall, so the vault reads as tall." },
+      { "id": "fact/porch-to-vault", "value": 24.0, "unit": "blocks",
+        "note": "The vault stands at least twenty-four blocks off the porch, so the approach is walked rather than glanced at." },
+      { "id": "fact/grade", "value": 64.0, "unit": "blocks",
+        "note": "Grade is at sixty-four." }
+    ]
+  }
+}"#,
+    )
+});
+
+/// The green map, drawn by hand.
+///
+/// Plan view at grade (east is `+x`, south is `+z`); each place's cell range is
+/// written out, and every number the tests below assert is read off THIS
+/// drawing rather than computed:
+///
+/// ```text
+///            x: 0        13        30        45         63
+///   z:  4..11    [porch ]  [ hall  ]  [vault ]  ┐
+///                 4..11     13..28     30..37   │
+///                 y 64..67  y 64..71   y 64..67 │
+///   z: 13..28    [cellar]              [   yard    ]
+///                 4..11                 30..45
+///                 y 59..70              y 64..71  (sky-open)
+///   z: 16..23                           [pit] 32..39, y 59..62 (under the yard)
+/// ```
+///
+/// Stated by hand, so the assertions are not the checker agreeing with itself:
+///
+/// * **all fifteen box pairs are disjoint.** The three at grade are separated on
+///   `x`; `cellar` clears them on `z`; `yard` clears `hall` on `x`; `pit` sits
+///   under `yard` and clears it on `y`.
+/// * **seven faces are shared, each with a gap of exactly one cell** — that cell
+///   being the wall the two places have in common. `porch|hall` at x 12,
+///   `hall|vault` at x 29, `hall|cellar` at x 12, `porch|cellar` at z 12,
+///   `vault|yard` at z 12, and `yard|pit` at y 63 (twice, once per connection).
+/// * **the two stairs climb 5 blocks each, and both are hosted in the LOWER
+///   place**, because treads rise off a walk plane and the only one a stair has
+///   is the lower of the two. `hall` (64) down to `cellar` (59) is massed in
+///   `cellar`; `pit` (59) up to `yard` (64) is massed in `pit`. The 1:1 standard
+///   pitch needs 5 blocks of run, and each host affords 8 across the axis its
+///   run is spent on, so both are buildable.
+/// * **the two drops fall 5 blocks each**, which is exactly the designed-drop
+///   cap — the deepest fall the policy allows, and therefore green.
+/// * **five identities hold**: the region is 64 across, the hall is 16 by 8, the
+///   porch centre `(7.5, 7.5)` stands 26 blocks from the vault centre
+///   `(33.5, 7.5)` which is at least the 24 the brief asks for, and grade is 64.
+static PLAN: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "campaign_id": "hello-world",
+  "content": {
+    "boxes": [
+      {
+        "ceiling": {
+          "clearance": 4
+        },
+        "extent": [
+          8,
+          8
+        ],
+        "floor": {
+          "datum": "datum/grade"
+        },
+        "min": [
+          4,
+          4
+        ],
+        "node": "node/porch",
+        "sides": {"east": "wall", "west": "wall", "south": "wall", "north": "wall"}
+      },
+      {
+        "ceiling": {
+          "clearance": 8
+        },
+        "extent": [
+          16,
+          16
+        ],
+        "floor": {
+          "datum": "datum/grade"
+        },
+        "node": "node/hall",
+        "sides": {"east": "wall", "west": "wall", "south": "wall", "north": "wall"}
+      },
+      {
+        "ceiling": {
+          "clearance": 4
+        },
+        "extent": [
+          8,
+          8
+        ],
+        "floor": {
+          "datum": "datum/grade"
+        },
+        "node": "node/vault",
+        "sides": {"east": "wall", "west": "wall", "south": "wall", "north": "wall"}
+      },
+      {
+        "ceiling": {
+          "clearance": 12
+        },
+        "extent": [
+          8,
+          16
+        ],
+        "floor": {
+          "datum": "datum/undercroft"
+        },
+        "node": "node/cellar",
+        "sides": {"east": "wall", "west": "wall", "south": "wall", "north": "wall"}
+      },
+      {
+        "ceiling": {
+          "open": 8
+        },
+        "extent": [
+          16,
+          16
+        ],
+        "floor": {
+          "datum": "datum/grade"
+        },
+        "node": "node/yard",
+        "sides": {"east": "wall", "west": "wall", "south": "wall", "north": "wall"}
+      },
+      {
+        "ceiling": {
+          "clearance": 4
+        },
+        "extent": [
+          8,
+          8
+        ],
+        "floor": {
+          "y": 59
+        },
+        "node": "node/pit",
+        "sides": {"east": "wall", "west": "wall", "south": "wall", "north": "wall"}
+      }
+    ],
+    "datums": [
+      {
+        "id": "datum/grade",
+        "note": "The plane the delve opens on.",
+        "y": 64
+      },
+      {
+        "id": "datum/undercroft",
+        "y": 59
+      }
+    ],
+    "fill": {
+      "block": "minecraft:deepslate",
+      "kind": "solid"
+    },
+    "identities": [
+      {
+        "cmp": "eq",
+        "fact": "fact/region-span",
+        "measure": {
+          "axis": "x",
+          "of": "region-extent"
+        }
+      },
+      {
+        "cmp": "eq",
+        "fact": "fact/hall-span",
+        "measure": {
+          "axis": "x",
+          "node": "node/hall",
+          "of": "box-extent"
+        }
+      },
+      {
+        "cmp": "eq",
+        "fact": "fact/hall-height",
+        "measure": {
+          "node": "node/hall",
+          "of": "box-height"
+        }
+      },
+      {
+        "cmp": "ge",
+        "fact": "fact/porch-to-vault",
+        "measure": {
+          "from": "node/porch",
+          "of": "distance-xz",
+          "to": "node/vault"
+        }
+      },
+      {
+        "cmp": "eq",
+        "fact": "fact/grade",
+        "measure": {
+          "datum": "datum/grade",
+          "of": "datum-y"
+        }
+      }
+    ],
+    "lighting": {
+      "fixture": "torch",
+      "min_light": 7
+    },
+    "region": {
+      "extent": [
+        64,
+        48,
+        64
+      ],
+      "min": [
+        0,
+        48,
+        0
+      ]
+    },
+    "seams": [
+      {
+        "at": 2,
+        "edge": "edge/porch-hall",
+        "form": "a doorway",
+        "face": "east",
+        "meets": 2,
+        "opening": "arch"
+      },
+      {
+        "at": 2,
+        "edge": "edge/hall-vault",
+        "form": "a doorway",
+        "face": "east",
+        "meets": 2,
+        "opening": "door"
+      },
+      {
+        "at": 10,
+        "edge": "edge/hall-cellar",
+        "form": "a doorway",
+        "face": "west",
+        "meets": 1,
+        "opening": "passage",
+        "stair_in": "node/cellar"
+      },
+      {
+        "edge": "edge/porch-cellar",
+        "form": "a doorway",
+        "face": "south",
+        "opening": "passage"
+      },
+      {
+        "at": 2,
+        "edge": "edge/vault-yard",
+        "form": "a doorway",
+        "face": "south",
+        "meets": 2,
+        "opening": "arch"
+      },
+      {
+        "at": [
+          2,
+          3
+        ],
+        "edge": "edge/yard-pit",
+        "form": "a doorway",
+        "face": "down",
+        "meets": [
+          0,
+          0
+        ],
+        "opening": "passage"
+      },
+      {
+        "at": [
+          0,
+          0
+        ],
+        "edge": "edge/pit-yard",
+        "form": "a doorway",
+        "face": "up",
+        "meets": [
+          2,
+          3
+        ],
+        "opening": "passage",
+        "stair_in": "node/pit"
+      }
+    ],
+    "sightlines": [
+      {
+        "edge": "edge/porch-vault-sightline",
+        "from": [
+          8,
+          65,
+          8
+        ],
+        "to": [
+          33,
+          65,
+          8
+        ]
+      }
+    ],
+    "views": [
+      {
+        "eye": [
+          20,
+          80,
+          60
+        ],
+        "id": "view/from-the-south",
+        "look_at": [
+          20,
+          66,
+          12
+        ],
+        "note": "The approach the silhouette is judged from."
+      }
+    ],
+    "volumes": [
+      {
+        "id": "volume/undercroft-rock",
+        "note": "The rock the cellar and the pit are cut into.",
+        "region": {
+          "extent": [
+            44,
+            10,
+            36
+          ],
+          "min": [
+            4,
+            48,
+            4
+          ]
+        },
+        "role": "massif"
+      },
+      {
+        "id": "volume/sky-over-the-yard",
+        "region": {
+          "extent": [
+            16,
+            20,
+            16
+          ],
+          "min": [
+            30,
+            72,
+            13
+          ]
+        },
+        "role": "clearance"
+      }
+    ]
+  },
+  "dsl_version": "%dsl_version%",
+  "stage": "site-plan"
+}"#,
+    )
+});
+
+// ---------------------------------------------------------------------------
+// Harness
+// ---------------------------------------------------------------------------
+
+/// The hello-world campaign, made into a **site-plan** campaign when a plan is
+/// handed over.
+///
+/// Four substitutions, and every one of them is an obligation the round that
+/// derived the blockout added rather than a convenience:
+///
+/// * **`areas[]` is emptied.** A campaign has one placement authority
+///   (`DW0839`), and this one's is the plan.
+/// * **the area references move to `area/site`.** That is the one place a
+///   site-plan campaign has, and it is where the NPC stands and the quest
+///   happens.
+/// * **the anchors move to the synthesized vocabulary.** A site-plan campaign
+///   has no prefab to name an anchor, so `anchor/node-<place>` is what its
+///   content binds to — the names `delvewright_dsl::synthesized_anchors`
+///   reports and the derivation really places.
+/// * **the `open-gate` names the gated seam's own region.** `DW1028`: a gated
+///   way nothing opens is a wall, and the region such an effect must target
+///   only exists once a plan does.
+///
+/// A campaign handed no plan is left exactly as it was, which is what keeps the
+/// "a campaign with no plan binds nothing" case honest.
+fn campaign(plan: Option<String>, graph: Option<String>, brief: Option<String>) -> RawCampaign {
+    let base = common::valid_raw();
+    if plan.is_none() {
+        return RawCampaign {
+            site_plan: plan,
+            detail_plan: None,
+            design: None,
+            layout_graph: graph,
+            geometry_brief: brief,
+            ..base
+        };
+    }
+    let retarget = |doc: &str, edits: &[(&str, &str)]| -> String {
+        let mut out = doc.to_string();
+        for (from, to) in edits {
+            out = out.replace(from, to);
+        }
+        out
+    };
+    let mut world: Value = serde_json::from_str(&base.world).expect("hello-world's world parses");
+    world["content"]["areas"] = json!([]);
+    RawCampaign {
+        world: serde_json::to_string(&world).expect("re-serialize"),
+        npcs: retarget(
+            &base.npcs,
+            &[
+                ("\"area/keep\"", "\"area/site\""),
+                ("\"anchor/keeper-stand\"", "\"anchor/node-porch\""),
+            ],
+        ),
+        quest_plan: retarget(&base.quest_plan, &[("\"area/keep\"", "\"area/site\"")]),
+        quests: retarget(
+            &base.quests,
+            &[
+                ("\"anchor/exit\"", "\"anchor/node-hall\""),
+                ("\"anchor/door\"", "\"anchor/seam-hall-vault\""),
+            ],
+        ),
+        site_plan: plan,
+        detail_plan: None,
+        design: None,
+        layout_graph: graph,
+        geometry_brief: brief,
+        ..base
+    }
+}
+
+fn codes_of(raw: &RawCampaign) -> Vec<String> {
+    check_campaign(raw).into_iter().map(|d| d.code).collect()
+}
+
+/// Validate the green campaign with the plan perturbed by one edit.
+fn plan_with(patch: impl FnOnce(&mut Value)) -> Vec<String> {
+    let mut v: Value = serde_json::from_str(PLAN.as_str()).expect("the green plan parses");
+    patch(&mut v);
+    let text = serde_json::to_string(&v).expect("re-serialize");
+    codes_of(&campaign(
+        Some(text),
+        Some(GRAPH.to_string()),
+        Some(BRIEF.to_string()),
+    ))
+}
+
+/// The same, with the message texts, for the assertions that check a refusal
+/// says the numbers an author needs.
+fn plan_diags(patch: impl FnOnce(&mut Value)) -> Vec<delvewright_dsl::Diagnostic> {
+    let mut v: Value = serde_json::from_str(PLAN.as_str()).expect("the green plan parses");
+    patch(&mut v);
+    let text = serde_json::to_string(&v).expect("re-serialize");
+    check_campaign(&campaign(
+        Some(text),
+        Some(GRAPH.to_string()),
+        Some(BRIEF.to_string()),
+    ))
+}
+
+fn boxes(v: &mut Value) -> &mut Vec<Value> {
+    v["content"]["boxes"].as_array_mut().expect("boxes")
+}
+
+fn seams(v: &mut Value) -> &mut Vec<Value> {
+    v["content"]["seams"].as_array_mut().expect("seams")
+}
+
+/// The index of the box for `node`, by hand from the document above.
+fn box_of(node: &str) -> usize {
+    match node {
+        "node/porch" => 0,
+        "node/hall" => 1,
+        "node/vault" => 2,
+        "node/cellar" => 3,
+        "node/yard" => 4,
+        "node/pit" => 5,
+        other => panic!("no box for {other}"),
+    }
+}
+
+/// The index of the seam for `edge`, by hand.
+fn seam_of(edge: &str) -> usize {
+    match edge {
+        "edge/porch-hall" => 0,
+        "edge/hall-vault" => 1,
+        "edge/hall-cellar" => 2,
+        "edge/porch-cellar" => 3,
+        "edge/vault-yard" => 4,
+        "edge/yard-pit" => 5,
+        "edge/pit-yard" => 6,
+        other => panic!("no seam for {other}"),
+    }
+}
+
+fn has(codes: &[String], code: &str) -> bool {
+    codes.iter().any(|c| c == code)
+}
+
+// ---------------------------------------------------------------------------
+// The green baseline, and the binding it reports
+// ---------------------------------------------------------------------------
+
+/// The map above is accepted, and the only lines it draws are the two advisories
+/// this pipeline always draws: the pacing projection, which refuses nothing, and
+/// the notice that every verdict above rests on uncalibrated standards.
+#[test]
+fn the_hand_drawn_plan_is_accepted() {
+    let got = codes_of(&campaign(
+        Some(PLAN.to_string()),
+        Some(GRAPH.to_string()),
+        Some(BRIEF.to_string()),
+    ));
+    assert_eq!(
+        got,
+        vec!["DW0822".to_string(), "DW0813".to_string()],
+        "the green plan should raise nothing but the two advisories"
+    );
+}
+
+/// A campaign that carries no site plan is untouched, and the ledger says so
+/// with a zero rather than by omission.
+#[test]
+fn a_campaign_with_no_plan_binds_nothing() {
+    let raw = campaign(None, None, None);
+    assert!(codes_of(&raw).is_empty());
+    let c = delvewright_dsl::parse_campaign(&raw).expect("parses");
+    let b = delvewright_dsl::LayoutBinding::of(&c);
+    assert_eq!(b.plan, delvewright_dsl::PlanBinding::default());
+    assert_eq!(b.plan.boxes, 0);
+    assert_eq!(b.plan.box_pairs, 0);
+    // With no plan, no place owes an anchor, whatever node is named.
+    let node = delvewright_dsl::NodeId("node/porch".into());
+    assert!(delvewright_dsl::owed_anchors(&c, &node).is_empty());
+}
+
+/// The binding count, **stated by hand** from the document above and compared
+/// against what the ledger computes. Written out rather than derived, because a
+/// count the code produced and the code checked would agree however wrong it
+/// was.
+#[test]
+fn the_binding_ledger_counts_what_the_plan_holds() {
+    let raw = campaign(
+        Some(PLAN.to_string()),
+        Some(GRAPH.to_string()),
+        Some(BRIEF.to_string()),
+    );
+    let c = delvewright_dsl::parse_campaign(&raw).expect("parses");
+    let b = delvewright_dsl::LayoutBinding::of(&c);
+    assert_eq!(b.plan.boxes, 6);
+    assert_eq!(b.plan.box_pairs, 15, "six places make fifteen pairs");
+    assert_eq!(
+        b.plan.seams, 7,
+        "seven of the eight connections carry a body"
+    );
+    assert_eq!(b.plan.stair_seams, 2, "hall-cellar and pit-yard");
+    assert_eq!(b.plan.drop_seams, 2, "porch-cellar and yard-pit");
+    assert_eq!(b.plan.datums, 2);
+    assert_eq!(b.plan.volumes, 2);
+    assert_eq!(b.plan.identities, 5);
+    assert_eq!(b.plan.sightlines, 1);
+    assert_eq!(b.plan.views, 1);
+    assert_eq!(
+        (b.plan.pinned, b.plan.derived, b.plan.components),
+        (1, 5, 1)
+    );
+    let line = b.plan.line();
+    assert!(
+        line.contains(
+            "6 box(es) (15 pair(s) compared; 1 pinned, 5 derived, in 1 component(s); 0 roofed;"
+        ),
+        "{line}"
+    );
+    assert!(line.contains("7 seam(s) (2 stair, 2 drop)"), "{line}");
+    assert!(line.contains("5 identity(ies)"), "{line}");
+}
+
+// ---------------------------------------------------------------------------
+// The document's shape
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// THE ORDERING TOOTH (spec-0049 §7.1)
+// ---------------------------------------------------------------------------
+
+/// A site plan with no layout graph is refused **by name**, and the refusal
+/// names the missing document rather than every dangling reference inside the
+/// plan.
+///
+/// This is the inversion the whole stage exists to make uncompilable: an
+/// embedding cannot reach green ahead of the thing it embeds.
+#[test]
+fn a_plan_without_its_graph_is_refused_naming_the_graph() {
+    let diags = check_campaign(&campaign(
+        Some(PLAN.to_string()),
+        None,
+        Some(BRIEF.to_string()),
+    ));
+    let codes: Vec<&str> = diags.iter().map(|d| d.code.as_str()).collect();
+    assert!(codes.contains(&"DW0824"), "{codes:?}");
+    let d = diags
+        .iter()
+        .find(|d| d.code == "DW0824")
+        .expect("the tooth");
+    assert!(d.message.contains("layout-graph.json"), "{}", d.message);
+    // And nothing else is reported about the plan: the missing document is the
+    // finding, not the six boxes that now name nothing.
+    assert_eq!(
+        diags.iter().filter(|d| d.code == "DW0824").count(),
+        1,
+        "one refusal, naming the missing document: {codes:?}"
+    );
+}
+
+/// The same for the brief. Both halves of `spec-0049 §7.1` are real.
+#[test]
+fn a_plan_without_its_brief_is_refused_naming_the_brief() {
+    let diags = check_campaign(&campaign(
+        Some(PLAN.to_string()),
+        Some(GRAPH.to_string()),
+        None,
+    ));
+    let d = diags
+        .iter()
+        .find(|d| d.code == "DW0824" && d.message.contains("geometry-brief.json"))
+        .expect("the brief half of the tooth");
+    assert!(d.message.contains("identities"), "{}", d.message);
+}
+
+/// **The inversion is not compilable, not merely refused.**
+///
+/// The two refusals above are the reachable half. This is the structural half,
+/// and it is a property of the TYPE rather than of a check: a box carries a
+/// required `node`, so there is no site plan — well formed or otherwise — that
+/// describes a space without naming the place it is the space of. A document
+/// that tries does not parse.
+#[test]
+fn a_box_cannot_be_written_without_naming_a_place() {
+    let got = plan_with(|v| {
+        boxes(v)[box_of("node/porch")]
+            .as_object_mut()
+            .expect("box")
+            .remove("node");
+    });
+    assert!(
+        has(&got, "DW0100"),
+        "a box with no `node` must fail to PARSE, not merely fail a check: {got:?}"
+    );
+}
+
+/// And the region cannot be omitted or derived: there is no spelling for
+/// "compute the extent from the boxes", so extent-flows-up is unrepresentable
+/// rather than forbidden.
+#[test]
+fn the_region_cannot_be_omitted_or_derived() {
+    let missing = plan_with(|v| {
+        v["content"]
+            .as_object_mut()
+            .expect("content")
+            .remove("region");
+    });
+    assert!(has(&missing, "DW0100"), "{missing:?}");
+    // There is no "fit" spelling either — the schema takes a box of numbers and
+    // nothing else, so a document that asks for a derived extent does not parse.
+    let derived = plan_with(|v| v["content"]["region"] = json!("fit"));
+    assert!(has(&derived, "DW0100"), "{derived:?}");
+}
+
+// ---------------------------------------------------------------------------
+// DW0824 — the graph and the plan agree exactly
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_place_with_no_box_is_refused() {
+    let got = plan_with(|v| {
+        boxes(v).remove(box_of("node/pit"));
+        // and its seams, so the only finding is the missing box
+        let s = seams(v);
+        s.remove(seam_of("edge/pit-yard"));
+        s.remove(seam_of("edge/yard-pit"));
+    });
+    assert!(has(&got, "DW0824"), "{got:?}");
+}
+
+#[test]
+fn a_box_naming_no_place_is_refused() {
+    let got = plan_with(|v| boxes(v)[box_of("node/pit")]["node"] = json!("node/nowhere"));
+    assert!(has(&got, "DW0824"), "{got:?}");
+}
+
+#[test]
+fn a_connection_with_no_seam_is_refused() {
+    let got = plan_with(|v| {
+        seams(v).remove(seam_of("edge/vault-yard"));
+    });
+    let d = plan_diags(|v| {
+        seams(v).remove(seam_of("edge/vault-yard"));
+    });
+    assert!(has(&got, "DW0824"), "{got:?}");
+    assert!(
+        d.iter()
+            .any(|x| x.code == "DW0824" && x.message.contains("allocated, not")),
+        "the refusal says why allocation is the point"
+    );
+}
+
+#[test]
+fn a_second_seam_for_one_connection_is_refused() {
+    let got = plan_with(|v| {
+        let extra = seams(v)[seam_of("edge/vault-yard")].clone();
+        seams(v).push(extra);
+    });
+    assert!(has(&got, "DW0824"), "{got:?}");
+}
+
+/// A `vision` connection carries a sightline and a traversal one carries a seam;
+/// swapping them is refused in both directions.
+#[test]
+fn a_vision_connection_may_not_carry_a_seam() {
+    let got = plan_with(|v| {
+        seams(v)[seam_of("edge/vault-yard")]["edge"] = json!("edge/porch-vault-sightline");
+    });
+    assert!(has(&got, "DW0824"), "{got:?}");
+}
+
+#[test]
+fn a_traversal_connection_may_not_carry_a_sightline() {
+    let got = plan_with(|v| {
+        v["content"]["sightlines"][0]["edge"] = json!("edge/vault-yard");
+    });
+    assert!(has(&got, "DW0824"), "{got:?}");
+}
+
+/// A sightline whose end is not in the place its connection names would send the
+/// stage-5 proof to walk a different segment and call the answer the vista's.
+#[test]
+fn a_sightline_end_outside_its_place_is_refused() {
+    let got = plan_with(|v| v["content"]["sightlines"][0]["to"] = json!([20, 65, 8]));
+    assert!(has(&got, "DW0824"), "{got:?}");
+}
+
+/// Stair massing may only be declared on a stair, and only in one of the two
+/// places that stair joins.
+#[test]
+fn stair_massing_on_a_walk_is_refused() {
+    let got = plan_with(|v| {
+        seams(v)[seam_of("edge/porch-hall")]["stair_in"] = json!("node/porch");
+    });
+    assert!(has(&got, "DW0824"), "{got:?}");
+}
+
+#[test]
+fn stair_massing_in_a_third_place_is_refused() {
+    let got = plan_with(|v| {
+        seams(v)[seam_of("edge/hall-cellar")]["stair_in"] = json!("node/yard");
+    });
+    assert!(has(&got, "DW0824"), "{got:?}");
+}
+
+// ---------------------------------------------------------------------------
+// DW0826 / DW0827 — the boxes and the region
+// ---------------------------------------------------------------------------
+
+/// A box's footprint is any whole number of blocks: a 6-block extent is
+/// written as the author wrote it, and nothing refuses it for its size.
+#[test]
+fn a_box_at_any_footprint_is_not_refused_for_its_size() {
+    let d = plan_diags(|v| boxes(v)[box_of("node/porch")]["extent"] = json!([6, 8]));
+    assert!(
+        !d.iter().any(|x| x.message.contains("quantum")),
+        "no rule holds a footprint to a quantum: {d:?}"
+    );
+}
+
+/// The region is the brief's number flowing down, and a box is never grounds to
+/// grow it — which is what the prescription says.
+#[test]
+fn a_box_outside_the_region_is_refused_and_the_region_is_not_grown() {
+    // A pin puts the vault where it says (the seam that would place it
+    // disagrees, which is `DW0883` — a second finding, not this one).
+    let d = plan_diags(|v| boxes(v)[box_of("node/vault")]["min"] = json!([60, 4]));
+    let msg = d
+        .iter()
+        .find(|x| x.code == "DW0826")
+        .map(|x| x.message.clone())
+        .unwrap_or_default();
+    assert!(!msg.is_empty(), "{d:?}");
+    assert!(msg.contains("never grounds to grow"), "{msg}");
+}
+
+/// The whole's own mass answers to the region too: a massif outside it is the
+/// extent flowing up through the back door.
+#[test]
+fn a_volume_outside_the_region_is_refused() {
+    let got = plan_with(|v| v["content"]["volumes"][0]["region"]["min"] = json!([4, 48, 40]));
+    assert!(has(&got, "DW0826"), "{got:?}");
+}
+
+/// **One cause, one line — the primary-absent side.** One box outside the region
+/// is one box's mistake, so it keeps its own line at its own path and names the
+/// region beside its own span. The fold below must never reach this case.
+#[test]
+fn a_single_box_outside_the_region_still_gets_its_own_line() {
+    // The pit hangs nothing off itself, so a pin that puts it out of the
+    // region moves exactly one box (the seams that disagree are `DW0883`).
+    let d = plan_diags(|v| boxes(v)[box_of("node/pit")]["min"] = json!([60, 16]));
+    let leaving: Vec<&delvewright_dsl::Diagnostic> =
+        d.iter().filter(|x| x.code == "DW0826").collect();
+    assert_eq!(leaving.len(), 1, "one offender is one line: {leaving:?}");
+    assert_eq!(
+        leaving[0].path,
+        format!("/content/boxes/{}", box_of("node/pit")),
+        "and it is addressed at the box that is wrong"
+    );
+    assert!(
+        leaving[0].message.contains("`node/pit`")
+            && leaving[0].message.contains("against the region's"),
+        "{}",
+        leaving[0].message
+    );
+}
+
+/// **One cause, one line — the primary-present side.** The region is one number
+/// handed down by the brief, so shrinking it puts many boxes over the same edge
+/// at once and each per-box refusal would print the same two numbers with a
+/// different name in front. `DW0826` states the count, names every offender with
+/// its own overrun, and prescribes once — one line for the boxes and one for the
+/// whole-owned volumes, never one per object.
+#[test]
+fn one_region_number_is_one_finding_however_many_things_leave_it() {
+    let d = plan_diags(|v| v["content"]["region"]["extent"] = json!([20, 48, 64]));
+    let leaving: Vec<&delvewright_dsl::Diagnostic> =
+        d.iter().filter(|x| x.code == "DW0826").collect();
+    assert_eq!(
+        leaving.len(),
+        2,
+        "one folded line for the boxes and one for the volumes: {leaving:?}"
+    );
+
+    let boxes_line = leaving
+        .iter()
+        .find(|x| x.path == "/content/boxes")
+        .expect("the boxes are one finding addressed at the array");
+    // Every box east of x 19 leaves, and every one of them is named in the line
+    // that stands for it — a fold that dropped names would be a suppression.
+    for node in ["node/vault", "node/yard", "node/pit"] {
+        assert!(
+            boxes_line.message.contains(node),
+            "{node} is not named: {}",
+            boxes_line.message
+        );
+    }
+    assert!(
+        boxes_line.message.contains("of the 6 box(es)")
+            && boxes_line.message.contains("x 0..19")
+            && boxes_line.message.contains("never grounds to grow"),
+        "the count, the region and the prescription: {}",
+        boxes_line.message
+    );
+
+    let volumes_line = leaving
+        .iter()
+        .find(|x| x.path == "/content/volumes")
+        .expect("the volumes are one finding addressed at the array");
+    assert!(
+        volumes_line.message.contains("volume/undercroft-rock")
+            && volumes_line.message.contains("volume/sky-over-the-yard"),
+        "{}",
+        volumes_line.message
+    );
+
+    // The fold is about how many LINES say it, never about whether the run
+    // stops: both are still errors.
+    assert!(
+        leaving
+            .iter()
+            .all(|x| x.severity == delvewright_dsl::Severity::Error),
+        "{leaving:?}"
+    );
+}
+
+/// Two places may share a face; they may never share a cell.
+#[test]
+fn overlapping_boxes_are_refused_with_the_intersection() {
+    // Slide the vault one cell west so it stands in the hall's east wall AND in
+    // the hall itself: hall is x 13..28, so a vault at x 28..35 overlaps at 28.
+    let d = plan_diags(|v| boxes(v)[box_of("node/vault")]["min"] = json!([28, 4]));
+    let msg = d
+        .iter()
+        .find(|x| x.code == "DW0827")
+        .map(|x| x.message.clone())
+        .unwrap_or_default();
+    assert!(!msg.is_empty(), "{d:?}");
+    assert!(msg.contains("x 28..28"), "the intersection is named: {msg}");
+}
+
+/// The whole's mass stands beside a place, under it and over it — never in it.
+#[test]
+fn a_volume_inside_a_box_is_refused() {
+    // The sky reservation dropped to grade lands inside the yard.
+    let d = plan_diags(|v| v["content"]["volumes"][1]["region"]["min"] = json!([30, 64, 13]));
+    let msg = d
+        .iter()
+        .find(|x| x.code == "DW0835")
+        .map(|x| x.message.clone())
+        .unwrap_or_default();
+    assert!(!msg.is_empty(), "{d:?}");
+    assert!(msg.contains("node/yard"), "{msg}");
+}
+
+// ---------------------------------------------------------------------------
+// DW0828 / DW0829 — seams are allocated on a face both boxes already have
+// ---------------------------------------------------------------------------
+
+/// Two boxes one cell apart share a face. Two cells apart, they do not — and the
+/// refusal says so with the gap it measured.
+#[test]
+fn a_seam_on_a_face_the_boxes_do_not_share_is_refused() {
+    // Across a wall the packing leaves exactly one cell, so the gap a seam can
+    // get wrong is the vertical one: the pit's floor two courses lower puts two
+    // cells between the yard's floor and the pit's ceiling.
+    let d = plan_diags(|v| boxes(v)[box_of("node/pit")]["floor"] = json!({ "y": 58 }));
+    let msg = d
+        .iter()
+        .find(|x| x.code == "DW0828")
+        .map(|x| x.message.clone())
+        .unwrap_or_default();
+    assert!(!msg.is_empty(), "{d:?}");
+    assert!(
+        msg.contains("2 cells between them"),
+        "the gap it measured: {msg}"
+    );
+    assert!(msg.contains("already have"), "{msg}");
+}
+
+/// The right two boxes, the wrong face of the first one.
+#[test]
+fn a_seam_on_the_wrong_face_of_the_right_boxes_is_refused() {
+    let got = plan_with(|v| seams(v)[seam_of("edge/porch-hall")]["face"] = json!("west"));
+    assert!(has(&got, "DW0828"), "{got:?}");
+}
+
+/// `at` is an offset along the `a` box's own face; one past that face
+/// allocates the seam nowhere.
+#[test]
+fn a_seam_anchored_off_the_shared_face_is_refused() {
+    let got = plan_with(|v| seams(v)[seam_of("edge/porch-hall")]["at"] = json!(40));
+    assert!(has(&got, "DW0828"), "{got:?}");
+}
+
+/// The opening is a standard from the metrics table, never quietly cropped to
+/// fit: `hall|vault` share a face four cells tall, and a five-tall gateway
+/// overruns it.
+#[test]
+fn an_opening_that_does_not_fit_the_shared_face_is_refused() {
+    let d = plan_diags(|v| seams(v)[seam_of("edge/hall-vault")]["opening"] = json!("gateway"));
+    let msg = d
+        .iter()
+        .find(|x| x.code == "DW0829")
+        .map(|x| x.message.clone())
+        .unwrap_or_default();
+    assert!(!msg.is_empty(), "{d:?}");
+    assert!(msg.contains("5x5"), "{msg}");
+}
+
+/// An opening name the table does not define cannot compile — the table is the
+/// single authority for this vocabulary, so no check downstream ever meets one.
+#[test]
+fn an_opening_the_table_does_not_define_is_refused() {
+    let got = plan_with(|v| seams(v)[seam_of("edge/hall-vault")]["opening"] = json!("portcullis"));
+    assert!(has(&got, "DW0812"), "{got:?}");
+}
+
+/// A body standing on the floor of a side it enters from must be able to get
+/// onto the sill. Two blocks up is past a jump.
+#[test]
+fn a_sill_a_body_cannot_reach_is_refused() {
+    // The sill is the higher of the two floors: lift the vault two blocks and a
+    // body in the hall cannot get into the door.
+    let d = plan_diags(|v| boxes(v)[box_of("node/vault")]["floor"] = json!({ "y": 66 }));
+    let msg = d
+        .iter()
+        .find(|x| x.code == "DW0829" && x.message.contains("sill"))
+        .map(|x| x.message.clone())
+        .unwrap_or_default();
+    assert!(!msg.is_empty(), "{d:?}");
+    assert!(msg.contains("2 blocks over the floor"), "{msg}");
+}
+
+// ---------------------------------------------------------------------------
+// DW0830 / DW0831 — the climb and the fall
+// ---------------------------------------------------------------------------
+
+/// **A stair is measured against the climb its opening asks for, and against
+/// the run the host really has** — the arithmetic the derivation lays treads
+/// by, because it is the same function.
+///
+/// The green plan's `hall|cellar` stair climbs 5. Sink the cellar four more —
+/// one field — and the courses have to carry 9, which no standard pitch fits in
+/// the eight blocks of run the cellar affords. The stand-in cannot lay that
+/// stair, which is a finding about the stand-in and never a refusal of the plan:
+/// a piece detailed into the cellar carries its own stair, judged over its bytes.
+/// The finding names the rise, the run needed and the run available.
+/// The sill is derived (the higher floor), so the climb the treads carry is the
+/// rise the floors state: one arithmetic, and this check reads it.
+#[test]
+fn a_stair_no_standard_pitch_fits_is_a_stand_in_finding_with_its_numbers() {
+    let d = plan_diags(|v| boxes(v)[box_of("node/cellar")]["floor"] = json!({ "y": 55 }));
+    assert!(
+        !d.iter()
+            .any(|x| x.code == "DW0830" && x.severity == delvewright_dsl::Severity::Error),
+        "the plan is not refused for its stand-in's pitch: {d:?}"
+    );
+    let msg = d
+        .iter()
+        .find(|x| x.code == "DW0830" && x.severity == delvewright_dsl::Severity::Warning)
+        .map(|x| x.message.clone())
+        .unwrap_or_default();
+    assert!(!msg.is_empty(), "{d:?}");
+    assert!(msg.contains("stand-in cannot"), "{msg}");
+    assert!(msg.contains("climbs 9 block(s)"), "{msg}");
+    assert!(msg.contains("for a climb of 9"), "{msg}");
+    assert!(msg.contains("affords 8"), "{msg}");
+}
+
+/// **A run exactly as long as the courses it must carry is buildable**, and is
+/// not refused.
+///
+/// The pit is 8 by 8 and hosts the stair up to the yard through a hole in its
+/// own ceiling. Shrink it to a 4-block footprint and the treads have exactly the
+/// four cells the four courses need: the top course stands under the hole and
+/// the run walks back to the far wall, which is what the derivation lays. A body
+/// reaches the bottom course from the cells beside it — the treads are the
+/// width of the doorway, not of the room.
+///
+/// Half of the same pair as the test above, in the other direction: measured
+/// against the RISE (5) rather than the climb (4) this plan was refused, and the
+/// refusal was false — the derivation builds it. Equality is not the defect; two
+/// arithmetics were.
+#[test]
+fn a_run_exactly_as_long_as_its_courses_is_not_refused() {
+    let got = plan_with(|v| boxes(v)[box_of("node/pit")]["extent"] = json!([4, 4]));
+    assert!(!has(&got, "DW0830"), "{got:?}");
+}
+
+/// A stair that climbs nothing is a walk that has been called a stair, and the
+/// rise is not authored — it IS the difference between two floors the plan
+/// already chose.
+///
+/// Two codes come back from this one edit, and that is the model working rather
+/// than a muddy test: `cellar` is the foot of the stair AND the floor the porch
+/// drops onto, so raising its plane to grade makes the stair climb nothing
+/// (`DW0830`) and the fall fall nothing (`DW0831`) in the same breath. A rise
+/// authored per seam could have been edited on one and left wrong on the other;
+/// derived from the floor, there is one number and it moves once.
+#[test]
+fn a_stair_between_two_places_on_one_plane_is_refused() {
+    let got = plan_with(|v| {
+        // Raise the cellar to grade: the hall's west face is still shared with
+        // it, and what changes is that the stair now climbs zero.
+        boxes(v)[box_of("node/cellar")]["floor"] = json!({ "y": 64 });
+    });
+    assert!(has(&got, "DW0830"), "{got:?}");
+    assert!(has(&got, "DW0831"), "one datum, both relations: {got:?}");
+}
+
+/// A stair has to stand somewhere, and the plan says where.
+#[test]
+fn a_stair_with_no_host_is_refused() {
+    let got = plan_with(|v| {
+        seams(v)[seam_of("edge/pit-yard")]
+            .as_object_mut()
+            .expect("seam")
+            .remove("stair_in");
+    });
+    assert!(has(&got, "DW0830"), "{got:?}");
+}
+
+/// **A drop cap is the author's declaration.** The green plan declares none,
+/// so a drop one block deeper than its two is accepted; with `max_drop: 5`
+/// declared, the same drop is refused naming the declared cap.
+#[test]
+fn a_drop_past_the_plans_declared_max_drop_is_refused() {
+    let sink = |v: &mut Value| {
+        // Sink the pit one block. Its ceiling course still meets the yard's
+        // floor course, so the face stays shared and only the fall grows.
+        boxes(v)[box_of("node/pit")]["floor"] = json!({ "y": 58 });
+        boxes(v)[box_of("node/pit")]["ceiling"] = json!({ "clearance": 5 });
+    };
+    let d = plan_diags(sink);
+    assert!(
+        !d.iter().any(|x| x.code == "DW0831"),
+        "no cap declared: {d:?}"
+    );
+    let d = plan_diags(|v| {
+        sink(v);
+        v["content"]["max_drop"] = json!(5);
+    });
+    let msg = d
+        .iter()
+        .find(|x| x.code == "DW0831")
+        .map(|x| x.message.clone())
+        .unwrap_or_default();
+    assert!(!msg.is_empty(), "{d:?}");
+    assert!(msg.contains("drops 6 blocks"), "{msg}");
+    assert!(
+        msg.contains("`max_drop` caps a designed fall at 5"),
+        "{msg}"
+    );
+}
+
+/// **The survivable fall holds every drop**, declared cap or not: a drop deeper
+/// than an unarmoured body survives at full health is refused.
+#[test]
+fn a_drop_deeper_than_a_body_survives_is_refused_without_a_declared_cap() {
+    let d = plan_diags(|v| {
+        boxes(v)[box_of("node/pit")]["floor"] = json!({ "y": 41 });
+        boxes(v)[box_of("node/pit")]["ceiling"] = json!({ "clearance": 22 });
+    });
+    let msg = d
+        .iter()
+        .find(|x| x.code == "DW0831")
+        .map(|x| x.message.clone())
+        .unwrap_or_default();
+    assert!(!msg.is_empty(), "{d:?}");
+    assert!(
+        msg.contains("drops 23 blocks") && msg.contains("survives a fall of 22"),
+        "{msg}"
+    );
+}
+
+/// A drop that rises is a mislabelled stair.
+#[test]
+fn a_drop_that_rises_is_refused() {
+    let got = plan_with(|v| {
+        // Turn the yard→pit fall around by lifting the pit above the yard's
+        // floor while keeping the shared plane.
+        v["content"]["boxes"][box_of("node/pit")]["floor"] = json!({ "y": 70 });
+    });
+    assert!(has(&got, "DW0831") || has(&got, "DW0828"), "{got:?}");
+}
+
+// ---------------------------------------------------------------------------
+// DW0822 — the pacing projection reads the boxes
+// ---------------------------------------------------------------------------
+
+/// Hand-computed: the critical path `porch → hall → vault` crosses boxes whose
+/// long extents are 8, 16 and 8, so 32 blocks; widening the hall to 24 makes
+/// it 40. The figure moves when the map moves.
+#[test]
+fn dw0822_is_the_boxes_long_extents_and_moves_with_them() {
+    let projected = |d: &[delvewright_dsl::Diagnostic]| {
+        d.iter()
+            .find(|x| x.code == "DW0822")
+            .map(|x| x.message.clone())
+            .expect("the projection is printed")
+    };
+    let m = projected(&plan_diags(|_| {}));
+    assert!(m.contains("3 place(s)") && m.contains("32 blocks"), "{m}");
+    let m = projected(&plan_diags(|v| {
+        boxes(v)[box_of("node/hall")]["extent"] = json!([24, 16]);
+    }));
+    assert!(m.contains("40 blocks"), "{m}");
+}
+
+// ---------------------------------------------------------------------------
+// DW0833 / DW0834 — the plan held to the brief
+// ---------------------------------------------------------------------------
+
+/// The identity names both numbers and quotes the brief's own sentence, because
+/// the author's next action is deciding which of the two to move.
+#[test]
+fn a_broken_identity_names_both_numbers_and_the_briefs_sentence() {
+    let d = plan_diags(|v| {
+        boxes(v)[box_of("node/hall")]["ceiling"] = json!({ "clearance": 12 });
+    });
+    let msg = d
+        .iter()
+        .find(|x| x.code == "DW0833")
+        .map(|x| x.message.clone())
+        .unwrap_or_default();
+    assert!(!msg.is_empty(), "{d:?}");
+    assert!(msg.contains("measures 12"), "{msg}");
+    assert!(msg.contains("exactly 8"), "{msg}");
+    assert!(msg.contains("so the vault reads as tall"), "{msg}");
+}
+
+/// Every one of the five measures is a real measurement, and each can be broken
+/// on its own. Written as a table of one-field perturbations, each with the
+/// answer stated by hand.
+#[test]
+fn every_measure_is_falsifiable_on_its_own() {
+    // (which identity, what to change, why the changed plan breaks it)
+    let region = plan_with(|v| v["content"]["region"]["extent"] = json!([60, 48, 64]));
+    assert!(has(&region, "DW0833"), "region extent 60 != 64: {region:?}");
+
+    let span = plan_with(|v| {
+        boxes(v)[box_of("node/hall")]["extent"] = json!([12, 16]);
+    });
+    assert!(has(&span, "DW0833"), "hall span 12 != 16: {span:?}");
+
+    let height = plan_with(|v| boxes(v)[box_of("node/hall")]["ceiling"] = json!({"clearance": 9}));
+    assert!(has(&height, "DW0833"), "hall height 9 != 8: {height:?}");
+
+    // The porch centre is (7.5, 7.5) and the vault centre (33.5, 7.5), which is
+    // 26 apart. Halve the hall and the vault, hung off its east face, slides
+    // back to x 22..29: the centres are 18 apart, under the 24 the brief asks.
+    let standoff = plan_with(|v| boxes(v)[box_of("node/hall")]["extent"] = json!([8, 16]));
+    assert!(has(&standoff, "DW0833"), "18 < 24: {standoff:?}");
+
+    let grade = plan_with(|v| v["content"]["datums"][0]["y"] = json!(65));
+    assert!(has(&grade, "DW0833"), "grade 65 != 64: {grade:?}");
+}
+
+/// A plan with no identity binds the whole map to nothing, and says so on every
+/// run. A warning rather than a refusal, so a deliberately minimal plan stays
+/// compilable — and printed, so the emptiness is never quietly a pass.
+#[test]
+fn an_empty_identity_gate_is_a_stated_finding_not_a_silent_pass() {
+    let d = plan_diags(|v| v["content"]["identities"] = json!([]));
+    let found = d
+        .iter()
+        .find(|x| x.code == "DW0834")
+        .expect("the empty gate is named");
+    assert_eq!(found.severity, delvewright_dsl::Severity::Warning);
+    assert!(found.message.contains("the plan declares no identity"));
+    // And it does not turn a validate red.
+    assert!(
+        !d.iter()
+            .any(|x| x.severity == delvewright_dsl::Severity::Error)
+    );
+}
+
+/// The other side of the same emptiness.
+#[test]
+fn an_empty_brief_is_named_as_the_empty_side() {
+    let empty_brief = common::at_dsl_version(
+        r#"{"campaign_id":"hello-world","dsl_version":"%dsl_version%",
+      "stage":"geometry-brief","content":{}}"#,
+    );
+    let d = check_campaign(&campaign(
+        Some(PLAN.to_string()),
+        Some(GRAPH.to_string()),
+        Some(empty_brief),
+    ));
+    assert!(
+        d.iter()
+            .any(|x| x.code == "DW0834" && x.message.contains("the brief states no fact")),
+        "{d:?}"
+    );
+}
+
+/// An identity may only bind to a number the brief wrote down.
+#[test]
+fn an_identity_naming_no_fact_is_refused() {
+    let got = plan_with(|v| v["content"]["identities"][0]["fact"] = json!("fact/nowhere"));
+    assert!(has(&got, "DW0824"), "{got:?}");
+}
+
+// ---------------------------------------------------------------------------
+// Plan-internal references and ids
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_floor_naming_no_datum_is_a_dangling_reference() {
+    let got = plan_with(|v| {
+        boxes(v)[box_of("node/porch")]["floor"] = json!({ "datum": "datum/nowhere" });
+    });
+    assert!(has(&got, "DW0112"), "{got:?}");
+}
+
+#[test]
+fn duplicate_and_malformed_plan_ids_are_the_ordinary_id_rules() {
+    let dup = plan_with(|v| v["content"]["datums"][1]["id"] = json!("datum/grade"));
+    assert!(has(&dup, "DW0111"), "{dup:?}");
+    let bad = plan_with(|v| v["content"]["views"][0]["id"] = json!("view/Not Kebab"));
+    assert!(has(&bad, "DW0110"), "{bad:?}");
+}
+
+/// The lighting block is the engine's existing area-lighting object, so it
+/// answers the same range rule with the same code — not a twin of it.
+#[test]
+fn the_plans_lighting_answers_the_same_range_rule_an_areas_does() {
+    let got = plan_with(|v| v["content"]["lighting"]["min_light"] = json!(15));
+    assert!(has(&got, "DW0196"), "{got:?}");
+}
+
+// ---------------------------------------------------------------------------
+// One campaign, one placement authority (spec-0049 §6)
+// ---------------------------------------------------------------------------
+
+/// `DW0839`: `areas[]` and a site plan in one campaign is two owners for one
+/// question.
+///
+/// The perturbation is the smallest one that exists — the campaign gets its
+/// `areas[]` back — so the green above and the red here differ in exactly the
+/// thing the rule is about.
+#[test]
+fn two_placement_authorities_in_one_campaign_are_refused() {
+    let mut raw = campaign(
+        Some(PLAN.to_string()),
+        Some(GRAPH.to_string()),
+        Some(BRIEF.to_string()),
+    );
+    raw.world = common::valid_raw().world; // the `areas[]` this campaign gave up
+    let got = codes_of(&raw);
+    assert!(
+        has(&got, "DW0839"),
+        "a world with both authorities must be refused: {got:?}"
+    );
+    let d = check_campaign(&raw)
+        .into_iter()
+        .find(|d| d.code == "DW0839")
+        .expect("the refusal is present");
+    assert_eq!(d.stage, "world");
+    assert!(
+        d.message.contains("fixed stride") && d.message.contains("region"),
+        "the refusal says what each authority owns: {}",
+        d.message
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The opener obligation (spec-0107 §8.2 `DW1028`)
+// ---------------------------------------------------------------------------
+
+/// `DW1028`: a gated way nothing opens is a wall, and the region such an effect
+/// must target is the seam's own.
+///
+/// The graph half of this rule stands under `DW0818`: a gated connection must
+/// declare a `gating` naming a flag something really sets. That says the way is
+/// MEANT to open. This is the other half, and it can only be asked once a plan
+/// exists, because the region an opener addresses is synthesized from it.
+#[test]
+fn dw1028_a_gated_way_no_effect_opens_is_refused_by_name() {
+    // The green campaign's `open-gate` names the seam. Point it somewhere else —
+    // an anchor no seam owns — and the gated way has nothing that opens it.
+    let mut raw = campaign(
+        Some(PLAN.to_string()),
+        Some(GRAPH.to_string()),
+        Some(BRIEF.to_string()),
+    );
+    raw.quests = raw
+        .quests
+        .replace("\"anchor/seam-hall-vault\"", "\"anchor/node-porch\"");
+    let d = check_campaign(&raw);
+    let got: Vec<String> = d.iter().map(|x| x.code.clone()).collect();
+    assert!(
+        has(&got, "DW1028"),
+        "a gated way nothing opens must be refused: {got:?}"
+    );
+    let m = d
+        .iter()
+        .find(|x| x.code == "DW1028")
+        .expect("the opener refusal is present");
+    assert_eq!(
+        m.stage, "quests",
+        "the opener is the quest documents' to write"
+    );
+    assert!(
+        m.message.contains("anchor/seam-hall-vault")
+            && m.message.contains("edge/hall-vault")
+            && m.message.contains("nothing in this campaign opens it"),
+        "the refusal names the connection and the region an opener must address: {}",
+        m.message
+    );
+    // The remedy the refusal names — remove the `gating` — is reachable: the
+    // same campaign with the connection ungated compiles without `DW1028`.
+    let mut g: Value = serde_json::from_str(GRAPH.as_str()).expect("parse");
+    g["content"]["edges"][1]
+        .as_object_mut()
+        .expect("edge")
+        .remove("gating");
+    raw.layout_graph = Some(serde_json::to_string(&g).expect("re-serialize"));
+    let got = codes_of(&raw);
+    assert!(
+        !has(&got, "DW1028"),
+        "an ungated way owes no opener: {got:?}"
+    );
+}
+
+/// The population is every gated connection, not one class: a gated `stair`
+/// is built shut exactly as a gated walk is, and nothing opening it is the
+/// same refusal, naming the stair's own seam.
+#[test]
+fn dw1028_judges_a_gated_stair_as_it_judges_a_gated_walk() {
+    let mut raw = campaign(
+        Some(PLAN.to_string()),
+        Some(GRAPH.to_string()),
+        Some(BRIEF.to_string()),
+    );
+    let mut g: Value = serde_json::from_str(GRAPH.as_str()).expect("parse");
+    g["content"]["edges"][2]["gating"] = json!({ "quest": "quest/open-the-door" });
+    raw.layout_graph = Some(serde_json::to_string(&g).expect("re-serialize"));
+    let d = check_campaign(&raw);
+    let m = d
+        .iter()
+        .find(|x| x.code == "DW1028")
+        .unwrap_or_else(|| panic!("a gated stair nothing opens is refused: {d:#?}"));
+    assert!(
+        m.message.contains("anchor/seam-hall-cellar") && m.message.contains("`stair`"),
+        "{}",
+        m.message
+    );
+}
+
+/// The same obligation, satisfied by a `shortcut` rather than by an `open-gate`.
+///
+/// Every verb that opens a gate is an opener, which is what stops this from
+/// being a rule about `open-gate` that a shortcut campaign has to work around.
+#[test]
+fn a_shortcut_satisfies_the_opener_obligation_too() {
+    let mut raw = campaign(
+        Some(PLAN.to_string()),
+        Some(GRAPH.to_string()),
+        Some(BRIEF.to_string()),
+    );
+    // Drop the `open-gate` and lift the bar from the far side instead.
+    let mut quests: Value = serde_json::from_str(&raw.quests).expect("quests parse");
+    quests["content"]["quests"][0]["on_objective_complete"]["obj/talk"] = json!([]);
+    quests["content"]["shortcuts"] = json!([{
+        "id": "shortcut/vault-door",
+        "gate": "anchor/seam-hall-vault",
+        "unlock": "anchor/unlock-hall-vault"
+    }]);
+    raw.quests = serde_json::to_string(&quests).expect("re-serialize");
+    let got = codes_of(&raw);
+    assert!(
+        !got.iter().any(|c| c == "DW1028"),
+        "a shortcut lifting the bar is an opener: {got:?}"
+    );
+}
+
+/// A timed gate's clock is an opener too (spec-0107 §8.2): the way is shut
+/// part of every cycle and open the rest, so it is not shut forever.
+#[test]
+fn a_timed_gate_satisfies_the_opener_obligation() {
+    let mut raw = campaign(
+        Some(PLAN.to_string()),
+        Some(GRAPH.to_string()),
+        Some(BRIEF.to_string()),
+    );
+    let mut quests: Value = serde_json::from_str(&raw.quests).expect("quests parse");
+    quests["content"]["quests"][0]["on_objective_complete"]["obj/talk"] = json!([]);
+    quests["content"]["timed_gates"] = json!([{
+        "id": "timed-gate/vault-door",
+        "gate": "anchor/seam-hall-vault",
+        "open_ticks": 100,
+        "closed_ticks": 100
+    }]);
+    raw.quests = serde_json::to_string(&quests).expect("re-serialize");
+    let got = codes_of(&raw);
+    assert!(
+        !has(&got, "DW1028"),
+        "a clock lifting the bar is an opener: {got:?}"
+    );
+}
+
+/// `DW1027` and `DW1028` state their binding on every run, with the
+/// denominator: the green plan carries one gated connection, opened by an
+/// `open-gate`, and no front among the gated.
+#[test]
+fn the_gated_bindings_are_stated_with_their_denominator() {
+    let raw = campaign(
+        Some(PLAN.to_string()),
+        Some(GRAPH.to_string()),
+        Some(BRIEF.to_string()),
+    );
+    let c = delvewright_dsl::parse_campaign(&raw).expect("the green campaign parses");
+    let line = delvewright_dsl::LayoutBinding::of(&c).plan_line();
+    assert!(
+        line.contains("DW1027 binding: 1 gated connection(s), 0 of them fronts")
+            && line.contains(
+                "DW1028 binding: 1 gated connection(s), 1 opened by an `open-gate`, 0 by a \
+                 shortcut, 0 by a clock, 0 by nothing"
+            ),
+        "{line}"
+    );
+}
+
+/// `DW0830`: a stair's treads stand in the LOWER of the two places, and hosting
+/// them in the higher one is refused with both floors.
+///
+/// **Found by building, not by reading.** This check used to ask only whether
+/// the named host affords the RUN, so a plan hosting a downward stair in the
+/// upper place reached green here — and the derivation then laid a mound on the
+/// wrong side of the opening and filled the hole it was supposed to arrive at.
+/// The stage-5 observer caught that as a seam whose opening was still solid,
+/// which is a true refusal for the wrong defect: the repair belongs to the plan,
+/// and this is where the plan is judged.
+///
+/// The perturbation is the one field: the green plan hosts `edge/hall-cellar` in
+/// `cellar`, and this moves it to `hall`.
+#[test]
+fn stair_massing_in_the_higher_place_is_refused_with_both_floors() {
+    let d = plan_diags(|v| {
+        seams(v)[seam_of("edge/hall-cellar")]["stair_in"] = json!("node/hall");
+    });
+    let msg = d
+        .iter()
+        .find(|x| x.code == "DW0830" && x.message.contains("HIGHER"))
+        .map(|x| x.message.clone())
+        .unwrap_or_default();
+    assert!(!msg.is_empty(), "{d:?}");
+    assert!(msg.contains("`node/hall` stands at y 64"), "{msg}");
+    assert!(msg.contains("`node/cellar` at y 59"), "{msg}");
+    assert!(
+        msg.contains("Host it in `node/cellar`"),
+        "the refusal names the place the treads belong in: {msg}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Every stage-5 verb reaches a DERIVED world's anchors
+// ---------------------------------------------------------------------------
+
+/// The names the derivation synthesizes for this fixture's graph — the whole
+/// spatial vocabulary a site-plan campaign has, because there is no prefab.
+const SYNTHESIZED: &[&str] = &[
+    "anchor/node-porch",
+    "anchor/node-hall",
+    "anchor/node-vault",
+    "anchor/node-cellar",
+    "anchor/node-yard",
+    "anchor/node-pit",
+    "anchor/seam-hall-vault",
+    "anchor/unlock-hall-vault",
+];
+
+/// **A site-plan campaign can author every stage-5 verb, and this is the test
+/// that was missing.**
+///
+/// Anchor resolution — *is this name one some area provides?* — was asked in
+/// eleven places in `dsl::validate`, each walking `world.areas` and the prefab
+/// registry itself. When a site plan became a second placement authority, ONE of
+/// the eleven was taught that a derived world's anchors come from
+/// `siteplan::synthesized_anchors` instead. The other ten went on enumerating
+/// prefabs a derived world does not have, so a `shortcut` naming the very
+/// `anchor/unlock-<edge>` the derivation places for it was refused as an invented
+/// name — and so were a trap, a shop, a loot chest, a lethal volume, an actor and
+/// a trigger. Every stage-5 verb but the ones that happen to walk was
+/// unauthorable on a derived map.
+///
+/// **Nothing was red**, and nothing could have been: a check resolving against a
+/// smaller world than the campaign has refuses CONTENT, not itself. It surfaced
+/// only when somebody tried to write the second verb.
+///
+/// The assertion is deliberately about the FAILURE SHAPE rather than about a
+/// list of codes: any diagnostic that names a synthesized anchor and says it
+/// comes from no prefab is this defect, whichever verb raised it. That is what
+/// makes the test cover the eleventh walk somebody writes next.
+#[test]
+fn no_stage_five_verb_calls_a_synthesized_anchor_an_invented_name() {
+    let mut raw = campaign(
+        Some(PLAN.to_string()),
+        Some(GRAPH.to_string()),
+        Some(BRIEF.to_string()),
+    );
+    let mut quests: Value = serde_json::from_str(&raw.quests).expect("quests parse");
+    // **The fence, or this test proves nothing.** Every verb below sits behind a
+    // per-stage `dsl_version` fence, and the hello-world fixture's quests stage
+    // is 0.2.0 — so the first draft of this test added seven verbs to a document
+    // none of their checks were allowed to look at, and passed on the UNREPAIRED
+    // tree. That is the constitution's `unfenced` vacuity mode exactly, and it
+    // was caught only by red-demoing the repair it was written for.
+    quests["dsl_version"] = json!(DSL_VERSION);
+    // The fixture is a 0.2.0 document, and the newer stage requires an
+    // objective's player-facing `title`.
+    quests["content"]["quests"][0]["objectives"][1]["title"] = json!("Leave by the vault");
+    let c = &mut quests["content"];
+
+    // The bar is lifted from the far side rather than by the objective, so the
+    // opener obligation is still satisfied and the `shortcut` is real.
+    c["quests"][0]["on_objective_complete"]["obj/talk"] = json!([]);
+    c["shortcuts"] = json!([{
+        "id": "shortcut/vault-door",
+        "gate": "anchor/seam-hall-vault",
+        "unlock": "anchor/unlock-hall-vault"
+    }]);
+    c["shops"] = json!([{
+        "id": "shop/counter",
+        "anchor": "anchor/node-hall",
+        "title": "The counter",
+        "prop": { "block": "minecraft:barrel" },
+        "offers": [{
+            "label": "Bread, one emerald",
+            "effects": [{ "type": "give-item", "item": "minecraft:bread", "count": 1 }]
+        }]
+    }]);
+    c["loot"] = json!([{
+        "id": "loot/cellar-chest",
+        "anchor": "anchor/node-cellar",
+        "items": [{ "item": "minecraft:bread", "count": 1 }]
+    }]);
+    c["lethal_volumes"] = json!([{
+        "id": "lethal/the-sump",
+        "damage_type": "fall",
+        "message": "The floor of the pit is not a floor.",
+        "region": { "anchor": "anchor/node-pit", "extent": [2, 2, 2] }
+    }]);
+    c["actors"] = json!([{
+        "id": "actor/yard-moth",
+        "anchor": "anchor/node-yard",
+        "entity": "minecraft:zombie",
+        "name": "The Yard Watcher"
+    }]);
+    c["triggers"] = json!([{
+        "id": "trigger/the-bar",
+        "at": "anchor/seam-hall-vault",
+        "on": { "on": "use" },
+        "once": false,
+        "audience": "presser",
+        "effects": [{
+            "type": "narrate", "style": "actionbar",
+            "text": "The bar does not lift from this side."
+        }]
+    }]);
+    raw.quests = serde_json::to_string(&quests).expect("re-serialize");
+
+    let bad: Vec<String> = check_campaign(&raw)
+        .into_iter()
+        .filter(|d| {
+            d.message.contains("prefab") && SYNTHESIZED.iter().any(|a| d.message.contains(a))
+        })
+        .map(|d| format!("{} {}", d.code, d.message))
+        .collect();
+    assert!(
+        bad.is_empty(),
+        "a derived world has no prefab to ask, and these checks asked one anyway:\n{}",
+        bad.join("\n")
+    );
+}
+
+/// The live instance, named on its own so a regression says which verb.
+///
+/// The pre-existing `a_shortcut_satisfies_the_opener_obligation_too` above
+/// asserted the absence of ONE code (`DW0818`) on this exact document — while
+/// `DW0371` was firing on it the whole time. A test that checks for one code and
+/// ignores the rest of the verdict is how a refusal hides inside a green test.
+#[test]
+fn a_shortcut_on_a_derived_world_resolves_its_gate_and_its_unlock() {
+    let mut raw = campaign(
+        Some(PLAN.to_string()),
+        Some(GRAPH.to_string()),
+        Some(BRIEF.to_string()),
+    );
+    let mut quests: Value = serde_json::from_str(&raw.quests).expect("quests parse");
+    // `shortcut_checks` is fenced at 0.6.0; below it the declaration is parsed
+    // and never examined, which is a green that means nothing.
+    quests["dsl_version"] = json!(DSL_VERSION);
+    quests["content"]["quests"][0]["on_objective_complete"]["obj/talk"] = json!([]);
+    quests["content"]["shortcuts"] = json!([{
+        "id": "shortcut/vault-door",
+        "gate": "anchor/seam-hall-vault",
+        "unlock": "anchor/unlock-hall-vault"
+    }]);
+    raw.quests = serde_json::to_string(&quests).expect("re-serialize");
+    let got = codes_of(&raw);
+    assert!(
+        !has(&got, "DW0371"),
+        "the derivation places both anchors; nothing here is invented: {got:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// A refusal never prescribes a document this campaign may not write
+// ---------------------------------------------------------------------------
+
+/// The prescriptions a **derived** map's author cannot carry out, and the reason
+/// each one is on this list. Every entry is a fragment some refusal in
+/// `dsl::validate` printed before `crate::placement` existed.
+///
+/// They are not "words about prefabs" — a refusal is allowed to SAY that no
+/// prefab provides a name, because on a derived map that is true and vacuous.
+/// Each of these is an **instruction**: go and do this thing. On a site-plan
+/// campaign each one is refused by another gate, or names a document that does
+/// not exist and must not be created.
+const FORBIDDEN_ON_A_DERIVED_MAP: &[(&str, &str)] = &[
+    (
+        "declare it in stage-1 `world.areas`",
+        "`DW0839` refuses `areas[]` in a campaign carrying a site plan, and `DW0160` refuses an \
+         entry with no prefab bound to it",
+    ),
+    (
+        "use one of the world stage's area ids",
+        "that set is required to be EMPTY here (`DW0839`), so the instruction names nothing",
+    ),
+    (
+        "anchor names come from prefab metadata",
+        "a derived map has no prefab and no metadata to read",
+    ),
+    (
+        "do NOT invent one",
+        "a derived map's anchor names ARE synthesized from node ids the author picked; this \
+         forbids the only correct answer",
+    ),
+    (
+        "bind a prefab/pool",
+        "binding a prefab means declaring an `areas[]` entry, which `DW0839` refuses",
+    ),
+    (
+        "an anchor the prefab exposes",
+        "there is no prefab to expose one",
+    ),
+    (
+        "an anchor a prefab exposes",
+        "there is no prefab to expose one",
+    ),
+    (
+        "an anchor some area's prefab exposes",
+        "there is no area with a prefab",
+    ),
+    (
+        "bind the trap to an `anchor/trap` marker",
+        "an `anchor/trap` marker comes from prefab metadata a derived map does not have",
+    ),
+];
+
+/// Every area and anchor reference this fixture breaks on purpose. The count is
+/// the test's binding and is read off THIS list rather than written down beside
+/// it, so a planted name that stops being examined fails the test instead of
+/// quietly shrinking the population.
+fn planted_bad_names() -> Vec<&'static str> {
+    vec![
+        "area/nowhere",
+        "anchor/nowhere-npc",
+        "anchor/nowhere-objective",
+        "anchor/nowhere-shortcut-gate",
+        "anchor/nowhere-shortcut-unlock",
+        "anchor/nowhere-shop",
+        "anchor/nowhere-loot",
+        "anchor/nowhere-lethal",
+        "anchor/nowhere-actor",
+        "anchor/nowhere-trigger",
+    ]
+}
+
+/// **A refusal on a derived map never sends its author to a prefab.**
+///
+/// The companion of
+/// [`no_stage_five_verb_calls_a_synthesized_anchor_an_invented_name`], one step
+/// on. That test proves a name the derivation really places RESOLVES; this one
+/// proves that when a name genuinely does not resolve, the sentence the author
+/// reads afterwards prescribes something they are allowed to do.
+///
+/// The pair it exists for: `DW0112` printed *"declare it in stage-1
+/// `world.areas`"*, which is exactly what `DW0839` refuses in a campaign
+/// carrying a site plan; `DW0142` printed *"anchor names come from prefab
+/// metadata; do NOT invent one"* against names that are synthesized by design.
+/// CLAUDE.md: when one gate's prescription is another gate's refusal, the defect
+/// belongs to the PAIR, and a gate that names a remedy owes a check that the
+/// remedy is reachable. This is that check.
+///
+/// The assertion is deliberately about the FORBIDDEN PRESCRIPTION rather than
+/// about a list of codes, so it covers the eighteenth refusal site somebody
+/// writes without that site having to know this test exists.
+#[test]
+fn no_refusal_on_a_derived_map_prescribes_a_prefab_document() {
+    let mut raw = campaign(
+        Some(PLAN.to_string()),
+        Some(GRAPH.to_string()),
+        Some(BRIEF.to_string()),
+    );
+
+    // Every verb below is fenced; the quests stage of the hello-world fixture is
+    // 0.2.0, and adding a declaration a check is not allowed to look at is the
+    // `unfenced` vacuity mode.
+    let mut quests: Value = serde_json::from_str(&raw.quests).expect("quests parse");
+    quests["dsl_version"] = json!(DSL_VERSION);
+    quests["content"]["quests"][0]["objectives"][1]["title"] = json!("Leave by the vault");
+    quests["content"]["quests"][0]["on_objective_complete"]["obj/talk"] = json!([]);
+    let c = &mut quests["content"];
+    c["quests"][0]["objectives"][1]["anchor"] = json!("anchor/nowhere-objective");
+    c["shortcuts"] = json!([{
+        "id": "shortcut/vault-door",
+        "gate": "anchor/nowhere-shortcut-gate",
+        "unlock": "anchor/nowhere-shortcut-unlock"
+    }]);
+    c["shops"] = json!([{
+        "id": "shop/counter",
+        "anchor": "anchor/nowhere-shop",
+        "title": "The counter",
+        "prop": { "block": "minecraft:barrel" },
+        "offers": [{
+            "label": "Bread, one emerald",
+            "effects": [{ "type": "give-item", "item": "minecraft:bread", "count": 1 }]
+        }]
+    }]);
+    c["loot"] = json!([{
+        "id": "loot/cellar-chest",
+        "anchor": "anchor/nowhere-loot",
+        "items": [{ "item": "minecraft:bread", "count": 1 }]
+    }]);
+    c["lethal_volumes"] = json!([{
+        "id": "lethal/the-sump",
+        "damage_type": "fall",
+        "message": "The floor of the pit is not a floor.",
+        "region": { "anchor": "anchor/nowhere-lethal", "extent": [2, 2, 2] }
+    }]);
+    c["actors"] = json!([{
+        "id": "actor/yard-moth",
+        "anchor": "anchor/nowhere-actor",
+        "entity": "minecraft:zombie",
+        "name": "The Yard Watcher"
+    }]);
+    c["triggers"] = json!([{
+        "id": "trigger/the-bar",
+        "at": "anchor/nowhere-trigger",
+        "on": { "on": "use" },
+        "once": false,
+        "audience": "presser",
+        "effects": [{
+            "type": "narrate", "style": "actionbar",
+            "text": "The bar does not lift from this side."
+        }]
+    }]);
+    raw.quests = serde_json::to_string(&quests).expect("re-serialize");
+    raw.npcs = raw
+        .npcs
+        .replace("\"anchor/node-porch\"", "\"anchor/nowhere-npc\"");
+
+    let anchors_broken = check_campaign(&raw);
+
+    // A broken `area` makes `AnchorProviders::for_area` return `None`, which
+    // SKIPS the per-area anchor rules — so the area case is a SECOND campaign,
+    // or this test would silently measure fewer sites than exist.
+    let mut area_raw = raw.clone();
+    area_raw.npcs = area_raw.npcs.replace("\"area/site\"", "\"area/nowhere\"");
+    area_raw.quest_plan = area_raw
+        .quest_plan
+        .replace("\"area/site\"", "\"area/nowhere\"");
+    let areas_broken = check_campaign(&area_raw);
+
+    let all: Vec<delvewright_dsl::Diagnostic> =
+        anchors_broken.into_iter().chain(areas_broken).collect();
+
+    // Binding, computed from the fixture: every name planted above must reach a
+    // refusal, or this test is examining a smaller population than it claims.
+    let unexamined: Vec<&str> = planted_bad_names()
+        .into_iter()
+        .filter(|name| !all.iter().any(|d| d.message.contains(name)))
+        .collect();
+    assert!(
+        unexamined.is_empty(),
+        "these deliberately-broken references reached no refusal, so this test binds to less \
+         than it says: {unexamined:?}"
+    );
+
+    let bad: Vec<String> = all
+        .iter()
+        .flat_map(|d| {
+            FORBIDDEN_ON_A_DERIVED_MAP
+                .iter()
+                .filter(move |(phrase, _)| d.message.contains(phrase))
+                .map(move |(phrase, why)| {
+                    format!("{} at {}: says \"{phrase}\" — but {why}", d.code, d.path)
+                })
+        })
+        .collect();
+    assert!(
+        bad.is_empty(),
+        "{} refusal(s) over {} diagnostic(s) prescribe something this campaign is refused for \
+         doing:\n{}",
+        bad.len(),
+        all.len(),
+        bad.join("\n")
+    );
+}
+
+/// **The same question asked of a campaign with NO map at all** — `areas[]`
+/// empty and no site plan.
+///
+/// This is a real authoring state (a story layer written before its map) and it
+/// is the one the old message served worst: *"declare it in stage-1
+/// `world.areas`"* names one half of a choice the author has not made, and
+/// silently commits them to the half that then refuses their site plan.
+///
+/// Refusing the campaign is correct — it has no map. What the refusal owes is
+/// BOTH branches, so the author can pick.
+#[test]
+fn a_campaign_with_no_map_is_told_about_both_placement_authorities() {
+    let mut raw = campaign(None, None, None);
+    let mut world: Value = serde_json::from_str(&raw.world).expect("world parses");
+    world["content"]["areas"] = json!([]);
+    raw.world = serde_json::to_string(&world).expect("re-serialize");
+
+    let d = check_campaign(&raw);
+    let area_refusals: Vec<&delvewright_dsl::Diagnostic> =
+        d.iter().filter(|x| x.code == "DW0112").collect();
+    assert!(
+        !area_refusals.is_empty(),
+        "a campaign that declares no area must still be refused: {d:?}"
+    );
+    for x in &area_refusals {
+        assert!(
+            x.message.contains("`world.areas`") && x.message.contains("`site-plan.json`"),
+            "a refusal here must name BOTH placement authorities, or it decides for the \
+             author: {}",
+            x.message
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// spec-0059 — a box is placed by its seam, and the grid is derived
+// ---------------------------------------------------------------------------
+
+/// The packing hands every corner back: the pinned porch, and every other box
+/// hung off a box that already stood by the first seam in document order that
+/// reached it.
+#[test]
+fn every_derived_corner_is_handed_back_with_the_seam_that_placed_it() {
+    let raw = campaign(
+        Some(PLAN.to_string()),
+        Some(GRAPH.to_string()),
+        Some(BRIEF.to_string()),
+    );
+    let c = delvewright_dsl::parse_campaign(&raw).expect("the green plan parses");
+    let lines = delvewright_dsl::placements(&c);
+    assert_eq!(lines.len(), 6, "{lines:#?}");
+    let expect = [
+        ("node/porch", "[4, 4]", "pinned"),
+        (
+            "node/hall",
+            "[13, 4]",
+            "hung off `node/porch` across the east face by the seam for `edge/porch-hall`",
+        ),
+        (
+            "node/vault",
+            "[30, 4]",
+            "hung off `node/hall` across the east face by the seam for `edge/hall-vault`",
+        ),
+        (
+            "node/cellar",
+            "[4, 13]",
+            "hung off `node/hall` across the west face by the seam for `edge/hall-cellar`",
+        ),
+        (
+            "node/yard",
+            "[30, 13]",
+            "hung off `node/vault` across the south face by the seam for `edge/vault-yard`",
+        ),
+        (
+            "node/pit",
+            "[32, 16]",
+            "hung off `node/yard` across the down face by the seam for `edge/yard-pit`",
+        ),
+    ];
+    for (node, corner, by) in expect {
+        let line = lines
+            .iter()
+            .find(|l| l.contains(&format!("`{node}`")))
+            .unwrap_or_else(|| panic!("no placing line for {node}: {lines:#?}"));
+        assert!(line.contains(corner) && line.contains(by), "{line}");
+    }
+}
+
+/// `DW0883`, first shape: a component of the seam graph with no pinned box.
+/// Nothing places it, and the refusal names every box and the box to pin.
+#[test]
+fn a_component_no_pin_seeds_is_refused_naming_every_box_in_it() {
+    let d = plan_diags(|v| {
+        boxes(v)[box_of("node/porch")]
+            .as_object_mut()
+            .expect("box")
+            .remove("min");
+    });
+    let refusals: Vec<_> = d.iter().filter(|x| x.code == "DW0883").collect();
+    assert_eq!(refusals.len(), 1, "{d:?}");
+    let m = &refusals[0].message;
+    for node in ["porch", "hall", "vault", "cellar", "yard", "pit"] {
+        assert!(m.contains(&format!("`node/{node}`")), "{m}");
+    }
+    assert!(m.contains("Pin one of them — `node/porch`"), "{m}");
+    assert!(m.contains("6 box(es) in this component"), "{m}");
+    // No box has cells, so nothing geometric is judged against a corner that
+    // does not exist — the one refusal is the whole story.
+    for code in ["DW0826", "DW0827", "DW0828", "DW0829", "DW0830", "DW0831"] {
+        assert!(
+            !has(&codes_of_diags(&d), code),
+            "{code} fired over unplaced boxes: {d:?}"
+        );
+    }
+}
+
+fn codes_of_diags(d: &[delvewright_dsl::Diagnostic]) -> Vec<String> {
+    d.iter().map(|x| x.code.to_string()).collect()
+}
+
+/// `DW0883`, second shape: a pin and the seam that reaches the box disagree.
+/// Both corners are named, with how each was obtained.
+#[test]
+fn a_pin_the_packing_contradicts_is_refused_naming_both_corners() {
+    let d = plan_diags(|v| boxes(v)[box_of("node/vault")]["min"] = json!([31, 4]));
+    let refusals: Vec<_> = d.iter().filter(|x| x.code == "DW0883").collect();
+    assert_eq!(refusals.len(), 1, "{d:?}");
+    let m = &refusals[0].message;
+    assert!(m.contains("`node/vault` stands at [31, 4] (pinned)"), "{m}");
+    assert!(m.contains("would stand at [30, 4]"), "{m}");
+    assert!(m.contains("hung off `node/porch`"), "{m}");
+    assert_eq!(
+        refusals[0].path,
+        format!("/content/seams/{}", seam_of("edge/hall-vault")),
+        "addressed at the seam that disagrees"
+    );
+}
+
+/// A pin that says what the packing derives is a claim the packing verifies,
+/// and is accepted.
+#[test]
+fn a_pin_the_packing_agrees_with_is_accepted() {
+    let got = plan_with(|v| boxes(v)[box_of("node/vault")]["min"] = json!([30, 4]));
+    assert!(!has(&got, "DW0883") && !has(&got, "DW0828"), "{got:?}");
+}
+
+/// The face decides the shape of an offset: one number along a wall, two
+/// through a floor. The wrong shape is `DW0828` naming the face.
+#[test]
+fn an_offset_of_the_wrong_shape_for_its_face_is_refused() {
+    let wall = plan_diags(|v| seams(v)[seam_of("edge/porch-hall")]["at"] = json!([2, 2]));
+    let m = wall
+        .iter()
+        .find(|x| x.code == "DW0828")
+        .map(|x| x.message.clone())
+        .unwrap_or_default();
+    assert!(m.contains("is a wall with one horizontal axis"), "{m}");
+    let floor = plan_diags(|v| seams(v)[seam_of("edge/yard-pit")]["at"] = json!(2));
+    let m = floor
+        .iter()
+        .find(|x| x.code == "DW0828")
+        .map(|x| x.message.clone())
+        .unwrap_or_default();
+    assert!(
+        m.contains("is a floor or ceiling with two in-plane axes"),
+        "{m}"
+    );
+}
+
+/// A seam whose two boxes both already stand places nothing; when the cells it
+/// names from `a` are not the cells it names from `b`, the loop does not close
+/// and the refusal is at that seam.
+#[test]
+fn a_loop_that_does_not_close_is_refused_at_the_seam_that_closes_it() {
+    let d = plan_diags(|v| seams(v)[seam_of("edge/porch-cellar")]["meets"] = json!(3));
+    let refusals: Vec<_> = d.iter().filter(|x| x.code == "DW0828").collect();
+    assert_eq!(refusals.len(), 1, "{d:?}");
+    let m = &refusals[0].message;
+    assert!(
+        m.contains("closes a loop, and the loop does not close"),
+        "{m}"
+    );
+    assert!(m.contains("`node/cellar` stands at [4, 13]"), "{m}");
+    assert!(m.contains("would stand at [3, 13]"), "{m}");
+    assert!(
+        !has(&codes_of_diags(&d), "DW0883"),
+        "no pin is involved: {d:?}"
+    );
+}
+
+/// The scan is document order, and a consistent plan packs to the same corners
+/// however its seams are ordered — determinism is of the corners, not of which
+/// seam happened to place them.
+#[test]
+fn reordering_the_seams_of_a_consistent_plan_moves_no_corner() {
+    let corners = |patch: fn(&mut Value)| -> Vec<String> {
+        let mut v: Value = serde_json::from_str(PLAN.as_str()).expect("parses");
+        patch(&mut v);
+        let raw = campaign(
+            Some(serde_json::to_string(&v).expect("re-serialize")),
+            Some(GRAPH.to_string()),
+            Some(BRIEF.to_string()),
+        );
+        let c = delvewright_dsl::parse_campaign(&raw).expect("parses");
+        let mut lines: Vec<String> = delvewright_dsl::placements(&c)
+            .into_iter()
+            .map(|l| l.split(" — ").next().unwrap_or_default().to_string())
+            .collect();
+        lines.sort();
+        lines
+    };
+    let forward = corners(|_| {});
+    let reversed = corners(|v| seams(v).reverse());
+    assert_eq!(forward, reversed);
+    assert_eq!(forward.len(), 6);
+}
+
+/// The regeneration property (spec-0059 §7): widen one box and every new
+/// refusal is about that box or one of its seams; no other box is re-typed.
+#[test]
+fn one_extent_edit_raises_findings_about_that_box_alone() {
+    let green = plan_diags(|_| {});
+    let edited = plan_diags(|v| boxes(v)[box_of("node/hall")]["extent"] = json!([20, 16]));
+    let new: Vec<_> = edited
+        .iter()
+        .filter(|x| !green.iter().any(|g| g.code == x.code && g.path == x.path))
+        .collect();
+    assert!(
+        !new.is_empty(),
+        "widening the hall past its class and its brief fact says so"
+    );
+    let hall_seams = ["edge/porch-hall", "edge/hall-vault", "edge/hall-cellar"];
+    let mut residue = 0;
+    for x in &new {
+        // The one residue spec-0059 §7 names: a sightline end typed in world
+        // coordinates against a box that moved. It is `DW0824` at the
+        // sightline, never at a box.
+        if x.path.starts_with("/content/sightlines/") {
+            assert_eq!(x.code, "DW0824", "{x:?}");
+            residue += 1;
+            continue;
+        }
+        let about_hall = x.message.contains("`node/hall`")
+            || x.path
+                .starts_with(&format!("/content/boxes/{}", box_of("node/hall")))
+            || hall_seams.iter().any(|e| x.message.contains(e));
+        assert!(about_hall, "a finding not about the hall: {x:?}");
+    }
+    assert_eq!(
+        residue, 1,
+        "the vault moved under the sightline's `to` end: {new:?}"
+    );
+    // And the vault, hung off the hall's east face, moved with it — read from
+    // the derivation, not from a document that was never edited.
+    let mut v: Value = serde_json::from_str(PLAN.as_str()).expect("parses");
+    boxes(&mut v)[box_of("node/hall")]["extent"] = json!([20, 16]);
+    let raw = campaign(
+        Some(serde_json::to_string(&v).expect("re-serialize")),
+        Some(GRAPH.to_string()),
+        Some(BRIEF.to_string()),
+    );
+    let c = delvewright_dsl::parse_campaign(&raw).expect("parses");
+    let lines = delvewright_dsl::placements(&c);
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.contains("`node/vault` stands at [34, 4]")),
+        "{lines:#?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// spec-0098: what undeclared space becomes, the seam's form, and the roof
+// ---------------------------------------------------------------------------
+
+/// **Criterion 19's first half: `fill` is required.** A plan with no `fill`
+/// does not parse, and the refusal names the field.
+#[test]
+fn a_plan_without_a_fill_is_refused_naming_the_field() {
+    let d = plan_diags(|v| {
+        v["content"].as_object_mut().unwrap().remove("fill");
+    });
+    let e = d.iter().find(|x| x.code == "DW0100").expect("a DW0100");
+    assert!(e.message.contains("missing field `fill`"), "{}", e.message);
+}
+
+/// A seam's form is a creative judgement the plan states once, never a
+/// default: a seam with none does not parse.
+#[test]
+fn a_seam_without_a_form_is_refused_naming_the_field() {
+    let d = plan_diags(|v| {
+        seams(v)[0].as_object_mut().unwrap().remove("form");
+    });
+    let e = d.iter().find(|x| x.code == "DW0100").expect("a DW0100");
+    assert!(e.message.contains("missing field `form`"), "{}", e.message);
+}
+
+/// **Criterion 8: `DW0988` in both shapes, and eaves that stop.** A roof on the
+/// open yard is refused; a roof over the pit, under the yard, is refused naming
+/// both; a roof over the vault passes, its eaves stopping at the neighbours'
+/// shells rather than being refused.
+#[test]
+fn dw0988_refuses_a_roof_over_the_sky_and_under_a_place_and_passes_a_free_one() {
+    let open = plan_diags(|v| {
+        boxes(v)[box_of("node/yard")]["roof"] = json!({"courses": 2, "eaves": 1});
+    });
+    let e = open
+        .iter()
+        .find(|x| x.code == "DW0988")
+        .expect("a DW0988 on the yard");
+    assert!(
+        e.message.contains("`node/yard`") && e.message.contains("`open`"),
+        "{}",
+        e.message
+    );
+
+    let stacked = plan_diags(|v| {
+        boxes(v)[box_of("node/pit")]["roof"] = json!({"courses": 2, "eaves": 0});
+    });
+    let e = stacked
+        .iter()
+        .find(|x| x.code == "DW0988")
+        .expect("a DW0988 under the yard");
+    assert!(
+        e.message.contains("`node/pit`") && e.message.contains("`node/yard`"),
+        "{}",
+        e.message
+    );
+
+    let free = plan_with(|v| {
+        boxes(v)[box_of("node/vault")]["roof"] = json!({"courses": 3, "eaves": 1});
+    });
+    assert!(!has(&free, "DW0988"), "{free:?}");
+    assert!(
+        !has(&free, "DW0827"),
+        "the eaves stop; they are not contested: {free:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The climb (spec-0098 §2c, beside spec-0099)
+// ---------------------------------------------------------------------------
+
+/// The green campaign with one graph edge's class replaced and the plan
+/// patched.
+fn climb_codes(edge: &str, class: &str, patch: impl FnOnce(&mut Value)) -> Vec<String> {
+    let mut v: Value = serde_json::from_str(PLAN.as_str()).expect("the green plan parses");
+    patch(&mut v);
+    let mut g: Value = serde_json::from_str(GRAPH.as_str()).expect("the green graph parses");
+    let mut hit = 0;
+    for e in g["content"]["edges"].as_array_mut().unwrap() {
+        if e["id"] == edge {
+            e["class"] = json!(class);
+            e.as_object_mut().unwrap().remove("shortcut");
+            hit += 1;
+        }
+    }
+    assert_eq!(hit, 1, "the edge {edge} is in the graph");
+    codes_of(&campaign(
+        Some(serde_json::to_string(&v).unwrap()),
+        Some(serde_json::to_string(&g).unwrap()),
+        Some(BRIEF.to_string()),
+    ))
+}
+
+/// **A climb carries a rise with no treads; a climb that rises nothing is
+/// `DW0992`.** The hall's connection down to the cellar, declared a `climb`
+/// with no `stair_in`, raises nothing beyond the green plan's two advisories:
+/// no pitch, no run and no sill is asked of a ladder. The perturbation: the
+/// porch's walk to the hall — two places on one plane — declared a climb is
+/// refused, because a ladder between two places at one level climbs nothing.
+#[test]
+fn a_climb_carries_a_rise_and_a_climb_on_one_level_is_dw0992() {
+    let got = climb_codes("edge/hall-cellar", "climb", |v| {
+        seams(v)[seam_of("edge/hall-cellar")]
+            .as_object_mut()
+            .unwrap()
+            .remove("stair_in");
+    });
+    assert_eq!(
+        got,
+        vec!["DW0822".to_string(), "DW0813".to_string()],
+        "{got:?}"
+    );
+    let got = climb_codes("edge/porch-hall", "climb", |_| {});
+    assert!(has(&got, "DW0992"), "{got:?}");
+}
+
+// ---------------------------------------------------------------------------
+// spec-0123 §5: a side that may stand no wall
+// ---------------------------------------------------------------------------
+
+/// The four horizontal sides and their two values are accepted and change no
+/// verdict the plan draws at validation: the yard declares three sides open
+/// and its north side, where the vault's arch comes in, a wall in words.
+#[test]
+fn sides_of_the_four_horizontal_names_and_two_values_are_accepted() {
+    let got = plan_with(|v| {
+        boxes(v)[box_of("node/yard")]["sides"] =
+            json!({"east": "open", "west": "open", "south": "open", "north": "wall"});
+    });
+    assert_eq!(
+        got,
+        vec!["DW0822".to_string(), "DW0813".to_string()],
+        "an open side is not itself a finding at validation"
+    );
+}
+
+/// `up` is not a side (a lid is the ceiling) and `ajar` is not a value: both
+/// are the schema's refusal.
+#[test]
+fn a_side_the_plan_cannot_spell_is_dw0100() {
+    let up = plan_with(|v| boxes(v)[box_of("node/yard")]["sides"] = json!({"up": "open"}));
+    assert!(has(&up, "DW0100"), "{up:?}");
+    let ajar = plan_with(|v| boxes(v)[box_of("node/yard")]["sides"] = json!({"east": "ajar"}));
+    assert!(has(&ajar, "DW0100"), "{ajar:?}");
+}
+
+/// `DW1064`: the vault's arch into the yard is cut in the vault's south face
+/// and the yard's north face. Declaring either open leaves no wall to cut it
+/// in, and the refusal names the edge, the face and the place; the green plan
+/// does not raise it.
+#[test]
+fn dw1064_a_portal_in_a_side_declared_open() {
+    let green = plan_with(|_| {});
+    assert!(!has(&green, "DW1064"), "{green:?}");
+    let yard = plan_diags(|v| {
+        boxes(v)[box_of("node/yard")]["sides"] =
+            json!({"north": "open", "east": "wall", "west": "wall", "south": "wall"})
+    });
+    let hit: Vec<_> = yard.iter().filter(|d| d.code == "DW1064").collect();
+    assert_eq!(hit.len(), 1, "{yard:?}");
+    assert!(
+        hit[0]
+            .message
+            .contains("`edge/vault-yard` is a portal in the north face of `node/yard`"),
+        "{}",
+        hit[0].message
+    );
+    let vault = plan_diags(|v| {
+        boxes(v)[box_of("node/vault")]["sides"] =
+            json!({"south": "open", "east": "wall", "west": "wall", "north": "wall"})
+    });
+    let hit: Vec<_> = vault.iter().filter(|d| d.code == "DW1064").collect();
+    assert_eq!(hit.len(), 1, "{vault:?}");
+    assert!(
+        hit[0].message.contains("in the south face of `node/vault`"),
+        "{}",
+        hit[0].message
+    );
+    // The same side open on a face no portal is cut in is no finding.
+    let elsewhere = plan_with(|v| {
+        boxes(v)[box_of("node/yard")]["sides"] =
+            json!({"east": "open", "west": "wall", "south": "wall", "north": "wall"})
+    });
+    assert!(!has(&elsewhere, "DW1064"), "{elsewhere:?}");
+}
+
+/// A `contact` on an open side is that side's crossing, stated from the
+/// connection: `DW1064` does not judge it.
+#[test]
+fn dw1064_admits_a_contact_on_an_open_side() {
+    let got = plan_with(|v| {
+        boxes(v)[box_of("node/yard")]["sides"] =
+            json!({"north": "open", "east": "wall", "west": "wall", "south": "wall"});
+        let s = &mut seams(v)[seam_of("edge/vault-yard")];
+        let o = s.as_object_mut().expect("seam");
+        o.remove("opening");
+        o.remove("meets");
+        o.insert("at".into(), json!(0));
+        o.insert("contact".into(), json!({"extent": [8, 4]}));
+    });
+    assert!(!has(&got, "DW1064"), "{got:?}");
+}
+
+/// `delvec fmt` writes `sides` as it writes every object: its keys in the one
+/// canonical order (`east`, `north`, `south`, `west`), whatever order the
+/// author typed them in, and the formatted plan still validates.
+#[test]
+fn fmt_writes_sides_in_its_canonical_key_order() {
+    let text = r#"{"west": "open", "south": "wall", "north": "open", "east": "open"}"#;
+    let got = delvewright_dsl::fmt::format_text(text).expect("formats");
+    assert_eq!(
+        got,
+        "{\n  \"east\": \"open\",\n  \"north\": \"open\",\n  \"south\": \"wall\",\n  \"west\": \"open\"\n}\n"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// spec-0125 §3.4 — DW1073: a plot cannot hold its parts
+// ---------------------------------------------------------------------------
+
+/// The green campaign with `node/yard` (an `open: 8`, 16 × 16 box) declaring
+/// `holds`, and the plan perturbed by one edit.
+fn plot_diags(holds: Value, patch: impl FnOnce(&mut Value)) -> Vec<delvewright_dsl::Diagnostic> {
+    let mut g: Value = serde_json::from_str(GRAPH.as_str()).expect("the green graph parses");
+    let yard = g["content"]["nodes"]
+        .as_array_mut()
+        .expect("nodes")
+        .iter_mut()
+        .find(|n| n["id"] == "node/yard")
+        .expect("the yard");
+    yard["holds"] = holds;
+    let mut v: Value = serde_json::from_str(PLAN.as_str()).expect("the green plan parses");
+    patch(&mut v);
+    check_campaign(&campaign(
+        Some(serde_json::to_string(&v).expect("plan")),
+        Some(serde_json::to_string(&g).expect("graph")),
+        Some(BRIEF.to_string()),
+    ))
+}
+
+fn yard_parts(house: u32, height: u32) -> Value {
+    json!([
+        {"id": "part/house", "kind": "structure", "use": "the house", "cells": house, "height": height},
+        {"id": "part/shed", "kind": "structure", "use": "the shed", "cells": 20},
+        {"id": "part/back", "kind": "ground", "use": "the back yard", "cells": 100},
+        {"id": "part/bed", "kind": "ground", "use": "a bed", "cells": 6, "reached": false}
+    ])
+}
+
+fn dw1073(d: &[delvewright_dsl::Diagnostic]) -> Vec<&str> {
+    d.iter()
+        .filter(|x| x.code == "DW1073")
+        .map(|x| x.message.as_str())
+        .collect()
+}
+
+/// A plot whose parts fit its open box is asked nothing: 256 cells of play
+/// space hold 226 declared, and a ridge of 8 fits 8 courses of air.
+#[test]
+fn dw1073_a_plot_whose_parts_fit_passes() {
+    let d = plot_diags(yard_parts(100, 8), |_| {});
+    assert!(dw1073(&d).is_empty(), "{d:?}");
+}
+
+/// Under a lid: the plot's box given a `clearance` ceiling.
+#[test]
+fn dw1073_a_plot_under_a_lid() {
+    let d = plot_diags(yard_parts(100, 8), |v| {
+        boxes(v)[box_of("node/yard")]["ceiling"] = json!({"clearance": 8});
+    });
+    let hit = dw1073(&d);
+    assert_eq!(hit.len(), 1, "{d:?}");
+    assert!(
+        hit[0].starts_with("under a lid: `node/yard` is a plot"),
+        "{}",
+        hit[0]
+    );
+    assert!(hit[0].contains("{\"clearance\": 8}"), "{}", hit[0]);
+}
+
+/// Too small: the parts' cells past the box's play space, naming the sum, the
+/// area and the shortfall.
+#[test]
+fn dw1073_a_plot_smaller_than_its_parts() {
+    let d = plot_diags(yard_parts(140, 8), |_| {});
+    let hit = dw1073(&d);
+    assert_eq!(hit.len(), 1, "{d:?}");
+    assert!(hit[0].starts_with("too small:"), "{}", hit[0]);
+    assert!(
+        hit[0].contains("declare 266 cell(s)")
+            && hit[0].contains("16 × 16 = 256")
+            && hit[0].contains("10 short"),
+        "{}",
+        hit[0]
+    );
+}
+
+/// Too low: a structure's `height` past the box's `open` courses, naming the
+/// part.
+#[test]
+fn dw1073_a_part_taller_than_the_sky() {
+    let d = plot_diags(yard_parts(100, 9), |_| {});
+    let hit = dw1073(&d);
+    assert_eq!(hit.len(), 1, "{d:?}");
+    assert!(
+        hit[0].starts_with("too low: `node/yard`'s part `part/house`"),
+        "{}",
+        hit[0]
+    );
+    assert!(
+        hit[0].contains("height of 9") && hit[0].contains("8 course(s) of air"),
+        "{}",
+        hit[0]
+    );
+}
+
+/// **`fill.strata[]`: the first rule a column meets gives its blocks, and a
+/// stratum's trees stand clear of every ring** (spec-0127 §2.2). The green
+/// plan's fill made `open` and flat at the grade, with two rules: a wood in a
+/// rectangle of columns (`area`, a surface band, `trees`), and rock on steep
+/// patches (`steep`, `patch`). On a flat terrain no column is steep, so the
+/// second rule meets none and the fill's own blocks stand outside the wood —
+/// which is what shows `steep` is read rather than ignored. Every tree drawn
+/// stands inside the wood, four or more cells from every place's ring, and the
+/// draw is the same twice (ADR-0006). A stratum block that is not a block state
+/// is `DW0193`.
+#[test]
+fn a_stratum_gives_its_columns_their_blocks_and_grows_trees_clear_of_every_ring() {
+    use delvewright_dsl::siteplan::{Ground, placed_boxes};
+    let strata = |v: &mut Value, surface: &str| {
+        v["content"]["fill"] = json!({
+            "kind": "open",
+            "surface": "minecraft:grass_block",
+            "below": "minecraft:dirt",
+            "terrain": {"kind": "flat", "datum": "datum/grade"},
+            "strata": [
+                {
+                    "when": {"y_min": 60, "y_max": 70, "area": {"min": [40, 40], "max": [63, 63]}},
+                    "surface": surface,
+                    "below": "minecraft:coarse_dirt",
+                    "trees": {
+                        "per_mille": 300,
+                        "log": "minecraft:oak_log[axis=y]",
+                        "leaves": "minecraft:oak_leaves[persistent=true]",
+                        "height": [5, 6]
+                    }
+                },
+                {
+                    "when": {"steep": 1, "patch": {"scale": 4, "min": 0, "salt": 3}},
+                    "surface": "minecraft:stone",
+                    "below": "minecraft:stone"
+                }
+            ]
+        });
+    };
+    let mut v: Value = serde_json::from_str(PLAN.as_str()).expect("the green plan parses");
+    strata(&mut v, "minecraft:podzol");
+    let raw = campaign(
+        Some(v.to_string()),
+        Some(GRAPH.to_string()),
+        Some(BRIEF.to_string()),
+    );
+    let c = delvewright_dsl::parse_campaign(&raw).expect("the plan with strata parses");
+    let ground = Ground::of(&c);
+    // The surface stands one under the datum's walk plane.
+    assert_eq!(ground.top(50, 50), Some(63));
+    // The first rule a column meets: the wood inside its rectangle, the fill's
+    // own outside it, and no steep column anywhere on a flat terrain.
+    assert_eq!(ground.column_kind(50, 50), 1, "a column of the wood");
+    assert_eq!(ground.column_kind(39, 50), 0, "one column west of the wood");
+    assert_eq!(
+        ground.column_kind(10, 10),
+        0,
+        "a flat column is never steep"
+    );
+    assert_eq!(ground.fill_block([50, 63, 50]), Some("minecraft:podzol"));
+    assert_eq!(
+        ground.fill_block([50, 62, 50]),
+        Some("minecraft:coarse_dirt")
+    );
+    assert_eq!(
+        ground.fill_block([50, 64, 50]),
+        None,
+        "air over the surface"
+    );
+    assert_eq!(
+        ground.fill_block([10, 63, 10]),
+        Some("minecraft:grass_block")
+    );
+    assert_eq!(ground.fill_block([10, 62, 10]), Some("minecraft:dirt"));
+    assert_eq!(ground.ground_block([50, 63, 50], 63), "minecraft:podzol");
+    // The trees: drawn, inside the wood, clear of every ring, and the same twice.
+    let mut reads = delvewright_dsl::metrics::Reads::new();
+    let clear: Vec<[i64; 4]> = placed_boxes(&c, &mut reads)
+        .iter()
+        .map(|b| [b.foot[0] - 1, b.foot[1] + 1, b.foot[2] - 1, b.foot[3] + 1])
+        .collect();
+    assert!(!clear.is_empty(), "the plan places boxes");
+    let trees = ground.trees(&clear);
+    let trunks: Vec<[i64; 3]> = trees
+        .iter()
+        .filter(|(cell, block)| *block == "minecraft:oak_log[axis=y]" && cell[1] == 64)
+        .map(|(cell, _)| *cell)
+        .collect();
+    assert!(
+        !trunks.is_empty(),
+        "300 per mille over a 24 × 24 wood draws a tree"
+    );
+    for t in &trunks {
+        assert!(
+            (40..=63).contains(&t[0]) && (40..=63).contains(&t[2]),
+            "a trunk inside the wood: {t:?}"
+        );
+        for f in &clear {
+            assert!(
+                t[0] < f[0] - 4 || t[0] > f[1] + 4 || t[2] < f[2] - 4 || t[2] > f[3] + 4,
+                "a trunk four or more cells from every ring: {t:?} against {f:?}"
+            );
+        }
+    }
+    assert!(
+        trees
+            .iter()
+            .any(|(_, b)| *b == "minecraft:oak_leaves[persistent=true]"),
+        "a crown is drawn"
+    );
+    assert_eq!(trees, ground.trees(&clear), "the draw is seeded");
+    eprintln!(
+        "strata binding: {} tree(s) drawn over the wood, {} cell(s) of trunk and crown",
+        trunks.len(),
+        trees.len()
+    );
+
+    // A stratum block that is not a block state is refused where it is written.
+    let codes = plan_with(|v| strata(v, "minecraft:not_a_block"));
+    assert!(codes.contains(&"DW0193".to_string()), "{codes:?}");
+}
+
+/// **`DW1064` judges doors and arches; a `stair` crosses a side declared open
+/// in the open air** (spec-0127 §4.3). The cellar's east side, where the
+/// hall's stair arrives, declared open: no finding. The hall's west side
+/// carries two seams — the porch's arch and the same stair — and declared open
+/// it is refused once, for the arch alone, so the verdict turns on the seam's
+/// kind over one face of one place.
+#[test]
+fn dw1064_admits_a_stair_across_a_side_declared_open() {
+    let open = |face: &str| {
+        let mut sides = json!({"east": "wall", "west": "wall", "south": "wall", "north": "wall"});
+        sides[face] = json!("open");
+        sides
+    };
+    let cellar = plan_diags(|v| boxes(v)[box_of("node/cellar")]["sides"] = open("east"));
+    let hit: Vec<&str> = cellar
+        .iter()
+        .filter(|x| x.code == "DW1064")
+        .map(|x| x.message.as_str())
+        .collect();
+    assert!(
+        hit.is_empty(),
+        "the stair arrives through the cellar's open east side: {hit:?}"
+    );
+    let hall = plan_diags(|v| boxes(v)[box_of("node/hall")]["sides"] = open("west"));
+    let hit: Vec<&str> = hall
+        .iter()
+        .filter(|x| x.code == "DW1064")
+        .map(|x| x.message.as_str())
+        .collect();
+    assert_eq!(hit.len(), 1, "one face, two seams, one refusal: {hit:?}");
+    assert!(
+        hit[0].contains("`edge/porch-hall` is a portal"),
+        "{}",
+        hit[0]
+    );
+    assert!(
+        !hit[0].contains("edge/hall-cellar"),
+        "the stair is not the portal: {}",
+        hit[0]
+    );
+}
+
+/// **A tree stands only where a body walks out under its crown** (spec-0127
+/// §2.2): over a slope rising one course per column, the lowest leaf layer of
+/// any tree would stand under three courses over the ground two columns
+/// uphill, so no tree is drawn there; over the flat shelf beside it, with the
+/// same rule at a thousand per mille, trees stand. Every crown drawn clears
+/// every column it covers by three or more. The terrain is a heightmap handed
+/// to the campaign as the loader hands it.
+#[test]
+fn a_crown_stands_three_or_more_over_every_column_it_covers_on_a_slope() {
+    use delvewright_dsl::siteplan::{Ground, HeightmapRead};
+    let mut v: Value = serde_json::from_str(PLAN.as_str()).expect("the green plan parses");
+    v["content"]["fill"] = json!({
+        "kind": "open",
+        "surface": "minecraft:grass_block",
+        "below": "minecraft:dirt",
+        "terrain": {"kind": "heightmap", "heightmap": "terrain.png", "base_y": 60, "range": 15},
+        "strata": [{
+            "when": {"area": {"min": [40, 40], "max": [63, 63]}},
+            "surface": "minecraft:podzol",
+            "below": "minecraft:dirt",
+            "trees": {
+                "per_mille": 1000,
+                "log": "minecraft:oak_log[axis=y]",
+                "leaves": "minecraft:oak_leaves[persistent=true]",
+                "height": [5, 5]
+            }
+        }]
+    });
+    let raw = campaign(
+        Some(v.to_string()),
+        Some(GRAPH.to_string()),
+        Some(BRIEF.to_string()),
+    );
+    let mut c = delvewright_dsl::parse_campaign(&raw).expect("the plan with a heightmap parses");
+    // The surface: flat at 60 west of x 40, rising one course per column from
+    // x 40 to x 55, flat at 75 beyond. `pixel_top` is base_y + grey * range / 255,
+    // so a grey of 17 per course gives the course back exactly.
+    let top = |x: i64| 60 + (x - 40).clamp(0, 15);
+    let grey: Vec<u8> = (0..64 * 64)
+        .map(|i| u8::try_from((top(i % 64) - 60) * 17).unwrap())
+        .collect();
+    c.heightmap = Some(HeightmapRead::Read {
+        path: "terrain.png".into(),
+        width: 64,
+        depth: 64,
+        grey,
+    });
+    let ground = Ground::of(&c);
+    assert_eq!(ground.top(40, 50), Some(60));
+    assert_eq!(ground.top(55, 50), Some(75));
+    assert_eq!(ground.top(63, 50), Some(75));
+    let trees = ground.trees(&[]);
+    let trunks: Vec<[i64; 3]> = trees
+        .iter()
+        .filter(|(_, block)| *block == "minecraft:oak_log[axis=y]")
+        .filter(|(cell, _)| ground.top(cell[0], cell[2]) == Some(cell[1] - 1))
+        .map(|(cell, _)| *cell)
+        .collect();
+    assert!(
+        !trunks.is_empty(),
+        "the flat shelf grows trees at a thousand per mille"
+    );
+    // On the slope proper (x 40..54) the column two uphill stands two courses
+    // higher, so the lowest leaf layer would clear it by two: no tree. From the
+    // slope's top course (x 55) on, the crown clears every column it covers.
+    let on_the_slope: Vec<&[i64; 3]> = trunks.iter().filter(|t| t[0] < 55).collect();
+    assert!(
+        on_the_slope.is_empty(),
+        "no tree stands where the ground two columns uphill is two courses higher: {on_the_slope:?}"
+    );
+    for t in &trunks {
+        // The lowest leaf layer: two under the trunk's top (height 5).
+        let low = t[1] - 1 + 5 - 2;
+        for dx in -2..=2 {
+            for dz in -2..=2 {
+                let g = ground.top(t[0] + dx, t[2] + dz).unwrap();
+                assert!(
+                    low - g >= 3,
+                    "crown of {t:?} stands {} over column ({}, {})",
+                    low - g,
+                    t[0] + dx,
+                    t[2] + dz
+                );
+            }
+        }
+    }
+    eprintln!(
+        "slope binding: {} tree(s) from the slope's top course on, 0 on its 15 rising columns, every crown three or more over its 25 columns",
+        trunks.len()
+    );
+}

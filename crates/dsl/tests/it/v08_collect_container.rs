@@ -1,0 +1,259 @@
+//! DSL v0.8 `collect` container adoption.
+//!
+//! Three fields, one complaint: without them the quest item is an unnamed
+//! generic stack in a chest the compiler conjures out of the air beside the
+//! barrel the prefab already put there, and opening it shows one lonely item.
+//! `container` adopts
+//! the prefab's barrel, `item_name` gives the item a name a player can read, and
+//! `fill_count` pads the container so it reads full.
+//!
+//! Same contract every reserved field before them kept: declaring any of them
+//! absence emits byte-identically to a campaign
+//! written before them.
+
+use crate::common;
+
+use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign, l10n, parse_campaign};
+
+/// hello-world's quests stage with one `collect` objective, parameterised on the
+/// stage version and on the objective's own adoption fields.
+fn quests(fields: &str) -> String {
+    format!(
+        r#"{{
+  "dsl_version": "{DSL_VERSION}",
+  "campaign_id": "hello-world",
+  "stage": "quests",
+  "content": {{
+    "quests": [
+      {{
+        "id": "quest/open-the-door",
+        "trigger": {{ "type": "campaign-start" }},
+        "objectives": [
+          {{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }},
+          {{ "type": "collect", "id": "obj/cheese", "item": "minecraft:bread", "count": 3,
+             "anchor": "anchor/exit", "after": ["obj/talk"]{fields} }}
+        ],
+        "on_complete": [ {{ "type": "campaign-complete" }} ]
+      }}
+    ]
+  }}
+}}"#
+    )
+}
+
+fn campaign_with(quests: String) -> RawCampaign {
+    RawCampaign {
+        world: common::read_valid("world.json"),
+        npcs: common::read_valid("npcs.json"),
+        classes: common::read_valid("classes.json"),
+        quest_plan: common::read_valid("quest-plan.json"),
+        quests,
+        dialogue: common::read_valid("dialogue.json"),
+        world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
+        site_plan: None,
+        detail_plan: None,
+        design: None,
+    }
+}
+
+/// The whole surface at once: adopt the prefab's container, name the item, pad
+/// the container to read full.
+const ADOPTED: &str = r#", "holder": "anchor/door", "item_name": "Cheese", "fill_count": 8"#;
+
+#[test]
+fn the_adoption_surface_validates_clean_at_v08() {
+    let diags = check_campaign(&campaign_with(quests(ADOPTED)));
+    assert!(
+        diags.is_empty(),
+        "expected zero diagnostics for a v0.8 adopted-container collect, got: {diags:#?}"
+    );
+}
+
+/// The container anchor is an anchor like any other: invented ones are `DW0142`.
+#[test]
+fn an_invented_container_anchor_is_dw0142() {
+    let diags = check_campaign(&campaign_with(quests(
+        r#", "holder": "anchor/no-such-barrel""#,
+    )));
+    let d = diags
+        .iter()
+        .find(|d| d.code == "DW0142")
+        .unwrap_or_else(|| panic!("expected DW0142, got: {diags:#?}"));
+    assert!(d.path.ends_with("/holder"), "{}", d.path);
+}
+
+/// The fill is positional, so it obeys the same 27-slot ceiling a `loot`
+/// declaration does — and for the same reason: everything past the last slot is
+/// dropped without a word.
+#[test]
+fn padding_past_the_last_slot_is_dw0432() {
+    let diags = check_campaign(&campaign_with(quests(
+        r#", "holder": "anchor/door", "fill_count": 27"#,
+    )));
+    let d = diags
+        .iter()
+        .find(|d| d.code == "DW0432")
+        .unwrap_or_else(|| panic!("expected DW0432, got: {diags:#?}"));
+    assert!(d.path.ends_with("/fill_count"), "{}", d.path);
+    assert!(d.message.contains("28 slots"), "{}", d.message);
+
+    // The exact ceiling validates: 26 padding stacks + the objective's own = 27.
+    assert!(
+        !check_campaign(&campaign_with(quests(
+            r#", "holder": "anchor/door", "fill_count": 26"#,
+        )))
+        .iter()
+        .any(|d| d.code == "DW0432"),
+        "a fill that exactly fills the container must validate"
+    );
+}
+
+/// A `loot` entry and an adopted `collect` on one container overwrite each other
+/// slot-for-slot — the `DW0435` rule, reached through the second door.
+#[test]
+fn a_loot_entry_and_an_adopted_collect_on_one_anchor_is_dw0435() {
+    let quests = format!(
+        r#"{{
+  "dsl_version": "{DSL_VERSION}",
+  "campaign_id": "hello-world",
+  "stage": "quests",
+  "content": {{
+    "quests": [
+      {{
+        "id": "quest/open-the-door",
+        "trigger": {{ "type": "campaign-start" }},
+        "objectives": [
+          {{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }},
+          {{ "type": "collect", "id": "obj/cheese", "item": "minecraft:bread", "count": 3,
+             "anchor": "anchor/exit", "after": ["obj/talk"]{ADOPTED} }}
+        ],
+        "on_complete": [ {{ "type": "campaign-complete" }} ]
+      }}
+    ],
+    "loot": [
+      {{ "id": "loot/galley-stores", "anchor": "anchor/door",
+         "items": [ {{ "item": "minecraft:cooked_cod", "count": 3 }} ] }}
+    ]
+  }}
+}}"#
+    );
+    let diags = check_campaign(&campaign_with(quests));
+    let d = diags
+        .iter()
+        .find(|d| d.code == "DW0435")
+        .unwrap_or_else(|| panic!("expected DW0435, got: {diags:#?}"));
+    assert!(d.path.ends_with("/holder"), "{}", d.path);
+    assert!(
+        d.message.contains("loot/galley-stores") && d.message.contains("obj/cheese"),
+        "the message must name both claimants: {}",
+        d.message
+    );
+}
+
+/// Two collects filling one container is the same collision: whichever activates
+/// second replaces the first objective's items with its own.
+#[test]
+fn two_adopted_collects_on_one_anchor_is_dw0435() {
+    let quests = common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
+  "campaign_id": "hello-world",
+  "stage": "quests",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/open-the-door",
+        "trigger": { "type": "campaign-start" },
+        "objectives": [
+          { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },
+          { "type": "collect", "id": "obj/cheese", "item": "minecraft:bread", "count": 1,
+            "anchor": "anchor/exit", "after": ["obj/talk"], "holder": "anchor/door" },
+          { "type": "collect", "id": "obj/wine", "item": "minecraft:potion", "count": 1,
+            "anchor": "anchor/exit", "after": ["obj/cheese"], "holder": "anchor/door" }
+        ],
+        "on_complete": [ { "type": "campaign-complete" } ]
+      }
+    ]
+  }
+}"#,
+    );
+    let diags = check_campaign(&campaign_with(quests.to_string()));
+    assert!(
+        diags.iter().any(|d| d.code == "DW0435"),
+        "expected DW0435, got: {diags:#?}"
+    );
+}
+
+/// The item's display name is read by a player off the stack in the barrel, so it
+/// translates like every other player-visible string.
+#[test]
+fn item_name_enters_the_l10n_inventory() {
+    let c = parse_campaign(&campaign_with(quests(ADOPTED))).expect("parses");
+    let inv = l10n::inventory(&c);
+    assert_eq!(
+        inv.get("obj.open-the-door.cheese.item_name")
+            .map(String::as_str),
+        Some("Cheese"),
+        "inventory keys were: {:?}",
+        inv.keys().collect::<Vec<_>>()
+    );
+}
+
+/// The stage-5 schema export carries all three fields (the skill authors against
+/// it).
+#[test]
+fn stage5_schema_exports_the_adoption_fields() {
+    let schema = delvewright_dsl::schema::stage_schema(delvewright_dsl::Stage::Quests);
+    let json = serde_json::to_string(&schema).unwrap();
+    for field in ["\"holder\"", "\"item_name\"", "\"fill_count\""] {
+        assert!(json.contains(field), "stage-5 schema is missing {field}");
+    }
+    // spec-0111 criterion 1: `LootItem.slot` is exported, and the collect
+    // variant carries `holder` and no `container`.
+    let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let defs = v
+        .get("$defs")
+        .or_else(|| v.get("definitions"))
+        .expect("schema defs");
+    assert!(
+        defs["LootItem"]["properties"].get("slot").is_some(),
+        "LootItem.slot is not exported"
+    );
+    let objective = serde_json::to_string(&defs["Objective"]).unwrap();
+    let collect: Vec<&serde_json::Value> = defs["Objective"]["oneOf"]
+        .as_array()
+        .expect("Objective is a oneOf")
+        .iter()
+        .filter(|variant| {
+            variant["properties"]["type"]
+                .to_string()
+                .contains("collect")
+        })
+        .collect();
+    assert_eq!(collect.len(), 1, "{objective}");
+    assert!(
+        collect[0]["properties"].get("holder").is_some(),
+        "{objective}"
+    );
+    assert!(
+        collect[0]["properties"].get("container").is_none(),
+        "{objective}"
+    );
+}
+
+/// A collect that declares none of it serializes exactly as it did before the
+/// fields existed — the byte-identity contract, checked where it is decidable
+/// from the DSL alone.
+#[test]
+fn an_unadopted_collect_serializes_without_the_new_fields() {
+    let c = parse_campaign(&campaign_with(quests(""))).expect("parses");
+    let json = serde_json::to_string(&c.quests.content).expect("serializes");
+    for field in ["holder", "item_name", "fill_count"] {
+        assert!(
+            !json.contains(field),
+            "an unadopted collect must not serialize `{field}`: {json}"
+        );
+    }
+}

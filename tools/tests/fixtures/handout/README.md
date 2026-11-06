@@ -10,7 +10,7 @@ footing. It validates and builds with every place a stand-in.
 `allocations.json` is `delvec allocation campaign --all`, recorded by the engine
 at `delvec 1.15.0`, as the stub `delvec` of
 `tools/tests/test_handout.py` answers with. It is a copy of an instrument's
-output and never an authority: `crates/delvec/tests/handout_script.rs` holds it
+output and never an authority: `crates/delvec/tests/it/handout_script.rs` holds it
 equal to the built binary's own answer, byte for byte, so a change to what the
 engine hands a place reds there and the file is re-recorded with the same
 command.

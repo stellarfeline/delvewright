@@ -256,7 +256,7 @@ pub(super) fn prove_world(
             // `contact_face_cells: 0` is a watertight hull saying so.
             let party_walk = world.body_region_rooted(&crate::compiler::edit::anchor_starts(plan));
             let seepage = crate::compiler::nav::measure_sea_seepage(world, &party_walk);
-            eprintln!("{}", seepage.line());
+            crate::note!("{}", seepage.line());
             sea_seepage_ledger = Some(seepage.ledger());
 
             // **`DW0344`, second arm: no walk cell of a placed piece stands at
@@ -269,7 +269,7 @@ pub(super) fn prove_world(
             // for the same vacuity reason the exposure line is.
             let (sea_walk, sea_walk_findings) =
                 crate::compiler::plan::check_ocean_walk_plane(plan, prefabs, &party_walk);
-            eprintln!("{}", sea_walk.line());
+            crate::note!("{}", sea_walk.line());
             if let Some((first, rest)) = sea_walk_findings.split_first() {
                 for extra in rest {
                     eprintln!("{} [error] build: {}", extra.code, extra.message);
@@ -303,7 +303,7 @@ pub(super) fn prove_world(
                 &party_walk,
                 None,
             );
-            eprintln!("{}", exposure.line());
+            crate::note!("{}", exposure.line());
             piece_exposure_ledger = Some(exposure.to_json());
             if let Some((first, rest)) = findings.split_first() {
                 // Every piece this world stands unanswered, not only the one
@@ -366,7 +366,7 @@ pub(super) fn prove_world(
             // but a station of a scenery place nobody is put in
             // (`edit::body_starts`). The line states what it left out.
             let body_starts = crate::compiler::edit::body_starts(plan, world);
-            eprintln!(
+            crate::note!(
                 "boundary-safety binding: {} of {} anchor(s) root the walk region, {} \
                  excluded as a station of a scenery place (`reached: false`) no body is put in{}",
                 body_starts.roots.len(),
@@ -407,7 +407,7 @@ pub(super) fn prove_world(
                     &reachable,
                     sea_entry,
                 );
-                eprintln!("{}", gate.line());
+                crate::note!("{}", gate.line());
                 if let Some(first) = findings.first() {
                     return Err(BuildFailure::Diagnostic {
                         code: first.code,
@@ -474,7 +474,7 @@ pub(super) fn prove_world(
                         });
                     }
                 }
-                eprintln!(
+                crate::note!(
                     "link gathering binding: {} link(s) carried after their root's cutscene, {} \
                      press cell(s) outside their volumes over {} walk cell(s)",
                     gathered.len(),
@@ -515,7 +515,7 @@ pub(super) fn prove_world(
                     campaign_spawn(plan),
                     &waves,
                 );
-                eprintln!("{}", binding.line());
+                crate::note!("{}", binding.line());
                 firework_gate = Some(binding);
                 if let Some((first, rest)) = findings.split_first() {
                     for extra in rest {
@@ -540,7 +540,7 @@ pub(super) fn prove_world(
                     campaign_spawn(plan),
                     &waves,
                 );
-                eprintln!("{}", binding.line());
+                crate::note!("{}", binding.line());
                 lightning_gate = Some(binding);
                 if let Some((first, rest)) = findings.split_first() {
                     for extra in rest {
@@ -573,7 +573,7 @@ pub(super) fn prove_world(
             {
                 let (binding, refused) =
                     crate::compiler::gatesignal::check(plan, blocks, &relight.placements);
-                eprintln!("{}", binding.line());
+                crate::note!("{}", binding.line());
                 put_json(out, "validation/gate-signal.json", &binding.to_json());
                 if let Some(f) = refused {
                     return Err(BuildFailure::Diagnostic {
@@ -585,7 +585,7 @@ pub(super) fn prove_world(
             // spec-0123 §3.1: the doors the walk opens are derived from the
             // pinned registry, never written by hand, and every build states
             // the set its proofs read.
-            eprintln!("{}", delvewright_dsl::blockshape::doors_by_hand().line());
+            crate::note!("{}", delvewright_dsl::blockshape::doors_by_hand().line());
             // DW1057 (spec-0120): every way's declared clear width is clear
             // along the whole way, in every state its cells can take, and
             // nothing excuses a column that is not. It reads the plan, the blocks as shipped and the runtime
@@ -598,7 +598,7 @@ pub(super) fn prove_world(
                     assembled,
                     &relight.placements,
                 );
-                eprintln!("{}", binding.line());
+                crate::note!("{}", binding.line());
                 put_json(out, "validation/clear-width.json", &binding.to_json());
                 // spec-0123 §3.5: the piece census, beside the clear-width
                 // ledger — a measurement the review reads, never a refusal.
@@ -608,13 +608,13 @@ pub(super) fn prove_world(
                     &assembled.blocks,
                     structures,
                 );
-                eprintln!("{}", census.line());
+                crate::note!("{}", census.line());
                 put_json(out, "validation/piece-census.json", &census.to_json());
                 // spec-0125 §5.4: the plot program, beside the census — the
                 // shares, setbacks and gaps the review reads, and the walk of
                 // each walked part judged again over the shipped templates.
                 let (plots, unwalked) = crate::compiler::plot::ledger(plan, prefabs, structures);
-                eprintln!("{}", plots.line());
+                crate::note!("{}", plots.line());
                 put_json(out, "validation/plot-program.json", &plots.to_json());
                 if let Some((first, rest)) = unwalked.split_first() {
                     for extra in rest {
@@ -650,7 +650,7 @@ pub(super) fn prove_world(
                 {
                     let (ledger, verdict) = crate::compiler::framing::judge(plan, world, &m, &am);
                     if !ledger.cutscenes.is_empty() {
-                        eprintln!("{}", ledger.line());
+                        crate::note!("{}", ledger.line());
                         shot_ledger = Some(ledger);
                     }
                     if let Some((first, rest)) = verdict.split_first() {
@@ -716,8 +716,8 @@ pub(super) fn prove_world(
                     // Stated whether it found anything or not, and before the
                     // verdict is taken: a refusal owes its reader the population
                     // it was measured against as much as a pass does.
-                    eprintln!("{}", binding.line());
-                    eprintln!("{}", wave_lethal.line());
+                    crate::note!("{}", binding.line());
+                    crate::note!("{}", wave_lethal.line());
                     verdict?;
                     warnings.extend(binding.findings());
                     wave_lethal.verdict()?;
@@ -730,7 +730,7 @@ pub(super) fn prove_world(
                 // whether or not the campaign grants a blinding, zeroes included.
                 let (blind, blind_verdict) =
                     crate::compiler::blind::check(plan, world, campaign_spawn(plan));
-                eprintln!("{}", blind.line());
+                crate::note!("{}", blind.line());
                 blind_verdict?;
                 // spec-0086 §4: a loop's slab, its closed view, the bodies in its
                 // span and its tiling, over the world as shipped (relight
@@ -747,7 +747,7 @@ pub(super) fn prove_world(
                             seals: &assembled.gate_seals,
                             wave_seats: &waves,
                         });
-                    eprintln!("{}", binding.line());
+                    crate::note!("{}", binding.line());
                     loop_gate = Some(binding);
                     if let Some(f) = refusal {
                         return Err(BuildFailure::Diagnostic {
@@ -760,7 +760,7 @@ pub(super) fn prove_world(
                 // makeable before any route takes one as a move.
                 let (jump_binding, proven, jump_verdict) =
                     crate::compiler::nav::check_declared_jumps(plan, world);
-                eprintln!("{}", jump_binding.line());
+                crate::note!("{}", jump_binding.line());
                 jump_verdict?;
                 proven_jumps.extend(proven);
                 // DW0311, with its binding stated whichever way it goes
@@ -768,7 +768,7 @@ pub(super) fn prove_world(
                 // a crossing and carried by a link.
                 let (route_binding, route_verdict) =
                     crate::compiler::nav::check_critical_path_bound(plan, world);
-                eprintln!("{}", route_binding.line());
+                crate::note!("{}", route_binding.line());
                 route_verdict?;
                 legs_carried = route_binding.carried;
                 // DW1044: a trigger the path performs to pay a flag a later
@@ -776,7 +776,7 @@ pub(super) fn prove_world(
                 // DW0311, because it asks for walks over the legs DW0311 proved.
                 let (threshold_binding, threshold_verdict) =
                     crate::compiler::nav::check_threshold_triggers(plan, world);
-                eprintln!("{}", threshold_binding.line());
+                crate::note!("{}", threshold_binding.line());
                 threshold_verdict?;
                 put_json(
                     out,
@@ -795,18 +795,18 @@ pub(super) fn prove_world(
                     world,
                     playable_region(plan).map(|r| (r.min, r.max)),
                 );
-                eprintln!("{}", leave_binding.line());
-                eprintln!("{}", leave_binding.reach.line());
+                crate::note!("{}", leave_binding.line());
+                crate::note!("{}", leave_binding.reach.line());
                 // spec-0113 §5.4 (`DW1043`): what the campaign gives a player,
                 // read for how it moves a body, with the configurations judged
                 // and left unbounded — zeroes included.
-                eprintln!(
+                crate::note!(
                     "{}",
                     plan.movement
                         .line(leave_binding.configurations, leave_binding.unbounded)
                 );
                 warnings.extend(plan.movement.findings(leave_binding.unbounded));
-                eprintln!("{}", leave_binding.hatch_line());
+                crate::note!("{}", leave_binding.hatch_line());
                 leave_verdict?;
                 put_json(out, "validation/leave-proof.json", &leave_binding.to_json());
                 put_json(
@@ -820,7 +820,7 @@ pub(super) fn prove_world(
                 // printed before the verdict is taken.
                 let (separation, separation_verdict) =
                     crate::compiler::nav::check_gates_separate(plan, world);
-                eprintln!("{}", separation.line());
+                crate::note!("{}", separation.line());
                 separation_verdict?;
                 put_json(
                     out,
@@ -834,7 +834,7 @@ pub(super) fn prove_world(
                 // written before the verdict is taken.
                 let (shut_ways, shut_ways_verdict) =
                     crate::compiler::nav::check_shut_ways_learned(plan, world, prefabs);
-                eprintln!("{}", shut_ways.line());
+                crate::note!("{}", shut_ways.line());
                 put_json(out, "validation/shut-ways.json", &shut_ways.to_json());
                 shut_ways_verdict?;
                 warnings.extend(shut_ways.findings());
@@ -855,7 +855,7 @@ pub(super) fn prove_world(
                         playable_region(plan).map(|r| (r.min, r.max)),
                     );
                     if strand.waves > 0 {
-                        eprintln!("{}", strand.line());
+                        crate::note!("{}", strand.line());
                     }
                     strand.verdict()?;
                     if strand.waves > 0 {
@@ -971,7 +971,7 @@ pub(super) fn prove_world(
                 // on every build that walks, zeroes included.
                 let furniture =
                     crate::compiler::nav::furniture_binding(plan, world, &routes, &m, &am);
-                eprintln!("{}", furniture.line());
+                crate::note!("{}", furniture.line());
                 put_json(out, "validation/furniture-gate.json", &furniture.to_json());
                 // `DW1068`: a walked way that exists only across a leaf its
                 // mover cannot set — over the same world and the same legs the
@@ -1006,7 +1006,7 @@ pub(super) fn prove_world(
                         body: format!("a `{}` body opens no door or trapdoor", l.entity),
                     }));
                     let (leaves, refusals) = crate::compiler::nav::check_leaves(world, &walked);
-                    eprintln!("{}", leaves.line());
+                    crate::note!("{}", leaves.line());
                     put_json(out, "validation/door-leaves.json", &leaves.to_json());
                     if let Some((first, rest)) = refusals.split_first() {
                         let mut message = first.clone();
@@ -1052,7 +1052,7 @@ pub(super) fn prove_world(
                     world,
                     campaign_spawn(plan),
                 );
-                eprintln!("{}", reach_footprint.line());
+                crate::note!("{}", reach_footprint.line());
                 off_floor?;
                 // Stair-orientation proof (DW0430). Nav models a stair
                 // as a full cube, so a reversed stair reads as a legal one-block
@@ -1082,7 +1082,7 @@ pub(super) fn prove_world(
                 // included, and on every build that walks, zeroes included.
                 {
                     let (gate, verdict) = crate::compiler::pulse::measure(plan, world, &routes);
-                    eprintln!("{}", gate.line());
+                    crate::note!("{}", gate.line());
                     verdict.map_err(|f| BuildFailure::Diagnostic {
                         code: f.code,
                         message: f.message,
@@ -1098,7 +1098,7 @@ pub(super) fn prove_world(
                         &plan.critical_path_sneak,
                         &proven_jumps,
                     );
-                    eprintln!(
+                    crate::note!(
                         "{}",
                         crate::compiler::waypoints::vibration_line(&doc, &listening)
                     );
@@ -1236,7 +1236,7 @@ pub(super) fn prove_world(
                 {
                     let (binding, findings) =
                         crate::compiler::approach::check(plan, &path_legs, &m);
-                    eprintln!("{}", binding.line());
+                    crate::note!("{}", binding.line());
                     if let Some((first, rest)) = findings.split_first() {
                         for extra in rest {
                             eprintln!("{} [error] build: {}", extra.code, extra.message);
@@ -1307,7 +1307,7 @@ pub(super) fn prove_world(
             // Pool. Same seated cells, same reach, same population.
             let (engage, refused) =
                 crate::compiler::engage::check_engagement(plan, world, blocks, &waves);
-            eprintln!("{}", engage.line());
+            crate::note!("{}", engage.line());
             if let Some(e) = refused {
                 return Err(BuildFailure::Diagnostic {
                     code: e.code,

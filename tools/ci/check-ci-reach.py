@@ -34,8 +34,9 @@ WHAT IT ASSERTS
 
 The `if` grammar understood is the subset the table needs: `github.event_name`,
 `needs.changes.outputs.<group>`, string literals, `true`/`false`, `==`, `!=`,
-`!`, `&&`, `||` and parentheses. Anything else — a function call such as
-`always()`, another context — is refused by name, never guessed at.
+`!`, `&&`, `||` and parentheses, and the one call `cancelled()`, which is
+`false` for the run the question is asked of. Anything else — a function call
+such as `always()`, another context — is refused by name, never guessed at.
 
 The workflow is read through `tools/lib/workflow_yaml.py`, the one shared parse
 rule. States its binding counts; a run that judges zero jobs exits 2.
@@ -99,6 +100,16 @@ def tokenize(text: str) -> list[tuple[str, str]]:
             out.append(("str", m.group("str").replace("''", "'")))
         else:
             if m.group("call"):
+                # The one call evaluated: the reach question is asked of a run
+                # nobody cancelled, so `cancelled()` is `false` — the form a
+                # gathering job uses (`!cancelled() && <reach>`) to run, and
+                # red, when a job it needs failed, instead of reporting
+                # `skipped`, which branch protection passes. `always()` stays
+                # refused: it also ignores the reach condition itself.
+                if m.group("ident") == "cancelled" and body[m.end():].lstrip().startswith(")"):
+                    out.append(("ident", "false"))
+                    pos = body.index(")", m.end()) + 1
+                    continue
                 raise ExprError(f"a function call `{m.group('ident')}(…)` is not evaluated by this gate")
             out.append(("ident", m.group("ident")))
         pos = m.end()

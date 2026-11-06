@@ -1,6 +1,6 @@
 //! **The long gallery** (spec-0086): a synthesised corridor of identical bays,
-//! shared by the loop tests (`tests/endless_corridor.rs`) and the remedy rows
-//! that take DW0945–DW0948's moves (`tests/remedy_reachability.rs`). Every
+//! shared by the loop tests (`tests/it/endless_corridor.rs`) and the remedy rows
+//! that take DW0945–DW0948's moves (`tests/it/remedy_reachability.rs`). Every
 //! fixture built over it is `tests/fixtures/long-gallery` plus one edit.
 //!
 //! The piece is synthesised rather than drawn from the content library: the
@@ -129,7 +129,8 @@ pub fn gallery_anchors() -> Value {
 /// Write the corridor into a fresh prefab directory under the test's temp
 /// root, and return it.
 pub fn gallery_prefabs(tag: &str, cuts: &Cuts) -> PathBuf {
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("long-gallery-prefabs-{tag}"));
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("long-gallery-prefabs-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     super::write_single_prefab(
         &dir,

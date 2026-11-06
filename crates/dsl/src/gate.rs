@@ -34,7 +34,7 @@
 //! literal — is a compile error in combination with `deny_unknown_fields`, which
 //! every stage struct carries and which is what turns an author's typo into
 //! `DW0100` instead of silence. That half of the obligation is
-//! `crates/dsl/tests/gate_consumers.rs`, which enumerates the consumers **from
+//! `crates/dsl/tests/it/gate_consumers.rs`, which enumerates the consumers **from
 //! the generated JSON Schema** — i.e. from the types — and fails when any schema
 //! object declares `requires_flags` without `requires_state`.
 //!
@@ -107,7 +107,7 @@ impl<'a> Gate<'a> {
 // list of gate consumers is one fact, and a fact spread over six files is a fact
 // nobody can read. A seventh consumer whose author forgets to add its `gate()`
 // here is a consumer no proof written against `Gate` can see — which is exactly
-// the shape `crates/dsl/tests/gate_consumers.rs` fails on.
+// the shape `crates/dsl/tests/it/gate_consumers.rs` fails on.
 
 impl crate::Objective {
     /// This objective's whole gate, as one value (DSL v0.10).

@@ -1,0 +1,53 @@
+name: The suite's instruments
+description: >
+  Install the Rust suite's two instruments (spec-0126 §1) at exactly the
+  versions `versions.toml` `[ci]` records — cargo-nextest, which runs every
+  test as its own process and writes one JUnit <testcase> per test with its
+  time, and cargo-llvm-cov, which reads region coverage out of that run — plus
+  the toolchain's own `llvm-tools`, the only LLVM the counters may be read
+  with. The version literals live in THIS file and nowhere else in the
+  workflow tree; `validation/check-versions.sh` holds them to the manifest.
+  Every job of the `rust` family (the build, each partition, the census) uses
+  this, so the install is cached by version: a hit restores the two binaries
+  in seconds, a miss builds them once (about five minutes), and either way the
+  step refuses unless each binary reports the pinned version — a stale cache
+  cannot pass.
+runs:
+  using: composite
+  steps:
+    - name: llvm-tools (the toolchain's own llvm-profdata and llvm-cov)
+      shell: bash
+      run: rustup component add llvm-tools
+    - name: cached cargo-nextest and cargo-llvm-cov binaries, keyed by version
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/bin/cargo-nextest
+          ~/.cargo/bin/cargo-llvm-cov
+        key: suite-instruments-${{ runner.os }}-${{ runner.arch }}-cargo-nextest@0.9.148_cargo-llvm-cov@0.9.1
+    - name: install (cache miss)
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: cargo install --locked cargo-nextest@0.9.148 cargo-llvm-cov@0.9.1
+    - name: each instrument reports the pinned version
+      shell: bash
+      env:
+        CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
+      run: |
+        set -euo pipefail
+        want_nextest="$(python3 -c 'import sys, tomllib; sys.stdout.reconfigure(newline="\n"); print(tomllib.load(open("versions.toml","rb"))["ci"]["nextest_version"])')"
+        want_llvm_cov="$(python3 -c 'import sys, tomllib; sys.stdout.reconfigure(newline="\n"); print(tomllib.load(open("versions.toml","rb"))["ci"]["llvm_cov_version"])')"
+        got_nextest="$(cargo nextest --version | head -n 1 | awk '{print $2}')"
+        got_llvm_cov="$(cargo llvm-cov --version | awk '{print $2}')"
+        echo "suite-instruments: cargo-nextest $got_nextest (want $want_nextest), cargo-llvm-cov $got_llvm_cov (want $want_llvm_cov), cache hit: $CACHE_HIT"
+        [ "$got_nextest" = "$want_nextest" ] || { echo "cargo-nextest $got_nextest is not the pinned $want_nextest" >&2; exit 1; }
+        [ "$got_llvm_cov" = "$want_llvm_cov" ] || { echo "cargo-llvm-cov $got_llvm_cov is not the pinned $want_llvm_cov" >&2; exit 1; }
+    - name: the toolchain's llvm-profdata, by path (the component installs it off PATH)
+      shell: bash
+      run: |
+        set -euo pipefail
+        profdata="$(ls "$(rustc --print sysroot)"/lib/rustlib/*/bin/llvm-profdata)"
+        [ -x "$profdata" ] || { echo "no llvm-profdata under the toolchain's sysroot" >&2; exit 1; }
+        echo "LLVM_PROFDATA=$profdata" >> "$GITHUB_ENV"
+        "$profdata" --version | head -n 1
