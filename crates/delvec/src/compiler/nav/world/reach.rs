@@ -3387,8 +3387,12 @@ impl World {
             hold(&mut held, *c);
         }
         let mut flown: HashMap<[i32; 3], Quadrants> = HashMap::new();
+        // The cells reached since the last round asked its launches: the
+        // only ones the next round need ask ([`World::round`]).
+        let mut fresh: Vec<[i32; 3]> = seen.iter().copied().collect();
         let take = |seen: &mut BTreeSet<[i32; 3]>,
                     held: &mut Reach,
+                    fresh: &mut Vec<[i32; 3]>,
                     next: &mut Vec<[i32; 3]>,
                     cur: [i32; 3],
                     edges: &[Edge]| {
@@ -3399,28 +3403,30 @@ impl World {
                 {
                     seen.insert(edge.to);
                     hold(held, edge.to);
+                    fresh.push(edge.to);
                     next.push(edge.to);
                 }
             }
         };
-        let close =
-            |seen: &mut BTreeSet<[i32; 3]>, held: &mut Reach, mut frontier: Vec<[i32; 3]>| {
-                while !frontier.is_empty() {
-                    let edges = self.cell_edges(&memo, &params, &frontier);
-                    let mut next: Vec<[i32; 3]> = Vec::new();
-                    for (cur, e) in frontier.iter().zip(edges) {
-                        take(seen, held, &mut next, *cur, &e.edges);
-                    }
-                    next.sort_unstable();
-                    frontier = next;
+        let close = |seen: &mut BTreeSet<[i32; 3]>,
+                     held: &mut Reach,
+                     fresh: &mut Vec<[i32; 3]>,
+                     mut frontier: Vec<[i32; 3]>| {
+            while !frontier.is_empty() {
+                let edges = self.cell_edges(&memo, &params, &frontier);
+                let mut next: Vec<[i32; 3]> = Vec::new();
+                for (cur, e) in frontier.iter().zip(edges) {
+                    take(seen, held, fresh, &mut next, *cur, &e.edges);
                 }
-            };
+                next.sort_unstable();
+                frontier = next;
+            }
+        };
         let start: Vec<[i32; 3]> = seen.iter().copied().collect();
-        close(&mut seen, &mut held, start);
+        close(&mut seen, &mut held, &mut fresh, start);
         loop {
-            let standing: Vec<[i32; 3]> = seen
-                .iter()
-                .copied()
+            let mut standing: Vec<[i32; 3]> = std::mem::take(&mut fresh)
+                .into_iter()
                 .filter(|c| {
                     matches!(
                         self.rest_kind(*c),
@@ -3428,6 +3434,8 @@ impl World {
                     )
                 })
                 .collect();
+            standing.sort_unstable();
+            standing.dedup();
             let todo: Vec<[i32; 3]> = self
                 .left_to_fly(&memo, &held, &standing, &|c| {
                     flown.get(&c).copied().unwrap_or(0)
@@ -3447,10 +3455,10 @@ impl World {
                 let mut next: Vec<[i32; 3]> = Vec::new();
                 for ((c, q), e) in chunk.iter().zip(out) {
                     *flown.entry(*c).or_insert(0) |= *q;
-                    take(&mut seen, &mut held, &mut next, *c, &e.edges);
+                    take(&mut seen, &mut held, &mut fresh, &mut next, *c, &e.edges);
                 }
                 next.sort_unstable();
-                close(&mut seen, &mut held, next);
+                close(&mut seen, &mut held, &mut fresh, next);
             }
         }
         seen
@@ -3947,15 +3955,25 @@ impl World {
         }
         let mut reach = Reach::default();
         let mut visits = chunks::Visits::default();
-        self.close(&memo, params, &mut reach, start.clone(), &mut visits);
+        let mut fresh: Vec<[i32; 3]> = Vec::new();
+        self.close(
+            &memo,
+            params,
+            &mut reach,
+            start.clone(),
+            &mut visits,
+            &mut fresh,
+        );
         loop {
             // A round: every standing or holding state whose envelope holds a
             // cell the closure has not reached flies the launches that can
             // reach it, each judged against the closure as the round found it
             // — so which launches are flown never depends on the order the
             // chunks are visited in — and then the closure is taken over what
-            // they reached.
-            let todo = self.round(&memo, &reach);
+            // they reached. Only the states the last close reached are asked
+            // ([`World::round`]): a state asked in an earlier round has
+            // nothing left to fly.
+            let todo = self.round(&memo, &reach, &mut fresh);
             if todo.is_empty() {
                 break;
             }
@@ -3968,7 +3986,7 @@ impl World {
                 reach.portals = visits.report();
                 return Arc::new(reach);
             }
-            self.close(&memo, params, &mut reach, new, &mut visits);
+            self.close(&memo, params, &mut reach, new, &mut visits, &mut fresh);
         }
         reach.portals = visits.report();
         closure_taken(&reach);
@@ -4100,7 +4118,7 @@ impl World {
     ) {
         let mut visits = chunks::Visits::default();
         let new = self.fly_chunks(memo, params, reach, cells, &mut visits);
-        self.close(memo, params, reach, new, &mut visits);
+        self.close(memo, params, reach, new, &mut visits, &mut Vec::new());
         let [p, f] = visits.report();
         reach.portals[0] += p;
         reach.portals[1] += f;
@@ -4109,14 +4127,21 @@ impl World {
     /// The round's work: every standing or holding state of `reach` with the
     /// launches its envelope still asks for ([`World::envelope_open`]) and
     /// that it has not flown, judged against `reach` as it stands — in cell
-    /// order.
-    fn round(&self, memo: &GraphMemo, reach: &Reach) -> Vec<([i32; 3], Quadrants)> {
-        let nodes: Vec<[i32; 3]> = reach
-            .states
-            .iter()
-            .filter(|(_, k)| matches!(k, RestKind::Standing | RestKind::Holding))
-            .map(|(c, _)| c)
-            .collect();
+    /// order. Only `fresh` — the standing and holding states reached since
+    /// the last round, emptied here — can have any: the envelope asks only
+    /// toward cells the closure has not reached, so it only shrinks as the
+    /// closure grows, and a state asked in an earlier round flew every
+    /// direction it asked for then and asks for no new one now. The round is
+    /// the one every state would give.
+    fn round(
+        &self,
+        memo: &GraphMemo,
+        reach: &Reach,
+        fresh: &mut Vec<[i32; 3]>,
+    ) -> Vec<([i32; 3], Quadrants)> {
+        let mut nodes = std::mem::take(fresh);
+        nodes.sort_unstable();
+        nodes.dedup();
         self.left_to_fly(memo, reach, &nodes, &|c| reach.flown_mask(c))
     }
 
@@ -4209,7 +4234,8 @@ impl World {
     /// frontier of the chunk it lands in, and the next chunk with a frontier
     /// taken, until none has one. The closure is the same set whatever order
     /// the chunks are taken in, and every reached state's cell-relation edges
-    /// are joined once.
+    /// are joined once. Every standing or holding state reached is added to
+    /// `fresh`, for the round that asks its launches ([`World::round`]).
     fn close(
         &self,
         memo: &GraphMemo,
@@ -4217,6 +4243,7 @@ impl World {
         reach: &mut Reach,
         frontier: Vec<[i32; 3]>,
         visits: &mut chunks::Visits,
+        fresh: &mut Vec<[i32; 3]>,
     ) {
         let side = chunks::side_here();
         let mut queued: std::collections::HashSet<[i32; 3]> = std::collections::HashSet::new();
@@ -4267,6 +4294,9 @@ impl World {
                         continue;
                     };
                     reach.states.insert(&memo.dense, *c, kind);
+                    if matches!(kind, RestKind::Standing | RestKind::Holding) {
+                        fresh.push(*c);
+                    }
                     if e.leaves_world {
                         reach.leaves_world.insert(*c);
                     }
