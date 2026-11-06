@@ -2,9 +2,10 @@
 
 Status: **spike note + model proposal**, written 2026-08-01 as the input the M4
 expressiveness spec consumes. The diagnostics, codes and file names it proposes
-are proposals, not the engine's: the engine's player movement relation admits
-gap jumps over `dsl::metrics::jump_max_gap` (`compiler::nav::world::body`), and
-its DW codes are the ones `docs/reference/compiler.md` lists. Souls-mode parkour
+are proposals, not the engine's: the engine admits a jump where its reach graph
+(`compiler::nav::world::reach`) flies the launch tick by tick with the body
+simulator (`dsl::metrics::body`), or where `world.jumps[]` declares one (`DW1041`),
+and its DW codes are the ones `docs/reference/compiler.md` lists. Souls-mode parkour
 needs provable jump gaps; this note supplies (a) the
 empirical 1.21.11 jump kinematics the model must respect, measured on the pinned
 server, and (b) the proposed compiler/nav/harness shape. Water and ladder edge
