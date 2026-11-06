@@ -7,8 +7,7 @@ they are distributed and what is a declared prerequisite).
 
 Every number below carries the command that produced it, so a later session
 **re-measures instead of re-litigating**. The binary and toolchain figures are
-measurements taken at engine 1.15.0 (`delvec 1.15.0, dsl 0.69.0, mc 1.21.11`,
-built from `8b3c7396d`) on macOS 27.2 / `aarch64-apple-darwin` / rustc 1.97.1;
+measurements taken at engine 1.15.0 (built from `8b3c7396d`) on macOS 27.2 / `aarch64-apple-darwin` / rustc 1.97.1;
 the image figures and §4.2's split were taken at engine 1.1.0 and say so where
 they stand. Re-measure with [§Re-measuring](#re-measuring) before quoting any of
 them for a later engine. The plugin figures in §2 are counted from the
@@ -249,7 +248,7 @@ ls -l target/release/delvec                                  → 53,896,928 B
 ls -l target/aarch64-apple-darwin/release/delvec             → 43,212,976 B (shelf recipe)
 ```
 
-Both report `delvec 1.15.0, dsl 0.69.0, mc 1.21.11`. A repo-wide `strip` would
+Both report engine 1.15.0. A repo-wide `strip` would
 take symbols off every developer's `cargo build --release`, which is why the
 flag sits where it does; the 20% gap is recorded, not hidden.
 
