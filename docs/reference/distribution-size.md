@@ -6,11 +6,12 @@ Companion to [`tools.md`](tools.md) (*what* the tools are) and ADR-0023 (*how*
 they are distributed and what is a declared prerequisite).
 
 Every number below carries the command that produced it, so a later session
-**re-measures instead of re-litigating**. Unless stated otherwise, the binary,
-toolchain and image figures are frozen measurements taken at engine 1.1.0
-(`delvec 1.1.0, dsl 0.19.0, mc 1.21.11`) on macOS 26.6 / `aarch64-apple-darwin`
-/ rustc 1.97.1; re-measure them with [§Re-measuring](#re-measuring) before
-quoting them for a later engine. The plugin figures in §2 are counted from the
+**re-measures instead of re-litigating**. The binary and toolchain figures are
+measurements taken at engine 1.15.0 (`delvec 1.15.0, dsl 0.69.0, mc 1.21.11`,
+built from `8b3c7396d`) on macOS 27.2 / `aarch64-apple-darwin` / rustc 1.97.1;
+the image figures and §4.2's split were taken at engine 1.1.0 and say so where
+they stand. Re-measure with [§Re-measuring](#re-measuring) before quoting any of
+them for a later engine. The plugin figures in §2 are counted from the
 committed tree.
 
 ---
@@ -19,12 +20,12 @@ committed tree.
 
 | | download | on disk |
 |---|---|---|
-| **the authoring loop** (skill + `delvec` + prefabs) | **~9.4 MB** | **~25 MB** |
+| **the authoring loop** (skill + `delvec` + prefabs) | **~16 MB** | **~44 MB** |
 | \+ a Rust toolchain, if installing via `cargo install` or building from source | ~0.4 GB | **~2.1 GB** (with the five shelf targets) |
 | \+ Python venv, only if the campaign declares custom skins | — | ~94 MB |
 | **the validation ladder** (docker images, jars, renderer) | ~0.4 GB | ~2.0 GB |
 
-**`delvec` itself is ~9 MB to download and ~24 MB installed**, and it is the
+**`delvec` itself is ~15 MB to download and ~43 MB installed**, and it is the
 whole creator: compiler, prefab authoring and admission, schematic conversion,
 playtest harvesting, and both render arms — the CPU surface and the GPU stack
 (Nucleation, Lumenwright, wgpu). Nothing the authoring loop needs is large. The two big
@@ -48,31 +49,26 @@ cache and copies the plugin out, and their own filesystem gets no working tree.
 
 | item | download | on disk | how it is obtained |
 |---|---|---|---|
-| the plugin (32 files) | 453,851 B | same | `/plugin install delvewright@delvewright` |
-| — of which `SKILL.md`, the spine | 28,607 B | same | always in context once the skill loads |
-| — of which `references/` (24 files) | 352,302 B | same | level 3: costs nothing until a step reads one |
-| — of which `scripts/` (5 files) | 70,967 B | same | level 3: run through bash, only the output enters context |
-| `delvec` binary | 9,256,047 B | 24,489,840 B | release shelf (default), `cargo install`, or a checkout (ADR-0023 §1–§2) |
+| the plugin (37 files) | 694,795 B | same | `/plugin install delvewright@delvewright` |
+| — of which `SKILL.md`, the spine | 35,373 B | same | always in context once the skill loads |
+| — of which `references/` (25 files) | 399,222 B | same | level 3: costs nothing until a step reads one |
+| — of which `scripts/` (9 files) | 258,225 B | same | level 3: run through bash, only the output enters context |
+| `delvec` binary | 15,373,599 B | 43,212,976 B | release shelf (default), `cargo install`, or a checkout (ADR-0023 §1–§2) |
 | `LICENSE` (travels in every archive) | — | 35,149 B | inside the archive |
 | prefab library (`campaigns/prefabs`) | 95,355 B | 479,232 B, 74 files | the content repo — **OPTIONAL** (ADR-0027 §1): taken at step 2 by a campaign that seats shipped pieces, and by no other |
 
 ```
 git ls-tree -r -l HEAD -- .claude/skills/delvewright | awk '{n++; s+=$4} END{print n, s}'
-                                                             → 32 453851 (plugin; same per subdirectory)
+                                                             → 37 694795 (plugin; same per subdirectory)
 bash tools/ci/build-release-binaries.sh --target aarch64-apple-darwin
-ls -l dist/delvec-v1.1.0-aarch64-apple-darwin.tar.gz        → 9,256,047 B
-ls -l target/aarch64-apple-darwin/release/delvec             → 24,489,840 B
-wc -c < target/aarch64-apple-darwin/release/delvec           → 24,489,840 (second reader, same answer)
+ls -l dist/delvec-v1.15.0-aarch64-apple-darwin.tar.gz       → 15,373,599 B
+ls -l target/aarch64-apple-darwin/release/delvec             → 43,212,976 B
+wc -c < target/aarch64-apple-darwin/release/delvec           → 43,212,976 (second reader, same answer)
 ```
 
-The renderer is inside the binary (spec-0112): `target/release/delvec` built
-`cargo build --release --locked -p delvec` at `8150c02f9` on
-`aarch64-apple-darwin` measures 44,841,056 B (`ls -l target/release/delvec`),
-against 24,489,840 B for the shelf binary at 1.1.0 above — re-measure the shelf
-archive with the commands above before quoting a download size for a later
-engine.
+The renderer is inside the binary (spec-0112), so these figures include it.
 
-The **harvested game-registry data is not a separate download**: 4,065,934 B of
+The **harvested game-registry data is not a separate download**: 5,439,463 B of
 `crates/{delvec,dsl}/data/` is `include_str!`-ed into the binary (§4.3).
 
 ### Required, but only as a *way of getting* `delvec`
@@ -152,41 +148,41 @@ image, and that is the product, not the toolchain.
 ### `cargo install`'s own disk cost
 
 A fresh `CARGO_HOME` after installing the published crate held 35,212 KB of
-registry index plus crate sources when the binary resolved 50 packages; at 202
+registry index plus crate sources when the binary resolved 50 packages; at 208
 packages (§4) the figure is **not measured** — it is a one-time,
 shared-across-all-Rust-work cost either way, not a per-delve one.
 
 ---
 
-## 4. What makes `delvec` ~24 MB
+## 4. What makes `delvec` ~43 MB
 
 ```
 cargo tree -p delvec --edges normal --prefix none | sed 's/ (\*)$//' | sort -u | wc -l
-→ 202 packages
+→ 208 packages
 ```
 
 ### 4.1 Section map of the shelf binary
 
 ```
-size -m target/aarch64-apple-darwin/release/delvec      # stripped, 24,489,840 B
+size -m target/aarch64-apple-darwin/release/delvec      # stripped, 43,212,976 B
 ```
 
 | section | bytes | note |
 |---|---|---|
-| `__TEXT.__text` | 16,578,844 | code |
-| `__TEXT.__const` | 2,687,688 | mostly the embedded JSON (§4.3) and the render stack's tables |
-| `__TEXT.__eh_frame` | 1,855,192 | unwind tables |
-| `__DATA_CONST.__const` | 833,816 | |
-| `__TEXT.__gcc_except_tab` | 821,208 | landing pads |
-| `__TEXT.__cstring` | 397,026 | |
-| `__TEXT.__unwind_info` | 305,256 | |
+| `__TEXT.__text` | 27,275,608 | code |
+| `__TEXT.__const` | 7,922,424 | mostly the embedded registry data (§4.3) and the render stack's tables |
+| `__TEXT.__eh_frame` | 3,082,796 | unwind tables |
+| `__TEXT.__gcc_except_tab` | 1,406,636 | landing pads |
+| `__DATA_CONST.__const` | 982,688 | |
+| `__TEXT.__cstring` | 591,272 | |
+| `__TEXT.__unwind_info` | 506,296 | |
 
 Panic/unwind machinery (`__eh_frame` + `__gcc_except_tab` + `__unwind_info`) is
-2,981,656 B — 12% of the binary.
+4,995,728 B — 12% of the binary.
 
 ### 4.2 The GPU render stack is the growth, and it is deliberate
 
-The same script on the same host produces an 8,053,424 B binary (3,251,645 B
+At engine 1.1.0 the same script on the same host produced an 8,053,424 B binary (3,251,645 B
 archived) from the compiler and the CPU render surface alone, with the GPU arms
 left to a second binary built from a checkout. Carrying the whole
 creator in one binary (ADR-0023 §3) costs **+16,436,416 B on disk and
@@ -197,15 +193,16 @@ budget**: binary size under 100 MB is not a decision input (ADR-0023 §1), and
 the alternative is a second binary a creator has to find, build
 and keep in step.
 
-### 4.3 Embedded harvested registry data: 4,065,934 B
+### 4.3 Embedded harvested registry data: 5,439,463 B
 
 Every file under `crates/delvec/data/` and `crates/dsl/data/` that an
 `include_str!`/`include_bytes!` site outside a `#[cfg(test)]` module names, each
-path resolved against its own source file — **37 files over 37 sites**. The
-population is the sites, not the directories: the command lists 40 sites, and
-the three inside test modules (`compiler/registry.rs` ×2, `compiler/traversal.rs`)
-are excluded; `block-classification-1.21.11.json` (128,644 B) is named only by
-one of them and is otherwise read by a tool, so it is not here.
+path resolved against its own source file — **40 files over 40 sites**. The
+population is the sites, not the directories: the command lists 44 sites, and
+the four inside test modules (`compiler/registry.rs` ×2, `compiler/sign.rs`,
+`compiler/traversal.rs`) are excluded; `block-classification-1.21.11.json`
+(128,644 B) is named only by one of them and is otherwise read by a tool, so it
+is not here.
 
 ```
 perl -0777 -ne 'while(/include_(?:str|bytes)!\(\s*"([^"]*data\/[^"]*)"/g){print "$ARGV $1\n"}' \
@@ -214,6 +211,7 @@ perl -0777 -ne 'while(/include_(?:str|bytes)!\(\s*"([^"]*data\/[^"]*)"/g){print 
 
 | file | bytes |
 |---|---|
+| `outline-shapes-1.21.11.tsv` (dsl) | 1,196,356 |
 | `collision-footprints-1.21.11.tsv` (dsl) | 889,738 |
 | `textures-1.21.11.json` | 664,346 |
 | `commands-1.21.11.json` | 474,604 |
@@ -221,16 +219,18 @@ perl -0777 -ne 'while(/include_(?:str|bytes)!\(\s*"([^"]*data\/[^"]*)"/g){print 
 | `faces-1.21.11.tsv` (dsl) | 281,328 |
 | `block-appearance-1.21.11.json` | 278,817 |
 | `support-bases-1.21.11.tsv` (dsl) | 203,292 |
-| `blocks-1.21.11.json` | 178,040 |
+| `blocks-1.21.11.json` (dsl) | 178,040 |
 | `support-1.21.11.tsv` (dsl) | 153,062 |
-| `block-defaults-1.21.11.json` | 89,343 |
+| `light-block-1.21.11.tsv` (dsl) | 121,292 |
+| `block-defaults-1.21.11.json` (dsl) | 89,343 |
 | `sounds-1.21.11.json` | 71,582 |
+| `occlusion-1.21.11.tsv` (dsl) | 55,881 |
 | `redstone-1.21.11.tsv` (dsl) | 53,613 |
 | `item-stack-sizes-1.21.11.json` | 52,762 |
 | `model-parts-1.21.11.json` | 52,601 |
 | `items-1.21.11.json` (delvec) | 46,986 |
 | the remaining 22, each under 40,000 B | 155,150 |
-| **total** | **4,065,934** |
+| **total** | **5,439,463** |
 
 The block-appearance table: it is what lets the blocking chart paint from the pinned client jar on a machine that has no jar (`compiler.md`, `delvec blocking-chart`).
 
@@ -245,13 +245,13 @@ is stripped and a `cargo install` / `cargo build --release` binary is not:
 
 ```
 cargo build --release -p delvec
-ls -l target/release/delvec                                  → 30,945,760 B
-ls -l target/aarch64-apple-darwin/release/delvec             → 24,489,840 B (shelf recipe)
+ls -l target/release/delvec                                  → 53,896,928 B
+ls -l target/aarch64-apple-darwin/release/delvec             → 43,212,976 B (shelf recipe)
 ```
 
-Both report `delvec 1.1.0, dsl 0.19.0, mc 1.21.11`. A repo-wide `strip` would
+Both report `delvec 1.15.0, dsl 0.69.0, mc 1.21.11`. A repo-wide `strip` would
 take symbols off every developer's `cargo build --release`, which is why the
-flag sits where it does; the 26% gap is recorded, not hidden.
+flag sits where it does; the 20% gap is recorded, not hidden.
 
 ---
 
