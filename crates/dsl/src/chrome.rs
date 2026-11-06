@@ -116,7 +116,7 @@ impl ChromeString {
     /// The plan-time form, for a default the compiler bakes before it knows the
     /// build's language or the delve's key namespace. It is not emittable as it
     /// stands: [`Chrome::rebind`] is what turns it into the delve's own pack key,
-    /// and `crates/delvec/tests/i18n_v2.rs` fails the build of any tree that emits
+    /// and `crates/delvec/tests/it/i18n_v2.rs` fails the build of any tree that emits
     /// a bare key, so a site that forgets to rebind is a red rather than a string
     /// another delve's pack can answer.
     pub fn tagged(&self) -> String {

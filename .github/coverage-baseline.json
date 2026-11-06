@@ -1,0 +1,7582 @@
+{
+  "command": [
+    "cargo llvm-cov --no-report nextest --workspace --locked --no-fail-fast --profile ci",
+    "cargo llvm-cov report --json --output-path target/coverage.json"
+  ],
+  "excluded": {
+    "files": 206,
+    "regions": 51823
+  },
+  "files": [
+    {
+      "functions": {
+        "count": 19,
+        "covered": 18
+      },
+      "lines": {
+        "count": 76,
+        "covered": 74
+      },
+      "path": "crates/delvec/src/admit/allowlist.rs",
+      "regions": {
+        "count": 125,
+        "covered": 120
+      }
+    },
+    {
+      "functions": {
+        "count": 27,
+        "covered": 26
+      },
+      "lines": {
+        "count": 353,
+        "covered": 350
+      },
+      "path": "crates/delvec/src/admit/audit.rs",
+      "regions": {
+        "count": 511,
+        "covered": 506
+      }
+    },
+    {
+      "functions": {
+        "count": 4,
+        "covered": 4
+      },
+      "lines": {
+        "count": 54,
+        "covered": 46
+      },
+      "path": "crates/delvec/src/admit/catalog.rs",
+      "regions": {
+        "count": 50,
+        "covered": 46
+      }
+    },
+    {
+      "functions": {
+        "count": 6,
+        "covered": 6
+      },
+      "lines": {
+        "count": 36,
+        "covered": 36
+      },
+      "path": "crates/delvec/src/admit/diag.rs",
+      "regions": {
+        "count": 38,
+        "covered": 38
+      }
+    },
+    {
+      "functions": {
+        "count": 9,
+        "covered": 7
+      },
+      "lines": {
+        "count": 83,
+        "covered": 61
+      },
+      "path": "crates/delvec/src/admit/entities.rs",
+      "regions": {
+        "count": 139,
+        "covered": 98
+      }
+    },
+    {
+      "functions": {
+        "count": 13,
+        "covered": 13
+      },
+      "lines": {
+        "count": 151,
+        "covered": 151
+      },
+      "path": "crates/delvec/src/admit/fixtures.rs",
+      "regions": {
+        "count": 267,
+        "covered": 267
+      }
+    },
+    {
+      "functions": {
+        "count": 29,
+        "covered": 29
+      },
+      "lines": {
+        "count": 343,
+        "covered": 339
+      },
+      "path": "crates/delvec/src/admit/gallery.rs",
+      "regions": {
+        "count": 540,
+        "covered": 531
+      }
+    },
+    {
+      "functions": {
+        "count": 3,
+        "covered": 3
+      },
+      "lines": {
+        "count": 40,
+        "covered": 40
+      },
+      "path": "crates/delvec/src/admit/jigsaw.rs",
+      "regions": {
+        "count": 77,
+        "covered": 76
+      }
+    },
+    {
+      "functions": {
+        "count": 41,
+        "covered": 39
+      },
+      "lines": {
+        "count": 217,
+        "covered": 204
+      },
+      "path": "crates/delvec/src/admit/light.rs",
+      "regions": {
+        "count": 350,
+        "covered": 333
+      }
+    },
+    {
+      "functions": {
+        "count": 4,
+        "covered": 3
+      },
+      "lines": {
+        "count": 44,
+        "covered": 40
+      },
+      "path": "crates/delvec/src/admit/meta.rs",
+      "regions": {
+        "count": 38,
+        "covered": 35
+      }
+    },
+    {
+      "functions": {
+        "count": 79,
+        "covered": 64
+      },
+      "lines": {
+        "count": 1210,
+        "covered": 1003
+      },
+      "path": "crates/delvec/src/admit/run.rs",
+      "regions": {
+        "count": 2117,
+        "covered": 1745
+      }
+    },
+    {
+      "functions": {
+        "count": 15,
+        "covered": 15
+      },
+      "lines": {
+        "count": 120,
+        "covered": 108
+      },
+      "path": "crates/delvec/src/admit/scenery.rs",
+      "regions": {
+        "count": 183,
+        "covered": 169
+      }
+    },
+    {
+      "functions": {
+        "count": 15,
+        "covered": 12
+      },
+      "lines": {
+        "count": 153,
+        "covered": 119
+      },
+      "path": "crates/delvec/src/admit/settling.rs",
+      "regions": {
+        "count": 230,
+        "covered": 194
+      }
+    },
+    {
+      "functions": {
+        "count": 4,
+        "covered": 4
+      },
+      "lines": {
+        "count": 76,
+        "covered": 67
+      },
+      "path": "crates/delvec/src/admit/socket.rs",
+      "regions": {
+        "count": 136,
+        "covered": 130
+      }
+    },
+    {
+      "functions": {
+        "count": 14,
+        "covered": 14
+      },
+      "lines": {
+        "count": 156,
+        "covered": 156
+      },
+      "path": "crates/delvec/src/admit/spatial.rs",
+      "regions": {
+        "count": 196,
+        "covered": 195
+      }
+    },
+    {
+      "functions": {
+        "count": 42,
+        "covered": 37
+      },
+      "lines": {
+        "count": 314,
+        "covered": 300
+      },
+      "path": "crates/delvec/src/admit/structure.rs",
+      "regions": {
+        "count": 631,
+        "covered": 571
+      }
+    },
+    {
+      "functions": {
+        "count": 43,
+        "covered": 38
+      },
+      "lines": {
+        "count": 725,
+        "covered": 655
+      },
+      "path": "crates/delvec/src/cli/campaign.rs",
+      "regions": {
+        "count": 1236,
+        "covered": 1117
+      }
+    },
+    {
+      "functions": {
+        "count": 12,
+        "covered": 11
+      },
+      "lines": {
+        "count": 211,
+        "covered": 180
+      },
+      "path": "crates/delvec/src/cli/document.rs",
+      "regions": {
+        "count": 335,
+        "covered": 273
+      }
+    },
+    {
+      "functions": {
+        "count": 8,
+        "covered": 6
+      },
+      "lines": {
+        "count": 280,
+        "covered": 196
+      },
+      "path": "crates/delvec/src/cli/edit.rs",
+      "regions": {
+        "count": 459,
+        "covered": 347
+      }
+    },
+    {
+      "functions": {
+        "count": 15,
+        "covered": 13
+      },
+      "lines": {
+        "count": 212,
+        "covered": 159
+      },
+      "path": "crates/delvec/src/cli/l10n.rs",
+      "regions": {
+        "count": 384,
+        "covered": 285
+      }
+    },
+    {
+      "functions": {
+        "count": 8,
+        "covered": 7
+      },
+      "lines": {
+        "count": 243,
+        "covered": 178
+      },
+      "path": "crates/delvec/src/cli/metrics.rs",
+      "regions": {
+        "count": 264,
+        "covered": 188
+      }
+    },
+    {
+      "functions": {
+        "count": 9,
+        "covered": 9
+      },
+      "lines": {
+        "count": 130,
+        "covered": 113
+      },
+      "path": "crates/delvec/src/cli/report.rs",
+      "regions": {
+        "count": 174,
+        "covered": 161
+      }
+    },
+    {
+      "functions": {
+        "count": 17,
+        "covered": 17
+      },
+      "lines": {
+        "count": 258,
+        "covered": 236
+      },
+      "path": "crates/delvec/src/cli/sight_agreement.rs",
+      "regions": {
+        "count": 454,
+        "covered": 415
+      }
+    },
+    {
+      "functions": {
+        "count": 44,
+        "covered": 34
+      },
+      "lines": {
+        "count": 542,
+        "covered": 489
+      },
+      "path": "crates/delvec/src/cli/view.rs",
+      "regions": {
+        "count": 832,
+        "covered": 714
+      }
+    },
+    {
+      "functions": {
+        "count": 19,
+        "covered": 19
+      },
+      "lines": {
+        "count": 131,
+        "covered": 130
+      },
+      "path": "crates/delvec/src/compiler/acts.rs",
+      "regions": {
+        "count": 221,
+        "covered": 219
+      }
+    },
+    {
+      "functions": {
+        "count": 16,
+        "covered": 16
+      },
+      "lines": {
+        "count": 146,
+        "covered": 144
+      },
+      "path": "crates/delvec/src/compiler/affordance.rs",
+      "regions": {
+        "count": 214,
+        "covered": 206
+      }
+    },
+    {
+      "functions": {
+        "count": 3,
+        "covered": 3
+      },
+      "lines": {
+        "count": 100,
+        "covered": 99
+      },
+      "path": "crates/delvec/src/compiler/analyze.rs",
+      "regions": {
+        "count": 132,
+        "covered": 129
+      }
+    },
+    {
+      "functions": {
+        "count": 36,
+        "covered": 32
+      },
+      "lines": {
+        "count": 275,
+        "covered": 245
+      },
+      "path": "crates/delvec/src/compiler/approach.rs",
+      "regions": {
+        "count": 459,
+        "covered": 414
+      }
+    },
+    {
+      "functions": {
+        "count": 136,
+        "covered": 133
+      },
+      "lines": {
+        "count": 1140,
+        "covered": 1108
+      },
+      "path": "crates/delvec/src/compiler/assembled.rs",
+      "regions": {
+        "count": 2128,
+        "covered": 2070
+      }
+    },
+    {
+      "functions": {
+        "count": 185,
+        "covered": 184
+      },
+      "lines": {
+        "count": 1725,
+        "covered": 1685
+      },
+      "path": "crates/delvec/src/compiler/assembly.rs",
+      "regions": {
+        "count": 3041,
+        "covered": 2973
+      }
+    },
+    {
+      "functions": {
+        "count": 17,
+        "covered": 17
+      },
+      "lines": {
+        "count": 145,
+        "covered": 145
+      },
+      "path": "crates/delvec/src/compiler/atmos.rs",
+      "regions": {
+        "count": 223,
+        "covered": 223
+      }
+    },
+    {
+      "functions": {
+        "count": 91,
+        "covered": 80
+      },
+      "lines": {
+        "count": 639,
+        "covered": 604
+      },
+      "path": "crates/delvec/src/compiler/atmosphere.rs",
+      "regions": {
+        "count": 1040,
+        "covered": 983
+      }
+    },
+    {
+      "functions": {
+        "count": 102,
+        "covered": 99
+      },
+      "lines": {
+        "count": 728,
+        "covered": 691
+      },
+      "path": "crates/delvec/src/compiler/attached.rs",
+      "regions": {
+        "count": 1328,
+        "covered": 1256
+      }
+    },
+    {
+      "functions": {
+        "count": 4,
+        "covered": 0
+      },
+      "lines": {
+        "count": 100,
+        "covered": 0
+      },
+      "path": "crates/delvec/src/compiler/ballistics.rs",
+      "regions": {
+        "count": 178,
+        "covered": 0
+      }
+    },
+    {
+      "functions": {
+        "count": 36,
+        "covered": 36
+      },
+      "lines": {
+        "count": 265,
+        "covered": 257
+      },
+      "path": "crates/delvec/src/compiler/batchstate.rs",
+      "regions": {
+        "count": 486,
+        "covered": 476
+      }
+    },
+    {
+      "functions": {
+        "count": 32,
+        "covered": 20
+      },
+      "lines": {
+        "count": 351,
+        "covered": 251
+      },
+      "path": "crates/delvec/src/compiler/blind.rs",
+      "regions": {
+        "count": 570,
+        "covered": 397
+      }
+    },
+    {
+      "functions": {
+        "count": 32,
+        "covered": 32
+      },
+      "lines": {
+        "count": 366,
+        "covered": 357
+      },
+      "path": "crates/delvec/src/compiler/blocking.rs",
+      "regions": {
+        "count": 612,
+        "covered": 588
+      }
+    },
+    {
+      "functions": {
+        "count": 264,
+        "covered": 256
+      },
+      "lines": {
+        "count": 2433,
+        "covered": 2346
+      },
+      "path": "crates/delvec/src/compiler/blockout.rs",
+      "regions": {
+        "count": 4412,
+        "covered": 4267
+      }
+    },
+    {
+      "functions": {
+        "count": 19,
+        "covered": 12
+      },
+      "lines": {
+        "count": 68,
+        "covered": 50
+      },
+      "path": "crates/delvec/src/compiler/blockstate.rs",
+      "regions": {
+        "count": 96,
+        "covered": 73
+      }
+    },
+    {
+      "functions": {
+        "count": 47,
+        "covered": 47
+      },
+      "lines": {
+        "count": 297,
+        "covered": 296
+      },
+      "path": "crates/delvec/src/compiler/bodies.rs",
+      "regions": {
+        "count": 493,
+        "covered": 488
+      }
+    },
+    {
+      "functions": {
+        "count": 8,
+        "covered": 8
+      },
+      "lines": {
+        "count": 91,
+        "covered": 91
+      },
+      "path": "crates/delvec/src/compiler/bound.rs",
+      "regions": {
+        "count": 102,
+        "covered": 102
+      }
+    },
+    {
+      "functions": {
+        "count": 185,
+        "covered": 180
+      },
+      "lines": {
+        "count": 1524,
+        "covered": 1457
+      },
+      "path": "crates/delvec/src/compiler/branch.rs",
+      "regions": {
+        "count": 2596,
+        "covered": 2522
+      }
+    },
+    {
+      "functions": {
+        "count": 27,
+        "covered": 27
+      },
+      "lines": {
+        "count": 315,
+        "covered": 313
+      },
+      "path": "crates/delvec/src/compiler/burial.rs",
+      "regions": {
+        "count": 455,
+        "covered": 452
+      }
+    },
+    {
+      "functions": {
+        "count": 9,
+        "covered": 9
+      },
+      "lines": {
+        "count": 102,
+        "covered": 102
+      },
+      "path": "crates/delvec/src/compiler/calibrate.rs",
+      "regions": {
+        "count": 149,
+        "covered": 149
+      }
+    },
+    {
+      "functions": {
+        "count": 75,
+        "covered": 74
+      },
+      "lines": {
+        "count": 700,
+        "covered": 668
+      },
+      "path": "crates/delvec/src/compiler/camera.rs",
+      "regions": {
+        "count": 1239,
+        "covered": 1173
+      }
+    },
+    {
+      "functions": {
+        "count": 80,
+        "covered": 79
+      },
+      "lines": {
+        "count": 744,
+        "covered": 705
+      },
+      "path": "crates/delvec/src/compiler/cast.rs",
+      "regions": {
+        "count": 1212,
+        "covered": 1164
+      }
+    },
+    {
+      "functions": {
+        "count": 57,
+        "covered": 49
+      },
+      "lines": {
+        "count": 327,
+        "covered": 295
+      },
+      "path": "crates/delvec/src/compiler/cellset.rs",
+      "regions": {
+        "count": 507,
+        "covered": 459
+      }
+    },
+    {
+      "functions": {
+        "count": 60,
+        "covered": 57
+      },
+      "lines": {
+        "count": 333,
+        "covered": 319
+      },
+      "path": "crates/delvec/src/compiler/chain.rs",
+      "regions": {
+        "count": 633,
+        "covered": 588
+      }
+    },
+    {
+      "functions": {
+        "count": 40,
+        "covered": 37
+      },
+      "lines": {
+        "count": 445,
+        "covered": 432
+      },
+      "path": "crates/delvec/src/compiler/claims.rs",
+      "regions": {
+        "count": 568,
+        "covered": 552
+      }
+    },
+    {
+      "functions": {
+        "count": 22,
+        "covered": 22
+      },
+      "lines": {
+        "count": 242,
+        "covered": 226
+      },
+      "path": "crates/delvec/src/compiler/clearance.rs",
+      "regions": {
+        "count": 340,
+        "covered": 319
+      }
+    },
+    {
+      "functions": {
+        "count": 60,
+        "covered": 59
+      },
+      "lines": {
+        "count": 488,
+        "covered": 438
+      },
+      "path": "crates/delvec/src/compiler/clickbox.rs",
+      "regions": {
+        "count": 780,
+        "covered": 738
+      }
+    },
+    {
+      "functions": {
+        "count": 9,
+        "covered": 9
+      },
+      "lines": {
+        "count": 70,
+        "covered": 70
+      },
+      "path": "crates/delvec/src/compiler/clock.rs",
+      "regions": {
+        "count": 170,
+        "covered": 170
+      }
+    },
+    {
+      "functions": {
+        "count": 23,
+        "covered": 23
+      },
+      "lines": {
+        "count": 149,
+        "covered": 146
+      },
+      "path": "crates/delvec/src/compiler/cohabit.rs",
+      "regions": {
+        "count": 281,
+        "covered": 270
+      }
+    },
+    {
+      "functions": {
+        "count": 64,
+        "covered": 61
+      },
+      "lines": {
+        "count": 749,
+        "covered": 704
+      },
+      "path": "crates/delvec/src/compiler/combat.rs",
+      "regions": {
+        "count": 1034,
+        "covered": 982
+      }
+    },
+    {
+      "functions": {
+        "count": 33,
+        "covered": 32
+      },
+      "lines": {
+        "count": 403,
+        "covered": 391
+      },
+      "path": "crates/delvec/src/compiler/commands.rs",
+      "regions": {
+        "count": 642,
+        "covered": 626
+      }
+    },
+    {
+      "functions": {
+        "count": 28,
+        "covered": 28
+      },
+      "lines": {
+        "count": 402,
+        "covered": 398
+      },
+      "path": "crates/delvec/src/compiler/continuity.rs",
+      "regions": {
+        "count": 547,
+        "covered": 541
+      }
+    },
+    {
+      "functions": {
+        "count": 47,
+        "covered": 47
+      },
+      "lines": {
+        "count": 805,
+        "covered": 802
+      },
+      "path": "crates/delvec/src/compiler/creator.rs",
+      "regions": {
+        "count": 1137,
+        "covered": 1130
+      }
+    },
+    {
+      "functions": {
+        "count": 15,
+        "covered": 14
+      },
+      "lines": {
+        "count": 123,
+        "covered": 118
+      },
+      "path": "crates/delvec/src/compiler/crosshair.rs",
+      "regions": {
+        "count": 201,
+        "covered": 192
+      }
+    },
+    {
+      "functions": {
+        "count": 70,
+        "covered": 69
+      },
+      "lines": {
+        "count": 546,
+        "covered": 537
+      },
+      "path": "crates/delvec/src/compiler/daylight.rs",
+      "regions": {
+        "count": 943,
+        "covered": 926
+      }
+    },
+    {
+      "functions": {
+        "count": 37,
+        "covered": 36
+      },
+      "lines": {
+        "count": 322,
+        "covered": 319
+      },
+      "path": "crates/delvec/src/compiler/deathplan.rs",
+      "regions": {
+        "count": 503,
+        "covered": 494
+      }
+    },
+    {
+      "functions": {
+        "count": 54,
+        "covered": 54
+      },
+      "lines": {
+        "count": 426,
+        "covered": 396
+      },
+      "path": "crates/delvec/src/compiler/design.rs",
+      "regions": {
+        "count": 688,
+        "covered": 661
+      }
+    },
+    {
+      "functions": {
+        "count": 134,
+        "covered": 124
+      },
+      "lines": {
+        "count": 1207,
+        "covered": 1133
+      },
+      "path": "crates/delvec/src/compiler/detail.rs",
+      "regions": {
+        "count": 2120,
+        "covered": 1997
+      }
+    },
+    {
+      "functions": {
+        "count": 45,
+        "covered": 39
+      },
+      "lines": {
+        "count": 369,
+        "covered": 348
+      },
+      "path": "crates/delvec/src/compiler/eclipse.rs",
+      "regions": {
+        "count": 526,
+        "covered": 485
+      }
+    },
+    {
+      "functions": {
+        "count": 125,
+        "covered": 109
+      },
+      "lines": {
+        "count": 1391,
+        "covered": 1250
+      },
+      "path": "crates/delvec/src/compiler/edit.rs",
+      "regions": {
+        "count": 2152,
+        "covered": 1986
+      }
+    },
+    {
+      "functions": {
+        "count": 28,
+        "covered": 28
+      },
+      "lines": {
+        "count": 316,
+        "covered": 313
+      },
+      "path": "crates/delvec/src/compiler/emit/actor.rs",
+      "regions": {
+        "count": 589,
+        "covered": 586
+      }
+    },
+    {
+      "functions": {
+        "count": 6,
+        "covered": 6
+      },
+      "lines": {
+        "count": 246,
+        "covered": 241
+      },
+      "path": "crates/delvec/src/compiler/emit/advancement.rs",
+      "regions": {
+        "count": 329,
+        "covered": 324
+      }
+    },
+    {
+      "functions": {
+        "count": 8,
+        "covered": 8
+      },
+      "lines": {
+        "count": 77,
+        "covered": 77
+      },
+      "path": "crates/delvec/src/compiler/emit/atmosphere.rs",
+      "regions": {
+        "count": 117,
+        "covered": 116
+      }
+    },
+    {
+      "functions": {
+        "count": 19,
+        "covered": 19
+      },
+      "lines": {
+        "count": 147,
+        "covered": 146
+      },
+      "path": "crates/delvec/src/compiler/emit/boundary.rs",
+      "regions": {
+        "count": 216,
+        "covered": 214
+      }
+    },
+    {
+      "functions": {
+        "count": 9,
+        "covered": 6
+      },
+      "lines": {
+        "count": 99,
+        "covered": 92
+      },
+      "path": "crates/delvec/src/compiler/emit/branch.rs",
+      "regions": {
+        "count": 147,
+        "covered": 132
+      }
+    },
+    {
+      "functions": {
+        "count": 5,
+        "covered": 5
+      },
+      "lines": {
+        "count": 87,
+        "covered": 87
+      },
+      "path": "crates/delvec/src/compiler/emit/cast.rs",
+      "regions": {
+        "count": 125,
+        "covered": 125
+      }
+    },
+    {
+      "functions": {
+        "count": 13,
+        "covered": 13
+      },
+      "lines": {
+        "count": 278,
+        "covered": 278
+      },
+      "path": "crates/delvec/src/compiler/emit/checkpoint.rs",
+      "regions": {
+        "count": 398,
+        "covered": 395
+      }
+    },
+    {
+      "functions": {
+        "count": 19,
+        "covered": 19
+      },
+      "lines": {
+        "count": 175,
+        "covered": 174
+      },
+      "path": "crates/delvec/src/compiler/emit/class.rs",
+      "regions": {
+        "count": 297,
+        "covered": 293
+      }
+    },
+    {
+      "functions": {
+        "count": 9,
+        "covered": 9
+      },
+      "lines": {
+        "count": 54,
+        "covered": 54
+      },
+      "path": "crates/delvec/src/compiler/emit/coords.rs",
+      "regions": {
+        "count": 86,
+        "covered": 86
+      }
+    },
+    {
+      "functions": {
+        "count": 32,
+        "covered": 31
+      },
+      "lines": {
+        "count": 382,
+        "covered": 375
+      },
+      "path": "crates/delvec/src/compiler/emit/cutscene.rs",
+      "regions": {
+        "count": 656,
+        "covered": 641
+      }
+    },
+    {
+      "functions": {
+        "count": 20,
+        "covered": 20
+      },
+      "lines": {
+        "count": 363,
+        "covered": 362
+      },
+      "path": "crates/delvec/src/compiler/emit/dialogue.rs",
+      "regions": {
+        "count": 519,
+        "covered": 515
+      }
+    },
+    {
+      "functions": {
+        "count": 8,
+        "covered": 8
+      },
+      "lines": {
+        "count": 113,
+        "covered": 113
+      },
+      "path": "crates/delvec/src/compiler/emit/economy.rs",
+      "regions": {
+        "count": 177,
+        "covered": 177
+      }
+    },
+    {
+      "functions": {
+        "count": 39,
+        "covered": 36
+      },
+      "lines": {
+        "count": 748,
+        "covered": 712
+      },
+      "path": "crates/delvec/src/compiler/emit/effect.rs",
+      "regions": {
+        "count": 1078,
+        "covered": 1018
+      }
+    },
+    {
+      "functions": {
+        "count": 26,
+        "covered": 25
+      },
+      "lines": {
+        "count": 210,
+        "covered": 180
+      },
+      "path": "crates/delvec/src/compiler/emit/ending.rs",
+      "regions": {
+        "count": 549,
+        "covered": 431
+      }
+    },
+    {
+      "functions": {
+        "count": 33,
+        "covered": 33
+      },
+      "lines": {
+        "count": 189,
+        "covered": 188
+      },
+      "path": "crates/delvec/src/compiler/emit/equipment.rs",
+      "regions": {
+        "count": 297,
+        "covered": 296
+      }
+    },
+    {
+      "functions": {
+        "count": 5,
+        "covered": 5
+      },
+      "lines": {
+        "count": 44,
+        "covered": 43
+      },
+      "path": "crates/delvec/src/compiler/emit/firework.rs",
+      "regions": {
+        "count": 72,
+        "covered": 71
+      }
+    },
+    {
+      "functions": {
+        "count": 22,
+        "covered": 22
+      },
+      "lines": {
+        "count": 789,
+        "covered": 785
+      },
+      "path": "crates/delvec/src/compiler/emit/functions.rs",
+      "regions": {
+        "count": 1502,
+        "covered": 1490
+      }
+    },
+    {
+      "functions": {
+        "count": 88,
+        "covered": 82
+      },
+      "lines": {
+        "count": 1170,
+        "covered": 1122
+      },
+      "path": "crates/delvec/src/compiler/emit/guidance.rs",
+      "regions": {
+        "count": 1797,
+        "covered": 1722
+      }
+    },
+    {
+      "functions": {
+        "count": 28,
+        "covered": 26
+      },
+      "lines": {
+        "count": 182,
+        "covered": 158
+      },
+      "path": "crates/delvec/src/compiler/emit/holders.rs",
+      "regions": {
+        "count": 355,
+        "covered": 309
+      }
+    },
+    {
+      "functions": {
+        "count": 4,
+        "covered": 4
+      },
+      "lines": {
+        "count": 54,
+        "covered": 54
+      },
+      "path": "crates/delvec/src/compiler/emit/lane.rs",
+      "regions": {
+        "count": 69,
+        "covered": 69
+      }
+    },
+    {
+      "functions": {
+        "count": 12,
+        "covered": 12
+      },
+      "lines": {
+        "count": 140,
+        "covered": 135
+      },
+      "path": "crates/delvec/src/compiler/emit/lethal.rs",
+      "regions": {
+        "count": 180,
+        "covered": 172
+      }
+    },
+    {
+      "functions": {
+        "count": 1,
+        "covered": 1
+      },
+      "lines": {
+        "count": 9,
+        "covered": 8
+      },
+      "path": "crates/delvec/src/compiler/emit/lightning.rs",
+      "regions": {
+        "count": 17,
+        "covered": 16
+      }
+    },
+    {
+      "functions": {
+        "count": 7,
+        "covered": 7
+      },
+      "lines": {
+        "count": 60,
+        "covered": 60
+      },
+      "path": "crates/delvec/src/compiler/emit/loop.rs",
+      "regions": {
+        "count": 83,
+        "covered": 83
+      }
+    },
+    {
+      "functions": {
+        "count": 6,
+        "covered": 6
+      },
+      "lines": {
+        "count": 51,
+        "covered": 51
+      },
+      "path": "crates/delvec/src/compiler/emit/loot.rs",
+      "regions": {
+        "count": 80,
+        "covered": 80
+      }
+    },
+    {
+      "functions": {
+        "count": 38,
+        "covered": 32
+      },
+      "lines": {
+        "count": 395,
+        "covered": 373
+      },
+      "path": "crates/delvec/src/compiler/emit/manifest.rs",
+      "regions": {
+        "count": 742,
+        "covered": 698
+      }
+    },
+    {
+      "functions": {
+        "count": 63,
+        "covered": 61
+      },
+      "lines": {
+        "count": 1089,
+        "covered": 1018
+      },
+      "path": "crates/delvec/src/compiler/emit/mod.rs",
+      "regions": {
+        "count": 1678,
+        "covered": 1602
+      }
+    },
+    {
+      "functions": {
+        "count": 52,
+        "covered": 51
+      },
+      "lines": {
+        "count": 401,
+        "covered": 397
+      },
+      "path": "crates/delvec/src/compiler/emit/npc.rs",
+      "regions": {
+        "count": 608,
+        "covered": 600
+      }
+    },
+    {
+      "functions": {
+        "count": 18,
+        "covered": 18
+      },
+      "lines": {
+        "count": 160,
+        "covered": 159
+      },
+      "path": "crates/delvec/src/compiler/emit/objective.rs",
+      "regions": {
+        "count": 208,
+        "covered": 207
+      }
+    },
+    {
+      "functions": {
+        "count": 9,
+        "covered": 9
+      },
+      "lines": {
+        "count": 57,
+        "covered": 57
+      },
+      "path": "crates/delvec/src/compiler/emit/onkill.rs",
+      "regions": {
+        "count": 72,
+        "covered": 72
+      }
+    },
+    {
+      "functions": {
+        "count": 20,
+        "covered": 20
+      },
+      "lines": {
+        "count": 313,
+        "covered": 312
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest.rs",
+      "regions": {
+        "count": 564,
+        "covered": 560
+      }
+    },
+    {
+      "functions": {
+        "count": 17,
+        "covered": 17
+      },
+      "lines": {
+        "count": 322,
+        "covered": 321
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/actor.rs",
+      "regions": {
+        "count": 565,
+        "covered": 564
+      }
+    },
+    {
+      "functions": {
+        "count": 14,
+        "covered": 14
+      },
+      "lines": {
+        "count": 258,
+        "covered": 253
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/assembly.rs",
+      "regions": {
+        "count": 561,
+        "covered": 554
+      }
+    },
+    {
+      "functions": {
+        "count": 27,
+        "covered": 27
+      },
+      "lines": {
+        "count": 193,
+        "covered": 178
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/atmosphere.rs",
+      "regions": {
+        "count": 363,
+        "covered": 351
+      }
+    },
+    {
+      "functions": {
+        "count": 5,
+        "covered": 5
+      },
+      "lines": {
+        "count": 103,
+        "covered": 102
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/boundary.rs",
+      "regions": {
+        "count": 203,
+        "covered": 202
+      }
+    },
+    {
+      "functions": {
+        "count": 17,
+        "covered": 17
+      },
+      "lines": {
+        "count": 292,
+        "covered": 288
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/cast.rs",
+      "regions": {
+        "count": 521,
+        "covered": 515
+      }
+    },
+    {
+      "functions": {
+        "count": 30,
+        "covered": 30
+      },
+      "lines": {
+        "count": 878,
+        "covered": 844
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/checkpoint.rs",
+      "regions": {
+        "count": 1706,
+        "covered": 1661
+      }
+    },
+    {
+      "functions": {
+        "count": 4,
+        "covered": 4
+      },
+      "lines": {
+        "count": 117,
+        "covered": 115
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/class.rs",
+      "regions": {
+        "count": 246,
+        "covered": 244
+      }
+    },
+    {
+      "functions": {
+        "count": 2,
+        "covered": 2
+      },
+      "lines": {
+        "count": 15,
+        "covered": 15
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/creator.rs",
+      "regions": {
+        "count": 26,
+        "covered": 26
+      }
+    },
+    {
+      "functions": {
+        "count": 11,
+        "covered": 11
+      },
+      "lines": {
+        "count": 167,
+        "covered": 165
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/dialogue.rs",
+      "regions": {
+        "count": 324,
+        "covered": 322
+      }
+    },
+    {
+      "functions": {
+        "count": 10,
+        "covered": 10
+      },
+      "lines": {
+        "count": 225,
+        "covered": 225
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/economy.rs",
+      "regions": {
+        "count": 449,
+        "covered": 449
+      }
+    },
+    {
+      "functions": {
+        "count": 21,
+        "covered": 18
+      },
+      "lines": {
+        "count": 328,
+        "covered": 274
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/ending.rs",
+      "regions": {
+        "count": 654,
+        "covered": 568
+      }
+    },
+    {
+      "functions": {
+        "count": 60,
+        "covered": 60
+      },
+      "lines": {
+        "count": 774,
+        "covered": 737
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/guidance.rs",
+      "regions": {
+        "count": 1634,
+        "covered": 1579
+      }
+    },
+    {
+      "functions": {
+        "count": 13,
+        "covered": 13
+      },
+      "lines": {
+        "count": 204,
+        "covered": 201
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/healthbar.rs",
+      "regions": {
+        "count": 394,
+        "covered": 387
+      }
+    },
+    {
+      "functions": {
+        "count": 15,
+        "covered": 14
+      },
+      "lines": {
+        "count": 116,
+        "covered": 115
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/holders.rs",
+      "regions": {
+        "count": 236,
+        "covered": 232
+      }
+    },
+    {
+      "functions": {
+        "count": 7,
+        "covered": 7
+      },
+      "lines": {
+        "count": 173,
+        "covered": 172
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/lane.rs",
+      "regions": {
+        "count": 382,
+        "covered": 378
+      }
+    },
+    {
+      "functions": {
+        "count": 6,
+        "covered": 6
+      },
+      "lines": {
+        "count": 97,
+        "covered": 97
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/lethal.rs",
+      "regions": {
+        "count": 194,
+        "covered": 194
+      }
+    },
+    {
+      "functions": {
+        "count": 1,
+        "covered": 1
+      },
+      "lines": {
+        "count": 51,
+        "covered": 49
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/lightning.rs",
+      "regions": {
+        "count": 97,
+        "covered": 95
+      }
+    },
+    {
+      "functions": {
+        "count": 10,
+        "covered": 10
+      },
+      "lines": {
+        "count": 182,
+        "covered": 178
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/loop.rs",
+      "regions": {
+        "count": 308,
+        "covered": 299
+      }
+    },
+    {
+      "functions": {
+        "count": 4,
+        "covered": 4
+      },
+      "lines": {
+        "count": 47,
+        "covered": 46
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/loot.rs",
+      "regions": {
+        "count": 79,
+        "covered": 78
+      }
+    },
+    {
+      "functions": {
+        "count": 8,
+        "covered": 8
+      },
+      "lines": {
+        "count": 120,
+        "covered": 119
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/music.rs",
+      "regions": {
+        "count": 210,
+        "covered": 208
+      }
+    },
+    {
+      "functions": {
+        "count": 19,
+        "covered": 19
+      },
+      "lines": {
+        "count": 365,
+        "covered": 365
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/npc.rs",
+      "regions": {
+        "count": 698,
+        "covered": 695
+      }
+    },
+    {
+      "functions": {
+        "count": 42,
+        "covered": 39
+      },
+      "lines": {
+        "count": 820,
+        "covered": 751
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/objective.rs",
+      "regions": {
+        "count": 1445,
+        "covered": 1323
+      }
+    },
+    {
+      "functions": {
+        "count": 15,
+        "covered": 15
+      },
+      "lines": {
+        "count": 255,
+        "covered": 255
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/onkill.rs",
+      "regions": {
+        "count": 544,
+        "covered": 543
+      }
+    },
+    {
+      "functions": {
+        "count": 23,
+        "covered": 22
+      },
+      "lines": {
+        "count": 184,
+        "covered": 179
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/party.rs",
+      "regions": {
+        "count": 326,
+        "covered": 315
+      }
+    },
+    {
+      "functions": {
+        "count": 3,
+        "covered": 3
+      },
+      "lines": {
+        "count": 76,
+        "covered": 76
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/pulse.rs",
+      "regions": {
+        "count": 159,
+        "covered": 159
+      }
+    },
+    {
+      "functions": {
+        "count": 15,
+        "covered": 14
+      },
+      "lines": {
+        "count": 193,
+        "covered": 193
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/quest.rs",
+      "regions": {
+        "count": 338,
+        "covered": 336
+      }
+    },
+    {
+      "functions": {
+        "count": 4,
+        "covered": 4
+      },
+      "lines": {
+        "count": 67,
+        "covered": 67
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/seal.rs",
+      "regions": {
+        "count": 136,
+        "covered": 136
+      }
+    },
+    {
+      "functions": {
+        "count": 5,
+        "covered": 5
+      },
+      "lines": {
+        "count": 63,
+        "covered": 63
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/sequence.rs",
+      "regions": {
+        "count": 117,
+        "covered": 117
+      }
+    },
+    {
+      "functions": {
+        "count": 1,
+        "covered": 1
+      },
+      "lines": {
+        "count": 33,
+        "covered": 33
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/shortcut.rs",
+      "regions": {
+        "count": 76,
+        "covered": 76
+      }
+    },
+    {
+      "functions": {
+        "count": 2,
+        "covered": 2
+      },
+      "lines": {
+        "count": 40,
+        "covered": 40
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/standin.rs",
+      "regions": {
+        "count": 102,
+        "covered": 102
+      }
+    },
+    {
+      "functions": {
+        "count": 3,
+        "covered": 3
+      },
+      "lines": {
+        "count": 124,
+        "covered": 120
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/teleport.rs",
+      "regions": {
+        "count": 254,
+        "covered": 250
+      }
+    },
+    {
+      "functions": {
+        "count": 7,
+        "covered": 7
+      },
+      "lines": {
+        "count": 150,
+        "covered": 150
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/timed_gate.rs",
+      "regions": {
+        "count": 321,
+        "covered": 321
+      }
+    },
+    {
+      "functions": {
+        "count": 8,
+        "covered": 8
+      },
+      "lines": {
+        "count": 189,
+        "covered": 188
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/trap.rs",
+      "regions": {
+        "count": 371,
+        "covered": 370
+      }
+    },
+    {
+      "functions": {
+        "count": 33,
+        "covered": 31
+      },
+      "lines": {
+        "count": 392,
+        "covered": 373
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/trigger.rs",
+      "regions": {
+        "count": 739,
+        "covered": 695
+      }
+    },
+    {
+      "functions": {
+        "count": 15,
+        "covered": 15
+      },
+      "lines": {
+        "count": 286,
+        "covered": 286
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/watching.rs",
+      "regions": {
+        "count": 550,
+        "covered": 550
+      }
+    },
+    {
+      "functions": {
+        "count": 8,
+        "covered": 8
+      },
+      "lines": {
+        "count": 150,
+        "covered": 149
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/wave.rs",
+      "regions": {
+        "count": 228,
+        "covered": 227
+      }
+    },
+    {
+      "functions": {
+        "count": 2,
+        "covered": 2
+      },
+      "lines": {
+        "count": 81,
+        "covered": 81
+      },
+      "path": "crates/delvec/src/compiler/emit/packtest/world.rs",
+      "regions": {
+        "count": 158,
+        "covered": 157
+      }
+    },
+    {
+      "functions": {
+        "count": 15,
+        "covered": 14
+      },
+      "lines": {
+        "count": 149,
+        "covered": 103
+      },
+      "path": "crates/delvec/src/compiler/emit/piece.rs",
+      "regions": {
+        "count": 238,
+        "covered": 147
+      }
+    },
+    {
+      "functions": {
+        "count": 51,
+        "covered": 51
+      },
+      "lines": {
+        "count": 371,
+        "covered": 357
+      },
+      "path": "crates/delvec/src/compiler/emit/press.rs",
+      "regions": {
+        "count": 574,
+        "covered": 557
+      }
+    },
+    {
+      "functions": {
+        "count": 29,
+        "covered": 23
+      },
+      "lines": {
+        "count": 258,
+        "covered": 224
+      },
+      "path": "crates/delvec/src/compiler/emit/proofs.rs",
+      "regions": {
+        "count": 439,
+        "covered": 404
+      }
+    },
+    {
+      "functions": {
+        "count": 10,
+        "covered": 10
+      },
+      "lines": {
+        "count": 73,
+        "covered": 73
+      },
+      "path": "crates/delvec/src/compiler/emit/pulse.rs",
+      "regions": {
+        "count": 118,
+        "covered": 118
+      }
+    },
+    {
+      "functions": {
+        "count": 21,
+        "covered": 20
+      },
+      "lines": {
+        "count": 337,
+        "covered": 334
+      },
+      "path": "crates/delvec/src/compiler/emit/quest.rs",
+      "regions": {
+        "count": 580,
+        "covered": 573
+      }
+    },
+    {
+      "functions": {
+        "count": 5,
+        "covered": 5
+      },
+      "lines": {
+        "count": 35,
+        "covered": 35
+      },
+      "path": "crates/delvec/src/compiler/emit/removal.rs",
+      "regions": {
+        "count": 43,
+        "covered": 43
+      }
+    },
+    {
+      "functions": {
+        "count": 7,
+        "covered": 7
+      },
+      "lines": {
+        "count": 100,
+        "covered": 100
+      },
+      "path": "crates/delvec/src/compiler/emit/respawn.rs",
+      "regions": {
+        "count": 133,
+        "covered": 133
+      }
+    },
+    {
+      "functions": {
+        "count": 23,
+        "covered": 21
+      },
+      "lines": {
+        "count": 732,
+        "covered": 650
+      },
+      "path": "crates/delvec/src/compiler/emit/routes.rs",
+      "regions": {
+        "count": 1210,
+        "covered": 1116
+      }
+    },
+    {
+      "functions": {
+        "count": 2,
+        "covered": 2
+      },
+      "lines": {
+        "count": 3,
+        "covered": 3
+      },
+      "path": "crates/delvec/src/compiler/emit/seal.rs",
+      "regions": {
+        "count": 6,
+        "covered": 6
+      }
+    },
+    {
+      "functions": {
+        "count": 19,
+        "covered": 18
+      },
+      "lines": {
+        "count": 123,
+        "covered": 121
+      },
+      "path": "crates/delvec/src/compiler/emit/sequence.rs",
+      "regions": {
+        "count": 219,
+        "covered": 215
+      }
+    },
+    {
+      "functions": {
+        "count": 13,
+        "covered": 11
+      },
+      "lines": {
+        "count": 282,
+        "covered": 252
+      },
+      "path": "crates/delvec/src/compiler/emit/server.rs",
+      "regions": {
+        "count": 390,
+        "covered": 369
+      }
+    },
+    {
+      "functions": {
+        "count": 8,
+        "covered": 8
+      },
+      "lines": {
+        "count": 116,
+        "covered": 111
+      },
+      "path": "crates/delvec/src/compiler/emit/shortcut.rs",
+      "regions": {
+        "count": 142,
+        "covered": 131
+      }
+    },
+    {
+      "functions": {
+        "count": 4,
+        "covered": 4
+      },
+      "lines": {
+        "count": 24,
+        "covered": 24
+      },
+      "path": "crates/delvec/src/compiler/emit/sign.rs",
+      "regions": {
+        "count": 38,
+        "covered": 38
+      }
+    },
+    {
+      "functions": {
+        "count": 10,
+        "covered": 10
+      },
+      "lines": {
+        "count": 278,
+        "covered": 276
+      },
+      "path": "crates/delvec/src/compiler/emit/stake.rs",
+      "regions": {
+        "count": 414,
+        "covered": 411
+      }
+    },
+    {
+      "functions": {
+        "count": 42,
+        "covered": 40
+      },
+      "lines": {
+        "count": 210,
+        "covered": 210
+      },
+      "path": "crates/delvec/src/compiler/emit/state.rs",
+      "regions": {
+        "count": 370,
+        "covered": 365
+      }
+    },
+    {
+      "functions": {
+        "count": 6,
+        "covered": 6
+      },
+      "lines": {
+        "count": 139,
+        "covered": 137
+      },
+      "path": "crates/delvec/src/compiler/emit/stealth.rs",
+      "regions": {
+        "count": 181,
+        "covered": 179
+      }
+    },
+    {
+      "functions": {
+        "count": 3,
+        "covered": 3
+      },
+      "lines": {
+        "count": 31,
+        "covered": 29
+      },
+      "path": "crates/delvec/src/compiler/emit/teleport.rs",
+      "regions": {
+        "count": 62,
+        "covered": 57
+      }
+    },
+    {
+      "functions": {
+        "count": 25,
+        "covered": 24
+      },
+      "lines": {
+        "count": 193,
+        "covered": 190
+      },
+      "path": "crates/delvec/src/compiler/emit/text.rs",
+      "regions": {
+        "count": 355,
+        "covered": 335
+      }
+    },
+    {
+      "functions": {
+        "count": 6,
+        "covered": 6
+      },
+      "lines": {
+        "count": 113,
+        "covered": 109
+      },
+      "path": "crates/delvec/src/compiler/emit/timed_gate.rs",
+      "regions": {
+        "count": 152,
+        "covered": 142
+      }
+    },
+    {
+      "functions": {
+        "count": 38,
+        "covered": 37
+      },
+      "lines": {
+        "count": 478,
+        "covered": 468
+      },
+      "path": "crates/delvec/src/compiler/emit/trap.rs",
+      "regions": {
+        "count": 730,
+        "covered": 707
+      }
+    },
+    {
+      "functions": {
+        "count": 30,
+        "covered": 30
+      },
+      "lines": {
+        "count": 361,
+        "covered": 352
+      },
+      "path": "crates/delvec/src/compiler/emit/trigger.rs",
+      "regions": {
+        "count": 542,
+        "covered": 528
+      }
+    },
+    {
+      "functions": {
+        "count": 22,
+        "covered": 21
+      },
+      "lines": {
+        "count": 397,
+        "covered": 388
+      },
+      "path": "crates/delvec/src/compiler/emit/wave.rs",
+      "regions": {
+        "count": 605,
+        "covered": 594
+      }
+    },
+    {
+      "functions": {
+        "count": 2,
+        "covered": 2
+      },
+      "lines": {
+        "count": 26,
+        "covered": 26
+      },
+      "path": "crates/delvec/src/compiler/emit/world.rs",
+      "regions": {
+        "count": 49,
+        "covered": 49
+      }
+    },
+    {
+      "functions": {
+        "count": 53,
+        "covered": 53
+      },
+      "lines": {
+        "count": 537,
+        "covered": 515
+      },
+      "path": "crates/delvec/src/compiler/ending.rs",
+      "regions": {
+        "count": 910,
+        "covered": 873
+      }
+    },
+    {
+      "functions": {
+        "count": 19,
+        "covered": 19
+      },
+      "lines": {
+        "count": 143,
+        "covered": 141
+      },
+      "path": "crates/delvec/src/compiler/engage.rs",
+      "regions": {
+        "count": 219,
+        "covered": 216
+      }
+    },
+    {
+      "functions": {
+        "count": 28,
+        "covered": 28
+      },
+      "lines": {
+        "count": 356,
+        "covered": 331
+      },
+      "path": "crates/delvec/src/compiler/faces.rs",
+      "regions": {
+        "count": 466,
+        "covered": 446
+      }
+    },
+    {
+      "functions": {
+        "count": 4,
+        "covered": 4
+      },
+      "lines": {
+        "count": 29,
+        "covered": 28
+      },
+      "path": "crates/delvec/src/compiler/failure.rs",
+      "regions": {
+        "count": 41,
+        "covered": 38
+      }
+    },
+    {
+      "functions": {
+        "count": 18,
+        "covered": 17
+      },
+      "lines": {
+        "count": 166,
+        "covered": 163
+      },
+      "path": "crates/delvec/src/compiler/firework.rs",
+      "regions": {
+        "count": 215,
+        "covered": 211
+      }
+    },
+    {
+      "functions": {
+        "count": 238,
+        "covered": 229
+      },
+      "lines": {
+        "count": 1664,
+        "covered": 1613
+      },
+      "path": "crates/delvec/src/compiler/flow.rs",
+      "regions": {
+        "count": 2962,
+        "covered": 2868
+      }
+    },
+    {
+      "functions": {
+        "count": 100,
+        "covered": 93
+      },
+      "lines": {
+        "count": 834,
+        "covered": 789
+      },
+      "path": "crates/delvec/src/compiler/flow/story.rs",
+      "regions": {
+        "count": 1535,
+        "covered": 1452
+      }
+    },
+    {
+      "functions": {
+        "count": 71,
+        "covered": 68
+      },
+      "lines": {
+        "count": 696,
+        "covered": 677
+      },
+      "path": "crates/delvec/src/compiler/framing.rs",
+      "regions": {
+        "count": 1114,
+        "covered": 1090
+      }
+    },
+    {
+      "functions": {
+        "count": 66,
+        "covered": 61
+      },
+      "lines": {
+        "count": 688,
+        "covered": 649
+      },
+      "path": "crates/delvec/src/compiler/framing/shot.rs",
+      "regions": {
+        "count": 1008,
+        "covered": 959
+      }
+    },
+    {
+      "functions": {
+        "count": 6,
+        "covered": 6
+      },
+      "lines": {
+        "count": 39,
+        "covered": 37
+      },
+      "path": "crates/delvec/src/compiler/freshbody.rs",
+      "regions": {
+        "count": 68,
+        "covered": 65
+      }
+    },
+    {
+      "functions": {
+        "count": 11,
+        "covered": 11
+      },
+      "lines": {
+        "count": 135,
+        "covered": 135
+      },
+      "path": "crates/delvec/src/compiler/gates.rs",
+      "regions": {
+        "count": 185,
+        "covered": 185
+      }
+    },
+    {
+      "functions": {
+        "count": 28,
+        "covered": 25
+      },
+      "lines": {
+        "count": 164,
+        "covered": 154
+      },
+      "path": "crates/delvec/src/compiler/gatesignal.rs",
+      "regions": {
+        "count": 317,
+        "covered": 297
+      }
+    },
+    {
+      "functions": {
+        "count": 37,
+        "covered": 37
+      },
+      "lines": {
+        "count": 226,
+        "covered": 226
+      },
+      "path": "crates/delvec/src/compiler/guarantee.rs",
+      "regions": {
+        "count": 394,
+        "covered": 393
+      }
+    },
+    {
+      "functions": {
+        "count": 22,
+        "covered": 22
+      },
+      "lines": {
+        "count": 529,
+        "covered": 523
+      },
+      "path": "crates/delvec/src/compiler/gym.rs",
+      "regions": {
+        "count": 728,
+        "covered": 717
+      }
+    },
+    {
+      "functions": {
+        "count": 14,
+        "covered": 14
+      },
+      "lines": {
+        "count": 109,
+        "covered": 108
+      },
+      "path": "crates/delvec/src/compiler/handback.rs",
+      "regions": {
+        "count": 232,
+        "covered": 228
+      }
+    },
+    {
+      "functions": {
+        "count": 23,
+        "covered": 23
+      },
+      "lines": {
+        "count": 183,
+        "covered": 182
+      },
+      "path": "crates/delvec/src/compiler/healthbar.rs",
+      "regions": {
+        "count": 247,
+        "covered": 246
+      }
+    },
+    {
+      "functions": {
+        "count": 31,
+        "covered": 28
+      },
+      "lines": {
+        "count": 212,
+        "covered": 198
+      },
+      "path": "crates/delvec/src/compiler/hold.rs",
+      "regions": {
+        "count": 428,
+        "covered": 385
+      }
+    },
+    {
+      "functions": {
+        "count": 152,
+        "covered": 146
+      },
+      "lines": {
+        "count": 974,
+        "covered": 909
+      },
+      "path": "crates/delvec/src/compiler/holders.rs",
+      "regions": {
+        "count": 1645,
+        "covered": 1537
+      }
+    },
+    {
+      "functions": {
+        "count": 71,
+        "covered": 69
+      },
+      "lines": {
+        "count": 455,
+        "covered": 436
+      },
+      "path": "crates/delvec/src/compiler/horizon.rs",
+      "regions": {
+        "count": 725,
+        "covered": 696
+      }
+    },
+    {
+      "functions": {
+        "count": 9,
+        "covered": 9
+      },
+      "lines": {
+        "count": 114,
+        "covered": 110
+      },
+      "path": "crates/delvec/src/compiler/integrity.rs",
+      "regions": {
+        "count": 191,
+        "covered": 184
+      }
+    },
+    {
+      "functions": {
+        "count": 118,
+        "covered": 113
+      },
+      "lines": {
+        "count": 1003,
+        "covered": 950
+      },
+      "path": "crates/delvec/src/compiler/lethal.rs",
+      "regions": {
+        "count": 1574,
+        "covered": 1482
+      }
+    },
+    {
+      "functions": {
+        "count": 114,
+        "covered": 112
+      },
+      "lines": {
+        "count": 1130,
+        "covered": 1117
+      },
+      "path": "crates/delvec/src/compiler/light.rs",
+      "regions": {
+        "count": 1736,
+        "covered": 1709
+      }
+    },
+    {
+      "functions": {
+        "count": 18,
+        "covered": 17
+      },
+      "lines": {
+        "count": 158,
+        "covered": 155
+      },
+      "path": "crates/delvec/src/compiler/lightning.rs",
+      "regions": {
+        "count": 211,
+        "covered": 207
+      }
+    },
+    {
+      "functions": {
+        "count": 63,
+        "covered": 58
+      },
+      "lines": {
+        "count": 523,
+        "covered": 472
+      },
+      "path": "crates/delvec/src/compiler/link.rs",
+      "regions": {
+        "count": 907,
+        "covered": 786
+      }
+    },
+    {
+      "functions": {
+        "count": 33,
+        "covered": 23
+      },
+      "lines": {
+        "count": 220,
+        "covered": 202
+      },
+      "path": "crates/delvec/src/compiler/load.rs",
+      "regions": {
+        "count": 486,
+        "covered": 428
+      }
+    },
+    {
+      "functions": {
+        "count": 186,
+        "covered": 181
+      },
+      "lines": {
+        "count": 1643,
+        "covered": 1541
+      },
+      "path": "crates/delvec/src/compiler/loop.rs",
+      "regions": {
+        "count": 2651,
+        "covered": 2486
+      }
+    },
+    {
+      "functions": {
+        "count": 33,
+        "covered": 33
+      },
+      "lines": {
+        "count": 390,
+        "covered": 373
+      },
+      "path": "crates/delvec/src/compiler/loot.rs",
+      "regions": {
+        "count": 529,
+        "covered": 513
+      }
+    },
+    {
+      "functions": {
+        "count": 8,
+        "covered": 8
+      },
+      "lines": {
+        "count": 187,
+        "covered": 179
+      },
+      "path": "crates/delvec/src/compiler/mark.rs",
+      "regions": {
+        "count": 291,
+        "covered": 283
+      }
+    },
+    {
+      "functions": {
+        "count": 38,
+        "covered": 27
+      },
+      "lines": {
+        "count": 466,
+        "covered": 362
+      },
+      "path": "crates/delvec/src/compiler/massing.rs",
+      "regions": {
+        "count": 761,
+        "covered": 674
+      }
+    },
+    {
+      "functions": {
+        "count": 175,
+        "covered": 169
+      },
+      "lines": {
+        "count": 1064,
+        "covered": 1016
+      },
+      "path": "crates/delvec/src/compiler/music.rs",
+      "regions": {
+        "count": 2018,
+        "covered": 1928
+      }
+    },
+    {
+      "functions": {
+        "count": 29,
+        "covered": 27
+      },
+      "lines": {
+        "count": 304,
+        "covered": 298
+      },
+      "path": "crates/delvec/src/compiler/muster.rs",
+      "regions": {
+        "count": 452,
+        "covered": 434
+      }
+    },
+    {
+      "functions": {
+        "count": 17,
+        "covered": 12
+      },
+      "lines": {
+        "count": 198,
+        "covered": 137
+      },
+      "path": "crates/delvec/src/compiler/nav/actor.rs",
+      "regions": {
+        "count": 349,
+        "covered": 269
+      }
+    },
+    {
+      "functions": {
+        "count": 6,
+        "covered": 6
+      },
+      "lines": {
+        "count": 53,
+        "covered": 52
+      },
+      "path": "crates/delvec/src/compiler/nav/ambush.rs",
+      "regions": {
+        "count": 62,
+        "covered": 61
+      }
+    },
+    {
+      "functions": {
+        "count": 53,
+        "covered": 52
+      },
+      "lines": {
+        "count": 398,
+        "covered": 379
+      },
+      "path": "crates/delvec/src/compiler/nav/census.rs",
+      "regions": {
+        "count": 761,
+        "covered": 735
+      }
+    },
+    {
+      "functions": {
+        "count": 36,
+        "covered": 34
+      },
+      "lines": {
+        "count": 298,
+        "covered": 274
+      },
+      "path": "crates/delvec/src/compiler/nav/checkpoint.rs",
+      "regions": {
+        "count": 448,
+        "covered": 401
+      }
+    },
+    {
+      "functions": {
+        "count": 16,
+        "covered": 15
+      },
+      "lines": {
+        "count": 195,
+        "covered": 171
+      },
+      "path": "crates/delvec/src/compiler/nav/cutscene.rs",
+      "regions": {
+        "count": 270,
+        "covered": 255
+      }
+    },
+    {
+      "functions": {
+        "count": 15,
+        "covered": 15
+      },
+      "lines": {
+        "count": 145,
+        "covered": 139
+      },
+      "path": "crates/delvec/src/compiler/nav/door.rs",
+      "regions": {
+        "count": 288,
+        "covered": 277
+      }
+    },
+    {
+      "functions": {
+        "count": 5,
+        "covered": 5
+      },
+      "lines": {
+        "count": 45,
+        "covered": 45
+      },
+      "path": "crates/delvec/src/compiler/nav/furniture.rs",
+      "regions": {
+        "count": 57,
+        "covered": 57
+      }
+    },
+    {
+      "functions": {
+        "count": 15,
+        "covered": 15
+      },
+      "lines": {
+        "count": 120,
+        "covered": 119
+      },
+      "path": "crates/delvec/src/compiler/nav/hazard.rs",
+      "regions": {
+        "count": 180,
+        "covered": 179
+      }
+    },
+    {
+      "functions": {
+        "count": 13,
+        "covered": 10
+      },
+      "lines": {
+        "count": 160,
+        "covered": 140
+      },
+      "path": "crates/delvec/src/compiler/nav/horizon.rs",
+      "regions": {
+        "count": 285,
+        "covered": 231
+      }
+    },
+    {
+      "functions": {
+        "count": 12,
+        "covered": 11
+      },
+      "lines": {
+        "count": 106,
+        "covered": 96
+      },
+      "path": "crates/delvec/src/compiler/nav/jump.rs",
+      "regions": {
+        "count": 141,
+        "covered": 129
+      }
+    },
+    {
+      "functions": {
+        "count": 6,
+        "covered": 4
+      },
+      "lines": {
+        "count": 94,
+        "covered": 46
+      },
+      "path": "crates/delvec/src/compiler/nav/lane.rs",
+      "regions": {
+        "count": 116,
+        "covered": 91
+      }
+    },
+    {
+      "functions": {
+        "count": 126,
+        "covered": 122
+      },
+      "lines": {
+        "count": 939,
+        "covered": 907
+      },
+      "path": "crates/delvec/src/compiler/nav/learned.rs",
+      "regions": {
+        "count": 1694,
+        "covered": 1610
+      }
+    },
+    {
+      "functions": {
+        "count": 61,
+        "covered": 60
+      },
+      "lines": {
+        "count": 537,
+        "covered": 511
+      },
+      "path": "crates/delvec/src/compiler/nav/leave.rs",
+      "regions": {
+        "count": 914,
+        "covered": 871
+      }
+    },
+    {
+      "functions": {
+        "count": 14,
+        "covered": 14
+      },
+      "lines": {
+        "count": 146,
+        "covered": 145
+      },
+      "path": "crates/delvec/src/compiler/nav/lethal.rs",
+      "regions": {
+        "count": 308,
+        "covered": 307
+      }
+    },
+    {
+      "functions": {
+        "count": 4,
+        "covered": 4
+      },
+      "lines": {
+        "count": 24,
+        "covered": 19
+      },
+      "path": "crates/delvec/src/compiler/nav/mod.rs",
+      "regions": {
+        "count": 37,
+        "covered": 32
+      }
+    },
+    {
+      "functions": {
+        "count": 20,
+        "covered": 20
+      },
+      "lines": {
+        "count": 255,
+        "covered": 234
+      },
+      "path": "crates/delvec/src/compiler/nav/movement.rs",
+      "regions": {
+        "count": 435,
+        "covered": 413
+      }
+    },
+    {
+      "functions": {
+        "count": 24,
+        "covered": 19
+      },
+      "lines": {
+        "count": 220,
+        "covered": 178
+      },
+      "path": "crates/delvec/src/compiler/nav/npc.rs",
+      "regions": {
+        "count": 393,
+        "covered": 331
+      }
+    },
+    {
+      "functions": {
+        "count": 39,
+        "covered": 38
+      },
+      "lines": {
+        "count": 420,
+        "covered": 412
+      },
+      "path": "crates/delvec/src/compiler/nav/respawn.rs",
+      "regions": {
+        "count": 585,
+        "covered": 567
+      }
+    },
+    {
+      "functions": {
+        "count": 59,
+        "covered": 54
+      },
+      "lines": {
+        "count": 1185,
+        "covered": 898
+      },
+      "path": "crates/delvec/src/compiler/nav/route/leg.rs",
+      "regions": {
+        "count": 1554,
+        "covered": 1245
+      }
+    },
+    {
+      "functions": {
+        "count": 55,
+        "covered": 54
+      },
+      "lines": {
+        "count": 473,
+        "covered": 463
+      },
+      "path": "crates/delvec/src/compiler/nav/route/mod.rs",
+      "regions": {
+        "count": 678,
+        "covered": 667
+      }
+    },
+    {
+      "functions": {
+        "count": 57,
+        "covered": 54
+      },
+      "lines": {
+        "count": 399,
+        "covered": 390
+      },
+      "path": "crates/delvec/src/compiler/nav/route/region.rs",
+      "regions": {
+        "count": 634,
+        "covered": 609
+      }
+    },
+    {
+      "functions": {
+        "count": 27,
+        "covered": 25
+      },
+      "lines": {
+        "count": 242,
+        "covered": 232
+      },
+      "path": "crates/delvec/src/compiler/nav/sea.rs",
+      "regions": {
+        "count": 432,
+        "covered": 415
+      }
+    },
+    {
+      "functions": {
+        "count": 18,
+        "covered": 18
+      },
+      "lines": {
+        "count": 81,
+        "covered": 81
+      },
+      "path": "crates/delvec/src/compiler/nav/seat.rs",
+      "regions": {
+        "count": 163,
+        "covered": 163
+      }
+    },
+    {
+      "functions": {
+        "count": 38,
+        "covered": 36
+      },
+      "lines": {
+        "count": 392,
+        "covered": 370
+      },
+      "path": "crates/delvec/src/compiler/nav/separate.rs",
+      "regions": {
+        "count": 750,
+        "covered": 718
+      }
+    },
+    {
+      "functions": {
+        "count": 8,
+        "covered": 8
+      },
+      "lines": {
+        "count": 82,
+        "covered": 80
+      },
+      "path": "crates/delvec/src/compiler/nav/shortcut.rs",
+      "regions": {
+        "count": 116,
+        "covered": 113
+      }
+    },
+    {
+      "functions": {
+        "count": 41,
+        "covered": 41
+      },
+      "lines": {
+        "count": 204,
+        "covered": 203
+      },
+      "path": "crates/delvec/src/compiler/nav/shutmodel.rs",
+      "regions": {
+        "count": 399,
+        "covered": 397
+      }
+    },
+    {
+      "functions": {
+        "count": 30,
+        "covered": 30
+      },
+      "lines": {
+        "count": 298,
+        "covered": 282
+      },
+      "path": "crates/delvec/src/compiler/nav/staging.rs",
+      "regions": {
+        "count": 423,
+        "covered": 397
+      }
+    },
+    {
+      "functions": {
+        "count": 21,
+        "covered": 14
+      },
+      "lines": {
+        "count": 209,
+        "covered": 157
+      },
+      "path": "crates/delvec/src/compiler/nav/stealth.rs",
+      "regions": {
+        "count": 277,
+        "covered": 197
+      }
+    },
+    {
+      "functions": {
+        "count": 0,
+        "covered": 0
+      },
+      "lines": {
+        "count": 0,
+        "covered": 0
+      },
+      "path": "crates/delvec/src/compiler/nav/testkit.rs",
+      "regions": {
+        "count": 0,
+        "covered": 0
+      }
+    },
+    {
+      "functions": {
+        "count": 31,
+        "covered": 30
+      },
+      "lines": {
+        "count": 297,
+        "covered": 267
+      },
+      "path": "crates/delvec/src/compiler/nav/threshold.rs",
+      "regions": {
+        "count": 474,
+        "covered": 438
+      }
+    },
+    {
+      "functions": {
+        "count": 18,
+        "covered": 18
+      },
+      "lines": {
+        "count": 178,
+        "covered": 172
+      },
+      "path": "crates/delvec/src/compiler/nav/timed_gate.rs",
+      "regions": {
+        "count": 252,
+        "covered": 245
+      }
+    },
+    {
+      "functions": {
+        "count": 18,
+        "covered": 18
+      },
+      "lines": {
+        "count": 280,
+        "covered": 267
+      },
+      "path": "crates/delvec/src/compiler/nav/trap.rs",
+      "regions": {
+        "count": 351,
+        "covered": 340
+      }
+    },
+    {
+      "functions": {
+        "count": 2,
+        "covered": 2
+      },
+      "lines": {
+        "count": 32,
+        "covered": 32
+      },
+      "path": "crates/delvec/src/compiler/nav/view.rs",
+      "regions": {
+        "count": 25,
+        "covered": 25
+      }
+    },
+    {
+      "functions": {
+        "count": 9,
+        "covered": 9
+      },
+      "lines": {
+        "count": 88,
+        "covered": 86
+      },
+      "path": "crates/delvec/src/compiler/nav/wave.rs",
+      "regions": {
+        "count": 138,
+        "covered": 136
+      }
+    },
+    {
+      "functions": {
+        "count": 208,
+        "covered": 202
+      },
+      "lines": {
+        "count": 1486,
+        "covered": 1461
+      },
+      "path": "crates/delvec/src/compiler/nav/width.rs",
+      "regions": {
+        "count": 2612,
+        "covered": 2552
+      }
+    },
+    {
+      "functions": {
+        "count": 102,
+        "covered": 98
+      },
+      "lines": {
+        "count": 738,
+        "covered": 715
+      },
+      "path": "crates/delvec/src/compiler/nav/world/body.rs",
+      "regions": {
+        "count": 1450,
+        "covered": 1409
+      }
+    },
+    {
+      "functions": {
+        "count": 35,
+        "covered": 33
+      },
+      "lines": {
+        "count": 240,
+        "covered": 225
+      },
+      "path": "crates/delvec/src/compiler/nav/world/climb.rs",
+      "regions": {
+        "count": 498,
+        "covered": 470
+      }
+    },
+    {
+      "functions": {
+        "count": 12,
+        "covered": 12
+      },
+      "lines": {
+        "count": 62,
+        "covered": 62
+      },
+      "path": "crates/delvec/src/compiler/nav/world/confine.rs",
+      "regions": {
+        "count": 90,
+        "covered": 90
+      }
+    },
+    {
+      "functions": {
+        "count": 132,
+        "covered": 128
+      },
+      "lines": {
+        "count": 1036,
+        "covered": 1016
+      },
+      "path": "crates/delvec/src/compiler/nav/world/mod.rs",
+      "regions": {
+        "count": 1736,
+        "covered": 1705
+      }
+    },
+    {
+      "functions": {
+        "count": 262,
+        "covered": 258
+      },
+      "lines": {
+        "count": 2600,
+        "covered": 2487
+      },
+      "path": "crates/delvec/src/compiler/nav/world/reach.rs",
+      "regions": {
+        "count": 4634,
+        "covered": 4469
+      }
+    },
+    {
+      "functions": {
+        "count": 0,
+        "covered": 0
+      },
+      "lines": {
+        "count": 0,
+        "covered": 0
+      },
+      "path": "crates/delvec/src/compiler/nav/world/reach/agreement.rs",
+      "regions": {
+        "count": 0,
+        "covered": 0
+      }
+    },
+    {
+      "functions": {
+        "count": 65,
+        "covered": 65
+      },
+      "lines": {
+        "count": 345,
+        "covered": 342
+      },
+      "path": "crates/delvec/src/compiler/nav/world/reach/bank.rs",
+      "regions": {
+        "count": 586,
+        "covered": 579
+      }
+    },
+    {
+      "functions": {
+        "count": 43,
+        "covered": 41
+      },
+      "lines": {
+        "count": 364,
+        "covered": 347
+      },
+      "path": "crates/delvec/src/compiler/nav/world/reach/flights.rs",
+      "regions": {
+        "count": 576,
+        "covered": 548
+      }
+    },
+    {
+      "functions": {
+        "count": 45,
+        "covered": 45
+      },
+      "lines": {
+        "count": 337,
+        "covered": 306
+      },
+      "path": "crates/delvec/src/compiler/nav/world/reach/persist.rs",
+      "regions": {
+        "count": 765,
+        "covered": 657
+      }
+    },
+    {
+      "functions": {
+        "count": 11,
+        "covered": 10
+      },
+      "lines": {
+        "count": 57,
+        "covered": 48
+      },
+      "path": "crates/delvec/src/compiler/nbtread.rs",
+      "regions": {
+        "count": 87,
+        "covered": 74
+      }
+    },
+    {
+      "functions": {
+        "count": 14,
+        "covered": 14
+      },
+      "lines": {
+        "count": 106,
+        "covered": 103
+      },
+      "path": "crates/delvec/src/compiler/observer.rs",
+      "regions": {
+        "count": 193,
+        "covered": 190
+      }
+    },
+    {
+      "functions": {
+        "count": 16,
+        "covered": 15
+      },
+      "lines": {
+        "count": 166,
+        "covered": 150
+      },
+      "path": "crates/delvec/src/compiler/onkill.rs",
+      "regions": {
+        "count": 255,
+        "covered": 236
+      }
+    },
+    {
+      "functions": {
+        "count": 79,
+        "covered": 75
+      },
+      "lines": {
+        "count": 711,
+        "covered": 656
+      },
+      "path": "crates/delvec/src/compiler/placed.rs",
+      "regions": {
+        "count": 1272,
+        "covered": 1135
+      }
+    },
+    {
+      "functions": {
+        "count": 1,
+        "covered": 1
+      },
+      "lines": {
+        "count": 6,
+        "covered": 6
+      },
+      "path": "crates/delvec/src/compiler/plan/actor.rs",
+      "regions": {
+        "count": 8,
+        "covered": 8
+      }
+    },
+    {
+      "functions": {
+        "count": 5,
+        "covered": 5
+      },
+      "lines": {
+        "count": 31,
+        "covered": 30
+      },
+      "path": "crates/delvec/src/compiler/plan/ambush.rs",
+      "regions": {
+        "count": 42,
+        "covered": 41
+      }
+    },
+    {
+      "functions": {
+        "count": 48,
+        "covered": 44
+      },
+      "lines": {
+        "count": 397,
+        "covered": 365
+      },
+      "path": "crates/delvec/src/compiler/plan/anchors.rs",
+      "regions": {
+        "count": 580,
+        "covered": 535
+      }
+    },
+    {
+      "functions": {
+        "count": 13,
+        "covered": 13
+      },
+      "lines": {
+        "count": 83,
+        "covered": 71
+      },
+      "path": "crates/delvec/src/compiler/plan/area.rs",
+      "regions": {
+        "count": 125,
+        "covered": 112
+      }
+    },
+    {
+      "functions": {
+        "count": 9,
+        "covered": 9
+      },
+      "lines": {
+        "count": 58,
+        "covered": 51
+      },
+      "path": "crates/delvec/src/compiler/plan/body.rs",
+      "regions": {
+        "count": 90,
+        "covered": 83
+      }
+    },
+    {
+      "functions": {
+        "count": 28,
+        "covered": 25
+      },
+      "lines": {
+        "count": 215,
+        "covered": 199
+      },
+      "path": "crates/delvec/src/compiler/plan/checkpoint.rs",
+      "regions": {
+        "count": 282,
+        "covered": 269
+      }
+    },
+    {
+      "functions": {
+        "count": 6,
+        "covered": 6
+      },
+      "lines": {
+        "count": 72,
+        "covered": 72
+      },
+      "path": "crates/delvec/src/compiler/plan/effects.rs",
+      "regions": {
+        "count": 80,
+        "covered": 80
+      }
+    },
+    {
+      "functions": {
+        "count": 39,
+        "covered": 39
+      },
+      "lines": {
+        "count": 319,
+        "covered": 314
+      },
+      "path": "crates/delvec/src/compiler/plan/gate_reach.rs",
+      "regions": {
+        "count": 525,
+        "covered": 518
+      }
+    },
+    {
+      "functions": {
+        "count": 13,
+        "covered": 12
+      },
+      "lines": {
+        "count": 67,
+        "covered": 67
+      },
+      "path": "crates/delvec/src/compiler/plan/lethal.rs",
+      "regions": {
+        "count": 99,
+        "covered": 97
+      }
+    },
+    {
+      "functions": {
+        "count": 6,
+        "covered": 6
+      },
+      "lines": {
+        "count": 61,
+        "covered": 60
+      },
+      "path": "crates/delvec/src/compiler/plan/loot.rs",
+      "regions": {
+        "count": 76,
+        "covered": 74
+      }
+    },
+    {
+      "functions": {
+        "count": 35,
+        "covered": 31
+      },
+      "lines": {
+        "count": 461,
+        "covered": 438
+      },
+      "path": "crates/delvec/src/compiler/plan/mod.rs",
+      "regions": {
+        "count": 804,
+        "covered": 756
+      }
+    },
+    {
+      "functions": {
+        "count": 13,
+        "covered": 13
+      },
+      "lines": {
+        "count": 40,
+        "covered": 40
+      },
+      "path": "crates/delvec/src/compiler/plan/naming.rs",
+      "regions": {
+        "count": 69,
+        "covered": 69
+      }
+    },
+    {
+      "functions": {
+        "count": 7,
+        "covered": 7
+      },
+      "lines": {
+        "count": 73,
+        "covered": 73
+      },
+      "path": "crates/delvec/src/compiler/plan/npc.rs",
+      "regions": {
+        "count": 105,
+        "covered": 105
+      }
+    },
+    {
+      "functions": {
+        "count": 2,
+        "covered": 2
+      },
+      "lines": {
+        "count": 22,
+        "covered": 21
+      },
+      "path": "crates/delvec/src/compiler/plan/objective.rs",
+      "regions": {
+        "count": 24,
+        "covered": 23
+      }
+    },
+    {
+      "functions": {
+        "count": 1,
+        "covered": 1
+      },
+      "lines": {
+        "count": 9,
+        "covered": 9
+      },
+      "path": "crates/delvec/src/compiler/plan/onkill.rs",
+      "regions": {
+        "count": 7,
+        "covered": 7
+      }
+    },
+    {
+      "functions": {
+        "count": 13,
+        "covered": 13
+      },
+      "lines": {
+        "count": 88,
+        "covered": 84
+      },
+      "path": "crates/delvec/src/compiler/plan/path/ancestors.rs",
+      "regions": {
+        "count": 198,
+        "covered": 194
+      }
+    },
+    {
+      "functions": {
+        "count": 46,
+        "covered": 45
+      },
+      "lines": {
+        "count": 346,
+        "covered": 322
+      },
+      "path": "crates/delvec/src/compiler/plan/path/drive.rs",
+      "regions": {
+        "count": 625,
+        "covered": 581
+      }
+    },
+    {
+      "functions": {
+        "count": 28,
+        "covered": 17
+      },
+      "lines": {
+        "count": 162,
+        "covered": 117
+      },
+      "path": "crates/delvec/src/compiler/plan/path/mock.rs",
+      "regions": {
+        "count": 295,
+        "covered": 204
+      }
+    },
+    {
+      "functions": {
+        "count": 103,
+        "covered": 99
+      },
+      "lines": {
+        "count": 913,
+        "covered": 849
+      },
+      "path": "crates/delvec/src/compiler/plan/path/mod.rs",
+      "regions": {
+        "count": 1639,
+        "covered": 1542
+      }
+    },
+    {
+      "functions": {
+        "count": 55,
+        "covered": 54
+      },
+      "lines": {
+        "count": 444,
+        "covered": 429
+      },
+      "path": "crates/delvec/src/compiler/plan/path/region.rs",
+      "regions": {
+        "count": 679,
+        "covered": 642
+      }
+    },
+    {
+      "functions": {
+        "count": 60,
+        "covered": 53
+      },
+      "lines": {
+        "count": 295,
+        "covered": 241
+      },
+      "path": "crates/delvec/src/compiler/plan/path/triggers.rs",
+      "regions": {
+        "count": 520,
+        "covered": 438
+      }
+    },
+    {
+      "functions": {
+        "count": 7,
+        "covered": 7
+      },
+      "lines": {
+        "count": 22,
+        "covered": 22
+      },
+      "path": "crates/delvec/src/compiler/plan/quest.rs",
+      "regions": {
+        "count": 23,
+        "covered": 23
+      }
+    },
+    {
+      "functions": {
+        "count": 9,
+        "covered": 8
+      },
+      "lines": {
+        "count": 95,
+        "covered": 93
+      },
+      "path": "crates/delvec/src/compiler/plan/sea.rs",
+      "regions": {
+        "count": 122,
+        "covered": 117
+      }
+    },
+    {
+      "functions": {
+        "count": 5,
+        "covered": 4
+      },
+      "lines": {
+        "count": 42,
+        "covered": 38
+      },
+      "path": "crates/delvec/src/compiler/plan/seal.rs",
+      "regions": {
+        "count": 83,
+        "covered": 74
+      }
+    },
+    {
+      "functions": {
+        "count": 2,
+        "covered": 1
+      },
+      "lines": {
+        "count": 30,
+        "covered": 25
+      },
+      "path": "crates/delvec/src/compiler/plan/shortcut.rs",
+      "regions": {
+        "count": 38,
+        "covered": 32
+      }
+    },
+    {
+      "functions": {
+        "count": 2,
+        "covered": 2
+      },
+      "lines": {
+        "count": 21,
+        "covered": 21
+      },
+      "path": "crates/delvec/src/compiler/plan/sign.rs",
+      "regions": {
+        "count": 20,
+        "covered": 19
+      }
+    },
+    {
+      "functions": {
+        "count": 8,
+        "covered": 8
+      },
+      "lines": {
+        "count": 75,
+        "covered": 73
+      },
+      "path": "crates/delvec/src/compiler/plan/state.rs",
+      "regions": {
+        "count": 95,
+        "covered": 91
+      }
+    },
+    {
+      "functions": {
+        "count": 11,
+        "covered": 10
+      },
+      "lines": {
+        "count": 51,
+        "covered": 50
+      },
+      "path": "crates/delvec/src/compiler/plan/stealth.rs",
+      "regions": {
+        "count": 90,
+        "covered": 84
+      }
+    },
+    {
+      "functions": {
+        "count": 10,
+        "covered": 9
+      },
+      "lines": {
+        "count": 191,
+        "covered": 173
+      },
+      "path": "crates/delvec/src/compiler/plan/surround.rs",
+      "regions": {
+        "count": 243,
+        "covered": 234
+      }
+    },
+    {
+      "functions": {
+        "count": 7,
+        "covered": 7
+      },
+      "lines": {
+        "count": 47,
+        "covered": 46
+      },
+      "path": "crates/delvec/src/compiler/plan/trap.rs",
+      "regions": {
+        "count": 71,
+        "covered": 70
+      }
+    },
+    {
+      "functions": {
+        "count": 8,
+        "covered": 8
+      },
+      "lines": {
+        "count": 20,
+        "covered": 20
+      },
+      "path": "crates/delvec/src/compiler/plan/trigger.rs",
+      "regions": {
+        "count": 36,
+        "covered": 36
+      }
+    },
+    {
+      "functions": {
+        "count": 9,
+        "covered": 9
+      },
+      "lines": {
+        "count": 53,
+        "covered": 53
+      },
+      "path": "crates/delvec/src/compiler/plan/wave.rs",
+      "regions": {
+        "count": 54,
+        "covered": 53
+      }
+    },
+    {
+      "functions": {
+        "count": 111,
+        "covered": 106
+      },
+      "lines": {
+        "count": 527,
+        "covered": 511
+      },
+      "path": "crates/delvec/src/compiler/plot.rs",
+      "regions": {
+        "count": 977,
+        "covered": 938
+      }
+    },
+    {
+      "functions": {
+        "count": 7,
+        "covered": 7
+      },
+      "lines": {
+        "count": 70,
+        "covered": 70
+      },
+      "path": "crates/delvec/src/compiler/png.rs",
+      "regions": {
+        "count": 157,
+        "covered": 157
+      }
+    },
+    {
+      "functions": {
+        "count": 9,
+        "covered": 9
+      },
+      "lines": {
+        "count": 94,
+        "covered": 94
+      },
+      "path": "crates/delvec/src/compiler/pool.rs",
+      "regions": {
+        "count": 98,
+        "covered": 98
+      }
+    },
+    {
+      "functions": {
+        "count": 25,
+        "covered": 25
+      },
+      "lines": {
+        "count": 233,
+        "covered": 232
+      },
+      "path": "crates/delvec/src/compiler/presence.rs",
+      "regions": {
+        "count": 445,
+        "covered": 442
+      }
+    },
+    {
+      "functions": {
+        "count": 121,
+        "covered": 117
+      },
+      "lines": {
+        "count": 940,
+        "covered": 827
+      },
+      "path": "crates/delvec/src/compiler/pressable.rs",
+      "regions": {
+        "count": 1446,
+        "covered": 1372
+      }
+    },
+    {
+      "functions": {
+        "count": 87,
+        "covered": 59
+      },
+      "lines": {
+        "count": 777,
+        "covered": 623
+      },
+      "path": "crates/delvec/src/compiler/promise.rs",
+      "regions": {
+        "count": 1168,
+        "covered": 911
+      }
+    },
+    {
+      "functions": {
+        "count": 33,
+        "covered": 33
+      },
+      "lines": {
+        "count": 273,
+        "covered": 267
+      },
+      "path": "crates/delvec/src/compiler/pulse.rs",
+      "regions": {
+        "count": 443,
+        "covered": 432
+      }
+    },
+    {
+      "functions": {
+        "count": 12,
+        "covered": 12
+      },
+      "lines": {
+        "count": 113,
+        "covered": 106
+      },
+      "path": "crates/delvec/src/compiler/raster.rs",
+      "regions": {
+        "count": 182,
+        "covered": 171
+      }
+    },
+    {
+      "functions": {
+        "count": 47,
+        "covered": 47
+      },
+      "lines": {
+        "count": 366,
+        "covered": 351
+      },
+      "path": "crates/delvec/src/compiler/reach.rs",
+      "regions": {
+        "count": 528,
+        "covered": 509
+      }
+    },
+    {
+      "functions": {
+        "count": 7,
+        "covered": 7
+      },
+      "lines": {
+        "count": 50,
+        "covered": 49
+      },
+      "path": "crates/delvec/src/compiler/region_fill.rs",
+      "regions": {
+        "count": 104,
+        "covered": 101
+      }
+    },
+    {
+      "functions": {
+        "count": 58,
+        "covered": 56
+      },
+      "lines": {
+        "count": 332,
+        "covered": 310
+      },
+      "path": "crates/delvec/src/compiler/registry.rs",
+      "regions": {
+        "count": 547,
+        "covered": 517
+      }
+    },
+    {
+      "functions": {
+        "count": 14,
+        "covered": 14
+      },
+      "lines": {
+        "count": 101,
+        "covered": 99
+      },
+      "path": "crates/delvec/src/compiler/rehearsal.rs",
+      "regions": {
+        "count": 188,
+        "covered": 185
+      }
+    },
+    {
+      "functions": {
+        "count": 138,
+        "covered": 130
+      },
+      "lines": {
+        "count": 1236,
+        "covered": 1193
+      },
+      "path": "crates/delvec/src/compiler/render_plan.rs",
+      "regions": {
+        "count": 2044,
+        "covered": 1993
+      }
+    },
+    {
+      "functions": {
+        "count": 4,
+        "covered": 4
+      },
+      "lines": {
+        "count": 136,
+        "covered": 136
+      },
+      "path": "crates/delvec/src/compiler/resourcepack.rs",
+      "regions": {
+        "count": 290,
+        "covered": 290
+      }
+    },
+    {
+      "functions": {
+        "count": 49,
+        "covered": 49
+      },
+      "lines": {
+        "count": 460,
+        "covered": 449
+      },
+      "path": "crates/delvec/src/compiler/respawn.rs",
+      "regions": {
+        "count": 690,
+        "covered": 680
+      }
+    },
+    {
+      "functions": {
+        "count": 28,
+        "covered": 27
+      },
+      "lines": {
+        "count": 213,
+        "covered": 206
+      },
+      "path": "crates/delvec/src/compiler/resting.rs",
+      "regions": {
+        "count": 394,
+        "covered": 381
+      }
+    },
+    {
+      "functions": {
+        "count": 60,
+        "covered": 56
+      },
+      "lines": {
+        "count": 465,
+        "covered": 449
+      },
+      "path": "crates/delvec/src/compiler/sculk.rs",
+      "regions": {
+        "count": 794,
+        "covered": 750
+      }
+    },
+    {
+      "functions": {
+        "count": 55,
+        "covered": 54
+      },
+      "lines": {
+        "count": 717,
+        "covered": 714
+      },
+      "path": "crates/delvec/src/compiler/seating.rs",
+      "regions": {
+        "count": 890,
+        "covered": 883
+      }
+    },
+    {
+      "functions": {
+        "count": 35,
+        "covered": 34
+      },
+      "lines": {
+        "count": 459,
+        "covered": 451
+      },
+      "path": "crates/delvec/src/compiler/seeding.rs",
+      "regions": {
+        "count": 806,
+        "covered": 789
+      }
+    },
+    {
+      "functions": {
+        "count": 7,
+        "covered": 6
+      },
+      "lines": {
+        "count": 41,
+        "covered": 38
+      },
+      "path": "crates/delvec/src/compiler/served.rs",
+      "regions": {
+        "count": 65,
+        "covered": 62
+      }
+    },
+    {
+      "functions": {
+        "count": 7,
+        "covered": 6
+      },
+      "lines": {
+        "count": 105,
+        "covered": 101
+      },
+      "path": "crates/delvec/src/compiler/sign.rs",
+      "regions": {
+        "count": 155,
+        "covered": 145
+      }
+    },
+    {
+      "functions": {
+        "count": 27,
+        "covered": 25
+      },
+      "lines": {
+        "count": 224,
+        "covered": 198
+      },
+      "path": "crates/delvec/src/compiler/skinparts.rs",
+      "regions": {
+        "count": 360,
+        "covered": 325
+      }
+    },
+    {
+      "functions": {
+        "count": 20,
+        "covered": 19
+      },
+      "lines": {
+        "count": 105,
+        "covered": 104
+      },
+      "path": "crates/delvec/src/compiler/solo.rs",
+      "regions": {
+        "count": 224,
+        "covered": 219
+      }
+    },
+    {
+      "functions": {
+        "count": 75,
+        "covered": 63
+      },
+      "lines": {
+        "count": 704,
+        "covered": 621
+      },
+      "path": "crates/delvec/src/compiler/solver.rs",
+      "regions": {
+        "count": 1038,
+        "covered": 939
+      }
+    },
+    {
+      "functions": {
+        "count": 9,
+        "covered": 8
+      },
+      "lines": {
+        "count": 144,
+        "covered": 135
+      },
+      "path": "crates/delvec/src/compiler/stairs.rs",
+      "regions": {
+        "count": 232,
+        "covered": 213
+      }
+    },
+    {
+      "functions": {
+        "count": 40,
+        "covered": 36
+      },
+      "lines": {
+        "count": 373,
+        "covered": 345
+      },
+      "path": "crates/delvec/src/compiler/stake.rs",
+      "regions": {
+        "count": 544,
+        "covered": 516
+      }
+    },
+    {
+      "functions": {
+        "count": 17,
+        "covered": 17
+      },
+      "lines": {
+        "count": 118,
+        "covered": 112
+      },
+      "path": "crates/delvec/src/compiler/standin.rs",
+      "regions": {
+        "count": 157,
+        "covered": 155
+      }
+    },
+    {
+      "functions": {
+        "count": 7,
+        "covered": 6
+      },
+      "lines": {
+        "count": 68,
+        "covered": 67
+      },
+      "path": "crates/delvec/src/compiler/statepath.rs",
+      "regions": {
+        "count": 122,
+        "covered": 116
+      }
+    },
+    {
+      "functions": {
+        "count": 27,
+        "covered": 25
+      },
+      "lines": {
+        "count": 229,
+        "covered": 212
+      },
+      "path": "crates/delvec/src/compiler/strand.rs",
+      "regions": {
+        "count": 399,
+        "covered": 369
+      }
+    },
+    {
+      "functions": {
+        "count": 56,
+        "covered": 56
+      },
+      "lines": {
+        "count": 892,
+        "covered": 880
+      },
+      "path": "crates/delvec/src/compiler/surround.rs",
+      "regions": {
+        "count": 1589,
+        "covered": 1565
+      }
+    },
+    {
+      "functions": {
+        "count": 11,
+        "covered": 11
+      },
+      "lines": {
+        "count": 126,
+        "covered": 126
+      },
+      "path": "crates/delvec/src/compiler/teleport.rs",
+      "regions": {
+        "count": 140,
+        "covered": 139
+      }
+    },
+    {
+      "functions": {
+        "count": 129,
+        "covered": 121
+      },
+      "lines": {
+        "count": 1074,
+        "covered": 1021
+      },
+      "path": "crates/delvec/src/compiler/telling.rs",
+      "regions": {
+        "count": 2057,
+        "covered": 1966
+      }
+    },
+    {
+      "functions": {
+        "count": 32,
+        "covered": 32
+      },
+      "lines": {
+        "count": 327,
+        "covered": 322
+      },
+      "path": "crates/delvec/src/compiler/textfit.rs",
+      "regions": {
+        "count": 462,
+        "covered": 457
+      }
+    },
+    {
+      "functions": {
+        "count": 36,
+        "covered": 35
+      },
+      "lines": {
+        "count": 346,
+        "covered": 300
+      },
+      "path": "crates/delvec/src/compiler/textures.rs",
+      "regions": {
+        "count": 543,
+        "covered": 507
+      }
+    },
+    {
+      "functions": {
+        "count": 14,
+        "covered": 14
+      },
+      "lines": {
+        "count": 104,
+        "covered": 103
+      },
+      "path": "crates/delvec/src/compiler/timeline.rs",
+      "regions": {
+        "count": 157,
+        "covered": 156
+      }
+    },
+    {
+      "functions": {
+        "count": 8,
+        "covered": 8
+      },
+      "lines": {
+        "count": 99,
+        "covered": 95
+      },
+      "path": "crates/delvec/src/compiler/trap_trigger.rs",
+      "regions": {
+        "count": 132,
+        "covered": 124
+      }
+    },
+    {
+      "functions": {
+        "count": 24,
+        "covered": 23
+      },
+      "lines": {
+        "count": 302,
+        "covered": 282
+      },
+      "path": "crates/delvec/src/compiler/traversal.rs",
+      "regions": {
+        "count": 412,
+        "covered": 391
+      }
+    },
+    {
+      "functions": {
+        "count": 23,
+        "covered": 18
+      },
+      "lines": {
+        "count": 101,
+        "covered": 87
+      },
+      "path": "crates/delvec/src/compiler/view/assets.rs",
+      "regions": {
+        "count": 205,
+        "covered": 166
+      }
+    },
+    {
+      "functions": {
+        "count": 51,
+        "covered": 43
+      },
+      "lines": {
+        "count": 283,
+        "covered": 231
+      },
+      "path": "crates/delvec/src/compiler/view/beat.rs",
+      "regions": {
+        "count": 457,
+        "covered": 368
+      }
+    },
+    {
+      "functions": {
+        "count": 63,
+        "covered": 50
+      },
+      "lines": {
+        "count": 554,
+        "covered": 466
+      },
+      "path": "crates/delvec/src/compiler/view/blockcolor.rs",
+      "regions": {
+        "count": 1032,
+        "covered": 871
+      }
+    },
+    {
+      "functions": {
+        "count": 115,
+        "covered": 106
+      },
+      "lines": {
+        "count": 856,
+        "covered": 825
+      },
+      "path": "crates/delvec/src/compiler/view/camera.rs",
+      "regions": {
+        "count": 1300,
+        "covered": 1241
+      }
+    },
+    {
+      "functions": {
+        "count": 90,
+        "covered": 64
+      },
+      "lines": {
+        "count": 1131,
+        "covered": 970
+      },
+      "path": "crates/delvec/src/compiler/view/cli.rs",
+      "regions": {
+        "count": 1868,
+        "covered": 1474
+      }
+    },
+    {
+      "functions": {
+        "count": 4,
+        "covered": 4
+      },
+      "lines": {
+        "count": 50,
+        "covered": 48
+      },
+      "path": "crates/delvec/src/compiler/view/detect.rs",
+      "regions": {
+        "count": 80,
+        "covered": 78
+      }
+    },
+    {
+      "functions": {
+        "count": 4,
+        "covered": 4
+      },
+      "lines": {
+        "count": 26,
+        "covered": 26
+      },
+      "path": "crates/delvec/src/compiler/view/diag.rs",
+      "regions": {
+        "count": 25,
+        "covered": 25
+      }
+    },
+    {
+      "functions": {
+        "count": 6,
+        "covered": 6
+      },
+      "lines": {
+        "count": 116,
+        "covered": 114
+      },
+      "path": "crates/delvec/src/compiler/view/font.rs",
+      "regions": {
+        "count": 154,
+        "covered": 148
+      }
+    },
+    {
+      "functions": {
+        "count": 27,
+        "covered": 21
+      },
+      "lines": {
+        "count": 257,
+        "covered": 213
+      },
+      "path": "crates/delvec/src/compiler/view/frames.rs",
+      "regions": {
+        "count": 340,
+        "covered": 282
+      }
+    },
+    {
+      "functions": {
+        "count": 43,
+        "covered": 37
+      },
+      "lines": {
+        "count": 456,
+        "covered": 405
+      },
+      "path": "crates/delvec/src/compiler/view/frameset.rs",
+      "regions": {
+        "count": 819,
+        "covered": 709
+      }
+    },
+    {
+      "functions": {
+        "count": 9,
+        "covered": 6
+      },
+      "lines": {
+        "count": 87,
+        "covered": 70
+      },
+      "path": "crates/delvec/src/compiler/view/index.rs",
+      "regions": {
+        "count": 119,
+        "covered": 100
+      }
+    },
+    {
+      "functions": {
+        "count": 4,
+        "covered": 1
+      },
+      "lines": {
+        "count": 13,
+        "covered": 10
+      },
+      "path": "crates/delvec/src/compiler/view/meta.rs",
+      "regions": {
+        "count": 27,
+        "covered": 15
+      }
+    },
+    {
+      "functions": {
+        "count": 12,
+        "covered": 8
+      },
+      "lines": {
+        "count": 78,
+        "covered": 63
+      },
+      "path": "crates/delvec/src/compiler/view/nbt.rs",
+      "regions": {
+        "count": 193,
+        "covered": 157
+      }
+    },
+    {
+      "functions": {
+        "count": 34,
+        "covered": 33
+      },
+      "lines": {
+        "count": 320,
+        "covered": 305
+      },
+      "path": "crates/delvec/src/compiler/view/panorama.rs",
+      "regions": {
+        "count": 470,
+        "covered": 457
+      }
+    },
+    {
+      "functions": {
+        "count": 68,
+        "covered": 66
+      },
+      "lines": {
+        "count": 629,
+        "covered": 618
+      },
+      "path": "crates/delvec/src/compiler/view/review.rs",
+      "regions": {
+        "count": 1111,
+        "covered": 1071
+      }
+    },
+    {
+      "functions": {
+        "count": 65,
+        "covered": 60
+      },
+      "lines": {
+        "count": 282,
+        "covered": 271
+      },
+      "path": "crates/delvec/src/compiler/view/scene.rs",
+      "regions": {
+        "count": 567,
+        "covered": 547
+      }
+    },
+    {
+      "functions": {
+        "count": 65,
+        "covered": 55
+      },
+      "lines": {
+        "count": 486,
+        "covered": 463
+      },
+      "path": "crates/delvec/src/compiler/view/sheet.rs",
+      "regions": {
+        "count": 802,
+        "covered": 735
+      }
+    },
+    {
+      "functions": {
+        "count": 22,
+        "covered": 21
+      },
+      "lines": {
+        "count": 188,
+        "covered": 186
+      },
+      "path": "crates/delvec/src/compiler/view/showing.rs",
+      "regions": {
+        "count": 264,
+        "covered": 258
+      }
+    },
+    {
+      "functions": {
+        "count": 29,
+        "covered": 28
+      },
+      "lines": {
+        "count": 225,
+        "covered": 206
+      },
+      "path": "crates/delvec/src/compiler/view/sight.rs",
+      "regions": {
+        "count": 367,
+        "covered": 332
+      }
+    },
+    {
+      "functions": {
+        "count": 5,
+        "covered": 5
+      },
+      "lines": {
+        "count": 85,
+        "covered": 74
+      },
+      "path": "crates/delvec/src/compiler/view/tileset.rs",
+      "regions": {
+        "count": 123,
+        "covered": 112
+      }
+    },
+    {
+      "functions": {
+        "count": 34,
+        "covered": 28
+      },
+      "lines": {
+        "count": 311,
+        "covered": 289
+      },
+      "path": "crates/delvec/src/compiler/view/viewer.rs",
+      "regions": {
+        "count": 479,
+        "covered": 447
+      }
+    },
+    {
+      "functions": {
+        "count": 46,
+        "covered": 39
+      },
+      "lines": {
+        "count": 404,
+        "covered": 312
+      },
+      "path": "crates/delvec/src/compiler/view/viewer/resources.rs",
+      "regions": {
+        "count": 713,
+        "covered": 579
+      }
+    },
+    {
+      "functions": {
+        "count": 64,
+        "covered": 63
+      },
+      "lines": {
+        "count": 582,
+        "covered": 555
+      },
+      "path": "crates/delvec/src/compiler/view/world.rs",
+      "regions": {
+        "count": 1119,
+        "covered": 1068
+      }
+    },
+    {
+      "functions": {
+        "count": 26,
+        "covered": 25
+      },
+      "lines": {
+        "count": 274,
+        "covered": 267
+      },
+      "path": "crates/delvec/src/compiler/watch.rs",
+      "regions": {
+        "count": 394,
+        "covered": 385
+      }
+    },
+    {
+      "functions": {
+        "count": 50,
+        "covered": 50
+      },
+      "lines": {
+        "count": 301,
+        "covered": 296
+      },
+      "path": "crates/delvec/src/compiler/watching.rs",
+      "regions": {
+        "count": 481,
+        "covered": 475
+      }
+    },
+    {
+      "functions": {
+        "count": 36,
+        "covered": 35
+      },
+      "lines": {
+        "count": 243,
+        "covered": 243
+      },
+      "path": "crates/delvec/src/compiler/waypoints.rs",
+      "regions": {
+        "count": 377,
+        "covered": 374
+      }
+    },
+    {
+      "functions": {
+        "count": 50,
+        "covered": 49
+      },
+      "lines": {
+        "count": 409,
+        "covered": 392
+      },
+      "path": "crates/delvec/src/compiler/ways.rs",
+      "regions": {
+        "count": 599,
+        "covered": 575
+      }
+    },
+    {
+      "functions": {
+        "count": 4,
+        "covered": 4
+      },
+      "lines": {
+        "count": 36,
+        "covered": 36
+      },
+      "path": "crates/delvec/src/compiler/wrongside.rs",
+      "regions": {
+        "count": 77,
+        "covered": 76
+      }
+    },
+    {
+      "functions": {
+        "count": 90,
+        "covered": 73
+      },
+      "lines": {
+        "count": 1014,
+        "covered": 859
+      },
+      "path": "crates/delvec/src/detail.rs",
+      "regions": {
+        "count": 1779,
+        "covered": 1497
+      }
+    },
+    {
+      "functions": {
+        "count": 11,
+        "covered": 11
+      },
+      "lines": {
+        "count": 92,
+        "covered": 83
+      },
+      "path": "crates/delvec/src/grammar/block.rs",
+      "regions": {
+        "count": 150,
+        "covered": 132
+      }
+    },
+    {
+      "functions": {
+        "count": 52,
+        "covered": 44
+      },
+      "lines": {
+        "count": 737,
+        "covered": 614
+      },
+      "path": "crates/delvec/src/grammar/cli.rs",
+      "regions": {
+        "count": 1141,
+        "covered": 931
+      }
+    },
+    {
+      "functions": {
+        "count": 28,
+        "covered": 25
+      },
+      "lines": {
+        "count": 272,
+        "covered": 249
+      },
+      "path": "crates/delvec/src/grammar/compose.rs",
+      "regions": {
+        "count": 390,
+        "covered": 349
+      }
+    },
+    {
+      "functions": {
+        "count": 190,
+        "covered": 186
+      },
+      "lines": {
+        "count": 1801,
+        "covered": 1722
+      },
+      "path": "crates/delvec/src/grammar/contract.rs",
+      "regions": {
+        "count": 3221,
+        "covered": 3094
+      }
+    },
+    {
+      "functions": {
+        "count": 25,
+        "covered": 25
+      },
+      "lines": {
+        "count": 226,
+        "covered": 225
+      },
+      "path": "crates/delvec/src/grammar/coverage.rs",
+      "regions": {
+        "count": 368,
+        "covered": 365
+      }
+    },
+    {
+      "functions": {
+        "count": 18,
+        "covered": 16
+      },
+      "lines": {
+        "count": 186,
+        "covered": 148
+      },
+      "path": "crates/delvec/src/grammar/document.rs",
+      "regions": {
+        "count": 298,
+        "covered": 243
+      }
+    },
+    {
+      "functions": {
+        "count": 10,
+        "covered": 10
+      },
+      "lines": {
+        "count": 117,
+        "covered": 113
+      },
+      "path": "crates/delvec/src/grammar/eval.rs",
+      "regions": {
+        "count": 178,
+        "covered": 166
+      }
+    },
+    {
+      "functions": {
+        "count": 72,
+        "covered": 63
+      },
+      "lines": {
+        "count": 983,
+        "covered": 902
+      },
+      "path": "crates/delvec/src/grammar/expand.rs",
+      "regions": {
+        "count": 1484,
+        "covered": 1352
+      }
+    },
+    {
+      "functions": {
+        "count": 16,
+        "covered": 15
+      },
+      "lines": {
+        "count": 227,
+        "covered": 169
+      },
+      "path": "crates/delvec/src/grammar/explain.rs",
+      "regions": {
+        "count": 354,
+        "covered": 276
+      }
+    },
+    {
+      "functions": {
+        "count": 76,
+        "covered": 74
+      },
+      "lines": {
+        "count": 853,
+        "covered": 811
+      },
+      "path": "crates/delvec/src/grammar/export.rs",
+      "regions": {
+        "count": 1221,
+        "covered": 1130
+      }
+    },
+    {
+      "functions": {
+        "count": 64,
+        "covered": 60
+      },
+      "lines": {
+        "count": 612,
+        "covered": 566
+      },
+      "path": "crates/delvec/src/grammar/gates.rs",
+      "regions": {
+        "count": 972,
+        "covered": 911
+      }
+    },
+    {
+      "functions": {
+        "count": 31,
+        "covered": 30
+      },
+      "lines": {
+        "count": 137,
+        "covered": 133
+      },
+      "path": "crates/delvec/src/grammar/geom.rs",
+      "regions": {
+        "count": 157,
+        "covered": 153
+      }
+    },
+    {
+      "functions": {
+        "count": 123,
+        "covered": 121
+      },
+      "lines": {
+        "count": 1068,
+        "covered": 932
+      },
+      "path": "crates/delvec/src/grammar/ir.rs",
+      "regions": {
+        "count": 1387,
+        "covered": 1251
+      }
+    },
+    {
+      "functions": {
+        "count": 1,
+        "covered": 1
+      },
+      "lines": {
+        "count": 94,
+        "covered": 94
+      },
+      "path": "crates/delvec/src/grammar/library/ambush_door.rs",
+      "regions": {
+        "count": 223,
+        "covered": 223
+      }
+    },
+    {
+      "functions": {
+        "count": 1,
+        "covered": 1
+      },
+      "lines": {
+        "count": 127,
+        "covered": 127
+      },
+      "path": "crates/delvec/src/grammar/library/bait_stand.rs",
+      "regions": {
+        "count": 295,
+        "covered": 295
+      }
+    },
+    {
+      "functions": {
+        "count": 1,
+        "covered": 1
+      },
+      "lines": {
+        "count": 15,
+        "covered": 15
+      },
+      "path": "crates/delvec/src/grammar/library/bell/barrow_shore.rs",
+      "regions": {
+        "count": 33,
+        "covered": 33
+      }
+    },
+    {
+      "functions": {
+        "count": 7,
+        "covered": 7
+      },
+      "lines": {
+        "count": 125,
+        "covered": 125
+      },
+      "path": "crates/delvec/src/grammar/library/bell/bell_tower.rs",
+      "regions": {
+        "count": 291,
+        "covered": 291
+      }
+    },
+    {
+      "functions": {
+        "count": 3,
+        "covered": 3
+      },
+      "lines": {
+        "count": 59,
+        "covered": 59
+      },
+      "path": "crates/delvec/src/grammar/library/bell/chapel_ward.rs",
+      "regions": {
+        "count": 131,
+        "covered": 131
+      }
+    },
+    {
+      "functions": {
+        "count": 3,
+        "covered": 3
+      },
+      "lines": {
+        "count": 77,
+        "covered": 77
+      },
+      "path": "crates/delvec/src/grammar/library/bell/cistern_deep.rs",
+      "regions": {
+        "count": 184,
+        "covered": 184
+      }
+    },
+    {
+      "functions": {
+        "count": 3,
+        "covered": 3
+      },
+      "lines": {
+        "count": 110,
+        "covered": 110
+      },
+      "path": "crates/delvec/src/grammar/library/bell/cliff_road.rs",
+      "regions": {
+        "count": 256,
+        "covered": 256
+      }
+    },
+    {
+      "functions": {
+        "count": 3,
+        "covered": 3
+      },
+      "lines": {
+        "count": 67,
+        "covered": 67
+      },
+      "path": "crates/delvec/src/grammar/library/bell/drowned_ward.rs",
+      "regions": {
+        "count": 154,
+        "covered": 154
+      }
+    },
+    {
+      "functions": {
+        "count": 4,
+        "covered": 4
+      },
+      "lines": {
+        "count": 114,
+        "covered": 114
+      },
+      "path": "crates/delvec/src/grammar/library/bell/gate_ward.rs",
+      "regions": {
+        "count": 272,
+        "covered": 272
+      }
+    },
+    {
+      "functions": {
+        "count": 2,
+        "covered": 2
+      },
+      "lines": {
+        "count": 78,
+        "covered": 78
+      },
+      "path": "crates/delvec/src/grammar/library/bell/hall_keep.rs",
+      "regions": {
+        "count": 180,
+        "covered": 180
+      }
+    },
+    {
+      "functions": {
+        "count": 4,
+        "covered": 3
+      },
+      "lines": {
+        "count": 15,
+        "covered": 15
+      },
+      "path": "crates/delvec/src/grammar/library/bell/mod.rs",
+      "regions": {
+        "count": 34,
+        "covered": 33
+      }
+    },
+    {
+      "functions": {
+        "count": 2,
+        "covered": 2
+      },
+      "lines": {
+        "count": 77,
+        "covered": 77
+      },
+      "path": "crates/delvec/src/grammar/library/boulder_stair.rs",
+      "regions": {
+        "count": 185,
+        "covered": 185
+      }
+    },
+    {
+      "functions": {
+        "count": 2,
+        "covered": 2
+      },
+      "lines": {
+        "count": 87,
+        "covered": 87
+      },
+      "path": "crates/delvec/src/grammar/library/broken_grate.rs",
+      "regions": {
+        "count": 187,
+        "covered": 187
+      }
+    },
+    {
+      "functions": {
+        "count": 1,
+        "covered": 1
+      },
+      "lines": {
+        "count": 141,
+        "covered": 141
+      },
+      "path": "crates/delvec/src/grammar/library/castle.rs",
+      "regions": {
+        "count": 338,
+        "covered": 338
+      }
+    },
+    {
+      "functions": {
+        "count": 4,
+        "covered": 4
+      },
+      "lines": {
+        "count": 158,
+        "covered": 158
+      },
+      "path": "crates/delvec/src/grammar/library/causeway.rs",
+      "regions": {
+        "count": 380,
+        "covered": 380
+      }
+    },
+    {
+      "functions": {
+        "count": 1,
+        "covered": 1
+      },
+      "lines": {
+        "count": 331,
+        "covered": 331
+      },
+      "path": "crates/delvec/src/grammar/library/church.rs",
+      "regions": {
+        "count": 650,
+        "covered": 650
+      }
+    },
+    {
+      "functions": {
+        "count": 7,
+        "covered": 7
+      },
+      "lines": {
+        "count": 128,
+        "covered": 128
+      },
+      "path": "crates/delvec/src/grammar/library/cliff_path.rs",
+      "regions": {
+        "count": 285,
+        "covered": 285
+      }
+    },
+    {
+      "functions": {
+        "count": 1,
+        "covered": 1
+      },
+      "lines": {
+        "count": 61,
+        "covered": 61
+      },
+      "path": "crates/delvec/src/grammar/library/decorated_room.rs",
+      "regions": {
+        "count": 149,
+        "covered": 149
+      }
+    },
+    {
+      "functions": {
+        "count": 1,
+        "covered": 1
+      },
+      "lines": {
+        "count": 119,
+        "covered": 119
+      },
+      "path": "crates/delvec/src/grammar/library/disarm_stand.rs",
+      "regions": {
+        "count": 288,
+        "covered": 288
+      }
+    },
+    {
+      "functions": {
+        "count": 2,
+        "covered": 2
+      },
+      "lines": {
+        "count": 79,
+        "covered": 79
+      },
+      "path": "crates/delvec/src/grammar/library/drop_shaft.rs",
+      "regions": {
+        "count": 185,
+        "covered": 185
+      }
+    },
+    {
+      "functions": {
+        "count": 2,
+        "covered": 2
+      },
+      "lines": {
+        "count": 104,
+        "covered": 104
+      },
+      "path": "crates/delvec/src/grammar/library/dumbwaiter.rs",
+      "regions": {
+        "count": 247,
+        "covered": 247
+      }
+    },
+    {
+      "functions": {
+        "count": 2,
+        "covered": 2
+      },
+      "lines": {
+        "count": 90,
+        "covered": 90
+      },
+      "path": "crates/delvec/src/grammar/library/elite_ground.rs",
+      "regions": {
+        "count": 206,
+        "covered": 206
+      }
+    },
+    {
+      "functions": {
+        "count": 2,
+        "covered": 2
+      },
+      "lines": {
+        "count": 76,
+        "covered": 76
+      },
+      "path": "crates/delvec/src/grammar/library/far_side_bar.rs",
+      "regions": {
+        "count": 175,
+        "covered": 175
+      }
+    },
+    {
+      "functions": {
+        "count": 1,
+        "covered": 1
+      },
+      "lines": {
+        "count": 94,
+        "covered": 94
+      },
+      "path": "crates/delvec/src/grammar/library/hearth_ward.rs",
+      "regions": {
+        "count": 237,
+        "covered": 237
+      }
+    },
+    {
+      "functions": {
+        "count": 22,
+        "covered": 22
+      },
+      "lines": {
+        "count": 431,
+        "covered": 431
+      },
+      "path": "crates/delvec/src/grammar/library/idioms.rs",
+      "regions": {
+        "count": 972,
+        "covered": 972
+      }
+    },
+    {
+      "functions": {
+        "count": 3,
+        "covered": 3
+      },
+      "lines": {
+        "count": 105,
+        "covered": 105
+      },
+      "path": "crates/delvec/src/grammar/library/lift_shaft.rs",
+      "regions": {
+        "count": 261,
+        "covered": 261
+      }
+    },
+    {
+      "functions": {
+        "count": 35,
+        "covered": 34
+      },
+      "lines": {
+        "count": 157,
+        "covered": 140
+      },
+      "path": "crates/delvec/src/grammar/library/mod.rs",
+      "regions": {
+        "count": 162,
+        "covered": 155
+      }
+    },
+    {
+      "functions": {
+        "count": 1,
+        "covered": 1
+      },
+      "lines": {
+        "count": 25,
+        "covered": 25
+      },
+      "path": "crates/delvec/src/grammar/library/negated_guard.rs",
+      "regions": {
+        "count": 53,
+        "covered": 53
+      }
+    },
+    {
+      "functions": {
+        "count": 5,
+        "covered": 5
+      },
+      "lines": {
+        "count": 112,
+        "covered": 112
+      },
+      "path": "crates/delvec/src/grammar/library/rafter_hall.rs",
+      "regions": {
+        "count": 285,
+        "covered": 285
+      }
+    },
+    {
+      "functions": {
+        "count": 2,
+        "covered": 2
+      },
+      "lines": {
+        "count": 103,
+        "covered": 103
+      },
+      "path": "crates/delvec/src/grammar/library/spatial_contract.rs",
+      "regions": {
+        "count": 175,
+        "covered": 175
+      }
+    },
+    {
+      "functions": {
+        "count": 2,
+        "covered": 2
+      },
+      "lines": {
+        "count": 131,
+        "covered": 131
+      },
+      "path": "crates/delvec/src/grammar/library/stair_flight.rs",
+      "regions": {
+        "count": 274,
+        "covered": 274
+      }
+    },
+    {
+      "functions": {
+        "count": 2,
+        "covered": 2
+      },
+      "lines": {
+        "count": 70,
+        "covered": 70
+      },
+      "path": "crates/delvec/src/grammar/library/store_room.rs",
+      "regions": {
+        "count": 162,
+        "covered": 162
+      }
+    },
+    {
+      "functions": {
+        "count": 1,
+        "covered": 1
+      },
+      "lines": {
+        "count": 59,
+        "covered": 59
+      },
+      "path": "crates/delvec/src/grammar/library/tee_passage.rs",
+      "regions": {
+        "count": 147,
+        "covered": 147
+      }
+    },
+    {
+      "functions": {
+        "count": 1,
+        "covered": 1
+      },
+      "lines": {
+        "count": 150,
+        "covered": 150
+      },
+      "path": "crates/delvec/src/grammar/library/temple.rs",
+      "regions": {
+        "count": 332,
+        "covered": 332
+      }
+    },
+    {
+      "functions": {
+        "count": 3,
+        "covered": 3
+      },
+      "lines": {
+        "count": 81,
+        "covered": 81
+      },
+      "path": "crates/delvec/src/grammar/library/threshold_motif.rs",
+      "regions": {
+        "count": 202,
+        "covered": 202
+      }
+    },
+    {
+      "functions": {
+        "count": 1,
+        "covered": 1
+      },
+      "lines": {
+        "count": 112,
+        "covered": 112
+      },
+      "path": "crates/delvec/src/grammar/library/watch_bay.rs",
+      "regions": {
+        "count": 253,
+        "covered": 253
+      }
+    },
+    {
+      "functions": {
+        "count": 14,
+        "covered": 12
+      },
+      "lines": {
+        "count": 92,
+        "covered": 82
+      },
+      "path": "crates/delvec/src/grammar/model.rs",
+      "regions": {
+        "count": 158,
+        "covered": 148
+      }
+    },
+    {
+      "functions": {
+        "count": 27,
+        "covered": 27
+      },
+      "lines": {
+        "count": 140,
+        "covered": 138
+      },
+      "path": "crates/delvec/src/grammar/nav.rs",
+      "regions": {
+        "count": 260,
+        "covered": 257
+      }
+    },
+    {
+      "functions": {
+        "count": 20,
+        "covered": 20
+      },
+      "lines": {
+        "count": 150,
+        "covered": 149
+      },
+      "path": "crates/delvec/src/grammar/orient.rs",
+      "regions": {
+        "count": 260,
+        "covered": 256
+      }
+    },
+    {
+      "functions": {
+        "count": 4,
+        "covered": 4
+      },
+      "lines": {
+        "count": 28,
+        "covered": 27
+      },
+      "path": "crates/delvec/src/grammar/rng.rs",
+      "regions": {
+        "count": 43,
+        "covered": 41
+      }
+    },
+    {
+      "functions": {
+        "count": 11,
+        "covered": 11
+      },
+      "lines": {
+        "count": 146,
+        "covered": 136
+      },
+      "path": "crates/delvec/src/grammar/settle.rs",
+      "regions": {
+        "count": 236,
+        "covered": 218
+      }
+    },
+    {
+      "functions": {
+        "count": 5,
+        "covered": 5
+      },
+      "lines": {
+        "count": 77,
+        "covered": 76
+      },
+      "path": "crates/delvec/src/grammar/split.rs",
+      "regions": {
+        "count": 119,
+        "covered": 118
+      }
+    },
+    {
+      "functions": {
+        "count": 32,
+        "covered": 30
+      },
+      "lines": {
+        "count": 218,
+        "covered": 215
+      },
+      "path": "crates/delvec/src/grammar/survey.rs",
+      "regions": {
+        "count": 420,
+        "covered": 412
+      }
+    },
+    {
+      "functions": {
+        "count": 18,
+        "covered": 18
+      },
+      "lines": {
+        "count": 54,
+        "covered": 54
+      },
+      "path": "crates/delvec/src/grammar/version.rs",
+      "regions": {
+        "count": 95,
+        "covered": 95
+      }
+    },
+    {
+      "functions": {
+        "count": 3,
+        "covered": 3
+      },
+      "lines": {
+        "count": 168,
+        "covered": 166
+      },
+      "path": "crates/delvec/src/main.rs",
+      "regions": {
+        "count": 275,
+        "covered": 273
+      }
+    },
+    {
+      "functions": {
+        "count": 8,
+        "covered": 8
+      },
+      "lines": {
+        "count": 60,
+        "covered": 58
+      },
+      "path": "crates/delvec/src/orchestrator/camera.rs",
+      "regions": {
+        "count": 145,
+        "covered": 136
+      }
+    },
+    {
+      "functions": {
+        "count": 2,
+        "covered": 1
+      },
+      "lines": {
+        "count": 78,
+        "covered": 42
+      },
+      "path": "crates/delvec/src/orchestrator/cli.rs",
+      "regions": {
+        "count": 109,
+        "covered": 71
+      }
+    },
+    {
+      "functions": {
+        "count": 25,
+        "covered": 24
+      },
+      "lines": {
+        "count": 183,
+        "covered": 176
+      },
+      "path": "crates/delvec/src/orchestrator/mod.rs",
+      "regions": {
+        "count": 410,
+        "covered": 374
+      }
+    },
+    {
+      "functions": {
+        "count": 8,
+        "covered": 8
+      },
+      "lines": {
+        "count": 94,
+        "covered": 87
+      },
+      "path": "crates/delvec/src/orchestrator/rehearsal.rs",
+      "regions": {
+        "count": 210,
+        "covered": 194
+      }
+    },
+    {
+      "functions": {
+        "count": 31,
+        "covered": 27
+      },
+      "lines": {
+        "count": 227,
+        "covered": 217
+      },
+      "path": "crates/delvec/src/outdir.rs",
+      "regions": {
+        "count": 456,
+        "covered": 413
+      }
+    },
+    {
+      "functions": {
+        "count": 14,
+        "covered": 13
+      },
+      "lines": {
+        "count": 59,
+        "covered": 59
+      },
+      "path": "crates/delvec/src/par.rs",
+      "regions": {
+        "count": 111,
+        "covered": 109
+      }
+    },
+    {
+      "functions": {
+        "count": 37,
+        "covered": 15
+      },
+      "lines": {
+        "count": 398,
+        "covered": 94
+      },
+      "path": "crates/delvec/src/render/cli.rs",
+      "regions": {
+        "count": 693,
+        "covered": 177
+      }
+    },
+    {
+      "functions": {
+        "count": 2,
+        "covered": 2
+      },
+      "lines": {
+        "count": 21,
+        "covered": 21
+      },
+      "path": "crates/delvec/src/render/fidelity.rs",
+      "regions": {
+        "count": 40,
+        "covered": 40
+      }
+    },
+    {
+      "functions": {
+        "count": 23,
+        "covered": 15
+      },
+      "lines": {
+        "count": 199,
+        "covered": 160
+      },
+      "path": "crates/delvec/src/render/gpu.rs",
+      "regions": {
+        "count": 296,
+        "covered": 245
+      }
+    },
+    {
+      "functions": {
+        "count": 22,
+        "covered": 18
+      },
+      "lines": {
+        "count": 163,
+        "covered": 144
+      },
+      "path": "crates/delvec/src/render/occupancy.rs",
+      "regions": {
+        "count": 252,
+        "covered": 230
+      }
+    },
+    {
+      "functions": {
+        "count": 22,
+        "covered": 18
+      },
+      "lines": {
+        "count": 415,
+        "covered": 383
+      },
+      "path": "crates/delvec/src/render/shots.rs",
+      "regions": {
+        "count": 555,
+        "covered": 496
+      }
+    },
+    {
+      "functions": {
+        "count": 22,
+        "covered": 22
+      },
+      "lines": {
+        "count": 300,
+        "covered": 294
+      },
+      "path": "crates/delvec/src/render/view.rs",
+      "regions": {
+        "count": 413,
+        "covered": 398
+      }
+    },
+    {
+      "functions": {
+        "count": 7,
+        "covered": 5
+      },
+      "lines": {
+        "count": 75,
+        "covered": 61
+      },
+      "path": "crates/delvec/src/schem/cli.rs",
+      "regions": {
+        "count": 125,
+        "covered": 101
+      }
+    },
+    {
+      "functions": {
+        "count": 19,
+        "covered": 17
+      },
+      "lines": {
+        "count": 210,
+        "covered": 205
+      },
+      "path": "crates/delvec/src/schem/convert.rs",
+      "regions": {
+        "count": 424,
+        "covered": 394
+      }
+    },
+    {
+      "functions": {
+        "count": 5,
+        "covered": 4
+      },
+      "lines": {
+        "count": 34,
+        "covered": 31
+      },
+      "path": "crates/delvec/src/schem/diag.rs",
+      "regions": {
+        "count": 35,
+        "covered": 28
+      }
+    },
+    {
+      "functions": {
+        "count": 19,
+        "covered": 19
+      },
+      "lines": {
+        "count": 169,
+        "covered": 167
+      },
+      "path": "crates/delvec/src/schem/fixtures.rs",
+      "regions": {
+        "count": 353,
+        "covered": 351
+      }
+    },
+    {
+      "functions": {
+        "count": 1,
+        "covered": 1
+      },
+      "lines": {
+        "count": 54,
+        "covered": 54
+      },
+      "path": "crates/delvec/src/schem/mod.rs",
+      "regions": {
+        "count": 74,
+        "covered": 74
+      }
+    },
+    {
+      "functions": {
+        "count": 26,
+        "covered": 26
+      },
+      "lines": {
+        "count": 113,
+        "covered": 113
+      },
+      "path": "crates/delvec/src/schem/nav.rs",
+      "regions": {
+        "count": 269,
+        "covered": 269
+      }
+    },
+    {
+      "functions": {
+        "count": 9,
+        "covered": 9
+      },
+      "lines": {
+        "count": 72,
+        "covered": 64
+      },
+      "path": "crates/delvec/src/schem/nbt.rs",
+      "regions": {
+        "count": 150,
+        "covered": 130
+      }
+    },
+    {
+      "functions": {
+        "count": 42,
+        "covered": 25
+      },
+      "lines": {
+        "count": 275,
+        "covered": 256
+      },
+      "path": "crates/delvec/src/schem/schematic.rs",
+      "regions": {
+        "count": 499,
+        "covered": 415
+      }
+    },
+    {
+      "functions": {
+        "count": 15,
+        "covered": 15
+      },
+      "lines": {
+        "count": 99,
+        "covered": 96
+      },
+      "path": "crates/delvec/src/schem/stairs.rs",
+      "regions": {
+        "count": 124,
+        "covered": 121
+      }
+    },
+    {
+      "functions": {
+        "count": 7,
+        "covered": 6
+      },
+      "lines": {
+        "count": 84,
+        "covered": 60
+      },
+      "path": "crates/delvec/src/sculpt/cli.rs",
+      "regions": {
+        "count": 124,
+        "covered": 92
+      }
+    },
+    {
+      "functions": {
+        "count": 41,
+        "covered": 41
+      },
+      "lines": {
+        "count": 436,
+        "covered": 424
+      },
+      "path": "crates/delvec/src/sculpt/fit.rs",
+      "regions": {
+        "count": 837,
+        "covered": 819
+      }
+    },
+    {
+      "functions": {
+        "count": 35,
+        "covered": 32
+      },
+      "lines": {
+        "count": 459,
+        "covered": 372
+      },
+      "path": "crates/delvec/src/sculpt/form.rs",
+      "regions": {
+        "count": 630,
+        "covered": 546
+      }
+    },
+    {
+      "functions": {
+        "count": 36,
+        "covered": 36
+      },
+      "lines": {
+        "count": 381,
+        "covered": 373
+      },
+      "path": "crates/delvec/src/sculpt/grid.rs",
+      "regions": {
+        "count": 754,
+        "covered": 742
+      }
+    },
+    {
+      "functions": {
+        "count": 37,
+        "covered": 37
+      },
+      "lines": {
+        "count": 244,
+        "covered": 241
+      },
+      "path": "crates/delvec/src/sculpt/hull.rs",
+      "regions": {
+        "count": 471,
+        "covered": 468
+      }
+    },
+    {
+      "functions": {
+        "count": 37,
+        "covered": 33
+      },
+      "lines": {
+        "count": 366,
+        "covered": 340
+      },
+      "path": "crates/delvec/src/sculpt/mod.rs",
+      "regions": {
+        "count": 589,
+        "covered": 556
+      }
+    },
+    {
+      "functions": {
+        "count": 10,
+        "covered": 9
+      },
+      "lines": {
+        "count": 170,
+        "covered": 139
+      },
+      "path": "crates/dsl/src/actor.rs",
+      "regions": {
+        "count": 183,
+        "covered": 157
+      }
+    },
+    {
+      "functions": {
+        "count": 2,
+        "covered": 2
+      },
+      "lines": {
+        "count": 92,
+        "covered": 82
+      },
+      "path": "crates/dsl/src/ambush.rs",
+      "regions": {
+        "count": 83,
+        "covered": 79
+      }
+    },
+    {
+      "functions": {
+        "count": 21,
+        "covered": 21
+      },
+      "lines": {
+        "count": 356,
+        "covered": 301
+      },
+      "path": "crates/dsl/src/assembly.rs",
+      "regions": {
+        "count": 414,
+        "covered": 361
+      }
+    },
+    {
+      "functions": {
+        "count": 67,
+        "covered": 66
+      },
+      "lines": {
+        "count": 531,
+        "covered": 500
+      },
+      "path": "crates/dsl/src/blocks.rs",
+      "regions": {
+        "count": 816,
+        "covered": 777
+      }
+    },
+    {
+      "functions": {
+        "count": 162,
+        "covered": 156
+      },
+      "lines": {
+        "count": 865,
+        "covered": 836
+      },
+      "path": "crates/dsl/src/blockshape.rs",
+      "regions": {
+        "count": 1470,
+        "covered": 1402
+      }
+    },
+    {
+      "functions": {
+        "count": 44,
+        "covered": 43
+      },
+      "lines": {
+        "count": 304,
+        "covered": 297
+      },
+      "path": "crates/dsl/src/body.rs",
+      "regions": {
+        "count": 402,
+        "covered": 394
+      }
+    },
+    {
+      "functions": {
+        "count": 1,
+        "covered": 1
+      },
+      "lines": {
+        "count": 9,
+        "covered": 9
+      },
+      "path": "crates/dsl/src/canonical.rs",
+      "regions": {
+        "count": 23,
+        "covered": 22
+      }
+    },
+    {
+      "functions": {
+        "count": 10,
+        "covered": 8
+      },
+      "lines": {
+        "count": 52,
+        "covered": 42
+      },
+      "path": "crates/dsl/src/cast.rs",
+      "regions": {
+        "count": 79,
+        "covered": 60
+      }
+    },
+    {
+      "functions": {
+        "count": 77,
+        "covered": 72
+      },
+      "lines": {
+        "count": 478,
+        "covered": 430
+      },
+      "path": "crates/dsl/src/celestial.rs",
+      "regions": {
+        "count": 728,
+        "covered": 656
+      }
+    },
+    {
+      "functions": {
+        "count": 15,
+        "covered": 15
+      },
+      "lines": {
+        "count": 59,
+        "covered": 59
+      },
+      "path": "crates/dsl/src/chrome.rs",
+      "regions": {
+        "count": 97,
+        "covered": 97
+      }
+    },
+    {
+      "functions": {
+        "count": 19,
+        "covered": 19
+      },
+      "lines": {
+        "count": 268,
+        "covered": 263
+      },
+      "path": "crates/dsl/src/class.rs",
+      "regions": {
+        "count": 329,
+        "covered": 322
+      }
+    },
+    {
+      "functions": {
+        "count": 3,
+        "covered": 3
+      },
+      "lines": {
+        "count": 11,
+        "covered": 11
+      },
+      "path": "crates/dsl/src/color.rs",
+      "regions": {
+        "count": 18,
+        "covered": 18
+      }
+    },
+    {
+      "functions": {
+        "count": 26,
+        "covered": 25
+      },
+      "lines": {
+        "count": 108,
+        "covered": 108
+      },
+      "path": "crates/dsl/src/compass.rs",
+      "regions": {
+        "count": 226,
+        "covered": 224
+      }
+    },
+    {
+      "functions": {
+        "count": 26,
+        "covered": 25
+      },
+      "lines": {
+        "count": 447,
+        "covered": 410
+      },
+      "path": "crates/dsl/src/cutscene.rs",
+      "regions": {
+        "count": 554,
+        "covered": 526
+      }
+    },
+    {
+      "functions": {
+        "count": 9,
+        "covered": 9
+      },
+      "lines": {
+        "count": 96,
+        "covered": 96
+      },
+      "path": "crates/dsl/src/design.rs",
+      "regions": {
+        "count": 84,
+        "covered": 84
+      }
+    },
+    {
+      "functions": {
+        "count": 20,
+        "covered": 18
+      },
+      "lines": {
+        "count": 71,
+        "covered": 66
+      },
+      "path": "crates/dsl/src/detailplan.rs",
+      "regions": {
+        "count": 95,
+        "covered": 87
+      }
+    },
+    {
+      "functions": {
+        "count": 22,
+        "covered": 18
+      },
+      "lines": {
+        "count": 117,
+        "covered": 93
+      },
+      "path": "crates/dsl/src/diagnostic.rs",
+      "regions": {
+        "count": 114,
+        "covered": 96
+      }
+    },
+    {
+      "functions": {
+        "count": 30,
+        "covered": 27
+      },
+      "lines": {
+        "count": 362,
+        "covered": 323
+      },
+      "path": "crates/dsl/src/dialogue.rs",
+      "regions": {
+        "count": 525,
+        "covered": 496
+      }
+    },
+    {
+      "functions": {
+        "count": 7,
+        "covered": 7
+      },
+      "lines": {
+        "count": 63,
+        "covered": 56
+      },
+      "path": "crates/dsl/src/difficulty.rs",
+      "regions": {
+        "count": 77,
+        "covered": 69
+      }
+    },
+    {
+      "functions": {
+        "count": 35,
+        "covered": 33
+      },
+      "lines": {
+        "count": 404,
+        "covered": 371
+      },
+      "path": "crates/dsl/src/economy.rs",
+      "regions": {
+        "count": 565,
+        "covered": 537
+      }
+    },
+    {
+      "functions": {
+        "count": 33,
+        "covered": 29
+      },
+      "lines": {
+        "count": 294,
+        "covered": 265
+      },
+      "path": "crates/dsl/src/effects.rs",
+      "regions": {
+        "count": 350,
+        "covered": 314
+      }
+    },
+    {
+      "functions": {
+        "count": 17,
+        "covered": 17
+      },
+      "lines": {
+        "count": 273,
+        "covered": 267
+      },
+      "path": "crates/dsl/src/envelope.rs",
+      "regions": {
+        "count": 381,
+        "covered": 376
+      }
+    },
+    {
+      "functions": {
+        "count": 30,
+        "covered": 29
+      },
+      "lines": {
+        "count": 231,
+        "covered": 231
+      },
+      "path": "crates/dsl/src/equipment.rs",
+      "regions": {
+        "count": 386,
+        "covered": 385
+      }
+    },
+    {
+      "functions": {
+        "count": 27,
+        "covered": 26
+      },
+      "lines": {
+        "count": 152,
+        "covered": 145
+      },
+      "path": "crates/dsl/src/fight.rs",
+      "regions": {
+        "count": 235,
+        "covered": 222
+      }
+    },
+    {
+      "functions": {
+        "count": 9,
+        "covered": 9
+      },
+      "lines": {
+        "count": 124,
+        "covered": 124
+      },
+      "path": "crates/dsl/src/firework.rs",
+      "regions": {
+        "count": 127,
+        "covered": 127
+      }
+    },
+    {
+      "functions": {
+        "count": 6,
+        "covered": 6
+      },
+      "lines": {
+        "count": 29,
+        "covered": 28
+      },
+      "path": "crates/dsl/src/fluid.rs",
+      "regions": {
+        "count": 40,
+        "covered": 39
+      }
+    },
+    {
+      "functions": {
+        "count": 39,
+        "covered": 34
+      },
+      "lines": {
+        "count": 494,
+        "covered": 371
+      },
+      "path": "crates/dsl/src/fmt.rs",
+      "regions": {
+        "count": 773,
+        "covered": 633
+      }
+    },
+    {
+      "functions": {
+        "count": 51,
+        "covered": 49
+      },
+      "lines": {
+        "count": 383,
+        "covered": 380
+      },
+      "path": "crates/dsl/src/gate.rs",
+      "regions": {
+        "count": 531,
+        "covered": 520
+      }
+    },
+    {
+      "functions": {
+        "count": 5,
+        "covered": 5
+      },
+      "lines": {
+        "count": 111,
+        "covered": 111
+      },
+      "path": "crates/dsl/src/healthbar.rs",
+      "regions": {
+        "count": 141,
+        "covered": 140
+      }
+    },
+    {
+      "functions": {
+        "count": 21,
+        "covered": 20
+      },
+      "lines": {
+        "count": 119,
+        "covered": 99
+      },
+      "path": "crates/dsl/src/holders.rs",
+      "regions": {
+        "count": 192,
+        "covered": 171
+      }
+    },
+    {
+      "functions": {
+        "count": 14,
+        "covered": 14
+      },
+      "lines": {
+        "count": 63,
+        "covered": 63
+      },
+      "path": "crates/dsl/src/ids.rs",
+      "regions": {
+        "count": 79,
+        "covered": 79
+      }
+    },
+    {
+      "functions": {
+        "count": 92,
+        "covered": 92
+      },
+      "lines": {
+        "count": 1035,
+        "covered": 971
+      },
+      "path": "crates/dsl/src/l10n.rs",
+      "regions": {
+        "count": 1824,
+        "covered": 1756
+      }
+    },
+    {
+      "functions": {
+        "count": 106,
+        "covered": 104
+      },
+      "lines": {
+        "count": 1213,
+        "covered": 1151
+      },
+      "path": "crates/dsl/src/layout.rs",
+      "regions": {
+        "count": 1724,
+        "covered": 1690
+      }
+    },
+    {
+      "functions": {
+        "count": 4,
+        "covered": 4
+      },
+      "lines": {
+        "count": 123,
+        "covered": 118
+      },
+      "path": "crates/dsl/src/lethal.rs",
+      "regions": {
+        "count": 117,
+        "covered": 108
+      }
+    },
+    {
+      "functions": {
+        "count": 3,
+        "covered": 3
+      },
+      "lines": {
+        "count": 66,
+        "covered": 65
+      },
+      "path": "crates/dsl/src/license.rs",
+      "regions": {
+        "count": 75,
+        "covered": 74
+      }
+    },
+    {
+      "functions": {
+        "count": 2,
+        "covered": 2
+      },
+      "lines": {
+        "count": 8,
+        "covered": 8
+      },
+      "path": "crates/dsl/src/lightning.rs",
+      "regions": {
+        "count": 20,
+        "covered": 20
+      }
+    },
+    {
+      "functions": {
+        "count": 4,
+        "covered": 4
+      },
+      "lines": {
+        "count": 143,
+        "covered": 106
+      },
+      "path": "crates/dsl/src/loop.rs",
+      "regions": {
+        "count": 145,
+        "covered": 114
+      }
+    },
+    {
+      "functions": {
+        "count": 15,
+        "covered": 15
+      },
+      "lines": {
+        "count": 350,
+        "covered": 327
+      },
+      "path": "crates/dsl/src/loot.rs",
+      "regions": {
+        "count": 375,
+        "covered": 354
+      }
+    },
+    {
+      "functions": {
+        "count": 5,
+        "covered": 5
+      },
+      "lines": {
+        "count": 25,
+        "covered": 25
+      },
+      "path": "crates/dsl/src/mark.rs",
+      "regions": {
+        "count": 26,
+        "covered": 26
+      }
+    },
+    {
+      "functions": {
+        "count": 4,
+        "covered": 4
+      },
+      "lines": {
+        "count": 22,
+        "covered": 22
+      },
+      "path": "crates/dsl/src/mclang.rs",
+      "regions": {
+        "count": 42,
+        "covered": 42
+      }
+    },
+    {
+      "functions": {
+        "count": 42,
+        "covered": 40
+      },
+      "lines": {
+        "count": 609,
+        "covered": 575
+      },
+      "path": "crates/dsl/src/metrics.rs",
+      "regions": {
+        "count": 509,
+        "covered": 479
+      }
+    },
+    {
+      "functions": {
+        "count": 55,
+        "covered": 52
+      },
+      "lines": {
+        "count": 775,
+        "covered": 692
+      },
+      "path": "crates/dsl/src/metrics/body.rs",
+      "regions": {
+        "count": 1249,
+        "covered": 1140
+      }
+    },
+    {
+      "functions": {
+        "count": 11,
+        "covered": 10
+      },
+      "lines": {
+        "count": 67,
+        "covered": 60
+      },
+      "path": "crates/dsl/src/metrics/body/ballistics.rs",
+      "regions": {
+        "count": 120,
+        "covered": 113
+      }
+    },
+    {
+      "functions": {
+        "count": 16,
+        "covered": 14
+      },
+      "lines": {
+        "count": 147,
+        "covered": 135
+      },
+      "path": "crates/dsl/src/music.rs",
+      "regions": {
+        "count": 183,
+        "covered": 168
+      }
+    },
+    {
+      "functions": {
+        "count": 24,
+        "covered": 22
+      },
+      "lines": {
+        "count": 266,
+        "covered": 261
+      },
+      "path": "crates/dsl/src/npc.rs",
+      "regions": {
+        "count": 397,
+        "covered": 378
+      }
+    },
+    {
+      "functions": {
+        "count": 4,
+        "covered": 4
+      },
+      "lines": {
+        "count": 44,
+        "covered": 44
+      },
+      "path": "crates/dsl/src/onkill.rs",
+      "regions": {
+        "count": 58,
+        "covered": 58
+      }
+    },
+    {
+      "functions": {
+        "count": 31,
+        "covered": 31
+      },
+      "lines": {
+        "count": 285,
+        "covered": 269
+      },
+      "path": "crates/dsl/src/ordering.rs",
+      "regions": {
+        "count": 525,
+        "covered": 489
+      }
+    },
+    {
+      "functions": {
+        "count": 18,
+        "covered": 18
+      },
+      "lines": {
+        "count": 171,
+        "covered": 170
+      },
+      "path": "crates/dsl/src/perception.rs",
+      "regions": {
+        "count": 256,
+        "covered": 255
+      }
+    },
+    {
+      "functions": {
+        "count": 8,
+        "covered": 8
+      },
+      "lines": {
+        "count": 63,
+        "covered": 55
+      },
+      "path": "crates/dsl/src/placement.rs",
+      "regions": {
+        "count": 50,
+        "covered": 49
+      }
+    },
+    {
+      "functions": {
+        "count": 48,
+        "covered": 45
+      },
+      "lines": {
+        "count": 316,
+        "covered": 312
+      },
+      "path": "crates/dsl/src/prefab.rs",
+      "regions": {
+        "count": 407,
+        "covered": 389
+      }
+    },
+    {
+      "functions": {
+        "count": 8,
+        "covered": 8
+      },
+      "lines": {
+        "count": 132,
+        "covered": 132
+      },
+      "path": "crates/dsl/src/producers.rs",
+      "regions": {
+        "count": 147,
+        "covered": 147
+      }
+    },
+    {
+      "functions": {
+        "count": 3,
+        "covered": 3
+      },
+      "lines": {
+        "count": 150,
+        "covered": 125
+      },
+      "path": "crates/dsl/src/pulse.rs",
+      "regions": {
+        "count": 129,
+        "covered": 115
+      }
+    },
+    {
+      "functions": {
+        "count": 56,
+        "covered": 56
+      },
+      "lines": {
+        "count": 852,
+        "covered": 847
+      },
+      "path": "crates/dsl/src/quest/check.rs",
+      "regions": {
+        "count": 993,
+        "covered": 980
+      }
+    },
+    {
+      "functions": {
+        "count": 79,
+        "covered": 66
+      },
+      "lines": {
+        "count": 618,
+        "covered": 531
+      },
+      "path": "crates/dsl/src/quest/effect.rs",
+      "regions": {
+        "count": 863,
+        "covered": 762
+      }
+    },
+    {
+      "functions": {
+        "count": 17,
+        "covered": 17
+      },
+      "lines": {
+        "count": 69,
+        "covered": 69
+      },
+      "path": "crates/dsl/src/quest/mod.rs",
+      "regions": {
+        "count": 96,
+        "covered": 94
+      }
+    },
+    {
+      "functions": {
+        "count": 37,
+        "covered": 33
+      },
+      "lines": {
+        "count": 255,
+        "covered": 231
+      },
+      "path": "crates/dsl/src/quest/objective.rs",
+      "regions": {
+        "count": 312,
+        "covered": 282
+      }
+    },
+    {
+      "functions": {
+        "count": 7,
+        "covered": 7
+      },
+      "lines": {
+        "count": 79,
+        "covered": 78
+      },
+      "path": "crates/dsl/src/quest/verb.rs",
+      "regions": {
+        "count": 83,
+        "covered": 82
+      }
+    },
+    {
+      "functions": {
+        "count": 35,
+        "covered": 35
+      },
+      "lines": {
+        "count": 451,
+        "covered": 434
+      },
+      "path": "crates/dsl/src/quest_plan.rs",
+      "regions": {
+        "count": 696,
+        "covered": 676
+      }
+    },
+    {
+      "functions": {
+        "count": 36,
+        "covered": 31
+      },
+      "lines": {
+        "count": 177,
+        "covered": 160
+      },
+      "path": "crates/dsl/src/registry.rs",
+      "regions": {
+        "count": 254,
+        "covered": 237
+      }
+    },
+    {
+      "functions": {
+        "count": 50,
+        "covered": 48
+      },
+      "lines": {
+        "count": 367,
+        "covered": 321
+      },
+      "path": "crates/dsl/src/rig.rs",
+      "regions": {
+        "count": 612,
+        "covered": 564
+      }
+    },
+    {
+      "functions": {
+        "count": 1,
+        "covered": 1
+      },
+      "lines": {
+        "count": 16,
+        "covered": 16
+      },
+      "path": "crates/dsl/src/schema.rs",
+      "regions": {
+        "count": 20,
+        "covered": 20
+      }
+    },
+    {
+      "functions": {
+        "count": 5,
+        "covered": 5
+      },
+      "lines": {
+        "count": 18,
+        "covered": 18
+      },
+      "path": "crates/dsl/src/serde_fields.rs",
+      "regions": {
+        "count": 17,
+        "covered": 17
+      }
+    },
+    {
+      "functions": {
+        "count": 5,
+        "covered": 5
+      },
+      "lines": {
+        "count": 101,
+        "covered": 83
+      },
+      "path": "crates/dsl/src/shortcut.rs",
+      "regions": {
+        "count": 115,
+        "covered": 99
+      }
+    },
+    {
+      "functions": {
+        "count": 2,
+        "covered": 2
+      },
+      "lines": {
+        "count": 85,
+        "covered": 84
+      },
+      "path": "crates/dsl/src/sign.rs",
+      "regions": {
+        "count": 76,
+        "covered": 73
+      }
+    },
+    {
+      "functions": {
+        "count": 44,
+        "covered": 44
+      },
+      "lines": {
+        "count": 593,
+        "covered": 539
+      },
+      "path": "crates/dsl/src/siteplan/check.rs",
+      "regions": {
+        "count": 753,
+        "covered": 735
+      }
+    },
+    {
+      "functions": {
+        "count": 76,
+        "covered": 75
+      },
+      "lines": {
+        "count": 498,
+        "covered": 490
+      },
+      "path": "crates/dsl/src/siteplan/claim.rs",
+      "regions": {
+        "count": 967,
+        "covered": 956
+      }
+    },
+    {
+      "functions": {
+        "count": 13,
+        "covered": 12
+      },
+      "lines": {
+        "count": 213,
+        "covered": 192
+      },
+      "path": "crates/dsl/src/siteplan/fillcheck.rs",
+      "regions": {
+        "count": 285,
+        "covered": 263
+      }
+    },
+    {
+      "functions": {
+        "count": 40,
+        "covered": 40
+      },
+      "lines": {
+        "count": 300,
+        "covered": 291
+      },
+      "path": "crates/dsl/src/siteplan/ground.rs",
+      "regions": {
+        "count": 529,
+        "covered": 516
+      }
+    },
+    {
+      "functions": {
+        "count": 14,
+        "covered": 14
+      },
+      "lines": {
+        "count": 141,
+        "covered": 126
+      },
+      "path": "crates/dsl/src/siteplan/measure.rs",
+      "regions": {
+        "count": 202,
+        "covered": 194
+      }
+    },
+    {
+      "functions": {
+        "count": 28,
+        "covered": 27
+      },
+      "lines": {
+        "count": 206,
+        "covered": 195
+      },
+      "path": "crates/dsl/src/siteplan/mod.rs",
+      "regions": {
+        "count": 306,
+        "covered": 291
+      }
+    },
+    {
+      "functions": {
+        "count": 25,
+        "covered": 25
+      },
+      "lines": {
+        "count": 376,
+        "covered": 371
+      },
+      "path": "crates/dsl/src/siteplan/pack.rs",
+      "regions": {
+        "count": 649,
+        "covered": 640
+      }
+    },
+    {
+      "functions": {
+        "count": 38,
+        "covered": 38
+      },
+      "lines": {
+        "count": 333,
+        "covered": 321
+      },
+      "path": "crates/dsl/src/siteplan/place.rs",
+      "regions": {
+        "count": 500,
+        "covered": 486
+      }
+    },
+    {
+      "functions": {
+        "count": 9,
+        "covered": 9
+      },
+      "lines": {
+        "count": 200,
+        "covered": 198
+      },
+      "path": "crates/dsl/src/siteplan/region.rs",
+      "regions": {
+        "count": 326,
+        "covered": 320
+      }
+    },
+    {
+      "functions": {
+        "count": 21,
+        "covered": 20
+      },
+      "lines": {
+        "count": 498,
+        "covered": 471
+      },
+      "path": "crates/dsl/src/siteplan/seam.rs",
+      "regions": {
+        "count": 794,
+        "covered": 752
+      }
+    },
+    {
+      "functions": {
+        "count": 5,
+        "covered": 3
+      },
+      "lines": {
+        "count": 40,
+        "covered": 29
+      },
+      "path": "crates/dsl/src/siteplan/way.rs",
+      "regions": {
+        "count": 58,
+        "covered": 38
+      }
+    },
+    {
+      "functions": {
+        "count": 18,
+        "covered": 16
+      },
+      "lines": {
+        "count": 147,
+        "covered": 140
+      },
+      "path": "crates/dsl/src/split.rs",
+      "regions": {
+        "count": 228,
+        "covered": 209
+      }
+    },
+    {
+      "functions": {
+        "count": 33,
+        "covered": 30
+      },
+      "lines": {
+        "count": 376,
+        "covered": 369
+      },
+      "path": "crates/dsl/src/state.rs",
+      "regions": {
+        "count": 464,
+        "covered": 453
+      }
+    },
+    {
+      "functions": {
+        "count": 1,
+        "covered": 1
+      },
+      "lines": {
+        "count": 6,
+        "covered": 6
+      },
+      "path": "crates/dsl/src/stealth.rs",
+      "regions": {
+        "count": 7,
+        "covered": 7
+      }
+    },
+    {
+      "functions": {
+        "count": 47,
+        "covered": 42
+      },
+      "lines": {
+        "count": 182,
+        "covered": 163
+      },
+      "path": "crates/dsl/src/support.rs",
+      "regions": {
+        "count": 365,
+        "covered": 325
+      }
+    },
+    {
+      "functions": {
+        "count": 48,
+        "covered": 46
+      },
+      "lines": {
+        "count": 375,
+        "covered": 372
+      },
+      "path": "crates/dsl/src/textstyle.rs",
+      "regions": {
+        "count": 600,
+        "covered": 592
+      }
+    },
+    {
+      "functions": {
+        "count": 8,
+        "covered": 8
+      },
+      "lines": {
+        "count": 171,
+        "covered": 164
+      },
+      "path": "crates/dsl/src/timed_gate.rs",
+      "regions": {
+        "count": 176,
+        "covered": 167
+      }
+    },
+    {
+      "functions": {
+        "count": 12,
+        "covered": 10
+      },
+      "lines": {
+        "count": 322,
+        "covered": 244
+      },
+      "path": "crates/dsl/src/trap.rs",
+      "regions": {
+        "count": 300,
+        "covered": 248
+      }
+    },
+    {
+      "functions": {
+        "count": 73,
+        "covered": 70
+      },
+      "lines": {
+        "count": 898,
+        "covered": 810
+      },
+      "path": "crates/dsl/src/trigger.rs",
+      "regions": {
+        "count": 1092,
+        "covered": 1027
+      }
+    },
+    {
+      "functions": {
+        "count": 40,
+        "covered": 40
+      },
+      "lines": {
+        "count": 457,
+        "covered": 445
+      },
+      "path": "crates/dsl/src/validate/mod.rs",
+      "regions": {
+        "count": 903,
+        "covered": 893
+      }
+    },
+    {
+      "functions": {
+        "count": 8,
+        "covered": 8
+      },
+      "lines": {
+        "count": 87,
+        "covered": 86
+      },
+      "path": "crates/dsl/src/viewdistance.rs",
+      "regions": {
+        "count": 132,
+        "covered": 131
+      }
+    },
+    {
+      "functions": {
+        "count": 50,
+        "covered": 49
+      },
+      "lines": {
+        "count": 698,
+        "covered": 674
+      },
+      "path": "crates/dsl/src/wave.rs",
+      "regions": {
+        "count": 778,
+        "covered": 755
+      }
+    },
+    {
+      "functions": {
+        "count": 61,
+        "covered": 59
+      },
+      "lines": {
+        "count": 711,
+        "covered": 647
+      },
+      "path": "crates/dsl/src/world.rs",
+      "regions": {
+        "count": 753,
+        "covered": 697
+      }
+    },
+    {
+      "functions": {
+        "count": 11,
+        "covered": 9
+      },
+      "lines": {
+        "count": 582,
+        "covered": 306
+      },
+      "path": "crates/dsl/src/world_edits.rs",
+      "regions": {
+        "count": 643,
+        "covered": 428
+      }
+    }
+  ],
+  "instrument": {
+    "cargo_llvm_cov": "0.9.1",
+    "llvm_tools": "LLVM version 22.1.6-rust-1.97.1-stable",
+    "nextest": "0.9.148",
+    "rustc": "1.97.1"
+  },
+  "rows_sha256": "21ba10daa2b819d7bd7ea354d26a13ef8884704957c2993af636bf857cf05d30",
+  "sha256": "0ba53b04054e5294d2da6449eb360e7c603acad0d0337073826a0f05b67eb2ab",
+  "tree": "e39566796c78151f8f19d78778bb686e87653fd1",
+  "unstable_regions": 0
+}

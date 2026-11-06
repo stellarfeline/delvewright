@@ -114,8 +114,8 @@ the binary's registry; `delvec codes` prints that registry. Given a built
 reads, in both directions, by `(code, constant name)` and by exit tier — so the
 source reading here, the doc catalog and the binary all agree. A declaration
 written outside `dw_code!` is in the source and absent from the registry, and
-reds. `crates/delvec/tests/codes.rs` runs this with the binary cargo built, so
-`cargo test --workspace` binds it; without `--delvec` the run prints that the
+reds. `crates/delvec/tests/it/codes.rs` runs this with the binary cargo built, so
+the workspace test run binds it; without `--delvec` the run prints that the
 registry was not compared.
 
 Deterministic, offline, no dependencies (Python 3 stdlib). Run from the repo root:
@@ -176,11 +176,11 @@ ALLOWLIST: dict[str, str] = {
     # *algorithm* it wraps (`detect::scan_default`) is unit-tested directly in
     # `crates/delvec/src/compiler/view/detect.rs`'s `#[cfg(test)]` module; the CLI wiring that
     # emits DW0720 from a real render is exercised by
-    # `crates/delvec/tests/render_gpu.rs::detector_catches_heavy_core_when_included`,
+    # `crates/delvec/tests/it/render_gpu.rs::detector_catches_heavy_core_when_included`,
     # `#[ignore]`d because no GPU/jar is available in CI or this dev sandbox.
     "DW0720": (
         "requires a GPU adapter + the never-committed 1.21.11 client jar "
-        "(see crates/delvec/tests/render_gpu.rs, #[ignore]d); the detector algorithm "
+        "(see crates/delvec/tests/it/render_gpu.rs, #[ignore]d); the detector algorithm "
         "it wraps is unit-tested in crates/delvec/src/compiler/view/detect.rs"
     ),
 }
@@ -781,7 +781,7 @@ def tested_codes() -> set[str]:
 # ---------------------------------------------------------------------------
 
 # The test that takes each move and asserts it reaches a different verdict.
-REMEDY_TEST = REPO_ROOT / "crates" / "delvec" / "tests" / "remedy_reachability.rs"
+REMEDY_TEST = REPO_ROOT / "crates" / "delvec" / "tests" / "it" / "remedy_reachability.rs"
 
 # **What makes a sentence a MOVE rather than an explanation.**
 #
@@ -1205,7 +1205,7 @@ def main(argv: list[str] | None = None) -> int:
 
     registry_note = (
         "registry NOT compared (no --delvec; `cargo test` compares it through "
-        "crates/delvec/tests/codes.rs)"
+        "crates/delvec/tests/it/codes.rs)"
     )
     if delvec is not None:
         rows = registry_rows(delvec)

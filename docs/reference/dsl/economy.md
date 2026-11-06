@@ -40,8 +40,8 @@ shop that had grown a `price` field would have needed all four rules written a
 second time, and the fifth consumer would have needed a fifth copy. `ShopOffer` is
 therefore one of the ten gate consumers (`GateConsumer::ALL`), carrying `requires_flags` /
 `forbids_flags` / `requires_state` like the other nine and nothing of its own;
-`crates/dsl/tests/gate_consumers.rs` asserts the positive half from the generated
-schema and `crates/delvec/tests/v10_economy.rs` the negative half (no `price`,
+`crates/dsl/tests/it/gate_consumers.rs` asserts the positive half from the generated
+schema and `crates/delvec/tests/it/v10_economy.rs` the negative half (no `price`,
 `cost` or `compare` field exists anywhere in the shop's types).
 
 `DW0520`–`DW0524` and `DW0527` are declaration and authoring rules: the first five live in `dsl::economy`, `DW0527` in `dsl::state`. `DW0525` and
@@ -219,7 +219,7 @@ records the skip); no CI job runs the bot ladder. Over the economy fixture:
 **The die-retry loop** — death → respawn at the governing checkpoint → walk back
 → re-engage — binds only where an ARMED checkpoint stands before a mandatory
 encounter. `crates/delvec/tests/fixtures/die-retry` is the smallest campaign that
-lets it bind, `crates/delvec/tests/die_retry_fixture.rs` holds it to that shape,
+lets it bind, `crates/delvec/tests/it/die_retry_fixture.rs` holds it to that shape,
 and the run report's `die_retry_binding` makes the zero loud on every other build.
 
 **The first death is seeded.** `dw.death_seen` and `dw.death_ack` are `dummy`

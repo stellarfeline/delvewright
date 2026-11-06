@@ -15,7 +15,7 @@
 //!   is drawn in; each row names the client renderer it was read from. Authored
 //!   from the pinned client's renderers under Mojang's published mappings, and
 //!   held to the entity-type tags and the equipment assets by the cross-checks
-//!   in `crates/delvec/tests/equipment_tables.rs`.
+//!   in `crates/delvec/tests/it/equipment_tables.rs`.
 //! - **The item facts** ([`Equippable`]), injected through
 //!   [`crate::registry::ItemRegistry::equippable`]: the compiler vendors them as
 //!   `crates/delvec/data/item-equippable-1.21.11.json`

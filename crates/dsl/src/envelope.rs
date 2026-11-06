@@ -92,7 +92,7 @@ impl Stage {
     /// **Every stage, in document order.** The one enumeration.
     ///
     /// Hand-written stage lists are how a new document escapes a gate that was
-    /// written before it existed: `crates/dsl/tests/gate_consumers.rs` walked
+    /// written before it existed: `crates/dsl/tests/it/gate_consumers.rs` walked
     /// seven stages by name, so a schema object declaring part of the gate in an
     /// eighth would have been invisible to the check whose whole subject is that
     /// no such object exists. Anything that means "over the stages" reads this.

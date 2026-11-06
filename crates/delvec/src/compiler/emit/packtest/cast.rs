@@ -414,7 +414,7 @@ fn emit_cast_silent_packtest(
             // drives over the same ticks — asserting it from two templates is
             // exactly the interleaving dependence `packtest_batch` forbids. "A
             // silent scene emits no action clause" is a property of the emitted
-            // text, proved in `tests/cast_emit.rs` where it is race-free by
+            // text, proved in `tests/it/cast_emit.rs` where it is race-free by
             // construction.
         }
     }

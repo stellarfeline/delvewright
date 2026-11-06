@@ -5,7 +5,7 @@ Three tables, three questions asked of one booted jar:
 
 - **What a block emits.** The fixture
   `crates/delvec/tests/fixtures/light/emission-<version>.tsv` is what
-  `crates/delvec/tests/emission_table.rs` measures `light::emission()` against:
+  `crates/delvec/tests/it/emission_table.rs` measures `light::emission()` against:
   the game's own `BlockState.getLightEmission()`.
 - **What a block hides from the eye.** `crates/dsl/data/occlusion-<version>.tsv`
   is what `World::hides` reads (`delvewright_dsl::blockshape::hides`): per

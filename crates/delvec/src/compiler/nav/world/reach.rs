@@ -857,15 +857,26 @@ type EdgeTable = std::sync::RwLock<
 
 const EDGE_TABLES: usize = 4096;
 
+/// The edge tables of a process, by the codes their nodes hold.
+type EdgeTables = std::sync::RwLock<HashMap<[Code; 45], Arc<EdgeTable>>>;
+
+/// How a node finds the shared table for its codes: [`shared_edges`] in
+/// every build; a test hands another to reach the node-local path.
+type FindEdges<'f> = &'f (dyn Fn(&[Code; 45]) -> Option<Arc<EdgeTable>> + Sync);
+
 fn shared_edges(codes: &[Code; 45]) -> Option<Arc<EdgeTable>> {
-    type Tables = std::sync::RwLock<HashMap<[Code; 45], Arc<EdgeTable>>>;
-    static T: OnceLock<Tables> = OnceLock::new();
-    let t = T.get_or_init(Default::default);
-    if let Some(e) = t.read().expect("edge tables").get(codes) {
+    static T: OnceLock<EdgeTables> = OnceLock::new();
+    edges_in(T.get_or_init(Default::default), EDGE_TABLES, codes)
+}
+
+/// The table for `codes` in `tables`, made if there is room for it: at most
+/// `cap` tables are kept, and past that `None` (the node keeps its own).
+fn edges_in(tables: &EdgeTables, cap: usize, codes: &[Code; 45]) -> Option<Arc<EdgeTable>> {
+    if let Some(e) = tables.read().expect("edge tables").get(codes) {
         return Some(Arc::clone(e));
     }
-    let mut w = t.write().expect("edge tables");
-    if w.len() >= EDGE_TABLES && !w.contains_key(codes) {
+    let mut w = tables.write().expect("edge tables");
+    if w.len() >= cap && !w.contains_key(codes) {
         return None;
     }
     Some(Arc::clone(w.entry(*codes).or_default()))
@@ -2821,6 +2832,19 @@ impl World {
         wanted: Quadrants,
         banked: Option<&bank::Expansion<'_>>,
     ) -> NodeEdges {
+        self.expand_with(memo, params, c, wanted, banked, &shared_edges)
+    }
+
+    /// [`World::expand`], finding its nodes' shared edge tables by `find`.
+    fn expand_with(
+        &self,
+        memo: &GraphMemo,
+        params: &ReachParams,
+        c: [i32; 3],
+        wanted: Quadrants,
+        banked: Option<&bank::Expansion<'_>>,
+        find: FindEdges<'_>,
+    ) -> NodeEdges {
         let fly_launches = wanted != 0;
         let track = banked.map(|b| &b.track);
         let leaf_watch = bank::LeafWatch::open(track.is_some());
@@ -2963,7 +2987,7 @@ impl World {
                 // memo reads them too, for the run it is in.
                 // Nodes whose cells round them hold the same codes find the same
                 // edge positions: those read inside the box are shared.
-                let shared = shared_edges(&near.codes);
+                let shared = find(&near.codes);
                 let edge_at = |dir: [f64; 2], compute: &dyn Fn() -> Option<[f64; 3]>| {
                     let k = (dir[0].to_bits(), dir[1].to_bits());
                     let held = edge_memo.borrow().get(&k).copied();

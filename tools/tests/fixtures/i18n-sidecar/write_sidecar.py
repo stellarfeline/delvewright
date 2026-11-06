@@ -2,7 +2,7 @@
 """Write one l10n sidecar with `tools/creator/i18n-translate.py`'s own writer.
 
 The driver exists so the writer can be judged by the engine's own formatter over
-a REAL FILE rather than over a string: `crates/delvec/tests/i18n_sidecar.rs`
+a REAL FILE rather than over a string: `crates/delvec/tests/it/i18n_sidecar.rs`
 runs this, then runs `delvec fmt --check` on what it produced. Every sidecar the
 tool had ever written was refused by that check (`DW0773`, error tier) — the
 envelope was in dict-insertion order rather than canonical key order, and an

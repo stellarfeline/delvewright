@@ -112,7 +112,7 @@ pub struct NpcSkin {
 
 /// One of the player model's second-layer parts, as the pinned client's
 /// `PlayerModelPart` names it (spec-0097 §2.4). `left` and `right` are the
-/// model's own, not the observer's. `crates/delvec/tests/skin_parts.rs` holds
+/// model's own, not the observer's. `crates/delvec/tests/it/skin_parts.rs` holds
 /// these tokens equal to the layers `crates/delvec/data/model-parts-1.21.11.json`
 /// read from the jar.
 #[derive(

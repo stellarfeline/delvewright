@@ -32,11 +32,16 @@ Exit 0 clean, 1 with one finding per line.
 
 from __future__ import annotations
 
+import argparse
 import re
 import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO / "tools"))
+
+from lib import workflow_yaml  # noqa: E402
+
 CI = REPO / ".github" / "workflows" / "ci.yml"
 MANIFEST = REPO / ".github" / "required-status-checks.txt"
 
@@ -68,17 +73,64 @@ FILTER_JOB = "changes (which jobs a pull request reaches)"
 # dict of keys, which nobody counts.
 MAX_ADVISORY_JOBS = 1
 
-# A job's display name: `    name: <value>` nested under a job key. Quotes are
-# optional in YAML and both forms appear in the wild, so strip them.
-JOB_NAME = re.compile(r"^    name:\s*(.+?)\s*$")
+# A job's display name is its `name:` (its key when it has none), read through
+# the one workflow parser this tree's gates share (`tools/lib/workflow_yaml.py`).
+# A job `name:` may carry `${{ matrix.<var> }}`: GitHub reports one context per
+# matrix value, named with the value substituted, and branch protection matches
+# each of those. The manifest therefore lists the EXPANDED names, and this
+# checker expands the same way — every `${{ matrix.<var> }}` in the name from
+# that job's `strategy.matrix.<var>` list, in order, all combinations. Any other
+# expression in a name, or a matrix value that is not a plain list, is a
+# finding: a context nobody can spell cannot be required.
+MATRIX_REF = re.compile(r"\$\{\{\s*matrix\.([A-Za-z0-9_-]+)\s*\}\}")
+ANY_EXPR = re.compile(r"\$\{\{")
 
 
-def ci_job_names() -> list[str]:
+def expand_job_name(job_id: str, job: dict, findings: list[str]) -> list[str]:
+    name = job.get("name")
+    name = job_id if name is None else str(name)
+    refs = MATRIX_REF.findall(name)
+    if not refs:
+        if ANY_EXPR.search(name):
+            findings.append(
+                f"job {job_id!r} is named by an expression this checker does not expand: {name!r}. "
+                f"Only `${{{{ matrix.<var> }}}}` over a plain matrix list is expanded."
+            )
+        return [name]
+    strategy = job.get("strategy") or {}
+    matrix = strategy.get("matrix") if isinstance(strategy, dict) else None
+    names = [name]
+    for var in refs:
+        values = matrix.get(var) if isinstance(matrix, dict) else None
+        if not isinstance(values, list) or not values or not all(isinstance(v, str) for v in values):
+            findings.append(
+                f"job {job_id!r} names itself by `${{{{ matrix.{var} }}}}` but `strategy.matrix.{var}` "
+                f"is not a plain, non-empty list of scalars, so its contexts cannot be enumerated."
+            )
+            return []
+        names = [
+            MATRIX_REF.sub(lambda m, v=v: v if m.group(1) == var else m.group(0), n)
+            for n in names
+            for v in values
+        ]
+    if ANY_EXPR.search("".join(names)):
+        findings.append(f"job {job_id!r}: an expression survives matrix expansion in {names[0]!r}")
+    return names
+
+
+def ci_job_names(findings: list[str]) -> list[str]:
+    """Every context ci.yml can report, matrix names expanded (one parse rule: `tools/lib/workflow_yaml.py`)."""
+    try:
+        doc = workflow_yaml.normalize(workflow_yaml.load(CI.read_text(encoding="utf-8")))
+    except workflow_yaml.WorkflowYamlError as e:
+        findings.append(f"{CI.name} is not in the workflow subset this tree's gates parse: {e}")
+        return []
+    jobs = doc.get("jobs") if isinstance(doc, dict) else None
+    if not isinstance(jobs, dict):
+        return []
     names: list[str] = []
-    for line in CI.read_text(encoding="utf-8").splitlines():
-        m = JOB_NAME.match(line)
-        if m:
-            names.append(m.group(1).strip("'\""))
+    for job_id, job in jobs.items():
+        names.extend(expand_job_name(job_id, job if isinstance(job, dict) else {}, findings))
     return names
 
 
@@ -92,6 +144,15 @@ def manifest_contexts() -> list[str]:
 
 
 def main() -> int:
+    global CI, MANIFEST
+    ap = argparse.ArgumentParser(description="keep the required-contexts manifest and ci.yml's job names in lockstep")
+    ap.add_argument("--ci", default=None, help="the workflow file (default: this tree's ci.yml)")
+    ap.add_argument("--manifest", default=None, help="the manifest (default: this tree's required-status-checks.txt)")
+    args = ap.parse_args()
+    if args.ci:
+        CI = Path(args.ci)
+    if args.manifest:
+        MANIFEST = Path(args.manifest)
     if not CI.is_file():
         print(f"check-required-contexts: FAIL — {CI} is missing", file=sys.stderr)
         return 1
@@ -99,7 +160,8 @@ def main() -> int:
         print(f"check-required-contexts: FAIL — {MANIFEST} is missing", file=sys.stderr)
         return 1
 
-    jobs = ci_job_names()
+    findings: list[str] = []
+    jobs = ci_job_names(findings)
     required = manifest_contexts()
 
     # Vacuity guard: parsing nothing is not a pass (CLAUDE.md — a green gate that
@@ -107,7 +169,8 @@ def main() -> int:
     if not jobs:
         print(
             "check-required-contexts: FAIL — parsed 0 job names from ci.yml; the "
-            "`    name:` indentation this checker keys off has changed",
+            "workflow's `jobs:` block is not what this checker reads"
+            + "".join(f"\n  {f}" for f in findings),
             file=sys.stderr,
         )
         return 1
@@ -118,8 +181,6 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
-
-    findings: list[str] = []
 
     for ctx in required:
         if ctx not in jobs:

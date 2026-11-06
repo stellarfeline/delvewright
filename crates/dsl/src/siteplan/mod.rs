@@ -126,7 +126,7 @@ crate::dw_code! {
 ///
 /// It is a constant rather than a literal because the authoring documents state
 /// it: [`PlanBox`]'s schema description carries this value, and
-/// `crates/dsl/tests/v14_site_plan.rs` asserts the exported description against
+/// `crates/dsl/tests/it/v14_site_plan.rs` asserts the exported description against
 /// this constant, so the rule a person reads and the rule the checks enforce
 /// cannot drift apart.
 pub const SHARED_FACE_GAP_CELLS: i64 = 1;
@@ -468,7 +468,7 @@ pub fn synthesized_anchors(c: &Campaign) -> BTreeSet<String> {
 /// which place is exactly the two-functions-agreeing-about-spelling drift that
 /// note exists to remove.
 ///
-/// `crates/delvec/tests/blockout.rs`'s
+/// `crates/delvec/tests/it/blockout.rs`'s
 /// `the_owed_anchors_partition_the_synthesized_set` proves the two PARTITION
 /// rather than merely overlap: every synthesized name is owed by exactly one
 /// place or is a gate region no place owes. A name in neither would be one a

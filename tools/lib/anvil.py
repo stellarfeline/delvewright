@@ -2,7 +2,7 @@
 
 Every tool that reads a world save or a world `delvec build` writes reads it
 through here (`tools/ci/check-written-world.py`, the spec-0089 rig, the
-writer's own read-back tests in `crates/delvec/tests/review_frame_worlds.rs`),
+writer's own read-back tests in `crates/delvec/tests/it/review_frame_worlds.rs`),
 so two gates never hold two copies of the region and chunk rules.
 
 The layout follows minecraft.wiki's *Region file format* and *Chunk format*: an

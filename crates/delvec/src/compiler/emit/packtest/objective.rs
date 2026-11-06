@@ -810,7 +810,7 @@ pub(super) fn emit_verb_packtests(
         // click afterwards still works.
         //
         // This is the runtime half of the arming invariant. The compile-time half
-        // (`tests/tick_arming.rs`) pins that the arming quest's lines precede the
+        // (`tests/it/tick_arming.rs`) pins that the arming quest's lines precede the
         // adjudication, so a pending click can never be lost to same-tick
         // ordering. What a live server has to show is the other half: the
         // unconditional reset really does SPEND a premature click rather than

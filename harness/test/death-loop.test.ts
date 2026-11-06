@@ -458,7 +458,7 @@ test("a body at the centre of any cell of the box is one the volume kills", () =
  * arguments, one answer, and each side's doc comment asserted the other's
  * agreement with nothing checking it.
  *
- * `crates/dsl/tests/metrics.rs::the_cell_rule_agrees_with_a_swept_body_box`
+ * `crates/dsl/tests/it/metrics.rs::the_cell_rule_agrees_with_a_swept_body_box`
  * sweeps this exact box over this exact grid and states 441 examined / 175
  * reached. This is the mirror of it, over the same box and the same grid, with
  * the same two numbers — so the two implementations are pinned to one measurement

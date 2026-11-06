@@ -918,9 +918,16 @@ fn answered(w: &World, roots: &[[i32; 3]], side: i32) -> Answered {
 /// difference in any answer: the states, every state's successors and
 /// predecessors in order, the flags, the counts and both node tables. (The
 /// sides are this test's own: a graph is kept per side, and the node tables of
-/// one other tests share hold what those tests flew.)
+/// one other tests share hold what those tests flew.) The graph is built at
+/// four threads whatever `DELVEC_THREADS` says: a snapshot page is read back
+/// only past a thread's recent pages, and at one thread none is, so the
+/// binding below would be zero (spec-0126 §5.4).
 #[test]
 fn no_answer_depends_on_the_chunk_side_or_the_budget() {
+    crate::par::with_threads(4, no_answer_depends_on_the_chunk_side_or_the_budget_at)
+}
+
+fn no_answer_depends_on_the_chunk_side_or_the_budget_at() {
     let worlds = invariance_worlds();
     let (mut states, mut edges, mut sea, mut crossing, mut holding) = (0, 0, 0, 0, 0);
     let mut read_back = 0u64;

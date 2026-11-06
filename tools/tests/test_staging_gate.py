@@ -1206,7 +1206,7 @@ def test_the_live_item_gate_precondition_counts_item_gates_not_interacts(gate, t
 
 def test_the_item_gate_precondition_reads_the_spelling_the_emitter_is_held_to(gate):
     """The precondition is a build-side probe, so it is only as good as its
-    agreement with the emitter. `crates/delvec/tests/v07_held_item.rs` is what
+    agreement with the emitter. `crates/delvec/tests/it/v07_held_item.rs` is what
     holds the emitter to the spelling of the held-item completion gate; the
     probe has to match that exact sentence, or a change to the emitter would
     silently turn every precondition zero and every demo-shaped zero into a
@@ -1214,7 +1214,7 @@ def test_the_item_gate_precondition_reads_the_spelling_the_emitter_is_held_to(ga
     import re
 
     row = live_rows(gate, {"isl-02"})["isl-02"]
-    rust = (REPO_ROOT / "crates" / "delvec" / "tests" / "v07_held_item.rs").read_text()
+    rust = (REPO_ROOT / "crates" / "delvec" / "tests" / "it" / "v07_held_item.rs").read_text()
     asserted = re.findall(r'gate\.contains\(&format!\("([^"]*weapon\.mainhand[^"]*)"', rust)
     assert len(asserted) == 1, asserted
     item = re.search(r'const ITEM: &str = "([^"]+)"', rust).group(1)

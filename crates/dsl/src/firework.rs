@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 
 /// The wiki pages every constant in this module was read from (spec-0068
 /// *Ground*). Named so a re-pin knows what to re-read, and asserted by
-/// `crates/dsl/tests/v29_firework.rs` so the list cannot quietly shrink.
+/// `crates/dsl/tests/it/v29_firework.rs` so the list cannot quietly shrink.
 pub const WIKI_PAGES: [&str; 3] = [
     "Firework Rocket",
     "Data component format/fireworks",

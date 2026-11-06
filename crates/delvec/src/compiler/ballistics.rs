@@ -6,7 +6,7 @@
 //! only what our toolchain owns; vanilla behaviour is established once against
 //! the pinned jar and recorded). No build emits it and no CI job runs it: it
 //! is written into a build tree by hand with
-//! `cargo test -p delvec --test movement_ballistics_instrument -- --ignored`,
+//! `cargo test -p delvec --test it movement_ballistics_instrument:: -- --ignored`,
 //! and run with `validation/packtest-run.sh`. Its result, and the revision it
 //! was measured at, are recorded in `docs/reference/body-movement.md`.
 //!

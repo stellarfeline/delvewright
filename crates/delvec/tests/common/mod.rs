@@ -8,6 +8,7 @@
 use std::path::{Path, PathBuf};
 
 pub mod assembly_fixture;
+pub mod built;
 pub mod corridor;
 pub mod ferry;
 pub mod framing_fixture;
@@ -198,7 +199,7 @@ pub fn prefabs_dir() -> PathBuf {
         // is the state that impersonates a naming problem. A warning (`DW0543`,
         // a key newer than this engine) leaves the prefab loaded and usable, so
         // it cannot produce that impersonation — and it has its own test, which
-        // states its binding count, in `tests/registry_load.rs`.
+        // states its binding count, in `tests/it/registry_load.rs`.
         let diags: Vec<_> = reg
             .load_diagnostics()
             .iter()
@@ -931,7 +932,7 @@ pub enum OceanRoom {
 ///
 /// Returns the directory, which is a temp copy: nothing here touches the library.
 pub fn ocean_prefabs_dir(tag: &str, room: OceanRoom) -> PathBuf {
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(tag);
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     copy_dir_all(&prefabs_dir(), &dir);
@@ -1306,7 +1307,7 @@ fn read3(v: &serde_json::Value) -> [i64; 3] {
 /// out of the room, so the piece's own outside becomes something a body can be
 /// in front of (`DW0885`).
 ///
-/// Shared rather than copied. It lived in `tests/boundary_assembled.rs` and was
+/// Shared rather than copied. It lived in `tests/it/boundary_assembled.rs` and was
 /// copied verbatim into a second file, which
 /// `tools/ci/check-structure-emitters.py` caught in the only way it can: the copy
 /// was a new site naming `fastnbt::to_bytes` that judged no palette, and the
@@ -1612,6 +1613,100 @@ pub fn horizon(base: &str) -> serde_json::Value {
 /// `(campaign, prefabs)`.
 #[allow(dead_code)]
 pub fn gallery_site_plan_detailed(root: &Path) -> (PathBuf, PathBuf) {
+    // One `detail --all` per machine and engine (spec-0126 §4.2): the detailed
+    // point is built once into the cache, keyed by the gallery's tracked files
+    // and the `delvec` that details it, and every caller gets its own copy to
+    // patch and commit into.
+    let cached = built::built(
+        "gallery-site-plan-detailed",
+        built::Inputs::new()
+            .text("the gallery's site-plan point, every place detailed by `detail --all`")
+            .tracked(&repo_root(), "gallery"),
+        gallery_site_plan_detailed_into,
+    );
+    let prefabs = root.join("prefabs");
+    let campaign = root.join("site-plan");
+    let _ = std::fs::remove_dir_all(&prefabs);
+    let _ = std::fs::remove_dir_all(&campaign);
+    copy_dir_all(&cached.join("prefabs"), &prefabs);
+    copy_dir_all(&cached.join("site-plan"), &campaign);
+    (campaign, prefabs)
+}
+
+/// The gallery's solid site-plan point, every place detailed, with the
+/// library its `detail --all` committed its pieces into: built once per
+/// machine and engine (spec-0126 §4.2) and copied to `root`.
+pub fn gallery_site_plan_solid_detailed(root: &Path) -> (PathBuf, PathBuf) {
+    let cached = built::built(
+        "gallery-site-plan-solid-detailed",
+        built::Inputs::new()
+            .text("the gallery's solid site-plan point, every place detailed by `detail --all`")
+            .tracked(&repo_root(), "gallery")
+            .tracked(&repo_root(), "tools/ci/gallery_domain.py"),
+        gallery_site_plan_solid_detailed_into,
+    );
+    let campaign = root.join("site-plan-solid");
+    let prefabs = root.join("prefabs-solid");
+    let _ = std::fs::remove_dir_all(&campaign);
+    let _ = std::fs::remove_dir_all(&prefabs);
+    copy_dir_all(&cached.join("site-plan-solid"), &campaign);
+    copy_dir_all(&cached.join("prefabs"), &prefabs);
+    (campaign, prefabs)
+}
+
+fn gallery_site_plan_solid_detailed_into(dir: &Path) {
+    let (_, pieces) = gallery_primary_at(&dir.join("primary"));
+    let prefabs = dir.join("prefabs");
+    copy_dir_all(&pieces, &prefabs);
+    let campaign = dir.join("site-plan-solid");
+    let python = std::env::var("DELVEWRIGHT_PYTHON").unwrap_or_else(|_| "python3".to_string());
+    // The domain tool runs the gallery generator through `$CARGO`.
+    let out = build_toolchain(&mut std::process::Command::new(python))
+        .arg(repo_root().join("tools/ci/gallery_domain.py"))
+        .args(["materialise", "--point", "site-plan-solid"])
+        .arg(&campaign)
+        .output()
+        .expect("run gallery_domain.py");
+    assert!(
+        out.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stems: Vec<String> = std::fs::read_dir(campaign.join("programs"))
+        .unwrap()
+        .filter_map(|e| {
+            let p = e.unwrap().path();
+            (p.extension().and_then(|x| x.to_str()) == Some("json"))
+                .then(|| p.file_stem().unwrap().to_string_lossy().to_string())
+        })
+        .collect();
+    patch_file(&campaign.join("detail-plan.json"), |v| {
+        v["content"]["details"].as_array_mut().unwrap().retain(|r| {
+            let place = r["place"].as_str().unwrap();
+            !stems.iter().any(|s| place == format!("node/{s}"))
+        });
+    });
+    let all = std::process::Command::new(env!("CARGO_BIN_EXE_delvec"))
+        .arg("--prefabs")
+        .arg(&prefabs)
+        .arg("detail")
+        .arg(&campaign)
+        .arg("--all")
+        .output()
+        .expect("run delvec");
+    assert!(
+        all.status.success(),
+        "`detail --all` over the gallery's solid site-plan point exited {:?}: {}",
+        all.status,
+        String::from_utf8_lossy(&all.stderr)
+    );
+}
+
+/// The build behind `gallery_site_plan_detailed`: the gallery primary's
+/// pieces as the library, the site-plan point with its committed programs'
+/// detail rows removed, and `detail --all` over it.
+fn gallery_site_plan_detailed_into(root: &Path) {
     let (_, pieces) = gallery_primary_at(&root.join("primary"));
     let prefabs = root.join("prefabs");
     let _ = std::fs::remove_dir_all(&prefabs);
@@ -1647,5 +1742,4 @@ pub fn gallery_site_plan_detailed(root: &Path) -> (PathBuf, PathBuf) {
         out.status,
         String::from_utf8_lossy(&out.stderr)
     );
-    (campaign, prefabs)
 }

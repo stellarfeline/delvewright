@@ -5,7 +5,7 @@
 
 ADR-0006 promises that the same DSL and the same seed produce a byte-identical
 datapack and world. Until now every gate holding that promise ran on ONE machine:
-`tests/cli.rs::build_is_byte_identical_across_runs` builds twice on one runner,
+`tests/it/cli.rs::build_is_byte_identical_across_runs` builds twice on one runner,
 and the prefab-generator job runs each generator twice on one runner. Both prove
 determinism *within* a host — which is the property that catches an unseeded RNG
 or a hash-ordered iteration, and not the one that catches a libm difference, a

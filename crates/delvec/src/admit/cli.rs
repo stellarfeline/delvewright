@@ -5,7 +5,7 @@
 //! that opens a piece an author named owes a lone tile a refusal (`DW0739`), and
 //! the only way to check that every one of them does is to enumerate them from
 //! the parser itself — a hand-written list of doors is what let the guard reach
-//! two of three in the first place. `crates/delvec/tests/prefab_fragment_doors.rs`
+//! two of three in the first place. `crates/delvec/tests/it/prefab_fragment_doors.rs`
 //! walks [`PrefabCommand`]'s clap tree; a command added here and classified
 //! nowhere is a red.
 

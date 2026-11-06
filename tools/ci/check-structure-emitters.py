@@ -135,19 +135,19 @@ NOT_CONNECTION_EMITTERS = {
         "crate could not call it in any case: the derivation lives in the gallery's generator "
         "(`gallery/prefab-generator`, its own workspace), and `delvec` does not depend on it."
     ),
-    "crates/delvec/tests/staged_lethal.rs": (
+    "crates/delvec/tests/it/staged_lethal.rs": (
         "test fixture for spec-0088's staged lethal volume: the lid room. Its palette is four "
         "plain ids — stone, magma block, glowstone and the room's air — judged against the "
         "pinned registry before the bytes are written, none of them a fence, wall, pane or "
         "multiface block, and the room is written into the test target's scratch directory and "
         "never admitted into the library."
     ),
-    "crates/delvec/tests/edit.rs": (
+    "crates/delvec/tests/it/edit.rs": (
         "test fixture for the edit-stage determinism gate. Its palette is four states — air, "
         "stone, a lantern and an oak log — none of them a fence, wall, pane or multiface block, "
         "and the box it frames is never admitted into the library."
     ),
-    "crates/delvec/tests/review_frame_worlds.rs": (
+    "crates/delvec/tests/it/review_frame_worlds.rs": (
         "test fixture for spec-0112's written block entities: a copy of the pinned hello room "
         "with one oak sign added to its palette, judged against the pinned registry before the "
         "bytes are written. A standing sign carries `rotation` and `waterlogged`, neither a "
@@ -187,7 +187,7 @@ NOT_EMITTERS = {
         "`#[cfg(test)]` fixture: hand-frames a template to feed `structure_cells`. Emits "
         "nothing; reads its own bytes back in the same function."
     ),
-    "crates/delvec/tests/boundary_assembled.rs": (
+    "crates/delvec/tests/it/boundary_assembled.rs": (
         "test fixture for the assembled-world model. The plain stone box it used to frame here "
         "moved to `common::box_nbt` when a second file needed it; what remains is this file's "
         "own — a room with a doorway in one wall and an optional walled porch outside it, the "
@@ -205,14 +205,14 @@ NOT_EMITTERS = {
         "them. `box_nbt` arrived here because it was COPIED into a second test file, and this "
         "check caught the copy as a new unjudged site: the repair was to share the one function "
         "rather than to write a second exemption, so this list got shorter by one entry "
-        "(`crates/delvec/tests/boundary_assembled.rs`) instead of longer by one."
+        "(`crates/delvec/tests/it/boundary_assembled.rs`) instead of longer by one."
     ),
-    "crates/delvec/tests/emit.rs": "test fixture for the emitted datapack.",
-    "crates/delvec/tests/lava_floor.rs": (
+    "crates/delvec/tests/it/emit.rs": "test fixture for the emitted datapack.",
+    "crates/delvec/tests/it/lava_floor.rs": (
         "test fixture for the fluid-occupancy proof: hand-frames a synthetic room whose floor "
         "course is the variable. Its palette is deliberately minimal and is never admitted."
     ),
-    "crates/delvec/tests/relight.rs": "test fixture for the spec-0010 relight.",
+    "crates/delvec/tests/it/relight.rs": "test fixture for the spec-0010 relight.",
     "docs/experiments/m2-jigsaw-seed-stability/generator/src/main.rs": (
         "frozen experiment record — the script exactly as it was run, beside the evidence it "
         "produced. Rewriting it would make the recorded result irreproducible from the "
