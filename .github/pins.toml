@@ -526,13 +526,6 @@ policy = "floating"
 why = "GitHub's own checkout action, held at its major tag."
 
 [[pin]]
-id = "action-cache"
-value = "actions/cache@v4"
-sites = [".github/actions/checkout-content/action.yml"]
-policy = "floating"
-why = "GitHub's own cache action, held at its major tag. Restores the content repo's LFS objects; affects transfer, not output."
-
-[[pin]]
 id = "action-rust-cache"
 value = "Swatinem/rust-cache@v2"
 sites = [
@@ -572,9 +565,12 @@ why = "GitHub's artifact upload action, held at its major tag."
 [[pin]]
 id = "action-cache"
 value = "actions/cache@v4"
-sites = [".github/actions/suite-instruments/action.yml"]
+sites = [
+    ".github/actions/checkout-content/action.yml",
+    ".github/actions/suite-instruments/action.yml",
+]
 policy = "floating"
-why = "GitHub's cache action, held at its major tag: restores the two cargo-installed instruments by a key that carries their pinned versions, so a hit is the pinned bytes and a miss builds them once."
+why = "GitHub's cache action, held at its major tag: restores the two cargo-installed instruments by a key that carries their pinned versions, so a hit is the pinned bytes and a miss builds them once; and the content repo's LFS objects by a key of their ids, which affects transfer, not output."
 
 [[pin]]
 id = "action-download-artifact"
