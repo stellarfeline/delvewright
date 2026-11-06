@@ -916,6 +916,13 @@ impl<C: Codes> Codes for Recorder<'_, C> {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    /// The flight memo's answers on this thread: kept flights taken, and
+    /// kept flights refused (another floor, a volume near).
+    static MEMO_ANSWERS: std::cell::Cell<(u64, u64)> = const { std::cell::Cell::new((0, 0)) };
+}
+
 /// A [`Codes`] relative to a world cell: the template's origin put at `at`,
 /// noting every window cell it reads in `track` ([`bank`]).
 struct Shifted<'a> {
@@ -938,7 +945,15 @@ impl Codes for Shifted<'_> {
                 }
                 self.dense.cells.get(i)
             }
-            None => self.dense.code(a),
+            None => {
+                // A cell past the window grows the box as [`Local`]'s later
+                // reads of it do: the box is what the run read, however
+                // many times it read it.
+                if let Some(t) = self.track {
+                    t.extend((a, a));
+                }
+                self.dense.code(a)
+            }
         }
     }
 }
@@ -2930,6 +2945,15 @@ impl World {
                     at: c,
                     track,
                 };
+                // The flight memo is walked through a reader that notes
+                // nothing: a kept flight may read on past where this one ends
+                // (a deeper floor, a world without this one's volumes), and
+                // what a node records is what its own flights read.
+                let quiet = Shifted {
+                    dense,
+                    at: c,
+                    track: None,
+                };
                 let killed = |st: &State| self.kills(st);
                 let edge_memo: EdgeMemo = std::cell::RefCell::new(HashMap::default());
                 // Its cells are among the node's own (`node_boxes`).
@@ -3103,16 +3127,35 @@ impl World {
                                                     )
                                                 };
                                             }
-                                            match flights::lookup(&key, &local) {
+                                            let walked = Recorder {
+                                                inner: &quiet,
+                                                seen: Default::default(),
+                                            };
+                                            match flights::lookup(&key, &walked) {
                                                 Some(leaf)
                                                     if leaf.holds_at(bottom)
                                                         && !leaf.swept.is_some_and(|b| {
                                                             self.lethal_near(&b.offset(at))
                                                         }) =>
                                                 {
+                                                    // The kept flight is this
+                                                    // one: the cells it read
+                                                    // are read here, as flying
+                                                    // would read them.
+                                                    for r in walked.seen.into_inner() {
+                                                        local.code(r);
+                                                    }
+                                                    #[cfg(test)]
+                                                    MEMO_ANSWERS.with(|m| {
+                                                        m.set((m.get().0 + 1, m.get().1))
+                                                    });
                                                     Flown::Kept(leaf)
                                                 }
                                                 Some(_) => {
+                                                    #[cfg(test)]
+                                                    MEMO_ANSWERS.with(|m| {
+                                                        m.set((m.get().0, m.get().1 + 1))
+                                                    });
                                                     let f = run_here!(&local);
                                                     Flown::Here(f.outcome, f.swept)
                                                 }

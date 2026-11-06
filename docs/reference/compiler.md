@@ -263,7 +263,11 @@ is not kept — the expansion's answer is the same, the next world that asks
 re-flies the node, and no output byte reads the bank; the `reach scratch:`
 line states the cap and the variants refused at it beside the bank's file.
 A run that kept any prints `reach bank: N node variant(s) kept over B
-byte(s) in the spill file` as it ends.
+byte(s) in the spill file` as it ends: `B` is the bytes of the variants
+kept, the same at every thread count and whatever the flight memo holds
+(`docs/reference/delvec/compiler/nav.md`); the scratch file's own length,
+which the `reach scratch:` line states, follows the order records were
+written and given up in.
 **One policy for every scratch file**: one that cannot be opened is no file,
 and the structure holds its records in memory instead (the same answers,
 slower); one that was opened and then refuses a write or a read back stops
