@@ -14,7 +14,7 @@ by (spec-0036 §1c), `delvec detail` and `delvec sculpt`, which run its gates an
 its export, and the compiler's piece-claim checks (`compiler::seating`,
 `compiler::claims`), which read a frozen piece's blocks into its `VoxelModel` and
 ask `settle` for its fluid bodies. The export seam of §6 is tested from both sides
-in `crates/delvec/tests/grammar_prefab.rs`.
+in `crates/delvec/tests/it/grammar_prefab.rs`.
 
 Two library modules exist for the tool and are public for it:
 
@@ -294,10 +294,10 @@ Four things it is:
 A binding writes no cell and draws nothing from the seeded stream, so it can
 move no block by itself: rebinding every name of every rule of every library
 program to itself gives byte-identical models and identical anchors, at three
-seeds (`crates/delvec/tests/grammar_arguments.rs`).
+seeds (`crates/delvec/tests/it/grammar_arguments.rs`).
 
 The three scope constructs compose, and the composition is asserted rather than
-assumed (`crates/delvec/tests/grammar_frames_compose.rs`): a `claim` under a `bind` resolves to the box
+assumed (`crates/delvec/tests/it/grammar_frames_compose.rs`): a `claim` under a `bind` resolves to the box
 the pushed value made, a reflected rule claims the mirror-image box, and a
 binding reads the same extents reflected as not.
 
@@ -449,8 +449,8 @@ image under every frame and are never refused.
    across `X` and the same head across `Z`. It cannot pass a paint, a size or a
    role — that is the line between it and `bind`.
 
-Items 1–5 are asserted in `crates/delvec/tests/grammar_idioms.rs`; item 6 in both `crates/delvec/tests/grammar_idioms.rs`
-and `crates/delvec/tests/grammar_arguments.rs`.
+Items 1–5 are asserted in `crates/delvec/tests/it/grammar_idioms.rs`; item 6 in both `crates/delvec/tests/it/grammar_idioms.rs`
+and `crates/delvec/tests/it/grammar_arguments.rs`.
 
 ## 2b. `mark` — anchor declarations
 
@@ -499,7 +499,7 @@ Marks collect into `Expansion::anchors` (a `BTreeMap`, keyed by exported name),
 the block grid would change what `canonical_bytes` means. The export writes them
 into the prefab metadata's `anchors` map in the hand-built `{pos, facing}` shape,
 `pos` local to the structure; `PrefabRegistry` reads a grammar prefab's anchors
-with the same code path as a hand-built one (`crates/delvec/tests/grammar_prefab.rs`).
+with the same code path as a hand-built one (`crates/delvec/tests/it/grammar_prefab.rs`).
 
 A mark may name a block's own cell rather than a place a body stands: the
 container a `loot` entry fills, the sign a `signs` entry writes
@@ -554,7 +554,7 @@ delvec grammar expand --program idiom-shape --region 15x9x3 --seed 1 -o out/
 
 Each program exists to teach one technique and nothing else, and each is
 expanded at exactly the region and seed above by
-`crates/delvec/tests/grammar_idioms.rs`, which asserts the claim in its own row. An
+`crates/delvec/tests/it/grammar_idioms.rs`, which asserts the claim in its own row. An
 entry that stopped being true is a red, not a stale page. They declare no
 anchors — the composition declares one — so `expand` prints the no-anchors
 finding over them, which is correct: a teaching program is not a prefab a
@@ -804,7 +804,7 @@ remainder. The window is a full-width waist with `half` below it and the same
 Together they give a chamfered octagon — a rose window — at glazing widths 3, 5,
 7, 9, 9, 9, 7, 5, 3, symmetric about both centre lines of the wall. It re-centres
 itself as the wall widens, because the aperture and every course inside it sit in
-the middle share of a `[margin, aperture, margin]` split. `crates/delvec/tests/grammar_idioms.rs`
+the middle share of a `[margin, aperture, margin]` split. `crates/delvec/tests/it/grammar_idioms.rs`
 compares the reflection against the two hand-written copies it replaces, byte for
 byte, and the entry's own row asserts the `symmetric` gate over the result.
 
@@ -864,7 +864,7 @@ two taper across world `X` and two across world `Z`. Three rules.
 filled by `shoulders`, the second rule of the recursion — so a glazed head needs
 a copy of `shoulders`, which needs a copy of `head` to call it, twice over for
 the two axes. Nothing keeps four copies in step and no gate reads the
-difference: `crates/delvec/tests/grammar_arguments.rs` builds the nine-rule program, edits one copy's
+difference: `crates/delvec/tests/it/grammar_arguments.rs` builds the nine-rule program, edits one copy's
 taper, and all five always-on gates — `blocks-exist`, `shape-complete`,
 `states-complete`, `oriented-fills`, `non-empty` — plus the coverage report and
 the determinism
@@ -917,7 +917,7 @@ value as its default, retyping none, so the program it writes still binds when
 the plan moves. Each step is commented with the obligation of the program's
 contract it meets.
 
-`crates/delvec/tests/place_generator.rs` holds it to that with the built
+`crates/delvec/tests/it/place_generator.rs` holds it to that with the built
 binary: `delvec allocation` → the script → the emitted document, after `delvec
 fmt`, equals the committed `programs/annex.json` byte for byte, and `delvec
 detail --check` on it exits 0. A committed program that stops being the
@@ -1084,7 +1084,7 @@ nothing here asks it.
 Claims collect into `Expansion::contract`, **not** into the `VoxelModel`, for the
 reason marks do: a claim writes no blocks, and folding it into the block grid
 would change what `canonical_bytes` means and make "declaring a space changed
-nothing about the building" untestable. `crates/delvec/tests/grammar_contract.rs` asserts exactly that,
+nothing about the building" untestable. `crates/delvec/tests/it/grammar_contract.rs` asserts exactly that,
 over every program in the library, by wrapping every rule of each in a claim.
 
 `spatial-contract` is the corpus example: two rooms, a barred door and a corbel.
@@ -1298,7 +1298,7 @@ TRUE of the blocks is `DW0885`'s second arm, at build time, over the piece's own
 template bytes: a declared side with no solid cell on it is refused exactly as an
 undeclared exposed one is. So padding the list out to six is a red, not a hatch.
 The corpus's own claim is held to the corpus's own bytes by
-`crates/delvec/tests/grammar_export.rs`.
+`crates/delvec/tests/it/grammar_export.rs`.
 
 `library::castle` is the corpus's demonstration: four curtain walls, declared,
 with `up` and `down` deliberately absent — the plan does not fill its box to the
@@ -1322,7 +1322,7 @@ is regression-tested.
 
 A `bind` frame is resolved from `BTreeMap`s by name and draws nothing, so it can
 perturb neither the draw order nor the visit order. Measured rather than argued:
-`crates/delvec/tests/grammar_arguments.rs` expands `idiom-arguments` — whose one recursion is reached
+`crates/delvec/tests/it/grammar_arguments.rs` expands `idiom-arguments` — whose one recursion is reached
 under four different frames — in **two separate processes** and compares the
 `.nbt` and the metadata byte for byte, and reaches the same `.nbt` again through
 the JSON authoring form of the nine-rule program it replaces.
@@ -1330,9 +1330,9 @@ the JSON authoring form of the nine-rule program it replaces.
 The same promise is asserted one layer out, on the bytes that actually ship: a
 double-**export** test over the three ported programs of §5 at four seeds
 compares the `.nbt` and the metadata JSON byte for byte (§6). The §5b staging
-rules and the §5c zone programs are **not** in that suite — `crates/delvec/tests/grammar_export.rs`
+rules and the §5c zone programs are **not** in that suite — `crates/delvec/tests/it/grammar_export.rs`
 carries `temple` / `castle` / `church` and nothing else; what covers the staging
-rules is the registry round trip (`crates/delvec/tests/grammar_prefab.rs`),
+rules is the registry round trip (`crates/delvec/tests/it/grammar_prefab.rs`),
 which exports once and reads back, not twice and compares.
 
 ## 4. Failure is loud
@@ -1381,7 +1381,7 @@ expressions, and a bad size or failed evaluation names the expression it came
 from. `PaletteFull`, the budgets and the mark errors do not: the palette and
 the budgets are model-global, and a mark error already names its cell and box.
 All of it is asserted — operand values included, because a message is a claim —
-in `crates/delvec/tests/grammar_failures.rs`.
+in `crates/delvec/tests/it/grammar_failures.rs`.
 
 The three budgets live on `Limits` and are inputs, never silent clamps:
 `max_depth` and `max_scopes` turn an unguarded recursive rule into a diagnostic
@@ -1417,7 +1417,7 @@ passes, and the feature is simply not there. `minecraft:chain` is not a block
 at the pin — the game holds `minecraft:iron_chain` — so a rule painting the old
 id would ship its rope curtain as cells of air.
 
-`crates/delvec/tests/grammar_library.rs` asserts it over every program in the library with its binding
+`crates/delvec/tests/it/grammar_library.rs` asserts it over every program in the library with its binding
 count, and `gates::judge` reports the same verdict without exporting.
 
 Three more members of the same spelling rule ride the same sites. Two are gate
@@ -1522,23 +1522,23 @@ model to judge at all.
   the rewriter are one transform, read from two ends, and the refusal is what
   keeps them from ever disagreeing.
 
-`crates/delvec/tests/grammar_shape_orient.rs` demonstrates all four red→green on real pieces —
+`crates/delvec/tests/it/grammar_shape_orient.rs` demonstrates all four red→green on real pieces —
 `broken_grate`'s bars for the first three, `far_side_bar`'s for the frame, in
 both directions — and both of its identity-region halves are `DW0742`, which is
 what a pair of tests written one region apart looks like once the third answer
-exists. `crates/delvec/tests/grammar_frames_undecided.rs` is the third answer on its own: one program
+exists. `crates/delvec/tests/it/grammar_frames_undecided.rs` is the third answer on its own: one program
 at a box and at its transpose, plus the four ways a fill is genuinely decided
 (no reorientation, a reorientation that reads no proportion, a state no
 reachable frame disturbs, and a state written in the scope's own frame), none of
-which may report anything. `crates/delvec/tests/grammar_frames_blockstate.rs` carries the gates across the frame
+which may report anything. `crates/delvec/tests/it/grammar_frames_blockstate.rs` carries the gates across the frame
 constructs — an unguarded fill inside a mirrored body, a `claim` under a
 reoriented scope, a `bind`-rebound role, and what a refusal's message names
-inside a reframed subtree — and `crates/delvec/tests/grammar_frames_local_paint.rs` is the same sweep
+inside a reframed subtree — and `crates/delvec/tests/it/grammar_frames_local_paint.rs` is the same sweep
 for a LOCAL paint: inside a mirrored body, under a frame that reflects and
 permutes at once, under a pushed argument frame, inside a claimed space, and
 over all forty-eight frames the grammar can build, where every case either
-resolves to a state the pin accepts or refuses with `DW0738`. `crates/delvec/tests/grammar_library.rs`
-and `crates/delvec/tests/grammar_zones.rs` sweep the gates over every library program and every bell
+resolves to a state the pin accepts or refuses with `DW0738`. `crates/delvec/tests/it/grammar_library.rs`
+and `crates/delvec/tests/it/grammar_zones.rs` sweep the gates over every library program and every bell
 zone with summed binding counts; `delvec grammar audit` (§4e) runs the same sweep
 over a campaign's own zone programs, which is where a zone that has left the
 engine's copy behind is caught.
@@ -1803,7 +1803,7 @@ copy/paste bug).
 Two library claims are pinned by arithmetic rather than prose, because prose
 rots: the temple's colonnade really does follow the box, and a nine-deep box at
 `column_size` 1 really does give upstream's four columns
-(`crates/delvec/tests/grammar_library.rs`).
+(`crates/delvec/tests/it/grammar_library.rs`).
 
 ## 5b. Staging vocabulary — original rules with gates
 
@@ -1812,7 +1812,7 @@ rots: the temple's colonnade really does follow the box, and a nine-deep box at
 entry owed). They are a souls-like staging vocabulary — path and hazard
 geometry, and interior ambush — and they are a different kind of rule from §5: a temple is judged by looking at it, these are judged by a
 **machine gate about how the space plays**. Every gate below is an assertion in
-`crates/delvec/tests/grammar_staging.rs` over the expanded model, and each has been
+`crates/delvec/tests/it/grammar_staging.rs` over the expanded model, and each has been
 shown to go red when the geometry is wrong.
 
 ### The staging frame
@@ -1900,7 +1900,7 @@ the hall and alternate which side is declared a perch.
 | | |
 |---|---|
 | Controls | `beam_period` (4), `bracket` (2), `span_beams` (0 — a test knob); roles `stone`, `timber` |
-| Smallest region | the density cap ties width to length, so this is a curve, not a triple: interior `X · Z · period ≥ 24·Z + 24·period`, plus `X ≥ 2·bracket + 3`, `Y ≥ 6`, `Z ≥ period`. 10 × 6 × 12 is the smallest trussed hall at the defaults, pinned from both sides in `crates/delvec/tests/grammar_staging.rs` |
+| Smallest region | the density cap ties width to length, so this is a curve, not a triple: interior `X · Z · period ≥ 24·Z + 24·period`, plus `X ≥ 2·bracket + 3`, `Y ≥ 6`, `Z ≥ period`. 10 × 6 × 12 is the smallest trussed hall at the defaults, pinned from both sides in `crates/delvec/tests/it/grammar_staging.rs` |
 | Anchors | `anchor/perch-<i>` — a corbel's inner cell. `anchor/hall-door` — the floor cell at the centre of the approach end, which is where the sightline gate stands |
 | Variants | `Y < 6` is a **hall with no truss**: same shell, same door anchor, no perches, and not an error. Both shapes are asserted |
 
@@ -2000,9 +2000,9 @@ would last exactly as long as nobody looked.
 All five programs are in the generic library suites too: structural validity,
 JSON round trip, palette-swap-moves-no-block over **every** role each binds, and
 the double-expand determinism gate over model bytes *and* anchors
-(`crates/delvec/tests/grammar_library.rs`, `grammar_determinism.rs`). Their anchors — including generated
+(`crates/delvec/tests/it/grammar_library.rs`, `grammar_determinism.rs`). Their anchors — including generated
 `-<i>` names nobody hand-listed, and `store_room`'s seeded tell position —
-round-trip through `PrefabRegistry` (`crates/delvec/tests/grammar_prefab.rs`).
+round-trip through `PrefabRegistry` (`crates/delvec/tests/it/grammar_prefab.rs`).
 
 ### `boulder_stair` — the worn-tread tell, and the side pockets
 
@@ -2125,7 +2125,7 @@ ledge finds nothing underfoot.
 Gates:
 
 1. **`anchor/spill` reaches `anchor/landing`** by the reach graph
-   (`nav::reaches`, `crates/delvec/tests/grammar_staging.rs`): a body steps off
+   (`nav::reaches`, `crates/delvec/tests/it/grammar_staging.rs`): a body steps off
    the brink and falls to the landing — a player can walk off a ledge, an
    escorted NPC never has to (`compiler::nav::World::walk_region`).
 2. **`anchor/landing` does *not* reach `anchor/spill`**: no walk, climb or jump
@@ -2373,9 +2373,9 @@ which is what a tall tower over a small footprint needs, since a straight flight
 climbs at most about `Z / tread`. No dogleg rule exists in the library; the
 construction is available and the shape is a recurring one. `cliff_path` under
 `Reorient::turned` is the worked example, asserted cell by cell in
-`crates/delvec/tests/grammar_staging.rs`.
+`crates/delvec/tests/it/grammar_staging.rs`.
 
-Gates (`crates/delvec/tests/grammar_staging.rs`), each with its binding count:
+Gates (`crates/delvec/tests/it/grammar_staging.rs`), each with its binding count:
 
 1. **The flight walks up, and back down** — the reach graph (`nav::reaches`),
    66 standable cells in the fixture, 2 landings, 8 treads; both directions are
@@ -2459,7 +2459,7 @@ handed the same pattern. A stair's treads each have to know how high the last
 one was; a shaft's storeys are identical, so no storey needs an index and
 `marked_each` supplies one anyway.
 
-Gates (`crates/delvec/tests/grammar_staging.rs`), each with its binding count:
+Gates (`crates/delvec/tests/it/grammar_staging.rs`), each with its binding count:
 
 1. **Every station can hold the car the campaign fills** — 2 stations × 9
    footprint cells = 18, plus 2 call cells. The 3×3 is air; the station is *not*
@@ -2482,8 +2482,8 @@ Gates (`crates/delvec/tests/grammar_staging.rs`), each with its binding count:
 
 `drop_shaft`, `dumbwaiter`, `far_side_bar`, `tee_passage`, `causeway`,
 `elite_ground`, `stair_flight` and `lift_shaft` carry the same generic-suite and
-registry-round-trip promises as the eight above (`crates/delvec/tests/grammar_library.rs`,
-`crates/delvec/tests/grammar_determinism.rs`, `grammar_prefab.rs`).
+registry-round-trip promises as the eight above (`crates/delvec/tests/it/grammar_library.rs`,
+`crates/delvec/tests/it/grammar_determinism.rs`, `grammar_prefab.rs`).
 
 Three anchor names are shared across rules — `anchor/elite` (`causeway`,
 `elite_ground`), `anchor/gate` (`watch_bay`, `far_side_bar`) and
@@ -2685,7 +2685,7 @@ expansion-time `AnchorCollision`: this checks only the claims the caller made.
 
 The seam's own promise is pinned from both sides: an included program expanded
 over the same box gives byte-identical bytes and identically-named anchors to
-the program alone, over three programs × four seeds (`crates/delvec/tests/grammar_compose.rs`). The
+the program alone, over three programs × four seeds (`crates/delvec/tests/it/grammar_compose.rs`). The
 one thing that does change is an anchor's `declared_by`, which becomes the
 qualified rule name — a composed prefab's anchors say which piece they came
 from.
@@ -2697,7 +2697,7 @@ reached*. The seeded stream is one sequential splitmix64 consumed in traversal
 order (`crates/delvec/src/grammar/rng.rs`), so a sibling that draws first shifts every draw the piece
 makes afterwards: geometry chosen by mutually exclusive guards is unaffected — a
 single applicable candidate never draws — while weighted alternatives and mixes
-re-texture. `crates/delvec/tests/grammar_document_include.rs` demonstrates both halves against one
+re-texture. `crates/delvec/tests/it/grammar_document_include.rs` demonstrates both halves against one
 program: the host that draws nothing reproduces the piece exactly, and a host
 that first tosses a coin whose two outcomes are geometrically identical does not
 (4 of 4 seeds). The consequence for review is that a composed piece's *texture*
@@ -2915,7 +2915,7 @@ reason.
 
 **Z1 is a switchback.** `cliff_path` survives a reflection, because its
 recesses and lane are placed by split order, not by `reorient`.
-`crates/delvec/tests/grammar_staging.rs::the_recess_reorientation_aims_an_anchor_and_writes_nothing`
+`crates/delvec/tests/it/grammar_staging.rs::the_recess_reorientation_aims_an_anchor_and_writes_nothing`
 strips the only `reorient` inside `cliff_path` and the model is byte-identical:
 the ledge, recess and backing are three pieces of an `X` split, and that
 `reorient` writes no block — it aims `anchor/niche-<i>`, and stripping it leaves
@@ -2925,7 +2925,7 @@ What a hairpin needs is narrower than a reflection: its second leg is not a
 mirror in one axis but a **half-turn** in two, a rotation (§2). Z1's far leg is
 the near leg under `Reorient::turned` — same rule, same parameters, no mirrored
 copy of the rule body;
-`crates/delvec/tests/grammar_staging.rs::the_cliff_path_turned_round_is_the_same_path_mirrored`
+`crates/delvec/tests/it/grammar_staging.rs::the_cliff_path_turned_round_is_the_same_path_mirrored`
 asserts the turned expansion is the plain one mirrored over all 540 cells and
 every anchor. No `cliff_turn` landing rule is needed: the hairpin's head is
 `turn_run` cells of solid crag to road level, which is mass and absence and
@@ -2940,7 +2940,7 @@ a rule owes its callers once any caller can turn it.
 The fairness is gated. A knockback niche is survivable only when it is
 visible from the previous switchback, so the two legs sit either
 side of one gulf and look into each other's recesses;
-`crates/delvec/tests/grammar_zones.rs::every_far_niche_is_visible_from_the_near_leg` binds 4 recesses
+`crates/delvec/tests/it/grammar_zones.rs::every_far_niche_is_visible_from_the_near_leg` binds 4 recesses
 over 37 (viewer, niche) pairs at the pinned seed, with `gulf_screen` as its
 teeth — a column down the middle of the gulf that leaves both roads walkable and
 both drops lethal and takes every crossing sightline to zero.
@@ -2948,7 +2948,7 @@ both drops lethal and takes every crossing sightline to zero.
 ### The three seam limits
 
 Each is asserted rather than asserted-about: every one has a test in
-`crates/delvec/tests/grammar_zones.rs` that watches it happen.
+`crates/delvec/tests/it/grammar_zones.rs` that watches it happen.
 
 1. **Two pieces that declare one anchor name.** `include` never renames an
    anchor on its own, so `causeway` + `elite_ground` (`anchor/elite`) and
@@ -3036,7 +3036,7 @@ guard — which for a one-piece zone collapses to `Z > X`, after the zone's own
 program earns its place because a zone is one program and a campaign binds
 `barrow_shore`, not because it proves something new.
 
-Gates (`crates/delvec/tests/grammar_zones.rs`), each with its **binding count** and the red it has been
+Gates (`crates/delvec/tests/it/grammar_zones.rs`), each with its **binding count** and the red it has been
 watched producing. A gate is about what *composition* did or failed to preserve;
 the piece-level claims stay in §5b.
 
@@ -3102,7 +3102,7 @@ would mean a zone's anchors round-tripping through
 `PrefabRegistry` and carrying a spec-0027 §2 provenance row like a rule's,
 which is a capability question and not a size one. Their structural
 validity, JSON round trip, determinism and palette-swap
-promises are asserted in `crates/delvec/tests/grammar_zones.rs`.
+promises are asserted in `crates/delvec/tests/it/grammar_zones.rs`.
 
 ## 6. Export — freezing an expansion as a prefab
 
@@ -3161,7 +3161,7 @@ does not itself model:
   document with those overrides applied — content-addressed, so a program built
   in Rust and the same program parsed from JSON hash alike. Re-expanding the
   named document with exactly this row's inputs reproduces the `.nbt` byte for
-  byte, which `crates/delvec/tests/grammar_cli.rs` asserts by replaying the row and by perturbing one
+  byte, which `crates/delvec/tests/it/grammar_cli.rs` asserts by replaying the row and by perturbing one
   `--param` and checking the row, the hash and the bytes all move.
 - **`anchors`** is exactly what the program's `mark` declarations produced (§2b),
   in the hand-built `{pos, facing}` shape with `pos` local to the structure.
@@ -3267,7 +3267,7 @@ expansion produced all of it.
   that tiles an oversize `.schem` import — one tiling, so one reassembly rule
   reads both. They are a pure function of the region and the cap: no RNG, no
   clock, no dependence on the program, the seed or the blocks, so the tiles and
-  the manifest are byte-identical across runs (`crates/delvec/tests/grammar_export.rs`).
+  the manifest are byte-identical across runs (`crates/delvec/tests/it/grammar_export.rs`).
 - **A tile is packaging and never a unit of judgement.** The gates judge the
   whole expansion, the block-legality check runs over the whole model, and both
   the anchors and every diagnostic position are in zone coordinates. Binding
@@ -3305,7 +3305,7 @@ passed — and the verdict is printed only once the prefab is on disk, so no
 `pass` line ever sits above a refusal.
 
 `PrefabRegistry` (the engine's reader) loads the result with no diagnostics;
-`crates/delvec/tests/grammar_prefab.rs` tests that seam from both sides.
+`crates/delvec/tests/it/grammar_prefab.rs` tests that seam from both sides.
 
 ## 7. Not built
 
@@ -3479,5 +3479,5 @@ life at zero bindings — a surface nothing demonstrates is a finding on the day
 lands. The check is bound to two events rather than to a line in this document:
 an IR change cannot compile past it, and a corpus change cannot be pushed past
 the `#[test]` in `crates/delvec/src/grammar/coverage.rs` that carries the same
-assertion inside `cargo test --workspace`. CI runs the command as its own step so
+assertion inside the workspace test run. CI runs the command as its own step so
 the table reaches the log.

@@ -61,7 +61,7 @@ green; a tenth root fails the bind until both sides name it.
 (`dsl::gate::Gate`), and every consumer answers `gate()`. Two things keep that
 from decaying:
 
-- `crates/dsl/tests/gate_consumers.rs` enumerates the gate-declaring object
+- `crates/dsl/tests/it/gate_consumers.rs` enumerates the gate-declaring object
   schemas **from the generated JSON Schema** — derived from the Rust types, so
   the enumeration is complete by construction rather than by diligence — and
   fails when any of them declares part of the gate and not the rest. It states

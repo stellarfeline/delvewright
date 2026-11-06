@@ -26,7 +26,7 @@ use super::World;
 use crate::compiler::nav::world::Ambient;
 use crate::compiler::nav::world::body::Footprint;
 use delvewright_dsl::metrics::body::{
-    self as sim, Aabb, Attributes, CollisionWorld, Fluid, Input, Material, Rules, State,
+    self as sim, Aabb, Attributes, CollisionWorld, Fluid, Input, Material, Rules, State, cell_floor,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -857,15 +857,26 @@ type EdgeTable = std::sync::RwLock<
 
 const EDGE_TABLES: usize = 4096;
 
+/// The edge tables of a process, by the codes their nodes hold.
+type EdgeTables = std::sync::RwLock<HashMap<[Code; 45], Arc<EdgeTable>>>;
+
+/// How a node finds the shared table for its codes: [`shared_edges`] in
+/// every build; a test hands another to reach the node-local path.
+type FindEdges<'f> = &'f (dyn Fn(&[Code; 45]) -> Option<Arc<EdgeTable>> + Sync);
+
 fn shared_edges(codes: &[Code; 45]) -> Option<Arc<EdgeTable>> {
-    type Tables = std::sync::RwLock<HashMap<[Code; 45], Arc<EdgeTable>>>;
-    static T: OnceLock<Tables> = OnceLock::new();
-    let t = T.get_or_init(Default::default);
-    if let Some(e) = t.read().expect("edge tables").get(codes) {
+    static T: OnceLock<EdgeTables> = OnceLock::new();
+    edges_in(T.get_or_init(Default::default), EDGE_TABLES, codes)
+}
+
+/// The table for `codes` in `tables`, made if there is room for it: at most
+/// `cap` tables are kept, and past that `None` (the node keeps its own).
+fn edges_in(tables: &EdgeTables, cap: usize, codes: &[Code; 45]) -> Option<Arc<EdgeTable>> {
+    if let Some(e) = tables.read().expect("edge tables").get(codes) {
         return Some(Arc::clone(e));
     }
-    let mut w = t.write().expect("edge tables");
-    if w.len() >= EDGE_TABLES && !w.contains_key(codes) {
+    let mut w = tables.write().expect("edge tables");
+    if w.len() >= cap && !w.contains_key(codes) {
         return None;
     }
     Some(Arc::clone(w.entry(*codes).or_default()))
@@ -923,130 +934,189 @@ thread_local! {
     static MEMO_ANSWERS: std::cell::Cell<(u64, u64)> = const { std::cell::Cell::new((0, 0)) };
 }
 
-/// A [`Codes`] relative to a world cell: the template's origin put at `at`,
-/// noting every window cell it reads in `track` ([`bank`]).
-struct Shifted<'a> {
+/// The window round a launch cell, read relative to it (the template's origin
+/// put at `at`), noting every window cell it reads in `track` ([`bank`]), and
+/// **answered from a slot after the first read**: a node's thousands of
+/// launches, and every flight-memo walk among them, read the same few hundred
+/// cells over and over, and the snapshot does not change under one expansion,
+/// so a cell's code is read from the snapshot once per expansion and from its
+/// slot after ([`flights::near_slot`]; a cell further off is read through the
+/// snapshot every time). What the bank records is what it was without the
+/// slots: a cell is noted the first time each run asks for it ([`Local::code`],
+/// [`Local::next_run`]), and a read a slot answers still grows the run's and
+/// the scope's box by the cell. A read that notes nothing ([`Local::peek`]) is
+/// the flight memo's walk, which reads the same slots and leaves no mark.
+pub(super) struct Local<'a> {
     dense: &'a Dense,
     at: [i32; 3],
     track: Option<&'a bank::Track<'a>>,
+    /// Per near slot, the expansion the cell was read for and its code: what
+    /// a walk reads, kept apart from `noted` so a walk touches less.
+    codes: Vec<std::cell::Cell<(u32, Code)>>,
+    /// Per near slot, the run the cell was last noted in (`0`: not yet in
+    /// this expansion) and its window index ([`NO_INDEX`] outside it).
+    noted: Vec<std::cell::Cell<(u32, u32)>>,
+    /// This expansion's stamp: a slot carrying it holds this node's reading.
+    node: u32,
+    /// The current run's stamp: a slot carrying it was noted this run.
+    run: std::cell::Cell<u32>,
 }
 
-impl Codes for Shifted<'_> {
-    fn wet(&self) -> bool {
-        self.dense.wet
-    }
-    #[inline(always)]
-    fn code(&self, c: [i32; 3]) -> Code {
-        let a = [c[0] + self.at[0], c[1] + self.at[1], c[2] + self.at[2]];
-        match self.dense.index(a) {
-            Some(i) => {
-                if let Some(t) = self.track {
-                    t.note(i, a);
-                }
-                self.dense.cells.get(i)
-            }
-            None => {
-                // A cell past the window grows the box as [`Local`]'s later
-                // reads of it do: the box is what the run read, however
-                // many times it read it.
-                if let Some(t) = self.track {
-                    t.extend((a, a));
-                }
-                self.dense.code(a)
-            }
-        }
-    }
-}
+/// The window index of a cell outside the window.
+const NO_INDEX: u32 = u32::MAX;
 
-/// The cells round a node its launches read, each read through `inner` the
-/// first time in each run of the node's expansion ([`Local::next_run`]) and
-/// from a slot after: a node's thousands of launches, and every flight-memo
-/// walk among them, read the same few hundred cells over and over. A slot
-/// answers what `inner` answered, and a read it answers still grows the
-/// bank's current run and scope box by the cell (the run's first read of it
-/// noted it as the run's), so what the bank records of a run is what it was
-/// without the slots.
-struct Local<'a, C: Codes + ?Sized> {
-    inner: &'a C,
-    at: [i32; 3],
-    track: Option<&'a bank::Track<'a>>,
-    slots: Vec<std::cell::Cell<(u32, Code)>>,
-    stamp: std::cell::Cell<u32>,
-}
-
-/// A thread's slots for [`Local`], with the stamp of the last expansion.
-type LocalSlots = (u32, Vec<std::cell::Cell<(u32, Code)>>);
+/// A thread's slots for [`Local`], with the stamp of the last run.
+type LocalSlots = (
+    u32,
+    Vec<std::cell::Cell<(u32, Code)>>,
+    Vec<std::cell::Cell<(u32, u32)>>,
+);
 
 thread_local! {
-    static LOCAL: std::cell::RefCell<LocalSlots> = const { std::cell::RefCell::new((0, Vec::new())) };
+    static LOCAL: std::cell::RefCell<LocalSlots> = const { std::cell::RefCell::new((0, Vec::new(), Vec::new())) };
 }
 
-impl<'a, C: Codes + ?Sized> Local<'a, C> {
-    fn new(inner: &'a C, at: [i32; 3], track: Option<&'a bank::Track<'a>>) -> Self {
-        let slots = LOCAL.with(|l| {
-            let mut slots = std::mem::take(&mut l.borrow_mut().1);
-            if slots.is_empty() {
-                slots = vec![std::cell::Cell::new((0, 0)); flights::NEAR_SLOTS];
+/// The next stamp on this thread; the slots are wiped when it wraps.
+fn next_stamp(
+    codes: &[std::cell::Cell<(u32, Code)>],
+    noted: &[std::cell::Cell<(u32, u32)>],
+) -> u32 {
+    LOCAL.with(|l| {
+        let mut l = l.borrow_mut();
+        l.0 = l.0.wrapping_add(1);
+        if l.0 == 0 {
+            for s in codes {
+                s.set((0, 0));
             }
-            slots
+            for s in noted {
+                s.set((0, 0));
+            }
+            l.0 = 1;
+        }
+        l.0
+    })
+}
+
+impl<'a> Local<'a> {
+    fn new(dense: &'a Dense, at: [i32; 3], track: Option<&'a bank::Track<'a>>) -> Self {
+        let (codes, noted) = LOCAL.with(|l| {
+            let mut l = l.borrow_mut();
+            let mut codes = std::mem::take(&mut l.1);
+            let mut noted = std::mem::take(&mut l.2);
+            if codes.is_empty() {
+                codes = vec![std::cell::Cell::new((0, 0)); flights::NEAR_SLOTS];
+                noted = vec![std::cell::Cell::new((0, 0)); flights::NEAR_SLOTS];
+            }
+            (codes, noted)
         });
+        let node = next_stamp(&codes, &noted);
         let local = Local {
-            inner,
+            dense,
             at,
             track,
-            slots,
-            stamp: std::cell::Cell::new(0),
+            codes,
+            noted,
+            node,
+            run: std::cell::Cell::new(0),
         };
         local.next_run();
         local
     }
 
-    /// Answer no later read from a slot filled before: each cell is read
-    /// through `inner` again the first time a run asks for it, so a run
-    /// notes every cell it reads whatever the runs before it read.
+    /// Note no later read as noted before: each cell is noted again the
+    /// first time a run asks for it, so a run notes every cell it reads
+    /// whatever the runs before it read. The slots' codes stay.
     fn next_run(&self) {
-        let stamp = LOCAL.with(|l| {
-            let mut l = l.borrow_mut();
-            l.0 = l.0.wrapping_add(1);
-            if l.0 == 0 {
-                for s in &self.slots {
-                    s.set((0, 0));
-                }
-                l.0 = 1;
+        self.run.set(next_stamp(&self.codes, &self.noted));
+    }
+
+    /// The window cell `c` lies in, and its code, read from the snapshot.
+    #[inline(always)]
+    fn read(&self, a: [i32; 3]) -> (u32, Code) {
+        match self.dense.index(a) {
+            Some(i) => (i as u32, self.dense.cells.get(i)),
+            None => (NO_INDEX, self.dense.code(a)),
+        }
+    }
+
+    /// Note the cell `a` at window index `index` as read by this run: the
+    /// window cell as read, a cell past the window into the run's box.
+    #[inline(always)]
+    fn note(&self, index: u32, a: [i32; 3]) {
+        if let Some(t) = self.track {
+            if index == NO_INDEX {
+                t.extend((a, a));
+            } else {
+                t.note(index as usize, a);
             }
-            l.0
-        });
-        self.stamp.set(stamp);
+        }
+    }
+
+    /// `c`'s code, noting nothing: a slot's answer, else the snapshot's,
+    /// kept in the slot for the expansion.
+    #[inline(always)]
+    pub(super) fn peek(&self, c: [i32; 3]) -> Code {
+        let Some(s) = flights::near_slot(c) else {
+            let a = [c[0] + self.at[0], c[1] + self.at[1], c[2] + self.at[2]];
+            return self.read(a).1;
+        };
+        let (node, code) = self.codes[s].get();
+        if node == self.node {
+            return code;
+        }
+        let a = [c[0] + self.at[0], c[1] + self.at[1], c[2] + self.at[2]];
+        let (index, code) = self.read(a);
+        self.codes[s].set((self.node, code));
+        self.noted[s].set((0, index));
+        code
     }
 }
 
-impl<C: Codes + ?Sized> Drop for Local<'_, C> {
+impl Drop for Local<'_> {
     fn drop(&mut self) {
-        let slots = std::mem::take(&mut self.slots);
-        LOCAL.with(|l| l.borrow_mut().1 = slots);
+        let codes = std::mem::take(&mut self.codes);
+        let noted = std::mem::take(&mut self.noted);
+        LOCAL.with(|l| {
+            let mut l = l.borrow_mut();
+            l.1 = codes;
+            l.2 = noted;
+        });
     }
 }
 
-impl<C: Codes + ?Sized> Codes for Local<'_, C> {
+impl Codes for Local<'_> {
     fn wet(&self) -> bool {
-        self.inner.wet()
+        self.dense.wet
     }
+    /// `c`'s code, noted as read: the first time this run asks for a cell it
+    /// is noted as the snapshot read notes it, and every later time the
+    /// run's box grows by it.
     #[inline(always)]
     fn code(&self, c: [i32; 3]) -> Code {
-        let Some(i) = flights::near_slot(c) else {
-            return self.inner.code(c);
+        let a = [c[0] + self.at[0], c[1] + self.at[1], c[2] + self.at[2]];
+        let Some(s) = flights::near_slot(c) else {
+            let (index, code) = self.read(a);
+            self.note(index, a);
+            return code;
         };
-        let (s, v) = self.slots[i].get();
-        if s == self.stamp.get() {
-            if let Some(t) = self.track {
-                let a = [c[0] + self.at[0], c[1] + self.at[1], c[2] + self.at[2]];
-                t.extend((a, a));
+        let (node, code) = self.codes[s].get();
+        if node == self.node {
+            let (run, index) = self.noted[s].get();
+            if run == self.run.get() {
+                if let Some(t) = self.track {
+                    t.extend((a, a));
+                }
+            } else {
+                self.note(index, a);
+                self.noted[s].set((self.run.get(), index));
             }
-            return v;
+            return code;
         }
-        let v = self.inner.code(c);
-        self.slots[i].set((self.stamp.get(), v));
-        v
+        let (index, code) = self.read(a);
+        self.note(index, a);
+        self.codes[s].set((self.node, code));
+        self.noted[s].set((self.run.get(), index));
+        code
     }
 }
 
@@ -1282,11 +1352,7 @@ pub enum Death {
 const LAUNCH_TICKS: usize = 160;
 
 fn cell_of(p: [f64; 3]) -> [i32; 3] {
-    [
-        p[0].floor() as i32,
-        p[1].floor() as i32,
-        p[2].floor() as i32,
-    ]
+    [cell_floor(p[0]), cell_floor(p[1]), cell_floor(p[2])]
 }
 
 /// The feet height a body standing in `c` rests at, read through `codes`:
@@ -1322,11 +1388,11 @@ fn landing_cells<C: Codes + ?Sized>(codes: &C, body: &Attributes, p: [f64; 3]) -
         bb.max[1] - TOUCH,
         bb.max[2] - TOUCH,
     );
-    for x in bb.min[0].floor() as i32..=bb.max[0].floor() as i32 {
-        for z in bb.min[2].floor() as i32..=bb.max[2].floor() as i32 {
+    for x in cell_floor(bb.min[0])..=cell_floor(bb.max[0]) {
+        for z in cell_floor(bb.min[2])..=cell_floor(bb.max[2]) {
             // From the cell under the feet: a barrier there reaches half a
             // block over its own cell.
-            for y in bb.min[1].floor() as i32 - 1..=bb.max[1].floor() as i32 {
+            for y in cell_floor(bb.min[1]) - 1..=cell_floor(bb.max[1]) {
                 world.shapes([x, y, z], &mut boxes);
             }
         }
@@ -1335,12 +1401,12 @@ fn landing_cells<C: Codes + ?Sized>(codes: &C, body: &Attributes, p: [f64; 3]) -
         return Vec::new();
     }
     let mut out = Vec::new();
-    let y0 = (p[1] - 1e-7).floor() as i32;
+    let y0 = cell_floor(p[1] - 1e-7);
     // A barrier's top is half a block into the cell over it: the cell under the
     // feet cell's support is asked only for feet at a half.
-    let half = ((p[1] - p[1].floor()) - 0.5).abs() < 1e-6;
-    for x in bb.min[0].floor() as i32..=bb.max[0].floor() as i32 {
-        for z in bb.min[2].floor() as i32..=bb.max[2].floor() as i32 {
+    let half = ((p[1] - f64::from(cell_floor(p[1]))) - 0.5).abs() < 1e-6;
+    for x in cell_floor(bb.min[0])..=cell_floor(bb.max[0]) {
+        for z in cell_floor(bb.min[2])..=cell_floor(bb.max[2]) {
             for sy in [y0, y0 - 1].into_iter().take(if half { 2 } else { 1 }) {
                 boxes.clear();
                 world.shapes([x, sy, z], &mut boxes);
@@ -1401,9 +1467,9 @@ fn edge_position<C: Codes + ?Sized>(
         );
         let mut meets = false;
         let mut stands = false;
-        for x in bb.min[0].floor() as i32..=bb.max[0].floor() as i32 {
-            for z in bb.min[2].floor() as i32..=bb.max[2].floor() as i32 {
-                for y in (bb.min[1].floor() as i32 - 1)..=bb.max[1].floor() as i32 {
+        for x in cell_floor(bb.min[0])..=cell_floor(bb.max[0]) {
+            for z in cell_floor(bb.min[2])..=cell_floor(bb.max[2]) {
+                for y in (cell_floor(bb.min[1]) - 1)..=cell_floor(bb.max[1]) {
                     boxes.clear();
                     world.shapes([x, y, z], boxes);
                     for b in boxes.iter() {
@@ -1843,8 +1909,18 @@ fn union(a: Option<Aabb>, b: Option<Aabb>) -> Option<Aabb> {
 // ---------------------------------------------------------------------------
 
 /// The edges out of one node as they are gathered: the first launch that
-/// reaches a cell by a kind of movement names it.
-type Edges = BTreeMap<([i32; 3], EdgeKind), (Option<i16>, bool)>;
+/// reaches a cell by a kind of movement names it. Gathered by hash and put
+/// in key order once at the end ([`sorted_edges`]): the order is the same,
+/// and a launch's landing is a probe, not a tree walk.
+type Edges =
+    HashMap<([i32; 3], EdgeKind), (Option<i16>, bool), std::hash::BuildHasherDefault<flights::Mix>>;
+
+/// `edges` in key order: cell, then kind.
+fn sorted_edges(edges: Edges) -> Vec<bank::NamedEdge> {
+    let mut v: Vec<_> = edges.into_iter().collect();
+    v.sort_unstable_by_key(|(k, _)| *k);
+    v
+}
 
 /// Everything one node of the graph leads to.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -2306,7 +2382,7 @@ fn carry_table() -> &'static [f64] {
 fn reach_columns(k: i32) -> i32 {
     let t = carry_table();
     let k = (k.max(0) as usize).min(t.len() - 1);
-    (t[k] + 1.0 + Attributes::PLAYER.width / 2.0).floor() as i32
+    cell_floor(t[k] + 1.0 + Attributes::PLAYER.width / 2.0)
 }
 
 /// Per window cell of `d`, the world's raw membership: bit 0 tall, 1 a
@@ -2821,6 +2897,19 @@ impl World {
         wanted: Quadrants,
         banked: Option<&bank::Expansion<'_>>,
     ) -> NodeEdges {
+        self.expand_with(memo, params, c, wanted, banked, &shared_edges)
+    }
+
+    /// [`World::expand`], finding its nodes' shared edge tables by `find`.
+    fn expand_with(
+        &self,
+        memo: &GraphMemo,
+        params: &ReachParams,
+        c: [i32; 3],
+        wanted: Quadrants,
+        banked: Option<&bank::Expansion<'_>>,
+        find: FindEdges<'_>,
+    ) -> NodeEdges {
         let fly_launches = wanted != 0;
         let track = banked.map(|b| &b.track);
         let leaf_watch = bank::LeafWatch::open(track.is_some());
@@ -2838,7 +2927,7 @@ impl World {
             return out;
         };
         let dense = &memo.dense;
-        let mut edges: Edges = BTreeMap::new();
+        let mut edges: Edges = HashMap::default();
         // A node's launches land in a few cells many times over: each cell's
         // rest state is asked of the world once a run (so each run notes the
         // cells it asks about).
@@ -2940,30 +3029,24 @@ impl World {
                     *v = dense.code([c[0], c[1] + i as i32, c[2]]);
                 }
                 let class = template_class(&(support, column, holding, params.key()), params);
-                let shifted = Shifted {
-                    dense,
-                    at: c,
-                    track,
-                };
+                let killed = |st: &State| self.kills(st);
+                let edge_memo: EdgeMemo = std::cell::RefCell::new(HashMap::default());
+                // Its cells are among the node's own (`node_boxes`).
+                let local = Local::new(dense, c, track);
                 // The flight memo is walked through a reader that notes
                 // nothing: a kept flight may read on past where this one ends
                 // (a deeper floor, a world without this one's volumes), and
                 // what a node records is what its own flights read.
-                let quiet = Shifted {
-                    dense,
-                    at: c,
-                    track: None,
-                };
-                let killed = |st: &State| self.kills(st);
-                let edge_memo: EdgeMemo = std::cell::RefCell::new(HashMap::default());
-                // Its cells are among the node's own (`node_boxes`).
-                let local = Local::new(&shifted, c, track);
+                // The flight memo is walked through the slots without
+                // noting; the cells a walk read are kept for a kept
+                // flight to note.
+                let mut walked: Vec<[i32; 3]> = Vec::with_capacity(1024);
                 let near = NearStart::new(&local);
                 // An edge position read cells: a launch that takes it from the
                 // memo reads them too, for the run it is in.
                 // Nodes whose cells round them hold the same codes find the same
                 // edge positions: those read inside the box are shared.
-                let shared = shared_edges(&near.codes);
+                let shared = find(&near.codes);
                 let edge_at = |dir: [f64; 2], compute: &dyn Fn() -> Option<[f64; 3]>| {
                     let k = (dir[0].to_bits(), dir[1].to_bits());
                     let held = edge_memo.borrow().get(&k).copied();
@@ -2977,6 +3060,10 @@ impl World {
                         .as_ref()
                         .and_then(|t| t.read().expect("edges").get(&k).copied())
                     {
+                        // Read inside the box, so no cell to note: the
+                        // node's own memo answers the direction's other
+                        // launches and runs.
+                        edge_memo.borrow_mut().insert(k, (v, None));
                         return v;
                     }
                     near.escaped.set(false);
@@ -3002,14 +3089,14 @@ impl World {
                 );
                 let grow = |into: &mut Option<bank::Box3>, b: &Aabb| {
                     let lo = [
-                        b.min[0].floor() as i32 - 2,
-                        b.min[1].floor() as i32 - 3,
-                        b.min[2].floor() as i32 - 2,
+                        cell_floor(b.min[0]) - 2,
+                        cell_floor(b.min[1]) - 3,
+                        cell_floor(b.min[2]) - 2,
                     ];
                     let hi = [
-                        b.max[0].floor() as i32 + 2,
-                        b.max[1].floor() as i32 + 3,
-                        b.max[2].floor() as i32 + 2,
+                        cell_floor(b.max[0]) + 2,
+                        cell_floor(b.max[1]) + 3,
+                        cell_floor(b.max[2]) + 2,
                     ];
                     *into = Some(match *into {
                         None => (lo, hi),
@@ -3043,7 +3130,7 @@ impl World {
                             edge_memo.borrow_mut().retain(|_, (_, b)| b.is_none());
                             local.next_run();
                             leaf_watch.since();
-                            let mut gedges: Edges = BTreeMap::new();
+                            let mut gedges: Edges = HashMap::default();
                             let mut gout = NodeEdges::default();
                             let mut gread: Option<bank::Box3> = None;
                             for arc in &class.arcs[lo..hi] {
@@ -3127,11 +3214,7 @@ impl World {
                                                     )
                                                 };
                                             }
-                                            let walked = Recorder {
-                                                inner: &quiet,
-                                                seen: Default::default(),
-                                            };
-                                            match flights::lookup(&key, &walked) {
+                                            match flights::lookup(&key, &local, &mut walked) {
                                                 Some(leaf)
                                                     if leaf.holds_at(bottom)
                                                         && !leaf.swept.is_some_and(|b| {
@@ -3142,8 +3225,8 @@ impl World {
                                                     // one: the cells it read
                                                     // are read here, as flying
                                                     // would read them.
-                                                    for r in walked.seen.into_inner() {
-                                                        local.code(r);
+                                                    for r in &walked {
+                                                        local.code(*r);
                                                     }
                                                     #[cfg(test)]
                                                     MEMO_ANSWERS.with(|m| {
@@ -3181,7 +3264,7 @@ impl World {
                             // The leaf cells the run's landings read grow the
                             // node's read box as its sweeps do.
                             bank::Summary {
-                                edges: gedges.into_iter().collect(),
+                                edges: sorted_edges(gedges),
                                 leaves_world: gout.leaves_world,
                                 dies: gout.dies,
                                 simulated: gout.simulated,
@@ -3214,7 +3297,7 @@ impl World {
                 out.read = Some(read);
             }
         }
-        out.edges = edges
+        out.edges = sorted_edges(edges)
             .into_iter()
             .map(|((to, kind), (yaw, sprint))| Edge {
                 to,
@@ -3387,8 +3470,12 @@ impl World {
             hold(&mut held, *c);
         }
         let mut flown: HashMap<[i32; 3], Quadrants> = HashMap::new();
+        // The cells reached since the last round asked its launches: the
+        // only ones the next round need ask ([`World::round`]).
+        let mut fresh: Vec<[i32; 3]> = seen.iter().copied().collect();
         let take = |seen: &mut BTreeSet<[i32; 3]>,
                     held: &mut Reach,
+                    fresh: &mut Vec<[i32; 3]>,
                     next: &mut Vec<[i32; 3]>,
                     cur: [i32; 3],
                     edges: &[Edge]| {
@@ -3399,28 +3486,30 @@ impl World {
                 {
                     seen.insert(edge.to);
                     hold(held, edge.to);
+                    fresh.push(edge.to);
                     next.push(edge.to);
                 }
             }
         };
-        let close =
-            |seen: &mut BTreeSet<[i32; 3]>, held: &mut Reach, mut frontier: Vec<[i32; 3]>| {
-                while !frontier.is_empty() {
-                    let edges = self.cell_edges(&memo, &params, &frontier);
-                    let mut next: Vec<[i32; 3]> = Vec::new();
-                    for (cur, e) in frontier.iter().zip(edges) {
-                        take(seen, held, &mut next, *cur, &e.edges);
-                    }
-                    next.sort_unstable();
-                    frontier = next;
+        let close = |seen: &mut BTreeSet<[i32; 3]>,
+                     held: &mut Reach,
+                     fresh: &mut Vec<[i32; 3]>,
+                     mut frontier: Vec<[i32; 3]>| {
+            while !frontier.is_empty() {
+                let edges = self.cell_edges(&memo, &params, &frontier);
+                let mut next: Vec<[i32; 3]> = Vec::new();
+                for (cur, e) in frontier.iter().zip(edges) {
+                    take(seen, held, fresh, &mut next, *cur, &e.edges);
                 }
-            };
+                next.sort_unstable();
+                frontier = next;
+            }
+        };
         let start: Vec<[i32; 3]> = seen.iter().copied().collect();
-        close(&mut seen, &mut held, start);
+        close(&mut seen, &mut held, &mut fresh, start);
         loop {
-            let standing: Vec<[i32; 3]> = seen
-                .iter()
-                .copied()
+            let mut standing: Vec<[i32; 3]> = std::mem::take(&mut fresh)
+                .into_iter()
                 .filter(|c| {
                     matches!(
                         self.rest_kind(*c),
@@ -3428,6 +3517,8 @@ impl World {
                     )
                 })
                 .collect();
+            standing.sort_unstable();
+            standing.dedup();
             let todo: Vec<[i32; 3]> = self
                 .left_to_fly(&memo, &held, &standing, &|c| {
                     flown.get(&c).copied().unwrap_or(0)
@@ -3447,10 +3538,10 @@ impl World {
                 let mut next: Vec<[i32; 3]> = Vec::new();
                 for ((c, q), e) in chunk.iter().zip(out) {
                     *flown.entry(*c).or_insert(0) |= *q;
-                    take(&mut seen, &mut held, &mut next, *c, &e.edges);
+                    take(&mut seen, &mut held, &mut fresh, &mut next, *c, &e.edges);
                 }
                 next.sort_unstable();
-                close(&mut seen, &mut held, next);
+                close(&mut seen, &mut held, &mut fresh, next);
             }
         }
         seen
@@ -3947,15 +4038,25 @@ impl World {
         }
         let mut reach = Reach::default();
         let mut visits = chunks::Visits::default();
-        self.close(&memo, params, &mut reach, start.clone(), &mut visits);
+        let mut fresh: Vec<[i32; 3]> = Vec::new();
+        self.close(
+            &memo,
+            params,
+            &mut reach,
+            start.clone(),
+            &mut visits,
+            &mut fresh,
+        );
         loop {
             // A round: every standing or holding state whose envelope holds a
             // cell the closure has not reached flies the launches that can
             // reach it, each judged against the closure as the round found it
             // — so which launches are flown never depends on the order the
             // chunks are visited in — and then the closure is taken over what
-            // they reached.
-            let todo = self.round(&memo, &reach);
+            // they reached. Only the states the last close reached are asked
+            // ([`World::round`]): a state asked in an earlier round has
+            // nothing left to fly.
+            let todo = self.round(&memo, &reach, &mut fresh);
             if todo.is_empty() {
                 break;
             }
@@ -3968,7 +4069,7 @@ impl World {
                 reach.portals = visits.report();
                 return Arc::new(reach);
             }
-            self.close(&memo, params, &mut reach, new, &mut visits);
+            self.close(&memo, params, &mut reach, new, &mut visits, &mut fresh);
         }
         reach.portals = visits.report();
         closure_taken(&reach);
@@ -4100,7 +4201,7 @@ impl World {
     ) {
         let mut visits = chunks::Visits::default();
         let new = self.fly_chunks(memo, params, reach, cells, &mut visits);
-        self.close(memo, params, reach, new, &mut visits);
+        self.close(memo, params, reach, new, &mut visits, &mut Vec::new());
         let [p, f] = visits.report();
         reach.portals[0] += p;
         reach.portals[1] += f;
@@ -4109,14 +4210,21 @@ impl World {
     /// The round's work: every standing or holding state of `reach` with the
     /// launches its envelope still asks for ([`World::envelope_open`]) and
     /// that it has not flown, judged against `reach` as it stands — in cell
-    /// order.
-    fn round(&self, memo: &GraphMemo, reach: &Reach) -> Vec<([i32; 3], Quadrants)> {
-        let nodes: Vec<[i32; 3]> = reach
-            .states
-            .iter()
-            .filter(|(_, k)| matches!(k, RestKind::Standing | RestKind::Holding))
-            .map(|(c, _)| c)
-            .collect();
+    /// order. Only `fresh` — the standing and holding states reached since
+    /// the last round, emptied here — can have any: the envelope asks only
+    /// toward cells the closure has not reached, so it only shrinks as the
+    /// closure grows, and a state asked in an earlier round flew every
+    /// direction it asked for then and asks for no new one now. The round is
+    /// the one every state would give.
+    fn round(
+        &self,
+        memo: &GraphMemo,
+        reach: &Reach,
+        fresh: &mut Vec<[i32; 3]>,
+    ) -> Vec<([i32; 3], Quadrants)> {
+        let mut nodes = std::mem::take(fresh);
+        nodes.sort_unstable();
+        nodes.dedup();
         self.left_to_fly(memo, reach, &nodes, &|c| reach.flown_mask(c))
     }
 
@@ -4209,7 +4317,8 @@ impl World {
     /// frontier of the chunk it lands in, and the next chunk with a frontier
     /// taken, until none has one. The closure is the same set whatever order
     /// the chunks are taken in, and every reached state's cell-relation edges
-    /// are joined once.
+    /// are joined once. Every standing or holding state reached is added to
+    /// `fresh`, for the round that asks its launches ([`World::round`]).
     fn close(
         &self,
         memo: &GraphMemo,
@@ -4217,6 +4326,7 @@ impl World {
         reach: &mut Reach,
         frontier: Vec<[i32; 3]>,
         visits: &mut chunks::Visits,
+        fresh: &mut Vec<[i32; 3]>,
     ) {
         let side = chunks::side_here();
         let mut queued: std::collections::HashSet<[i32; 3]> = std::collections::HashSet::new();
@@ -4267,6 +4377,9 @@ impl World {
                         continue;
                     };
                     reach.states.insert(&memo.dense, *c, kind);
+                    if matches!(kind, RestKind::Standing | RestKind::Holding) {
+                        fresh.push(*c);
+                    }
                     if e.leaves_world {
                         reach.leaves_world.insert(*c);
                     }

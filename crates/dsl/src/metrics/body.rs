@@ -491,9 +491,24 @@ thread_local! {
     };
 }
 
-#[inline]
+/// `⌊v⌋` as a cell coordinate: what `v.floor() as i32` gives, for every `v`
+/// — the truncation, one less where it rounded up, saturated at the ends
+/// and `0` for a NaN as the cast is — without the library call the
+/// baseline target's `floor` is (`roundsd` needs SSE4.1).
+#[inline(always)]
+#[must_use]
+pub fn cell_floor(v: f64) -> i32 {
+    let t = v as i32;
+    if f64::from(t) > v {
+        t.saturating_sub(1)
+    } else {
+        t
+    }
+}
+
+#[inline(always)]
 fn floor(v: f64) -> i32 {
-    v.floor() as i32
+    cell_floor(v)
 }
 
 /// Every collision box of every cell a query box touches, the cell under it

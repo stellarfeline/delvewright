@@ -241,7 +241,7 @@ jobs:
       # ADR-0006's LINUX HALF. The determinism promise is "same DSL + same seed
       # -> byte-identical datapack and world", and until this step every gate
       # holding it ran on one machine: the double-build gate inside `rust`'s
-      # `cargo test` builds twice on THIS runner, and the prefab-generator job
+      # test run builds twice on THIS runner, and the prefab-generator job
       # runs each generator twice on THIS runner. Both catch an unseeded RNG or a
       # hash-ordered iteration; neither can catch a libm difference, a
       # float-formatting difference, or a directory-ordering difference between
@@ -291,36 +291,36 @@ jobs:
       - name: every JSON document this repository holds is canonical
         run: python3 tools/ci/check-json-canonical.py --delvec target/debug/delvec
 
-  rust:
-    name: rust (fmt, clippy, test)
+  # THE RUST SUITE IS ONE BUILD, N PARTITION RUNS, ONE CENSUS (spec-0126 §5).
+  #
+  # Instrumented, the whole suite's per-test times sum to 55,000–61,000 s and
+  # the hosted runner runs about 3.6 tests at once, so one job takes
+  # 4 h 22 m – 4 h 47 m, and was once cancelled at GitHub's 6-hour job limit.
+  # The suite is therefore built once — `rust-build` archives every
+  # instrumented test binary — and run as N partition jobs, each
+  # `cargo nextest … --partition hash:k/N` over that one archive. No job, run
+  # or test of the family carries a time bound of its own (spec-0126 §5).
+  # The `rust` job gathers them: the partition census proves every listed test
+  # ran in exactly one partition (a sharding that can drop a test is the
+  # unbound vacuity mode), merges the N profiles into the one coverage report,
+  # and judges the floor over it. `rust` is the required context the merge
+  # waits on, and it is red whenever any job it gathers is not green.
+  rust-build:
+    name: rust build (fmt, clippy, instrumented archive)
     needs: changes
     if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     steps:
-      # The job's disk, met by the host (CLAUDE.md, "Host hardware never caps
-      # a capability"). The build takes most of the root filesystem, and the
-      # test executables then fill it with the output trees they leave and the
-      # builds' scratch files (ADR-0037: the reach graph's lists, tables, bank
-      # and snapshot, and the section stores' records, in the system's
-      # temporary directory, several builds at once). Read off this runner
-      # image: 94.2 GB free at the start, 12.8 GB left when the executables
-      # began, 13.1 GB taken by them. The preinstalled toolchains this job
-      # never uses are removed first (27.2 GB on that image), each only if
-      # present, with the free bytes printed before and after.
-      - name: the job's disk (toolchains it never uses removed)
-        run: |
-          set -euo pipefail
-          df -B1 --output=target,size,avail /
-          for d in /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/swift; do
-            if [ -d "$d" ]; then echo "removing $d"; sudo rm -rf "$d"; fi
-          done
-          df -B1 --output=target,size,avail /
       - uses: actions/checkout@v4
+      # The job's disk, met by the host (the action states what it frees and why).
+      - uses: ./.github/actions/runner-disk
+        with: { step: start }
       # The compiler tests read the prefab library (`campaigns/prefabs/*.nbt`,
       # git-lfs); it lives in the content repo now (spec-0007 Step 0), checked out
-      # at the pinned SHA into ./campaigns. The ADR-0006 double-build byte-identity
-      # gate runs inside `cargo test --workspace` (tests/cli.rs).
+      # at the pinned SHA into ./campaigns. The build needs the tree's shape only;
+      # the partitions check the payloads out again where the tests read them.
       - uses: ./.github/actions/checkout-content
+        with: { lfs: "false" }
       # rust-toolchain.toml pins the channel + clippy/rustfmt components,
       # which rustup on the runner installs automatically.
       - uses: Swatinem/rust-cache@v2
@@ -342,22 +342,30 @@ jobs:
         run: bash tools/ci/fmt-workspaces.sh --check
       - name: cargo clippy -D warnings
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
-      # Every frame a test draws is drawn with Minecraft's own textures, read
-      # out of the pinned client jar (spec-0112 §6.1). The jar is never
-      # committed or cached in the repository: this is the job's one live
-      # Mojang fetch, checked on its bytes against versions.toml, and a red
-      # here is the network, never a frame.
-      - name: the pinned client jar (one verified fetch)
-        run: echo "DELVEWRIGHT_CLIENT_JAR=$(bash validation/client-jar-cache.sh --cache "$RUNNER_TEMP/client-jar" | tail -n 1)" >> "$GITHUB_ENV"
-      # Every test executable `cargo test --workspace` builds, run two at a
-      # time and each to its end, then the doc tests: an executable that is a
-      # sequence of `delvec` runs leaves most of the runner idle in their
-      # single-threaded stretches, and a second one fills them. The count of
-      # executables run against cargo's own listing is printed and must agree.
-      - name: cargo test (incl. determinism double-build gate)
-        run: python3 tools/ci/cargo-test-concurrent.py --jobs 2 --locked
-
-      # The viewer's interactive layer is JavaScript, so `cargo test` cannot run
+      # The suite's instruments (spec-0126 §1), at the literal versions the
+      # composite action carries and validation/check-versions.sh holds.
+      - uses: ./.github/actions/suite-instruments
+      # One instrumented build of every test binary, archived for the
+      # partitions: `cargo llvm-cov nextest-archive` is `cargo nextest archive`
+      # under cargo-llvm-cov's instrumentation flags (its 0.9.1 source,
+      # `archive_nextest`). The archive carries the test binaries, the
+      # `delvec` binary the tests spawn (`CARGO_BIN_EXE_delvec`), and the
+      # build-script outputs; nothing in it is rebuilt by a partition.
+      - name: the instrumented archive (every test binary, built once)
+        run: cargo llvm-cov nextest-archive --workspace --locked --archive-file target/nextest-archive.tar.zst
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rust-nextest-archive
+          path: target/nextest-archive.tar.zst
+          if-no-files-found: error
+          retention-days: 3
+      # The doc tests, which nextest cannot run (it lists only test binaries):
+      # ten on this tree, eight of them `compile_fail` proofs that a private
+      # surface stays private (`compiler::framing`). Uninstrumented: doc-test
+      # coverage needs nightly.
+      - name: cargo test --doc (the doc tests nextest does not run)
+        run: cargo test --doc --workspace --locked
+      # The viewer's interactive layer is JavaScript, so the Rust test run cannot run
       # it — and for as long as that was the whole story the camera had NO
       # executable coverage at all. A and D shipped swapped; the mapping was
       # reported wrong a second time by the owner, from her own hands, because
@@ -379,6 +387,244 @@ jobs:
       # the line above.
       - name: a label belongs to the model that drew it (node --test)
         run: node --test crates/delvec/tests/labels.test.mjs
+      - uses: ./.github/actions/runner-disk
+        if: always()
+        with: { step: report }
+
+  # The gallery's two detailed points are the fixtures most of the heavy
+  # tests copy (spec-0126 §4.2, `common::built`): each costs about ten
+  # minutes of instrumented `detail --all` on this runner, and a partition
+  # that built them itself ran its first consumer at 1,400–2,000 s
+  # (measured, run 41696974786). So they are built once per run, from the
+  # same archive and binary the partitions run — the cache key is the
+  # binary's bytes and the test executable's — and shipped to every partition.
+  rust-fixtures:
+    name: rust fixtures (the gallery points, built once)
+    needs: [changes, rust-build]
+    if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    # spec-0126 §5.4: the engine every test runs or spawns runs one thread
+    # (`crates/delvec/src/par.rs`), so a test is one core of the runner and
+    # the instrumented counters are not contended across threads. The count
+    # never changes what a build emits (ADR-0006); a test that needs the
+    # engine at more than one thread sets its own count.
+    env:
+      DELVEC_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/runner-disk
+        with: { step: start }
+      - uses: ./.github/actions/checkout-content
+      - uses: ./.github/actions/suite-instruments
+      - name: the pinned client jar (one verified fetch)
+        run: echo "DELVEWRIGHT_CLIENT_JAR=$(bash validation/client-jar-cache.sh --cache "$RUNNER_TEMP/client-jar" | tail -n 1)" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: rust-nextest-archive
+          path: ${{ runner.temp }}/archive
+      # The one test that builds both points into the cache, run exactly as a
+      # partition runs its tests (the layout below is the partition step's).
+      - name: the gallery's detailed points, built once from the archive
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/archive/nextest-archive.tar.zst"
+          mkdir -p target/llvm-cov-target/debug
+          cargo nextest list --archive-file "$archive" --extract-to target/llvm-cov-target --workspace-remap . --message-format json > target/nextest-list.json
+          ln target/llvm-cov-target/target/debug/delvec target/llvm-cov-target/debug/delvec
+          cargo llvm-cov nextest --no-report --archive-file "$archive" --extract-overwrite --workspace-remap . --profile ci -E 'test(=built_fixtures::the_gallery_points_are_built_once_per_run)'
+          du -sh target/llvm-cov-target/tmp/built
+          ls -la target/llvm-cov-target/tmp/built
+      - name: the fixtures' profile (one .profdata, merged into the report with the partitions')
+        run: |
+          set -euo pipefail
+          "$LLVM_PROFDATA" merge -sparse -o target/fixtures.profdata target/llvm-cov-target/*.profraw
+          ls -l target/fixtures.profdata
+      - uses: ./.github/actions/runner-disk
+        if: always()
+        with: { step: report }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rust-fixtures
+          path: |
+            target/llvm-cov-target/tmp/built
+            target/fixtures.profdata
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 3
+
+  rust-partition:
+    name: rust partition (${{ matrix.k }} of 13)
+    needs: [changes, rust-build, rust-fixtures]
+    if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    # spec-0126 §5.4: the engine every test runs or spawns runs one thread
+    # (`crates/delvec/src/par.rs`), so a test is one core of the runner and
+    # the instrumented counters are not contended across threads. The count
+    # never changes what a build emits (ADR-0006); a test that needs the
+    # engine at more than one thread sets its own count.
+    env:
+      DELVEC_THREADS: "1"
+    strategy:
+      # Every partition runs to its end: the census needs all N reports to say
+      # which tests ran where, and a failure in one says nothing about the rest.
+      fail-fast: false
+      matrix:
+        k: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+    outputs:
+      # N, read by the census from the matrix itself rather than typed again.
+      total: ${{ strategy.job-total }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/runner-disk
+        with: { step: start }
+      - uses: ./.github/actions/checkout-content
+      - uses: ./.github/actions/suite-instruments
+      # Every frame a test draws is drawn with Minecraft's own textures, read
+      # out of the pinned client jar (spec-0112 §6.1). The jar is never
+      # committed or cached in the repository: this is the job's one live
+      # Mojang fetch, checked on its bytes against versions.toml, and a red
+      # here is the network, never a frame.
+      - name: the pinned client jar (one verified fetch)
+        run: echo "DELVEWRIGHT_CLIENT_JAR=$(bash validation/client-jar-cache.sh --cache "$RUNNER_TEMP/client-jar" | tail -n 1)" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: rust-nextest-archive
+          path: ${{ runner.temp }}/archive
+      - uses: actions/download-artifact@v4
+        with:
+          name: rust-fixtures
+          path: ${{ runner.temp }}/fixtures
+      # Partition k of N of the one archive, instrumented. cargo-llvm-cov hands
+      # nextest `--extract-to target/llvm-cov-target`, so the binaries land
+      # under `target/llvm-cov-target/target/debug/`; the tests reach `delvec`
+      # by the path compiled into them, `target/llvm-cov-target/debug/delvec`,
+      # so the archive is laid out first and `delvec` hard-linked there — a
+      # hard link, not a symlink, because a tool that canonicalises the path
+      # it was handed (`handout.py`) must still print the path the test names
+      # (measured: `handout_script` red through a symlink on run 41696974786).
+      # The checkout stands at the same absolute path as the build's, so every
+      # other compiled-in path (`CARGO_MANIFEST_DIR`) resolves as built. Every
+      # test runs to its end; the determinism double-build gate (`cli.rs`)
+      # runs inside whichever partition its name hashes to.
+      - name: cargo nextest, partition k of N, instrumented
+        env:
+          PARTITION: ${{ matrix.k }}
+          PARTITIONS: ${{ strategy.job-total }}
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/archive/nextest-archive.tar.zst"
+          mkdir -p target/llvm-cov-target/debug target/llvm-cov-target/tmp
+          cargo nextest list --archive-file "$archive" --extract-to target/llvm-cov-target --workspace-remap . --message-format json > target/nextest-list.json
+          ln target/llvm-cov-target/target/debug/delvec target/llvm-cov-target/debug/delvec
+          cp -a "$RUNNER_TEMP/fixtures/llvm-cov-target/tmp/built" target/llvm-cov-target/tmp/built
+          ls target/llvm-cov-target/tmp/built
+          cargo llvm-cov nextest --no-report --archive-file "$archive" --extract-overwrite --workspace-remap . --profile ci --partition "hash:$PARTITION/$PARTITIONS"
+      # The partition's counters, merged once here into one indexed profile,
+      # so the census job merges N files instead of thousands of raw ones. The
+      # count of raw profiles is printed: one per test process, plus one per
+      # instrumented `delvec` a test spawned.
+      - name: the partition's profile (one .profdata) and its JUnit report
+        if: always()
+        run: |
+          set -euo pipefail
+          n="$(ls target/llvm-cov-target/*.profraw 2>/dev/null | wc -l | tr -d ' ')"
+          echo "partition: $n raw profiles"
+          [ "$n" -gt 0 ] || { echo "no raw profile was written: the partition ran nothing instrumented" >&2; exit 1; }
+          "$LLVM_PROFDATA" merge -sparse -o target/partition.profdata target/llvm-cov-target/*.profraw
+          ls -l target/partition.profdata target/nextest/ci/junit.xml
+      - uses: ./.github/actions/runner-disk
+        if: always()
+        with: { step: report }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rust-partition-${{ matrix.k }}
+          path: |
+            target/nextest/ci/junit.xml
+            target/partition.profdata
+          if-no-files-found: error
+          retention-days: 3
+
+  rust:
+    name: rust (fmt, clippy, test)
+    needs: [changes, rust-build, rust-fixtures, rust-partition]
+    # Runs whenever the family was reached, success or not — a required context
+    # that is skipped because a partition failed would PASS branch protection —
+    # and its first step turns any non-green job it gathers into its own red.
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: every job this one gathers is green
+        env:
+          BUILD: ${{ needs.rust-build.result }}
+          FIXTURES: ${{ needs.rust-fixtures.result }}
+          PARTITIONS: ${{ needs.rust-partition.result }}
+        run: |
+          echo "rust build: $BUILD; rust fixtures: $FIXTURES; rust partitions: $PARTITIONS"
+          [ "$BUILD" = "success" ] && [ "$FIXTURES" = "success" ] && [ "$PARTITIONS" = "success" ] || { echo "a job this one gathers is not green" >&2; exit 1; }
+      # Whole history: the coverage floor proves its record's tree is an
+      # ancestor of the commit it judges (spec-0126 §2.2).
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/suite-instruments
+      - uses: actions/download-artifact@v4
+        with:
+          name: rust-nextest-archive
+          path: ${{ runner.temp }}/archive
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: rust-partition-*
+          path: partitions
+      - uses: actions/download-artifact@v4
+        with:
+          name: rust-fixtures
+          path: ${{ runner.temp }}/fixtures
+      # The archive's own listing is the census's denominator: every test it
+      # lists (ignored ones aside) must appear in exactly one partition's
+      # JUnit report, and every partition must have run something. `--extract-to`
+      # lays the binaries where `cargo llvm-cov report` looks for them.
+      - name: the archive's listing (the census's denominator)
+        run: |
+          set -euo pipefail
+          mkdir -p target/llvm-cov-target
+          cargo nextest list --archive-file "$RUNNER_TEMP/archive/nextest-archive.tar.zst" --extract-to target/llvm-cov-target --workspace-remap . --message-format json > target/nextest-list.json
+      - name: the partition census (every listed test ran in exactly one partition)
+        env:
+          PARTITIONS: ${{ needs.rust-partition.outputs.total }}
+        run: python3 tools/ci/check-partitions.py --list target/nextest-list.json --junit-dir partitions --partitions "$PARTITIONS"
+      # The N partition profiles and the fixtures job's merged into the one
+      # profile the report reads (the fixtures' `detail --all` is engine
+      # coverage the one-job run had):
+      # cargo-llvm-cov names it `<workspace directory>.profdata` under
+      # `target/llvm-cov-target` and, finding no raw profiles beside it, reads
+      # it as it stands (its 0.9.1 source, `merge_profraw`). The objects come
+      # from the archive's `binaries-metadata.json`.
+      - name: the coverage report (region, line, function) over every partition
+        run: |
+          set -euo pipefail
+          ws="$(cargo metadata --format-version 1 --no-deps | python3 -c 'import json, os, sys; sys.stdout.reconfigure(newline="\n"); print(os.path.basename(json.load(sys.stdin)["workspace_root"]))')"
+          "$LLVM_PROFDATA" merge -sparse -o "target/llvm-cov-target/$ws.profdata" partitions/*/partition.profdata "$RUNNER_TEMP/fixtures/fixtures.profdata"
+          cargo llvm-cov report --json --output-path target/coverage.json --nextest-archive-file "$RUNNER_TEMP/archive/nextest-archive.tar.zst"
+      - name: the run's measurements (JUnit per-test times per partition, coverage export, listing)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-suite-measurements
+          path: |
+            partitions/*/nextest/ci/junit.xml
+            target/nextest-list.json
+            target/coverage.json
+          if-no-files-found: warn
+      # Every test file of the audited tree has a row, and every removal its
+      # proof (spec-0126 §6): merges keep their assertions and DW codes.
+      - name: the suite audit table holds (rows, verdicts, proofs)
+        run: python3 tools/ci/check-suite-audit.py --merges
+      # The coverage floor (spec-0126 §2.2), over the merged report: region
+      # coverage of production source may not fall below the record's floor by
+      # more than its measured run-to-run instability.
+      - name: the coverage floor (region coverage of production source)
+        run: python3 tools/ci/coverage-floor.py --report target/coverage.json
 
   # What crates.io would receive, built the way a stranger's `cargo install`
   # builds it. Its own job rather than steps of `rust`: it shares no build with
@@ -1208,6 +1454,16 @@ jobs:
   # include the concurrent append/read-back case, on the Windows release
   # target (ADR-0023). The test count is asserted so a filter that matched
   # nothing cannot read as green.
+  #
+  # Its place in the suite (spec-0126 §5): the job is a build and one
+  # module's tests (measured: 8.3, 13.9 and 17.5 min on runs 42004265302,
+  # 41990592184 and 42015765769, the build 4.5–12.9 min of it and the 45
+  # tests 172–226 s), with no time bound of its own.
+  # It re-runs on a second platform tests the partitions already run: every
+  # test it selects is a test of the archive's listing, run in exactly one
+  # partition, at one engine thread. It is not a
+  # shard, so the census does not count it; it runs library unit tests, so
+  # the audit table, whose rows are integration-test files, has no row for it.
   rust-windows:
     name: rust (Windows, reach module)
     needs: changes
@@ -1359,8 +1615,8 @@ jobs:
       #     build`, `clippy`, `test` and this step alike until it is classified,
       #     and it then begins life at zero bindings.
       #   * a CORPUS change cannot be pushed past it. The same assertion is a
-      #     `#[test]` in that module, so it runs inside `rust`'s `cargo test
-      #     --workspace` as well as here. This step exists on top of the test
+      #     `#[test]` in that module, so it runs inside `rust`'s nextest run
+      #     of the workspace as well as here. This step exists on top of the test
       #     because a table is what a reader acts on and an assertion message is
       #     not.
       # It sits in this job because this job already runs the grammar through
@@ -2288,7 +2544,7 @@ jobs:
       # spec-0031 acceptance criterion 9 — the LIFT, authored entirely in campaign
       # JSON. The compiler gains nothing for it: `tests/fixtures/lift` is the
       # owner's timing table written as the steps of one `sequence` over the five
-      # v0.10 primitives, and `tests/v10_lift.rs` reads it back off the emission.
+      # v0.10 primitives, and `tests/it/v10_lift.rs` reads it back off the emission.
       # This pass is what stops that from being a compile-time-only green: the
       # campaign really loads, and BOTH rides' `teleport_<key>` templates — step 5
       # of the table, the only step this tier has a generated template for — run

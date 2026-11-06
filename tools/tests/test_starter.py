@@ -1,6 +1,6 @@
 """`scripts/starter.py` answers an open side as it answers a seam (spec-0123 §5.3).
 
-The starter is judged whole by `crates/delvec/tests/starter_program.rs`
+The starter is judged whole by `crates/delvec/tests/it/starter_program.rs`
 (every gallery place, `detail --check`, unedited); this file pins the one
 shape that test cannot name by itself: a side the place declares open is left
 open in the ring from the walk plane up and is the `via` of a `walk` edge to

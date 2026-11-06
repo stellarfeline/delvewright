@@ -16,7 +16,7 @@ The jar is EULA-bound and is never committed, so CI has none and can only check
 the table against itself. The single occasion a jar IS in hand is the occasion
 the table changes — ADR-0009's pin moving — and that is this command. So the
 proof runs here: the `derive-block-appearance` example writes the table, and the
-jar-gated half of `crates/delvec/tests/preview_palette.rs` re-derives every entry
+jar-gated half of `crates/delvec/tests/it/preview_palette.rs` re-derives every entry
 and compares. A regeneration whose proof is a test somebody may remember to type
 is a regeneration nobody proved.
 

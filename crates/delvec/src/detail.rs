@@ -174,7 +174,11 @@ fn run(
             .join(", "),
     );
     if check {
-        let leaks = leak_check(&campaign, &library, &prepared, prefabs_dir, json)?;
+        // The whole's binding notes — every proof's census over the whole
+        // campaign, the same on every check of every place — are held from
+        // here and written to one file, named on one counted line; a refusal
+        // is printed where it is raised.
+        let held = delvec::compiler::notes::hold();
         // `--check` is the commit's own `prepare`, `judge_run`, write and
         // battery, the write landing in a scratch copy of the campaign and
         // the library instead of in them: the battery the commit runs over
@@ -182,7 +186,12 @@ fn run(
         // So every refusal the commit can give, `--check` gives — there is no
         // list of battery observers to keep in step — and nothing of the
         // campaign or the library is written.
-        let built = check_battery(campaign_dir, &campaign, prefabs_dir, &prepared, lang, json)?;
+        let judged = leak_check(&campaign, &library, &prepared, prefabs_dir, json).and_then(|l| {
+            check_battery(campaign_dir, &campaign, prefabs_dir, &prepared, lang, json)
+                .map(|b| (l, b))
+        });
+        write_notes(campaign_dir, &held.take())?;
+        let (leaks, built) = judged?;
         eprintln!(
             "detail --check: {places} would commit against the whole as it stands; nothing \
              written. {binding}; {leaks}; {built}; peak rss: {rss}",
@@ -903,6 +912,36 @@ fn judge_run(
         line = binding.line()
     );
     Err(1)
+}
+
+/// Where `--check` writes the whole's binding notes, under the campaign's
+/// output directory.
+pub(crate) fn notes_path(campaign_dir: &Path) -> std::path::PathBuf {
+    campaign_dir.join(".out").join("detail-check-notes.txt")
+}
+
+/// Write the whole's binding notes `--check` held to [`notes_path`], and say
+/// how many there are and where, on one line.
+fn write_notes(campaign_dir: &Path, notes: &[String]) -> Result<(), u8> {
+    let path = notes_path(campaign_dir);
+    let mut text = notes.join("\n");
+    if !text.is_empty() {
+        text.push('\n');
+    }
+    if let Err(e) = path
+        .parent()
+        .map_or(Ok(()), std::fs::create_dir_all)
+        .and_then(|()| std::fs::write(&path, text))
+    {
+        eprintln!("internal error: cannot write {}: {e}", path.display());
+        return Err(EXIT_INTERNAL);
+    }
+    eprintln!(
+        "-- what the whole's proofs examined: {} line(s), the campaign's census; written to {}",
+        notes.len(),
+        path.display()
+    );
+    Ok(())
 }
 
 /// **The leak proof for the places this run checks** (`DW0838`): the whole

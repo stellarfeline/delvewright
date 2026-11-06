@@ -134,7 +134,7 @@ crate::dw_code! {
 
 /// The table's own revision. Bumped whenever the exported JSON changes by a
 /// single byte **from a version that has merged**, which
-/// `crates/dsl/tests/metrics.rs` enforces against a committed digest: a consumer
+/// `crates/dsl/tests/it/metrics.rs` enforces against a committed digest: a consumer
 /// that pins a version is pinning values, and values that move under a fixed
 /// version are the drift the pin was bought to prevent.
 ///

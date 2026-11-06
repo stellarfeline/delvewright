@@ -320,7 +320,7 @@ impl BodyAnswers {
 /// so the compiler makes no claim about the moves it makes and a locomotion
 /// declaration on it could change no verdict. It declares no `skin` either — the
 /// exclusion holds for both properties, and the schema says so
-/// (`crates/dsl/tests/body_skin_sites.rs`). It becomes a member the day the lane
+/// (`crates/dsl/tests/it/body_skin_sites.rs`). It becomes a member the day the lane
 /// proof reasons about how its bodies move — and it joins here, through this
 /// same type, rather than through a field of its own.
 #[derive(Clone, Copy, Debug)]
@@ -712,7 +712,7 @@ pub fn body_watch_sites(c: &crate::envelope::Campaign) -> Vec<BodyWatchSite<'_>>
 /// does owe is the **same population**: a body class that declares a skin and is
 /// missing here would keep an un-namespaced texture and collide with every other
 /// delve, silently. `body_skin_sites_mut_is_the_same_walk`
-/// (`crates/dsl/tests/body_skin_sites.rs`) pins that over a campaign carrying one
+/// (`crates/dsl/tests/it/body_skin_sites.rs`) pins that over a campaign carrying one
 /// body of every class in [`BodyRef::ALL_CLASSES`] — the closed set the schema
 /// export is compared against in the same file, so a new body class turns that
 /// coverage red and both walks are visited together.

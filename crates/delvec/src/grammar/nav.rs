@@ -20,7 +20,7 @@
 //! What lives here is the part that is genuinely this crate's: which of **its**
 //! blocks a body can occupy and which of them it can stand on, plus the rule
 //! library's own travel-axis convention. `tests/support/mod.rs` and
-//! `tests/grammar_staging.rs` both read the model through this module.
+//! `tests/it/grammar_staging.rs` both read the model through this module.
 
 use std::collections::BTreeSet;
 

@@ -1041,7 +1041,7 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
             }
         },
     );
-    eprintln!(
+    crate::note!(
         "{}",
         sweep.line(program.len() - templates - tiles, templates, tiles)
     );

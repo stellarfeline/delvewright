@@ -778,7 +778,7 @@ pub enum Verb {
     /// **The selection is total over bodies.** Emission is a single `tp
     /// @e[<box>,tag=!dw_fixture] <cell>` with no `type=`, no `limit=` and no
     /// `sort=` — every body in the volume moves, and
-    /// `crates/delvec/tests/v10_teleport.rs` asserts that from the emitted
+    /// `crates/delvec/tests/it/v10_teleport.rs` asserts that from the emitted
     /// selector rather than from anyone's memory. A machinery-**type** exemption
     /// of the kind a `lethal_volumes[]` entry must carry was considered and
     /// **rejected**: an NPC is a body plus a co-located `minecraft:interaction`

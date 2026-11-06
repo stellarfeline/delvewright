@@ -187,7 +187,7 @@ const TELEPORT_WITNESS_TYPES: [(&str, &str); 5] = [
 /// **puts one entity of every witness type in the volume and asserts every one of
 /// them arrived**.
 ///
-/// The compile-time test (`crates/delvec/tests/v10_teleport.rs`) proves the
+/// The compile-time test (`crates/delvec/tests/it/v10_teleport.rs`) proves the
 /// compiler wrote no filter beyond the one class exclusion (`tag=!dw_fixture`,
 /// [`crate::compiler::affordance`]). That is only half of "the selection is total over
 /// bodies": the other half is vanilla's own `@e[<box>]` semantics, which no Rust

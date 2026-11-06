@@ -181,7 +181,7 @@ impl TrapTrigger {
 /// registry's ids that [`TrapTrigger::is_trigger_block`] accepts for a
 /// [`TrapTrigger::STEPPED`] kind. Read from `crates/dsl/data/blocks-1.21.11.json`
 /// rather than listed, so a pin that adds a plate adds it here;
-/// `crates/delvec/tests/stepped_blocks_tag.rs` holds the set equal to vanilla's
+/// `crates/delvec/tests/it/stepped_blocks_tag.rs` holds the set equal to vanilla's
 /// own `#pressure_plates` tag plus the tripwire string.
 pub fn stepped_blocks() -> Vec<&'static str> {
     crate::blocks::BlockRegistry::v1_21_11()

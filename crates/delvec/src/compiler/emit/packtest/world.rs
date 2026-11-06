@@ -12,7 +12,7 @@ pub(super) fn emit_sealed_state_packtest(plan: &Plan, out: &mut BuildOutput) {
     //   * the five gamerules — 1.21.11 gamerule *values* have NO `execute
     //     if`/predicate read-back in vanilla, so they cannot be asserted in-game.
     //     Their presence and exact 1.21.11 form is a compile-time regression
-    //     instead (crates/delvec/tests/emit.rs::environment_sealing_emitted),
+    //     instead (crates/delvec/tests/it/emit.rs::environment_sealing_emitted),
     //     which is the authoritative sealing assertion.
     // Verified live: `function <ns>:setup` sets daytime to 6000 and this assert
     // passes on Fabric + PackTest 2.4.0.

@@ -361,7 +361,8 @@ impl Station4 {
     /// Write the hall as one piece, cut into tiles along z at the vanilla
     /// 48-per-axis template cap, under the test's temp root.
     pub fn prefabs(&self, tag: &str) -> PathBuf {
-        let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("station-4-prefabs-{tag}"));
+        let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
+            .join(format!("station-4-prefabs-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let id = "station-4";

@@ -36,7 +36,7 @@ rewrite, and the reader says what it saw.
 
 | Code | Meaning |
 |------|---------|
-| `DW0543` | **A prefab metadata file carries a key this delvec does not model.** Warning, `compiler::registry::PrefabRegistry::load_dir`, reported per file at every `validate`/`analyze`/`build`. The message names every unknown key, at the document root and per anchor, and states the two things it can be: a library newer than this engine (upgrade `delvec` to consume the key), or a misspelling of a key the document does define, in which case whatever it was meant to say is not being said. The prefab **loads** — it is not skipped, and this is not `DW0346`. Binding: the pinned content library must produce zero of these, which is what makes it a tripwire rather than noise (`tests/registry_load.rs`). |
+| `DW0543` | **A prefab metadata file carries a key this delvec does not model.** Warning, `compiler::registry::PrefabRegistry::load_dir`, reported per file at every `validate`/`analyze`/`build`. The message names every unknown key, at the document root and per anchor, and states the two things it can be: a library newer than this engine (upgrade `delvec` to consume the key), or a misspelling of a key the document does define, in which case whatever it was meant to say is not being said. The prefab **loads** — it is not skipped, and this is not `DW0346`. Binding: the pinned content library must produce zero of these, which is what makes it a tripwire rather than noise (`tests/it/registry_load.rs`). |
 
 ### DW1062 — the prefab library a verb reads is not there (`compiler::registry`)
 

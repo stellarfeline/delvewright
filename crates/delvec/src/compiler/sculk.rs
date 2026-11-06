@@ -777,16 +777,17 @@ pub fn check(
 ) -> Result<SculkBinding, Failure> {
     let writes = runtime_writes(plan);
     let (rest, refused) = check_rest(blocks, &writes);
-    eprintln!(
+    crate::note!(
         "sculk rest: {} acting sculk cell(s) of the assembled world and {} runtime write(s) \
          judged by the one rest rule",
-        rest.cells, rest.writes
+        rest.cells,
+        rest.writes
     );
     if let Some(f) = refused {
         return Err(f);
     }
     let (reach, refused) = prove_reach(blocks, &writes);
-    eprintln!("{}", reach.line());
+    crate::note!("{}", reach.line());
     if let Some(f) = refused {
         return Err(f);
     }
@@ -828,7 +829,7 @@ pub fn check(
         }
     }
     let (cats, refused) = prove_catalysts(&catalysts, &opened, &body_roots, &mob_roots);
-    eprintln!("{}", cats.line());
+    crate::note!("{}", cats.line());
     if let Some(f) = refused {
         return Err(f);
     }

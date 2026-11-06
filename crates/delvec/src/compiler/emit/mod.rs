@@ -414,7 +414,7 @@ fn emit_all(
                 message: e.message,
             }
         })?;
-        eprintln!("{}", atmosphere_binding(plan, &map).line());
+        crate::note!("{}", atmosphere_binding(plan, &map).line());
         map
     };
 
@@ -476,13 +476,13 @@ fn emit_all(
     let whole = assembled;
     let judged = boundary::judged_columns(plan).and_then(|(lo, hi)| whole.judged_within(lo, hi));
     if let Some((_, j)) = &judged {
-        eprintln!("{}", j.line());
+        crate::note!("{}", j.line());
     }
-    eprintln!("{}", whole.store_line(judged.as_ref().map(|(a, _)| a)));
+    crate::note!("{}", whole.store_line(judged.as_ref().map(|(a, _)| a)));
     // The build's cost, computed before the whole-map stages start and
     // written as a ledger that holds nothing measured (ADR-0037 §3).
     let cost = crate::compiler::cost::ResourceCost::of(plan, whole, judged.as_ref());
-    eprintln!("{}", cost.line());
+    crate::note!("{}", cost.line());
     put_json(&mut out, "validation/resource-cost.json", &cost.to_json());
     // The banks keep no more than the cost states (ADR-0037 §3).
     crate::compiler::nav::set_bank_cap(cost.bank_cap());
@@ -531,7 +531,7 @@ fn emit_all(
         &plan.loot,
         &plan.collect_fills,
     );
-    eprintln!("{}", containers.line());
+    crate::note!("{}", containers.line());
     if !plan.loot.is_empty()
         || !plan.collect_fills.is_empty()
         || !plan.traps.is_empty()
@@ -626,7 +626,7 @@ fn emit_all(
             &plan.signs,
             &sidecars,
         );
-        eprintln!("{}", binding.line());
+        crate::note!("{}", binding.line());
         proof.map_err(|e| BuildFailure::Diagnostic {
             code: e.code,
             message: e.message,
@@ -654,7 +654,7 @@ fn emit_all(
     // every reader of the critical path takes (`holders::final_walk`).
     let owned_holders = crate::compiler::holders::own_holders(plan, &entity_holders);
     let (walked, relight) = crate::compiler::holders::final_walk(plan, assembled, &owned_holders);
-    eprintln!("{}", relight.binding.line());
+    crate::note!("{}", relight.binding.line());
     if let Some(diag) = relight.diagnostics.first() {
         return Err(BuildFailure::Diagnostic {
             code: diag.code,
@@ -717,7 +717,7 @@ fn emit_all(
             let stances = walked.stances;
             let stance_verdict = walked.verdict;
             let census = census.with_stance(unsupported, unreachable);
-            eprintln!("{}", census.line());
+            crate::note!("{}", census.line());
             census
                 .check_declared(&crate::compiler::holders::anchors_by_cell(&plan.anchors))
                 .map_err(|e| BuildFailure::Diagnostic {
@@ -739,7 +739,7 @@ fn emit_all(
                     code: e.code,
                     message: e.message,
                 })?;
-            eprintln!(
+            crate::note!(
                 "holder edits: {edits} runtime edit(s) examined against {} holder entit(y/ies), 0 \
              reaching a holder (DW1038).",
                 owned_holders.len()
@@ -759,7 +759,7 @@ fn emit_all(
     // verdict, zeroes included.
     let body_answers = {
         let (binding, verdict) = crate::compiler::bodies::check(plan, &world);
-        eprintln!("{}", binding.line());
+        crate::note!("{}", binding.line());
         verdict.map_err(|e| BuildFailure::Diagnostic {
             code: e.code,
             message: e.message,
@@ -781,7 +781,7 @@ fn emit_all(
             if let Some((whole, eyes, best, worst)) =
                 crate::compiler::horizon::standing_reach(plan, &biome_map, place, &p.biome, &walk)
             {
-                eprintln!(
+                crate::note!(
                     "atmosphere reach: `{place}` — {whole} of {eyes} standing eye(s) read `{}` \
                      whole; the best reads {:.1}% of it, the worst {:.1}%",
                     p.biome,
@@ -904,7 +904,7 @@ fn emit_all(
     // before the verdict.
     {
         let (binding, findings) = crate::compiler::approach::check_held(plan, &population, &moves);
-        eprintln!("{}", binding.line());
+        crate::note!("{}", binding.line());
         if let Some((first, rest)) = findings.split_first() {
             for extra in rest {
                 eprintln!("{} [error] build: {}", extra.code, extra.message);
@@ -946,7 +946,7 @@ fn emit_all(
     {
         crate::compiler::acts::fix_walks(plan, &branch_takes);
         let (acts, refusals) = crate::compiler::promise::check_acts_found(plan, &world);
-        eprintln!("{}", acts.line());
+        crate::note!("{}", acts.line());
         refuse_first(refusals)?;
     }
     // spec-0117 §6: the press proof the placed world decides — a trigger at a
@@ -956,7 +956,7 @@ fn emit_all(
     {
         let (proof, verdict) =
             crate::compiler::pressable::check(plan, &assembled.blocks, &assembled.gate_seals);
-        eprintln!("{}", proof.line());
+        crate::note!("{}", proof.line());
         put_json(&mut out, "validation/press-proof.json", &proof.to_json());
         if let Err(f) = verdict {
             return Err(BuildFailure::Diagnostic {
@@ -977,14 +977,14 @@ fn emit_all(
     let load = crate::compiler::view::beat::load_blocks(plan, &world, &picture);
     let attached_refusal = {
         let attached = crate::compiler::attached::judge_over(plan, &load);
-        eprintln!("{}", attached.line());
+        crate::note!("{}", attached.line());
         attached.refusal()
     };
     // DW1076: every block of the same load world reads as resting on what
     // holds it — reported, never refused; the binding is printed every build.
     {
         let resting = crate::compiler::resting::judge(plan, &load);
-        eprintln!("{}", resting.line());
+        crate::note!("{}", resting.line());
         warnings.extend(resting.warnings());
     }
     drop(load);
@@ -1051,7 +1051,7 @@ fn emit_all(
             .iter()
             .map(|f| crate::admit::structure::decompressed_len(&structures[*f]))
             .sum();
-        eprintln!(
+        crate::note!(
             "shipped templates: {} template(s) re-encoded as placed, {decompressed} byte(s) \
              decompressed in all, at most {TEMPLATE_DECODE_BYTES} byte(s) (or one template) \
              decoded at once (ADR-0037 §5 item 3)",
@@ -1124,7 +1124,7 @@ fn emit_all(
                 declared: plan.campaign.quests.content.pulses.len(),
                 rows: Vec::new(),
             };
-            eprintln!("{}", g.line());
+            crate::note!("{}", g.line());
             if let Some(p) = plan.campaign.quests.content.pulses.first() {
                 return Err(BuildFailure::Diagnostic {
                     code: crate::compiler::pulse::DW_PULSE_UNHEARD,
@@ -1155,7 +1155,7 @@ fn emit_all(
             .map(|(_, _, r)| r.as_slice())
             .unwrap_or(&[]);
         let (music, verdict) = crate::compiler::music::measure(plan, routes, &moves, &actor_moves);
-        eprintln!("{}", music.line());
+        crate::note!("{}", music.line());
         verdict.map_err(|f| BuildFailure::Diagnostic {
             code: f.code,
             message: f.message,
@@ -1193,7 +1193,7 @@ fn emit_all(
     let (ledger, placing_lines) =
         crate::compiler::placed::ledger_of_functions(plan, &mut functions);
     let unplaceable = ledger.unplaceable();
-    eprintln!(
+    crate::note!(
         "placements ledger: {} row(s) over {placing_lines} placing line(s) of the functions that \
          place outside the templates; {} body row(s) no frame's world can hold as written{}",
         ledger.rows.len(),
@@ -1222,9 +1222,9 @@ fn emit_all(
     let mut refusals: Vec<String> = attached_refusal.into_iter().collect();
     if assembles_world(plan) {
         let writes = crate::compiler::attached::judge_writes(plan, structures, &functions);
-        eprintln!("{}", writes.sequence.line());
-        eprintln!("{}", writes.by_chunk.line());
-        eprintln!("{}", writes.runtime.line());
+        crate::note!("{}", writes.sequence.line());
+        crate::note!("{}", writes.by_chunk.line());
+        crate::note!("{}", writes.runtime.line());
         refusals.extend(writes.sequence.refusal());
         refusals.extend(writes.runtime.refusal());
     }
@@ -1382,7 +1382,7 @@ fn emit_all(
     // spec-0018 criterion 1: the party-division checks state what they bound,
     // counted off the suite just emitted.
     let party = packtest::party_binding(plan, &out);
-    eprintln!("{}", party.line());
+    crate::note!("{}", party.line());
     put_json(&mut out, "validation/party-division.json", &party.to_json());
 
     // ---- creator overlay (playtest-only; spec-0006) ----
@@ -1511,13 +1511,13 @@ fn emit_all(
             &mut out,
         );
         for line in &review.lines {
-            eprintln!("{line}");
+            crate::note!("{line}");
         }
     }
     // spec-0091: the served view distance, what the build judged against it
     // (every showcase camera and cutscene shot — a refusal stopped the build
     // before here), and the cost stated to the host.
-    eprintln!(
+    crate::note!(
         "{}",
         crate::compiler::served::Binding {
             chunks: delvewright_dsl::viewdistance::chunks(plan.campaign),
@@ -1534,7 +1534,7 @@ fn emit_all(
     // Read off the finished tree, after every emitter, so it reaches templates
     // not yet written (`crate::compiler::solo`).
     let solo = crate::compiler::solo::isolate(&plan.namespace, &mut out);
-    eprintln!("{}", solo.line());
+    crate::note!("{}", solo.line());
     put_json(&mut out, "validation/packtest-solo.json", &solo.to_json());
     // ---- a template that writes a pressable's cell lays it back ----
     // The world is shared by every batch; a pressable's block is what
@@ -1547,7 +1547,7 @@ fn emit_all(
             .collect::<Vec<_>>(),
         &mut out,
     );
-    eprintln!("{}", handback.line());
+    crate::note!("{}", handback.line());
     put_json(
         &mut out,
         "validation/packtest-handback.json",
@@ -1558,7 +1558,7 @@ fn emit_all(
     // A score belongs to a name, and PackTest reuses dummy names across a
     // suite (`crate::compiler::freshbody`).
     let fresh = crate::compiler::freshbody::fresh_bodies(&plan.namespace, &mut out);
-    eprintln!("{}", fresh.line());
+    crate::note!("{}", fresh.line());
     put_json(&mut out, "validation/packtest-fresh.json", &fresh.to_json());
 
     // ---- the checks read off the finished tree ----

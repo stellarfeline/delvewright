@@ -441,7 +441,7 @@ reads as a zero rather than as a silence. What no campaign document here can
 reach is a `DW0780` refusal itself: areas stand `AREA_SPACING` apart and the
 solver computes every seated position, so an authored document has no surface on
 which to move a piece off its seam. The refusal is a self-check over the solver's
-own layout, and its perturbations live in `crates/delvec/tests/face_contract.rs`
+own layout, and its perturbations live in `crates/delvec/tests/it/face_contract.rs`
 — a mated piece detached by one block, and a pair that touches and declares
 nothing across the plane it touches on.
 

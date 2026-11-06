@@ -295,10 +295,10 @@ repo = "stellarfeline/delvewright-campaigns"
 #
 # WHAT CARRIES EACH CLAIM. `tools/ci/check-pins.py` holds this `sha` equal to
 # the `content-repo` entry in `.github/pins.toml`.
-# `crates/delvec/tests/registry_load.rs` reads every document at the pin and
+# `crates/delvec/tests/it/registry_load.rs` reads every document at the pin and
 # DERIVES how many declare `waterline_y`, so that count is never retyped here.
 # `DW0735` says a state that omits a shape-carrying property drops the geometry
-# the property assembles; the library sweep (`crates/delvec/tests/admit_library.rs`)
+# the property assembles; the library sweep (`crates/delvec/tests/it/admit_library.rs`)
 # asks it of every admitted piece on every run and prints its own binding count
 # there, which is where that number belongs.
 sha = "c1e29e0c62ed6fde43f35a517d2470c4dde9f0ba"
@@ -395,6 +395,20 @@ beet_version = "0.116.0"
 # collection or assertion behaviour moves a required check's verdict.
 # Consumed by: .github/workflows/ci.yml (skin toolchain, both tool-test jobs).
 pytest_version = "9.1.1"
+# The Rust suite's three instruments (spec-0126). cargo-nextest runs the suite
+# one process per test and writes the JUnit report whose per-test times judge the
+# budget; cargo-llvm-cov reads region coverage out of that same run, which the
+# coverage floor (`tools/ci/coverage-floor.py`) judges; cargo-mutants is the
+# second instrument a test removal is proven by (spec-0126 §3.3), run by
+# `tools/ci/test-kill-set.sh`. Each is an instrument of a required check or of
+# the proof a removal commits, so each is named literally.
+# Consumed by: .github/workflows/ci.yml (the `rust` job installs nextest and
+# llvm-cov), tools/ci/test-coverage-map.sh and tools/ci/test-kill-set.sh (each
+# refuses an installed version other than these), and the `instrument` block of
+# .github/coverage-baseline.json.
+nextest_version = "0.9.148"
+llvm_cov_version = "0.9.1"
+mutants_version = "27.1.0"
 
 # The two READINGS OF THE PLUGIN BY THE FORMAT'S OWN IMPLEMENTATIONS
 # (spec-0063 §8). `tools/ci/check-skill-page.py` is this project's judgement of the
