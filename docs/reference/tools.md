@@ -39,7 +39,7 @@ they disagree. They are not the same *bytes*: the archive is stripped and the
 has both figures, measured on one host — they move by a megabyte between
 toolchains, so compare only numbers taken the same way).
 
-**How big is all this?** `delvec` is ~9 MB to download and ~24 MB installed —
+**How big is all this?** `delvec` is ~15 MB to download and ~43 MB installed —
 one binary carrying the whole creator, the GPU render stack included; the
 prefab library is another ~95 KB; nothing else in the authoring loop is large.
 The measured inventory — per platform, what each install path costs, what the
