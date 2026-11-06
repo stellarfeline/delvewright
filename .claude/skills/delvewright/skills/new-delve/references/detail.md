@@ -81,7 +81,10 @@ edit touched, a moved door included); `delvec --prefabs "$DELVEWRIGHT_PREFABS" d
 and the plan row — each through a temporary file renamed into place, so a check
 running at that instant reads the old file or the new one, never a torn one —
 and then runs the battery over the committed whole. So every refusal the
-commit can give, `--check` gives at the same exit. Up to **N** authors are in
+commit can give, `--check` gives at the same exit. `--check` prints the
+whole's census — every proof's binding line over the whole campaign, the same
+on every check — as one counted line naming the file it wrote them to,
+`<campaign-dir>/.out/detail-check-notes.txt`; the commit prints them. Up to **N** authors are in
 flight at once, N the line `delvec --prefabs "$DELVEWRIGHT_PREFABS" allocation
 <campaign-dir> --all` prints on stderr, `concurrency: N = min(P, max(1, C /
 2))` — P the places with no passing program (no `details[]` row, or a row

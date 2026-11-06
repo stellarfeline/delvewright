@@ -971,7 +971,7 @@ impl<'a> Plan<'a> {
         // A relinked plan is the same placement measured a second time; its
         // binding line was printed by the first build and is not printed twice.
         if announce {
-            eprintln!("{}", binding.line(placed));
+            crate::note!("{}", binding.line(placed));
         }
         if let Some(finding) = binding.finding(placed, campaign.site_plan.is_some()) {
             warnings.push(finding);
