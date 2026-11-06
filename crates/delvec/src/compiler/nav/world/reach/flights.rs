@@ -328,8 +328,17 @@ fn read<C: Codes + ?Sized>(codes: &C, c: [i16; 3]) -> Code {
     codes.code([i32::from(c[0]), i32::from(c[1]), i32::from(c[2])])
 }
 
-/// The recorded flight of `key` over `codes`, if one met the same cells.
-pub(super) fn lookup<C: Codes + ?Sized>(key: &Key, codes: &C) -> Option<Kept> {
+/// The runs of entries a lookup walked, in order: what [`replay`] reads
+/// again. Entries never move once stored (a run is split by shortening a
+/// node, never by moving its entries), so a path stays readable after the
+/// lock is let go.
+pub(super) type Path = Vec<(u32, u32)>;
+
+/// The recorded flight of `key` over `codes`, if one met the same cells;
+/// `path` is left holding the runs walked (those of a flight that did not
+/// match are left there too, for nothing).
+pub(super) fn lookup<C: Codes + ?Sized>(key: &Key, codes: &C, path: &mut Path) -> Option<Kept> {
+    path.clear();
     #[cfg(test)]
     if off() {
         return None;
@@ -347,6 +356,7 @@ pub(super) fn lookup<C: Codes + ?Sized>(key: &Key, codes: &C) -> Option<Kept> {
                 left_at: leaf.left_at,
             });
         }
+        path.push((node.start, node.len));
         for k in 0..node.len - 1 {
             let e = shard.entry(node.start + k);
             if read(codes, e.cell) != e.code {
@@ -355,6 +365,22 @@ pub(super) fn lookup<C: Codes + ?Sized>(key: &Key, codes: &C) -> Option<Kept> {
         }
         let last = shard.entry(node.start + node.len - 1);
         n = shard.child(n, read(codes, last.cell))?;
+    }
+}
+
+/// Every cell the lookup of `key` that left `path` read, in its order,
+/// handed to `f`: a kept flight taken has its cells read again through the
+/// node's own reader.
+pub(super) fn replay(key: &Key, path: &Path, mut f: impl FnMut([i32; 3])) {
+    if path.is_empty() {
+        return;
+    }
+    let shard = shards()[key.shard()].read().expect("flight memo");
+    for &(start, len) in path {
+        for k in 0..len {
+            let c = shard.entry(start + k).cell;
+            f([i32::from(c[0]), i32::from(c[1]), i32::from(c[2])]);
+        }
     }
 }
 
