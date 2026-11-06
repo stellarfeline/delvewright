@@ -1119,6 +1119,57 @@ fn invariance_worlds() -> Vec<(String, World, Vec<[i32; 3]>)> {
     worlds
 }
 
+/// **A closure's rounds leave no state with a direction to fly**: the round
+/// asks only the states the last close reached ([`World::round`]), on the
+/// ground that a state asked once asks for nothing after — its envelope only
+/// shrinks as the closure grows. Held here directly: every invariance world's
+/// closure, asked of every standing and holding state against what it flew,
+/// has none left — and a state asked in a round before the last was asked
+/// (the cases bind nothing otherwise). Perturbation: a round that asks a
+/// state late, or an envelope that grows, leaves a state with a direction.
+#[test]
+fn the_rounds_leave_no_state_with_a_direction_to_fly() {
+    let worlds = invariance_worlds();
+    let (mut states, mut early, mut worlds_n) = (0usize, 0usize, 0usize);
+    for (name, w, roots) in &worlds {
+        let r = w.body_reach(roots);
+        let memo = w.graph_memo(&super::ReachParams::shipped(w.unbounded_fall));
+        let nodes: Vec<[i32; 3]> = r
+            .states
+            .iter()
+            .filter(|(_, k)| matches!(k, super::RestKind::Standing | super::RestKind::Holding))
+            .map(|(c, _)| c)
+            .collect();
+        let left = w.left_to_fly(&memo, &r, &nodes, &|c| r.flown_mask(c));
+        assert!(
+            left.is_empty(),
+            "{name}: {} state(s) the rounds left with a direction to fly, the first {:?}",
+            left.len(),
+            left.first()
+        );
+        // A state flown toward fewer than every direction was asked in a
+        // round before the closure was whole: had it been asked again later
+        // it could only have been for nothing.
+        early += nodes
+            .iter()
+            .filter(|c| {
+                let q = r.flown_mask(**c);
+                q != 0 && q != super::ALL_QUADRANTS
+            })
+            .count();
+        states += nodes.len();
+        worlds_n += 1;
+    }
+    eprintln!(
+        "rounds: {worlds_n} world(s), {states} standing or holding state(s), none with a \
+         direction left; {early} flown toward some directions and not others"
+    );
+    assert!(
+        states > 0 && early > 0,
+        "the cases bind nothing: no state was flown toward some directions and not others"
+    );
+}
+
 /// **The summarised sea is the closure expanded cell by cell** (ADR-0037 §2):
 /// every invariance world asked of the closure that floods the plain sea by
 /// component and computes its dives on read, and of the closure that expands
