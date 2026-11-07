@@ -139,9 +139,10 @@ def host_target(system: str, machine: str) -> str | None:
 def read_pin(path: pathlib.Path) -> tuple[str, str]:
     """`(repo, ref)` from the manifest beside the page.
 
-    `ref` is the engine RELEASE TAG the page ships at (ADR-0029 §1): the shelf
-    this script downloads from, the tree Init I2 detaches at and the version the
-    binary must answer are all derived from that one name, never stated twice.
+    `ref` is the engine RELEASE TAG the page is proven on (ADR-0038 §2): the
+    shelf this script downloads from, the tree Init I2 detaches at and the
+    version the binary must answer are all derived from that one name, never
+    stated twice.
     """
     try:
         data = tomllib.loads(path.read_text(encoding="utf-8"))
@@ -167,7 +168,7 @@ def tag_version(tag: str) -> str:
             EXIT_UNUSABLE,
             f"`[engine].ref` is {tag!r}, which is not a `delvec--v<major>."
             f"<minor>.<patch>` release tag. The pin names the engine RELEASE "
-            f"this page ships at, so a name shaped any other way names no "
+            f"this page is proven on, so a name shaped any other way names no "
             f"shelf at all.",
         )
     return m.group(1)

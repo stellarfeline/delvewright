@@ -222,10 +222,10 @@ anywhere else; they are all written `"$DELVEWRIGHT_ENGINE/…"`.
 
 **The engine is not yours to choose, and it is not the default branch.**
 `versions.toml` in the skill root names it once, as `[engine].ref` — the engine
-RELEASE TAG this page ships at, so the page you are reading and the tree you are
-about to check out came out of the same commit. Read it from there; this page
-restates it nowhere, because a tag written on a page goes stale the first time
-the pin moves and nothing reports it.
+RELEASE TAG this page is proven on, so the tree you are about to check out is
+the one every step of this page was judged against. Read it from there; this
+page restates it nowhere, because a tag written on a page goes stale the first
+time the pin moves and nothing reports it.
 
 ```sh
 PIN="$DELVEWRIGHT_SKILL/versions.toml"

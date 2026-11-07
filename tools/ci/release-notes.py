@@ -16,11 +16,11 @@ THE OPENING, from the tree:
   delvec           the engine version, the `dsl_version` the binary speaks
                    (`[engine].dsl_crate_version`), the crates.io page
   delvewright-dsl  the format version and its crates.io page
-  delvewright      the engine release tag the page ships at, the
+  delvewright      the engine release tag the page is proven on, the
                    `requires_delvec` window, the `dsl_version` that pinned engine
                    speaks (read from the engine tree AT the pin, where this
                    checkout carries the tag), and the plugin root's tree hash at
-                   the release commit
+                   the release commit, under the plugin's own tag
 
 THE SUMMARY, from `RELEASE-NOTES.md` at the same commit (`tools/lib/release_notes.py`):
 the entry headed by this Release's title — `### Highlights`, then the change
@@ -135,10 +135,11 @@ def opening(line: str, repo: pathlib.Path, sha: str) -> tuple[str, str]:
         except (KeyError, tomllib.TOMLDecodeError) as exc:
             raise Missing(f"{PAGE_PIN} has no readable [engine]: {exc}")
         window = requires_delvec(show(repo, sha, PAGE))
-        # `plugin-release.yml` runs only at a written engine tag, so there the pin
-        # resolves. Run by hand on a commit whose pin is still unborn, the tag is
-        # PRINTED as unborn rather than raised — the one fact a reader needs is
-        # which engine release the page ships at, and that is the name itself.
+        # `plugin-release.yml` refuses a pin whose engine is not published, so
+        # there the pin resolves. Run by hand on a commit whose pin is still
+        # unborn, the tag is PRINTED as unborn rather than raised — the one fact a
+        # reader needs is which engine release the page is proven on, and that
+        # is the name itself.
         try:
             speaks = engine_table(repo, f"{pin['ref']}^{{commit}}")["dsl_crate_version"]
             speaks = f"**{speaks}**"
@@ -147,19 +148,19 @@ def opening(line: str, repo: pathlib.Path, sha: str) -> tuple[str, str]:
         tree = git(repo, "rev-parse", f"{sha}:{PLUGIN_ROOT}").stdout.strip()
         if not tree:
             raise Missing(f"{sha}:{PLUGIN_ROOT} is not a tree")
+        tag = release_tags.tag_for("delvewright", manifest["version"])
         return manifest["version"], (
             f"**`delvewright` {manifest['version']}** — the Delvewright Claude Code plugin (`/delvewright:new-delve`), "
             f"one of the three things this repository releases (the others are the `delvec` binary and the "
-            f"`delvewright-dsl` format crate). Its version is the version of the engine release it ships "
-            f"at, and it is tagged at that release's commit: the marketplace serves the plugin root at the "
-            f"engine release tag the entry names, so these are the bytes a creator installing from that tag "
-            f"receives, and an installed creator updates to them because the version moved with the pin.\n\n"
-            f"- the page ships at engine release `{pin['ref']}`, and installs that engine\n"
+            f"`delvewright-dsl` format crate). It is released on its own version line: the marketplace serves "
+            f"the plugin root at this release's own tag, so these are the bytes a creator installing now "
+            f"receives, and an installed creator updates to them because the version moved.\n\n"
+            f"- the page is proven on engine release `{pin['ref']}`, and installs that engine\n"
             f"- it accepts `delvec` `{window}`\n"
             f"- that engine speaks `dsl_version` {speaks}\n"
-            f"- plugin root tree `{tree}`, tagged at `{sha}`\n"
-            f"- to hold a fixed page, add the marketplace at the ENGINE release it ships at: "
-            f"`/plugin marketplace add {REPOSITORY}#{pin['ref']}` (Claude Code pins a GitHub marketplace to a "
+            f"- plugin root tree `{tree}`, tagged `{tag}` at `{sha}`\n"
+            f"- to hold a fixed page, add the marketplace at this release: "
+            f"`/plugin marketplace add {REPOSITORY}#{tag}` (Claude Code pins a GitHub marketplace to a "
             f"branch or tag with `#ref`); a creator who already has the `delvewright` marketplace registered "
             f"refreshes it with `/plugin marketplace update delvewright` instead, because the same name from "
             f"another source is refused\n"

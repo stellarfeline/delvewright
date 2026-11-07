@@ -5,8 +5,9 @@ name: fixture — a release a human dispatches
 on:
   workflow_dispatch:
     inputs:
-      version:
-        required: true
+      commit:
+        required: false
+        default: "main"
         type: string
 permissions:
   contents: read

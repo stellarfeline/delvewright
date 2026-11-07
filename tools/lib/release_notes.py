@@ -3,10 +3,11 @@
 ## What the file is
 
 The repository releases three things by name and version (`tools/lib/release_tags.py`).
-`RELEASE-NOTES.md` at the root holds the notes of the release being prepared —
-one entry per line that release names, at most one entry per line, replaced
-wholesale by the pull request that prepares the next release — each headed by
-the Release's title, the tag with `--v` read as a space:
+`RELEASE-NOTES.md` at the root holds the notes of the releases being prepared —
+at most one entry per line, each line prepared on its own clock (a plugin
+release needs no engine release, ADR-0038), each entry replaced by the pull
+request that prepares that line's next release — each headed by the Release's
+title, the tag with `--v` read as a space:
 
     ## delvec 1.15.0
 
@@ -27,7 +28,9 @@ the changes merged since the previous release of the same line; the release
 workflow publishes it as the Release's notes below the opening
 `tools/ci/release-notes.py` reads from the tree, with a compare link to the full
 merged list. The published Release keeps each version's text; the tree keeps
-only the next release's, so no record of past versions accumulates here.
+only each line's next release's, so no record of past versions accumulates
+here — an entry whose tag is written stays until its line is next prepared, and
+is dropped then.
 Nothing here is a list of merged pull-request titles: that list is one click
 away, and a Release's notes are what a reader needs instead of it.
 

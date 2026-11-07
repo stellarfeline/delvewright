@@ -427,14 +427,6 @@ def test_a_step_heading_is_the_page_s_to_rename(mod, tree, engine):
 # ---------------------------------------------------------------- rules 11 and 12 --
 
 
-def test_a_plugin_version_that_is_not_semver_reds(mod, tree, engine):
-    path = mod.PLUGIN_JSON
-    data = json.loads(path.read_text(encoding="utf-8"))
-    data["version"] = "1.0"
-    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    assert has(run(mod, engine), "which is not semver")
-
-
 def test_a_relative_path_source_reds(mod, tree, engine):
     """A relative path is a string: it carries no field, so it cannot pin."""
     path = mod.MARKETPLACE
@@ -444,13 +436,25 @@ def test_a_relative_path_source_reds(mod, tree, engine):
     assert has(run(mod, engine), "It is a `git-subdir` object")
 
 
-def test_an_entry_ref_that_is_not_the_pin_reds(mod, tree, engine):
-    """One name in two files, held equal here or it is two authorities."""
+def test_an_entry_ref_that_is_not_the_plugins_own_tag_reds(mod, tree, engine):
+    """The entry's `ref` is derived from `plugin.json` `version`, held equal here
+    or it is two authorities; an engine tag there is the shape ADR-0038 moved
+    away from, and it reds like any other name."""
+    _repo, ref = mod.read_pin()
     path = mod.MARKETPLACE
     data = json.loads(path.read_text(encoding="utf-8"))
-    data["plugins"][0]["source"]["ref"] = "delvec--v1.4.0"
+    data["plugins"][0]["source"]["ref"] = ref
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    assert has(run(mod, engine), "`source.ref` is 'delvec--v1.4.0'")
+    rep = run(mod, engine)
+    assert has(rep, f"`source.ref` is {ref!r} and the plugin's own release tag"), rep.findings
+
+
+def test_an_entry_url_that_is_not_the_pins_repo_reds(mod, tree, engine):
+    path = mod.MARKETPLACE
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["plugins"][0]["source"]["url"] = "someone-else/delvewright"
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    assert has(run(mod, engine), "`source.url` is 'someone-else/delvewright'")
 
 
 def test_an_entry_carrying_a_sha_reds(mod, tree, engine):
@@ -610,7 +614,7 @@ def test_a_command_named_only_in_inline_PROSE_inside_init_does_not_prove_it(
     assert not any("--profile play" in p for p in proofs), sorted(proofs)
 
 
-# ------------------------- rule 11, the version is the pinned release's own --
+# ------------------------------- rule 11, the version is the plugin's own line --
 
 
 def _set_version(mod, version: str) -> None:
@@ -620,63 +624,118 @@ def _set_version(mod, version: str) -> None:
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
-def test_a_version_that_is_not_the_pins_reds(mod, tree, engine):
-    """The defect this rule exists for: the pin moved through five engine
-    releases while `plugin.json` stayed at 1.5.0, so `/plugin update` told every
-    installed creator they were up to date."""
-    _repo, ref = mod.read_pin()
-    _line, number = mod.release_tags.parse(ref)
-    major, minor, patch = (int(x) for x in number.split("."))
-    _set_version(mod, f"{major}.{minor}.{patch + 1}")
-    assert has(run(mod, engine), f"the pin names {ref}, so it is {number!r}")
+def _set_entry_ref(mod, ref: str) -> None:
+    path = mod.MARKETPLACE
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["plugins"][0]["source"]["ref"] = ref
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
-def test_the_pins_version_holds(mod, tree, engine):
-    _repo, ref = mod.read_pin()
-    _set_version(mod, mod.release_tags.parse(ref)[1])
+def _newest_plugin_tag(mod) -> tuple[str, str]:
+    """The newest `delvewright--v*` tag this repository carries, with its version."""
+    tags = mod.plugin_tags_here()
+    key = lambda t: mod.release_tags.version_key(mod.release_tags.parse(t)[1])  # noqa: E731
+    tag = max(tags, key=key)
+    return tag, mod.release_tags.parse(tag)[1]
+
+
+def _bump(version: str, patch: int) -> str:
+    major, minor, p = (int(x) for x in version.split("."))
+    return f"{major}.{minor}.{p + patch}"
+
+
+def test_the_newest_released_version_holds_with_its_drift_printed(mod, tree, engine, capsys):
+    """A page edit merged between releases: the version stays the newest
+    release's, the entry names that tag, and the edit is counted, not refused —
+    it reaches creators with the next plugin release (ADR-0038 §1)."""
+    tag, version = _newest_plugin_tag(mod)
+    _set_version(mod, version)
+    _set_entry_ref(mod, tag)
+    (tree / "references" / "when-red.md").write_text(
+        (tree / "references" / "when-red.md").read_text(encoding="utf-8") + "\nA line merged after the release.\n",
+        encoding="utf-8",
+    )
     rep = run(mod, engine)
     assert not has(rep, "`plugin.json` `version` is"), rep.findings
+    assert not has(rep, "`source.ref`"), rep.findings
+    out = capsys.readouterr().out
+    assert f"is the newest release of its line ({tag})" in out
+    assert "differs from it in" in out
 
 
-def test_an_unborn_pin_under_the_old_version_reds(mod):
-    """The pull request that names the next tag is the one that delivers: it
-    must carry that tag's version, because its tree IS what the release tags."""
+def test_a_version_behind_the_newest_release_reds(mod, tree, engine):
+    """The defect ADR-0033 fixed, kept fixed: a version a creator may already
+    hold reaches nobody, so the line never goes back."""
+    tag, version = _newest_plugin_tag(mod)
+    older = min(mod.plugin_tags_here(), key=lambda t: mod.release_tags.version_key(mod.release_tags.parse(t)[1]))
+    if older == tag:
+        pytest.skip("one release on the line; nothing older to go back to")
+    _set_version(mod, mod.release_tags.parse(older)[1])
+    _set_entry_ref(mod, older)
+    assert has(run(mod, engine), f"the newest release of the line is {tag}")
+
+
+def test_an_unborn_version_above_the_newest_release_holds(mod, tree, engine, capsys):
+    """The pull request that prepares a plugin release: the version is above
+    every release, no tag carries it, and the entry names the tag the release
+    dispatched on the merge commit will write."""
+    tag, version = _newest_plugin_tag(mod)
+    nxt = _bump(version, 1)
+    _set_version(mod, nxt)
+    _set_entry_ref(mod, f"delvewright--v{nxt}")
+    rep = run(mod, engine)
+    assert not has(rep, "`plugin.json` `version` is"), rep.findings
+    assert not has(rep, "`source.ref`"), rep.findings
+    assert f"is unborn and above the newest release of its line ({tag})" in capsys.readouterr().out
+
+
+def test_an_unborn_version_below_the_newest_release_reds(mod, tree, engine):
+    tag, version = _newest_plugin_tag(mod)
+    major, minor, patch = (int(x) for x in version.split("."))
+    below = f"{major}.{minor - 1}.99" if minor else f"{major - 1}.99.99"
+    _set_version(mod, below)
+    _set_entry_ref(mod, f"delvewright--v{below}")
+    assert has(run(mod, engine), "which no release of the line carries, and the newest release is")
+
+
+def test_a_version_outside_the_grammar_reds(mod, tree, engine):
+    """`1.0` names no tag; the tag is derived from the version, strictly."""
+    _set_version(mod, "1.0")
+    assert has(run(mod, engine), "is not a strict `major.minor.patch`")
+
+
+def test_a_leading_zero_in_the_version_reds(mod, tree, engine):
+    _, version = _newest_plugin_tag(mod)
+    _set_version(mod, "0" + _bump(version, 1))
+    assert has(run(mod, engine), "is not a strict `major.minor.patch`")
+
+
+def test_a_checkout_with_no_plugin_tag_cannot_judge(mod, tmp_path, monkeypatch):
+    """A clone that has not fetched the line's tags would call every version
+    unborn; the rule refuses and names the fetch instead."""
+    bare = tmp_path / "bare"
+    subprocess.run(["git", "init", "-q", str(bare)], check=True)
+    monkeypatch.setattr(mod, "REPO", bare)
+    with pytest.raises(mod.Unusable, match="carries no `delvewright--v\\*` tag"):
+        mod.plugin_tags_here()
+
+
+def test_own_version_rule_reads_the_tags_it_is_given(mod):
+    """The rule's three states, over a list it is handed, so the judgement does
+    not depend on which tags this checkout happens to carry."""
+    tags = ["delvewright--v1.11.0", "delvewright--v1.15.0"]
     rep = mod.Report()
-    mod.delivered_version_rule(rep, "delvec--v9.8.7", "HEAD", False, "9.8.6", legacy={})
-    assert any("so it is '9.8.7'" in f for f in rep.findings), rep.findings
-
-
-def test_an_unborn_pin_under_its_own_version_holds(mod):
-    rep = mod.Report()
-    mod.delivered_version_rule(rep, "delvec--v9.8.7", "HEAD", False, "9.8.7", legacy={})
+    assert mod.own_version_rule(rep, "1.15.1", tags) == "delvewright--v1.15.1"
     assert rep.findings == [], rep.findings
-    assert rep.bindings == [("delivered plugin manifest(s) held to the pin's version", 1, 1)]
-
-
-def test_a_pin_whose_tree_delivers_another_version_reds(mod):
-    """The bytes a creator receives are the tag's, so the tag's `plugin.json` is
-    read, not this tree's. The perturbation is a pin onto an engine release cut
-    from a tree whose page never moved to it: here, a tag named 9.8.7 standing
-    at `HEAD`, whose committed `plugin.json` states the current pin's version."""
-    shown = subprocess.run(
-        ["git", "-C", str(mod.REPO), "show", f"HEAD:{mod.MANIFEST_REL}"],
-        capture_output=True, text=True, check=True,
-    )
-    assert json.loads(shown.stdout)["version"] != "9.8.7"
     rep = mod.Report()
-    mod.delivered_version_rule(rep, "delvec--v9.8.7", "HEAD", True, "9.8.7", legacy={})
-    assert any("the plugin.json delvec--v9.8.7 delivers states" in f for f in rep.findings), rep.findings
-    assert rep.bindings == [("delivered plugin manifest(s) held to the pin's version", 1, 1)]
-
-
-def test_a_stale_pre_rule_entry_reds(mod):
-    """The record names what a pin USED to deliver; once the pin moves it is a
-    second statement of something no longer true."""
+    assert mod.own_version_rule(rep, "1.11.0", tags) == "delvewright--v1.11.0"
+    assert any("the newest release of the line is delvewright--v1.15.0" in f for f in rep.findings), rep.findings
     rep = mod.Report()
-    mod.delivered_version_rule(
-        rep, "delvec--v9.8.7", "HEAD", False, "9.8.7", legacy={"delvec--v1.0.0": "0.1.0"}
-    )
-    assert any("still records delvec--v1.0.0" in f for f in rep.findings), rep.findings
+    assert mod.own_version_rule(rep, "1.14.9", tags) == "delvewright--v1.14.9"
+    assert any("which no release of the line carries" in f for f in rep.findings), rep.findings
+    rep = mod.Report()
+    assert mod.own_version_rule(rep, None, tags) is None
+    assert rep.findings and rep.bindings == [("plugin release tag(s) of the line read", 2, 2)]
 
 
 # ------------------------------------ rule 17, a DW code the pinned engine declares --
@@ -1091,3 +1150,108 @@ def test_the_pin_arm_reds_when_the_pinned_tree_lacks_a_named_script(
     assert len(named) == 1, rep.findings
     assert "the tree the pin names" in named[0], named[0]
     assert "the tree the page ships from does not carry it" not in named[0]
+
+
+# ------------------------------- rule 13, the plugin's own tag asked of the remote --
+
+
+def _tag_commit(mod, tag: str) -> str:
+    return subprocess.run(
+        ["git", "-C", str(mod.REPO), "rev-parse", "--verify", f"refs/tags/{tag}^{{commit}}"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+
+
+def _plugin_online(mod, tag: str, exists: bool, answers: dict):
+    def fetch(path: str):
+        if path in answers:
+            return answers[path]
+        raise mod.NotFound(path)
+    rep = mod.Report()
+    mod.plugin_online(rep, "o/r", tag, exists, fetch=fetch)
+    return rep
+
+
+def test_an_unborn_plugin_tag_absent_on_the_remote_holds(mod):
+    rep = _plugin_online(mod, "delvewright--v99.0.0", False, {})
+    assert rep.findings == [], rep.findings
+    assert rep.bindings == [("unborn plugin release tag(s) confirmed absent on o/r", 1, 1)]
+
+
+def test_a_plugin_tag_only_this_machine_has_reds(mod):
+    tag, _version = _newest_plugin_tag(mod)
+    rep = _plugin_online(mod, tag, True, {})
+    assert any("only this machine has" in f for f in rep.findings), rep.findings
+
+
+def test_a_plugin_tag_that_appeared_on_the_remote_reds(mod):
+    rep = _plugin_online(
+        mod, "delvewright--v99.0.0", False,
+        {"repos/o/r/git/ref/tags/delvewright--v99.0.0": {"object": {"type": "commit", "sha": "0" * 40}}},
+    )
+    assert any("now carries the plugin tag" in f for f in rep.findings), rep.findings
+
+
+def test_a_released_plugin_tag_with_a_published_release_holds(mod):
+    tag, _version = _newest_plugin_tag(mod)
+    sha = _tag_commit(mod, tag)
+    rep = _plugin_online(
+        mod, tag, True,
+        {
+            f"repos/o/r/git/ref/tags/{tag}": {"object": {"type": "commit", "sha": sha}},
+            f"repos/o/r/releases/tags/{tag}": {"draft": False, "assets": []},
+        },
+    )
+    assert rep.findings == [], rep.findings
+    assert rep.bindings == [("plugin release tag(s) of o/r held to the tree they name", 1, 1)]
+
+
+def test_a_released_plugin_tag_at_another_commit_reds(mod):
+    tag, _version = _newest_plugin_tag(mod)
+    rep = _plugin_online(
+        mod, tag, True,
+        {
+            f"repos/o/r/git/ref/tags/{tag}": {"object": {"type": "commit", "sha": "f" * 40}},
+            f"repos/o/r/releases/tags/{tag}": {"draft": False, "assets": []},
+        },
+    )
+    assert any("The entry delivers the remote's tree" in f for f in rep.findings), rep.findings
+
+
+@pytest.mark.parametrize("release", [None, {"draft": True, "assets": []}])
+def test_a_released_plugin_tag_with_no_published_release_reds(mod, release):
+    """A tag standing alone is a release run that stopped after its tag write."""
+    tag, _version = _newest_plugin_tag(mod)
+    sha = _tag_commit(mod, tag)
+    answers = {f"repos/o/r/git/ref/tags/{tag}": {"object": {"type": "commit", "sha": sha}}}
+    if release is not None:
+        answers[f"repos/o/r/releases/tags/{tag}"] = release
+    rep = _plugin_online(mod, tag, True, answers)
+    assert any("no published Release at it" in f for f in rep.findings), rep.findings
+
+
+def test_a_draft_engine_release_reds(mod, engine, tmp_path):
+    """Rule 13's shelf half: a draft is served to nobody, so a shelf behind it is
+    no shelf."""
+    engine_root, _rev, _tag_exists = engine
+    _repo, ref = mod.read_pin()
+    sha = _tag_commit(mod, ref)
+    targets = mod.tomllib.loads((engine_root / "versions.toml").read_text(encoding="utf-8"))["engine"]["targets"]
+    version = mod.engine_version(engine_root / "Cargo.toml")
+    assets = [{"name": mod.ARCHIVE.format(version=version, target=t)} for t in targets] + [{"name": mod.CHECKSUMS}]
+    answers = {
+        f"repos/o/r/git/ref/tags/{ref}": {"object": {"type": "commit", "sha": sha}},
+        f"repos/o/r/commits/{sha}/branches-where-head": [],
+        f"repos/o/r/releases/tags/{ref}": {"draft": True, "assets": assets},
+    }
+    def fetch(path: str):
+        if path in answers:
+            return answers[path]
+        raise mod.NotFound(path)
+    rep = mod.Report()
+    mod.online(rep, engine_root, "o/r", ref, version, True, fetch=fetch)
+    assert any("is a DRAFT" in f for f in rep.findings), rep.findings
+    answers[f"repos/o/r/releases/tags/{ref}"]["draft"] = False
+    rep = mod.Report()
+    mod.online(rep, engine_root, "o/r", ref, version, True, fetch=fetch)
+    assert rep.findings == [], rep.findings

@@ -24,8 +24,12 @@ description: >
   TREE, which is the tree that release would tag, and the gate's rule 2 refuses
   any absent name but that one.
 
-  A targeted fetch, not `fetch-depth: 0`: the tag is all the gate reads, so the
-  whole history is never needed.
+  THE PLUGIN'S OWN TAGS are fetched too, every `delvewright--v*` (ADR-0038 §1):
+  the gate's rule 11 holds `plugin.json` `version` to the newest release of the
+  plugin's line, and refuses to judge from a checkout that carries none of them.
+
+  A targeted fetch, not `fetch-depth: 0`: the tags are all the gate reads, so
+  the whole history is never needed.
 
 runs:
   using: composite
@@ -56,3 +60,13 @@ runs:
         else
           echo "skill-page objects: origin has no $REF — the engine the gate judges is this tree, which is the tree the release dispatched on this merge commit would tag (ADR-0029 §3)"
         fi
+
+    # The plugin's own release line, by glob refspec into `refs/tags/`: what
+    # rule 11 judges the version against. Zero is a refusal in the gate, so the
+    # count is printed here.
+    - name: fetch the plugin's own release tags
+      shell: bash
+      run: |
+        set -euo pipefail
+        git fetch --no-tags --quiet origin 'refs/tags/delvewright--v*:refs/tags/delvewright--v*'
+        echo "skill-page objects: $(git tag --list 'delvewright--v*' | wc -l | tr -d ' ') delvewright--v* tag(s)"

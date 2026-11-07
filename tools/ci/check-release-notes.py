@@ -15,14 +15,15 @@ WHAT IT JUDGES, through `tools/lib/release_notes.py`, the one reader of the file
 
 - the file parses: every `##` heading is a Release title (`<name> <version>` in
   the tag grammar), no title twice, one entry per line;
-- every entry is the release being prepared: its version is the one the tree
-  states for that line (`versions.toml [engine].version`,
-  `[engine].dsl_crate_version`, `plugin.json` `version`). An entry for a version
-  the tree does not state names no release; an entry whose tag is already
-  written while the tree states a later version is stale — the published
-  Release keeps that text, and the file is replaced for the next release. An
-  entry whose tag is written and whose version the tree still states is the
-  release being re-run, and passes;
+- every entry is the release its line is preparing: its version is the one
+  the tree states for that line (`versions.toml [engine].version`,
+  `[engine].dsl_crate_version`, `plugin.json` `version` — three lines, each
+  released on its own clock). An entry for a version the tree does not state
+  names no release; an entry whose tag is already written while the tree
+  states a later version is stale — the published Release keeps that text,
+  and the entry is replaced when the line is next prepared. An entry whose tag
+  is written and whose version the tree still states is that line's last
+  release, kept until the line moves, and passes;
 - every entry has the shape of a summary (`release_notes.shape`): a Highlights
   section within its ceiling, at least one group of changes with a bullet, the
   changes within their ceiling, every line inside a section, and no line that

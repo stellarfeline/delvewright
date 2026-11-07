@@ -101,10 +101,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # `check-skill-page.py` below reads the pinned engine tag, which an
-      # ordinary shallow checkout does not carry, and refuses rather than judging
-      # the page against whatever is on disk. One targeted fetch, its name read
-      # at run time; the action says why it is not `fetch-depth: 0`.
+      # `check-skill-page.py` below reads the pinned engine tag and the plugin's
+      # own release tags, which an ordinary shallow checkout does not carry, and
+      # refuses rather than judging the page against whatever is on disk. Two
+      # targeted fetches, every name read at run time; the action says why it is
+      # not `fetch-depth: 0`.
       - uses: ./.github/actions/skill-page-objects
       # ubuntu-latest ships python3 (>=3.11, has stdlib tomllib) and bash.
       - name: consumers agree with versions.toml
@@ -1496,7 +1497,8 @@ jobs:
   #
   # What this job checks: each pin into our own history is measured against
   # what it names — has content `main` moved past the content pin unnoticed,
-  # and does the engine release the plugin ships at exist with a full shelf.
+  # and does the engine release the page is proven on exist with a full shelf,
+  # and the plugin's own release stand where its entry points.
   # Nothing here builds the engine; the zone-program audit, which does, is the
   # `zone-audit` job below, so a change only these checks read runs no compile.
   # Its own job, not a step in `rust`: the deepening fetch is a content-repo
@@ -1564,7 +1566,7 @@ jobs:
       # requests per hour per repository. Three calls a run, nowhere near either
       # budget on its own; the finding was one IP-mate away every time, and the
       # fix is the credential the job already holds, not more of it.
-      - name: the plugin's shelf carries every target
+      - name: the engine's shelf carries every target, and the plugin's own tag stands
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 tools/ci/check-skill-page.py --online

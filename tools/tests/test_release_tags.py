@@ -120,22 +120,31 @@ def test_the_cli_refuses_a_bare_v_tag_with_exit_1():
 @pytest.mark.parametrize("line,path", sorted(RELEASE_WORKFLOWS.items()))
 def test_a_release_starts_only_by_dispatch(line, path):
     """No push, tag or merge starts a release: `on` is `workflow_dispatch` alone.
-    The engine and the format crate take the `main` commit whose version they
-    release; the plugin takes the version of the engine release whose commit it
-    tags (`check-skill-page.py` rule 11)."""
+    Each of the three takes the `main` commit whose tree states the version it
+    releases (default: the tip) and derives the tag from it; no version is ever
+    typed (ADR-0028 §4, ADR-0038 §4)."""
     doc = load(path.read_text(encoding="utf-8"))
     on = doc["on"]
     assert isinstance(on, dict) and sorted(on) == ["workflow_dispatch"], f"{path.name} starts on {sorted(on)}"
     inputs = on["workflow_dispatch"]["inputs"]
-    if line == "delvewright":
-        assert sorted(inputs) == ["version"], inputs
-    else:
-        assert sorted(inputs) == ["commit"] and inputs["commit"].get("default") == "main", inputs
+    assert sorted(inputs) == ["commit"] and inputs["commit"].get("default") == "main", inputs
 
 
 @pytest.mark.parametrize("line,path", sorted(RELEASE_WORKFLOWS.items()))
 def test_each_release_derives_its_tag_through_the_grammar(line, path):
-    assert f"tools/lib/release_tags.py tag {line} " in _runs(path), f"{path.name} does not derive its tag"
+    """The engine and the format crate derive their tag in the workflow through
+    the grammar's CLI; the plugin derives it inside its identity tool
+    (`tools/ci/check-plugin-release.py`, through `release_tags.tag_for`), which
+    the workflow must run — so the tool is held to the module and the workflow
+    to the tool, and no tag is received from an input anywhere."""
+    runs = _runs(path)
+    if line == "delvewright":
+        assert "tools/ci/check-plugin-release.py" in runs, f"{path.name} does not run the identity tool"
+        tool = (REPO / "tools" / "ci" / "check-plugin-release.py").read_text(encoding="utf-8")
+        assert "release_tags.tag_for(LINE, version)" in tool and 'LINE = "delvewright"' in tool
+    else:
+        assert f"tools/lib/release_tags.py tag {line} " in runs, f"{path.name} does not derive its tag"
+    assert "inputs.version" not in path.read_text(encoding="utf-8"), f"{path.name} receives a version"
 
 
 # ------------------------------------------------------------------ the notes --
