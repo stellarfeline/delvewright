@@ -337,6 +337,47 @@ def test_the_handout_says_whether_the_campaigns_notice_covers_scenery(rig: Rig):
     assert f"a `loot` entry fills `{owed}` — so no scenery container may stand in it (`DW1024`)" in rig.handouts("landing")[0].read_text(encoding="utf-8")
 
 
+def test_every_cast_shape_the_dsl_accepts_is_read_and_a_mark_is_owed_to_its_anchor(rig: Rig):
+    """A cast entry is a bare keyword, one placement, or a list of per-branch
+    placements; a placement's `at` is a keyword, an anchor or a mark
+    `{anchor, offset}` (`CastEntry`, `CastPlace` in `crates/dsl/src/cast.rs`).
+    The handout lists the cast row of each that stands at an owed name, and
+    none of them crashes it."""
+    quests_path = rig.campaign / "quests.json"
+    doc = json.loads(quests_path.read_text(encoding="utf-8"))
+    body = doc.get("content", doc)
+    body["quests"][0]["cast"] = {
+        "npc/anchored": {"at": "anchor/node-hall", "doing": "plain"},
+        "npc/marked": {"at": {"anchor": "anchor/node-hall", "offset": [2, 0, -1]}, "doing": "offset"},
+        "npc/marked-zero": {"at": {"anchor": "anchor/node-hall"}, "doing": "zero"},
+        "npc/branched": [
+            {"at": {"anchor": "anchor/node-hall", "offset": [0, 1, 0]}, "doing": "first branch"},
+            {"at": "anchor/node-yard", "doing": "elsewhere"},
+            {"at": "offstage", "doing": "gone"},
+        ],
+        "npc/dead": "dead",
+        "npc/away": {"at": "offstage", "doing": "away"},
+    }
+    quests_path.write_text(json.dumps(doc), encoding="utf-8")
+    out = rig.run()
+    assert out.returncode == 0, out.stderr
+    text = rig.handouts("hall")[0].read_text(encoding="utf-8")
+    cast = sorted(l for l in text.splitlines() if l.startswith("- cast: "))
+    q_ = "(quest `quest/walk-the-whole`)"
+    assert cast == sorted([
+        f"- cast: `npc/anchored` stands at `anchor/node-hall`, plain {q_}",
+        f"- cast: `npc/marked` stands at `anchor/node-hall` + [2,0,-1], offset {q_}",
+        f"- cast: `npc/marked-zero` stands at `anchor/node-hall`, zero {q_}",
+        f"- cast: `npc/branched` stands at `anchor/node-hall` + [0,1,0], first branch {q_}",
+    ])
+    out = rig.run(place="node/yard")
+    assert out.returncode == 0, out.stderr
+    yard = rig.handouts("yard")[0].read_text(encoding="utf-8")
+    assert [l for l in yard.splitlines() if l.startswith("- cast: ")] == [
+        f"- cast: `npc/branched` stands at `anchor/node-yard`, elsewhere {q_}"
+    ]
+
+
 def test_the_generator_path_is_the_campaigns_own_where_one_exists(rig: Rig):
     out = rig.run()
     assert out.returncode == 0, out.stderr
