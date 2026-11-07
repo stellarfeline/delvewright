@@ -1743,8 +1743,16 @@ fn the_compass_follows_the_line_of_the_objective_it_followed() {
     assert_eq!(refresh(&st, b_latch), b_stand, "B's next step in its quest");
 
     // Line B's quest done: the quest it opens, ahead of line A.
-    st.extend([("dw.o_b-stand", 1), ("dw.q_line-b", 1), ("dw.qa_line-b-on", 1)]);
-    assert_eq!(refresh(&st, b_stand), b_exit, "the quest B's completion opens");
+    st.extend([
+        ("dw.o_b-stand", 1),
+        ("dw.q_line-b", 1),
+        ("dw.qa_line-b-on", 1),
+    ]);
+    assert_eq!(
+        refresh(&st, b_stand),
+        b_exit,
+        "the quest B's completion opens"
+    );
 
     // Line B ended: the first open objective of the campaign.
     st.push(("dw.o_b-exit", 1));
@@ -1760,7 +1768,11 @@ fn the_compass_follows_the_line_of_the_objective_it_followed() {
     let mut st = both_open.to_vec();
     st.push(("dw.o_talk", 1));
     st.push(("dw.o_b-latch", 1));
-    assert_eq!(refresh(&st, b_latch), b_stand, "B's line, with A's next open");
+    assert_eq!(
+        refresh(&st, b_latch),
+        b_stand,
+        "B's line, with A's next open"
+    );
     assert_eq!(refresh(&st, talk), a_exit, "and A's line from A");
 
     let again = try_build(&dir).expect("builds again");
