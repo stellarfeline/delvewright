@@ -295,7 +295,8 @@ def test_the_plugin_notes_read_the_pin_and_the_entry(repo):
     _with_changelog(repo, GOOD_ENTRY.replace("## delvec 1.15.0", "## delvewright 1.15.0"))
     result = _notes(repo, "delvewright")
     assert result.returncode == 0, result.stderr
-    assert "ships at engine release `delvec--v1.15.0`" in result.stdout
+    assert "is proven on engine release `delvec--v1.15.0`" in result.stdout
+    assert "tagged `delvewright--v1.15.0` at" in result.stdout
     assert "### Highlights" in result.stdout
     assert "first release of its line" in result.stdout  # no `delvewright--v*` tag in this repository
 
@@ -307,7 +308,7 @@ def test_the_plugin_notes_pin_the_marketplace_with_a_hash_ref(repo):
     _with_changelog(repo, GOOD_ENTRY.replace("## delvec 1.15.0", "## delvewright 1.15.0"))
     result = _notes(repo, "delvewright")
     assert result.returncode == 0, result.stderr
-    assert "`/plugin marketplace add stellarfeline/delvewright#delvec--v1.15.0`" in result.stdout
+    assert "`/plugin marketplace add stellarfeline/delvewright#delvewright--v1.15.0`" in result.stdout
     assert "marketplace add stellarfeline/delvewright@" not in result.stdout
     assert "`/plugin marketplace update delvewright`" in result.stdout
 

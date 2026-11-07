@@ -1,6 +1,6 @@
 # ADR-0033: The plugin's version is the engine release it ships at
 
-- **Status**: Accepted
+- **Status**: Superseded by ADR-0038
 - **Date**: 2026-10-09
 - **Source**: the tags of `stellarfeline/delvewright` read with `git show <tag>:<path>`
   for every `delvec--v*` tag; the logs of `plugin-release.yml` runs 35152655434

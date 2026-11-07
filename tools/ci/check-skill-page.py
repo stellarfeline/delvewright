@@ -65,31 +65,38 @@ WHAT IS CHECKED, AND THE PERTURBATION THAT REDS EACH
                                                a build into validation/delve-output
    10  retired: it held the page's headings to a frozen census of the page
        before it was split, so no step could ever be renamed or reordered.
-   11  `plugin.json` parses; `name` is kebab-case; `version` is semver and IS
-       the version of the engine release the pin names, in this tree and in
-       the `plugin.json` the marketplace delivers — the one in the tree the
-       tag names, where the tag exists. The version is derived, never chosen:
-       Claude Code updates an installed plugin only when this string changes,
-       and the delivered bytes change only when the pin moves, so the pin's
-       version is the one string that moves exactly when they do.
-                                               RED: a pin move under an unchanged
-                                               version; a pin naming a tag whose
-                                               tree carries another version
+   11  `plugin.json` parses; `name` is kebab-case; `version` is a strict
+       `major.minor.patch` on the plugin's OWN line (ADR-0038 §1): where this
+       repository carries `delvewright--v<version>`, it is the newest release
+       of the line and this tree's plugin root may be ahead of it (the count is
+       printed; those edits reach creators with the next plugin release); where
+       it does not, the version is above every released one, which is the
+       state the pull request preparing a plugin release is in.
+                                               RED: a version behind the newest
+                                               release; an unreleased version
+                                               below a released one; `1.0`
    12  `marketplace.json` carries `name`, `owner.name`, and one plugin whose
        `source` is a `git-subdir` object whose `url` is `[engine].repo`, whose
-       `path` is the plugin root, and whose `ref` equals `[engine].ref`, with no
-       `sha` and no `version`; that path carries a `plugin.json` of that name.
-                                               RED: a moved directory; a `ref` the
-                                               pin does not state; a `sha`, which
-                                               the documentation makes the
-                                               effective pin
-   13  `--online`, two states, decided by the object. The tag exists: it is the
-       commit this checkout judged, and its Release carries an archive per target
-       at that tree plus `SHA256SUMS`. It does not: the remote still lacks it,
-       which is the state the offline half judged, and the shelf cannot be asked
-       because the release that writes the tag is what fills it.
+       `path` is the plugin root, and whose `ref` is the plugin's own release
+       tag `delvewright--v<plugin.json version>` (ADR-0038 §3), with no `sha`
+       and no `version`; that path carries a `plugin.json` of that name.
+                                               RED: a moved directory; a `ref` that
+                                               is not the tag the version derives;
+                                               a `sha`, which the documentation
+                                               makes the effective pin
+   13  `--online`, each tag in one of two states, decided by the object. The
+       ENGINE tag exists: it is the commit this checkout judged, and its Release
+       is published and carries an archive per target at that tree plus
+       `SHA256SUMS`. It does not: the remote still lacks it, which is the state
+       the offline half judged, and the shelf cannot be asked because the
+       release that writes the tag is what fills it. The PLUGIN tag exists: it
+       is the commit this checkout carries, with a published Release at it. It
+       does not: the remote lacks it too, and the plugin release dispatched on
+       this pull request's merge commit writes it.
                                                RED: a shelf missing a target; a
-                                               tag that has appeared since
+                                               draft Release; a tag that has
+                                               appeared since; a plugin tag with
+                                               no Release
    14  no shipped file carries an unsubstituted template placeholder.
                                                RED: `@@TOC@@` at the top of a reference
    15  every `refimg.py` flag a page file names that SOME supported provider
@@ -240,15 +247,20 @@ CHECKSUMS = "SHA256SUMS"
 
 # The one key of the pin, and the `bound_key` `.github/pins.toml` registers
 # `skill-page-engine` under: `engine.ref`, in the manifest beside the page,
-# `.claude/skills/delvewright/skills/new-delve/versions.toml`. The marketplace
-# entry in `.claude-plugin/marketplace.json` carries the same name, because
-# Claude Code reads that file and reads nothing else; the pin is the authority
-# and the entry is its copy, and rule 12 holds them equal (ADR-0029 §2).
+# `.claude/skills/delvewright/skills/new-delve/versions.toml`. It names the
+# engine the page is proven on; the marketplace entry in
+# `.claude-plugin/marketplace.json` names the PLUGIN's own release tag, derived
+# from `plugin.json` `version`, and rule 12 holds that derivation (ADR-0038 §3).
 PIN_KEY = ("engine", "ref")
 # The line of `tools/lib/release_tags.py`'s grammar the page's pin may name. The
 # page installs the creator binary and nothing else, so `delvewright-dsl` and
 # `delvewright` tags are refused here rather than merely unexpected.
 RELEASE_LINE = "delvec"
+# The line the plugin itself is released on: `plugin.json` `version` is its
+# number and `delvewright--v<version>` is the tag the marketplace entry serves
+# the plugin root from (ADR-0038 §1, §3).
+PLUGIN_LINE = "delvewright"
+PLUGIN_REL = ".claude/skills/delvewright"
 
 # Paths inside the engine tree, materialised at `ref`. `tools/creator/refimg.py` is here
 # because rule 15 asks THAT tool, at the pinned revision, which flags each
@@ -2473,13 +2485,7 @@ def manifest_rules(rep: Report, pin_repo: str, ref: str, rev: str, tag_exists: b
     if not isinstance(name, str) or not KEBAB_RE.match(name):
         rep.find(f"`plugin.json` `name` is {name!r}, which is not kebab-case")
     version = plugin.get("version")
-    if not isinstance(version, str) or not SEMVER_RE.match(version):
-        rep.find(
-            f"`plugin.json` `version` is {version!r}, which is not semver. A "
-            f"declared version PINS the plugin: creators receive an update only "
-            f"when it moves, and it is the version of the engine release the pin "
-            f"names."
-        )
+    plugin_tag = own_version_rule(rep, version, plugin_tags_here())
 
     try:
         market = json.loads(MARKETPLACE.read_text(encoding="utf-8"))
@@ -2537,23 +2543,32 @@ def manifest_rules(rep: Report, pin_repo: str, ref: str, rev: str, tag_exists: b
             fields = {
                 "source": "git-subdir",
                 "url": pin_repo,
-                "ref": ref,
+                "ref": plugin_tag,
             }
             for key, want in fields.items():
                 got = source.get(key)
+                if key == "ref" and want is None:
+                    continue  # rule 11 has refused the version the tag derives from
                 if got != want:
-                    rep.find(
-                        f"the marketplace entry's `source.{key}` is {got!r} and the "
-                        f"pin beside the page says {want!r}. "
-                        + (
-                            f"`versions.toml` `[engine].{PIN_KEY[1]}` is the "
-                            f"authority and this entry is its copy; one name in two "
-                            f"files is held equal here or it is two authorities "
-                            f"(ADR-0029 §2)."
-                            if key in ("ref", "url")
-                            else "The source kind decides which fields are read at all."
+                    if key == "ref":
+                        why = (
+                            f"the plugin's own release tag, derived from `plugin.json` "
+                            f"`version`, is {want!r}. The entry serves the plugin root at "
+                            f"the plugin's release tag, so the bytes a creator receives "
+                            f"are a released tree and nothing else (ADR-0038 §3); the "
+                            f"version is the authority and the entry is derived from it, "
+                            f"held equal here or it is two authorities."
                         )
-                    )
+                    elif key == "url":
+                        why = (
+                            f"the pin beside the page says {want!r}. `versions.toml` "
+                            f"`[engine].repo` is the authority and this entry is its "
+                            f"copy; one name in two files is held equal here or it is "
+                            f"two authorities (ADR-0029 §2)."
+                        )
+                    else:
+                        why = f"it is {want!r}: the source kind decides which fields are read at all."
+                    rep.find(f"the marketplace entry's `source.{key}` is {got!r} and {why}")
             for key, why in (
                 (
                     "sha",
@@ -2593,108 +2608,136 @@ def manifest_rules(rep: Report, pin_repo: str, ref: str, rev: str, tag_exists: b
             )
     rep.bind("marketplace plugin entr(y/ies)", len(entries) if isinstance(entries, list) else 0, 1)
 
-    delivered_version_rule(rep, ref, rev, tag_exists, version)
+# ---------------------------------------------------------- rule 11, own line --
 
 
-# Pins whose tag was written before rule 11 derived the version, by exact
-# (tag, delivered version) pair; empty while the pin names a tag cut under the rule.
-DELIVERED_BEFORE_THE_RULE: dict[str, str] = {}
+def plugin_tags_here() -> list[str]:
+    """Every `delvewright--v*` tag this checkout carries, in the grammar.
 
-# Where the plugin manifest sits in any tree of this repository, read once
-# from the real layout (the test fixture moves `PLUGIN_ROOT`, not history).
-MANIFEST_REL = (PLUGIN_ROOT / ".claude-plugin" / "plugin.json").relative_to(REPO).as_posix()
-
-
-def delivered_version_rule(
-    rep: Report,
-    ref: str,
-    rev: str,
-    tag_exists: bool,
-    version: object,
-    legacy: dict[str, str] | None = None,
-) -> None:
-    """The plugin's version IS the version of the engine release it ships at.
-
-    The marketplace entry delivers the plugin root at the tag `[engine].ref`
-    names (rule 12), and Claude Code updates an installed plugin only when
-    `plugin.json` `version` differs from the one it holds — measured, and
-    recorded in `docs/reference/skill-workflow.md`. The delivered bytes change
-    exactly when the pin moves, and every pin names a distinct release, so the
-    pin's own version is the one string that moves when they do. It is derived,
-    never chosen: there is one right value, every other value is a red, and no
-    base revision is needed to know it, so the rule binds on every run.
-
-    Two trees are read. THIS tree's `plugin.json` must state the pin's version:
-    while the tag is unborn this tree is what the release will tag, and once it
-    exists this is what keeps `main` stating the version it delivers. And where
-    the tag exists, the `plugin.json` in the tree it names — the bytes a creator
-    actually receives — must state it too, which is what refuses a pin onto an
-    engine release that was cut without the page moving to it.
+    The list is what rule 11 judges `plugin.json` `version` against, so a
+    checkout with none cannot judge: the line has releases, and a clone that
+    has not fetched them would call every version unborn. That is a refusal
+    naming the fetch, never a pass.
     """
-    legacy = DELIVERED_BEFORE_THE_RULE if legacy is None else legacy
-    for tag, held in sorted(legacy.items()):
-        if tag != ref:
-            rep.find(
-                f"`DELIVERED_BEFORE_THE_RULE` still records {tag} (delivering "
-                f"{held!r}) and the pin names {ref}. The entry describes what the "
-                f"pin used to deliver; the pull request that moved the pin deletes it."
-            )
-    try:
-        _line, number = release_tags.parse(ref)
-    except release_tags.Refused:
-        return  # rule 2 has already refused the name; there is no version to derive
-    if version != number:
-        rep.find(
-            f"`plugin.json` `version` is {version!r} and the pin names {ref}, so it "
-            f"is {number!r}. The plugin's version is the version of the engine "
-            f"release it ships at: the marketplace delivers the plugin root at that "
-            f"tag, and Claude Code updates an installed creator only when this "
-            f"string changes — a pin move under an unchanged version reaches nobody "
-            f"who already installed."
-        )
-    else:
-        print(f"  ok   plugin.json version {version!r} is the version {ref} states")
-    if not tag_exists:
-        print(
-            f"  ok   {ref} is unborn, so the plugin.json it will deliver is this "
-            f"tree's, held above"
-        )
-        rep.bind("delivered plugin manifest(s) held to the pin's version", 1, 1)
-        return
-    shown = subprocess.run(
-        ["git", "-C", str(REPO), "show", f"{rev}:{MANIFEST_REL}"],
+    listed = subprocess.run(
+        ["git", "-C", str(REPO), "tag", "--list", f"{PLUGIN_LINE}--v*"],
         capture_output=True,
         text=True,
     )
-    if shown.returncode != 0:
-        rep.find(
-            f"{ref} names a tree with no {MANIFEST_REL}, so the marketplace entry "
-            f"that points at it delivers no plugin: {shown.stderr.strip()}"
+    if listed.returncode != 0:
+        raise Unusable(f"could not list this checkout's tags: {listed.stderr.strip()}")
+    tags = [t for t in listed.stdout.split() if release_tags.TAG_RE.match(t)]
+    if not tags:
+        raise Unusable(
+            f"this checkout carries no `{PLUGIN_LINE}--v*` tag, so `plugin.json` "
+            f"`version` cannot be judged against the newest release of its line. "
+            f"Fetch them: `git fetch --no-tags origin "
+            f"'refs/tags/{PLUGIN_LINE}--v*:refs/tags/{PLUGIN_LINE}--v*'` — the "
+            f"same fetch `.github/actions/skill-page-objects` performs."
         )
-        rep.bind("delivered plugin manifest(s) held to the pin's version", 0, 1)
-        return
+    return tags
+
+
+def plugin_tag_here() -> str | None:
+    """The tag `plugin.json` `version` derives, or None where rule 11 refused it."""
     try:
-        delivered = json.loads(shown.stdout).get("version")
-    except json.JSONDecodeError as exc:
-        raise Unusable(f"{MANIFEST_REL} at {ref} does not parse: {exc}") from exc
-    rep.bind("delivered plugin manifest(s) held to the pin's version", 1, 1)
-    if delivered == number:
-        print(f"  ok   the plugin.json {ref} delivers states {delivered!r}")
-    elif legacy.get(ref) == delivered:
+        version = json.loads(PLUGIN_JSON.read_text(encoding="utf-8")).get("version")
+        return release_tags.tag_for(PLUGIN_LINE, version) if isinstance(version, str) else None
+    except (OSError, json.JSONDecodeError, release_tags.Refused):
+        return None
+
+
+def plugin_root_drift(tag: str) -> int | None:
+    """How many files this tree's plugin root differs from the root at `tag` by,
+    or None where either tree cannot be read. Information, never a finding:
+    `main` is ahead of the newest plugin release between releases by
+    construction, and those edits reach creators with the next one."""
+    index = subprocess.run(["git", "-C", str(REPO), "write-tree"], capture_output=True, text=True)
+    if index.returncode != 0:
+        return None
+    diff = subprocess.run(
+        [
+            "git", "-C", str(REPO), "diff", "--name-only",
+            f"refs/tags/{tag}:{PLUGIN_REL}", f"{index.stdout.strip()}:{PLUGIN_REL}",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if diff.returncode != 0:
+        return None
+    return len([ln for ln in diff.stdout.split("\n") if ln.strip()])
+
+
+def own_version_rule(rep: Report, version: object, tags: list[str]) -> str | None:
+    """The plugin's version is its own line, held to the releases of that line.
+
+    `plugin.json` `version` is the number Claude Code compares to decide whether
+    an installed creator receives an update (measured, recorded in
+    `docs/reference/skill-workflow.md`), and `delvewright--v<version>` is the
+    tag the marketplace entry serves the plugin root from (rule 12). The tag is
+    derived from the version, so the version is held to the line's releases
+    rather than to anything else: where this checkout carries the tag, it is
+    the newest release of the line, and this tree's plugin root may be ahead of
+    it — the count is printed, because that is what a page edit merged between
+    releases looks like and it is not a finding. Where it does not, the version
+    is above every released one, which is the state the pull request that
+    prepares a plugin release leaves `main` in until the release dispatched on
+    its merge commit writes the tag (ADR-0038 §1, §3).
+
+    Returns the tag the version derives, or None where there is none.
+    """
+    if not isinstance(version, str):
+        rep.find(f"`plugin.json` `version` is {version!r}; the plugin's release tag is derived from it.")
+        rep.bind("plugin release tag(s) of the line read", len(tags), len(tags))
+        return None
+    try:
+        tag = release_tags.tag_for(PLUGIN_LINE, version)
+    except release_tags.Refused as exc:
+        rep.find(
+            f"`plugin.json` `version` is {version!r}, and {exc} The plugin's release "
+            f"tag `{PLUGIN_LINE}--v<version>` is derived from it, so it is a strict "
+            f"`major.minor.patch` or it names no release (ADR-0038 §1)."
+        )
+        rep.bind("plugin release tag(s) of the line read", len(tags), len(tags))
+        return None
+    mine = release_tags.version_key(version)
+    released = sorted((release_tags.version_key(release_tags.parse(t)[1]), t) for t in tags)
+    newest_key, newest = released[-1]
+    if tag in tags:
+        if newest_key > mine:
+            rep.find(
+                f"`plugin.json` `version` is {version!r}, a released version, and the "
+                f"newest release of the line is {newest}. The version never goes back "
+                f"behind the newest release: a creator holding {newest} would receive "
+                f"these bytes as no update at all (ADR-0038 §1)."
+            )
+        else:
+            drift = plugin_root_drift(tag)
+            ahead = (
+                f"this tree's plugin root differs from it in {drift} file(s), which "
+                f"reach creators with the next plugin release"
+                if drift is not None
+                else "this tree's plugin root could not be compared with it"
+            )
+            print(f"  ok   plugin.json version {version!r} is the newest release of its line ({tag}); {ahead}")
+    elif newest_key < mine:
         print(
-            f"  ---  the plugin.json {ref} delivers states {delivered!r}, recorded in "
-            f"`DELIVERED_BEFORE_THE_RULE`: a creator installing now receives "
-            f"{delivered!r}, and one who already holds it receives no update until "
-            f"the pin moves to a tag cut from a tree this rule has held"
+            f"  ok   plugin.json version {version!r} is unborn and above the newest "
+            f"release of its line ({newest}): the plugin release dispatched on this "
+            f"pull request's merge commit writes {tag} (ADR-0038 §4). Measured on the "
+            f"pinned Claude Code: a fresh `/plugin install` inside that interval is "
+            f"REFUSED at the fetch of the ref, and an existing install is untouched."
         )
     else:
         rep.find(
-            f"the plugin.json {ref} delivers states {delivered!r}, not {number!r}. "
-            f"That release was cut from a tree whose page did not move to it, so a "
-            f"creator holding {delivered!r} would receive these bytes as no update "
-            f"at all. Pin a tag whose own tree named it (ADR-0029 §3), or name this "
-            f"tree's next tag."
+            f"`plugin.json` `version` is {version!r}, which no release of the line "
+            f"carries, and the newest release is {newest}. An unreleased version "
+            f"stands above every released one, or it is the released one: the "
+            f"plugin's version moves forward from the newest `{PLUGIN_LINE}--v*` tag "
+            f"in the pull request that prepares its release (ADR-0038 §1)."
         )
+    rep.bind("plugin release tag(s) of the line read", len(tags), len(tags))
+    return tag
 
 
 # ------------------------------------------------------------------ online --
@@ -2750,7 +2793,7 @@ def online(
     tag_exists: bool,
     fetch=gh,
 ) -> None:
-    """The two states of `--online`, decided by the object (ADR-0029 §6).
+    """The two states of the ENGINE tag under `--online`, decided by the object (ADR-0029 §6).
 
     THE TAG DOES NOT EXIST. The offline half has already refused any name but
     this tree's own next tag, so the one thing the remote can be asked is
@@ -2844,6 +2887,12 @@ def online(
         )
         rep.bind("shelf archive(s) held to the pin", 0, len(targets))
         return
+    if rel.get("draft"):
+        rep.find(
+            f"the Release at {ref} on {repo} is a DRAFT: the shelf was built and "
+            f"nobody approved the publish, so no creator can download from it. "
+            f"The release run's gated job is what undrafts it."
+        )
     assets = {a["name"] for a in rel.get("assets", [])}
     missing = [
         ARCHIVE.format(version=version, target=t)
@@ -2862,6 +2911,79 @@ def online(
             f"nothing to verify the archive against and refuses every platform."
         )
     rep.bind("shelf archive(s) held to the pin", len(targets) - len(missing), len(targets))
+
+
+def plugin_online(rep: Report, repo: str, tag: str, exists: bool, fetch=gh) -> None:
+    """The two states of the PLUGIN's own tag under `--online` (ADR-0038 §3, §4).
+
+    UNBORN here and on the remote: `plugin.json` names a version above every
+    release of the line, the entry names its tag, and the plugin release
+    dispatched on this pull request's merge commit writes it. EXISTS here: the
+    remote carries it at the same commit, and a published Release stands at it
+    — a tag with no Release is a release run that stopped after its tag write,
+    finished by re-running the failed job and never by a new dispatch. A tag on
+    one side only is a red either way: what a creator installs is not what this
+    gate judged.
+    """
+    try:
+        remote = fetch(f"repos/{repo}/git/ref/tags/{tag}")
+    except NotFound:
+        remote = None
+    if remote is None:
+        if exists:
+            rep.find(
+                f"this checkout carries the plugin tag {tag} and {repo} does not. The "
+                f"entry names a tag only this machine has, so what a creator "
+                f"installs is not what this gate judged."
+            )
+            rep.bind(f"plugin release tag(s) of {repo} asked about", 0, 1)
+            return
+        print(
+            f"  ok   {repo} has no tag {tag}, which is the state the offline half "
+            f"judged: `plugin.json` names a version above every release of the "
+            f"line, and the plugin release dispatched on this pull request's merge "
+            f"commit writes the tag (ADR-0038 §4)."
+        )
+        rep.bind(f"unborn plugin release tag(s) confirmed absent on {repo}", 1, 1)
+        return
+    if not exists:
+        rep.find(
+            f"{repo} now carries the plugin tag {tag}, and this checkout does not. "
+            f"Fetch it (`git fetch origin refs/tags/{tag}:refs/tags/{tag}`) and "
+            f"re-run — the tree that tag names is what a creator now receives."
+        )
+        rep.bind(f"plugin release tag(s) of {repo} asked about", 1, 1)
+        return
+    obj = remote["object"] if isinstance(remote, dict) else {}
+    commit = obj.get("sha")
+    if obj.get("type") == "tag":
+        commit = fetch(f"repos/{repo}/git/tags/{commit}")["object"]["sha"]
+    local = subprocess.run(
+        ["git", "-C", str(REPO), "rev-parse", "--verify", f"refs/tags/{tag}^{{commit}}"],
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    if commit != local:
+        rep.find(
+            f"{tag} in {repo} is commit {commit}, and this checkout's {tag} is "
+            f"{local}. The entry delivers the remote's tree, which nothing here read."
+        )
+    else:
+        print(f"  ok   {tag} is {str(commit)[:8]} in {repo} — the plugin root a creator receives")
+    try:
+        rel = fetch(f"repos/{repo}/releases/tags/{tag}")
+    except NotFound:
+        rel = None
+    if rel is None or (isinstance(rel, dict) and rel.get("draft")):
+        rep.find(
+            f"{repo} has the plugin tag {tag} and no published Release at it. The "
+            f"plugin release writes the tag and then the Release in one run; a tag "
+            f"standing alone is that run stopped halfway, finished by re-running "
+            f"its failed job (ADR-0038 §4)."
+        )
+    else:
+        print(f"  ok   a published Release stands at {tag}")
+    rep.bind(f"plugin release tag(s) of {repo} held to the tree they name", 1, 1)
 
 
 # --------------------------------------------------------------------- main --
@@ -2887,6 +3009,10 @@ def main(argv: list[str] | None = None) -> int:
                 print("== the release the page downloads ==")
                 version = engine_version(engine / "Cargo.toml")
                 online(rep, engine, repo, ref, version, tag_exists)
+                print("== the release the marketplace serves the page from ==")
+                plugin_tag = plugin_tag_here()
+                if plugin_tag is not None:
+                    plugin_online(rep, repo, plugin_tag, plugin_tag in plugin_tags_here())
                 if tag_exists:
                     print("== the names the page gives the release, asked of the release ==")
                     binary = acquire_release(pathlib.Path(tmp) / "release-bin")

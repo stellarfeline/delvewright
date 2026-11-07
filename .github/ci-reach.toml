@@ -167,7 +167,7 @@ inputs = [
 name = "pin-drift"
 inputs = [
   { glob = ".claude/**", why = "`check-skill-page.py --online` reads the pin and asks the release binary about every name the plugin's shipped files give it (rule 18)" },
-  { glob = ".claude-plugin/**", why = "the marketplace manifest, a site of the `skill-page-engine` pin both scripts read" },
+  { glob = ".claude-plugin/**", why = "the marketplace manifest, whose entry `check-skill-page.py --online` holds to the plugin's own release tag and asks the remote about" },
   { glob = "Cargo.toml", why = "the engine version `check-skill-page.py --online` reads from the engine tree, which is this tree while the pinned tag is unborn" },
   { glob = "tools/ci/check-pins.py", why = "the drift check this job runs" },
   { glob = "tools/ci/check-skill-page.py", why = "the release-shelf check this job runs" },

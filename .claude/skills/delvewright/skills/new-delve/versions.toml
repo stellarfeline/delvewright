@@ -1,23 +1,19 @@
-# The page's own pin: the ONE engine this page is written against, proven on,
-# and SHIPS AT.
+# The page's own pin: the ONE engine this page is written against and proven on.
 #
-# spec-0063 §8, ADR-0029 §1. `ref` is the engine release TAG the marketplace
-# entry serves this page from, so the plugin root a creator installs and the
-# engine tree their Init clones are the same commit — a creator never holds a
-# page and an engine from different revisions. The page reads this file and
-# restates nothing: a literal on the page goes stale the first time the pin
-# moves and nothing catches it; an indirection stays true and
-# `tools/ci/check-skill-page.py` holds it.
+# spec-0063 §8, ADR-0038 §2. `ref` is the engine release TAG the page is judged
+# against (`tools/ci/check-skill-page.py`) and the engine a creator's Init
+# installs: the source tree Init I2 detaches at is the commit this tag points
+# at, and the archive Init I3a downloads is on the Release at this tag, named
+# for the version the tag states — both derived from `ref`, neither written a
+# second time (ADR-0023). The page reads this file and restates nothing: a
+# literal on the page goes stale the first time the pin moves and nothing
+# catches it; an indirection stays true and the gate holds it.
 #
-# ONE NAME, BOTH CHANNELS (ADR-0023). The archive Init I3a downloads is on the
-# Release at this tag and is named for the version the tag states; the source
-# tree Init I2 detaches at is the commit this tag points at. Both are derived
-# from `ref`, and neither is written a second time.
-#
-# THE SECOND FILE. `.claude-plugin/marketplace.json`'s entry carries the same
-# name, because Claude Code reads that file and reads nothing else. This file is
-# the authority and the entry is its copy; `tools/ci/check-skill-page.py` holds them
-# equal and a difference is a red.
+# THE PAGE ITSELF ships at the plugin's own release (ADR-0038 §3): the
+# marketplace entry in `.claude-plugin/marketplace.json` serves the plugin root
+# at `delvewright--v<plugin.json version>`, so this pin names the engine a
+# creator installs and never the page they receive. The gate holds that
+# derivation too.
 #
 # Registered in `.github/pins.toml` under the `release` policy. Drift past it is
 # not a finding: what an author needs is the engine the page was WALKED against,

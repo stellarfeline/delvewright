@@ -6,7 +6,7 @@ This repository releases three things, each by its name and its version:
 
     delvec--v1.6.0            the creator binary       (.github/workflows/engine-release.yml)
     delvewright-dsl--v0.26.0  the format crate          (.github/workflows/dsl-crate-publish.yml)
-    delvewright--v1.4.3       the Claude Code plugin    (.github/workflows/plugin-release.yml)
+    delvewright--v1.15.1      the Claude Code plugin    (.github/workflows/plugin-release.yml)
 
 The version is a strict semver triple — no leading zero, no prerelease, no build
 metadata. A workflow's `on.push.tags` filter can only say "starts with the name

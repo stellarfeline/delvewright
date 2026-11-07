@@ -33,13 +33,14 @@ edit. Template at the bottom.
 | [0026](0026-one-approval-two-platforms.md) | One approval authorises both platforms — an engine release reaches crates.io and the GitHub Release together, or neither | Accepted; §4's open question closed by ADR-0028 |
 | [0027](0027-the-content-repository-is-optional-and-the-rig-is-reached-not-carried.md) | The content repository is an optional clone, and the plugin reaches the engine tree instead of carrying pieces of it | Accepted |
 | [0028](0028-three-things-released-by-name.md) | Three things, each released by its name and its version: `<name>--v<semver>` tags for `delvec`, `delvewright-dsl` and the `delvewright` plugin | Superseded in part by ADR-0033 (§5) and by ADR-0036 (§2's notes); §3 superseded by ADR-0029 |
-| [0029](0029-the-page-ships-at-a-tag.md) | The page ships at a tag — the marketplace serves the plugin from the engine release the page pins | Accepted |
+| [0029](0029-the-page-ships-at-a-tag.md) | The page ships at a tag — the marketplace serves the plugin from the engine release the page pins | Superseded in part by ADR-0038 (§1, §2, §5) |
 | [0031](0031-a-module-per-object-class.md) | A module per object class — no file that every feature touches | Proposed |
 | [0032](0032-one-map-route.md) | One map route — a site is a plan of scenes, and a scene is drawn whole | Accepted |
-| [0033](0033-the-plugin-version-is-the-engine-release-it-ships-at.md) | The plugin's version is the engine release it ships at: derived and checked, the pin names the unborn tag, the plugin release writes no branch | Accepted |
+| [0033](0033-the-plugin-version-is-the-engine-release-it-ships-at.md) | The plugin's version is the engine release it ships at: derived and checked, the pin names the unborn tag, the plugin release writes no branch | Superseded by ADR-0038 |
 | [0034](0034-the-gallery-baseline-is-computed-in-ci.md) | The gallery emission baseline is computed in CI from the merge base and the head, both built from source; only the expected-warnings ledger is committed | Accepted |
 | [0036](0036-a-release-notes-are-a-summary-not-the-merged-list.md) | A Release's notes are a summary written before the release — a `RELEASE-NOTES.md` entry the workflows judge and publish — never the list of merged pull-request titles | Accepted |
 | [0037](0037-peak-memory-is-bounded-in-map-size.md) | Peak memory is bounded in map size: every whole-map stage runs over a chunked world store with a fixed working set, and the engine states a build's resource cost before it starts | Proposed |
+| [0038](0038-the-plugin-is-released-on-its-own-version.md) | The plugin is released on its own version: the marketplace serves the plugin root at the plugin's tag, the page pins the engine it is proven on, and a plugin release needs no engine release | Accepted |
 
 ## Template
 
