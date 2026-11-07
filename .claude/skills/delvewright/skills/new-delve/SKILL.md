@@ -315,6 +315,8 @@ Every destination is built to read as what it is: `docs/reference/game-writing.m
 A plot is planned with what it holds before its box is written — its structures
 and open ground, which are walked, each part's play space in cells — and its box
 is sized from them (`references/placement.md`).
+A long way between places carries something new every so often, and a stretch
+with nothing gets a place of its own beside it (`references/placement.md`).
 A settlement — streets, lots, a harbour — is laid out against the town
 checklist, and its places are drawn with the starter's town helpers:
 `references/town.md`.
