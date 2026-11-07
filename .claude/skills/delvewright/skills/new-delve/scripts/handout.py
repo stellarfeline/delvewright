@@ -313,14 +313,24 @@ def design_rows(
             n += 1
             rows.append(f"- seam {q(edge)} is written as: {s.get('form', '(no form)')}")
     for quest in quests.get("quests", []):
-        for npc, c in (quest.get("cast") or {}).items():
-            if c.get("at") in owed:
-                n += 1
-                rows.append(
-                    f"- cast: {q(npc)} stands at {q(c['at'])}"
-                    + (f", {c['doing']}" if c.get("doing") else "")
-                    + f" (quest {q(quest.get('id'))})"
-                )
+        for npc, entry in (quest.get("cast") or {}).items():
+            # A cast entry is a bare keyword ("dead" / "offstage": no scene, owes no place),
+            # one placement, or a list of per-branch placements (`CastEntry`, crates/dsl/src/cast.rs);
+            # a placement's `at` is a keyword, an anchor, or a mark {anchor, offset} (`CastPlace`).
+            if isinstance(entry, str):
+                continue
+            for c in entry if isinstance(entry, list) else [entry]:
+                at = c.get("at")
+                anchor = at.get("anchor") if isinstance(at, dict) else at
+                if anchor in owed:
+                    n += 1
+                    offset = at.get("offset") if isinstance(at, dict) else None
+                    rows.append(
+                        f"- cast: {q(npc)} stands at {q(anchor)}"
+                        + (f" + {json.dumps(offset, separators=(',', ':'))}" if offset and any(offset) else "")
+                        + (f", {c['doing']}" if c.get("doing") else "")
+                        + f" (quest {q(quest.get('id'))})"
+                    )
         for o in quest.get("objectives", []):
             if o.get("anchor") in owed:
                 n += 1
