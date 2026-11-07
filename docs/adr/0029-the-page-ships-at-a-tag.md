@@ -1,6 +1,6 @@
 # ADR-0029: The page ships at a tag — the marketplace serves the plugin from the engine release the page pins
 
-- **Status**: Accepted
+- **Status**: Superseded in part by ADR-0038 (§1, §2, §5)
 - **Date**: 2026-09-16
 - **Source**: the rule that the page and the engine a creator clones move
   together, with no window in which a fresh `/new-delve` is broken.

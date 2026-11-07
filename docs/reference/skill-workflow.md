@@ -20,72 +20,63 @@ it, in this repository, judging it against the engine at `[engine].ref`.
 
 ## The release order, and the property it buys
 
-**A creator never holds a page and an engine from different revisions.** The
-marketplace entry is a `git-subdir` source whose `ref` is the engine release tag
-the page pins, and `[engine].ref` inside the bytes that tag delivers is that same
-tag, so the plugin root a creator installs and the engine tree their Init clones
-are one commit. It holds by construction rather than by a gate comparing two
-trees (ADR-0029 §1).
+**The page a creator receives is a released tree, and the engine it installs is
+a released engine the page was proven on.** The marketplace entry is a
+`git-subdir` source whose `ref` is the plugin's own release tag,
+`delvewright--v<plugin.json version>`; the `versions.toml` inside the bytes that
+tag delivers pins `[engine].ref`, the engine release every rule of
+`tools/ci/check-skill-page.py` judged the page against. The two are different
+commits, held compatible by the gate rather than by construction (ADR-0038
+§2–§3): a page green against the engine at its pin is a page proven on it.
 
-For every engine release the page moves to, in order:
+The plugin is released on its own clock (ADR-0038 §1, §4). For a plugin
+release, in order:
 
-1. **A pull request names the tag.** It writes `[engine].ref` and the entry's
-   `ref` to `delvec--v<version>`, where `<version>` is `[engine].version` at the
-   root of the same tree, and `plugin.json` `version` to `<version>`. That pull
-   request is the one that walks the page against the engine — which is now this
-   tree — and it merges on the same terms as any page change.
-   `tools/ci/check-skill-page.py` refuses a name that is not this tree's own tag
-   and a `plugin.json` version that is not the tag's, and
-   `tools/ci/check-pins.py --online` refuses the name too. The same pull
-   request writes the release's notes: it replaces `RELEASE-NOTES.md` wholesale
-   with one entry per line the commit will release (`## delvec <version>`,
-   `## delvewright <version>`, and `## delvewright-dsl <dsl_version>` when the
-   format moved since its last release), each written from `git log <previous
-   tag of the line>..HEAD` as a summary for the reader — `### Highlights`, then
-   the changes grouped — never the merged titles. The published Release keeps
-   each version's text; the file holds only the release being prepared.
-   `tools/ci/check-release-notes.py` judges the entries on the pull request
-   (an entry for a version the tree has moved past is stale); the release
-   workflow refuses a commit whose version has no entry.
+1. **A pull request prepares it.** It moves `plugin.json` `version` forward
+   from the newest `delvewright--v*` tag (patch for a fix, minor for a change
+   in what a creator can do), moves the entry's `ref` to
+   `delvewright--v<version>`, and writes the `## delvewright <version>` entry
+   of `RELEASE-NOTES.md` as a summary for the reader — `### Highlights`, then
+   the changes grouped — never the merged titles. It merges on the same terms
+   as any page change. `check-skill-page.py` rule 11 holds the version above
+   every release of the line, rule 12 holds the entry to the tag the version
+   derives, and `tools/ci/check-release-notes.py` judges the entry where it is
+   written.
 2. **The release is dispatched on the merge commit**, as the next act.
-   `engine-release.yml` derives the same name from the same tree, fills the
-   shelf, uploads to crates.io, writes the tag at that commit and undrafts. From
-   this moment a fresh install receives the plugin root of that commit, and an
-   existing install updates to it.
-3. **The plugin release records it.** `plugin-release.yml`, dispatched with the
-   same `<version>`, tags `delvewright--v<version>` at the commit
-   `delvec--v<version>` names and publishes the plugin root as an archive. It
-   writes to no branch and delivers nothing the engine release has not already
-   delivered.
-4. **Nothing follows.** No commit re-points the entry and no pull request waits
-   on the release. `main` moves on, and its tip's page is judged against the
-   engine at the tag until the next pull request names the next tag.
+   `plugin-release.yml` takes the commit, and `tools/ci/check-plugin-release.py
+   --online` refuses before anything is written: a commit off `main`, a tag
+   already written, a version not above the line's newest, an entry that does
+   not name the tag, a pin whose engine Release is not published. Then
+   `check-skill-page.py --online` runs at the commit, the notes are read
+   (refused without the entry), the tag is written at the commit and the
+   Release created, never Latest. It writes to no branch and needs no engine
+   release.
+3. **Nothing follows.** No commit re-points the entry. `main` moves on; a page
+   edit merged afterwards leaves the version alone, is counted by rule 11 as
+   drift ahead of the tag, and reaches creators with the next plugin release.
 
-**The order is not reversible.** A pull request that points the pin at a tag
-already written is refused unless the tree that tag names already states that
-tag's version in `plugin.json` — which only a tree whose pin named the tag
-before its release does. Pinning an engine release after the fact delivers the
-page and the pin as they stood at the release, under the version they stood at,
-so it reaches no installed creator.
+For an engine release whose page must reach creators, the same pull request
+also names the engine's unborn tag (`[engine].ref` and `[engine].version`,
+ADR-0029 §3) and writes the engine's entry; the engine release is dispatched
+first, the plugin release after it on the same or a later `main` commit,
+because the plugin ships only at a published engine. A pin onto an engine
+release already written is admitted the moment the page is walked against it,
+with no version condition on the engine's side.
 
 **Between step 1 and step 2 a fresh install is refused, not broken** — measured
-on the pinned Claude Code: `claude plugin install` exits 1 with `Failed to clone
-repository for git-subdir source: … fatal: Remote branch <tag> not found in
-upstream origin`, and nothing is installed. An existing install is untouched:
-`claude plugin update` fails the same way and keeps the bytes and the version it
-had.
+on the pinned Claude Code (ADR-0029 §4): `claude plugin install` exits 1 with
+`Failed to clone repository for git-subdir source: … fatal: Remote branch <tag>
+not found in upstream origin`, and nothing is installed. An existing install is
+untouched: `claude plugin update` fails the same way and keeps the bytes and
+the version it had.
 
-**A newer page reaches an existing creator when the entry's `ref` moves to a tag
-whose `plugin.json` `version` differs from the one they hold** — an unchanged
-version is not an update, measured. So the plugin's version is the version of
-the engine release it ships at, derived rather than chosen
-(`tools/ci/check-skill-page.py` rule 11): every pin move is a new version, and a
-creator's installed plugin version names the engine release whose page they hold
-and whose `delvec` their Init installs. A pull request that edits the page
-between releases leaves the version alone; its edit reaches creators with the
-next pin move. Every tag written before the rule (`delvec--v1.6.0` …
-`delvec--v1.10.0`) delivers 1.5.0, so the first release made under it is what
-reaches a creator who installed any of them.
+**A newer page reaches an existing creator when the entry's `ref` resolves to a
+tree whose `plugin.json` `version` differs from the one they hold** — an
+unchanged version is not an update, measured. Every plugin release moves the
+version, so every plugin release reaches every installed creator; a creator who
+holds 1.15.0 from `delvec--v1.15.0` receives 1.15.1 on `/plugin marketplace
+update delvewright` then `/plugin update`. A fixed page is held by adding the
+marketplace at the plugin's own tag, `stellarfeline/delvewright#delvewright--v<version>`.
 
 This file stays beside it rather than in it: it is about how an agent driving
 the page splits the work, which is engine-side planner material and is

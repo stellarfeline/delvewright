@@ -320,11 +320,44 @@ from several installed plugins are intersected. Cross-marketplace dependencies
 are refused unless the root marketplace lists the target in
 `allowCrossMarketplaceDependenciesOn`.
 
-**SILENT, partially.** *Plugins reference* links a section named "Version
-management" for the full resolution order. That section was not read here; the
-rules above are assembled from the `version` field's own description and from
-*Plugin marketplaces*, and the ordering between those two sources is stated by
-neither in one place.
+**CITED** (*Plugin loading*, "Versions and updates" and "How Claude Code
+computes the version"). "Claude Code computes a version for every plugin it
+installs, and that version is how it detects an update. `claude plugin update`
+and background auto-update compute the version again and don't replace the
+cached copy when it matches what `installed_plugins.json` records." The order:
+"1. The `version` field in the plugin's manifest comes first 2. Then the
+`version` field in the plugin's marketplace entry 3. When neither is set, the
+version comes from the source type" — for `github`, `url` or `git-subdir`,
+"the commit SHA of the source, shortened to 12 characters. A `git-subdir`
+version also carries a hash of the subdirectory path". "Because the manifest
+comes first, a manifest that pins `"version": "1.0.0"` keeps every user on the
+cached copy until its author changes the string, however many commits they
+push. To let users track commits instead, leave `version` out of both the
+manifest and the entry."
+
+**CITED** (*Host a marketplace*, "Release a new version" and "Hold users on one
+version"). "To release a new version to users, change the plugin's `version`.
+Users get a new copy only when the plugin's computed version differs from the
+one they have." "One marketplace serves one version of each plugin at a time,
+so you hold users on a version by choosing what each entry points at": "`ref`
+and `sha` on the plugin entry: `ref` names a branch or tag and `sha` names a
+commit for a `github`, `url`, or `git-subdir` source". Under release channels:
+"a ref that moves without a version change leaves users on the cached copy."
+
+**CITED** (*Marketplace reference*, "Plugin sources"). A `git-subdir` source
+takes `url`, `path`, `ref` and `sha`; "`ref`: a branch or tag. Defaults to the
+repository's default branch"; "`sha`: a full 40-character lowercase commit SHA.
+When you set both `ref` and `sha`, Claude Code checks out `sha`."
+
+**CITED** (*Plugin manifest*). `version` is "A version string, not checked
+against semver. Setting it pins the plugin to that version until you change
+it." A missing `version` is a validation warning, which `--strict` turns into a
+failure.
+
+**What this tree does with it** (ADR-0038): `plugin.json` `version` is the
+plugin's own line, the marketplace entry's `ref` is `delvewright--v<version>`,
+and the page's pin names the engine it is proven on; the version string is the
+update event, the tag is the delivered tree.
 
 ---
 
@@ -687,7 +720,7 @@ which, in a single file, is what happens anyway.
 
 Anthropic's own documentation is the primary source for the standard throughout.
 No secondary source is cited on this page; where a claim rests on something not
-read verbatim, the finding says so. ADR-0014, ADR-0023, ADR-0029 and
+read verbatim, the finding says so. ADR-0014, ADR-0023, ADR-0029, ADR-0038 and
 spec-0063 are cited from this tree.
 
 - *Specification* — Agent Skills, "Specification", <https://agentskills.io/specification>
@@ -699,3 +732,7 @@ spec-0063 are cited from this tree.
 - *Plugin marketplaces* — Claude Code Docs, "Create and distribute a plugin marketplace", <https://code.claude.com/docs/en/plugin-marketplaces>
 - *Discover plugins* — Claude Code Docs, "Discover and install prebuilt plugins through marketplaces", <https://code.claude.com/docs/en/discover-plugins>
 - *Plugin dependencies* — Claude Code Docs, "Constrain plugin dependency versions", <https://code.claude.com/docs/en/plugin-dependencies>
+- *Plugin loading* — Claude Code Docs, "Plugin loading reference", <https://code.claude.com/docs/en/plugins/loading>
+- *Host a marketplace* — Claude Code Docs, "Host and maintain a marketplace", <https://code.claude.com/docs/en/plugins/host-marketplace>
+- *Marketplace reference* — Claude Code Docs, "Marketplace reference", <https://code.claude.com/docs/en/plugins/marketplace-reference>
+- *Plugin manifest* — Claude Code Docs, "Plugin manifest reference", <https://code.claude.com/docs/en/plugins/manifest-reference>
