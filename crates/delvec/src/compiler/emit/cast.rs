@@ -5,6 +5,11 @@ use super::*;
 /// The per-player scene selector the cast ledger dispatches on (spec-0020).
 pub(super) const CAST_SCORE: &str = "dw.cast";
 
+/// The `dw.sys` holder `cast_<npc>` saves the standing selection in, at the head
+/// of a quest whose `"unchanged"` placement follows another placement of its
+/// own. The selector runs to completion as one player, so one holder serves all.
+const CAST_CARRY: &str = "#cast_carry";
+
 /// The right-click body for one NPC: the cast ledger's scene dispatch, or — for
 /// an NPC no quest casts — the single `show_node_cmd(root)` line that has always
 /// been there (so a campaign with no ledger is byte-identical).
@@ -71,7 +76,27 @@ pub(super) fn cast_selector_fn(
 ) -> Option<(String, String)> {
     let cast = casts.get(&npc.npc_id)?;
     let mut body = vec![format!("scoreboard players set @s {CAST_SCORE} 0")];
-    for cl in &cast.by_quest {
+    for (n, cl) in cast.by_quest.iter().enumerate() {
+        // `"unchanged"` claims nothing: while its gate holds it puts back what
+        // governed before this quest's first clause (`cast::governing_scene`).
+        // As the quest's first clause that is the selection already standing, so
+        // nothing is written; after a sibling placement of the same quest the
+        // standing selection is saved at the head of the quest's run and restored.
+        let first_of_quest = n == 0 || cast.by_quest[n - 1].quest != cl.quest;
+        if first_of_quest
+            && cast.by_quest[n..]
+                .iter()
+                .take_while(|j| j.quest == cl.quest)
+                .skip(1)
+                .any(|j| j.scene.is_none())
+        {
+            body.push(format!(
+                "scoreboard players operation {CAST_CARRY} dw.sys = @s {CAST_SCORE}"
+            ));
+        }
+        if cl.scene.is_none() && first_of_quest {
+            continue;
+        }
         // Per-branch casts add their branch gate to the same clause, so a
         // branch-divergent NPC really does dispatch per branch. Flags are party
         // state (`#party`), matching every other flag read in the dialogue path.
@@ -94,11 +119,14 @@ pub(super) fn cast_selector_fn(
         // is per-player (`dw.cast` on `@s`), so a `player`-scoped datum is legal
         // here too.
         gate.push_str(&state_cond(plan, &cl.requires_state, false));
+        let act = match cl.scene {
+            Some(scene) => format!("scoreboard players set @s {CAST_SCORE} {scene}"),
+            None => format!("scoreboard players operation @s {CAST_SCORE} = {CAST_CARRY} dw.sys"),
+        };
         body.push(format!(
-            "execute if score {} {} matches 1{gate} run scoreboard players set @s {CAST_SCORE} {}",
+            "execute if score {} {} matches 1{gate} run {act}",
             plan::PARTY,
             quest_active_score(&cl.quest),
-            cl.scene
         ));
     }
     Some((format!("cast_{}", npc.safe), lines(&body)))

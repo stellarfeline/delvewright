@@ -129,8 +129,12 @@ pub struct CastScene {
 pub struct CastClause {
     /// The quest whose ledger declared it.
     pub quest: String,
-    /// The scene index this clause selects.
-    pub scene: u32,
+    /// The scene index this clause selects, or `None` for an `"unchanged"`
+    /// placement: the clause **makes no claim**. While its gate holds it puts
+    /// back whatever governed before its quest's clauses ran, so the NPC answers
+    /// as if this quest had not declared it at all. A sibling quest that only
+    /// carries an NPC forward therefore never overrides the quest that needs it.
+    pub scene: Option<u32>,
     /// Branch gate: every listed flag must be set (per-branch casts).
     pub requires_flags: Vec<String>,
     /// Branch gate: no listed flag may be set.
@@ -152,8 +156,9 @@ pub struct NpcCast {
     /// quest. **Later clauses override earlier ones**, exactly as a later quest
     /// overrides an earlier one — so a per-branch entry lists its fallback first
     /// and its specific branches after. A quest that declares `"unchanged"`
-    /// yields a clause pointing at the scene it carries forward, which is why the
-    /// sugar emits no new artifact and still governs the right-click.
+    /// yields a clause with no scene ([`CastClause::scene`]): it emits no new
+    /// artifact and claims nothing, so what governs is decided by the other
+    /// quests that have begun. [`governing_scene`] is the one evaluation.
     pub by_quest: Vec<CastClause>,
 }
 
@@ -178,14 +183,12 @@ pub fn npc_casts(c: &Campaign) -> BTreeMap<String, NpcCast> {
                 };
                 let cast = out.entry(npc.as_str().to_string()).or_default();
                 let idx = match dialogue {
-                    // `"unchanged"`: carry the previous scene forward. Emits
-                    // nothing new — the dispatch keeps pointing at the same scene.
-                    CastDialogue::Keyword(CastDialogueKeyword::Unchanged) => {
-                        match cast.by_quest.last() {
-                            Some(c) => c.scene,
-                            None => continue, // DW0466 elsewhere; nothing to resolve
-                        }
-                    }
+                    // `"unchanged"`: this quest makes no claim on the
+                    // right-click. Resolved at run time, never to a scene
+                    // picked here: the clause ranked before it may belong to a
+                    // sibling quest, another branch, or this quest's own other
+                    // placement, and none of those is what governs.
+                    CastDialogue::Keyword(CastDialogueKeyword::Unchanged) => None,
                     _ => {
                         let action = match dialogue {
                             CastDialogue::Keyword(CastDialogueKeyword::None) => SceneAction::Silent,
@@ -197,7 +200,7 @@ pub fn npc_casts(c: &Campaign) -> BTreeMap<String, NpcCast> {
                         // repeated root id costs no extra artifact (it is still
                         // flagged as staleness by `DW0467`).
                         match cast.scenes.iter().find(|s| s.action == action) {
-                            Some(s) => s.index,
+                            Some(s) => Some(s.index),
                             None => {
                                 let index = cast.scenes.len() as u32 + 1;
                                 cast.scenes.push(CastScene {
@@ -205,7 +208,7 @@ pub fn npc_casts(c: &Campaign) -> BTreeMap<String, NpcCast> {
                                     action,
                                     declared_by: qid.clone(),
                                 });
-                                index
+                                Some(index)
                             }
                         }
                     }
@@ -433,25 +436,48 @@ pub fn check_cast(c: &Campaign) -> Vec<Diagnostic> {
 // An objective that cannot be completed is refused (DW0858)
 // ---------------------------------------------------------------------------
 
-/// Every quest that can still be live while `quest` is — a sound
-/// over-approximation, used to bound which cast scenes an objective in `quest`
-/// could ever be answered by.
+/// The quests that have certainly begun once `quest` has opened.
 ///
-/// Two exclusions, and both are facts about the emitted dispatch rather than
-/// guesses:
-///
-/// * **Anything ranked before `quest` in [`quest_dag_order`]** cannot govern,
-///   because clauses accumulate in that order and the LAST one whose quest has
-///   begun wins — so as long as `quest` declares this NPC at all, its own clause
-///   overrides every earlier one. (The caller only applies the rule when `quest`
-///   does declare one; an NPC `quest` puts offstage has no body to right-click,
-///   which is [`check_placement_position`]'s question.)
-/// * **Anything whose trigger chain waits on `quest` itself.** `dw.qa_*` is set
-///   when a quest starts, so a quest that only opens once `quest` COMPLETES
-///   cannot have begun while an objective of `quest` is still pending — and an
-///   objective is what has to complete first.
-fn concurrent_quests<'a>(c: &'a Campaign, quest: &str, order: &'a [String]) -> BTreeSet<&'a str> {
-    // Quests transitively unlocked by `quest` completing.
+/// A quest begins when its trigger fires, and `dw.qa_*` is never cleared. The
+/// only triggers are `campaign-start` and `quest-complete`, so a quest's trigger
+/// chain is a path of completions: every quest on it has completed by the time
+/// `quest` opens, and every quest one of those completions opens — the siblings
+/// `quest` opens beside, in the same tick, among them — has begun too, as has
+/// every `campaign-start` quest.
+fn begun_at_open(c: &Campaign, quest: &str) -> BTreeSet<String> {
+    use delvewright_dsl::Trigger;
+    let quests = &c.quests.content.quests;
+    let trigger = |id: &str| {
+        quests
+            .iter()
+            .find(|q| q.id.as_str() == id)
+            .map(|q| &q.trigger)
+    };
+    let mut done: BTreeSet<&str> = BTreeSet::new();
+    let mut cur = quest;
+    while let Some(Trigger::QuestComplete { quest: src }) = trigger(cur) {
+        if !done.insert(src.as_str()) {
+            break; // a trigger cycle is another proof's finding
+        }
+        cur = src.as_str();
+    }
+    let mut out: BTreeSet<String> = done.iter().map(|q| q.to_string()).collect();
+    out.insert(quest.to_string());
+    for q in quests {
+        let opened = match &q.trigger {
+            Trigger::CampaignStart => true,
+            Trigger::QuestComplete { quest: src } => done.contains(src.as_str()),
+        };
+        if opened {
+            out.insert(q.id.as_str().to_string());
+        }
+    }
+    out
+}
+
+/// Every quest transitively opened by `quest` completing: none of them can have
+/// begun while an objective of `quest` is still pending.
+fn opened_by_completion<'a>(c: &'a Campaign, quest: &str) -> BTreeSet<&'a str> {
     let mut blocked: BTreeSet<&str> = BTreeSet::new();
     loop {
         let mut changed = false;
@@ -467,13 +493,56 @@ fn concurrent_quests<'a>(c: &'a Campaign, quest: &str, order: &'a [String]) -> B
             break;
         }
     }
-    let rank = order.iter().position(|q| q == quest);
-    order
-        .iter()
-        .enumerate()
-        .filter(|(i, q)| rank.is_none_or(|r| *i >= r) && !blocked.contains(q.as_str()))
-        .map(|(_, q)| q.as_str())
-        .collect()
+    blocked
+}
+
+/// The scenes that can govern `cast`'s NPC once exactly the quests in `begun`
+/// have begun, with every branch gate left open (any of them may hold), and the
+/// quests whose clauses supply them.
+///
+/// It is [`governing_scene`] read over every gate assignment at once: walk the
+/// begun quests from the last-ranked down, collect each one's scenes, and stop at
+/// the first quest whose entry always overrides what lies below it — an ungated
+/// placement with a scene and no `"unchanged"` placement after it. A quest
+/// that only carries the NPC forward contributes nothing and stops nothing.
+/// `0` (the stage-6 root) is in the answer when no begun quest stops the walk.
+fn scenes_that_can_govern(
+    cast: &NpcCast,
+    begun: &BTreeSet<String>,
+) -> (BTreeSet<u32>, Vec<String>) {
+    let mut scenes = BTreeSet::new();
+    let mut by: Vec<String> = Vec::new();
+    let mut blocks: Vec<&[CastClause]> = Vec::new();
+    let mut rest = cast.by_quest.as_slice();
+    while let Some(first) = rest.first() {
+        let n = rest.iter().take_while(|cl| cl.quest == first.quest).count();
+        blocks.push(&rest[..n]);
+        rest = &rest[n..];
+    }
+    for block in blocks.into_iter().rev() {
+        if !begun.contains(&block[0].quest) {
+            continue;
+        }
+        let own: Vec<u32> = block.iter().filter_map(|cl| cl.scene).collect();
+        if !own.is_empty() {
+            scenes.extend(own);
+            by.push(block[0].quest.clone());
+        }
+        let ungated = |cl: &&CastClause| {
+            cl.requires_flags.is_empty()
+                && cl.forbids_flags.is_empty()
+                && cl.requires_state.is_empty()
+        };
+        let overrides = block
+            .iter()
+            .rposition(|cl| cl.scene.is_some() && ungated(&cl))
+            .is_some_and(|i| block[i + 1..].iter().all(|cl| cl.scene.is_some()));
+        if overrides {
+            return (scenes, by);
+        }
+    }
+    scenes.insert(0);
+    (scenes, by)
 }
 
 /// **An objective that cannot be completed is refused** (`DW0858`).
@@ -484,6 +553,9 @@ fn concurrent_quests<'a>(c: &'a Campaign, quest: &str, order: &'a [String]) -> B
 /// silent scene, so the interaction is consumed and the tree never appears. A
 /// quest that declares its own NPC silent and then asks the player to talk to
 /// them has written a beat the player walks up to, presses, and cannot pass.
+/// So has a quest whose NPC is overridden: quests that open together all begin
+/// at once, and the last-ranked of them that declares a scene for the NPC
+/// decides what right-click opens for as long as they are all open.
 ///
 /// Why the checks next door do not see it, and why this is not one of them:
 ///
@@ -499,14 +571,18 @@ fn concurrent_quests<'a>(c: &'a Campaign, quest: &str, order: &'a [String]) -> B
 ///   it does not trip it at all.
 /// * The deep fixpoint's `DW0203` is cast-blind by construction: it is monotone
 ///   and has no notion of *when*, whereas the ledger is entirely about when.
-///   [`crate::compiler::flow::Flow`]'s replay is the one place a moment exists,
-///   and it reads objectives, never the ledger.
 ///
-/// The rule is therefore the CONJUNCTION and nothing wider: an objective that
-/// requires this conversation, and no scene the ledger can present while that
-/// objective is live opening a tree from which an option completing it is
-/// reachable. A silent scene on its own stays legal — an NPC with nothing to say
-/// during a quest they are not part of is ordinary and common.
+/// The states judged are the ones the objective can be live in: the moment its
+/// quest opens ([`begun_at_open`]), and that moment plus any one quest that can
+/// still open before the objective's quest completes, with everything that
+/// quest's opening implies. At each state the scenes that can govern are
+/// [`scenes_that_can_govern`], the selector's own order. The objective passes
+/// when, at some such state, one of those scenes opens a tree from which an
+/// option completing it is reachable. One quest at a time is enough: adding a
+/// begun quest can only add an override above a scene, never remove one, so a
+/// scene that governs under several later openings governs under the smallest.
+/// A silent scene on its own stays legal — an NPC with nothing to say during a
+/// quest they are not part of is ordinary and common.
 ///
 /// Inert on a campaign with no ledger (pre-0.7): with no clause to consult there
 /// is no scene to be wrong about, and `DW0123` keeps its old verdict unchanged.
@@ -517,7 +593,8 @@ fn check_talk_answerable(c: &Campaign, order: &[String]) -> Vec<Diagnostic> {
     let casts = npc_casts(c);
 
     for (qi, q) in c.quests.content.quests.iter().enumerate() {
-        let mut live: Option<BTreeSet<&str>> = None;
+        let qid = q.id.as_str();
+        let mut states: Option<Vec<BTreeSet<String>>> = None;
         for (oi, obj) in q.objectives.iter().enumerate() {
             let Objective::TalkTo { id, npc, .. } = obj else {
                 continue;
@@ -528,37 +605,73 @@ fn check_talk_answerable(c: &Campaign, order: &[String]) -> Vec<Diagnostic> {
             // Only judge a quest that declares this NPC itself. Where it does
             // not, the body is absent or the campaign is pre-ledger, and another
             // proof owns that.
-            if !cast.by_quest.iter().any(|cl| cl.quest == q.id.as_str()) {
+            if !cast.by_quest.iter().any(|cl| cl.quest == qid) {
                 continue;
             }
             let Some(tree) = c.dialogue.content.tree_for(npc.as_str()) else {
                 continue; // DW0122: the npc has no tree at all
             };
-            let live = live.get_or_insert_with(|| concurrent_quests(c, q.id.as_str(), order));
+            let states = states.get_or_insert_with(|| {
+                let at_open = begun_at_open(c, qid);
+                let blocked = opened_by_completion(c, qid);
+                let mut out = vec![at_open.clone()];
+                for x in order {
+                    if at_open.contains(x) || blocked.contains(x.as_str()) {
+                        continue;
+                    }
+                    let mut s = at_open.clone();
+                    s.extend(begun_at_open(c, x));
+                    out.push(s);
+                }
+                out
+            });
 
-            let mut roots: Vec<&str> = Vec::new();
-            let mut silent = 0usize;
-            let mut barks = 0usize;
-            for cl in &cast.by_quest {
-                if !live.contains(cl.quest.as_str()) {
-                    continue;
-                }
-                match cast
-                    .scenes
+            let roots_of = |scenes: &BTreeSet<u32>| -> Vec<&str> {
+                scenes
                     .iter()
-                    .find(|s| s.index == cl.scene)
-                    .map(|s| &s.action)
-                {
-                    Some(SceneAction::Root(r)) => roots.push(r.as_str()),
-                    Some(SceneAction::Silent) => silent += 1,
-                    Some(SceneAction::Barks(_)) => barks += 1,
-                    None => {}
-                }
-            }
-            if tree.completes_from(&roots).contains(id.as_str()) {
+                    .filter_map(|i| {
+                        if *i == 0 {
+                            return Some(tree.root.as_str());
+                        }
+                        match cast
+                            .scenes
+                            .iter()
+                            .find(|s| s.index == *i)
+                            .map(|s| &s.action)
+                        {
+                            Some(SceneAction::Root(r)) => Some(r.as_str()),
+                            _ => None,
+                        }
+                    })
+                    .collect()
+            };
+            let answered = states.iter().any(|s| {
+                let (scenes, _) = scenes_that_can_govern(cast, s);
+                tree.completes_from(&roots_of(&scenes))
+                    .contains(id.as_str())
+            });
+            if answered {
                 continue;
             }
 
+            // The message reads the moment the quest opens: the first state the
+            // player meets, and the one every later state only overrides further.
+            let (scenes, by) = scenes_that_can_govern(cast, &states[0]);
+            let roots = roots_of(&scenes);
+            let mut silent = 0usize;
+            let mut barks = 0usize;
+            for i in &scenes {
+                match cast
+                    .scenes
+                    .iter()
+                    .find(|s| s.index == *i)
+                    .map(|s| &s.action)
+                {
+                    Some(SceneAction::Silent) => silent += 1,
+                    Some(SceneAction::Barks(_)) => barks += 1,
+                    _ => {}
+                }
+            }
             let offered = if roots.is_empty() {
                 let mut what = Vec::new();
                 if silent > 0 {
@@ -582,6 +695,31 @@ fn check_talk_answerable(c: &Campaign, order: &[String]) -> Vec<Diagnostic> {
                         .join(", ")
                 )
             };
+            let others: Vec<String> = by
+                .iter()
+                .filter(|b| b.as_str() != qid)
+                .map(|b| format!("`{b}`"))
+                .collect();
+            let overridden = if others.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    " Quest `{qid}`'s own clause does not govern: {} {} begun by the time it \
+                     opens and {} after it in the quest order, so {} cast clause overrides \
+                     `{qid}`'s for as long as both are open. Where {} no claim on `{npc}` \
+                     during this beat, declare `\"unchanged\"` there — an `\"unchanged\"` \
+                     clause claims nothing, so `{qid}`'s own declaration governs.",
+                    others.join(", "),
+                    if others.len() == 1 { "has" } else { "have" },
+                    if others.len() == 1 { "ranks" } else { "rank" },
+                    if others.len() == 1 { "its" } else { "their" },
+                    if others.len() == 1 {
+                        "it has"
+                    } else {
+                        "they have"
+                    },
+                )
+            };
 
             diags.push(Diagnostic::error(
                 DW_CAST_UNANSWERABLE,
@@ -591,17 +729,24 @@ fn check_talk_answerable(c: &Campaign, order: &[String]) -> Vec<Diagnostic> {
                     "`talk-to` objective `{id}` cannot be completed: while it is live, npc \
                      `{npc}`'s `cast` ledger offers {offered}. A silent scene consumes \
                      the right-click and opens nothing, and a bark pool never claims to advance \
-                     anything — so the player walks up, presses, and the beat does not pass. Give \
-                     `{npc}` a `dialogue` root in quest `{}`'s `cast` whose tree reaches \
+                     anything — so the player walks up, presses, and the beat does not pass.{overridden} \
+                     Give `{npc}` a `dialogue` root in quest `{qid}`'s `cast` whose tree reaches \
                      an option with a `complete-objective` effect for `{id}`, or drop the \
                      objective. (`DW0123` is green here on purpose: the completing option exists \
-                     in the tree, it is just not what right-click opens during this beat.)",
-                    q.id
+                     in the tree, it is just not what right-click opens during this beat.)"
                 ),
             ));
         }
     }
     diags
+}
+
+/// How a diagnostic or a generated comment names what a clause selects.
+pub fn scene_label(scene: Option<u32>) -> String {
+    match scene {
+        Some(i) => format!("scene {i}"),
+        None => "`\"unchanged\"`".to_string(),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -690,10 +835,36 @@ pub fn eval_ladder(
     flags: &BTreeMap<String, i32>,
     datums: &BTreeMap<String, i32>,
 ) -> u32 {
+    governing_scene(
+        cast,
+        |q| begun.contains(q),
+        |cl| clause_gate_holds(cl, flags, datums),
+    )
+}
+
+/// **The scene that governs**, given which quests have begun and which clause
+/// gates hold — the one walk every model of the `cast_<npc>` selector reads
+/// ([`eval_ladder`], the flow replay's right-click, [`check_talk_answerable`]).
+///
+/// Clauses run in ladder order and the last passing one wins. A clause with a
+/// scene sets it; an `"unchanged"` clause (no scene) puts back the selection
+/// that held before its own quest's first clause, so a quest that carries an
+/// NPC forward never decides what that NPC opens. `0` is the stage-6 root.
+pub fn governing_scene(
+    cast: &NpcCast,
+    begun: impl Fn(&str) -> bool,
+    gate: impl Fn(&CastClause) -> bool,
+) -> u32 {
     let mut sel = 0;
+    let mut before_quest = 0;
+    let mut quest: Option<&str> = None;
     for cl in &cast.by_quest {
-        if begun.contains(&cl.quest) && clause_gate_holds(cl, flags, datums) {
-            sel = cl.scene;
+        if quest != Some(cl.quest.as_str()) {
+            quest = Some(cl.quest.as_str());
+            before_quest = sel;
+        }
+        if begun(&cl.quest) && gate(cl) {
+            sel = cl.scene.unwrap_or(before_quest);
         }
     }
     sel
@@ -855,13 +1026,17 @@ pub fn distinguishing_drive(cast: &NpcCast, n: usize) -> Option<ClauseDrive> {
 
     // The guarantee the caller's assert rests on, verified in the model rather
     // than assumed from the construction above.
-    debug_assert_eq!(
-        eval_ladder(cast, &begun, &drive_flags, &drive_datums),
-        k.scene,
-        "a distinguishing drive selects its own clause by construction"
-    );
-    if eval_ladder(cast, &begun, &drive_flags, &drive_datums) != k.scene {
-        return None;
+    // An `"unchanged"` clause selects what governed before its quest, so only a
+    // clause with a scene of its own has a selection to confirm.
+    if let Some(scene) = k.scene {
+        debug_assert_eq!(
+            eval_ladder(cast, &begun, &drive_flags, &drive_datums),
+            scene,
+            "a distinguishing drive selects its own clause by construction"
+        );
+        if eval_ladder(cast, &begun, &drive_flags, &drive_datums) != scene {
+            return None;
+        }
     }
     Some(ClauseDrive {
         begun,
@@ -905,7 +1080,7 @@ fn check_clause_liveness(c: &Campaign) -> Vec<Diagnostic> {
             let shadowers: Vec<String> = cast.by_quest[n + 1..]
                 .iter()
                 .filter(|j| j.quest == k.quest)
-                .map(|j| format!("placement {} (scene {})", j.placement, j.scene))
+                .map(|j| format!("placement {} ({})", j.placement, scene_label(j.scene)))
                 .collect();
             let qi = quest_index(c, &k.quest);
             diags.push(Diagnostic::error(
