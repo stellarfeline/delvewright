@@ -722,18 +722,21 @@ fn every_live_clause_has_a_drive_its_model_confirms() {
 // `quest/one` → { `quest/two`, `quest/three` }, both opened by `quest/one`
 // completing, so they begin in the same tick; `quest/two` ranks first.
 // `quest/two` asks the player to talk to the scout. An optional `quest/four`
-// opens once `quest/three` completes.
+// opens once its parent completes: `quest/three` (a later opening) or
+// `quest/one` (a third sibling, ranked last).
 
-/// The sibling fixture's quest plan: the two siblings, plus `quest/four` when
-/// `four` is given.
-fn sibling_plan(four: bool) -> String {
-    let tail = if four {
-        r#",
-    { "id": "quest/four", "goal": "Report back.", "area": "area/keep",
-      "npcs": ["npc/scout"], "depends_on": ["quest/three"], "mandatory": false, "act": 1 }"#
-    } else {
-        ""
-    };
+/// The sibling fixture's quest plan: the two siblings, plus `quest/four` under
+/// `four`'s parent when given.
+fn sibling_plan(four: Option<&str>) -> String {
+    let tail = four
+        .map(|parent| {
+            format!(
+                r#",
+    {{ "id": "quest/four", "goal": "Report back.", "area": "area/keep",
+      "npcs": ["npc/scout"], "depends_on": ["{parent}"], "mandatory": false, "act": 1 }}"#
+            )
+        })
+        .unwrap_or_default();
     common::at_dsl_version(&format!(
         r#"{{
   "dsl_version": "%dsl_version%", "campaign_id": "hello-world", "stage": "quest-plan",
@@ -750,13 +753,13 @@ fn sibling_plan(four: bool) -> String {
 }
 
 /// Three (or four) quests; the scout's tree gains `dlg/scout-ask`, the one node
-/// whose option completes `obj/ask`.
-fn siblings(two: &str, three: &str, four: Option<&str>) -> Campaign {
+/// whose option completes `obj/ask`. `four` is `quest/four`'s parent and cast.
+fn siblings(two: &str, three: &str, four: Option<(&str, &str)>) -> Campaign {
     let four_q = four
-        .map(|c| {
+        .map(|(parent, c)| {
             format!(
                 r#",
-    {{ "id": "quest/four", "trigger": {{ "type": "quest-complete", "quest": "quest/three" }},
+    {{ "id": "quest/four", "trigger": {{ "type": "quest-complete", "quest": "{parent}" }},
        "objectives": [ {{ "type": "reach-anchor", "id": "obj/report", "anchor": "anchor/exit", "radius": 2 }} ],
        "on_complete": [], "cast": {c} }}"#
             )
@@ -789,7 +792,7 @@ fn siblings(two: &str, three: &str, four: Option<&str>) -> Campaign {
         world: hw("world.json"),
         npcs: NPCS.to_string(),
         classes: hw("classes.json"),
-        quest_plan: sibling_plan(four.is_some()),
+        quest_plan: sibling_plan(four.map(|(parent, _)| parent)),
         quests,
         dialogue,
         world_edits: None,
@@ -897,7 +900,7 @@ fn dw0858_an_objective_a_later_opening_answers_passes() {
       "npc/keeper": { "at": "anchor/keeper-stand", "doing": "watching you go", "dialogue": "dlg/after" },
       "npc/scout":  { "at": "anchor/exit", "doing": "waiting", "dialogue": "dlg/scout-later" }
     }"#;
-    let diags = cast::check_cast(&siblings(two, THREE_BARKS, Some(four)));
+    let diags = cast::check_cast(&siblings(two, THREE_BARKS, Some(("quest/three", four))));
     assert!(
         !diags.iter().any(|d| d.code == "DW0858"),
         "quest/four's opening answers obj/ask: {diags:#?}"
@@ -962,5 +965,46 @@ fn unchanged_puts_back_what_governed_before_its_quest() {
     assert_eq!(
         cast::eval_ladder(scout, &all, &warned, &Default::default()),
         scene_of(scout, "dlg/scout-ask"),
+    );
+}
+
+/// The shape that stranded the playtest, exactly: `quest/three` gives the scout
+/// a bark pool only once `quest/two` is done (`flag/asked`), and a third sibling
+/// opened in the same tick, ranked last, carries her forward. `"unchanged"` once
+/// resolved to the clause ranked before it and was emitted ungated, so the third
+/// sibling set the bark pool for everyone the moment the three quests opened.
+/// It claims nothing now: `quest/two`'s root governs until the flag is set, and
+/// DW0858, reading the clause that wins, has nothing to refuse.
+#[test]
+fn a_last_ranked_sibling_that_carries_the_npc_does_not_override_it() {
+    let three = r#"{
+      "npc/keeper": { "at": "anchor/keeper-stand", "doing": "watching you go", "dialogue": "unchanged" },
+      "npc/scout":  { "at": "anchor/exit", "doing": "busy at the gate once asked", "dialogue": { "barks": ["Busy."] },
+                      "requires_flags": ["flag/asked"] }
+    }"#;
+    let c = siblings(TWO_ASKS, three, Some(("quest/one", THREE_UNCHANGED)));
+    let scout = &cast::npc_casts(&c)["npc/scout"];
+    let all = begun(&["quest/one", "quest/two", "quest/three", "quest/four"]);
+    let ask = scout
+        .scenes
+        .iter()
+        .find(|s| s.action == cast::SceneAction::Root("dlg/scout-ask".into()))
+        .unwrap()
+        .index;
+    assert_eq!(
+        cast::eval_ladder(scout, &all, &Default::default(), &Default::default()),
+        ask,
+        "before `flag/asked`, quest/two's own root must govern"
+    );
+    let asked: BTreeMap<String, i32> = [("flag/asked".to_string(), 1)].into();
+    assert_ne!(
+        cast::eval_ladder(scout, &all, &asked, &Default::default()),
+        ask,
+        "once asked, quest/three's gated pool takes over, through quest/four's carry"
+    );
+    let diags = cast::check_cast(&c);
+    assert!(
+        !diags.iter().any(|d| d.code == "DW0858"),
+        "the governing scene answers obj/ask: {diags:#?}"
     );
 }
