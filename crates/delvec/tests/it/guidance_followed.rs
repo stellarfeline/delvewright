@@ -1515,3 +1515,254 @@ fn a_served_objective_is_told_while_its_presses_are_open() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// §6 — the compass follows its line
+// ---------------------------------------------------------------------------
+
+/// Two lines the party may take in either order. Line A, declared first: the
+/// keeper, then the exit (`quest/line-a`). Line B: the latch, then the
+/// keeper's stand (`quest/line-b`), then — in the quest that line's
+/// completion opens — the exit again (`quest/line-b-on`).
+fn two_lines() -> (Value, Value) {
+    let reach = |id: &str, anchor: &str, title: &str, after: &[&str]| {
+        let mut o = json!({ "type": "reach-anchor", "id": id, "anchor": anchor, "radius": 1,
+                            "title": title, "hint": "It is in the keep." });
+        if !after.is_empty() {
+            o["after"] = json!(after);
+        }
+        o
+    };
+    let quests = json!({
+        "campaign_id": NS, "stage": "quests",
+        "content": { "quests": [
+            { "id": "quest/line-a", "trigger": { "type": "campaign-start" },
+              "objectives": [
+                  { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper",
+                    "title": "Talk to the keeper", "hint": "He stands by the door." },
+                  reach("obj/a-exit", "anchor/exit", "Go to the exit", &["obj/talk"])
+              ],
+              "on_complete": [], "cast": cast() },
+            { "id": "quest/line-b", "trigger": { "type": "campaign-start" },
+              "objectives": [
+                  reach("obj/b-latch", "anchor/latch", "Go to the latch", &[]),
+                  reach("obj/b-stand", "anchor/keeper-stand", "Go to the keeper's post", &["obj/b-latch"])
+              ],
+              "on_complete": [], "cast": cast() },
+            { "id": "quest/line-b-on",
+              "trigger": { "type": "quest-complete", "quest": "quest/line-b" },
+              "objectives": [ reach("obj/b-exit", "anchor/exit", "Go back to the exit", &[]) ],
+              "on_complete": [{ "type": "campaign-complete" }], "cast": cast() }
+        ] }
+    });
+    let plan = json!({
+        "campaign_id": NS, "stage": "quest-plan",
+        "content": { "finale": "quest/line-b-on", "quests": [
+            { "id": "quest/line-a", "goal": "Speak with the Keeper and find the exit.",
+              "area": "area/keep", "npcs": ["npc/keeper"], "depends_on": [],
+              "mandatory": false, "act": 1 },
+            { "id": "quest/line-b", "goal": "Find the latch and the Keeper's post.",
+              "area": "area/keep", "npcs": ["npc/keeper"], "depends_on": [],
+              "mandatory": true, "act": 1 },
+            { "id": "quest/line-b-on", "goal": "Leave the keep.",
+              "area": "area/keep", "npcs": ["npc/keeper"], "depends_on": ["quest/line-b"],
+              "mandatory": true, "act": 1 }
+        ] }
+    });
+    (quests, plan)
+}
+
+fn two_lines_variant(name: &str) -> PathBuf {
+    let (mut quests, plan) = two_lines();
+    let mut dialogue = dialogue(GREETING);
+    let base = common::hello_world_dir();
+    let npcs: Value =
+        serde_json::from_str(&std::fs::read_to_string(base.join("npcs.json")).unwrap()).unwrap();
+    common::declare_story(&mut quests, &npcs, &dialogue);
+    common::declare_dialogue_story(&mut dialogue);
+    let dst = std::env::temp_dir().join(format!("dw-guidance-{}-{name}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dst);
+    common::materialize_from(
+        &base,
+        &json!({ "documents": { "quests": quests, "dialogue": dialogue, "quest-plan": plan } }),
+        &dst,
+    );
+    dst
+}
+
+/// The scoreboard subset `compass_refresh` is written in, run as one player
+/// (`@s`) against the party's scores: `scoreboard players set` and
+/// `operation … =`, `execute` with `if|unless score <holder> <objective>
+/// matches <range>` and `if|unless score <a> <o> = <b> <o>` terms, and a
+/// `function` call into a function the build emitted. A call to a function
+/// that writes no score this model reads (`compass_give`, `compass_tell`,
+/// `compass_aim_followed`) is recorded and skipped; any other command is a
+/// test failure, so the model cannot silently pass over a line it does not
+/// understand. An unset score fails `if` and passes `unless`, as vanilla's
+/// `ScoreHolderArgument` reads it.
+struct Scores<'a> {
+    out: &'a BuildOutput,
+    s: BTreeMap<(String, String), i64>,
+}
+
+impl<'a> Scores<'a> {
+    const INERT: [&'static str; 3] = ["compass_give", "compass_tell", "compass_aim_followed"];
+
+    fn get(&self, h: &str, o: &str) -> Option<i64> {
+        self.s.get(&(h.to_string(), o.to_string())).copied()
+    }
+
+    fn set(&mut self, h: &str, o: &str, v: i64) {
+        self.s.insert((h.to_string(), o.to_string()), v);
+    }
+
+    fn matches(v: Option<i64>, range: &str) -> bool {
+        let Some(v) = v else { return false };
+        match range.split_once("..") {
+            Some((lo, hi)) => {
+                (lo.is_empty() || v >= lo.parse::<i64>().unwrap())
+                    && (hi.is_empty() || v <= hi.parse::<i64>().unwrap())
+            }
+            None => v == range.parse::<i64>().unwrap(),
+        }
+    }
+
+    fn call(&mut self, name: &str) {
+        let body = fn_body(self.out, name).unwrap_or_else(|| panic!("{name} emitted"));
+        for line in body.lines().filter(|l| !l.trim().is_empty()) {
+            self.run(line);
+        }
+    }
+
+    fn run(&mut self, line: &str) {
+        let t: Vec<&str> = line.split_whitespace().collect();
+        let cmd: &[&str] = if t[0] == "execute" {
+            let mut i = 1;
+            let mut pass = true;
+            while t[i] != "run" {
+                let want = match t[i] {
+                    "if" => true,
+                    "unless" => false,
+                    other => panic!("an execute term this model does not read: {other} in {line}"),
+                };
+                assert_eq!(t[i + 1], "score", "{line}");
+                let held = self.get(t[i + 2], t[i + 3]);
+                let ok = match t[i + 4] {
+                    "matches" => {
+                        let r = Self::matches(held, t[i + 5]);
+                        i += 6;
+                        r
+                    }
+                    "=" => {
+                        let other = self.get(t[i + 5], t[i + 6]);
+                        i += 7;
+                        held.is_some() && held == other
+                    }
+                    op => panic!("a score comparison this model does not read: {op} in {line}"),
+                };
+                pass &= ok == want;
+            }
+            if !pass {
+                return;
+            }
+            &t[i + 1..]
+        } else {
+            &t[..]
+        };
+        match cmd {
+            ["scoreboard", "players", "set", h, o, v] => self.set(h, o, v.parse().unwrap()),
+            ["scoreboard", "players", "operation", h, o, "=", h2, o2] => {
+                if let Some(v) = self.get(h2, o2) {
+                    self.set(h, o, v);
+                }
+            }
+            ["function", f] => {
+                let name = f.strip_prefix(&format!("{NS}:")).expect("this namespace");
+                if !Self::INERT.contains(&name) {
+                    self.call(name);
+                }
+            }
+            other => panic!("a command this model does not read: {other:?}"),
+        }
+    }
+}
+
+/// The compass's ordinal of the objective titled `title` in `out`: the button the menu
+/// offers for it.
+fn ordinal_of(out: &BuildOutput, title: &str) -> i64 {
+    let menu = fn_body(out, "compass_menu").unwrap();
+    let line = menu
+        .lines()
+        .find(|l| l.contains("unless score @s dw.track") && l.contains(title))
+        .unwrap_or_else(|| panic!("a button for {title}: {menu}"));
+    let k = line.split("trigger dw.cpick set ").nth(1).unwrap();
+    k.split('"').next().unwrap().parse().unwrap()
+}
+
+/// When the objective a player follows completes, the compass follows the
+/// next open objective on that objective's line — its own quest's, then the
+/// quest its quest's completion opens — before the first open objective of
+/// the campaign; a line that ends falls back to the first open one; a
+/// player's pick of an open objective is kept. Run on the emitted
+/// `compass_refresh`, against party states the quests reach.
+#[test]
+fn the_compass_follows_the_line_of_the_objective_it_followed() {
+    let dir = two_lines_variant("compass-line");
+    let out = try_build(&dir).expect("the two-line campaign builds");
+    let [talk, a_exit, b_latch, b_stand, b_exit] = [
+        "Talk to the keeper",
+        "Go to the exit",
+        "Go to the latch",
+        "Go to the keeper's post",
+        "Go back to the exit",
+    ]
+    .map(|t| ordinal_of(&out, t));
+    assert!(
+        talk < b_latch && a_exit < b_stand,
+        "line A is earlier in file order: {talk} {a_exit} {b_latch} {b_stand}"
+    );
+    let party = "#party";
+    let refresh = |state: &[(&str, i64)], track: i64| -> i64 {
+        let mut s = Scores {
+            out: &out,
+            s: BTreeMap::new(),
+        };
+        for (o, v) in state {
+            s.set(party, o, *v);
+        }
+        s.set("@s", "dw.track", track);
+        s.call("compass_refresh");
+        s.get("@s", "dw.track").expect("dw.track written")
+    };
+    let both_open = [("dw.qa_line-a", 1), ("dw.qa_line-b", 1)];
+
+    // Line B's first step done, the player following it: B's second step,
+    // though line A's first step is open and earlier.
+    let mut st = both_open.to_vec();
+    st.push(("dw.o_b-latch", 1));
+    assert_eq!(refresh(&st, b_latch), b_stand, "B's next step in its quest");
+
+    // Line B's quest done: the quest it opens, ahead of line A.
+    st.extend([("dw.o_b-stand", 1), ("dw.q_line-b", 1), ("dw.qa_line-b-on", 1)]);
+    assert_eq!(refresh(&st, b_stand), b_exit, "the quest B's completion opens");
+
+    // Line B ended: the first open objective of the campaign.
+    st.push(("dw.o_b-exit", 1));
+    assert_eq!(refresh(&st, b_exit), talk, "a line that ends falls back");
+
+    // Following nothing: the first open one, as before.
+    let mut st = both_open.to_vec();
+    st.push(("dw.o_b-latch", 1));
+    assert_eq!(refresh(&st, 0), talk, "nothing followed");
+
+    // A pick of an open objective is kept, whatever the line says.
+    assert_eq!(refresh(&st, talk), talk, "an open pick is kept");
+    let mut st = both_open.to_vec();
+    st.push(("dw.o_talk", 1));
+    st.push(("dw.o_b-latch", 1));
+    assert_eq!(refresh(&st, b_latch), b_stand, "B's line, with A's next open");
+    assert_eq!(refresh(&st, talk), a_exit, "and A's line from A");
+
+    let again = try_build(&dir).expect("builds again");
+    assert_eq!(out, again, "two builds are byte-identical");
+}

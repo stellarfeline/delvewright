@@ -184,6 +184,25 @@ pub(super) fn quests_in_arming_order(
     out
 }
 
+/// The quests `quest`'s completion activates — every quest whose trigger is
+/// `quest-complete` on it — with their stage-5 indices, in declaration order.
+/// `complete_q_<quest>` activates exactly these, and the compass's line
+/// ([`super::guidance`]) follows exactly these, so the two cannot disagree
+/// about what a completion opens.
+pub(super) fn armed_by<'a>(
+    c: &'a delvewright_dsl::Campaign,
+    quest: &'a str,
+) -> impl Iterator<Item = (usize, &'a delvewright_dsl::Quest)> + 'a {
+    c.quests
+        .content
+        .quests
+        .iter()
+        .enumerate()
+        .filter(move |(_, q)| {
+            matches!(&q.trigger, Trigger::QuestComplete { quest: p } if p.as_str() == quest)
+        })
+}
+
 /// The guard a press that `serves` objective `o` is open under (spec-0117
 /// §5.3): its quest active, every `after` complete, and `o` not complete — the
 /// objective's [`pending_guard`] without its own gate, because the press may be
@@ -492,16 +511,12 @@ pub(super) fn quest_completion_fns(
             root_audience(delvewright_dsl::EffectRootKind::QuestComplete),
         ));
         // activate quests triggered by this quest's completion
-        for dep in &c.quests.content.quests {
-            if let Trigger::QuestComplete { quest } = &dep.trigger
-                && quest.as_str() == q.id.as_str()
-            {
-                done.push(format!(
-                    "scoreboard players set {} {} 1",
-                    plan::PARTY,
-                    quest_active_score(dep.id.as_str())
-                ));
-            }
+        for (_, dep) in armed_by(c, q.id.as_str()) {
+            done.push(format!(
+                "scoreboard players set {} {} 1",
+                plan::PARTY,
+                quest_active_score(dep.id.as_str())
+            ));
         }
         fns.push((
             format!("complete_q_{}", plan::safe_local(q.id.as_str())),
