@@ -45,6 +45,7 @@ def run(tmp_path):
                 "TMPDIR": str(tmpdir),
                 "HOME": str(tmp_path),
                 "DW_MUTEX_DIR": str(tmp_path / "mutex"),
+                "CREATOR_NAME": "Tester",
             },
         )
 

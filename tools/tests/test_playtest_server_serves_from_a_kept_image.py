@@ -516,6 +516,7 @@ def served(tmp_path):
         "HOME": str(tmp_path),
         "TMPDIR": str(tmpdir),
         "DW_MUTEX_DIR": str(tmp_path / "mutex.lock.d"),
+        "CREATOR_NAME": "Tester",
         "DW_PLAYTEST_RUNTIME_CACHE": str(tmp_path / "runtime"),
         "DW_PLAYTEST_CHECKPOINTS": str(tmp_path / "checkpoints"),
     }

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # playtest-server.sh — build a thing and serve it locally for the owner to walk
-# (Multiplayer -> Direct Connect localhost:25565), or tear it down.
+# (Multiplayer -> Direct Connect localhost:25565, or this host's address for
+# players on other machines), or tear it down. Needs CREATOR_NAME.
 #
 #   tools/creator/playtest-server.sh up <path> [--lang LANG] [--prefabs DIR]
 #                                [--delvec BIN] [--name NAME] [--out DIR]
@@ -149,6 +150,13 @@
 # containers, what the session is holding on disk, and the kept images with
 # their manifest and size.
 #
+# ## The creator is opped
+#
+# `up` and `restore` read `CREATOR_NAME` (the variable `validation/compose.yaml`
+# reads for the same purpose) and write an offline-mode `ops.json` into the
+# served `/data`; both refuse, before any build, when it is unset or is not a
+# Minecraft name. Other players join as ordinary players.
+#
 # ## The delve's resource pack is SERVED, never installed (spec-0084 §11)
 #
 # (What follows is the prefab path's staging. On a campaign the sidecar serves
@@ -161,9 +169,13 @@
 # moon would replace it everywhere. Served, it applies while the player is
 # connected and is gone when they leave. So a build that ships
 # `resourcepack.zip` gets a SIDECAR, `<name>-pack`: a busybox httpd (spec-0009's
-# verified pattern, pinned in versions.toml [images.pack_server]) over the build
-# output, published on 127.0.0.1:25580 — the address a client on this machine
-# reaches — and the staged `server.properties` carries `resource-pack`,
+# verified pattern, pinned in versions.toml [images.pack_server]) over a
+# directory holding the pack alone, published on 25580 on every interface, as
+# the game port is. The URL names the address other machines reach this host
+# at: `DELVEWRIGHT_PLAYTEST_HOST`, else the address of the interface the host
+# routes outward through, never loopback unless that variable says so. The cost
+# is a second port: a player outside this network needs 25580 forwarded as well
+# as 25565. The staged `server.properties` carries `resource-pack`,
 # `resource-pack-sha1` (the manifest's) and `resource-pack-prompt` (a JSON text
 # component). They are written into the file, not passed as itzg's
 # RESOURCE_PACK* variables, because this server runs with
@@ -260,12 +272,64 @@ dw_playtest_docker_run_argv() {
 }
 
 # The pack sidecar's docker-run argv, one token per line — the same seam as
-# the server's: a test asserts the flags without a docker. <out> is the build
-# output directory the sidecar serves, read-only.
+# the server's: a test asserts the flags without a docker. <packdir> is a
+# directory holding the pack and nothing else (`dw_playtest_pack_dir`), served
+# read-only. The port is published on every interface, as the game port is:
+# a client on another machine fetches the pack from the host's address.
 dw_playtest_pack_run_argv() {
-  local name="$1" image="$2" port="$3" out="$4"
-  printf '%s\n' docker run -d --name "$name-pack" -p "127.0.0.1:$port:8000" \
-    -v "$out:/srv:ro" --entrypoint httpd "$image" -f -p 8000 -h /srv
+  local name="$1" image="$2" port="$3" packdir="$4"
+  printf '%s\n' docker run -d --name "$name-pack" -p "$port:8000" \
+    -v "$packdir:/srv:ro" --entrypoint httpd "$image" -f -p 8000 -h /srv
+}
+
+# <zip> copied alone into <dir>, the only thing the sidecar can serve.
+dw_playtest_pack_dir() {
+  local zip="$1" dir="$2"
+  mkdir -p "$dir" && cp "$zip" "$dir/resourcepack.zip"
+}
+
+# The address a client reaches this host at, which is what the pack URL names.
+# DELVEWRIGHT_PLAYTEST_HOST says it (a LAN name or address, or the public one
+# for players across the internet); unset, it is the address of the interface
+# this host routes outward through (a UDP socket connected and never sent on).
+# Never loopback by default: a client told 127.0.0.1 fetches from itself.
+dw_playtest_pack_host() {
+  local host="${DELVEWRIGHT_PLAYTEST_HOST:-}"
+  if [ -z "$host" ]; then
+    host="$(python3 -c 'import socket, sys
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+try:
+    s.connect(("192.0.2.1", 9))
+    sys.stdout.write(s.getsockname()[0])
+except OSError:
+    pass' 2>/dev/null || true)"
+  fi
+  [ -n "$host" ] && [[ $host != 127.* ]] && [[ $host != 0.0.0.0 ]] \
+    || die "no address other machines reach this host at: set DELVEWRIGHT_PLAYTEST_HOST to its LAN or public name or address (127.0.0.1 only if every player is on this machine)"
+  [[ $host =~ ^[A-Za-z0-9.-]+$ ]] || die "DELVEWRIGHT_PLAYTEST_HOST '$host' is not a host name or IPv4 address"
+  printf '%s' "$host"
+}
+
+# The creator's Minecraft name, from CREATOR_NAME — the one variable
+# validation/compose.yaml reads to op the same person. Refused when unset or
+# not a Minecraft name: the walk needs op (/tp, inspection), and a name is
+# written into ops.json.
+dw_playtest_creator_name() {
+  local n="${CREATOR_NAME:-}"
+  [ -n "$n" ] || die "CREATOR_NAME is not set: the creator is opped on the served world — export CREATOR_NAME=<your Minecraft name>"
+  [[ $n =~ ^[A-Za-z0-9_]{3,16}$ ]] || die "CREATOR_NAME '$n' is not a Minecraft name (3-16 letters, digits, underscore)"
+  printf '%s' "$n"
+}
+
+# The ops.json that ops <name> on an offline-mode server (every build here sets
+# online-mode=false): the UUID such a server assigns the name on join, so the
+# name never goes to Mojang. The same derivation validation/world-settings-
+# entrypoint.sh uses for DELVE_OPS_OFFLINE.
+dw_playtest_ops_json() {
+  python3 -c 'import hashlib, json, sys, uuid
+n = sys.argv[1]
+u = uuid.UUID(bytes=hashlib.md5(("OfflinePlayer:" + n).encode()).digest(), version=3)
+sys.stdout.write(json.dumps([{"uuid": str(u), "name": n, "level": 4, "bypassesPlayerLimit": False}]) + "\n")' "$1"
 }
 
 # The three properties that serve the pack, appended to the staged
@@ -1081,6 +1145,11 @@ if [ "$cmd" = "watch" ]; then
   exit 0
 fi
 
+# The creator is opped on every world this script serves; refused before any
+# build, resume or teardown when the name is missing.
+CREATOR=""
+if [ "$cmd" = "up" ] || [ "$cmd" = "restore" ]; then CREATOR="$(dw_playtest_creator_name)"; fi
+
 RESTORE_DIR=""
 PLAYTEST_IMAGE=""
 if [ "$cmd" = "restore" ]; then
@@ -1358,11 +1427,12 @@ if [ "$SUBJECT_KIND" = "campaign" ]; then
     M_PACK="$(python3 -c 'import json, sys; sys.stdout.reconfigure(newline="\n"); print(json.load(open(sys.argv[1])).get("resource_pack_sha1", ""))' "$IMAGE_DIR/manifest.json")" \
       || die "cannot read resource_pack_sha1 from the image's manifest"
     [ "$M_PACK" = "$L_PACK" ] || die "REFUSING to serve $PLAYTEST_IMAGE: its pack label says $L_PACK and its manifest $M_PACK"
-    PACK_URL="http://127.0.0.1:$PACK_PORT/resourcepack.zip"
+    PACK_URL="http://$(dw_playtest_pack_host):$PACK_PORT/resourcepack.zip"
+    dw_playtest_pack_dir "$IMAGE_DIR/resourcepack.zip" "$IMAGE_DIR/pack" || die "cannot stage the pack for the sidecar"
     PACK_ARGV=()
     while IFS= read -r dw_argv_line; do
       PACK_ARGV+=("$dw_argv_line")
-    done < <(dw_playtest_pack_run_argv "$NAME" "$PACK_IMAGE" "$PACK_PORT" "$IMAGE_DIR")
+    done < <(dw_playtest_pack_run_argv "$NAME" "$PACK_IMAGE" "$PACK_PORT" "$IMAGE_DIR/pack")
     "${PACK_ARGV[@]}" >/dev/null || die "could not start the resource-pack sidecar $NAME-pack"
     # The response is READ: the bytes a client will download, hashed, and held to
     # the manifest's SHA-1 — which is the hash the client checks them against.
@@ -1386,6 +1456,7 @@ if [ "$SUBJECT_KIND" = "campaign" ]; then
   session_record stage-dir "$STAGE"
   LOG_HINT="server log: $STAGE/logs/latest.log (docker-boot.log alongside it once cleanup runs)"
   dw_playtest_runtime_seed "$RUNTIME_CACHE" "$STAGE" "$MC_VERSION" "$JAR_SHA256"
+  dw_playtest_ops_json "$CREATOR" > "$STAGE/ops.json" || die "cannot write ops.json for $CREATOR"
   if [ -n "$RESTORE_DIR" ]; then
     # A /data that already holds a world is served as it stands: the image's
     # placed world is copied in only where there is none
@@ -1463,6 +1534,7 @@ session_record stage-dir "$STAGE"
 mkdir -p "$STAGE/world/datapacks"
 cp "$OUT_DIR/server/server.properties" "$STAGE/server.properties"
 printf 'enable-rcon=true\nrcon.password=%s\nrcon.port=25575\n' "$RCON_PW" >> "$STAGE/server.properties"
+dw_playtest_ops_json "$CREATOR" > "$STAGE/ops.json" || die "cannot write ops.json for $CREATOR"
 
 # ---- the delve's resource pack: served, never installed (spec-0084 §11) ------
 PACK_NOTE="no resource pack in this build"
@@ -1473,11 +1545,14 @@ if [ -f "$OUT_DIR/resourcepack.zip" ]; then
   PACK_SHA1="$(python3 -c 'import json, sys; sys.stdout.reconfigure(newline="\n"); print(json.load(open(sys.argv[1])).get("resource_pack_sha1", ""))' "$OUT_DIR/manifest.json")" \
     || die "cannot read resource_pack_sha1 from $OUT_DIR/manifest.json"
   [ -n "$PACK_SHA1" ] || die "$OUT_DIR ships resourcepack.zip and its manifest records no resource_pack_sha1"
-  PACK_URL="http://127.0.0.1:$PACK_PORT/resourcepack.zip"
+  PACK_URL="http://$(dw_playtest_pack_host):$PACK_PORT/resourcepack.zip"
+  PACK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dw-playtest-pack.XXXXXX")"
+  session_record image-dir "$PACK_DIR"
+  dw_playtest_pack_dir "$OUT_DIR/resourcepack.zip" "$PACK_DIR" || die "cannot stage the pack for the sidecar"
   PACK_ARGV=()
   while IFS= read -r dw_argv_line; do
     PACK_ARGV+=("$dw_argv_line")
-  done < <(dw_playtest_pack_run_argv "$NAME" "$PACK_IMAGE" "$PACK_PORT" "$OUT_DIR")
+  done < <(dw_playtest_pack_run_argv "$NAME" "$PACK_IMAGE" "$PACK_PORT" "$PACK_DIR")
   "${PACK_ARGV[@]}" >/dev/null || die "could not start the resource-pack sidecar $NAME-pack"
   # The response is READ: the bytes a client will download, hashed, and held to
   # the manifest's SHA-1 — which is the hash the client checks them against.

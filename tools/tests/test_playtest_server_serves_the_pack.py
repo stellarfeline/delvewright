@@ -40,14 +40,14 @@ def pinned_pack_image() -> str:
     return f"{pin['repo']}:{pin['tag']}@{pin['digest']}"
 
 
-def test_the_sidecar_serves_the_build_output_read_only_on_the_loopback():
-    result = run_hook('dw_playtest_pack_run_argv dw-x "$PACK_IMAGE" "$PACK_PORT" /builds/out')
+def test_the_sidecar_serves_the_pack_alone_read_only_on_every_interface():
+    result = run_hook('dw_playtest_pack_run_argv dw-x "$PACK_IMAGE" "$PACK_PORT" /builds/pack')
     assert result.returncode == 0, result.stderr
     argv = result.stdout.splitlines()
     assert argv[:3] == ["docker", "run", "-d"], argv
     assert argv[argv.index("--name") + 1] == "dw-x-pack", argv
-    assert argv[argv.index("-p") + 1] == "127.0.0.1:25580:8000", argv
-    assert argv[argv.index("-v") + 1] == "/builds/out:/srv:ro", argv
+    assert argv[argv.index("-p") + 1] == "25580:8000", argv
+    assert argv[argv.index("-v") + 1] == "/builds/pack:/srv:ro", argv
     assert pinned_pack_image() in argv, (argv, pinned_pack_image())
     assert argv[argv.index("--entrypoint") + 1] == "httpd", argv
     assert argv[-5:] == ["-f", "-p", "8000", "-h", "/srv"], argv
@@ -97,3 +97,34 @@ def test_a_failed_up_removes_the_sidecar_too(tmp_path):
     log = calls.read_text().splitlines()
     assert "rm -f dw-x-pack" in log, log
     assert "rm -f dw-x" in log, log
+
+
+def test_the_pack_url_names_an_address_other_machines_reach():
+    named = run_hook("dw_playtest_pack_host", extra_env={"DELVEWRIGHT_PLAYTEST_HOST": "play.example.net"})
+    assert named.returncode == 0, named.stderr
+    assert named.stdout == "play.example.net"
+    auto = run_hook("dw_playtest_pack_host")
+    if auto.returncode == 0:  # a host with no route outward is refused, below
+        assert not auto.stdout.startswith("127."), auto.stdout
+    for bad in ("127.0.0.1", "0.0.0.0", "a b", "x/y"):
+        r = run_hook("dw_playtest_pack_host", extra_env={"DELVEWRIGHT_PLAYTEST_HOST": bad})
+        assert r.returncode != 0, (bad, r.stdout)
+
+
+def test_no_pack_url_in_the_script_names_loopback():
+    code = "\n".join(
+        ln for ln in SCRIPT.read_text(encoding="utf-8").splitlines() if not ln.lstrip().startswith("#")
+    )
+    assert "http://127.0.0.1" not in code
+    assert "http://$(dw_playtest_pack_host)" in code
+
+
+def test_the_sidecar_directory_holds_the_pack_alone(tmp_path):
+    src = tmp_path / "out"
+    src.mkdir()
+    (src / "resourcepack.zip").write_bytes(b"pk")
+    (src / "server.properties").write_text("secret=1")
+    dest = tmp_path / "pack"
+    r = run_hook(f'dw_playtest_pack_dir "{src}/resourcepack.zip" "{dest}"')
+    assert r.returncode == 0, r.stderr
+    assert sorted(p.name for p in dest.iterdir()) == ["resourcepack.zip"]
