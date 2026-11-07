@@ -1,6 +1,6 @@
 # ADR-0038: The plugin is released on its own version — the marketplace serves the plugin root at the plugin's tag, and the page pins the engine it is proven on
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-07
 - **Source**: the requirement that the `delvewright` plugin is releasable
   independently of `delvec`; the engine tree at `f2b106d09` (the `main` this
