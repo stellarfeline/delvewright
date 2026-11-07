@@ -508,6 +508,53 @@ fn an_npc_larger_than_its_box_wears_one_that_encloses_it_and_a_villager_keeps_it
     );
 }
 
+/// The hitbox summon the emitter writes for the keeper, as `(width, height)`:
+/// `emit::npc` takes the box from `bodies::npc_hitbox_dims` of the NPC the
+/// campaign declares, so this asks the same entry point the summon asks.
+#[test]
+fn a_happy_ghast_npc_wears_a_box_that_encloses_its_four_block_body() {
+    let r = raw_with(
+        Vec::new(),
+        Vec::new(),
+        |n| {
+            n["content"]["npcs"][0]["base_entity"] = json!("minecraft:happy_ghast");
+        },
+        |_| {},
+    );
+    let c = campaign(&r);
+    let npc = &c.npcs.content.npcs[0];
+    let (w, h) = delvec::compiler::bodies::npc_hitbox_dims(npc);
+    let m = delvec::compiler::clickbox::CLICK_MARGIN;
+    // The pinned registry's happy ghast is 4.0 x 4.0.
+    assert!(
+        w >= 4.0 + 2.0 * m - 1e-9 && h >= 4.0 + m - 1e-9,
+        "{w} x {h}"
+    );
+    // The fixture room cannot hold a body that size, and the build says so
+    // naming the 4 x 4 body rather than seating a player-sized box in it.
+    let (code, msg) = refusal(&c);
+    assert_eq!(code, "DW0450", "{msg}");
+    assert!(msg.contains("4 × 4 blocks"), "{msg}");
+}
+
+#[test]
+fn every_registered_entity_has_the_registry_body_and_none_falls_back_to_the_humanoid_default() {
+    let table: BTreeMap<String, Value> =
+        serde_json::from_str(include_str!("../../data/entity-bodies-1.21.11.json")).unwrap();
+    assert!(table.len() > 100, "{} rows", table.len());
+    let player_sized = ["armor_stand", "mannequin", "player"];
+    for (id, row) in &table {
+        if player_sized.contains(&id.trim_start_matches("minecraft:")) {
+            continue;
+        }
+        let want = (
+            row["width"].as_f64().unwrap(),
+            row["height"].as_f64().unwrap(),
+        );
+        assert_eq!(delvec::compiler::nav::entity_dims(id), want, "{id}");
+    }
+}
+
 /// The keeper re-bodied as `kind`, answering a blow so a monster kind is not
 /// refused for its silence.
 fn keeper_as(kind: &str) -> RawCampaign {
