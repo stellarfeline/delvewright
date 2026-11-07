@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-11-07
-- **Source**: the ruling that the `delvewright` plugin is releasable
+- **Source**: the requirement that the `delvewright` plugin is releasable
   independently of `delvec`; the engine tree at `f2b106d09` (the `main` this
   record lands on) and the tags of `stellarfeline/delvewright` read with
   `git tag -l` and `git show <tag>:<path>`; Claude Code's documentation read
@@ -30,8 +30,8 @@ cast shape the format accepts, where it read some. No engine or format byte
 changed. Under ADR-0033 the plugin's version is the engine release it ships
 at, so delivering that fix to a creator who runs `/plugin update` needs an
 engine release 1.15.1 whose binary is byte-identical to 1.15.0 — a shelf of
-five archives and a crates.io version burned to move one Markdown file. The
-owner rejects that coupling: the plugin is released on its own.
+five archives and a crates.io version burned to move one Markdown file. That
+coupling is rejected: the plugin is released on its own.
 
 ### What ADR-0033 fixed, and must stay fixed
 
