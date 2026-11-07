@@ -84,6 +84,18 @@ def test_a_matrix_name_without_a_matrix_list_is_a_finding(tmp_path):
     assert "`strategy.matrix.k` is not a plain, non-empty list of scalars" in r.stderr
 
 
+def test_a_matrix_job_that_can_skip_at_job_level_reds(tmp_path):
+    skipping = CI.replace(
+        "    needs: changes\n    runs-on: ubuntu-latest\n    strategy:",
+        "    needs: changes\n    if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'\n    runs-on: ubuntu-latest\n    strategy:",
+    )
+    assert skipping != CI
+    r = run(tmp_path, ci=skipping)
+    assert r.returncode == 1 and "can skip it" in r.stderr, r.stderr
+    always = skipping.replace("if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'", "if: ${{ !cancelled() }}")
+    assert run(tmp_path, ci=always).returncode == 0
+
+
 def test_the_real_tree_resolves():
     r = subprocess.run([sys.executable, str(TOOL)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     assert r.returncode == 0, r.stderr

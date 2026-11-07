@@ -456,7 +456,13 @@ jobs:
   rust-partition:
     name: rust partition (${{ matrix.k }} of 13)
     needs: [changes, rust-build, rust-fixtures]
-    if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
+    # A matrix job skipped at JOB level is never expanded: GitHub reports one
+    # context named `rust partition (${{ matrix.k }} of 13)` and none of the 13
+    # required names, so a pull request with no Rust change would block for
+    # ever. The job therefore always runs and each STEP is guarded: when no
+    # Rust reaches it, nothing is checked out, built or run, and the 13 names
+    # report success.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     # spec-0126 §5.4: the engine every test runs or spawns runs one thread
     # (`crates/delvec/src/par.rs`), so a test is one core of the runner and
@@ -476,22 +482,29 @@ jobs:
       total: ${{ strategy.job-total }}
     steps:
       - uses: actions/checkout@v4
+        if: ${{ needs.changes.outputs.rust == 'true' || github.event_name != 'pull_request' }}
       - uses: ./.github/actions/runner-disk
+        if: ${{ needs.changes.outputs.rust == 'true' || github.event_name != 'pull_request' }}
         with: { step: start }
       - uses: ./.github/actions/checkout-content
+        if: ${{ needs.changes.outputs.rust == 'true' || github.event_name != 'pull_request' }}
       - uses: ./.github/actions/suite-instruments
+        if: ${{ needs.changes.outputs.rust == 'true' || github.event_name != 'pull_request' }}
       # Every frame a test draws is drawn with Minecraft's own textures, read
       # out of the pinned client jar (spec-0112 §6.1). The jar is never
       # committed or cached in the repository: this is the job's one live
       # Mojang fetch, checked on its bytes against versions.toml, and a red
       # here is the network, never a frame.
       - name: the pinned client jar (one verified fetch)
+        if: ${{ needs.changes.outputs.rust == 'true' || github.event_name != 'pull_request' }}
         run: echo "DELVEWRIGHT_CLIENT_JAR=$(bash validation/client-jar-cache.sh --cache "$RUNNER_TEMP/client-jar" | tail -n 1)" >> "$GITHUB_ENV"
       - uses: actions/download-artifact@v4
+        if: ${{ needs.changes.outputs.rust == 'true' || github.event_name != 'pull_request' }}
         with:
           name: rust-nextest-archive
           path: ${{ runner.temp }}/archive
       - uses: actions/download-artifact@v4
+        if: ${{ needs.changes.outputs.rust == 'true' || github.event_name != 'pull_request' }}
         with:
           name: rust-fixtures
           path: ${{ runner.temp }}/fixtures
@@ -508,6 +521,7 @@ jobs:
       # test runs to its end; the determinism double-build gate (`cli.rs`)
       # runs inside whichever partition its name hashes to.
       - name: cargo nextest, partition k of N, instrumented
+        if: ${{ needs.changes.outputs.rust == 'true' || github.event_name != 'pull_request' }}
         env:
           PARTITION: ${{ matrix.k }}
           PARTITIONS: ${{ strategy.job-total }}
@@ -525,7 +539,7 @@ jobs:
       # count of raw profiles is printed: one per test process, plus one per
       # instrumented `delvec` a test spawned.
       - name: the partition's profile (one .profdata) and its JUnit report
-        if: always()
+        if: ${{ always() && (needs.changes.outputs.rust == 'true' || github.event_name != 'pull_request') }}
         run: |
           set -euo pipefail
           n="$(ls target/llvm-cov-target/*.profraw 2>/dev/null | wc -l | tr -d ' ')"
@@ -534,10 +548,10 @@ jobs:
           "$LLVM_PROFDATA" merge -sparse -o target/partition.profdata target/llvm-cov-target/*.profraw
           ls -l target/partition.profdata target/nextest/ci/junit.xml
       - uses: ./.github/actions/runner-disk
-        if: always()
+        if: ${{ always() && (needs.changes.outputs.rust == 'true' || github.event_name != 'pull_request') }}
         with: { step: report }
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: ${{ always() && (needs.changes.outputs.rust == 'true' || github.event_name != 'pull_request') }}
         with:
           name: rust-partition-${{ matrix.k }}
           path: |
