@@ -1548,6 +1548,9 @@ fn two_lines() -> (Value, Value) {
                   reach("obj/b-latch", "anchor/latch", "Go to the latch", &[]),
                   reach("obj/b-stand", "anchor/keeper-stand", "Go to the keeper's post", &["obj/b-latch"])
               ],
+              "on_objective_complete": {
+                  "obj/b-stand": [{ "type": "open-gate", "anchor": "anchor/door" }]
+              },
               "on_complete": [], "cast": cast() },
             { "id": "quest/line-b-on",
               "trigger": { "type": "quest-complete", "quest": "quest/line-b" },
