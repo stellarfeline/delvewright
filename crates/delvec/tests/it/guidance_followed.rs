@@ -1725,7 +1725,7 @@ fn the_compass_follows_the_line_of_the_objective_it_followed() {
         "line A is earlier in file order: {talk} {a_exit} {b_latch} {b_stand}"
     );
     let party = "#party";
-    let refresh = |state: &[(&str, i64)], track: i64| -> i64 {
+    let refresh = |state: &[(String, i64)], track: i64| -> i64 {
         let mut s = Scores {
             out: &out,
             s: BTreeMap::new(),
@@ -1737,20 +1737,19 @@ fn the_compass_follows_the_line_of_the_objective_it_followed() {
         s.call("compass_refresh");
         s.get("@s", "dw.track").expect("dw.track written")
     };
-    let both_open = [("dw.qa_line-a", 1), ("dw.qa_line-b", 1)];
+    let o = |id: &str| (delvec::compiler::plan::obj_score(id), 1);
+    let qa = |id: &str| (delvec::compiler::plan::quest_active_score(id), 1);
+    let q = |id: &str| (delvec::compiler::plan::quest_score(id), 1);
+    let both_open = [qa("quest/line-a"), qa("quest/line-b")];
 
     // Line B's first step done, the player following it: B's second step,
     // though line A's first step is open and earlier.
     let mut st = both_open.to_vec();
-    st.push(("dw.o_b-latch", 1));
+    st.push(o("obj/b-latch"));
     assert_eq!(refresh(&st, b_latch), b_stand, "B's next step in its quest");
 
     // Line B's quest done: the quest it opens, ahead of line A.
-    st.extend([
-        ("dw.o_b-stand", 1),
-        ("dw.q_line-b", 1),
-        ("dw.qa_line-b-on", 1),
-    ]);
+    st.extend([o("obj/b-stand"), q("quest/line-b"), qa("quest/line-b-on")]);
     assert_eq!(
         refresh(&st, b_stand),
         b_exit,
@@ -1758,19 +1757,19 @@ fn the_compass_follows_the_line_of_the_objective_it_followed() {
     );
 
     // Line B ended: the first open objective of the campaign.
-    st.push(("dw.o_b-exit", 1));
+    st.push(o("obj/b-exit"));
     assert_eq!(refresh(&st, b_exit), talk, "a line that ends falls back");
 
     // Following nothing: the first open one, as before.
     let mut st = both_open.to_vec();
-    st.push(("dw.o_b-latch", 1));
+    st.push(o("obj/b-latch"));
     assert_eq!(refresh(&st, 0), talk, "nothing followed");
 
     // A pick of an open objective is kept, whatever the line says.
     assert_eq!(refresh(&st, talk), talk, "an open pick is kept");
     let mut st = both_open.to_vec();
-    st.push(("dw.o_talk", 1));
-    st.push(("dw.o_b-latch", 1));
+    st.push(o("obj/talk"));
+    st.push(o("obj/b-latch"));
     assert_eq!(
         refresh(&st, b_latch),
         b_stand,
