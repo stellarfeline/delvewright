@@ -3632,7 +3632,10 @@
                   "You walked past the label. I'll copy that down too."
                 ]
               },
-              "doing": "copying the catalogue at the wall desk, back to the wall"
+              "doing": "copying the catalogue at the wall desk, back to the wall",
+              "forbids_flags": [
+                "flag/read-the-label"
+              ]
             },
             {
               "at": {
