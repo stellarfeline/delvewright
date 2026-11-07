@@ -1480,7 +1480,7 @@ def with_a_release_pin(repo: Path, tag: str, tree_version: str = "1.6.0") -> Non
         repo,
         RELEASE_BINDER,
         "#!/usr/bin/env bash\n"
-        f"# holds engine.ref equal across {RELEASE_SITE} and .claude-plugin/marketplace.json\n",
+        f"# reads engine.ref out of {RELEASE_SITE} and judges the page against it\n",
     )
     add_file(
         repo,

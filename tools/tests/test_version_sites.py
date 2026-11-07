@@ -441,8 +441,48 @@ def test_the_release_notes_heading_is_excused_and_a_second_mention_is_not(scratc
     """
     v = _dsl_version()
     notes = scratch / "RELEASE-NOTES.md"
+    _prepare_dsl_entry(notes, v)
+    subprocess.run(["git", "-C", str(scratch), "add", "-A"], check=True)
     assert f"## delvewright-dsl {v}\n" in notes.read_text(encoding="utf-8")
     assert run("verify", root=scratch).returncode == 0
+    notes.write_text(notes.read_text(encoding="utf-8") + f"\n- the format is {v}\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(scratch), "add", "-A"], check=True)
+    r = run("verify", root=scratch)
+    assert r.returncode == 1, r.stdout
+    assert "RELEASE-NOTES.md" in r.stderr
+
+
+def _prepare_dsl_entry(notes: Path, v: str) -> None:
+    """The notes file with the format crate's entry, as the pull request preparing
+    that line writes it; the real file holds it only while that line is prepared."""
+    text = notes.read_text(encoding="utf-8")
+    if f"## delvewright-dsl {v}\n" not in text:
+        text = text.rstrip("\n") + f"\n\n## delvewright-dsl {v}\n\n### Highlights\n\n- A format.\n\n### Added\n\n- A field.\n"
+    notes.write_text(text, encoding="utf-8")
+
+
+def _drop_dsl_entry(notes: Path) -> None:
+    text = notes.read_text(encoding="utf-8")
+    start = text.find("## delvewright-dsl ")
+    if start >= 0:
+        end = text.find("\n## ", start + 1)
+        text = text[:start] + (text[end + 1:] if end >= 0 else "")
+    notes.write_text(text, encoding="utf-8")
+
+
+def test_the_release_notes_without_the_format_entry_state_their_absence(scratch: Path) -> None:
+    """The format crate's line is released on its own clock (ADR-0038 §6): a
+    notes file with no `delvewright-dsl` entry is not stale, it is a line not
+    being prepared, and the run says so — while the number typed into the file
+    without that entry is still the carrier it always was."""
+    v = _dsl_version()
+    notes = scratch / "RELEASE-NOTES.md"
+    _drop_dsl_entry(notes)
+    subprocess.run(["git", "-C", str(scratch), "add", "-A"], check=True)
+    assert f"## delvewright-dsl {v}" not in notes.read_text(encoding="utf-8")
+    r = run("verify", root=scratch)
+    assert r.returncode == 0, r.stderr
+    assert "holds no `delvewright-dsl` entry" in r.stderr and "0 of 1 statement present" in r.stderr
     notes.write_text(notes.read_text(encoding="utf-8") + f"\n- the format is {v}\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(scratch), "add", "-A"], check=True)
     r = run("verify", root=scratch)

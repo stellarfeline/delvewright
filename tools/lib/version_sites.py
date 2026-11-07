@@ -286,14 +286,31 @@ ROWS: dict[str, list[dict[str, object]]] = {
 # an entry is never a licence for the whole file. A statement the file no longer
 # contains is reported, which is how an entry keyed to a number is retired when
 # the number moves on.
+#
+# An entry may name the `line` its statement heads. The notes file holds an
+# entry per line only while that line's release is being prepared (ADR-0038 §6),
+# so the statement is PRESENT exactly when `tools/lib/release_notes.py` — the
+# file's one reader — finds an entry of that line, and absent otherwise; `verify`
+# reads the file through that reader and states which, rather than calling an
+# absence stale.
 COUNTEREXAMPLES: dict[str, dict[str, object]] = {
     "RELEASE-NOTES.md": {
         "statements": ["## delvewright-dsl {v}\n"],
-        "reason": "the heading of the release being prepared: the release workflows require the entry "
-        "titled with the crate's version, and `tools/ci/check-release-notes.py` holds that title equal "
-        "to the version the tree states (a heading ahead of or behind it is a finding there)",
+        "line": "delvewright-dsl",
+        "reason": "the heading of the format crate's release being prepared: the release workflows require "
+        "the entry titled with the crate's version, and `tools/ci/check-release-notes.py` holds that title "
+        "equal to the version the tree states (a heading ahead of or behind it is a finding there)",
     },
 }
+
+
+def _prepares(root: Path, rel: str, line: str) -> bool:
+    """Whether the notes file at `rel` holds an entry of `line`, read the one way."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import release_notes  # noqa: E402  — the file's one reader
+
+    entries, _findings = release_notes.parse((root / rel).read_text(encoding="utf-8"))
+    return any(e.name == line for e in entries)
 
 # Documents that declare a `dsl_version` OTHER than the authority's, on purpose.
 # The sweep above only ever asks which files state the CURRENT number, so a
@@ -701,7 +718,16 @@ def sweep(
                 f"  COUNTEREXAMPLES names {rel!r}, which git does not track — remove it "
                 "rather than letting it rot into a licence to hardcode"
             )
-        elif version not in (root / rel).read_text(encoding="utf-8"):
+            continue
+        line = COUNTEREXAMPLES[rel].get("line")
+        if isinstance(line, str) and not _prepares(root, rel, line):
+            print(
+                f"version-sites: {rel} holds no `{line}` entry — that line is not being prepared, "
+                f"so its excused statement is absent by the file's own reading (0 of 1 statement present)",
+                file=sys.stderr,
+            )
+            continue
+        if version not in (root / rel).read_text(encoding="utf-8"):
             findings.append(
                 f"  COUNTEREXAMPLES names {rel!r}, which no longer states `{version}` — "
                 "the entry measures nothing"
