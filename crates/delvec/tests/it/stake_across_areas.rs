@@ -36,11 +36,10 @@ fn campaign(tag: &str, stake: bool) -> PathBuf {
         qp["content"] = json!({
             "quests": [
                 { "id": "quest/decide", "area": "area/keep", "act": 1, "depends_on": [],
-                  "goal": "Hear the Keeper out.", "mandatory": true, "npcs": ["npc/keeper"] },
-                  "activity": ["talk"],
+                  "goal": "Hear the Keeper out.", "activity": ["talk"], "mandatory": true, "npcs": ["npc/keeper"] },
                 { "id": "quest/away", "area": "area/landing", "act": 2,
                   "depends_on": ["quest/decide"], "goal": "Walk off the landing.",
-                  "mandatory": true, "npcs": [] }
+                  "activity": ["reach"], "mandatory": true, "npcs": [] }
             ],
             "finale": "quest/away"
         });
