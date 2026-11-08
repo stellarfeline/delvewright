@@ -208,6 +208,11 @@
       "stage": "build"
     },
     {
+      "code": "DW0451",
+      "pointer": "/content/actors/1",
+      "stage": "quests"
+    },
+    {
       "code": "DW0453",
       "pointer": "/content/actors/1",
       "stage": "quests"
@@ -418,6 +423,11 @@
       "code": "DW0995",
       "pointer": "pulse binding",
       "stage": "build"
+    },
+    {
+      "code": "DW0451",
+      "pointer": "/content/actors/1",
+      "stage": "quests"
     },
     {
       "code": "DW0453",
@@ -637,6 +647,11 @@
       "stage": "build"
     },
     {
+      "code": "DW0451",
+      "pointer": "/content/actors/1",
+      "stage": "quests"
+    },
+    {
       "code": "DW0453",
       "pointer": "/content/actors/1",
       "stage": "quests"
@@ -849,6 +864,11 @@
       "stage": "build"
     },
     {
+      "code": "DW0451",
+      "pointer": "/content/actors/1",
+      "stage": "quests"
+    },
+    {
       "code": "DW0453",
       "pointer": "/content/actors/1",
       "stage": "quests"
@@ -1059,6 +1079,11 @@
       "code": "DW0995",
       "pointer": "pulse binding",
       "stage": "build"
+    },
+    {
+      "code": "DW0451",
+      "pointer": "/content/actors/1",
+      "stage": "quests"
     },
     {
       "code": "DW0453",
@@ -1382,6 +1407,11 @@
       "code": "DW0995",
       "pointer": "pulse binding",
       "stage": "build"
+    },
+    {
+      "code": "DW0451",
+      "pointer": "/content/actors/1",
+      "stage": "quests"
     },
     {
       "code": "DW0453",
