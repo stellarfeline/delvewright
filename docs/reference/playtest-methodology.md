@@ -76,7 +76,7 @@ A `kill` step does three things, in order, and only the first is a measurement.
    paying, the declared drops dropping, the health bar, the re-seat, and the walk
    to the anchor that proves the route.
 
-spec-0023 §1's **die-retry** stage is the load-bearing bot proof: scripted deaths, respawn at the governing checkpoint, a walkable route
+spec-0023 §1's **die-retry** stage is the load-bearing bot proof: scripted deaths, respawn at the governing checkpoint (for a death taken after the encounter's objective completed, the seats `death-plan.json` puts in force after the encounter's step, which its own completion may have moved), a walkable route
 back, an encounter that re-engages, no progression lost. It runs between the
 reading and the clear. A die-retry stage that cannot finish reds on its own
 coverage and does not end the run: suppressing every measurement behind one fight
