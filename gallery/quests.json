@@ -32,7 +32,7 @@
       },
       {
         "anchor": "anchor/rafters",
-        "entity": "minecraft:spider",
+        "entity": "minecraft:cave_spider",
         "facing": "east",
         "id": "actor/rafter-spider",
         "name": "The Rafter Spider",

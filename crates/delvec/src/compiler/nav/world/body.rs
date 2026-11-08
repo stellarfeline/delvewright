@@ -69,10 +69,13 @@ impl Footprint {
 }
 
 /// The standing hitbox `(width, height)` in blocks for a vanilla entity id
-/// (spec-0014 per-entity dims table) — the ONE table in the compiler that knows
-/// how big a mob's body is. Covers the 1.21.11 mobs an actor or a re-dressed NPC
-/// mannequin is likely to wear; anything unlisted falls back to the humanoid
-/// default (0.6 × 1.95).
+/// (spec-0014 per-entity dims table) — the ONE function in the compiler that
+/// knows how big a mob's body is. Every registered 1.21.11 entity type is
+/// answered from the pinned entity table
+/// (`crates/delvec/data/entity-bodies-1.21.11.json`, read off the game by
+/// `tools/maintenance/extract-entity-bodies.py`), so no body a `base_entity` can
+/// name is missing a row. Only an id the registry does not hold (which the
+/// game cannot summon) takes the humanoid default (0.6 x 1.95).
 ///
 /// Two consumers, deliberately sharing one source of truth: [`entity_footprint`]
 /// quantizes it to walkable cells for actor routing, and [`crate::compiler::eclipse`] uses
@@ -82,24 +85,15 @@ impl Footprint {
 /// of *hitbox*).
 pub fn entity_dims(entity: &str) -> (f64, f64) {
     match entity.strip_prefix("minecraft:").unwrap_or(entity) {
-        "warden" => (0.9, 2.9),
-        "iron_golem" => (1.4, 2.7),
-        "ravager" => (1.95, 2.2),
-        "hoglin" | "zoglin" => (1.4, 1.4),
-        "sheep" | "goat" | "pig" | "cow" | "mooshroom" | "wolf" | "fox" | "panda" => (0.9, 1.4),
-        "villager" | "zombie" | "husk" | "zombie_villager" => (0.6, 1.95),
-        "skeleton" | "stray" | "wither_skeleton" => (0.6, 1.99),
-        "creeper" | "enderman" => (0.6, 1.9),
-        "allay" | "vex" => (0.35, 0.6),
         // The player's own row reads the metrics table, so the body every proof
-        // in this engine routes is the body `delvec metrics` publishes. The mobs
-        // around it stay literals: they are not the player, and a metrics table
-        // that enumerated the 1.21.11 mob roster would be a registry dump.
+        // in this engine routes is the body `delvec metrics` publishes.
         "armor_stand" | "player" | "mannequin" => (
             delvewright_dsl::metrics::PLAYER_WIDTH,
             delvewright_dsl::metrics::PLAYER_HEIGHT,
         ),
-        _ => (0.6, 1.95),
+        id => {
+            crate::compiler::framing::entity_body(id).map_or((0.6, 1.95), |b| (b.width, b.height))
+        }
     }
 }
 
