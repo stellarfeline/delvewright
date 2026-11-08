@@ -139,6 +139,11 @@
     },
     {
       "code": "DW0527",
+      "pointer": "/content/triggers/11/effects/3/when/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
       "pointer": "/content/triggers/12/effects/2/when/requires_state",
       "stage": "quests"
     },
@@ -346,6 +351,11 @@
     },
     {
       "code": "DW0527",
+      "pointer": "/content/triggers/11/effects/3/when/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
       "pointer": "/content/triggers/12/effects/2/when/requires_state",
       "stage": "quests"
     },
@@ -549,6 +559,11 @@
     {
       "code": "DW0527",
       "pointer": "/content/triggers/11/effects/2/when/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/triggers/11/effects/3/when/requires_state",
       "stage": "quests"
     },
     {
@@ -765,6 +780,11 @@
     },
     {
       "code": "DW0527",
+      "pointer": "/content/triggers/11/effects/3/when/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
       "pointer": "/content/triggers/12/effects/2/when/requires_state",
       "stage": "quests"
     },
@@ -968,6 +988,11 @@
     {
       "code": "DW0527",
       "pointer": "/content/triggers/11/effects/2/when/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/triggers/11/effects/3/when/requires_state",
       "stage": "quests"
     },
     {
@@ -1286,6 +1311,11 @@
     {
       "code": "DW0527",
       "pointer": "/content/triggers/11/effects/2/when/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/triggers/11/effects/3/when/requires_state",
       "stage": "quests"
     },
     {

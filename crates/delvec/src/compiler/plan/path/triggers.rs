@@ -258,47 +258,61 @@ pub(super) fn path_triggers(
 /// How many times a path performs `t` before the effect it is performed for
 /// happens: 1, unless `t` is repeatable and an effect that opens a way or sets
 /// a flag is gated on a datum `t`'s own bundle counts up ahead of it — a hit
-/// count (spec-0082 §3.3). Then it is the least `n` for which the datum's
-/// declared initial plus `n` times the bundle's ungated `add-state` amounts
-/// satisfies every term of that gate on it. A gate the count cannot open
-/// within 64 performances, or one that reads anything the bundle does not
-/// count, is left at 1 — the path performs the trigger and the step fails
-/// where it stands, the direction that can only turn a proof red.
+/// count (spec-0082 §3.3). Then it is the largest [`count_needed`] over those
+/// effects. A gate the count cannot open within 64 performances, or one that
+/// reads anything the bundle does not count, is left at 1 — the path performs
+/// the trigger and the step fails where it stands, the direction that can only
+/// turn a proof red. A flag-paying effect whose gate a count does not open is
+/// `super::drive`'s to schedule or refuse (`DW1080`).
 fn fires_needed(campaign: &Campaign, t: &delvewright_dsl::EnvTrigger) -> usize {
+    (0..t.effects.len())
+        .filter(|&i| {
+            let e = &t.effects[i];
+            opens_a_way(e) || matches!(e.verb, delvewright_dsl::Verb::SetFlag { .. })
+        })
+        .filter_map(|i| count_needed(campaign, t, i))
+        .fold(1, usize::max)
+}
+
+/// **The hit count that opens effect `i` of `t`** (spec-0082 §3.3): the least
+/// `n` for which the declared initial of every datum `t.effects[i]`'s numeric
+/// gate reads, plus `n` times the ungated `add-state` amounts `t`'s own bundle
+/// writes to it ahead of the effect, satisfies every term of that gate. `None`
+/// when `t` is `once`, the effect carries no numeric term, a term reads a datum
+/// the bundle does not count ahead of it, or no `n` up to 64 opens it.
+pub(super) fn count_needed(
+    campaign: &Campaign,
+    t: &delvewright_dsl::EnvTrigger,
+    i: usize,
+) -> Option<usize> {
     if t.once {
-        return 1;
+        return None;
     }
-    let mut needed = 1usize;
+    let terms = t.effects.get(i)?.requires_state();
+    if terms.is_empty() {
+        return None;
+    }
     let mut counted: BTreeMap<&str, i64> = BTreeMap::new();
-    for e in &t.effects {
+    for e in &t.effects[..i] {
         if let delvewright_dsl::Verb::AddState { state, amount } = &e.verb
             && e.when.is_none()
         {
             *counted.entry(state.as_str()).or_insert(0) += i64::from(*amount);
-            continue;
-        }
-        let pays = opens_a_way(e) || matches!(e.verb, delvewright_dsl::Verb::SetFlag { .. });
-        let terms = e.requires_state();
-        if !pays || terms.is_empty() {
-            continue;
-        }
-        let holds = |n: i64| {
-            terms.iter().all(|c| {
-                let Some(step) = counted.get(c.state.as_str()).copied() else {
-                    return false;
-                };
-                let Some(decl) = campaign.quests.content.state_decl(c.state.as_str()) else {
-                    return false;
-                };
-                let v = i64::from(decl.initial) + n * step;
-                i32::try_from(v).is_ok_and(|v| c.holds(v))
-            })
-        };
-        if let Some(n) = (1..=64).find(|n| holds(*n)) {
-            needed = needed.max(n as usize);
         }
     }
-    needed
+    let holds = |n: i64| {
+        terms.iter().all(|c| {
+            let Some(step) = counted.get(c.state.as_str()).copied() else {
+                return false;
+            };
+            let Some(decl) = campaign.quests.content.state_decl(c.state.as_str()) else {
+                return false;
+            };
+            let v = i64::from(decl.initial) + n * step;
+            i32::try_from(v).is_ok_and(|v| c.holds(v))
+        })
+    };
+    (1..=64).find(|n| holds(*n)).map(|n| n as usize)
 }
 
 /// Whether a critical path could ever perform this trigger — its bundle opens a
@@ -337,7 +351,7 @@ pub(crate) fn trigger_may_be_performed(t: &delvewright_dsl::EnvTrigger) -> bool 
 }
 
 /// Whether an effect opens a way on: an `open-gate` or an `open-way`.
-fn opens_a_way(e: &QuestEffect) -> bool {
+pub(super) fn opens_a_way(e: &QuestEffect) -> bool {
     matches!(e.gate_region_write(), Some((_, false))) || e.way_write().is_some()
 }
 

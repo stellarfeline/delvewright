@@ -69,9 +69,25 @@ pub(crate) fn writes_state_at_top(t: &EnvTrigger) -> bool {
     t.effects.iter().any(|e| e.writes_state().is_some())
 }
 
+/// Whether `e`'s nested lists are a reaction bundle (`on_respawn`, `on_rest`,
+/// `on_caught`), fired at times no ordered walk can name — the producer
+/// table's nesting rule.
+fn reacts(e: &QuestEffect) -> bool {
+    matches!(
+        e.verb,
+        delvewright_dsl::Verb::SetCheckpoint { .. }
+            | delvewright_dsl::Verb::Bonfire { .. }
+            | delvewright_dsl::Verb::BeginStealth { .. }
+    )
+}
+
 /// The data every value of which the presses alone decide — see the module
-/// doc for the rule.
-fn driven_data(campaign: &Campaign) -> BTreeSet<String> {
+/// doc for the rule. With `nested`, a write in a list nested under a
+/// pressable trigger's line (a `sequence` step, a cutscene's `then`) keeps the
+/// datum too: the press replay applies it when the press is made. That wider
+/// set is what a flag-paying press is replayed over (`DW1080`); the objective
+/// drive (`DW0985`) keeps to top-level writes.
+fn driven_data(campaign: &Campaign, nested: bool) -> BTreeSet<String> {
     let content = &campaign.quests.content;
     let mut out: BTreeSet<String> = BTreeSet::new();
     for s in &content.state {
@@ -102,13 +118,40 @@ fn driven_data(campaign: &Campaign) -> BTreeSet<String> {
                     out.remove(id.as_str());
                 }
             }
-            for nested in e.nested_effect_lists() {
-                strike_nested_writes(nested, &mut out);
+            if nested && top_of_press && !reacts(e) {
+                for list in e.nested_effect_lists() {
+                    keep_nested_writes(list, &mut written_by_press, &mut out);
+                }
+            } else {
+                for list in e.nested_effect_lists() {
+                    strike_nested_writes(list, &mut out);
+                }
             }
         }
     });
     out.retain(|id| written_by_press.contains(id));
     out
+}
+
+/// Record every datum a press's nested list writes, striking the ones a
+/// reaction bundle inside it writes.
+fn keep_nested_writes(
+    list: &[QuestEffect],
+    written: &mut BTreeSet<String>,
+    out: &mut BTreeSet<String>,
+) {
+    for e in list {
+        if let Some((id, _)) = e.writes_state() {
+            written.insert(id.as_str().to_string());
+        }
+        for nested in e.nested_effect_lists() {
+            if reacts(e) {
+                strike_nested_writes(nested, out);
+            } else {
+                keep_nested_writes(nested, written, out);
+            }
+        }
+    }
 }
 
 /// Remove every datum a nested list (at any depth) writes.
@@ -132,6 +175,9 @@ struct Held {
     flags: BTreeSet<String>,
     /// `once` triggers already performed.
     spent: BTreeSet<String>,
+    /// Data the plan does not drive that a press has written: from then on the
+    /// plan cannot name their value. Only a lenient scene records one.
+    lost: BTreeSet<String>,
 }
 
 /// What a press did.
@@ -151,10 +197,19 @@ struct Scene<'s> {
     flags: &'s BTreeSet<String>,
     /// Data the plan does not drive, at the value the guaranteed replay names.
     known: &'s BTreeMap<String, Option<i64>>,
+    /// Whether a write to a datum the plan does not drive is followed by
+    /// forgetting that datum's value (`true`) rather than abandoning the press
+    /// as undecidable (`false`). A flag-paying press (`DW1080`) is lenient: what
+    /// it is replayed for is the flag, and a datum it writes on the side is
+    /// only lost to the lines that read it later.
+    lenient: bool,
 }
 
 impl Scene<'_> {
     fn value(&self, h: &Held, id: &str) -> Option<i64> {
+        if h.lost.contains(id) {
+            return None;
+        }
         match h.data.get(id) {
             Some(v) => Some(*v),
             None => self.known.get(id).copied().flatten(),
@@ -214,11 +269,22 @@ impl Scene<'_> {
             if let delvewright_dsl::Verb::SetFlag { flag, .. } = &e.verb {
                 next.flags.insert(flag.as_str().to_string());
             }
+            if self
+                .nested_flags(&e.nested_effect_lists(), e, &mut next)
+                .is_none()
+            {
+                return Pressed::Undecidable;
+            }
             if let Some((id, w)) = e.writes_state() {
                 let id = id.as_str();
                 // A write to a datum the plan does not drive cannot be
-                // followed; the candidate filter keeps such a trigger out.
+                // followed; the candidate filter keeps such a trigger out,
+                // and a lenient scene forgets the datum instead.
                 let Some(v) = next.data.get(id).copied() else {
+                    if self.lenient {
+                        next.lost.insert(id.to_string());
+                        continue;
+                    }
                     return Pressed::Undecidable;
                 };
                 let after = match w {
@@ -232,6 +298,59 @@ impl Scene<'_> {
             }
         }
         Pressed::Ran(next)
+    }
+
+    /// The flags the lists nested under `parent` set, each line behind its own
+    /// gate read at the value the press holds now — the producer table's
+    /// nesting rule: a reaction bundle (`on_respawn`, `on_rest`, `on_caught`)
+    /// is not descended. A nested write is not applied; it already keeps its
+    /// datum out of the driven set, and a lenient scene forgets the datum.
+    /// `None` when a gate reads a datum the plan cannot name.
+    fn nested_flags(
+        &self,
+        lists: &[&[QuestEffect]],
+        parent: &QuestEffect,
+        next: &mut Held,
+    ) -> Option<()> {
+        if reacts(parent) {
+            return Some(());
+        }
+        for list in lists {
+            for e in *list {
+                if !self.holds(
+                    next,
+                    e.requires_flags(),
+                    e.forbids_flags(),
+                    e.requires_state(),
+                )? {
+                    continue;
+                }
+                if let delvewright_dsl::Verb::SetFlag { flag, .. } = &e.verb {
+                    next.flags.insert(flag.as_str().to_string());
+                }
+                if let Some((id, w)) = e.writes_state() {
+                    let id = id.as_str();
+                    match next.data.get(id).copied() {
+                        Some(v) => {
+                            let after = match w {
+                                delvewright_dsl::StateWrite::Set(n) => i64::from(n),
+                                delvewright_dsl::StateWrite::Add(n) => v + i64::from(n),
+                                delvewright_dsl::StateWrite::Clear => {
+                                    self.initial.get(id).copied().unwrap_or(0)
+                                }
+                            };
+                            next.data.insert(id.to_string(), after);
+                        }
+                        None if self.lenient => {
+                            next.lost.insert(id.to_string());
+                        }
+                        None => {}
+                    }
+                }
+                self.nested_flags(&e.nested_effect_lists(), e, next)?;
+            }
+        }
+        Some(())
     }
 }
 
@@ -247,27 +366,30 @@ enum Search {
     },
 }
 
+/// Whether every term of `goal` holds at `h` — the objective goal of
+/// [`search`].
+fn terms_hold(h: &Held, goal: &[&delvewright_dsl::StateCompare]) -> bool {
+    goal.iter().all(|c| {
+        h.data
+            .get(c.state.as_str())
+            .is_some_and(|v| i32::try_from(*v).is_ok_and(|v| c.holds(v)))
+    })
+}
+
+/// The shortest sequence of presses of `candidates` from `start` to a state
+/// `done` accepts, noting every value each datum in `watch` reaches.
 fn search(
     scene: &Scene<'_>,
     candidates: &[&EnvTrigger],
     start: &Held,
-    goal: &[&delvewright_dsl::StateCompare],
+    done: &dyn Fn(&Held) -> bool,
+    watch: &BTreeSet<&str>,
 ) -> Search {
-    let done = |h: &Held| {
-        goal.iter().all(|c| {
-            h.data
-                .get(c.state.as_str())
-                .is_some_and(|v| i32::try_from(*v).is_ok_and(|v| c.holds(v)))
-        })
-    };
     let mut reached: BTreeMap<String, BTreeSet<i64>> = BTreeMap::new();
     let note = |h: &Held, reached: &mut BTreeMap<String, BTreeSet<i64>>| {
-        for c in goal {
-            if let Some(v) = h.data.get(c.state.as_str()) {
-                reached
-                    .entry(c.state.as_str().to_string())
-                    .or_default()
-                    .insert(*v);
+        for id in watch {
+            if let Some(v) = h.data.get(*id) {
+                reached.entry((*id).to_string()).or_default().insert(*v);
             }
         }
     };
@@ -324,10 +446,24 @@ fn press_step(campaign: &Campaign, t: &EnvTrigger, pos: [i32; 3]) -> Step {
         npc_id: None,
         assembly_id: None,
         pos,
-        range: None,
+        range: match t.on {
+            delvewright_dsl::TriggerOn::Approach { range } => Some(range),
+            _ => None,
+        },
         stand: None,
         block: pressed_block(campaign, t.id.as_str()),
     }
+}
+
+/// Whether any line of `t`'s bundle, at any depth, sets `flag`.
+fn sets_flag(t: &EnvTrigger, flag: &str) -> bool {
+    let mut hit = false;
+    for e in &t.effects {
+        e.visit_deep(&mut |x| {
+            hit |= matches!(&x.verb, delvewright_dsl::Verb::SetFlag { flag: f, .. } if f.as_str() == flag);
+        });
+    }
+    hit
 }
 
 /// Where `t`'s anchor stands, looking in `area` first: a name another area
@@ -350,34 +486,169 @@ fn press_cell(anchors: &AnchorTable, t: &EnvTrigger, area: &str) -> Option<[i32;
     Some(cell(first.1))
 }
 
-/// **The presses each gated objective owes**, keyed like
-/// [`super::path_triggers`]'s output by the path step they are performed in
-/// front of, and performed after the triggers already due there.
+/// The numeric terms that stand between a press of `t` and its `set-flag` of
+/// `flag`: `t`'s own `requires_state`, and every `when` on the chain of
+/// effects down to each line that sets it (a reaction bundle is not
+/// descended, the producer table's rule). Empty when nothing numeric gates
+/// the flag, or `t` does not set it.
+pub(crate) fn flag_state_terms<'t>(
+    t: &'t EnvTrigger,
+    flag: &str,
+) -> Vec<&'t delvewright_dsl::StateCompare> {
+    fn walk<'t>(
+        list: &'t [QuestEffect],
+        flag: &str,
+        above: &mut Vec<&'t delvewright_dsl::StateCompare>,
+        out: &mut Vec<&'t delvewright_dsl::StateCompare>,
+        found: &mut bool,
+    ) {
+        for e in list {
+            let depth = above.len();
+            above.extend(e.requires_state());
+            if let delvewright_dsl::Verb::SetFlag { flag: f, .. } = &e.verb
+                && f.as_str() == flag
+            {
+                *found = true;
+                out.extend(above.iter().copied());
+            }
+            if !matches!(
+                e.verb,
+                delvewright_dsl::Verb::SetCheckpoint { .. }
+                    | delvewright_dsl::Verb::Bonfire { .. }
+                    | delvewright_dsl::Verb::BeginStealth { .. }
+            ) {
+                for nested in e.nested_effect_lists() {
+                    walk(nested, flag, above, out, found);
+                }
+            }
+            above.truncate(depth);
+        }
+    }
+    let mut out: Vec<&delvewright_dsl::StateCompare> = Vec::new();
+    let mut found = false;
+    walk(&t.effects, flag, &mut Vec::new(), &mut out, &mut found);
+    if !found || (out.is_empty() && t.requires_state.is_empty()) {
+        return Vec::new();
+    }
+    let mut all: Vec<&delvewright_dsl::StateCompare> = t.requires_state.iter().collect();
+    for c in out {
+        if !all.contains(&c) {
+            all.push(c);
+        }
+    }
+    all
+}
+
+/// Whether a hit count alone opens every numeric gate on `t`'s `set-flag` of
+/// each of `flags` (spec-0082 §3.3, [`super::triggers::count_needed`]): `t`
+/// has no `requires_state` of its own, and every top-level line that sets the
+/// flag behind a numeric `when` is opened by the count of `t`'s own presses
+/// the path already performs. A flag set behind a numeric gate on a nested
+/// line is not a count.
+fn counted_opens(campaign: &Campaign, t: &EnvTrigger, flags: &[&str]) -> bool {
+    if !t.requires_state.is_empty() {
+        return false;
+    }
+    flags.iter().all(|flag| {
+        let mut nested_gate = false;
+        for e in &t.effects {
+            for list in e.nested_effect_lists() {
+                for x in list {
+                    x.visit_deep(&mut |y| {
+                        nested_gate |= matches!(&y.verb,
+                            delvewright_dsl::Verb::SetFlag { flag: f, .. } if f.as_str() == *flag)
+                            && !flag_state_terms(t, flag).is_empty();
+                    });
+                }
+            }
+        }
+        !nested_gate
+            && t.effects.iter().enumerate().all(|(i, e)| {
+                !matches!(&e.verb, delvewright_dsl::Verb::SetFlag { flag: f, .. } if f.as_str() == *flag)
+                    || e.requires_state().is_empty()
+                    || super::triggers::count_needed(campaign, t, i).is_some()
+            })
+    })
+}
+
+/// The presses a path performs, by the step they are performed in front of,
+/// and every flag a trigger other than the one the flow model named came to
+/// pay.
+pub(super) struct Schedule {
+    /// The whole schedule: what was due, with every owed press in place.
+    pub due: BTreeMap<usize, Vec<Step>>,
+    /// `(flag, payer)`: a flag whose named payer could not be made to set it,
+    /// and the declared trigger whose press the schedule sets it with instead.
+    pub repaid: Vec<(String, String)>,
+}
+
+/// A flag a path performs a trigger to pay (`Flow::trigger_debts`), and the
+/// objective that reads it.
+pub(super) struct Owed {
+    /// The flag.
+    pub flag: String,
+    /// The first objective on the path that reads it.
+    pub reader: String,
+}
+
+/// **The presses each gated objective and each state-gated flag owes**, and
+/// the schedule they make with what the path already performs: `due` with
+/// every press added in front of the step that owes it.
 ///
-/// `due` is what the path already performs; `data_before` is the guaranteed
-/// replay's value of every datum walking up to each objective, read for the
-/// data this module does not drive.
+/// Two gates are driven, by one replay:
+///
+/// * an objective's `requires_state` on driven data (`DW0985`), by the presses
+///   performed after the triggers already due at its step; and
+/// * a flag the path performs a trigger to pay (`owed`, by trigger) whose
+///   `set-flag` waits on a numeric term — the trigger's own `requires_state`
+///   or a `when` on the line ([`flag_state_terms`]) — however many other
+///   triggers write the datum it reads. The press the path performs for the
+///   flag is replayed; if the flag is not set by it, the shortest sequence of
+///   presses ending in the state where it is replaces it (the payer itself
+///   among the candidates, at the place the path performs it). A gate a
+///   count of the payer's own presses opens (spec-0082 §3.3) stands as the
+///   path performs it. Otherwise the gate cannot be shown to hold, and the
+///   flag is not credited: `DW1080`.
+///
+/// The same builder serves the exported path and every spec-0025 branch path,
+/// so a branch run performs the presses its own flags owe.
+///
+/// `data_before` is the guaranteed replay's value of every datum walking up
+/// to each objective, read for the data this module does not drive.
 pub(super) fn drive_presses(
     campaign: &Campaign,
     anchors: &AnchorTable,
     path: &crate::compiler::flow::Playthrough,
     flags_at: &[BTreeSet<String>],
     due: &BTreeMap<usize, Vec<Step>>,
+    owed: &BTreeMap<String, Vec<Owed>>,
     data_before: &BTreeMap<String, BTreeMap<String, Option<i64>>>,
-) -> Result<BTreeMap<usize, Vec<Step>>, PlanError> {
+) -> Result<Schedule, PlanError> {
     let mut out: BTreeMap<usize, Vec<Step>> = BTreeMap::new();
-    let driven = driven_data(campaign);
-    if driven.is_empty() {
-        return Ok(out);
-    }
+    let mut repaid: Vec<(String, String)> = Vec::new();
+    let driven = driven_data(campaign, false);
+    // The data a flag-paying press is replayed over: the driven data, and
+    // those a press also writes in a nested line.
+    let followed = driven_data(campaign, true);
     let content = &campaign.quests.content;
     let initial: BTreeMap<String, i64> = content
         .state
         .iter()
-        .filter(|s| driven.contains(s.id.as_str()))
+        .filter(|s| followed.contains(s.id.as_str()))
         .map(|s| (s.id.as_str().to_string(), i64::from(s.initial)))
         .collect();
     // A candidate presses by hand and writes only data the plan follows.
+    let writes_only = |t: &EnvTrigger, set: &BTreeSet<String>| {
+        let mut ok = true;
+        for e in &t.effects {
+            e.visit_deep(&mut |x| {
+                if let Some((id, _)) = x.writes_state() {
+                    ok &= set.contains(id.as_str());
+                }
+            });
+        }
+        ok
+    };
     let candidates: Vec<&EnvTrigger> = content
         .triggers
         .iter()
@@ -389,16 +660,44 @@ pub(super) fn drive_presses(
             })
         })
         .collect();
+    // A flag-paying search's candidates: every pressable trigger that writes
+    // a followed datum, at any depth, and nothing the plan does not follow.
+    let pay_candidates: Vec<&EnvTrigger> = content
+        .triggers
+        .iter()
+        .filter(|t| pressable(t) && writes_only(t, &followed))
+        .filter(|t| {
+            let mut any = false;
+            for e in &t.effects {
+                e.visit_deep(&mut |x| any |= x.writes_state().is_some());
+            }
+            any
+        })
+        .collect();
     let by_id: BTreeMap<&str, &EnvTrigger> = content
         .triggers
         .iter()
         .map(|t| (t.id.as_str(), t))
         .collect();
+    let reader_at = |objective: &str| path.steps.iter().position(|st| st.objective == objective);
+    let area_of = |si: usize| {
+        campaign
+            .quest_plan
+            .content
+            .quests
+            .iter()
+            .find(|q| q.id.as_str() == path.steps[si].quest)
+            .map(|q| q.area.as_str())
+            .unwrap_or("")
+    };
     let mut held = Held {
         data: initial.clone(),
         flags: BTreeSet::new(),
         spent: BTreeSet::new(),
+        lost: BTreeSet::new(),
     };
+    // Flag-paying presses moved to the step that reads the flag.
+    let mut deferred: BTreeMap<usize, Vec<Vec<Step>>> = BTreeMap::new();
     let empty = BTreeMap::new();
     let no_flags = BTreeSet::new();
     for (si, st) in path.steps.iter().enumerate() {
@@ -407,18 +706,190 @@ pub(super) fn drive_presses(
             initial: &initial,
             flags: flags_at.get(si).unwrap_or(&no_flags),
             known,
+            lenient: false,
         };
-        // What the path already performs here moves the data first.
+        let area = area_of(si);
+        let placed: Vec<(&EnvTrigger, [i32; 3])> = candidates
+            .iter()
+            .filter_map(|t| press_cell(anchors, t, area).map(|p| (*t, p)))
+            .collect();
+        // What the path already performs here moves the data first: each run
+        // of one trigger's presses, then the flag-paying runs moved here.
+        let mut runs: Vec<(Vec<Step>, bool)> = Vec::new();
         for step in due.get(&si).into_iter().flatten() {
-            let Some(t) = step.trigger().and_then(|id| by_id.get(id)) else {
+            match runs.last_mut() {
+                Some((r, _)) if step.trigger().is_some() && r[0].trigger() == step.trigger() => {
+                    r.push(step.clone());
+                }
+                _ => runs.push((vec![step.clone()], true)),
+            }
+        }
+        for r in deferred.remove(&si).unwrap_or_default() {
+            runs.push((r, false));
+        }
+        for (run, may_defer) in runs {
+            let step = &run[0];
+            let Some(t) = step.trigger().and_then(|id| by_id.get(id)).copied() else {
+                out.entry(si).or_default().extend(run);
                 continue;
             };
-            match scene.press(t, &held) {
-                Pressed::Ran(n) => held = n,
-                Pressed::Refused | Pressed::Undecidable => {
+            let gated: Vec<&Owed> = owed
+                .get(t.id.as_str())
+                .into_iter()
+                .flatten()
+                .filter(|o| !flag_state_terms(t, &o.flag).is_empty())
+                .collect();
+            if gated.is_empty() {
+                for s in run {
+                    match scene.press(t, &held) {
+                        Pressed::Ran(n) => held = n,
+                        Pressed::Refused | Pressed::Undecidable => {
+                            if t.once {
+                                held.spent.insert(t.id.as_str().to_string());
+                            }
+                        }
+                    }
+                    out.entry(si).or_default().push(s);
+                }
+                continue;
+            }
+            let flags: Vec<&str> = gated.iter().map(|o| o.flag.as_str()).collect();
+            // The flags this press pays are not yet held when the path
+            // decides to perform it (the journal credits them from the step
+            // that owes them, the replay's stance).
+            let mut before: BTreeSet<String> = scene.flags.clone();
+            for f in &flags {
+                before.remove(*f);
+            }
+            let pay = Scene {
+                initial: &initial,
+                flags: &before,
+                known,
+                lenient: true,
+            };
+            let paid = |h: &Held| flags.iter().all(|f| h.flags.contains(*f));
+            // The press as the path performs it.
+            let mut h = held.clone();
+            let mut undecidable = false;
+            for _ in 0..run.len() {
+                match pay.press(t, &h) {
+                    Pressed::Ran(n) => h = n,
+                    Pressed::Refused => {}
+                    Pressed::Undecidable => {
+                        undecidable = true;
+                        break;
+                    }
+                }
+            }
+            if !undecidable && paid(&h) {
+                held = h;
+                out.entry(si).or_default().extend(run);
+                continue;
+            }
+            // Not paid where the path first could perform it: the presses
+            // that pay it are made in front of the step that reads the flag,
+            // as an objective's own numeric gate is driven, when the payer
+            // stands where that step's party is.
+            // A payer that also opens a way stays where the path performs
+            // it: the route is proved with its opening there.
+            let opens = {
+                let mut any = false;
+                for e in &t.effects {
+                    e.visit_deep(&mut |x| any |= super::triggers::opens_a_way(x));
+                }
+                any
+            };
+            if may_defer && !opens {
+                let reader = gated
+                    .iter()
+                    .filter_map(|o| reader_at(&o.reader))
+                    .min()
+                    .filter(|r| *r > si);
+                if let Some(r) = reader
+                    && let Some(pos) = press_cell(anchors, t, area_of(r))
+                {
+                    let moved: Vec<Step> = run
+                        .iter()
+                        .map(|s| match s {
+                            Step::Trigger { .. } => press_step(campaign, t, pos),
+                            other => other.clone(),
+                        })
+                        .collect();
+                    deferred.entry(r).or_default().push(moved);
+                    continue;
+                }
+            }
+            // The presses that make the gate hold, ending in the state where
+            // the flag is set. The payer stands where the path performs it.
+            // The flow model names the first declared trigger whose flag gate
+            // holds; any other declared trigger on an anchor in the step's area
+            // that sets one of the flags is a payer too, so a gate the named
+            // one cannot open refuses nothing while another can pay.
+            let mut pool: Vec<(&EnvTrigger, Step)> = pay_candidates
+                .iter()
+                .filter(|c| c.id != t.id)
+                .filter_map(|c| {
+                    press_cell(anchors, c, area).map(|p| (*c, press_step(campaign, c, p)))
+                })
+                .collect();
+            for other in &content.triggers {
+                if other.id == t.id
+                    || pool.iter().any(|(c, _)| c.id == other.id)
+                    || !flags.iter().any(|f| sets_flag(other, f))
+                {
+                    continue;
+                }
+                if let Some(p) = press_cell(anchors, other, area) {
+                    pool.push((other, press_step(campaign, other, p)));
+                }
+            }
+            pool.push((t, step.clone()));
+            let pool_t: Vec<&EnvTrigger> = pool.iter().map(|(c, _)| *c).collect();
+            let terms: Vec<&delvewright_dsl::StateCompare> =
+                flags.iter().flat_map(|f| flag_state_terms(t, f)).collect();
+            let watch: BTreeSet<&str> = terms.iter().map(|c| c.state.as_str()).collect();
+            match search(&pay, &pool_t, &held, &paid, &watch) {
+                Search::Found(seq, end) => {
+                    // The press the search stopped on is the one that set the
+                    // flags: the payer the path performs.
+                    if let Some(&k) = seq.last()
+                        && pool[k].0.id != t.id
+                    {
+                        for f in &flags {
+                            repaid.push(((*f).to_string(), pool[k].0.id.as_str().to_string()));
+                        }
+                    }
+                    let steps = out.entry(si).or_default();
+                    for k in seq {
+                        steps.push(pool[k].1.clone());
+                    }
+                    held = end;
+                }
+                Search::Exhausted { undecidable: u, .. }
+                    if (u || undecidable) && counted_opens(campaign, t, &flags) =>
+                {
+                    // A hit count (spec-0082 §3.3): the path performs the
+                    // payer as often as its own count needs.
                     if t.once {
                         held.spent.insert(t.id.as_str().to_string());
                     }
+                    out.entry(si).or_default().extend(run);
+                }
+                Search::Exhausted {
+                    reached,
+                    undecidable: u,
+                    capped,
+                } => {
+                    return Err(unpaid(
+                        t,
+                        &gated,
+                        &terms,
+                        &held,
+                        &pool_t,
+                        &reached,
+                        capped,
+                        u || undecidable,
+                    ));
                 }
             }
         }
@@ -430,28 +901,12 @@ pub(super) fn drive_presses(
             .iter()
             .filter(|c| driven.contains(c.state.as_str()))
             .collect();
-        let holds_now = goal.iter().all(|c| {
-            held.data
-                .get(c.state.as_str())
-                .is_some_and(|v| i32::try_from(*v).is_ok_and(|v| c.holds(v)))
-        });
-        if goal.is_empty() || holds_now {
+        if goal.is_empty() || terms_hold(&held, &goal) {
             continue;
         }
-        let area = campaign
-            .quest_plan
-            .content
-            .quests
-            .iter()
-            .find(|q| q.id.as_str() == st.quest)
-            .map(|q| q.area.as_str())
-            .unwrap_or("");
-        let placed: Vec<(&EnvTrigger, [i32; 3])> = candidates
-            .iter()
-            .filter_map(|t| press_cell(anchors, t, area).map(|p| (*t, p)))
-            .collect();
         let pool: Vec<&EnvTrigger> = placed.iter().map(|(t, _)| *t).collect();
-        match search(&scene, &pool, &held, &goal) {
+        let watch: BTreeSet<&str> = goal.iter().map(|c| c.state.as_str()).collect();
+        match search(&scene, &pool, &held, &|h| terms_hold(h, &goal), &watch) {
             Search::Found(seq, end) => {
                 let steps = out.entry(si).or_default();
                 for k in seq {
@@ -488,36 +943,115 @@ pub(super) fn drive_presses(
                         .collect::<Vec<_>>()
                         .join(", ")
                 };
-                let reach = reached
-                    .iter()
-                    .map(|(id, vs)| {
-                        let vs: Vec<String> = vs.iter().take(16).map(i64::to_string).collect();
-                        let more = if reached[id].len() > 16 { ", …" } else { "" };
-                        format!("`{id}` ∈ {{{}{more}}}", vs.join(", "))
-                    })
-                    .collect::<Vec<_>>()
-                    .join("; ");
-                let bound = if capped {
-                    format!("the search visited its bound of {MAX_STATES} distinct states")
-                } else {
-                    format!("every sequence of at most {MAX_PRESSES} presses was tried")
-                };
                 return Err(PlanError::new(
                     DW_GATE_UNDRIVABLE,
                     format!(
                         "objective `{}` waits on {terms}, and only presses write that datum. \
                          From where the path stands ({now}), pressing {presses} — each bundle \
                          replayed in order, every effect's `when` read against the value the \
-                         lines before it produced — never satisfies the gate: {bound}, and the \
-                         values reached were {reach}. The delve cannot be finished. Look for a \
+                         lines before it produced — never satisfies the gate: {}, and the \
+                         values reached were {}. The delve cannot be finished. Look for a \
                          bundle whose own write is followed by a line gated on the value it \
                          just produced (the shape `DW0527` describes): move every reading effect \
                          ahead of the write, or change the gate",
-                        st.objective
+                        st.objective,
+                        bound_phrase(capped),
+                        reach_phrase(&reached),
                     ),
                 ));
             }
         }
     }
-    Ok(out)
+    Ok(Schedule { due: out, repaid })
+}
+
+/// How a search that found nothing ended.
+fn bound_phrase(capped: bool) -> String {
+    if capped {
+        format!("the search visited its bound of {MAX_STATES} distinct states")
+    } else {
+        format!("every sequence of at most {MAX_PRESSES} presses was tried")
+    }
+}
+
+/// Every value each watched datum reached, at most sixteen per datum.
+fn reach_phrase(reached: &BTreeMap<String, BTreeSet<i64>>) -> String {
+    if reached.is_empty() {
+        return "none the plan can name".to_string();
+    }
+    reached
+        .iter()
+        .map(|(id, vs)| {
+            let shown: Vec<String> = vs.iter().take(16).map(i64::to_string).collect();
+            let more = if vs.len() > 16 { ", …" } else { "" };
+            format!("`{id}` ∈ {{{}{more}}}", shown.join(", "))
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+/// `DW1080`: the flag a path performs `t` to pay waits on a numeric gate no
+/// press sequence the plan can follow makes hold.
+#[allow(clippy::too_many_arguments)]
+fn unpaid(
+    t: &EnvTrigger,
+    gated: &[&Owed],
+    terms: &[&delvewright_dsl::StateCompare],
+    held: &Held,
+    pool: &[&EnvTrigger],
+    reached: &BTreeMap<String, BTreeSet<i64>>,
+    capped: bool,
+    undecidable: bool,
+) -> PlanError {
+    let reads = gated
+        .iter()
+        .map(|o| format!("`{}` reads `{}`", o.reader, o.flag))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let gate = terms
+        .iter()
+        .map(|c| format!("`{} {} {}`", c.state.as_str(), c.op.token(), c.value))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let now = terms
+        .iter()
+        .map(|c| c.state.as_str())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .map(|id| match held.data.get(id) {
+            Some(v) if !held.lost.contains(id) => format!("`{id}` = {v}"),
+            _ => format!("`{id}` unknown to the plan"),
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let presses = pool
+        .iter()
+        .map(|t| format!("`{}`", t.id.as_str()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let why = if undecidable {
+        "a line on the way reads a datum the plan cannot name at this step — something other \
+         than a press the plan follows writes it, or a press writes one it does not follow — \
+         so whether the gate holds is not a fact the proof has"
+            .to_string()
+    } else {
+        format!(
+            "no sequence makes it hold: {}, and the values reached were {}",
+            bound_phrase(capped),
+            reach_phrase(reached)
+        )
+    };
+    PlanError::new(
+        DW_FLAG_GATE_UNPAID,
+        format!(
+            "{reads}, and the path performs trigger `{}` to set it; that `set-flag` waits on \
+             {gate} (the trigger's `requires_state` and every `when` on the line). From where \
+             the path stands ({now}), pressing {presses} — each bundle replayed in order, every \
+             `when` read against the value the lines before it produced — {why}. The proof \
+             does not credit the flag, and the delve cannot be shown finishable. Make the \
+             datum one only presses write (no quest bundle, nested line or unpressed trigger \
+             writes it), or set the flag where its gate is known to hold",
+            t.id.as_str()
+        ),
+    )
 }
