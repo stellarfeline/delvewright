@@ -4,25 +4,26 @@
 //! still walks where no way joins its ends.
 //!
 //! The site, on open flat ground at grade 64, every place walled and every
-//! connection an arch three wide (footprints as the derivation places them):
+//! connection an arch three wide, one wall course between neighbours
+//! (footprints as `delvec validate` places them):
 //!
 //! ```text
-//!   x 2..12        13..20     21..25
-//!   ┌──────────┐┌────────┐┌─────┐  z 2..6
-//!   │home      ├┤ road-a ├┤     │
-//!   └─┬────────┘└────────┘│     │
-//!   ┌─┴─┐                 │road │
-//!   │grn│ (13 long)       │ -b  │  z 7..19
-//!   └─┬─┘                 │     │
-//!   ┌─┴────────┐┌────────┐│     │
-//!   │market    ├┤ road-c ├┤     │  z 20..24
-//!   └──────────┘└────────┘└─────┘
+//!   x 2..12        14..21     23..27
+//!   ┌──────────┐ ┌────────┐ ┌─────┐  z 2..6
+//!   │home      ├─┤ road-a ├─┤     │
+//!   └─┬────────┘ └────────┘ │     │
+//!   ┌─┴─┐                   │road │
+//!   │grn│ (13 long)         │ -b  │  z 8..20
+//!   └─┬─┘                   │     │
+//!   ┌─┴────────┐ ┌────────┐ │     │
+//!   │market    ├─┤ road-c ├─┤     │  z 22..26
+//!   └──────────┘ └────────┘ └─────┘
 //! ```
 //!
 //! The keeper walks from home to the market: through the green is about
 //! twenty-six cells, round the three roads about fifty. The green stands
-//! clear of the roads by more than a sprint jump, so the site is a legal
-//! blockout (`DW0838` is asked of it before any walk is read).
+//! clear of the roads by more than a sprint jump, so the site validates and
+//! is a legal blockout (`DW0838` is asked of it before any walk is read).
 
 use crate::common;
 
@@ -122,14 +123,14 @@ fn campaign(dir: &Path, far_road_way: bool) {
         "site-plan.json",
         "site-plan",
         serde_json::json!({
-            "region": {"min": [0, 56, 0], "extent": [28, 24, 28]},
+            "region": {"min": [0, 56, 0], "extent": [32, 24, 32]},
             "datums": [{"id": "datum/grade", "y": 64}],
             "boxes": [
                 home,
                 place("node/green", [5, 13], None),
                 place("node/market", [11, 5], None),
                 place("node/road-a", [8, 5], Some("x")),
-                place("node/road-b", [5, 23], far_road_way.then_some("z")),
+                place("node/road-b", [5, 25], far_road_way.then_some("z")),
                 place("node/road-c", [8, 5], Some("x"))
             ],
             "seams": [
@@ -137,7 +138,7 @@ fn campaign(dir: &Path, far_road_way: bool) {
                 seam("edge/green-market", "south", 1, 1),
                 seam("edge/home-road-a", "east", 1, 1),
                 seam("edge/road-a-road-b", "east", 1, 1),
-                seam("edge/road-c-road-b", "east", 1, 19),
+                seam("edge/road-c-road-b", "east", 1, 21),
                 seam("edge/market-road-c", "east", 1, 1)
             ],
             "fill": {
@@ -186,6 +187,20 @@ fn keeper_walk(far_road_way: bool) -> (Site, Vec<[i32; 3]>, Vec<[f64; 3]>) {
     campaign(&dir, far_road_way);
     let c = common::campaign_at(&dir);
     let reg = empty_library(&root);
+    let refused: Vec<_> = common::validation_diagnostics(
+        &c,
+        &delvec::compiler::registry::FullItemRegistry::v1_21_11(),
+        &reg,
+        &delvec::compiler::registry::FullEntityRegistry::v1_21_11(),
+    )
+    .into_iter()
+    .filter(|d| d.severity == delvewright_dsl::Severity::Error)
+    .map(|d| format!("{}: {}", d.code, d.message))
+    .collect();
+    assert!(
+        refused.is_empty(),
+        "the site does not validate: {refused:#?}"
+    );
     let plan = Plan::build(&c, &reg).expect("the site plans");
     let blocks = delvec::compiler::assembled::assembled_blocks(&plan, &BTreeMap::new());
     let battery = delvec::compiler::blockout::check(&plan, &blocks).expect("a blockout");
