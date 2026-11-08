@@ -86,6 +86,10 @@ MATRIX_REF = re.compile(r"\$\{\{\s*matrix\.([A-Za-z0-9_-]+)\s*\}\}")
 ANY_EXPR = re.compile(r"\$\{\{")
 
 
+# A job-level `if` that is true on every pull request. Anything else can skip the job.
+ALWAYS_RUNS = {"always()", "!cancelled()", "${{ always() }}", "${{ !cancelled() }}"}
+
+
 def expand_job_name(job_id: str, job: dict, findings: list[str]) -> list[str]:
     name = job.get("name")
     name = job_id if name is None else str(name)
@@ -97,6 +101,14 @@ def expand_job_name(job_id: str, job: dict, findings: list[str]) -> list[str]:
                 f"Only `${{{{ matrix.<var> }}}}` over a plain matrix list is expanded."
             )
         return [name]
+    cond = job.get("if")
+    if cond is not None and str(cond).strip() not in ALWAYS_RUNS:
+        findings.append(
+            f"job {job_id!r} is a matrix job named {name!r} and carries a job-level `if` ({str(cond).strip()!r}) "
+            f"that can skip it. GitHub never expands a skipped matrix job: it reports one context, literally "
+            f"the unexpanded template, and none of the required per-value names, so the pull request blocks for "
+            f"ever. Run the job always (`if: ${{{{ !cancelled() }}}}`) and put the condition on each step."
+        )
     strategy = job.get("strategy") or {}
     matrix = strategy.get("matrix") if isinstance(strategy, dict) else None
     names = [name]
