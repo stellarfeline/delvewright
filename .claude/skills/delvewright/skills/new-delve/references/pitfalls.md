@@ -46,7 +46,8 @@
      needs a checkpoint or bonfire that governs it, and a wave the party must be
      able to re-fight wants `respawns_on_rest`. Leaving it off is legitimate — a
      won fight stays won, and the stage records that as `cleared-before-retry` and
-     passes it. What it reds is `stranded`: nothing left to fight AND the
+     passes it, judging that respawn against the checkpoint the fight's own
+     completion put in force. What it reds is `stranded`: nothing left to fight AND the
      objective unfinished, so the party can neither complete the encounter nor
      re-fight it. Turning `respawns_on_rest` ON buys a stricter check: the wave
      must come back WHOLE — declared count, all-new mobs, full health — because a

@@ -182,6 +182,18 @@ this section is what they are *for* and the traps in each.
 - **Every datum must be both written somewhere and read somewhere**: a gate
   reading a datum nothing writes is `DW0501`, and a datum no gate reads is
   `DW0502`. Both mean the mechanism is decoration.
+- **A press puzzle is proved by replaying the presses.** When only triggers the
+  party presses by hand (`use` or `strike` on an anchor) write a datum, the build
+  replays every press the way the datapack runs it and hands the bot the order to
+  press: for an objective whose `requires_state` reads the datum (`DW0985` when
+  no order opens it), and for a flag a press sets behind a `when` or its
+  trigger's own `requires_state` on the datum — the latch of an ordered puzzle —
+  that an objective reads (`DW1080` when no order sets it). Keep every write of
+  such a datum on a pressed trigger — in its top-level `effects` for an
+  objective's own gate; a `sequence` inside the press is followed for a flag: a
+  write in a quest beat, a reaction bundle or a trigger nobody presses makes the
+  value one the build cannot follow, and a flag behind it is refused unless the
+  trigger's own count of presses opens it (the hit count below).
 - A `player`-scoped datum can only be touched where a player is acting — a
   dialogue option, a cast placement, an `on_death` beat, an effect on a quest
   beat a player completes, or a trigger declaring `audience: "presser"`, which

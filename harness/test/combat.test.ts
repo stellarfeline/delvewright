@@ -18,6 +18,7 @@ import {
   returnHealthNote,
   dieRetryFidelityGaps,
   respawnedAtCheckpoint,
+  respawnedAtEncounterSeat,
   retryOutcome,
   scriptedDeathCommand,
   trialVerdict,
@@ -203,6 +204,35 @@ test("a respawn within the radius counts; one across the map does not", () => {
 
 test("with no checkpoint declared yet there is nothing to contradict", () => {
   assert.equal(respawnedAtCheckpoint([0, 0, 0], undefined), true);
+});
+
+// The gallery's own seats around its muster (`death-plan.json`): the hearth is
+// in force from step 19, and the muster's own completion bundle (step 21) sets
+// the checkpoint at the muster.
+const seatsAroundTheMuster = [
+  { cp: -1, label: "the campaign's entry spawn", cell: [15, 67, 2] as const, inForceAfter: -1 },
+  { cp: 0, label: "bonfire anchor `anchor/hearth`", cell: [6, 67, 8] as const, inForceAfter: 19 },
+  { cp: 2, label: "checkpoint anchor `anchor/muster`", cell: [15, 67, 19] as const, inForceAfter: 21 },
+  { cp: 3, label: "checkpoint anchor `anchor/lectern`", cell: [10, 67, 5] as const, inForceAfter: 32 },
+];
+
+test("a death in a fight still standing returns to the encounter's checkpoint, never its own kill step's", () => {
+  const enc = encounter({ step: 21, checkpoint: [6, 67, 8] });
+  assert.equal(respawnedAtEncounterSeat([6.5, 67, 8.5], enc, false, seatsAroundTheMuster), true);
+  assert.equal(respawnedAtEncounterSeat([15.5, 67, 19.5], enc, false, seatsAroundTheMuster), false);
+});
+
+test("a death after the fight was won returns to the seat its own completion put in force", () => {
+  const enc = encounter({ step: 21, checkpoint: [6, 67, 8] });
+  assert.equal(respawnedAtEncounterSeat([15.5, 67, 19.5], enc, true, seatsAroundTheMuster), true);
+  assert.equal(respawnedAtEncounterSeat([6.5, 67, 8.5], enc, true, seatsAroundTheMuster), false);
+  assert.equal(respawnedAtEncounterSeat([10.5, 67, 5.5], enc, true, seatsAroundTheMuster), false);
+});
+
+test("with no death plan the encounter's checkpoint is the only statement there is", () => {
+  const enc = encounter({ step: 21, checkpoint: [6, 67, 8] });
+  assert.equal(respawnedAtEncounterSeat([15.5, 67, 19.5], enc, true, undefined), false);
+  assert.equal(respawnedAtEncounterSeat([6.5, 67, 8.5], enc, true, undefined), true);
 });
 
 function trial(over: Partial<DeathTrial> = {}): DeathTrial {

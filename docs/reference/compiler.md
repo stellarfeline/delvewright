@@ -16,7 +16,7 @@ Methodology; CI enforces the DW-code subset — see `tools/ci/check-dw-codes.py`
   other subcommand `delvec --help` lists — and
   the scripts around it (`tools/`, `validation/`) are indexed in
   [`tools.md`](tools.md).
-- Versions (as of this doc): `delvec 1.15.0`, `dsl 0.69.0`, `mc 1.21.11`.
+- Versions (as of this doc): `delvec 1.16.0`, `dsl 0.69.0`, `mc 1.21.11`.
   The `dsl` number is the **one** `dsl_version` this engine accepts (ADR-0024):
   every stage document, map-pipeline document and l10n sidecar declares it, and
   any other number is refused at the envelope with `DW0102`, which names it. The
@@ -3336,9 +3336,11 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   from the position before it to the step that reads the flag (`DW1044`, the
   reader recorded in `PathFiring::trigger_debts`).
   A path whose trigger gate never holds, or whose target never shares an area
-  with a step, does not perform it, and nothing it opens is credited. For these
-  two reasons numeric gates (`requires_state`) are not evaluated: a press whose
-  state gate is closed broadcasts no marker and the step fails where it stands.
+  with a step, does not perform it, and nothing it opens is credited. Placing a
+  trigger reads no numeric gate (`requires_state`); a trigger performed for a
+  way it opens whose state gate is closed broadcasts no marker and the step
+  fails where it stands. A flag a trigger is performed to pay is judged by the
+  press replay below.
   **A numeric gate only presses move is driven** (`plan::path::drive`,
   `DW0985`). A datum is *driven* when it is declared, no stake forfeits it, no
   loop counts it, it has one holder on the walk (`party`, or `player` with
@@ -3359,6 +3361,35 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   datum the plan cannot name there is not taken, and a search that skipped one
   refuses nothing. Terms on data that are not driven are left to the other
   proofs.
+  **A flag behind a numeric gate is paid by the presses that open it**
+  (`plan::path::drive`, `DW1080`). When the path performs a trigger to pay a
+  flag (`Flow::trigger_debts`) and that trigger's `set-flag` waits on a numeric
+  term — the trigger's own `requires_state`, or a `when` on the line or on an
+  effect enclosing it (a reaction bundle is not descended) — the same replay
+  presses it as the path performs it, with the flags it pays not yet held. This
+  replay follows a wider set of data than the objective drive: every datum
+  whose every write is a line of a `use`/`strike` trigger on an anchor at any
+  depth (a `sequence` step, a cutscene's `then`; never a reaction bundle), from
+  its declared `initial`, a nested write applied when the press is made. If the
+  flag is set, the press stands. Otherwise, unless the payer also opens a way,
+  the press moves in front of the first step that reads the flag, when the
+  payer's anchor resolves in that step's area, and is judged there. Where it
+  is judged, the search above runs with the goal *the flag is set*, over every
+  pressable trigger in the step's area that writes only followed data, every
+  other declared trigger on an anchor there that sets the flag, and the payer
+  at the place the path performs it; the sequence it finds replaces the
+  payer's press — however many other triggers write the datum the gate reads
+  — and the trigger it ends on is the payer the path performs and
+  `PathFiring::trigger_debts` records, so a first-declared payer whose gate no
+  press opens refuses nothing while a later one can set the flag. A press in
+  this replay that writes a datum the plan does not follow forgets that datum
+  rather than being abandoned. A gate a count of the payer's own presses opens
+  (spec-0082 §3.3, the hit count `trigger` steps already repeat) stands as
+  performed. Anything else is `DW1080`: the flag is not credited, naming the
+  reader, the flag, the payer, the terms and the values reached. The builder
+  is the one every spec-0025 branch path is built by, so a branch run performs
+  the presses its own flags owe. Nested lines of a press set flags behind
+  their own gates, read at the value the press holds.
   **`loop` steps** (spec-0086 §5.2, §6). A loop that holds where the forced
   route meets it is **exercised**: in front of the first step whose position is
   beyond the slab along its axis while the party, in the loop's area, is not,

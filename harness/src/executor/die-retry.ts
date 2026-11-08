@@ -9,7 +9,7 @@ import {
   observationOf,
   openTrial,
   describeStanding,
-  respawnedAtCheckpoint,
+  respawnedAtEncounterSeat,
   retryOutcome,
   scriptedDeathCommand,
   scriptedDeathRefusal,
@@ -203,6 +203,10 @@ export const methods = {
         // What the bot carries INTO the death — the baseline `keep_inventory` is
         // judged against on the way out.
         this.itemsBeforeDeath = bot.inventory.items().length;
+        // Whether the fight was already won when the bot died: then the death
+        // is after the encounter's step, and the seat that governs it is the
+        // one in force after that step (`respawnedAtEncounterSeat`).
+        const clearedBeforeDeath = this.completedObjectives.has(enc.objective);
         const chatFrom = this.chatMark();
         bot.chat(scriptedDeathCommand());
         if (!(await this.awaitDeathAfter(seq, RESPAWN_TIMEOUT_MS))) {
@@ -222,11 +226,20 @@ export const methods = {
         const respawn = await this.respawnAndRearm();
         trial.respawnPos = respawn.pos;
         trial.kitKept = respawn.kitKept;
-        trial.atCheckpoint = respawnedAtCheckpoint(trial.respawnPos ?? [0, 0, 0], enc.checkpoint);
+        trial.atCheckpoint = respawnedAtEncounterSeat(
+          trial.respawnPos ?? [0, 0, 0],
+          enc,
+          clearedBeforeDeath,
+          this.deathPlan?.seats,
+        );
+        const governing =
+          clearedBeforeDeath && this.deathPlan !== undefined
+            ? `the seat(s) in force after step ${enc.step}, which ${enc.objective} completed before the death`
+            : `the governing checkpoint ${enc.checkpoint?.join(",") ?? "(none)"}`;
         process.stderr.write(
           `[die-retry] ${step.wave} death ${attempt}: respawned at ` +
             `${trial.respawnPos ? trial.respawnPos.join(",") : "an unknown position"}` +
-            `${trial.atCheckpoint ? "" : ` — NOT the governing checkpoint ${enc.checkpoint?.join(",") ?? "(none)"}`}\n`,
+            `${trial.atCheckpoint ? (clearedBeforeDeath ? ` — ${governing}` : "") : ` — NOT ${governing}`}\n`,
         );
         // Fidelity is read HERE, at the event it guards: the re-seat has just
         // landed (`cp_respawn_fire` runs on the first tick after the respawn) and

@@ -36,6 +36,14 @@ The critical path drives a gate whose datum only hand-pressed triggers write ([`
 |---|---|
 | `DW0985` | **No press sequence opens a gate only presses move.** Build tier (exit 3), `plan::path::drive`. An objective's `requires_state` reads a driven datum — one every write of which is a top-level effect of a `use`/`strike` trigger on an anchor — and from the value the path holds walking up to it, no sequence of at most 64 presses (16384 distinct states) of those triggers, each bundle replayed line by line with every `when` read against the value the lines before it produced, satisfies the gate. The message names the objective, the terms, the presses tried, and every value they reach. The usual cause is a bundle whose write is followed by a line gated on the value it just produced (the shape `DW0527` describes). Remedy: move every reading effect ahead of the write, or change the gate. Pinned by `numeric_gate_drive::a_gate_no_press_sequence_can_open_is_dw0985`. |
 
+### DW1080 — a flag behind a numeric gate no press opens (`compiler::plan`; error)
+
+The critical path pays a flag behind a numeric gate with the presses that make the gate hold ([`compiler.md`](../../compiler.md), `trigger` steps).
+
+| Code | Meaning |
+|---|---|
+| `DW1080` | **No press sequence sets a flag behind a numeric gate.** Build tier (exit 3), `plan::path::drive`. The path performs a trigger to pay a flag an objective reads (`Flow::trigger_debts`), and the trigger's `set-flag` waits on a numeric term — the trigger's own `requires_state`, or a `when` on the line or on an effect enclosing it. Replaying the presses as the datapack runs them — over every datum only presses write, at any depth but a reaction bundle, from its declared initial — from where the path stands (in front of the first step that reads the flag, when the payer's press does not pay where the path first performs it and opens no way), no sequence of at most 64 presses (16384 distinct states) of the hand-pressed triggers in the step's area, every other declared trigger on an anchor there that sets the flag, and the payer sets it — or a line on the way reads a datum the plan cannot name there (written by a quest bundle, a reaction bundle or a trigger nobody presses by hand) and no count of the payer's own presses opens it (spec-0082 §3.3). The proof does not credit the flag. The message names the reader, the flag, the payer, the terms, where the path stands, the presses tried and every value they reach. Remedy: make the datum one only presses write, or set the flag where its gate is known to hold. Pinned by `numeric_gate_drive::a_flag_no_press_sequence_can_pay_is_dw1080` and the gallery probe `a-latch-no-press-sets`. |
+
 ### DW07xx — asset, render and authoring tooling (spec-0007; `delvec` subcommands)
 
 This module's rows of a section whose prose is on the [`delvec::admit::diag` page](../admit/diag.md#dw07xx--asset-render-and-authoring-tooling-spec-0007-delvec-subcommands).

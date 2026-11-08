@@ -828,12 +828,13 @@ const ANCHORS: &[Anchor] = &[
                gate is still SHUT",
         role: None,
     },
-    // The three valves on the near hall's north wall: a numeric gate that
-    // only presses move. `obj/reach-the-counter` waits on `state/valve-round`
-    // reaching 3, which nothing but these three `use` triggers write, and a
-    // valve pressed out of turn puts the round back to 0. The plan replays
-    // every press the way the datapack runs it and schedules the order that
-    // opens the gate (`DW0985` when none does), so the bot presses first,
+    // The three valves on the near hall's north wall: a flag behind a
+    // numeric gate that only presses move. `obj/reach-the-counter` reads
+    // `flag/valves-turned`, which the third valve sets only at
+    // `state/valve-round` 2; nothing but these three `use` triggers write the
+    // round, and a valve pressed out of turn puts it back to 0. The plan
+    // replays every press the way the datapack runs it and schedules the order
+    // that sets the flag (`DW1080` when none does), so the bot presses first,
     // second, third — although the document declares them the other way
     // round. One press, one anchor (DW0878), two cells apart so each lever is
     // read as its own.

@@ -24,6 +24,8 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Vec3Tuple } from "./critical-path.ts";
 import type { CensusMob, CensusSummary } from "./markers.ts";
+import { atSeat, governingSeats } from "./crush-death.ts";
+import type { Seat } from "./death-loop.ts";
 
 /** Where the combat plan sits relative to `critical-path.json`. */
 const COMBAT_PLAN_SUBPATH = ["validation", "combat-plan.json"] as const;
@@ -682,6 +684,29 @@ export function respawnedAtCheckpoint(
   const dy = pos[1] - checkpoint[1];
   const dz = pos[2] - checkpoint[2];
   return Math.sqrt(dx * dx + dy * dy + dz * dz) <= radius;
+}
+
+/**
+ * **Where a scripted death at `enc` must return the party.** While the fight
+ * stands, the encounter's governing checkpoint ({@link Encounter.checkpoint}): a
+ * checkpoint its own kill step sets is correctly not it. Once the encounter's
+ * objective is complete before the death — its last body felled first, by the
+ * bot's own staged removal of a body that came to it — the death happens after
+ * that step, and the seats the death plan puts in force after it govern
+ * ({@link governingSeats}): the encounter's own completion may have moved the
+ * checkpoint, and a respawn there is the campaign keeping its word. With no
+ * death plan the encounter's checkpoint is the only statement there is.
+ */
+export function respawnedAtEncounterSeat(
+  pos: Vec3Tuple,
+  enc: Encounter,
+  clearedBeforeDeath: boolean,
+  seats: readonly Seat[] | undefined,
+): boolean {
+  if (!clearedBeforeDeath || seats === undefined) {
+    return respawnedAtCheckpoint(pos, enc.checkpoint);
+  }
+  return governingSeats(seats, enc.step).some((i) => atSeat(pos, seats[i]!));
 }
 
 /**
