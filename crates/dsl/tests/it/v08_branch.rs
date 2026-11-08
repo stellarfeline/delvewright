@@ -83,9 +83,9 @@ fn plan(branch_points: &str) -> String {
         r#"{{
   "dsl_version": "{DSL_VERSION}", "campaign_id": "hello-world", "stage": "quest-plan",
   "content": {{ "quests": [
-    {{ "id": "quest/one", "goal": "Speak.", "area": "area/keep", "npcs": ["npc/keeper"],
+    {{ "id": "quest/one", "goal": "Speak.", "activity": ["talk"], "area": "area/keep", "npcs": ["npc/keeper"],
        "depends_on": [], "mandatory": true, "act": 1 }},
-    {{ "id": "quest/two", "goal": "Leave.", "area": "area/keep", "npcs": [],
+    {{ "id": "quest/two", "goal": "Leave.", "activity": ["talk"], "area": "area/keep", "npcs": [],
        "depends_on": ["quest/one"], "mandatory": true, "act": 1 }}
   ], "finale": "quest/two", "branch_points": {branch_points} }}
 }}"#

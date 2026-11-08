@@ -443,6 +443,7 @@ fn quest_plan_doc(tower: bool) -> String {
     "quests": [
       { "id": "quest/open-the-door", "act": 1, "area": "area/keep", "depends_on": [],
         "goal": "Hear the Keeper out and leave through the door.",
+        "activity": ["talk"],
         "mandatory": true, "npcs": ["npc/keeper"] }
     ]
   }
@@ -460,6 +461,7 @@ fn quest_plan_doc(tower: bool) -> String {
     "quests": [
       { "id": "quest/open-the-door", "act": 1, "area": "area/keep", "depends_on": [],
         "goal": "Hear the Keeper out and leave through the door.",
+        "activity": ["talk"],
         "mandatory": true, "npcs": ["npc/keeper"] },
       { "id": "quest/cross", "act": 1, "area": "area/tower",
         "depends_on": ["quest/open-the-door"],
@@ -467,6 +469,7 @@ fn quest_plan_doc(tower: bool) -> String {
     ]
   }
 }"#,
+        "activity": ["talk"],
     )
     .to_string()
 }

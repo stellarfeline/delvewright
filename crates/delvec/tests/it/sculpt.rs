@@ -730,7 +730,7 @@ fn carcass_campaign(tag: &str, form: &serde_json::Value) -> (i32, String) {
             doc(
                 "quest-plan",
                 serde_json::json!({"finale": "quest/walk", "quests": [{
-                    "act": 1, "area": "area/carcass", "depends_on": [], "goal": "Walk it.",
+                    "act": 1, "area": "area/carcass", "depends_on": [], "goal": "Walk it.", "activity": ["talk"],
                     "id": "quest/walk", "mandatory": true, "npcs": []
                 }]}),
             ),

@@ -5,6 +5,9 @@
     "quests": [
       {
         "act": 1,
+        "activity": [
+          "reach"
+        ],
         "area": "area/hall",
         "depends_on": [],
         "goal": "Go to the bell in the watch-hall.",
@@ -14,6 +17,9 @@
       },
       {
         "act": 2,
+        "activity": [
+          "reach"
+        ],
         "area": "area/vault",
         "depends_on": [
           "quest/hall"
@@ -25,6 +31,6 @@
       }
     ]
   },
-  "dsl_version": "0.69.0",
+  "dsl_version": "0.70.0",
   "stage": "quest-plan"
 }

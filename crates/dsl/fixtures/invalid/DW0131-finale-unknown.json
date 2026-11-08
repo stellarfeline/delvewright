@@ -8,6 +8,10 @@
         "quests": [
           {
             "act": 1,
+            "activity": [
+              "reach",
+              "talk"
+            ],
             "area": "area/keep",
             "depends_on": [],
             "goal": "Hear the Keeper out and leave through the door.",

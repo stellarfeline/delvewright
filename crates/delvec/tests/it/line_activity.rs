@@ -1,16 +1,16 @@
-//! spec-0131: every line of the plan states what the player does on it. The
-//! census counts each line's acts and prices them (`ActivityCensus`), and a
-//! planned quest's `goal` opens on an act its line performs (`DW1079`).
+//! spec-0131: every line of the plan states its activity. The census counts
+//! each line's acts and prices them (`ActivityCensus`), and a planned quest's
+//! declared `activity` is carried out by its expansion (`DW1079`).
 //!
-//! Read over hello-world with its one quest's objectives and the plan's goal
-//! replaced, so each test states exactly the line it judges.
+//! Read over hello-world with its one quest's objectives and the plan's
+//! declaration replaced, so each test states exactly the line it judges.
 
 use crate::common;
 
 use std::collections::BTreeSet;
 
-use delvec::compiler::telling::{self, DW_LINE_UNTRUE, Lexicon};
 use delvewright_dsl::metrics::{Metrics, Reads};
+use delvewright_dsl::quest::check::{ACTIVITY_NOT_CARRIED_OUT, check_activity};
 use delvewright_dsl::{Act, ActivityCensus, ActivityRates, Campaign, RawCampaign, parse_campaign};
 use serde_json::{Value, json};
 
@@ -18,54 +18,44 @@ fn read(dir: &std::path::Path, name: &str) -> String {
     std::fs::read_to_string(dir.join(name)).unwrap()
 }
 
+fn raw_with(plan: &Value, quests: &Value) -> RawCampaign {
+    let dir = common::hello_world_dir();
+    RawCampaign {
+        world: read(&dir, "world.json"),
+        npcs: read(&dir, "npcs.json"),
+        classes: read(&dir, "classes.json"),
+        quest_plan: plan.to_string(),
+        quests: quests.to_string(),
+        dialogue: read(&dir, "dialogue.json"),
+        world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
+        site_plan: None,
+        detail_plan: None,
+        design: None,
+    }
+}
+
 /// hello-world whose one quest carries `objectives` and `effects` as its
-/// `on_objective_complete`, and whose one planned quest has `goal`.
-fn line(goal: &str, objectives: Vec<Value>, effects: Value) -> Campaign {
+/// `on_objective_complete`, and whose one planned quest declares `activity`.
+fn line(activity: &[&str], objectives: Vec<Value>, effects: Value) -> Campaign {
     let dir = common::hello_world_dir();
     let mut q: Value = serde_json::from_str(&read(&dir, "quests.json")).unwrap();
     q["content"]["quests"][0]["objectives"] = Value::Array(objectives);
     q["content"]["quests"][0]["on_objective_complete"] = effects;
     let mut p: Value = serde_json::from_str(&read(&dir, "quest-plan.json")).unwrap();
-    p["content"]["quests"][0]["goal"] = json!(goal);
-    parse_campaign(&RawCampaign {
-        world: read(&dir, "world.json"),
-        npcs: read(&dir, "npcs.json"),
-        classes: read(&dir, "classes.json"),
-        quest_plan: p.to_string(),
-        quests: q.to_string(),
-        dialogue: read(&dir, "dialogue.json"),
-        world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
-        design: None,
-    })
-    .expect("campaign parses")
+    p["content"]["quests"][0]["activity"] = json!(activity);
+    parse_campaign(&raw_with(&p, &q)).expect("campaign parses")
 }
 
 /// hello-world with its stage-5 quests emptied: the state step 3 leaves.
-fn unexpanded(goal: &str) -> Campaign {
+fn unexpanded(activity: &[&str]) -> Campaign {
     let dir = common::hello_world_dir();
     let mut q: Value = serde_json::from_str(&read(&dir, "quests.json")).unwrap();
     q["content"]["quests"] = json!([]);
     let mut p: Value = serde_json::from_str(&read(&dir, "quest-plan.json")).unwrap();
-    p["content"]["quests"][0]["goal"] = json!(goal);
-    parse_campaign(&RawCampaign {
-        world: read(&dir, "world.json"),
-        npcs: read(&dir, "npcs.json"),
-        classes: read(&dir, "classes.json"),
-        quest_plan: p.to_string(),
-        quests: q.to_string(),
-        dialogue: read(&dir, "dialogue.json"),
-        world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
-        design: None,
-    })
-    .expect("campaign parses")
+    p["content"]["quests"][0]["activity"] = json!(activity);
+    parse_campaign(&raw_with(&p, &q)).expect("campaign parses")
 }
 
 fn talk(id: &str) -> Value {
@@ -95,7 +85,46 @@ fn rates() -> ActivityRates {
     ActivityRates::read(&Metrics::table(), &mut Reads::new()).expect("the table prices every act")
 }
 
-const GOAL: &str = "/content/quests/0/goal";
+const ACTIVITY: &str = "/content/quests/0/activity";
+
+// ---------------------------------------------------------------------------
+// The surface
+// ---------------------------------------------------------------------------
+
+/// `activity` is required on a planned quest, and its members are the act
+/// vocabulary spelled in kebab-case; a plan without it, or with a word outside
+/// the vocabulary, does not parse.
+#[test]
+fn the_declaration_is_required_and_closed() {
+    let dir = common::hello_world_dir();
+    let q: Value = serde_json::from_str(&read(&dir, "quests.json")).unwrap();
+    let mut p: Value = serde_json::from_str(&read(&dir, "quest-plan.json")).unwrap();
+    assert!(
+        p["content"]["quests"][0]["activity"].is_array(),
+        "hello-world declares its line"
+    );
+    p["content"]["quests"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("activity");
+    assert!(
+        parse_campaign(&raw_with(&p, &q)).is_err(),
+        "a plan with no `activity` parses"
+    );
+    p["content"]["quests"][0]["activity"] = json!(["search"]);
+    assert!(
+        parse_campaign(&raw_with(&p, &q)).is_err(),
+        "a word outside the vocabulary parses"
+    );
+    for act in Act::ALL {
+        p["content"]["quests"][0]["activity"] = json!([act.as_str()]);
+        assert!(
+            parse_campaign(&raw_with(&p, &q)).is_ok(),
+            "`{}` is a member",
+            act.as_str()
+        );
+    }
+}
 
 // ---------------------------------------------------------------------------
 // The census
@@ -128,7 +157,7 @@ fn the_table_prices_every_act_and_the_census_reads_the_whole_list() {
 #[test]
 fn the_census_counts_each_lines_acts_and_prices_them() {
     let c = line(
-        "Hear the Keeper out.",
+        &["talk", "reach", "kill", "take", "use"],
         vec![
             talk("obj/a"),
             reach("obj/b"),
@@ -171,7 +200,7 @@ fn an_objective_of_several_acts_is_priced_once_at_its_dearest() {
     let mut o = interact("obj/lay");
     o["requires_item"] = json!("minecraft:paper");
     o["takes_item"] = json!(true);
-    let c = line("Lay the roll on the counter.", vec![o], json!({}));
+    let c = line(&["give"], vec![o], json!({}));
     let census = census(&c);
     let r = rates();
     let l = &census.lines[0];
@@ -190,7 +219,7 @@ fn an_objective_of_several_acts_is_priced_once_at_its_dearest() {
 #[test]
 fn a_talk_and_walk_line_is_named_in_the_census() {
     let c = line(
-        "Hear the Keeper out and leave.",
+        &["talk", "reach"],
         vec![talk("obj/a"), reach("obj/b"), talk("obj/c")],
         json!({}),
     );
@@ -205,25 +234,26 @@ fn a_talk_and_walk_line_is_named_in_the_census() {
 }
 
 /// The step-3 state: a plan and no stage 5. The census counts the planned
-/// quests as awaiting expansion, prices nothing and refuses nothing.
+/// quests as awaiting expansion, prices nothing, and the declaration is not
+/// judged and refuses nothing.
 #[test]
 fn an_unexpanded_plan_is_counted_and_not_priced() {
-    let c = unexpanded("Take the roll from the loft.");
+    let c = unexpanded(&["take"]);
     let census = census(&c);
     assert!(census.lines.is_empty());
     assert_eq!(census.unexpanded, vec!["quest/open-the-door".to_string()]);
     assert_eq!(census.minutes, 0);
     assert!(census.lines()[0].contains("1 planned quest(s) awaiting stage 5"));
-    let (d, b) = telling::check_line_acts(&c);
+    let (d, b) = check_activity(&c);
     assert!(d.is_empty(), "{d:?}");
-    assert_eq!((b.lines, b.expanded, b.judged, b.refused), (1, 0, 0, 0));
+    assert_eq!((b.lines, b.judged, b.refused), (1, 0, 0));
     assert!(b.line().contains("1 awaiting stage 5"), "{}", b.line());
 }
 
 /// The ledger states its denominator as `examined`, and the price list.
 #[test]
 fn the_ledger_carries_the_census_with_its_denominator() {
-    let c = line("Hear the Keeper out.", vec![talk("obj/a")], json!({}));
+    let c = line(&["talk"], vec![talk("obj/a")], json!({}));
     let j = census(&c).to_json();
     assert_eq!(j["examined"], json!(1));
     assert_eq!(j["lines"][0]["quest"], json!("quest/open-the-door"));
@@ -234,184 +264,169 @@ fn the_ledger_carries_the_census_with_its_denominator() {
 }
 
 // ---------------------------------------------------------------------------
-// DW1079 — the goal says what the line does
+// DW1079 — the declared activity is carried out
 // ---------------------------------------------------------------------------
 
-/// The verdict over one line: `(refused paths, judged, unknown)`.
+/// The verdict over one line: `(refused paths, judged, lines beyond their declaration)`.
 fn judge(c: &Campaign) -> (Vec<String>, usize, usize) {
-    let (d, b) = telling::check_line_acts(c);
-    assert!(d.iter().all(|x| x.code == DW_LINE_UNTRUE.id()));
+    let (d, b) = check_activity(c);
+    assert!(d.iter().all(|x| x.code == ACTIVITY_NOT_CARRIED_OUT.id()));
     (
         d.into_iter().map(|x| x.path).collect(),
         b.judged,
-        b.unknown.len(),
+        b.undeclared.len(),
     )
 }
 
-/// A goal whose head names an act some objective of the line performs is
-/// green on every kind, and a head of the union is enough: a line of a talk
-/// and a reach accepts a talk word and a reach word.
+/// A declaration every act of which some objective of the line performs is
+/// green on every kind, on a union of two, and on the richer shapes.
 #[test]
-fn a_goal_that_names_an_act_the_line_performs_is_green() {
-    let cases: Vec<(&str, Vec<Value>)> = vec![
-        ("Speak to the Keeper about the door.", vec![talk("obj/a")]),
-        ("Go through the door.", vec![reach("obj/a")]),
-        ("Clear the guard from the hall.", vec![kill("obj/a")]),
-        ("Take the roll from the loft.", vec![collect("obj/a")]),
-        ("Pull the lever by the gate.", vec![interact("obj/a")]),
-        (
-            "Hear the Keeper out and leave.",
-            vec![talk("obj/a"), reach("obj/b")],
-        ),
-        (
-            "Leave the keep once the Keeper is heard.",
-            vec![talk("obj/a"), reach("obj/b")],
-        ),
+fn a_declaration_the_line_carries_out_is_green() {
+    let mut takes = interact("obj/lay");
+    takes["requires_item"] = json!("minecraft:paper");
+    takes["takes_item"] = json!(true);
+    let cases: Vec<(&[&str], Vec<Value>)> = vec![
+        (&["talk"], vec![talk("obj/a")]),
+        (&["reach"], vec![reach("obj/a")]),
+        (&["kill"], vec![kill("obj/a")]),
+        (&["take"], vec![collect("obj/a")]),
+        (&["use"], vec![interact("obj/a")]),
+        (&["talk", "reach"], vec![talk("obj/a"), reach("obj/b")]),
+        (&["use", "present", "give"], vec![takes]),
     ];
-    for (goal, objectives) in cases {
-        let (refused, judged, unknown) = judge(&line(goal, objectives, json!({})));
-        assert!(refused.is_empty(), "{goal}: {refused:?}");
-        assert_eq!((judged, unknown), (1, 0), "{goal}");
+    for (activity, objectives) in cases {
+        let (refused, judged, beyond) = judge(&line(activity, objectives, json!({})));
+        assert!(refused.is_empty(), "{activity:?}: {refused:?}");
+        assert_eq!((judged, beyond), (1, 0), "{activity:?}");
     }
 }
 
-/// A goal whose head names an act no objective of the line performs is
-/// refused at the goal's path, on every kind, with the census in the message.
+/// A declared act no objective of the line performs is refused at the
+/// declaration's path, on every kind, with the census in the message.
 #[test]
-fn a_goal_that_promises_an_act_nobody_performs_is_refused() {
-    let cases: Vec<(&str, Vec<Value>, &str)> = vec![
-        ("Take the Keeper's roll.", vec![talk("obj/a")], "take"),
-        ("Speak to the door.", vec![reach("obj/a")], "talk"),
-        ("Gather the guard's keys.", vec![kill("obj/a")], "take"),
+fn a_declared_act_nobody_performs_is_refused() {
+    let cases: Vec<(&[&str], Vec<Value>, &str)> = vec![
+        (&["take"], vec![talk("obj/a")], "take"),
+        (&["talk"], vec![reach("obj/a")], "talk"),
+        (&["take"], vec![kill("obj/a")], "take"),
+        (&["kill"], vec![collect("obj/a")], "kill"),
+        (&["take"], vec![interact("obj/a")], "take"),
+        (&["use", "present"], vec![interact("obj/a")], "present"),
+        // The motivating shape: a line of conversations declared as a search.
         (
-            "Clear the loft of its rolls.",
-            vec![collect("obj/a")],
-            "kill",
-        ),
-        ("Fetch the lever's handle.", vec![interact("obj/a")], "take"),
-        // The motivating shape: a line of conversations whose goal promises a
-        // search.
-        (
-            "Gather the scattered chorus.",
+            &["take", "talk"],
             vec![talk("obj/a"), talk("obj/b"), talk("obj/c")],
             "take",
         ),
     ];
-    for (goal, objectives, said) in cases {
-        let c = line(goal, objectives, json!({}));
-        let (d, b) = telling::check_line_acts(&c);
-        assert_eq!(d.len(), 1, "{goal}: {d:?}");
-        assert_eq!(d[0].code, DW_LINE_UNTRUE.id());
-        assert_eq!(d[0].path, GOAL);
+    for (activity, objectives, missing) in cases {
+        let c = line(activity, objectives, json!({}));
+        let (d, b) = check_activity(&c);
+        assert_eq!(d.len(), 1, "{activity:?}: {d:?}");
+        assert_eq!(d[0].code, ACTIVITY_NOT_CARRIED_OUT.id());
+        assert_eq!(d[0].path, ACTIVITY);
         assert_eq!(d[0].stage, "quest-plan");
         assert!(
-            d[0].message.contains(&format!("→ {said}")),
-            "{}",
             d[0].message
-        );
-        assert!(
-            d[0].message.contains("re-head the goal"),
+                .contains(&format!("so the plan promises {missing} and")),
             "{}",
             d[0].message
         );
         assert!(d[0].message.contains("`obj/a` →"), "{}", d[0].message);
-        assert_eq!((b.judged, b.refused), (1, 1), "{goal}");
+        assert_eq!((b.judged, b.refused), (1, 1), "{activity:?}");
     }
 }
 
-/// A head the lexicon does not know states no act the engine knows: counted
-/// and listed, never refused.
+/// A line that does something declares what: an empty declaration over
+/// objectives that perform acts is refused; over no objective it is not.
 #[test]
-fn an_unknown_head_is_counted_and_listed_not_refused() {
-    let c = line(
-        "Convince the Keeper to unbar the gate.",
-        vec![talk("obj/a")],
-        json!({}),
-    );
-    let (refused, judged, unknown) = judge(&c);
-    assert!(refused.is_empty());
-    assert_eq!((judged, unknown), (0, 1));
-    let b = telling::check_line_acts(&c).1;
+fn an_empty_declaration_over_a_line_that_does_something_is_refused() {
+    let c = line(&[], vec![talk("obj/a")], json!({}));
+    let (d, b) = check_activity(&c);
+    assert_eq!(d.len(), 1);
+    assert_eq!(d[0].path, ACTIVITY);
     assert!(
-        b.line().contains("1 head(s) the lexicon does not know"),
+        d[0].message.contains("declares no activity"),
+        "{}",
+        d[0].message
+    );
+    assert_eq!(b.refused, 1);
+    let c = line(&[], vec![], json!({}));
+    let (d, _) = check_activity(&c);
+    assert!(d.is_empty(), "{d:?}");
+}
+
+/// An act the line performs beyond its declaration is counted in the binding
+/// and refused nothing: the check confirms a declaration, it never infers one.
+#[test]
+fn an_act_beyond_the_declaration_is_counted_not_refused() {
+    let c = line(&["talk"], vec![talk("obj/a"), collect("obj/b")], json!({}));
+    let (refused, judged, beyond) = judge(&c);
+    assert!(refused.is_empty());
+    assert_eq!((judged, beyond), (1, 1));
+    let b = check_activity(&c).1;
+    assert!(
+        b.line().contains(
+            "1 line(s) perform an act beyond their declaration (`quest/open-the-door` also take)"
+        ),
         "{}",
         b.line()
     );
-    assert!(b.line().contains("Convince the Keeper"), "{}", b.line());
 }
 
 /// A `give-item` among a talk's completion effects makes the line a taking,
-/// so a `take` head over it is true; without the effect it is refused.
+/// so `take` declared over it is carried out; without the effect it is not.
 #[test]
-fn a_give_item_on_completion_lets_the_goal_say_take() {
+fn a_give_item_on_completion_carries_out_a_declared_take() {
     let effects = json!({"obj/a": [{"type": "give-item", "item": "minecraft:paper", "count": 1}]});
-    let (refused, ..) = judge(&line(
-        "Take the roll from the Keeper.",
-        vec![talk("obj/a")],
-        effects,
-    ));
+    let (refused, ..) = judge(&line(&["talk", "take"], vec![talk("obj/a")], effects));
     assert!(refused.is_empty(), "{refused:?}");
-    let (refused, ..) = judge(&line(
-        "Take the roll from the Keeper.",
-        vec![talk("obj/a")],
-        json!({}),
-    ));
-    assert_eq!(refused, vec![GOAL.to_string()]);
+    let (refused, ..) = judge(&line(&["talk", "take"], vec![talk("obj/a")], json!({})));
+    assert_eq!(refused, vec![ACTIVITY.to_string()]);
 }
 
-/// The object-decided heads: `find` is reach, talk or take, so it is true of
-/// a walk, a conversation and a taking, and false of a fight.
+/// Perturbation toward the vacuous shape: the one thing that moves between a
+/// green run and a red one is the declaration, over the same expansion.
 #[test]
-fn an_object_decided_head_passes_on_every_act_in_its_set() {
-    let lex = Lexicon::english();
-    let (_, said) = lex.head("Find the Keeper").expect("`find` is a head");
-    let expected: BTreeSet<Act> = [Act::Reach, Act::Talk, Act::Take].into_iter().collect();
-    assert_eq!(*said, expected);
-    for objectives in [
-        vec![reach("obj/a")],
-        vec![talk("obj/a")],
-        vec![collect("obj/a")],
-    ] {
-        let (refused, ..) = judge(&line("Find the Keeper's roll.", objectives, json!({})));
-        assert!(refused.is_empty(), "{refused:?}");
-    }
-    let (refused, ..) = judge(&line(
-        "Find the Keeper's roll.",
-        vec![kill("obj/a")],
-        json!({}),
-    ));
-    assert_eq!(refused, vec![GOAL.to_string()]);
-}
-
-/// Perturbation toward the vacuous shape: a lexicon that knows no head judges
-/// nothing and refuses nothing, and says so in its binding — a run whose
-/// judged count is zero on a plan with goals is the zero the gate reads.
-#[test]
-fn an_empty_lexicon_judges_nothing_and_the_binding_says_so() {
-    let c = line("Take the Keeper's roll.", vec![talk("obj/a")], json!({}));
-    let empty = Lexicon::parse("{}").expect("an empty lexicon parses");
-    let (d, b) = telling::check_line_acts_with(&c, &empty);
+fn the_declaration_alone_turns_the_verdict() {
+    let objectives = || vec![talk("obj/a"), reach("obj/b")];
+    let (d, b) = check_activity(&line(&["talk", "reach"], objectives(), json!({})));
     assert!(d.is_empty());
-    assert_eq!((b.expanded, b.judged, b.unknown.len()), (1, 0, 1));
-    // The same line under the engine's lexicon is refused: the lexicon is the
-    // only thing that moved.
-    let (d, b) = telling::check_line_acts(&c);
+    assert_eq!((b.judged, b.refused), (1, 0));
+    let (d, b) = check_activity(&line(
+        &["talk", "reach", "take"],
+        objectives(),
+        json!({}),
+    ));
     assert_eq!(d.len(), 1);
-    assert_eq!(b.judged, 1);
+    assert_eq!((b.judged, b.refused), (1, 1));
 }
 
 /// The ledger rows the build writes beside the census.
 #[test]
-fn the_line_binding_ledger_states_judged_as_examined() {
-    let c = line("Take the Keeper's roll.", vec![talk("obj/a")], json!({}));
-    let j = telling::check_line_acts(&c).1.to_json();
+fn the_activity_binding_ledger_states_judged_as_examined() {
+    let c = line(&["take"], vec![talk("obj/a")], json!({}));
+    let j = check_activity(&c).1.to_json();
     assert_eq!(j["code"], json!("DW1079"));
     assert_eq!(j["examined"], json!(1));
     assert_eq!(j["refused"], json!(1));
 }
 
-/// Every goal of the hello-world fixture, the gallery primary and every overlay
-/// agrees with its line: the corpus the engine itself ships is green.
+/// The check runs inside the validation pass: a campaign whose declaration is
+/// not carried out is refused by `validate_campaign`, not only by the check
+/// called on its own.
+#[test]
+fn the_validation_pass_runs_the_activity_check() {
+    let c = line(&["take"], vec![talk("obj/a")], json!({}));
+    let codes: BTreeSet<String> = delvewright_dsl::validate::validate_campaign(&c)
+        .into_iter()
+        .map(|d| d.code)
+        .collect();
+    assert!(codes.contains("DW1079"), "{codes:?}");
+}
+
+/// Every declaration of the hello-world fixture, the gallery primary and every
+/// overlay is carried out: the corpus the engine itself ships is green.
 #[test]
 fn the_shipped_corpus_is_green() {
     let root = common::repo_root();
@@ -448,9 +463,9 @@ fn the_shipped_corpus_is_green() {
             design: None,
         };
         let c = parse_campaign(&raw).unwrap_or_else(|e| panic!("{}: {e:?}", dir.display()));
-        let (d, b) = telling::check_line_acts(&c);
+        let (d, b) = check_activity(&c);
         assert!(d.is_empty(), "{}: {d:?}", dir.display());
-        assert!(b.judged > 0, "{}: no goal judged", dir.display());
+        assert!(b.judged > 0, "{}: no line judged", dir.display());
     }
 }
 

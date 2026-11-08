@@ -195,9 +195,9 @@ fn plan_with_second_quest(mandatory: bool) -> String {
   "content": {{
     "finale": "quest/open-the-door",
     "quests": [
-      {{ "id": "quest/open-the-door", "goal": "Hear the Keeper out and leave through the door.",
+      {{ "id": "quest/open-the-door", "goal": "Hear the Keeper out and leave through the door.", "activity": ["talk"],
          "area": "area/keep", "npcs": ["npc/keeper"], "depends_on": {finale_deps}, "mandatory": true, "act": 1 }},
-      {{ "id": "quest/side", "goal": "Look at the doorway from the Keeper's stand.",
+      {{ "id": "quest/side", "goal": "Look at the doorway from the Keeper's stand.", "activity": ["talk"],
          "area": "area/keep", "npcs": [], "depends_on": [], "mandatory": {mandatory}, "act": 1 }}
     ]
   }}

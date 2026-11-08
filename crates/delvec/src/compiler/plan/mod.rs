@@ -200,11 +200,6 @@ pub struct Plan<'a> {
     /// its verdict with [`Plan::with_act_binding`]; absent, the build reads the
     /// plan's own campaign, which is English.
     pub act_binding: Option<crate::compiler::telling::ActBinding>,
-    /// What the line check (`DW1079`, spec-0131) judged over the plan's ENGLISH
-    /// goals, attached by the run that read the English for the same reason
-    /// as [`Plan::act_binding`]; absent, the build reads the plan's own
-    /// campaign.
-    pub line_binding: Option<crate::compiler::telling::LineActBinding>,
     /// What the ocean-datum invariant (`DW0344`) examined in this build, printed
     /// as its own line by [`crate::compiler::emit::build`]. `NOT_AN_OCEAN` for
     /// every world that declares another horizon.
@@ -1321,7 +1316,6 @@ impl<'a> Plan<'a> {
             surround,
             design_files: crate::compiler::design::DesignFiles::default(),
             act_binding: None,
-            line_binding: None,
             waterline,
             face_binding: binding,
             acts: std::sync::OnceLock::new(),
@@ -1352,14 +1346,6 @@ impl<'a> Plan<'a> {
     #[must_use]
     pub fn with_act_binding(mut self, binding: crate::compiler::telling::ActBinding) -> Self {
         self.act_binding = Some(binding);
-        self
-    }
-
-    /// Attach what the line check judged over the English plan
-    /// ([`Plan::line_binding`]).
-    #[must_use]
-    pub fn with_line_binding(mut self, binding: crate::compiler::telling::LineActBinding) -> Self {
-        self.line_binding = Some(binding);
         self
     }
 }

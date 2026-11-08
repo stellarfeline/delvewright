@@ -8,6 +8,10 @@
         "quests": [
           {
             "act": 1,
+            "activity": [
+              "reach",
+              "talk"
+            ],
             "area": "area/keep",
             "depends_on": [
               "quest/open-the-door"

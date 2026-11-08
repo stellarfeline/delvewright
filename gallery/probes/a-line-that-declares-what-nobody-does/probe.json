@@ -1,0 +1,13 @@
+{
+  "code": "DW1079",
+  "patch": [
+    {
+      "doc": "quest-plan.json",
+      "op": "replace",
+      "path": "/content/quests/3/activity",
+      "value": ["reach", "take"]
+    }
+  ],
+  "units": [],
+  "why": "The long hall declares a taking beside its arrivals, and the line is two arrivals: nothing on it is ever picked up. The plan promises a search and the expansion delivers a walk, which is how a campaign comes out as walking and talking with every line planned as play. The declared activity is read against the acts the line's objectives perform, and an act nobody performs is refused where it was declared; the census under `-- what this run examined` states every line's acts beside it."
+}

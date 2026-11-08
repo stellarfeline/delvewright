@@ -5,6 +5,9 @@
     "quests": [
       {
         "act": 1,
+        "activity": [
+          "talk"
+        ],
         "area": "area/keep",
         "depends_on": [],
         "goal": "Hear the Keeper name the trial, and mark the stone he stands on.",
@@ -16,6 +19,9 @@
       },
       {
         "act": 1,
+        "activity": [
+          "kill"
+        ],
         "area": "area/keep",
         "depends_on": [
           "quest/greet"
@@ -27,6 +33,6 @@
       }
     ]
   },
-  "dsl_version": "0.69.0",
+  "dsl_version": "0.70.0",
   "stage": "quest-plan"
 }

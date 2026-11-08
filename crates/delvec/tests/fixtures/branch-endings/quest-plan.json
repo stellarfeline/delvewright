@@ -31,6 +31,9 @@
     "quests": [
       {
         "act": 1,
+        "activity": [
+          "talk"
+        ],
         "area": "area/keep",
         "depends_on": [],
         "goal": "Choose whether to hold the gate or bolt for the moor road.",
@@ -42,6 +45,9 @@
       },
       {
         "act": 2,
+        "activity": [
+          "use"
+        ],
         "area": "area/keep",
         "depends_on": [
           "quest/decide"
@@ -55,6 +61,10 @@
       },
       {
         "act": 2,
+        "activity": [
+          "reach",
+          "talk"
+        ],
         "area": "area/keep",
         "depends_on": [
           "quest/decide",
@@ -69,6 +79,6 @@
       }
     ]
   },
-  "dsl_version": "0.69.0",
+  "dsl_version": "0.70.0",
   "stage": "quest-plan"
 }

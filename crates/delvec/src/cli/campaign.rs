@@ -474,7 +474,8 @@ fn validate_loaded_with(
             }
             // spec-0131: what the player does on every line of the plan — the
             // activity census, stated with its denominator whatever it counts —
-            // and the goal of each line read against its acts (DW1079).
+            // and what the activity check (`DW1079`, raised inside
+            // `validate_campaign_with` above) examined.
             {
                 let table = delvewright_dsl::metrics::Metrics::table();
                 let mut reads = delvewright_dsl::metrics::Reads::new();
@@ -483,9 +484,11 @@ fn validate_loaded_with(
                 {
                     examined.extend(census.lines());
                 }
-                let (ld, lbind) = delvec::compiler::telling::check_line_acts(&campaign);
-                examined.push(lbind.line());
-                diags.extend(ld);
+                examined.push(
+                    delvewright_dsl::quest::check::check_activity(&campaign)
+                        .1
+                        .line(),
+                );
             }
             // v0.6 `close-gate` gate-block declaration (DW0343): the fill block is
             // prefab metadata, so this compiler-side check runs here (validation
@@ -1002,7 +1005,6 @@ fn build_as(
     let is_english = lang == delvewright_dsl::CANONICAL_LANG;
     // The act check reads the English, which the localisation below replaces.
     let act_binding = delvec::compiler::telling::check_acts(&campaign).1;
-    let line_binding = delvec::compiler::telling::check_line_acts(&campaign).1;
     let mut campaign = campaign;
     if !is_english {
         if !campaign.world.content.languages.iter().any(|l| l == lang) {
@@ -1058,7 +1060,6 @@ fn build_as(
     let plan = match built.map(|p| {
         p.with_design_files(loaded.design_files.clone())
             .with_act_binding(act_binding)
-            .with_line_binding(line_binding)
     }) {
         Ok(p) => p,
         Err(e) => {

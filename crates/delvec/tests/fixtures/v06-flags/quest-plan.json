@@ -5,6 +5,10 @@
     "quests": [
       {
         "act": 1,
+        "activity": [
+          "reach",
+          "talk"
+        ],
         "area": "area/keep",
         "depends_on": [],
         "goal": "Hear the Keeper out and leave through the door.",
@@ -16,6 +20,6 @@
       }
     ]
   },
-  "dsl_version": "0.69.0",
+  "dsl_version": "0.70.0",
   "stage": "quest-plan"
 }

@@ -85,6 +85,7 @@ impl Fixture {
                 "area": "area/keep",
                 "depends_on": self.strand_deps,
                 "goal": "A side strand the mainline neither needs nor fears.",
+                "activity": ["talk"],
                 "id": STRAND,
                 "mandatory": !self.strand_optional,
                 "npcs": [],

@@ -5,6 +5,9 @@
     "quests": [
       {
         "act": 1,
+        "activity": [
+          "talk"
+        ],
         "area": "area/keep",
         "depends_on": [],
         "goal": "Hear the Keeper's charge and raise the guard.",
@@ -16,6 +19,13 @@
       },
       {
         "act": 2,
+        "activity": [
+          "reach",
+          "kill",
+          "take",
+          "use",
+          "present"
+        ],
         "area": "area/keep",
         "depends_on": [
           "quest/greet"
@@ -29,6 +39,6 @@
       }
     ]
   },
-  "dsl_version": "0.69.0",
+  "dsl_version": "0.70.0",
   "stage": "quest-plan"
 }

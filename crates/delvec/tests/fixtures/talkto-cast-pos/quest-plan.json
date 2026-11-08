@@ -5,6 +5,9 @@
     "quests": [
       {
         "act": 1,
+        "activity": [
+          "talk"
+        ],
         "area": "area/keep",
         "depends_on": [],
         "goal": "Ask the Keeper to lift the gate.",
@@ -16,6 +19,9 @@
       },
       {
         "act": 2,
+        "activity": [
+          "talk"
+        ],
         "area": "area/keep",
         "depends_on": [
           "quest/ask"
@@ -29,6 +35,6 @@
       }
     ]
   },
-  "dsl_version": "0.69.0",
+  "dsl_version": "0.70.0",
   "stage": "quest-plan"
 }

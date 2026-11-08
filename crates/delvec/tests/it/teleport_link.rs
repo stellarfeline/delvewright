@@ -1046,6 +1046,7 @@ fn populations_campaign() -> PathBuf {
         }));
     });
     dir
+            "activity": ["talk"],
 }
 
 #[test]

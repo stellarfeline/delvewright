@@ -5,6 +5,11 @@
     "quests": [
       {
         "act": 1,
+        "activity": [
+          "reach",
+          "talk",
+          "use"
+        ],
         "area": "area/bank",
         "depends_on": [],
         "goal": "Ask the warden what stands outside the wall, then walk the bank to its far corner.",
@@ -16,6 +21,6 @@
       }
     ]
   },
-  "dsl_version": "0.69.0",
+  "dsl_version": "0.70.0",
   "stage": "quest-plan"
 }

@@ -37,6 +37,7 @@ fn campaign(tag: &str, stake: bool) -> PathBuf {
             "quests": [
                 { "id": "quest/decide", "area": "area/keep", "act": 1, "depends_on": [],
                   "goal": "Hear the Keeper out.", "mandatory": true, "npcs": ["npc/keeper"] },
+                  "activity": ["talk"],
                 { "id": "quest/away", "area": "area/landing", "act": 2,
                   "depends_on": ["quest/decide"], "goal": "Walk off the landing.",
                   "mandatory": true, "npcs": [] }

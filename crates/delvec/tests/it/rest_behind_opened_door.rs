@@ -299,6 +299,7 @@ fn two_quest_plan(errand_is_mandatory: bool) -> String {
     "quests": [
       {{ "id": "quest/side-errand", "act": 1, "area": "area/keep", "npcs": [],
          "goal": "Look in on the Keeper's stand.", "depends_on": [],
+         "activity": ["talk"],
          "mandatory": {errand_is_mandatory} }},
       {{ "id": "quest/open-the-door", "act": 1, "area": "area/keep",
          "npcs": ["npc/keeper"], "goal": "Get the Keeper to let you rest.",

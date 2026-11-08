@@ -5,6 +5,10 @@
     "quests": [
       {
         "act": 1,
+        "activity": [
+          "reach",
+          "talk"
+        ],
         "area": "area/site",
         "depends_on": [],
         "goal": "Hear the keeper out, and walk out the far side through the cell door.",
@@ -16,6 +20,6 @@
       }
     ]
   },
-  "dsl_version": "0.69.0",
+  "dsl_version": "0.70.0",
   "stage": "quest-plan"
 }

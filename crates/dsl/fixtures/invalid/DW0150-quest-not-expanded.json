@@ -8,6 +8,10 @@
         "quests": [
           {
             "act": 1,
+            "activity": [
+              "reach",
+              "talk"
+            ],
             "area": "area/keep",
             "depends_on": [
               "quest/side-trip"
@@ -21,6 +25,9 @@
           },
           {
             "act": 1,
+            "activity": [
+              "talk"
+            ],
             "area": "area/keep",
             "depends_on": [],
             "goal": "A prerequisite that was never expanded.",

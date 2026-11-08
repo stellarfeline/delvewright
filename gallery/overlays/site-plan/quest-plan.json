@@ -5,6 +5,10 @@
     "quests": [
       {
         "act": 1,
+        "activity": [
+          "reach",
+          "talk"
+        ],
         "area": "area/site",
         "depends_on": [],
         "goal": "Read the near hall and the counter off it, and earn the doors through the barred wall.",
@@ -17,6 +21,11 @@
       },
       {
         "act": 2,
+        "activity": [
+          "reach",
+          "talk",
+          "kill"
+        ],
         "area": "area/site",
         "depends_on": [
           "quest/near-hall"
@@ -31,6 +40,6 @@
       }
     ]
   },
-  "dsl_version": "0.69.0",
+  "dsl_version": "0.70.0",
   "stage": "quest-plan"
 }

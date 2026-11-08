@@ -555,6 +555,7 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
                 "quests": [{
                     "id": "quest/walk-the-ladder",
                     "act": 1,
+                    "activity": ["talk", "reach"],
                     "area": delvewright_dsl::SITE_AREA,
                     "depends_on": [],
                     "goal": "Walk the bays through every standard doorway, up both climbs and \

@@ -405,6 +405,7 @@ static QUEST_PLAN_TWO_QUESTS: LazyLock<String> = LazyLock::new(|| {
       {
         "id": "quest/open-the-door",
         "goal": "Hear the Keeper out and leave through the door.",
+        "activity": ["talk"],
         "area": "area/keep",
         "npcs": ["npc/keeper"],
         "depends_on": [],
@@ -414,6 +415,7 @@ static QUEST_PLAN_TWO_QUESTS: LazyLock<String> = LazyLock::new(|| {
       {
         "id": "quest/second",
         "goal": "Speak to the Keeper once more.",
+        "activity": ["talk"],
         "area": "area/keep",
         "npcs": ["npc/keeper"],
         "depends_on": ["quest/open-the-door"],
