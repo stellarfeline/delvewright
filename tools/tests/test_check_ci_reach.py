@@ -409,3 +409,30 @@ def test_a_pieces_job_that_skips_the_rust_group_is_refused(tmp_path, capsys):
     code, out = run_gate(capsys, wf)
     assert code == 1
     assert "job `determinism-cross-os` needs `gallery-pieces`, which does not run on a pull request that reaches `determinism-cross-os`'s group `rust`" in out
+
+
+JAR_STEP = "      - name: the pinned client jar (one verified fetch)\n"
+STEP_IF = "        if: ${{ needs.changes.outputs.rust == 'true' || github.event_name != 'pull_request' }}\n"
+
+
+def test_a_matrix_job_gates_each_step_and_the_live_one_passes(capsys):
+    code, out = run_gate(capsys)
+    assert code == 0, out
+
+
+def test_a_step_of_an_always_running_matrix_job_without_an_if_is_refused(tmp_path, capsys):
+    wf = perturbed(tmp_path, JAR_STEP + STEP_IF, JAR_STEP)
+    code, out = run_gate(capsys, wf)
+    assert code == 1 and "`rust-partition` always runs" in out and "has none" in out, out
+
+
+def test_a_step_of_an_always_running_matrix_job_that_ignores_its_group_is_refused(tmp_path, capsys):
+    wf = perturbed(tmp_path, JAR_STEP + STEP_IF, JAR_STEP + "        if: ${{ github.event_name != 'pull_request' }}\n")
+    code, out = run_gate(capsys, wf)
+    assert code == 1 and "reads no filter group" in out, out
+
+
+def test_a_step_that_runs_on_every_pull_request_is_refused(tmp_path, capsys):
+    wf = perturbed(tmp_path, JAR_STEP + STEP_IF, JAR_STEP + "        if: ${{ !cancelled() }}\n")
+    code, out = run_gate(capsys, wf)
+    assert code == 1 and "reads no filter group" in out, out
