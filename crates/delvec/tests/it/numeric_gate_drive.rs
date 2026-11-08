@@ -249,8 +249,8 @@ fn a_gate_no_press_sequence_can_open_is_dw0985() {
 }
 
 /// The hello-world `quests` doc with an ordered three-press latch: the first
-/// stone (at `spawn`) sets `state/order` to 1, the second (at the keeper's
-/// stand) moves 1 to 2, and the third (at the exit) is `third` — the trigger
+/// stone (at `spawn`) sets `state/order` to 1, the second (at the door)
+/// moves 1 to 2, and the third (at the exit) is `third` — the trigger
 /// whose bundle sets `flag/latch` behind a gate on the order the other two
 /// wrote. The exit reads the flag, never the datum.
 fn latch_doc(third: &str) -> String {
@@ -273,7 +273,10 @@ fn latch_doc(third: &str) -> String {
              "radius": 2, "after": ["obj/talk"], "requires_flags": ["flag/latch"] }}
         ],
         "on_objective_complete": {{
-          "obj/talk": [ {{ "type": "open-gate", "anchor": "anchor/door" }} ]
+          "obj/talk": [
+            {{ "type": "open-gate", "anchor": "anchor/door" }},
+            {{ "type": "set-flag", "flag": "flag/told" }}
+          ]
         }},
         "on_complete": []
       }}
@@ -299,9 +302,12 @@ fn latch_doc(third: &str) -> String {
 }
 
 /// The third stone sets the latch behind its effect's own `when`: pressed at
-/// any order but 2 it runs, prints its marker, and sets nothing.
+/// any order but 2 it runs, prints its marker, and sets nothing. It wakes once
+/// the keeper has spoken, when the door beyond which it stands is open.
 const THIRD_WHEN: &str = r#"{ "id": "trigger/third-stone", "at": "anchor/exit", "on": { "on": "use" },
    "once": false, "prop": { "block": "minecraft:oak_sign[rotation=0]" },
+   "requires_flags": ["flag/told"],
+   "answers": { "not_yet": "The stone is cold." },
    "effects": [
      { "type": "set-flag", "flag": "flag/latch",
        "when": { "requires_state": [ { "state": "state/order", "op": "equals", "value": 2 } ] } },
@@ -312,6 +318,8 @@ const THIRD_WHEN: &str = r#"{ "id": "trigger/third-stone", "at": "anchor/exit", 
 /// The third stone answers only at order 2: its own `requires_state`.
 const THIRD_REQUIRES: &str = r#"{ "id": "trigger/third-stone", "at": "anchor/exit", "on": { "on": "use" },
    "once": false, "prop": { "block": "minecraft:oak_sign[rotation=0]" },
+   "requires_flags": ["flag/told"],
+   "answers": { "not_yet": "The stone is cold." },
    "requires_state": [ { "state": "state/order", "op": "equals", "value": 2 } ],
    "effects": [
      { "type": "set-flag", "flag": "flag/latch" },
