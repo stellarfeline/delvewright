@@ -394,10 +394,24 @@ fn press_step(campaign: &Campaign, t: &EnvTrigger, pos: [i32; 3]) -> Step {
         npc_id: None,
         assembly_id: None,
         pos,
-        range: None,
+        range: match t.on {
+            delvewright_dsl::TriggerOn::Approach { range } => Some(range),
+            _ => None,
+        },
         stand: None,
         block: pressed_block(campaign, t.id.as_str()),
     }
+}
+
+/// Whether any line of `t`'s bundle, at any depth, sets `flag`.
+fn sets_flag(t: &EnvTrigger, flag: &str) -> bool {
+    let mut hit = false;
+    for e in &t.effects {
+        e.visit_deep(&mut |x| {
+            hit |= matches!(&x.verb, delvewright_dsl::Verb::SetFlag { flag: f, .. } if f.as_str() == flag);
+        });
+    }
+    hit
 }
 
 /// Where `t`'s anchor stands, looking in `area` first: a name another area
@@ -505,6 +519,17 @@ fn counted_opens(campaign: &Campaign, t: &EnvTrigger, flags: &[&str]) -> bool {
     })
 }
 
+/// The presses a path performs, by the step they are performed in front of,
+/// and every flag a trigger other than the one the flow model named came to
+/// pay.
+pub(super) struct Schedule {
+    /// The whole schedule: what was due, with every owed press in place.
+    pub due: BTreeMap<usize, Vec<Step>>,
+    /// `(flag, payer)`: a flag whose named payer could not be made to set it,
+    /// and the declared trigger whose press the schedule sets it with instead.
+    pub repaid: Vec<(String, String)>,
+}
+
 /// A flag a path performs a trigger to pay (`Flow::trigger_debts`), and the
 /// objective that reads it.
 pub(super) struct Owed {
@@ -546,8 +571,9 @@ pub(super) fn drive_presses(
     due: &BTreeMap<usize, Vec<Step>>,
     owed: &BTreeMap<String, Vec<Owed>>,
     data_before: &BTreeMap<String, BTreeMap<String, Option<i64>>>,
-) -> Result<BTreeMap<usize, Vec<Step>>, PlanError> {
+) -> Result<Schedule, PlanError> {
     let mut out: BTreeMap<usize, Vec<Step>> = BTreeMap::new();
+    let mut repaid: Vec<(String, String)> = Vec::new();
     let driven = driven_data(campaign);
     let content = &campaign.quests.content;
     let initial: BTreeMap<String, i64> = content
@@ -675,11 +701,26 @@ pub(super) fn drive_presses(
             }
             // The presses that make the gate hold, ending in the state where
             // the flag is set. The payer stands where the path performs it.
+            // The flow model names the first declared trigger whose flag gate
+            // holds; any other declared trigger on an anchor in the step's area
+            // that sets one of the flags is a payer too, so a gate the named
+            // one cannot open refuses nothing while another can pay.
             let mut pool: Vec<(&EnvTrigger, Step)> = placed
                 .iter()
                 .filter(|(c, _)| c.id != t.id)
                 .map(|(c, p)| (*c, press_step(campaign, c, *p)))
                 .collect();
+            for other in &content.triggers {
+                if other.id == t.id
+                    || pool.iter().any(|(c, _)| c.id == other.id)
+                    || !flags.iter().any(|f| sets_flag(other, f))
+                {
+                    continue;
+                }
+                if let Some(p) = press_cell(anchors, other, area) {
+                    pool.push((other, press_step(campaign, other, p)));
+                }
+            }
             pool.push((t, step.clone()));
             let pool_t: Vec<&EnvTrigger> = pool.iter().map(|(c, _)| *c).collect();
             let terms: Vec<&delvewright_dsl::StateCompare> =
@@ -687,6 +728,15 @@ pub(super) fn drive_presses(
             let watch: BTreeSet<&str> = terms.iter().map(|c| c.state.as_str()).collect();
             match search(&pay, &pool_t, &held, &paid, &watch) {
                 Search::Found(seq, end) => {
+                    // The press the search stopped on is the one that set the
+                    // flags: the payer the path performs.
+                    if let Some(&k) = seq.last()
+                        && pool[k].0.id != t.id
+                    {
+                        for f in &flags {
+                            repaid.push(((*f).to_string(), pool[k].0.id.as_str().to_string()));
+                        }
+                    }
                     let steps = out.entry(si).or_default();
                     for k in seq {
                         steps.push(pool[k].1.clone());
@@ -793,7 +843,7 @@ pub(super) fn drive_presses(
             }
         }
     }
-    Ok(out)
+    Ok(Schedule { due: out, repaid })
 }
 
 /// How a search that found nothing ended.

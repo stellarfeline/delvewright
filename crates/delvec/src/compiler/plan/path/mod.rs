@@ -892,7 +892,7 @@ pub(super) fn build_critical_path(
     // whole schedule.
     let due = {
         let before = path_fired_lines(campaign, flow, path, &due);
-        drive::drive_presses(
+        let schedule = drive::drive_presses(
             campaign,
             anchors,
             path,
@@ -900,7 +900,22 @@ pub(super) fn build_critical_path(
             &due,
             &owed,
             &before.data_before,
-        )?
+        )?;
+        // A flag another declared trigger came to pay is recorded against the
+        // trigger the path performs for it.
+        for (flag, payer) in schedule.repaid {
+            let moved: Vec<String> = trigger_debts
+                .iter()
+                .filter(|(_, (_, f))| *f == flag)
+                .map(|(t, _)| t.clone())
+                .collect();
+            for t in moved {
+                if let Some(debt) = trigger_debts.remove(&t) {
+                    trigger_debts.entry(payer.clone()).or_insert(debt);
+                }
+            }
+        }
+        schedule.due
     };
     let replay = path_fired_lines(campaign, flow, path, &due);
     let held_at_end: BTreeSet<String> = flow

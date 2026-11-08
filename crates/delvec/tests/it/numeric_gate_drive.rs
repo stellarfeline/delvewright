@@ -255,6 +255,19 @@ fn a_gate_no_press_sequence_can_open_is_dw0985() {
 /// stone wrote. The exit reads the flag, never the datum, so nothing but the
 /// flag owes the first stone a press.
 fn latch_doc(first_sets: i32, last: &str) -> String {
+    let first = format!(
+        r#"{{ "id": "trigger/first-stone", "at": "spawn", "on": {{ "on": "use" }},
+         "once": false, "prop": {{ "block": "minecraft:oak_sign[rotation=0]" }},
+         "effects": [
+           {{ "type": "set-state", "state": "state/order", "value": {first_sets},
+              "when": {{ "requires_state": [ {{ "state": "state/order", "op": "equals", "value": 0 }} ] }} }}
+         ] }}"#
+    );
+    latch_doc_with(&first, last)
+}
+
+/// [`latch_doc`] with the trigger at `spawn` written whole as `first`.
+fn latch_doc_with(first: &str, last: &str) -> String {
     common::at_dsl_version(&format!(
         r#"{{
   "dsl_version": "%dsl_version%",
@@ -284,12 +297,7 @@ fn latch_doc(first_sets: i32, last: &str) -> String {
     ],
     "triggers": [
       {last},
-      {{ "id": "trigger/first-stone", "at": "spawn", "on": {{ "on": "use" }},
-         "once": false, "prop": {{ "block": "minecraft:oak_sign[rotation=0]" }},
-         "effects": [
-           {{ "type": "set-state", "state": "state/order", "value": {first_sets},
-              "when": {{ "requires_state": [ {{ "state": "state/order", "op": "equals", "value": 0 }} ] }} }}
-         ] }}
+      {first}
     ]
   }}
 }}"#
@@ -375,4 +383,34 @@ fn a_flag_no_press_sequence_can_pay_is_dw1080() {
         assert!(err.contains("state/order equals 1"), "{err}");
         assert!(err.contains("`state/order` ∈ {0, 5}"), "{err}");
     }
+}
+
+/// **A latch another declared trigger sets without a gate is paid by that
+/// trigger.** The last stone, declared first, sets the latch only at order 1,
+/// and nothing ever makes the order 1; the spare stone at `spawn`, declared
+/// after it, sets the latch on any press. The flow model names the first
+/// declared producer as the payer, and a gate it cannot open is no reason to
+/// refuse while another trigger can pay: the path presses the spare stone,
+/// never the last.
+#[test]
+fn a_flag_a_later_ungated_trigger_sets_is_paid_by_it_not_refused() {
+    const SPARE: &str = r#"{ "id": "trigger/spare-stone", "at": "spawn", "on": { "on": "use" },
+       "once": false, "prop": { "block": "minecraft:oak_sign[rotation=0]" },
+       "effects": [ { "type": "set-flag", "flag": "flag/latch" } ] }"#;
+    let p = prefabs();
+    let c = validated(&latch_doc_with(SPARE, LAST_WHEN), &p);
+    let out = build(&c, &p).expect("the spare stone pays the latch");
+    let steps = acts(&critical_path(&out));
+    let s = |a: &str, w: &str| (a.to_string(), w.to_string());
+    assert_eq!(
+        steps,
+        [
+            s("select-class", ""),
+            s("talk-to", "obj/talk"),
+            s("trigger", "trigger/spare-stone"),
+            s("reach", "obj/exit"),
+            s("assert-complete", ""),
+        ],
+        "{steps:#?}"
+    );
 }
