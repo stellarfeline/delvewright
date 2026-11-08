@@ -57,8 +57,8 @@ and looping against them is the one way to spend an afternoon here.
   quests are optional, the endings and what they read, paced to
   `target_minutes`. Its shape is a web: read *The plan is a web, not a chain*,
   below, before you write it. **Every line declares its activity**: each
-  quest's `goal` opens on the verb of what the player does on it, and the
-  engine holds stage 5 to it — read *Every line has an activity*, below.
+  quest's `activity` names the acts the player performs on it, and the engine
+  holds stage 5 to it — read *Every line has an activity*, below.
 - **Declare every story fork here.** If a choice forks who lives, where the
   party ends up, or which ending plays, it is a `branch_points` entry:
   `{id, opens_at, forks_on:[flags], branches:[{id, flags, leads_to}]}`.
@@ -134,15 +134,19 @@ steps are not optional, for a thin brief or a detailed one.
    used or lit or pulled, a thing presented or laid, a fight. The hub and the
    finale may be conversations; a spoke or a strand may not be only one. Talk
    opens a line and closes it; it is never the body.
-2. **The `goal` opens on the verb of the body.** It is the plan's one statement
-   of what the player does on the line, so write it the way a title is written:
-   *Search the castle for the three candles and light them in the play's
-   order*, *Find the hidden audience around the lower town*, *Win the oven door
-   back from the smith*. At step 5 the engine reads the goal's first word
-   against the acts the line's objectives perform and refuses a goal whose verb
-   nobody performs on the line (`DW1079`); a verb it does not know is listed,
-   never refused. A goal that opens on *Speak to* or *Hear* is true of a line
-   of conversations, and the census at step 5 will say that is what the line is.
+2. **Declare the body on the quest, in `activity`.** Every planned quest
+   carries `"activity": [...]`, the acts the player performs on the line, in
+   the engine's words: `reach` (arrive somewhere), `talk` (a conversation),
+   `kill` (a fight), `take` (find and pick up), `use` (press, pull, light,
+   open), `present` (hold a thing up at a place), `give` (lay or hand a thing
+   over). A search of the castle with a candle puzzle is `["reach", "talk",
+   "take", "use"]`; a hide-and-seek is `["talk", "use"]`; a hub that is one
+   conversation is `["talk"]`. Declare what the body is, not what the kinds
+   will be — the schema is the list of words. At step 5 the engine holds the
+   expansion to it: an act you declared that no objective of the line performs
+   is refused (`DW1079`), and an act the line performs beyond the declaration
+   is counted, not refused. Then write the `goal` to open on the body's verb,
+   the way a title does, so the plan reads as play.
 3. **Budget the evening per activity, not per place.** Write the plan's lines
    into `DESIGN.md` as a table — line, body, acts, minutes — and sum it against
    `target_minutes`. The engine prices each objective at its table's minutes

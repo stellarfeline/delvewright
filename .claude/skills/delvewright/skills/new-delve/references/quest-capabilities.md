@@ -1008,6 +1008,6 @@ Run each of these; each names what it judges and how many objects it bound.
 - Pace to `target_minutes`; no grind. The mainline is the mandatory quests; an
   optional strand is paced on top of it, never inside it. The pace is the sum
   of the route and the acts — every objective priced at the table's minutes
-  per act, which `DW0822` states beside the walk — and a line's goal opens on
-  the act its body performs, which `DW1079` holds it to (*Reference: story*,
+  per act, which `DW0822` states beside the walk — and a line performs the
+  activity its plan declares, which `DW1079` holds it to (*Reference: story*,
   *Every line has an activity*; `$DELVEWRIGHT_ENGINE/docs/reference/web-narrative.md` §7).

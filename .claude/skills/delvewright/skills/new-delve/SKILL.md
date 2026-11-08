@@ -329,7 +329,7 @@ messages name something `quests.json` or `dialogue.json` will supply. That is th
 correct state to leave this step in, and it is not something to mention,
 apologise for or try to fix. **Read**: `references/story.md` before you start the
 loop, not after a refusal.
-**Every line of the plan declares its activity**: each quest's `goal` opens on the verb of what the player does on it, decided before the goal is written, and the lines are budgeted per activity against `target_minutes` in `DESIGN.md` (`references/story.md`, *Every line has an activity*) — mandatory for every brief.
+**Every line of the plan declares its activity**: each quest's `activity` names the acts the player performs on it, decided before the goal is written and held to at step 5 (`DW1079`), and the lines are budgeted per activity against `target_minutes` in `DESIGN.md` (`references/story.md`, *Every line has an activity*; the research is `$DELVEWRIGHT_ENGINE/docs/reference/web-narrative.md` §7) — mandatory for every brief.
 
 ## 4. The design gate — the user says yes
 
@@ -352,7 +352,7 @@ written at all) — both before writing, not after a refusal. A custom face, or 
 vanilla texture the delve replaces (the moon, a mob's skin, a block), is
 `references/npc-skins.md`. Other languages are a final document stage:
 `references/other-languages.md`.
-**The step closes on the census**: the last clean `validate` prints every line's acts and minutes and the pacing sum against `target_minutes`; a line the census names as only conversations and walks gets its body, and a goal the engine refuses (`DW1079`) gets the objective it promised (`references/content.md`).
+**The step closes on the census**: the last clean `validate` prints every line's acts and minutes and the pacing sum against `target_minutes`; a line the census names as only conversations and walks gets its body, and a declaration the engine refuses (`DW1079`) gets the objective it promised (`references/content.md`).
 
 ## 6. `delvec fmt` — every campaign, every time
 

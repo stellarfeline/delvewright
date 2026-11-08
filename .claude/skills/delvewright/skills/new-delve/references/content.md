@@ -54,11 +54,12 @@ Read it against the plan's table in `DESIGN.md`, line by line:
 
 - a spoke or a strand the census names as talk-or-reach only has no body
   (`$DELVEWRIGHT_ENGINE/docs/reference/web-narrative.md` §7 L1): give it the
-  objective its goal promises — a `collect`, an `interact`, a `kill` — and
-  write the objective, never re-head the goal to match the talk;
-- a goal the engine refuses (`DW1079`) promised an act nobody performs on the
-  line: the message names both repairs, and on a spoke the first is the right
-  one;
+  objective its plan declares — a `collect`, an `interact`, a `kill` — and
+  write the objective, never narrow the declaration to match the talk;
+- a declaration the engine refuses (`DW1079`) promised an act nobody performs
+  on the line: the message names both repairs, and on a spoke the first — the
+  objective — is the right one; an act the line performs beyond its
+  declaration is only counted, and the plan is brought up to it;
 - a sum well under `target_minutes` is lines missing, not a pacing note: go
   back to step 3 for the lines, through the design gate if the design moves.
 

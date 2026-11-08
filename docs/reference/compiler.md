@@ -633,13 +633,15 @@ it, and a quest with a non-empty `depends_on` is not armed at `campaign-start`
 (`DW1077`); a join is armed by one of its arms. A mainline objective keyed on a
 flag only optional content produces is `DW0868`. The closure is
 `QuestPlanContent::spine` and the declaration is `QuestPlanContent::optional`
-— one authority each. `goal` → l10n `quest.<q>.goal`. **A planned quest's `goal`
-opens on an act its line performs** (spec-0131; `DW1079`, `compiler::telling`):
-its head is read by the title's head rule (`DW1045`'s lexicon) against the union
-of the acts its stage-5 objectives perform (`Quest::objective_acts`); a head
-naming an act nobody performs on the line is refused at `/content/quests/<i>/goal`,
-an unknown head is counted and listed, and a planned quest with no stage-5
-expansion is counted as awaiting it. **The activity census** (`dsl::quest::activity`,
+— one authority each. `goal` → l10n `quest.<q>.goal`. **A planned quest declares
+its line's activity and the expansion is held to it** (spec-0131; `DW1079`,
+`dsl::quest::check`): `activity` names the acts of the spec-0114 vocabulary the
+player performs on the line, and is read against the union of the acts its
+stage-5 objectives perform (`Quest::objective_acts`); a declared act nobody
+performs, or an empty declaration over a line whose objectives perform acts, is
+refused at `/content/quests/<i>/activity`; an act performed beyond the
+declaration is counted in the binding line and refused nothing; a planned quest
+with no stage-5 expansion is counted as awaiting it. **The activity census** (`dsl::quest::activity`,
 `ActivityCensus`) states, on every `validate` under `-- what this run examined`,
 every planned quest's objectives and acts, priced at the table's
 `pacing.minutes-per-<act>` entries (each objective at its dearest act; the
@@ -652,6 +654,7 @@ both call sites and reads the sum against `target_minutes`.
 |---------|-------------------|-------|
 | `branch_points[]` | `{id, opens_at, forks_on[], branches[]}` (spec-0025) — the campaign's declared **story forks**. `forks_on` is the flag set this fork owns; `opens_at` the quest at which it opens. Each branch is `{id, flags[], leads_to}`: `flags` is the subset of `forks_on` this branch holds (the rest of `forks_on` is pinned **unset** on it — that half is what makes `DW0484` decidable), and `leads_to` is a **single** field whose id prefix says which kind of terminus it is — a `quest/<kebab>` the branches converge at, or an `ending/<kebab>` this branch runs to. One field rather than two mutually exclusive ones, so "exactly one of them" is an unrepresentable state instead of a rule some diagnostic polices: a value with neither prefix is the ordinary `DW0110`, one naming nothing is the ordinary `DW0112`. Enumerated branches are the **product of the declared points**, so the branch set is authored and small. Empty/absent = a campaign claiming to have no branch, which the compiler then *verifies* rather than assumes (`DW0480`). Proofs: `DW0480`–`DW0485`. | 0.8 |
 | `endings_read` (opt) | `{at_least?, deeds_at_least?}` (spec-0108) — **what every ending reads**, declared by the campaign: every ending's count of **seeded** inputs is at least `at_least`, and its count of seeded inputs some writer of which is a **deed** (a thing done in the world, or a quest finished) is at least `deeds_at_least`. An ending's inputs are every flag and datum a gate in its **final scene** reads (the whole bundle the act that fires it fires — the effect root its `campaign-complete` stands in at any depth, with every list nested under it — so an epilogue line gated on a thread's outcome is that thread read, spoken before the banner or after it); an input is seeded when some writer is dated outside the ending's host quest or belongs to no quest. Absent, the engine counts and reports and refuses nothing; present, an ending below either term is `DW1029`; a declaration over zero endings states `0 ending(s)`. The number is the campaign's, never the engine's: a check confirms a declared intent. Reading and binding: [`delvec/compiler/ending.md`](delvec/compiler/ending.md). | 0.46 |
+| `quests[].activity` | `[<act>, …]` (spec-0131), required — **what the player does on this line**: the acts of the spec-0114 vocabulary (`reach`, `talk`, `kill`, `take`, `use`, `present`, `give`) the quest's stage-5 objectives perform, declared where the line is planned. Confirmed against the union of `Quest::objective_acts` over the expansion: a declared act no objective performs, or an empty list over a line whose objectives perform acts, is `DW1079`; an act performed beyond the declaration is counted in the binding line and refused nothing; a quest with no expansion is counted as awaiting stage 5. Not inventoried for l10n (authoring metadata, never shown). The census of what each line performs, priced per act, is `dsl::quest::activity` ([`dsl/quest/check.md`](dsl/quest/check.md)). | 0.70 |
 
 ### Stage 5 — `quests` (+ v0.3/v0.4 gameplay surface)
 
@@ -3594,7 +3597,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   **Emitted only for a campaign that declares a volume**, so a file that exists
   and reports zero is a finding rather than an absence.
 - `<out>/validation/act-gate.json` (every build; a `--lang` bake carries the verdict over the English titles, read before they were swapped — `Plan::act_binding`): the `DW1045` check's **binding ledger** (`compiler::telling::ActBinding`): `objectives`, `titled`, `judged` (also as `examined`), `unknown` (each `{path, title}`), `untitled`, `refused`. The gallery coverage gate reads it through the shared `examined` rule.
-- `<out>/validation/activity-census.json` (every build; spec-0131): the **activity census** (`dsl::quest::activity::ActivityCensus::to_json`) — `examined` (the planned quests with a stage-5 expansion, also as the length of `lines`), `lines` (each `{quest, mandatory, objectives, acts {<act>: n}, minutes, talk_or_reach_only}`), `unexpanded` (planned quests awaiting stage 5), `objectives`, `acts`, `minutes`, `mandatory_minutes`, `rates` (`{<act>: minutes}`, the table's price list the minutes were computed at), `target_minutes` — and under `goals` what the `DW1079` check judged over the English goals (`compiler::telling::LineActBinding`, carried as `Plan::line_binding` for the reason the act binding is): `lines`, `expanded`, `judged` (also as `examined`), `unknown` (each `{path, goal}`), `refused`. The gallery coverage gate reads the top-level `examined`.
+- `<out>/validation/activity-census.json` (every build; spec-0131): the **activity census** (`dsl::quest::activity::ActivityCensus::to_json`) — `examined` (the planned quests with a stage-5 expansion, also as the length of `lines`), `lines` (each `{quest, mandatory, objectives, acts {<act>: n}, minutes, talk_or_reach_only}`), `unexpanded` (planned quests awaiting stage 5), `objectives`, `acts`, `minutes`, `mandatory_minutes`, `rates` (`{<act>: minutes}`, the table's price list the minutes were computed at), `target_minutes` — and under `declared` what the `DW1079` check judged of each line's declaration (`dsl::quest::check::ActivityBinding`): `lines`, `judged` (also as `examined`), `undeclared` (each `{quest, acts}`, the acts a line performs beyond its declaration), `refused`. The gallery coverage gate reads the top-level `examined`.
 - `<out>/validation/cues.json` (every build): the engine's quest cues for the
   bot — `cues {announce, complete, campaign}` (the sound events), the `volume`
   and `pitch` they play at (1, 1), their `range` (`pulse::BASE_RANGE` at that
