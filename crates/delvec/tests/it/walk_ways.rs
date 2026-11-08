@@ -272,6 +272,16 @@ fn the_keeper_walks_the_roads_and_not_across_the_green() {
         in_green.is_empty(),
         "the route crosses the green at {in_green:?}"
     );
+    // The far road is entered across its west column, which is outside its
+    // clear width: the one cell of each crossing from a near road, in that
+    // road's own clear rows, is the only off-way cell a road owes.
+    let far = site.roads[1].0;
+    let crossing = |c: &[i32; 3]| {
+        c[0] == far[0]
+            && [site.roads[0].1, site.roads[2].1]
+                .iter()
+                .any(|clear| c[2] >= clear[2] && c[2] <= clear[3])
+    };
     let off_road: Vec<_> = cells
         .iter()
         .filter(|c| {
@@ -280,12 +290,15 @@ fn the_keeper_walks_the_roads_and_not_across_the_green() {
                     .roads
                     .iter()
                     .any(|(_, clear)| in_foot(*clear, c[0], c[2]))
+                && !crossing(c)
         })
         .collect();
     assert!(
         off_road.is_empty(),
         "the route leaves the roads' clear width at {off_road:?}"
     );
+    let crossed = cells.iter().filter(|c| crossing(c)).count();
+    assert_eq!(crossed, 2, "the far road is entered once and left once");
     assert!(
         cells.iter().any(|c| in_foot(site.roads[1].0, c[0], c[2])),
         "the route never reaches the far road"
