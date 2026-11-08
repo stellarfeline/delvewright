@@ -104,6 +104,7 @@ validation/          # docker compose: headless server + bot, same image as CI &
 - TypeScript (harness only): strict mode; assertions and navigation, never game logic.
 - ADRs: sequential, status field, cite sources; never edit an Accepted decision — supersede it. Specs: `spec-NNNN-<slug>.md` with a machine-checkable "Acceptance criteria" section. Numbers (spec, ADR, DW code, `dsl_version`) are allocated by the planner across every remote ref, never picked by a round.
 - Commits/PRs: conventional, small, one concern each. Commit messages and every `gh` text argument come from a file, never inline; a measurement belongs in the commit body.
+- **An issue closes with the fix that settles it**: a pull request that fixes a recorded issue names it with a closing keyword (`Fixes #N`) in its body, so the merge closes it; an integration pull request names every issue its branches fix; an issue found already fixed is closed with the commit that fixed it.
 - **Privacy in repo artifacts**: no personal information, no verbatim personal speech, no record of who decided what or when. Sanctioned identifiers are ADR numbers, spec numbers and DW codes; a task id, PR number or dated attribution is not one.
 - **Attribution ledger**: any adopted library, ported algorithm or paper gets its entry (verified license) in `docs/ACKNOWLEDGEMENTS.md` in the same PR.
 - **DW-diagnostic coverage**: every DW diagnostic is asserted by at least one test; a minimal, justified allowlist is the only exemption.
