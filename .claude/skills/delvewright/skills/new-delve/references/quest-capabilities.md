@@ -238,6 +238,13 @@ this section is what they are *for* and the traps in each.
     — never re-spell the same root id, and never omit `dialogue` hoping it
     defaults (it does not: `DW0463`). `"unchanged"` at an NPC's first
     appearance is `DW0466`.
+  - **Quests that open together all govern at once.** When one completion opens
+    several quests, the last-ranked of them that declares a scene for an NPC is
+    what that NPC's right-click opens while they are all open. Give an NPC a
+    new scene only in the quest whose beat goes through them, and declare
+    `"unchanged"` for it in every quest opened beside it: `"unchanged"` claims
+    nothing. A sibling that overrides an NPC another quest asks the player to
+    talk to is `DW0858`.
   - **Treat the `DW0467` staleness warning as a design smell, not a nuisance.**
     It means an NPC's right-click never learns that the story moved. Give it a
     scene that changes, or make it a bark-pool background character — do not

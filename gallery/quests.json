@@ -3613,18 +3613,42 @@
       },
       {
         "cast": {
-          "npc/copyist": {
-            "at": {
-              "anchor": "anchor/usher",
-              "offset": [
-                0,
-                0,
-                -4
+          "npc/copyist": [
+            {
+              "at": {
+                "anchor": "anchor/usher",
+                "offset": [
+                  0,
+                  0,
+                  -4
+                ]
+              },
+              "dialogue": {
+                "barks": [
+                  "You walked past the label. I'll copy that down too."
+                ]
+              },
+              "doing": "copying the catalogue at the wall desk, back to the wall",
+              "forbids_flags": [
+                "flag/read-the-label"
               ]
             },
-            "dialogue": "unchanged",
-            "doing": "copying the catalogue at the wall desk, back to the wall"
-          },
+            {
+              "at": {
+                "anchor": "anchor/usher",
+                "offset": [
+                  0,
+                  0,
+                  -4
+                ]
+              },
+              "dialogue": "unchanged",
+              "doing": "copying the catalogue at the wall desk, back to the wall",
+              "requires_flags": [
+                "flag/read-the-label"
+              ]
+            }
+          ],
           "npc/curator": {
             "at": "anchor/pedestal",
             "dialogue": "unchanged",
