@@ -63,6 +63,7 @@ mod threshold;
 mod timed_gate;
 mod trap;
 mod view;
+mod walkway;
 mod wave;
 pub mod width;
 pub use actor::*;

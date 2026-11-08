@@ -1269,6 +1269,20 @@ impl World {
         fp: &Footprint,
         width: f64,
     ) -> bool {
+        self.segment_walkable_within_fp(a, b, fp, width, &|_| true)
+    }
+
+    /// [`World::segment_walkable_fp`], with every column the segment sweeps
+    /// also owed `within` — the walked line kept inside a set of cells (a
+    /// declared way, [`crate::compiler::nav::smooth_walk`]).
+    pub(in crate::compiler::nav) fn segment_walkable_within_fp(
+        &self,
+        a: [i32; 3],
+        b: [i32; 3],
+        fp: &Footprint,
+        width: f64,
+        within: &dyn Fn([i32; 3]) -> bool,
+    ) -> bool {
         if a[1] != b[1] {
             return false;
         }
@@ -1296,7 +1310,8 @@ impl World {
                     continue;
                 }
                 let col = [cx, a[1], cz];
-                if self.is_use_gate(col)
+                if !within(col)
+                    || self.is_use_gate(col)
                     || (self.has_leaves()
                         && (0..fp.height).any(|dy| self.leaf_read([cx, a[1] + dy, cz]).is_some()))
                     || !self.standable_fp(col, fp)

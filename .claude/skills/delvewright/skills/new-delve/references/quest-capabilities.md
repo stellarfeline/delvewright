@@ -858,6 +858,12 @@ Run each of these; each names what it judges and how many objects it bound.
   `move-actor` routes round anything the piece declares as furniture, and a
   destination on it ends on the floor beside it. A walk whose only way is over
   the table is refused naming it (`DW0510`): move the mark or open a way round.
+- **A walk between places keeps to the roads.** A `move-npc` or `move-actor`
+  whose two ends are in different places walks the site plan's ways — the clear
+  width of every place that declares `way` — wherever they join its ends, and
+  leaves them only to reach or leave one; it crosses open ground or a third
+  place only where no way joins. To route a walk down a street, declare the
+  street a way; a walk inside one place crosses it directly.
 - **A status effect is a verb — and it ends by expiring, never by being
   cleared.** `give-effect {effect, seconds, amplifier?, hide_particles?}`
   grants any pinned-1.21.11 status effect; the effect's `in {anchor, extent}`
