@@ -68,6 +68,16 @@ form and the commands are in *Reference: drawing the map's reference*.
      site plan — your declaration — and nothing in the graph classifies it or
      refuses it. A road, a ledge one body wide climbing a whole cliff face and a
      hall are all just places with the boxes you draw for them.
+   - **A long way carries something new at least every 130 cells, never the
+     same kind twice running.** An edge the brief's numbers make longer than
+     that — a climb between districts, a causeway, a road out of town — gets a
+     place of its own beside it (a spring, a garden, a hut, a lookout: a node
+     with a box, an author and a `walk` edge from the way), a view found and
+     lost at a bend, or a change of ground; when the site plan gives the edge
+     its length, a stretch over the ceiling sends you back to the graph for its
+     node. A stretch the story wants empty stays empty, said in the way's
+     `note`. What counts as new, the figure's research, and the town and the
+     dungeon cases: `$DELVEWRIGHT_ENGINE/docs/reference/place-craft.md` §11.
    - **A `climb` is a way up a ladder or a vine the lower place hangs**: a hole
      through a floor, or a door high in a wall, with no treads and no sill. Its
      rise is the two floors' difference; a climb between two places on one
