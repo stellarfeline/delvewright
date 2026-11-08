@@ -3366,23 +3366,30 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   flag (`Flow::trigger_debts`) and that trigger's `set-flag` waits on a numeric
   term — the trigger's own `requires_state`, or a `when` on the line or on an
   effect enclosing it (a reaction bundle is not descended) — the same replay
-  presses it as the path performs it, with the flags it pays not yet held. If
-  the flag is set, the press stands. Otherwise the search above runs with the
-  goal *the flag is set*, over the hand-pressed triggers placed in the step's
-  area, every other declared trigger on an anchor there that sets the flag, and
-  the payer at the place the path performs it; the sequence it finds replaces
-  the payer's press — however many other triggers write the datum the gate
-  reads — and the trigger it ends on is the payer the path performs and
+  presses it as the path performs it, with the flags it pays not yet held. This
+  replay follows a wider set of data than the objective drive: every datum
+  whose every write is a line of a `use`/`strike` trigger on an anchor at any
+  depth (a `sequence` step, a cutscene's `then`; never a reaction bundle), from
+  its declared `initial`, a nested write applied when the press is made. If the
+  flag is set, the press stands. Otherwise, unless the payer also opens a way,
+  the press moves in front of the first step that reads the flag, when the
+  payer's anchor resolves in that step's area, and is judged there. Where it
+  is judged, the search above runs with the goal *the flag is set*, over every
+  pressable trigger in the step's area that writes only followed data, every
+  other declared trigger on an anchor there that sets the flag, and the payer
+  at the place the path performs it; the sequence it finds replaces the
+  payer's press — however many other triggers write the datum the gate reads
+  — and the trigger it ends on is the payer the path performs and
   `PathFiring::trigger_debts` records, so a first-declared payer whose gate no
-  press opens refuses nothing while a later one can set the flag. A press in this replay that writes a datum the plan
-  does not drive forgets that datum rather than being abandoned. A gate a
-  count of the payer's own presses opens (spec-0082 §3.3, the hit count
-  `trigger` steps already repeat) stands as performed. Anything else is
-  `DW1080`: the flag is not credited, naming the reader, the flag, the payer,
-  the terms and the values reached. The builder is the one every spec-0025
-  branch path is built by, so a branch run performs the presses its own flags
-  owe. Nested lines of a press set flags behind their own gates, read at the
-  value the press holds; their writes are not applied.
+  press opens refuses nothing while a later one can set the flag. A press in
+  this replay that writes a datum the plan does not follow forgets that datum
+  rather than being abandoned. A gate a count of the payer's own presses opens
+  (spec-0082 §3.3, the hit count `trigger` steps already repeat) stands as
+  performed. Anything else is `DW1080`: the flag is not credited, naming the
+  reader, the flag, the payer, the terms and the values reached. The builder
+  is the one every spec-0025 branch path is built by, so a branch run performs
+  the presses its own flags owe. Nested lines of a press set flags behind
+  their own gates, read at the value the press holds.
   **`loop` steps** (spec-0086 §5.2, §6). A loop that holds where the forced
   route meets it is **exercised**: in front of the first step whose position is
   beyond the slab along its axis while the party, in the loop's area, is not,

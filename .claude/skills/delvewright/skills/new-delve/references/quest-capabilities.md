@@ -189,10 +189,11 @@ this section is what they are *for* and the traps in each.
   no order opens it), and for a flag a press sets behind a `when` or its
   trigger's own `requires_state` on the datum — the latch of an ordered puzzle —
   that an objective reads (`DW1080` when no order sets it). Keep every write of
-  such a datum in a pressed trigger's top-level `effects`: a write in a quest
-  beat, a nested line or a trigger nobody presses makes the value one the build
-  cannot follow, and a flag behind it is refused unless the trigger's own count
-  of presses opens it (the hit count below).
+  such a datum on a pressed trigger — in its top-level `effects` for an
+  objective's own gate; a `sequence` inside the press is followed for a flag: a
+  write in a quest beat, a reaction bundle or a trigger nobody presses makes the
+  value one the build cannot follow, and a flag behind it is refused unless the
+  trigger's own count of presses opens it (the hit count below).
 - A `player`-scoped datum can only be touched where a player is acting — a
   dialogue option, a cast placement, an `on_death` beat, an effect on a quest
   beat a player completes, or a trigger declaring `audience: "presser"`, which
