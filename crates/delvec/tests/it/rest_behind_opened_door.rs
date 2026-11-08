@@ -303,7 +303,7 @@ fn two_quest_plan(errand_is_mandatory: bool) -> String {
          "mandatory": {errand_is_mandatory} }},
       {{ "id": "quest/open-the-door", "act": 1, "area": "area/keep",
          "npcs": ["npc/keeper"], "goal": "Get the Keeper to let you rest.",
-         "depends_on": ["quest/side-errand"], "mandatory": true }}
+         "activity": ["talk"], "depends_on": ["quest/side-errand"], "mandatory": true }}
     ]
   }}
 }}"#
