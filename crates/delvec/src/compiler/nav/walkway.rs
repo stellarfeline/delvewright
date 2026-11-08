@@ -23,11 +23,11 @@
 //!   street and in at the other; a walk leaves its start place and enters its
 //!   goal place by the way it would anywhere. A place is the one the plan
 //!   says holds the cell ([`crate::compiler::holders::place_of`]).
-//! - **Why eight** (authored): a switchback road on a hillside is two to four
-//!   times the length of the straight descent over the flank beside it, so
-//!   any toll over four keeps a walk on it; eight keeps it on a way up to
-//!   eight times as long as the shortcut, and bounds the detour a walk makes
-//!   to keep to a way it barely needs.
+//! - **Why eight** (authored): a way up to eight times the length of the
+//!   off-way shortcut beside it is still walked, and no walk detours further
+//!   than that to keep to a way it barely needs. The value is a judgement, not
+//!   a measurement; on the one whole town it was tried on, it moved the staged
+//!   walks' per-tick positions in the commons from 6357 to 1508.
 //! - **The rendered line stays on the way** (authored): the string-pull that
 //!   turns the route into a walked polyline ([`super::smooth_walk`]) never
 //!   merges a segment between two way cells that sweeps a column off the way.
