@@ -1358,10 +1358,7 @@ impl<'a> Plan<'a> {
     /// Attach what the line check judged over the English plan
     /// ([`Plan::line_binding`]).
     #[must_use]
-    pub fn with_line_binding(
-        mut self,
-        binding: crate::compiler::telling::LineActBinding,
-    ) -> Self {
+    pub fn with_line_binding(mut self, binding: crate::compiler::telling::LineActBinding) -> Self {
         self.line_binding = Some(binding);
         self
     }

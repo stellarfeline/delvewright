@@ -12,6 +12,7 @@ Every claim is marked **cited** (with its source, listed at the end) or **author
 - [4. Fit for a 2–3 hour delve](#4-fit-for-a-23-hour-delve)
 - [5. Guidance without highlights](#5-guidance-without-highlights)
 - [6. Engine gaps](#6-engine-gaps)
+- [7. What fills a line, and how long it takes](#7-what-fills-a-line-and-how-long-it-takes)
 - [Sources](#sources)
 
 ## 1. What goes wrong in a chain
@@ -114,23 +115,58 @@ What the proofs assume, in one place:
 | A gate that holds | A gated connection is built shut (spec-0107). `DW1011` proves every shut gate *separates*: in every story configuration, no body at its near face reaches its far face by walking, falling, jumping, climbing or swimming (`validation/separation-proof.json`). `DW1047` proves no redstone signal can open a shut gate, a floor hatch included. `DW1053`/`DW1054` prove each shut way says how the player learns it is shut. | A way a story stage floods or drains is not modelled: water moved at runtime is outside every route proof (spec-0038). | Completability's ordering claim; the bypass in section 1. |
 | Many routes to one goal | Geometry may hold several routes; nav finds one. | Declared alternative routes, each proven walkable under its own gate state; today a second route is neither required nor checked. | Nav `DW0311`; the bot. |
 | Storylet-style variants | Cast placements and dialogue options select per flag and state; `DW0483` and the cast ladder prove one selection per branch. | None needed at the fitting use (section 4). | — |
+| A line's activity | Every planned quest's acts are counted and priced on every `validate` (the activity census, `validation/activity-census.json`); a goal's head is read against them (`DW1079`); `DW0822` reads route and acts as one figure against `target_minutes` (section 7). | The census prices objectives only: an environment trigger (an overheard scene, a find on a shelf), a shop and a loop are not objectives and are not priced; an item a dialogue option hands over is not counted as a taking; the price of a fight is authored, not measured. | The pacing figure's completeness. |
+
+## 7. What fills a line, and how long it takes
+
+The question a hub town asks that a dungeon does not: what does the player *do* on a line when nobody fights, and how much of it does a two-to-three-hour evening need. A delve whose every line was "go somewhere and talk" passed every gate and played to its ending in about twenty minutes against a target of a hundred and fifty, and nothing on the way had counted what the lines were made of. Each rule below is **cited** or **authored**; the sources are design writing and talks, read for their ideas and not for their content (ADR-0013).
+
+### 7.1 What practice says
+
+- **A quest is a sequence of atomic actions, and lines differ by which actions they are made of** (**cited**: Doran & Parberry). Over 750 quests from four games reduce to a few strategies, each a short sequence of atomic actions — `goto`, `get`, `give`, `listen`, `report`, `use`, `repair`, `exchange`, `spy`, `steal`, `damage`, `escort` — each with the post-condition the game checks. A talk-only line is the one strategy `goto, listen, goto, report`, repeated; the paper's own table carries it under two motivations only (Knowledge: *interview NPC*; Serenity: *check on NPC*).
+- **Without combat, the set that remains is get, give, use, exchange, listen, spy and goto** (**authored**, from Doran & Parberry's table with `damage`, `kill`, `defend` and `escort` struck out). In the engine's act vocabulary (spec-0114; `docs/reference/game-writing.md` F7) those are `take`, `give`, `use`, `present`, `talk` and `reach`: a town line has five acts to be made of besides a conversation.
+- **A find the adventure needs wants three ways to be found, and a problem it needs solved wants three solutions** (**cited**: Alexander, *The Three Clue Rule* and its chokepoint extension): a player misses, ignores or misreads any one clue.
+- **Problems, not puzzles: several solutions to one problem, each with its own consequence later** (**cited**: Spector, Deus Ex postmortem and GDC 2017 classic postmortem); **and one more solution for the player who broke everything** (**cited**: Larian's "n+1", via PC Gamer).
+- **A scene read for what happened is a story told by the place** (**cited**: Smith & Worch, GDC 2010): its elements draw from the premise, and the player assembles the story by looking.
+- **Overheard lines and thinking aloud are the cheapest way to make a place feel lived in, and they can point at a quest** (**cited**: Game Developer, *Adding life to worlds with dialogue barks*); **a line matched to the world state makes the ambient voice notice what the player did** (**cited**: Ruskin, GDC 2012, via Short's notes).
+- **Reputation is what a faction knows about the player, and pleasing one side angers another** (**cited**: Sawyer on Fallout: New Vegas, via The Escapist; the community record of its Fame and Infamy).
+- **A hub's first act is a long tutorial that teaches by escalating its challenges, always with more than one way through** (**cited**: Vincke on Baldur's Gate 3, via PC Gamer).
+
+### 7.2 The rules for a line (**authored**, from 7.1; the engine's part is stated per rule)
+
+- **L1 — Every line has a body that is not talk.** A line opens with a conversation and may close with one; between them the player does something the game checks — finds, uses, presents, lays, fights — and the talk is never the body. In the plan, the hub and the finale may be conversations; a spoke or a strand may not be only one. The engine counts: the activity census under `-- what this run examined` states every planned quest's acts and names the lines whose every act is talk or reach, and it refuses nothing on that count — a plan may declare a line of conversations, and the census says so where the author reads it.
+- **L2 — The goal says what the player does on the line, and opens on its verb** (F1's rule applied to the plan, the way F7 applies it to a title). The head of a planned quest's `goal` is read by the title's head rule against the union of acts its stage-5 objectives perform; a head naming an act nobody performs on the line is refused (`DW1079`), with the line's census and both remedies — re-head the goal, or give the line an objective that performs the act. A head the lexicon does not know is counted, never refused. *Search the castle for the three candles* over a line of arrivals and conversations is the lie this catches; *Hear the keeper out and leave* over the same line is true.
+- **L3 — Every find the line needs has three ways to be found**: its hint, the line's own speaker who names the place again, and the thing itself standing out in its place; a clue that unlocks a better answer never stands alone, the plain answer stays (Alexander). The engine proves the hint is announced or the thing is in sight (`DW0863`) and judges nothing else here; the playtest judges the rest.
+- **L4 — A door the line needs has more than one key, and the plain one is always on offer**: talked round, traded for, taken while a back is turned, or admitted — the n+1 — and the character remembers which, and says so later (Spector; Larian; Sawyer). The engine expresses each way as a dialogue option or an objective writing its own flag and proves every ending reads them (`DW1029`, `DW1030`); whether the ways are distinct play is the design's.
+- **L5 — Side content is exploration that pays**: overheard scenes, finds that each tell a piece of the place's story and pay a little, a stall that sells for pennies; some of it points at a strand (Smith & Worch; the barks writing). It is environment triggers, pulses and a shop, not objectives, and the census does not price it (section 6).
+- **L6 — The length is estimated per activity, never from the route alone.** `DW0822` states the route's minutes at the table's blocks-per-minute and, in the same line, the activity minutes — every objective priced at its dearest act by the table's `pacing.minutes-per-<act>` entries (`delvec metrics` prints them; they are provisional seeds until a playtest calibrates them) — and the sum against `target_minutes`. The author reads the sum, not the walk: a map that walks in fifty minutes and talks in twenty is a seventy-minute evening against whatever it bills.
+
+### 7.3 Where the prices come from
+
+One owner playthrough of the talk-and-walk campaign named above (eighteen objectives, sixteen of them conversations, over a route the engine measured at 2380 blocks, in about twenty minutes) gives a conversation about a minute and the walk about twice the table's route coefficient; the round that rewrote the campaign budgeted each activity from what the player does at it (a talk one to two minutes on trees written to carry a line, a find with its search three to five, a use with its vessel two, an overheard scene half a minute, a side find one to two, a shop visit two) and summed them per line in its design record. The table's seeds are the engine's reading of those budgets, with a reach priced at zero because the route coefficient already prices the walk; a fight's price is authored, since no measured campaign had one. **The measurement is the playtest**: a price is calibrated by walking the metrics gym and by a full playtest, as the route coefficient is, and until then `DW0813` names each seed a run read.
 
 ## Sources
 
+- Alexander, J. *The Three Clue Rule* and *Running Mysteries: The Two Types of Leads*. The Alexandrian (thealexandrian.net); design essays, read for their rules.
 - Ashwell, S. K. *Standard Patterns in Choice-Based Games*. These Heterogeneous Tasks; mirrored at ifwiki.org/Standard_Patterns_in_Choice-Based_Games.
 - Beachum, A. & Verneau, L. *Curiosity-Driven Exploration: The Design of Outer Wilds*, GDC 2020; Beachum, K. *Sparking Curiosity-Driven Exploration Through Narrative in Outer Wilds*, GDC 2021 (session descriptions, gdcvault.com).
 - Boris the Brave. *Lock and Key Dungeons*. boristhebrave.com; Zelda Universe, *Explore Zelda dungeon design in Mark Brown's YouTube series Boss Keys* — both on Brown, *Boss Keys* (Game Maker's Toolkit).
 - Den of Geek. *The Walking Dead: The False Promises of Telltale's Masterpiece*; *Mass Effect: The First Trilogy's Ending and the Futility of the Hero*.
 - Dishonored Wiki (Fandom, CC BY-SA). *Chaos*.
+- Doran, J. & Parberry, I. *A Prototype Quest Generator Based on a Structural Analysis of Quests from Four MMORPGs*. PCGames 2011 (ianparberry.com/pubs/pcg2011.pdf); Tables 1–5, the motivations, strategies and atomic actions.
 - Doctorow, C. Notes on Scott Rogers, *Everything I Learned About Level Design I Learned from Disneyland*, GDC 2009 (craphound.com; Boing Boing).
 - Fabulich, D. *By the Numbers: How to Write a Long Interactive Novel That Doesn't Suck*. Choice of Games blog.
+- Fallout: New Vegas reputations, the community record of Fame and Infamy (fallout-archive.fandom.com, CC BY-SA); The Escapist, interview with J. Sawyer on the reputation system.
+- Game Developer. *Adding life to worlds with dialogue barks*; Spector, W. *Postmortem: Ion Storm's Deus Ex* (gamedeveloper.com); Spector, W. *Classic Game Postmortem: Deus Ex*, GDC 2017 (gdcvault.com).
 - Game Informer. *Why Your Choices Don't Matter in Telltale Games*; *Mass Effect 3 Extended Cut: The Good, Bad, and Ugly*.
 - GameBanshee. *The Deleted Scenes of Deus Ex* (excerpt of Spector's Deus Ex postmortem lecture).
 - Ingold, J. *Narrative Sorcery: Coherent Storytelling in an Open World*, GDC 2017 (session description).
 - Lynch, K. *The Image of the City* (1960), as organised in Totten, C. *An Architectural Approach to Level Design*, 2nd ed. (CRC Press, 2019).
+- PC Gamer. *Larian gave Baldur's Gate 3 its acclaimed reactivity by approaching it as "weird Dungeon Masters"*; *Larian boss says we should think of Baldur's Gate 3's entire first act as the tutorial* (press accounts of interviews with S. Vincke; the talks themselves were not read).
 - PlayStation Blog. *Deus Ex: Human Revolution's Level Design is Multi-Path, Multi-Solution*.
 - Prima Games. *The Witcher 3 Ending – The Fate of Ciri*; Shacknews. *Ciri's fate and Best ending – The Witcher 3*.
 - Quarter to Three, *What happened to the ending of Fallout: New Vegas?*; Prima Games, *Why Fallout: NV comes to a proper close* (Sawyer and Avellone on the ending slides).
 - RPG Site. *Mass Effect 3 Endings guide*; TrueAchievements, *Second Take: Mass Effect 3*.
-- Short, E. *Beyond Branching: Quality-Based, Salience-Based, and Waypoint Narrative Structures*. emshort.blog.
+- Short, E. *Beyond Branching: Quality-Based, Salience-Based, and Waypoint Narrative Structures*. emshort.blog; and her notes on Ruskin, E. *AI-driven Dynamic Dialog through Fuzzy Pattern Matching*, GDC 2012 (emshort.blog, tag *Valve*).
+- Smith, H. & Worch, M. *What Happened Here? Environmental Storytelling*, GDC 2010 (gdcvault.com).
 - Secondary analyses of *Half-Life 2* and *Lost Coast* developer commentary (gangles.ca; gamertagmythras.com).

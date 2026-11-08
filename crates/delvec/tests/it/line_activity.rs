@@ -150,7 +150,9 @@ fn the_census_counts_each_lines_acts_and_prices_them() {
     }
     assert_eq!(
         l.minutes,
-        u64::from(r.of(Act::Talk) + r.of(Act::Reach) + r.of(Act::Kill) + r.of(Act::Take) + r.of(Act::Use))
+        u64::from(
+            r.of(Act::Talk) + r.of(Act::Reach) + r.of(Act::Kill) + r.of(Act::Take) + r.of(Act::Use)
+        )
     );
     assert_eq!(census.minutes, l.minutes);
     assert_eq!(census.mandatory_minutes, l.minutes);
@@ -257,8 +259,14 @@ fn a_goal_that_names_an_act_the_line_performs_is_green() {
         ("Clear the guard from the hall.", vec![kill("obj/a")]),
         ("Take the roll from the loft.", vec![collect("obj/a")]),
         ("Pull the lever by the gate.", vec![interact("obj/a")]),
-        ("Hear the Keeper out and leave.", vec![talk("obj/a"), reach("obj/b")]),
-        ("Leave the keep once the Keeper is heard.", vec![talk("obj/a"), reach("obj/b")]),
+        (
+            "Hear the Keeper out and leave.",
+            vec![talk("obj/a"), reach("obj/b")],
+        ),
+        (
+            "Leave the keep once the Keeper is heard.",
+            vec![talk("obj/a"), reach("obj/b")],
+        ),
     ];
     for (goal, objectives) in cases {
         let (refused, judged, unknown) = judge(&line(goal, objectives, json!({})));
@@ -275,11 +283,19 @@ fn a_goal_that_promises_an_act_nobody_performs_is_refused() {
         ("Take the Keeper's roll.", vec![talk("obj/a")], "take"),
         ("Speak to the door.", vec![reach("obj/a")], "talk"),
         ("Gather the guard's keys.", vec![kill("obj/a")], "take"),
-        ("Clear the loft of its rolls.", vec![collect("obj/a")], "kill"),
+        (
+            "Clear the loft of its rolls.",
+            vec![collect("obj/a")],
+            "kill",
+        ),
         ("Fetch the lever's handle.", vec![interact("obj/a")], "take"),
         // The motivating shape: a line of conversations whose goal promises a
         // search.
-        ("Gather the scattered chorus.", vec![talk("obj/a"), talk("obj/b"), talk("obj/c")], "take"),
+        (
+            "Gather the scattered chorus.",
+            vec![talk("obj/a"), talk("obj/b"), talk("obj/c")],
+            "take",
+        ),
     ];
     for (goal, objectives, said) in cases {
         let c = line(goal, objectives, json!({}));
@@ -288,8 +304,16 @@ fn a_goal_that_promises_an_act_nobody_performs_is_refused() {
         assert_eq!(d[0].code, DW_LINE_UNTRUE.id());
         assert_eq!(d[0].path, GOAL);
         assert_eq!(d[0].stage, "quest-plan");
-        assert!(d[0].message.contains(&format!("→ {said}")), "{}", d[0].message);
-        assert!(d[0].message.contains("re-head the goal"), "{}", d[0].message);
+        assert!(
+            d[0].message.contains(&format!("→ {said}")),
+            "{}",
+            d[0].message
+        );
+        assert!(
+            d[0].message.contains("re-head the goal"),
+            "{}",
+            d[0].message
+        );
         assert!(d[0].message.contains("`obj/a` →"), "{}", d[0].message);
         assert_eq!((b.judged, b.refused), (1, 1), "{goal}");
     }
@@ -299,12 +323,20 @@ fn a_goal_that_promises_an_act_nobody_performs_is_refused() {
 /// and listed, never refused.
 #[test]
 fn an_unknown_head_is_counted_and_listed_not_refused() {
-    let c = line("Convince the Keeper to unbar the gate.", vec![talk("obj/a")], json!({}));
+    let c = line(
+        "Convince the Keeper to unbar the gate.",
+        vec![talk("obj/a")],
+        json!({}),
+    );
     let (refused, judged, unknown) = judge(&c);
     assert!(refused.is_empty());
     assert_eq!((judged, unknown), (0, 1));
     let b = telling::check_line_acts(&c).1;
-    assert!(b.line().contains("1 head(s) the lexicon does not know"), "{}", b.line());
+    assert!(
+        b.line().contains("1 head(s) the lexicon does not know"),
+        "{}",
+        b.line()
+    );
     assert!(b.line().contains("Convince the Keeper"), "{}", b.line());
 }
 
@@ -313,9 +345,17 @@ fn an_unknown_head_is_counted_and_listed_not_refused() {
 #[test]
 fn a_give_item_on_completion_lets_the_goal_say_take() {
     let effects = json!({"obj/a": [{"type": "give-item", "item": "minecraft:paper", "count": 1}]});
-    let (refused, ..) = judge(&line("Take the roll from the Keeper.", vec![talk("obj/a")], effects));
+    let (refused, ..) = judge(&line(
+        "Take the roll from the Keeper.",
+        vec![talk("obj/a")],
+        effects,
+    ));
     assert!(refused.is_empty(), "{refused:?}");
-    let (refused, ..) = judge(&line("Take the roll from the Keeper.", vec![talk("obj/a")], json!({})));
+    let (refused, ..) = judge(&line(
+        "Take the roll from the Keeper.",
+        vec![talk("obj/a")],
+        json!({}),
+    ));
     assert_eq!(refused, vec![GOAL.to_string()]);
 }
 
@@ -327,11 +367,19 @@ fn an_object_decided_head_passes_on_every_act_in_its_set() {
     let (_, said) = lex.head("Find the Keeper").expect("`find` is a head");
     let expected: BTreeSet<Act> = [Act::Reach, Act::Talk, Act::Take].into_iter().collect();
     assert_eq!(*said, expected);
-    for objectives in [vec![reach("obj/a")], vec![talk("obj/a")], vec![collect("obj/a")]] {
+    for objectives in [
+        vec![reach("obj/a")],
+        vec![talk("obj/a")],
+        vec![collect("obj/a")],
+    ] {
         let (refused, ..) = judge(&line("Find the Keeper's roll.", objectives, json!({})));
         assert!(refused.is_empty(), "{refused:?}");
     }
-    let (refused, ..) = judge(&line("Find the Keeper's roll.", vec![kill("obj/a")], json!({})));
+    let (refused, ..) = judge(&line(
+        "Find the Keeper's roll.",
+        vec![kill("obj/a")],
+        json!({}),
+    ));
     assert_eq!(refused, vec![GOAL.to_string()]);
 }
 
@@ -449,7 +497,11 @@ fn the_pacing_projection_reads_the_route_and_the_acts_as_one_figure() {
         "{}",
         pacing.message
     );
-    assert!(pacing.message.contains("minute(s) in all"), "{}", pacing.message);
+    assert!(
+        pacing.message.contains("minute(s) in all"),
+        "{}",
+        pacing.message
+    );
     assert!(
         pacing.message.contains(&census.rates.line()),
         "the price list is stated: {}",
@@ -470,7 +522,9 @@ fn the_pacing_projection_reads_the_route_and_the_acts_as_one_figure() {
         .find(|d| d.code == "DW0822")
         .expect("the projection stands on a plan awaiting stage 5");
     assert!(
-        pacing.message.contains("about 0 minute(s) over 0 objective(s) on 0 line(s)"),
+        pacing
+            .message
+            .contains("about 0 minute(s) over 0 objective(s) on 0 line(s)"),
         "{}",
         pacing.message
     );

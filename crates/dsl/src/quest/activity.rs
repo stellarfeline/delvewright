@@ -60,7 +60,10 @@ impl ActivityRates {
     /// its acts in one completion — an `interact` that presents and takes an
     /// item is one use at the thing — so the acts are not summed.
     pub fn objective_minutes(&self, acts: &BTreeSet<Act>) -> u64 {
-        acts.iter().map(|a| u64::from(self.of(*a))).max().unwrap_or(0)
+        acts.iter()
+            .map(|a| u64::from(self.of(*a)))
+            .max()
+            .unwrap_or(0)
     }
 
     /// The price list as the census line prints it: `talk 2, reach 0, …`, in
