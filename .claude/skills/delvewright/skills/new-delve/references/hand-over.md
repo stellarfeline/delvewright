@@ -132,6 +132,13 @@ and verifies over rcon that the datapack actually loaded before it says READY:
     --written-world .out/written-world.json
 ```
 
+`up` needs `CREATOR_NAME=<the creator's Minecraft name>` in the environment and refuses
+without it; that name is opped on the served world, everyone else joins as a player. The
+resource pack is served on port 25580 beside the game port, at this machine's address as
+other machines reach it (`DELVEWRIGHT_PLAYTEST_HOST` names it when it cannot be found,
+or when players are across the internet); a player outside the local network needs 25580
+forwarded as well as 25565, and joins at that same address instead of `localhost`.
+
 A reference level is served with `--prefabs campaigns/references/<id>/prefabs`.
 
 **`--run-report` and `--written-world` are step 10's two records**, and the gate
