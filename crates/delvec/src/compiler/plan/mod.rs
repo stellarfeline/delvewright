@@ -412,6 +412,15 @@ delvewright_dsl::dw_code! {
 }
 
 delvewright_dsl::dw_code! {
+    /// `DW1080`: the path performs a trigger to pay a flag an objective reads,
+    /// and the trigger's `set-flag` waits on a numeric term — its own
+    /// `requires_state` or a `when` on the line — that no press sequence the
+    /// plan can follow makes hold (`path::drive`). The proof does not credit a
+    /// flag whose gate it cannot show holding.
+    pub const DW_FLAG_GATE_UNPAID: DwCode = DwCode::new("DW1080", ExitTier::Build);
+}
+
+delvewright_dsl::dw_code! {
     /// `DW0306`: gate-aware reachability deadlock (M2 fix 7). After the solver produces
     /// a layout, sealed gates are modelled as cut edges in the piece-connectivity
     /// graph; an objective whose anchor is only reachable through a gate that no

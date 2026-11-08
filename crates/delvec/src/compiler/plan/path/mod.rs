@@ -863,20 +863,34 @@ pub(super) fn build_critical_path(
 
     // Which objective needs each flag-paying trigger: the first reader of the
     // flag it pays, by the same withheld replay `path_triggers` performs it for.
+    let debts = flow.trigger_debts(path);
     let mut trigger_debts: BTreeMap<String, (String, String)> = BTreeMap::new();
-    for d in flow.trigger_debts(path) {
+    for d in &debts {
         if let Some(st) = path.steps.get(d.step) {
             trigger_debts
-                .entry(d.trigger)
-                .or_insert_with(|| (st.objective.clone(), d.flag));
+                .entry(d.trigger.clone())
+                .or_insert_with(|| (st.objective.clone(), d.flag.clone()));
         }
     }
     // The environment triggers this path performs, keyed by the path step each
     // is performed in front of. See [`path_triggers`].
-    let mut due = path_triggers(campaign, anchors, flow, path, &flags_at, &begun);
-    // The presses a numeric gate owes (`DW0985`), performed after what is
-    // already due at the same step; the replay is then taken over both.
-    let owed = {
+    let due = path_triggers(campaign, anchors, flow, path, &flags_at, &begun);
+    // Every flag each trigger is performed to pay, and the objective that
+    // reads it: a flag whose `set-flag` waits on a numeric term is credited
+    // only once the presses that make the term hold are on the path (`DW1080`).
+    let mut owed: BTreeMap<String, Vec<drive::Owed>> = BTreeMap::new();
+    for d in debts {
+        if let Some(st) = path.steps.get(d.step) {
+            owed.entry(d.trigger).or_default().push(drive::Owed {
+                flag: d.flag,
+                reader: st.objective.clone(),
+            });
+        }
+    }
+    // The presses a numeric gate owes (`DW0985`, `DW1080`), scheduled with
+    // what is already due at the same step; the replay is then taken over the
+    // whole schedule.
+    let due = {
         let before = path_fired_lines(campaign, flow, path, &due);
         drive::drive_presses(
             campaign,
@@ -884,12 +898,10 @@ pub(super) fn build_critical_path(
             path,
             &flags_at,
             &due,
+            &owed,
             &before.data_before,
         )?
     };
-    for (si, presses) in owed {
-        due.entry(si).or_default().extend(presses);
-    }
     let replay = path_fired_lines(campaign, flow, path, &due);
     let held_at_end: BTreeSet<String> = flow
         .journal(path)

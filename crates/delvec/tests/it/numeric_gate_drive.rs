@@ -248,12 +248,13 @@ fn a_gate_no_press_sequence_can_open_is_dw0985() {
     assert!(err.contains("`state/round` ∈ {0}"), "{err}");
 }
 
-/// The hello-world `quests` doc with an ordered three-press latch: the first
-/// stone (at `spawn`) sets `state/order` to 1, the second (at the door)
-/// moves 1 to 2, and the third (at the exit) is `third` — the trigger
-/// whose bundle sets `flag/latch` behind a gate on the order the other two
-/// wrote. The exit reads the flag, never the datum.
-fn latch_doc(third: &str) -> String {
+/// The hello-world `quests` doc with a latch: the first stone (at `spawn`)
+/// sets `state/order` to `first_sets`, and the last stone (at the exit, awake
+/// once the keeper has spoken and the door stands open) is `last` — the
+/// trigger whose bundle sets `flag/latch` behind a gate on the order the first
+/// stone wrote. The exit reads the flag, never the datum, so nothing but the
+/// flag owes the first stone a press.
+fn latch_doc(first_sets: i32, last: &str) -> String {
     common::at_dsl_version(&format!(
         r#"{{
   "dsl_version": "%dsl_version%",
@@ -282,18 +283,12 @@ fn latch_doc(third: &str) -> String {
       }}
     ],
     "triggers": [
-      {third},
+      {last},
       {{ "id": "trigger/first-stone", "at": "spawn", "on": {{ "on": "use" }},
          "once": false, "prop": {{ "block": "minecraft:oak_sign[rotation=0]" }},
          "effects": [
-           {{ "type": "set-state", "state": "state/order", "value": 1,
+           {{ "type": "set-state", "state": "state/order", "value": {first_sets},
               "when": {{ "requires_state": [ {{ "state": "state/order", "op": "equals", "value": 0 }} ] }} }}
-         ] }},
-      {{ "id": "trigger/second-stone", "at": "anchor/door", "on": {{ "on": "use" }},
-         "once": false, "prop": {{ "block": "minecraft:oak_sign[rotation=0]" }},
-         "effects": [
-           {{ "type": "set-state", "state": "state/order", "value": 2,
-              "when": {{ "requires_state": [ {{ "state": "state/order", "op": "equals", "value": 1 }} ] }} }}
          ] }}
     ]
   }}
@@ -301,46 +296,83 @@ fn latch_doc(third: &str) -> String {
     ))
 }
 
-/// The third stone sets the latch behind its effect's own `when`: pressed at
-/// any order but 2 it runs, prints its marker, and sets nothing. It wakes once
-/// the keeper has spoken, when the door beyond which it stands is open.
-const THIRD_WHEN: &str = r#"{ "id": "trigger/third-stone", "at": "anchor/exit", "on": { "on": "use" },
+/// The last stone sets the latch behind its line's own `when`: pressed at any
+/// order but 1 it runs, prints its marker, and sets nothing.
+const LAST_WHEN: &str = r#"{ "id": "trigger/last-stone", "at": "anchor/exit", "on": { "on": "use" },
    "once": false, "prop": { "block": "minecraft:oak_sign[rotation=0]" },
    "requires_flags": ["flag/told"],
    "answers": { "not_yet": "The stone is cold." },
    "effects": [
      { "type": "set-flag", "flag": "flag/latch",
-       "when": { "requires_state": [ { "state": "state/order", "op": "equals", "value": 2 } ] } },
-     { "type": "set-state", "state": "state/order", "value": 3,
-       "when": { "requires_state": [ { "state": "state/order", "op": "equals", "value": 2 } ] } }
+       "when": { "requires_state": [ { "state": "state/order", "op": "equals", "value": 1 } ] } },
+     { "type": "set-state", "state": "state/order", "value": 2,
+       "when": { "requires_state": [ { "state": "state/order", "op": "equals", "value": 1 } ] } }
    ] }"#;
 
-/// The third stone answers only at order 2: its own `requires_state`.
-const THIRD_REQUIRES: &str = r#"{ "id": "trigger/third-stone", "at": "anchor/exit", "on": { "on": "use" },
+/// The last stone answers only at order 1: its own `requires_state`.
+const LAST_REQUIRES: &str = r#"{ "id": "trigger/last-stone", "at": "anchor/exit", "on": { "on": "use" },
    "once": false, "prop": { "block": "minecraft:oak_sign[rotation=0]" },
    "requires_flags": ["flag/told"],
+   "requires_state": [ { "state": "state/order", "op": "equals", "value": 1 } ],
    "answers": { "not_yet": "The stone is cold." },
-   "requires_state": [ { "state": "state/order", "op": "equals", "value": 2 } ],
    "effects": [
      { "type": "set-flag", "flag": "flag/latch" },
-     { "type": "set-state", "state": "state/order", "value": 3 }
+     { "type": "set-state", "state": "state/order", "value": 2 }
    ] }"#;
 
-fn print_path(third: &str) {
+/// The path a latch doc builds, as `(action, trigger-or-objective)`.
+fn latch_path(first_sets: i32, last: &str) -> Result<Vec<(String, String)>, String> {
     let p = prefabs();
-    let c = validated(&latch_doc(third), &p);
-    match build(&c, &p) {
-        Ok(out) => eprintln!("PATH {:?}", acts(&critical_path(&out))),
-        Err(e) => eprintln!("ERR {e}"),
+    let c = validated(&latch_doc(first_sets, last), &p);
+    build(&c, &p).map(|out| acts(&critical_path(&out)))
+}
+
+/// The path that pays the latch: the first stone, then the last, between the
+/// beat that opens the door and the exit that reads the flag.
+fn paid_path() -> Vec<(String, String)> {
+    let s = |a: &str, w: &str| (a.to_string(), w.to_string());
+    vec![
+        s("select-class", ""),
+        s("talk-to", "obj/talk"),
+        s("trigger", "trigger/first-stone"),
+        s("trigger", "trigger/last-stone"),
+        s("reach", "obj/exit"),
+        s("assert-complete", ""),
+    ]
+}
+
+/// **A flag behind a `when` on state another press writes is paid by the
+/// presses that make the `when` hold.** The latch line waits on the order the
+/// first stone writes; the path presses the first stone, then the last.
+#[test]
+fn a_flag_behind_a_when_on_another_press_s_state_is_paid_by_both_presses() {
+    let steps = latch_path(1, LAST_WHEN).expect("the two stones pay the latch");
+    assert_eq!(steps, paid_path(), "{steps:#?}");
+}
+
+/// **The same, when the gate is the paying trigger's own `requires_state`.**
+/// Pressed at order 0 the last stone does not run at all and prints no
+/// marker; the path presses the first stone ahead of it.
+#[test]
+fn a_flag_behind_its_trigger_s_requires_state_is_paid_by_both_presses() {
+    let steps = latch_path(1, LAST_REQUIRES).expect("the two stones pay the latch");
+    assert_eq!(steps, paid_path(), "{steps:#?}");
+}
+
+/// **No sequence, no credit.** The first stone sets the order to 5, a value
+/// the last stone never answers, so no press the party can make sets the
+/// latch. The proof does not credit the flag: `DW1080`, naming the reader,
+/// the flag, the payer and the values the presses reach.
+#[test]
+fn a_flag_no_press_sequence_can_pay_is_dw1080() {
+    for last in [LAST_WHEN, LAST_REQUIRES] {
+        let err =
+            latch_path(5, last).expect_err("a latch no press sets is a delve nobody finishes");
+        let code: DwCode = delvec::compiler::plan::DW_FLAG_GATE_UNPAID;
+        assert!(err.contains(code.id()), "{err}");
+        assert!(err.contains("`obj/exit` reads `flag/latch`"), "{err}");
+        assert!(err.contains("trigger `trigger/last-stone`"), "{err}");
+        assert!(err.contains("state/order equals 1"), "{err}");
+        assert!(err.contains("`state/order` ∈ {0, 5}"), "{err}");
     }
-}
-
-#[test]
-fn repro_when() {
-    print_path(THIRD_WHEN);
-}
-
-#[test]
-fn repro_requires() {
-    print_path(THIRD_REQUIRES);
 }
