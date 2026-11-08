@@ -247,3 +247,92 @@ fn a_gate_no_press_sequence_can_open_is_dw0985() {
     assert!(err.contains("trigger/first-valve"), "{err}");
     assert!(err.contains("`state/round` ∈ {0}"), "{err}");
 }
+
+/// The hello-world `quests` doc with an ordered three-press latch: the first
+/// stone (at `spawn`) sets `state/order` to 1, the second (at the keeper's
+/// stand) moves 1 to 2, and the third (at the exit) is `third` — the trigger
+/// whose bundle sets `flag/latch` behind a gate on the order the other two
+/// wrote. The exit reads the flag, never the datum.
+fn latch_doc(third: &str) -> String {
+    common::at_dsl_version(&format!(
+        r#"{{
+  "dsl_version": "%dsl_version%",
+  "campaign_id": "hello-world",
+  "stage": "quests",
+  "content": {{
+    "state": [
+      {{ "id": "state/order", "scope": "party", "note": "stones pressed in the right order" }}
+    ],
+    "quests": [
+      {{
+        "id": "quest/open-the-door",
+        "trigger": {{ "type": "campaign-start" }},
+        "objectives": [
+          {{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }},
+          {{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
+             "radius": 2, "after": ["obj/talk"], "requires_flags": ["flag/latch"] }}
+        ],
+        "on_objective_complete": {{
+          "obj/talk": [ {{ "type": "open-gate", "anchor": "anchor/door" }} ]
+        }},
+        "on_complete": []
+      }}
+    ],
+    "triggers": [
+      {third},
+      {{ "id": "trigger/first-stone", "at": "spawn", "on": {{ "on": "use" }},
+         "once": false, "prop": {{ "block": "minecraft:oak_sign[rotation=0]" }},
+         "effects": [
+           {{ "type": "set-state", "state": "state/order", "value": 1,
+              "when": {{ "requires_state": [ {{ "state": "state/order", "op": "equals", "value": 0 }} ] }} }}
+         ] }},
+      {{ "id": "trigger/second-stone", "at": "anchor/keeper-stand", "on": {{ "on": "use" }},
+         "once": false, "prop": {{ "block": "minecraft:oak_sign[rotation=0]" }},
+         "effects": [
+           {{ "type": "set-state", "state": "state/order", "value": 2,
+              "when": {{ "requires_state": [ {{ "state": "state/order", "op": "equals", "value": 1 }} ] }} }}
+         ] }}
+    ]
+  }}
+}}"#
+    ))
+}
+
+/// The third stone sets the latch behind its effect's own `when`: pressed at
+/// any order but 2 it runs, prints its marker, and sets nothing.
+const THIRD_WHEN: &str = r#"{ "id": "trigger/third-stone", "at": "anchor/exit", "on": { "on": "use" },
+   "once": false, "prop": { "block": "minecraft:oak_sign[rotation=0]" },
+   "effects": [
+     { "type": "set-flag", "flag": "flag/latch",
+       "when": { "requires_state": [ { "state": "state/order", "op": "equals", "value": 2 } ] } },
+     { "type": "set-state", "state": "state/order", "value": 3,
+       "when": { "requires_state": [ { "state": "state/order", "op": "equals", "value": 2 } ] } }
+   ] }"#;
+
+/// The third stone answers only at order 2: its own `requires_state`.
+const THIRD_REQUIRES: &str = r#"{ "id": "trigger/third-stone", "at": "anchor/exit", "on": { "on": "use" },
+   "once": false, "prop": { "block": "minecraft:oak_sign[rotation=0]" },
+   "requires_state": [ { "state": "state/order", "op": "equals", "value": 2 } ],
+   "effects": [
+     { "type": "set-flag", "flag": "flag/latch" },
+     { "type": "set-state", "state": "state/order", "value": 3 }
+   ] }"#;
+
+fn print_path(third: &str) {
+    let p = prefabs();
+    let c = validated(&latch_doc(third), &p);
+    match build(&c, &p) {
+        Ok(out) => eprintln!("PATH {:?}", acts(&critical_path(&out))),
+        Err(e) => eprintln!("ERR {e}"),
+    }
+}
+
+#[test]
+fn repro_when() {
+    print_path(THIRD_WHEN);
+}
+
+#[test]
+fn repro_requires() {
+    print_path(THIRD_REQUIRES);
+}
