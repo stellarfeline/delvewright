@@ -1230,33 +1230,34 @@ def test_a_released_plugin_tag_with_no_published_release_reds(mod, release):
     assert any("no published Release at it" in f for f in rep.findings), rep.findings
 
 
-def _released_engine(mod, engine, tmp_path):
-    """`(engine tree, tag)` for an engine release tag this checkout carries.
+def _tagged_pin(mod, engine, tmp_path, monkeypatch):
+    """`(engine tree, pin tag, the tag's commit)` in the state the shelf half judges.
 
-    The shelf half judges only the state where the pinned tag EXISTS. Between a
-    version move and its release the pin names this tree's own unborn tag
-    (ADR-0029 §3), a legitimate tree state in which that half has nothing to
-    ask; the rule is then exercised on the newest `delvec--v*` tag the checkout
-    does carry, materialised as that tag's own tree.
+    The shelf half runs only where the pinned tag EXISTS. Between a version
+    move and its release the pin names this tree's own unborn tag (ADR-0029
+    §3), a legitimate state in which the half has nothing to ask — so there the
+    tag is made to exist: a scratch repository standing in for this checkout
+    carries it, at a commit of its own, and the remote answers below name the
+    same commit. The engine judged is the one the pin resolves to either way.
     """
     engine_root, _rev, tag_exists = engine
     _repo, ref = mod.read_pin()
     if tag_exists:
-        return engine_root, ref
-    tags = subprocess.run(
-        ["git", "-C", str(mod.REPO), "tag", "--list", "delvec--v*", "--sort=-v:refname"],
-        capture_output=True, text=True, check=True,
-    ).stdout.split()
-    assert tags, "this checkout carries no `delvec--v*` release tag to judge a shelf on"
-    ref = tags[0]
-    return mod.materialise(f"refs/tags/{ref}^{{commit}}", tmp_path / "released-engine"), ref
+        return engine_root, ref, _tag_commit(mod, ref)
+    scratch = tmp_path / "checkout"
+    scratch.mkdir()
+    git = ["git", "-C", str(scratch), "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"]
+    subprocess.run([*git, "init", "-q"], check=True)
+    subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "the release commit"], check=True)
+    subprocess.run([*git, "tag", ref], check=True)
+    monkeypatch.setattr(mod, "REPO", scratch)
+    return engine_root, ref, _tag_commit(mod, ref)
 
 
-def test_a_draft_engine_release_reds(mod, engine, tmp_path):
+def test_a_draft_engine_release_reds(mod, engine, tmp_path, monkeypatch):
     """Rule 13's shelf half: a draft is served to nobody, so a shelf behind it is
     no shelf."""
-    engine_root, ref = _released_engine(mod, engine, tmp_path)
-    sha = _tag_commit(mod, ref)
+    engine_root, ref, sha = _tagged_pin(mod, engine, tmp_path, monkeypatch)
     targets = mod.tomllib.loads((engine_root / "versions.toml").read_text(encoding="utf-8"))["engine"]["targets"]
     version = mod.engine_version(engine_root / "Cargo.toml")
     assets = [{"name": mod.ARCHIVE.format(version=version, target=t)} for t in targets] + [{"name": mod.CHECKSUMS}]
