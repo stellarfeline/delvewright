@@ -140,7 +140,7 @@ impl Fixture {
             }));
         });
 
-        c
+        common::declared(c)
     }
 
     fn codes(&self) -> BTreeSet<String> {

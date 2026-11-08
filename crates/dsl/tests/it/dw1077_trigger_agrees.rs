@@ -84,7 +84,7 @@ impl Join {
                 }));
             }
         });
-        c
+        common::declared(c)
     }
 
     fn codes(&self) -> BTreeSet<String> {

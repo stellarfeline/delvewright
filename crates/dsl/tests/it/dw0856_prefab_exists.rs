@@ -75,7 +75,7 @@ fn quests_collecting_at(anchor: &str) -> String {
 }
 
 fn campaign(prefab: &str, anchor: &str) -> RawCampaign {
-    RawCampaign {
+    common::declared(RawCampaign {
         world: world_with(prefab),
         npcs: common::read_valid("npcs.json"),
         classes: common::read_valid("classes.json"),
@@ -88,7 +88,7 @@ fn campaign(prefab: &str, anchor: &str) -> RawCampaign {
         site_plan: None,
         detail_plan: None,
         design: None,
-    }
+    })
 }
 
 fn codes(d: &[Diagnostic]) -> Vec<&str> {

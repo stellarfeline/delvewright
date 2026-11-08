@@ -160,3 +160,39 @@ pub fn patch_doc(text: &str, f: impl FnOnce(&mut serde_json::Value)) -> String {
     f(&mut v);
     delvewright_dsl::to_canonical_string(&v).expect("patched fixture serializes")
 }
+
+/// The plan re-declared from the expansion a test wrote (spec-0131): every
+/// planned quest's `activity` becomes the acts its stage-5 objectives perform
+/// (`Quest::objective_acts`, the one derivation), so a test that replaces
+/// hello-world's body keeps the plan true by construction and judges what it
+/// set out to judge. A campaign that does not parse is returned unchanged —
+/// that is the test's own finding. `DW1079` itself is exercised by the engine
+/// crate's `line_activity` tests, never through this.
+pub fn declared(mut raw: RawCampaign) -> RawCampaign {
+    let Ok(c) = delvewright_dsl::parse_campaign(&raw) else {
+        return raw;
+    };
+    let by_id: BTreeMap<&str, &delvewright_dsl::Quest> = c
+        .quests
+        .content
+        .quests
+        .iter()
+        .map(|q| (q.id.as_str(), q))
+        .collect();
+    let plan = &c.quest_plan.content.quests;
+    raw.quest_plan = patch_doc(&raw.quest_plan, |v| {
+        for (i, planned) in plan.iter().enumerate() {
+            let Some(q) = by_id.get(planned.id.as_str()) else {
+                continue;
+            };
+            let acts: std::collections::BTreeSet<delvewright_dsl::Act> = q
+                .objectives
+                .iter()
+                .flat_map(|o| q.objective_acts(o))
+                .collect();
+            v["content"]["quests"][i]["activity"] =
+                serde_json::json!(acts.iter().map(|a| a.as_str()).collect::<Vec<_>>());
+        }
+    });
+    raw
+}
