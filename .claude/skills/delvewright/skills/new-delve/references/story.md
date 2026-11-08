@@ -4,6 +4,7 @@
 
 - [The three documents, in order](#the-three-documents-in-order)
 - [The plan is a web, not a chain](#the-plan-is-a-web-not-a-chain)
+- [Every line has an activity](#every-line-has-an-activity)
 - [Where step 3 ends](#where-step-3-ends)
 
 
@@ -55,7 +56,9 @@ and looping against them is the one way to spend an afternoon here.
 - **Quest plan**: acts, dependencies, which area each quest belongs to, which
   quests are optional, the endings and what they read, paced to
   `target_minutes`. Its shape is a web: read *The plan is a web, not a chain*,
-  below, before you write it.
+  below, before you write it. **Every line declares its activity**: each
+  quest's `goal` opens on the verb of what the player does on it, and the
+  engine holds stage 5 to it — read *Every line has an activity*, below.
 - **Declare every story fork here.** If a choice forks who lives, where the
   party ends up, or which ending plays, it is a `branch_points` entry:
   `{id, opens_at, forks_on:[flags], branches:[{id, flags, leads_to}]}`.
@@ -116,6 +119,36 @@ with its sources, is `$DELVEWRIGHT_ENGINE/docs/reference/web-narrative.md`:
    flag and one with `flags: []`, both `leads_to` the quest they rejoin at.
    Gating an ending, an epilogue line or a dialogue option on it needs no
    declaration.
+
+
+## Every line has an activity
+
+A plan whose every line is *go somewhere and talk* passes every gate and plays
+to its ending in a fraction of its `target_minutes`. The rules and the research
+behind them are `$DELVEWRIGHT_ENGINE/docs/reference/web-narrative.md` §7; these
+steps are not optional, for a thin brief or a detailed one.
+
+1. **Decide each line's body before its goal is written.** The body is what the
+   player does between the conversation that opens the line and the one that
+   may close it, in the engine's acts: a search that ends in a taking, a thing
+   used or lit or pulled, a thing presented or laid, a fight. The hub and the
+   finale may be conversations; a spoke or a strand may not be only one. Talk
+   opens a line and closes it; it is never the body.
+2. **The `goal` opens on the verb of the body.** It is the plan's one statement
+   of what the player does on the line, so write it the way a title is written:
+   *Search the castle for the three candles and light them in the play's
+   order*, *Find the hidden audience around the lower town*, *Win the oven door
+   back from the smith*. At step 5 the engine reads the goal's first word
+   against the acts the line's objectives perform and refuses a goal whose verb
+   nobody performs on the line (`DW1079`); a verb it does not know is listed,
+   never refused. A goal that opens on *Speak to* or *Hear* is true of a line
+   of conversations, and the census at step 5 will say that is what the line is.
+3. **Budget the evening per activity, not per place.** Write the plan's lines
+   into `DESIGN.md` as a table — line, body, acts, minutes — and sum it against
+   `target_minutes`. The engine prices each objective at its table's minutes
+   per act and adds the route (`DW0822`, read at step 5 and again at step 8);
+   `delvec metrics` prints the prices. A plan whose sum is a third of its
+   billing is a plan with lines missing, not a pacing note.
 
 
 ## Where step 3 ends

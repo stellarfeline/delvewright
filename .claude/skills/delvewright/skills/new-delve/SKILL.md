@@ -104,7 +104,7 @@ presentation. **Coherence and pacing always win over feature count** — never
 bolt on a mechanic the story cannot motivate.
 
 **A detailed brief is the opposite**: honour exactly what it pins down and
-showcase nothing extra.
+showcase nothing extra. What is never extra, under either brief: every line of the plan has a body the player performs and is budgeted for it — a conversation is how a line opens and closes, not what it is (steps 3 and 5).
 
 **Every round changes only what was asked for.** A mechanics fix must not
 incidentally rewrite story, staging or dialogue; an approved change that moves
@@ -329,6 +329,7 @@ messages name something `quests.json` or `dialogue.json` will supply. That is th
 correct state to leave this step in, and it is not something to mention,
 apologise for or try to fix. **Read**: `references/story.md` before you start the
 loop, not after a refusal.
+**Every line of the plan declares its activity**: each quest's `goal` opens on the verb of what the player does on it, decided before the goal is written, and the lines are budgeted per activity against `target_minutes` in `DESIGN.md` (`references/story.md`, *Every line has an activity*) — mandatory for every brief.
 
 ## 4. The design gate — the user says yes
 
@@ -351,6 +352,7 @@ written at all) — both before writing, not after a refusal. A custom face, or 
 vanilla texture the delve replaces (the moon, a mob's skin, a block), is
 `references/npc-skins.md`. Other languages are a final document stage:
 `references/other-languages.md`.
+**The step closes on the census**: the last clean `validate` prints every line's acts and minutes and the pacing sum against `target_minutes`; a line the census names as only conversations and walks gets its body, and a goal the engine refuses (`DW1079`) gets the objective it promised (`references/content.md`).
 
 ## 6. `delvec fmt` — every campaign, every time
 

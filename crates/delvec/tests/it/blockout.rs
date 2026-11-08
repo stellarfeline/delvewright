@@ -726,6 +726,14 @@ fn dw0822_measures_the_built_route_at_the_second_call_site() {
         "every leg of the fixture's critical path routes over the built blockout: {}",
         d.message
     );
+    // spec-0131: the measurement adds the quests' acts to the route and reads
+    // the sum against `target_minutes`, as the projection does.
+    assert!(
+        d.message.contains("the quests' acts add about")
+            && d.message.contains("minute(s) in all against this world's `target_minutes`"),
+        "the measurement states the activity half and the sum: {}",
+        d.message
+    );
 }
 
 // ---------------------------------------------------------------------------

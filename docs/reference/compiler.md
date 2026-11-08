@@ -16,7 +16,7 @@ Methodology; CI enforces the DW-code subset — see `tools/ci/check-dw-codes.py`
   other subcommand `delvec --help` lists — and
   the scripts around it (`tools/`, `validation/`) are indexed in
   [`tools.md`](tools.md).
-- Versions (as of this doc): `delvec 1.15.0`, `dsl 0.69.0`, `mc 1.21.11`.
+- Versions (as of this doc): `delvec 1.16.0`, `dsl 0.69.0`, `mc 1.21.11`.
   The `dsl` number is the **one** `dsl_version` this engine accepts (ADR-0024):
   every stage document, map-pipeline document and l10n sidecar declares it, and
   any other number is refused at the envelope with `DW0102`, which names it. The
@@ -633,7 +633,20 @@ it, and a quest with a non-empty `depends_on` is not armed at `campaign-start`
 (`DW1077`); a join is armed by one of its arms. A mainline objective keyed on a
 flag only optional content produces is `DW0868`. The closure is
 `QuestPlanContent::spine` and the declaration is `QuestPlanContent::optional`
-— one authority each. `goal` → l10n `quest.<q>.goal`.
+— one authority each. `goal` → l10n `quest.<q>.goal`. **A planned quest's `goal`
+opens on an act its line performs** (spec-0131; `DW1079`, `compiler::telling`):
+its head is read by the title's head rule (`DW1045`'s lexicon) against the union
+of the acts its stage-5 objectives perform (`Quest::objective_acts`); a head
+naming an act nobody performs on the line is refused at `/content/quests/<i>/goal`,
+an unknown head is counted and listed, and a planned quest with no stage-5
+expansion is counted as awaiting it. **The activity census** (`dsl::quest::activity`,
+`ActivityCensus`) states, on every `validate` under `-- what this run examined`,
+every planned quest's objectives and acts, priced at the table's
+`pacing.minutes-per-<act>` entries (each objective at its dearest act; the
+entries are read whole, one per act, so `DW0813` names each), the lines whose
+every act is talk or reach, and the activity minutes against `target_minutes`;
+it refuses nothing. `DW0822` adds the activity minutes to the route minutes at
+both call sites and reads the sum against `target_minutes`.
 
 | Element | Fields → behavior | Since |
 |---------|-------------------|-------|
@@ -3581,6 +3594,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   **Emitted only for a campaign that declares a volume**, so a file that exists
   and reports zero is a finding rather than an absence.
 - `<out>/validation/act-gate.json` (every build; a `--lang` bake carries the verdict over the English titles, read before they were swapped — `Plan::act_binding`): the `DW1045` check's **binding ledger** (`compiler::telling::ActBinding`): `objectives`, `titled`, `judged` (also as `examined`), `unknown` (each `{path, title}`), `untitled`, `refused`. The gallery coverage gate reads it through the shared `examined` rule.
+- `<out>/validation/activity-census.json` (every build; spec-0131): the **activity census** (`dsl::quest::activity::ActivityCensus::to_json`) — `examined` (the planned quests with a stage-5 expansion, also as the length of `lines`), `lines` (each `{quest, mandatory, objectives, acts {<act>: n}, minutes, talk_or_reach_only}`), `unexpanded` (planned quests awaiting stage 5), `objectives`, `acts`, `minutes`, `mandatory_minutes`, `rates` (`{<act>: minutes}`, the table's price list the minutes were computed at), `target_minutes` — and under `goals` what the `DW1079` check judged over the English goals (`compiler::telling::LineActBinding`, carried as `Plan::line_binding` for the reason the act binding is): `lines`, `expanded`, `judged` (also as `examined`), `unknown` (each `{path, goal}`), `refused`. The gallery coverage gate reads the top-level `examined`.
 - `<out>/validation/cues.json` (every build): the engine's quest cues for the
   bot — `cues {announce, complete, campaign}` (the sound events), the `volume`
   and `pitch` they play at (1, 1), their `range` (`pulse::BASE_RANGE` at that

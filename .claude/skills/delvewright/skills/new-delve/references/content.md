@@ -45,6 +45,26 @@ finding — a `DW0150` here means an id in the plan and an id in `quests.json` d
 not match, and the message says how many quests stage 5 declares, which is how
 you tell that apart from the step-3 state.
 
+**The step does not close until the census is read.** The last clean `validate`
+prints, under `-- what this run examined`, the **activity census**: one line per
+planned quest with its objectives, its acts and its minutes, a header with the
+totals, the lines whose every act is talk or reach, and the activity minutes
+against `target_minutes`; `DW0822` beside it adds the route and states the sum.
+Read it against the plan's table in `DESIGN.md`, line by line:
+
+- a spoke or a strand the census names as talk-or-reach only has no body
+  (`$DELVEWRIGHT_ENGINE/docs/reference/web-narrative.md` §7 L1): give it the
+  objective its goal promises — a `collect`, an `interact`, a `kill` — and
+  write the objective, never re-head the goal to match the talk;
+- a goal the engine refuses (`DW1079`) promised an act nobody performs on the
+  line: the message names both repairs, and on a spoke the first is the right
+  one;
+- a sum well under `target_minutes` is lines missing, not a pacing note: go
+  back to step 3 for the lines, through the design gate if the design moves.
+
+Record the census header and the `DW0822` line in `GENERATION.md` under the
+content step; the hand-over's report quotes them.
+
 **One code arrives rather than goes away, and this is the first run that can
 raise it.** `DW0890` refuses when the approved design and the built world do not
 agree about the sky: the rows step 4 wrote into `design.json` state `night` and

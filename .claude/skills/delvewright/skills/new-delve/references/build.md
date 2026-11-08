@@ -67,13 +67,16 @@ The build writes more than a datapack. Four things to read, on every build:
   line step 12 checks it against.
 - `DW0822`, the pacing line — it stands beside `DW0813` on every build. It
   measures the critical path over the built blockout — so many blocks of
-  route, and about so many minutes at the metrics table's blocks-per-minute
-  rate — and it carries **no threshold and refuses nothing**, so nothing in
-  the engine compares it to your `target_minutes`. **You do that.** A map that
-  measures twelve minutes against a `target_minutes` of 150 is not a warning
-  anyone will raise; it is a map whose walking is a twelfth of its billing, and
-  the gap is either content you have not written yet or a design that is
-  smaller than it says.
+  route, about so many minutes at the metrics table's blocks-per-minute rate —
+  then adds what the quests' acts cost at the table's minutes per act, over so
+  many objectives on so many lines, and states the sum against your
+  `target_minutes`. It carries **no threshold and refuses nothing**. **You read
+  the sum, not the walk.** An evening that measures seventy minutes against a
+  `target_minutes` of 150 is not a warning anyone will raise; the gap is lines
+  the plan does not have, and the activity census the same run prints under
+  `-- what this run examined` says which lines are only conversations and
+  walks. The only answer is content: back to step 3 for the lines, never a
+  note that explains the gap.
 
 **Every campaign: no place a player can get into and not out of.**
 The build moves a body the way a player does — walks, falls off edges, jumps
