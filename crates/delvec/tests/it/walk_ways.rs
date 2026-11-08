@@ -4,23 +4,25 @@
 //! still walks where no way joins its ends.
 //!
 //! The site, on open flat ground at grade 64, every place walled and every
-//! connection an arch three wide:
+//! connection an arch three wide (footprints as the derivation places them):
 //!
 //! ```text
-//!   x 2..6      7..16       17..21
-//!   ┌─────┐┌────────────┐┌─────┐  z 2..6
-//!   │home ├┤   road-a   ├┤     │
-//!   └──┬──┘└────────────┘│     │
-//!   ┌──┴──┐              │road │
-//!   │green│  (13 long)   │ -b  │  z 7..19
-//!   └──┬──┘              │     │
-//!   ┌──┴──┐┌────────────┐│     │
-//!   │mkt  ├┤   road-c   ├┤     │  z 20..24
-//!   └─────┘└────────────┘└─────┘
+//!   x 2..12        13..20     21..25
+//!   ┌──────────┐┌────────┐┌─────┐  z 2..6
+//!   │home      ├┤ road-a ├┤     │
+//!   └─┬────────┘└────────┘│     │
+//!   ┌─┴─┐                 │road │
+//!   │grn│ (13 long)       │ -b  │  z 7..19
+//!   └─┬─┘                 │     │
+//!   ┌─┴────────┐┌────────┐│     │
+//!   │market    ├┤ road-c ├┤     │  z 20..24
+//!   └──────────┘└────────┘└─────┘
 //! ```
 //!
-//! The keeper walks from home to the market: straight through the green is
-//! about eighteen cells, round the three roads about fifty.
+//! The keeper walks from home to the market: through the green is about
+//! twenty-six cells, round the three roads about fifty. The green stands
+//! clear of the roads by more than a sprint jump, so the site is a legal
+//! blockout (`DW0838` is asked of it before any walk is read).
 
 use crate::common;
 
@@ -42,16 +44,6 @@ fn empty_library(root: &Path) -> PrefabRegistry {
     std::fs::create_dir_all(&dir).unwrap();
     PrefabRegistry::load_dir(&dir).expect("an empty library loads")
 }
-
-/// The green's footprint, `[x0, x1, z0, z1]`.
-const GREEN: [i32; 4] = [2, 6, 7, 19];
-
-/// The three roads' footprints and their clear columns: `[x0, x1, z0, z1]`.
-const ROADS: [(&str, [i32; 4], &str, [i32; 4]); 3] = [
-    ("node/road-a", [7, 16, 2, 6], "x", [7, 16, 3, 5]),
-    ("node/road-b", [17, 21, 2, 24], "z", [18, 20, 2, 24]),
-    ("node/road-c", [7, 16, 20, 24], "x", [7, 16, 21, 23]),
-];
 
 fn place(node: &str, extent: [i32; 2], way: Option<&str>) -> serde_json::Value {
     let mut b = serde_json::json!({
@@ -124,21 +116,21 @@ fn campaign(dir: &Path, far_road_way: bool) {
             ]
         }),
     );
-    let mut home = place("node/home", [5, 5], None);
+    let mut home = place("node/home", [11, 5], None);
     home["min"] = serde_json::json!([2, 2]);
     write(
         "site-plan.json",
         "site-plan",
         serde_json::json!({
-            "region": {"min": [0, 56, 0], "extent": [24, 24, 28]},
+            "region": {"min": [0, 56, 0], "extent": [28, 24, 28]},
             "datums": [{"id": "datum/grade", "y": 64}],
             "boxes": [
                 home,
                 place("node/green", [5, 13], None),
-                place("node/market", [5, 5], None),
-                place("node/road-a", [10, 5], Some("x")),
+                place("node/market", [11, 5], None),
+                place("node/road-a", [8, 5], Some("x")),
                 place("node/road-b", [5, 23], far_road_way.then_some("z")),
-                place("node/road-c", [10, 5], Some("x"))
+                place("node/road-c", [8, 5], Some("x"))
             ],
             "seams": [
                 seam("edge/home-green", "south", 1, 1),
@@ -175,8 +167,20 @@ fn campaign(dir: &Path, far_road_way: bool) {
     });
 }
 
-/// The keeper's planned walk: its route cells and its per-tick positions.
-fn keeper_walk(far_road_way: bool) -> (Vec<[i32; 3]>, Vec<[f64; 3]>) {
+/// A place's footprint `[x0, x1, z0, z1]`, as the derivation placed it.
+type Foot = [i32; 4];
+
+/// What the walk is judged against, read off the planned site: the green's
+/// footprint, and each road's footprint with its three clear columns — the
+/// middle three of its five across, the declared `clear: 3` centred.
+struct Site {
+    green: Foot,
+    roads: Vec<(Foot, Foot)>,
+}
+
+/// The keeper's planned walk over the site: the site, the route cells and
+/// the per-tick positions.
+fn keeper_walk(far_road_way: bool) -> (Site, Vec<[i32; 3]>, Vec<[f64; 3]>) {
     let root = tempdir(if far_road_way { "joined" } else { "broken" });
     let dir = root.join("campaign");
     campaign(&dir, far_road_way);
@@ -195,16 +199,42 @@ fn keeper_walk(far_road_way: bool) -> (Vec<[i32; 3]>, Vec<[f64; 3]>) {
         errors.is_empty(),
         "the site is not a legal blockout: {errors:#?}"
     );
+    let foot = |node: &str| -> Foot {
+        let b = plan
+            .blockout
+            .as_ref()
+            .expect("a blockout")
+            .boxes
+            .iter()
+            .find(|b| b.node.0 == node)
+            .expect("the place is placed");
+        b.foot.map(|v| i32::try_from(v).unwrap())
+    };
+    let site = Site {
+        green: foot("node/green"),
+        roads: ["node/road-a", "node/road-b", "node/road-c"]
+            .iter()
+            .map(|n| {
+                let f = foot(n);
+                let clear = if *n == "node/road-b" {
+                    [f[0] + 1, f[1] - 1, f[2], f[3]]
+                } else {
+                    [f[0], f[1], f[2] + 1, f[3] - 1]
+                };
+                (f, clear)
+            })
+            .collect(),
+    };
     let world = delvec::compiler::nav::World::from_plan(&plan, &BTreeMap::new());
     let moves = delvec::compiler::nav::plan_moves(&plan, &world).expect("the walk routes");
     let m = moves
         .iter()
         .find(|m| m.npc == "npc/keeper")
         .expect("the keeper walks");
-    (m.cells.clone(), m.waypoints.clone())
+    (site, m.cells.clone(), m.waypoints.clone())
 }
 
-fn in_foot(foot: [i32; 4], x: i32, z: i32) -> bool {
+fn in_foot(foot: Foot, x: i32, z: i32) -> bool {
     x >= foot[0] && x <= foot[1] && z >= foot[2] && z <= foot[3]
 }
 
@@ -214,14 +244,14 @@ fn column(p: &[f64; 3]) -> (i32, i32) {
 
 /// **The walk keeps to the roads beside the shortcut through the green**:
 /// no route cell and no per-tick position stands in the green, every route
-/// cell outside home and the market is on a road's clear columns, and the
-/// walk goes the whole way round.
+/// cell on a road is on its clear columns, and the walk goes the whole way
+/// round.
 #[test]
 fn the_keeper_walks_the_roads_and_not_across_the_green() {
-    let (cells, ticks) = keeper_walk(true);
+    let (site, cells, ticks) = keeper_walk(true);
     let in_green: Vec<_> = cells
         .iter()
-        .filter(|c| in_foot(GREEN, c[0], c[2]))
+        .filter(|c| in_foot(site.green, c[0], c[2]))
         .collect();
     assert!(
         in_green.is_empty(),
@@ -230,10 +260,11 @@ fn the_keeper_walks_the_roads_and_not_across_the_green() {
     let off_road: Vec<_> = cells
         .iter()
         .filter(|c| {
-            c[0] > 6
-                && !ROADS
+            site.roads.iter().any(|(f, _)| in_foot(*f, c[0], c[2]))
+                && !site
+                    .roads
                     .iter()
-                    .any(|(_, _, _, clear)| in_foot(*clear, c[0], c[2]))
+                    .any(|(_, clear)| in_foot(*clear, c[0], c[2]))
         })
         .collect();
     assert!(
@@ -241,13 +272,13 @@ fn the_keeper_walks_the_roads_and_not_across_the_green() {
         "the route leaves the roads' clear width at {off_road:?}"
     );
     assert!(
-        cells.iter().any(|c| in_foot(ROADS[1].1, c[0], c[2])),
+        cells.iter().any(|c| in_foot(site.roads[1].0, c[0], c[2])),
         "the route never reaches the far road"
     );
     let drawn: Vec<_> = ticks
         .iter()
         .map(column)
-        .filter(|(x, z)| in_foot(GREEN, *x, *z))
+        .filter(|(x, z)| in_foot(site.green, *x, *z))
         .collect();
     assert!(
         drawn.is_empty(),
@@ -263,10 +294,10 @@ fn the_keeper_walks_the_roads_and_not_across_the_green() {
 /// through the green, the shorter way.
 #[test]
 fn with_the_roads_broken_the_keeper_still_walks() {
-    let (cells, _) = keeper_walk(false);
+    let (site, cells, _) = keeper_walk(false);
     assert!(cells.len() > 1, "the walk is a walk: {cells:?}");
     assert!(
-        cells.iter().any(|c| in_foot(GREEN, c[0], c[2])),
+        cells.iter().any(|c| in_foot(site.green, c[0], c[2])),
         "the walk takes the green once no way joins its ends"
     );
 }
