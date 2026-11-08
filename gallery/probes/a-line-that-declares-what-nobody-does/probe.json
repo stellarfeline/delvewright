@@ -5,7 +5,10 @@
       "doc": "quest-plan.json",
       "op": "replace",
       "path": "/content/quests/3/activity",
-      "value": ["reach", "take"]
+      "value": [
+        "reach",
+        "take"
+      ]
     }
   ],
   "units": [],
