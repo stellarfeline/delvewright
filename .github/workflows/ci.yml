@@ -539,7 +539,7 @@ jobs:
       # count of raw profiles is printed: one per test process, plus one per
       # instrumented `delvec` a test spawned.
       - name: the partition's profile (one .profdata) and its JUnit report
-        if: ${{ always() && (needs.changes.outputs.rust == 'true' || github.event_name != 'pull_request') }}
+        if: ${{ !cancelled() && (needs.changes.outputs.rust == 'true' || github.event_name != 'pull_request') }}
         run: |
           set -euo pipefail
           n="$(ls target/llvm-cov-target/*.profraw 2>/dev/null | wc -l | tr -d ' ')"
@@ -548,10 +548,10 @@ jobs:
           "$LLVM_PROFDATA" merge -sparse -o target/partition.profdata target/llvm-cov-target/*.profraw
           ls -l target/partition.profdata target/nextest/ci/junit.xml
       - uses: ./.github/actions/runner-disk
-        if: ${{ always() && (needs.changes.outputs.rust == 'true' || github.event_name != 'pull_request') }}
+        if: ${{ !cancelled() && (needs.changes.outputs.rust == 'true' || github.event_name != 'pull_request') }}
         with: { step: report }
       - uses: actions/upload-artifact@v4
-        if: ${{ always() && (needs.changes.outputs.rust == 'true' || github.event_name != 'pull_request') }}
+        if: ${{ !cancelled() && (needs.changes.outputs.rust == 'true' || github.event_name != 'pull_request') }}
         with:
           name: rust-partition-${{ matrix.k }}
           path: |

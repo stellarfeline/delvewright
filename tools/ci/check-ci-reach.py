@@ -224,6 +224,34 @@ def tracked(repo: pathlib.Path) -> list[str]:
     return [p for p in r.stdout.split("\0") if p]
 
 
+ALWAYS_RUNS = {"!cancelled()", "${{ !cancelled() }}"}
+
+
+def step_gated(job: dict[str, Any]) -> bool:
+    """A matrix job that always runs and gates each step instead.
+
+    Actions never expands a matrix job skipped at job level: it reports the
+    unexpanded name once and none of the per-value names, so a required matrix
+    context would never report. Such a job runs always and every step carries
+    the reach condition, so the reach is judged on each step's `if`.
+    """
+    strategy = job.get("strategy")
+    return (
+        isinstance(strategy, dict)
+        and isinstance(strategy.get("matrix"), dict)
+        and isinstance(job.get("if"), str)
+        and job["if"].strip() in ALWAYS_RUNS
+    )
+
+
+def reach_exprs(job: dict[str, Any]) -> list[str | None]:
+    """The expressions that decide whether a job's work reaches a pull request."""
+    if step_gated(job):
+        return [s.get("if") if isinstance(s, dict) and isinstance(s.get("if"), str) else None for s in job.get("steps") or []]
+    expr = job.get("if")
+    return [expr if isinstance(expr, str) and expr.strip() else None]
+
+
 def needs_of(job: dict[str, Any]) -> list[str]:
     n = job.get("needs")
     if n is None:
@@ -282,36 +310,52 @@ def check(workflow: dict[str, Any], table: ci_reach.Table, files: list[str]) -> 
             continue
         if FILTER not in needs_of(job):
             findings.append(f"job `{jid}` does not need `{FILTER}`, so it cannot read a group")
-        expr = job.get("if")
-        if not isinstance(expr, str) or not expr.strip():
-            findings.append(f"job `{jid}` has no job-level `if`: it has no filter group and runs on every pull request")
+        exprs = reach_exprs(job)
+        if not exprs:
+            findings.append(f"job `{jid}` is gated step by step but has no steps")
             continue
-        try:
-            read = groups_read(expr)
-        except ExprError as exc:
-            findings.append(f"job `{jid}`: `if: {expr}` — {exc}")
+        if None in exprs:
+            findings.append(
+                f"job `{jid}` has no job-level `if`: it has no filter group and runs on every pull request"
+                if not step_gated(job)
+                else f"job `{jid}` always runs (a matrix job), so every step needs an `if` reading a filter group; step {exprs.index(None) + 1} has none"
+            )
             continue
-        if not read:
-            findings.append(f"job `{jid}` reads no filter group: its `if` names no `needs.{FILTER}.outputs.<group>`")
+        read_all: set[str] = set()
+        bad = False
+        for expr in exprs:
+            try:
+                read = groups_read(expr)
+            except ExprError as exc:
+                findings.append(f"job `{jid}`: `if: {expr}` — {exc}")
+                bad = True
+                continue
+            if not read:
+                findings.append(f"job `{jid}` reads no filter group: its `if` names no `needs.{FILTER}.outputs.<group>`")
+                bad = True
+                continue
+            unknown = [g for g in read if g not in table.groups]
+            if unknown:
+                findings.append(f"job `{jid}` reads group(s) {unknown} the table does not declare")
+                bad = True
+                continue
+            read_all.update(read)
+            try:
+                for event in other_events:
+                    if not evaluate(expr, event, set(), groups):
+                        findings.append(f"job `{jid}` does not run on `{event}`: `if: {expr}`")
+                if "pull_request" in events:
+                    if evaluate(expr, "pull_request", set(), groups):
+                        findings.append(f"job `{jid}` runs on a pull request that reaches none of its groups: `if: {expr}`")
+                    for g in read:
+                        if not evaluate(expr, "pull_request", {g}, groups):
+                            findings.append(f"job `{jid}` does not run on a pull request that reaches its group `{g}`: `if: {expr}`")
+            except ExprError as exc:
+                findings.append(f"job `{jid}`: `if: {expr}` — {exc}")
+        if bad:
             continue
-        unknown = [g for g in read if g not in table.groups]
-        if unknown:
-            findings.append(f"job `{jid}` reads group(s) {unknown} the table does not declare")
-            continue
-        for g in read:
+        for g in read_all:
             read_by[g].append(jid)
-        try:
-            for event in other_events:
-                if not evaluate(expr, event, set(), groups):
-                    findings.append(f"job `{jid}` does not run on `{event}`: `if: {expr}`")
-            if "pull_request" in events:
-                if evaluate(expr, "pull_request", set(), groups):
-                    findings.append(f"job `{jid}` runs on a pull request that reaches none of its groups: `if: {expr}`")
-                for g in read:
-                    if not evaluate(expr, "pull_request", {g}, groups):
-                        findings.append(f"job `{jid}` does not run on a pull request that reaches its group `{g}`: `if: {expr}`")
-        except ExprError as exc:
-            findings.append(f"job `{jid}`: `if: {expr}` — {exc}")
 
     # 6. a job that needs another runs only where the other runs
     pairs = 0
@@ -319,7 +363,7 @@ def check(workflow: dict[str, Any], table: ci_reach.Table, files: list[str]) -> 
         if jid == FILTER or not isinstance(job, dict) or not isinstance(job.get("if"), str):
             continue
         try:
-            read = groups_read(job["if"])
+            read = sorted({g for e in reach_exprs(job) if e for g in groups_read(e)})
         except ExprError:
             continue
         for dep in needs_of(job):
