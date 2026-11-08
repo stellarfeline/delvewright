@@ -462,3 +462,21 @@ fn a_latch_a_lift_call_sets_in_its_ride_is_paid_by_the_call_that_answers() {
         "{steps:#?}"
     );
 }
+
+/// **The presses that pay a flag are made in front of the step that reads
+/// it.** The last stone here wakes at once (no `flag/told`), so the path could
+/// first perform it ahead of the talk, while the door between the party and
+/// the exit is still shut; pressed there it would not pay, and the presses
+/// that do pay it are owed only by the exit. They are made after the talk that
+/// opens the door, in front of the exit, as an objective's own numeric gate is
+/// driven.
+#[test]
+fn a_flag_s_presses_are_made_in_front_of_the_step_that_reads_it() {
+    let last = LAST_WHEN.replace(r#""requires_flags": ["flag/told"],"#, "");
+    assert_ne!(
+        last, LAST_WHEN,
+        "the last stone no longer waits on the talk"
+    );
+    let steps = latch_path(1, &last).expect("the two stones pay the latch after the talk");
+    assert_eq!(steps, paid_path(), "{steps:#?}");
+}
