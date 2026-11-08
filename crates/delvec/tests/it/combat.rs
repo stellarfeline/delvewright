@@ -69,6 +69,7 @@ fn campaign_with(dst: &Path, mutate: impl FnOnce(&mut serde_json::Value, &mut se
         serde_json::to_string_pretty(&classes).unwrap(),
     )
     .unwrap();
+    common::redeclare_plan(dst);
 }
 
 /// Build a materialized campaign directory, returning the output plus the

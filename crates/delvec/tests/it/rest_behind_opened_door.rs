@@ -111,7 +111,7 @@ fn parse_hw(quests: &str) -> Campaign {
 }
 
 fn parse_hw_planned(quests: &str, quest_plan: &str) -> Campaign {
-    let raw = RawCampaign {
+    let raw = common::declared(RawCampaign {
         world: hw("world.json"),
         npcs: hw("npcs.json"),
         classes: classes_with_a_flask(),
@@ -124,7 +124,7 @@ fn parse_hw_planned(quests: &str, quest_plan: &str) -> Campaign {
         site_plan: None,
         detail_plan: None,
         design: None,
-    };
+    });
     let mut c = parse_campaign(&raw).expect("campaign parses");
     delvewright_dsl::tag_translatables(&mut c);
     c

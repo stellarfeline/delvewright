@@ -392,6 +392,7 @@ pub fn materialize(patch: &serde_json::Value, dst: &Path) {
             std::fs::write(file, text).unwrap();
         }
     }
+    redeclare_plan(dst);
 }
 
 /// Give an override document the envelope key it deliberately does not carry.
@@ -1812,4 +1813,36 @@ pub fn redeclare_plan(dir: &Path) {
             serde_json::json!(acts.iter().map(|a| a.as_str()).collect::<Vec<_>>());
     }
     std::fs::write(&plan_path, patch_doc(&text, |p| *p = v)).unwrap();
+}
+
+/// [`redeclare_plan`] for a campaign held in memory: the plan of `raw`
+/// re-declared from the expansion it carries. A campaign that does not parse
+/// is returned unchanged.
+pub fn declared(mut raw: delvewright_dsl::RawCampaign) -> delvewright_dsl::RawCampaign {
+    let Ok(c) = delvewright_dsl::parse_campaign(&raw) else {
+        return raw;
+    };
+    let by_id: std::collections::BTreeMap<&str, &delvewright_dsl::Quest> = c
+        .quests
+        .content
+        .quests
+        .iter()
+        .map(|q| (q.id.as_str(), q))
+        .collect();
+    let plan = &c.quest_plan.content.quests;
+    raw.quest_plan = patch_doc(&raw.quest_plan, |v| {
+        for (i, planned) in plan.iter().enumerate() {
+            let Some(q) = by_id.get(planned.id.as_str()) else {
+                continue;
+            };
+            let acts: std::collections::BTreeSet<delvewright_dsl::Act> = q
+                .objectives
+                .iter()
+                .flat_map(|o| q.objective_acts(o))
+                .collect();
+            v["content"]["quests"][i]["activity"] =
+                serde_json::json!(acts.iter().map(|a| a.as_str()).collect::<Vec<_>>());
+        }
+    });
+    raw
 }
