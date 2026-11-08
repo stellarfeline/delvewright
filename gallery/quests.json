@@ -1001,18 +1001,14 @@
             "id": "obj/reach-the-counter",
             "radius": 2,
             "requires_flags": [
-              "flag/sentinel-sunk"
+              "flag/sentinel-sunk",
+              "flag/valves-turned"
             ],
             "requires_state": [
               {
                 "op": "at-most",
                 "state": "state/labels-read",
                 "value": 9
-              },
-              {
-                "op": "at-least",
-                "state": "state/valve-round",
-                "value": 3
               }
             ],
             "stealth": false,
@@ -4100,7 +4096,7 @@
       {
         "id": "state/valve-round",
         "initial": 0,
-        "note": "How many of the north wall's valves the party has turned in order. Only the three valve triggers write it, a valve out of turn puts it back to 0, and the counter waits on 3: a numeric gate only presses move, whose order the plan finds (DW0985 when none opens it).",
+        "note": "How many of the north wall's valves the party has turned in order. Only the three valve triggers write it, and a valve out of turn puts it back to 0. The third valve, turned at 2, sets `flag/valves-turned`, which the counter reads: a flag behind a numeric gate other presses move, which the path pays by pressing first, second, third (DW1080 when no press sequence sets it).",
         "scope": "party"
       },
       {
@@ -4739,6 +4735,19 @@
                   "op": "equals",
                   "state": "state/valve-round",
                   "value": 1
+                }
+              ]
+            }
+          },
+          {
+            "flag": "flag/valves-turned",
+            "type": "set-flag",
+            "when": {
+              "requires_state": [
+                {
+                  "op": "equals",
+                  "state": "state/valve-round",
+                  "value": 2
                 }
               ]
             }

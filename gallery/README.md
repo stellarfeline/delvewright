@@ -89,13 +89,18 @@ each one on the pinned server with a PackTest dummy credited by vanilla's own
 removal, and a rest.
 
 Three valves stand on the near hall's north wall, levers on the floor, and the
-counter waits on them: `obj/reach-the-counter` reads `state/valve-round at-least
-3`, which only `trigger/valve-first`, `trigger/valve-second` and
-`trigger/valve-third` write. Each answers only in its turn, and the second and
-third put the round back to 0 when pressed out of it. The document declares them
-third, second, first. The plan replays every press the way the datapack runs
-it, line by line, and the path presses first, second, third in front of the
-counter. A gate no press sequence can open is refused (`DW0985`).
+counter waits on them through a flag: `obj/reach-the-counter` reads
+`flag/valves-turned`, which `trigger/valve-third` sets behind a `when` on
+`state/valve-round equals 2` — a datum only `trigger/valve-first`,
+`trigger/valve-second` and `trigger/valve-third` write. Each answers only in its
+turn, and the second and third put the round back to 0 when pressed out of it.
+The document declares them third, second, first. The plan replays every press
+the way the datapack runs it, line by line, and the path presses first, second,
+third, so the press that pays the flag is made where its gate holds. A flag no
+press sequence can set is not credited (`DW1080`). The bay door beyond the east
+bay reads `state/bay-knocks at-least 2` directly, which only the knocker writes,
+and the path knocks twice in front of it; a numeric gate no press sequence can
+open is refused (`DW0985`).
 
 One place in the hall is climbed to, and a ladder is the only way up. The ferry
 cabin's roof stands four courses over the far hall's floor, past any step or jump,
@@ -240,6 +245,7 @@ holding them at once.
 | `nothing-places-the-whole` | `DW0883` | `validate` | deleting the entry box's pinned `min`, so nothing places the site plan |
 | `two-presses-on-one-cell` | `DW0878` | `build` | hanging an `interact` objective and a click trigger on one anchor |
 | `a-gate-the-path-already-cleared` | `DW0879` | `validate` | clearing a counter between the beat that fills it and the gate that reads it |
+| `a-latch-no-press-sets` | `DW1080` | `build` | gating the third valve's `flag/valves-turned` on a round of 7, which no order of presses reaches, while the counter reads the flag |
 | `two-bodies-on-one-mark` | `DW0896` | `build` | taking the page's offset away, so it is summoned onto the usher's own cell while the usher is still standing on it |
 | `an-offset-out-of-the-room` | `DW0897` | `build` | writing the page's offset from the usher as forty cells instead of four, past the hall's east wall |
 | `a-chestplate-on-a-horse` | `DW0898` | `validate` | putting a chestplate on the barded horse, which the server stores and the client never draws |
