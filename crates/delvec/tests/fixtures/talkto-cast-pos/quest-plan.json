@@ -20,7 +20,7 @@
         "depends_on": [
           "quest/ask"
         ],
-        "goal": "Take the Keeper's last word on the far side of the gate.",
+        "goal": "Hear the Keeper's last word on the far side of the gate.",
         "id": "quest/farewell",
         "mandatory": true,
         "npcs": [

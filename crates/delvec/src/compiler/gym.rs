@@ -452,7 +452,19 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
     // than restated.
     let coefficient = pacing(table, &mut reads, "route-blocks-per-minute");
     let nominal: i64 = bays.iter().map(|b| b.extent[0].max(b.extent[1])).sum();
-    let target_minutes = ceil_div(nominal, coefficient.max(1)).max(1);
+    // …plus what the gym's own two objectives cost at the table's price per
+    // act (spec-0131): one conversation with the invigilator, one arrival at
+    // the far bay — read through the one price list, so the gym is built from
+    // the activity entries as it is from the route coefficient.
+    let activity: i64 = delvewright_dsl::ActivityRates::read(table, &mut reads)
+        .map(|rates| {
+            let talk = std::iter::once(delvewright_dsl::Act::Talk).collect();
+            let reach = std::iter::once(delvewright_dsl::Act::Reach).collect();
+            i64::try_from(rates.objective_minutes(&talk) + rates.objective_minutes(&reach))
+                .unwrap_or(i64::MAX)
+        })
+        .expect("the gym's price per act is the table's own names");
+    let target_minutes = (ceil_div(nominal, coefficient.max(1)) + activity).max(1);
 
     let mut documents: BTreeMap<String, String> = BTreeMap::new();
     let put = |documents: &mut BTreeMap<String, String>, name: &str, v: Value| {

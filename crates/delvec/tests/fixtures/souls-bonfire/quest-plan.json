@@ -7,7 +7,7 @@
         "act": 1,
         "area": "area/keep",
         "depends_on": [],
-        "goal": "Take the Keeper's charge and raise the guard.",
+        "goal": "Hear the Keeper's charge and raise the guard.",
         "id": "quest/greet",
         "mandatory": true,
         "npcs": [

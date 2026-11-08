@@ -1,0 +1,13 @@
+{
+  "code": "DW1079",
+  "patch": [
+    {
+      "doc": "quest-plan.json",
+      "op": "replace",
+      "path": "/content/quests/3/goal",
+      "value": "Gather what the long hall drops before it lets the party through."
+    }
+  ],
+  "units": [],
+  "why": "The long hall's goal opens on `gather`, a taking, and the line is two arrivals: nothing on it is ever picked up. The plan promises a search and the expansion delivers a walk, which is how a campaign comes out as walking and talking with every line's goal reading as play. The goal's head is read against the acts the line's objectives perform, as a title's head is read against its completion; the census under `-- what this run examined` states every line's acts beside it."
+}

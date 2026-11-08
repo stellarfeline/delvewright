@@ -70,7 +70,7 @@ static QUEST_PLAN: LazyLock<String> = LazyLock::new(|| {
     "quests": [
       {
         "id": "quest/open-the-door",
-        "goal": "Get the Keeper to open the door.",
+        "goal": "Hear the Keeper out and go through the door.",
         "area": "area/keep",
         "npcs": ["npc/keeper"],
         "depends_on": [],

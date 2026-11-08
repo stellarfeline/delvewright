@@ -12,7 +12,7 @@
             "depends_on": [
               "quest/not-yet-declared"
             ],
-            "goal": "Get the Keeper to open the door and leave the keep.",
+            "goal": "Hear the Keeper out and leave through the door.",
             "id": "quest/open-the-door",
             "mandatory": true,
             "npcs": [

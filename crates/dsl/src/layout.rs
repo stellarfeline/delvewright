@@ -2214,6 +2214,21 @@ fn pacing(
         return;
     };
     let rate = u64::from(*rate).max(1);
+    let route_minutes = blocks.div_ceil(rate);
+    // spec-0131: the route is one half of the evening; what the player does
+    // at each objective is the other, priced per act by the same table, so the
+    // figure read against `target_minutes` is the sum and not the walk alone.
+    let census = crate::quest::ActivityCensus::of(c, table, reads);
+    let activity = census
+        .as_ref()
+        .map(|a| {
+            format!(
+                " of route; {}; about {} minute(s) in all",
+                a.pacing_clause(),
+                route_minutes + a.minutes
+            )
+        })
+        .unwrap_or_default();
     d.push(Diagnostic::warning(
         DW_PACING,
         "layout-graph",
@@ -2221,11 +2236,11 @@ fn pacing(
         format!(
             "the critical path crosses {legs} place(s) over {steps} step(s), a measured \
              {blocks} blocks of route, which at {rate} blocks of route per minute of play \
-             projects to about {minutes} minute(s) against this world's `target_minutes` of \
-             {target}{un}. It carries no threshold and refuses nothing — see `DW0822` in \
-             `docs/reference/dsl/layout.md` for what the number is worth.",
+             projects to about {minutes} minute(s){activity} against this world's \
+             `target_minutes` of {target}{un}. It carries no threshold and refuses nothing — \
+             see `DW0822` in `docs/reference/dsl/layout.md` for what the number is worth.",
             steps = graph.critical_path.len().saturating_sub(1),
-            minutes = blocks.div_ceil(rate),
+            minutes = route_minutes,
             target = c.world.content.target_minutes,
             un = if unprojected.is_empty() {
                 String::new()

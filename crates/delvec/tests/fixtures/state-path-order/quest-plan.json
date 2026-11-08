@@ -7,7 +7,7 @@
         "act": 1,
         "area": "area/keep",
         "depends_on": [],
-        "goal": "Read a label off the Keeper's ledger.",
+        "goal": "Ask the Keeper for a label off his ledger.",
         "id": "quest/ask",
         "mandatory": true,
         "npcs": [
@@ -20,7 +20,7 @@
         "depends_on": [
           "quest/ask"
         ],
-        "goal": "Put the ledger back and leave by the door.",
+        "goal": "Leave by the door, the ledger put back.",
         "id": "quest/leave",
         "mandatory": true,
         "npcs": [

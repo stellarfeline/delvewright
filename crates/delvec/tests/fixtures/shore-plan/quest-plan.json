@@ -7,7 +7,7 @@
         "act": 1,
         "area": "area/site",
         "depends_on": [],
-        "goal": "Get the keeper to open the cell door and walk out the far side.",
+        "goal": "Hear the keeper out, and walk out the far side through the cell door.",
         "id": "quest/walk-the-whole",
         "mandatory": true,
         "npcs": [

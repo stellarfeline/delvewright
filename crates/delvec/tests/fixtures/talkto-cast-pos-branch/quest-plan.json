@@ -46,7 +46,7 @@
         "depends_on": [
           "quest/decide"
         ],
-        "goal": "Take the Keeper's last word — wherever the choice left him standing.",
+        "goal": "Hear the Keeper's last word — wherever the choice left him standing.",
         "id": "quest/parley",
         "mandatory": true,
         "npcs": [

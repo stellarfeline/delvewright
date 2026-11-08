@@ -442,7 +442,7 @@ fn quest_plan_doc(tower: bool) -> String {
     "finale": "quest/open-the-door",
     "quests": [
       { "id": "quest/open-the-door", "act": 1, "area": "area/keep", "depends_on": [],
-        "goal": "Get the Keeper to open the door and leave the keep.",
+        "goal": "Hear the Keeper out and leave through the door.",
         "mandatory": true, "npcs": ["npc/keeper"] }
     ]
   }
@@ -459,7 +459,7 @@ fn quest_plan_doc(tower: bool) -> String {
     "finale": "quest/cross",
     "quests": [
       { "id": "quest/open-the-door", "act": 1, "area": "area/keep", "depends_on": [],
-        "goal": "Get the Keeper to open the door and leave the keep.",
+        "goal": "Hear the Keeper out and leave through the door.",
         "mandatory": true, "npcs": ["npc/keeper"] },
       { "id": "quest/cross", "act": 1, "area": "area/tower",
         "depends_on": ["quest/open-the-door"],

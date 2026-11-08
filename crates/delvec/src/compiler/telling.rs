@@ -2179,3 +2179,160 @@ pub fn check_hint_acts_with(c: &Campaign, lex: &Lexicon) -> (Vec<Diagnostic>, Hi
     }
     (d, bind)
 }
+
+// ---------------------------------------------------------------------------
+// DW1079 — a line's goal says what the player does on it (spec-0131)
+// ---------------------------------------------------------------------------
+
+delvewright_dsl::dw_code! {
+    /// `DW1079`: a planned quest's `goal` opens on a word naming an act none
+    /// of the quest's objectives performs.
+    pub const DW_LINE_UNTRUE: DwCode = DwCode::new("DW1079", ExitTier::Build);
+}
+
+/// What `DW1079` examined, zeroes included (spec-0131 §5).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LineActBinding {
+    /// Planned quests in the plan.
+    pub lines: usize,
+    /// Planned quests with a stage-5 expansion — the ones with acts to read
+    /// a goal against.
+    pub expanded: usize,
+    /// Expanded lines whose goal's head the lexicon knows — the judged ones.
+    pub judged: usize,
+    /// Expanded lines whose goal's head the lexicon does not know, by path and
+    /// goal.
+    pub unknown: Vec<(String, String)>,
+    /// Judged goals refused.
+    pub refused: usize,
+}
+
+impl LineActBinding {
+    /// The binding line `delvec validate` prints.
+    pub fn line(&self) -> String {
+        let mut s = format!(
+            "line act binding (DW1079): {} of {} English goal(s) read against their line's \
+             acts, over {} planned quest(s); {} head(s) the lexicon does not know; {} awaiting \
+             stage 5; {} refused",
+            self.judged,
+            self.expanded,
+            self.lines,
+            self.unknown.len(),
+            self.lines - self.expanded,
+            self.refused
+        );
+        if !self.unknown.is_empty() {
+            let listed: Vec<String> = self
+                .unknown
+                .iter()
+                .map(|(p, g)| format!("\"{g}\" ({p})"))
+                .collect();
+            s.push_str(&format!(" — not known: {}", listed.join(", ")));
+        }
+        s
+    }
+
+    /// The ledger rows `validation/activity-census.json` carries beside the
+    /// census: `judged` also as `examined`, so a build of a plan whose goals
+    /// were all unknown reads as a zero binding of this check.
+    pub fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "code": DW_LINE_UNTRUE.id(),
+            "lines": self.lines,
+            "expanded": self.expanded,
+            "judged": self.judged,
+            "examined": self.judged,
+            "unknown": self.unknown.iter().map(|(p, g)| serde_json::json!({"path": p, "goal": g})).collect::<Vec<_>>(),
+            "refused": self.refused,
+        })
+    }
+}
+
+/// **A line's goal says what the player does on it** (spec-0131 §4): the
+/// goal of every planned quest is read by the title's head rule
+/// ([`Lexicon::head`]), and the act it names must be one some objective of
+/// that quest performs ([`delvewright_dsl::Quest::objective_acts`], the union
+/// over the line). A goal whose head the lexicon does not know states no act
+/// the engine knows and is counted, never refused; a planned quest with no
+/// stage-5 expansion yet has no acts to read against and is counted apart —
+/// the state `DW0150` names.
+pub fn check_line_acts(c: &Campaign) -> (Vec<Diagnostic>, LineActBinding) {
+    check_line_acts_with(c, Lexicon::english())
+}
+
+/// [`check_line_acts`] against a given lexicon.
+pub fn check_line_acts_with(c: &Campaign, lex: &Lexicon) -> (Vec<Diagnostic>, LineActBinding) {
+    let mut bind = LineActBinding::default();
+    let mut d = Vec::new();
+    let by_id: BTreeMap<&str, &delvewright_dsl::Quest> = c
+        .quests
+        .content
+        .quests
+        .iter()
+        .map(|q| (q.id.as_str(), q))
+        .collect();
+    for (pi, planned) in c.quest_plan.content.quests.iter().enumerate() {
+        bind.lines += 1;
+        let Some(q) = by_id.get(planned.id.as_str()) else {
+            continue;
+        };
+        bind.expanded += 1;
+        let path = format!("/content/quests/{pi}/goal");
+        let goal = delvewright_dsl::l10n::plain(&planned.goal).into_owned();
+        let Some((head, said)) = lex.head(&goal) else {
+            bind.unknown.push((path, goal));
+            continue;
+        };
+        bind.judged += 1;
+        let done: BTreeSet<Act> = q
+            .objectives
+            .iter()
+            .flat_map(|o| q.objective_acts(o))
+            .collect();
+        if said.intersection(&done).next().is_some() {
+            continue;
+        }
+        bind.refused += 1;
+        let census: Vec<String> = q
+            .objectives
+            .iter()
+            .map(|o| format!("`{}` → {}", o.id(), acts_line(&q.objective_acts(o))))
+            .collect();
+        let words = lex.examples(&done, 3);
+        let performs = if done.is_empty() {
+            "no act: the quest has no objective".to_string()
+        } else {
+            acts_line(&done)
+        };
+        d.push(Diagnostic::error(
+            DW_LINE_UNTRUE,
+            "quest-plan",
+            path,
+            format!(
+                "planned quest `{}` has the goal \"{goal}\": its head `{head}` → {}, and the \
+                 line performs {performs} ({}), so the plan promises an activity the player \
+                 never performs on it (spec-0131). Either re-head the goal with a word of \
+                 what the line does ({}), or give the line an objective that performs `{}` — \
+                 the census under `-- what this run examined` states every line's acts.",
+                planned.id,
+                acts_line(said),
+                if census.is_empty() {
+                    "no objectives".to_string()
+                } else {
+                    census.join(", ")
+                },
+                if words.is_empty() {
+                    "none: the line has no objective to take a word from".to_string()
+                } else {
+                    words
+                        .iter()
+                        .map(|w| format!("`{w}`"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                },
+                acts_line(said),
+            ),
+        ));
+    }
+    (d, bind)
+}

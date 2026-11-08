@@ -33,7 +33,7 @@ static QUEST_PLAN: LazyLock<String> = LazyLock::new(|| {
         r#"{
   "dsl_version": "%dsl_version%", "campaign_id": "hello-world", "stage": "quest-plan",
   "content": { "quests": [
-    { "id": "quest/open-the-door", "goal": "Get the Keeper to open the door.", "area": "area/keep",
+    { "id": "quest/open-the-door", "goal": "Hear the Keeper out and go through the door.", "area": "area/keep",
       "npcs": ["npc/keeper"], "depends_on": [], "mandatory": true, "act": 1 },
     { "id": "quest/side-trip", "goal": "A prerequisite nobody has written yet.", "area": "area/keep",
       "npcs": [], "depends_on": [], "mandatory": true, "act": 1 }

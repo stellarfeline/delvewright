@@ -1867,6 +1867,23 @@ fn emit_all(
         .clone()
         .unwrap_or_else(|| crate::compiler::telling::check_acts(plan.campaign).1);
     put_json(&mut out, "validation/act-gate.json", &acts.to_json());
+    // spec-0131: the activity census — what the player does on every line of
+    // the plan, priced per act — beside what the line check (`DW1079`) judged
+    // over the English goals (`Plan::line_binding`, for the reason the act
+    // binding is carried). Every build writes it; `examined` is the lines read.
+    {
+        let table = delvewright_dsl::metrics::Metrics::table();
+        let mut reads = delvewright_dsl::metrics::Reads::new();
+        let mut ledger = delvewright_dsl::ActivityCensus::of(plan.campaign, &table, &mut reads)
+            .map(|c| c.to_json())
+            .unwrap_or_else(|| serde_json::json!({"examined": 0, "unbound": true, "reason": "the metrics table prices no act"}));
+        let lines = plan
+            .line_binding
+            .clone()
+            .unwrap_or_else(|| crate::compiler::telling::check_line_acts(plan.campaign).1);
+        ledger["goals"] = lines.to_json();
+        put_json(&mut out, "validation/activity-census.json", &ledger);
+    }
     // The engine's quest cues and the objectives that owe them, so the bot
     // judges where each one arrives. Every build plays the campaign cue, so
     // every build writes the file.
