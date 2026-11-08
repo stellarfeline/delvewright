@@ -100,15 +100,23 @@ async function clearBodies() {
   await rcon.probe('kill @e[type=minecraft:snowball]')
   await rcon.probe('kill @e[type=minecraft:egg]')
   await rcon.probe('kill @e[type=minecraft:item]')
+  // A thrown egg hatches a chicken one time in eight, and a chicken's steps are
+  // vibrations with a UUID of their own: the first run read a stranger's anger
+  // climbing to 118 beside a sneaking bot and it was a chicken.
+  await rcon.probe('kill @e[type=minecraft:chicken]')
+  await rcon.probe('kill @e[type=minecraft:experience_orb]')
   await sleep(600)
 }
 async function summonWarden(at, nbt) {
-  await rcon.run(`summon minecraft:warden ${at.x} ${at.y} ${at.z} ${nbt}`)
+  await rcon.run(`summon minecraft:warden ${at.x} ${at.y} ${at.z}${nbt ? ' ' + nbt : ''}`)
 }
 async function summonVictim(at) {
   await rcon.probe('kill @e[tag=dw_victim]')
   await rcon.run(
-    `summon minecraft:zombie ${at.x} ${at.y} ${at.z} {NoAI:1b,Invulnerable:1b,Silent:1b,PersistenceRequired:1b,Tags:["dw_victim"]}`,
+    // Not `Invulnerable`: the warden's target filter drops an invulnerable body
+    // (the first run's seeded anger at one read back as `[]` on the next tick).
+    // Resistance V makes it unkillable while still a valid target.
+    `summon minecraft:zombie ${at.x} ${at.y} ${at.z} {NoAI:1b,Silent:1b,PersistenceRequired:1b,Tags:["dw_victim"],active_effects:[{id:"minecraft:resistance",amplifier:4b,duration:-1,show_particles:0b}]}`,
   )
   await sleep(300)
   const uuid = await entityGet('@e[tag=dw_victim,limit=1]', 'UUID')
@@ -122,6 +130,8 @@ const angerAt = (uuid, anger) => `anger:{suspects:[{anger:${anger},uuid:${uuid}}
 async function reading() {
   const pos = parsePos(await wardenGet('Pos'))
   const anger = await wardenGet('anger.suspects')
+  // `disturbance_location` is not saved to NBT on this version and always reads
+  // back null; it is kept in the reading so the fact stays visible in the TSV.
   const dist = await wardenGet('Brain.memories."minecraft:disturbance_location"')
   const target = await wardenGet('Brain.memories."minecraft:attack_target"')
   const roar = await wardenGet('Brain.memories."minecraft:roar_target"')
@@ -171,32 +181,36 @@ function wardenEntity(bot) {
 // T1: a sourceless snowball lands d blocks from a roaming warden.
 async function t1(bot) {
   await park(bot)
-  for (const d of [8, 15, 17, 24]) {
+  // `disturbance_location` is not a saved memory on this version (the first run
+  // read it back as null while the warden walked to the spot), so the reading is
+  // the warden's own feet: heard = it reaches within 2 blocks of the landing cell.
+  for (const d of [0, 8, 12, 16, 18, 20, 24]) {
     await clearBodies()
-    begin('T1-projectile-reach', `snowball lands ${d} blocks east of a roaming warden`)
+    const control = d === 0
+    begin('T1-projectile-reach', control ? 'control: no snowball; the roaming warden is read for 15s' : `snowball lands ${d} blocks east of a roaming warden`)
     await summonWarden(W, awakeNbt())
     await sleep(3000)
     const before = await reading()
-    row(`d=${d}`, 'before', `pos=${before.pos?.map(f1)}`, `dist=${before.dist}`, `anger=${before.anger}`)
-    const landing = [W.x + d, FLOOR_Y + 1, W.z]
-    await rcon.run(`summon minecraft:snowball ${landing[0]} ${FLOOR_Y + 4} ${landing[2]}`)
+    const landing = [W.x + (control ? 16 : d), FLOOR_Y + 1, W.z]
+    const d0 = before.pos ? dist2(before.pos, landing) : null
+    row(`d=${d}`, 'before', `pos=${before.pos?.map(f1)}`, `wardenToLanding=${f1(d0)}`, `anger=${before.anger}`)
+    if (!control) await rcon.run(`summon minecraft:snowball ${landing[0]} ${FLOOR_Y + 4} ${landing[2]}`)
     const tLand = now()
-    let firstSeen = null
-    let lastSeen = null
+    let reachedMs = null
+    let leftMs = null
     let nearest = Infinity
-    while (now() - tLand < 25_000) {
+    while (now() - tLand < 15_000) {
       const r = await reading()
-      if (r.pos) nearest = Math.min(nearest, dist2(r.pos, landing))
-      if (r.dist) {
-        if (firstSeen == null) firstSeen = now() - tLand
-        lastSeen = now() - tLand
-      } else if (firstSeen != null && now() - tLand - lastSeen > 3000) {
-        break
+      const dl = r.pos ? dist2(r.pos, landing) : null
+      if (dl != null) {
+        nearest = Math.min(nearest, dl)
+        if (dl <= 2 && reachedMs == null) reachedMs = now() - tLand
+        if (reachedMs != null && leftMs == null && dl > 2) leftMs = now() - tLand
       }
-      row(`d=${d}`, `pos=${r.pos?.map(f1)}`, `toLanding=${r.pos ? f1(dist2(r.pos, landing)) : '-'}`, `dist=${r.dist}`, `anger=${r.anger}`)
+      row(`d=${d}`, `pos=${r.pos?.map(f1)}`, `toLanding=${f1(dl)}`, `anger=${r.anger}`)
       await sleep(500)
     }
-    row(`d=${d}`, 'summary', `heard=${firstSeen != null}`, `firstMs=${firstSeen}`, `heldMs=${firstSeen == null ? '-' : lastSeen - firstSeen}`, `nearestToLanding=${f1(nearest)}`)
+    row(`d=${d}`, 'summary', `wardenToLandingAtLanding=${f1(d0)}`, `reached=${reachedMs != null}`, `reachedMs=${reachedMs}`, `leftMs=${leftMs}`, `nearestToLanding=${f1(nearest)}`)
   }
 }
 
@@ -346,31 +360,36 @@ async function t5(bot) {
     await summonWarden(W, awakeNbt())
     await sleep(3000)
     const before = await reading()
-    row('before', `pos=${before.pos?.map(f1)}`, `dist=${before.dist}`)
+    row('before', `pos=${before.pos?.map(f1)}`)
     await act(B)
     const tAct = now()
-    let heard = null
+    const d0 = before.pos ? dist2(before.pos, [B.x + 0.5, 0, B.z + 0.5]) : null
+    let reachedMs = null
     let nearest = Infinity
-    while (now() - tAct < 10_000) {
+    while (now() - tAct < 12_000) {
       const r = await reading()
-      if (r.pos) nearest = Math.min(nearest, dist2(r.pos, [B.x + 0.5, 0, B.z + 0.5]))
-      if (r.dist && heard == null) heard = now() - tAct
-      row(`pos=${r.pos?.map(f1)}`, `toBell=${r.pos ? f1(dist2(r.pos, [B.x + 0.5, 0, B.z + 0.5])) : '-'}`, `dist=${r.dist}`, `anger=${r.anger}`)
+      const db = r.pos ? dist2(r.pos, [B.x + 0.5, 0, B.z + 0.5]) : null
+      if (db != null) {
+        nearest = Math.min(nearest, db)
+        if (db <= 2 && reachedMs == null) reachedMs = now() - tAct
+      }
+      row(`pos=${r.pos?.map(f1)}`, `toBell=${f1(db)}`, `anger=${r.anger}`)
       await sleep(500)
     }
-    row('summary', `heard=${heard != null}`, `firstMs=${heard}`, `nearestToBell=${f1(nearest)}`)
+    row('summary', `wardenToBellAtAct=${f1(d0)}`, `reached=${reachedMs != null}`, `reachedMs=${reachedMs}`, `nearestToBell=${f1(nearest)}`)
     await rcon.run(`setblock ${B.x} ${B.y} ${B.z} minecraft:air`)
     await rcon.probe(`setblock ${B.x + 1} ${B.y} ${B.z} minecraft:air`)
   }
+  await probeBell('control-10', 10, async () => {})
   await probeBell('state-powered', 10, (B) =>
     rcon.run(`setblock ${B.x} ${B.y} ${B.z} minecraft:bell[attachment=floor,facing=north,powered=true]`),
   )
-  await probeBell('redstone-block-10', 10, (B) => rcon.run(`setblock ${B.x + 1} ${B.y} ${B.z} minecraft:redstone_block`))
   await probeBell('playsound-only', 10, (B) =>
     rcon.run(`playsound minecraft:block.bell.use block @a ${B.x} ${B.y} ${B.z} 1 1`),
   )
-  await probeBell('redstone-block-15', 15, (B) => rcon.run(`setblock ${B.x + 1} ${B.y} ${B.z} minecraft:redstone_block`))
-  await probeBell('redstone-block-20', 20, (B) => rcon.run(`setblock ${B.x + 1} ${B.y} ${B.z} minecraft:redstone_block`))
+  for (const d of [10, 15, 16, 18, 20]) {
+    await probeBell(`redstone-block-${d}`, d, (B) => rcon.run(`setblock ${B.x + 1} ${B.y} ${B.z} minecraft:redstone_block`))
+  }
 }
 
 // T6: does a command summon play the emerge animation? The bot, 12 blocks
