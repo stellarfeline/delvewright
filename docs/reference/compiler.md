@@ -3369,9 +3369,12 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   presses it as the path performs it, with the flags it pays not yet held. If
   the flag is set, the press stands. Otherwise the search above runs with the
   goal *the flag is set*, over the hand-pressed triggers placed in the step's
-  area plus the payer at the place the path performs it, and the sequence it
-  finds replaces the payer's press — however many other triggers write the
-  datum the gate reads. A press in this replay that writes a datum the plan
+  area, every other declared trigger on an anchor there that sets the flag, and
+  the payer at the place the path performs it; the sequence it finds replaces
+  the payer's press — however many other triggers write the datum the gate
+  reads — and the trigger it ends on is the payer the path performs and
+  `PathFiring::trigger_debts` records, so a first-declared payer whose gate no
+  press opens refuses nothing while a later one can set the flag. A press in this replay that writes a datum the plan
   does not drive forgets that datum rather than being abandoned. A gate a
   count of the payer's own presses opens (spec-0082 §3.3, the hit count
   `trigger` steps already repeat) stands as performed. Anything else is
