@@ -472,7 +472,9 @@ fn a_latch_a_lift_call_sets_in_its_ride_is_paid_by_the_call_that_answers() {
 /// driven.
 #[test]
 fn a_flag_s_presses_are_made_in_front_of_the_step_that_reads_it() {
-    let last = LAST_WHEN.replace(r#""requires_flags": ["flag/told"],"#, "");
+    let last = LAST_WHEN
+        .replace(r#""requires_flags": ["flag/told"],"#, "")
+        .replace(r#""answers": { "not_yet": "The stone is cold." },"#, "");
     assert_ne!(
         last, LAST_WHEN,
         "the last stone no longer waits on the talk"
