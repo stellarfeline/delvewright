@@ -286,7 +286,7 @@ fn latch_doc(third: &str) -> String {
            {{ "type": "set-state", "state": "state/order", "value": 1,
               "when": {{ "requires_state": [ {{ "state": "state/order", "op": "equals", "value": 0 }} ] }} }}
          ] }},
-      {{ "id": "trigger/second-stone", "at": "anchor/keeper-stand", "on": {{ "on": "use" }},
+      {{ "id": "trigger/second-stone", "at": "anchor/door", "on": {{ "on": "use" }},
          "once": false, "prop": {{ "block": "minecraft:oak_sign[rotation=0]" }},
          "effects": [
            {{ "type": "set-state", "state": "state/order", "value": 2,
