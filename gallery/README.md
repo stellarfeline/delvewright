@@ -97,10 +97,10 @@ turn, and the second and third put the round back to 0 when pressed out of it.
 The document declares them third, second, first. The plan replays every press
 the way the datapack runs it, line by line, and the path presses first, second,
 third, so the press that pays the flag is made where its gate holds. A flag no
-press sequence can set is not credited (`DW1080`). The bay door beyond the east
-bay reads `state/bay-knocks at-least 2` directly, which only the knocker writes,
-and the path knocks twice in front of it; a numeric gate no press sequence can
-open is refused (`DW0985`).
+press sequence can set is not credited (`DW1080`). The bay door, on the optional
+reliquary strand, reads `state/bay-knocks at-least 2` directly, which only the
+knocker writes; an objective's numeric gate no press sequence can open is
+refused (`DW0985`).
 
 One place in the hall is climbed to, and a ladder is the only way up. The ferry
 cabin's roof stands four courses over the far hall's floor, past any step or jump,
