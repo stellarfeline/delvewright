@@ -1042,11 +1042,10 @@ fn populations_campaign() -> PathBuf {
         p["content"]["finale"] = json!("quest/keep");
         p["content"]["quests"].as_array_mut().unwrap().push(json!({
             "act": 1, "area": "area/keep", "depends_on": ["quest/cross"],
-            "goal": "Walk to the keep's door.", "id": "quest/keep", "mandatory": true, "npcs": []
+            "goal": "Walk to the keep's door.", "activity": ["reach"], "id": "quest/keep", "mandatory": true, "npcs": []
         }));
     });
     dir
-            "activity": ["talk"],
 }
 
 #[test]

@@ -393,11 +393,7 @@ fn the_declaration_alone_turns_the_verdict() {
     let (d, b) = check_activity(&line(&["talk", "reach"], objectives(), json!({})));
     assert!(d.is_empty());
     assert_eq!((b.judged, b.refused), (1, 0));
-    let (d, b) = check_activity(&line(
-        &["talk", "reach", "take"],
-        objectives(),
-        json!({}),
-    ));
+    let (d, b) = check_activity(&line(&["talk", "reach", "take"], objectives(), json!({})));
     assert_eq!(d.len(), 1);
     assert_eq!((b.judged, b.refused), (1, 1));
 }

@@ -465,11 +465,10 @@ fn quest_plan_doc(tower: bool) -> String {
         "mandatory": true, "npcs": ["npc/keeper"] },
       { "id": "quest/cross", "act": 1, "area": "area/tower",
         "depends_on": ["quest/open-the-door"],
-        "goal": "Cross the mended threshold.", "mandatory": true, "npcs": [] }
+        "goal": "Cross the mended threshold.", "activity": ["reach"], "mandatory": true, "npcs": [] }
     ]
   }
 }"#,
-        "activity": ["talk"],
     )
     .to_string()
 }

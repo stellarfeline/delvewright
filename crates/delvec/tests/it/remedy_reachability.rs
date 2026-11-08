@@ -3257,11 +3257,10 @@ fn dw0932_using_a_crossing_for_another_area_builds() {
         p["content"]["finale"] = serde_json::json!("quest/keep");
         p["content"]["quests"].as_array_mut().unwrap().push(serde_json::json!({
             "act": 1, "area": "area/keep", "depends_on": ["quest/cross"],
-            "goal": "Walk to the keep's door.", "id": "quest/keep", "mandatory": true, "npcs": []
+            "goal": "Walk to the keep's door.", "activity": ["reach"], "id": "quest/keep", "mandatory": true, "npcs": []
         }));
     });
     let (s, t) = build("link-two-areas-moved", &camp, &prefabs);
-            "activity": ["talk"],
     assert_ne!(refused_with(s, &t).as_deref(), Some("DW0932"), "{t}");
 }
 
