@@ -351,7 +351,7 @@ pub(crate) fn trigger_may_be_performed(t: &delvewright_dsl::EnvTrigger) -> bool 
 }
 
 /// Whether an effect opens a way on: an `open-gate` or an `open-way`.
-fn opens_a_way(e: &QuestEffect) -> bool {
+pub(super) fn opens_a_way(e: &QuestEffect) -> bool {
     matches!(e.gate_region_write(), Some((_, false))) || e.way_write().is_some()
 }
 

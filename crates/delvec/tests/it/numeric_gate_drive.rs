@@ -414,3 +414,51 @@ fn a_flag_a_later_ungated_trigger_sets_is_paid_by_it_not_refused() {
         "{steps:#?}"
     );
 }
+
+/// **A lift's latch is paid by the call its car can answer.** The car stands at
+/// floor 1 (`initial`), and the only writes to its floor are the two calls'
+/// `sequence` lines. The call declared first answers only away from floor 1,
+/// so pressed from where the path stands it does nothing; the other call, at
+/// the exit, answers away from floor 2 and sets the latch as its ride ends.
+/// The floor is a datum only presses move, even though they move it in a
+/// nested line, so the plan follows it from its declared start and presses
+/// the call that answers — never refusing the latch as unknowable.
+#[test]
+fn a_latch_a_lift_call_sets_in_its_ride_is_paid_by_the_call_that_answers() {
+    const DOWN: &str = r#"{ "id": "trigger/call-down", "at": "spawn", "on": { "on": "use" },
+       "once": false, "prop": { "block": "minecraft:oak_sign[rotation=0]" },
+       "answers": { "not_yet": "The car is already here." },
+       "requires_state": [ { "state": "state/order", "op": "not-equals", "value": 1 } ],
+       "effects": [ { "type": "sequence", "steps": [ { "at_ticks": 0, "effects": [
+         { "type": "set-state", "state": "state/order", "value": 1 },
+         { "type": "set-flag", "flag": "flag/latch" } ] } ] } ] }"#;
+    const UP: &str = r#"{ "id": "trigger/call-up", "at": "anchor/exit", "on": { "on": "use" },
+       "once": false, "prop": { "block": "minecraft:oak_sign[rotation=0]" },
+       "requires_flags": ["flag/told"],
+       "answers": { "not_yet": "The call is dead." },
+       "requires_state": [ { "state": "state/order", "op": "not-equals", "value": 2 } ],
+       "effects": [ { "type": "sequence", "steps": [ { "at_ticks": 0, "effects": [
+         { "type": "set-state", "state": "state/order", "value": 2 },
+         { "type": "set-flag", "flag": "flag/latch" } ] } ] } ] }"#;
+    let doc = latch_doc_with(UP, DOWN).replace(
+        r#""note": "stones pressed in the right order" }"#,
+        r#""note": "the floor the car stands at", "initial": 1 }"#,
+    );
+    assert!(doc.contains(r#""initial": 1"#), "the car starts at floor 1");
+    let p = prefabs();
+    let c = validated(&doc, &p);
+    let out = build(&c, &p).expect("the call that answers pays the latch");
+    let steps = acts(&critical_path(&out));
+    let s = |a: &str, w: &str| (a.to_string(), w.to_string());
+    assert_eq!(
+        steps,
+        [
+            s("select-class", ""),
+            s("talk-to", "obj/talk"),
+            s("trigger", "trigger/call-up"),
+            s("reach", "obj/exit"),
+            s("assert-complete", ""),
+        ],
+        "{steps:#?}"
+    );
+}

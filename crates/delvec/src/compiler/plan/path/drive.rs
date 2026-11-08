@@ -69,9 +69,25 @@ pub(crate) fn writes_state_at_top(t: &EnvTrigger) -> bool {
     t.effects.iter().any(|e| e.writes_state().is_some())
 }
 
+/// Whether `e`'s nested lists are a reaction bundle (`on_respawn`, `on_rest`,
+/// `on_caught`), fired at times no ordered walk can name — the producer
+/// table's nesting rule.
+fn reacts(e: &QuestEffect) -> bool {
+    matches!(
+        e.verb,
+        delvewright_dsl::Verb::SetCheckpoint { .. }
+            | delvewright_dsl::Verb::Bonfire { .. }
+            | delvewright_dsl::Verb::BeginStealth { .. }
+    )
+}
+
 /// The data every value of which the presses alone decide — see the module
-/// doc for the rule.
-fn driven_data(campaign: &Campaign) -> BTreeSet<String> {
+/// doc for the rule. With `nested`, a write in a list nested under a
+/// pressable trigger's line (a `sequence` step, a cutscene's `then`) keeps the
+/// datum too: the press replay applies it when the press is made. That wider
+/// set is what a flag-paying press is replayed over (`DW1080`); the objective
+/// drive (`DW0985`) keeps to top-level writes.
+fn driven_data(campaign: &Campaign, nested: bool) -> BTreeSet<String> {
     let content = &campaign.quests.content;
     let mut out: BTreeSet<String> = BTreeSet::new();
     for s in &content.state {
@@ -102,13 +118,40 @@ fn driven_data(campaign: &Campaign) -> BTreeSet<String> {
                     out.remove(id.as_str());
                 }
             }
-            for nested in e.nested_effect_lists() {
-                strike_nested_writes(nested, &mut out);
+            if nested && top_of_press && !reacts(e) {
+                for list in e.nested_effect_lists() {
+                    keep_nested_writes(list, &mut written_by_press, &mut out);
+                }
+            } else {
+                for list in e.nested_effect_lists() {
+                    strike_nested_writes(list, &mut out);
+                }
             }
         }
     });
     out.retain(|id| written_by_press.contains(id));
     out
+}
+
+/// Record every datum a press's nested list writes, striking the ones a
+/// reaction bundle inside it writes.
+fn keep_nested_writes(
+    list: &[QuestEffect],
+    written: &mut BTreeSet<String>,
+    out: &mut BTreeSet<String>,
+) {
+    for e in list {
+        if let Some((id, _)) = e.writes_state() {
+            written.insert(id.as_str().to_string());
+        }
+        for nested in e.nested_effect_lists() {
+            if reacts(e) {
+                strike_nested_writes(nested, out);
+            } else {
+                keep_nested_writes(nested, written, out);
+            }
+        }
+    }
 }
 
 /// Remove every datum a nested list (at any depth) writes.
@@ -269,12 +312,7 @@ impl Scene<'_> {
         parent: &QuestEffect,
         next: &mut Held,
     ) -> Option<()> {
-        if matches!(
-            parent.verb,
-            delvewright_dsl::Verb::SetCheckpoint { .. }
-                | delvewright_dsl::Verb::Bonfire { .. }
-                | delvewright_dsl::Verb::BeginStealth { .. }
-        ) {
+        if reacts(parent) {
             return Some(());
         }
         for list in lists {
@@ -290,10 +328,24 @@ impl Scene<'_> {
                 if let delvewright_dsl::Verb::SetFlag { flag, .. } = &e.verb {
                     next.flags.insert(flag.as_str().to_string());
                 }
-                if let Some((id, _)) = e.writes_state()
-                    && self.lenient
-                {
-                    next.lost.insert(id.as_str().to_string());
+                if let Some((id, w)) = e.writes_state() {
+                    let id = id.as_str();
+                    match next.data.get(id).copied() {
+                        Some(v) => {
+                            let after = match w {
+                                delvewright_dsl::StateWrite::Set(n) => i64::from(n),
+                                delvewright_dsl::StateWrite::Add(n) => v + i64::from(n),
+                                delvewright_dsl::StateWrite::Clear => {
+                                    self.initial.get(id).copied().unwrap_or(0)
+                                }
+                            };
+                            next.data.insert(id.to_string(), after);
+                        }
+                        None if self.lenient => {
+                            next.lost.insert(id.to_string());
+                        }
+                        None => {}
+                    }
                 }
                 self.nested_flags(&e.nested_effect_lists(), e, next)?;
             }
@@ -574,15 +626,29 @@ pub(super) fn drive_presses(
 ) -> Result<Schedule, PlanError> {
     let mut out: BTreeMap<usize, Vec<Step>> = BTreeMap::new();
     let mut repaid: Vec<(String, String)> = Vec::new();
-    let driven = driven_data(campaign);
+    let driven = driven_data(campaign, false);
+    // The data a flag-paying press is replayed over: the driven data, and
+    // those a press also writes in a nested line.
+    let followed = driven_data(campaign, true);
     let content = &campaign.quests.content;
     let initial: BTreeMap<String, i64> = content
         .state
         .iter()
-        .filter(|s| driven.contains(s.id.as_str()))
+        .filter(|s| followed.contains(s.id.as_str()))
         .map(|s| (s.id.as_str().to_string(), i64::from(s.initial)))
         .collect();
     // A candidate presses by hand and writes only data the plan follows.
+    let writes_only = |t: &EnvTrigger, set: &BTreeSet<String>| {
+        let mut ok = true;
+        for e in &t.effects {
+            e.visit_deep(&mut |x| {
+                if let Some((id, _)) = x.writes_state() {
+                    ok &= set.contains(id.as_str());
+                }
+            });
+        }
+        ok
+    };
     let candidates: Vec<&EnvTrigger> = content
         .triggers
         .iter()
@@ -594,20 +660,46 @@ pub(super) fn drive_presses(
             })
         })
         .collect();
+    // A flag-paying search's candidates: every pressable trigger that writes
+    // a followed datum, at any depth, and nothing the plan does not follow.
+    let pay_candidates: Vec<&EnvTrigger> = content
+        .triggers
+        .iter()
+        .filter(|t| pressable(t) && writes_only(t, &followed))
+        .filter(|t| {
+            let mut any = false;
+            for e in &t.effects {
+                e.visit_deep(&mut |x| any |= x.writes_state().is_some());
+            }
+            any
+        })
+        .collect();
     let by_id: BTreeMap<&str, &EnvTrigger> = content
         .triggers
         .iter()
         .map(|t| (t.id.as_str(), t))
         .collect();
+    let reader_at = |objective: &str| path.steps.iter().position(|st| st.objective == objective);
+    let area_of = |si: usize| {
+        campaign
+            .quest_plan
+            .content
+            .quests
+            .iter()
+            .find(|q| q.id.as_str() == path.steps[si].quest)
+            .map(|q| q.area.as_str())
+            .unwrap_or("")
+    };
     let mut held = Held {
         data: initial.clone(),
         flags: BTreeSet::new(),
         spent: BTreeSet::new(),
         lost: BTreeSet::new(),
     };
+    // Flag-paying presses moved to the step that reads the flag.
+    let mut deferred: BTreeMap<usize, Vec<Vec<Step>>> = BTreeMap::new();
     let empty = BTreeMap::new();
     let no_flags = BTreeSet::new();
-    let no_steps: Vec<Step> = Vec::new();
     for (si, st) in path.steps.iter().enumerate() {
         let known = data_before.get(&st.objective).unwrap_or(&empty);
         let scene = Scene {
@@ -616,32 +708,31 @@ pub(super) fn drive_presses(
             known,
             lenient: false,
         };
-        let area = campaign
-            .quest_plan
-            .content
-            .quests
-            .iter()
-            .find(|q| q.id.as_str() == st.quest)
-            .map(|q| q.area.as_str())
-            .unwrap_or("");
+        let area = area_of(si);
         let placed: Vec<(&EnvTrigger, [i32; 3])> = candidates
             .iter()
             .filter_map(|t| press_cell(anchors, t, area).map(|p| (*t, p)))
             .collect();
-        // What the path already performs here moves the data first.
-        let here = due.get(&si).unwrap_or(&no_steps);
-        let mut i = 0;
-        while i < here.len() {
-            let step = &here[i];
+        // What the path already performs here moves the data first: each run
+        // of one trigger's presses, then the flag-paying runs moved here.
+        let mut runs: Vec<(Vec<Step>, bool)> = Vec::new();
+        for step in due.get(&si).into_iter().flatten() {
+            match runs.last_mut() {
+                Some((r, _)) if step.trigger().is_some() && r[0].trigger() == step.trigger() => {
+                    r.push(step.clone());
+                }
+                _ => runs.push((vec![step.clone()], true)),
+            }
+        }
+        for r in deferred.remove(&si).unwrap_or_default() {
+            runs.push((r, false));
+        }
+        for (run, may_defer) in runs {
+            let step = &run[0];
             let Some(t) = step.trigger().and_then(|id| by_id.get(id)).copied() else {
-                out.entry(si).or_default().push(step.clone());
-                i += 1;
+                out.entry(si).or_default().extend(run);
                 continue;
             };
-            let run = here[i..]
-                .iter()
-                .take_while(|s| s.trigger() == Some(t.id.as_str()))
-                .count();
             let gated: Vec<&Owed> = owed
                 .get(t.id.as_str())
                 .into_iter()
@@ -649,7 +740,7 @@ pub(super) fn drive_presses(
                 .filter(|o| !flag_state_terms(t, &o.flag).is_empty())
                 .collect();
             if gated.is_empty() {
-                for s in &here[i..i + run] {
+                for s in run {
                     match scene.press(t, &held) {
                         Pressed::Ran(n) => held = n,
                         Pressed::Refused | Pressed::Undecidable => {
@@ -658,9 +749,8 @@ pub(super) fn drive_presses(
                             }
                         }
                     }
-                    out.entry(si).or_default().push(s.clone());
+                    out.entry(si).or_default().push(s);
                 }
-                i += run;
                 continue;
             }
             let flags: Vec<&str> = gated.iter().map(|o| o.flag.as_str()).collect();
@@ -681,7 +771,7 @@ pub(super) fn drive_presses(
             // The press as the path performs it.
             let mut h = held.clone();
             let mut undecidable = false;
-            for _ in 0..run {
+            for _ in 0..run.len() {
                 match pay.press(t, &h) {
                     Pressed::Ran(n) => h = n,
                     Pressed::Refused => {}
@@ -693,11 +783,41 @@ pub(super) fn drive_presses(
             }
             if !undecidable && paid(&h) {
                 held = h;
-                out.entry(si)
-                    .or_default()
-                    .extend(here[i..i + run].iter().cloned());
-                i += run;
+                out.entry(si).or_default().extend(run);
                 continue;
+            }
+            // Not paid where the path first could perform it: the presses
+            // that pay it are made in front of the step that reads the flag,
+            // as an objective's own numeric gate is driven, when the payer
+            // stands where that step's party is.
+            // A payer that also opens a way stays where the path performs
+            // it: the route is proved with its opening there.
+            let opens = {
+                let mut any = false;
+                for e in &t.effects {
+                    e.visit_deep(&mut |x| any |= super::triggers::opens_a_way(x));
+                }
+                any
+            };
+            if may_defer && !opens {
+                let reader = gated
+                    .iter()
+                    .filter_map(|o| reader_at(&o.reader))
+                    .min()
+                    .filter(|r| *r > si);
+                if let Some(r) = reader
+                    && let Some(pos) = press_cell(anchors, t, area_of(r))
+                {
+                    let moved: Vec<Step> = run
+                        .iter()
+                        .map(|s| match s {
+                            Step::Trigger { .. } => press_step(campaign, t, pos),
+                            other => other.clone(),
+                        })
+                        .collect();
+                    deferred.entry(r).or_default().push(moved);
+                    continue;
+                }
             }
             // The presses that make the gate hold, ending in the state where
             // the flag is set. The payer stands where the path performs it.
@@ -705,10 +825,12 @@ pub(super) fn drive_presses(
             // holds; any other declared trigger on an anchor in the step's area
             // that sets one of the flags is a payer too, so a gate the named
             // one cannot open refuses nothing while another can pay.
-            let mut pool: Vec<(&EnvTrigger, Step)> = placed
+            let mut pool: Vec<(&EnvTrigger, Step)> = pay_candidates
                 .iter()
-                .filter(|(c, _)| c.id != t.id)
-                .map(|(c, p)| (*c, press_step(campaign, c, *p)))
+                .filter(|c| c.id != t.id)
+                .filter_map(|c| {
+                    press_cell(anchors, c, area).map(|p| (*c, press_step(campaign, c, p)))
+                })
                 .collect();
             for other in &content.triggers {
                 if other.id == t.id
@@ -751,9 +873,7 @@ pub(super) fn drive_presses(
                     if t.once {
                         held.spent.insert(t.id.as_str().to_string());
                     }
-                    out.entry(si)
-                        .or_default()
-                        .extend(here[i..i + run].iter().cloned());
+                    out.entry(si).or_default().extend(run);
                 }
                 Search::Exhausted {
                     reached,
@@ -772,7 +892,6 @@ pub(super) fn drive_presses(
                     ));
                 }
             }
-            i += run;
         }
         let Some(obj) = objective_quest(campaign, &st.objective).map(|(_, o)| o) else {
             continue;
