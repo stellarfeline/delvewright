@@ -71,8 +71,9 @@ fn walk(id: &str, a: &str, b: &str) -> serde_json::Value {
 
 /// The campaign: the blockout fixture's cast and words over six places, the
 /// keeper walking from home to the market once he is asked. `far_road_way`
-/// says whether the far road declares itself a way.
-fn campaign(dir: &Path, far_road_way: bool) {
+/// says whether the far road declares itself a way; `body`, when given, is
+/// the entity the keeper wears in place of the fixture's villager.
+fn campaign(dir: &Path, far_road_way: bool, body: Option<&str>) {
     common::copy_dir_all(
         &common::repo_root().join("crates/delvec/tests/fixtures/blockout"),
         dir,
@@ -149,6 +150,9 @@ fn campaign(dir: &Path, far_road_way: bool) {
     );
     common::patch_file(&dir.join("npcs.json"), |v| {
         v["content"]["npcs"][0]["anchor"] = serde_json::json!("anchor/node-home");
+        if let Some(body) = body {
+            v["content"]["npcs"][0]["base_entity"] = serde_json::json!(body);
+        }
     });
     common::patch_file(&dir.join("quests.json"), |v| {
         let q = &mut v["content"]["quests"][0];
@@ -182,9 +186,26 @@ struct Site {
 /// The keeper's planned walk over the site: the site, the route cells and
 /// the per-tick positions.
 fn keeper_walk(far_road_way: bool) -> (Site, Vec<[i32; 3]>, Vec<[f64; 3]>) {
-    let root = tempdir(if far_road_way { "joined" } else { "broken" });
+    keeper_walk_wearing(far_road_way, None)
+}
+
+/// [`keeper_walk`], the keeper wearing `body` when one is given.
+fn keeper_walk_wearing(
+    far_road_way: bool,
+    body: Option<&str>,
+) -> (Site, Vec<[i32; 3]>, Vec<[f64; 3]>) {
+    let name = match (far_road_way, body) {
+        (true, None) => "joined".to_string(),
+        (false, None) => "broken".to_string(),
+        (w, Some(b)) => format!(
+            "{}-{}",
+            if w { "joined" } else { "broken" },
+            b.replace(':', "-")
+        ),
+    };
+    let root = tempdir(&name);
     let dir = root.join("campaign");
-    campaign(&dir, far_road_way);
+    campaign(&dir, far_road_way, body);
     let c = common::campaign_at(&dir);
     let reg = empty_library(&root);
     let refused: Vec<_> = common::validation_diagnostics(
@@ -327,5 +348,53 @@ fn with_the_roads_broken_the_keeper_still_walks() {
     assert!(
         cells.iter().any(|c| in_foot(site.green, c[0], c[2])),
         "the walk takes the green once no way joins its ends"
+    );
+}
+
+/// **A body the old table did not list walks the ways at its registry width**
+/// (the declared ways crossed with every registered body wearing its own
+/// size): the keeper wears a camel, 1.7 wide in the pinned entity table where
+/// the humanoid fallback was 0.6, and the line its body is drawn along keeps
+/// that whole width out of the green — every per-tick position's hitbox, not
+/// only its centre — while the route still keeps to the roads.
+#[test]
+fn a_wide_registered_body_keeps_its_whole_width_off_the_green() {
+    let body = "minecraft:camel";
+    let (w, _) = delvec::compiler::nav::entity_dims(body);
+    assert!(
+        (w - 1.7).abs() < 1e-9,
+        "the camel wears its registry body, not the fallback: {w}"
+    );
+    let (site, cells, ticks) = keeper_walk_wearing(true, Some(body));
+    assert!(
+        !cells.iter().any(|c| in_foot(site.green, c[0], c[2])),
+        "the camel's route crosses the green"
+    );
+    assert!(
+        cells.iter().any(|c| in_foot(site.roads[1].0, c[0], c[2])),
+        "the camel's route never reaches the far road"
+    );
+    let half = w / 2.0;
+    let green = site.green;
+    let touches: Vec<_> = ticks
+        .iter()
+        .filter(|p| {
+            let (x0, x1) = (
+                (p[0] - half).floor() as i32,
+                (p[0] + half - 1e-9).floor() as i32,
+            );
+            let (z0, z1) = (
+                (p[2] - half).floor() as i32,
+                (p[2] + half - 1e-9).floor() as i32,
+            );
+            x1 >= green[0] && x0 <= green[1] && z1 >= green[2] && z0 <= green[3]
+        })
+        .collect();
+    assert!(
+        touches.is_empty(),
+        "{} of {} per-tick hitbox(es) of the camel reach into the green, first {:?}",
+        touches.len(),
+        ticks.len(),
+        touches.first()
     );
 }
