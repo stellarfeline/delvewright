@@ -38,7 +38,7 @@ fn quests(fields: &str) -> String {
 }
 
 fn campaign_with(quests: String) -> RawCampaign {
-    RawCampaign {
+    common::declared(RawCampaign {
         world: common::read_valid("world.json"),
         npcs: common::read_valid("npcs.json"),
         classes: common::read_valid("classes.json"),
@@ -51,7 +51,7 @@ fn campaign_with(quests: String) -> RawCampaign {
         site_plan: None,
         detail_plan: None,
         design: None,
-    }
+    })
 }
 
 const TAKES: &str = r#", "requires_item": "minecraft:iron_sword", "takes_item": true"#;

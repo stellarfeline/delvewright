@@ -34,7 +34,7 @@ fn quests(fields: &str, triggers: &str) -> String {
 }
 
 fn campaign_with(quests: String) -> RawCampaign {
-    RawCampaign {
+    common::declared(RawCampaign {
         world: common::read_valid("world.json"),
         npcs: common::read_valid("npcs.json"),
         classes: common::read_valid("classes.json"),
@@ -47,7 +47,7 @@ fn campaign_with(quests: String) -> RawCampaign {
         site_plan: None,
         detail_plan: None,
         design: None,
-    }
+    })
 }
 
 const BELL: &str = r#", "prop": { "block": "minecraft:bell[attachment=floor,facing=south]" }"#;

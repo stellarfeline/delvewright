@@ -5,6 +5,9 @@
     "quests": [
       {
         "act": 1,
+        "activity": [
+          "reach"
+        ],
         "area": "area/keep",
         "depends_on": [],
         "goal": "Find the hoist and learn how it is called.",
@@ -14,6 +17,9 @@
       },
       {
         "act": 1,
+        "activity": [
+          "reach"
+        ],
         "area": "area/keep",
         "depends_on": [
           "quest/board"
@@ -25,6 +31,6 @@
       }
     ]
   },
-  "dsl_version": "0.69.0",
+  "dsl_version": "0.70.0",
   "stage": "quest-plan"
 }

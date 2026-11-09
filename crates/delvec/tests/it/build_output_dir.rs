@@ -101,6 +101,7 @@ fn without_exit(at: &Path) -> PathBuf {
         "the fixture carries obj/exit to remove"
     );
     std::fs::write(&qp, serde_json::to_vec_pretty(&q).unwrap()).unwrap();
+    common::redeclare_plan(&dst);
     dst
 }
 

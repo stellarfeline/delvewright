@@ -28,7 +28,7 @@
     "wave.guards.mob.0.name": "要塞哨卫",
     "world.title": "要塞的试炼"
   },
-  "dsl_version": "0.69.0",
+  "dsl_version": "0.70.0",
   "kind": "l10n",
   "lang": "zh-cn",
   "source": {
@@ -54,7 +54,7 @@
     "obj.trial.shrine.title": "Reach the Shrine",
     "obj.trial.slay.hint": "The guard rises around you as the Keeper speaks — cut every one of them down.",
     "obj.trial.slay.title": "Clear the Guard",
-    "quest.greet.goal": "Take the Keeper's charge and raise the guard.",
+    "quest.greet.goal": "Hear the Keeper's charge and raise the guard.",
     "quest.trial.goal": "Clear the guard, take the key, open the door, reach the shrine.",
     "wave.guards.mob.0.name": "Keep Guard",
     "world.title": "Trial of the Keep"

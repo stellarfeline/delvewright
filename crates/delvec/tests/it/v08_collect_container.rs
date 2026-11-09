@@ -88,7 +88,7 @@ fn read_hw(name: &str) -> String {
 }
 
 fn parse_hw(quests: &str, edits: Option<&str>) -> Campaign {
-    parse_campaign(&RawCampaign {
+    parse_campaign(&common::declared(RawCampaign {
         world: read_hw("world.json"),
         npcs: read_hw("npcs.json"),
         classes: read_hw("classes.json"),
@@ -101,7 +101,7 @@ fn parse_hw(quests: &str, edits: Option<&str>) -> Campaign {
         site_plan: None,
         detail_plan: None,
         design: None,
-    })
+    }))
     .expect("campaign parses")
 }
 

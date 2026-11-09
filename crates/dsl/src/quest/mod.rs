@@ -1,11 +1,13 @@
 //! Stage 5 — quests: each quest's trigger, objectives and effects, and the
 //! stage document that holds every stage-5 collection.
 
+pub mod activity;
 pub mod check;
 mod effect;
 mod objective;
 mod verb;
 
+pub use activity::*;
 pub use effect::*;
 pub use objective::*;
 pub use verb::*;

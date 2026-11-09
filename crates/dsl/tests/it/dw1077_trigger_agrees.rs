@@ -56,6 +56,7 @@ impl Join {
                     "area": "area/keep",
                     "depends_on": deps,
                     "goal": "A beat the finale waits for.",
+                    "activity": ["talk"],
                     "id": id,
                     "mandatory": true,
                     "npcs": [],
@@ -83,7 +84,7 @@ impl Join {
                 }));
             }
         });
-        c
+        common::declared(c)
     }
 
     fn codes(&self) -> BTreeSet<String> {

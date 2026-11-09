@@ -278,6 +278,13 @@ pub struct PlannedQuest {
     pub id: QuestId,
     /// Human-readable goal.
     pub goal: String,
+    /// **What the player does on this line** (spec-0131): the acts of the
+    /// spec-0114 vocabulary the quest's stage-5 objectives perform, declared
+    /// here where the line is planned and confirmed there (`DW1079`): every
+    /// declared act is performed by some objective of the quest, and a line
+    /// with objectives declares at least one. The census under
+    /// `-- what this run examined` states what each line performs beside it.
+    pub activity: Vec<crate::Act>,
     /// Area this quest takes place in (stage-1 ref).
     pub area: AreaId,
     /// NPCs involved (stage-2 refs).
@@ -1020,6 +1027,7 @@ mod spine_tests {
                 serde_json::json!({
                     "id": id,
                     "goal": "g",
+                    "activity": ["talk"],
                     "area": "area/keep",
                     "npcs": [],
                     "depends_on": deps,

@@ -257,6 +257,7 @@ fn a_shared_crossing_with_divergent_destinations_is_dw0494() {
         p["content"]["quests"].as_array_mut().unwrap().push(json!({
             "id": "quest/beacon",
             "goal": "Light the shore beacon so the watch can be seen from the moor.",
+            "activity": ["talk"],
             "area": "area/shore",
             "npcs": [],
             "depends_on": ["quest/decide"],

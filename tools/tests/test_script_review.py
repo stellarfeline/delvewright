@@ -67,10 +67,10 @@ def campaign(root: pathlib.Path) -> pathlib.Path:
                 "quest-plan",
                 {
                     "quests": [
-                        {"id": "quest/finale", "goal": "Finish.", "mandatory": True, "depends_on": ["quest/spoke"]},
-                        {"id": "quest/spoke", "goal": "Do the spoke.", "mandatory": True, "depends_on": ["quest/hub"]},
-                        {"id": "quest/side", "goal": "A side thing.", "mandatory": False, "depends_on": ["quest/hub"]},
-                        {"id": "quest/hub", "goal": "Meet Anna.", "mandatory": True, "depends_on": []},
+                        {"id": "quest/finale", "goal": "Finish.", "activity": ["reach"], "mandatory": True, "depends_on": ["quest/spoke"]},
+                        {"id": "quest/spoke", "goal": "Do the spoke.", "activity": ["use", "talk"], "mandatory": True, "depends_on": ["quest/hub"]},
+                        {"id": "quest/side", "goal": "A side thing.", "activity": ["reach"], "mandatory": False, "depends_on": ["quest/hub"]},
+                        {"id": "quest/hub", "goal": "Meet Anna.", "activity": ["talk"], "mandatory": True, "depends_on": []},
                     ]
                 },
             )
@@ -228,6 +228,24 @@ def test_a_talk_to_writes_out_the_tree_the_cast_shows_and_nothing_the_author_mea
     assert UNREACHED_SENTINEL not in script
     assert "2 of 3 node(s) rendered" in r.stderr
     assert "1 dialogue node(s) no cast root or stage-6 root reaches" in r.stderr
+
+
+def test_a_line_s_declared_activity_never_reaches_the_reviewer(rig):
+    # Every planned line declares its activity (spec-0131): a promise the author
+    # makes and `DW1079` holds, never something a player meets. The script is
+    # byte-identical with and without the declaration.
+    c, b = rig
+    r = run(c, b)
+    assert r.returncode == 0, r.stderr
+    declared = (c / ".out" / "script-review" / "round-1" / "script.md").read_text()
+    plan_path = c / "quest-plan.json"
+    plan = json.loads(plan_path.read_text())
+    stripped = [q.pop("activity") for q in plan["content"]["quests"]]
+    assert len(stripped) == 4  # every line of the rig declared one
+    plan_path.write_text(json.dumps(plan))
+    r = run(c, b)
+    assert r.returncode == 0, r.stderr
+    assert (c / ".out" / "script-review" / "round-2" / "script.md").read_text() == declared
 
 
 def test_the_handout_carries_the_brief_and_every_question_of_the_engine_page(rig):

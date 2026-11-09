@@ -5,9 +5,13 @@
     "quests": [
       {
         "act": 1,
+        "activity": [
+          "reach",
+          "talk"
+        ],
         "area": "area/keep",
         "depends_on": [],
-        "goal": "Get the Keeper to open the door and leave the keep.",
+        "goal": "Hear the Keeper out and leave through the door.",
         "id": "quest/open-the-door",
         "mandatory": true,
         "npcs": [
@@ -16,6 +20,6 @@
       }
     ]
   },
-  "dsl_version": "0.69.0",
+  "dsl_version": "0.70.0",
   "stage": "quest-plan"
 }

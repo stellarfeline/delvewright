@@ -5,6 +5,9 @@
     "quests": [
       {
         "act": 1,
+        "activity": [
+          "reach"
+        ],
         "area": "area/strait",
         "depends_on": [],
         "goal": "Board the near hull and pull the tiller to cross to the far shore.",
@@ -14,6 +17,6 @@
       }
     ]
   },
-  "dsl_version": "0.69.0",
+  "dsl_version": "0.70.0",
   "stage": "quest-plan"
 }

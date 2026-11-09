@@ -447,8 +447,13 @@ pub enum Objective {
 /// its title's head word is read against (`DW1045`).
 ///
 /// Declared in the order of the spec's table; the order is the one every
-/// printed act set is written in.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// printed act set is written in. A planned quest declares its line's
+/// activity as a set of these (`PlannedQuest::activity`, spec-0131), spelled
+/// in kebab-case as [`Act::as_str`] spells them.
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "kebab-case")]
 pub enum Act {
     /// A body inside a volume at a place — the one **place** act.
     Reach,

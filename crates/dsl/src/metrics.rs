@@ -147,7 +147,7 @@ crate::dw_code! {
 /// No document declares a metrics version and no surface is gated by one. What
 /// it needs is that the number cannot stand still while the table moves, and
 /// that is the digest test.
-pub const METRICS_VERSION: u32 = 4;
+pub const METRICS_VERSION: u32 = 5;
 
 /// Player collision-box width in blocks (`0.6 × 0.6 × 1.8` standing).
 pub const PLAYER_WIDTH: f64 = 0.6;
@@ -1341,6 +1341,75 @@ impl Metrics {
                  walking in a straight line. It exists so the route coefficient above \
                  has a ceiling that is a fact rather than another guess, and so the \
                  ratio between them is the thing the playtest actually measures.",
+            ),
+            // The price of each act (spec-0131): minutes a party spends at one
+            // objective performing it, the walk to it excluded — the route
+            // coefficient above prices the walk. One entry per act of the
+            // spec-0114 vocabulary, read whole by `ActivityRates::read`, so an
+            // act the table does not price cannot be estimated. Seeds, from one
+            // owner playthrough of a talk-and-walk campaign (eighteen objectives,
+            // sixteen of them conversations, in about twenty minutes over a
+            // route the engine measured at 2380 blocks) and the per-activity
+            // budgets the round that rewrote it authored; the playtest of that
+            // rewrite is what calibrates them.
+            building(
+                "pacing.minutes-per-reach",
+                MetricValue::Count(0),
+                "minutes",
+                Provenance::Provisional,
+                "Arriving at a place costs nothing beyond the walk the route \
+                 coefficient already prices; a reach is priced at zero so the two \
+                 figures are not summed twice.",
+            ),
+            building(
+                "pacing.minutes-per-talk",
+                MetricValue::Count(2),
+                "minutes",
+                Provenance::Provisional,
+                "A conversation: the tree read and a choice made. The playthrough \
+                 that seeded it spent about a minute a talk on short trees; trees \
+                 written to carry a line are about twice as long.",
+            ),
+            building(
+                "pacing.minutes-per-kill",
+                MetricValue::Count(3),
+                "minutes",
+                Provenance::Provisional,
+                "A wave fought to its counter's end. Authored, not read from a \
+                 playthrough: no measured campaign of the seed set had a fight.",
+            ),
+            building(
+                "pacing.minutes-per-take",
+                MetricValue::Count(4),
+                "minutes",
+                Provenance::Provisional,
+                "A thing found and taken, with the search that finds it: the seed \
+                 round budgeted a find with its search at three to five minutes.",
+            ),
+            building(
+                "pacing.minutes-per-use",
+                MetricValue::Count(2),
+                "minutes",
+                Provenance::Provisional,
+                "A thing at a place used — pressed, pulled, lit, opened — with the \
+                 looking that finds it; the seed round budgeted a use with its \
+                 vessel at two minutes.",
+            ),
+            building(
+                "pacing.minutes-per-present",
+                MetricValue::Count(2),
+                "minutes",
+                Provenance::Provisional,
+                "A thing held up at a place: a use with the item already in hand, \
+                 priced as the use is.",
+            ),
+            building(
+                "pacing.minutes-per-give",
+                MetricValue::Count(2),
+                "minutes",
+                Provenance::Provisional,
+                "A thing laid or handed over at a place: a use with the item \
+                 already in hand, priced as the use is.",
             ),
         ];
 

@@ -218,9 +218,9 @@ fn two_quest_doc(despawn: &str) -> (String, String) {
   "stage": "quest-plan",
   "content": {
     "quests": [
-      { "id": "quest/open-the-door", "goal": "Open the door", "area": "area/keep",
+      { "id": "quest/open-the-door", "goal": "Open the door", "activity": ["talk"], "area": "area/keep",
         "npcs": ["npc/keeper"], "depends_on": [], "mandatory": true, "act": 1 },
-      { "id": "quest/second", "goal": "Speak again", "area": "area/keep",
+      { "id": "quest/second", "goal": "Speak again", "activity": ["talk"], "area": "area/keep",
         "npcs": ["npc/keeper"], "depends_on": ["quest/open-the-door"], "mandatory": true, "act": 1 }
     ],
     "finale": "quest/second"

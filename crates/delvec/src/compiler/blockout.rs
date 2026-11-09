@@ -4409,6 +4409,22 @@ fn pacing(
         return;
     };
     let rate = u64::from(*rate).max(1);
+    let route_minutes =
+        (blocks as u64).div_euclid(rate) + u64::from(!(blocks as u64).is_multiple_of(rate));
+    // spec-0131: the walk is one half of the evening and what the player does
+    // at each objective is the other, priced per act by the same table, so
+    // the figure beside `target_minutes` is the sum here as at the projection.
+    let activity = delvewright_dsl::ActivityCensus::of(c, &table, &mut reads)
+        .map(|a| {
+            format!(
+                " of route; {}; about {} minute(s) in all against this world's \
+                 `target_minutes` of {}",
+                a.pacing_clause(),
+                route_minutes + a.minutes,
+                a.target_minutes
+            )
+        })
+        .unwrap_or_default();
     raise(
         d,
         delvewright_dsl::layout::DW_PACING,
@@ -4419,14 +4435,13 @@ fn pacing(
             format!(
                 "the critical path MEASURES {blocks} block(s) of route over {legs} leg(s) of the \
              built blockout, which at {rate} blocks of route per minute of play is about \
-             {minutes} minute(s){un}. Like the projection printed over the graph, this figure \
-             carries NO threshold and refuses nothing: the coefficient is uncalibrated until the \
-             metrics gym has been walked and a full playtest has run. The two are printed so they \
-             can be set side by side — the projection is what the boxes' extents say the map \
-             should cost, and this is what it costs.",
+             {minutes} minute(s){activity}{un}. Like the projection printed over the graph, this \
+             figure carries NO threshold and refuses nothing: the coefficient is uncalibrated \
+             until the metrics gym has been walked and a full playtest has run. The two are \
+             printed so they can be set side by side — the projection is what the boxes' extents \
+             say the map should cost, and this is what it costs.",
                 legs = binding.legs,
-                minutes = (blocks as u64).div_euclid(rate)
-                    + u64::from(!(blocks as u64).is_multiple_of(rate)),
+                minutes = route_minutes,
                 un = [
                     (!unrouted.is_empty()).then(|| {
                         format!(

@@ -571,6 +571,7 @@ fn add_optional_strand(plan: &mut Value, quests: &mut Value) {
             "area": "area/keep",
             "depends_on": ["quest/decide"],
             "goal": "Go back for a last look at the gate on the way out.",
+            "activity": ["talk"],
             "id": "quest/look-back",
             "mandatory": false,
             "npcs": []
@@ -715,6 +716,7 @@ fn lingering_strand_fixture(then: impl Fn(&mut Value)) -> Campaign {
                 "area": "area/keep",
                 "depends_on": ["quest/decide"],
                 "goal": "Linger in the yard a while.",
+                "activity": ["talk"],
                 "id": "quest/linger",
                 "mandatory": false,
                 "npcs": []
@@ -1079,6 +1081,7 @@ fn a_clash_that_needs_every_step_between_its_beats_is_dw0485_campaign() -> Campa
                 "area": "area/keep",
                 "depends_on": deps,
                 "goal": "A beat of the night.",
+                "activity": ["talk"],
                 "id": id,
                 "mandatory": true,
                 "npcs": []
@@ -1270,6 +1273,7 @@ fn plan_quest(plan: &mut Value, id: &str, deps: &[&str]) {
             "area": "area/keep",
             "depends_on": deps,
             "goal": "A beat of the night.",
+            "activity": ["talk"],
             "id": id,
             "mandatory": false,
             "npcs": []
@@ -1703,6 +1707,7 @@ fn a_branch_past_the_bound_is_dw0927() {
                     "area": "area/keep",
                     "depends_on": ["quest/decide"],
                     "goal": "Answer a knock at the gate.",
+                    "activity": ["talk"],
                     "id": id,
                     "mandatory": false,
                     "npcs": []

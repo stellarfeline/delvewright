@@ -708,6 +708,9 @@ pub(crate) fn cross_stage(c: &Campaign, d: &mut Vec<Diagnostic>) {
         }
     }
     trigger_agrees_with_plan(c, d);
+    // spec-0131: every line's declared activity is carried out by its
+    // expansion (`DW1079`); the binding is printed by the caller.
+    d.extend(check_activity(c).0);
     for (i, q) in c.quests.content.quests.iter().enumerate() {
         if !planned_ids.contains(q.id.as_str()) {
             d.push(Diagnostic::error(
@@ -1420,4 +1423,161 @@ pub(crate) fn quest_dangling_refs(c: &Campaign, d: &mut Vec<Diagnostic>) {
             );
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// DW1079 — a line's declared activity is carried out (spec-0131)
+// ---------------------------------------------------------------------------
+
+crate::dw_code! {
+    /// A planned quest declares an act (`activity`) none of its stage-5
+    /// objectives performs, or declares no act while its objectives perform
+    /// some.
+    pub const ACTIVITY_NOT_CARRIED_OUT: DwCode = DwCode::new("DW1079", ExitTier::Build);
+}
+
+/// What `DW1079` examined, zeroes included (spec-0131 §4).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ActivityBinding {
+    /// Planned quests in the plan.
+    pub lines: usize,
+    /// Planned quests with a stage-5 expansion — the judged ones.
+    pub judged: usize,
+    /// Judged lines whose objectives perform an act the declaration does not
+    /// name, by quest id and the acts.
+    pub undeclared: Vec<(String, BTreeSet<crate::Act>)>,
+    /// Judged lines refused.
+    pub refused: usize,
+}
+
+impl ActivityBinding {
+    /// The binding line `delvec validate` prints.
+    pub fn line(&self) -> String {
+        let mut s = format!(
+            "activity binding (DW1079): {} of {} planned quest(s) declare an activity their \
+             expansion is read against; {} awaiting stage 5; {} refused; {} line(s) perform an \
+             act beyond their declaration",
+            self.judged,
+            self.lines,
+            self.lines - self.judged,
+            self.refused,
+            self.undeclared.len()
+        );
+        if !self.undeclared.is_empty() {
+            let listed: Vec<String> = self
+                .undeclared
+                .iter()
+                .map(|(q, acts)| format!("`{q}` also {}", crate::acts_line(acts)))
+                .collect();
+            s.push_str(&format!(" ({})", listed.join("; ")));
+        }
+        s
+    }
+
+    /// The ledger rows `validation/activity-census.json` carries under
+    /// `declared`: `judged` also as `examined`, so a build of a plan whose
+    /// quests are all unexpanded reads as a zero binding of this check.
+    pub fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "code": ACTIVITY_NOT_CARRIED_OUT.id(),
+            "lines": self.lines,
+            "judged": self.judged,
+            "examined": self.judged,
+            "undeclared": self.undeclared.iter().map(|(q, acts)| serde_json::json!({
+                "quest": q,
+                "acts": acts.iter().map(|a| a.as_str()).collect::<Vec<_>>(),
+            })).collect::<Vec<_>>(),
+            "refused": self.refused,
+        })
+    }
+}
+
+/// **A line's declared activity is carried out** (spec-0131 §4): every act a
+/// planned quest's `activity` names is performed by some objective of its
+/// stage-5 expansion ([`crate::Quest::objective_acts`], the one derivation,
+/// so a `give-item` among a talk's completion effects makes the line a
+/// taking), and a line whose objectives perform acts declares at least one.
+/// The declaration is confirmed, never inferred: an act the line performs
+/// beyond its declaration is counted in the binding and refused nothing, and
+/// a planned quest with no stage-5 quest yet has nothing to read against and
+/// is counted apart — the state `DW0150` names. Nothing here reads English.
+pub fn check_activity(c: &Campaign) -> (Vec<Diagnostic>, ActivityBinding) {
+    let mut bind = ActivityBinding::default();
+    let mut d = Vec::new();
+    let by_id: BTreeMap<&str, &crate::Quest> = c
+        .quests
+        .content
+        .quests
+        .iter()
+        .map(|q| (q.id.as_str(), q))
+        .collect();
+    for (pi, planned) in c.quest_plan.content.quests.iter().enumerate() {
+        bind.lines += 1;
+        let Some(q) = by_id.get(planned.id.as_str()) else {
+            continue;
+        };
+        bind.judged += 1;
+        let declared: BTreeSet<crate::Act> = planned.activity.iter().copied().collect();
+        let performed: BTreeSet<crate::Act> = q
+            .objectives
+            .iter()
+            .flat_map(|o| q.objective_acts(o))
+            .collect();
+        let beyond: BTreeSet<crate::Act> = performed.difference(&declared).copied().collect();
+        if !beyond.is_empty() {
+            bind.undeclared.push((planned.id.to_string(), beyond));
+        }
+        let missing: BTreeSet<crate::Act> = declared.difference(&performed).copied().collect();
+        let path = format!("/content/quests/{pi}/activity");
+        let census: Vec<String> = q
+            .objectives
+            .iter()
+            .map(|o| format!("`{}` → {}", o.id(), crate::acts_line(&q.objective_acts(o))))
+            .collect();
+        let census = if census.is_empty() {
+            "no objective".to_string()
+        } else {
+            census.join(", ")
+        };
+        if !missing.is_empty() {
+            bind.refused += 1;
+            d.push(Diagnostic::error(
+                ACTIVITY_NOT_CARRIED_OUT,
+                "quest-plan",
+                path,
+                format!(
+                    "planned quest `{}` declares the activity {} and its expansion performs {} \
+                     ({census}), so the plan promises {} and no objective of the line performs \
+                     it (spec-0131). Either give the line an objective that performs it — a \
+                     `collect` takes, an `interact` uses (and presents with `requires_item`, \
+                     gives with `takes_item`), a `kill` kills, a `talk-to` talks, a \
+                     `reach-anchor` reaches — or withdraw it from `activity`; the census under \
+                     `-- what this run examined` states every line's acts.",
+                    planned.id,
+                    crate::acts_line(&declared),
+                    if performed.is_empty() {
+                        "no act".to_string()
+                    } else {
+                        crate::acts_line(&performed)
+                    },
+                    crate::acts_line(&missing),
+                ),
+            ));
+        } else if declared.is_empty() && !performed.is_empty() {
+            bind.refused += 1;
+            d.push(Diagnostic::error(
+                ACTIVITY_NOT_CARRIED_OUT,
+                "quest-plan",
+                path,
+                format!(
+                    "planned quest `{}` declares no activity and its expansion performs {} \
+                     ({census}): a line that does something says what, where it is planned \
+                     (spec-0131). Declare the act(s) the player performs on it in `activity`.",
+                    planned.id,
+                    crate::acts_line(&performed),
+                ),
+            ));
+        }
+    }
+    (d, bind)
 }

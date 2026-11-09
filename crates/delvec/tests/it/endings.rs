@@ -36,6 +36,7 @@ fn planned(id: &str, deps: &[&str], mandatory: bool) -> Value {
     json!({
         "act": 1, "area": "area/keep", "depends_on": deps,
         "goal": format!("Do {id}."), "id": id, "mandatory": mandatory,
+        "activity": ["talk"],
         "npcs": ["npc/keeper"]
     })
 }

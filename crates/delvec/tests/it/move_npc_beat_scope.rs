@@ -133,7 +133,7 @@ fn fixture(guard: bool) -> std::path::PathBuf {
         quests.insert(
             0,
             json!({
-                "id": "quest/arrive", "goal": "Take stock of the keep before asking.",
+                "id": "quest/arrive", "goal": "Take stock of the keep before asking.", "activity": ["talk"],
                 "area": "area/keep", "npcs": [], "depends_on": [],
                 "mandatory": true, "act": 1,
             }),

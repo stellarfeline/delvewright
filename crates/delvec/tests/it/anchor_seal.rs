@@ -463,7 +463,7 @@ fn worldless_campaign(volley_anchor: &str) -> Campaign {
             r#"{
   "dsl_version": "%dsl_version%", "campaign_id": "hello-world", "stage": "quest-plan",
   "content": {
-    "quests": [ { "id": "quest/open-the-door", "goal": "Leave the keep.",
+    "quests": [ { "id": "quest/open-the-door", "goal": "Leave the keep.", "activity": ["talk"],
       "area": "area/keep", "npcs": [], "depends_on": [], "mandatory": true, "act": 1 } ],
     "finale": "quest/open-the-door"
   }

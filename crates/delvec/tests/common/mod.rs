@@ -119,6 +119,7 @@ pub fn materialize_from(base: &Path, patch: &serde_json::Value, dst: &Path) {
             std::fs::write(file, text).unwrap();
         }
     }
+    redeclare_plan(dst);
 }
 
 /// Strip any i18n from a materialized campaign at `dir`: drop `world.languages`
@@ -391,6 +392,7 @@ pub fn materialize(patch: &serde_json::Value, dst: &Path) {
             std::fs::write(file, text).unwrap();
         }
     }
+    redeclare_plan(dst);
 }
 
 /// Give an override document the envelope key it deliberately does not carry.
@@ -468,6 +470,13 @@ pub fn patch_doc(text: &str, f: impl FnOnce(&mut serde_json::Value)) -> String {
 pub fn patch_file(path: &Path, f: impl FnOnce(&mut serde_json::Value)) {
     let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {path:?}: {e}"));
     std::fs::write(path, patch_doc(&text, f)).unwrap();
+    // A patched body re-declares its plan (spec-0131); a patch to any other
+    // document leaves the plan as the test wrote it.
+    if path.file_name().is_some_and(|n| n == "quests.json")
+        && let Some(dir) = path.parent()
+    {
+        redeclare_plan(dir);
+    }
 }
 
 /// The effect list a quest runs when one of its objectives completes —
@@ -1742,4 +1751,98 @@ fn gallery_site_plan_detailed_into(root: &Path) {
         out.status,
         String::from_utf8_lossy(&out.stderr)
     );
+}
+
+/// The plan at `dir` re-declared from the expansion a test wrote (spec-0131):
+/// every planned quest's `activity` becomes the acts its stage-5 objectives
+/// perform (`Quest::objective_acts`, the one derivation), so a fixture whose
+/// body a test replaced keeps its plan true by construction. Called by
+/// [`materialize_from`] and by [`patch_file`] whenever `quests.json` is the file
+/// patched. A campaign that does not parse is left as it is — that is the
+/// test's own finding. `DW1079` itself is exercised by `it/line_activity.rs`,
+/// never through this.
+pub fn redeclare_plan(dir: &Path) {
+    let read = |n: &str| std::fs::read_to_string(dir.join(n)).ok();
+    let (Some(world), Some(npcs), Some(classes), Some(quest_plan), Some(quests), Some(dialogue)) = (
+        read("world.json"),
+        read("npcs.json"),
+        read("classes.json"),
+        read("quest-plan.json"),
+        read("quests.json"),
+        read("dialogue.json"),
+    ) else {
+        return;
+    };
+    let raw = delvewright_dsl::RawCampaign {
+        world,
+        npcs,
+        classes,
+        quest_plan,
+        quests,
+        dialogue,
+        world_edits: read("world-edits.json"),
+        geometry_brief: read("geometry-brief.json"),
+        layout_graph: read("layout-graph.json"),
+        site_plan: read("site-plan.json"),
+        detail_plan: read("detail-plan.json"),
+        design: read("design.json"),
+    };
+    let Ok(c) = delvewright_dsl::parse_campaign(&raw) else {
+        return;
+    };
+    let by_id: std::collections::BTreeMap<&str, &delvewright_dsl::Quest> = c
+        .quests
+        .content
+        .quests
+        .iter()
+        .map(|q| (q.id.as_str(), q))
+        .collect();
+    let plan_path = dir.join("quest-plan.json");
+    let text = std::fs::read_to_string(&plan_path).unwrap();
+    let mut v: serde_json::Value = serde_json::from_str(&text).expect("the plan is JSON");
+    for (i, planned) in c.quest_plan.content.quests.iter().enumerate() {
+        let Some(q) = by_id.get(planned.id.as_str()) else {
+            continue;
+        };
+        let acts: std::collections::BTreeSet<delvewright_dsl::Act> = q
+            .objectives
+            .iter()
+            .flat_map(|o| q.objective_acts(o))
+            .collect();
+        v["content"]["quests"][i]["activity"] =
+            serde_json::json!(acts.iter().map(|a| a.as_str()).collect::<Vec<_>>());
+    }
+    std::fs::write(&plan_path, patch_doc(&text, |p| *p = v)).unwrap();
+}
+
+/// [`redeclare_plan`] for a campaign held in memory: the plan of `raw`
+/// re-declared from the expansion it carries. A campaign that does not parse
+/// is returned unchanged.
+pub fn declared(mut raw: delvewright_dsl::RawCampaign) -> delvewright_dsl::RawCampaign {
+    let Ok(c) = delvewright_dsl::parse_campaign(&raw) else {
+        return raw;
+    };
+    let by_id: std::collections::BTreeMap<&str, &delvewright_dsl::Quest> = c
+        .quests
+        .content
+        .quests
+        .iter()
+        .map(|q| (q.id.as_str(), q))
+        .collect();
+    let plan = &c.quest_plan.content.quests;
+    raw.quest_plan = patch_doc(&raw.quest_plan, |v| {
+        for (i, planned) in plan.iter().enumerate() {
+            let Some(q) = by_id.get(planned.id.as_str()) else {
+                continue;
+            };
+            let acts: std::collections::BTreeSet<delvewright_dsl::Act> = q
+                .objectives
+                .iter()
+                .flat_map(|o| q.objective_acts(o))
+                .collect();
+            v["content"]["quests"][i]["activity"] =
+                serde_json::json!(acts.iter().map(|a| a.as_str()).collect::<Vec<_>>());
+        }
+    });
+    raw
 }

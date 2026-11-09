@@ -51,7 +51,7 @@ A prompt is a **constraint set over the documents**: honour everything it pins d
 
 **A thin prompt is creative licence.** When a prompt pins down little — a one-line theme, no detailed brief — treat it as a **showcase** brief and deliberately exercise the breadth of what the engine supports, so that a stranger playing the result discovers what it can do. Do not work from a written feature list, which rots as the schema moves: **query the live schema** (`delvec schema --stage all`) for the available verbs and effects, then aim to include, wherever the story can carry them coherently: multi-area transport as a narrative beat, flag-gated dialogue consequences, real props and set dressing, at least one tuned combat or stealth encounter, narration beats, and varied NPC presentation. **Coherence and pacing always win over feature count** — never bolt on a mechanic the story cannot motivate.
 
-**A detailed brief is the opposite**: honour exactly what it pins down and showcase nothing extra.
+**A detailed brief is the opposite**: honour exactly what it pins down and showcase nothing extra. What is never extra, under either brief: every line of the plan has a body the player performs and is budgeted for it — a conversation is how a line opens and closes, not what it is (steps 3 and 5).
 
 **Every round changes only what was asked for.** A mechanics fix must not incidentally rewrite story, staging or dialogue; an approved change that moves the design updates `DESIGN.md` in the same commit; and every round ends with a conformance review — diff the campaign's current behaviour against `DESIGN.md` beat by beat and report any deviation nobody asked for instead of shipping it. Drift found in review is restored to the design or escalated, never silently kept.
 
@@ -163,7 +163,7 @@ A key pasted under (c) or (d) goes into `.out/env.sh` under its provider's name,
 
 ## 3. The story documents — `npcs`, `classes`, `quest-plan`
 
-**Needs**: step 2. **Produces**: `npcs.json`, `classes.json`, `quest-plan.json`. **Ends at**: a campaign that does **not** validate, carrying only refusals whose messages name something `quests.json` or `dialogue.json` will supply — the correct state to leave this step in. **Read**: `references/story.md` before you start the loop, not after a refusal.
+**Needs**: step 2. **Produces**: `npcs.json`, `classes.json`, `quest-plan.json`. **Ends at**: a campaign that does **not** validate, carrying only refusals whose messages name something `quests.json` or `dialogue.json` will supply — the correct state to leave this step in. **Read**: `references/story.md` before you start the loop, not after a refusal. **Every line of the plan declares its activity**: each quest's `activity` names the acts the player performs on it, decided before the goal is written and held to at step 5 (`DW1079`), and the lines are budgeted per activity against `target_minutes` in `DESIGN.md` (`references/story.md`, *Every line has an activity*; the research is `$DELVEWRIGHT_ENGINE/docs/reference/web-narrative.md` §7) — mandatory for every brief.
 
 ## 4. The design gate — the user says yes
 
@@ -171,7 +171,7 @@ A key pasted under (c) or (d) goes into `.out/env.sh` under its provider's name,
 
 ## 5. The content documents — `quests` and `dialogue`
 
-**Needs**: step 4's yes. **Produces**: `quests.json`, `dialogue.json`, and the first campaign state where `validate` clean is reachable. **Read**: `references/content.md`, plus `references/quest-capabilities.md` for what the DSL can express and `references/writing-craft.md` for how the prose has to be written (its L1 rule decides what the level shows and what is written at all) — both before writing, not after a refusal. A custom face, or a vanilla texture the delve replaces (the moon, a mob's skin, a block), is `references/npc-skins.md`. Other languages are a final document stage: `references/other-languages.md`.
+**Needs**: step 4's yes. **Produces**: `quests.json`, `dialogue.json`, and the first campaign state where `validate` clean is reachable. **Read**: `references/content.md`, plus `references/quest-capabilities.md` for what the DSL can express and `references/writing-craft.md` for how the prose has to be written (its L1 rule decides what the level shows and what is written at all) — both before writing, not after a refusal. A custom face, or a vanilla texture the delve replaces (the moon, a mob's skin, a block), is `references/npc-skins.md`. Other languages are a final document stage: `references/other-languages.md`. **The step closes on the census**: the last clean `validate` prints every line's acts and minutes and the pacing sum against `target_minutes`; a line the census names as only conversations and walks gets its body, and a declaration the engine refuses (`DW1079`) gets the objective it promised (`references/content.md`).
 
 ## 5b. The script review — only when the story was yours
 
