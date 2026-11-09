@@ -253,6 +253,30 @@ def test_a_body_of_501_lines_reds(mod, tree, engine):
     assert has(run(mod, engine), "budget is 500")
 
 
+# ------------------------------------------------------ rule 23, one paragraph, one line --
+
+
+def test_a_wrapped_paragraph_reds(mod, tree, engine):
+    path = tree / "references" / "when-red.md"
+    path.write_text(path.read_text(encoding="utf-8") + "\nA paragraph that\nis broken here.\n", encoding="utf-8")
+    rep = run(mod, engine)
+    assert has(rep, "when-red.md:") and has(rep, "continues the paragraph")
+
+
+def test_a_wrapped_list_item_reds(mod, tree, engine):
+    path = tree / "SKILL.md"
+    path.write_text(path.read_text(encoding="utf-8") + "\n- an item that\n  carries on.\n", encoding="utf-8")
+    assert has(run(mod, engine), "SKILL.md:")
+
+
+def test_fences_tables_and_hard_breaks_are_not_wrapped_prose(mod):
+    text = "# T\n\n```\na\nb\n```\n\n| a | b |\n| c | d |\n\nline  \nafter a hard break\n"
+    assert mod.wrapped_lines(text) == []
+    assert mod.wrapped_lines("one\ntwo\n") == [2]
+    assert mod.wrapped_lines("- item runs to\n  <place> here\n") == [2]
+    assert mod.wrapped_lines("> a quote\n> carried on\n") == [2]
+
+
 # ----------------------------------------------------------------- rule 7, the pointers --
 
 
@@ -347,8 +371,8 @@ def test_an_ask_outside_every_listed_section_reds(mod, tree, engine):
     """spec-0122 §5's first perturbation: the provider question back in Init I7."""
     edit(
         tree / "references" / "init.md",
-        "A variable whose name says what a key is *for* and nothing about *whose* it\n    is names no provider and is treated as absent.",
-        "A variable whose name says what a key is *for* and nothing about *whose* it\n    is names no provider and is treated as absent. Ask the user which provider the key is for.",
+        "A variable whose name says what a key is *for* and nothing about *whose* it is names no provider and is treated as absent.",
+        "A variable whose name says what a key is *for* and nothing about *whose* it is names no provider and is treated as absent. Ask the user which provider the key is for.",
     )
     rep = run(mod, engine)
     assert has(rep, "references/init.md:")
@@ -975,8 +999,8 @@ def test_a_moved_layout_manifest_reds(mod, tree, engine):
     """
     edit(
         tree / "references" / "tools-by-symptom.md",
-        "calibrate\n  <report> --layout <out>/creator-datapack/layout.json",
-        "calibrate\n  <report> --layout <out>/creator-datapack/manifest.json",
+        "calibrate <report> --layout <out>/creator-datapack/layout.json",
+        "calibrate <report> --layout <out>/creator-datapack/manifest.json",
     )
     assert has(run(mod, engine), "names path `creator-datapack/manifest.json`")
 

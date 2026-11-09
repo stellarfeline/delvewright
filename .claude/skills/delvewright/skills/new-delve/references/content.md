@@ -1,82 +1,33 @@
 # Step 5 — quests and dialogue
 
 
-This is the long step. **What the DSL can express is in *Reference: what a quest
-can do*** — read it before writing, not after a refusal. **How the prose has to
-be written is in *Reference: writing craft*** — apply its section F as each
-line is written, and run its section A over every line before calling this step
-done.
+This is the long step. **What the DSL can express is in *Reference: what a quest can do*** — read it before writing, not after a refusal. **How the prose has to be written is in *Reference: writing craft*** — apply its section F as each line is written, and run its section A over every line before calling this step done.
 
-The order inside `quests.json` matters: **write the `cast` block first, then
-the campaign's `guidance` block, then the objectives.** Every quest declares,
-for every NPC live in it, `{at, doing, dialogue}` — position first, story
-second. `guidance` is usually omitted: write it only to hide the compass or
-announcements by default, or to give the journal a `manual`.
+The order inside `quests.json` matters: **write the `cast` block first, then the campaign's `guidance` block, then the objectives.** Every quest declares, for every NPC live in it, `{at, doing, dialogue}` — position first, story second. `guidance` is usually omitted: write it only to hide the compass or announcements by default, or to give the journal a `manual`.
 
 **Each quest's `trigger` agrees with its plan entry.** A quest with an empty `depends_on` is armed at `{"type": "campaign-start"}`; any other is armed by `{"type": "quest-complete", "quest": …}` naming one quest its `depends_on` lists. A join (a quest that `depends_on` several) is armed by one of them, and its first objective waits for the rest by a flag each of them sets. `validate` refuses a trigger that disagrees with the plan (`DW1077`).
 
 Then `dialogue.json`. Four rules that are not style preferences:
 
-- **A dialogue option is a button caption, not a sentence.** Vanilla draws each
-  option on a fixed 150-GUI-px button and *scrolls* a label that does not fit.
-  Author to **≤20 Latin / ≤12 Han characters**; the compiler refuses over-long
-  ones (`DW0331`). What does not fit belongs in the node's body text, which
-  wraps, in the option's `tooltip`, or in the NPC's reply — never in the button.
-- **Re-derive every node's option list from that node's situation.** Never carry
-  an option list forward from an earlier node.
-- **A question gets an answer.** An option whose label or tooltip ends in `?`
-  leads (`next`) to a node in which the speaker answers it plainly; an option
-  with no `next` closes the dialog, so a question there is asked into silence.
-  Its `complete-objective` still fires when it is chosen.
+- **A dialogue option is a button caption, not a sentence.** Vanilla draws each option on a fixed 150-GUI-px button and *scrolls* a label that does not fit. Author to **≤20 Latin / ≤12 Han characters**; the compiler refuses over-long ones (`DW0331`). What does not fit belongs in the node's body text, which wraps, in the option's `tooltip`, or in the NPC's reply — never in the button.
+- **Re-derive every node's option list from that node's situation.** Never carry an option list forward from an earlier node.
+- **A question gets an answer.** An option whose label or tooltip ends in `?` leads (`next`) to a node in which the speaker answers it plainly; an option with no `next` closes the dialog, so a question there is asked into silence. Its `complete-objective` still fires when it is chosen.
 - **Every `talk-to` keeps one completing option with no gate.** An option carrying `requires_flags`, `forbids_flags` or `requires_state` may be hidden the moment the beat needs it, so a gated completing option (an ending that reads the run, say) stands beside an ungated one, never alone. `validate` refuses a `talk-to` whose every completing option is gated (`DW0191`).
 
 **A line names a thing as the player sees it.** Every title, hint, notice and dialogue line calls a built object by the word a player would use for the block or build in front of them: a vanilla sign is a sign or a notice, never a slate. Where the story needs a noun the vanilla block does not read as, build the thing out of blocks so it reads as that noun, or change the noun. This rule is authored, not cited; the engine does not check it and the playtest judges it.
 
 **A secret the level shows is not told by the text first.** Where a shot reveals a way, a room or a thing, no line the player reads before that shot — a narrate on arrival, an objective's title or hint, a quest's goal, a line of dialogue, a tooltip, in any language — names it or says where it is. A hidden way carries no plain hint at all: no line points at the mechanism that opens it or says what that mechanism will do (*turn the sluice and the water douses the hearth* gives the secret away as surely as naming it). The mechanism is found by exploring, not by reading — tucked away and unremarkable rather than a lever hung on a wall, its purpose unknown when the player finds it, and often some distance from what it opens. Pressing it plays the close-up shot of what changed elsewhere, and only then is the way open. The reveal is the shot's; the text after it may say anything.
 
-Loop `delvec --prefabs "$DELVEWRIGHT_PREFABS" validate <campaign-dir>` until clean after each.
-**This is the step where clean is reachable**, and it is where the codes step 3
-ended holding go away: writing `quests.json` clears `DW0150` for every quest at
-once and `DW0818` with it, and the effects it carries clear `DW0172`, `DW0112`
-on a branch's `leads_to`, `DW0482` and `DW0197`; `dialogue.json` clears
-`DW0152`. If any of them
-survives a written stage 5 it has stopped being the expected state and is a real
-finding — a `DW0150` here means an id in the plan and an id in `quests.json` do
-not match, and the message says how many quests stage 5 declares, which is how
-you tell that apart from the step-3 state.
+Loop `delvec --prefabs "$DELVEWRIGHT_PREFABS" validate <campaign-dir>` until clean after each. **This is the step where clean is reachable**, and it is where the codes step 3 ended holding go away: writing `quests.json` clears `DW0150` for every quest at once and `DW0818` with it, and the effects it carries clear `DW0172`, `DW0112` on a branch's `leads_to`, `DW0482` and `DW0197`; `dialogue.json` clears `DW0152`. If any of them survives a written stage 5 it has stopped being the expected state and is a real finding — a `DW0150` here means an id in the plan and an id in `quests.json` do not match, and the message says how many quests stage 5 declares, which is how you tell that apart from the step-3 state.
 
-**The step does not close until the census is read.** The last clean `validate`
-prints, under `-- what this run examined`, the **activity census**: one line per
-planned quest with its objectives, its acts and its minutes, a header with the
-totals, the lines whose every act is talk or reach, and the activity minutes
-against `target_minutes`; `DW0822` beside it adds the route and states the sum.
-Read it against the plan's table in `DESIGN.md`, line by line:
+**The step does not close until the census is read.** The last clean `validate` prints, under `-- what this run examined`, the **activity census**: one line per planned quest with its objectives, its acts and its minutes, a header with the totals, the lines whose every act is talk or reach, and the activity minutes against `target_minutes`; `DW0822` beside it adds the route and states the sum. Read it against the plan's table in `DESIGN.md`, line by line:
 
-- a spoke or a strand the census names as talk-or-reach only has no body
-  (`$DELVEWRIGHT_ENGINE/docs/reference/web-narrative.md` §7 L1): give it the
-  objective its plan declares — a `collect`, an `interact`, a `kill` — and
-  write the objective, never narrow the declaration to match the talk;
-- a declaration the engine refuses (`DW1079`) promised an act nobody performs
-  on the line: the message names both repairs, and on a spoke the first — the
-  objective — is the right one; an act the line performs beyond its
-  declaration is only counted, and the plan is brought up to it;
-- a sum well under `target_minutes` is lines missing, not a pacing note: go
-  back to step 3 for the lines, through the design gate if the design moves.
+- a spoke or a strand the census names as talk-or-reach only has no body (`$DELVEWRIGHT_ENGINE/docs/reference/web-narrative.md` §7 L1): give it the objective its plan declares — a `collect`, an `interact`, a `kill` — and write the objective, never narrow the declaration to match the talk;
+- a declaration the engine refuses (`DW1079`) promised an act nobody performs on the line: the message names both repairs, and on a spoke the first — the objective — is the right one; an act the line performs beyond its declaration is only counted, and the plan is brought up to it;
+- a sum well under `target_minutes` is lines missing, not a pacing note: go back to step 3 for the lines, through the design gate if the design moves.
 
-Record the census header and the `DW0822` line in `GENERATION.md` under the
-content step; the hand-over's report quotes them.
+Record the census header and the `DW0822` line in `GENERATION.md` under the content step; the hand-over's report quotes them.
 
-**One code arrives rather than goes away, and this is the first run that can
-raise it.** `DW0890` refuses when the approved design and the built world do not
-agree about the sky: the rows step 4 wrote into `design.json` state `night` and
-`world.json` declares `noon`, or an effect reaches a `dawn` no row states, or a
-row names a picture that is not under `design/` — or a picture there has no row.
-Every run prints its binding line first (`design record: N reference(s) recorded
-over M image file(s) …`), refusing or not, so read that line and check the two
-counts are the two you approved. The remedy is always a document edit on
-whichever side is wrong, and *never* moving the hour to satisfy a mob — that is
-`DW0496`'s rule, and *Reference: authoring pitfalls* says why.
+**One code arrives rather than goes away, and this is the first run that can raise it.** `DW0890` refuses when the approved design and the built world do not agree about the sky: the rows step 4 wrote into `design.json` state `night` and `world.json` declares `noon`, or an effect reaches a `dawn` no row states, or a row names a picture that is not under `design/` — or a picture there has no row. Every run prints its binding line first (`design record: N reference(s) recorded over M image file(s) …`), refusing or not, so read that line and check the two counts are the two you approved. The remedy is always a document edit on whichever side is wrong, and *never* moving the hour to satisfy a mob — that is `DW0496`'s rule, and *Reference: authoring pitfalls* says why.
 
-If the campaign declares other languages, the localization stage is a **final
-document stage after `dialogue`** — see *Reference: other languages*. It does
-not change anything below.
+If the campaign declares other languages, the localization stage is a **final document stage after `dialogue`** — see *Reference: other languages*. It does not change anything below.
