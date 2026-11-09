@@ -2409,14 +2409,17 @@ CI-enforced over every fixture family by `tests/it/packtest_batch.rs`):
   per footprint, numbered `horizon/valley/t{n}` in footprint order), and the
   `DW0921` proof's quest configurations (counts summed and pockets listed in
   configuration order), the `DW1011` proof's (counts summed, bypassed gates
-  named in first-configuration order), and the story worlds' walks
+  named in first-configuration order), the story worlds' walks
   (`emit/routes.rs::prove_branch_world`: each world's path, links, per-branch
   `DW0311`, routes, `DW0314` and waypoints, folded in row order, so the first
-  failing world is the one named; one world's transients per thread), and a
+  failing world is the one named; one world's transients per thread), a
   written world's light strips (`view/world.rs::encode_world`: each strip of
   four chunk columns lit and its chunks encoded, folded in chunk order into the
   light hash and the region files; at most `threads` strips' light fields and
-  `2 × threads` strips' encoded chunks held at once). Gated by `tests/it/thread_count.rs`, which builds one
+  `2 × threads` strips' encoded chunks held at once), and the write sequence's
+  chunks (`attached::replay_by_chunk`: each chunk replayed over its halo,
+  folded in chunk order; at most `threads` replays' worlds and `2 × threads`
+  chunks' own cells and drops held at once). Gated by `tests/it/thread_count.rs`, which builds one
   subject at `DELVEC_THREADS=1`, `3` and unset and compares trees and stderr,
   the machine's measurements excepted: a world's wall time, the snapshot's
   page reads served by a thread's recent pages, `world store pages:` and
