@@ -2,6 +2,7 @@
 //! branch, the smoothed and resampled polyline, the facing, and the timeline's
 //! own seals.
 
+use super::walkway::WalkWays;
 use super::*;
 use crate::compiler::failure::Failure;
 use delvewright_dsl::QuestEffect;
@@ -323,11 +324,17 @@ fn step_vertices(a: [f64; 3], b: [f64; 3], width: f64) -> Vec<[f64; 3]> {
 /// which use-gate it passed — and a thinned route would silently stop binding
 /// those rules. This is the polyline the body is RENDERED along; the proof keeps
 /// the cells.
+///
+/// **A line between two cells of a declared way stays on the way**
+/// ([`super::walkway`]): such a segment is merged only while every column it
+/// sweeps is a way cell, so the polyline never cuts a switchback's corner
+/// across the flank the route kept off.
 pub(in crate::compiler::nav) fn smooth_walk(
     world: &World,
     cells: &[[i32; 3]],
     fp: &Footprint,
     width: f64,
+    ways: &WalkWays<'_>,
 ) -> Vec<[i32; 3]> {
     if cells.len() < 3 {
         return cells.to_vec();
@@ -340,7 +347,12 @@ pub(in crate::compiler::nav) fn smooth_walk(
         // polyline is never longer than the route.
         let mut far = i + 1;
         for j in (i + 2)..cells.len() {
-            if !world.segment_walkable_fp(cells[i], cells[j], fp, width) {
+            let walkable = if ways.on_way(cells[i]) && ways.on_way(cells[j]) {
+                world.segment_walkable_within_fp(cells[i], cells[j], fp, width, &|c| ways.on_way(c))
+            } else {
+                world.segment_walkable_fp(cells[i], cells[j], fp, width)
+            };
+            if !walkable {
                 break;
             }
             far = j;
@@ -645,7 +657,7 @@ mod tests {
             route.len() > 2,
             "fixture is vacuous — A* returned no staircase to pull: {route:?}"
         );
-        let line = smooth_walk(&world, &route, &fp, PLAYER_WIDTH);
+        let line = smooth_walk(&world, &route, &fp, PLAYER_WIDTH, &WalkWays::none());
         assert_eq!(line, vec![start, goal]);
         // The shorter route is also the one the body is teleported along, and no
         // waypoint on it puts any part of the body inside a block.
@@ -677,7 +689,7 @@ mod tests {
         let route = world
             .find_path(start, goal)
             .expect("an open plaza connects");
-        let line = smooth_walk(&world, &route, &fp, PLAYER_WIDTH);
+        let line = smooth_walk(&world, &route, &fp, PLAYER_WIDTH, &WalkWays::none());
         let (rounded, exact) = resample_body(&line, DEFAULT_SPEED, PLAYER_WIDTH);
         let yaws = yaws_along(&exact, 0);
         assert!(yaws.len() > 50, "fixture too short to show a twitch");
@@ -716,7 +728,7 @@ mod tests {
         let route = world
             .find_path(start, goal)
             .expect("the wall has an end to round");
-        let line = smooth_walk(&world, &route, &fp, PLAYER_WIDTH);
+        let line = smooth_walk(&world, &route, &fp, PLAYER_WIDTH, &WalkWays::none());
         // The straight line between the endpoints crosses the wall, and the swept
         // test is what refuses it.
         assert!(!world.segment_walkable_fp(start, goal, &fp, PLAYER_WIDTH));
@@ -759,7 +771,7 @@ mod tests {
         let route = world
             .find_path([0, 65, 1], [11, 66, 1])
             .expect("one step up connects the halves");
-        let line = smooth_walk(&world, &route, &fp, PLAYER_WIDTH);
+        let line = smooth_walk(&world, &route, &fp, PLAYER_WIDTH, &WalkWays::none());
         assert!(
             line.windows(2).any(|w| w[0][1] != w[1][1]),
             "the step vanished into a diagonal: {line:?}"

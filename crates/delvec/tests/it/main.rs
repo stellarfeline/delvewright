@@ -297,6 +297,7 @@ mod view_float;
 mod view_sheet;
 mod view_viewer;
 mod vision_camera_coverage;
+mod walk_ways;
 mod watch;
 mod watch_coverage;
 mod wave_lethal;

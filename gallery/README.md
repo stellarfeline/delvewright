@@ -40,6 +40,7 @@ order a player would:
 | `classes.json` | two kits, one carrying a flask (what a bonfire rest refills) |
 | `quest-plan.json` | four quests and the branch point the fork opens |
 | `quests.json` | the bulk: objectives, effects, waves, actors (a barded and saddled horse among them), traps, triggers, a shop, a shortcut, a stake, a timed gate, three killing volumes — one of them the pit under the terrace annex, live from the beat that clears the lid over it (spec-0088) — and twelve named datums of which one — the tokens — stands on the sidebar (`display: sidebar`, spec-0076); the hearth's two buttons, like every shop offer and some dialogue options, hover a tooltip saying what pressing them does (spec-0078); and the guidance surface (spec-0093): every objective kind states its `announcement`, the two reach objectives at the end of the hall and over the well are quiet (`announcement: hidden`, the first unmarked too), the ferry deck states both `shown`, and the valley overlay's whole campaign is quiet by `guidance` with its far corner opting its marker back in; the ferry's tiller and the cabin's are levers (`triggers[].prop`), the block the party uses and vanilla reports, so no hitbox stands there; the label under the case is a sign, a visible thing vanilla reports no use of, so its hit area is fitted over the sign; the stone beside the hearth is a stone slab, the thing the `strike` hits, and since the slab's sides lie on its cell's faces its hit area stands one hundredth of a block past them, so a swing at the slab reaches the hit area and not the slab (`DW1013` judges every hit area the gallery places); and the counter's third bark carries two styled spans, one obfuscated and one coloured, which its zh-cn row places in the Chinese order (spec-0096); and the item holders the hall carries (spec-0111): a glow frame on the reliquary wall holding a named map (`loot/map-frame`, its `slot` `contents`), an armour stand beside it wearing a helmet and holding a sword (`loot/sword-stand`, each stack naming its slot), a plain frame on the near hall's south wall the critical path's `obj/take-the-seal` takes from (`holder`), an empty frame beside it that the census prints frozen, and an empty brewing stand beside the long gallery's filled one — two holders whose contents show, exempt from the scenery rules |
+| `quests.json`, the copyist in the Long Hall | the Long Hall opens in the same tick as the Reliquary, and the two quests' `cast` ledgers both name every NPC. The copyist's Long Hall entry is a list, one placement per branch: a new bark for a party that walked past the label (`forbids_flags`), then `"unchanged"` for one that read it (`requires_flags`). `"unchanged"` claims nothing, so a party that read the label hears the line she had before the Long Hall opened, never a copy of the Long Hall's other placement; the generated `cast_ladder_copyist` drives that branch on a server and asserts the line carried forward |
 | `dialogue.json` | one tree per NPC; the Curator's carries the fork, and the Marshal's carries the two scenes it leads to — a pair of nodes no option leads to, reached only because the quest's `cast` ledger opens one of them per branch; the Curator says what the Long Hall is before the Marshal sends the party to it, the one told name a later line uses (`DW0982` binds to it) |
 | `world-edits.json` | the annex's piece-verb batches, the shards stamped by `fragment`, the barrier course, and the batches that dress the floor, lay the hearth — a lit campfire on the rest point's own cell, so a respawn is seated on the floor beside the fire, on the side the party walks up from — open the vault and rough the lane |
 | `geometry-brief.json` | four numbers out of the hall's own brief, the kind a site plan is later held to |
@@ -89,13 +90,18 @@ each one on the pinned server with a PackTest dummy credited by vanilla's own
 removal, and a rest.
 
 Three valves stand on the near hall's north wall, levers on the floor, and the
-counter waits on them: `obj/reach-the-counter` reads `state/valve-round at-least
-3`, which only `trigger/valve-first`, `trigger/valve-second` and
-`trigger/valve-third` write. Each answers only in its turn, and the second and
-third put the round back to 0 when pressed out of it. The document declares them
-third, second, first. The plan replays every press the way the datapack runs
-it, line by line, and the path presses first, second, third in front of the
-counter. A gate no press sequence can open is refused (`DW0985`).
+counter waits on them through a flag: `obj/reach-the-counter` reads
+`flag/valves-turned`, which `trigger/valve-third` sets behind a `when` on
+`state/valve-round equals 2` — a datum only `trigger/valve-first`,
+`trigger/valve-second` and `trigger/valve-third` write. Each answers only in its
+turn, and the second and third put the round back to 0 when pressed out of it.
+The document declares them third, second, first. The plan replays every press
+the way the datapack runs it, line by line, and the path presses first, second,
+third, so the press that pays the flag is made where its gate holds. A flag no
+press sequence can set is not credited (`DW1080`). The bay door, on the optional
+reliquary strand, reads `state/bay-knocks at-least 2` directly, which only the
+knocker writes; an objective's numeric gate no press sequence can open is
+refused (`DW0985`).
 
 One place in the hall is climbed to, and a ladder is the only way up. The ferry
 cabin's roof stands four courses over the far hall's floor, past any step or jump,
@@ -240,6 +246,7 @@ holding them at once.
 | `nothing-places-the-whole` | `DW0883` | `validate` | deleting the entry box's pinned `min`, so nothing places the site plan |
 | `two-presses-on-one-cell` | `DW0878` | `build` | hanging an `interact` objective and a click trigger on one anchor |
 | `a-gate-the-path-already-cleared` | `DW0879` | `validate` | clearing a counter between the beat that fills it and the gate that reads it |
+| `a-latch-no-press-sets` | `DW1080` | `build` | gating the third valve's `flag/valves-turned` on a round of 7, which no order of presses reaches, while the counter reads the flag |
 | `two-bodies-on-one-mark` | `DW0896` | `build` | taking the page's offset away, so it is summoned onto the usher's own cell while the usher is still standing on it |
 | `an-offset-out-of-the-room` | `DW0897` | `build` | writing the page's offset from the usher as forty cells instead of four, past the hall's east wall |
 | `a-chestplate-on-a-horse` | `DW0898` | `validate` | putting a chestplate on the barded horse, which the server stores and the client never draws |

@@ -74,8 +74,8 @@
     "state": [
       {
         "id": "state/car-at-floor",
-        "initial": 1,
-        "note": "Which landing the ONE car occupies. There is exactly one car and it exists at exactly one floor at a time, so this datum is the whole of the lift's position.",
+        "initial": 2,
+        "note": "Which landing the ONE car occupies. There is exactly one car and it exists at exactly one floor at a time, so this datum is the whole of the lift's position. The car waits at the upper landing, so the party's first call brings it down: the ride up from the lower landing would carry its riders onto the upper station's own filled cell (`DW0932`), the deck-offset gap `v10_lift` records.",
         "scope": "party"
       },
       {

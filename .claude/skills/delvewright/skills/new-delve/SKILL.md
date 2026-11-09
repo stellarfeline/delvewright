@@ -29,8 +29,7 @@ Read the pointer's file when you reach that step, and not before.
 generation front-end; Claude Code is the runtime that executes it, and building
 a separate agent runtime is permanently out of scope (ADR-0012). Someone typed
 `/delvewright:new-delve <prompt>`; that person is **the user** for the rest of
-this page, and their prompt is a constraint set — what it pins down is honoured
-verbatim, what it leaves open is yours to invent.
+this page.
 
 Every command below is yours to run and every document below is yours to write.
 **A question to the user is a design question**: a creative judgement that needs
@@ -80,9 +79,8 @@ it; the forbidden zones apply in full. That file names its own other half,
 improvising anything about dispatch, review, merge or staging". **You will not
 have it** — it is gitignored on the operator's machine, so no clone can produce
 it — **and this page improvises none of those four.** It stops at §4 and hands
-that to the user; §13 hands over and ends. So record the absence in one
-line and carry on with the run: the answer is the same every time, and the turn
-spent asking comes out of the user's.
+that to the user; §13 hands over and ends. So record the absence in one line
+and carry on with the run.
 
 ### Reference: turning a prompt into a campaign
 
@@ -132,6 +130,7 @@ A1  opening     one message: only the items that apply
  3  story       npcs · classes · quest-plan
  4  GATE        A2 — the design walkthrough, the user says yes
  5  content     quests · dialogue
+ 5b script      a fresh reader reviews the script, when the story was yours
  6  fmt         delvec fmt              ← every campaign, not optional
  7  analyze     analyze the quest graph
  8  build       build the datapack and the world
@@ -144,10 +143,9 @@ A1  opening     one message: only the items that apply
 ```
 
 One branch changes what you do, and it is decided before step 1: **do you
-already have approved reference art?** A campaign being re-made from an
-approved design carries its images in `campaigns/<id>/design/`. If that
-directory exists, you need no image provider and Init I7 is a read rather than
-a setup.
+already have approved reference art?** A campaign being re-made from an approved
+design carries its images in `campaigns/<id>/design/`. If that directory exists,
+you need no image provider and Init I7 is a read rather than a setup.
 
 ## Hard rules
 
@@ -190,9 +188,7 @@ exception.** I0, I1 and **I1b** run first on every run; I1b compares the binary,
 the engine tree and `.out/env.sh` with this page's own `versions.toml`, and **no
 campaign document is read and no `delvec` subcommand is run until it exits 0**.
 What else in Init a run owes is what I1b's row says. **If any step here cannot
-be completed, say so and stop**: authoring against a half-built toolchain
-produces a campaign whose visual half was never reviewed, and nothing downstream
-reports that.
+be completed, say so and stop.**
 
 The machine's toolchain lives in **`~/.delvewright/`** — `engine/` the checkout,
 `bin/` the unpacked archive, `client/` the jar, and `campaigns/` if the shipped
@@ -307,28 +303,23 @@ optional fields commit you to, and what a stub owes.
 
 **Needs**: step 1. **Produces**: `geometry-brief.json` + `layout-graph.json` +
 `site-plan.json`. **Read**: `references/placement.md`. The map's own reference
-is drawn first: `references/map-reference.md`.
-Before the brief is written, find the nearest reference work for the kind of map
-this is (a giant, an organic interior, a large single box, several levels
-joined): `references/reference-works.md`.
-Every destination is built to read as what it is: `docs/reference/game-writing.md` L1.
-A plot is planned with what it holds before its box is written — its structures
-and open ground, which are walked, each part's play space in cells — and its box
-is sized from them (`references/placement.md`).
-A long way between places carries something new every so often, and a stretch
-with nothing gets a place of its own beside it (`references/placement.md`).
-A settlement — streets, lots, a harbour — is laid out against the town
-checklist, and its places are drawn with the starter's town helpers:
-`references/town.md`.
+is drawn first: `references/map-reference.md`. Before the brief is written, find
+the nearest reference work for the kind of map this is (a giant, an organic
+interior, a large single box, several levels joined):
+`references/reference-works.md`. Every destination is built to read as what it
+is: `docs/reference/game-writing.md` L1. A plot is planned with what it holds
+before its box is written — its structures and open ground, which are walked,
+each part's play space in cells — and its box is sized from them
+(`references/placement.md`). A long way between places carries something new
+every so often, and a stretch with nothing gets a place of its own beside it
+(`references/placement.md`). A settlement — streets, lots, a harbour — is laid
+out against the town checklist, and its places are drawn with the starter's town
+helpers: `references/town.md`.
 
 ## 3. The story documents — `npcs`, `classes`, `quest-plan`
 
 **Needs**: step 2. **Produces**: `npcs.json`, `classes.json`, `quest-plan.json`.
-**Ends at**: a campaign that does **not** validate, carrying only refusals whose
-messages name something `quests.json` or `dialogue.json` will supply. That is the
-correct state to leave this step in, and it is not something to mention,
-apologise for or try to fix. **Read**: `references/story.md` before you start the
-loop, not after a refusal.
+**Ends at**: a campaign that does **not** validate, carrying only refusals whose messages name something `quests.json` or `dialogue.json` will supply — the correct state to leave this step in. **Read**: `references/story.md` before you start the loop, not after a refusal.
 **Every line of the plan declares its activity**: each quest's `activity` names the acts the player performs on it, decided before the goal is written and held to at step 5 (`DW1079`), and the lines are budgeted per activity against `target_minutes` in `DESIGN.md` (`references/story.md`, *Every line has an activity*; the research is `$DELVEWRIGHT_ENGINE/docs/reference/web-narrative.md` §7) — mandatory for every brief.
 
 ## 4. The design gate — the user says yes
@@ -353,6 +344,14 @@ vanilla texture the delve replaces (the moon, a mob's skin, a block), is
 `references/npc-skins.md`. Other languages are a final document stage:
 `references/other-languages.md`.
 **The step closes on the census**: the last clean `validate` prints every line's acts and minutes and the pacing sum against `target_minutes`; a line the census names as only conversations and walks gets its body, and a declaration the engine refuses (`DW1079`) gets the objective it promised (`references/content.md`).
+
+## 5b. The script review — only when the story was yours
+
+**Needs**: step 5 clean, and a prompt that left the story to you; the rule, the
+command and the loop are `references/script-review.md`. **Produces**: a review
+by a **fresh agent** handed only what a player meets, from the handout
+`scripts/script-review.py` writes — launched with the Agent tool on the line it
+prints, never a fork — and the documents revised from it.
 
 ## 6. `delvec fmt` — every campaign, every time
 
@@ -444,14 +443,11 @@ not a render one: place that one by hand in the running game
 step 11 where it applies, and your step 12 visual review done — and the staging
 gate run against that build. **Produces**: `campaigns/<id>/README.md` — the
 storybook — its localized editions, and the report that ends the run (H). Hand
-it over: nothing comes back, and the first time the user
-plays the delve it is the finished first version. With debug on, the report closes with
-*Technical decisions and engine limits*, rendered by `scripts/debug-report.py`
-and appended to `GENERATION.md`. **Read**: `references/hand-over.md`, and
-`references/playtest-rounds.md` from round 2 on. **When the exterior or
-starting-scene shot is not the one to ship**, place that camera by hand in the
-running game (`references/tools-by-symptom.md`, *a render camera nobody is
-satisfied with*) rather than re-rendering the one you have.
+it over: nothing comes back, and the first time the user plays the delve it is
+the finished first version. With debug on, the report closes with *Technical
+decisions and engine limits*, rendered by `scripts/debug-report.py` and appended
+to `GENERATION.md`. **Read**: `references/hand-over.md`, and
+`references/playtest-rounds.md` from round 2 on.
 
 **A newer page is not pushed at anybody.** Auto-update is off by default for a
 third-party marketplace, so a newer `/new-delve` arrives when the user runs
@@ -463,9 +459,9 @@ does anything else; I1b is what holds its toolchain to that version's pin.
 
 ## Where each reference lives
 
-Read one when the step above names it. **No reference file sends you on to
-another**: every pointer is from this page, so an italic *section name* inside a
-reference means the file listed here.
+Read one when its step names it. **No reference sends you on to another**: every
+pointer is from this page, so an italic *section name* inside one means the file
+listed here.
 
 | file | what it carries | named from |
 |---|---|---|
@@ -479,6 +475,7 @@ reference means the file listed here.
 | `references/story.md` | npcs, classes, the quest plan, and where step 3 ends | step 3 |
 | `references/design-gate.md` | the walkthrough, the approval, `design.json` | step 4 |
 | `references/content.md` | quests and dialogue, and the codes that clear here | step 5 |
+| `references/script-review.md` | when a fresh reader reviews the script, the handout, what the review changes, when the loop stops | step 5b |
 | `references/quest-capabilities.md` | every verb, effect and field a quest can use | step 5 |
 | `references/writing-craft.md` | the prose checklist, run over every line | step 5 |
 | `references/npc-skins.md` | the skin toolchain, when a design calls for a face; a vanilla texture the delve replaces | step 5 |
@@ -498,6 +495,7 @@ reference means the file listed here.
 | `scripts/fetch-delvec.py` | run at I3a: the archive, verified and unpacked | I3a |
 | `scripts/fetch-client-jar.py` | run at I5, on the download path | I5 |
 | `scripts/handout.py` | run at step 9, once per place per attempt: the handout a fresh agent authors that place's program from | step 9 |
+| `scripts/script-review.py` | run at step 5b, once per round: the script in play order and the handout a fresh agent reviews it from | step 5b |
 | `scripts/references.py` | run at step 9 before the first handout: fetches every place's `references[]` into `.out/references/`, so its author reads the pictures | step 9 |
 | `scripts/starter.py` | copied beside every handout by `handout.py`, run by the place's author at step 9: an empty-but-correct program for that place, read off its allocation, that passes every judgement `detail --check` makes of the place itself as it stands (the battery may name what the story asks of it); the place's generator imports its `Model` and `run`, draws the place as cells, and has every cell claimed from `delvec grammar survey` | step 9 |
 | `scripts/town.py` | imported through `starter.py` by a settlement's place generators at step 9: the town helpers — ways, fronts, lot edges, boats and quays, a front's seam and sign station — each parameterised by its caller | steps 2, 9 |

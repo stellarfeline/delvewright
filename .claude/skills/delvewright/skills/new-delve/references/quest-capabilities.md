@@ -182,6 +182,18 @@ this section is what they are *for* and the traps in each.
 - **Every datum must be both written somewhere and read somewhere**: a gate
   reading a datum nothing writes is `DW0501`, and a datum no gate reads is
   `DW0502`. Both mean the mechanism is decoration.
+- **A press puzzle is proved by replaying the presses.** When only triggers the
+  party presses by hand (`use` or `strike` on an anchor) write a datum, the build
+  replays every press the way the datapack runs it and hands the bot the order to
+  press: for an objective whose `requires_state` reads the datum (`DW0985` when
+  no order opens it), and for a flag a press sets behind a `when` or its
+  trigger's own `requires_state` on the datum — the latch of an ordered puzzle —
+  that an objective reads (`DW1080` when no order sets it). Keep every write of
+  such a datum on a pressed trigger — in its top-level `effects` for an
+  objective's own gate; a `sequence` inside the press is followed for a flag: a
+  write in a quest beat, a reaction bundle or a trigger nobody presses makes the
+  value one the build cannot follow, and a flag behind it is refused unless the
+  trigger's own count of presses opens it (the hit count below).
 - A `player`-scoped datum can only be touched where a player is acting — a
   dialogue option, a cast placement, an `on_death` beat, an effect on a quest
   beat a player completes, or a trigger declaring `audience: "presser"`, which
@@ -226,6 +238,13 @@ this section is what they are *for* and the traps in each.
     — never re-spell the same root id, and never omit `dialogue` hoping it
     defaults (it does not: `DW0463`). `"unchanged"` at an NPC's first
     appearance is `DW0466`.
+  - **Quests that open together all govern at once.** When one completion opens
+    several quests, the last-ranked of them that declares a scene for an NPC is
+    what that NPC's right-click opens while they are all open. Give an NPC a
+    new scene only in the quest whose beat goes through them, and declare
+    `"unchanged"` for it in every quest opened beside it: `"unchanged"` claims
+    nothing. A sibling that overrides an NPC another quest asks the player to
+    talk to is `DW0858`.
   - **Treat the `DW0467` staleness warning as a design smell, not a nuisance.**
     It means an NPC's right-click never learns that the story moved. Give it a
     scene that changes, or make it a bark-pool background character — do not
@@ -858,6 +877,12 @@ Run each of these; each names what it judges and how many objects it bound.
   `move-actor` routes round anything the piece declares as furniture, and a
   destination on it ends on the floor beside it. A walk whose only way is over
   the table is refused naming it (`DW0510`): move the mark or open a way round.
+- **A walk between places keeps to the roads.** A `move-npc` or `move-actor`
+  whose two ends are in different places walks the site plan's ways — the clear
+  width of every place that declares `way` — wherever they join its ends, and
+  leaves them only to reach or leave one; it crosses open ground or a third
+  place only where no way joins. To route a walk down a street, declare the
+  street a way; a walk inside one place crosses it directly.
 - **A status effect is a verb — and it ends by expiring, never by being
   cleared.** `give-effect {effect, seconds, amplifier?, hide_particles?}`
   grants any pinned-1.21.11 status effect; the effect's `in {anchor, extent}`

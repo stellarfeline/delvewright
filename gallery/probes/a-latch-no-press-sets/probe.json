@@ -1,0 +1,13 @@
+{
+  "code": "DW1080",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/triggers/11/effects/2/when/requires_state/0/value",
+      "value": 7
+    }
+  ],
+  "units": [],
+  "why": "One edit: the third valve's line that sets `flag/valves-turned` waits on `state/valve-round equals 7` instead of 2. The counter reads the flag and never the datum, so no objective's numeric gate asks for the valves, and the path performs the third valve because it is the trigger that pays the flag. Only the three valves write the round, and no order of presses ever makes it 7: the first valve makes 1, the second 2, the third 3, and a valve out of turn puts it back to 0. Pressing the third valve once is what the path would otherwise have walked, its marker would print, and the flag would never be set. The engine replays every press the way the datapack runs it, finds no sequence that sets the flag, and refuses to credit it, naming the reader, the flag, the payer, the gate and the values the presses reach. It declares no unit: `set-flag`, a `when` with `requires_state` and a flag-gated objective are all written by the domain, and what the engine refuses is a flag credited behind a gate no press opens."
+}

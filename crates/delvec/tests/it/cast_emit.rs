@@ -414,3 +414,125 @@ fn cast_claims_are_registered_and_discharged() {
         "the claim judged the cast bodies: {claims}"
     );
 }
+
+/// Run an emitted `cast_<npc>` body over one state: `scores` holds every
+/// `#party` score it reads (absent reads as 0). Only the four line shapes the
+/// selector emits are understood; any other line fails the test, so a new shape
+/// cannot be skipped silently.
+fn run_selector(body: &str, scores: &BTreeMap<String, i32>) -> i32 {
+    let mut sel = 0;
+    let mut carry = 0;
+    for line in body.lines().filter(|l| !l.trim().is_empty()) {
+        let mut rest = line;
+        let mut pass = true;
+        if let Some(r) = rest.strip_prefix("execute ") {
+            let (conds, act) = r
+                .split_once(" run ")
+                .expect("an execute line runs something");
+            let words: Vec<&str> = conds.split(' ').collect();
+            for c in words.chunks(6) {
+                let [
+                    kind @ ("if" | "unless"),
+                    "score",
+                    "#party",
+                    obj,
+                    "matches",
+                    "1",
+                ] = c
+                else {
+                    panic!("unexpected condition in `{line}`");
+                };
+                let on = scores.get(*obj).copied().unwrap_or(0) == 1;
+                pass &= if *kind == "if" { on } else { !on };
+            }
+            rest = act;
+        }
+        if !pass {
+            continue;
+        }
+        match rest {
+            "scoreboard players operation #cast_carry dw.sys = @s dw.cast" => carry = sel,
+            "scoreboard players operation @s dw.cast = #cast_carry dw.sys" => sel = carry,
+            r => {
+                let n = r
+                    .strip_prefix("scoreboard players set @s dw.cast ")
+                    .unwrap_or_else(|| panic!("unexpected selector line `{line}`"));
+                sel = n.parse().unwrap();
+            }
+        }
+    }
+    sel
+}
+
+/// `"unchanged"` after another placement of its own quest puts back what
+/// governed before that quest — on the emitted selector, at every state, in
+/// agreement with the compiler's model (`cast::eval_ladder`). The sleeper snores
+/// through `quest/leave` unless woken, and once woken `quest/leave` makes no
+/// claim on her, so `quest/ask`'s bark pool answers.
+#[test]
+fn unchanged_after_a_sibling_placement_restores_the_standing_scene() {
+    let src = common::compiler_fixtures_dir().join("cast-ledger");
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("cast-unchanged-carry");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    for f in common::STAGE_FILES {
+        std::fs::copy(src.join(f), dir.join(f)).unwrap();
+    }
+    let mut quests: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(src.join("quests.json")).unwrap()).unwrap();
+    let leave = &mut quests["content"]["quests"][1];
+    assert_eq!(leave["id"], "quest/leave");
+    leave["cast"]["npc/sleeper"] = serde_json::json!([
+        { "at": "anchor/exit", "doing": "snoring against the wall", "dialogue": { "barks": ["Hnnrk."] } },
+        { "at": "anchor/exit", "doing": "awake, and saying nothing new", "dialogue": "unchanged",
+          "requires_flags": ["flag/woke"] }
+    ]);
+    std::fs::write(
+        dir.join("quests.json"),
+        serde_json::to_string_pretty(&quests).unwrap(),
+    )
+    .unwrap();
+
+    let out = build(&dir);
+    let body = func(&out, "cast_sleeper.mcfunction");
+    assert!(
+        body.contains("scoreboard players operation @s dw.cast = #cast_carry dw.sys"),
+        "the `unchanged` placement must restore the saved selection:\n{body}"
+    );
+
+    let campaign = parse_campaign(&load_campaign_dir(&dir).unwrap().raw).unwrap();
+    let casts = delvec::compiler::cast::npc_casts(&campaign);
+    let sleeper = &casts["npc/sleeper"];
+    let mut states = 0;
+    for (ask, leave, woke) in (0..8).map(|i| (i & 1, (i >> 1) & 1, (i >> 2) & 1)) {
+        let scores: BTreeMap<String, i32> = [
+            ("dw.qa_ask".to_string(), ask),
+            ("dw.qa_leave".to_string(), leave),
+            ("dw.f_woke".to_string(), woke),
+        ]
+        .into();
+        let begun: std::collections::BTreeSet<String> =
+            [("quest/ask", ask), ("quest/leave", leave)]
+                .into_iter()
+                .filter(|(_, v)| *v == 1)
+                .map(|(q, _)| q.to_string())
+                .collect();
+        let flags: BTreeMap<String, i32> = [("flag/woke".to_string(), woke)].into();
+        let model = delvec::compiler::cast::eval_ladder(sleeper, &begun, &flags, &BTreeMap::new());
+        assert_eq!(
+            run_selector(&body, &scores) as u32,
+            model,
+            "emitted selector and model disagree at ask={ask} leave={leave} woke={woke}:\n{body}"
+        );
+        states += 1;
+    }
+    assert_eq!(states, 8);
+    // The state the restore exists for: both begun, woken -> quest/ask's pool.
+    let woken: BTreeMap<String, i32> = [
+        ("dw.qa_ask".to_string(), 1),
+        ("dw.qa_leave".to_string(), 1),
+        ("dw.f_woke".to_string(), 1),
+    ]
+    .into();
+    assert_eq!(run_selector(&body, &woken), 1, "{body}");
+}
