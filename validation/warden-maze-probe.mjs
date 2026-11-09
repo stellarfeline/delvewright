@@ -37,6 +37,10 @@
 //     ghcr.io/stellarfeline/delvewright-base@sha256:<versions.toml [images.base].digest>
 //   node validation/warden-maze-probe.mjs dw-<round>-warden [only=T1,T5]
 //
+// On a host where container addresses are not routable (Docker Desktop),
+// publish a loopback port (`-p 127.0.0.1:<port>:25565`, never 25565) and set
+// `PROBE_HOST=127.0.0.1 PROBE_PORT=<port>`.
+//
 // The bot joins the container's own address (no host port is published), so the
 // script runs on the Docker host. mineflayer is the harness's pinned copy,
 // resolved from `harness/` (run `npm ci` there first).
@@ -168,8 +172,11 @@ async function containerIp() {
   return ip
 }
 async function joinBot() {
-  const host = await containerIp()
-  const bot = mineflayer.createBot({ host, port: 25565, version: '1.21.11', username: BOT, auth: 'offline' })
+  // A host whose containers' addresses are not routable from the host itself
+  // (Docker Desktop) names a published loopback port instead.
+  const host = process.env.PROBE_HOST ?? (await containerIp())
+  const port = Number(process.env.PROBE_PORT ?? 25565)
+  const bot = mineflayer.createBot({ host, port, version: '1.21.11', username: BOT, auth: 'offline' })
   await new Promise((resolve, reject) => {
     bot.once('spawn', resolve)
     bot.once('kicked', (r) => reject(new Error(`kicked: ${JSON.stringify(r)}`)))
