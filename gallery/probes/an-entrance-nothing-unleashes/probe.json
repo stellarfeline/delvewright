@@ -1,0 +1,12 @@
+{
+  "code": "DW1082",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/quests/3/on_objective_complete/obj~1arrive-at-the-porch/7"
+    }
+  ],
+  "units": [],
+  "why": "The porch's arrival beat with its `unleash-actor` removed: `actor/the-sleeper` still declares how it enters and that the party outruns it, and nothing in the campaign ever frees it, so neither declaration is about a body that comes to the world. The refusal names the actor and the field — once for `entrance`, once for `outrun` — and prescribes unleashing the actor on the path or dropping the field. It declares no unit: both fields are bound by the primary's warden."
+}

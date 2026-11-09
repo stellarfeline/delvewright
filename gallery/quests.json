@@ -208,6 +208,19 @@
           0,
           0
         ]
+      },
+      {
+        "anchor": "anchor/long-hall-porch",
+        "entity": "minecraft:warden",
+        "entrance": "native",
+        "facing": "south",
+        "id": "actor/the-sleeper",
+        "offset": [
+          0,
+          0,
+          -2
+        ],
+        "outrun": true
       }
     ],
     "ambushes": [
@@ -3772,6 +3785,27 @@
             {
               "category": "voice",
               "type": "stop-sound"
+            },
+            {
+              "actor": "actor/the-sleeper",
+              "happening": {
+                "subject": "actor/the-sleeper",
+                "text": "Something digs up out of the porch floor behind the party.",
+                "verb": "arrives"
+              },
+              "type": "unleash-actor"
+            }
+          ],
+          "obj/reach-the-hall-end": [
+            {
+              "actor": "actor/the-sleeper",
+              "happening": {
+                "subject": "actor/the-sleeper",
+                "text": "Whatever came up out of the porch is gone when the party looks back.",
+                "verb": "departs"
+              },
+              "style": "vanish",
+              "type": "despawn-actor"
             }
           ]
         },

@@ -1,0 +1,13 @@
+{
+  "code": "DW1081",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/actors/8/entity",
+      "value": "minecraft:zombie"
+    }
+  ],
+  "units": [],
+  "why": "`actor/the-sleeper` is the warden that digs up out of the long hall's porch as the party arrives, and here it is a zombie that still declares `entrance: \"native\"`. A zombie has no entrance of its own that the engine has measured on the pinned server — the registry holds the warden's emerge and the wither's charge-up and nothing else — so the build cannot play the arrival the field promises. The refusal names the actor, the kind, the action (`enter`) and the kinds that have one, and prescribes dropping the field or giving the body a kind that enters. It declares no unit: `actors[].entrance` and its value are bound by the primary's own warden."
+}
