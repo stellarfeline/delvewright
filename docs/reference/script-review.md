@@ -200,7 +200,10 @@ reads this section into the handout too.
 1. **What works** — Q11's statements, three to six lines, each naming where.
 2. **The run, retold** — what a player would say happened, in a few neutral
    lines with no judgement in them, so the author sees what reached a reader.
-3. **Findings** — one per problem. Each names **where** (the file and the id:
+3. **Findings** — one per problem, found in two readings: once through the
+   script as a player, then once more per question, Q1 to Q10 in turn, over the
+   whole script, so that a question with nothing under it was asked and not
+   forgotten. Each names **where** (the file and the id:
    `quests.json` `quest/…` `obj/…`; `dialogue.json` `dlg/…`; a trigger, shop or
    sign id), quotes **what the player meets** there, names **the question** it
    fails, and says **why it hurts play** in one or two sentences. A fix may be
@@ -220,8 +223,13 @@ reads this section into the handout too.
 
 The form is **authored**, from the cited practice: the order of 1–3 is script
 coverage's with Lerman's opening; the note shape is Catmull's; the scale and
-its second pass are Nielsen's; the per-question table is heuristic evaluation's
-record.
+its second pass are Nielsen's; the per-question reading and the per-question
+table are heuristic evaluation's method and record (Desurvire et al.: the
+evaluator walks the artifact asking how each heuristic is supported or
+violated). Measured on one campaign, three single readers each missed one or
+two findings another reader caught under an unchanged question, which is
+Nielsen's own finding about one evaluator; the per-question reading is the
+remedy this step can afford, and a second reader is the one it cannot.
 
 ## 4. What the review is not
 
