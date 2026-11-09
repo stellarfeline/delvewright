@@ -143,6 +143,7 @@ export const methods = {
       );
       return;
     }
+    const judged: { w: Watcher; body: Vec3Tuple }[] = [];
     for (const w of near) {
       const line = all.find((l) => l.includes(posMarker(w.id)));
       const body = line ? parsePosReply(line) : undefined;
@@ -152,6 +153,17 @@ export const methods = {
       }
       if (feetDistance(body, me) > w.within - WATCH_REACH_MARGIN) continue;
       if (horizontalDistance(body, me) < WATCH_MIN_HORIZONTAL) continue;
+      judged.push({ w, body });
+    }
+    if (judged.length === 0) return;
+    // A body is live (`dw_watch`) from the tick a walk's arrival, a summon or a
+    // respawn restores the tag, and the watch line turns it in that tick or the
+    // next: the read above can fall between the two. Its yaw is judged only
+    // after the server has run the line with the tag live at the read's start —
+    // a whole game tick later at the least — and only for a body that has not
+    // moved since, so a walk that took it in between is not judged.
+    await this.waitForGameTicks(2, `${label}: the watch line's tick after the bodies were seen live`);
+    for (const { w, body } of judged) {
       ledger.reach(w.id);
       const yaw = bearing(body, me);
       const range = yRotationRange(yaw, WATCH_YAW_TOLERANCE);
@@ -165,7 +177,8 @@ export const methods = {
         continue;
       }
       const stillLive = live ? parsePosReply(lineWith(live, posMarker(w.id)) ?? "") : undefined;
-      if (!stillLive) continue; // a walk took the body between the two reads
+      // A walk took the body between the reads: it was not standing, so it was not judged.
+      if (!stillLive || feetDistance(stillLive, body) > 0.001) continue;
       const yawLine = actual ? lineWith(actual, yawMarker(w.id)) : undefined;
       const stated = yawLine ? parseYawReply(yawLine.slice(yawLine.indexOf(yawMarker(w.id)) + yawMarker(w.id).length)) : undefined;
       ledger.fail(
