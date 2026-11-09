@@ -7,12 +7,7 @@
 - [What stays yours](#what-stays-yours)
 - [When a plan moves under a drawn place](#when-a-plan-moves-under-a-drawn-place)
 
-A town is a site plan like any other map (*The map is a site plan* on the
-page): many boxes, the seams that join them, one piece per place. Use this
-page at step 2, when the plan lays out the settlement; at step 9 the handout
-lists it for every way's and every plot's author. Each line's provenance — a ruling, a cited
-source, or a rule reasoned here — and its sources are
-`$DELVEWRIGHT_ENGINE/docs/reference/place-craft.md` §10, line for line.
+A town is a site plan like any other map (*The map is a site plan* on the page): many boxes, the seams that join them, one piece per place. Use this page at step 2, when the plan lays out the settlement; at step 9 the handout lists it for every way's and every plot's author. Each line's provenance — a ruling, a cited source, or a rule reasoned here — and its sources are `$DELVEWRIGHT_ENGINE/docs/reference/place-craft.md` §10, line for line.
 
 ## The checklist
 
@@ -34,24 +29,11 @@ Go through it at step 2 and again before you call the map done.
 
 ## The helpers that draw it
 
-Every helper below is in `$DELVEWRIGHT_SKILL/scripts/town.py` and is imported
-from the starter like `Model` and `run` (never copied):
+Every helper below is in `$DELVEWRIGHT_SKILL/scripts/town.py` and is imported from the starter like `Model` and `run` (never copied):
 
     from starter import Model, run, stretch, street_seam, street_front
 
-Each takes what you state — seed, edge, roles, what stands where — and reads
-nothing from a place's name; what the plan hands is never stated: a way
-place's run axis, clear width and clear columns come from `place.way` (the
-allocation's `way`), and a value you state that differs is refused. No
-default thing a helper stands is a container the holder census counts
-(`DW1018`): a barrel stands only where you name one. A helper that stands a
-lamp, a bracket or an awning on the frame's top course declares `up` shown
-itself. `flight` and `ramp` tell the starter they are the way up to the
-opening above (`Model.climbs_to`), so no ladder stands in their steps. A
-cart (`handcart`) is two upside-down stairs back to back, resting on its own
-ends; nothing a helper stands shows half a course of air under itself, which
-the build reports as `DW1076` wherever a drawing does. `--help`-level detail
-is each function's docstring.
+Each takes what you state — seed, edge, roles, what stands where — and reads nothing from a place's name; what the plan hands is never stated: a way place's run axis, clear width and clear columns come from `place.way` (the allocation's `way`), and a value you state that differs is refused. No default thing a helper stands is a container the holder census counts (`DW1018`): a barrel stands only where you name one. A helper that stands a lamp, a bracket or an awning on the frame's top course declares `up` shown itself. `flight` and `ramp` tell the starter they are the way up to the opening above (`Model.climbs_to`), so no ladder stands in their steps. A cart (`handcart`) is two upside-down stairs back to back, resting on its own ends; nothing a helper stands shows half a course of air under itself, which the build reports as `DW1076` wherever a drawing does. `--help`-level detail is each function's docstring.
 
 | need | helpers |
 |---|---|
@@ -68,14 +50,8 @@ is each function's docstring.
 
 ## What stays yours
 
-The palette and its roles, which trade gets which front and which sign wood,
-what stands on a verge and in a square, the coastline's shape, the castle's
-bank: all design, written in the campaign's own generator and plan script.
+The palette and its roles, which trade gets which front and which sign wood, what stands on a verge and in a square, the coastline's shape, the castle's bank: all design, written in the campaign's own generator and plan script.
 
 ## When a plan moves under a drawn place
 
-Every program the starter writes carries the order its cuts were emitted in as
-the guard of its start rule. When a plan edit moves a handed value past a
-literal the program was cut against, `detail` refuses with `no alternative of
-rule "place" applies … required (param:handed/… ) > N`. Re-run that place's
-generator against the new allocation; nothing in the program is edited by hand.
+Every program the starter writes carries the order its cuts were emitted in as the guard of its start rule. When a plan edit moves a handed value past a literal the program was cut against, `detail` refuses with `no alternative of rule "place" applies … required (param:handed/… ) > N`. Re-run that place's generator against the new allocation; nothing in the program is edited by hand.
