@@ -11,11 +11,21 @@
 //   T3  its pursuit down a 1-wide and a 2-wide corridor;
 //   T4  a sneaking player beside it, against a walking one;
 //   T5  a bell rung by a block state, by redstone power, and `playsound` alone;
-//   T6  whether a command summon can play the emerge-from-the-ground animation.
+//   T6  whether a command summon can play the emerge-from-the-ground animation;
+//   T7  the wither's spawn charge-up (`Invul`): its length, what the body does
+//       and cannot do while it runs, the blast that ends it, and whether a NoAI
+//       body plays it at all;
+//   T8  the emerge window: whether an emerging warden hears a walker, takes a
+//       blow, and keeps a seeded anger through to the hunt;
+//   T9  whether a body summoned and removed in one tick is ever seen by a client
+//       — the shape an `ambushes[]` puppet takes under `unleash-actor`.
 //
-// One mineflayer bot is the "player" where a player is the question (T2, T4, T6:
-// it reads the warden's synced pose off its own client). Everything else is read
-// back over rcon through the repo's one rejection rule (`tools/lib/rcon.mjs`).
+// One mineflayer bot is the "player" where a player is the question (T2, T4, T6,
+// T7, T8, T9: it reads the warden's synced pose, the wither's boss bar and every
+// entity spawn off its own client). Everything else is read back over rcon
+// through the repo's one rejection rule (`tools/lib/rcon.mjs`).
+// The written records are `docs/reference/warden-behaviour.md` (T1–T6, T8) and
+// `docs/reference/native-entrance.md` (T7, T9).
 //
 //   docker run -d --name dw-<round>-warden --cpus=2 --memory=2g -e EULA=TRUE \
 //     -e TYPE=VANILLA -e VERSION=1.21.11 -e DIFFICULTY=easy \
@@ -29,7 +39,7 @@
 // resolved from `harness/` (run `npm ci` there first).
 //
 // Output: one TSV line per reading — trial, elapsed ms, and the fields the trial
-// reads. The written record is `docs/reference/warden-behaviour.md`.
+// reads.
 import { createRequire } from 'node:module'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -105,6 +115,10 @@ async function clearBodies() {
   // climbing to 118 beside a sneaking bot and it was a chicken.
   await rcon.probe('kill @e[type=minecraft:chicken]')
   await rcon.probe('kill @e[type=minecraft:experience_orb]')
+  await rcon.probe('kill @e[type=minecraft:wither]')
+  await rcon.probe('kill @e[type=minecraft:wither_skull]')
+  await rcon.probe('kill @e[type=minecraft:villager]')
+  await rcon.probe('kill @e[tag=dw_blink]')
   await sleep(600)
 }
 async function summonWarden(at, nbt) {
@@ -429,6 +443,277 @@ async function t6(bot) {
   }
 }
 
+// ---- T7–T9: the native entrance -------------------------------------------------
+// `execute if entity` answers the rcon source "Test passed, count: N" or
+// "Test failed"; anything else is reported as it came, never guessed.
+async function countEntities(sel) {
+  const reply = await rcon.probe(`execute if entity ${sel}`)
+  const m = reply.match(/count: (\d+)/)
+  if (m) return Number(m[1])
+  if (/Test failed/.test(reply)) return 0
+  return `?(${reply})`
+}
+async function countStone(cells) {
+  let n = 0
+  for (const [x, y, z] of cells) {
+    const reply = await rcon.probe(`execute if block ${x} ${y} ${z} minecraft:stone`)
+    if (/Test passed/.test(reply)) n += 1
+  }
+  return n
+}
+const WITHER_SEL = '@e[type=minecraft:wither,limit=1]'
+async function witherGet(path) {
+  return valueOf(await rcon.probe(`data get entity ${WITHER_SEL} ${path}`))
+}
+// The wither ignores the undead (`EntityTypeTags.WITHER_FRIENDS`), so its target
+// here is a villager. Resistance V: a valid target it cannot kill.
+async function summonTarget(at, tag, extra = '') {
+  await rcon.probe(`kill @e[tag=${tag}]`)
+  await rcon.run(
+    `summon minecraft:villager ${at.x} ${at.y} ${at.z} {NoAI:1b,Silent:1b,PersistenceRequired:1b,Tags:["${tag}"]${extra}}`,
+  )
+  await sleep(300)
+}
+async function shieldBot() {
+  await rcon.run(`effect give ${BOT} minecraft:resistance infinite 4 true`)
+}
+async function unshieldBot() {
+  await rcon.probe(`effect clear ${BOT} minecraft:resistance`)
+}
+// A ring of stone two blocks out from the body, three high: what the blast that
+// ends the charge-up does to blocks is read as how many of these survive.
+function ringCells(c) {
+  const cells = []
+  for (const [dx, dz] of [[2, 0], [-2, 0], [0, 2], [0, -2], [2, 2], [-2, -2], [2, -2], [-2, 2]]) {
+    for (let dy = 0; dy < 3; dy++) cells.push([c.x + dx, c.y + dy, c.z + dz])
+  }
+  return cells
+}
+async function placeRing(c) {
+  for (const [x, y, z] of ringCells(c)) await rcon.run(`setblock ${x} ${y} ${z} minecraft:stone`)
+}
+async function clearRing(c) {
+  for (const [x, y, z] of ringCells(c)) await rcon.probe(`setblock ${x} ${y} ${z} minecraft:air`)
+}
+
+// T7: the wither's spawn charge-up. A block-built wither spends 220 ticks
+// charging (`Invul`), healing from a third of its health, and ends it with a
+// blast; a command summon carries whatever `Invul` the NBT says. Read over rcon
+// every 500 ms: `Invul`, `Health`, feet, skulls in the air (its attack), the
+// target's health; the bot reads the vanilla boss bar's progress off its client
+// (a second instrument for the countdown that shares nothing with the NBT read).
+async function t7(bot) {
+  await clearBodies()
+  // Past the wither's 40-block `follow_range`, inside its 10-chunk tracking range.
+  await rcon.run(`tp ${BOT} ${W.x} ${W.y} ${W.z - 48}`)
+  bot.clearControlStates()
+  await shieldBot()
+  await sleep(800)
+  const bars = []
+  const onBar = (bar) => bars.push(`${now() - t0}ms:${(bar.health ?? bar.percent ?? '?').toString().slice(0, 5)}`)
+  bot.on('bossBarUpdated', onBar)
+  bot.on('bossBarCreated', onBar)
+  const T = { x: W.x + 8, y: W.y, z: W.z }
+  const arms = [
+    ['bare', '', 'mob_griefing false', 9_000],
+    ['invul-220', '{PersistenceRequired:1b,Invul:220,Health:100f}', 'mob_griefing false', 15_000],
+    ['invul-220-griefing', '{PersistenceRequired:1b,Invul:220}', 'mob_griefing true', 15_000],
+    ['invul-220-noai', '{PersistenceRequired:1b,Invul:220,NoAI:1b}', 'mob_griefing false', 4_000],
+  ]
+  for (const [label, nbt, griefing, watchMs] of arms) {
+    await clearBodies()
+    await rcon.run(`gamerule ${griefing}`)
+    await clearRing(W)
+    await placeRing(W)
+    // Two targets the blast can reach, at 3 and 6 blocks, with health to spare so
+    // the damage is read as a number rather than a death.
+    await summonTarget({ x: W.x + 3, y: W.y, z: W.z + 3 }, 'dw_t3', ',attributes:[{id:"minecraft:max_health",base:1024}],Health:1024f')
+    await summonTarget({ x: W.x + 6, y: W.y, z: W.z }, 'dw_t6', ',attributes:[{id:"minecraft:max_health",base:1024}],Health:1024f')
+    // The hunting target, unkillable, at 8 blocks.
+    await summonTarget(T, 'dw_wtarget', ',active_effects:[{id:"minecraft:resistance",amplifier:4b,duration:-1,show_particles:0b}]')
+    const ring0 = await countStone(ringCells(W))
+    bars.length = 0
+    begin(`T7-wither-${label}`, `summon wither ${nbt || '<no nbt>'}; ${griefing}; ring of ${ring0} stone at 2 blocks; targets at 3, 6 (1024 hp) and 8 (resistance V) blocks`)
+    await rcon.run(`summon minecraft:wither ${W.x} ${W.y} ${W.z}${nbt ? ' ' + nbt : ''}`)
+    const tS = now()
+    let p0 = null
+    let maxMove = 0
+    let hitAt = null
+    let blastRead = false
+    let damaged = false
+    while (now() - tS < watchMs) {
+      const invul = await witherGet('Invul')
+      const health = await witherGet('Health')
+      const pos = parsePos(await witherGet('Pos'))
+      if (pos && !p0) p0 = pos
+      if (pos && p0) maxMove = Math.max(maxMove, Math.hypot(pos[0] - p0[0], pos[1] - p0[1], pos[2] - p0[2]))
+      const skulls = await countEntities('@e[type=minecraft:wither_skull]')
+      row(`t=${((now() - tS) / 1000).toFixed(1)}s`, `invul=${invul}`, `health=${health}`, `moved=${maxMove.toFixed(2)}`, `skulls=${skulls}`)
+      if (health == null) {
+        row('gone', 'the wither is no longer readable')
+        break
+      }
+      // One blow of 10 at about 3 s: hurt, or refused while charging.
+      if (!damaged && now() - tS > 3000) {
+        damaged = true
+        const before = await witherGet('Health')
+        const reply = await rcon.probe(`damage ${WITHER_SEL} 10 minecraft:generic`)
+        await sleep(150)
+        const after = await witherGet('Health')
+        row('blow', `health ${before} -> ${after}`, `reply=${reply}`)
+      }
+      // The tick the charge ends: read the blast's reach at once.
+      if (!blastRead && invul != null && /^0\b/.test(invul) && nbt.includes('Invul')) {
+        blastRead = true
+        hitAt = now() - tS
+        const h3 = await entityGet('@e[tag=dw_t3,limit=1]', 'Health')
+        const h6 = await entityGet('@e[tag=dw_t6,limit=1]', 'Health')
+        const ring1 = await countStone(ringCells(W))
+        row('blast', `at=${hitAt}ms`, `target3=${h3}`, `target6=${h6}`, `ring ${ring0} -> ${ring1}`)
+      }
+      await sleep(500)
+    }
+    const tgt = parsePos(await entityGet('@e[tag=dw_wtarget,limit=1]', 'Pos'))
+    const tHealth = await entityGet('@e[tag=dw_wtarget,limit=1]', 'Health')
+    row('end', `targetAt8=${tgt ? 'present' : 'gone'} health=${tHealth}`, `bossbar=${bars.join(' ') || '-'}`)
+    await rcon.probe('kill @e[tag=dw_t3]')
+    await rcon.probe('kill @e[tag=dw_t6]')
+    await rcon.probe('kill @e[tag=dw_wtarget]')
+  }
+  bot.removeListener('bossBarUpdated', onBar)
+  bot.removeListener('bossBarCreated', onBar)
+  await clearRing(W)
+  await rcon.run('gamerule mob_griefing true')
+  await unshieldBot()
+}
+
+// T8: the emerge window. The warden is summoned awake with `is_emerging`
+// (T6's shape); the bot reads its pose while the server is asked what the body
+// hears, takes and remembers during the 133 ticks.
+async function t8(bot) {
+  const emergingNbt = () => awakeNbt('"minecraft:is_emerging":{value:{},ttl:133L}')
+  const readPose = () => {
+    const w = wardenEntity(bot)
+    return w ? w.metadata?.[6] : 'absent'
+  }
+  // 8a: a player walking four blocks from the emerging body. Resistance V keeps
+  // the bot alive past the emerge so the hunt that follows is read too.
+  await clearBodies()
+  await shieldBot()
+  await rcon.run(`tp ${BOT} ${W.x} ${W.y} ${W.z - 4}`)
+  await sleep(800)
+  begin('T8-emerge-hearing', 'bot walks to and fro 4 blocks north of an emerging warden; anger read every second')
+  await bot.lookAt(new Vec3(W.x + 0.5, W.y + 1, W.z + 0.5), true)
+  await summonWarden(W, emergingNbt())
+  const tS = now()
+  let lastPose
+  let flip = false
+  const uuid = bot.player?.uuid ?? bot.entity?.uuid
+  while (now() - tS < 12_000) {
+    const pose = readPose()
+    if (pose !== lastPose) {
+      row('pose', `${now() - tS}ms:${pose}`)
+      lastPose = pose
+    }
+    // To and fro: walking is the vibration the hunter hears (T4).
+    bot.setControlState('forward', false)
+    bot.setControlState('back', false)
+    bot.setControlState(flip ? 'forward' : 'back', true)
+    flip = !flip
+    if (Math.round((now() - tS) / 250) % 4 === 0) {
+      const anger = await wardenGet('anger.suspects')
+      const pos = parsePos(await wardenGet('Pos'))
+      const me = bot.entity?.position
+      row(`t=${((now() - tS) / 1000).toFixed(1)}s`, `pose=${pose}`, `anger=${anger}`, `wardenToBot=${pos && me ? f1(Math.hypot(pos[0] - me.x, pos[2] - me.z)) : '-'}`)
+    }
+    await sleep(250)
+  }
+  bot.clearControlStates()
+  row('summary', `botUuid=${uuid}`, `anger=${await wardenGet('anger.suspects')}`, `botHealth=${bot.health}`)
+
+  // 8b: a blow during the emerge.
+  await clearBodies()
+  await rcon.run(`tp ${BOT} ${W.x} ${W.y} ${W.z - 12}`)
+  await sleep(800)
+  begin('T8-emerge-blow', 'damage 10 generic at 2 s into the emerge; health and pose read')
+  await bot.lookAt(new Vec3(W.x + 0.5, W.y + 1, W.z + 0.5), true)
+  await summonWarden(W, emergingNbt())
+  await sleep(2000)
+  const before = await wardenGet('Health')
+  const poseBefore = readPose()
+  const reply = await rcon.probe(`damage @e[type=minecraft:warden,limit=1] 10 minecraft:generic`)
+  await sleep(300)
+  row('blow', `health ${before} -> ${await wardenGet('Health')}`, `pose ${poseBefore} -> ${readPose()}`, `reply=${reply}`)
+  await sleep(5500)
+  row('after', `pose=${readPose()}`, `health=${await wardenGet('Health')}`, `alive=${(await wardenGet('Health')) != null}`)
+
+  // 8c: a seeded anger across the emerge — the aggro lock `unleash_<id>` writes,
+  // on a body that cannot act for 133 ticks. Does the hunt follow?
+  await clearBodies()
+  await park(bot)
+  const V = { x: W.x + 10, y: W.y, z: W.z }
+  const victim = await summonVictim(V)
+  begin('T8-emerge-anger-seeded', `anger 150 at a body 10 blocks east, seeded on an emerging warden; feet read every second`)
+  await summonWarden(W, awakeNbt('"minecraft:is_emerging":{value:{},ttl:133L}', angerAt(victim, 150)))
+  const t0c = now()
+  let charged = null
+  while (now() - t0c < 16_000) {
+    const r = await reading()
+    const d = r.pos ? dist2(r.pos, [V.x, V.y, V.z]) : null
+    if (d != null && d < 2.5 && charged == null) charged = now() - t0c
+    row(`t=${((now() - t0c) / 1000).toFixed(1)}s`, `wardenToVictim=${f1(d)}`, `anger=${r.anger}`)
+    await sleep(1000)
+  }
+  row('summary', `reachedVictimAt=${charged == null ? 'never' : charged + 'ms'}`)
+  await rcon.probe('kill @e[tag=dw_victim]')
+  await unshieldBot()
+}
+
+// T9: a body summoned and removed in one tick. The bot, 12 blocks away, records
+// every warden its client is ever told about and where it stood. Three shapes,
+// each a datapack function the probe writes into the container: (a) summon then
+// `kill` in one function; (b) summon then the compiler's unseen removal — a `tp`
+// to Y -128 in the same function; (c) the control: summon alone, killed by a
+// later command, which the client must see for the instrument to count.
+async function t9(bot) {
+  const b64 = (s) => Buffer.from(s, 'utf8').toString('base64')
+  const dp = '/data/world/datapacks/dwprobe'
+  const summon = `summon minecraft:warden ${W.x} ${W.y} ${W.z} {NoAI:1b,PersistenceRequired:1b,Tags:["dw_blink"],Brain:{memories:{${KEEP_AWAKE}}}}`
+  const files = {
+    'pack.mcmeta': JSON.stringify({ pack: { description: 'probe', min_format: [94, 1], max_format: [94, 1] } }),
+    'data/dwprobe/function/blink_kill.mcfunction': `${summon}\nkill @e[tag=dw_blink]\n`,
+    'data/dwprobe/function/blink_unseen.mcfunction': `${summon}\nexecute as @e[tag=dw_blink] at @s run tp @s ~ -128 ~\n`,
+    'data/dwprobe/function/blink_control.mcfunction': `${summon}\n`,
+  }
+  for (const [rel, body] of Object.entries(files)) {
+    const dir = `${dp}/${rel}`.replace(/\/[^/]+$/, '')
+    await execFileP('docker', ['exec', container, 'sh', '-c', `mkdir -p '${dir}' && echo '${b64(body)}' | base64 -d > '${dp}/${rel}'`])
+  }
+  console.log(`#RELOAD\t${await rcon.probe('reload')}`)
+  await clearBodies()
+  await rcon.run(`tp ${BOT} ${W.x} ${W.y} ${W.z - 12}`)
+  await sleep(800)
+  const seen = []
+  const onSpawn = (e) => {
+    if (e?.name === 'warden') seen.push(`${now() - t0}ms@[${e.position?.x?.toFixed(1)},${e.position?.y?.toFixed(1)},${e.position?.z?.toFixed(1)}]`)
+  }
+  bot.on('entitySpawn', onSpawn)
+  for (const fn of ['blink_kill', 'blink_unseen', 'blink_control']) {
+    await clearBodies()
+    seen.length = 0
+    begin(`T9-${fn}`, `function dwprobe:${fn}; the bot records every warden spawn its client receives for 2 s`)
+    const reply = await rcon.probe(`function dwprobe:${fn}`)
+    await sleep(2000)
+    const server = await countEntities('@e[tag=dw_blink]')
+    const clientNow = Object.values(bot.entities).filter((e) => e.name === 'warden').length
+    row('result', `reply=${reply}`, `clientSpawnsSeen=${seen.length}`, `where=${seen.join(' ') || '-'}`, `serverBodies=${server}`, `clientBodiesNow=${clientNow}`)
+    await rcon.probe('kill @e[tag=dw_blink]')
+  }
+  bot.removeListener('entitySpawn', onSpawn)
+  await execFileP('docker', ['exec', container, 'rm', '-rf', dp])
+  await rcon.probe('reload')
+}
+
 // ---- run --------------------------------------------------------------------
 async function setup() {
   await rcon.run('gamerule spawn_mobs false')
@@ -471,6 +756,9 @@ try {
   if (wants('T4')) await t4(bot)
   if (wants('T5')) await t5(bot)
   if (wants('T6')) await t6(bot)
+  if (wants('T7')) await t7(bot)
+  if (wants('T8')) await t8(bot)
+  if (wants('T9')) await t9(bot)
   console.log('== probe complete ==')
 } catch (e) {
   console.error(`probe failed: ${e.stack ?? e}`)
