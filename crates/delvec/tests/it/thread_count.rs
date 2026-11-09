@@ -281,3 +281,61 @@ fn phase_timing_moves_no_output_byte_and_only_stamps_the_log() {
         "the stamped log is the plain one, stamps and marks taken out"
     );
 }
+
+/// **The story worlds are proven in parallel and folded in row order**
+/// (`emit/routes.rs`, `prove_branch_world`): a campaign of several story
+/// worlds built at one thread and at three writes the same tree and says the
+/// same diagnostics. The worlds walked are counted off the tree (one
+/// `validation/world-waypoints-*.json` per walked world), so a subject that
+/// stopped walking more than one would fail here rather than compare a
+/// single row with itself.
+#[test]
+fn the_story_worlds_are_the_same_at_every_thread_count() {
+    let root = tmp("thread-count-story-worlds");
+    let campaign = common::compiler_fixtures_dir().join("branch-two-endings");
+    let prefabs = common::prefabs_dir();
+    let mut built: Vec<(&str, Tree, Vec<u8>)> = Vec::new();
+    for (name, threads) in [("1", Some("1")), ("3", Some("3")), ("host", None)] {
+        let out = root.join(format!("out-{name}"));
+        let r = build(&campaign, &prefabs, &out, threads);
+        assert!(
+            r.status.success(),
+            "the subject builds at {name} thread(s):\n{}",
+            String::from_utf8_lossy(&r.stderr)
+        );
+        built.push((name, read_tree(&out), r.stderr));
+    }
+    let (_, first, first_err) = &built[0];
+    let walked = first
+        .keys()
+        .filter(|p| p.starts_with("validation/world-waypoints-"))
+        .count();
+    eprintln!(
+        "story-world thread-count binding: {} file(s) compared across {} build(s); {walked} \
+         walked world(s)",
+        first.len(),
+        built.len()
+    );
+    assert!(
+        walked >= 2,
+        "the subject walks several story worlds: {walked}"
+    );
+    for (name, tree, stderr) in &built[1..] {
+        assert_eq!(
+            first.keys().collect::<Vec<_>>(),
+            tree.keys().collect::<Vec<_>>(),
+            "the same files at 1 and {name} thread(s)"
+        );
+        for (path, bytes) in first {
+            assert!(
+                bytes == &tree[path],
+                "{path} differs between 1 and {name} thread(s)"
+            );
+        }
+        assert_eq!(
+            without_wall_time(&String::from_utf8_lossy(first_err)),
+            without_wall_time(&String::from_utf8_lossy(stderr)),
+            "the same diagnostics at 1 and {name} thread(s)"
+        );
+    }
+}

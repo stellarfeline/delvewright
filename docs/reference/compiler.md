@@ -2408,8 +2408,11 @@ CI-enforced over every fixture family by `tests/it/packtest_batch.rs`):
   failing template is the one named), the valley horizon's tile stacks (built
   per footprint, numbered `horizon/valley/t{n}` in footprint order), and the
   `DW0921` proof's quest configurations (counts summed and pockets listed in
-  configuration order), and the `DW1011` proof's (counts summed, bypassed gates
-  named in first-configuration order). Gated by `tests/it/thread_count.rs`, which builds one
+  configuration order), the `DW1011` proof's (counts summed, bypassed gates
+  named in first-configuration order), and the story worlds' walks
+  (`emit/routes.rs::prove_branch_world`: each world's path, links, per-branch
+  `DW0311`, routes, `DW0314` and waypoints, folded in row order, so the first
+  failing world is the one named; one world's transients per thread). Gated by `tests/it/thread_count.rs`, which builds one
   subject at `DELVEC_THREADS=1`, `3` and unset and compares trees and stderr,
   the machine's measurements excepted: a world's wall time, the snapshot's
   page reads served by a thread's recent pages, `world store pages:` and

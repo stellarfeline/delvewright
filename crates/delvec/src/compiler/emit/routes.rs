@@ -1157,94 +1157,24 @@ pub(super) fn prove_world(
                     };
                 if !rows.is_empty() {
                     let flow = crate::compiler::flow::Flow::new(plan.campaign);
-                    for row in rows.iter().filter(|w| w.no_path.is_none()) {
-                        let r = &row.realized;
-                        let widx = row.k;
-                        let who = row.label();
-                        crate::compiler::notes::mark(&format!("branch world {who}: start"));
-                        let label = |e: Failure| Failure {
-                            code: e.code,
-                            message: format!("{who}: {}", e.message),
-                        };
-                        let branch_fail = |e: plan::PlanError| BuildFailure::Diagnostic {
-                            code: e.failure.code,
-                            message: format!("{who}: {}", e.failure.message),
-                        };
-                        let unlinked = plan
-                            .branch_critical_path(&flow, &flow.story_playthrough(widx))
-                            .map_err(branch_fail)?;
-                        // The branch's own links (spec-0083 §6): taken over its
-                        // own steps and gate model, then spliced into its path.
-                        let (unlinked_events, unlinked_ancestors) =
-                            plan.branch_gate_model(&unlinked);
-                        let takes = if plan.links.is_empty() && !unlinked_events.has_keep_out() {
-                            plan::LinkTakes::default()
-                        } else {
-                            let (region_events, ancestors) = (unlinked_events, unlinked_ancestors);
-                            let ancestor = |g: usize, s: usize| {
-                                g == 0 || ancestors.get(&s).is_some_and(|a| a.contains(&g))
-                            };
-                            crate::compiler::nav::take_branch_links(
-                                plan,
-                                world,
-                                campaign_spawn(plan),
-                                &unlinked,
-                                &region_events,
-                                &ancestor,
-                            )
-                            .map_err(label)?
-                        };
-                        let cp = if takes.is_empty() {
-                            unlinked
-                        } else {
-                            plan.branch_critical_path_linked(
-                                &flow,
-                                &flow.story_playthrough(widx),
-                                &takes,
-                            )
-                            .map_err(branch_fail)?
-                        };
-                        crate::compiler::notes::mark("branch world: path built and links taken");
-                        branch_takes.insert(r.branch.slug.clone(), takes);
-                        let (region_events, ancestors) = plan.branch_gate_model(&cp);
-                        let ancestor = |g: usize, s: usize| {
-                            g == 0 || ancestors.get(&s).is_some_and(|a| a.contains(&g))
-                        };
-                        crate::compiler::nav::check_branch_path(
-                            plan,
-                            world,
-                            campaign_spawn(plan),
-                            &cp,
-                            &region_events,
-                            &ancestor,
-                        )
-                        .map_err(label)?;
-                        crate::compiler::notes::mark("branch world: path checked");
-                        let branch_routes = crate::compiler::nav::branch_path_routes(
-                            world,
-                            campaign_spawn(plan),
-                            &cp.steps,
-                            &cp.transport_by_step,
-                            &region_events,
-                            &ancestor,
-                        );
-                        crate::compiler::nav::verify_exported_routes(world, &branch_routes)
-                            .map_err(label)?;
-                        crate::compiler::notes::mark("branch world: routes planned and verified");
-                        if !branch_routes.is_empty() {
-                            branch_waypoints.push((
-                                r.branch.slug.clone(),
-                                crate::compiler::waypoints::waypoints_json(
-                                    plan,
-                                    &branch_routes,
-                                    &listening,
-                                    &cp.sneak_by_step,
-                                    &proven_jumps,
-                                ),
-                            ));
+                    // Each row is walked in its own world from its own path,
+                    // and reads nothing another row computes: the rows are
+                    // proven in parallel (`par::map`, one row's transients per
+                    // thread) and folded here in row order, so the first row
+                    // that fails is the one named and every ledger is the
+                    // sequential loop's (ADR-0006).
+                    let walked: Vec<&crate::compiler::branch::WorldRow> =
+                        rows.iter().filter(|w| w.no_path.is_none()).collect();
+                    let proven = crate::par::map(&walked, |row| {
+                        prove_branch_world(plan, world, &flow, row, &listening, &proven_jumps)
+                    });
+                    for row in proven {
+                        let row = row?;
+                        branch_takes.insert(row.slug.clone(), row.takes);
+                        if let Some(w) = row.waypoints {
+                            branch_waypoints.push((row.slug.clone(), w));
                         }
-                        path_legs.push((r.branch.slug.clone(), cp.steps.clone(), branch_routes));
-                        crate::compiler::notes::mark("branch world: done");
+                        path_legs.push((row.slug, row.steps, row.routes));
                     }
                 }
                 // `DW1025`: a body the party talks to faces the party as they
@@ -1464,5 +1394,110 @@ pub(super) fn prove_world(
         lightning_gate,
         stake_table,
         death_plan,
+    })
+}
+
+/// One story world's proven walk (spec-0108 §4.3): what [`prove_world`]'s
+/// branch rows fold, in row order.
+struct BranchWorld {
+    slug: String,
+    takes: plan::LinkTakes,
+    waypoints: Option<Value>,
+    steps: Vec<plan::Step>,
+    routes: Vec<crate::compiler::nav::LegRoute>,
+}
+
+/// **One story world, walked in a world of its own** (spec-0108 §4.3,
+/// spec-0083 §6, spec-0025): its path built, its own links taken and spliced
+/// in, every walked leg proven routable under its own gate seals (`DW0311`),
+/// its routes planned and checked standable (`DW0314`), and its waypoint
+/// artifact written. It reads nothing another row computes, which is what lets
+/// [`prove_world`] prove the rows in parallel and fold them in row order.
+fn prove_branch_world(
+    plan: &Plan,
+    world: &crate::compiler::nav::World,
+    flow: &crate::compiler::flow::Flow,
+    row: &crate::compiler::branch::WorldRow,
+    listening: &crate::compiler::sculk::Listening,
+    proven_jumps: &[crate::compiler::nav::ProvenJump],
+) -> Result<BranchWorld, BuildFailure> {
+    let r = &row.realized;
+    let widx = row.k;
+    let who = row.label();
+    crate::compiler::notes::mark(&format!("branch world {who}: start"));
+    let label = |e: Failure| Failure {
+        code: e.code,
+        message: format!("{who}: {}", e.message),
+    };
+    let branch_fail = |e: plan::PlanError| BuildFailure::Diagnostic {
+        code: e.failure.code,
+        message: format!("{who}: {}", e.failure.message),
+    };
+    let unlinked = plan
+        .branch_critical_path(flow, &flow.story_playthrough(widx))
+        .map_err(branch_fail)?;
+    // The branch's own links (spec-0083 §6): taken over its own steps and gate
+    // model, then spliced into its path.
+    let (unlinked_events, unlinked_ancestors) = plan.branch_gate_model(&unlinked);
+    let takes = if plan.links.is_empty() && !unlinked_events.has_keep_out() {
+        plan::LinkTakes::default()
+    } else {
+        let (region_events, ancestors) = (unlinked_events, unlinked_ancestors);
+        let ancestor =
+            |g: usize, s: usize| g == 0 || ancestors.get(&s).is_some_and(|a| a.contains(&g));
+        crate::compiler::nav::take_branch_links(
+            plan,
+            world,
+            campaign_spawn(plan),
+            &unlinked,
+            &region_events,
+            &ancestor,
+        )
+        .map_err(label)?
+    };
+    let cp = if takes.is_empty() {
+        unlinked
+    } else {
+        plan.branch_critical_path_linked(flow, &flow.story_playthrough(widx), &takes)
+            .map_err(branch_fail)?
+    };
+    crate::compiler::notes::mark("branch world: path built and links taken");
+    let (region_events, ancestors) = plan.branch_gate_model(&cp);
+    let ancestor = |g: usize, s: usize| g == 0 || ancestors.get(&s).is_some_and(|a| a.contains(&g));
+    crate::compiler::nav::check_branch_path(
+        plan,
+        world,
+        campaign_spawn(plan),
+        &cp,
+        &region_events,
+        &ancestor,
+    )
+    .map_err(label)?;
+    crate::compiler::notes::mark("branch world: path checked");
+    let routes = crate::compiler::nav::branch_path_routes(
+        world,
+        campaign_spawn(plan),
+        &cp.steps,
+        &cp.transport_by_step,
+        &region_events,
+        &ancestor,
+    );
+    crate::compiler::nav::verify_exported_routes(world, &routes).map_err(label)?;
+    crate::compiler::notes::mark("branch world: routes planned and verified");
+    let waypoints = (!routes.is_empty()).then(|| {
+        crate::compiler::waypoints::waypoints_json(
+            plan,
+            &routes,
+            listening,
+            &cp.sneak_by_step,
+            proven_jumps,
+        )
+    });
+    Ok(BranchWorld {
+        slug: r.branch.slug.clone(),
+        takes,
+        waypoints,
+        steps: cp.steps,
+        routes,
     })
 }
