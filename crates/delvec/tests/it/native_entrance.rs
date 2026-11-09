@@ -356,10 +356,8 @@ fn an_unleash_with_no_puppet_arrives_at_the_mark() {
     );
     for want in [
         format!(
-            "execute store result score #mark_unl_{SLEEPER_SAFE} dw.sys if entity @e[type=minecraft:warden,tag=dw_actor_{SLEEPER_SAFE},x={},y={},z={},distance=..0.5]\nassert score #mark_unl_{SLEEPER_SAFE} dw.sys matches 1\n",
-            format!("{}.5", mark[0]),
-            format!("{}.0", mark[1]),
-            format!("{}.5", mark[2])
+            "execute store result score #mark_unl_{SLEEPER_SAFE} dw.sys if entity @e[type=minecraft:warden,tag=dw_actor_{SLEEPER_SAFE},x={}.5,y={}.0,z={}.5,distance=..0.5]\nassert score #mark_unl_{SLEEPER_SAFE} dw.sys matches 1\n",
+            mark[0], mark[1], mark[2]
         ),
         format!("assert score #once_unl_{SLEEPER_SAFE} dw.sys matches 1\n"),
     ] {
