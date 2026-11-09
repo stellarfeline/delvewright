@@ -147,9 +147,12 @@ fn dw1082_an_outrun_nothing_unleashes() {
     );
 }
 
+/// One DW1083 case: what it adds, the edit, and the path the refusal names.
+type Case = (&'static str, Box<dyn Fn(&mut Value)>, &'static str);
+
 #[test]
 fn dw1083_every_puppet_surface_on_an_entering_actor() {
-    let cases: Vec<(&str, Box<dyn Fn(&mut Value)>, &str)> = vec![
+    let cases: Vec<Case> = vec![
         (
             "a spawn-actor",
             Box::new(|q| talk(q).insert(0, json!({ "type": "spawn-actor", "actor": SLEEPER }))),
