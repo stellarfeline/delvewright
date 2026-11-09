@@ -147,6 +147,12 @@ WHAT IS CHECKED, AND THE PERTURBATION THAT REDS EACH
                                                  deleted while the opening check
                                                  still asks
 
+   23  every Markdown page of the skill holds each paragraph and each list item
+       on one line: a line that continues the prose of the line before it is
+       a finding naming the file and line. Front matter, fenced blocks,
+       tables, headings and hard breaks are not read.
+                                            RED: a paragraph broken across two lines
+
 RULE 21, AND THE PAIR IT NOW HOLDS WHOLE
 
 A creator holds two things: the PAGE, which a marketplace install takes from the
@@ -489,6 +495,46 @@ def headings(text: str) -> list[str]:
         m = HEADING_RE.match(line)
         if m is not None:
             out.append(m.group(1).strip())
+    return out
+
+
+_BLOCK_START_RE = re.compile(r"^\s*(?:#{1,6}\s|\||>|<|(?:[-*_]\s*){3,}$|\[[^\]]+\]:\s)")
+_LIST_MARK_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s")
+
+
+def wrapped_lines(text: str) -> list[int]:
+    """The 1-based numbers of the lines that continue a paragraph or list item.
+
+    A paragraph or a list item is one line. A line is a continuation when the
+    line before it is prose (not blank, not in a fence, not a heading, table
+    row, quote, HTML or rule, and not ending in a hard break) and it opens no
+    block of its own. Front matter and fenced blocks are not read. This is the
+    one parse rule: the gate refuses by it and the unwrapping uses it.
+    """
+    out: list[int] = []
+    lines = text.split("\n")
+    start = 0
+    if lines and lines[0].strip() == "---" and "---" in lines[1:]:
+        start = lines.index("---", 1) + 1
+    fence = False
+    prose = False
+    for i in range(start, len(lines)):
+        line = lines[i]
+        if FENCE_RE.match(line):
+            fence = not fence
+            prose = False
+            continue
+        if fence:
+            continue
+        if not line.strip():
+            prose = False
+            continue
+        opens = _BLOCK_START_RE.match(line) is not None or _LIST_MARK_RE.match(line) is not None
+        if prose and not opens:
+            out.append(i + 1)
+        prose = not _BLOCK_START_RE.match(line) and not (
+            line.endswith("  ") or line.endswith("\\")
+        )
     return out
 
 
@@ -1303,6 +1349,16 @@ def check(
 
     # -- 22. every stop the pages spell is a listed ask ----------------------
     ask_rule(rep, files)
+
+    # -- 23. one paragraph, one line ----------------------------------------
+    for path in files:
+        for number in wrapped_lines(path.read_text(encoding="utf-8")):
+            rep.find(
+                f"{rel(path)}:{number} continues the paragraph or list item above "
+                f"it on a line of its own. A page of the skill holds each paragraph "
+                f"and each list item on one line; join the lines."
+            )
+    rep.bind("page file(s) read for wrapped prose", len(files), len(files))
 
     # -- 14/15/16. what the first full drill found ---------------------------
     placeholder_rule(rep)
