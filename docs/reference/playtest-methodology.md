@@ -328,13 +328,17 @@ neither fails a crossing.
 
 **The binding count.** Every walk whose leg carries vibrations prints
 `[sculk] <walk>: N sensor(s) predicted, N heard; M shrieker(s) predicted, M heard (leg start at game tick T, B predicted device(s) busy then[; heard through game tick U])`.
-At the end of every run, passed or failed, `[sculk] darkness D (E more with a warden in reach), warden spawns heard W, undeclared standing U`
-counts every `darkness` effect on the bot no warden in reach explains (`D`), the
-ones a warden the client saw within 20 blocks does (`E` — a warden pulses darkness
-onto every player in that reach), every `warden` that spawned (`W`), and the
-server's own count of wardens standing at the end that wear no `dw_actor` tag (`U`
-— a warden an actor declares is the campaign's, spec-0132 §5.7). `D` or `U`
-non-zero fails the run, and so does an unread `U` beside a heard spawn, because a
+At the end of every run, passed or failed, `[sculk] darkness D (E more with a warden in reach), unpredicted shrieks S (at …), warden spawns heard W, undeclared standing U`
+states every `darkness` effect on the bot no declared warden can stand for (`D`):
+one with no warden the client saw within 20 blocks, or one that arrived within a
+second of any shriek the run heard, predicted or not — a shriek's darkness and a
+warden's pulse look alike to the client, and only the shriek's absence tells them
+apart; the rest, a warden's pulse with no shriek around it (`E`); every shriek
+(`world_event` 3007) at a cell no leg of the proven route predicts (`S`), counted
+whatever stands near it; every `warden` that spawned (`W`); and the server's own
+count of wardens standing at the end that wear no `dw_actor` tag (`U` — a warden an
+actor declares is the campaign's, spec-0132 §5.7). `D`, `S` or `U` non-zero fails
+the run, and so does an unread `U` beside a heard spawn, because a
 shrieker with `can_summon=false` applies no darkness and summons nothing. The build's own `sculk walk:` line says how many of
 the world's sensors and shriekers some leg predicts; a device off the walk is
 stated there, never asserted.

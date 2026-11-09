@@ -409,7 +409,7 @@ export const methods = {
             e.position !== undefined &&
             e.position.distanceTo(here) <= WARDEN_DARKNESS_RANGE,
         );
-      this.sculk.onSelfEffect(registry?.effects?.[effect.id]?.name, wardenNear);
+      this.sculk.onSelfEffect(registry?.effects?.[effect.id]?.name, wardenNear, Date.now());
     });
     bot.on("entitySpawn", (entity: Entity) => {
       this.sculk.onSpawn(entity?.name);

@@ -75,7 +75,7 @@ staging gate (`--written-world`).
 - **Sculk, watchers and pulses are asserted on the walk, each with its own
   line.** `[sculk] <walk>: N sensor(s) predicted, N heard; M shrieker(s)
   predicted, M heard` per leg — a predicted vibration not heard fails the step —
-  and `[sculk] darkness D (E more with a warden in reach), warden spawns heard W, undeclared standing U` at the end of every run, where a darkness no warden explains or a warden your actors do not declare fails it. `[watch] W watcher(s) in the record, K within reach on the
+  and `[sculk] darkness D (E more with a warden in reach), unpredicted shrieks S, warden spawns heard W, undeclared standing U` at the end of every run, where a darkness no declared warden can stand for, a shriek no walk was predicted to set off, or a warden your actors do not declare fails it. `[watch] W watcher(s) in the record, K within reach on the
   proven path, K asserted …` — a watcher not facing the bot where the route
   passes in reach fails the critical path; one the path never reaches is named,
   not failed. `pulse binding: H of N pulse(s) heard at a listening station, S

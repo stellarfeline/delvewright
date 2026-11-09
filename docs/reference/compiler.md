@@ -2078,8 +2078,9 @@ its `entrance_ticks`, or no reading (`docs/reference/playtest-methodology.md`
 `[pursuit] <n> pursued step(s) of <N>, <m> pursuer(s), <k> reading(s); closest
 approach <d>`. The sculk ear's warden rule reads the declaration too: the run's
 warden failure is the server's count of wardens standing at the end that wear no
-`dw_actor` tag, and a darkness the client saw a warden in reach of is counted
-apart.
+`dw_actor` tag; a shriek at a cell no leg predicts fails the run on its own; and a
+darkness is set apart as a declared warden's only when the client saw a warden in
+reach and no shriek was heard within a second of it.
 
 ### A cutscene is pure observation (`dw_cutscene`)
 

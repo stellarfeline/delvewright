@@ -1107,6 +1107,11 @@ export const methods = {
    * declare standing at the end — `undeclared`, from
    * {@link readUndeclaredWardens}), if it does. */
   sculkRunVerdict(this: MineflayerExecutor, undeclared?: number): string | undefined {
+    // Every shrieker any leg of the proven route predicts; a shriek anywhere
+    // else is unpredicted (spec-0132 §5.7's pair with spec-0100 §4.7).
+    this.sculk.predictShriekers(
+      (this.waypoints?.legs ?? []).flatMap((l) => l.vibrations.flatMap((v) => v.shriekers)),
+    );
     process.stderr.write(`${this.sculk.runLine(undeclared)}\n`);
     return this.sculk.runFailure(undeclared);
   },

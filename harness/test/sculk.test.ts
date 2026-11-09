@@ -79,3 +79,32 @@ test("the undeclared-warden reading asks for wardens wearing no dw_actor tag, an
   assert.equal(parseUndeclaredWardens(4, ["[dw:sculk 4 undeclared 2]"]), 2);
   assert.equal(parseUndeclaredWardens(4, ["[dw:sculk 3 undeclared 2]"]), undefined);
 });
+
+test("an unpredicted shriek beside a declared warden fails the run, and its darkness is not excused", () => {
+  const ear = new SculkEar();
+  // The run predicted one shrieker, at [4, 64, 4]; a declared warden stands in reach.
+  ear.predictShriekers([[4, 64, 4]]);
+  ear.onSpawn("warden");
+  // A shrieker nobody predicted shrieks at [30, 64, 30], and its darkness lands
+  // on the bot in the same moment, with the warden within 20 blocks.
+  ear.onWorldEvent(3007, [30, 64, 30], 1_000);
+  ear.onSelfEffect("darkness", true, 1_050);
+  const failure = ear.runFailure(0);
+  assert.ok(failure !== undefined, "an unpredicted shriek is never excused by a warden in reach");
+  assert.match(failure, /unpredicted shrieks 1 \(at \[30, 64, 30\]\)/);
+  assert.match(failure, /darkness 1 \(0 more with a warden in reach\)/);
+});
+
+test("a predicted shriek still un-excuses the darkness that arrives with it", () => {
+  const ear = new SculkEar();
+  ear.predictShriekers([[4, 64, 4]]);
+  ear.onWorldEvent(3007, [4, 64, 4], 1_000);
+  ear.onSelfEffect("darkness", true, 1_020);
+  assert.match(ear.runFailure(0) ?? "", /darkness 1 \(0 more with a warden in reach\), unpredicted shrieks 0/);
+  // A warden's pulse with no shriek around it is the warden's.
+  const quiet = new SculkEar();
+  quiet.onWorldEvent(3007, [4, 64, 4], 1_000);
+  quiet.predictShriekers([[4, 64, 4]]);
+  quiet.onSelfEffect("darkness", true, 9_000);
+  assert.equal(quiet.runFailure(0), undefined);
+});
