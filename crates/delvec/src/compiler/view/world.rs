@@ -516,7 +516,7 @@ impl EntityRecord {
 pub struct WorldInput<'a> {
     pub blocks: &'a BlockMap,
     /// Which biome a 4×4×4 cell stands in, asked at its centre.
-    pub biome: &'a dyn Fn([i32; 3]) -> String,
+    pub biome: &'a (dyn Fn([i32; 3]) -> String + Sync),
     pub spawn: [i32; 3],
     pub ground: &'a Ground,
     /// The inclusive box every chunk of which is written, its generator's
@@ -571,7 +571,7 @@ pub fn pack_nibbles(levels: &[u8]) -> Vec<i8> {
 /// clock: [`encode_world`] over the map alone.
 pub fn encode(
     blocks: &BlockMap,
-    biome: &dyn Fn([i32; 3]) -> String,
+    biome: &(dyn Fn([i32; 3]) -> String + Sync),
     spawn: [i32; 3],
     ground: &Ground,
 ) -> WrittenWorld {
@@ -598,7 +598,6 @@ pub fn encode(
 pub fn encode_world(input: &WorldInput<'_>) -> WrittenWorld {
     let WorldInput {
         blocks,
-        biome,
         spawn,
         ground,
         ..
@@ -714,83 +713,52 @@ pub fn encode_world(input: &WorldInput<'_>) -> WrittenWorld {
             .map(|(c, s)| (c, s.as_str()))
             .chain(generated)
     };
-    let mut strip: Option<(i32, crate::compiler::light::LightArrays)> = None;
+    // The strips are lit and their chunks encoded in parallel
+    // (`par::try_for_each_ordered`), each strip from the map, the ground and
+    // its own light alone, and folded here in chunk order: the light hash is
+    // fed the same bytes in the same order, and every payload lands at the
+    // same index, at any thread count. At most `threads` strips' light fields
+    // and `2 × threads` strips' encoded chunks (each a compressed chunk and
+    // its 4,096 light bytes per section) are held at once, where the
+    // sequential walk held one of each (ADR-0037; `docs/reference/compiler.md`,
+    // "Parallel work merges in a fixed order").
+    let chunks: Vec<(i32, i32)> = chunk_set.iter().copied().collect();
+    let strips: Vec<&[(i32, i32)]> = chunks
+        .chunk_by(|a, b| a.0.div_euclid(LIGHT_STRIP) == b.0.div_euclid(LIGHT_STRIP))
+        .collect();
+    let encode_strip = |strip: &&[(i32, i32)]| -> Vec<EncodedChunk> {
+        let light = strip_light(
+            box_lo,
+            box_hi,
+            strip[0].0.div_euclid(LIGHT_STRIP),
+            &strip_cells,
+        );
+        strip
+            .iter()
+            .map(|&(cx, cz)| encode_chunk(input, &at, &light, (cx, cz), (sec_lo, sec_hi)))
+            .collect()
+    };
     let mut light_hash = Sha256::new();
     let mut light_cells = 0usize;
     let mut block_entities = 0usize;
     // region (rx, rz) -> chunk index -> payload.
     let mut regions: BTreeMap<(i32, i32), BTreeMap<usize, Vec<u8>>> = BTreeMap::new();
-    for (cx, cz) in &chunk_set {
-        let g = cx.div_euclid(LIGHT_STRIP);
-        if strip.as_ref().is_none_or(|(k, _)| *k != g) {
-            // The last strip's arrays are given up before the next is lit.
-            drop(strip.take());
-            strip = Some((g, strip_light(box_lo, box_hi, g, &strip_cells)));
-        }
-        let light = &strip.as_ref().expect("the strip is lit").1;
-        let secs: Vec<Tag> = (sec_lo..=sec_hi)
-            .map(|sy| {
-                let (x0, y0, z0) = (cx * 16, sy * 16, cz * 16);
-                let cell = |i: i32| [x0 + (i % 16), y0 + i / 256, z0 + ((i / 16) % 16)];
-                let block_cells: Vec<&str> =
-                    (0..4096).map(|i| at(cell(i)).unwrap_or(AIR)).collect();
-                let biome_cells = (0..64).map(|i| {
-                    biome([
-                        x0 + 4 * (i % 4) + 2,
-                        y0 + 4 * (i / 16) + 2,
-                        z0 + 4 * ((i / 4) % 4) + 2,
-                    ])
-                });
-                let sky: Vec<u8> = (0..4096).map(|i| light.sky(cell(i))).collect();
-                let blk: Vec<u8> = (0..4096).map(|i| light.block(cell(i))).collect();
-                let (sky, blk) = (pack_nibbles(&sky), pack_nibbles(&blk));
-                light_hash.update(sky.iter().map(|b| *b as u8).collect::<Vec<u8>>());
-                light_hash.update(blk.iter().map(|b| *b as u8).collect::<Vec<u8>>());
-                light_cells += 4096;
-                compound(vec![
-                    // A section's `Y` is a byte, as the game writes it.
-                    ("Y", Tag::Byte(sy as i8)),
-                    ("block_states", paletted(block_cells.into_iter(), 4)),
-                    ("biomes", paletted(biome_cells, 0)),
-                    ("BlockLight", Tag::ByteArray(blk)),
-                    ("SkyLight", Tag::ByteArray(sky)),
-                ])
-            })
-            .collect();
-        // The chunk's block entities, in cell order.
-        let bes: Vec<Tag> = input
-            .block_entities
-            .range([cx * 16, i32::MIN, i32::MIN]..=[cx * 16 + 15, i32::MAX, i32::MAX])
-            .filter(|(c, _)| c[2].div_euclid(16) == *cz && at(**c).is_some())
-            .map(|(c, nbt)| {
-                let mut t = match nbt {
-                    Nbt::Compound(_) => nbt.clone(),
-                    _ => Nbt::Compound(Vec::new()),
-                };
-                t.set("x", Tag::Int(c[0]));
-                t.set("y", Tag::Int(c[1]));
-                t.set("z", Tag::Int(c[2]));
-                t
-            })
-            .collect();
-        block_entities += bes.len();
-        let mut root = vec![
-            ("DataVersion", Tag::Int(DATA_VERSION)),
-            ("xPos", Tag::Int(*cx)),
-            ("zPos", Tag::Int(*cz)),
-            ("yPos", Tag::Int(sec_lo)),
-            ("Status", Tag::Str("minecraft:full".to_string())),
-            ("sections", Tag::List(secs)),
-        ];
-        if !bes.is_empty() {
-            root.push(("block_entities", Tag::List(bes)));
-        }
-        let index = (cz.rem_euclid(32) * 32 + cx.rem_euclid(32)) as usize;
-        regions
-            .entry((cx.div_euclid(32), cz.div_euclid(32)))
-            .or_default()
-            .insert(index, zlib(&nbt_root(compound(root))));
-    }
+    let folded: Result<(), std::convert::Infallible> =
+        crate::par::try_for_each_ordered(&strips, encode_strip, |encoded| {
+            for c in encoded {
+                light_hash.update(&c.light);
+                light_cells += c.light_cells;
+                block_entities += c.block_entities;
+                let (cx, cz) = c.chunk;
+                let index = (cz.rem_euclid(32) * 32 + cx.rem_euclid(32)) as usize;
+                regions
+                    .entry((cx.div_euclid(32), cz.div_euclid(32)))
+                    .or_default()
+                    .insert(index, c.payload);
+            }
+            Ok(())
+        });
+    let Ok(()) = folded;
     crate::compiler::notes::mark("encode: chunks lit, encoded and compressed");
     // The bodies, one entity chunk per chunk a body stands in.
     let mut by_chunk: BTreeMap<(i32, i32), Vec<Tag>> = BTreeMap::new();
@@ -838,6 +806,95 @@ pub fn encode_world(input: &WorldInput<'_>) -> WrittenWorld {
         light_sha256: format!("{:x}", light_hash.finalize()),
         sha256: format!("{:x}", hasher.finalize()),
         files,
+    }
+}
+
+/// One chunk as [`encode_world`] folds it: its payload, the light bytes the
+/// light hash is fed for it, in section order, and its counts.
+struct EncodedChunk {
+    chunk: (i32, i32),
+    payload: Vec<u8>,
+    light: Vec<u8>,
+    light_cells: usize,
+    block_entities: usize,
+}
+
+/// **One written chunk**: every section from `secs.0` to `secs.1` with its
+/// blocks (`at`), its biomes, and its two light arrays read from its strip's
+/// `light`; its block entities in cell order; zlib-compressed as the region
+/// file holds it.
+fn encode_chunk<'b>(
+    input: &WorldInput<'_>,
+    at: &impl Fn([i32; 3]) -> Option<&'b str>,
+    light: &crate::compiler::light::LightArrays,
+    (cx, cz): (i32, i32),
+    (sec_lo, sec_hi): (i32, i32),
+) -> EncodedChunk {
+    let biome = input.biome;
+    let mut light_bytes = Vec::with_capacity(((sec_hi - sec_lo + 1) as usize) * 4096);
+    let mut light_cells = 0usize;
+    let secs: Vec<Tag> = (sec_lo..=sec_hi)
+        .map(|sy| {
+            let (x0, y0, z0) = (cx * 16, sy * 16, cz * 16);
+            let cell = |i: i32| [x0 + (i % 16), y0 + i / 256, z0 + ((i / 16) % 16)];
+            let block_cells: Vec<&str> = (0..4096).map(|i| at(cell(i)).unwrap_or(AIR)).collect();
+            let biome_cells = (0..64).map(|i| {
+                biome([
+                    x0 + 4 * (i % 4) + 2,
+                    y0 + 4 * (i / 16) + 2,
+                    z0 + 4 * ((i / 4) % 4) + 2,
+                ])
+            });
+            let sky: Vec<u8> = (0..4096).map(|i| light.sky(cell(i))).collect();
+            let blk: Vec<u8> = (0..4096).map(|i| light.block(cell(i))).collect();
+            let (sky, blk) = (pack_nibbles(&sky), pack_nibbles(&blk));
+            light_bytes.extend(sky.iter().map(|b| *b as u8));
+            light_bytes.extend(blk.iter().map(|b| *b as u8));
+            light_cells += 4096;
+            compound(vec![
+                // A section's `Y` is a byte, as the game writes it.
+                ("Y", Tag::Byte(sy as i8)),
+                ("block_states", paletted(block_cells.into_iter(), 4)),
+                ("biomes", paletted(biome_cells, 0)),
+                ("BlockLight", Tag::ByteArray(blk)),
+                ("SkyLight", Tag::ByteArray(sky)),
+            ])
+        })
+        .collect();
+    // The chunk's block entities, in cell order.
+    let bes: Vec<Tag> = input
+        .block_entities
+        .range([cx * 16, i32::MIN, i32::MIN]..=[cx * 16 + 15, i32::MAX, i32::MAX])
+        .filter(|(c, _)| c[2].div_euclid(16) == cz && at(**c).is_some())
+        .map(|(c, nbt)| {
+            let mut t = match nbt {
+                Nbt::Compound(_) => nbt.clone(),
+                _ => Nbt::Compound(Vec::new()),
+            };
+            t.set("x", Tag::Int(c[0]));
+            t.set("y", Tag::Int(c[1]));
+            t.set("z", Tag::Int(c[2]));
+            t
+        })
+        .collect();
+    let block_entities = bes.len();
+    let mut root = vec![
+        ("DataVersion", Tag::Int(DATA_VERSION)),
+        ("xPos", Tag::Int(cx)),
+        ("zPos", Tag::Int(cz)),
+        ("yPos", Tag::Int(sec_lo)),
+        ("Status", Tag::Str("minecraft:full".to_string())),
+        ("sections", Tag::List(secs)),
+    ];
+    if !bes.is_empty() {
+        root.push(("block_entities", Tag::List(bes)));
+    }
+    EncodedChunk {
+        chunk: (cx, cz),
+        payload: zlib(&nbt_root(compound(root))),
+        light: light_bytes,
+        light_cells,
+        block_entities,
     }
 }
 
@@ -967,7 +1024,7 @@ pub fn write_files(w: &WrittenWorld, dir: &Path) -> std::io::Result<()> {
 /// [`encode`], written under `dir` ([`write_world`] over the map alone).
 pub fn write(
     blocks: &BlockMap,
-    biome: &dyn Fn([i32; 3]) -> String,
+    biome: &(dyn Fn([i32; 3]) -> String + Sync),
     spawn: [i32; 3],
     ground: &Ground,
     dir: &Path,
@@ -1201,5 +1258,103 @@ mod tests {
                 assert!(bytes[SECTOR..2 * SECTOR].iter().all(|b| *b == 0), "{rel}");
             }
         }
+    }
+
+    /// **A world encoded strip by strip in parallel is the sequential
+    /// world** (`encode_world`, `par::try_for_each_ordered`): a generated
+    /// world spanning eight light strips — stone floors and roofs with holes,
+    /// emitters, chests carrying block entities, an ocean ground under it —
+    /// encoded at one thread and at four gives the same files, counts and
+    /// light hash, and both are the bytes the one-strip-at-a-time walk wrote
+    /// before the strips were parallel (the pinned hashes, taken from that
+    /// implementation on this case). A fold out of strip order moves the
+    /// light hash; one out of chunk order moves a region file.
+    #[test]
+    fn a_world_encoded_in_parallel_is_the_sequential_world() {
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = |n: u64| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed % n
+        };
+        let (lo, hi) = ([-150, 40, -20], [290, 70, 40]);
+        let mut m = BlockMap::new();
+        let mut bes: BTreeMap<[i32; 3], Nbt> = BTreeMap::new();
+        for x in lo[0]..=hi[0] {
+            for z in lo[2]..=hi[2] {
+                m.insert([x, lo[1], z], BlockState::new("minecraft:stone"));
+                if next(30) != 0 {
+                    m.insert([x, hi[1], z], BlockState::new("minecraft:stone"));
+                }
+            }
+        }
+        for _ in 0..2_000 {
+            let c = [
+                lo[0] + next((hi[0] - lo[0] + 1) as u64) as i32,
+                lo[1] + 1 + next((hi[1] - lo[1] - 1) as u64) as i32,
+                lo[2] + next((hi[2] - lo[2] + 1) as u64) as i32,
+            ];
+            let b = match next(6) {
+                0 => "minecraft:glowstone",
+                1 => "minecraft:torch",
+                2 => "minecraft:glass",
+                3 => {
+                    bes.insert(
+                        c,
+                        Nbt::Compound(vec![("id".to_string(), Nbt::Str("minecraft:chest".into()))]),
+                    );
+                    "minecraft:chest[facing=north]"
+                }
+                _ => "minecraft:oak_planks",
+            };
+            m.insert(c, BlockState::new(b));
+        }
+        let mut reached = crate::compiler::assembled::Reached::default();
+        for c in m.keys() {
+            reached.mark(c);
+        }
+        let ground = Ground::of_base(delvewright_dsl::HorizonBase::Ocean, reached);
+        let biome = |c: [i32; 3]| {
+            if c[0] < 0 {
+                "minecraft:ocean".to_string()
+            } else {
+                "minecraft:plains".to_string()
+            }
+        };
+        let input = WorldInput {
+            blocks: &m,
+            biome: &biome,
+            spawn: [0, 41, 0],
+            ground: &ground,
+            extent: None,
+            block_entities: &bes,
+            entities: &[],
+            day_time: Some(6000),
+        };
+        let one = crate::par::with_threads(1, || encode_world(&input));
+        let four = crate::par::with_threads(4, || encode_world(&input));
+        let strips = {
+            let per = LIGHT_STRIP * 16;
+            (lo[0].div_euclid(per)..=hi[0].div_euclid(per)).count()
+        };
+        eprintln!(
+            "parallel encode: {} chunk(s) over {strips} strip(s), {} block entit(ies), light {}, \
+             world {}",
+            one.chunks, one.block_entities, one.light_sha256, one.sha256
+        );
+        assert!(
+            strips >= 8 && one.block_entities > 0,
+            "the case binds nothing"
+        );
+        assert_eq!(one, four, "the world at one thread and at four");
+        assert_eq!(
+            one.light_sha256, "8a96c7f2959845280fecafa80e9978eaab8b1d676e82e90aa4ebfd51d107cc3b",
+            "the sequential walk's light hash"
+        );
+        assert_eq!(
+            one.sha256, "be064630957e0b6da67c20ec25d22ccfcd148fcece0bede25c889e1d490c19b4",
+            "the sequential walk's world hash"
+        );
     }
 }
