@@ -184,23 +184,30 @@ fn emit_cast_ladder_packtest(
             // never opens) before emission. Named rather than silent so a tree
             // that bypassed validation still says what is missing.
             b.push(format!(
-                "# -- clause {}: quest `{}` scene {} has NO distinguishing state (DW0846/DW0847) --",
+                "# -- clause {}: quest `{}` {} has NO distinguishing state (DW0846/DW0847) --",
                 n + 1,
                 cl.quest,
-                cl.scene
+                crate::compiler::cast::scene_label(cl.scene)
             ));
             continue;
         };
+        // A clause with a scene selects it; an `"unchanged"` one selects what
+        // governed before its quest, which the model computes.
+        let own =
+            crate::compiler::cast::eval_ladder(cast, &drive.begun, &drive.flags, &drive.datums);
         b.push(format!(
-            "# -- clause {}: quest `{}` placement {} -> scene {} --",
+            "# -- clause {}: quest `{}` placement {} -> {} --",
             n + 1,
             cl.quest,
             cl.placement,
-            cl.scene
+            match cl.scene {
+                Some(scene) => format!("scene {scene}"),
+                None => format!("`\"unchanged\"`, scene {own}"),
+            }
         ));
         b.extend(cast_drive_lines(plan, cast, &drive, &sel));
         b.push(run.clone());
-        assert(&mut b, cl.scene);
+        assert(&mut b, own);
 
         // Break each term of THIS clause's gate on its own, assert the model's
         // answer, restore. One term at a time: broken together, a selector that
@@ -373,7 +380,7 @@ fn emit_cast_silent_packtest(
             // The first clause that can be distinguished while selecting this
             // scene. Every clause has one in a validated build (DW0846/DW0847).
             let Some((n, _)) = cast.by_quest.iter().enumerate().find(|(n, cl)| {
-                cl.scene == scene.index
+                cl.scene == Some(scene.index)
                     && crate::compiler::cast::distinguishing_drive(cast, *n).is_some()
             }) else {
                 continue;

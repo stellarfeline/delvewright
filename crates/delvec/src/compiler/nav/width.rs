@@ -472,6 +472,25 @@ pub fn plan_cross_sections(plan: &Plan, prefabs: &PrefabRegistry) -> Vec<CrossSe
     cross_sections(&population(plan, prefabs).0)
 }
 
+/// **Every cell a body walking a way place can be in**: the body cells of
+/// every column of every station of every site-plan box that declares `way` —
+/// its declared clear columns, from its floor through its headroom, the
+/// treads of a flight it hosts included. A seam's own approach is not taken
+/// out of it, as the width judgement takes it, since nothing here is judged
+/// twice. The one entry point a staged walk reads the plan's ways by
+/// ([`super::walkway`]).
+#[must_use]
+pub fn way_place_cells(plan: &Plan) -> BTreeSet<[i32; 3]> {
+    let mut census = Census::default();
+    let mut ways = Vec::new();
+    place_ways(plan, &mut census, &BTreeSet::new(), &mut ways);
+    ways.iter()
+        .flat_map(|w| w.stations.iter())
+        .flat_map(|s| s.columns.iter())
+        .flat_map(body_cells)
+        .collect()
+}
+
 /// The lowest cell of a column a body can be in, over `w` — the measurement a
 /// piece way's station plane is taken from.
 fn lowest_body(w: &World, c: &Column) -> Option<i32> {

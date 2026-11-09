@@ -10,6 +10,7 @@ use crate::common;
 
 use delvec::compiler::cast;
 use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
+use std::collections::BTreeMap;
 use std::sync::LazyLock;
 
 fn hw(name: &str) -> String {
@@ -397,7 +398,8 @@ fn per_branch_gates_reach_the_selector() {
         .expect("the gated branch must produce its own clause");
     assert_eq!(gated.requires_flags, vec!["flag/warned".to_string()]);
     assert_eq!(
-        gated.scene, 2,
+        gated.scene,
+        Some(2),
         "the gated branch must select its own scene, not the fallback's"
     );
 }
@@ -496,8 +498,15 @@ fn unchanged_carries_the_previous_scene_forward() {
             .iter()
             .map(|c| (c.quest.as_str(), c.scene))
             .collect::<Vec<_>>(),
-        vec![("quest/one", 1), ("quest/two", 1)],
-        "both quests must resolve to the carried-forward scene"
+        vec![("quest/one", Some(1)), ("quest/two", None)],
+        "`unchanged` claims no scene of its own"
+    );
+    let both: std::collections::BTreeSet<String> =
+        ["quest/one", "quest/two"].map(String::from).into();
+    assert_eq!(
+        cast::eval_ladder(scout, &both, &Default::default(), &Default::default()),
+        1,
+        "with both quests begun, the scene carried forward from quest/one governs"
     );
 }
 
@@ -694,11 +703,308 @@ fn every_live_clause_has_a_drive_its_model_confirms() {
         for n in 0..cast_.by_quest.len() {
             let drive = cast::distinguishing_drive(cast_, n).expect("live ledger");
             assert_eq!(
-                cast::eval_ladder(cast_, &drive.begun, &drive.flags, &drive.datums),
+                Some(cast::eval_ladder(
+                    cast_,
+                    &drive.begun,
+                    &drive.flags,
+                    &drive.datums
+                )),
                 cast_.by_quest[n].scene,
             );
             proved += 1;
         }
     }
     assert_eq!(proved, 4, "two NPCs x two quests of clauses were solved");
+}
+
+// --- quests open together: whose clause governs ----------------------------
+//
+// `quest/one` → { `quest/two`, `quest/three` }, both opened by `quest/one`
+// completing, so they begin in the same tick; `quest/two` ranks first.
+// `quest/two` asks the player to talk to the scout. An optional `quest/four`
+// opens once its parent completes: `quest/three` (a later opening) or
+// `quest/one` (a third sibling, ranked last).
+
+/// The sibling fixture's quest plan: the two siblings, plus `quest/four` under
+/// `four`'s parent when given.
+fn sibling_plan(four: Option<&str>) -> String {
+    let tail = four
+        .map(|parent| {
+            format!(
+                r#",
+    {{ "id": "quest/four", "goal": "Report back.", "area": "area/keep",
+      "npcs": ["npc/scout"], "depends_on": ["{parent}"], "mandatory": false, "act": 1 }}"#
+            )
+        })
+        .unwrap_or_default();
+    common::at_dsl_version(&format!(
+        r#"{{
+  "dsl_version": "%dsl_version%", "campaign_id": "hello-world", "stage": "quest-plan",
+  "content": {{ "quests": [
+    {{ "id": "quest/one", "goal": "Speak with the Keeper.", "area": "area/keep",
+      "npcs": ["npc/keeper"], "depends_on": [], "mandatory": true, "act": 1 }},
+    {{ "id": "quest/two", "goal": "Ask the scout.", "area": "area/keep",
+      "npcs": ["npc/scout"], "depends_on": ["quest/one"], "mandatory": true, "act": 1 }},
+    {{ "id": "quest/three", "goal": "Leave the keep.", "area": "area/keep",
+      "npcs": ["npc/keeper"], "depends_on": ["quest/one"], "mandatory": true, "act": 1 }}{tail}
+  ], "finale": "quest/three" }}
+}}"#
+    ))
+}
+
+/// Three (or four) quests; the scout's tree gains `dlg/scout-ask`, the one node
+/// whose option completes `obj/ask`. `four` is `quest/four`'s parent and cast.
+fn siblings(two: &str, three: &str, four: Option<(&str, &str)>) -> Campaign {
+    let four_q = four
+        .map(|(parent, c)| {
+            format!(
+                r#",
+    {{ "id": "quest/four", "trigger": {{ "type": "quest-complete", "quest": "{parent}" }},
+       "objectives": [ {{ "type": "reach-anchor", "id": "obj/report", "anchor": "anchor/exit", "radius": 2 }} ],
+       "on_complete": [], "cast": {c} }}"#
+            )
+        })
+        .unwrap_or_default();
+    let quests = format!(
+        r#"{{
+  "dsl_version": "{DSL_VERSION}", "campaign_id": "hello-world", "stage": "quests",
+  "content": {{ "quests": [
+    {{ "id": "quest/one", "trigger": {{ "type": "campaign-start" }},
+       "objectives": [ {{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }} ],
+       "on_complete": [], "cast": {FULL_ONE} }},
+    {{ "id": "quest/two", "trigger": {{ "type": "quest-complete", "quest": "quest/one" }},
+       "objectives": [ {{ "type": "talk-to", "id": "obj/ask", "npc": "npc/scout" }} ],
+       "on_complete": [], "cast": {two} }},
+    {{ "id": "quest/three", "trigger": {{ "type": "quest-complete", "quest": "quest/one" }},
+       "objectives": [ {{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit", "radius": 2 }} ],
+       "on_complete": [ {{ "type": "campaign-complete" }} ], "cast": {three} }}{four_q}
+  ] }}
+}}"#
+    );
+    let dialogue = DIALOGUE.replace(
+        r#"{ "id": "dlg/scout-later", "text": "We are clear.", "options": [] }"#,
+        r#"{ "id": "dlg/scout-later", "text": "We are clear.", "options": [] },
+      { "id": "dlg/scout-ask", "text": "Ask, then.", "options": [
+        { "label": "Which way is clear?", "effects": [{ "type": "complete-objective", "objective": "obj/ask" }] } ] }"#,
+    );
+    assert_ne!(dialogue, DIALOGUE.as_str(), "the dialogue patch must apply");
+    parse_campaign(&RawCampaign {
+        world: hw("world.json"),
+        npcs: NPCS.to_string(),
+        classes: hw("classes.json"),
+        quest_plan: sibling_plan(four.map(|(parent, _)| parent)),
+        quests,
+        dialogue,
+        world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
+        site_plan: None,
+        detail_plan: None,
+        design: None,
+    })
+    .expect("sibling fixture must parse")
+}
+
+/// `quest/two` gives the scout the root that completes `obj/ask`.
+const TWO_ASKS: &str = r#"{
+  "npc/keeper": { "at": "anchor/keeper-stand", "doing": "watching you go", "dialogue": "dlg/after" },
+  "npc/scout":  { "at": "anchor/exit", "doing": "waiting to be asked", "dialogue": "dlg/scout-ask" }
+}"#;
+
+/// A sibling ranked after `quest/two` that gives the scout a bark pool.
+const THREE_BARKS: &str = r#"{
+  "npc/keeper": { "at": "anchor/keeper-stand", "doing": "watching you go", "dialogue": "unchanged" },
+  "npc/scout":  { "at": "anchor/exit", "doing": "busy at the gate", "dialogue": { "barks": ["Busy."] } }
+}"#;
+
+/// The same sibling, with no claim on the scout.
+const THREE_UNCHANGED: &str = r#"{
+  "npc/keeper": { "at": "anchor/keeper-stand", "doing": "watching you go", "dialogue": "unchanged" },
+  "npc/scout":  { "at": "anchor/exit", "doing": "waiting to be asked", "dialogue": "unchanged" }
+}"#;
+
+/// Every quest of the sibling fixture begun, no flag set.
+fn begun(ids: &[&str]) -> std::collections::BTreeSet<String> {
+    ids.iter().map(|s| s.to_string()).collect()
+}
+
+/// The shape that stranded a playtest: two quests open in one tick, and the one
+/// ranked later declares a bark pool for the NPC the other one needs. At run
+/// time the later clause governs for as long as both are open, so the
+/// objective's own root is never what right-click opens. DW0858 judges the
+/// clause that wins, not every clause of every open quest.
+#[test]
+fn dw0858_a_sibling_ranked_later_that_overrides_the_npc_is_refused() {
+    let c = siblings(TWO_ASKS, THREE_BARKS, None);
+    let scout = &cast::npc_casts(&c)["npc/scout"];
+    let all = begun(&["quest/one", "quest/two", "quest/three"]);
+    let bark = scout
+        .scenes
+        .iter()
+        .find(|s| matches!(s.action, cast::SceneAction::Barks(_)) && s.declared_by == "quest/three")
+        .expect("quest/three's pool is a scene")
+        .index;
+    assert_eq!(
+        cast::eval_ladder(scout, &all, &Default::default(), &Default::default()),
+        bark,
+        "the model must agree the later sibling's bark pool is what right-click opens"
+    );
+    let d = cast::check_cast(&c)
+        .into_iter()
+        .find(|d| d.code == "DW0858")
+        .expect("an objective whose NPC a same-tick sibling overrides must be refused");
+    assert!(d.message.contains("obj/ask"), "{}", d.message);
+    assert!(d.message.contains("`quest/three`"), "{}", d.message);
+    assert!(d.message.contains("bark pool"), "{}", d.message);
+}
+
+/// The repair the refusal names: the sibling declares `"unchanged"`, claims
+/// nothing, and `quest/two`'s own root governs.
+#[test]
+fn dw0858_a_sibling_that_carries_the_npc_forward_passes() {
+    let c = siblings(TWO_ASKS, THREE_UNCHANGED, None);
+    let diags = cast::check_cast(&c);
+    assert!(
+        !diags.iter().any(|d| d.code == "DW0858"),
+        "an `unchanged` sibling claims nothing: {diags:#?}"
+    );
+    let scout = &cast::npc_casts(&c)["npc/scout"];
+    let ask = scout
+        .scenes
+        .iter()
+        .find(|s| s.action == cast::SceneAction::Root("dlg/scout-ask".into()))
+        .unwrap()
+        .index;
+    assert_eq!(
+        cast::eval_ladder(
+            scout,
+            &begun(&["quest/one", "quest/two", "quest/three"]),
+            &Default::default(),
+            &Default::default()
+        ),
+        ask
+    );
+}
+
+/// An objective answerable only once a later quest opens is a legal design:
+/// the scout is busy while `quest/three` runs, and `quest/four` (opened by
+/// `quest/three` completing) hands her the root. Some reachable state answers
+/// it, so nothing is refused.
+#[test]
+fn dw0858_an_objective_a_later_opening_answers_passes() {
+    let four = r#"{
+      "npc/keeper": { "at": "anchor/keeper-stand", "doing": "watching you go", "dialogue": "unchanged" },
+      "npc/scout":  { "at": "anchor/exit", "doing": "free at last", "dialogue": "dlg/scout-ask" }
+    }"#;
+    let two = r#"{
+      "npc/keeper": { "at": "anchor/keeper-stand", "doing": "watching you go", "dialogue": "dlg/after" },
+      "npc/scout":  { "at": "anchor/exit", "doing": "waiting", "dialogue": "dlg/scout-later" }
+    }"#;
+    let diags = cast::check_cast(&siblings(two, THREE_BARKS, Some(("quest/three", four))));
+    assert!(
+        !diags.iter().any(|d| d.code == "DW0858"),
+        "quest/four's opening answers obj/ask: {diags:#?}"
+    );
+    // Without quest/four nothing ever answers it.
+    assert!(
+        codes(&siblings(two, THREE_BARKS, None)).contains(&"DW0858".to_string()),
+        "with no later opening the objective is unanswerable"
+    );
+}
+
+/// `"unchanged"` is resolved at run time, never to the clause ranked before it:
+/// inside a per-branch list it does not copy its own quest's other placement,
+/// and after a gated clause it does not carry that clause's scene ungated.
+#[test]
+fn unchanged_puts_back_what_governed_before_its_quest() {
+    let all = begun(&["quest/one", "quest/two", "quest/three"]);
+    let warned: BTreeMap<String, i32> = [("flag/warned".to_string(), 1)].into();
+    let scene_of = |cast_: &cast::NpcCast, root: &str| {
+        cast_
+            .scenes
+            .iter()
+            .find(|s| s.action == cast::SceneAction::Root(root.into()))
+            .unwrap()
+            .index
+    };
+
+    // The list shape: barks unless warned, and no claim once warned.
+    let three = r#"{
+      "npc/keeper": { "at": "anchor/keeper-stand", "doing": "watching you go", "dialogue": "unchanged" },
+      "npc/scout": [
+        { "at": "anchor/exit", "doing": "busy at the gate", "dialogue": { "barks": ["Busy."] },
+          "forbids_flags": ["flag/warned"] },
+        { "at": "anchor/exit", "doing": "waiting to be asked", "dialogue": "unchanged",
+          "requires_flags": ["flag/warned"] }
+      ]
+    }"#;
+    let c = siblings(TWO_ASKS, three, None);
+    let scout = &cast::npc_casts(&c)["npc/scout"];
+    assert_eq!(
+        cast::eval_ladder(scout, &all, &warned, &Default::default()),
+        scene_of(scout, "dlg/scout-ask"),
+        "warned: quest/three claims nothing, so quest/two's root governs"
+    );
+
+    // The gated shape: quest/two splits on the flag, quest/three carries it.
+    let two = r#"{
+      "npc/keeper": { "at": "anchor/keeper-stand", "doing": "watching you go", "dialogue": "dlg/after" },
+      "npc/scout": [
+        { "at": "anchor/exit", "doing": "waiting", "dialogue": "dlg/scout-later" },
+        { "at": "anchor/exit", "doing": "waiting to be asked", "dialogue": "dlg/scout-ask",
+          "requires_flags": ["flag/warned"] }
+      ]
+    }"#;
+    let c = siblings(two, THREE_UNCHANGED, None);
+    let scout = &cast::npc_casts(&c)["npc/scout"];
+    assert_eq!(
+        cast::eval_ladder(scout, &all, &Default::default(), &Default::default()),
+        scene_of(scout, "dlg/scout-later"),
+        "not warned: the carried scene is quest/two's fallback, not its gated branch"
+    );
+    assert_eq!(
+        cast::eval_ladder(scout, &all, &warned, &Default::default()),
+        scene_of(scout, "dlg/scout-ask"),
+    );
+}
+
+/// The shape that stranded the playtest, exactly: `quest/three` gives the scout
+/// a bark pool only once `quest/two` is done (`flag/asked`), and a third sibling
+/// opened in the same tick, ranked last, carries her forward. `"unchanged"` once
+/// resolved to the clause ranked before it and was emitted ungated, so the third
+/// sibling set the bark pool for everyone the moment the three quests opened.
+/// It claims nothing now: `quest/two`'s root governs until the flag is set, and
+/// DW0858, reading the clause that wins, has nothing to refuse.
+#[test]
+fn a_last_ranked_sibling_that_carries_the_npc_does_not_override_it() {
+    let three = r#"{
+      "npc/keeper": { "at": "anchor/keeper-stand", "doing": "watching you go", "dialogue": "unchanged" },
+      "npc/scout":  { "at": "anchor/exit", "doing": "busy at the gate once asked", "dialogue": { "barks": ["Busy."] },
+                      "requires_flags": ["flag/asked"] }
+    }"#;
+    let c = siblings(TWO_ASKS, three, Some(("quest/one", THREE_UNCHANGED)));
+    let scout = &cast::npc_casts(&c)["npc/scout"];
+    let all = begun(&["quest/one", "quest/two", "quest/three", "quest/four"]);
+    let ask = scout
+        .scenes
+        .iter()
+        .find(|s| s.action == cast::SceneAction::Root("dlg/scout-ask".into()))
+        .unwrap()
+        .index;
+    assert_eq!(
+        cast::eval_ladder(scout, &all, &Default::default(), &Default::default()),
+        ask,
+        "before `flag/asked`, quest/two's own root must govern"
+    );
+    let asked: BTreeMap<String, i32> = [("flag/asked".to_string(), 1)].into();
+    assert_ne!(
+        cast::eval_ladder(scout, &all, &asked, &Default::default()),
+        ask,
+        "once asked, quest/three's gated pool takes over, through quest/four's carry"
+    );
+    let diags = cast::check_cast(&c);
+    assert!(
+        !diags.iter().any(|d| d.code == "DW0858"),
+        "the governing scene answers obj/ask: {diags:#?}"
+    );
 }
