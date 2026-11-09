@@ -226,6 +226,19 @@ available parallelism. `DELVEC_THREADS=1` runs everything on the calling
 thread. The count changes how long a build takes and never a byte it emits
 (§4 "Determinism").
 
+**Phase timing.** `DELVEC_PHASE_TIMING` set (to anything) stamps every binding
+note `delvec` prints on stderr with `[t=+W s cpu=C s thr=N]` — the wall seconds
+since the process started, its CPU seconds so far and its thread count, the
+last two read from `/proc/self/stat` and so on Linux only — and prints a
+`phase: …` line at each phase boundary that owns no note (assembly, edit
+replay, links, the proof groups, each branch world's stages, each reach graph
+built with what keys its lineage, each closure taken, the review worlds' encodes,
+the output write). It is the log's alone (`compiler/notes.rs`): a note a
+`hold` keeps is kept unstamped and a mark is never held, so no output byte and
+nothing a caller holds moves; unset, stderr is unchanged too. It is the
+instrument for where a build's wall time goes: fold a stamped stderr into
+per-phase wall and CPU, and the ratio says how many cores a phase kept busy.
+
 **The reach graph's node bank across runs.** `DELVEC_REACH_CACHE=<dir>` names
 a directory the reach graph's node banks are read from when a run first asks
 for one and written back to when the run ends, if the variants it keeps
@@ -2395,8 +2408,18 @@ CI-enforced over every fixture family by `tests/it/packtest_batch.rs`):
   failing template is the one named), the valley horizon's tile stacks (built
   per footprint, numbered `horizon/valley/t{n}` in footprint order), and the
   `DW0921` proof's quest configurations (counts summed and pockets listed in
-  configuration order), and the `DW1011` proof's (counts summed, bypassed gates
-  named in first-configuration order). Gated by `tests/it/thread_count.rs`, which builds one
+  configuration order), the `DW1011` proof's (counts summed, bypassed gates
+  named in first-configuration order), the story worlds' walks
+  (`emit/routes.rs::prove_branch_world`: each world's path, links, per-branch
+  `DW0311`, routes, `DW0314` and waypoints, folded in row order, so the first
+  failing world is the one named; one world's transients per thread), a
+  written world's light strips (`view/world.rs::encode_world`: each strip of
+  four chunk columns lit and its chunks encoded, folded in chunk order into the
+  light hash and the region files; at most `threads` strips' light fields and
+  `2 × threads` strips' encoded chunks held at once), and the write sequence's
+  chunks (`attached::replay_by_chunk`: each chunk replayed over its halo,
+  folded in chunk order; at most `threads` replays' worlds and `2 × threads`
+  chunks' own cells and drops held at once). Gated by `tests/it/thread_count.rs`, which builds one
   subject at `DELVEC_THREADS=1`, `3` and unset and compares trees and stderr,
   the machine's measurements excepted: a world's wall time, the snapshot's
   page reads served by a thread's recent pages, `world store pages:` and

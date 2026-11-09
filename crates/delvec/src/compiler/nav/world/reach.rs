@@ -2611,6 +2611,7 @@ impl World {
     /// A new graph memo over this world at `params`, with the latest graph of
     /// its window as its lineage; it becomes the next one's.
     fn build_graph(&self, params: &ReachParams) -> Arc<GraphMemo> {
+        crate::compiler::notes::mark("reach graph: build start");
         let dense = Dense::of(self);
         // A declared jump's launch cell is a premise cell too: a node whose
         // jumps differ from the lineage's is not the lineage's node.
@@ -2696,6 +2697,25 @@ impl World {
         // The latest graph is the next one's lineage: configurations are asked
         // about in story order, and the one before differs least.
         seeds.lock().expect("memo").insert(seed_key, Arc::clone(&g));
+        if crate::compiler::notes::timing() {
+            crate::compiler::notes::mark(&format!(
+                "reach graph: built, window {:?} at {:?}, lineage {}, lineage diff {} cell(s), premise {}, leaves {}, keep-out {}, unbounded fall {}, ambient {}, world {}",
+                g.dense.dims,
+                g.dense.lo,
+                g.lineage.is_some(),
+                g.lineage.as_ref().map_or(0, |(_, d)| d.len()),
+                g.premise_cells.len(),
+                g.leaf_cells.len(),
+                self.keep_out.len(),
+                self.unbounded_fall,
+                self.ambient.name(),
+                self.fingerprint()
+                    .iter()
+                    .take(4)
+                    .map(|b| format!("{b:02x}"))
+                    .collect::<String>()
+            ));
+        }
         g
     }
 
@@ -4033,6 +4053,7 @@ impl World {
                     r.over_budget = Some(params.budget);
                     return Arc::new(r);
                 }
+                crate::compiler::notes::mark("reach closure: reused");
                 return Arc::clone(c);
             }
         }
@@ -4047,7 +4068,9 @@ impl World {
             &mut visits,
             &mut fresh,
         );
+        let mut rounds = 0usize;
         loop {
+            rounds += 1;
             // A round: every standing or holding state whose envelope holds a
             // cell the closure has not reached flies the launches that can
             // reach it, each judged against the closure as the round found it
@@ -4072,6 +4095,15 @@ impl World {
             self.close(&memo, params, &mut reach, new, &mut visits, &mut fresh);
         }
         reach.portals = visits.report();
+        if crate::compiler::notes::timing() {
+            crate::compiler::notes::mark(&format!(
+                "reach closure: taken over {} root(s) in {rounds} round(s): {} state(s), {} simulated, {} credited",
+                start.len(),
+                reach.states.len(),
+                reach.simulated,
+                reach.credited
+            ));
+        }
         closure_taken(&reach);
         // The closure is kept as a copy taken in one sweep, its lists at
         // their length; the one the rounds grew is dropped here.

@@ -52,6 +52,18 @@ fn read_tree(root: &Path) -> Tree {
 /// Build `campaign` into `out` with `DELVEC_THREADS` set to `threads`, or unset
 /// for `None` (the host's own parallelism).
 fn build(campaign: &Path, prefabs: &Path, out: &Path, threads: Option<&str>) -> Output {
+    build_with(campaign, prefabs, out, threads, false)
+}
+
+/// [`build`], with `DELVEC_PHASE_TIMING` set when `timing` and removed
+/// otherwise.
+fn build_with(
+    campaign: &Path,
+    prefabs: &Path,
+    out: &Path,
+    threads: Option<&str>,
+    timing: bool,
+) -> Output {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_delvec"));
     cmd.args([
         "build",
@@ -65,12 +77,16 @@ fn build(campaign: &Path, prefabs: &Path, out: &Path, threads: Option<&str>) -> 
         Some(n) => cmd.env("DELVEC_THREADS", n),
         None => cmd.env_remove("DELVEC_THREADS"),
     };
+    if timing {
+        cmd.env("DELVEC_PHASE_TIMING", "1");
+    } else {
+        cmd.env_remove("DELVEC_PHASE_TIMING");
+    }
     cmd.output().expect("delvec runs")
 }
 
-#[test]
-fn the_output_is_the_same_at_every_thread_count() {
-    let root = tmp("thread-count");
+/// The subject: a piece cut into several templates under a `valley` horizon.
+fn subject(root: &Path) -> (PathBuf, PathBuf) {
     let prefabs = root.join("prefabs");
     common::write_tiled_zone(
         &prefabs,
@@ -92,6 +108,13 @@ fn the_output_is_the_same_at_every_thread_count() {
         c.insert("horizon".into(), common::horizon("valley"));
         c.insert("boundary".into(), serde_json::json!({ "margin": 20 }));
     });
+    (campaign, prefabs)
+}
+
+#[test]
+fn the_output_is_the_same_at_every_thread_count() {
+    let root = tmp("thread-count");
+    let (campaign, prefabs) = subject(&root);
 
     let runs: Vec<(&str, Option<&str>)> = vec![("1", Some("1")), ("3", Some("3")), ("host", None)];
     let mut built: Vec<(&str, Tree, Vec<u8>)> = Vec::new();
@@ -194,4 +217,125 @@ fn without_wall_time(text: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// **Phase timing is the log's alone** (`DELVEC_PHASE_TIMING`,
+/// `compiler/notes.rs`): the subject built with it set and unset writes the
+/// same tree, and the stamped stderr is the plain one once each note's stamp
+/// and each `phase:` mark are taken out. The marks are counted, so a timing
+/// switch that stopped stamping would fail here rather than compare nothing.
+#[test]
+fn phase_timing_moves_no_output_byte_and_only_stamps_the_log() {
+    let root = tmp("phase-timing");
+    let (campaign, prefabs) = subject(&root);
+    let plain_out = root.join("out-plain");
+    let timed_out = root.join("out-timed");
+    let plain = build_with(&campaign, &prefabs, &plain_out, Some("1"), false);
+    let timed = build_with(&campaign, &prefabs, &timed_out, Some("1"), true);
+    for (name, r) in [("plain", &plain), ("timed", &timed)] {
+        assert!(
+            r.status.success(),
+            "the subject builds {name}:\n{}",
+            String::from_utf8_lossy(&r.stderr)
+        );
+    }
+    let (a, b) = (read_tree(&plain_out), read_tree(&timed_out));
+    assert_eq!(
+        a.keys().collect::<Vec<_>>(),
+        b.keys().collect::<Vec<_>>(),
+        "the same files with phase timing set and unset"
+    );
+    for (path, bytes) in &a {
+        assert!(bytes == &b[path], "{path} differs with phase timing set");
+    }
+    let plain_err = String::from_utf8_lossy(&plain.stderr);
+    let timed_err = String::from_utf8_lossy(&timed.stderr);
+    assert!(!plain_err.contains("phase: "), "unset, no mark is printed");
+    let unstamp = |l: &str| -> String {
+        match l.strip_prefix("[t=+").and_then(|r| r.split_once("] ")) {
+            Some((_, rest)) => rest.to_string(),
+            None => l.to_string(),
+        }
+    };
+    let marks = timed_err
+        .lines()
+        .filter(|l| unstamp(l).starts_with("phase: "))
+        .count();
+    let stamped = timed_err.lines().filter(|l| l.starts_with("[t=+")).count();
+    eprintln!(
+        "phase-timing binding: {} file(s) compared, {marks} mark(s), {stamped} stamped line(s)",
+        a.len()
+    );
+    assert!(
+        marks >= 2,
+        "the timed build prints its phase marks: {marks}"
+    );
+    let timed_plain: Vec<String> = timed_err
+        .lines()
+        .map(unstamp)
+        .filter(|l| !l.starts_with("phase: "))
+        .collect();
+    assert_eq!(
+        without_wall_time(&plain_err),
+        without_wall_time(&timed_plain.join("\n")),
+        "the stamped log is the plain one, stamps and marks taken out"
+    );
+}
+
+/// **The story worlds are proven in parallel and folded in row order**
+/// (`emit/routes.rs`, `prove_branch_world`): a campaign of several story
+/// worlds built at one thread and at three writes the same tree and says the
+/// same diagnostics. The worlds walked are counted off the tree (one
+/// `validation/world-waypoints-*.json` per walked world), so a subject that
+/// stopped walking more than one would fail here rather than compare a
+/// single row with itself.
+#[test]
+fn the_story_worlds_are_the_same_at_every_thread_count() {
+    let root = tmp("thread-count-story-worlds");
+    let campaign = common::compiler_fixtures_dir().join("branch-two-endings");
+    let prefabs = common::prefabs_dir();
+    let mut built: Vec<(&str, Tree, Vec<u8>)> = Vec::new();
+    for (name, threads) in [("1", Some("1")), ("3", Some("3")), ("host", None)] {
+        let out = root.join(format!("out-{name}"));
+        let r = build(&campaign, &prefabs, &out, threads);
+        assert!(
+            r.status.success(),
+            "the subject builds at {name} thread(s):\n{}",
+            String::from_utf8_lossy(&r.stderr)
+        );
+        built.push((name, read_tree(&out), r.stderr));
+    }
+    let (_, first, first_err) = &built[0];
+    let walked = first
+        .keys()
+        .filter(|p| p.starts_with("validation/world-waypoints-"))
+        .count();
+    eprintln!(
+        "story-world thread-count binding: {} file(s) compared across {} build(s); {walked} \
+         walked world(s)",
+        first.len(),
+        built.len()
+    );
+    assert!(
+        walked >= 2,
+        "the subject walks several story worlds: {walked}"
+    );
+    for (name, tree, stderr) in &built[1..] {
+        assert_eq!(
+            first.keys().collect::<Vec<_>>(),
+            tree.keys().collect::<Vec<_>>(),
+            "the same files at 1 and {name} thread(s)"
+        );
+        for (path, bytes) in first {
+            assert!(
+                bytes == &tree[path],
+                "{path} differs between 1 and {name} thread(s)"
+            );
+        }
+        assert_eq!(
+            without_wall_time(&String::from_utf8_lossy(first_err)),
+            without_wall_time(&String::from_utf8_lossy(stderr)),
+            "the same diagnostics at 1 and {name} thread(s)"
+        );
+    }
 }
