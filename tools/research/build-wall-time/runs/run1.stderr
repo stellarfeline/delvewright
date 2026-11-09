@@ -1,0 +1,583 @@
+-- what this run examined (142 line(s))
+equipment binding: 0 body(ies) dressed over 0 entity type(s), 0 piece(s) declared over 0 slot(s) in use, 0 piece(s) with a registry-declared slot, 0 with an allowed-entity list, 0 refused (DW0898).
+purchase binding: 4 charge(s) over 1 datum(s) bind 4 (list, datum) pair(s) of 79 effect list(s) walked, 0 of them behind a numeric gate, 0 refused (DW0901).
+read-after-write binding: 133 effect(s) over 55 bundle(s) walked, 4 gated write(s) recorded, 0 refused (DW0527).
+health-bar binding: 0 of 0 fight(s) carry a bar (0 wave(s), 0 actor(s) declared); 0 of 0 boss-billed fight(s) carry one; 0 refused (DW0100/DW0909/DW0910), 0 advised (DW0912).
+on_kill binding: 0 of 0 fight(s) carry a bundle, 0 of them on a fight that comes back, 0 stating `every-kill`; 0 refused (DW0913/DW0914/DW0915).
+inline-style binding: 0 of 656 player-facing line(s) carry 0 span(s); 656 sidecar row(s) held to their English's spans
+compass binding (DW1049): 620 of 656 player-facing line(s) judged; 36 declared name(s); 0 compass word(s) inside a declared name, 0 refused
+textures: 0 row(s) resolved of 0 declared, against a census of 3517 vanilla texture(s)
+sheet binding: 13 of 13 sheet(s) judged against their model's boxes — 13 of 13 mannequin skin(s), 0 of 0 `world.textures[]` row(s) an entity model is drawn with; by model: player 5, player_slim 8; 0 refused (DW0978/DW0979)
+journal pages: 72 page(s) measured over the source and every declared language, the fullest 14 of 14 line(s); 0 over
+name-tag binding (DW0983): 0 of 0 wave(s) carry a named member, 0 named actor(s); 0 name(s) tag a group; 0 wave(s) and 0 actor(s) refused
+act binding (DW1045): 28 of 35 English title(s) read against 35 objective(s); 7 head(s) the lexicon does not know; 0 untitled; 0 refused — not known: "Tag the harbour pumpkin" (/content/quests/2/objectives/1/title), "Tag the fishy pumpkin" (/content/quests/2/objectives/2/title), "Tag the candle pumpkin" (/content/quests/2/objectives/3/title), "Tag the last pumpkin" (/content/quests/2/objectives/4/title), "Fill the bucket at the spring" (/content/quests/3/objectives/1/title), "Fill the bottle at the hive" (/content/quests/3/objectives/2/title), "Bake the Mountain Loaf" (/content/quests/3/objectives/4/title)
+hint act binding (DW1045): 3 of 35 English hint(s) name an act, over 35 objective(s); 0 warned
+seating binding: horizon base `ocean`; areas[]: 0 of 0 area(s) name a piece set, examined over 0 member(s), 0 opening outward, 0 `.nbt` opened, 0 waterline declaration(s) examined, 0 borne out by the bytes; site plan: 99 of 99 box(es) judged against this base. byte-claim binding: 0 document(s) read, 0 `.nbt` opened; 0 declaration(s) of the class examined, 0 denied by the bytes (DW0888); per key examined/denied: structure.data_version=0/0, walk_y=0/0, anchors.*.pos=0/0, anchors.*.region=0/0, anchors.*.dispenser=0/0, anchors.*.trigger_block=0/0, anchors.*.furniture=0/0, connectors[].opening=0/0, connectors[].socket=0/0, jigsaw-declared=0/0.
+anchor-guarantee binding: 0 of 0 area(s) bind a pool, examined over 0 member(s) declaring 0 anchor name(s), of which 0 are guaranteed; 2001 name(s) carried by this campaign's documents, 0 reported outside a guarantee.
+promise: 35 objective(s) examined — 35 announced (DW0862/DW0961), 0 adopted container(s) (DW0861); 0 failure clock(s) (DW0860) over 11 effect root(s)
+compass binding: 31 tracked objective(s) of 35 — 0 by their own field, 31 by the campaign default; 0 refused
+highlight binding: 0 highlight(s) over 50 act(s) — 0 on a block, 0 on a body; 0 refused
+press bodies (DW1059): 30 interaction point(s) — 2 pressed on their own (2 bell, 0 button, 0 lever), 28 boxed (5 acting on their own, 23 unobservable, 0 struck), 0 riding a body or a gate, 0 refused
+press answers (DW1051): 30 pressable(s) — 51 answer(s) owed, 51 declared, 0 refused; 0 gate answer(s) judged by DW0429; 0 released; 1 with only the open state
+detail binding: 99 of 99 place(s) bound over 99 `details[]` row(s), 99 piece(s) measured against their frame, 196 seam(s) required answering over 538 declared face(s) examined (342 answering an open side), 0 contract bar(s) judged against the hand (DW1063), 119 owed anchor name(s) checked, 0 of them a killing volume's seat in out-of-walk floor.
+void binding: 99 bound piece(s) opened, 10398 void cell(s) examined, 0 painted (DW0987); 73 fixed ring ground cell(s) examined, 0 written (DW0990).
+aloft binding: 0 aloft place(s) of 99, 0 terrain column(s) under them examined, 0 reaching into a claim (DW0990).
+contradiction binding: 8 branch(es) read in their exported order over 376 dated line(s); every legal order searched over 240 step(s) (8 quiet), 68680 distinct play state(s) walked; 0 refused beyond the exported order (DW0485); 0 branch(es) unproven at the bound of 50000 state(s) per branch (DW0927)
+ending binding: 3 ending(s); 27 input(s) read, 27 seeded (9 with a deed among their writers), 0 final-scene only; 160 story world(s) enumerated (16256 unrealizable target(s), 0 at the bound); 0 aftermath effect(s), 0 of them observable after the scene.
+ending/encore: reads 9 input(s) — flag/chorus-done: finished, seeded, written at quest/the-chorus; flag/curtain-done: finished, seeded, written at quest/the-curtain; flag/founder-buoys: said, seeded, written at quest/the-founder; flag/founder-song: said, seeded, written at quest/the-founder; flag/loaf-forge: said, seeded, written at quest/the-loaf; flag/loaf-oven: said, seeded, written at quest/the-loaf; flag/tail-dumpling: said, seeded, written at quest/the-dragon; flag/tail-nest-moved: said, seeded, written at quest/the-dragon; state/applause: finished, seeded, written at quest/the-chorus, quest/the-curtain; aftermath: 0 effect(s) []; reached by world/0, world/4, world/5, world/9, world/10, world/14, world/15, world/19, world/40, world/44, world/45, world/49, world/50, world/54, world/55, world/59, world/80, world/84, world/85, world/89, world/90, world/94, world/95, world/99, world/120, world/124, world/125, world/129, world/130, world/134, world/135, world/139
+ending/curtain-call: reads 9 input(s) — flag/chorus-done: finished, seeded, written at quest/the-chorus; flag/curtain-done: finished, seeded, written at quest/the-curtain; flag/founder-buoys: said, seeded, written at quest/the-founder; flag/founder-song: said, seeded, written at quest/the-founder; flag/loaf-forge: said, seeded, written at quest/the-loaf; flag/loaf-oven: said, seeded, written at quest/the-loaf; flag/tail-dumpling: said, seeded, written at quest/the-dragon; flag/tail-nest-moved: said, seeded, written at quest/the-dragon; state/applause: finished, seeded, written at quest/the-chorus, quest/the-curtain; aftermath: 0 effect(s) []; reached by world/1, world/2, world/3, world/6, world/7, world/8, world/11, world/12, world/13, world/16, world/17, world/18, world/41, world/42, world/43, world/46, world/47, world/48, world/51, world/52, world/53, world/56, world/57, world/58, world/81, world/82, world/83, world/86, world/87, world/88, world/91, world/92, world/93, world/96, world/97, world/98, world/121, world/122, world/123, world/126, world/127, world/128, world/131, world/132, world/133, world/136, world/137, world/138
+ending/no-ending: reads 9 input(s) — flag/chorus-done: finished, seeded, written at quest/the-chorus; flag/curtain-done: finished, seeded, written at quest/the-curtain; flag/founder-buoys: said, seeded, written at quest/the-founder; flag/founder-song: said, seeded, written at quest/the-founder; flag/loaf-forge: said, seeded, written at quest/the-loaf; flag/loaf-oven: said, seeded, written at quest/the-loaf; flag/tail-dumpling: said, seeded, written at quest/the-dragon; flag/tail-nest-moved: said, seeded, written at quest/the-dragon; state/applause: finished, seeded, written at quest/the-chorus, quest/the-curtain; aftermath: 0 effect(s) []; reached by world/20, world/21, world/22, world/23, world/24, world/25, world/26, world/27, world/28, world/29, world/30, world/31, world/32, world/33, world/34, world/35, world/36, world/37, world/38, world/39, world/60, world/61, world/62, world/63, world/64, world/65, world/66, world/67, world/68, world/69, world/70, world/71, world/72, world/73, world/74, world/75, world/76, world/77, world/78, world/79, world/100, world/101, world/102, world/103, world/104, world/105, world/106, world/107, world/108, world/109, world/110, world/111, world/112, world/113, world/114, world/115, world/116, world/117, world/118, world/119, world/140, world/141, world/142, world/143, world/144, world/145, world/146, world/147, world/148, world/149, world/150, world/151, world/152, world/153, world/154, world/155, world/156, world/157, world/158, world/159
+state path binding: 33 path(s) walked over 1145 step(s); 0 numeric gate term(s) read, of which 0 against an undatable datum and 0 withheld (the order is not forced); 128 state write(s) replayed; 2 declared datum(s) of which 1 undatable
+name-told binding (DW0982): 34 declared name(s); 9 walk(s); 201 of 218 dialogue string(s) and 70 of 70 objective string(s) on screen on some walk; 63 use(s) of a name in them, 0 untold
+secrets (DW1060): 0 hidden way(s), 0 secret word(s); 0 string(s) read before the shot(s), 0 mention(s) refused; 0 word(s) told after; 0 hidden way(s) with no shot to read against
+presence binding (DW1026): 15 npc(s) and 0 actor(s) (0 named) declared, 0 assembl(ies) with no name; 1 name(s) carried by more than one declaration, over 2 body(ies); 13 story state(s) judged (world init, and every state a spawn changes) over 9 configuration(s), 0 body(ies) an undatable spawn can bring in; 0 character(s) refused
+design record: 17 reference(s) recorded over 17 image file(s) under `design/` (concept/ 14, reference/ 3); skies stated: {"daytime":10500}+clear x15, {"daytime":11867}+clear x2; world reaches times {{"daytime":10500}, {"daytime":11867}} weathers {clear} (DW0890); showcase cameras: 17 in design/cameras.json answering 17 of 17 approved image(s) (DW0900)
+clock: world {"daytime":10500} -> day 0 daytime 10500; sun +34.84° W, moon below the horizon (full-moon); sky light judged 15, game 15; burns: yes
+clock: set-time {"daytime":11867} -> day 0 daytime 11867; sun +14.43° W, moon below the horizon (full-moon); sky light judged 15, game 15; burns: yes
+clocks: 1 world + 1 cut(s); 0 celestial, 2 tick, 0 keyword; phases stated {}; days {0}
+view distance binding: 10 chunk(s) (the engine's floor, undeclared) serve 160 blocks in every direction; 0 sightline(s) and 0 view(s) judged against it, 0 beyond it.
+layout-graph binding: 99 node(s), 98 edge(s) (98 traversal, 0 one-way, 0 shortcut, 0 gated, 0 carry), 19 station(s) of which 0 gate(s), 35 beat(s) of which 25 on the mandatory spine, 226 critical-path step(s); geometry-brief binding: 2 fact(s).
+references binding: 178 reference(s) over 49 of 99 node(s)
+plot program: 25 plot(s) over 99 node(s), 63 part(s) — 37 structure(s), 26 ground(s), 2 seen; cells declared 5383 of 7784 play space
+site-plan binding: 99 box(es) (4851 pair(s) compared; 1 pinned, 98 derived, in 1 component(s); 0 roofed; 6295 shared claim cell(s) awarded), 98 seam(s) (30 stair, 0 drop), 0 datum(s), 0 whole-owned volume(s), 2 identity(ies), 0 sightline(s), 0 view(s); fill `open`. DW1027 binding: 0 gated connection(s), 0 of them fronts. DW1028 binding: 0 gated connection(s), 0 opened by an `open-gate`, 0 by a shortcut, 0 by a clock, 0 by nothing.
+site-plan placing: `node/square` stands at [108, 230] — pinned.
+site-plan placing: `node/flight-1` stands at [119, 255] — hung off `node/square` across the south face by the seam for `edge/square-to-flight-1`.
+site-plan placing: `node/street-1` stands at [118, 262] — hung off `node/flight-1` across the south face by the seam for `edge/flight-1-to-street-1`.
+site-plan placing: `node/flight-2` stands at [119, 277] — hung off `node/street-1` across the south face by the seam for `edge/street-1-to-flight-2`.
+site-plan placing: `node/street-2` stands at [118, 284] — hung off `node/flight-2` across the south face by the seam for `edge/flight-2-to-street-2`.
+site-plan placing: `node/flight-3` stands at [119, 299] — hung off `node/street-2` across the south face by the seam for `edge/street-2-to-flight-3`.
+site-plan placing: `node/street-3` stands at [118, 306] — hung off `node/flight-3` across the south face by the seam for `edge/flight-3-to-street-3`.
+site-plan placing: `node/flight-4` stands at [119, 321] — hung off `node/street-3` across the south face by the seam for `edge/street-3-to-flight-4`.
+site-plan placing: `node/street-4` stands at [117, 328] — hung off `node/flight-4` across the south face by the seam for `edge/flight-4-to-street-4`.
+site-plan placing: `node/flight-5` stands at [119, 343] — hung off `node/street-4` across the south face by the seam for `edge/street-4-to-flight-5`.
+site-plan placing: `node/street-5` stands at [118, 350] — hung off `node/flight-5` across the south face by the seam for `edge/flight-5-to-street-5`.
+site-plan placing: `node/flight-6` stands at [119, 365] — hung off `node/street-5` across the south face by the seam for `edge/street-5-to-flight-6`.
+site-plan placing: `node/street-6` stands at [118, 372] — hung off `node/flight-6` across the south face by the seam for `edge/flight-6-to-street-6`.
+site-plan placing: `node/flight-7` stands at [119, 387] — hung off `node/street-6` across the south face by the seam for `edge/street-6-to-flight-7`.
+site-plan placing: `node/street-7` stands at [118, 394] — hung off `node/flight-7` across the south face by the seam for `edge/flight-7-to-street-7`.
+site-plan placing: `node/flight-8` stands at [119, 409] — hung off `node/street-7` across the south face by the seam for `edge/street-7-to-flight-8`.
+site-plan placing: `node/street-8` stands at [118, 416] — hung off `node/flight-8` across the south face by the seam for `edge/flight-8-to-street-8`.
+site-plan placing: `node/flight-9` stands at [119, 431] — hung off `node/street-8` across the south face by the seam for `edge/street-8-to-flight-9`.
+site-plan placing: `node/street-9` stands at [118, 438] — hung off `node/flight-9` across the south face by the seam for `edge/flight-9-to-street-9`.
+site-plan placing: `node/flight-10` stands at [119, 453] — hung off `node/street-9` across the south face by the seam for `edge/street-9-to-flight-10`.
+site-plan placing: `node/quay` stands at [92, 460] — hung off `node/flight-10` across the south face by the seam for `edge/flight-10-to-quay`.
+site-plan placing: `node/cathedral` stands at [139, 216] — hung off `node/square` across the east face by the seam for `edge/square-to-cathedral`.
+site-plan placing: `node/inn` stands at [79, 230] — hung off `node/square` across the west face by the seam for `edge/square-to-inn`.
+site-plan placing: `node/road-1` stands at [121, 225] — hung off `node/square` across the north face by the seam for `edge/square-to-road-1`.
+site-plan placing: `node/road-2` stands at [121, 214] — hung off `node/road-1` across the north face by the seam for `edge/road-1-to-road-2`.
+site-plan placing: `node/road-3` stands at [121, 201] — hung off `node/road-2` across the south face by the seam for `edge/road-3-to-road-2`.
+site-plan placing: `node/road-4` stands at [112, 201] — hung off `node/road-3` across the west face by the seam for `edge/road-3-to-road-4`.
+site-plan placing: `node/road-5` stands at [101, 201] — hung off `node/road-4` across the west face by the seam for `edge/road-4-to-road-5`.
+site-plan placing: `node/road-6` stands at [92, 201] — hung off `node/road-5` across the east face by the seam for `edge/road-6-to-road-5`.
+site-plan placing: `node/road-7` stands at [81, 201] — hung off `node/road-6` across the west face by the seam for `edge/road-6-to-road-7`.
+site-plan placing: `node/road-8` stands at [72, 201] — hung off `node/road-7` across the east face by the seam for `edge/road-8-to-road-7`.
+site-plan placing: `node/road-9` stands at [61, 201] — hung off `node/road-8` across the west face by the seam for `edge/road-8-to-road-9`.
+site-plan placing: `node/road-10` stands at [52, 201] — hung off `node/road-9` across the east face by the seam for `edge/road-10-to-road-9`.
+site-plan placing: `node/road-11` stands at [52, 190] — hung off `node/road-10` across the north face by the seam for `edge/road-10-to-road-11`.
+site-plan placing: `node/road-12` stands at [52, 177] — hung off `node/road-11` across the south face by the seam for `edge/road-12-to-road-11`.
+site-plan placing: `node/road-13` stands at [52, 166] — hung off `node/road-12` across the north face by the seam for `edge/road-12-to-road-13`.
+site-plan placing: `node/road-14` stands at [52, 153] — hung off `node/road-13` across the south face by the seam for `edge/road-14-to-road-13`.
+site-plan placing: `node/road-15` stands at [58, 153] — hung off `node/road-14` across the east face by the seam for `edge/road-14-to-road-15`.
+site-plan placing: `node/road-16` stands at [67, 153] — hung off `node/road-15` across the east face by the seam for `edge/road-15-to-road-16`.
+site-plan placing: `node/road-17` stands at [78, 153] — hung off `node/road-16` across the west face by the seam for `edge/road-17-to-road-16`.
+site-plan placing: `node/road-18` stands at [87, 153] — hung off `node/road-17` across the east face by the seam for `edge/road-17-to-road-18`.
+site-plan placing: `node/road-19` stands at [98, 153] — hung off `node/road-18` across the west face by the seam for `edge/road-19-to-road-18`.
+site-plan placing: `node/road-20` stands at [107, 153] — hung off `node/road-19` across the east face by the seam for `edge/road-19-to-road-20`.
+site-plan placing: `node/road-21` stands at [118, 153] — hung off `node/road-20` across the west face by the seam for `edge/road-21-to-road-20`.
+site-plan placing: `node/road-22` stands at [121, 142] — hung off `node/road-21` across the north face by the seam for `edge/road-21-to-road-22`.
+site-plan placing: `node/road-23` stands at [121, 129] — hung off `node/road-22` across the south face by the seam for `edge/road-23-to-road-22`.
+site-plan placing: `node/road-24` stands at [121, 118] — hung off `node/road-23` across the north face by the seam for `edge/road-23-to-road-24`.
+site-plan placing: `node/road-25` stands at [121, 105] — hung off `node/road-24` across the south face by the seam for `edge/road-25-to-road-24`.
+site-plan placing: `node/road-26` stands at [112, 105] — hung off `node/road-25` across the west face by the seam for `edge/road-25-to-road-26`.
+site-plan placing: `node/road-27` stands at [101, 105] — hung off `node/road-26` across the west face by the seam for `edge/road-26-to-road-27`.
+site-plan placing: `node/road-28` stands at [92, 105] — hung off `node/road-27` across the east face by the seam for `edge/road-28-to-road-27`.
+site-plan placing: `node/road-29` stands at [81, 105] — hung off `node/road-28` across the west face by the seam for `edge/road-28-to-road-29`.
+site-plan placing: `node/road-30` stands at [72, 105] — hung off `node/road-29` across the east face by the seam for `edge/road-30-to-road-29`.
+site-plan placing: `node/road-31` stands at [61, 105] — hung off `node/road-30` across the west face by the seam for `edge/road-30-to-road-31`.
+site-plan placing: `node/road-32` stands at [52, 105] — hung off `node/road-31` across the east face by the seam for `edge/road-32-to-road-31`.
+site-plan placing: `node/road-33` stands at [52, 94] — hung off `node/road-32` across the north face by the seam for `edge/road-32-to-road-33`.
+site-plan placing: `node/road-34` stands at [52, 81] — hung off `node/road-33` across the south face by the seam for `edge/road-34-to-road-33`.
+site-plan placing: `node/road-35` stands at [52, 70] — hung off `node/road-34` across the north face by the seam for `edge/road-34-to-road-35`.
+site-plan placing: `node/road-36` stands at [52, 57] — hung off `node/road-35` across the south face by the seam for `edge/road-36-to-road-35`.
+site-plan placing: `node/road-37` stands at [58, 57] — hung off `node/road-36` across the east face by the seam for `edge/road-36-to-road-37`.
+site-plan placing: `node/road-38` stands at [67, 57] — hung off `node/road-37` across the east face by the seam for `edge/road-37-to-road-38`.
+site-plan placing: `node/road-39` stands at [78, 57] — hung off `node/road-38` across the west face by the seam for `edge/road-39-to-road-38`.
+site-plan placing: `node/road-40` stands at [87, 57] — hung off `node/road-39` across the east face by the seam for `edge/road-39-to-road-40`.
+site-plan placing: `node/road-41` stands at [98, 57] — hung off `node/road-40` across the west face by the seam for `edge/road-41-to-road-40`.
+site-plan placing: `node/road-42` stands at [107, 57] — hung off `node/road-41` across the east face by the seam for `edge/road-41-to-road-42`.
+site-plan placing: `node/road-43` stands at [118, 57] — hung off `node/road-42` across the west face by the seam for `edge/road-43-to-road-42`.
+site-plan placing: `node/road-44` stands at [121, 46] — hung off `node/road-43` across the north face by the seam for `edge/road-43-to-road-44`.
+site-plan placing: `node/road-45` stands at [121, 33] — hung off `node/road-44` across the south face by the seam for `edge/road-45-to-road-44`.
+site-plan placing: `node/road-top` stands at [121, 27] — hung off `node/road-45` across the north face by the seam for `edge/road-45-to-road-top`.
+site-plan placing: `node/gate-road` stands at [244, 33] — hung off `node/road-top` across the south face by the seam for `edge/road-top-to-gate-road`.
+site-plan placing: `node/castle` stands at [170, 42] — hung off `node/gate-road` across the north face by the seam for `edge/road-to-gate`.
+site-plan placing: `node/lane-3` stands at [77, 311] — hung off `node/street-3` across the west face by the seam for `edge/street-3-to-lane-3`.
+site-plan placing: `node/lane-5` stands at [128, 355] — hung off `node/street-5` across the east face by the seam for `edge/street-5-to-lane-5`.
+site-plan placing: `node/lane-8` stands at [128, 421] — hung off `node/street-8` across the east face by the seam for `edge/street-8-to-lane-8`.
+site-plan placing: `node/bakery` stands at [95, 263] — hung off `node/street-1` across the west face by the seam for `edge/street-1-to-bakery`.
+site-plan placing: `node/apothecary` stands at [128, 263] — hung off `node/street-1` across the east face by the seam for `edge/street-1-to-apothecary`.
+site-plan placing: `node/cottages` stands at [97, 285] — hung off `node/street-2` across the west face by the seam for `edge/street-2-to-cottages`.
+site-plan placing: `node/merchant` stands at [128, 285] — hung off `node/street-2` across the east face by the seam for `edge/street-2-to-merchant`.
+site-plan placing: `node/weaver` stands at [128, 307] — hung off `node/street-3` across the east face by the seam for `edge/street-3-to-weaver`.
+site-plan placing: `node/townhall` stands at [92, 330] — hung off `node/street-4` across the west face by the seam for `edge/street-4-to-townhall`.
+site-plan placing: `node/tavern` stands at [129, 329] — hung off `node/street-4` across the east face by the seam for `edge/street-4-to-tavern`.
+site-plan placing: `node/smithy` stands at [93, 351] — hung off `node/street-5` across the west face by the seam for `edge/street-5-to-smithy`.
+site-plan placing: `node/chandler` stands at [97, 374] — hung off `node/street-6` across the west face by the seam for `edge/street-6-to-chandler`.
+site-plan placing: `node/cooper` stands at [128, 374] — hung off `node/street-6` across the east face by the seam for `edge/street-6-to-cooper`.
+site-plan placing: `node/fishmonger` stands at [97, 396] — hung off `node/street-7` across the west face by the seam for `edge/street-7-to-fishmonger`.
+site-plan placing: `node/tannery` stands at [128, 396] — hung off `node/street-7` across the east face by the seam for `edge/street-7-to-tannery`.
+site-plan placing: `node/netloft` stands at [97, 418] — hung off `node/street-8` across the west face by the seam for `edge/street-8-to-netloft`.
+site-plan placing: `node/carpenter` stands at [79, 294] — hung off `node/lane-3` across the north face by the seam for `edge/lane-3-to-carpenter`.
+site-plan placing: `node/potter` stands at [79, 317] — hung off `node/lane-3` across the south face by the seam for `edge/lane-3-to-potter`.
+site-plan placing: `node/boatwright` stands at [154, 344] — hung off `node/lane-5` across the north face by the seam for `edge/lane-5-to-boatwright`.
+site-plan placing: `node/cottages-2` stands at [154, 361] — hung off `node/lane-5` across the south face by the seam for `edge/lane-5-to-cottages-2`.
+site-plan placing: `node/cliff-path-1` stands at [175, 421] — hung off `node/lane-8` across the east face by the seam for `edge/lane-8-to-cliff-path-1`.
+site-plan placing: `node/cliff-path-2` stands at [188, 427] — hung off `node/cliff-path-1` across the south face by the seam for `edge/cliff-path-1-to-cliff-path-2`.
+site-plan placing: `node/lighthouse` stands at [187, 469] — hung off `node/cliff-path-2` across the south face by the seam for `edge/cliff-path-2-to-lighthouse`.
+site-plan placing: `node/harbour` stands at [153, 458] — hung off `node/quay` across the east face by the seam for `edge/quay-to-harbour`.
+site-plan placing: `node/poi-spring` stands at [73, 207] — hung off `node/road-8` across the south face by the seam for `edge/road-8-to-poi-spring`.
+site-plan placing: `node/poi-bees` stands at [99, 159] — hung off `node/road-19` across the south face by the seam for `edge/road-19-to-poi-bees`.
+site-plan placing: `node/poi-hut` stands at [73, 97] — hung off `node/road-30` across the north face by the seam for `edge/road-30-to-poi-hut`.
+site-plan placing: `node/poi-lookout` stands at [99, 63] — hung off `node/road-41` across the south face by the seam for `edge/road-41-to-poi-lookout`.
+site-plan binding 0: this plan names no view, so the visual review has no declared vantage to judge the silhouette from and the render beside the reference sheet has nothing to frame. The plan still builds; what is missing is the picture the whole was supposed to be looked at in.
+site-plan binding 0: this plan declares no whole-owned volume, so the check that keeps the whole's mass out of the places examined nothing. A map made only of rooms is a legitimate map; a map with a mountain in it that forgot to say so is not, and nothing else would notice.
+[t=+4.9s cpu=4.9s thr=1] piece-mating binding: 0 of 198 placed piece(s) touch in 0 pair(s), 0 of which a declared face crosses; 538 face(s) declared (99 piece(s) by spatial contract, 0 by jigsaw socket), 0 of them abutting another piece.
+[t=+4.9s cpu=5.0s thr=1] phase: validated, analysed, planned: emit starts
+[t=+4.9s cpu=5.0s thr=1] phase: emit: start (biome map)
+[t=+4.9s cpu=5.0s thr=1] atmosphere binding: 0 declared; 0 of 99 place(s) carry one; 0 repaint effect(s) over 0 volume(s); 0 quart cells painted at bootstrap of 0 paint(s) in the map; 0 biome file(s) emitted
+[t=+5.0s cpu=5.1s thr=1] phase: assemble: start
+[t=+8.5s cpu=10.2s thr=1] assembly written: 220767 write(s) — 220647 region write(s), 120 template(s), 0 surround tile(s) — over 2014 section column(s), each column in one step; 229654 decode(s), at most 472 write(s) held decoded at once (ADR-0037 §2)
+[t=+9.5s cpu=11.3s thr=1] phase: assemble: done
+[t=+9.5s cpu=11.3s thr=1] phase: edit replay: start
+[t=+9.5s cpu=11.3s thr=1] phase: edit replay: done; judged columns + cost: start
+world store need: raised to 442368 byte(s); 53 of the last 75 read-back(s) came back within one turnover of the resident arrays
+world store need: raised to 884736 byte(s); 56 of the last 66 read-back(s) came back within one turnover of the resident arrays
+[t=+10.2s cpu=12.0s thr=1] judged world: columns x 27..296, z 2..513 (the boundary's playable region grown by 16); 8809020 assembled cell(s) judged, 9615456 placed beyond them and judged by nothing, 264992 wall cell(s) closing the faces
+[t=+10.2s cpu=12.0s thr=1] world store: 18424476 placed cell(s) in 7296 section(s) of 16 x 16 x 16, 30554880 byte(s); the judged copy 9074012 cell(s) in 3900 section(s), 16361984 byte(s) (ADR-0037 §1)
+[t=+10.6s cpu=12.4s thr=1] resource cost: region 588 x 176 x 830 cell(s) under a ocean horizon; judged columns [27, 2]..[296, 513]; reach window at most 32054400 cell(s) (288 x 210 x 530), its reached and plain-sea bitmaps 8013600 byte(s), 9 x 17 chunk(s) of side 32 with 1858080 face cell(s); rest census: 163176 standing and 147271 water candidate(s) over 152640 column(s), at most 7859 node(s) in one chunk, 5432 edge(s) out of one node and every landing within 5 column(s); at most 5764140 portal edge(s) in one closure; working set before any walk: the stores' ring 221184 + the snapshot's pages 46497792 + the lists' buffered pushes 1179648 = 47898624 byte(s), the lists' largest chunk at most 23688100 byte(s) by its candidates; summaries at most: 2995200 face label(s), 34 configuration(s); scratch: the stores' 346587136 byte(s), one region of 8192 per array alive at once, at most 42308 — 7296 section(s) of the whole, 3900 of the judged copy, 7540 written section(s) under the write sequence judge's 4 stores, and 28 region section(s) per configuration; the reach graph's 220232555400 byte(s) over the configuration(s), 6477428100 per configuration — the snapshot's pages 192331776, the node tables 761340592 over 32841662 edge(s) at most, one closure's lists 2381207570, the bank's file 3142548162 (the cap the build sets: the tables and the lists, past which no variant is kept) — the variants' worlds, a second closure and a second table entry covered by those terms' slack (ADR-0037 §3)
+[t=+10.7s cpu=12.5s thr=1] holder binding: 0 fill(s) (0 loot, 0 adopting collect), 0 judged against the assembled world, 0 deferred to the detail of a place still standing in its stand-in.
+[t=+10.7s cpu=12.5s thr=1] sign binding: 9 sign text(s), 9 judged against the assembled world (minecraft:hanging_sign: 9), 36 line(s) measured over the English and 1 declared language(s), 0 deferred to the detail of a place still standing in its stand-in.
+[t=+10.7s cpu=12.5s thr=1] phase: holders: start
+[t=+12.7s cpu=14.4s thr=1] phase: reach graph: build start
+[t=+13.8s cpu=15.5s thr=1] phase: reach graph: built, window [288, 186, 530], lineage false, lineage diff 0 cell(s), premise 0, leaves 130
+[t=+59.0s cpu=688.0s thr=1] phase: reach closure: taken over 119 root(s) in 19 round(s): 160432 state(s), 163543812 simulated, 88248 credited
+[t=+60.3s cpu=689.3s thr=1] DW0210 binding: 111755 reachable cell(s) judged, 0 dark; 0 cell(s) under 0 stand-in(s) not judged
+[t=+61.5s cpu=690.5s thr=1] holder census: 118 holder(s) in the assembled world (container: 118); 0 loot, 0 collect, 4 device, 114 decoration, 0 empty (frozen), 0 exempt (contents show from outside); notice declared; by place: node/apothecary: 1, node/bakery: 2, node/boatwright: 4, node/carpenter: 1, node/castle: 3, node/cathedral: 1, node/chandler: 16, node/cooper: 21, node/cottages: 1, node/cottages-2: 5, node/fishmonger: 7, node/harbour: 6, node/inn: 2, node/lane-3: 1, node/lane-5: 1, node/lane-8: 1, node/lighthouse: 4, node/merchant: 2, node/netloft: 4, node/poi-bees: 1, node/poi-hut: 1, node/potter: 1, node/quay: 3, node/smithy: 3, node/square: 1, node/street-1: 2, node/street-3: 2, node/street-5: 2, node/street-7: 2, node/street-9: 2, node/tannery: 3, node/tavern: 8, node/townhall: 2, node/weaver: 2; arrangement: 0 mixed place(s). stance: 0 filled holder(s) and 0 holder(s) judged, 0 unsupported, 0 unreachable.
+[t=+61.5s cpu=690.5s thr=1] holder edits: 3 runtime edit(s) examined against 0 holder entit(y/ies), 0 reaching a holder (DW1038).
+[t=+61.5s cpu=690.5s thr=1] body answers (DW1055): 15 bodies — 0 monster-kind, 0 inert, 0 in reach, 0 lines owed, 0 declared, 0 volunteered on kinds not owed, 0 refused; 0 out of reach, 0 carried by a strike trigger
+[t=+61.5s cpu=690.5s thr=1] phase: links taken: start
+[t=+61.5s cpu=690.5s thr=1] phase: seats fixed; walked population: start
+[t=+61.7s cpu=690.6s thr=1] phase: reach graph: build start
+[t=+62.8s cpu=691.8s thr=1] phase: reach graph: built, window [288, 186, 530], lineage false, lineage diff 0 cell(s), premise 0, leaves 130
+[t=+105.8s cpu=1316.5s thr=1] phase: reach closure: taken over 1 root(s) in 19 round(s): 193058 state(s), 150034436 simulated, 88248 credited
+[t=+107.4s cpu=1318.5s thr=1] phase: assemblies: start
+[t=+107.6s cpu=1318.7s thr=1] assembly binding: 0 assembl(ies) declared, 0 part(s), 0 clip(s), 0 hitbox(es) examined, 0 strike step(s) checked over 0 facing(s) and 0 locked cell(s), 0 refused
+[t=+107.6s cpu=1318.7s thr=1] assembly cost: 0 display part(s) in all; at most 0.0 keyframe write(s) per tick at the declared cadences (measured on the pinned server, spec-0082 §8 row 7: about 0.3 ms per 34-part assembly per tick at a 5-tick cadence, 0.9 ms at every tick)
+[t=+107.6s cpu=1318.7s thr=1] phase: blockout battery: start
+[t=+107.6s cpu=1318.7s thr=1] blockout binding: 99 place(s) massed (99 detailed, so 0 massed by the derivation; 0 roof zone(s) massed), 75 fixed ring ground cell(s) laid, 98 seam(s) cut (0 stair, 0 climb, 0 shut), 0 stairwell cell(s) cut over through-floor runs, 0 whole-owned volume(s), 119 anchor(s) synthesized, 220647 region write(s) over 18293507 cell(s).
+[t=+107.6s cpu=1318.7s thr=1] waterline binding: horizon base `ocean`; 0 of 198 placed piece(s) declare a `waterline_y` and were held to sea level (y=62). A piece that declares none authors no shore, and where its floor stands is the walk-plane arm's question (DW0344, second arm) rather than this one's.
+[t=+109.8s cpu=1320.8s thr=1] phase: reach graph: build start
+[t=+110.8s cpu=1321.8s thr=1] phase: reach graph: built, window [288, 186, 530], lineage true, lineage diff 24 cell(s), premise 0, leaves 130
+[t=+117.4s cpu=1340.5s thr=1] phase: reach closure: taken over 1 root(s) in 19 round(s): 160360 state(s), 164121846 simulated, 88210 credited
+[t=+117.4s cpu=1340.5s thr=1] phase: reach closure: reused
+[t=+121.2s cpu=1344.2s thr=1] phase: reach graph: build start
+[t=+122.5s cpu=1345.6s thr=1] phase: reach graph: built, window [288, 186, 530], lineage true, lineage diff 434784 cell(s), premise 0, leaves 130
+[t=+123.0s cpu=1350.0s thr=1] phase: reach graph: build start
+[t=+124.1s cpu=1351.1s thr=1] phase: reach graph: built, window [288, 186, 530], lineage true, lineage diff 360893 cell(s), premise 0, leaves 130
+[t=+172.7s cpu=1979.2s thr=1] phase: reach closure: reused
+[t=+172.7s cpu=1979.2s thr=1] phase: reach closure: reused
+[t=+172.8s cpu=1979.3s thr=1] phase: reach closure: reused
+[t=+172.8s cpu=1979.3s thr=1] phase: reach closure: reused
+[t=+172.9s cpu=1979.4s thr=1] phase: reach closure: reused
+[t=+172.9s cpu=1979.4s thr=1] phase: reach closure: reused
+[t=+172.9s cpu=1979.4s thr=1] phase: reach closure: reused
+[t=+173.0s cpu=1979.5s thr=1] phase: reach closure: reused
+[t=+173.0s cpu=1979.5s thr=1] phase: reach closure: reused
+[t=+173.0s cpu=1979.5s thr=1] phase: reach closure: reused
+[t=+173.1s cpu=1979.6s thr=1] phase: reach closure: reused
+[t=+173.1s cpu=1979.6s thr=1] phase: reach closure: reused
+[t=+173.1s cpu=1979.6s thr=1] phase: reach closure: reused
+[t=+173.1s cpu=1979.7s thr=1] phase: reach closure: reused
+[t=+173.2s cpu=1979.7s thr=1] phase: reach closure: reused
+[t=+173.2s cpu=1979.7s thr=1] phase: reach closure: reused
+[t=+173.2s cpu=1979.8s thr=1] phase: reach closure: reused
+[t=+173.3s cpu=1979.8s thr=1] phase: reach closure: reused
+[t=+173.3s cpu=1979.8s thr=1] phase: reach closure: reused
+[t=+173.3s cpu=1979.8s thr=1] phase: reach closure: reused
+[t=+173.4s cpu=1979.9s thr=1] phase: reach closure: reused
+[t=+173.4s cpu=1979.9s thr=1] phase: reach closure: reused
+[t=+173.4s cpu=1979.9s thr=1] phase: reach closure: reused
+[t=+173.5s cpu=1980.0s thr=1] phase: reach closure: reused
+[t=+173.5s cpu=1980.0s thr=1] phase: reach closure: reused
+[t=+173.5s cpu=1980.0s thr=1] phase: reach closure: reused
+[t=+173.6s cpu=1980.1s thr=1] phase: reach closure: reused
+[t=+173.6s cpu=1980.1s thr=1] phase: reach closure: reused
+[t=+173.6s cpu=1980.1s thr=1] phase: reach closure: reused
+[t=+173.7s cpu=1980.2s thr=1] phase: reach closure: reused
+[t=+173.7s cpu=1980.2s thr=1] phase: reach closure: reused
+[t=+173.7s cpu=1980.2s thr=1] phase: reach closure: reused
+[t=+173.8s cpu=1980.3s thr=1] phase: reach closure: reused
+[t=+173.8s cpu=1980.3s thr=1] phase: reach closure: reused
+[t=+173.8s cpu=1980.3s thr=1] phase: reach closure: reused
+[t=+173.8s cpu=1980.3s thr=1] phase: reach closure: reused
+[t=+173.9s cpu=1980.4s thr=1] phase: reach closure: reused
+[t=+173.9s cpu=1980.4s thr=1] phase: reach closure: reused
+[t=+173.9s cpu=1980.5s thr=1] phase: reach closure: reused
+[t=+174.0s cpu=1980.5s thr=1] phase: reach closure: reused
+[t=+174.0s cpu=1980.5s thr=1] phase: reach closure: reused
+[t=+174.0s cpu=1980.5s thr=1] phase: reach closure: reused
+[t=+174.1s cpu=1980.6s thr=1] phase: reach closure: reused
+[t=+174.1s cpu=1980.6s thr=1] phase: reach closure: reused
+[t=+174.1s cpu=1980.6s thr=1] phase: reach closure: reused
+[t=+174.2s cpu=1980.7s thr=1] phase: reach closure: reused
+[t=+174.2s cpu=1980.7s thr=1] phase: reach closure: reused
+[t=+174.2s cpu=1980.7s thr=1] phase: reach closure: reused
+[t=+174.3s cpu=1980.8s thr=1] phase: reach closure: reused
+[t=+174.3s cpu=1980.8s thr=1] phase: reach closure: reused
+[t=+174.3s cpu=1980.8s thr=1] phase: reach closure: reused
+[t=+174.4s cpu=1980.9s thr=1] phase: reach closure: reused
+[t=+174.4s cpu=1980.9s thr=1] phase: reach closure: reused
+[t=+174.4s cpu=1980.9s thr=1] phase: reach closure: reused
+[t=+174.5s cpu=1981.0s thr=1] phase: reach closure: reused
+[t=+174.5s cpu=1981.0s thr=1] phase: reach closure: reused
+[t=+174.5s cpu=1981.0s thr=1] phase: reach closure: reused
+[t=+174.6s cpu=1981.1s thr=1] phase: reach closure: reused
+[t=+174.6s cpu=1981.1s thr=1] phase: reach closure: reused
+[t=+174.6s cpu=1981.1s thr=1] phase: reach closure: reused
+[t=+174.7s cpu=1981.2s thr=1] phase: reach closure: reused
+[t=+174.7s cpu=1981.2s thr=1] phase: reach closure: reused
+[t=+174.7s cpu=1981.2s thr=1] phase: reach closure: reused
+[t=+174.8s cpu=1981.3s thr=1] phase: reach closure: reused
+[t=+174.8s cpu=1981.3s thr=1] phase: reach closure: reused
+[t=+174.8s cpu=1981.3s thr=1] phase: reach closure: reused
+[t=+174.9s cpu=1981.4s thr=1] phase: reach closure: reused
+[t=+174.9s cpu=1981.4s thr=1] phase: reach closure: reused
+[t=+174.9s cpu=1981.4s thr=1] phase: reach closure: reused
+[t=+175.0s cpu=1981.5s thr=1] phase: reach closure: reused
+[t=+175.0s cpu=1981.5s thr=1] phase: reach closure: reused
+[t=+175.0s cpu=1981.5s thr=1] phase: reach closure: reused
+[t=+175.0s cpu=1981.6s thr=1] phase: reach closure: reused
+[t=+175.1s cpu=1981.6s thr=1] phase: reach closure: reused
+[t=+175.1s cpu=1981.6s thr=1] phase: reach closure: reused
+[t=+175.1s cpu=1981.7s thr=1] phase: reach closure: reused
+[t=+175.2s cpu=1981.7s thr=1] phase: reach closure: reused
+[t=+175.2s cpu=1981.7s thr=1] phase: reach closure: reused
+[t=+175.2s cpu=1981.8s thr=1] phase: reach closure: reused
+[t=+175.3s cpu=1981.8s thr=1] phase: reach closure: reused
+[t=+175.3s cpu=1981.8s thr=1] phase: reach closure: reused
+[t=+175.3s cpu=1981.8s thr=1] phase: reach closure: reused
+[t=+175.4s cpu=1981.9s thr=1] phase: reach closure: reused
+[t=+175.4s cpu=1981.9s thr=1] phase: reach closure: reused
+[t=+175.4s cpu=1981.9s thr=1] phase: reach closure: reused
+[t=+175.5s cpu=1982.0s thr=1] phase: reach closure: reused
+[t=+175.5s cpu=1982.0s thr=1] phase: reach closure: reused
+[t=+175.5s cpu=1982.0s thr=1] phase: reach closure: reused
+[t=+175.6s cpu=1982.1s thr=1] phase: reach closure: reused
+[t=+175.6s cpu=1982.1s thr=1] phase: reach closure: reused
+[t=+175.6s cpu=1982.1s thr=1] phase: reach closure: reused
+[t=+175.7s cpu=1982.2s thr=1] phase: reach closure: reused
+[t=+175.7s cpu=1982.2s thr=1] phase: reach closure: reused
+[t=+175.7s cpu=1982.2s thr=1] phase: reach closure: reused
+[t=+175.7s cpu=1982.3s thr=1] phase: reach closure: reused
+[t=+175.8s cpu=1982.3s thr=1] phase: reach closure: reused
+[t=+175.8s cpu=1982.3s thr=1] phase: reach closure: reused
+[t=+175.8s cpu=1982.3s thr=1] phase: reach closure: reused
+[t=+175.8s cpu=1982.3s thr=1] phase: reach closure: reused
+[t=+175.9s cpu=1982.4s thr=1] phase: reach closure: reused
+[t=+175.9s cpu=1982.4s thr=1] phase: reach closure: reused
+[t=+175.9s cpu=1982.4s thr=1] phase: reach closure: reused
+[t=+175.9s cpu=1982.5s thr=1] phase: reach closure: reused
+[t=+175.9s cpu=1982.5s thr=1] phase: reach closure: reused
+[t=+176.0s cpu=1982.5s thr=1] phase: reach closure: reused
+[t=+176.0s cpu=1982.5s thr=1] phase: reach closure: reused
+[t=+176.0s cpu=1982.5s thr=1] phase: reach closure: reused
+[t=+176.1s cpu=1982.6s thr=1] phase: reach closure: reused
+[t=+176.1s cpu=1982.6s thr=1] phase: reach closure: reused
+[t=+176.1s cpu=1982.7s thr=1] phase: reach closure: reused
+[t=+176.2s cpu=1982.7s thr=1] phase: reach closure: reused
+[t=+176.2s cpu=1982.7s thr=1] phase: reach closure: reused
+[t=+176.2s cpu=1982.7s thr=1] phase: reach closure: reused
+[t=+176.3s cpu=1982.8s thr=1] phase: reach closure: reused
+[t=+176.3s cpu=1982.8s thr=1] phase: reach closure: reused
+[t=+176.3s cpu=1982.8s thr=1] phase: reach closure: reused
+[t=+176.4s cpu=1982.9s thr=1] phase: reach closure: reused
+[t=+176.4s cpu=1982.9s thr=1] phase: reach closure: reused
+[t=+176.4s cpu=1982.9s thr=1] phase: reach closure: reused
+[t=+176.5s cpu=1983.0s thr=1] phase: reach closure: reused
+[t=+176.5s cpu=1983.0s thr=1] phase: reach closure: reused
+[t=+176.5s cpu=1983.0s thr=1] phase: reach closure: reused
+[t=+176.5s cpu=1983.1s thr=1] phase: reach closure: reused
+[t=+176.6s cpu=1983.1s thr=1] phase: reach closure: reused
+[t=+176.6s cpu=1983.1s thr=1] phase: reach closure: reused
+[t=+176.6s cpu=1983.2s thr=1] phase: reach closure: reused
+[t=+176.7s cpu=1983.2s thr=1] phase: reach closure: reused
+[t=+176.7s cpu=1983.2s thr=1] phase: reach closure: reused
+[t=+176.7s cpu=1983.2s thr=1] phase: reach closure: reused
+[t=+176.8s cpu=1983.3s thr=1] phase: reach closure: reused
+[t=+176.8s cpu=1983.3s thr=1] phase: reach closure: reused
+[t=+176.8s cpu=1983.3s thr=1] phase: reach closure: reused
+[t=+176.9s cpu=1983.4s thr=1] phase: reach closure: reused
+[t=+176.9s cpu=1983.4s thr=1] phase: reach closure: reused
+[t=+176.9s cpu=1983.4s thr=1] phase: reach closure: reused
+[t=+177.0s cpu=1983.5s thr=1] phase: reach closure: reused
+[t=+177.0s cpu=1983.5s thr=1] phase: reach closure: reused
+[t=+177.0s cpu=1983.5s thr=1] phase: reach closure: reused
+[t=+177.1s cpu=1983.6s thr=1] phase: reach closure: reused
+[t=+177.1s cpu=1983.6s thr=1] phase: reach closure: reused
+[t=+177.1s cpu=1983.6s thr=1] phase: reach closure: reused
+[t=+177.1s cpu=1983.7s thr=1] phase: reach closure: reused
+[t=+177.2s cpu=1983.7s thr=1] phase: reach closure: reused
+[t=+177.2s cpu=1983.7s thr=1] phase: reach closure: reused
+[t=+177.2s cpu=1983.7s thr=1] phase: reach closure: reused
+[t=+177.2s cpu=1983.7s thr=1] phase: reach closure: reused
+[t=+177.3s cpu=1983.8s thr=1] phase: reach closure: reused
+[t=+177.3s cpu=1983.8s thr=1] phase: reach closure: reused
+[t=+177.3s cpu=1983.8s thr=1] phase: reach closure: reused
+[t=+177.4s cpu=1983.9s thr=1] phase: reach closure: reused
+[t=+177.4s cpu=1983.9s thr=1] phase: reach closure: reused
+[t=+177.4s cpu=1983.9s thr=1] phase: reach closure: reused
+[t=+177.5s cpu=1984.0s thr=1] phase: reach closure: reused
+[t=+177.5s cpu=1984.0s thr=1] phase: reach closure: reused
+[t=+177.5s cpu=1984.0s thr=1] phase: reach closure: reused
+[t=+177.6s cpu=1984.1s thr=1] phase: reach closure: reused
+[t=+177.6s cpu=1984.1s thr=1] phase: reach closure: reused
+[t=+177.6s cpu=1984.1s thr=1] phase: reach closure: reused
+[t=+177.7s cpu=1984.2s thr=1] phase: reach closure: reused
+[t=+177.7s cpu=1984.2s thr=1] phase: reach closure: reused
+[t=+177.7s cpu=1984.2s thr=1] phase: reach closure: reused
+[t=+177.8s cpu=1984.3s thr=1] phase: reach closure: reused
+[t=+177.8s cpu=1984.3s thr=1] phase: reach closure: reused
+[t=+177.8s cpu=1984.3s thr=1] phase: reach closure: reused
+[t=+177.9s cpu=1984.4s thr=1] phase: reach closure: reused
+[t=+177.9s cpu=1984.4s thr=1] phase: reach closure: reused
+[t=+177.9s cpu=1984.4s thr=1] phase: reach closure: reused
+[t=+178.0s cpu=1984.5s thr=1] phase: reach closure: reused
+[t=+178.0s cpu=1984.5s thr=1] phase: reach closure: reused
+[t=+178.0s cpu=1984.5s thr=1] phase: reach closure: reused
+[t=+178.1s cpu=1984.6s thr=1] phase: reach closure: reused
+[t=+178.1s cpu=1984.6s thr=1] phase: reach closure: reused
+[t=+178.1s cpu=1984.6s thr=1] phase: reach closure: reused
+[t=+178.2s cpu=1984.7s thr=1] phase: reach closure: reused
+[t=+178.2s cpu=1984.7s thr=1] phase: reach closure: reused
+[t=+178.2s cpu=1984.7s thr=1] phase: reach closure: reused
+[t=+178.3s cpu=1984.8s thr=1] phase: reach closure: reused
+[t=+178.3s cpu=1984.8s thr=1] phase: reach closure: reused
+[t=+178.3s cpu=1984.8s thr=1] phase: reach closure: reused
+[t=+178.3s cpu=1984.9s thr=1] phase: reach closure: reused
+[t=+178.4s cpu=1984.9s thr=1] phase: reach closure: reused
+[t=+178.4s cpu=1984.9s thr=1] phase: reach closure: reused
+[t=+178.4s cpu=1985.0s thr=1] phase: reach closure: reused
+[t=+178.5s cpu=1985.0s thr=1] phase: reach closure: reused
+[t=+178.5s cpu=1985.0s thr=1] phase: reach closure: reused
+[t=+178.5s cpu=1985.0s thr=1] phase: reach closure: reused
+[t=+178.6s cpu=1985.1s thr=1] phase: reach closure: reused
+[t=+178.6s cpu=1985.1s thr=1] phase: reach closure: reused
+[t=+178.6s cpu=1985.2s thr=1] phase: reach closure: reused
+[t=+178.7s cpu=1985.2s thr=1] phase: reach closure: reused
+[t=+178.7s cpu=1985.2s thr=1] phase: reach closure: reused
+[t=+178.7s cpu=1985.2s thr=1] phase: reach closure: reused
+[t=+178.8s cpu=1985.3s thr=1] phase: reach closure: reused
+[t=+178.8s cpu=1985.3s thr=1] phase: reach closure: reused
+[t=+178.8s cpu=1985.3s thr=1] phase: reach closure: reused
+[t=+178.9s cpu=1985.4s thr=1] phase: reach closure: reused
+[t=+178.9s cpu=1985.4s thr=1] phase: reach closure: reused
+[t=+178.9s cpu=1985.4s thr=1] phase: reach closure: reused
+[t=+179.0s cpu=1985.5s thr=1] phase: reach closure: reused
+[t=+179.0s cpu=1985.5s thr=1] phase: reach closure: reused
+[t=+179.0s cpu=1985.5s thr=1] phase: reach closure: reused
+[t=+179.1s cpu=1985.6s thr=1] phase: reach closure: reused
+[t=+179.1s cpu=1985.6s thr=1] phase: reach closure: reused
+[t=+179.1s cpu=1985.6s thr=1] phase: reach closure: reused
+[t=+179.2s cpu=1985.7s thr=1] phase: reach closure: reused
+[t=+179.2s cpu=1985.7s thr=1] phase: reach closure: reused
+[t=+179.2s cpu=1985.7s thr=1] phase: reach closure: reused
+[t=+179.2s cpu=1985.8s thr=1] phase: reach closure: reused
+[t=+179.3s cpu=1985.8s thr=1] phase: reach closure: reused
+[t=+179.3s cpu=1985.8s thr=1] phase: reach closure: reused
+[t=+179.3s cpu=1985.8s thr=1] phase: reach closure: reused
+[t=+179.4s cpu=1985.9s thr=1] phase: reach closure: reused
+[t=+179.4s cpu=1985.9s thr=1] phase: reach closure: reused
+[t=+179.4s cpu=1986.0s thr=1] phase: reach closure: reused
+[t=+179.5s cpu=1986.0s thr=1] phase: reach closure: reused
+[t=+179.5s cpu=1986.0s thr=1] phase: reach closure: reused
+[t=+179.5s cpu=1986.0s thr=1] phase: reach closure: reused
+[t=+179.6s cpu=1986.1s thr=1] phase: reach closure: reused
+[t=+179.6s cpu=1986.1s thr=1] phase: reach closure: reused
+[t=+179.6s cpu=1986.2s thr=1] phase: reach closure: reused
+[t=+179.7s cpu=1986.2s thr=1] phase: reach closure: reused
+[t=+179.7s cpu=1986.2s thr=1] phase: reach closure: reused
+[t=+179.7s cpu=1986.2s thr=1] phase: reach closure: reused
+[t=+179.8s cpu=1986.3s thr=1] phase: reach closure: reused
+[t=+179.8s cpu=1986.3s thr=1] phase: reach closure: reused
+[t=+179.8s cpu=1986.3s thr=1] phase: reach closure: reused
+[t=+179.8s cpu=1986.4s thr=1] blockout battery binding: 98 seam(s) proven over 98 shared wall(s) (of them 68 contact(s), 457 crossable column(s) measured; 30 portal(s) measured over 170 standable opening cell(s), 0 left to `DW0836` as solid; 0 unallocated open cell(s) admitted as a stair's stairwell), 99 place(s) proven reached (0 of them scenery, proven not reached), 154452 standable cell(s) classified over 4851 place pair(s), 0 sightline(s) walked, 2 identity(ies) re-measured (2 declaration-only), 226 critical-path leg(s) measured; 75 fixed ring ground cell(s) handed, 5024 plot-edge column(s) examined, 0 crack(s), 0 aloft place(s) with no ground to stitch (DW0990); 121124 standable cell(s) outside every claim (the commons: the site is open), 14 place pair(s) joined through the commons, 98 seamless border(s) deleted as declared openings (1502 cell(s) beyond the open sides' runs), 4417 cell(s) of floor the deletion made kept off (DW0838).
+[t=+179.8s cpu=1986.4s thr=1] phase: declaration proofs: start
+[t=+179.8s cpu=1986.4s thr=1] mark binding: 15 body site(s), 11 with a non-zero offset; 8 destination(s), 8 with a non-zero offset; 180 cast row(s) at a mark; 0 assembl(ies) at a mark; 3 pulse source(s) at a mark; 0 refused for leaving the piece (DW0897).
+[t=+179.8s cpu=1986.4s thr=1] one-mark binding: 15 body(ies) declared, 15 of them resolving to 15 distinct cell(s); 14 stand there from world init and 14 are bodies nothing in this campaign can remove; 104 co-existence question(s) asked over 1 entry event(s), 0 refused (DW0896).
+[t=+179.8s cpu=1986.4s thr=1] phase: watchers: start
+[t=+179.9s cpu=1986.4s thr=1] watch binding: 15 watcher(s) (0 declared, 15 by default), over 142417 walked cell(s), 15 drawable, 0 refused, 0 default(s) nobody can draw, 0 unobservable
+[t=+179.9s cpu=1986.4s thr=1] phase: frame worlds: start
+[t=+179.9s cpu=1986.4s thr=1] phase: world proofs: start
+[t=+180.0s cpu=1986.5s thr=1] phase: reach closure: reused
+[t=+181.3s cpu=1987.8s thr=1] sea-seepage binding: horizon base `ocean` (ambient `ocean`); 142769 walk cell(s) examined, of which 25 are named by the critical path; 0 submerged and 0 wading, over 843 cell(s) the sea reaches inside 198 placed piece(s) from 228 cell(s) of open contact face and 9 block(s) the placement waterlogs.
+[t=+181.4s cpu=1987.9s thr=1] sea walk-plane binding: horizon base `ocean`; 67403 of 142769 walk cell(s) lie inside a placed piece and were judged against the sea plane (y=62); 0 stand at or below it (DW0344).
+[t=+181.6s cpu=1988.1s thr=1] piece-exposure binding: horizon base `ocean` (ambient `ocean`); 99 of 198 placed piece(s) examined, putting 40515 solid cell(s) on their own box boundaries, of which 471 have nothing in front of them and 471 stand in air the party can be in (1061770 cell(s) of party air over 919 section component label(s), cut off at the 2-cell skin); 35 side(s) of a piece are seen that way, against 404 `shown_faces` declaration(s) of which 35 are bound.
+[t=+181.6s cpu=1988.1s thr=1] boundary-safety binding: 119 of 119 anchor(s) root the walk region, 0 excluded as a station of a scenery place (`reached: false`) no body is put in
+[t=+181.6s cpu=1988.1s thr=1] phase: reach closure: reused
+[t=+182.9s cpu=1989.5s thr=1] boundary binding: the region returns; 25 place(s) a body is put examined, 0 outside; 0 reachable cell(s) examined for a way out; 0 refused
+[t=+182.9s cpu=1989.5s thr=1] link gathering binding: 0 link(s) carried after their root's cutscene, 0 press cell(s) outside their volumes over 0 walk cell(s)
+[t=+182.9s cpu=1989.5s thr=1] firework binding: 1 firework(s) declared, 1 burst column(s) checked to 32 cell(s), 226 post(s) within reach examined, 0 refused
+[t=+182.9s cpu=1989.5s thr=1] lightning binding: 0 strike(s) declared, 0 struck block(s) read, 0 post(s) within reach examined, 0 refused
+[t=+183.1s cpu=1989.7s thr=1] sculk rest: 0 acting sculk cell(s) of the assembled world and 0 runtime write(s) judged by the one rest rule
+[t=+183.7s cpu=1990.3s thr=1] sculk: 0 sensor(s) (0 calibrated), 0 reach cell(s) checked, 0 shrieker(s), 0 catalyst(s); 36 runtime write(s) judged beside the world as placed
+[t=+184.0s cpu=1990.6s thr=1] sculk: 0 catalyst(s), no body cell to measure against; 0 body cell(s), 0 mob cell(s) examined
+[t=+184.6s cpu=1991.2s thr=1] DW1047 binding: 0 shut gate(s) examined; 0 whose block reads a signal judged (0 through a floor, 0 cell(s)), 0 whose block reads none not judged; 38 signal source(s) examined (1 laid by a runtime write), no source to measure against
+[t=+184.6s cpu=1991.2s thr=1] doors by hand: 52 block(s) passable, 2 held
+[t=+184.8s cpu=1991.4s thr=1] clear width (DW1057): 170 way(s) of 98 traversal seam(s), 99 box(es) and 611 contract edge(s) — 30 portal(s), 0 stair run(s), 68 contact(s), 72 way place(s), 0 open side(s), 0 piece way(s); 5495 column(s) at 1129 station(s) judged over 1 state(s); 170 way(s) whole, 0 narrowed; 680 plane column(s) left to DW0836; 30 stair run(s) undeclared by their piece
+[t=+185.1s cpu=1991.6s thr=1] piece census: 99 piece(s), 396 face(s), 417 opening(s), 900 water cell(s); doors framed: 42 of 42
+[t=+185.1s cpu=1991.7s thr=1] phase: reach graph: build start
+[t=+185.1s cpu=1991.7s thr=1] phase: reach graph: built, window [74, 66, 56], lineage false, lineage diff 0 cell(s), premise 0, leaves 0
+[t=+186.2s cpu=2006.5s thr=1] phase: reach graph: build start
+[t=+186.2s cpu=2006.5s thr=1] phase: reach graph: built, window [45, 34, 42], lineage false, lineage diff 0 cell(s), premise 0, leaves 11
+[t=+186.7s cpu=2014.0s thr=1] phase: reach graph: build start
+[t=+186.7s cpu=2014.0s thr=1] phase: reach graph: built, window [39, 34, 30], lineage false, lineage diff 0 cell(s), premise 0, leaves 5
+[t=+186.9s cpu=2017.5s thr=1] phase: reach graph: build start
+[t=+186.9s cpu=2017.5s thr=1] phase: reach graph: built, window [35, 34, 30], lineage false, lineage diff 0 cell(s), premise 0, leaves 4
+[t=+187.1s cpu=2020.1s thr=1] phase: reach graph: build start
+[t=+187.1s cpu=2020.1s thr=1] phase: reach graph: built, window [37, 18, 30], lineage false, lineage diff 0 cell(s), premise 0, leaves 6
+[t=+187.3s cpu=2023.2s thr=1] phase: reach graph: build start
+[t=+187.3s cpu=2023.2s thr=1] phase: reach graph: built, window [43, 34, 30], lineage false, lineage diff 0 cell(s), premise 0, leaves 15
+[t=+187.6s cpu=2027.6s thr=1] phase: reach graph: build start
+[t=+187.6s cpu=2027.6s thr=1] phase: reach graph: built, window [39, 34, 30], lineage false, lineage diff 0 cell(s), premise 0, leaves 4
+[t=+187.8s cpu=2030.6s thr=1] phase: reach graph: build start
+[t=+187.9s cpu=2030.6s thr=1] phase: reach graph: built, window [41, 34, 29], lineage false, lineage diff 0 cell(s), premise 0, leaves 2
+[t=+188.1s cpu=2033.9s thr=1] phase: reach graph: build start
+[t=+188.1s cpu=2033.9s thr=1] phase: reach graph: built, window [41, 34, 30], lineage false, lineage diff 0 cell(s), premise 0, leaves 5
+[t=+188.4s cpu=2038.2s thr=1] phase: reach graph: build start
+[t=+188.4s cpu=2038.2s thr=1] phase: reach graph: built, window [41, 34, 30], lineage false, lineage diff 0 cell(s), premise 0, leaves 6
+[t=+188.6s cpu=2041.9s thr=1] phase: reach graph: build start
+[t=+188.6s cpu=2041.9s thr=1] phase: reach graph: built, window [37, 18, 28], lineage false, lineage diff 0 cell(s), premise 0, leaves 8
+[t=+188.9s cpu=2044.5s thr=1] phase: reach graph: build start
+[t=+188.9s cpu=2044.5s thr=1] phase: reach graph: built, window [39, 34, 28], lineage false, lineage diff 0 cell(s), premise 0, leaves 7
+[t=+189.1s cpu=2048.0s thr=1] phase: reach graph: build start
+[t=+189.1s cpu=2048.0s thr=1] phase: reach graph: built, window [37, 18, 28], lineage true, lineage diff 457 cell(s), premise 0, leaves 6
+[t=+189.3s cpu=2050.3s thr=1] phase: reach graph: build start
+[t=+189.3s cpu=2050.3s thr=1] phase: reach graph: built, window [39, 34, 28], lineage true, lineage diff 519 cell(s), premise 0, leaves 8
+[t=+189.5s cpu=2053.4s thr=1] phase: reach graph: build start
+[t=+189.5s cpu=2053.4s thr=1] phase: reach graph: built, window [37, 34, 28], lineage false, lineage diff 0 cell(s), premise 0, leaves 1
+[t=+189.9s cpu=2058.6s thr=1] phase: reach graph: build start
+[t=+189.9s cpu=2058.6s thr=1] phase: reach graph: built, window [34, 34, 33], lineage false, lineage diff 0 cell(s), premise 0, leaves 5
+[t=+190.2s cpu=2062.6s thr=1] phase: reach graph: build start
+[t=+190.2s cpu=2062.6s thr=1] phase: reach graph: built, window [34, 18, 28], lineage false, lineage diff 0 cell(s), premise 0, leaves 6
+[t=+190.4s cpu=2065.2s thr=1] phase: reach graph: build start
+[t=+190.4s cpu=2065.2s thr=1] phase: reach graph: built, window [32, 18, 27], lineage false, lineage diff 0 cell(s), premise 0, leaves 11
+[t=+190.5s cpu=2067.2s thr=1] phase: reach graph: build start
+[t=+190.5s cpu=2067.2s thr=1] phase: reach graph: built, window [32, 34, 27], lineage false, lineage diff 0 cell(s), premise 0, leaves 4
+[t=+190.8s cpu=2071.1s thr=1] phase: reach graph: build start
+[t=+190.8s cpu=2071.1s thr=1] phase: reach graph: built, window [38, 50, 38], lineage false, lineage diff 0 cell(s), premise 0, leaves 0
+[t=+191.3s cpu=2077.9s thr=1] phase: reach graph: build start
+[t=+191.3s cpu=2077.9s thr=1] phase: reach graph: built, window [154, 35, 135], lineage false, lineage diff 0 cell(s), premise 0, leaves 9
+[t=+191.9s cpu=2086.7s thr=1] phase: reach graph: build start
+[t=+191.9s cpu=2086.7s thr=1] phase: reach graph: built, window [24, 18, 24], lineage false, lineage diff 0 cell(s), premise 0, leaves 2
+[t=+192.0s cpu=2088.2s thr=1] phase: reach graph: build start
+[t=+192.0s cpu=2088.2s thr=1] phase: reach graph: built, window [24, 18, 24], lineage true, lineage diff 62 cell(s), premise 0, leaves 0
+[t=+192.1s cpu=2089.1s thr=1] phase: reach graph: build start
+[t=+192.1s cpu=2089.1s thr=1] phase: reach graph: built, window [24, 34, 24], lineage false, lineage diff 0 cell(s), premise 0, leaves 2
+[t=+192.2s cpu=2090.0s thr=1] phase: reach graph: build start
+[t=+192.2s cpu=2090.0s thr=1] phase: reach graph: built, window [24, 18, 24], lineage true, lineage diff 252 cell(s), premise 0, leaves 0
+[t=+192.3s cpu=2090.9s thr=1] plot program: 25 plot(s), 63 part(s) built 63 of 63; coverage 0–51 %, remainder 20–50 %
+[t=+192.3s cpu=2090.9s thr=1] phase: moves: start
+[t=+192.4s cpu=2091.0s thr=1] phase: actor moves: start
+[t=+192.4s cpu=2091.0s thr=1] phase: cutscenes: start
+[t=+192.4s cpu=2091.0s thr=1] phase: framing: start
+[t=+192.4s cpu=2091.0s thr=1] blind-reach binding: 0 blinding grant(s) examined; standing sets of 0 cell(s); reaches of 0 move(s); 0 caught.
+[t=+192.4s cpu=2091.0s thr=1] jumps binding: 0 declared, 0 proven, 0 refused, 0 not a jump; run-ups measured none
+[t=+193.0s cpu=2091.6s thr=1] DW0311 binding: 25 leg(s); 25 walked, 0 carried by a crossing, 0 carried by a link, 0 carried by a loop; 0 link(s) declared, 0 live on some leg, 0 taken; 0 gather(s) declared
+[t=+193.0s cpu=2091.6s thr=1] DW1044 binding: 0 trigger(s) performed by the critical path; 0 judged (walk-fired, paying a flag a later step reads), 0 entered by every walk to the step that needs it; not judged: 0 pay no flag a later step reads, 0 fired by hand, 0 a link the party is carried by
+[t=+193.0s cpu=2091.6s thr=1] phase: bodies can leave (DW0921): start
+[t=+193.7s cpu=2092.4s thr=1] phase: reach graph: build start
+[t=+194.7s cpu=2093.3s thr=1] phase: reach graph: built, window [288, 186, 530], lineage true, lineage diff 15 cell(s), premise 0, leaves 130
+[t=+199.7s cpu=2115.0s thr=1] phase: reach closure: taken over 2289 root(s) in 19 round(s): 193057 state(s), 149787600 simulated, 87967 credited
+[t=+201.4s cpu=2116.6s thr=1] phase: reach closure: reused
+[t=+202.9s cpu=2118.1s thr=1] phase: reach closure: reused
+[t=+204.3s cpu=2119.5s thr=1] phase: reach closure: reused
+[t=+205.5s cpu=2120.7s thr=1] DW0921 binding: 4 quest configuration(s), 2781 route cell(s), 772228 cell(s) a body can reach by walking, falling, jumping, swimming or climbing (34808 of them afloat, 1668 on a fence or wall top), 0 it cannot leave; 0 link stand cell(s) served as a way out; 0 configuration(s) unjudged, a body in them holding a movement the reach graph does not fly (DW1043)
+[t=+205.5s cpu=2120.7s thr=1] reach binding: 4 configuration(s); 772228 rest state(s) (571072 standing, 34808 afloat, 166300 submerged, 48 holding); 11920572 edge(s) (2389992 walk, 1748916 fall, 6623452 jump, 1101816 dive, 56396 climb, 0 exit); 599308720 launch state(s) simulated, 351868 template arc(s) credited; 599660588 of budget 200000000; survivable fall 22 blocks (unbounded: no)
+[t=+205.5s cpu=2120.7s thr=1] movement items: 19 examined, 1 a movement the reach graph does not fly, 0 reducing a fall (every fall survivable: no); 4 quest configuration(s) judged, 0 unbounded; a body may hold `minecraft:elytra` (a `give-item` at quests.json/content/quests/1/on_objective_complete/obj~1find-the-wings/0) from critical step 10
+[t=+205.5s cpu=2120.7s thr=1] DW1066 binding: 48 trapdoor cell(s) whose shape every movement past them was asked; 0 of 0 place(s) a body cannot leave shut by a trapdoor
+[t=+205.5s cpu=2120.7s thr=1] phase: gates separate: start
+[t=+206.3s cpu=2121.9s thr=5] phase: reach closure: reused
+[t=+206.5s cpu=2122.4s thr=4] phase: reach closure: reused
+[t=+206.5s cpu=2122.5s thr=4] phase: reach closure: reused
+[t=+206.5s cpu=2122.5s thr=4] phase: reach closure: reused
+[t=+206.6s cpu=2122.5s thr=1] DW1011 binding: 0 gate(s) resolved (0 of 0 gated connection(s) among them); 0 declared a way round (shortcut), 0 clocked, 0 operated by no beat, 0 with no two faces; over 4 quest configuration(s), 0 (gate, configuration) pair(s) shut, 0 with a face no body can stand at, 0 with the party at a face, 0 got round by walking, falling, jumping or swimming
+[t=+206.6s cpu=2122.5s thr=1] phase: shut ways learned: start
+[t=+207.4s cpu=2123.8s thr=5] phase: reach closure: reused
+[t=+207.7s cpu=2124.7s thr=5] phase: reach closure: reused
+[t=+207.7s cpu=2124.7s thr=5] phase: reach closure: reused
+[t=+207.7s cpu=2124.7s thr=5] phase: reach closure: reused
+[t=+210.1s cpu=2131.1s thr=1] shut ways (DW1053/DW1054): 0 gated connection(s); over 4 configuration(s), 0 shut way(s) met — 0 at a face, 0 by the eye alone — 0 declared (0 seen, 0 told, 0 rewarded, 0 hidden), 0 undeclared, 0 declaration(s) not confirmed; 0 declared and never met shut; 0 hidden way(s) judged over 0 configuration(s), 0 eye line(s) examined
+[t=+210.1s cpu=2131.1s thr=1] phase: critical path routes: start
+[t=+210.9s cpu=2131.9s thr=1] furniture binding: 0 region(s) over 0 solid cell(s), 0 standable cell(s) withheld from walking; 33 leg(s) proved, 0 standing on furniture.
+[t=+210.9s cpu=2131.9s thr=1] DW1068 binding: 82 door cell(s) and 48 trapdoor cell(s) whose leaf the walk reads; 33 walked leg(s) asked, 18 step(s) across a leaf's cell asked of it; 0 refused
+[t=+210.9s cpu=2131.9s thr=1] phase: reach closure: reused
+[t=+220.0s cpu=2148.9s thr=1] phase: reach closure: reused
+[t=+228.6s cpu=2159.8s thr=1] reach-footprint binding: 4 reach objective(s) examined over 28602 cell(s) their completion volumes cover, against 142769 cell(s) the party can stand on; 1010 of those are footing a body could complete from, and 0 of THOSE stand on floor no body can walk to the anchor's own footing from without leaving the completion volume.
+[t=+228.8s cpu=2160.0s thr=1] pulse binding: 3 pulse(s), 1 staged; far 17.76..74.96 block(s) over 338..761 standable cell(s), range 23.67..107.08 (volume 1.480..6.692); 2 of 3 live on the forced route in some configuration; 2 of 3 with a listening station
+[t=+228.8s cpu=2160.0s thr=1] sculk walk: 0 of 0 sensor(s) predicted on 0 leg(s), 0 of 0 shrieker(s); 0 unpredicted sensor(s), 0 unpredicted shrieker(s), 0 device(s) a runtime write covers
+[t=+229.4s cpu=2160.7s thr=1] phase: branch worlds: start
+[t=+558.5s cpu=2489.7s thr=1] approach binding (DW1025): 1672 talk beat(s) over 161 configuration(s): 0 judged by facing (0 yaw(s), 0 refused), 1672 drawn by a watch, 0 held by declaration (judged from every cell), 0 reached by no walked leg, 0 with no resolved body
+[t=+558.5s cpu=2489.7s thr=1] phase: body clearance: start
+[t=+558.5s cpu=2489.7s thr=1] phase: traversal: start
+[t=+558.5s cpu=2489.7s thr=1] engagement binding: 0 staged fight(s) examined, 0 of a species whose targeting reads the hour, 0 of those bright while the fight is live, 0 of those with water for the party's feet within reach; 0 refused (DW0920).
+[t=+558.5s cpu=2489.7s thr=1] phase: lanes + combat: start
+[t=+559.0s cpu=2490.3s thr=1] phase: world proofs: done; held facing: start
+[t=+559.0s cpu=2490.3s thr=1] held-facing binding (DW1025): 0 cell(s) judged over 0 body(ies) declaring `watch: "none"` at 0 stance(s): 0 cell(s) behind a body, 0 stance(s) refused, 0 stance(s) no walked cell reaches
+[t=+559.5s cpu=2490.7s thr=1] DW0863 binding: 265 act(s) over 9 walk(s) — 265 announced with a hint, 0 in sight (0 kill(s) also in reach), 0 trigger(s) judged by sight alone, 0 announced but not yet armed on the way and judged by sight; 0 place(s) walked through — 0 with an announced objective armed, 0 with the next act in sight; 0 refused; 0 kill(s) on no walk judged from the acts that fire their wave
+[t=+559.5s cpu=2490.7s thr=1] press proof (DW0429/DW1059/DW1052/DW0896): 30 pressable(s) placed — 2 pressed on their own, 5 boxed acting on their own, 23 boxed unobservable, 0 boxed struck; 0 sealed gate(s) answered (0 by their own block, 0 by a knocker); 51 answer trigger(s) synthesized; 1 reconciliation pair(s) in tick
+[t=+559.5s cpu=2490.7s thr=1] phase: attached/resting over the load: start
+[t=+560.1s cpu=2491.3s thr=1] attached blocks (DW1002): 4072 of 9074041 non-air cell(s) at load need a neighbour to stay — 4072 held, 0 dropped; unjudged by the measured rule: 0 cell(s) (none); not in the table: 0 cell(s) (none)
+[t=+561.6s cpu=2492.8s thr=1] resting blocks (DW1076): 443 of 9073150 outlined cell(s) at load stand half a course or more over what is under them — 442 held at a side or from above, 1 read as floating; not in the outline table: 0 cell(s)
+[t=+562.2s cpu=2495.0s thr=1] shipped templates: 120 template(s) re-encoded as placed, 35497128 byte(s) decompressed in all, at most 16777216 byte(s) (or one template) decoded at once (ADR-0037 §5 item 3)
+[t=+562.3s cpu=2495.2s thr=1] phase: datapack emission + guidance: start
+[t=+562.3s cpu=2495.2s thr=1] music binding: 1 biome(s) a camera can stand in — 0 atmosphere(s) and the ground declared (0 with a track, 1 silent: 0 fading, 1 playing out), 0 band biome(s) undeclared; 0 cutscene(s), 0 declare what they hear, 0 of 0 confirmed, 0 declare their music over 0 painted 4-cell(s) in 0 paint line(s) and 0 variant biome(s); 0 stop-sound effect(s), 0 of 0 cut a play-out, 0 a stinger, 0 a hiccup; 0 sound(s) in a category other than master
+[t=+562.5s cpu=2495.4s thr=1] placements ledger: 111 row(s) over 111 placing line(s) of the functions that place outside the templates; 0 body row(s) no frame's world can hold as written
+[t=+589.2s cpu=2522.1s thr=1] write sequence (DW1002): 220797 write(s) the load runs in order over 17 function(s) — 120 template(s), 220647 fill(s), 30 setblock(s); 16960247 changed cell(s) judged with their neighbours as each write lands, 4057 attached and 242320 falling block(s) among them, 0 not kept; 0 conditional write(s) not laid; 0 line(s) not read
+[t=+589.2s cpu=2522.1s thr=1] write sequence by chunk: 154 chunk(s) of 4 x 4 section column(s), replayed 154 time(s), each over its own columns and a halo of 16 cell(s), 0 of them again over a wider halo (the widest 16 cell(s)); at most 358 section(s) held by one replay (ADR-0037 §2)
+[t=+589.2s cpu=2522.1s thr=1] runtime writes (DW1002): 3 block-writing line(s) outside the load, in 3 function(s), 0 of them behind a condition, may change 3 cell(s); 21 cell(s) judged with their neighbours against every block any write may leave there (13 block(s) judged) — every configuration a story path, a branch or an unforced beat can reach, in any order; 0 not kept; 0 line(s) not read
+[t=+589.3s cpu=2522.2s thr=1] party binding (spec-0018): 0 AND-join(s) of 35 objective(s), 0 bound to a `party_join` PackTest (0 `party_join` template(s) of 181); 6 `carrier: one` `give-item`(s) of 11, 2 judged by a two-player PackTest (not judged: 0 under a `when`/`in` envelope, 4 outside an objective's completion bundle); `min_players: 1` owes no division (a party of one is the single-agent proof)
+[t=+589.8s cpu=2522.7s thr=1] phase: render plan: start
+[t=+590.1s cpu=2523.0s thr=1] threshold shots: 123 over 99 place(s), 60 door(s), 0 open side(s), 63 part(s)
+[t=+590.1s cpu=2523.0s thr=1] phase: review worlds: start
+[t=+864.6s cpu=2797.5s thr=1] review frames: 1627 shot(s) in 10 world(s) (524 at load, 1103 after a step); 1627 quick, 0 hq, 17 light frame(s) rendered quick; 0 cutscene frame(s) of 0 shot(s) in 0 cutscene(s), 0 cutscene(s) no critical step fires; cameras proven clear: 1627 of 1627 in their own worlds
+[t=+864.6s cpu=2797.5s thr=1] world: at-load 2014 chunk(s), 18424505 cell(s), 58175073 ground cell(s), 261 block entit(ies), 55 entit(ies), light arrays over 2014 chunk(s), sha256 34ac781f1de7d9e7791ea68a5405b491f66c40acc381c01663362bd7285eb4f8 -> validation/worlds/at-load, written in 26465 ms
+[t=+864.6s cpu=2797.5s thr=1] world: after-obj-ask-bernt 2014 chunk(s), 18424505 cell(s), 58175073 ground cell(s), 261 block entit(ies), 54 entit(ies), light arrays over 2014 chunk(s), sha256 82bdae173a988a58b10927c9efadc9d2d53070974bc054a6bbb7e6aa98021ad0 -> validation/worlds/after-obj-ask-bernt, written in 26431 ms
+[t=+864.6s cpu=2797.5s thr=1] world: after-obj-find-the-head 2014 chunk(s), 18424505 cell(s), 58175073 ground cell(s), 261 block entit(ies), 55 entit(ies), light arrays over 2014 chunk(s), sha256 a9a089a8613b8acafd9101dfea95c8ac77a06bfa11e55f4939e09fe8eb780ccd -> validation/worlds/after-obj-find-the-head, written in 26456 ms
+[t=+864.6s cpu=2797.5s thr=1] world: after-obj-light-candle-1 2014 chunk(s), 18424505 cell(s), 58175073 ground cell(s), 261 block entit(ies), 55 entit(ies), light arrays over 2014 chunk(s), sha256 19cd961f0263d99a400d32092dae05a22dc8abd60ebeb648da19bc8508100169 -> validation/worlds/after-obj-light-candle-1, written in 26444 ms
+[t=+864.6s cpu=2797.5s thr=1] world: after-obj-light-candle-2 2014 chunk(s), 18424505 cell(s), 58175073 ground cell(s), 261 block entit(ies), 55 entit(ies), light arrays over 2014 chunk(s), sha256 4121f6058c3da3e23aac6cd7824a782f78b2cb2b0092dd6fc04ab684862cdc39 -> validation/worlds/after-obj-light-candle-2, written in 26412 ms
+[t=+864.6s cpu=2797.5s thr=1] world: after-obj-light-candle-3 2014 chunk(s), 18424505 cell(s), 58175073 ground cell(s), 261 block entit(ies), 54 entit(ies), light arrays over 2014 chunk(s), sha256 23baa8e87303cbedf78b194af84f1dd46531a0db9a7773265c0de03d7b712ff3 -> validation/worlds/after-obj-light-candle-3, written in 26415 ms
+[t=+864.6s cpu=2797.5s thr=1] world: after-obj-take-places 2014 chunk(s), 18424505 cell(s), 58175073 ground cell(s), 261 block entit(ies), 54 entit(ies), light arrays over 2014 chunk(s), sha256 46b35b77be5ee565d679b825643887a21bbc27e7610e4524f74e0dfd2f07a338 -> validation/worlds/after-obj-take-places, written in 26467 ms
+[t=+864.6s cpu=2797.5s thr=1] world: after-obj-find-the-wings 2014 chunk(s), 18424505 cell(s), 58175073 ground cell(s), 261 block entit(ies), 55 entit(ies), light arrays over 2014 chunk(s), sha256 7a8cf3128be2fb3a135daefe9b5936737e168fe09c5d9e05f125a7ecab4e1671 -> validation/worlds/after-obj-find-the-wings, written in 26458 ms
+[t=+864.6s cpu=2797.5s thr=1] world: after-obj-find-inga 2014 chunk(s), 18424505 cell(s), 58175073 ground cell(s), 261 block entit(ies), 55 entit(ies), light arrays over 2014 chunk(s), sha256 34ac781f1de7d9e7791ea68a5405b491f66c40acc381c01663362bd7285eb4f8 -> validation/worlds/after-obj-find-inga, written in 26478 ms
+[t=+864.6s cpu=2797.5s thr=1] world: after-obj-raise-the-curtain 2014 chunk(s), 18424505 cell(s), 58175073 ground cell(s), 261 block entit(ies), 55 entit(ies), light arrays over 2014 chunk(s), sha256 7a8cf3128be2fb3a135daefe9b5936737e168fe09c5d9e05f125a7ecab4e1671 -> validation/worlds/after-obj-raise-the-curtain, written in 26634 ms
+[t=+864.6s cpu=2797.5s thr=1] view distance binding: 10 chunk(s) (the engine's floor, undeclared) serve 160 blocks in every direction; 17 showcase camera(s) and 0 cutscene shot(s) judged against it, 0 beyond it; stated to the host: heap-max 4G for 4 players × 473 chunks each (server/resources.properties).
+[t=+866.0s cpu=2798.9s thr=1] packtest solo binding: 0 of 181 template(s) take every body and run in their own test environment
+[t=+868.2s cpu=2801.1s thr=1] packtest hand-back binding: 34 of 181 template(s) write one of 30 pressable cell(s) and lay it back when they end
+[t=+868.2s cpu=2801.1s thr=1] packtest fresh-body binding: 181 of 181 template(s) carry a dummy and reset every score its name holds before their first command
+[t=+868.7s cpu=2801.6s thr=1] chain binding: 731 shipped function(s) measured, 0 counted loop(s), 14 world-build step(s); longest chain 64275 (`foot-of-the-mountain:tick`) of a 65536 limit, per executing source; 0 refused (DW0984).
+[t=+868.7s cpu=2801.6s thr=1] DW1013 binding: 32 of 47 interaction summon(s) placed at a cell and judged against its block (dw_i 22, dw_trig 10); 0 fitted to a two-cell body; 0 assembly hitbox(es) judged against the grid; 15 borne by a body (15 NPC dialogue hitbox(es), 0 actor answer box(es)), 0 at a runtime position — every judged box encloses its block's outline by at least 0.001 and lies within its cells by at most 0.01
+[t=+868.7s cpu=2801.6s thr=1] observer binding: 26 positional player selector(s) over 704 shipped function(s); 26 exclude `dw_cutscene`, 0 at an allowed site, 0 unguarded (DW0926).
+[t=+874.7s cpu=2807.6s thr=1] phase: emit: done
+[t=+874.7s cpu=2807.6s thr=1] phase: emit returned
+[t=+874.7s cpu=2807.6s thr=1] phase: output: writing the tree
+reach budget: 53802152 byte(s) resident at the end, under one budget of 72627744 byte(s), the sum of the working sets stated: the world store's sections 884736 byte(s), the window snapshot's pages 41189376 byte(s), the closures' edge lists 30553632 byte(s) (ADR-0037 §1)
+reach lists: 1116576893 byte(s) held in the scratch file; working set 30553632 byte(s) (3 x 3 chunks of the largest decoded, 3263776 byte(s), and their buffered pushes); 7101 chunk read(s) back over 111977513 record(s), 8984 chunk(s) given up (ADR-0037 §2)
+reach closures: 3504 chunk visit(s) over 709 (closure, chunk) pair(s), at most 21 for one chunk in one closure [1x79 2x183 3x43 4x116 5x45 6x51 7x36 8x43 9x30 10x23 11x21 12x11 13x4 14x4 16x2 17x4 18x6 19x2 20x4 21x2] (ADR-0037 §2)
+reach snapshot: 35096 distinct page(s) of 4096 cell(s) over 457768960 byte(s) in the scratch file; 138 resident at the end, working set 41189376 byte(s) (the 3 x 3 rings of the tallest window, 4 times over); 168976 page(s) read back; 3584459213 of 3595982906 page read(s) served by a thread's recent pages (ADR-0037 §2)
+reach portals: 1934267 portal edge(s) over 190120 face cell(s), summed over the closures taken, the most in one closure 506493, at a chunk side of 32 (ADR-0037 §2)
+reach graphs: 31 graph(s) memoised over the run, one per distinct world and parameters: 31 distinct world(s), 1 of them the configurations the reach binding counts (ADR-0037 §3's figure) and 30 premise variants and counterfactuals that are worlds of their own; 1 parameter set(s)
+reach states: the most in one closure 193058 state(s) (142769 standing, 8702 afloat, 41575 submerged, 12 holding), 30280 of them plain sea summarised in 3 component(s), over 4 closure(s) (ADR-0037 §3's rest states, per closure)
+reach bank: 156064 node variant(s) kept over 2511861790 byte(s) in the spill file; in memory, one slot per variant
+reach scratch: 4519955288 byte(s) written to the scratch files, at most 4139907410 byte(s) on disk (the sum of each file's longest), 4086207643 kept at the end; the lists' and tables' 1550324538 written, at most 1170276660 long, 1116576893 kept at the end; the bank's 2511861790 written, at most 2511861790 long, 2511861790 kept at the end, under a cap of 106846637508 byte(s) with 0 variant(s) refused; the snapshot's 457768960 written, at most 457768960 long, 457768960 kept at the end (ADR-0037 §2)
+[t=+875.1s cpu=2808.0s thr=1] phase: exit
+world store pages: 0 byte(s) resident over 0 section(s) of every store; 482612 array(s) given up, 469793 read back, 3052 of them within one turnover of the resident arrays; the need raised 2 time(s) for a walk found thrashing, to 884736 byte(s); 132292608 byte(s) in the scratch file in regions of 8192 byte(s), at most 16149 of them holding a live array at once; at most 18593 array(s) alive at once over every store (ADR-0037 §1)

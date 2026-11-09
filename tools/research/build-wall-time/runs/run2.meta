@@ -1,0 +1,9 @@
+start 2026-11-09T04:33:29Z
+nproc 16
+loadavg-at-start 4.44 1.70 1.79 1/371 814559
+delvec ~/dw/wt/delvewright/build-wall-time/target/release/delvec 090cfa1f4db9ae67b03ff5342d5df3b502136eb61676093d218777d9e2b93c43
+content 95a5d982ad4cc6104b6b7b3939e84442fdee09ac
+campaign foot-of-the-mountain
+threads unset
+pid 814568
+end 2026-11-09T04:48:18Z status 0 loadavg-at-end 1.00 1.60 2.34 1/339 935965

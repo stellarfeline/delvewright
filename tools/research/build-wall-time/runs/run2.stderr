@@ -1,0 +1,1429 @@
+-- what this run examined (142 line(s))
+equipment binding: 0 body(ies) dressed over 0 entity type(s), 0 piece(s) declared over 0 slot(s) in use, 0 piece(s) with a registry-declared slot, 0 with an allowed-entity list, 0 refused (DW0898).
+purchase binding: 4 charge(s) over 1 datum(s) bind 4 (list, datum) pair(s) of 79 effect list(s) walked, 0 of them behind a numeric gate, 0 refused (DW0901).
+read-after-write binding: 133 effect(s) over 55 bundle(s) walked, 4 gated write(s) recorded, 0 refused (DW0527).
+health-bar binding: 0 of 0 fight(s) carry a bar (0 wave(s), 0 actor(s) declared); 0 of 0 boss-billed fight(s) carry one; 0 refused (DW0100/DW0909/DW0910), 0 advised (DW0912).
+on_kill binding: 0 of 0 fight(s) carry a bundle, 0 of them on a fight that comes back, 0 stating `every-kill`; 0 refused (DW0913/DW0914/DW0915).
+inline-style binding: 0 of 656 player-facing line(s) carry 0 span(s); 656 sidecar row(s) held to their English's spans
+compass binding (DW1049): 620 of 656 player-facing line(s) judged; 36 declared name(s); 0 compass word(s) inside a declared name, 0 refused
+textures: 0 row(s) resolved of 0 declared, against a census of 3517 vanilla texture(s)
+sheet binding: 13 of 13 sheet(s) judged against their model's boxes — 13 of 13 mannequin skin(s), 0 of 0 `world.textures[]` row(s) an entity model is drawn with; by model: player 5, player_slim 8; 0 refused (DW0978/DW0979)
+journal pages: 72 page(s) measured over the source and every declared language, the fullest 14 of 14 line(s); 0 over
+name-tag binding (DW0983): 0 of 0 wave(s) carry a named member, 0 named actor(s); 0 name(s) tag a group; 0 wave(s) and 0 actor(s) refused
+act binding (DW1045): 28 of 35 English title(s) read against 35 objective(s); 7 head(s) the lexicon does not know; 0 untitled; 0 refused — not known: "Tag the harbour pumpkin" (/content/quests/2/objectives/1/title), "Tag the fishy pumpkin" (/content/quests/2/objectives/2/title), "Tag the candle pumpkin" (/content/quests/2/objectives/3/title), "Tag the last pumpkin" (/content/quests/2/objectives/4/title), "Fill the bucket at the spring" (/content/quests/3/objectives/1/title), "Fill the bottle at the hive" (/content/quests/3/objectives/2/title), "Bake the Mountain Loaf" (/content/quests/3/objectives/4/title)
+hint act binding (DW1045): 3 of 35 English hint(s) name an act, over 35 objective(s); 0 warned
+seating binding: horizon base `ocean`; areas[]: 0 of 0 area(s) name a piece set, examined over 0 member(s), 0 opening outward, 0 `.nbt` opened, 0 waterline declaration(s) examined, 0 borne out by the bytes; site plan: 99 of 99 box(es) judged against this base. byte-claim binding: 0 document(s) read, 0 `.nbt` opened; 0 declaration(s) of the class examined, 0 denied by the bytes (DW0888); per key examined/denied: structure.data_version=0/0, walk_y=0/0, anchors.*.pos=0/0, anchors.*.region=0/0, anchors.*.dispenser=0/0, anchors.*.trigger_block=0/0, anchors.*.furniture=0/0, connectors[].opening=0/0, connectors[].socket=0/0, jigsaw-declared=0/0.
+anchor-guarantee binding: 0 of 0 area(s) bind a pool, examined over 0 member(s) declaring 0 anchor name(s), of which 0 are guaranteed; 2001 name(s) carried by this campaign's documents, 0 reported outside a guarantee.
+promise: 35 objective(s) examined — 35 announced (DW0862/DW0961), 0 adopted container(s) (DW0861); 0 failure clock(s) (DW0860) over 11 effect root(s)
+compass binding: 31 tracked objective(s) of 35 — 0 by their own field, 31 by the campaign default; 0 refused
+highlight binding: 0 highlight(s) over 50 act(s) — 0 on a block, 0 on a body; 0 refused
+press bodies (DW1059): 30 interaction point(s) — 2 pressed on their own (2 bell, 0 button, 0 lever), 28 boxed (5 acting on their own, 23 unobservable, 0 struck), 0 riding a body or a gate, 0 refused
+press answers (DW1051): 30 pressable(s) — 51 answer(s) owed, 51 declared, 0 refused; 0 gate answer(s) judged by DW0429; 0 released; 1 with only the open state
+detail binding: 99 of 99 place(s) bound over 99 `details[]` row(s), 99 piece(s) measured against their frame, 196 seam(s) required answering over 538 declared face(s) examined (342 answering an open side), 0 contract bar(s) judged against the hand (DW1063), 119 owed anchor name(s) checked, 0 of them a killing volume's seat in out-of-walk floor.
+void binding: 99 bound piece(s) opened, 10398 void cell(s) examined, 0 painted (DW0987); 73 fixed ring ground cell(s) examined, 0 written (DW0990).
+aloft binding: 0 aloft place(s) of 99, 0 terrain column(s) under them examined, 0 reaching into a claim (DW0990).
+contradiction binding: 8 branch(es) read in their exported order over 376 dated line(s); every legal order searched over 240 step(s) (8 quiet), 68680 distinct play state(s) walked; 0 refused beyond the exported order (DW0485); 0 branch(es) unproven at the bound of 50000 state(s) per branch (DW0927)
+ending binding: 3 ending(s); 27 input(s) read, 27 seeded (9 with a deed among their writers), 0 final-scene only; 160 story world(s) enumerated (16256 unrealizable target(s), 0 at the bound); 0 aftermath effect(s), 0 of them observable after the scene.
+ending/encore: reads 9 input(s) — flag/chorus-done: finished, seeded, written at quest/the-chorus; flag/curtain-done: finished, seeded, written at quest/the-curtain; flag/founder-buoys: said, seeded, written at quest/the-founder; flag/founder-song: said, seeded, written at quest/the-founder; flag/loaf-forge: said, seeded, written at quest/the-loaf; flag/loaf-oven: said, seeded, written at quest/the-loaf; flag/tail-dumpling: said, seeded, written at quest/the-dragon; flag/tail-nest-moved: said, seeded, written at quest/the-dragon; state/applause: finished, seeded, written at quest/the-chorus, quest/the-curtain; aftermath: 0 effect(s) []; reached by world/0, world/4, world/5, world/9, world/10, world/14, world/15, world/19, world/40, world/44, world/45, world/49, world/50, world/54, world/55, world/59, world/80, world/84, world/85, world/89, world/90, world/94, world/95, world/99, world/120, world/124, world/125, world/129, world/130, world/134, world/135, world/139
+ending/curtain-call: reads 9 input(s) — flag/chorus-done: finished, seeded, written at quest/the-chorus; flag/curtain-done: finished, seeded, written at quest/the-curtain; flag/founder-buoys: said, seeded, written at quest/the-founder; flag/founder-song: said, seeded, written at quest/the-founder; flag/loaf-forge: said, seeded, written at quest/the-loaf; flag/loaf-oven: said, seeded, written at quest/the-loaf; flag/tail-dumpling: said, seeded, written at quest/the-dragon; flag/tail-nest-moved: said, seeded, written at quest/the-dragon; state/applause: finished, seeded, written at quest/the-chorus, quest/the-curtain; aftermath: 0 effect(s) []; reached by world/1, world/2, world/3, world/6, world/7, world/8, world/11, world/12, world/13, world/16, world/17, world/18, world/41, world/42, world/43, world/46, world/47, world/48, world/51, world/52, world/53, world/56, world/57, world/58, world/81, world/82, world/83, world/86, world/87, world/88, world/91, world/92, world/93, world/96, world/97, world/98, world/121, world/122, world/123, world/126, world/127, world/128, world/131, world/132, world/133, world/136, world/137, world/138
+ending/no-ending: reads 9 input(s) — flag/chorus-done: finished, seeded, written at quest/the-chorus; flag/curtain-done: finished, seeded, written at quest/the-curtain; flag/founder-buoys: said, seeded, written at quest/the-founder; flag/founder-song: said, seeded, written at quest/the-founder; flag/loaf-forge: said, seeded, written at quest/the-loaf; flag/loaf-oven: said, seeded, written at quest/the-loaf; flag/tail-dumpling: said, seeded, written at quest/the-dragon; flag/tail-nest-moved: said, seeded, written at quest/the-dragon; state/applause: finished, seeded, written at quest/the-chorus, quest/the-curtain; aftermath: 0 effect(s) []; reached by world/20, world/21, world/22, world/23, world/24, world/25, world/26, world/27, world/28, world/29, world/30, world/31, world/32, world/33, world/34, world/35, world/36, world/37, world/38, world/39, world/60, world/61, world/62, world/63, world/64, world/65, world/66, world/67, world/68, world/69, world/70, world/71, world/72, world/73, world/74, world/75, world/76, world/77, world/78, world/79, world/100, world/101, world/102, world/103, world/104, world/105, world/106, world/107, world/108, world/109, world/110, world/111, world/112, world/113, world/114, world/115, world/116, world/117, world/118, world/119, world/140, world/141, world/142, world/143, world/144, world/145, world/146, world/147, world/148, world/149, world/150, world/151, world/152, world/153, world/154, world/155, world/156, world/157, world/158, world/159
+state path binding: 33 path(s) walked over 1145 step(s); 0 numeric gate term(s) read, of which 0 against an undatable datum and 0 withheld (the order is not forced); 128 state write(s) replayed; 2 declared datum(s) of which 1 undatable
+name-told binding (DW0982): 34 declared name(s); 9 walk(s); 201 of 218 dialogue string(s) and 70 of 70 objective string(s) on screen on some walk; 63 use(s) of a name in them, 0 untold
+secrets (DW1060): 0 hidden way(s), 0 secret word(s); 0 string(s) read before the shot(s), 0 mention(s) refused; 0 word(s) told after; 0 hidden way(s) with no shot to read against
+presence binding (DW1026): 15 npc(s) and 0 actor(s) (0 named) declared, 0 assembl(ies) with no name; 1 name(s) carried by more than one declaration, over 2 body(ies); 13 story state(s) judged (world init, and every state a spawn changes) over 9 configuration(s), 0 body(ies) an undatable spawn can bring in; 0 character(s) refused
+design record: 17 reference(s) recorded over 17 image file(s) under `design/` (concept/ 14, reference/ 3); skies stated: {"daytime":10500}+clear x15, {"daytime":11867}+clear x2; world reaches times {{"daytime":10500}, {"daytime":11867}} weathers {clear} (DW0890); showcase cameras: 17 in design/cameras.json answering 17 of 17 approved image(s) (DW0900)
+clock: world {"daytime":10500} -> day 0 daytime 10500; sun +34.84° W, moon below the horizon (full-moon); sky light judged 15, game 15; burns: yes
+clock: set-time {"daytime":11867} -> day 0 daytime 11867; sun +14.43° W, moon below the horizon (full-moon); sky light judged 15, game 15; burns: yes
+clocks: 1 world + 1 cut(s); 0 celestial, 2 tick, 0 keyword; phases stated {}; days {0}
+view distance binding: 10 chunk(s) (the engine's floor, undeclared) serve 160 blocks in every direction; 0 sightline(s) and 0 view(s) judged against it, 0 beyond it.
+layout-graph binding: 99 node(s), 98 edge(s) (98 traversal, 0 one-way, 0 shortcut, 0 gated, 0 carry), 19 station(s) of which 0 gate(s), 35 beat(s) of which 25 on the mandatory spine, 226 critical-path step(s); geometry-brief binding: 2 fact(s).
+references binding: 178 reference(s) over 49 of 99 node(s)
+plot program: 25 plot(s) over 99 node(s), 63 part(s) — 37 structure(s), 26 ground(s), 2 seen; cells declared 5383 of 7784 play space
+site-plan binding: 99 box(es) (4851 pair(s) compared; 1 pinned, 98 derived, in 1 component(s); 0 roofed; 6295 shared claim cell(s) awarded), 98 seam(s) (30 stair, 0 drop), 0 datum(s), 0 whole-owned volume(s), 2 identity(ies), 0 sightline(s), 0 view(s); fill `open`. DW1027 binding: 0 gated connection(s), 0 of them fronts. DW1028 binding: 0 gated connection(s), 0 opened by an `open-gate`, 0 by a shortcut, 0 by a clock, 0 by nothing.
+site-plan placing: `node/square` stands at [108, 230] — pinned.
+site-plan placing: `node/flight-1` stands at [119, 255] — hung off `node/square` across the south face by the seam for `edge/square-to-flight-1`.
+site-plan placing: `node/street-1` stands at [118, 262] — hung off `node/flight-1` across the south face by the seam for `edge/flight-1-to-street-1`.
+site-plan placing: `node/flight-2` stands at [119, 277] — hung off `node/street-1` across the south face by the seam for `edge/street-1-to-flight-2`.
+site-plan placing: `node/street-2` stands at [118, 284] — hung off `node/flight-2` across the south face by the seam for `edge/flight-2-to-street-2`.
+site-plan placing: `node/flight-3` stands at [119, 299] — hung off `node/street-2` across the south face by the seam for `edge/street-2-to-flight-3`.
+site-plan placing: `node/street-3` stands at [118, 306] — hung off `node/flight-3` across the south face by the seam for `edge/flight-3-to-street-3`.
+site-plan placing: `node/flight-4` stands at [119, 321] — hung off `node/street-3` across the south face by the seam for `edge/street-3-to-flight-4`.
+site-plan placing: `node/street-4` stands at [117, 328] — hung off `node/flight-4` across the south face by the seam for `edge/flight-4-to-street-4`.
+site-plan placing: `node/flight-5` stands at [119, 343] — hung off `node/street-4` across the south face by the seam for `edge/street-4-to-flight-5`.
+site-plan placing: `node/street-5` stands at [118, 350] — hung off `node/flight-5` across the south face by the seam for `edge/flight-5-to-street-5`.
+site-plan placing: `node/flight-6` stands at [119, 365] — hung off `node/street-5` across the south face by the seam for `edge/street-5-to-flight-6`.
+site-plan placing: `node/street-6` stands at [118, 372] — hung off `node/flight-6` across the south face by the seam for `edge/flight-6-to-street-6`.
+site-plan placing: `node/flight-7` stands at [119, 387] — hung off `node/street-6` across the south face by the seam for `edge/street-6-to-flight-7`.
+site-plan placing: `node/street-7` stands at [118, 394] — hung off `node/flight-7` across the south face by the seam for `edge/flight-7-to-street-7`.
+site-plan placing: `node/flight-8` stands at [119, 409] — hung off `node/street-7` across the south face by the seam for `edge/street-7-to-flight-8`.
+site-plan placing: `node/street-8` stands at [118, 416] — hung off `node/flight-8` across the south face by the seam for `edge/flight-8-to-street-8`.
+site-plan placing: `node/flight-9` stands at [119, 431] — hung off `node/street-8` across the south face by the seam for `edge/street-8-to-flight-9`.
+site-plan placing: `node/street-9` stands at [118, 438] — hung off `node/flight-9` across the south face by the seam for `edge/flight-9-to-street-9`.
+site-plan placing: `node/flight-10` stands at [119, 453] — hung off `node/street-9` across the south face by the seam for `edge/street-9-to-flight-10`.
+site-plan placing: `node/quay` stands at [92, 460] — hung off `node/flight-10` across the south face by the seam for `edge/flight-10-to-quay`.
+site-plan placing: `node/cathedral` stands at [139, 216] — hung off `node/square` across the east face by the seam for `edge/square-to-cathedral`.
+site-plan placing: `node/inn` stands at [79, 230] — hung off `node/square` across the west face by the seam for `edge/square-to-inn`.
+site-plan placing: `node/road-1` stands at [121, 225] — hung off `node/square` across the north face by the seam for `edge/square-to-road-1`.
+site-plan placing: `node/road-2` stands at [121, 214] — hung off `node/road-1` across the north face by the seam for `edge/road-1-to-road-2`.
+site-plan placing: `node/road-3` stands at [121, 201] — hung off `node/road-2` across the south face by the seam for `edge/road-3-to-road-2`.
+site-plan placing: `node/road-4` stands at [112, 201] — hung off `node/road-3` across the west face by the seam for `edge/road-3-to-road-4`.
+site-plan placing: `node/road-5` stands at [101, 201] — hung off `node/road-4` across the west face by the seam for `edge/road-4-to-road-5`.
+site-plan placing: `node/road-6` stands at [92, 201] — hung off `node/road-5` across the east face by the seam for `edge/road-6-to-road-5`.
+site-plan placing: `node/road-7` stands at [81, 201] — hung off `node/road-6` across the west face by the seam for `edge/road-6-to-road-7`.
+site-plan placing: `node/road-8` stands at [72, 201] — hung off `node/road-7` across the east face by the seam for `edge/road-8-to-road-7`.
+site-plan placing: `node/road-9` stands at [61, 201] — hung off `node/road-8` across the west face by the seam for `edge/road-8-to-road-9`.
+site-plan placing: `node/road-10` stands at [52, 201] — hung off `node/road-9` across the east face by the seam for `edge/road-10-to-road-9`.
+site-plan placing: `node/road-11` stands at [52, 190] — hung off `node/road-10` across the north face by the seam for `edge/road-10-to-road-11`.
+site-plan placing: `node/road-12` stands at [52, 177] — hung off `node/road-11` across the south face by the seam for `edge/road-12-to-road-11`.
+site-plan placing: `node/road-13` stands at [52, 166] — hung off `node/road-12` across the north face by the seam for `edge/road-12-to-road-13`.
+site-plan placing: `node/road-14` stands at [52, 153] — hung off `node/road-13` across the south face by the seam for `edge/road-14-to-road-13`.
+site-plan placing: `node/road-15` stands at [58, 153] — hung off `node/road-14` across the east face by the seam for `edge/road-14-to-road-15`.
+site-plan placing: `node/road-16` stands at [67, 153] — hung off `node/road-15` across the east face by the seam for `edge/road-15-to-road-16`.
+site-plan placing: `node/road-17` stands at [78, 153] — hung off `node/road-16` across the west face by the seam for `edge/road-17-to-road-16`.
+site-plan placing: `node/road-18` stands at [87, 153] — hung off `node/road-17` across the east face by the seam for `edge/road-17-to-road-18`.
+site-plan placing: `node/road-19` stands at [98, 153] — hung off `node/road-18` across the west face by the seam for `edge/road-19-to-road-18`.
+site-plan placing: `node/road-20` stands at [107, 153] — hung off `node/road-19` across the east face by the seam for `edge/road-19-to-road-20`.
+site-plan placing: `node/road-21` stands at [118, 153] — hung off `node/road-20` across the west face by the seam for `edge/road-21-to-road-20`.
+site-plan placing: `node/road-22` stands at [121, 142] — hung off `node/road-21` across the north face by the seam for `edge/road-21-to-road-22`.
+site-plan placing: `node/road-23` stands at [121, 129] — hung off `node/road-22` across the south face by the seam for `edge/road-23-to-road-22`.
+site-plan placing: `node/road-24` stands at [121, 118] — hung off `node/road-23` across the north face by the seam for `edge/road-23-to-road-24`.
+site-plan placing: `node/road-25` stands at [121, 105] — hung off `node/road-24` across the south face by the seam for `edge/road-25-to-road-24`.
+site-plan placing: `node/road-26` stands at [112, 105] — hung off `node/road-25` across the west face by the seam for `edge/road-25-to-road-26`.
+site-plan placing: `node/road-27` stands at [101, 105] — hung off `node/road-26` across the west face by the seam for `edge/road-26-to-road-27`.
+site-plan placing: `node/road-28` stands at [92, 105] — hung off `node/road-27` across the east face by the seam for `edge/road-28-to-road-27`.
+site-plan placing: `node/road-29` stands at [81, 105] — hung off `node/road-28` across the west face by the seam for `edge/road-28-to-road-29`.
+site-plan placing: `node/road-30` stands at [72, 105] — hung off `node/road-29` across the east face by the seam for `edge/road-30-to-road-29`.
+site-plan placing: `node/road-31` stands at [61, 105] — hung off `node/road-30` across the west face by the seam for `edge/road-30-to-road-31`.
+site-plan placing: `node/road-32` stands at [52, 105] — hung off `node/road-31` across the east face by the seam for `edge/road-32-to-road-31`.
+site-plan placing: `node/road-33` stands at [52, 94] — hung off `node/road-32` across the north face by the seam for `edge/road-32-to-road-33`.
+site-plan placing: `node/road-34` stands at [52, 81] — hung off `node/road-33` across the south face by the seam for `edge/road-34-to-road-33`.
+site-plan placing: `node/road-35` stands at [52, 70] — hung off `node/road-34` across the north face by the seam for `edge/road-34-to-road-35`.
+site-plan placing: `node/road-36` stands at [52, 57] — hung off `node/road-35` across the south face by the seam for `edge/road-36-to-road-35`.
+site-plan placing: `node/road-37` stands at [58, 57] — hung off `node/road-36` across the east face by the seam for `edge/road-36-to-road-37`.
+site-plan placing: `node/road-38` stands at [67, 57] — hung off `node/road-37` across the east face by the seam for `edge/road-37-to-road-38`.
+site-plan placing: `node/road-39` stands at [78, 57] — hung off `node/road-38` across the west face by the seam for `edge/road-39-to-road-38`.
+site-plan placing: `node/road-40` stands at [87, 57] — hung off `node/road-39` across the east face by the seam for `edge/road-39-to-road-40`.
+site-plan placing: `node/road-41` stands at [98, 57] — hung off `node/road-40` across the west face by the seam for `edge/road-41-to-road-40`.
+site-plan placing: `node/road-42` stands at [107, 57] — hung off `node/road-41` across the east face by the seam for `edge/road-41-to-road-42`.
+site-plan placing: `node/road-43` stands at [118, 57] — hung off `node/road-42` across the west face by the seam for `edge/road-43-to-road-42`.
+site-plan placing: `node/road-44` stands at [121, 46] — hung off `node/road-43` across the north face by the seam for `edge/road-43-to-road-44`.
+site-plan placing: `node/road-45` stands at [121, 33] — hung off `node/road-44` across the south face by the seam for `edge/road-45-to-road-44`.
+site-plan placing: `node/road-top` stands at [121, 27] — hung off `node/road-45` across the north face by the seam for `edge/road-45-to-road-top`.
+site-plan placing: `node/gate-road` stands at [244, 33] — hung off `node/road-top` across the south face by the seam for `edge/road-top-to-gate-road`.
+site-plan placing: `node/castle` stands at [170, 42] — hung off `node/gate-road` across the north face by the seam for `edge/road-to-gate`.
+site-plan placing: `node/lane-3` stands at [77, 311] — hung off `node/street-3` across the west face by the seam for `edge/street-3-to-lane-3`.
+site-plan placing: `node/lane-5` stands at [128, 355] — hung off `node/street-5` across the east face by the seam for `edge/street-5-to-lane-5`.
+site-plan placing: `node/lane-8` stands at [128, 421] — hung off `node/street-8` across the east face by the seam for `edge/street-8-to-lane-8`.
+site-plan placing: `node/bakery` stands at [95, 263] — hung off `node/street-1` across the west face by the seam for `edge/street-1-to-bakery`.
+site-plan placing: `node/apothecary` stands at [128, 263] — hung off `node/street-1` across the east face by the seam for `edge/street-1-to-apothecary`.
+site-plan placing: `node/cottages` stands at [97, 285] — hung off `node/street-2` across the west face by the seam for `edge/street-2-to-cottages`.
+site-plan placing: `node/merchant` stands at [128, 285] — hung off `node/street-2` across the east face by the seam for `edge/street-2-to-merchant`.
+site-plan placing: `node/weaver` stands at [128, 307] — hung off `node/street-3` across the east face by the seam for `edge/street-3-to-weaver`.
+site-plan placing: `node/townhall` stands at [92, 330] — hung off `node/street-4` across the west face by the seam for `edge/street-4-to-townhall`.
+site-plan placing: `node/tavern` stands at [129, 329] — hung off `node/street-4` across the east face by the seam for `edge/street-4-to-tavern`.
+site-plan placing: `node/smithy` stands at [93, 351] — hung off `node/street-5` across the west face by the seam for `edge/street-5-to-smithy`.
+site-plan placing: `node/chandler` stands at [97, 374] — hung off `node/street-6` across the west face by the seam for `edge/street-6-to-chandler`.
+site-plan placing: `node/cooper` stands at [128, 374] — hung off `node/street-6` across the east face by the seam for `edge/street-6-to-cooper`.
+site-plan placing: `node/fishmonger` stands at [97, 396] — hung off `node/street-7` across the west face by the seam for `edge/street-7-to-fishmonger`.
+site-plan placing: `node/tannery` stands at [128, 396] — hung off `node/street-7` across the east face by the seam for `edge/street-7-to-tannery`.
+site-plan placing: `node/netloft` stands at [97, 418] — hung off `node/street-8` across the west face by the seam for `edge/street-8-to-netloft`.
+site-plan placing: `node/carpenter` stands at [79, 294] — hung off `node/lane-3` across the north face by the seam for `edge/lane-3-to-carpenter`.
+site-plan placing: `node/potter` stands at [79, 317] — hung off `node/lane-3` across the south face by the seam for `edge/lane-3-to-potter`.
+site-plan placing: `node/boatwright` stands at [154, 344] — hung off `node/lane-5` across the north face by the seam for `edge/lane-5-to-boatwright`.
+site-plan placing: `node/cottages-2` stands at [154, 361] — hung off `node/lane-5` across the south face by the seam for `edge/lane-5-to-cottages-2`.
+site-plan placing: `node/cliff-path-1` stands at [175, 421] — hung off `node/lane-8` across the east face by the seam for `edge/lane-8-to-cliff-path-1`.
+site-plan placing: `node/cliff-path-2` stands at [188, 427] — hung off `node/cliff-path-1` across the south face by the seam for `edge/cliff-path-1-to-cliff-path-2`.
+site-plan placing: `node/lighthouse` stands at [187, 469] — hung off `node/cliff-path-2` across the south face by the seam for `edge/cliff-path-2-to-lighthouse`.
+site-plan placing: `node/harbour` stands at [153, 458] — hung off `node/quay` across the east face by the seam for `edge/quay-to-harbour`.
+site-plan placing: `node/poi-spring` stands at [73, 207] — hung off `node/road-8` across the south face by the seam for `edge/road-8-to-poi-spring`.
+site-plan placing: `node/poi-bees` stands at [99, 159] — hung off `node/road-19` across the south face by the seam for `edge/road-19-to-poi-bees`.
+site-plan placing: `node/poi-hut` stands at [73, 97] — hung off `node/road-30` across the north face by the seam for `edge/road-30-to-poi-hut`.
+site-plan placing: `node/poi-lookout` stands at [99, 63] — hung off `node/road-41` across the south face by the seam for `edge/road-41-to-poi-lookout`.
+site-plan binding 0: this plan names no view, so the visual review has no declared vantage to judge the silhouette from and the render beside the reference sheet has nothing to frame. The plan still builds; what is missing is the picture the whole was supposed to be looked at in.
+site-plan binding 0: this plan declares no whole-owned volume, so the check that keeps the whole's mass out of the places examined nothing. A map made only of rooms is a legitimate map; a map with a mountain in it that forgot to say so is not, and nothing else would notice.
+[t=+4.9s cpu=4.8s thr=1] piece-mating binding: 0 of 198 placed piece(s) touch in 0 pair(s), 0 of which a declared face crosses; 538 face(s) declared (99 piece(s) by spatial contract, 0 by jigsaw socket), 0 of them abutting another piece.
+[t=+4.9s cpu=5.0s thr=1] phase: validated, analysed, planned: emit starts
+[t=+4.9s cpu=5.0s thr=1] phase: emit: start (biome map)
+[t=+4.9s cpu=5.0s thr=1] atmosphere binding: 0 declared; 0 of 99 place(s) carry one; 0 repaint effect(s) over 0 volume(s); 0 quart cells painted at bootstrap of 0 paint(s) in the map; 0 biome file(s) emitted
+[t=+4.9s cpu=5.1s thr=1] phase: assemble: start
+[t=+8.6s cpu=10.0s thr=1] assembly written: 220767 write(s) — 220647 region write(s), 120 template(s), 0 surround tile(s) — over 2014 section column(s), each column in one step; 229654 decode(s), at most 472 write(s) held decoded at once (ADR-0037 §2)
+[t=+9.6s cpu=11.0s thr=1] phase: assemble: done
+[t=+9.6s cpu=11.0s thr=1] phase: edit replay: start
+[t=+9.6s cpu=11.0s thr=1] phase: edit replay: done; judged columns + cost: start
+world store need: raised to 442368 byte(s); 53 of the last 75 read-back(s) came back within one turnover of the resident arrays
+world store need: raised to 884736 byte(s); 56 of the last 66 read-back(s) came back within one turnover of the resident arrays
+[t=+10.3s cpu=11.8s thr=1] judged world: columns x 27..296, z 2..513 (the boundary's playable region grown by 16); 8809020 assembled cell(s) judged, 9615456 placed beyond them and judged by nothing, 264992 wall cell(s) closing the faces
+[t=+10.3s cpu=11.8s thr=1] world store: 18424476 placed cell(s) in 7296 section(s) of 16 x 16 x 16, 30554880 byte(s); the judged copy 9074012 cell(s) in 3900 section(s), 16361984 byte(s) (ADR-0037 §1)
+[t=+10.7s cpu=12.1s thr=1] resource cost: region 588 x 176 x 830 cell(s) under a ocean horizon; judged columns [27, 2]..[296, 513]; reach window at most 32054400 cell(s) (288 x 210 x 530), its reached and plain-sea bitmaps 8013600 byte(s), 9 x 17 chunk(s) of side 32 with 1858080 face cell(s); rest census: 163176 standing and 147271 water candidate(s) over 152640 column(s), at most 7859 node(s) in one chunk, 5432 edge(s) out of one node and every landing within 5 column(s); at most 5764140 portal edge(s) in one closure; working set before any walk: the stores' ring 221184 + the snapshot's pages 46497792 + the lists' buffered pushes 1179648 = 47898624 byte(s), the lists' largest chunk at most 23688100 byte(s) by its candidates; summaries at most: 2995200 face label(s), 34 configuration(s); scratch: the stores' 346587136 byte(s), one region of 8192 per array alive at once, at most 42308 — 7296 section(s) of the whole, 3900 of the judged copy, 7540 written section(s) under the write sequence judge's 4 stores, and 28 region section(s) per configuration; the reach graph's 220232555400 byte(s) over the configuration(s), 6477428100 per configuration — the snapshot's pages 192331776, the node tables 761340592 over 32841662 edge(s) at most, one closure's lists 2381207570, the bank's file 3142548162 (the cap the build sets: the tables and the lists, past which no variant is kept) — the variants' worlds, a second closure and a second table entry covered by those terms' slack (ADR-0037 §3)
+[t=+10.8s cpu=12.2s thr=1] holder binding: 0 fill(s) (0 loot, 0 adopting collect), 0 judged against the assembled world, 0 deferred to the detail of a place still standing in its stand-in.
+[t=+10.8s cpu=12.2s thr=1] sign binding: 9 sign text(s), 9 judged against the assembled world (minecraft:hanging_sign: 9), 36 line(s) measured over the English and 1 declared language(s), 0 deferred to the detail of a place still standing in its stand-in.
+[t=+10.8s cpu=12.2s thr=1] phase: holders: start
+[t=+12.8s cpu=14.2s thr=1] phase: reach graph: build start
+[t=+13.9s cpu=15.3s thr=1] phase: reach graph: built, window [288, 186, 530], lineage false, lineage diff 0 cell(s), premise 0, leaves 130
+[t=+59.3s cpu=691.6s thr=1] phase: reach closure: taken over 119 root(s) in 19 round(s): 160432 state(s), 163543812 simulated, 88248 credited
+[t=+60.6s cpu=693.0s thr=1] DW0210 binding: 111755 reachable cell(s) judged, 0 dark; 0 cell(s) under 0 stand-in(s) not judged
+[t=+61.9s cpu=694.2s thr=1] holder census: 118 holder(s) in the assembled world (container: 118); 0 loot, 0 collect, 4 device, 114 decoration, 0 empty (frozen), 0 exempt (contents show from outside); notice declared; by place: node/apothecary: 1, node/bakery: 2, node/boatwright: 4, node/carpenter: 1, node/castle: 3, node/cathedral: 1, node/chandler: 16, node/cooper: 21, node/cottages: 1, node/cottages-2: 5, node/fishmonger: 7, node/harbour: 6, node/inn: 2, node/lane-3: 1, node/lane-5: 1, node/lane-8: 1, node/lighthouse: 4, node/merchant: 2, node/netloft: 4, node/poi-bees: 1, node/poi-hut: 1, node/potter: 1, node/quay: 3, node/smithy: 3, node/square: 1, node/street-1: 2, node/street-3: 2, node/street-5: 2, node/street-7: 2, node/street-9: 2, node/tannery: 3, node/tavern: 8, node/townhall: 2, node/weaver: 2; arrangement: 0 mixed place(s). stance: 0 filled holder(s) and 0 holder(s) judged, 0 unsupported, 0 unreachable.
+[t=+61.9s cpu=694.2s thr=1] holder edits: 3 runtime edit(s) examined against 0 holder entit(y/ies), 0 reaching a holder (DW1038).
+[t=+61.9s cpu=694.2s thr=1] body answers (DW1055): 15 bodies — 0 monster-kind, 0 inert, 0 in reach, 0 lines owed, 0 declared, 0 volunteered on kinds not owed, 0 refused; 0 out of reach, 0 carried by a strike trigger
+[t=+61.9s cpu=694.2s thr=1] phase: links taken: start
+[t=+61.9s cpu=694.2s thr=1] phase: seats fixed; walked population: start
+[t=+62.0s cpu=694.3s thr=1] phase: reach graph: build start
+[t=+63.2s cpu=695.5s thr=1] phase: reach graph: built, window [288, 186, 530], lineage false, lineage diff 0 cell(s), premise 0, leaves 130
+[t=+106.4s cpu=1324.9s thr=1] phase: reach closure: taken over 1 root(s) in 19 round(s): 193058 state(s), 150034436 simulated, 88248 credited
+[t=+108.0s cpu=1326.8s thr=1] phase: assemblies: start
+[t=+108.2s cpu=1327.0s thr=1] assembly binding: 0 assembl(ies) declared, 0 part(s), 0 clip(s), 0 hitbox(es) examined, 0 strike step(s) checked over 0 facing(s) and 0 locked cell(s), 0 refused
+[t=+108.2s cpu=1327.0s thr=1] assembly cost: 0 display part(s) in all; at most 0.0 keyframe write(s) per tick at the declared cadences (measured on the pinned server, spec-0082 §8 row 7: about 0.3 ms per 34-part assembly per tick at a 5-tick cadence, 0.9 ms at every tick)
+[t=+108.2s cpu=1327.0s thr=1] phase: blockout battery: start
+[t=+108.2s cpu=1327.0s thr=1] blockout binding: 99 place(s) massed (99 detailed, so 0 massed by the derivation; 0 roof zone(s) massed), 75 fixed ring ground cell(s) laid, 98 seam(s) cut (0 stair, 0 climb, 0 shut), 0 stairwell cell(s) cut over through-floor runs, 0 whole-owned volume(s), 119 anchor(s) synthesized, 220647 region write(s) over 18293507 cell(s).
+[t=+108.2s cpu=1327.0s thr=1] waterline binding: horizon base `ocean`; 0 of 198 placed piece(s) declare a `waterline_y` and were held to sea level (y=62). A piece that declares none authors no shore, and where its floor stands is the walk-plane arm's question (DW0344, second arm) rather than this one's.
+[t=+110.4s cpu=1329.2s thr=1] phase: reach graph: build start
+[t=+111.5s cpu=1330.3s thr=1] phase: reach graph: built, window [288, 186, 530], lineage true, lineage diff 24 cell(s), premise 0, leaves 130
+[t=+118.1s cpu=1349.3s thr=1] phase: reach closure: taken over 1 root(s) in 19 round(s): 160360 state(s), 164121846 simulated, 88210 credited
+[t=+118.1s cpu=1349.4s thr=1] phase: reach closure: reused
+[t=+121.9s cpu=1353.1s thr=1] phase: reach graph: build start
+[t=+123.2s cpu=1354.5s thr=1] phase: reach graph: built, window [288, 186, 530], lineage true, lineage diff 434784 cell(s), premise 0, leaves 130
+[t=+123.7s cpu=1358.9s thr=1] phase: reach graph: build start
+[t=+124.9s cpu=1360.1s thr=1] phase: reach graph: built, window [288, 186, 530], lineage true, lineage diff 360893 cell(s), premise 0, leaves 130
+[t=+173.8s cpu=1992.1s thr=1] phase: reach closure: reused
+[t=+173.9s cpu=1992.2s thr=1] phase: reach closure: reused
+[t=+173.9s cpu=1992.2s thr=1] phase: reach closure: reused
+[t=+174.0s cpu=1992.2s thr=1] phase: reach closure: reused
+[t=+174.0s cpu=1992.3s thr=1] phase: reach closure: reused
+[t=+174.0s cpu=1992.3s thr=1] phase: reach closure: reused
+[t=+174.0s cpu=1992.3s thr=1] phase: reach closure: reused
+[t=+174.1s cpu=1992.4s thr=1] phase: reach closure: reused
+[t=+174.1s cpu=1992.4s thr=1] phase: reach closure: reused
+[t=+174.1s cpu=1992.5s thr=1] phase: reach closure: reused
+[t=+174.2s cpu=1992.5s thr=1] phase: reach closure: reused
+[t=+174.2s cpu=1992.5s thr=1] phase: reach closure: reused
+[t=+174.2s cpu=1992.5s thr=1] phase: reach closure: reused
+[t=+174.3s cpu=1992.6s thr=1] phase: reach closure: reused
+[t=+174.3s cpu=1992.6s thr=1] phase: reach closure: reused
+[t=+174.3s cpu=1992.6s thr=1] phase: reach closure: reused
+[t=+174.4s cpu=1992.7s thr=1] phase: reach closure: reused
+[t=+174.4s cpu=1992.7s thr=1] phase: reach closure: reused
+[t=+174.4s cpu=1992.7s thr=1] phase: reach closure: reused
+[t=+174.5s cpu=1992.8s thr=1] phase: reach closure: reused
+[t=+174.5s cpu=1992.8s thr=1] phase: reach closure: reused
+[t=+174.5s cpu=1992.8s thr=1] phase: reach closure: reused
+[t=+174.6s cpu=1992.9s thr=1] phase: reach closure: reused
+[t=+174.6s cpu=1992.9s thr=1] phase: reach closure: reused
+[t=+174.6s cpu=1992.9s thr=1] phase: reach closure: reused
+[t=+174.7s cpu=1993.0s thr=1] phase: reach closure: reused
+[t=+174.7s cpu=1993.0s thr=1] phase: reach closure: reused
+[t=+174.7s cpu=1993.0s thr=1] phase: reach closure: reused
+[t=+174.8s cpu=1993.1s thr=1] phase: reach closure: reused
+[t=+174.8s cpu=1993.1s thr=1] phase: reach closure: reused
+[t=+174.8s cpu=1993.1s thr=1] phase: reach closure: reused
+[t=+174.9s cpu=1993.2s thr=1] phase: reach closure: reused
+[t=+174.9s cpu=1993.2s thr=1] phase: reach closure: reused
+[t=+174.9s cpu=1993.2s thr=1] phase: reach closure: reused
+[t=+175.0s cpu=1993.2s thr=1] phase: reach closure: reused
+[t=+175.0s cpu=1993.3s thr=1] phase: reach closure: reused
+[t=+175.0s cpu=1993.3s thr=1] phase: reach closure: reused
+[t=+175.0s cpu=1993.3s thr=1] phase: reach closure: reused
+[t=+175.1s cpu=1993.4s thr=1] phase: reach closure: reused
+[t=+175.1s cpu=1993.4s thr=1] phase: reach closure: reused
+[t=+175.1s cpu=1993.5s thr=1] phase: reach closure: reused
+[t=+175.2s cpu=1993.5s thr=1] phase: reach closure: reused
+[t=+175.2s cpu=1993.5s thr=1] phase: reach closure: reused
+[t=+175.2s cpu=1993.5s thr=1] phase: reach closure: reused
+[t=+175.3s cpu=1993.6s thr=1] phase: reach closure: reused
+[t=+175.3s cpu=1993.6s thr=1] phase: reach closure: reused
+[t=+175.4s cpu=1993.7s thr=1] phase: reach closure: reused
+[t=+175.4s cpu=1993.7s thr=1] phase: reach closure: reused
+[t=+175.4s cpu=1993.7s thr=1] phase: reach closure: reused
+[t=+175.5s cpu=1993.8s thr=1] phase: reach closure: reused
+[t=+175.5s cpu=1993.8s thr=1] phase: reach closure: reused
+[t=+175.5s cpu=1993.8s thr=1] phase: reach closure: reused
+[t=+175.6s cpu=1993.9s thr=1] phase: reach closure: reused
+[t=+175.6s cpu=1993.9s thr=1] phase: reach closure: reused
+[t=+175.6s cpu=1993.9s thr=1] phase: reach closure: reused
+[t=+175.7s cpu=1994.0s thr=1] phase: reach closure: reused
+[t=+175.7s cpu=1994.0s thr=1] phase: reach closure: reused
+[t=+175.7s cpu=1994.0s thr=1] phase: reach closure: reused
+[t=+175.8s cpu=1994.1s thr=1] phase: reach closure: reused
+[t=+175.8s cpu=1994.1s thr=1] phase: reach closure: reused
+[t=+175.8s cpu=1994.1s thr=1] phase: reach closure: reused
+[t=+175.9s cpu=1994.2s thr=1] phase: reach closure: reused
+[t=+175.9s cpu=1994.2s thr=1] phase: reach closure: reused
+[t=+175.9s cpu=1994.2s thr=1] phase: reach closure: reused
+[t=+176.0s cpu=1994.3s thr=1] phase: reach closure: reused
+[t=+176.0s cpu=1994.3s thr=1] phase: reach closure: reused
+[t=+176.0s cpu=1994.3s thr=1] phase: reach closure: reused
+[t=+176.1s cpu=1994.3s thr=1] phase: reach closure: reused
+[t=+176.1s cpu=1994.4s thr=1] phase: reach closure: reused
+[t=+176.1s cpu=1994.4s thr=1] phase: reach closure: reused
+[t=+176.1s cpu=1994.5s thr=1] phase: reach closure: reused
+[t=+176.2s cpu=1994.5s thr=1] phase: reach closure: reused
+[t=+176.2s cpu=1994.5s thr=1] phase: reach closure: reused
+[t=+176.2s cpu=1994.5s thr=1] phase: reach closure: reused
+[t=+176.3s cpu=1994.6s thr=1] phase: reach closure: reused
+[t=+176.3s cpu=1994.6s thr=1] phase: reach closure: reused
+[t=+176.3s cpu=1994.6s thr=1] phase: reach closure: reused
+[t=+176.4s cpu=1994.7s thr=1] phase: reach closure: reused
+[t=+176.4s cpu=1994.7s thr=1] phase: reach closure: reused
+[t=+176.4s cpu=1994.7s thr=1] phase: reach closure: reused
+[t=+176.5s cpu=1994.8s thr=1] phase: reach closure: reused
+[t=+176.5s cpu=1994.8s thr=1] phase: reach closure: reused
+[t=+176.5s cpu=1994.8s thr=1] phase: reach closure: reused
+[t=+176.6s cpu=1994.9s thr=1] phase: reach closure: reused
+[t=+176.6s cpu=1994.9s thr=1] phase: reach closure: reused
+[t=+176.6s cpu=1994.9s thr=1] phase: reach closure: reused
+[t=+176.7s cpu=1995.0s thr=1] phase: reach closure: reused
+[t=+176.7s cpu=1995.0s thr=1] phase: reach closure: reused
+[t=+176.7s cpu=1995.0s thr=1] phase: reach closure: reused
+[t=+176.8s cpu=1995.0s thr=1] phase: reach closure: reused
+[t=+176.8s cpu=1995.1s thr=1] phase: reach closure: reused
+[t=+176.8s cpu=1995.1s thr=1] phase: reach closure: reused
+[t=+176.8s cpu=1995.2s thr=1] phase: reach closure: reused
+[t=+176.9s cpu=1995.2s thr=1] phase: reach closure: reused
+[t=+176.9s cpu=1995.2s thr=1] phase: reach closure: reused
+[t=+176.9s cpu=1995.2s thr=1] phase: reach closure: reused
+[t=+176.9s cpu=1995.2s thr=1] phase: reach closure: reused
+[t=+177.0s cpu=1995.3s thr=1] phase: reach closure: reused
+[t=+177.0s cpu=1995.3s thr=1] phase: reach closure: reused
+[t=+177.0s cpu=1995.3s thr=1] phase: reach closure: reused
+[t=+177.1s cpu=1995.4s thr=1] phase: reach closure: reused
+[t=+177.1s cpu=1995.4s thr=1] phase: reach closure: reused
+[t=+177.1s cpu=1995.4s thr=1] phase: reach closure: reused
+[t=+177.1s cpu=1995.4s thr=1] phase: reach closure: reused
+[t=+177.1s cpu=1995.5s thr=1] phase: reach closure: reused
+[t=+177.2s cpu=1995.5s thr=1] phase: reach closure: reused
+[t=+177.2s cpu=1995.5s thr=1] phase: reach closure: reused
+[t=+177.2s cpu=1995.5s thr=1] phase: reach closure: reused
+[t=+177.3s cpu=1995.6s thr=1] phase: reach closure: reused
+[t=+177.3s cpu=1995.6s thr=1] phase: reach closure: reused
+[t=+177.3s cpu=1995.6s thr=1] phase: reach closure: reused
+[t=+177.4s cpu=1995.7s thr=1] phase: reach closure: reused
+[t=+177.4s cpu=1995.7s thr=1] phase: reach closure: reused
+[t=+177.4s cpu=1995.7s thr=1] phase: reach closure: reused
+[t=+177.5s cpu=1995.8s thr=1] phase: reach closure: reused
+[t=+177.5s cpu=1995.8s thr=1] phase: reach closure: reused
+[t=+177.5s cpu=1995.8s thr=1] phase: reach closure: reused
+[t=+177.6s cpu=1995.9s thr=1] phase: reach closure: reused
+[t=+177.6s cpu=1995.9s thr=1] phase: reach closure: reused
+[t=+177.6s cpu=1995.9s thr=1] phase: reach closure: reused
+[t=+177.7s cpu=1996.0s thr=1] phase: reach closure: reused
+[t=+177.7s cpu=1996.0s thr=1] phase: reach closure: reused
+[t=+177.7s cpu=1996.0s thr=1] phase: reach closure: reused
+[t=+177.8s cpu=1996.1s thr=1] phase: reach closure: reused
+[t=+177.8s cpu=1996.1s thr=1] phase: reach closure: reused
+[t=+177.8s cpu=1996.1s thr=1] phase: reach closure: reused
+[t=+177.9s cpu=1996.2s thr=1] phase: reach closure: reused
+[t=+177.9s cpu=1996.2s thr=1] phase: reach closure: reused
+[t=+177.9s cpu=1996.2s thr=1] phase: reach closure: reused
+[t=+177.9s cpu=1996.2s thr=1] phase: reach closure: reused
+[t=+178.0s cpu=1996.3s thr=1] phase: reach closure: reused
+[t=+178.0s cpu=1996.3s thr=1] phase: reach closure: reused
+[t=+178.0s cpu=1996.3s thr=1] phase: reach closure: reused
+[t=+178.1s cpu=1996.4s thr=1] phase: reach closure: reused
+[t=+178.1s cpu=1996.4s thr=1] phase: reach closure: reused
+[t=+178.1s cpu=1996.4s thr=1] phase: reach closure: reused
+[t=+178.2s cpu=1996.5s thr=1] phase: reach closure: reused
+[t=+178.2s cpu=1996.5s thr=1] phase: reach closure: reused
+[t=+178.2s cpu=1996.5s thr=1] phase: reach closure: reused
+[t=+178.3s cpu=1996.6s thr=1] phase: reach closure: reused
+[t=+178.3s cpu=1996.6s thr=1] phase: reach closure: reused
+[t=+178.3s cpu=1996.6s thr=1] phase: reach closure: reused
+[t=+178.4s cpu=1996.7s thr=1] phase: reach closure: reused
+[t=+178.4s cpu=1996.7s thr=1] phase: reach closure: reused
+[t=+178.4s cpu=1996.7s thr=1] phase: reach closure: reused
+[t=+178.4s cpu=1996.7s thr=1] phase: reach closure: reused
+[t=+178.4s cpu=1996.7s thr=1] phase: reach closure: reused
+[t=+178.5s cpu=1996.8s thr=1] phase: reach closure: reused
+[t=+178.5s cpu=1996.8s thr=1] phase: reach closure: reused
+[t=+178.5s cpu=1996.8s thr=1] phase: reach closure: reused
+[t=+178.6s cpu=1996.9s thr=1] phase: reach closure: reused
+[t=+178.6s cpu=1996.9s thr=1] phase: reach closure: reused
+[t=+178.6s cpu=1996.9s thr=1] phase: reach closure: reused
+[t=+178.7s cpu=1997.0s thr=1] phase: reach closure: reused
+[t=+178.7s cpu=1997.0s thr=1] phase: reach closure: reused
+[t=+178.7s cpu=1997.0s thr=1] phase: reach closure: reused
+[t=+178.8s cpu=1997.1s thr=1] phase: reach closure: reused
+[t=+178.8s cpu=1997.1s thr=1] phase: reach closure: reused
+[t=+178.8s cpu=1997.1s thr=1] phase: reach closure: reused
+[t=+178.9s cpu=1997.2s thr=1] phase: reach closure: reused
+[t=+178.9s cpu=1997.2s thr=1] phase: reach closure: reused
+[t=+178.9s cpu=1997.2s thr=1] phase: reach closure: reused
+[t=+179.0s cpu=1997.3s thr=1] phase: reach closure: reused
+[t=+179.0s cpu=1997.3s thr=1] phase: reach closure: reused
+[t=+179.0s cpu=1997.3s thr=1] phase: reach closure: reused
+[t=+179.1s cpu=1997.4s thr=1] phase: reach closure: reused
+[t=+179.1s cpu=1997.4s thr=1] phase: reach closure: reused
+[t=+179.1s cpu=1997.4s thr=1] phase: reach closure: reused
+[t=+179.2s cpu=1997.5s thr=1] phase: reach closure: reused
+[t=+179.2s cpu=1997.5s thr=1] phase: reach closure: reused
+[t=+179.2s cpu=1997.5s thr=1] phase: reach closure: reused
+[t=+179.3s cpu=1997.6s thr=1] phase: reach closure: reused
+[t=+179.3s cpu=1997.6s thr=1] phase: reach closure: reused
+[t=+179.3s cpu=1997.6s thr=1] phase: reach closure: reused
+[t=+179.4s cpu=1997.7s thr=1] phase: reach closure: reused
+[t=+179.4s cpu=1997.7s thr=1] phase: reach closure: reused
+[t=+179.4s cpu=1997.7s thr=1] phase: reach closure: reused
+[t=+179.5s cpu=1997.8s thr=1] phase: reach closure: reused
+[t=+179.5s cpu=1997.8s thr=1] phase: reach closure: reused
+[t=+179.5s cpu=1997.8s thr=1] phase: reach closure: reused
+[t=+179.6s cpu=1997.9s thr=1] phase: reach closure: reused
+[t=+179.6s cpu=1997.9s thr=1] phase: reach closure: reused
+[t=+179.6s cpu=1997.9s thr=1] phase: reach closure: reused
+[t=+179.7s cpu=1998.0s thr=1] phase: reach closure: reused
+[t=+179.7s cpu=1998.0s thr=1] phase: reach closure: reused
+[t=+179.7s cpu=1998.0s thr=1] phase: reach closure: reused
+[t=+179.8s cpu=1998.0s thr=1] phase: reach closure: reused
+[t=+179.8s cpu=1998.1s thr=1] phase: reach closure: reused
+[t=+179.8s cpu=1998.1s thr=1] phase: reach closure: reused
+[t=+179.8s cpu=1998.2s thr=1] phase: reach closure: reused
+[t=+179.9s cpu=1998.2s thr=1] phase: reach closure: reused
+[t=+179.9s cpu=1998.2s thr=1] phase: reach closure: reused
+[t=+179.9s cpu=1998.2s thr=1] phase: reach closure: reused
+[t=+180.0s cpu=1998.3s thr=1] phase: reach closure: reused
+[t=+180.0s cpu=1998.3s thr=1] phase: reach closure: reused
+[t=+180.0s cpu=1998.3s thr=1] phase: reach closure: reused
+[t=+180.1s cpu=1998.4s thr=1] phase: reach closure: reused
+[t=+180.1s cpu=1998.4s thr=1] phase: reach closure: reused
+[t=+180.1s cpu=1998.4s thr=1] phase: reach closure: reused
+[t=+180.2s cpu=1998.5s thr=1] phase: reach closure: reused
+[t=+180.2s cpu=1998.5s thr=1] phase: reach closure: reused
+[t=+180.2s cpu=1998.5s thr=1] phase: reach closure: reused
+[t=+180.3s cpu=1998.6s thr=1] phase: reach closure: reused
+[t=+180.3s cpu=1998.6s thr=1] phase: reach closure: reused
+[t=+180.3s cpu=1998.6s thr=1] phase: reach closure: reused
+[t=+180.4s cpu=1998.7s thr=1] phase: reach closure: reused
+[t=+180.4s cpu=1998.7s thr=1] phase: reach closure: reused
+[t=+180.4s cpu=1998.7s thr=1] phase: reach closure: reused
+[t=+180.5s cpu=1998.8s thr=1] phase: reach closure: reused
+[t=+180.5s cpu=1998.8s thr=1] phase: reach closure: reused
+[t=+180.5s cpu=1998.8s thr=1] phase: reach closure: reused
+[t=+180.6s cpu=1998.9s thr=1] phase: reach closure: reused
+[t=+180.6s cpu=1998.9s thr=1] phase: reach closure: reused
+[t=+180.6s cpu=1998.9s thr=1] phase: reach closure: reused
+[t=+180.7s cpu=1999.0s thr=1] phase: reach closure: reused
+[t=+180.7s cpu=1999.0s thr=1] phase: reach closure: reused
+[t=+180.7s cpu=1999.0s thr=1] phase: reach closure: reused
+[t=+180.8s cpu=1999.1s thr=1] phase: reach closure: reused
+[t=+180.8s cpu=1999.1s thr=1] phase: reach closure: reused
+[t=+180.8s cpu=1999.1s thr=1] phase: reach closure: reused
+[t=+180.9s cpu=1999.2s thr=1] phase: reach closure: reused
+[t=+180.9s cpu=1999.2s thr=1] phase: reach closure: reused
+[t=+180.9s cpu=1999.2s thr=1] phase: reach closure: reused
+[t=+181.0s cpu=1999.3s thr=1] phase: reach closure: reused
+[t=+181.0s cpu=1999.3s thr=1] phase: reach closure: reused
+[t=+181.0s cpu=1999.3s thr=1] phase: reach closure: reused
+[t=+181.0s cpu=1999.3s thr=1] blockout battery binding: 98 seam(s) proven over 98 shared wall(s) (of them 68 contact(s), 457 crossable column(s) measured; 30 portal(s) measured over 170 standable opening cell(s), 0 left to `DW0836` as solid; 0 unallocated open cell(s) admitted as a stair's stairwell), 99 place(s) proven reached (0 of them scenery, proven not reached), 154452 standable cell(s) classified over 4851 place pair(s), 0 sightline(s) walked, 2 identity(ies) re-measured (2 declaration-only), 226 critical-path leg(s) measured; 75 fixed ring ground cell(s) handed, 5024 plot-edge column(s) examined, 0 crack(s), 0 aloft place(s) with no ground to stitch (DW0990); 121124 standable cell(s) outside every claim (the commons: the site is open), 14 place pair(s) joined through the commons, 98 seamless border(s) deleted as declared openings (1502 cell(s) beyond the open sides' runs), 4417 cell(s) of floor the deletion made kept off (DW0838).
+[t=+181.0s cpu=1999.3s thr=1] phase: declaration proofs: start
+[t=+181.0s cpu=1999.3s thr=1] mark binding: 15 body site(s), 11 with a non-zero offset; 8 destination(s), 8 with a non-zero offset; 180 cast row(s) at a mark; 0 assembl(ies) at a mark; 3 pulse source(s) at a mark; 0 refused for leaving the piece (DW0897).
+[t=+181.0s cpu=1999.3s thr=1] one-mark binding: 15 body(ies) declared, 15 of them resolving to 15 distinct cell(s); 14 stand there from world init and 14 are bodies nothing in this campaign can remove; 104 co-existence question(s) asked over 1 entry event(s), 0 refused (DW0896).
+[t=+181.0s cpu=1999.3s thr=1] phase: watchers: start
+[t=+181.0s cpu=1999.3s thr=1] watch binding: 15 watcher(s) (0 declared, 15 by default), over 142417 walked cell(s), 15 drawable, 0 refused, 0 default(s) nobody can draw, 0 unobservable
+[t=+181.0s cpu=1999.3s thr=1] phase: frame worlds: start
+[t=+181.1s cpu=1999.3s thr=1] phase: world proofs: start
+[t=+181.1s cpu=1999.3s thr=1] phase: fluid escape: start
+[t=+181.1s cpu=1999.4s thr=1] phase: party walk for seepage: start
+[t=+181.2s cpu=1999.5s thr=1] phase: reach closure: reused
+[t=+182.5s cpu=2000.8s thr=1] sea-seepage binding: horizon base `ocean` (ambient `ocean`); 142769 walk cell(s) examined, of which 25 are named by the critical path; 0 submerged and 0 wading, over 843 cell(s) the sea reaches inside 198 placed piece(s) from 228 cell(s) of open contact face and 9 block(s) the placement waterlogs.
+[t=+182.5s cpu=2000.8s thr=1] phase: ocean walk plane: start
+[t=+182.6s cpu=2000.9s thr=1] sea walk-plane binding: horizon base `ocean`; 67403 of 142769 walk cell(s) lie inside a placed piece and were judged against the sea plane (y=62); 0 stand at or below it (DW0344).
+[t=+182.6s cpu=2000.9s thr=1] phase: burial: start
+[t=+182.8s cpu=2001.1s thr=1] piece-exposure binding: horizon base `ocean` (ambient `ocean`); 99 of 198 placed piece(s) examined, putting 40515 solid cell(s) on their own box boundaries, of which 471 have nothing in front of them and 471 stand in air the party can be in (1061770 cell(s) of party air over 919 section component label(s), cut off at the 2-cell skin); 35 side(s) of a piece are seen that way, against 404 `shown_faces` declaration(s) of which 35 are bound.
+[t=+182.8s cpu=2001.1s thr=1] phase: body starts + boundary safety: start
+[t=+182.8s cpu=2001.1s thr=1] boundary-safety binding: 119 of 119 anchor(s) root the walk region, 0 excluded as a station of a scenery place (`reached: false`) no body is put in
+[t=+182.8s cpu=2001.1s thr=1] phase: reach closure: reused
+[t=+184.2s cpu=2002.5s thr=1] boundary binding: the region returns; 25 place(s) a body is put examined, 0 outside; 0 reachable cell(s) examined for a way out; 0 refused
+[t=+184.2s cpu=2002.5s thr=1] link gathering binding: 0 link(s) carried after their root's cutscene, 0 press cell(s) outside their volumes over 0 walk cell(s)
+[t=+184.2s cpu=2002.5s thr=1] firework binding: 1 firework(s) declared, 1 burst column(s) checked to 32 cell(s), 226 post(s) within reach examined, 0 refused
+[t=+184.2s cpu=2002.5s thr=1] lightning binding: 0 strike(s) declared, 0 struck block(s) read, 0 post(s) within reach examined, 0 refused
+[t=+184.3s cpu=2002.7s thr=1] sculk rest: 0 acting sculk cell(s) of the assembled world and 0 runtime write(s) judged by the one rest rule
+[t=+184.9s cpu=2003.3s thr=1] sculk: 0 sensor(s) (0 calibrated), 0 reach cell(s) checked, 0 shrieker(s), 0 catalyst(s); 36 runtime write(s) judged beside the world as placed
+[t=+185.3s cpu=2003.6s thr=1] sculk: 0 catalyst(s), no body cell to measure against; 0 body cell(s), 0 mob cell(s) examined
+[t=+185.9s cpu=2004.2s thr=1] DW1047 binding: 0 shut gate(s) examined; 0 whose block reads a signal judged (0 through a floor, 0 cell(s)), 0 whose block reads none not judged; 38 signal source(s) examined (1 laid by a runtime write), no source to measure against
+[t=+185.9s cpu=2004.2s thr=1] doors by hand: 52 block(s) passable, 2 held
+[t=+186.0s cpu=2004.4s thr=1] clear width (DW1057): 170 way(s) of 98 traversal seam(s), 99 box(es) and 611 contract edge(s) — 30 portal(s), 0 stair run(s), 68 contact(s), 72 way place(s), 0 open side(s), 0 piece way(s); 5495 column(s) at 1129 station(s) judged over 1 state(s); 170 way(s) whole, 0 narrowed; 680 plane column(s) left to DW0836; 30 stair run(s) undeclared by their piece
+[t=+186.3s cpu=2004.7s thr=1] piece census: 99 piece(s), 396 face(s), 417 opening(s), 900 water cell(s); doors framed: 42 of 42
+[t=+186.4s cpu=2004.7s thr=1] phase: reach graph: build start
+[t=+186.4s cpu=2004.7s thr=1] phase: reach graph: built, window [74, 66, 56], lineage false, lineage diff 0 cell(s), premise 0, leaves 0
+[t=+187.4s cpu=2019.5s thr=1] phase: reach graph: build start
+[t=+187.4s cpu=2019.6s thr=1] phase: reach graph: built, window [45, 34, 42], lineage false, lineage diff 0 cell(s), premise 0, leaves 11
+[t=+187.9s cpu=2027.0s thr=1] phase: reach graph: build start
+[t=+187.9s cpu=2027.0s thr=1] phase: reach graph: built, window [39, 34, 30], lineage false, lineage diff 0 cell(s), premise 0, leaves 5
+[t=+188.2s cpu=2030.5s thr=1] phase: reach graph: build start
+[t=+188.2s cpu=2030.5s thr=1] phase: reach graph: built, window [35, 34, 30], lineage false, lineage diff 0 cell(s), premise 0, leaves 4
+[t=+188.4s cpu=2033.2s thr=1] phase: reach graph: build start
+[t=+188.4s cpu=2033.2s thr=1] phase: reach graph: built, window [37, 18, 30], lineage false, lineage diff 0 cell(s), premise 0, leaves 6
+[t=+188.6s cpu=2036.4s thr=1] phase: reach graph: build start
+[t=+188.6s cpu=2036.4s thr=1] phase: reach graph: built, window [43, 34, 30], lineage false, lineage diff 0 cell(s), premise 0, leaves 15
+[t=+188.9s cpu=2040.7s thr=1] phase: reach graph: build start
+[t=+188.9s cpu=2040.7s thr=1] phase: reach graph: built, window [39, 34, 30], lineage false, lineage diff 0 cell(s), premise 0, leaves 4
+[t=+189.1s cpu=2043.7s thr=1] phase: reach graph: build start
+[t=+189.1s cpu=2043.7s thr=1] phase: reach graph: built, window [41, 34, 29], lineage false, lineage diff 0 cell(s), premise 0, leaves 2
+[t=+189.3s cpu=2047.1s thr=1] phase: reach graph: build start
+[t=+189.3s cpu=2047.1s thr=1] phase: reach graph: built, window [41, 34, 30], lineage false, lineage diff 0 cell(s), premise 0, leaves 5
+[t=+189.6s cpu=2051.5s thr=1] phase: reach graph: build start
+[t=+189.6s cpu=2051.5s thr=1] phase: reach graph: built, window [41, 34, 30], lineage false, lineage diff 0 cell(s), premise 0, leaves 6
+[t=+189.9s cpu=2055.3s thr=1] phase: reach graph: build start
+[t=+189.9s cpu=2055.3s thr=1] phase: reach graph: built, window [37, 18, 28], lineage false, lineage diff 0 cell(s), premise 0, leaves 8
+[t=+190.1s cpu=2057.9s thr=1] phase: reach graph: build start
+[t=+190.1s cpu=2057.9s thr=1] phase: reach graph: built, window [39, 34, 28], lineage false, lineage diff 0 cell(s), premise 0, leaves 7
+[t=+190.4s cpu=2061.4s thr=1] phase: reach graph: build start
+[t=+190.4s cpu=2061.4s thr=1] phase: reach graph: built, window [37, 18, 28], lineage true, lineage diff 457 cell(s), premise 0, leaves 6
+[t=+190.5s cpu=2063.8s thr=1] phase: reach graph: build start
+[t=+190.5s cpu=2063.8s thr=1] phase: reach graph: built, window [39, 34, 28], lineage true, lineage diff 519 cell(s), premise 0, leaves 8
+[t=+190.8s cpu=2066.8s thr=1] phase: reach graph: build start
+[t=+190.8s cpu=2066.8s thr=1] phase: reach graph: built, window [37, 34, 28], lineage false, lineage diff 0 cell(s), premise 0, leaves 1
+[t=+191.2s cpu=2072.1s thr=1] phase: reach graph: build start
+[t=+191.2s cpu=2072.1s thr=1] phase: reach graph: built, window [34, 34, 33], lineage false, lineage diff 0 cell(s), premise 0, leaves 5
+[t=+191.5s cpu=2076.1s thr=1] phase: reach graph: build start
+[t=+191.5s cpu=2076.1s thr=1] phase: reach graph: built, window [34, 18, 28], lineage false, lineage diff 0 cell(s), premise 0, leaves 6
+[t=+191.6s cpu=2078.7s thr=1] phase: reach graph: build start
+[t=+191.6s cpu=2078.7s thr=1] phase: reach graph: built, window [32, 18, 27], lineage false, lineage diff 0 cell(s), premise 0, leaves 11
+[t=+191.8s cpu=2080.8s thr=1] phase: reach graph: build start
+[t=+191.8s cpu=2080.8s thr=1] phase: reach graph: built, window [32, 34, 27], lineage false, lineage diff 0 cell(s), premise 0, leaves 4
+[t=+192.1s cpu=2084.7s thr=1] phase: reach graph: build start
+[t=+192.1s cpu=2084.7s thr=1] phase: reach graph: built, window [38, 50, 38], lineage false, lineage diff 0 cell(s), premise 0, leaves 0
+[t=+192.6s cpu=2091.5s thr=1] phase: reach graph: build start
+[t=+192.6s cpu=2091.5s thr=1] phase: reach graph: built, window [154, 35, 135], lineage false, lineage diff 0 cell(s), premise 0, leaves 9
+[t=+193.2s cpu=2100.4s thr=1] phase: reach graph: build start
+[t=+193.2s cpu=2100.4s thr=1] phase: reach graph: built, window [24, 18, 24], lineage false, lineage diff 0 cell(s), premise 0, leaves 2
+[t=+193.3s cpu=2102.0s thr=1] phase: reach graph: build start
+[t=+193.3s cpu=2102.0s thr=1] phase: reach graph: built, window [24, 18, 24], lineage true, lineage diff 62 cell(s), premise 0, leaves 0
+[t=+193.4s cpu=2102.8s thr=1] phase: reach graph: build start
+[t=+193.4s cpu=2102.8s thr=1] phase: reach graph: built, window [24, 34, 24], lineage false, lineage diff 0 cell(s), premise 0, leaves 2
+[t=+193.4s cpu=2103.7s thr=1] phase: reach graph: build start
+[t=+193.4s cpu=2103.7s thr=1] phase: reach graph: built, window [24, 18, 24], lineage true, lineage diff 252 cell(s), premise 0, leaves 0
+[t=+193.5s cpu=2104.6s thr=1] plot program: 25 plot(s), 63 part(s) built 63 of 63; coverage 0–51 %, remainder 20–50 %
+[t=+193.5s cpu=2104.6s thr=1] phase: moves: start
+[t=+193.7s cpu=2104.8s thr=1] phase: actor moves: start
+[t=+193.7s cpu=2104.8s thr=1] phase: cutscenes: start
+[t=+193.7s cpu=2104.8s thr=1] phase: framing: start
+[t=+193.7s cpu=2104.8s thr=1] blind-reach binding: 0 blinding grant(s) examined; standing sets of 0 cell(s); reaches of 0 move(s); 0 caught.
+[t=+193.7s cpu=2104.8s thr=1] jumps binding: 0 declared, 0 proven, 0 refused, 0 not a jump; run-ups measured none
+[t=+194.3s cpu=2105.3s thr=1] DW0311 binding: 25 leg(s); 25 walked, 0 carried by a crossing, 0 carried by a link, 0 carried by a loop; 0 link(s) declared, 0 live on some leg, 0 taken; 0 gather(s) declared
+[t=+194.3s cpu=2105.3s thr=1] DW1044 binding: 0 trigger(s) performed by the critical path; 0 judged (walk-fired, paying a flag a later step reads), 0 entered by every walk to the step that needs it; not judged: 0 pay no flag a later step reads, 0 fired by hand, 0 a link the party is carried by
+[t=+194.3s cpu=2105.3s thr=1] phase: bodies can leave (DW0921): start
+[t=+195.0s cpu=2106.1s thr=1] phase: reach graph: build start
+[t=+196.0s cpu=2107.1s thr=1] phase: reach graph: built, window [288, 186, 530], lineage true, lineage diff 15 cell(s), premise 0, leaves 130
+[t=+201.2s cpu=2129.6s thr=1] phase: reach closure: taken over 2289 root(s) in 19 round(s): 193057 state(s), 149787600 simulated, 87967 credited
+[t=+202.8s cpu=2131.2s thr=1] phase: reach closure: reused
+[t=+204.3s cpu=2132.7s thr=1] phase: reach closure: reused
+[t=+205.8s cpu=2134.2s thr=1] phase: reach closure: reused
+[t=+206.9s cpu=2135.4s thr=1] DW0921 binding: 4 quest configuration(s), 2781 route cell(s), 772228 cell(s) a body can reach by walking, falling, jumping, swimming or climbing (34808 of them afloat, 1668 on a fence or wall top), 0 it cannot leave; 0 link stand cell(s) served as a way out; 0 configuration(s) unjudged, a body in them holding a movement the reach graph does not fly (DW1043)
+[t=+206.9s cpu=2135.4s thr=1] reach binding: 4 configuration(s); 772228 rest state(s) (571072 standing, 34808 afloat, 166300 submerged, 48 holding); 11920572 edge(s) (2389992 walk, 1748916 fall, 6623452 jump, 1101816 dive, 56396 climb, 0 exit); 599308720 launch state(s) simulated, 351868 template arc(s) credited; 599660588 of budget 200000000; survivable fall 22 blocks (unbounded: no)
+[t=+206.9s cpu=2135.4s thr=1] movement items: 19 examined, 1 a movement the reach graph does not fly, 0 reducing a fall (every fall survivable: no); 4 quest configuration(s) judged, 0 unbounded; a body may hold `minecraft:elytra` (a `give-item` at quests.json/content/quests/1/on_objective_complete/obj~1find-the-wings/0) from critical step 10
+[t=+206.9s cpu=2135.4s thr=1] DW1066 binding: 48 trapdoor cell(s) whose shape every movement past them was asked; 0 of 0 place(s) a body cannot leave shut by a trapdoor
+[t=+206.9s cpu=2135.4s thr=1] phase: gates separate: start
+[t=+207.7s cpu=2136.6s thr=5] phase: reach closure: reused
+[t=+208.0s cpu=2137.1s thr=4] phase: reach closure: reused
+[t=+208.0s cpu=2137.1s thr=4] phase: reach closure: reused
+[t=+208.0s cpu=2137.1s thr=4] phase: reach closure: reused
+[t=+208.0s cpu=2137.2s thr=1] DW1011 binding: 0 gate(s) resolved (0 of 0 gated connection(s) among them); 0 declared a way round (shortcut), 0 clocked, 0 operated by no beat, 0 with no two faces; over 4 quest configuration(s), 0 (gate, configuration) pair(s) shut, 0 with a face no body can stand at, 0 with the party at a face, 0 got round by walking, falling, jumping or swimming
+[t=+208.0s cpu=2137.2s thr=1] phase: shut ways learned: start
+[t=+208.9s cpu=2138.5s thr=5] phase: reach closure: reused
+[t=+209.2s cpu=2139.2s thr=5] phase: reach closure: reused
+[t=+209.2s cpu=2139.2s thr=5] phase: reach closure: reused
+[t=+209.2s cpu=2139.2s thr=5] phase: reach closure: reused
+[t=+211.6s cpu=2145.8s thr=1] shut ways (DW1053/DW1054): 0 gated connection(s); over 4 configuration(s), 0 shut way(s) met — 0 at a face, 0 by the eye alone — 0 declared (0 seen, 0 told, 0 rewarded, 0 hidden), 0 undeclared, 0 declaration(s) not confirmed; 0 declared and never met shut; 0 hidden way(s) judged over 0 configuration(s), 0 eye line(s) examined
+[t=+211.6s cpu=2145.8s thr=1] phase: critical path routes: start
+[t=+212.3s cpu=2146.6s thr=1] furniture binding: 0 region(s) over 0 solid cell(s), 0 standable cell(s) withheld from walking; 33 leg(s) proved, 0 standing on furniture.
+[t=+212.3s cpu=2146.6s thr=1] DW1068 binding: 82 door cell(s) and 48 trapdoor cell(s) whose leaf the walk reads; 33 walked leg(s) asked, 18 step(s) across a leaf's cell asked of it; 0 refused
+[t=+212.3s cpu=2146.6s thr=1] phase: reach closure: reused
+[t=+221.8s cpu=2163.8s thr=1] phase: reach closure: reused
+[t=+230.7s cpu=2174.9s thr=1] reach-footprint binding: 4 reach objective(s) examined over 28602 cell(s) their completion volumes cover, against 142769 cell(s) the party can stand on; 1010 of those are footing a body could complete from, and 0 of THOSE stand on floor no body can walk to the anchor's own footing from without leaving the completion volume.
+[t=+230.9s cpu=2175.2s thr=1] pulse binding: 3 pulse(s), 1 staged; far 17.76..74.96 block(s) over 338..761 standable cell(s), range 23.67..107.08 (volume 1.480..6.692); 2 of 3 live on the forced route in some configuration; 2 of 3 with a listening station
+[t=+230.9s cpu=2175.2s thr=1] sculk walk: 0 of 0 sensor(s) predicted on 0 leg(s), 0 of 0 shrieker(s); 0 unpredicted sensor(s), 0 unpredicted shrieker(s), 0 device(s) a runtime write covers
+[t=+231.6s cpu=2175.8s thr=1] phase: branch worlds: start
+[t=+231.7s cpu=2175.9s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/nest-moved` (world/0): start
+[t=+232.4s cpu=2176.7s thr=1] phase: branch world: path built and links taken
+[t=+233.1s cpu=2177.4s thr=1] phase: branch world: path checked
+[t=+234.1s cpu=2178.3s thr=1] phase: branch world: routes planned and verified
+[t=+234.1s cpu=2178.3s thr=1] phase: branch world: done
+[t=+234.1s cpu=2178.3s thr=1] phase: branch world branch `branch/no-chorus+branch/oven-loaf+branch/nest-moved` (world/1): start
+[t=+234.1s cpu=2178.3s thr=1] phase: branch world: path built and links taken
+[t=+234.7s cpu=2178.9s thr=1] phase: branch world: path checked
+[t=+235.4s cpu=2179.6s thr=1] phase: branch world: routes planned and verified
+[t=+235.4s cpu=2179.6s thr=1] phase: branch world: done
+[t=+235.4s cpu=2179.6s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/nest-moved` (world/2): start
+[t=+236.1s cpu=2180.3s thr=1] phase: branch world: path built and links taken
+[t=+236.7s cpu=2180.9s thr=1] phase: branch world: path checked
+[t=+237.6s cpu=2181.8s thr=1] phase: branch world: routes planned and verified
+[t=+237.6s cpu=2181.8s thr=1] phase: branch world: done
+[t=+237.6s cpu=2181.8s thr=1] phase: branch world branch `branch/no-chorus+branch/oven-loaf+branch/nest-moved` (world/3): start
+[t=+238.2s cpu=2182.5s thr=1] phase: branch world: path built and links taken
+[t=+238.9s cpu=2183.1s thr=1] phase: branch world: path checked
+[t=+239.7s cpu=2184.0s thr=1] phase: branch world: routes planned and verified
+[t=+239.7s cpu=2184.0s thr=1] phase: branch world: done
+[t=+239.7s cpu=2184.0s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/nest-moved` (world/4): start
+[t=+240.4s cpu=2184.7s thr=1] phase: branch world: path built and links taken
+[t=+241.1s cpu=2185.4s thr=1] phase: branch world: path checked
+[t=+242.1s cpu=2186.3s thr=1] phase: branch world: routes planned and verified
+[t=+242.1s cpu=2186.3s thr=1] phase: branch world: done
+[t=+242.1s cpu=2186.3s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/nest-moved` (world/5): start
+[t=+242.8s cpu=2187.0s thr=1] phase: branch world: path built and links taken
+[t=+243.5s cpu=2187.7s thr=1] phase: branch world: path checked
+[t=+244.4s cpu=2188.6s thr=1] phase: branch world: routes planned and verified
+[t=+244.4s cpu=2188.6s thr=1] phase: branch world: done
+[t=+244.4s cpu=2188.6s thr=1] phase: branch world branch `branch/no-chorus+branch/oven-loaf+branch/nest-moved` (world/6): start
+[t=+244.4s cpu=2188.7s thr=1] phase: branch world: path built and links taken
+[t=+245.0s cpu=2189.2s thr=1] phase: branch world: path checked
+[t=+245.7s cpu=2190.0s thr=1] phase: branch world: routes planned and verified
+[t=+245.7s cpu=2190.0s thr=1] phase: branch world: done
+[t=+245.7s cpu=2190.0s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/nest-moved` (world/7): start
+[t=+246.4s cpu=2190.6s thr=1] phase: branch world: path built and links taken
+[t=+247.0s cpu=2191.3s thr=1] phase: branch world: path checked
+[t=+247.9s cpu=2192.2s thr=1] phase: branch world: routes planned and verified
+[t=+247.9s cpu=2192.2s thr=1] phase: branch world: done
+[t=+247.9s cpu=2192.2s thr=1] phase: branch world branch `branch/no-chorus+branch/oven-loaf+branch/nest-moved` (world/8): start
+[t=+248.6s cpu=2192.8s thr=1] phase: branch world: path built and links taken
+[t=+249.2s cpu=2193.5s thr=1] phase: branch world: path checked
+[t=+250.1s cpu=2194.3s thr=1] phase: branch world: routes planned and verified
+[t=+250.1s cpu=2194.3s thr=1] phase: branch world: done
+[t=+250.1s cpu=2194.3s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/nest-moved` (world/9): start
+[t=+250.8s cpu=2195.0s thr=1] phase: branch world: path built and links taken
+[t=+251.5s cpu=2195.7s thr=1] phase: branch world: path checked
+[t=+252.4s cpu=2196.7s thr=1] phase: branch world: routes planned and verified
+[t=+252.4s cpu=2196.7s thr=1] phase: branch world: done
+[t=+252.4s cpu=2196.7s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/nest-moved` (world/10): start
+[t=+253.1s cpu=2197.4s thr=1] phase: branch world: path built and links taken
+[t=+253.8s cpu=2198.1s thr=1] phase: branch world: path checked
+[t=+254.8s cpu=2199.0s thr=1] phase: branch world: routes planned and verified
+[t=+254.8s cpu=2199.0s thr=1] phase: branch world: done
+[t=+254.8s cpu=2199.0s thr=1] phase: branch world branch `branch/no-chorus+branch/oven-loaf+branch/nest-moved` (world/11): start
+[t=+254.8s cpu=2199.0s thr=1] phase: branch world: path built and links taken
+[t=+255.3s cpu=2199.6s thr=1] phase: branch world: path checked
+[t=+256.1s cpu=2200.3s thr=1] phase: branch world: routes planned and verified
+[t=+256.1s cpu=2200.3s thr=1] phase: branch world: done
+[t=+256.1s cpu=2200.3s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/nest-moved` (world/12): start
+[t=+256.7s cpu=2201.0s thr=1] phase: branch world: path built and links taken
+[t=+257.4s cpu=2201.6s thr=1] phase: branch world: path checked
+[t=+258.3s cpu=2202.5s thr=1] phase: branch world: routes planned and verified
+[t=+258.3s cpu=2202.5s thr=1] phase: branch world: done
+[t=+258.3s cpu=2202.5s thr=1] phase: branch world branch `branch/no-chorus+branch/oven-loaf+branch/nest-moved` (world/13): start
+[t=+258.9s cpu=2203.2s thr=1] phase: branch world: path built and links taken
+[t=+259.6s cpu=2203.8s thr=1] phase: branch world: path checked
+[t=+260.4s cpu=2204.7s thr=1] phase: branch world: routes planned and verified
+[t=+260.4s cpu=2204.7s thr=1] phase: branch world: done
+[t=+260.4s cpu=2204.7s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/nest-moved` (world/14): start
+[t=+261.1s cpu=2205.4s thr=1] phase: branch world: path built and links taken
+[t=+261.8s cpu=2206.1s thr=1] phase: branch world: path checked
+[t=+262.8s cpu=2207.0s thr=1] phase: branch world: routes planned and verified
+[t=+262.8s cpu=2207.0s thr=1] phase: branch world: done
+[t=+262.8s cpu=2207.0s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/nest-moved` (world/15): start
+[t=+263.5s cpu=2207.7s thr=1] phase: branch world: path built and links taken
+[t=+264.2s cpu=2208.4s thr=1] phase: branch world: path checked
+[t=+265.1s cpu=2209.3s thr=1] phase: branch world: routes planned and verified
+[t=+265.1s cpu=2209.3s thr=1] phase: branch world: done
+[t=+265.1s cpu=2209.3s thr=1] phase: branch world branch `branch/no-chorus+branch/oven-loaf+branch/nest-moved` (world/16): start
+[t=+265.1s cpu=2209.3s thr=1] phase: branch world: path built and links taken
+[t=+265.7s cpu=2209.9s thr=1] phase: branch world: path checked
+[t=+266.4s cpu=2210.7s thr=1] phase: branch world: routes planned and verified
+[t=+266.4s cpu=2210.7s thr=1] phase: branch world: done
+[t=+266.4s cpu=2210.7s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/nest-moved` (world/17): start
+[t=+267.1s cpu=2211.3s thr=1] phase: branch world: path built and links taken
+[t=+267.8s cpu=2212.0s thr=1] phase: branch world: path checked
+[t=+268.6s cpu=2212.9s thr=1] phase: branch world: routes planned and verified
+[t=+268.6s cpu=2212.9s thr=1] phase: branch world: done
+[t=+268.6s cpu=2212.9s thr=1] phase: branch world branch `branch/no-chorus+branch/oven-loaf+branch/nest-moved` (world/18): start
+[t=+269.3s cpu=2213.5s thr=1] phase: branch world: path built and links taken
+[t=+269.9s cpu=2214.2s thr=1] phase: branch world: path checked
+[t=+270.8s cpu=2215.0s thr=1] phase: branch world: routes planned and verified
+[t=+270.8s cpu=2215.0s thr=1] phase: branch world: done
+[t=+270.8s cpu=2215.0s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/nest-moved` (world/19): start
+[t=+271.5s cpu=2215.7s thr=1] phase: branch world: path built and links taken
+[t=+272.2s cpu=2216.4s thr=1] phase: branch world: path checked
+[t=+273.1s cpu=2217.4s thr=1] phase: branch world: routes planned and verified
+[t=+273.1s cpu=2217.4s thr=1] phase: branch world: done
+[t=+273.1s cpu=2217.4s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/nest-moved` (world/20): start
+[t=+273.8s cpu=2218.1s thr=1] phase: branch world: path built and links taken
+[t=+274.5s cpu=2218.8s thr=1] phase: branch world: path checked
+[t=+275.5s cpu=2219.7s thr=1] phase: branch world: routes planned and verified
+[t=+275.5s cpu=2219.7s thr=1] phase: branch world: done
+[t=+275.5s cpu=2219.7s thr=1] phase: branch world branch `branch/no-chorus+branch/forge-loaf+branch/nest-moved` (world/21): start
+[t=+275.5s cpu=2219.7s thr=1] phase: branch world: path built and links taken
+[t=+276.1s cpu=2220.3s thr=1] phase: branch world: path checked
+[t=+276.8s cpu=2221.0s thr=1] phase: branch world: routes planned and verified
+[t=+276.8s cpu=2221.0s thr=1] phase: branch world: done
+[t=+276.8s cpu=2221.0s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/nest-moved` (world/22): start
+[t=+277.5s cpu=2221.7s thr=1] phase: branch world: path built and links taken
+[t=+278.1s cpu=2222.3s thr=1] phase: branch world: path checked
+[t=+279.0s cpu=2223.2s thr=1] phase: branch world: routes planned and verified
+[t=+279.0s cpu=2223.2s thr=1] phase: branch world: done
+[t=+279.0s cpu=2223.2s thr=1] phase: branch world branch `branch/no-chorus+branch/forge-loaf+branch/nest-moved` (world/23): start
+[t=+279.6s cpu=2223.9s thr=1] phase: branch world: path built and links taken
+[t=+280.3s cpu=2224.5s thr=1] phase: branch world: path checked
+[t=+281.2s cpu=2225.4s thr=1] phase: branch world: routes planned and verified
+[t=+281.2s cpu=2225.4s thr=1] phase: branch world: done
+[t=+281.2s cpu=2225.4s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/nest-moved` (world/24): start
+[t=+281.9s cpu=2226.1s thr=1] phase: branch world: path built and links taken
+[t=+282.6s cpu=2226.8s thr=1] phase: branch world: path checked
+[t=+283.5s cpu=2227.7s thr=1] phase: branch world: routes planned and verified
+[t=+283.5s cpu=2227.7s thr=1] phase: branch world: done
+[t=+283.5s cpu=2227.7s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/nest-moved` (world/25): start
+[t=+284.2s cpu=2228.4s thr=1] phase: branch world: path built and links taken
+[t=+284.9s cpu=2229.1s thr=1] phase: branch world: path checked
+[t=+285.9s cpu=2230.1s thr=1] phase: branch world: routes planned and verified
+[t=+285.9s cpu=2230.1s thr=1] phase: branch world: done
+[t=+285.9s cpu=2230.1s thr=1] phase: branch world branch `branch/no-chorus+branch/forge-loaf+branch/nest-moved` (world/26): start
+[t=+285.9s cpu=2230.1s thr=1] phase: branch world: path built and links taken
+[t=+286.4s cpu=2230.7s thr=1] phase: branch world: path checked
+[t=+287.2s cpu=2231.4s thr=1] phase: branch world: routes planned and verified
+[t=+287.2s cpu=2231.4s thr=1] phase: branch world: done
+[t=+287.2s cpu=2231.4s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/nest-moved` (world/27): start
+[t=+287.8s cpu=2232.1s thr=1] phase: branch world: path built and links taken
+[t=+288.5s cpu=2232.7s thr=1] phase: branch world: path checked
+[t=+289.4s cpu=2233.6s thr=1] phase: branch world: routes planned and verified
+[t=+289.4s cpu=2233.6s thr=1] phase: branch world: done
+[t=+289.4s cpu=2233.6s thr=1] phase: branch world branch `branch/no-chorus+branch/forge-loaf+branch/nest-moved` (world/28): start
+[t=+290.0s cpu=2234.2s thr=1] phase: branch world: path built and links taken
+[t=+290.7s cpu=2234.9s thr=1] phase: branch world: path checked
+[t=+291.5s cpu=2235.8s thr=1] phase: branch world: routes planned and verified
+[t=+291.5s cpu=2235.8s thr=1] phase: branch world: done
+[t=+291.5s cpu=2235.8s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/nest-moved` (world/29): start
+[t=+292.2s cpu=2236.5s thr=1] phase: branch world: path built and links taken
+[t=+292.9s cpu=2237.2s thr=1] phase: branch world: path checked
+[t=+293.9s cpu=2238.1s thr=1] phase: branch world: routes planned and verified
+[t=+293.9s cpu=2238.1s thr=1] phase: branch world: done
+[t=+293.9s cpu=2238.1s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/nest-moved` (world/30): start
+[t=+294.6s cpu=2238.8s thr=1] phase: branch world: path built and links taken
+[t=+295.3s cpu=2239.5s thr=1] phase: branch world: path checked
+[t=+296.2s cpu=2240.5s thr=1] phase: branch world: routes planned and verified
+[t=+296.2s cpu=2240.5s thr=1] phase: branch world: done
+[t=+296.2s cpu=2240.5s thr=1] phase: branch world branch `branch/no-chorus+branch/forge-loaf+branch/nest-moved` (world/31): start
+[t=+296.2s cpu=2240.5s thr=1] phase: branch world: path built and links taken
+[t=+296.8s cpu=2241.1s thr=1] phase: branch world: path checked
+[t=+297.6s cpu=2241.8s thr=1] phase: branch world: routes planned and verified
+[t=+297.6s cpu=2241.8s thr=1] phase: branch world: done
+[t=+297.6s cpu=2241.8s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/nest-moved` (world/32): start
+[t=+298.2s cpu=2242.4s thr=1] phase: branch world: path built and links taken
+[t=+298.9s cpu=2243.1s thr=1] phase: branch world: path checked
+[t=+299.7s cpu=2244.0s thr=1] phase: branch world: routes planned and verified
+[t=+299.7s cpu=2244.0s thr=1] phase: branch world: done
+[t=+299.7s cpu=2244.0s thr=1] phase: branch world branch `branch/no-chorus+branch/forge-loaf+branch/nest-moved` (world/33): start
+[t=+300.4s cpu=2244.6s thr=1] phase: branch world: path built and links taken
+[t=+301.0s cpu=2245.3s thr=1] phase: branch world: path checked
+[t=+301.9s cpu=2246.1s thr=1] phase: branch world: routes planned and verified
+[t=+301.9s cpu=2246.1s thr=1] phase: branch world: done
+[t=+301.9s cpu=2246.1s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/nest-moved` (world/34): start
+[t=+302.6s cpu=2246.8s thr=1] phase: branch world: path built and links taken
+[t=+303.3s cpu=2247.5s thr=1] phase: branch world: path checked
+[t=+304.3s cpu=2248.5s thr=1] phase: branch world: routes planned and verified
+[t=+304.3s cpu=2248.5s thr=1] phase: branch world: done
+[t=+304.3s cpu=2248.5s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/nest-moved` (world/35): start
+[t=+305.0s cpu=2249.2s thr=1] phase: branch world: path built and links taken
+[t=+305.7s cpu=2249.9s thr=1] phase: branch world: path checked
+[t=+306.6s cpu=2250.8s thr=1] phase: branch world: routes planned and verified
+[t=+306.6s cpu=2250.8s thr=1] phase: branch world: done
+[t=+306.6s cpu=2250.8s thr=1] phase: branch world branch `branch/no-chorus+branch/forge-loaf+branch/nest-moved` (world/36): start
+[t=+306.6s cpu=2250.8s thr=1] phase: branch world: path built and links taken
+[t=+307.2s cpu=2251.4s thr=1] phase: branch world: path checked
+[t=+307.9s cpu=2252.1s thr=1] phase: branch world: routes planned and verified
+[t=+307.9s cpu=2252.1s thr=1] phase: branch world: done
+[t=+307.9s cpu=2252.1s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/nest-moved` (world/37): start
+[t=+308.6s cpu=2252.8s thr=1] phase: branch world: path built and links taken
+[t=+309.2s cpu=2253.5s thr=1] phase: branch world: path checked
+[t=+310.1s cpu=2254.3s thr=1] phase: branch world: routes planned and verified
+[t=+310.1s cpu=2254.3s thr=1] phase: branch world: done
+[t=+310.1s cpu=2254.3s thr=1] phase: branch world branch `branch/no-chorus+branch/forge-loaf+branch/nest-moved` (world/38): start
+[t=+310.8s cpu=2255.0s thr=1] phase: branch world: path built and links taken
+[t=+311.4s cpu=2255.6s thr=1] phase: branch world: path checked
+[t=+312.3s cpu=2256.5s thr=1] phase: branch world: routes planned and verified
+[t=+312.3s cpu=2256.5s thr=1] phase: branch world: done
+[t=+312.3s cpu=2256.5s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/nest-moved` (world/39): start
+[t=+313.0s cpu=2257.2s thr=1] phase: branch world: path built and links taken
+[t=+313.7s cpu=2257.9s thr=1] phase: branch world: path checked
+[t=+314.6s cpu=2258.8s thr=1] phase: branch world: routes planned and verified
+[t=+314.6s cpu=2258.8s thr=1] phase: branch world: done
+[t=+314.6s cpu=2258.8s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/nest-moved` (world/40): start
+[t=+315.3s cpu=2259.6s thr=1] phase: branch world: path built and links taken
+[t=+316.0s cpu=2260.2s thr=1] phase: branch world: path checked
+[t=+317.0s cpu=2261.2s thr=1] phase: branch world: routes planned and verified
+[t=+317.0s cpu=2261.2s thr=1] phase: branch world: done
+[t=+317.0s cpu=2261.2s thr=1] phase: branch world branch `branch/no-chorus+branch/oven-loaf+branch/nest-moved` (world/41): start
+[t=+317.0s cpu=2261.2s thr=1] phase: branch world: path built and links taken
+[t=+317.5s cpu=2261.8s thr=1] phase: branch world: path checked
+[t=+318.3s cpu=2262.5s thr=1] phase: branch world: routes planned and verified
+[t=+318.3s cpu=2262.5s thr=1] phase: branch world: done
+[t=+318.3s cpu=2262.5s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/nest-moved` (world/42): start
+[t=+318.9s cpu=2263.2s thr=1] phase: branch world: path built and links taken
+[t=+319.6s cpu=2263.8s thr=1] phase: branch world: path checked
+[t=+320.5s cpu=2264.7s thr=1] phase: branch world: routes planned and verified
+[t=+320.5s cpu=2264.7s thr=1] phase: branch world: done
+[t=+320.5s cpu=2264.7s thr=1] phase: branch world branch `branch/no-chorus+branch/oven-loaf+branch/nest-moved` (world/43): start
+[t=+321.1s cpu=2265.4s thr=1] phase: branch world: path built and links taken
+[t=+321.8s cpu=2266.0s thr=1] phase: branch world: path checked
+[t=+322.6s cpu=2266.9s thr=1] phase: branch world: routes planned and verified
+[t=+322.6s cpu=2266.9s thr=1] phase: branch world: done
+[t=+322.6s cpu=2266.9s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/nest-moved` (world/44): start
+[t=+323.3s cpu=2267.6s thr=1] phase: branch world: path built and links taken
+[t=+324.0s cpu=2268.3s thr=1] phase: branch world: path checked
+[t=+325.0s cpu=2269.2s thr=1] phase: branch world: routes planned and verified
+[t=+325.0s cpu=2269.2s thr=1] phase: branch world: done
+[t=+325.0s cpu=2269.2s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/nest-moved` (world/45): start
+[t=+325.7s cpu=2269.9s thr=1] phase: branch world: path built and links taken
+[t=+326.4s cpu=2270.6s thr=1] phase: branch world: path checked
+[t=+327.3s cpu=2271.6s thr=1] phase: branch world: routes planned and verified
+[t=+327.3s cpu=2271.6s thr=1] phase: branch world: done
+[t=+327.3s cpu=2271.6s thr=1] phase: branch world branch `branch/no-chorus+branch/oven-loaf+branch/nest-moved` (world/46): start
+[t=+327.3s cpu=2271.6s thr=1] phase: branch world: path built and links taken
+[t=+327.9s cpu=2272.1s thr=1] phase: branch world: path checked
+[t=+328.6s cpu=2272.9s thr=1] phase: branch world: routes planned and verified
+[t=+328.6s cpu=2272.9s thr=1] phase: branch world: done
+[t=+328.6s cpu=2272.9s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/nest-moved` (world/47): start
+[t=+329.3s cpu=2273.5s thr=1] phase: branch world: path built and links taken
+[t=+330.0s cpu=2274.2s thr=1] phase: branch world: path checked
+[t=+330.8s cpu=2275.1s thr=1] phase: branch world: routes planned and verified
+[t=+330.8s cpu=2275.1s thr=1] phase: branch world: done
+[t=+330.8s cpu=2275.1s thr=1] phase: branch world branch `branch/no-chorus+branch/oven-loaf+branch/nest-moved` (world/48): start
+[t=+331.5s cpu=2275.7s thr=1] phase: branch world: path built and links taken
+[t=+332.2s cpu=2276.4s thr=1] phase: branch world: path checked
+[t=+333.0s cpu=2277.2s thr=1] phase: branch world: routes planned and verified
+[t=+333.0s cpu=2277.2s thr=1] phase: branch world: done
+[t=+333.0s cpu=2277.2s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/nest-moved` (world/49): start
+[t=+333.7s cpu=2277.9s thr=1] phase: branch world: path built and links taken
+[t=+334.4s cpu=2278.7s thr=1] phase: branch world: path checked
+[t=+335.4s cpu=2279.6s thr=1] phase: branch world: routes planned and verified
+[t=+335.4s cpu=2279.6s thr=1] phase: branch world: done
+[t=+335.4s cpu=2279.6s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/nest-moved` (world/50): start
+[t=+336.1s cpu=2280.3s thr=1] phase: branch world: path built and links taken
+[t=+336.8s cpu=2281.0s thr=1] phase: branch world: path checked
+[t=+337.7s cpu=2281.9s thr=1] phase: branch world: routes planned and verified
+[t=+337.7s cpu=2281.9s thr=1] phase: branch world: done
+[t=+337.7s cpu=2281.9s thr=1] phase: branch world branch `branch/no-chorus+branch/oven-loaf+branch/nest-moved` (world/51): start
+[t=+337.7s cpu=2281.9s thr=1] phase: branch world: path built and links taken
+[t=+338.3s cpu=2282.5s thr=1] phase: branch world: path checked
+[t=+339.0s cpu=2283.2s thr=1] phase: branch world: routes planned and verified
+[t=+339.0s cpu=2283.2s thr=1] phase: branch world: done
+[t=+339.0s cpu=2283.2s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/nest-moved` (world/52): start
+[t=+339.7s cpu=2283.9s thr=1] phase: branch world: path built and links taken
+[t=+340.3s cpu=2284.6s thr=1] phase: branch world: path checked
+[t=+341.2s cpu=2285.4s thr=1] phase: branch world: routes planned and verified
+[t=+341.2s cpu=2285.4s thr=1] phase: branch world: done
+[t=+341.2s cpu=2285.4s thr=1] phase: branch world branch `branch/no-chorus+branch/oven-loaf+branch/nest-moved` (world/53): start
+[t=+341.9s cpu=2286.1s thr=1] phase: branch world: path built and links taken
+[t=+342.5s cpu=2286.8s thr=1] phase: branch world: path checked
+[t=+343.4s cpu=2287.6s thr=1] phase: branch world: routes planned and verified
+[t=+343.4s cpu=2287.6s thr=1] phase: branch world: done
+[t=+343.4s cpu=2287.6s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/nest-moved` (world/54): start
+[t=+344.1s cpu=2288.3s thr=1] phase: branch world: path built and links taken
+[t=+344.8s cpu=2289.0s thr=1] phase: branch world: path checked
+[t=+345.7s cpu=2290.0s thr=1] phase: branch world: routes planned and verified
+[t=+345.7s cpu=2290.0s thr=1] phase: branch world: done
+[t=+345.7s cpu=2290.0s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/nest-moved` (world/55): start
+[t=+346.4s cpu=2290.7s thr=1] phase: branch world: path built and links taken
+[t=+347.1s cpu=2291.4s thr=1] phase: branch world: path checked
+[t=+348.1s cpu=2292.3s thr=1] phase: branch world: routes planned and verified
+[t=+348.1s cpu=2292.3s thr=1] phase: branch world: done
+[t=+348.1s cpu=2292.3s thr=1] phase: branch world branch `branch/no-chorus+branch/oven-loaf+branch/nest-moved` (world/56): start
+[t=+348.1s cpu=2292.3s thr=1] phase: branch world: path built and links taken
+[t=+348.7s cpu=2292.9s thr=1] phase: branch world: path checked
+[t=+349.4s cpu=2293.6s thr=1] phase: branch world: routes planned and verified
+[t=+349.4s cpu=2293.6s thr=1] phase: branch world: done
+[t=+349.4s cpu=2293.6s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/nest-moved` (world/57): start
+[t=+350.1s cpu=2294.3s thr=1] phase: branch world: path built and links taken
+[t=+350.7s cpu=2295.0s thr=1] phase: branch world: path checked
+[t=+351.6s cpu=2295.8s thr=1] phase: branch world: routes planned and verified
+[t=+351.6s cpu=2295.8s thr=1] phase: branch world: done
+[t=+351.6s cpu=2295.8s thr=1] phase: branch world branch `branch/no-chorus+branch/oven-loaf+branch/nest-moved` (world/58): start
+[t=+352.3s cpu=2296.5s thr=1] phase: branch world: path built and links taken
+[t=+352.9s cpu=2297.1s thr=1] phase: branch world: path checked
+[t=+353.8s cpu=2298.0s thr=1] phase: branch world: routes planned and verified
+[t=+353.8s cpu=2298.0s thr=1] phase: branch world: done
+[t=+353.8s cpu=2298.0s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/nest-moved` (world/59): start
+[t=+354.5s cpu=2298.7s thr=1] phase: branch world: path built and links taken
+[t=+355.2s cpu=2299.4s thr=1] phase: branch world: path checked
+[t=+356.1s cpu=2300.3s thr=1] phase: branch world: routes planned and verified
+[t=+356.1s cpu=2300.3s thr=1] phase: branch world: done
+[t=+356.1s cpu=2300.3s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/nest-moved` (world/60): start
+[t=+356.8s cpu=2301.0s thr=1] phase: branch world: path built and links taken
+[t=+357.5s cpu=2301.7s thr=1] phase: branch world: path checked
+[t=+358.5s cpu=2302.7s thr=1] phase: branch world: routes planned and verified
+[t=+358.5s cpu=2302.7s thr=1] phase: branch world: done
+[t=+358.5s cpu=2302.7s thr=1] phase: branch world branch `branch/no-chorus+branch/forge-loaf+branch/nest-moved` (world/61): start
+[t=+358.5s cpu=2302.7s thr=1] phase: branch world: path built and links taken
+[t=+359.0s cpu=2303.2s thr=1] phase: branch world: path checked
+[t=+359.8s cpu=2304.0s thr=1] phase: branch world: routes planned and verified
+[t=+359.8s cpu=2304.0s thr=1] phase: branch world: done
+[t=+359.8s cpu=2304.0s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/nest-moved` (world/62): start
+[t=+360.4s cpu=2304.7s thr=1] phase: branch world: path built and links taken
+[t=+361.1s cpu=2305.3s thr=1] phase: branch world: path checked
+[t=+362.0s cpu=2306.2s thr=1] phase: branch world: routes planned and verified
+[t=+362.0s cpu=2306.2s thr=1] phase: branch world: done
+[t=+362.0s cpu=2306.2s thr=1] phase: branch world branch `branch/no-chorus+branch/forge-loaf+branch/nest-moved` (world/63): start
+[t=+362.6s cpu=2306.8s thr=1] phase: branch world: path built and links taken
+[t=+363.3s cpu=2307.5s thr=1] phase: branch world: path checked
+[t=+364.1s cpu=2308.4s thr=1] phase: branch world: routes planned and verified
+[t=+364.1s cpu=2308.4s thr=1] phase: branch world: done
+[t=+364.1s cpu=2308.4s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/nest-moved` (world/64): start
+[t=+364.8s cpu=2309.1s thr=1] phase: branch world: path built and links taken
+[t=+365.5s cpu=2309.8s thr=1] phase: branch world: path checked
+[t=+366.5s cpu=2310.7s thr=1] phase: branch world: routes planned and verified
+[t=+366.5s cpu=2310.7s thr=1] phase: branch world: done
+[t=+366.5s cpu=2310.7s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/nest-moved` (world/65): start
+[t=+367.2s cpu=2311.4s thr=1] phase: branch world: path built and links taken
+[t=+367.9s cpu=2312.1s thr=1] phase: branch world: path checked
+[t=+368.8s cpu=2313.1s thr=1] phase: branch world: routes planned and verified
+[t=+368.8s cpu=2313.1s thr=1] phase: branch world: done
+[t=+368.8s cpu=2313.1s thr=1] phase: branch world branch `branch/no-chorus+branch/forge-loaf+branch/nest-moved` (world/66): start
+[t=+368.8s cpu=2313.1s thr=1] phase: branch world: path built and links taken
+[t=+369.4s cpu=2313.6s thr=1] phase: branch world: path checked
+[t=+370.1s cpu=2314.4s thr=1] phase: branch world: routes planned and verified
+[t=+370.1s cpu=2314.4s thr=1] phase: branch world: done
+[t=+370.1s cpu=2314.4s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/nest-moved` (world/67): start
+[t=+370.8s cpu=2315.0s thr=1] phase: branch world: path built and links taken
+[t=+371.5s cpu=2315.7s thr=1] phase: branch world: path checked
+[t=+372.3s cpu=2316.6s thr=1] phase: branch world: routes planned and verified
+[t=+372.3s cpu=2316.6s thr=1] phase: branch world: done
+[t=+372.3s cpu=2316.6s thr=1] phase: branch world branch `branch/no-chorus+branch/forge-loaf+branch/nest-moved` (world/68): start
+[t=+373.0s cpu=2317.2s thr=1] phase: branch world: path built and links taken
+[t=+373.6s cpu=2317.9s thr=1] phase: branch world: path checked
+[t=+374.5s cpu=2318.7s thr=1] phase: branch world: routes planned and verified
+[t=+374.5s cpu=2318.7s thr=1] phase: branch world: done
+[t=+374.5s cpu=2318.7s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/nest-moved` (world/69): start
+[t=+375.2s cpu=2319.4s thr=1] phase: branch world: path built and links taken
+[t=+375.9s cpu=2320.1s thr=1] phase: branch world: path checked
+[t=+376.8s cpu=2321.1s thr=1] phase: branch world: routes planned and verified
+[t=+376.8s cpu=2321.1s thr=1] phase: branch world: done
+[t=+376.8s cpu=2321.1s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/nest-moved` (world/70): start
+[t=+377.5s cpu=2321.8s thr=1] phase: branch world: path built and links taken
+[t=+378.2s cpu=2322.5s thr=1] phase: branch world: path checked
+[t=+379.2s cpu=2323.4s thr=1] phase: branch world: routes planned and verified
+[t=+379.2s cpu=2323.4s thr=1] phase: branch world: done
+[t=+379.2s cpu=2323.4s thr=1] phase: branch world branch `branch/no-chorus+branch/forge-loaf+branch/nest-moved` (world/71): start
+[t=+379.2s cpu=2323.4s thr=1] phase: branch world: path built and links taken
+[t=+379.8s cpu=2324.0s thr=1] phase: branch world: path checked
+[t=+380.5s cpu=2324.7s thr=1] phase: branch world: routes planned and verified
+[t=+380.5s cpu=2324.7s thr=1] phase: branch world: done
+[t=+380.5s cpu=2324.7s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/nest-moved` (world/72): start
+[t=+381.2s cpu=2325.4s thr=1] phase: branch world: path built and links taken
+[t=+381.8s cpu=2326.1s thr=1] phase: branch world: path checked
+[t=+382.7s cpu=2326.9s thr=1] phase: branch world: routes planned and verified
+[t=+382.7s cpu=2326.9s thr=1] phase: branch world: done
+[t=+382.7s cpu=2326.9s thr=1] phase: branch world branch `branch/no-chorus+branch/forge-loaf+branch/nest-moved` (world/73): start
+[t=+383.3s cpu=2327.6s thr=1] phase: branch world: path built and links taken
+[t=+384.0s cpu=2328.2s thr=1] phase: branch world: path checked
+[t=+384.9s cpu=2329.1s thr=1] phase: branch world: routes planned and verified
+[t=+384.9s cpu=2329.1s thr=1] phase: branch world: done
+[t=+384.9s cpu=2329.1s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/nest-moved` (world/74): start
+[t=+385.6s cpu=2329.8s thr=1] phase: branch world: path built and links taken
+[t=+386.3s cpu=2330.5s thr=1] phase: branch world: path checked
+[t=+387.2s cpu=2331.4s thr=1] phase: branch world: routes planned and verified
+[t=+387.2s cpu=2331.4s thr=1] phase: branch world: done
+[t=+387.2s cpu=2331.4s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/nest-moved` (world/75): start
+[t=+387.9s cpu=2332.2s thr=1] phase: branch world: path built and links taken
+[t=+388.6s cpu=2332.8s thr=1] phase: branch world: path checked
+[t=+389.6s cpu=2333.8s thr=1] phase: branch world: routes planned and verified
+[t=+389.6s cpu=2333.8s thr=1] phase: branch world: done
+[t=+389.6s cpu=2333.8s thr=1] phase: branch world branch `branch/no-chorus+branch/forge-loaf+branch/nest-moved` (world/76): start
+[t=+389.6s cpu=2333.8s thr=1] phase: branch world: path built and links taken
+[t=+390.1s cpu=2334.4s thr=1] phase: branch world: path checked
+[t=+390.9s cpu=2335.1s thr=1] phase: branch world: routes planned and verified
+[t=+390.9s cpu=2335.1s thr=1] phase: branch world: done
+[t=+390.9s cpu=2335.1s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/nest-moved` (world/77): start
+[t=+391.5s cpu=2335.8s thr=1] phase: branch world: path built and links taken
+[t=+392.2s cpu=2336.4s thr=1] phase: branch world: path checked
+[t=+393.1s cpu=2337.3s thr=1] phase: branch world: routes planned and verified
+[t=+393.1s cpu=2337.3s thr=1] phase: branch world: done
+[t=+393.1s cpu=2337.3s thr=1] phase: branch world branch `branch/no-chorus+branch/forge-loaf+branch/nest-moved` (world/78): start
+[t=+393.7s cpu=2337.9s thr=1] phase: branch world: path built and links taken
+[t=+394.4s cpu=2338.6s thr=1] phase: branch world: path checked
+[t=+395.2s cpu=2339.5s thr=1] phase: branch world: routes planned and verified
+[t=+395.2s cpu=2339.5s thr=1] phase: branch world: done
+[t=+395.2s cpu=2339.5s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/nest-moved` (world/79): start
+[t=+395.9s cpu=2340.2s thr=1] phase: branch world: path built and links taken
+[t=+396.6s cpu=2340.9s thr=1] phase: branch world: path checked
+[t=+397.6s cpu=2341.8s thr=1] phase: branch world: routes planned and verified
+[t=+397.6s cpu=2341.8s thr=1] phase: branch world: done
+[t=+397.6s cpu=2341.8s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/dumpling-tail` (world/80): start
+[t=+398.3s cpu=2342.5s thr=1] phase: branch world: path built and links taken
+[t=+399.0s cpu=2343.2s thr=1] phase: branch world: path checked
+[t=+399.9s cpu=2344.2s thr=1] phase: branch world: routes planned and verified
+[t=+399.9s cpu=2344.2s thr=1] phase: branch world: done
+[t=+399.9s cpu=2344.2s thr=1] phase: branch world branch `branch/no-chorus+branch/oven-loaf+branch/dumpling-tail` (world/81): start
+[t=+399.9s cpu=2344.2s thr=1] phase: branch world: path built and links taken
+[t=+400.5s cpu=2344.7s thr=1] phase: branch world: path checked
+[t=+401.2s cpu=2345.5s thr=1] phase: branch world: routes planned and verified
+[t=+401.2s cpu=2345.5s thr=1] phase: branch world: done
+[t=+401.2s cpu=2345.5s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/dumpling-tail` (world/82): start
+[t=+401.9s cpu=2346.1s thr=1] phase: branch world: path built and links taken
+[t=+402.6s cpu=2346.8s thr=1] phase: branch world: path checked
+[t=+403.4s cpu=2347.7s thr=1] phase: branch world: routes planned and verified
+[t=+403.4s cpu=2347.7s thr=1] phase: branch world: done
+[t=+403.4s cpu=2347.7s thr=1] phase: branch world branch `branch/no-chorus+branch/oven-loaf+branch/dumpling-tail` (world/83): start
+[t=+404.1s cpu=2348.3s thr=1] phase: branch world: path built and links taken
+[t=+404.7s cpu=2349.0s thr=1] phase: branch world: path checked
+[t=+405.6s cpu=2349.8s thr=1] phase: branch world: routes planned and verified
+[t=+405.6s cpu=2349.8s thr=1] phase: branch world: done
+[t=+405.6s cpu=2349.8s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/dumpling-tail` (world/84): start
+[t=+406.3s cpu=2350.5s thr=1] phase: branch world: path built and links taken
+[t=+407.0s cpu=2351.2s thr=1] phase: branch world: path checked
+[t=+407.9s cpu=2352.2s thr=1] phase: branch world: routes planned and verified
+[t=+407.9s cpu=2352.2s thr=1] phase: branch world: done
+[t=+407.9s cpu=2352.2s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/dumpling-tail` (world/85): start
+[t=+408.6s cpu=2352.9s thr=1] phase: branch world: path built and links taken
+[t=+409.4s cpu=2353.6s thr=1] phase: branch world: path checked
+[t=+410.3s cpu=2354.5s thr=1] phase: branch world: routes planned and verified
+[t=+410.3s cpu=2354.5s thr=1] phase: branch world: done
+[t=+410.3s cpu=2354.5s thr=1] phase: branch world branch `branch/no-chorus+branch/oven-loaf+branch/dumpling-tail` (world/86): start
+[t=+410.3s cpu=2354.5s thr=1] phase: branch world: path built and links taken
+[t=+410.9s cpu=2355.1s thr=1] phase: branch world: path checked
+[t=+411.6s cpu=2355.8s thr=1] phase: branch world: routes planned and verified
+[t=+411.6s cpu=2355.8s thr=1] phase: branch world: done
+[t=+411.6s cpu=2355.8s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/dumpling-tail` (world/87): start
+[t=+412.3s cpu=2356.5s thr=1] phase: branch world: path built and links taken
+[t=+412.9s cpu=2357.2s thr=1] phase: branch world: path checked
+[t=+413.8s cpu=2358.0s thr=1] phase: branch world: routes planned and verified
+[t=+413.8s cpu=2358.0s thr=1] phase: branch world: done
+[t=+413.8s cpu=2358.0s thr=1] phase: branch world branch `branch/no-chorus+branch/oven-loaf+branch/dumpling-tail` (world/88): start
+[t=+414.5s cpu=2358.7s thr=1] phase: branch world: path built and links taken
+[t=+415.1s cpu=2359.3s thr=1] phase: branch world: path checked
+[t=+416.0s cpu=2360.2s thr=1] phase: branch world: routes planned and verified
+[t=+416.0s cpu=2360.2s thr=1] phase: branch world: done
+[t=+416.0s cpu=2360.2s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/dumpling-tail` (world/89): start
+[t=+416.7s cpu=2360.9s thr=1] phase: branch world: path built and links taken
+[t=+417.4s cpu=2361.6s thr=1] phase: branch world: path checked
+[t=+418.3s cpu=2362.6s thr=1] phase: branch world: routes planned and verified
+[t=+418.3s cpu=2362.6s thr=1] phase: branch world: done
+[t=+418.3s cpu=2362.6s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/dumpling-tail` (world/90): start
+[t=+419.0s cpu=2363.2s thr=1] phase: branch world: path built and links taken
+[t=+419.7s cpu=2363.9s thr=1] phase: branch world: path checked
+[t=+420.7s cpu=2364.9s thr=1] phase: branch world: routes planned and verified
+[t=+420.7s cpu=2364.9s thr=1] phase: branch world: done
+[t=+420.7s cpu=2364.9s thr=1] phase: branch world branch `branch/no-chorus+branch/oven-loaf+branch/dumpling-tail` (world/91): start
+[t=+420.7s cpu=2364.9s thr=1] phase: branch world: path built and links taken
+[t=+421.2s cpu=2365.5s thr=1] phase: branch world: path checked
+[t=+422.0s cpu=2366.2s thr=1] phase: branch world: routes planned and verified
+[t=+422.0s cpu=2366.2s thr=1] phase: branch world: done
+[t=+422.0s cpu=2366.2s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/dumpling-tail` (world/92): start
+[t=+422.6s cpu=2366.9s thr=1] phase: branch world: path built and links taken
+[t=+423.3s cpu=2367.5s thr=1] phase: branch world: path checked
+[t=+424.2s cpu=2368.4s thr=1] phase: branch world: routes planned and verified
+[t=+424.2s cpu=2368.4s thr=1] phase: branch world: done
+[t=+424.2s cpu=2368.4s thr=1] phase: branch world branch `branch/no-chorus+branch/oven-loaf+branch/dumpling-tail` (world/93): start
+[t=+424.8s cpu=2369.1s thr=1] phase: branch world: path built and links taken
+[t=+425.5s cpu=2369.7s thr=1] phase: branch world: path checked
+[t=+426.3s cpu=2370.6s thr=1] phase: branch world: routes planned and verified
+[t=+426.3s cpu=2370.6s thr=1] phase: branch world: done
+[t=+426.3s cpu=2370.6s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/dumpling-tail` (world/94): start
+[t=+427.0s cpu=2371.3s thr=1] phase: branch world: path built and links taken
+[t=+427.7s cpu=2372.0s thr=1] phase: branch world: path checked
+[t=+428.7s cpu=2372.9s thr=1] phase: branch world: routes planned and verified
+[t=+428.7s cpu=2372.9s thr=1] phase: branch world: done
+[t=+428.7s cpu=2372.9s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/dumpling-tail` (world/95): start
+[t=+429.4s cpu=2373.6s thr=1] phase: branch world: path built and links taken
+[t=+430.1s cpu=2374.3s thr=1] phase: branch world: path checked
+[t=+431.0s cpu=2375.3s thr=1] phase: branch world: routes planned and verified
+[t=+431.0s cpu=2375.3s thr=1] phase: branch world: done
+[t=+431.0s cpu=2375.3s thr=1] phase: branch world branch `branch/no-chorus+branch/oven-loaf+branch/dumpling-tail` (world/96): start
+[t=+431.0s cpu=2375.3s thr=1] phase: branch world: path built and links taken
+[t=+431.6s cpu=2375.8s thr=1] phase: branch world: path checked
+[t=+432.3s cpu=2376.6s thr=1] phase: branch world: routes planned and verified
+[t=+432.3s cpu=2376.6s thr=1] phase: branch world: done
+[t=+432.3s cpu=2376.6s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/dumpling-tail` (world/97): start
+[t=+433.0s cpu=2377.2s thr=1] phase: branch world: path built and links taken
+[t=+433.7s cpu=2377.9s thr=1] phase: branch world: path checked
+[t=+434.5s cpu=2378.8s thr=1] phase: branch world: routes planned and verified
+[t=+434.5s cpu=2378.8s thr=1] phase: branch world: done
+[t=+434.5s cpu=2378.8s thr=1] phase: branch world branch `branch/no-chorus+branch/oven-loaf+branch/dumpling-tail` (world/98): start
+[t=+435.2s cpu=2379.4s thr=1] phase: branch world: path built and links taken
+[t=+435.8s cpu=2380.1s thr=1] phase: branch world: path checked
+[t=+436.7s cpu=2380.9s thr=1] phase: branch world: routes planned and verified
+[t=+436.7s cpu=2380.9s thr=1] phase: branch world: done
+[t=+436.7s cpu=2380.9s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/dumpling-tail` (world/99): start
+[t=+437.4s cpu=2381.6s thr=1] phase: branch world: path built and links taken
+[t=+438.1s cpu=2382.3s thr=1] phase: branch world: path checked
+[t=+439.0s cpu=2383.3s thr=1] phase: branch world: routes planned and verified
+[t=+439.0s cpu=2383.3s thr=1] phase: branch world: done
+[t=+439.0s cpu=2383.3s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/dumpling-tail` (world/100): start
+[t=+439.7s cpu=2384.0s thr=1] phase: branch world: path built and links taken
+[t=+440.4s cpu=2384.7s thr=1] phase: branch world: path checked
+[t=+441.4s cpu=2385.6s thr=1] phase: branch world: routes planned and verified
+[t=+441.4s cpu=2385.6s thr=1] phase: branch world: done
+[t=+441.4s cpu=2385.6s thr=1] phase: branch world branch `branch/no-chorus+branch/forge-loaf+branch/dumpling-tail` (world/101): start
+[t=+441.4s cpu=2385.6s thr=1] phase: branch world: path built and links taken
+[t=+442.0s cpu=2386.2s thr=1] phase: branch world: path checked
+[t=+442.7s cpu=2386.9s thr=1] phase: branch world: routes planned and verified
+[t=+442.7s cpu=2386.9s thr=1] phase: branch world: done
+[t=+442.7s cpu=2386.9s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/dumpling-tail` (world/102): start
+[t=+443.4s cpu=2387.6s thr=1] phase: branch world: path built and links taken
+[t=+444.0s cpu=2388.3s thr=1] phase: branch world: path checked
+[t=+444.9s cpu=2389.1s thr=1] phase: branch world: routes planned and verified
+[t=+444.9s cpu=2389.1s thr=1] phase: branch world: done
+[t=+444.9s cpu=2389.1s thr=1] phase: branch world branch `branch/no-chorus+branch/forge-loaf+branch/dumpling-tail` (world/103): start
+[t=+445.6s cpu=2389.8s thr=1] phase: branch world: path built and links taken
+[t=+446.2s cpu=2390.4s thr=1] phase: branch world: path checked
+[t=+447.1s cpu=2391.3s thr=1] phase: branch world: routes planned and verified
+[t=+447.1s cpu=2391.3s thr=1] phase: branch world: done
+[t=+447.1s cpu=2391.3s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/dumpling-tail` (world/104): start
+[t=+447.8s cpu=2392.0s thr=1] phase: branch world: path built and links taken
+[t=+448.5s cpu=2392.7s thr=1] phase: branch world: path checked
+[t=+449.4s cpu=2393.7s thr=1] phase: branch world: routes planned and verified
+[t=+449.4s cpu=2393.7s thr=1] phase: branch world: done
+[t=+449.4s cpu=2393.7s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/dumpling-tail` (world/105): start
+[t=+450.1s cpu=2394.3s thr=1] phase: branch world: path built and links taken
+[t=+450.8s cpu=2395.1s thr=1] phase: branch world: path checked
+[t=+451.8s cpu=2396.0s thr=1] phase: branch world: routes planned and verified
+[t=+451.8s cpu=2396.0s thr=1] phase: branch world: done
+[t=+451.8s cpu=2396.0s thr=1] phase: branch world branch `branch/no-chorus+branch/forge-loaf+branch/dumpling-tail` (world/106): start
+[t=+451.8s cpu=2396.0s thr=1] phase: branch world: path built and links taken
+[t=+452.3s cpu=2396.6s thr=1] phase: branch world: path checked
+[t=+453.1s cpu=2397.3s thr=1] phase: branch world: routes planned and verified
+[t=+453.1s cpu=2397.3s thr=1] phase: branch world: done
+[t=+453.1s cpu=2397.3s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/dumpling-tail` (world/107): start
+[t=+453.7s cpu=2398.0s thr=1] phase: branch world: path built and links taken
+[t=+454.4s cpu=2398.6s thr=1] phase: branch world: path checked
+[t=+455.3s cpu=2399.5s thr=1] phase: branch world: routes planned and verified
+[t=+455.3s cpu=2399.5s thr=1] phase: branch world: done
+[t=+455.3s cpu=2399.5s thr=1] phase: branch world branch `branch/no-chorus+branch/forge-loaf+branch/dumpling-tail` (world/108): start
+[t=+455.9s cpu=2400.2s thr=1] phase: branch world: path built and links taken
+[t=+456.6s cpu=2400.8s thr=1] phase: branch world: path checked
+[t=+457.4s cpu=2401.7s thr=1] phase: branch world: routes planned and verified
+[t=+457.4s cpu=2401.7s thr=1] phase: branch world: done
+[t=+457.4s cpu=2401.7s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/dumpling-tail` (world/109): start
+[t=+458.2s cpu=2402.4s thr=1] phase: branch world: path built and links taken
+[t=+458.9s cpu=2403.1s thr=1] phase: branch world: path checked
+[t=+459.8s cpu=2404.0s thr=1] phase: branch world: routes planned and verified
+[t=+459.8s cpu=2404.0s thr=1] phase: branch world: done
+[t=+459.8s cpu=2404.0s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/dumpling-tail` (world/110): start
+[t=+460.5s cpu=2404.7s thr=1] phase: branch world: path built and links taken
+[t=+461.2s cpu=2405.4s thr=1] phase: branch world: path checked
+[t=+462.1s cpu=2406.4s thr=1] phase: branch world: routes planned and verified
+[t=+462.1s cpu=2406.4s thr=1] phase: branch world: done
+[t=+462.1s cpu=2406.4s thr=1] phase: branch world branch `branch/no-chorus+branch/forge-loaf+branch/dumpling-tail` (world/111): start
+[t=+462.1s cpu=2406.4s thr=1] phase: branch world: path built and links taken
+[t=+462.7s cpu=2406.9s thr=1] phase: branch world: path checked
+[t=+463.5s cpu=2407.7s thr=1] phase: branch world: routes planned and verified
+[t=+463.5s cpu=2407.7s thr=1] phase: branch world: done
+[t=+463.5s cpu=2407.7s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/dumpling-tail` (world/112): start
+[t=+464.1s cpu=2408.3s thr=1] phase: branch world: path built and links taken
+[t=+464.8s cpu=2409.0s thr=1] phase: branch world: path checked
+[t=+465.6s cpu=2409.9s thr=1] phase: branch world: routes planned and verified
+[t=+465.6s cpu=2409.9s thr=1] phase: branch world: done
+[t=+465.6s cpu=2409.9s thr=1] phase: branch world branch `branch/no-chorus+branch/forge-loaf+branch/dumpling-tail` (world/113): start
+[t=+466.3s cpu=2410.5s thr=1] phase: branch world: path built and links taken
+[t=+467.0s cpu=2411.2s thr=1] phase: branch world: path checked
+[t=+467.8s cpu=2412.1s thr=1] phase: branch world: routes planned and verified
+[t=+467.8s cpu=2412.1s thr=1] phase: branch world: done
+[t=+467.8s cpu=2412.1s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/dumpling-tail` (world/114): start
+[t=+468.5s cpu=2412.8s thr=1] phase: branch world: path built and links taken
+[t=+469.2s cpu=2413.4s thr=1] phase: branch world: path checked
+[t=+470.2s cpu=2414.4s thr=1] phase: branch world: routes planned and verified
+[t=+470.2s cpu=2414.4s thr=1] phase: branch world: done
+[t=+470.2s cpu=2414.4s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/dumpling-tail` (world/115): start
+[t=+470.9s cpu=2415.1s thr=1] phase: branch world: path built and links taken
+[t=+471.6s cpu=2415.8s thr=1] phase: branch world: path checked
+[t=+472.5s cpu=2416.7s thr=1] phase: branch world: routes planned and verified
+[t=+472.5s cpu=2416.7s thr=1] phase: branch world: done
+[t=+472.5s cpu=2416.7s thr=1] phase: branch world branch `branch/no-chorus+branch/forge-loaf+branch/dumpling-tail` (world/116): start
+[t=+472.5s cpu=2416.8s thr=1] phase: branch world: path built and links taken
+[t=+473.1s cpu=2417.3s thr=1] phase: branch world: path checked
+[t=+473.8s cpu=2418.1s thr=1] phase: branch world: routes planned and verified
+[t=+473.8s cpu=2418.1s thr=1] phase: branch world: done
+[t=+473.8s cpu=2418.1s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/dumpling-tail` (world/117): start
+[t=+474.5s cpu=2418.7s thr=1] phase: branch world: path built and links taken
+[t=+475.1s cpu=2419.4s thr=1] phase: branch world: path checked
+[t=+476.0s cpu=2420.3s thr=1] phase: branch world: routes planned and verified
+[t=+476.0s cpu=2420.3s thr=1] phase: branch world: done
+[t=+476.0s cpu=2420.3s thr=1] phase: branch world branch `branch/no-chorus+branch/forge-loaf+branch/dumpling-tail` (world/118): start
+[t=+476.7s cpu=2420.9s thr=1] phase: branch world: path built and links taken
+[t=+477.3s cpu=2421.6s thr=1] phase: branch world: path checked
+[t=+478.2s cpu=2422.4s thr=1] phase: branch world: routes planned and verified
+[t=+478.2s cpu=2422.4s thr=1] phase: branch world: done
+[t=+478.2s cpu=2422.4s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/dumpling-tail` (world/119): start
+[t=+478.9s cpu=2423.1s thr=1] phase: branch world: path built and links taken
+[t=+479.6s cpu=2423.8s thr=1] phase: branch world: path checked
+[t=+480.5s cpu=2424.8s thr=1] phase: branch world: routes planned and verified
+[t=+480.5s cpu=2424.8s thr=1] phase: branch world: done
+[t=+480.5s cpu=2424.8s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/dumpling-tail` (world/120): start
+[t=+481.2s cpu=2425.5s thr=1] phase: branch world: path built and links taken
+[t=+481.9s cpu=2426.2s thr=1] phase: branch world: path checked
+[t=+482.9s cpu=2427.1s thr=1] phase: branch world: routes planned and verified
+[t=+482.9s cpu=2427.1s thr=1] phase: branch world: done
+[t=+482.9s cpu=2427.1s thr=1] phase: branch world branch `branch/no-chorus+branch/oven-loaf+branch/dumpling-tail` (world/121): start
+[t=+482.9s cpu=2427.1s thr=1] phase: branch world: path built and links taken
+[t=+483.5s cpu=2427.7s thr=1] phase: branch world: path checked
+[t=+484.2s cpu=2428.4s thr=1] phase: branch world: routes planned and verified
+[t=+484.2s cpu=2428.4s thr=1] phase: branch world: done
+[t=+484.2s cpu=2428.4s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/dumpling-tail` (world/122): start
+[t=+484.9s cpu=2429.1s thr=1] phase: branch world: path built and links taken
+[t=+485.5s cpu=2429.8s thr=1] phase: branch world: path checked
+[t=+486.4s cpu=2430.6s thr=1] phase: branch world: routes planned and verified
+[t=+486.4s cpu=2430.6s thr=1] phase: branch world: done
+[t=+486.4s cpu=2430.6s thr=1] phase: branch world branch `branch/no-chorus+branch/oven-loaf+branch/dumpling-tail` (world/123): start
+[t=+487.0s cpu=2431.3s thr=1] phase: branch world: path built and links taken
+[t=+487.7s cpu=2431.9s thr=1] phase: branch world: path checked
+[t=+488.6s cpu=2432.8s thr=1] phase: branch world: routes planned and verified
+[t=+488.6s cpu=2432.8s thr=1] phase: branch world: done
+[t=+488.6s cpu=2432.8s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/dumpling-tail` (world/124): start
+[t=+489.3s cpu=2433.5s thr=1] phase: branch world: path built and links taken
+[t=+490.0s cpu=2434.2s thr=1] phase: branch world: path checked
+[t=+490.9s cpu=2435.2s thr=1] phase: branch world: routes planned and verified
+[t=+490.9s cpu=2435.2s thr=1] phase: branch world: done
+[t=+490.9s cpu=2435.2s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/dumpling-tail` (world/125): start
+[t=+491.6s cpu=2435.8s thr=1] phase: branch world: path built and links taken
+[t=+492.3s cpu=2436.6s thr=1] phase: branch world: path checked
+[t=+493.3s cpu=2437.5s thr=1] phase: branch world: routes planned and verified
+[t=+493.3s cpu=2437.5s thr=1] phase: branch world: done
+[t=+493.3s cpu=2437.5s thr=1] phase: branch world branch `branch/no-chorus+branch/oven-loaf+branch/dumpling-tail` (world/126): start
+[t=+493.3s cpu=2437.5s thr=1] phase: branch world: path built and links taken
+[t=+493.8s cpu=2438.1s thr=1] phase: branch world: path checked
+[t=+494.6s cpu=2438.8s thr=1] phase: branch world: routes planned and verified
+[t=+494.6s cpu=2438.8s thr=1] phase: branch world: done
+[t=+494.6s cpu=2438.8s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/dumpling-tail` (world/127): start
+[t=+495.2s cpu=2439.5s thr=1] phase: branch world: path built and links taken
+[t=+495.9s cpu=2440.1s thr=1] phase: branch world: path checked
+[t=+496.8s cpu=2441.0s thr=1] phase: branch world: routes planned and verified
+[t=+496.8s cpu=2441.0s thr=1] phase: branch world: done
+[t=+496.8s cpu=2441.0s thr=1] phase: branch world branch `branch/no-chorus+branch/oven-loaf+branch/dumpling-tail` (world/128): start
+[t=+497.4s cpu=2441.7s thr=1] phase: branch world: path built and links taken
+[t=+498.1s cpu=2442.3s thr=1] phase: branch world: path checked
+[t=+498.9s cpu=2443.2s thr=1] phase: branch world: routes planned and verified
+[t=+498.9s cpu=2443.2s thr=1] phase: branch world: done
+[t=+498.9s cpu=2443.2s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/dumpling-tail` (world/129): start
+[t=+499.6s cpu=2443.9s thr=1] phase: branch world: path built and links taken
+[t=+500.3s cpu=2444.6s thr=1] phase: branch world: path checked
+[t=+501.3s cpu=2445.5s thr=1] phase: branch world: routes planned and verified
+[t=+501.3s cpu=2445.5s thr=1] phase: branch world: done
+[t=+501.3s cpu=2445.5s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/dumpling-tail` (world/130): start
+[t=+502.0s cpu=2446.2s thr=1] phase: branch world: path built and links taken
+[t=+502.7s cpu=2446.9s thr=1] phase: branch world: path checked
+[t=+503.6s cpu=2447.9s thr=1] phase: branch world: routes planned and verified
+[t=+503.6s cpu=2447.9s thr=1] phase: branch world: done
+[t=+503.6s cpu=2447.9s thr=1] phase: branch world branch `branch/no-chorus+branch/oven-loaf+branch/dumpling-tail` (world/131): start
+[t=+503.6s cpu=2447.9s thr=1] phase: branch world: path built and links taken
+[t=+504.2s cpu=2448.4s thr=1] phase: branch world: path checked
+[t=+504.9s cpu=2449.2s thr=1] phase: branch world: routes planned and verified
+[t=+504.9s cpu=2449.2s thr=1] phase: branch world: done
+[t=+504.9s cpu=2449.2s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/dumpling-tail` (world/132): start
+[t=+505.6s cpu=2449.8s thr=1] phase: branch world: path built and links taken
+[t=+506.3s cpu=2450.5s thr=1] phase: branch world: path checked
+[t=+507.1s cpu=2451.4s thr=1] phase: branch world: routes planned and verified
+[t=+507.1s cpu=2451.4s thr=1] phase: branch world: done
+[t=+507.1s cpu=2451.4s thr=1] phase: branch world branch `branch/no-chorus+branch/oven-loaf+branch/dumpling-tail` (world/133): start
+[t=+507.8s cpu=2452.0s thr=1] phase: branch world: path built and links taken
+[t=+508.4s cpu=2452.7s thr=1] phase: branch world: path checked
+[t=+509.3s cpu=2453.5s thr=1] phase: branch world: routes planned and verified
+[t=+509.3s cpu=2453.5s thr=1] phase: branch world: done
+[t=+509.3s cpu=2453.5s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/dumpling-tail` (world/134): start
+[t=+510.0s cpu=2454.2s thr=1] phase: branch world: path built and links taken
+[t=+510.7s cpu=2454.9s thr=1] phase: branch world: path checked
+[t=+511.7s cpu=2455.9s thr=1] phase: branch world: routes planned and verified
+[t=+511.7s cpu=2455.9s thr=1] phase: branch world: done
+[t=+511.7s cpu=2455.9s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/dumpling-tail` (world/135): start
+[t=+512.4s cpu=2456.6s thr=1] phase: branch world: path built and links taken
+[t=+513.1s cpu=2457.3s thr=1] phase: branch world: path checked
+[t=+514.0s cpu=2458.2s thr=1] phase: branch world: routes planned and verified
+[t=+514.0s cpu=2458.2s thr=1] phase: branch world: done
+[t=+514.0s cpu=2458.2s thr=1] phase: branch world branch `branch/no-chorus+branch/oven-loaf+branch/dumpling-tail` (world/136): start
+[t=+514.0s cpu=2458.2s thr=1] phase: branch world: path built and links taken
+[t=+514.6s cpu=2458.8s thr=1] phase: branch world: path checked
+[t=+515.3s cpu=2459.6s thr=1] phase: branch world: routes planned and verified
+[t=+515.3s cpu=2459.6s thr=1] phase: branch world: done
+[t=+515.3s cpu=2459.6s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/dumpling-tail` (world/137): start
+[t=+516.0s cpu=2460.2s thr=1] phase: branch world: path built and links taken
+[t=+516.7s cpu=2460.9s thr=1] phase: branch world: path checked
+[t=+517.5s cpu=2461.8s thr=1] phase: branch world: routes planned and verified
+[t=+517.5s cpu=2461.8s thr=1] phase: branch world: done
+[t=+517.5s cpu=2461.8s thr=1] phase: branch world branch `branch/no-chorus+branch/oven-loaf+branch/dumpling-tail` (world/138): start
+[t=+518.2s cpu=2462.4s thr=1] phase: branch world: path built and links taken
+[t=+518.8s cpu=2463.1s thr=1] phase: branch world: path checked
+[t=+519.7s cpu=2463.9s thr=1] phase: branch world: routes planned and verified
+[t=+519.7s cpu=2463.9s thr=1] phase: branch world: done
+[t=+519.7s cpu=2463.9s thr=1] phase: branch world branch `branch/chorus-sings+branch/oven-loaf+branch/dumpling-tail` (world/139): start
+[t=+520.4s cpu=2464.6s thr=1] phase: branch world: path built and links taken
+[t=+521.1s cpu=2465.3s thr=1] phase: branch world: path checked
+[t=+522.0s cpu=2466.3s thr=1] phase: branch world: routes planned and verified
+[t=+522.0s cpu=2466.3s thr=1] phase: branch world: done
+[t=+522.0s cpu=2466.3s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/dumpling-tail` (world/140): start
+[t=+522.7s cpu=2467.0s thr=1] phase: branch world: path built and links taken
+[t=+523.4s cpu=2467.7s thr=1] phase: branch world: path checked
+[t=+524.4s cpu=2468.6s thr=1] phase: branch world: routes planned and verified
+[t=+524.4s cpu=2468.6s thr=1] phase: branch world: done
+[t=+524.4s cpu=2468.6s thr=1] phase: branch world branch `branch/no-chorus+branch/forge-loaf+branch/dumpling-tail` (world/141): start
+[t=+524.4s cpu=2468.6s thr=1] phase: branch world: path built and links taken
+[t=+525.0s cpu=2469.2s thr=1] phase: branch world: path checked
+[t=+525.7s cpu=2469.9s thr=1] phase: branch world: routes planned and verified
+[t=+525.7s cpu=2469.9s thr=1] phase: branch world: done
+[t=+525.7s cpu=2469.9s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/dumpling-tail` (world/142): start
+[t=+526.4s cpu=2470.6s thr=1] phase: branch world: path built and links taken
+[t=+527.0s cpu=2471.3s thr=1] phase: branch world: path checked
+[t=+527.9s cpu=2472.1s thr=1] phase: branch world: routes planned and verified
+[t=+527.9s cpu=2472.1s thr=1] phase: branch world: done
+[t=+527.9s cpu=2472.1s thr=1] phase: branch world branch `branch/no-chorus+branch/forge-loaf+branch/dumpling-tail` (world/143): start
+[t=+528.6s cpu=2472.8s thr=1] phase: branch world: path built and links taken
+[t=+529.2s cpu=2473.4s thr=1] phase: branch world: path checked
+[t=+530.1s cpu=2474.3s thr=1] phase: branch world: routes planned and verified
+[t=+530.1s cpu=2474.3s thr=1] phase: branch world: done
+[t=+530.1s cpu=2474.3s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/dumpling-tail` (world/144): start
+[t=+530.8s cpu=2475.0s thr=1] phase: branch world: path built and links taken
+[t=+531.5s cpu=2475.7s thr=1] phase: branch world: path checked
+[t=+532.4s cpu=2476.7s thr=1] phase: branch world: routes planned and verified
+[t=+532.4s cpu=2476.7s thr=1] phase: branch world: done
+[t=+532.4s cpu=2476.7s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/dumpling-tail` (world/145): start
+[t=+533.1s cpu=2477.4s thr=1] phase: branch world: path built and links taken
+[t=+533.8s cpu=2478.1s thr=1] phase: branch world: path checked
+[t=+534.8s cpu=2479.0s thr=1] phase: branch world: routes planned and verified
+[t=+534.8s cpu=2479.0s thr=1] phase: branch world: done
+[t=+534.8s cpu=2479.0s thr=1] phase: branch world branch `branch/no-chorus+branch/forge-loaf+branch/dumpling-tail` (world/146): start
+[t=+534.8s cpu=2479.0s thr=1] phase: branch world: path built and links taken
+[t=+535.4s cpu=2479.6s thr=1] phase: branch world: path checked
+[t=+536.1s cpu=2480.3s thr=1] phase: branch world: routes planned and verified
+[t=+536.1s cpu=2480.3s thr=1] phase: branch world: done
+[t=+536.1s cpu=2480.3s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/dumpling-tail` (world/147): start
+[t=+536.8s cpu=2481.0s thr=1] phase: branch world: path built and links taken
+[t=+537.4s cpu=2481.7s thr=1] phase: branch world: path checked
+[t=+538.3s cpu=2482.5s thr=1] phase: branch world: routes planned and verified
+[t=+538.3s cpu=2482.5s thr=1] phase: branch world: done
+[t=+538.3s cpu=2482.5s thr=1] phase: branch world branch `branch/no-chorus+branch/forge-loaf+branch/dumpling-tail` (world/148): start
+[t=+539.0s cpu=2483.2s thr=1] phase: branch world: path built and links taken
+[t=+539.6s cpu=2483.8s thr=1] phase: branch world: path checked
+[t=+540.5s cpu=2484.7s thr=1] phase: branch world: routes planned and verified
+[t=+540.5s cpu=2484.7s thr=1] phase: branch world: done
+[t=+540.5s cpu=2484.7s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/dumpling-tail` (world/149): start
+[t=+541.2s cpu=2485.4s thr=1] phase: branch world: path built and links taken
+[t=+541.9s cpu=2486.1s thr=1] phase: branch world: path checked
+[t=+542.8s cpu=2487.1s thr=1] phase: branch world: routes planned and verified
+[t=+542.8s cpu=2487.1s thr=1] phase: branch world: done
+[t=+542.8s cpu=2487.1s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/dumpling-tail` (world/150): start
+[t=+543.5s cpu=2487.8s thr=1] phase: branch world: path built and links taken
+[t=+544.2s cpu=2488.4s thr=1] phase: branch world: path checked
+[t=+545.2s cpu=2489.4s thr=1] phase: branch world: routes planned and verified
+[t=+545.2s cpu=2489.4s thr=1] phase: branch world: done
+[t=+545.2s cpu=2489.4s thr=1] phase: branch world branch `branch/no-chorus+branch/forge-loaf+branch/dumpling-tail` (world/151): start
+[t=+545.2s cpu=2489.4s thr=1] phase: branch world: path built and links taken
+[t=+545.7s cpu=2490.0s thr=1] phase: branch world: path checked
+[t=+546.5s cpu=2490.7s thr=1] phase: branch world: routes planned and verified
+[t=+546.5s cpu=2490.7s thr=1] phase: branch world: done
+[t=+546.5s cpu=2490.7s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/dumpling-tail` (world/152): start
+[t=+547.2s cpu=2491.4s thr=1] phase: branch world: path built and links taken
+[t=+547.8s cpu=2492.0s thr=1] phase: branch world: path checked
+[t=+548.7s cpu=2492.9s thr=1] phase: branch world: routes planned and verified
+[t=+548.7s cpu=2492.9s thr=1] phase: branch world: done
+[t=+548.7s cpu=2492.9s thr=1] phase: branch world branch `branch/no-chorus+branch/forge-loaf+branch/dumpling-tail` (world/153): start
+[t=+549.3s cpu=2493.6s thr=1] phase: branch world: path built and links taken
+[t=+550.0s cpu=2494.2s thr=1] phase: branch world: path checked
+[t=+550.9s cpu=2495.1s thr=1] phase: branch world: routes planned and verified
+[t=+550.9s cpu=2495.1s thr=1] phase: branch world: done
+[t=+550.9s cpu=2495.1s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/dumpling-tail` (world/154): start
+[t=+551.6s cpu=2495.8s thr=1] phase: branch world: path built and links taken
+[t=+552.3s cpu=2496.5s thr=1] phase: branch world: path checked
+[t=+553.2s cpu=2497.4s thr=1] phase: branch world: routes planned and verified
+[t=+553.2s cpu=2497.4s thr=1] phase: branch world: done
+[t=+553.2s cpu=2497.4s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/dumpling-tail` (world/155): start
+[t=+553.9s cpu=2498.1s thr=1] phase: branch world: path built and links taken
+[t=+554.6s cpu=2498.8s thr=1] phase: branch world: path checked
+[t=+555.6s cpu=2499.8s thr=1] phase: branch world: routes planned and verified
+[t=+555.6s cpu=2499.8s thr=1] phase: branch world: done
+[t=+555.6s cpu=2499.8s thr=1] phase: branch world branch `branch/no-chorus+branch/forge-loaf+branch/dumpling-tail` (world/156): start
+[t=+555.6s cpu=2499.8s thr=1] phase: branch world: path built and links taken
+[t=+556.1s cpu=2500.3s thr=1] phase: branch world: path checked
+[t=+556.9s cpu=2501.1s thr=1] phase: branch world: routes planned and verified
+[t=+556.9s cpu=2501.1s thr=1] phase: branch world: done
+[t=+556.9s cpu=2501.1s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/dumpling-tail` (world/157): start
+[t=+557.5s cpu=2501.8s thr=1] phase: branch world: path built and links taken
+[t=+558.2s cpu=2502.4s thr=1] phase: branch world: path checked
+[t=+559.1s cpu=2503.3s thr=1] phase: branch world: routes planned and verified
+[t=+559.1s cpu=2503.3s thr=1] phase: branch world: done
+[t=+559.1s cpu=2503.3s thr=1] phase: branch world branch `branch/no-chorus+branch/forge-loaf+branch/dumpling-tail` (world/158): start
+[t=+559.7s cpu=2503.9s thr=1] phase: branch world: path built and links taken
+[t=+560.4s cpu=2504.6s thr=1] phase: branch world: path checked
+[t=+561.2s cpu=2505.5s thr=1] phase: branch world: routes planned and verified
+[t=+561.2s cpu=2505.5s thr=1] phase: branch world: done
+[t=+561.2s cpu=2505.5s thr=1] phase: branch world branch `branch/chorus-sings+branch/forge-loaf+branch/dumpling-tail` (world/159): start
+[t=+561.9s cpu=2506.2s thr=1] phase: branch world: path built and links taken
+[t=+562.6s cpu=2506.9s thr=1] phase: branch world: path checked
+[t=+563.6s cpu=2507.8s thr=1] phase: branch world: routes planned and verified
+[t=+563.6s cpu=2507.8s thr=1] phase: branch world: done
+[t=+563.6s cpu=2507.8s thr=1] phase: approach check: start
+[t=+563.6s cpu=2507.8s thr=1] approach binding (DW1025): 1672 talk beat(s) over 161 configuration(s): 0 judged by facing (0 yaw(s), 0 refused), 1672 drawn by a watch, 0 held by declaration (judged from every cell), 0 reached by no walked leg, 0 with no resolved body
+[t=+563.6s cpu=2507.8s thr=1] phase: body clearance: start
+[t=+563.6s cpu=2507.8s thr=1] phase: traversal: start
+[t=+563.6s cpu=2507.8s thr=1] engagement binding: 0 staged fight(s) examined, 0 of a species whose targeting reads the hour, 0 of those bright while the fight is live, 0 of those with water for the party's feet within reach; 0 refused (DW0920).
+[t=+563.6s cpu=2507.8s thr=1] phase: lanes + combat: start
+[t=+564.2s cpu=2508.4s thr=1] phase: world proofs: done; held facing: start
+[t=+564.2s cpu=2508.4s thr=1] held-facing binding (DW1025): 0 cell(s) judged over 0 body(ies) declaring `watch: "none"` at 0 stance(s): 0 cell(s) behind a body, 0 stance(s) refused, 0 stance(s) no walked cell reaches
+[t=+564.6s cpu=2508.8s thr=1] DW0863 binding: 265 act(s) over 9 walk(s) — 265 announced with a hint, 0 in sight (0 kill(s) also in reach), 0 trigger(s) judged by sight alone, 0 announced but not yet armed on the way and judged by sight; 0 place(s) walked through — 0 with an announced objective armed, 0 with the next act in sight; 0 refused; 0 kill(s) on no walk judged from the acts that fire their wave
+[t=+564.6s cpu=2508.8s thr=1] press proof (DW0429/DW1059/DW1052/DW0896): 30 pressable(s) placed — 2 pressed on their own, 5 boxed acting on their own, 23 boxed unobservable, 0 boxed struck; 0 sealed gate(s) answered (0 by their own block, 0 by a knocker); 51 answer trigger(s) synthesized; 1 reconciliation pair(s) in tick
+[t=+564.6s cpu=2508.8s thr=1] phase: attached/resting over the load: start
+[t=+565.2s cpu=2509.5s thr=1] attached blocks (DW1002): 4072 of 9074041 non-air cell(s) at load need a neighbour to stay — 4072 held, 0 dropped; unjudged by the measured rule: 0 cell(s) (none); not in the table: 0 cell(s) (none)
+[t=+566.8s cpu=2511.0s thr=1] resting blocks (DW1076): 443 of 9073150 outlined cell(s) at load stand half a course or more over what is under them — 442 held at a side or from above, 1 read as floating; not in the outline table: 0 cell(s)
+[t=+567.4s cpu=2513.3s thr=1] shipped templates: 120 template(s) re-encoded as placed, 35497128 byte(s) decompressed in all, at most 16777216 byte(s) (or one template) decoded at once (ADR-0037 §5 item 3)
+[t=+567.6s cpu=2513.5s thr=1] phase: datapack emission + guidance: start
+[t=+567.6s cpu=2513.5s thr=1] music binding: 1 biome(s) a camera can stand in — 0 atmosphere(s) and the ground declared (0 with a track, 1 silent: 0 fading, 1 playing out), 0 band biome(s) undeclared; 0 cutscene(s), 0 declare what they hear, 0 of 0 confirmed, 0 declare their music over 0 painted 4-cell(s) in 0 paint line(s) and 0 variant biome(s); 0 stop-sound effect(s), 0 of 0 cut a play-out, 0 a stinger, 0 a hiccup; 0 sound(s) in a category other than master
+[t=+567.8s cpu=2513.7s thr=1] placements ledger: 111 row(s) over 111 placing line(s) of the functions that place outside the templates; 0 body row(s) no frame's world can hold as written
+[t=+594.7s cpu=2540.6s thr=1] write sequence (DW1002): 220797 write(s) the load runs in order over 17 function(s) — 120 template(s), 220647 fill(s), 30 setblock(s); 16960247 changed cell(s) judged with their neighbours as each write lands, 4057 attached and 242320 falling block(s) among them, 0 not kept; 0 conditional write(s) not laid; 0 line(s) not read
+[t=+594.7s cpu=2540.6s thr=1] write sequence by chunk: 154 chunk(s) of 4 x 4 section column(s), replayed 154 time(s), each over its own columns and a halo of 16 cell(s), 0 of them again over a wider halo (the widest 16 cell(s)); at most 358 section(s) held by one replay (ADR-0037 §2)
+[t=+594.7s cpu=2540.6s thr=1] runtime writes (DW1002): 3 block-writing line(s) outside the load, in 3 function(s), 0 of them behind a condition, may change 3 cell(s); 21 cell(s) judged with their neighbours against every block any write may leave there (13 block(s) judged) — every configuration a story path, a branch or an unforced beat can reach, in any order; 0 not kept; 0 line(s) not read
+[t=+594.8s cpu=2540.8s thr=1] party binding (spec-0018): 0 AND-join(s) of 35 objective(s), 0 bound to a `party_join` PackTest (0 `party_join` template(s) of 181); 6 `carrier: one` `give-item`(s) of 11, 2 judged by a two-player PackTest (not judged: 0 under a `when`/`in` envelope, 4 outside an objective's completion bundle); `min_players: 1` owes no division (a party of one is the single-agent proof)
+[t=+595.3s cpu=2541.2s thr=1] phase: render plan: start
+[t=+595.6s cpu=2541.6s thr=1] threshold shots: 123 over 99 place(s), 60 door(s), 0 open side(s), 63 part(s)
+[t=+595.6s cpu=2541.6s thr=1] phase: review worlds: start
+[t=+600.1s cpu=2546.0s thr=1] phase: encode: chunk set and ground counted
+[t=+623.1s cpu=2569.1s thr=1] phase: encode: chunks lit, encoded and compressed
+[t=+623.2s cpu=2569.1s thr=1] phase: review world at-load: encoded
+[t=+623.9s cpu=2569.8s thr=1] phase: review world: grid built
+[t=+628.0s cpu=2574.0s thr=1] phase: encode: chunk set and ground counted
+[t=+651.1s cpu=2597.0s thr=1] phase: encode: chunks lit, encoded and compressed
+[t=+651.1s cpu=2597.0s thr=1] phase: review world after-obj-ask-bernt: encoded
+[t=+651.8s cpu=2597.8s thr=1] phase: review world: grid built
+[t=+655.7s cpu=2601.6s thr=1] phase: encode: chunk set and ground counted
+[t=+678.7s cpu=2624.6s thr=1] phase: encode: chunks lit, encoded and compressed
+[t=+678.7s cpu=2624.7s thr=1] phase: review world after-obj-find-the-head: encoded
+[t=+679.4s cpu=2625.4s thr=1] phase: review world: grid built
+[t=+683.3s cpu=2629.3s thr=1] phase: encode: chunk set and ground counted
+[t=+706.4s cpu=2652.3s thr=1] phase: encode: chunks lit, encoded and compressed
+[t=+706.4s cpu=2652.3s thr=1] phase: review world after-obj-light-candle-1: encoded
+[t=+707.1s cpu=2653.1s thr=1] phase: review world: grid built
+[t=+711.0s cpu=2656.9s thr=1] phase: encode: chunk set and ground counted
+[t=+734.1s cpu=2680.0s thr=1] phase: encode: chunks lit, encoded and compressed
+[t=+734.1s cpu=2680.0s thr=1] phase: review world after-obj-light-candle-2: encoded
+[t=+734.8s cpu=2680.7s thr=1] phase: review world: grid built
+[t=+738.7s cpu=2684.6s thr=1] phase: encode: chunk set and ground counted
+[t=+761.8s cpu=2707.8s thr=1] phase: encode: chunks lit, encoded and compressed
+[t=+761.8s cpu=2707.8s thr=1] phase: review world after-obj-light-candle-3: encoded
+[t=+762.6s cpu=2708.5s thr=1] phase: review world: grid built
+[t=+766.5s cpu=2712.4s thr=1] phase: encode: chunk set and ground counted
+[t=+789.5s cpu=2735.5s thr=1] phase: encode: chunks lit, encoded and compressed
+[t=+789.6s cpu=2735.5s thr=1] phase: review world after-obj-take-places: encoded
+[t=+790.3s cpu=2736.2s thr=1] phase: review world: grid built
+[t=+794.4s cpu=2740.3s thr=1] phase: encode: chunk set and ground counted
+[t=+818.2s cpu=2764.1s thr=1] phase: encode: chunks lit, encoded and compressed
+[t=+818.2s cpu=2764.1s thr=1] phase: review world after-obj-find-the-wings: encoded
+[t=+818.9s cpu=2764.8s thr=1] phase: review world: grid built
+[t=+823.1s cpu=2769.0s thr=1] phase: encode: chunk set and ground counted
+[t=+846.1s cpu=2792.0s thr=1] phase: encode: chunks lit, encoded and compressed
+[t=+846.1s cpu=2792.0s thr=1] phase: review world after-obj-find-inga: encoded
+[t=+846.8s cpu=2792.8s thr=1] phase: review world: grid built
+[t=+851.1s cpu=2797.1s thr=1] phase: encode: chunk set and ground counted
+[t=+874.2s cpu=2820.1s thr=1] phase: encode: chunks lit, encoded and compressed
+[t=+874.2s cpu=2820.1s thr=1] phase: review world after-obj-raise-the-curtain: encoded
+[t=+874.9s cpu=2820.9s thr=1] phase: review world: grid built
+[t=+875.8s cpu=2821.8s thr=1] review frames: 1627 shot(s) in 10 world(s) (524 at load, 1103 after a step); 1627 quick, 0 hq, 17 light frame(s) rendered quick; 0 cutscene frame(s) of 0 shot(s) in 0 cutscene(s), 0 cutscene(s) no critical step fires; cameras proven clear: 1627 of 1627 in their own worlds
+[t=+875.8s cpu=2821.8s thr=1] world: at-load 2014 chunk(s), 18424505 cell(s), 58175073 ground cell(s), 261 block entit(ies), 55 entit(ies), light arrays over 2014 chunk(s), sha256 34ac781f1de7d9e7791ea68a5405b491f66c40acc381c01663362bd7285eb4f8 -> validation/worlds/at-load, written in 26936 ms
+[t=+875.8s cpu=2821.8s thr=1] world: after-obj-ask-bernt 2014 chunk(s), 18424505 cell(s), 58175073 ground cell(s), 261 block entit(ies), 54 entit(ies), light arrays over 2014 chunk(s), sha256 82bdae173a988a58b10927c9efadc9d2d53070974bc054a6bbb7e6aa98021ad0 -> validation/worlds/after-obj-ask-bernt, written in 26945 ms
+[t=+875.8s cpu=2821.8s thr=1] world: after-obj-find-the-head 2014 chunk(s), 18424505 cell(s), 58175073 ground cell(s), 261 block entit(ies), 55 entit(ies), light arrays over 2014 chunk(s), sha256 a9a089a8613b8acafd9101dfea95c8ac77a06bfa11e55f4939e09fe8eb780ccd -> validation/worlds/after-obj-find-the-head, written in 26870 ms
+[t=+875.8s cpu=2821.8s thr=1] world: after-obj-light-candle-1 2014 chunk(s), 18424505 cell(s), 58175073 ground cell(s), 261 block entit(ies), 55 entit(ies), light arrays over 2014 chunk(s), sha256 19cd961f0263d99a400d32092dae05a22dc8abd60ebeb648da19bc8508100169 -> validation/worlds/after-obj-light-candle-1, written in 26919 ms
+[t=+875.8s cpu=2821.8s thr=1] world: after-obj-light-candle-2 2014 chunk(s), 18424505 cell(s), 58175073 ground cell(s), 261 block entit(ies), 55 entit(ies), light arrays over 2014 chunk(s), sha256 4121f6058c3da3e23aac6cd7824a782f78b2cb2b0092dd6fc04ab684862cdc39 -> validation/worlds/after-obj-light-candle-2, written in 26960 ms
+[t=+875.8s cpu=2821.8s thr=1] world: after-obj-light-candle-3 2014 chunk(s), 18424505 cell(s), 58175073 ground cell(s), 261 block entit(ies), 54 entit(ies), light arrays over 2014 chunk(s), sha256 23baa8e87303cbedf78b194af84f1dd46531a0db9a7773265c0de03d7b712ff3 -> validation/worlds/after-obj-light-candle-3, written in 27019 ms
+[t=+875.8s cpu=2821.8s thr=1] world: after-obj-take-places 2014 chunk(s), 18424505 cell(s), 58175073 ground cell(s), 261 block entit(ies), 54 entit(ies), light arrays over 2014 chunk(s), sha256 46b35b77be5ee565d679b825643887a21bbc27e7610e4524f74e0dfd2f07a338 -> validation/worlds/after-obj-take-places, written in 26976 ms
+[t=+875.8s cpu=2821.8s thr=1] world: after-obj-find-the-wings 2014 chunk(s), 18424505 cell(s), 58175073 ground cell(s), 261 block entit(ies), 55 entit(ies), light arrays over 2014 chunk(s), sha256 7a8cf3128be2fb3a135daefe9b5936737e168fe09c5d9e05f125a7ecab4e1671 -> validation/worlds/after-obj-find-the-wings, written in 27870 ms
+[t=+875.8s cpu=2821.8s thr=1] world: after-obj-find-inga 2014 chunk(s), 18424505 cell(s), 58175073 ground cell(s), 261 block entit(ies), 55 entit(ies), light arrays over 2014 chunk(s), sha256 34ac781f1de7d9e7791ea68a5405b491f66c40acc381c01663362bd7285eb4f8 -> validation/worlds/after-obj-find-inga, written in 26916 ms
+[t=+875.8s cpu=2821.8s thr=1] world: after-obj-raise-the-curtain 2014 chunk(s), 18424505 cell(s), 58175073 ground cell(s), 261 block entit(ies), 55 entit(ies), light arrays over 2014 chunk(s), sha256 7a8cf3128be2fb3a135daefe9b5936737e168fe09c5d9e05f125a7ecab4e1671 -> validation/worlds/after-obj-raise-the-curtain, written in 26932 ms
+[t=+875.8s cpu=2821.8s thr=1] view distance binding: 10 chunk(s) (the engine's floor, undeclared) serve 160 blocks in every direction; 17 showcase camera(s) and 0 cutscene shot(s) judged against it, 0 beyond it; stated to the host: heap-max 4G for 4 players × 473 chunks each (server/resources.properties).
+[t=+877.3s cpu=2823.2s thr=1] packtest solo binding: 0 of 181 template(s) take every body and run in their own test environment
+[t=+879.3s cpu=2825.3s thr=1] packtest hand-back binding: 34 of 181 template(s) write one of 30 pressable cell(s) and lay it back when they end
+[t=+879.3s cpu=2825.3s thr=1] packtest fresh-body binding: 181 of 181 template(s) carry a dummy and reset every score its name holds before their first command
+[t=+879.8s cpu=2825.8s thr=1] chain binding: 731 shipped function(s) measured, 0 counted loop(s), 14 world-build step(s); longest chain 64275 (`foot-of-the-mountain:tick`) of a 65536 limit, per executing source; 0 refused (DW0984).
+[t=+879.9s cpu=2825.8s thr=1] DW1013 binding: 32 of 47 interaction summon(s) placed at a cell and judged against its block (dw_i 22, dw_trig 10); 0 fitted to a two-cell body; 0 assembly hitbox(es) judged against the grid; 15 borne by a body (15 NPC dialogue hitbox(es), 0 actor answer box(es)), 0 at a runtime position — every judged box encloses its block's outline by at least 0.001 and lies within its cells by at most 0.01
+[t=+879.9s cpu=2825.8s thr=1] observer binding: 26 positional player selector(s) over 704 shipped function(s); 26 exclude `dw_cutscene`, 0 at an allowed site, 0 unguarded (DW0926).
+[t=+885.8s cpu=2831.8s thr=1] phase: emit: done
+[t=+885.9s cpu=2831.8s thr=1] phase: emit returned
+[t=+885.9s cpu=2831.8s thr=1] phase: output: writing the tree
+reach budget: 53669392 byte(s) resident at the end, under one budget of 72627744 byte(s), the sum of the working sets stated: the world store's sections 884736 byte(s), the window snapshot's pages 41189376 byte(s), the closures' edge lists 30553632 byte(s) (ADR-0037 §1)
+reach lists: 1116576893 byte(s) held in the scratch file; working set 30553632 byte(s) (3 x 3 chunks of the largest decoded, 3263776 byte(s), and their buffered pushes); 7131 chunk read(s) back over 112577370 record(s), 9316 chunk(s) given up (ADR-0037 §2)
+reach closures: 3504 chunk visit(s) over 709 (closure, chunk) pair(s), at most 21 for one chunk in one closure [1x79 2x183 3x43 4x116 5x45 6x51 7x36 8x43 9x30 10x23 11x21 12x11 13x4 14x4 16x2 17x4 18x6 19x2 20x4 21x2] (ADR-0037 §2)
+reach snapshot: 35096 distinct page(s) of 4096 cell(s) over 457768960 byte(s) in the scratch file; 0 resident at the end, working set 41189376 byte(s) (the 3 x 3 rings of the tallest window, 4 times over); 168652 page(s) read back; 3584460413 of 3595983920 page read(s) served by a thread's recent pages (ADR-0037 §2)
+reach portals: 1934267 portal edge(s) over 190120 face cell(s), summed over the closures taken, the most in one closure 506493, at a chunk side of 32 (ADR-0037 §2)
+reach graphs: 31 graph(s) memoised over the run, one per distinct world and parameters: 31 distinct world(s), 1 of them the configurations the reach binding counts (ADR-0037 §3's figure) and 30 premise variants and counterfactuals that are worlds of their own; 1 parameter set(s)
+reach states: the most in one closure 193058 state(s) (142769 standing, 8702 afloat, 41575 submerged, 12 holding), 30280 of them plain sea summarised in 3 component(s), over 4 closure(s) (ADR-0037 §3's rest states, per closure)
+reach bank: 156064 node variant(s) kept over 2511861790 byte(s) in the spill file; in memory, one slot per variant
+reach scratch: 4517394536 byte(s) written to the scratch files, at most 4138944428 byte(s) on disk (the sum of each file's longest), 4086207643 kept at the end; the lists' and tables' 1547763786 written, at most 1169313678 long, 1116576893 kept at the end; the bank's 2511861790 written, at most 2511861790 long, 2511861790 kept at the end, under a cap of 106846637508 byte(s) with 0 variant(s) refused; the snapshot's 457768960 written, at most 457768960 long, 457768960 kept at the end (ADR-0037 §2)
+[t=+886.2s cpu=2832.2s thr=1] phase: exit
+world store pages: 0 byte(s) resident over 0 section(s) of every store; 482234 array(s) given up, 468330 read back, 2023 of them within one turnover of the resident arrays; the need raised 2 time(s) for a walk found thrashing, to 884736 byte(s); 132292608 byte(s) in the scratch file in regions of 8192 byte(s), at most 16149 of them holding a live array at once; at most 18593 array(s) alive at once over every store (ADR-0037 §1)
