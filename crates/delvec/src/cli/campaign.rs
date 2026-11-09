@@ -1066,6 +1066,7 @@ fn build_as(
     };
 
     let tree = CommandTree::v1_21_11();
+    delvec::compiler::notes::mark("validated, analysed, planned: emit starts");
     let output = match emit::build_with_warnings(
         &plan,
         &loaded.inputs,
@@ -1076,6 +1077,7 @@ fn build_as(
         &skins,
     ) {
         Ok((o, warnings)) => {
+            delvec::compiler::notes::mark("emit returned");
             // Advisory build-tier findings (stage-7 edit replay: DW0353/DW0354).
             // Printed exactly like the validation-tier warnings, and like them
             // they never change the exit code.
@@ -1149,6 +1151,7 @@ fn build_as(
 
     // The directory holds exactly this build afterwards, or nothing in it moves
     // (`delvec::outdir`, `DW0967`).
+    delvec::compiler::notes::mark("output: writing the tree");
     match delvec::outdir::replace(out, &output) {
         Ok(done) => {
             if let Some(line) = done.summary(out) {

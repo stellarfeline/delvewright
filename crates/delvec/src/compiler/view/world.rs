@@ -683,6 +683,7 @@ pub fn encode_world(input: &WorldInput<'_>) -> WrittenWorld {
         })
     };
     let ground_count = ground_cells().count();
+    crate::compiler::notes::mark("encode: chunk set and ground counted");
     // The light is flooded strip by strip of [`LIGHT_STRIP`] chunk columns,
     // each over its own box grown by [`LIGHT_REACH`] on both `x` sides
     // ([`strip_light`]): what the chunks of a strip carry is the whole box's
@@ -790,6 +791,7 @@ pub fn encode_world(input: &WorldInput<'_>) -> WrittenWorld {
             .or_default()
             .insert(index, zlib(&nbt_root(compound(root))));
     }
+    crate::compiler::notes::mark("encode: chunks lit, encoded and compressed");
     // The bodies, one entity chunk per chunk a body stands in.
     let mut by_chunk: BTreeMap<(i32, i32), Vec<Tag>> = BTreeMap::new();
     for e in input.entities {
