@@ -75,14 +75,14 @@ staging gate (`--written-world`).
 - **Sculk, watchers and pulses are asserted on the walk, each with its own
   line.** `[sculk] <walk>: N sensor(s) predicted, N heard; M shrieker(s)
   predicted, M heard` per leg — a predicted vibration not heard fails the step —
-  and `[sculk] darkness D, warden W` at the end of every run, where either
-  non-zero fails it. `[watch] W watcher(s) in the record, K within reach on the
+  and `[sculk] darkness D (E more with a warden in reach), warden spawns heard W, undeclared standing U` at the end of every run, where a darkness no warden explains or a warden your actors do not declare fails it. `[watch] W watcher(s) in the record, K within reach on the
   proven path, K asserted …` — a watcher not facing the bot where the route
   passes in reach fails the critical path; one the path never reaches is named,
   not failed. `pulse binding: H of N pulse(s) heard at a listening station, S
   silent at a silent station`, every station a `pulse_stations` row of the run
   report; a pulse with no station reads `not_heard: no station`, never a pass.
   What each asserts: `$DELVEWRIGHT_ENGINE/docs/reference/playtest-methodology.md`.
+- **A body declared `outrun` is walked beside, not removed.** Every step the path walks while it is loose is a row of the `pursuit` stage: the bot does the step with nothing staged away or healed, reads the body once a second, and the row is red on a death (`died`), the body gone (`pursuer_lost`), a body that never moved after its entrance (`pursuer_inert`) or no reading (`unread`); the run closes with `[pursuit] n pursued step(s) of N, …; closest approach d`. A red `pursuit` row is the delve's, read like any other: move the body, the lane or the beat, never the proof.
 - **The ladder does not fight, and says nothing about whether a fight can be
   won.** `staged_removals` lists every body the HARNESS took out of the delve and
   why; it is the harness acting, not your delve behaving. Whether the delve is too

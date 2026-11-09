@@ -147,6 +147,16 @@ the muster put a question to, stated per encounter even when the muster never
 ran; `muster_findings` is what it could not establish. Zero declared facts over a
 campaign with waves is an unbound probe, and the run says so before it starts.
 
+## What the ladder asserts beside a body it never fights
+
+Outside a scripted death a body never kills the bot, because the ladder removes every body that lands a hit so the route can be read. That is right for a fight the player wins and wrong for a body the player escapes, and an `unleash-actor` alone cannot tell the two apart. So the campaign says which it is: an actor declared **`outrun: true`** (spec-0132) is one the party survives by moving, and the compiler names it on every exported step walked while it is loose (`critical-path.json` `pursuers`, format 6). The bot never infers a pursuer.
+
+A **pursued step** is performed exactly as every other — the same movement, sprint allowed unless the leg is `sneak`, the same completion oracle, eating from the kit as a player would — with three acts turned off for the whole step: staging a body away, refunding a removed body's blows and holding full health. Each act the rule refuses is recorded on the step. Every pursuer is read once a second on the server's clock through the census the path names (`actor_census_<id>`), and once more after the completion lands. The step passes only when the bot arrived alive; nothing was staged, refunded or restored; every pursuer was read standing at every reading; every pursuer's feet left its arrival cell by more than its own width at some reading after its entrance window (counted from the first reading that found it standing); and at least one reading was taken.
+
+Each refusal is a red row of the **`pursuit`** stage, with the step and the pursuer: `died` (with the attacker the server named), `staged`, `restored`, `pursuer_lost`, `pursuer_inert` — a pursuer whose will never ran is the vacuous shape, not a pass — and `unread`. A death on a pursued step ends the run as a death on any walk leg does, after its row is written. Per pursued step the artifact states the closest approach, the pursuer's displacement, the bot's lowest health and the readings, as measurement and never as verdict: whether a player could have survived the body is the owner's hour.
+
+**The binding line.** `[pursuit] <n> pursued step(s) of <N>, <m> pursuer(s), <k> reading(s); closest approach <d>`, `<N>` the exported steps walked. A campaign that declares an `outrun` actor loose on no step is refused at build (`DW1082`), so a zero here is never a pass on such a campaign.
+
 ## What the ladder asserts at a climb
 
 **The bot climbs the climb the compiler proved, and nothing else** (spec-0099).
@@ -318,10 +328,14 @@ neither fails a crossing.
 
 **The binding count.** Every walk whose leg carries vibrations prints
 `[sculk] <walk>: N sensor(s) predicted, N heard; M shrieker(s) predicted, M heard (leg start at game tick T, B predicted device(s) busy then[; heard through game tick U])`.
-At the end of every run, passed or failed, `[sculk] darkness D, warden W`
-counts every `darkness` effect on the bot and every `warden` that spawned; either
-non-zero fails the run, because a shrieker with `can_summon=false` applies no
-darkness and summons nothing. The build's own `sculk walk:` line says how many of
+At the end of every run, passed or failed, `[sculk] darkness D (E more with a warden in reach), warden spawns heard W, undeclared standing U`
+counts every `darkness` effect on the bot no warden in reach explains (`D`), the
+ones a warden the client saw within 20 blocks does (`E` — a warden pulses darkness
+onto every player in that reach), every `warden` that spawned (`W`), and the
+server's own count of wardens standing at the end that wear no `dw_actor` tag (`U`
+— a warden an actor declares is the campaign's, spec-0132 §5.7). `D` or `U`
+non-zero fails the run, and so does an unread `U` beside a heard spawn, because a
+shrieker with `can_summon=false` applies no darkness and summons nothing. The build's own `sculk walk:` line says how many of
 the world's sensors and shriekers some leg predicts; a device off the walk is
 stated there, never asserted.
 
