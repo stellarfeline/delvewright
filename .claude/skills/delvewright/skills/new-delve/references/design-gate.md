@@ -166,8 +166,8 @@ is its design: the row says in words what the level is, and stands where
 - **Step 2** draws its map's reference as `map-reference.md` says. One mechanic
   and a minimum cast make the series short, never absent.
 - **Step 4** hands over the walkthrough — the row's text first, then each
-  scene's near and far view under its hour and weather — and waits for the
-  user's explicit yes. The row is not that yes. Never write that the row, the
+  scene's near and far view under its hour and weather — and stops as
+  [The stop](#the-stop) says. The row is not the yes it asks for. Never write that the row, the
   queue or anyone else approved the level, and never pass the gate on the
   level's size.
 - **On the yes, nothing is copied into `design/`**: the confirmed views and
