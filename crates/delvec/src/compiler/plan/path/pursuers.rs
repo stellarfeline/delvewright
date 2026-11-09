@@ -126,7 +126,7 @@ fn lifecycle_lines<'a>(
             if let Verb::UnleashActor { actor } | Verb::DespawnActor { actor, .. } = &e.verb
                 && outrun.contains(actor.as_str())
             {
-                out.push((path.clone(), owner.clone(), reaction, e));
+                out.push((path.clone(), *owner, reaction, e));
             }
             for (seg, _, nested) in e.nested_effect_lists_labeled() {
                 let r = reaction || matches!(seg.as_str(), "on_respawn" | "on_rest" | "on_caught");
@@ -184,12 +184,9 @@ pub(crate) fn pursuers_by_step(
                         events.push((s, is_unleash));
                     }
                 }
-                Some(When::Undated) => {
-                    if is_unleash {
-                        undated = true;
-                    }
-                }
-                None => {}
+                // An undated despawn may never fire, so it removes nothing.
+                Some(When::Undated) if is_unleash => undated = true,
+                Some(When::Undated) | None => {}
             }
         }
         // Within one step, a despawn is taken to follow an unleash: the body
