@@ -92,21 +92,33 @@ impl Ambush {
     pub fn to_trigger(&self, actors: &[crate::Actor]) -> EnvTrigger {
         let enters = |id: &ActorId| actors.iter().any(|a| a.id == *id && a.entrance.is_some());
         let mut effects = self.telegraph.clone();
-        let mut generated: Vec<QuestEffect> = Vec::new();
-        for a in self.actors.iter().filter(|a| !enters(a)) {
-            generated.push(Verb::SpawnActor { actor: a.clone() }.into());
+        let spawned: Vec<&ActorId> = self.actors.iter().filter(|a| !enters(a)).collect();
+        for (i, a) in spawned.iter().enumerate() {
+            effects.push(QuestEffect {
+                when: None,
+                // The ambush declaration, on the beat where the spring becomes
+                // real. Only the FIRST, for the reason the field documents: one
+                // ambush is one beat, and stamping the line on every generated
+                // effect would pad the chronicle and trip `DW0485`.
+                happening: if i == 0 { self.happening.clone() } else { None },
+                audience: None,
+                within: None,
+                verb: Verb::SpawnActor {
+                    actor: (*a).clone(),
+                },
+            });
         }
+        let first_unleash = effects.len();
         for a in &self.actors {
-            generated.push(Verb::UnleashActor { actor: a.clone() }.into());
+            effects.push(Verb::UnleashActor { actor: a.clone() }.into());
         }
-        // The ambush declaration, on the beat where the spring becomes real:
-        // the first generated effect only, for the reason the field documents —
-        // one ambush is one beat, and stamping the line on every generated
-        // effect would pad the chronicle and trip `DW0485`.
-        if let Some(first) = generated.first_mut() {
+        // An ambush of entering actors alone stands no puppet: its first
+        // unleash is where the spring becomes real, and carries the line.
+        if spawned.is_empty()
+            && let Some(first) = effects.get_mut(first_unleash)
+        {
             first.happening = self.happening.clone();
         }
-        effects.extend(generated);
         EnvTrigger {
             id: TriggerId(format!(
                 "trigger/{}",
