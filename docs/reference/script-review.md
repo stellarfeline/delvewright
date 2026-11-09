@@ -109,9 +109,10 @@ here is the question asked.
   something they can see. A task whose only purpose is to be finished — three
   things found so that three things have been found — or whose result the story
   never picks up again, is unmotivated, however pleasant the doing. A lock, a
-  latch or a puzzle is a task too: ask who put it there, why, and whether the
-  player learns it; one that exists because the line needed a middle is the
-  same defect in a harder shell. **Cited:** Tomaszkiewicz (a fetch quest is one
+  latch or a puzzle is a task too: ask who set it, why a person in their place
+  would have set it rather than simply kept or handed over the thing, and
+  whether the player learns that reason; one that exists because the line
+  needed a middle is the same defect in a harder shell, however good its clue. **Cited:** Tomaszkiewicz (a fetch quest is one
   with little or no story around it; an errand that leads somewhere is not
   one); Desurvire et al., Game Play 2 and Game Story 1. The "told before it is
   set" clause and the lock clause are **authored**: a reason the player learns
