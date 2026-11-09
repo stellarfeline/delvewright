@@ -1,0 +1,65 @@
+# The warden as a hunter — what the pinned server does
+
+Reader: the agent designing a level where a warden hunts the players and the players steer it, and the engine work that proves such a level. Every statement is **[cited]** — measured on the pinned server, Minecraft Java 1.21.11, by `validation/warden-maze-probe.mjs`, with the trial named — or **[authored]**, a judgement made here from the measurements. The published numbers (Minecraft Wiki, *Warden*; CC BY-NC-SA 3.0, ideas only) are quoted only where a measurement confirms them. What the compiler emits for a warden — the `dig_cooldown` memory a command summon lacks, the seeded anger of a click trigger — is `compiler.md`, the `unleash-actor` row, and is not restated here. The maze these facts size is `maze-craft.md`.
+
+## Instrument
+
+- Server: `ghcr.io/stellarfeline/delvewright-base@sha256:3e7db2562b492dbf442568a327d361547628c98c04a7cb68218c8dde6abdd1de` (`versions.toml`, `[images.base]`), `TYPE=VANILLA VERSION=1.21.11`, superflat, `difficulty easy`, `spawn_mobs false`, `random_tick_speed 0`, a throwaway container with no published port.
+- Arena: a stone pad 91 × 91 at y = 100 in open air and open sky, forceloaded; the warden stands at its centre and is read over rcon (`data get entity`) every 0.5–1.5 s. Every warden is summoned with `PersistenceRequired` and the `dig_cooldown` memory, so it neither despawns nor digs during a trial.
+- Player: one mineflayer 4.37.1 bot (offline mode), parked 40 blocks from the warden except where the trial puts it closer; it is the "player" wherever a player is the question.
+- Reading: the warden's feet. `Brain.memories."minecraft:disturbance_location"` and `"minecraft:attack_target"` are not saved to NBT on this version and read back null while the warden walks to the spot or closes on its target, so "heard" is **the warden reaching within 2 blocks of the sound's cell**, "hunting" is its distance to the target, and a control trial with no sound bounds what roaming alone does. `anger.suspects` is saved and is read as written.
+- Distances are horizontal, from the warden's feet at the moment of the sound to the sound's cell.
+- Two runs: run 1 (every trial; the two hunting trials void, §2) and run 2 (the hunting trials repaired, the reach and bell sweeps widened, the emerge trial added). A `death` event the bot's client raised during run 2's first control trial, with the bot parked 40 blocks away and nothing near it, was not explained and is not a finding.
+
+## 1. A projectile landing near a roaming warden
+
+- **Hearing reaches about 16 blocks.** [cited, T1 both runs] A sourceless snowball landing 7.5, 11.1, 14.5, 14.6 and 15.7 blocks from the warden's feet: the warden walked to the landing cell (within 1 block) every time. Landing 17.3, 18.7, 23.1 and 23.5 blocks away: it never came within 12 blocks of the cell in 15 s, and the control with no snowball roamed no nearer than 15.5. The wiki's *"15 block radius ovoid"* is the published figure; this server's warden turned at 15.7 and not at 17.3.
+- **It walks there at about 1.9 blocks per second and stays about 3 s.** [cited, T1] 7.5 blocks in 4.0 s, 11.1 in 5.8 s, 14.5 in 8–9 s, 15.7 in 9.4 s; at the spot for 2.7–3 s, then roaming again. One snowball buys the walker roughly ten to twelve seconds of the warden's attention, most of it the walk.
+
+## 2. A warden already hunting
+
+Anger seeded at 150 against a body 14.5 blocks south; the bell and projectiles come from the east.
+
+- **An invulnerable body is not a target.** [cited, T2/T3 run 1] Anger seeded at 150 against a `NoAI, Invulnerable` zombie read back as `[]` on the next tick and the warden never moved. The repaired trials use a body under Resistance V, which the warden targets and cannot kill.
+- **A hunt opens with a 7 s stand, then a charge at about 5 blocks per second.** [cited, T2 run 2] With anger 150 the warden stood on its cell for 7.6 s (the roar), then covered 14 blocks in 2.7 s and stayed in melee with its target. Its roaming walk (§1) is 1.9 blocks per second: a hunting warden is more than twice as fast as a roaming one, and faster than a walking player.
+- **A sourceless projectile does not pull a hunting warden off its target.** [cited, T2-hunt-vs-sourceless] A snowball landing 11.5 blocks away while it stood roaring changed nothing: it charged the target and stayed on it; its anger at the target decayed 1 per second (150 → 138 over 15 s) and nothing else entered the list.
+- **A thrown egg adds anger toward the thrower, 35 a time, and the warden still does not switch while the target's anger is higher.** [cited, T2-hunt-vs-thrown-egg] Six eggs thrown a second apart from a platform 10 blocks east and 11 blocks up: the bot's entry appeared at 34 after the first, 67 after the third, 73 after the sixth (the wiki's *"two projectiles from the same player/mob … within five seconds … adds the full 35"*, and its 2 s detection cooldown, which swallowed the second, fourth and fifth); the target held 150 → 142 and the warden charged and stayed with the target. The bot was never attacked and lost no health, standing 17.4 blocks from where the warden stopped — outside the wiki's *"14-block radius horizontally"* for the sonic boom, which this trial therefore did not reach.
+- [authored] The guide's projectiles are a bid for the warden's attention that is won only when the guide's anger passes the walker's: three heard eggs put the guide at 105, over the 80 that opens a hunt, and the warden takes whichever body is angrier. A guide who throws while the warden is on the walker is making themself the next target, from a platform the warden can reach with its ranged attack inside 14 blocks horizontally and 20 vertically. Eggs are the tool for a warden that is roaming, not for one that has already charged.
+
+## 3. Pursuit down a corridor
+
+- **A 1-wide, 4-high, open-top lane is walked at hunting speed.** [cited, T3-corridor-1w run 2] 17 blocks to within 2 of the target in 10.3 s, the first 7 s of it the roar stand: about 5 blocks per second once moving.
+- **A 2-wide lane: 8.9 s for the same 17 blocks.** [cited, T3-corridor-2w run 2]
+- [authored] Lane width between 1 and 2 does not slow the warden; the engine's footprint model (`crates/delvec/src/compiler/nav/world/body.rs`, `"warden" => (0.9, 2.9)`: a 1 × 3 body) agrees with what vanilla's pathfinder did. A maze lane never shelters the walker by its width; only its height (a 2-high passage the warden cannot enter, which the same model refuses to route it through) or its loops do.
+
+## 4. Sneaking
+
+- **A player walking 10 blocks from a calm warden is dead in about thirteen seconds.** [cited, T4-walk-at-10, run 1, easy difficulty] Anger at the bot read 34 at 4.4 s, 66 at 7.0 s, 119 at 9.5 s, 149 at 11.9 s; the bot died before the 14.6 s reading. The warden closed from 10 blocks to melee during the climb.
+- **A player sneaking 10 blocks from a calm warden, walking to and fro for 15 s, is not heard.** [cited, T4-sneak-at-10, run 1] The bot's anger entry never appeared while the warden roamed between 8 and 12 blocks of it. (A stranger's entry did appear and climbed to 118: a chicken hatched from an egg thrown in an earlier trial, walking in the open. Run 2 kills chickens between trials.)
+- **Sneaking does not hide a player from the sniff.** [cited, T4-sneak-stand-at-4, run 1] A bot sneaking and standing still 4 blocks from the warden for 20 s held an anger entry of 52 at the end: the sniff found it (the wiki's *"35 anger to the nearest mob or player within a 6 block radius horizontally"*), and it was below the 80 that opens a hunt only because the trial ended.
+- [authored] Sneaking is the walker's tool against a warden more than 6 blocks away and useless inside that radius; the maze's lanes decide which case the walker is in, so a lane that passes within 6 blocks of the warden's roaming ground is a lane the walker cannot sneak.
+
+## 5. A bell
+
+Bell east of a calm warden; the reading is the warden's feet.
+
+- **A bell rung by redstone power is heard, and the warden walks to it; its reach is about 16 blocks.** [cited, T5 both runs] A redstone block set beside the bell at 7.3, 9.6 and 15.0 blocks from the warden's feet: the warden reached the bell (within 1.6) in 3.9, 5.5 and 8.5 s. At 18.0, 18.1 and 20.9 blocks it did not come within 14 blocks in 12 s. The bell's ring is a vibration with the same reach as a projectile's landing (§1).
+- **A bell set directly to its `powered=true` state does not ring.** [cited, T5-state-powered, both runs] `setblock … bell[…,powered=true]` 10 blocks away: the warden came no nearer than the control (10.0 and 5.2 against the control's 8.8).
+- **`playsound` alone is not heard.** [cited, T5-playsound-only, both runs] `playsound minecraft:block.bell.use` at the bell's cell: the warden came no nearer than the control (10.0 and 5.5). A sound is not a vibration.
+- [authored] The engine's way to ring a distant bell is therefore a region write that powers it — a redstone block set in a cell beside it and cleared again a few ticks later — and never the bell's own state or a sound. The DSL's `set-block` takes an anchor id and a blockstate (`crates/dsl/src/quest/verb.rs`, `SetBlock { anchor: AnchorId, block }`), so the bell's cell and the cell that powers it are two anchors the piece declares; the cooldown is a `sequence` step that clears the power block, and the limited uses are a `state` datum the trigger's `requires_state` reads — all three compiled in one probe (the trigger's `press_` function gates on `dw.s_<datum> matches ..2`, its `seq_` steps run at 0, 2 and 40 ticks).
+
+## 6. The emerge animation
+
+Four summons at one cell, the bot 12 blocks away reading the warden's synced pose (entity metadata index 6: 13 is EMERGING, 14 DIGGING, 12 SNIFFING, 0 STANDING on this version) every 250 ms; presence and brain memories read at 12 s.
+
+- **A bare `/summon` stands up and stays; a summon with `{}` digs at once and is gone in 5 s.** [cited, T6-emerge-bare, T6-emerge-empty-nbt] Bare: SNIFFING at 0.5 s, STANDING at 4.8 s, alive at 12 s with `dig_cooldown` 1051 ticks left (the finalization the compiler's `unleash-actor` row describes, seen from the pose side). `{}`: DIGGING at 0.25 s, absent at 5.3 s.
+- **The compiler's awake NBT stands up and stays, with no emerge.** [cited, T6-emerge-awake] SNIFFING at 1.0 s, STANDING at 5.3 s, alive at 12 s.
+- **The `is_emerging` memory plays the emerge from the ground.** [cited, T6-emerge-is-emerging] Awake NBT plus `"minecraft:is_emerging":{value:{},ttl:133L}` in `Brain.memories`: EMERGING from 0.25 s to 7.0 s (133 ticks is 6.65 s), then SNIFFING, then STANDING at 11.3 s; alive at 12 s with `dig_cooldown` intact and `is_emerging` consumed. The wiki says a warden *"cannot detect any vibrations"* while emerging, which is the window a close-up shot has.
+- [authored] One memory entry on the unleashed twin's summon turns the warden's entrance into the emerge; the compiler's twin carries `dig_cooldown` alone (`unleash_<id>`: `Brain:{memories:{"minecraft:dig_cooldown":{value:{},ttl:1200L}}}`), so the entrance is a surface the `unleash-actor` verb does not yet offer, and nothing else in the DSL reaches the memory. The puppet cannot play it: it is `NoAI` and never runs the behaviour that reads the memory.
+
+## 7. What the engine takes from it
+
+- **The guide's steering has a reach of about 16 blocks from the warden's feet and buys ten to twelve seconds, and only against a warden that is not already hunting.** [authored, from §1, §2 and §5] A platform must stand within that reach of the lanes it is to clear; a bell's cell must be within it of where the warden is, and it is rung by power.
+- **A hunting warden is faster than a walking player and is not called off by a sound; the walker's escape is a loop that breaks the warden's line, not a sprint down a lane.** [authored, from §2 and §3]
+- **Walking is detection; sneaking is detection inside 6 blocks.** [authored, from §4]
+- **The entrance is one memory entry; the close-up is seven seconds.** [authored, from §6]
