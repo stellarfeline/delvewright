@@ -2699,12 +2699,21 @@ impl World {
         seeds.lock().expect("memo").insert(seed_key, Arc::clone(&g));
         if crate::compiler::notes::timing() {
             crate::compiler::notes::mark(&format!(
-                "reach graph: built, window {:?}, lineage {}, lineage diff {} cell(s), premise {}, leaves {}",
+                "reach graph: built, window {:?} at {:?}, lineage {}, lineage diff {} cell(s), premise {}, leaves {}, keep-out {}, unbounded fall {}, ambient {}, world {}",
                 g.dense.dims,
+                g.dense.lo,
                 g.lineage.is_some(),
                 g.lineage.as_ref().map_or(0, |(_, d)| d.len()),
                 g.premise_cells.len(),
-                g.leaf_cells.len()
+                g.leaf_cells.len(),
+                self.keep_out.len(),
+                self.unbounded_fall,
+                self.ambient.name(),
+                self.fingerprint()
+                    .iter()
+                    .take(4)
+                    .map(|b| format!("{b:02x}"))
+                    .collect::<String>()
             ));
         }
         g
