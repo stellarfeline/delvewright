@@ -682,7 +682,9 @@ not third-party reconstructions.
 - **`entity-bodies-1.21.11.json`** — every registered entity type (157) with its
   bounding box (`width`, `height`, from `EntityType#getWidth()`/`#getHeight()`) and
   the distance the server tracks it at (`tracking_range`, chunks, from
-  `EntityType#clientTrackingRange()`). Read for spec-0110 by
+  `EntityType#clientTrackingRange()`). Read for spec-0110 (the framing proofs) and
+  read again as the one body-size source of `nav::entity_dims` (a happy ghast is
+  4.0 x 4.0, so an NPC or actor wearing it gets a box and clearance proof of that size), by
   `tools/maintenance/extract-entity-bodies.py` from the pinned server jar's bundled
   `META-INF/versions/1.21.11/server-1.21.11.jar` through Mojang's official 1.21.11
   server mappings (piston-meta `server_mappings`, sha1

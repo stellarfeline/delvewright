@@ -1,6 +1,7 @@
 //! The `move-actor` walk: an actor's staged legs over the assembled world
 //! (`DW0325`, `DW0410`, `DW0488`).
 
+use super::walkway::Ways;
 use super::*;
 use crate::compiler::failure::Failure;
 use crate::compiler::plan::{Plan, ResolvedAnchor};
@@ -135,6 +136,8 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
     let mut planned_origin: BTreeMap<(String, String, String), ([i32; 3], BranchGate)> =
         BTreeMap::new();
     let mut cache = SealCache::default();
+    // The plan's declared ways, read once: every leg keeps to them.
+    let ways = Ways::of(plan);
     for (eff, seal) in crate::compiler::timeline::walk(plan) {
         let Verb::MoveActor {
             actor, to, speed, ..
@@ -255,7 +258,8 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
                     .unwrap_or(start_anchor)
             }
         };
-        let cells = match leg_world.find_path_fp(start, target, &fp) {
+        let leg_ways = ways.leg(plan, start, target);
+        let cells = match leg_world.find_walk_fp(start, target, &fp, &leg_ways) {
             Some(cells) => cells,
             // Unroutable in the timeline-correct world. Which diagnostic depends on
             // *why*: if the open world routes it, the campaign's own `close-gate` is
@@ -310,7 +314,7 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
         // A puppet crosses open ground the same way a villager does — smoothing
         // belongs to a walked body, not to the verb that first needed it. Swept at
         // the footprint THIS leg was routed under, which for an actor is its own.
-        let walked = smooth_walk(leg_world, &cells, &fp, body_w);
+        let walked = smooth_walk(leg_world, &cells, &fp, body_w, &leg_ways);
         let (waypoints, exact) = resample_body(&walked, speed.unwrap_or(DEFAULT_SPEED), body_w);
         // Seed: the facing the puppet already has — the exit yaw of the previous
         // leg **on this branch**, else the actor's declared spawn `facing`
