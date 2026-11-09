@@ -32,7 +32,7 @@ echo "pid $dpid" >> "$pfx.meta"
 spid=$!
 ppid=
 if [ "$perf" = perf ]; then
-  perf record -F 97 -e cpu-clock:u -p "$dpid" -o "$pfx.perf.data" > "$pfx.perf.log" 2>&1 &
+  "${PERF:-perf}" record -F 97 -e cpu-clock:u -p "$dpid" -o "$pfx.perf.data" > "$pfx.perf.log" 2>&1 &
   ppid=$!
 fi
 wait "$tpid"; status=$?

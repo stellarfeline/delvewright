@@ -239,6 +239,7 @@ pub(super) fn prove_world(
             // still running out of is not a verdict (see its doc comment). This
             // call and that one cannot disagree — the measurement is pure and
             // reads the same two sets.
+            crate::compiler::notes::mark("fluid escape: start");
             let fluid_escape = crate::compiler::nav::measure_fluid_escape(world);
             fluid_escape_ledger = Some(fluid_escape.ledger());
             if let Some(e) = fluid_escape.finding() {
@@ -254,6 +255,7 @@ pub(super) fn prove_world(
             // cannot disagree with it because the measurement is pure and reads
             // the same sets. A pass owes the numbers as much as a failure does —
             // `contact_face_cells: 0` is a watertight hull saying so.
+            crate::compiler::notes::mark("party walk for seepage: start");
             let party_walk = world.body_region_rooted(&crate::compiler::edit::anchor_starts(plan));
             let seepage = crate::compiler::nav::measure_sea_seepage(world, &party_walk);
             crate::note!("{}", seepage.line());
@@ -267,6 +269,7 @@ pub(super) fn prove_world(
             // because this is the first point at which the walk region and the
             // placed boxes are both in hand, and printed before it is raised,
             // for the same vacuity reason the exposure line is.
+            crate::compiler::notes::mark("ocean walk plane: start");
             let (sea_walk, sea_walk_findings) =
                 crate::compiler::plan::check_ocean_walk_plane(plan, prefabs, &party_walk);
             crate::note!("{}", sea_walk.line());
@@ -294,6 +297,7 @@ pub(super) fn prove_world(
             // finds something owes its reader the same counts as the run that
             // finds nothing, and a check whose line appears only on a pass is one
             // whose denominator nobody can read at the moment it matters.
+            crate::compiler::notes::mark("burial: start");
             let (exposure, findings) = crate::compiler::burial::check(
                 plan,
                 prefabs,
@@ -365,6 +369,7 @@ pub(super) fn prove_world(
             // `DW0322` floods from where a body can start a walk: every anchor
             // but a station of a scenery place nobody is put in
             // (`edit::body_starts`). The line states what it left out.
+            crate::compiler::notes::mark("body starts + boundary safety: start");
             let body_starts = crate::compiler::edit::body_starts(plan, world);
             crate::note!(
                 "boundary-safety binding: {} of {} anchor(s) root the walk region, {} \
@@ -1156,6 +1161,7 @@ pub(super) fn prove_world(
                         let r = &row.realized;
                         let widx = row.k;
                         let who = row.label();
+                        crate::compiler::notes::mark(&format!("branch world {who}: start"));
                         let label = |e: Failure| Failure {
                             code: e.code,
                             message: format!("{who}: {}", e.message),
@@ -1198,6 +1204,7 @@ pub(super) fn prove_world(
                             )
                             .map_err(branch_fail)?
                         };
+                        crate::compiler::notes::mark("branch world: path built and links taken");
                         branch_takes.insert(r.branch.slug.clone(), takes);
                         let (region_events, ancestors) = plan.branch_gate_model(&cp);
                         let ancestor = |g: usize, s: usize| {
@@ -1212,6 +1219,7 @@ pub(super) fn prove_world(
                             &ancestor,
                         )
                         .map_err(label)?;
+                        crate::compiler::notes::mark("branch world: path checked");
                         let branch_routes = crate::compiler::nav::branch_path_routes(
                             world,
                             campaign_spawn(plan),
@@ -1222,6 +1230,7 @@ pub(super) fn prove_world(
                         );
                         crate::compiler::nav::verify_exported_routes(world, &branch_routes)
                             .map_err(label)?;
+                        crate::compiler::notes::mark("branch world: routes planned and verified");
                         if !branch_routes.is_empty() {
                             branch_waypoints.push((
                                 r.branch.slug.clone(),
@@ -1235,6 +1244,7 @@ pub(super) fn prove_world(
                             ));
                         }
                         path_legs.push((r.branch.slug.clone(), cp.steps.clone(), branch_routes));
+                        crate::compiler::notes::mark("branch world: done");
                     }
                 }
                 // `DW1025`: a body the party talks to faces the party as they
@@ -1243,6 +1253,7 @@ pub(super) fn prove_world(
                 // the branches are routed) and the walks that leave a body
                 // where it is talked to. The line prints before the verdict.
                 {
+                    crate::compiler::notes::mark("approach check: start");
                     let (binding, findings) =
                         crate::compiler::approach::check(plan, &path_legs, &m);
                     crate::note!("{}", binding.line());
