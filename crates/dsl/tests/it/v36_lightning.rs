@@ -16,7 +16,7 @@ use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign, lightning, stage
 use serde_json::Value;
 
 fn campaign_with(quests: &str) -> RawCampaign {
-    RawCampaign {
+    common::declared(RawCampaign {
         world: common::read_valid("world.json"),
         npcs: common::read_valid("npcs.json"),
         classes: common::read_valid("classes.json"),
@@ -29,7 +29,7 @@ fn campaign_with(quests: &str) -> RawCampaign {
         site_plan: None,
         detail_plan: None,
         design: None,
-    }
+    })
 }
 
 /// A quests document whose single objective-completion bundle is `effects`.

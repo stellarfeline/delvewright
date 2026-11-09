@@ -35,6 +35,7 @@ fn second_planned_quest() -> Value {
         "area": "area/keep",
         "depends_on": [],
         "goal": "A prerequisite nobody has written yet.",
+        "activity": ["talk"],
         "id": "quest/side-trip",
         "mandatory": true,
         "npcs": []

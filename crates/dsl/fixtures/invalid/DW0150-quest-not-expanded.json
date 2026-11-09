@@ -8,11 +8,15 @@
         "quests": [
           {
             "act": 1,
+            "activity": [
+              "reach",
+              "talk"
+            ],
             "area": "area/keep",
             "depends_on": [
               "quest/side-trip"
             ],
-            "goal": "Get the Keeper to open the door and leave the keep.",
+            "goal": "Hear the Keeper out and leave through the door.",
             "id": "quest/open-the-door",
             "mandatory": true,
             "npcs": [
@@ -21,6 +25,9 @@
           },
           {
             "act": 1,
+            "activity": [
+              "talk"
+            ],
             "area": "area/keep",
             "depends_on": [],
             "goal": "A prerequisite that was never expanded.",

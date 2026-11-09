@@ -501,6 +501,7 @@ fn bearer_removed_by_aside(dst: &Path, on_path: bool) {
         .push(json!({
             "id": "quest/aside",
             "goal": "Stand where the keeper stood.",
+            "activity": ["reach"],
             "area": "area/keep",
             "npcs": [],
             "depends_on": ["quest/greet"],

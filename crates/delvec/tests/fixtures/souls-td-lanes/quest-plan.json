@@ -5,6 +5,10 @@
     "quests": [
       {
         "act": 1,
+        "activity": [
+          "reach",
+          "kill"
+        ],
         "area": "area/keep",
         "depends_on": [],
         "goal": "Break the warband walking the hall, and the husks they summon.",

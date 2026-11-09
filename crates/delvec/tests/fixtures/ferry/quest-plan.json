@@ -5,6 +5,9 @@
     "quests": [
       {
         "act": 1,
+        "activity": [
+          "reach"
+        ],
         "area": "area/strait",
         "depends_on": [],
         "goal": "Board the near hull and pull the tiller to cross to the far shore.",

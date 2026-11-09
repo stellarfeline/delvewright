@@ -5,6 +5,10 @@
     "quests": [
       {
         "act": 1,
+        "activity": [
+          "talk",
+          "kill"
+        ],
         "area": "area/keep",
         "depends_on": [],
         "goal": "Muster with the Keeper and put the garrison down.",

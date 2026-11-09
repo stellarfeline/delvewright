@@ -111,7 +111,7 @@ fn parse_hw(quests: &str) -> Campaign {
 }
 
 fn parse_hw_planned(quests: &str, quest_plan: &str) -> Campaign {
-    let raw = RawCampaign {
+    let raw = common::declared(RawCampaign {
         world: hw("world.json"),
         npcs: hw("npcs.json"),
         classes: classes_with_a_flask(),
@@ -124,7 +124,7 @@ fn parse_hw_planned(quests: &str, quest_plan: &str) -> Campaign {
         site_plan: None,
         detail_plan: None,
         design: None,
-    };
+    });
     let mut c = parse_campaign(&raw).expect("campaign parses");
     delvewright_dsl::tag_translatables(&mut c);
     c
@@ -299,10 +299,11 @@ fn two_quest_plan(errand_is_mandatory: bool) -> String {
     "quests": [
       {{ "id": "quest/side-errand", "act": 1, "area": "area/keep", "npcs": [],
          "goal": "Look in on the Keeper's stand.", "depends_on": [],
+         "activity": ["talk"],
          "mandatory": {errand_is_mandatory} }},
       {{ "id": "quest/open-the-door", "act": 1, "area": "area/keep",
          "npcs": ["npc/keeper"], "goal": "Get the Keeper to let you rest.",
-         "depends_on": ["quest/side-errand"], "mandatory": true }}
+         "activity": ["talk"], "depends_on": ["quest/side-errand"], "mandatory": true }}
     ]
   }}
 }}"#

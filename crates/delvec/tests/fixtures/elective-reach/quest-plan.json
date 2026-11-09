@@ -28,6 +28,9 @@
     "quests": [
       {
         "act": 1,
+        "activity": [
+          "talk"
+        ],
         "area": "area/keep",
         "depends_on": [],
         "goal": "Do quest/decide.",
@@ -39,6 +42,9 @@
       },
       {
         "act": 1,
+        "activity": [
+          "reach"
+        ],
         "area": "area/keep",
         "depends_on": [
           "quest/decide"
@@ -52,6 +58,9 @@
       },
       {
         "act": 1,
+        "activity": [
+          "reach"
+        ],
         "area": "area/keep",
         "depends_on": [
           "quest/decide"

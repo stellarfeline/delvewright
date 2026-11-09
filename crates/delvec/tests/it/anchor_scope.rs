@@ -113,7 +113,7 @@ fn fixture(tag: &str, annex_provides_the_name: bool, beat_in_annex: bool) -> std
         quests.insert(
             0,
             json!({
-                "id": "quest/arrive", "goal": "Cross the yard to the Keeper's door.",
+                "id": "quest/arrive", "goal": "Cross the yard to the Keeper's door.", "activity": ["talk"],
                 "area": "area/keep", "npcs": [], "depends_on": [],
                 "mandatory": true, "act": 1,
             }),

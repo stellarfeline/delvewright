@@ -398,6 +398,7 @@ fn plan_with_second_quest() -> String {
         "area": "area/keep",
         "depends_on": ["quest/open-the-door"],
         "goal": "Board the ship.",
+        "activity": ["talk"],
         "id": "quest/the-sail",
         "mandatory": true,
         "npcs": []

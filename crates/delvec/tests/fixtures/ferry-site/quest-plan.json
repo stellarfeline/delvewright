@@ -5,6 +5,9 @@
     "quests": [
       {
         "act": 1,
+        "activity": [
+          "reach"
+        ],
         "area": "area/site",
         "depends_on": [],
         "goal": "Cross the strait on the ferry, reach the far boathouse, and ride the far ferry home.",

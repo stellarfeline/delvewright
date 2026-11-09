@@ -31,6 +31,9 @@
     "quests": [
       {
         "act": 1,
+        "activity": [
+          "talk"
+        ],
         "area": "area/keep",
         "depends_on": [],
         "goal": "Choose whether to hold the gate with the Keeper or bolt for the moor road.",
@@ -42,11 +45,14 @@
       },
       {
         "act": 2,
+        "activity": [
+          "talk"
+        ],
         "area": "area/keep",
         "depends_on": [
           "quest/decide"
         ],
-        "goal": "Take the Keeper's last word — wherever the choice left him standing.",
+        "goal": "Hear the Keeper's last word — wherever the choice left him standing.",
         "id": "quest/parley",
         "mandatory": true,
         "npcs": [

@@ -5,6 +5,10 @@
     "quests": [
       {
         "act": 1,
+        "activity": [
+          "reach",
+          "use"
+        ],
         "area": "area/site",
         "depends_on": [],
         "goal": "Go through the door, ring the bell, and walk back.",

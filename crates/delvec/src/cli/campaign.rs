@@ -472,6 +472,24 @@ fn validate_loaded_with(
                 examined.push(hbind.line());
                 diags.extend(hd);
             }
+            // spec-0131: what the player does on every line of the plan — the
+            // activity census, stated with its denominator whatever it counts —
+            // and what the activity check (`DW1079`, raised inside
+            // `validate_campaign_with` above) examined.
+            {
+                let table = delvewright_dsl::metrics::Metrics::table();
+                let mut reads = delvewright_dsl::metrics::Reads::new();
+                if let Some(census) =
+                    delvewright_dsl::ActivityCensus::of(&campaign, &table, &mut reads)
+                {
+                    examined.extend(census.lines());
+                }
+                examined.push(
+                    delvewright_dsl::quest::check::check_activity(&campaign)
+                        .1
+                        .line(),
+                );
+            }
             // v0.6 `close-gate` gate-block declaration (DW0343): the fill block is
             // prefab metadata, so this compiler-side check runs here (validation
             // tier). No-op for a campaign that uses no `close-gate`.
@@ -1066,6 +1084,7 @@ fn build_as(
     };
 
     let tree = CommandTree::v1_21_11();
+    delvec::compiler::notes::mark("validated, analysed, planned: emit starts");
     let output = match emit::build_with_warnings(
         &plan,
         &loaded.inputs,
@@ -1076,6 +1095,7 @@ fn build_as(
         &skins,
     ) {
         Ok((o, warnings)) => {
+            delvec::compiler::notes::mark("emit returned");
             // Advisory build-tier findings (stage-7 edit replay: DW0353/DW0354).
             // Printed exactly like the validation-tier warnings, and like them
             // they never change the exit code.
@@ -1149,6 +1169,7 @@ fn build_as(
 
     // The directory holds exactly this build afterwards, or nothing in it moves
     // (`delvec::outdir`, `DW0967`).
+    delvec::compiler::notes::mark("output: writing the tree");
     match delvec::outdir::replace(out, &output) {
         Ok(done) => {
             if let Some(line) = done.summary(out) {

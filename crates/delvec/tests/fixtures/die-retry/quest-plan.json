@@ -5,9 +5,12 @@
     "quests": [
       {
         "act": 1,
+        "activity": [
+          "talk"
+        ],
         "area": "area/keep",
         "depends_on": [],
-        "goal": "Get the Keeper to name the trial, and mark the stone he stands on.",
+        "goal": "Hear the Keeper name the trial, and mark the stone he stands on.",
         "id": "quest/greet",
         "mandatory": true,
         "npcs": [
@@ -16,6 +19,9 @@
       },
       {
         "act": 1,
+        "activity": [
+          "kill"
+        ],
         "area": "area/keep",
         "depends_on": [
           "quest/greet"

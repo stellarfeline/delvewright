@@ -105,6 +105,7 @@ WHOLE_TREE = frozenset(
         "test_fetch_delvec.py",
         "test_handout.py",
         "test_references.py",
+        "test_script_review.py",
         "test_starter.py",
         "test_town.py",
         "test_release_tags.py",

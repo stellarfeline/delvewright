@@ -6,6 +6,7 @@
 #[path = "../common/mod.rs"]
 mod common;
 
+mod activity;
 mod assembly_surface;
 mod body_skin_sites;
 mod body_watch_sites;

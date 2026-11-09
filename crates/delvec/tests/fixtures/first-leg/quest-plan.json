@@ -5,20 +5,26 @@
     "quests": [
       {
         "act": 1,
+        "activity": [
+          "reach"
+        ],
         "area": "area/hall",
         "depends_on": [],
-        "goal": "Ring the bell in the watch-hall.",
+        "goal": "Go to the bell in the watch-hall.",
         "id": "quest/hall",
         "mandatory": true,
         "npcs": []
       },
       {
         "act": 2,
+        "activity": [
+          "reach"
+        ],
         "area": "area/vault",
         "depends_on": [
           "quest/hall"
         ],
-        "goal": "Take what the bell answers for.",
+        "goal": "Go down to what the bell answers for.",
         "id": "quest/vault",
         "mandatory": true,
         "npcs": []

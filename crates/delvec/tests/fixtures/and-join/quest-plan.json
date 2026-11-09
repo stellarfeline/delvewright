@@ -5,6 +5,10 @@
     "quests": [
       {
         "act": 1,
+        "activity": [
+          "talk",
+          "take"
+        ],
         "area": "area/keep",
         "depends_on": [],
         "goal": "Learn about the twin wards.",
@@ -16,6 +20,11 @@
       },
       {
         "act": 2,
+        "activity": [
+          "reach",
+          "take",
+          "use"
+        ],
         "area": "area/keep",
         "depends_on": [
           "quest/greet"

@@ -14,41 +14,21 @@
 - [The optional fields that commit something](#the-optional-fields-that-commit-something)
 
 
-Create `campaigns/<campaign-id>/`. Everything of the campaign lives
-there — the documents, the design record, the generation record, the storybook.
-Build output goes beside them and is ignored by git there.
+Create `campaigns/<campaign-id>/`. Everything of the campaign lives there — the documents, the design record, the generation record, the storybook. Build output goes beside them and is ignored by git there.
 
 ## Where a campaign lives
 
-**`campaigns/` is the home of a campaign, and a demo level is a campaign.** A
-level off the engine's `docs/demo-levels.md` queue — one mechanic in the
-spotlight, ten to twenty minutes, minimum cast — is authored through this page
-like any other and goes to `campaigns/<id>/`. It has to: a delve is what
-somebody plays, and a campaign is the directory under `campaigns/` that carries
-`world.json`. **A reference level lives whole in the content repository's
-`references` directory, under its own id** — its documents, its form, its
-prefabs and the record of how it is built — and is built with
-`--prefabs campaigns/references/<id>/prefabs`; the reference works page says
-which levels those are. **`demos/` is not a second home for a campaign.** What lives there is a
-demonstration of a *generation-time* surface — a grammar program, the piece it
-exports, its reports, its refusal transcripts — and it carries no campaign
-document because no delve is built from it. One place each, and no pointer file
-in either.
+**`campaigns/` is the home of a campaign, and a demo level is a campaign.** A level off the engine's `docs/demo-levels.md` queue — one mechanic in the spotlight, ten to twenty minutes, minimum cast — is authored through this page like any other and goes to `campaigns/<id>/`. It has to: a delve is what somebody plays, and a campaign is the directory under `campaigns/` that carries `world.json`. **A reference level lives whole in the content repository's `references` directory, under its own id** — its documents, its form, its prefabs and the record of how it is built — and is built with `--prefabs campaigns/references/<id>/prefabs`; the reference works page says which levels those are. **`demos/` is not a second home for a campaign.** What lives there is a demonstration of a *generation-time* surface — a grammar program, the piece it exports, its reports, its refusal transcripts — and it carries no campaign document because no delve is built from it. One place each, and no pointer file in either.
 
 ## The document names
 
-**The document names, all of them.** `delvec validate` reads a whole campaign
-and refuses one that is missing any of them with `DW0874`, which names **every**
-document that is absent in a single run, gives the whole required set, and
-prints what a stub looks like — so you never have to guess the names. Six are
-always required:
+**The document names, all of them.** `delvec validate` reads a whole campaign and refuses one that is missing any of them with `DW0874`, which names **every** document that is absent in a single run, gives the whole required set, and prints what a stub looks like — so you never have to guess the names. Six are always required:
 
 ```
 world.json  npcs.json  classes.json  quest-plan.json  quests.json  dialogue.json
 ```
 
-Six more are conditional, and every one of them is a real campaign document
-with its own schema:
+Six more are conditional, and every one of them is a real campaign document with its own schema:
 
 | document | when |
 |---|---|
@@ -70,269 +50,86 @@ with its own schema:
 }
 ```
 
-`stage` is the document's own name — `world`, `npcs`, `classes`, `quest-plan`,
-`quests`, `dialogue`, `world-edits`, `geometry-brief`, `layout-graph`,
-`site-plan`, `detail-plan`, `design`. `content` is everything else.
+`stage` is the document's own name — `world`, `npcs`, `classes`, `quest-plan`, `quests`, `dialogue`, `world-edits`, `geometry-brief`, `layout-graph`, `site-plan`, `detail-plan`, `design`. `content` is everything else.
 
-**What number goes in `dsl_version`: exactly the one `delvec --version` printed
-after `dsl`, on every document, the `l10n/` sidecars included.** The engine
-accepts that one number and no other: a document carrying any other — older or
-newer — is refused at the envelope with `DW0102`, which names the number to
-write. There is no floor and no range, so never copy a number from an example
-or an older campaign.
+**What number goes in `dsl_version`: exactly the one `delvec --version` printed after `dsl`, on every document, the `l10n/` sidecars included.** The engine accepts that one number and no other: a document carrying any other — older or newer — is refused at the envelope with `DW0102`, which names the number to write. There is no floor and no range, so never copy a number from an example or an older campaign.
 
 ## Getting a document's shape
 
-**Get the shape from the engine, never from memory.** Before writing a
-document:
+**Get the shape from the engine, never from memory.** Before writing a document:
 
 ```sh
 delvec schema --stage world          # or npcs, quests, site-plan, cameras, …
 delvec schema --stage all            # every document at once
 ```
 
-The schema is the authority on a document's form. Where anything else disagrees
-with it, the schema is what parses. If you want a filled-in example rather than
-a schema, `delvec metrics --gym .out/gym` writes nine complete documents that
-build (step 2's reference says what each is).
+The schema is the authority on a document's form. Where anything else disagrees with it, the schema is what parses. If you want a filled-in example rather than a schema, `delvec metrics --gym .out/gym` writes nine complete documents that build (step 2's reference says what each is).
 
 ## `DESIGN.md` and `GENERATION.md`
 
-Two more files belong to the campaign and are prose, not documents the compiler
-reads:
+Two more files belong to the campaign and are prose, not documents the compiler reads:
 
-- **`DESIGN.md`** — the authoritative design record: layout, dramaturgy beats,
-  the branch/ending table. Every later round is judged against it.
-- **`GENERATION.md`** — the campaign's own decisions, in your words as their
-  author: what the brief pinned down and what you invented, the `dsl_version`,
-  this campaign's **posture note** (see *Reference: writing craft* §B), and later
-  the findings ledger and the chronicle citation table. **Not the prompt
-  verbatim and not a date.** Every artifact of this campaign is
-  English-first and carries no personal information, no verbatim personal
-  speech, and no record of who decided something or when — the engine
-  constitution's *Privacy in repo artifacts* convention, which holds for these
-  generation logs as for every other artifact. So write the
-  constraint ("the brief pinned the tide as a story beat, never a clock"), never
-  the sentence somebody typed; write the decision, never its date or its author.
-  The record is for whoever authors the next round of this campaign, and a date
-  tells them nothing a `git log` does not.
+- **`DESIGN.md`** — the authoritative design record: layout, dramaturgy beats, the branch/ending table. Every later round is judged against it.
+- **`GENERATION.md`** — the campaign's own decisions, in your words as their author: what the brief pinned down and what you invented, the `dsl_version`, this campaign's **posture note** (see *Reference: writing craft* §B), and later the findings ledger and the chronicle citation table. **Not the prompt verbatim and not a date.** Every artifact of this campaign is English-first and carries no personal information, no verbatim personal speech, and no record of who decided something or when — the engine constitution's *Privacy in repo artifacts* convention, which holds for these generation logs as for every other artifact. So write the constraint ("the brief pinned the tide as a story beat, never a clock"), never the sentence somebody typed; write the decision, never its date or its author. The record is for whoever authors the next round of this campaign, and a date tells them nothing a `git log` does not.
 
 ## The campaign's own branch
 
-**First ask whether the working directory is a repository at all**, because Init
-I6's fourth case — "anything else" — is an ordinary directory that has never
-been one, and on it every instruction below fails at `git rev-parse`:
+**First ask whether the working directory is a repository at all**, because Init I6's fourth case — "anything else" — is an ordinary directory that has never been one, and on it every instruction below fails at `git rev-parse`:
 
 ```sh
 git -C . rev-parse --is-inside-work-tree 2>/dev/null || echo "no repository here"
 ```
 
-**No repository: `git init` it, and carry on.** A campaign is the artifact of
-record and it needs a history of its own from the first document, not a clone of
-anything: the content repository is where a *published* campaign goes, and a
-run that has not reached the design gate has nothing to publish. Say in one line
-that you did it and where. Everything below then applies unchanged, except that
-there is no `main` to keep off — the first branch you make is the campaign's.
+**No repository: `git init` it, and carry on.** A campaign is the artifact of record and it needs a history of its own from the first document, not a clone of anything: the content repository is where a *published* campaign goes, and a run that has not reached the design gate has nothing to publish. Say in one line that you did it and where. Everything below then applies unchanged, except that there is no `main` to keep off — the first branch you make is the campaign's.
 
-**Commit the campaign onto its own `campaign/<campaign-id>` branch**, as soon
-as the documents are on disk — not onto `main`, and not held back until
-everything is green. A campaign is in progress until the user has played it, and
-everything of it lands on that branch: the documents, the design record, any
-prefab it needs, the generation record, the storybook. Sort a file by which
-artifact it belongs to: if abandoning the campaign would delete it, it is the
-campaign. Conventional message; do not push unless asked. The documents are the
-artifact of record: the delve must rebuild byte-identically from them with no
-model in the loop.
+**Commit the campaign onto its own `campaign/<campaign-id>` branch**, as soon as the documents are on disk — not onto `main`, and not held back until everything is green. A campaign is in progress until the user has played it, and everything of it lands on that branch: the documents, the design record, any prefab it needs, the generation record, the storybook. Sort a file by which artifact it belongs to: if abandoning the campaign would delete it, it is the campaign. Conventional message; do not push unless asked. The documents are the artifact of record: the delve must rebuild byte-identically from them with no model in the loop.
 
-**A campaign correctly stopped at the design gate does not build yet, and that
-is not a defect.** Nothing in CI compiles it for you: the campaign is built by
-you, with the engine this page pins, and it builds before the pull request
-that publishes it — that is the run that decides whether it ships.
+**A campaign correctly stopped at the design gate does not build yet, and that is not a defect.** Nothing in CI compiles it for you: the campaign is built by you, with the engine this page pins, and it builds before the pull request that publishes it — that is the run that decides whether it ships.
 
 ## Stubbing what is not written yet
 
-**While you are authoring incrementally, stub the later documents** and mark the
-stubs clearly, so `delvec validate` can run at all. A stub is the envelope plus
-a `content` carrying only what its schema requires — `DW0874` prints the recipe.
-Two things to expect while stubbing:
+**While you are authoring incrementally, stub the later documents** and mark the stubs clearly, so `delvec validate` can run at all. A stub is the envelope plus a `content` carrying only what its schema requires — `DW0874` prints the recipe. Two things to expect while stubbing:
 
-- **`quest-plan.json` is the one document the recipe cannot be followed for
-  literally.** Its schema requires `finale` as well as `quests`, and `finale`
-  has to name a member of `quests`, so an empty `quests` is `DW0131`. Its
-  smallest stub is one planned quest with `finale` naming it.
-- **Stubs owe things, and the diagnostics name them**: every stage-2 NPC needs
-  a stage-6 dialogue tree (`DW0152`), a declared language needs a covering
-  sidecar (`DW0180`), and a planned quest with no stage-5 expansion is
-  `DW0150` — which is the ordinary state between step 3 and step 5 and is
-  discussed there.
+- **`quest-plan.json` is the one document the recipe cannot be followed for literally.** Its schema requires `finale` as well as `quests`, and `finale` has to name a member of `quests`, so an empty `quests` is `DW0131`. Its smallest stub is one planned quest with `finale` naming it.
+- **Stubs owe things, and the diagnostics name them**: every stage-2 NPC needs a stage-6 dialogue tree (`DW0152`), a declared language needs a covering sidecar (`DW0180`), and a planned quest with no stage-5 expansion is `DW0150` — which is the ordinary state between step 3 and step 5 and is discussed there.
 
 ## `world.json`, written here
 
-**`world.json` is written here, before placement**, because eight of its nine
-required fields are not about placement at all: `title`, `theme`, `premise`,
-`seed`, `target_minutes`, `time`, `weather` and `horizon`. Run `delvec schema
---stage world` and write them now. The ninth is `areas`, and it is **empty**:
-the site plan is the placement authority, and a plan beside a non-empty
-`areas[]` is `DW0839`.
+**`world.json` is written here, before placement**, because eight of its nine required fields are not about placement at all: `title`, `theme`, `premise`, `seed`, `target_minutes`, `time`, `weather` and `horizon`. Run `delvec schema --stage world` and write them now. The ninth is `areas`, and it is **empty**: the site plan is the placement authority, and a plan beside a non-empty `areas[]` is `DW0839`.
 
 ## The hour the delve is played at
 
-**`time` and `weather` are the delve's hour, and the engine will not choose it
-for you.** `time` is a keyword, a body with a position and a phase, or the
-clock itself. A keyword —
-`day`, `noon`, `dusk`, `night`, `midnight` or `dawn` (`sunrise` is accepted as a
-synonym of `dawn`) — is vanilla's hour on day 0, so **a keyword night is a full
-moon**. A designer's sentence about the sky is written as the body it is about,
-where it stands, and the moon's phase: *a new moon just above the horizon* is
-`{"moon": "just-risen", "phase": "new-moon"}`, *the sun just set* is
-`{"sun": "just-set", "phase": …}`. The positions are `rising`, `just-risen`,
-`high`, `setting`, `just-set` and `below`; the phases are the pinned game's eight
-names, kebab-cased (`full-moon`, `waning-gibbous`, `third-quarter`,
-`waning-crescent`, `new-moon`, `waxing-crescent`, `first-quarter`,
-`waxing-gibbous`). An hour between those positions is **the clock statement**,
-`{"daytime": <0..23999>}` — vanilla's day time in ticks, `0` the sunrise, `6000`
-noon, `12000` the sunset, `18000` midnight — so *late afternoon* is
-`{"daytime": 10500}`, with `"phase"` added where the moon is up at that tick. On `world.time`, `phase` is required wherever the moon is up
-and refused wherever it is down (`delvec validate` names which, and why); a `set-time`, a design
-row or a camera that leaves it out takes the world's. The engine computes the
-tick count, day included, and every build prints a `clock:` line per stated time
-saying where the sun and moon stand and which phase shows — read it. `weather`
-takes `clear`, `rain` or `thunder`. Neither has a default: "this delve is played at noon" is a design
-decision, not a mechanism, so a `world.json` that omits either is `DW0100` like
-any other missing required field. `DW0874`'s stub recipe is "its envelope, and a
-`content` carrying only the fields its schema requires", so a stubbed
-`world.json` carries both from the moment it is stubbed. Both are
-dimension-global and frozen by environment sealing, so the state declared here is
-the state for the whole delve.
+**`time` and `weather` are the delve's hour, and the engine will not choose it for you.** `time` is a keyword, a body with a position and a phase, or the clock itself. A keyword — `day`, `noon`, `dusk`, `night`, `midnight` or `dawn` (`sunrise` is accepted as a synonym of `dawn`) — is vanilla's hour on day 0, so **a keyword night is a full moon**. A designer's sentence about the sky is written as the body it is about, where it stands, and the moon's phase: *a new moon just above the horizon* is `{"moon": "just-risen", "phase": "new-moon"}`, *the sun just set* is `{"sun": "just-set", "phase": …}`. The positions are `rising`, `just-risen`, `high`, `setting`, `just-set` and `below`; the phases are the pinned game's eight names, kebab-cased (`full-moon`, `waning-gibbous`, `third-quarter`, `waning-crescent`, `new-moon`, `waxing-crescent`, `first-quarter`, `waxing-gibbous`). An hour between those positions is **the clock statement**, `{"daytime": <0..23999>}` — vanilla's day time in ticks, `0` the sunrise, `6000` noon, `12000` the sunset, `18000` midnight — so *late afternoon* is `{"daytime": 10500}`, with `"phase"` added where the moon is up at that tick. On `world.time`, `phase` is required wherever the moon is up and refused wherever it is down (`delvec validate` names which, and why); a `set-time`, a design row or a camera that leaves it out takes the world's. The engine computes the tick count, day included, and every build prints a `clock:` line per stated time saying where the sun and moon stand and which phase shows — read it. `weather` takes `clear`, `rain` or `thunder`. Neither has a default: "this delve is played at noon" is a design decision, not a mechanism, so a `world.json` that omits either is `DW0100` like any other missing required field. `DW0874`'s stub recipe is "its envelope, and a `content` carrying only the fields its schema requires", so a stubbed `world.json` carries both from the moment it is stubbed. Both are dimension-global and frozen by environment sealing, so the state declared here is the state for the whole delve.
 
-**The order on this page runs backwards from the decision, and that is the
-trap.** Step 4 confirms the design on concept art, and art has an hour in it — a
-night sea, a storm, first light on a headland. So write the hour the brief and
-the design are set in **here**, and expect step 4 to hold the pictures to it: at
-approval each image's row in `design.json` states the sky it was drawn under, and
-from step 5 onward `DW0890` refuses a campaign whose reachable skies and whose
-approved rows are not the same two sets. Two measurements also key off the
-declared hour: the dark-cell proof measures under the **darkest reachable**
-`(time, weather)` sky, so a space lit only by the sky is judged at the night floor
-once a night hour is declared (`DW0210`); and
-`DW0496`, the daylight-burning refusal, fires for any fight that can stand in a
-burning hour (`day`, `noon` or `dusk`) under a clear sky — `rain` and `thunder`
-fall on the play area and shelter a body standing in them — so declaring `night` is a design decision that also changes what that gate sees,
-which is why *Reference: authoring pitfalls* forbids reaching for the hour to save
-a mob.
+**The order on this page runs backwards from the decision, and that is the trap.** Step 4 confirms the design on concept art, and art has an hour in it — a night sea, a storm, first light on a headland. So write the hour the brief and the design are set in **here**, and expect step 4 to hold the pictures to it: at approval each image's row in `design.json` states the sky it was drawn under, and from step 5 onward `DW0890` refuses a campaign whose reachable skies and whose approved rows are not the same two sets. Two measurements also key off the declared hour: the dark-cell proof measures under the **darkest reachable** `(time, weather)` sky, so a space lit only by the sky is judged at the night floor once a night hour is declared (`DW0210`); and `DW0496`, the daylight-burning refusal, fires for any fight that can stand in a burning hour (`day`, `noon` or `dusk`) under a clear sky — `rain` and `thunder` fall on the play area and shelter a body standing in them — so declaring `night` is a design decision that also changes what that gate sees, which is why *Reference: authoring pitfalls* forbids reaching for the hour to save a mob.
 
 ### What a `thunder` beat does to the scene
 
-`rain` and `thunder` both fall on the play area; `thunder` also strikes it.
-Choose `rain` for a storm without strikes. Measured on the pinned server in a
-built void-horizon delve under the engine's own gamerules (difficulty `normal`,
-fire spread off): one player on the ground drew **7 natural strikes in 5
-minutes**, every one inside the play area. A
-bolt summoned onto each body showed what any one strike does to what it hits:
+`rain` and `thunder` both fall on the play area; `thunder` also strikes it. Choose `rain` for a storm without strikes. Measured on the pinned server in a built void-horizon delve under the engine's own gamerules (difficulty `normal`, fire spread off): one player on the ground drew **7 natural strikes in 5 minutes**, every one inside the play area. A bolt summoned onto each body showed what any one strike does to what it hits:
 
 - **A player** takes 5 damage (20 → 15) and is not left burning.
-- **A villager becomes a witch**: every villager body — including an NPC's
-  `NoAI`, `Invulnerable` body — turns into a witch that keeps its tags, `NoAI`
-  and `Invulnerable`. A villager NPC standing under open sky in a `thunder`
-  scene can end the scene as a witch: declare `rain`, or roof the NPC. A mannequin NPC
-  is untouched.
-- **A pig becomes a zombified piglin**, a red mooshroom turns brown, and a
-  creeper becomes charged (and takes 5 damage).
-- **Bodies that can be hurt** take damage: a vulnerable mannequin 20 → 10. An
-  `Invulnerable` body (a zombie puppet, a mannequin NPC) takes none.
+- **A villager becomes a witch**: every villager body — including an NPC's `NoAI`, `Invulnerable` body — turns into a witch that keeps its tags, `NoAI` and `Invulnerable`. A villager NPC standing under open sky in a `thunder` scene can end the scene as a witch: declare `rain`, or roof the NPC. A mannequin NPC is untouched.
+- **A pig becomes a zombified piglin**, a red mooshroom turns brown, and a creeper becomes charged (and takes 5 damage).
+- **Bodies that can be hurt** take damage: a vulnerable mannequin 20 → 10. An `Invulnerable` body (a zombie puppet, a mannequin NPC) takes none.
 - **Unhurt**: an armour stand, and an item frame and the item in it.
-- **No block is set alight**: zero fire on stone and on oak planks, wool and hay,
-  in thunder and in clear weather. (The counter is not blind: with fire spread
-  turned on, the same strike lit 6 blocks and spread to 16 in 30 s.)
+- **No block is set alight**: zero fire on stone and on oak planks, wool and hay, in thunder and in clear weather. (The counter is not blind: with fire spread turned on, the same strike lit 6 blocks and spread to 16 in 30 s.)
 - No skeleton-horse trap appears (natural spawning is off).
 
-Not measured: a villager NPC's name and dialogue after it turns, and species
-not listed here.
+Not measured: a villager NPC's name and dialogue after it turns, and species not listed here.
 
 ## Languages — already answered
 
-**The languages are the opening check's item (b)**, answered before step 1, so
-step 1 writes them rather than deciding them: the answer goes in `world.json`'s
-`languages`, and the localization stage at step 5 delivers the sidecars. Never
-guess either way from the language the prompt arrived in: that is how a delve
-ships in a language its author did not choose, or without one they assumed.
+**The languages are the opening check's item (b)**, answered before step 1, so step 1 writes them rather than deciding them: the answer goes in `world.json`'s `languages`, and the localization stage at step 5 delivers the sidecars. Never guess either way from the language the prompt arrived in: that is how a delve ships in a language its author did not choose, or without one they assumed.
 
 ## The optional fields that commit something
 
-**Some of `world.json`'s optional fields commit something you are not writing
-yet.** They all sit in this document at this step, and the ones below are
-refused, unbound or silently contradicted many steps later, so decide each one
-here with the thing it obliges in front of you. The rest are described where
-they are used: `languages` in *Reference: other languages*, `difficulty` in
-*Reference: authoring pitfalls*, and `outro` — the delve's closing line, the
-last player-visible sentence of the run, absent = the finale quest's `goal`.
+**Some of `world.json`'s optional fields commit something you are not writing yet.** They all sit in this document at this step, and the ones below are refused, unbound or silently contradicted many steps later, so decide each one here with the thing it obliges in front of you. The rest are described where they are used: `languages` in *Reference: other languages*, `difficulty` in *Reference: authoring pitfalls*, and `outro` — the delve's closing line, the last player-visible sentence of the run, absent = the finale quest's `goal`.
 
-- **`min_players`.** Absent = 1. Declaring `n ≥ 2` says the delve *requires* n
-  bodies, and that is a claim about the QUEST GRAPH: the analyzer demands an
-  objective with `n` `after` arms in `n` places — parallel work the party
-  divides — and a delve that is one serial chain a single player walks is
-  `DW0358` at **step 7**, after `quests.json` is written. So decide the number
-  with the quest plan at step 3, not with the world at step 1: a brief that says
-  "for two players" is a brief that has asked for a mechanism, and the design
-  gains one or the number comes down.
-- **`respawn_wait`.** Absent = no wait. `{ "seconds": n, "alone": false }`
-  makes a fallen player in a party watch a teammate as a spectator for `n`
-  seconds (1–120) after *Respawn* before rejoining, and count as down while
-  they wait — see *Reference: authoring pitfalls* for what a party feels. The
-  build refuses it without a `set-checkpoint` or `bonfire` to come back to
-  (`DW0925`, as it does `seconds` outside 1–120), so
-  decide it with the quest plan's checkpoints in front of you. `alone: true`
-  makes a party of one wait too.
-- **`jumps`.** Absent = the route jumps nowhere. Each entry `{ "id":
-  "jump/<name>", "from": "anchor/…", "to": "anchor/…", "sprint": true }`
-  says a gap is meant to be jumped: two anchors a body stands at, one jump
-  apart. The build flies the jump as a player on cue makes it and refuses one
-  that misses, an anchor no body stands at, or a gap the walk already crosses
-  (`DW1041`); a proven jump is a move of the critical path and the bot makes
-  it. A gap nobody declares is judged only by where a body can be, never as a
-  way the story goes, so declare every gap the critical path is meant to
-  cross, once its two anchors exist.
-- **`view_distance`.** Absent = 10 chunks (160 blocks), the engine's floor.
-  Declare it — in chunks, `10..=32` — when a thing is meant to be seen from
-  farther than that: a tower across the water, a hill-sized body on the
-  skyline, a cutscene whose subject is across the map. What a body is farther
-  from than the served radius is never sent to its client, so a far view is a
-  declaration, not a hope, and the build refuses a `views[]`/`sightlines[]`
-  entry, a showcase camera or a cutscene shot aimed past it, naming the fewest
-  chunks that would serve it. The build states the cost (`server/
-  resources.properties` `heap-max`, the host's to meet) and the storybook owes
-  the player the render-distance line (step 13): a client set below the
-  declared number is served less, and nothing on the server can raise it.
-- **`horizon` is required, and it states the ground's music.** Write the object
-  form `{"base": "void", "attributes": {"audio/background_music": {}}}` — `{}`
-  is silence, or name a track the way an atmosphere does. `base: void` is the
-  right answer unless the ground around the map is part of the design: it keeps
-  the area datum where every piece was authored for it and puts nothing outside
-  them. `attributes` takes the `audio/` ids only; the ground's look stays the
-  base's. There is no string shorthand and no default: the ground is a biome a
-  camera can stand in, so the build refuses a world that leaves its music to
-  the game.
-- **`valley` rings the map in generated mountain, and it needs to know how big
-  the map is.** A surround rings a DECLARED extent, and the campaign's is the
-  site plan's `region` — required, and never grown by a box (`DW0826`). What
-  the surround is made of and where its gap floor meets the region is
-  `$DELVEWRIGHT_ENGINE/docs/reference/compiler.md`, *horizon*. `valley` also
-  obliges a `boundary`, for the reason below — its gap floor is ground a body
-  can walk on.
-- **`ocean` swaps in a superflat sea at y=62**, and that is where the delve's
-  sea level is declared: the site plan writes no water plane of its own, so a
-  shore's floor is a datum chosen against that number. The sea's rules are
-  `compiler.md`, *horizon*.
-- **`boundary`, which `ocean` and `valley` both oblige.** Absent = no boundary. It declares the
-  playable region: the compiler derives one from the placed geometry plus a
-  `margin` of blocks on every side (default 16, range `0..=64`), and a per-second
-  clock returns anyone who leaves it to their last checkpoint, with an optional
-  `message` on the actionbar. **A `horizon` whose `base` is `ocean` or `valley`
-  with no `boundary` is `DW0320`** — an infinite swimmable sea, or a walkable gap floor, with no return
-  rule — so those two are written together or neither is written. `void` is the
-  one base that cannot need it, because there is nothing out there to stand on.
-  The clock never moves a player watching a cutscene, or a creator flying with
-  the free camera. `"returns": false` keeps the region and drops the clock — for
-  a world nobody can leave, so a creator flying out to look at a far view is
-  never pulled back; the build refuses it while any body can walk out of the
-  region or into the open sea, and names where.
+- **`min_players`.** Absent = 1. Declaring `n ≥ 2` says the delve *requires* n bodies, and that is a claim about the QUEST GRAPH: the analyzer demands an objective with `n` `after` arms in `n` places — parallel work the party divides — and a delve that is one serial chain a single player walks is `DW0358` at **step 7**, after `quests.json` is written. So decide the number with the quest plan at step 3, not with the world at step 1: a brief that says "for two players" is a brief that has asked for a mechanism, and the design gains one or the number comes down.
+- **`respawn_wait`.** Absent = no wait. `{ "seconds": n, "alone": false }` makes a fallen player in a party watch a teammate as a spectator for `n` seconds (1–120) after *Respawn* before rejoining, and count as down while they wait — see *Reference: authoring pitfalls* for what a party feels. The build refuses it without a `set-checkpoint` or `bonfire` to come back to (`DW0925`, as it does `seconds` outside 1–120), so decide it with the quest plan's checkpoints in front of you. `alone: true` makes a party of one wait too.
+- **`jumps`.** Absent = the route jumps nowhere. Each entry `{ "id": "jump/<name>", "from": "anchor/…", "to": "anchor/…", "sprint": true }` says a gap is meant to be jumped: two anchors a body stands at, one jump apart. The build flies the jump as a player on cue makes it and refuses one that misses, an anchor no body stands at, or a gap the walk already crosses (`DW1041`); a proven jump is a move of the critical path and the bot makes it. A gap nobody declares is judged only by where a body can be, never as a way the story goes, so declare every gap the critical path is meant to cross, once its two anchors exist.
+- **`view_distance`.** Absent = 10 chunks (160 blocks), the engine's floor. Declare it — in chunks, `10..=32` — when a thing is meant to be seen from farther than that: a tower across the water, a hill-sized body on the skyline, a cutscene whose subject is across the map. What a body is farther from than the served radius is never sent to its client, so a far view is a declaration, not a hope, and the build refuses a `views[]`/`sightlines[]` entry, a showcase camera or a cutscene shot aimed past it, naming the fewest chunks that would serve it. The build states the cost (`server/ resources.properties` `heap-max`, the host's to meet) and the storybook owes the player the render-distance line (step 13): a client set below the declared number is served less, and nothing on the server can raise it.
+- **`horizon` is required, and it states the ground's music.** Write the object form `{"base": "void", "attributes": {"audio/background_music": {}}}` — `{}` is silence, or name a track the way an atmosphere does. `base: void` is the right answer unless the ground around the map is part of the design: it keeps the area datum where every piece was authored for it and puts nothing outside them. `attributes` takes the `audio/` ids only; the ground's look stays the base's. There is no string shorthand and no default: the ground is a biome a camera can stand in, so the build refuses a world that leaves its music to the game.
+- **`valley` rings the map in generated mountain, and it needs to know how big the map is.** A surround rings a DECLARED extent, and the campaign's is the site plan's `region` — required, and never grown by a box (`DW0826`). What the surround is made of and where its gap floor meets the region is `$DELVEWRIGHT_ENGINE/docs/reference/compiler.md`, *horizon*. `valley` also obliges a `boundary`, for the reason below — its gap floor is ground a body can walk on.
+- **`ocean` swaps in a superflat sea at y=62**, and that is where the delve's sea level is declared: the site plan writes no water plane of its own, so a shore's floor is a datum chosen against that number. The sea's rules are `compiler.md`, *horizon*.
+- **`boundary`, which `ocean` and `valley` both oblige.** Absent = no boundary. It declares the playable region: the compiler derives one from the placed geometry plus a `margin` of blocks on every side (default 16, range `0..=64`), and a per-second clock returns anyone who leaves it to their last checkpoint, with an optional `message` on the actionbar. **A `horizon` whose `base` is `ocean` or `valley` with no `boundary` is `DW0320`** — an infinite swimmable sea, or a walkable gap floor, with no return rule — so those two are written together or neither is written. `void` is the one base that cannot need it, because there is nothing out there to stand on. The clock never moves a player watching a cutscene, or a creator flying with the free camera. `"returns": false` keeps the region and drops the clock — for a world nobody can leave, so a creator flying out to look at a far view is never pulled back; the build refuses it while any body can walk out of the region or into the open sea, and names where.

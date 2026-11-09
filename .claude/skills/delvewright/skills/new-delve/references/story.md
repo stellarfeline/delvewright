@@ -4,152 +4,59 @@
 
 - [The three documents, in order](#the-three-documents-in-order)
 - [The plan is a web, not a chain](#the-plan-is-a-web-not-a-chain)
+- [Every line has an activity](#every-line-has-an-activity)
 - [Where step 3 ends](#where-step-3-ends)
 
 
 ## The three documents, in order
 
-Write them in that order; each conditions the next. Get each one's shape from
-`delvec schema --stage <name>` first, and a **worked example** of it from
-`delvec metrics --gym <dir>`, which writes nine complete documents that build —
-these three among them. Reach for the gym whenever the schema alone is slow to
-read: `--stage all` is about 700 kB of JSON in which every stage's `content` is a
-`$ref`, so one document's required fields are several dereferences away, while
-the gym hands you that document filled in. The schema stays the authority on
-form; the gym is what shows you one. Then run
-`delvec --prefabs "$DELVEWRIGHT_PREFABS" validate <campaign-dir>`
-after each, fixing by diagnostic code. **Three failed repairs on the same code
-means stop and look at the design**, not at the syntax.
+Write them in that order; each conditions the next. Get each one's shape from `delvec schema --stage <name>` first, and a **worked example** of it from `delvec metrics --gym <dir>`, which writes nine complete documents that build — these three among them. Reach for the gym whenever the schema alone is slow to read: `--stage all` is about 700 kB of JSON in which every stage's `content` is a `$ref`, so one document's required fields are several dereferences away, while the gym hands you that document filled in. The schema stays the authority on form; the gym is what shows you one. Then run `delvec --prefabs "$DELVEWRIGHT_PREFABS" validate <campaign-dir>` after each, fixing by diagnostic code. **Three failed repairs on the same code means stop and look at the design**, not at the syntax.
 
-**That loop does not end on a green run, and it is not supposed to** — read
-*Where step 3 ends*, below, before you start it. Once the quest plan is on disk
-the campaign carries refusals that are correct and that only step 5 can clear,
-and looping against them is the one way to spend an afternoon here.
+**That loop does not end on a green run, and it is not supposed to** — read *Where step 3 ends*, below, before you start it. Once the quest plan is on disk the campaign carries refusals that are correct and that only step 5 can clear, and looping against them is the one way to spend an afternoon here.
 
-- **NPCs**: personas per the schema — `archetype`, `speech_style` and
-  `motivation` are required, and step 5 honours them in every line.
-  - **A character gets a face.** The default body is a **player model wearing
-    that character's own skin** (`skin` on the NPC, the toolchain in *Reference:
-    NPC skins*), not a re-dressed villager. A villager is what you reach for when
-    the fiction is a villager; anybody else in a delve — a guide, a keeper, a
-    duke — reads as a placeholder in one. Budget the skin with the cast, not
-    after it.
-  - **Decide, for every speaking character, whether the scene needs its gaze
-    NOT to follow the player.** Every NPC turns to watch the nearest player
-    within 8 blocks unless it says otherwise, and for most of a cast that is
-    right. But a body that turns to watch can break a scene's mood: a mourner
-    bent over a grave, a sentry who keeps his eyes on the far shore, a figure
-    so lost in the work at the bench that the party has to step into her
-    light. For each speaking character, decide; where the gaze must stay put,
-    declare it on that NPC, `"watch": "none"`, and stand the body where every
-    side the party can talk to it from is in front of it — a wall, a counter or
-    a rail at its back. Leaving `watch` out is a decision too: the body watches.
-  - **One named character is one body.** The engine checks a held facing from
-    every side the party can talk to the body from, a talk on the route at
-    every beat, and one name in every story state; each refusal names its move
-    (*Reference: when something goes red*, "walks up to its back", "lie behind
-    it" and "one person twice").
-- **Classes**: pre-provided gear, no grind. If the campaign places a bonfire,
-  **every class kit must declare a flask** (`DW0476`) — see *Reference:
-  authoring pitfalls*.
-- **Quest plan**: acts, dependencies, which area each quest belongs to, which
-  quests are optional, the endings and what they read, paced to
-  `target_minutes`. Its shape is a web: read *The plan is a web, not a chain*,
-  below, before you write it.
-- **Declare every story fork here.** If a choice forks who lives, where the
-  party ends up, or which ending plays, it is a `branch_points` entry:
-  `{id, opens_at, forks_on:[flags], branches:[{id, flags, leads_to}]}`.
-  `leads_to` is one field — a `quest/…` the branches converge at, or an
-  `ending/…` this branch runs to; the id prefix says which. Name each ending on
-  the `campaign-complete` that fires it (`"ending": "ending/<slug>"`). A flag
-  that gates casts, staging or quest structure and is not set on every
-  playthrough must belong to a declared point (`DW0480`). Every declared branch
-  must reach an ending (`DW0482`) and must be exclusive: no sibling's flag may
-  be producible on it (`DW0484`). A fork may be made by a deed rather than a
-  line: a branch whose `flags` is `[]` is the side where the deed was not done.
+- **NPCs**: personas per the schema — `archetype`, `speech_style` and `motivation` are required, and step 5 honours them in every line.
+  - **A character gets a face.** The default body is a **player model wearing that character's own skin** (`skin` on the NPC, the toolchain in *Reference: NPC skins*), not a re-dressed villager. A villager is what you reach for when the fiction is a villager; anybody else in a delve — a guide, a keeper, a duke — reads as a placeholder in one. Budget the skin with the cast, not after it.
+  - **Decide, for every speaking character, whether the scene needs its gaze NOT to follow the player.** Every NPC turns to watch the nearest player within 8 blocks unless it says otherwise, and for most of a cast that is right. But a body that turns to watch can break a scene's mood: a mourner bent over a grave, a sentry who keeps his eyes on the far shore, a figure so lost in the work at the bench that the party has to step into her light. For each speaking character, decide; where the gaze must stay put, declare it on that NPC, `"watch": "none"`, and stand the body where every side the party can talk to it from is in front of it — a wall, a counter or a rail at its back. Leaving `watch` out is a decision too: the body watches.
+  - **One named character is one body.** The engine checks a held facing from every side the party can talk to the body from, a talk on the route at every beat, and one name in every story state; each refusal names its move (*Reference: when something goes red*, "walks up to its back", "lie behind it" and "one person twice").
+- **Classes**: pre-provided gear, no grind. If the campaign places a bonfire, **every class kit must declare a flask** (`DW0476`) — see *Reference: authoring pitfalls*.
+- **Quest plan**: acts, dependencies, which area each quest belongs to, which quests are optional, the endings and what they read, paced to `target_minutes`. Its shape is a web: read *The plan is a web, not a chain*, below, before you write it. **Every line declares its activity**: each quest's `activity` names the acts the player performs on it, and the engine holds stage 5 to it — read *Every line has an activity*, below.
+- **Declare every story fork here.** If a choice forks who lives, where the party ends up, or which ending plays, it is a `branch_points` entry: `{id, opens_at, forks_on:[flags], branches:[{id, flags, leads_to}]}`. `leads_to` is one field — a `quest/…` the branches converge at, or an `ending/…` this branch runs to; the id prefix says which. Name each ending on the `campaign-complete` that fires it (`"ending": "ending/<slug>"`). A flag that gates casts, staging or quest structure and is not set on every playthrough must belong to a declared point (`DW0480`). Every declared branch must reach an ending (`DW0482`) and must be exclusive: no sibling's flag may be producible on it (`DW0484`). A fork may be made by a deed rather than a line: a branch whose `flags` is `[]` is the side where the deed was not done.
 
 
 ## The plan is a web, not a chain
 
-A plan in which every quest `depends_on` the one before it is a chain: one
-order, one story, and an ending that can only read the last scene. The engine
-expresses a web, and these steps lead to one. The research behind each rule,
-with its sources, is `$DELVEWRIGHT_ENGINE/docs/reference/web-narrative.md`:
-§4 for the shape, §3 for the endings.
+A plan in which every quest `depends_on` the one before it is a chain: one order, one story, and an ending that can only read the last scene. The engine expresses a web, and these steps lead to one. The research behind each rule, with its sources, is `$DELVEWRIGHT_ENGINE/docs/reference/web-narrative.md`: §4 for the shape, §3 for the endings.
 
-1. **One hub, two to four spokes.** The hub is a quest every run starts with
-   (`depends_on: []`). Each spoke `depends_on: ["quest/<hub>"]`, so all of them
-   open together when the hub completes and the party takes them in any order.
-   The finale `depends_on` every spoke. Keep the spokes in different places,
-   and let no spoke shut, fill or rebuild a way another spoke's route crosses:
-   the hub owns every shared door. Inside one quest, objectives with no `after`
-   are open together, and one with `after: [a, b]` waits for both.
-2. **At least one optional strand** (spec-0051): `"mandatory": false`, with
-   `depends_on` naming the hub or a spoke. Nothing on the mainline may need it.
-   The finale's `depends_on` closure may not reach it (`DW0866`), and no
-   mandatory quest may wait on it by `depends_on` or by its stage-5 trigger
-   (`DW0867`). What it writes feeds casts, dialogue and endings, never a
-   mandatory objective's gate (`DW0868`).
-3. **Declare what every ending reads**, on the plan:
-   `"endings_read": {"at_least": 3, "deeds_at_least": 1}`. The numbers are
-   yours; three inputs from different threads with a deed among them is the
-   research page's rule (§3). An input is any flag or datum a gate in the
-   ending's final scene reads, and it counts when something outside that scene
-   writes it (`DW1029` refuses an ending below either number). A deed is a
-   thing done in the world or a quest finished, not a line chosen.
-4. **Plan two or more endings and what decides between them.** At least one
-   deciding input must have an **elective** writer: an optional quest
-   finished, a trigger or kill the mainline never needs. An act every run
-   performs (a mandatory quest, a mandatory kill, a press the route needs) is
-   the same in every run, so it cannot tell two endings apart; `DW1030` refuses
-   an ending no run reaches and names each such writer *a mandatory or forced
-   writer*. A dialogue choice the ending reads sets a flag on **each** of its
-   options (`flag/asked` and `flag/did-not-ask`): an option that sets a flag
-   beside one that sets nothing is counted as forced.
-5. **Name the endings here and write them at step 5**: each `ending/<slug>` is
-   the `ending` of a `campaign-complete` in the finale's `on_complete`, with
-   `when` gates that exclude each other. *Reference: what a quest can do*,
-   *A web in stage 5*, has the shapes and the checks.
-6. **A strand's flag that changes who stands where is a fork.** Gating a cast
-   placement on a flag only an optional quest writes is `DW0480` until a
-   `branch_points` entry owns it: `opens_at` the strand, one branch holding the
-   flag and one with `flags: []`, both `leads_to` the quest they rejoin at.
-   Gating an ending, an epilogue line or a dialogue option on it needs no
-   declaration.
+1. **One hub, two to four spokes.** The hub is a quest every run starts with (`depends_on: []`). Each spoke `depends_on: ["quest/<hub>"]`, so all of them open together when the hub completes and the party takes them in any order. The finale `depends_on` every spoke. Keep the spokes in different places, and let no spoke shut, fill or rebuild a way another spoke's route crosses: the hub owns every shared door. Inside one quest, objectives with no `after` are open together, and one with `after: [a, b]` waits for both.
+2. **At least one optional strand** (spec-0051): `"mandatory": false`, with `depends_on` naming the hub or a spoke. Nothing on the mainline may need it. The finale's `depends_on` closure may not reach it (`DW0866`), and no mandatory quest may wait on it by `depends_on` or by its stage-5 trigger (`DW0867`). What it writes feeds casts, dialogue and endings, never a mandatory objective's gate (`DW0868`).
+3. **Declare what every ending reads**, on the plan: `"endings_read": {"at_least": 3, "deeds_at_least": 1}`. The numbers are yours; three inputs from different threads with a deed among them is the research page's rule (§3). An input is any flag or datum a gate in the ending's final scene reads, and it counts when something outside that scene writes it (`DW1029` refuses an ending below either number). A deed is a thing done in the world or a quest finished, not a line chosen.
+4. **Plan two or more endings and what decides between them.** At least one deciding input must have an **elective** writer: an optional quest finished, a trigger or kill the mainline never needs. An act every run performs (a mandatory quest, a mandatory kill, a press the route needs) is the same in every run, so it cannot tell two endings apart; `DW1030` refuses an ending no run reaches and names each such writer *a mandatory or forced writer*. A dialogue choice the ending reads sets a flag on **each** of its options (`flag/asked` and `flag/did-not-ask`): an option that sets a flag beside one that sets nothing is counted as forced.
+5. **Name the endings here and write them at step 5**: each `ending/<slug>` is the `ending` of a `campaign-complete` in the finale's `on_complete`, with `when` gates that exclude each other. *Reference: what a quest can do*, *A web in stage 5*, has the shapes and the checks.
+6. **A strand's flag that changes who stands where is a fork.** Gating a cast placement on a flag only an optional quest writes is `DW0480` until a `branch_points` entry owns it: `opens_at` the strand, one branch holding the flag and one with `flags: []`, both `leads_to` the quest they rejoin at. Gating an ending, an epilogue line or a dialogue option on it needs no declaration.
+
+
+## Every line has an activity
+
+A plan whose every line is *go somewhere and talk* passes every gate and plays to its ending in a fraction of its `target_minutes`. The rules and the research behind them are `$DELVEWRIGHT_ENGINE/docs/reference/web-narrative.md` §7; these steps are not optional, for a thin brief or a detailed one.
+
+1. **Decide each line's body before its goal is written.** The body is what the player does between the conversation that opens the line and the one that may close it, in the engine's acts: a search that ends in a taking, a thing used or lit or pulled, a thing presented or laid, a fight. The hub and the finale may be conversations; a spoke or a strand may not be only one. Talk opens a line and closes it; it is never the body.
+2. **Declare the body on the quest, in `activity`.** Every planned quest carries `"activity": [...]`, the acts the player performs on the line, in the engine's words: `reach` (arrive somewhere), `talk` (a conversation), `kill` (a fight), `take` (find and pick up), `use` (press, pull, light, open), `present` (hold a thing up at a place), `give` (lay or hand a thing over). A search of the castle with a candle puzzle is `["reach", "talk", "take", "use"]`; a hide-and-seek is `["talk", "use"]`; a hub that is one conversation is `["talk"]`. Declare what the body is, not what the kinds will be — the schema is the list of words. At step 5 the engine holds the expansion to it: an act you declared that no objective of the line performs is refused (`DW1079`), and an act the line performs beyond the declaration is counted, not refused. Then write the `goal` to open on the body's verb, the way a title does, so the plan reads as play.
+3. **Budget the evening per activity, not per place.** Write the plan's lines into `DESIGN.md` as a table — line, body, acts, minutes — and sum it against `target_minutes`. The engine prices each objective at its table's minutes per act and adds the route (`DW0822`, read at step 5 and again at step 8); `delvec metrics` prints the prices. A plan whose sum is a third of its billing is a plan with lines missing, not a pacing note.
 
 
 ## Where step 3 ends
 
-**The campaign does not validate when this step is done, and no amount of
-looping will make it.** The quest plan names quests, stage 5 is step 5, and the
-compiler is right to refuse a campaign that plans a quest nothing expands. So
-the finish line for this step is not a green run — it is a run whose every
-remaining error the rule below accounts for.
+**The campaign does not validate when this step is done, and no amount of looping will make it.** The quest plan names quests, stage 5 is step 5, and the compiler is right to refuse a campaign that plans a quest nothing expands. So the finish line for this step is not a green run — it is a run whose every remaining error the rule below accounts for.
 
-Run `delvec --prefabs "$DELVEWRIGHT_PREFABS" validate <campaign-dir>` and sort the output by
-**one rule, which is the whole of this step**:
+Run `delvec --prefabs "$DELVEWRIGHT_PREFABS" validate <campaign-dir>` and sort the output by **one rule, which is the whole of this step**:
 
-> A refusal whose message names something only `quests.json` or `dialogue.json`
-> can supply is the step-3 state, and is not a repair you owe. Every other code
-> is a repair you owe now.
+> A refusal whose message names something only `quests.json` or `dialogue.json` can supply is the step-3 state, and is not a repair you owe. Every other code is a repair you owe now.
 
-Those two documents are step 5, so nothing you write here can produce what they
-hold. **Read the message, not the code.** Each of these says in its own words
-what is missing and where it comes from — a flag no `set-flag` produces, an
-ending no `campaign-complete` declares, a body no `spawn-npc` summons. Every one
-of them is a stage-5 effect or a stage-6 dialogue option, every one of them
-clears at step 5, and looping on any of them here is the way to lose an
-afternoon.
+Those two documents are step 5, so nothing you write here can produce what they hold. **Read the message, not the code.** Each of these says in its own words what is missing and where it comes from — a flag no `set-flag` produces, an ending no `campaign-complete` declares, a body no `spawn-npc` summons. Every one of them is a stage-5 effect or a stage-6 dialogue option, every one of them clears at step 5, and looping on any of them here is the way to lose an afternoon.
 
-The codes below are the **instances a campaign hits today**, not the rule. A
-code that is not in this list is judged by the rule above — by what its message
-says is missing — never by its absence here.
+The codes below are the **instances a campaign hits today**, not the rule. A code that is not in this list is judged by the rule above — by what its message says is missing — never by its absence here.
 
-**`DW0890` is not one of them and cannot be**, which is worth knowing before you
-meet it: the design record does not exist until step 4 approves one, so at this
-step `validate` prints `0 reference(s) recorded over 0 image file(s)` and says
-nothing further. It becomes live at step 5, on the first `validate` after the
-gate, and it is a repair you owe there like any other.
+**`DW0890` is not one of them and cannot be**, which is worth knowing before you meet it: the design record does not exist until step 4 approves one, so at this step `validate` prints `0 reference(s) recorded over 0 image file(s)` and says nothing further. It becomes live at step 5, on the first `validate` after the gate, and it is a repair you owe there like any other.
 
 | code | what it is saying | what to do |
 |---|---|---|
@@ -163,23 +70,10 @@ gate, and it is a repair you owe there like any other.
 | `DW0816` | a place the graph's closure never reaches from `entry` under gating and one-way direction. The message names the place, the nearest place a body can stand, and how many of the graph's places are reachable at all. | **read the caveat before you decide.** Where the graph gates on a flag and stage 5 declares no quests, the message says so and points at `DW0150` — the way may be one a stage-5 `set-flag` opens, and the check is the same as `DW0172`'s: is a beat in the plan going to produce that flag? Where the message carries no such caveat, the place is unreached for a reason the mission has nothing to do with, and it is a graph repair you owe now. |
 | `DW0817` | the authored `critical_path[]` does not hold — four faults under one code. It does not run `entry` → `goal`; a step names two places no connection joins, or joins them the other way; a step crosses a connection not open yet at that point in the walk; or it never visits a place where a beat of the mandatory quest spine happens. | **three of the four are yours now.** Only the *not-open-yet* fault carries the unwritten-mission caveat, and only when that connection waits on a flag — the other three are judgements about the graph by itself, which an absent mission has nothing to say about, so they are repairs to the graph or the path here. Read which fault the message names. |
 
-Measured on a twenty-four-place campaign at the end of this step: 42
-errors over seven of those codes — `DW0818` ×28, `DW0152` ×6, `DW0482` ×2,
-`DW0172` ×2, `DW0112` ×2, `DW0197` ×1, `DW0150` ×1 — plus the two ordinary
-warnings (`DW0813`, `DW0822`) that stand on every campaign. A list
-that long is the expected shape here, not evidence that something went wrong.
+Measured on a twenty-four-place campaign at the end of this step: 42 errors over seven of those codes — `DW0818` ×28, `DW0152` ×6, `DW0482` ×2, `DW0172` ×2, `DW0112` ×2, `DW0197` ×1, `DW0150` ×1 — plus the two ordinary warnings (`DW0813`, `DW0822`) that stand on every campaign. A list that long is the expected shape here, not evidence that something went wrong.
 
-**Do not try to clear `DW0150` by writing empty stage-5 quests.** It is the
-obvious move and it is strictly worse: a quest carrying only what the schema
-requires is refused again by `DW0481`, because every quest must say what it does
-to the story, and by `DW0460` once for every NPC live in it. Measured on a
-five-quest plan, writing the five minimal expansions took the campaign from 5
-errors to 15. `DW0150` says this in its own message; believe it.
+**Do not try to clear `DW0150` by writing empty stage-5 quests.** It is the obvious move and it is strictly worse: a quest carrying only what the schema requires is refused again by `DW0481`, because every quest must say what it does to the story, and by `DW0460` once for every NPC live in it. Measured on a five-quest plan, writing the five minimal expansions took the campaign from 5 errors to 15. `DW0150` says this in its own message; believe it.
 
-**And the "three failed repairs" rule does not fire on these**, because there is
-nothing to repair. It fires on a code you have genuinely tried three times to
-fix.
+**And the "three failed repairs" rule does not fire on these**, because there is nothing to repair. It fires on a code you have genuinely tried three times to fix.
 
-If someone else gave you the brief, show them a 3–6 line summary of each
-document — the summary, not the JSON — and wait, unless they asked for an
-uninterrupted run.
+If someone else gave you the brief, show them a 3–6 line summary of each document — the summary, not the JSON — and wait, unless they asked for an uninterrupted run.
