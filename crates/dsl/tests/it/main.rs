@@ -17,6 +17,7 @@ mod dw0499_boss_respawn;
 mod dw0847_gate_contradiction;
 mod dw0856_prefab_exists;
 mod dw1077_trigger_agrees;
+mod dw1081_entrance;
 mod gate_consumers;
 mod give_item_enchantments;
 mod holder_slots;

@@ -160,6 +160,7 @@ mod movement_ballistics_instrument;
 mod movement_items;
 mod music;
 mod named_commands_exist;
+mod native_entrance;
 mod no_build_floods;
 mod numeric_gate_drive;
 mod occlusion_table;

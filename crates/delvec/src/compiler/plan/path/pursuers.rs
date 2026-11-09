@@ -2,7 +2,9 @@
 //! `outrun` actors a path's steps are walked beside, derived by the compiler
 //! and never by the bot.
 //!
-//! An actor is loose while a step is walked when an `unleash-actor` of it has
+//! A step that stands nowhere (`select-class`, `mock`, `assert-complete`) is
+//! walked beside nobody. Otherwise an actor is loose while a step is walked
+//! when an `unleash-actor` of it has
 //! fired at an earlier step of the path — the body arrived before the walk
 //! began — and no `despawn-actor` of it has fired since. The step whose own
 //! completion (or performance, for a trigger) fires the `despawn-actor` is not
@@ -212,7 +214,9 @@ pub(crate) fn pursuers_by_step(
                 k += 1;
             }
             let despawned_here = events.iter().any(|(s, u)| *s == i && !*u);
-            if loose && !despawned_here {
+            // A path-frame step stands nowhere — the class is chosen, the
+            // completion asserted, an act mocked — so nothing is walked on it.
+            if loose && !despawned_here && steps[i].pos().is_some() {
                 slot.push(row.clone());
             }
         }
