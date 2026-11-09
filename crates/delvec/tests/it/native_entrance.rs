@@ -704,3 +704,98 @@ fn an_actor_without_an_entrance_is_unchanged() {
 const GROUND_PUPPET: &str = r#"execute unless entity @e[tag=dw_actor_the_guardian] run summon minecraft:zombie 6.5 65.0 10.5 {NoAI:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b,Invulnerable:1b,DeathLootTable:"minecraft:empty",Rotation:[180f,0f],Tags:["dw_actor","dw_actor_the_guardian","dw_pup_the_guardian","dw_watch"],CustomName:"The Guardian",CustomNameVisible:1b,attributes:[{id:"minecraft:max_health",base:30.0},{id:"minecraft:attack_damage",base:4.0},{id:"minecraft:movement_speed",base:0.23},{id:"minecraft:follow_range",base:12.0}],equipment:{mainhand:{id:"minecraft:iron_sword",count:1},head:{id:"minecraft:iron_helmet",count:1}},drop_chances:{mainhand:0.0f,head:2.0f}}"#;
 const GROUND_TWIN: &str = r#"execute at @e[tag=dw_pup_the_guardian,limit=1] run summon minecraft:zombie ~ ~ ~ {PersistenceRequired:1b,DeathLootTable:"minecraft:empty",Tags:["dw_actor","dw_actor_the_guardian"],CustomName:"The Guardian",CustomNameVisible:1b,attributes:[{id:"minecraft:max_health",base:30.0},{id:"minecraft:attack_damage",base:4.0},{id:"minecraft:movement_speed",base:0.23},{id:"minecraft:follow_range",base:12.0}],equipment:{mainhand:{id:"minecraft:iron_sword",count:1},head:{id:"minecraft:iron_helmet",count:1}},drop_chances:{mainhand:0.0f,head:2.0f}}"#;
 const GROUND_RESEAT: &str = r#"summon minecraft:zombie 6.5 65.0 10.5 {PersistenceRequired:1b,DeathLootTable:"minecraft:empty",Tags:["dw_actor","dw_actor_the_guardian"],CustomName:"The Guardian",CustomNameVisible:1b,attributes:[{id:"minecraft:max_health",base:30.0},{id:"minecraft:attack_damage",base:4.0},{id:"minecraft:movement_speed",base:0.23},{id:"minecraft:follow_range",base:12.0}],equipment:{mainhand:{id:"minecraft:iron_sword",count:1},head:{id:"minecraft:iron_helmet",count:1}},drop_chances:{mainhand:0.0f,head:2.0f}}"#;
+
+// ---------------------------------------------------------------------------
+// §5.3 on a branch world: every story world's exported path names its pursuers
+// ---------------------------------------------------------------------------
+
+/// The pair of the parallel branch-world proof and the `pursuers` export: the
+/// `branch-transport` fixture (two story worlds, one of which crosses into a
+/// second area) with an `outrun` warden unleashed by the fork's own beat. Each
+/// `validation/world-path-<k>.json` is serialized by the same writer as the
+/// exported path, after the branch worlds are proven in parallel, so each
+/// carries format 6 and a `pursuers` key on every step, and every step after
+/// the fork is walked beside the warden.
+#[test]
+fn every_branch_world_path_names_the_bodies_it_is_walked_beside() {
+    let dir = common::compiler_fixtures_dir().join("branch-transport");
+    let loaded = load_campaign_dir(&dir).unwrap();
+    let mut c = parse_campaign(&loaded.raw).expect("branch-transport parses");
+    c.quests.content.actors.push(
+        serde_json::from_value(json!({
+            "id": SLEEPER,
+            "entity": "minecraft:warden",
+            "anchor": "anchor/door-knock",
+            "facing": "south",
+            "entrance": "native",
+            "outrun": true
+        }))
+        .expect("actor parses"),
+    );
+    beat(&mut c, "obj/decide").push(effect(json!({
+        "type": "unleash-actor",
+        "actor": SLEEPER,
+        "happening": { "verb": "arrives", "text": "the sleeper digs out of the floor" }
+    })));
+    let prefabs = PrefabRegistry::load_dir(&common::shown_prefabs_dir("branch-transport")).unwrap();
+    let errors: Vec<_> = validate_campaign_with(
+        &c,
+        &FullItemRegistry::v1_21_11(),
+        &prefabs,
+        &FullEntityRegistry::v1_21_11(),
+    )
+    .into_iter()
+    .filter(|d| d.severity == Severity::Error)
+    .collect();
+    assert!(errors.is_empty(), "validation: {errors:#?}");
+    let plan = Plan::build(&c, &prefabs).unwrap_or_else(|e| panic!("{}", e.failure.message));
+    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for area in &plan.areas {
+        for piece in &area.pieces {
+            for t in &piece.templates {
+                let bytes = std::fs::read(common::prefabs_dir().join(&t.structure_file)).unwrap();
+                structures.insert(t.structure_file.clone(), bytes);
+            }
+        }
+    }
+    let out = emit::build(
+        &plan,
+        &loaded.inputs,
+        &structures,
+        &CommandTree::v1_21_11(),
+        &prefabs,
+        None,
+        &BTreeMap::new(),
+    )
+    .unwrap_or_else(|e| panic!("emission succeeds: {e:?}"));
+    let worlds: Vec<&String> = out
+        .keys()
+        .filter(|k| k.starts_with("validation/world-path-") && k.ends_with(".json"))
+        .collect();
+    assert_eq!(
+        worlds.len(),
+        2,
+        "two story worlds export a path: {worlds:?}"
+    );
+    for k in worlds {
+        let cp: Value = serde_json::from_str(&text(&out, k)).unwrap();
+        assert_eq!(cp["format_version"], json!(6), "{k}");
+        let rows = pursued(&cp);
+        let fork = rows
+            .iter()
+            .position(|(what, _)| what == "obj/decide")
+            .unwrap_or_else(|| panic!("{k} walks the fork: {rows:?}"));
+        assert!(
+            rows[..=fork].iter().all(|(_, who)| who.is_empty()),
+            "{k}: nothing pursues up to the unleashing step: {rows:?}"
+        );
+        let after: Vec<&(String, Vec<String>)> = rows[fork + 1..]
+            .iter()
+            .filter(|(what, _)| what != "assert-complete")
+            .collect();
+        assert!(!after.is_empty(), "{k}: a step follows the fork: {rows:?}");
+        for (what, who) in after {
+            assert_eq!(who, &vec![SLEEPER.to_string()], "{k} at {what}: {rows:?}");
+        }
+    }
+}
