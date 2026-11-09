@@ -273,6 +273,8 @@ def test_fences_tables_and_hard_breaks_are_not_wrapped_prose(mod):
     text = "# T\n\n```\na\nb\n```\n\n| a | b |\n| c | d |\n\nline  \nafter a hard break\n"
     assert mod.wrapped_lines(text) == []
     assert mod.wrapped_lines("one\ntwo\n") == [2]
+    assert mod.wrapped_lines("- item runs to\n  <place> here\n") == [2]
+    assert mod.wrapped_lines("> a quote\n> carried on\n") == [2]
 
 
 # ----------------------------------------------------------------- rule 7, the pointers --
