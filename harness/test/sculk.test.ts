@@ -1,7 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { gameTimeCommands, parseGameTime } from "../src/game-time.ts";
-import { legStartCommands, parseLegStartBusy, SculkEar } from "../src/sculk.ts";
+import {
+  legStartCommands,
+  parseLegStartBusy,
+  parseUndeclaredWardens,
+  SculkEar,
+  undeclaredWardenCommands,
+} from "../src/sculk.ts";
 
 test("a game-time reading stores the time, then speaks it under its serial", () => {
   const cmds = gameTimeCommands(7);
@@ -42,4 +48,34 @@ test("an event before the leg answers for it only when its device was busy at th
   const late = new SculkEar();
   late.onBlockUpdate([1, 2, 3], { sculk_sensor_phase: "active" }, 1_000);
   assert.equal(late.hear(v, busy, 900).sensorsHeard, 0, "a click after `to` is not heard");
+});
+
+// spec-0132 §5.7: a warden the campaign declares is not a shrieker's.
+
+test("a declared warden no longer fails the run; an undeclared one still does", () => {
+  const ear = new SculkEar();
+  ear.onSpawn("warden");
+  ear.onSpawn("warden");
+  const one = ear.runFailure(1);
+  assert.ok(one !== undefined, "one undeclared warden standing fails the run");
+  assert.match(one, /warden spawns heard 2, undeclared standing 1/);
+  assert.equal(ear.runFailure(0), undefined, "two heard, none undeclared: the campaign's own");
+  // Unread is never a zero: a run whose server did not answer fails on what it heard.
+  assert.match(ear.runFailure() ?? "", /undeclared standing unread/);
+});
+
+test("a darkness a warden in reach explains is counted apart and fails nothing", () => {
+  const ear = new SculkEar();
+  ear.onSelfEffect("darkness", true);
+  assert.equal(ear.runFailure(0), undefined);
+  assert.match(ear.runLine(0), /darkness 0 \(1 more with a warden in reach\)/);
+  ear.onSelfEffect("darkness", false);
+  assert.match(ear.runFailure(0) ?? "", /darkness 1 \(1 more with a warden in reach\)/);
+});
+
+test("the undeclared-warden reading asks for wardens wearing no dw_actor tag, and parses its count", () => {
+  const cmds = undeclaredWardenCommands(4);
+  assert.match(cmds[0]!, /if entity @e\[type=minecraft:warden,tag=!dw_actor\]$/);
+  assert.equal(parseUndeclaredWardens(4, ["[dw:sculk 4 undeclared 2]"]), 2);
+  assert.equal(parseUndeclaredWardens(4, ["[dw:sculk 3 undeclared 2]"]), undefined);
 });

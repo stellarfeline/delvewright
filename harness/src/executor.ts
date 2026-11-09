@@ -78,6 +78,8 @@ import { methods as collectMethods } from "./executor/collect.ts";
 import { methods as settleMethods } from "./executor/settle.ts";
 import { methods as placementMethods } from "./executor/placement.ts";
 import { methods as clockMethods } from "./executor/clock.ts";
+import { methods as pursuitMethods, type PursuedStep } from "./executor/pursuit.ts";
+import type { Arrival, PursuitStepRecord, PursuitVerdict } from "./pursuit.ts";
 import { placementTimeoutFromEnv, type PlacementRecord } from "./placement.ts";
 
 export {
@@ -486,6 +488,15 @@ export class MineflayerExecutor implements StepExecutor {
   readonly stagedIds = new Set<number>();
   /** True while a `sneak` leg is walking: nothing is staged away on one. */
   sneaking = false;
+  /**
+   * The pursued step being walked (spec-0132 §5), while one is: nothing is
+   * staged away, refunded or restored on it, and every act refused is recorded.
+   */
+  pursuedStep: PursuedStep | undefined;
+  /** Every pursued step's record and verdict, in path order. */
+  readonly pursuitRecords: { record: PursuitStepRecord; verdict: PursuitVerdict }[] = [];
+  /** Where each pursuer was first read standing, across the run. */
+  readonly pursuitArrivals = new Map<string, Arrival>();
   /** The wave a `kill` step is clearing right now. Its bodies have been read and
    * are on their way out, so nothing protects them any longer. */
   clearing: string | undefined;
@@ -658,6 +669,7 @@ type Methods = typeof connectionMethods &
   typeof collectMethods &
   typeof settleMethods &
   typeof placementMethods &
-  typeof clockMethods;
+  typeof clockMethods &
+  typeof pursuitMethods;
 export interface MineflayerExecutor extends Methods {}
-for (const methods of [connectionMethods, chatMethods, objectiveMethods, triggerMethods, interactMethods, classMethods, talkMethods, walkMethods, timedGateMethods, climbMethods, cutsceneMethods, transportMethods, loopMethods, mockMethods, sustainMethods, deathMethods, pulseMethods, cueMethods, journalMethods, scoreMethods, lethalMethods, crushMethods, stakeMethods, waveMethods, dieRetryMethods, stagingMethods, musterMethods, restMethods, witnessMethods, watchMethods, crosshairMethods, collectMethods, settleMethods, placementMethods, clockMethods]) Object.assign(MineflayerExecutor.prototype, methods);
+for (const methods of [connectionMethods, chatMethods, objectiveMethods, triggerMethods, interactMethods, classMethods, talkMethods, walkMethods, timedGateMethods, climbMethods, cutsceneMethods, transportMethods, loopMethods, mockMethods, sustainMethods, deathMethods, pulseMethods, cueMethods, journalMethods, scoreMethods, lethalMethods, crushMethods, stakeMethods, waveMethods, dieRetryMethods, stagingMethods, musterMethods, restMethods, witnessMethods, watchMethods, crosshairMethods, collectMethods, settleMethods, placementMethods, clockMethods, pursuitMethods]) Object.assign(MineflayerExecutor.prototype, methods);

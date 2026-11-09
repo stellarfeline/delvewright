@@ -43,12 +43,15 @@ import {
   legLine,
   legStartCommands,
   parseLegStartBusy,
+  parseUndeclaredWardens,
+  undeclaredWardenCommands,
   type LegStart,
   type Vibration,
 } from "../sculk.ts";
 import { GameClockWatch } from "../game-time.ts";
 import { watchStops } from "../watch.ts";
 import { ControlTakenError } from "./cutscene.ts";
+import { isRejection } from "../rejection.ts";
 import { type GateAssist, crossTimedGate } from "./timed-gate.ts";
 import type { MineflayerExecutor } from "../executor.ts";
 
@@ -1084,11 +1087,28 @@ export const methods = {
     }
   },
 
+  /** spec-0132 §5.7: how many wardens the server holds that wear no `dw_actor`
+   * tag, or `undefined` when it did not answer. */
+  async readUndeclaredWardens(this: MineflayerExecutor): Promise<number | undefined> {
+    // spec-0132 §5.7: the wardens standing that the campaign did not declare,
+    // asked of the server in one bracketed turn. Unanswered stays unread.
+    try {
+      const serial = ++this.clockReads;
+      const reply = await this.bracketed(undeclaredWardenCommands(serial));
+      if (!reply.answered || reply.lines.some((line) => isRejection(line))) return undefined;
+      return parseUndeclaredWardens(serial, reply.lines);
+    } catch {
+      return undefined;
+    }
+  },
+
   /** spec-0100 §4.7: the run's closing `[sculk]` line, and why the run fails
-   * (a darkness effect on the bot, or a warden), if it does. */
-  sculkRunVerdict(this: MineflayerExecutor): string | undefined {
-    process.stderr.write(`${this.sculk.runLine()}\n`);
-    return this.sculk.runFailure();
+   * (a darkness effect no warden explains, or a warden the campaign did not
+   * declare standing at the end — `undeclared`, from
+   * {@link readUndeclaredWardens}), if it does. */
+  sculkRunVerdict(this: MineflayerExecutor, undeclared?: number): string | undefined {
+    process.stderr.write(`${this.sculk.runLine(undeclared)}\n`);
+    return this.sculk.runFailure(undeclared);
   },
 
   /**

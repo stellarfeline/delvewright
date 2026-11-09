@@ -70,9 +70,48 @@ import type { GateTerm } from "./death-loop.ts";
  *   sight. Required in both directions for `4`'s reason: a bot that guessed the
  *   act would be the compiler's knowledge written where it cannot be right.
  *
+ * * `6` — every step carries `pursuers` (spec-0132 §5.3): the `outrun` bodies
+ *   loose while it is walked, each with its kind, the census function that
+ *   reads it and its entrance window, empty for a step walked beside none.
+ *   Required in both directions: a path that cannot say whether a step is
+ *   pursued cannot be walked under the pursuit rule (`pursuit.ts`), and a bot
+ *   that guessed would be the compiler's knowledge written where it cannot be
+ *   right.
+ *
  * Rebuild the delve with a current `delvec` to produce a supported path.
  */
-export const CRITICAL_PATH_FORMAT_VERSION = 5;
+export const CRITICAL_PATH_FORMAT_VERSION = 6;
+
+/**
+ * One body a step is walked beside (spec-0132 §5.3): an `outrun` actor loose
+ * while the step is walked, derived by the compiler.
+ */
+export interface PursuerRow {
+  /** The actor id (`actor/<kebab>`). */
+  readonly actor: string;
+  /** The free body's entity kind, as the actor writes it (`minecraft:warden`). */
+  readonly kind: string;
+  /** The census function to call (`<ns>:actor_census_<id>`). */
+  readonly census: string;
+  /** The kind's entrance window in game ticks; 0 for a body with no entrance. */
+  readonly entranceTicks: number;
+  /** The unleash that looses it could not be dated on this path. */
+  readonly undated: boolean;
+}
+
+/**
+ * The bodies a step is walked beside. Present on the parsed step only when
+ * non-empty (an empty row is the default, as an absent `sneak` is); the wire
+ * format requires the key on every step.
+ */
+export interface Pursued {
+  readonly pursuers?: readonly PursuerRow[];
+}
+
+/** The bodies a step is walked beside — empty for a step walked beside none. */
+export function pursuersOf(step: Step): readonly PursuerRow[] {
+  return step.pursuers ?? [];
+}
 
 /** The closed set of critical-path step actions (spec-0002 / spec-0001 enum). */
 export const STEP_ACTIONS = [
@@ -96,7 +135,7 @@ export type StepAction = (typeof STEP_ACTIONS)[number];
 export type Vec3Tuple = readonly [number, number, number];
 
 /** Select a class by chatting the compiler-assigned `/trigger dw.class set <n>`. */
-export interface SelectClassStep {
+export interface SelectClassStep extends Pursued {
   readonly action: "select-class";
   readonly class: string;
   /** The exact chat command the bot sends (`bot.chat(command)`). */
@@ -148,7 +187,7 @@ export interface KeepOut {
 }
 
 /** Talk to an NPC at `pos`, then chat the compiler-assigned dialog `/trigger`. */
-export interface TalkToStep extends PresentationMarkers {
+export interface TalkToStep extends PresentationMarkers, Pursued {
   readonly action: "talk-to";
   /** The `obj/<id>` this step must prove complete (format 2). */
   readonly objective: string;
@@ -185,7 +224,7 @@ export type ReachCompletion =
   | { readonly kind: "cube"; readonly lo: Vec3Tuple; readonly hi: Vec3Tuple };
 
 /** Reach an anchor: walk into the objective's exported completion volume. */
-export interface ReachStep extends PresentationMarkers {
+export interface ReachStep extends PresentationMarkers, Pursued {
   readonly action: "reach";
   /** The `obj/<id>` this step must prove complete (format 2). */
   readonly objective: string;
@@ -208,7 +247,7 @@ export interface ReachStep extends PresentationMarkers {
 }
 
 /** Slay a wave: go to `pos`, attack the wave's mobs until the wave is cleared (v0.3). */
-export interface KillStep extends PresentationMarkers {
+export interface KillStep extends PresentationMarkers, Pursued {
   readonly action: "kill";
   /** The `obj/<id>` this step must prove complete (format 2). */
   readonly objective: string;
@@ -243,7 +282,7 @@ export const HOLDER_KINDS = ["item-frame", "glow-item-frame", "armor-stand"] as 
  * `droppedBy` is set, off the ground the named wave died on (v0.9), or, when
  * `holder` is set, off the frame or stand standing at `pos` (spec-0111).
  */
-export interface CollectStep extends PresentationMarkers {
+export interface CollectStep extends PresentationMarkers, Pursued {
   readonly action: "collect";
   /** The `obj/<id>` this step must prove complete (format 2). */
   readonly objective: string;
@@ -264,7 +303,7 @@ export interface CollectStep extends PresentationMarkers {
 }
 
 /** Interact at `pos`, then chat `command`; `requires_item` may gate it (v0.3). */
-export interface InteractStep extends PresentationMarkers {
+export interface InteractStep extends PresentationMarkers, Pursued {
   readonly action: "interact";
   /** The `obj/<id>` this step must prove complete (format 2). */
   readonly objective: string;
@@ -295,7 +334,7 @@ export interface InteractStep extends PresentationMarkers {
  * blew the walk-back budget — judging the campaign for a proof that never
  * performed the loop (bell round 3).
  */
-export interface RestStep extends PresentationMarkers {
+export interface RestStep extends PresentationMarkers, Pursued {
   readonly action: "rest";
   /** Which bonfire, by the compiler's index — names the fire in every diagnostic. */
   readonly bonfire: number;
@@ -328,7 +367,7 @@ export type TriggerKind = (typeof TRIGGER_KINDS)[number];
  * fired marker, never on the click landing. A hit count is N such steps, each
  * owed its own marker.
  */
-export interface TriggerStep extends PresentationMarkers {
+export interface TriggerStep extends PresentationMarkers, Pursued {
   readonly action: "trigger";
   /** The `trigger/<id>` performed — also the marker token the step passes on. */
   readonly trigger: string;
@@ -383,7 +422,7 @@ export const TRANSPORT_NEAR_Y = 4;
  * by the arming region, so nothing is wound up for it and no health is taken.
  * Proves no objective.
  */
-export interface WitnessStrikeStep {
+export interface WitnessStrikeStep extends Pursued {
   readonly action: "witness-strike";
   /** The assembly whose blow is witnessed. */
   readonly assembly: string;
@@ -408,7 +447,7 @@ export interface WitnessStrikeStep {
  * every crossing puts a body down on. A path EXPORT step, like `trigger`: it
  * proves no objective.
  */
-export interface LoopStep extends PresentationMarkers {
+export interface LoopStep extends PresentationMarkers, Pursued {
   readonly action: "loop";
   /** The `loop/<id>` exercised. */
   readonly loop: string;
@@ -425,7 +464,7 @@ export interface LoopStep extends PresentationMarkers {
 }
 
 /** Assert the campaign-completion scoreboard objective holds `value` (terminal step). */
-export interface AssertCompleteStep {
+export interface AssertCompleteStep extends Pursued {
   readonly action: "assert-complete";
   /** The sidebar-displayed objective the bot reads. */
   readonly objective: string;
@@ -454,7 +493,7 @@ export interface AssertCompleteStep {
  * must hold first and every `after` term once it has run: the state change is
  * asserted, not assumed. Proves no objective and stands nowhere.
  */
-export interface MockStep {
+export interface MockStep extends Pursued {
   readonly action: "mock";
   /** The act performed, as the branch plan's `entry_deeds` name it. */
   readonly act: string;
@@ -916,7 +955,52 @@ function rejectUnknownKeys(
   }
 }
 
+/** A step's `pursuers` (format 6): required, each row whole. */
+function parsePursuers(value: unknown, pointer: string): PursuerRow[] {
+  if (value === undefined) {
+    fail(
+      pointer,
+      "is required on every step (format 6): a step that cannot say which bodies it is " +
+        "walked beside cannot be walked under the pursuit rule",
+    );
+  }
+  if (!Array.isArray(value)) {
+    fail(pointer, `must be an array, got ${describe(value)}`);
+  }
+  return value.map((row, i) => {
+    const at = `${pointer}/${i}`;
+    if (!isRecord(row)) fail(at, `must be an object, got ${describe(row)}`);
+    rejectUnknownKeys(row, ["actor", "kind", "census", "entrance_ticks", "undated"], at);
+    const actor = requireString(row, "actor", at);
+    if (!/^actor\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(actor)) {
+      fail(`${at}/actor`, `must be an \`actor/<kebab>\` id, got ${JSON.stringify(actor)}`);
+    }
+    const entranceTicks = requireInteger(row, "entrance_ticks", at);
+    if (entranceTicks < 0) fail(`${at}/entrance_ticks`, `must not be negative, got ${entranceTicks}`);
+    const undated = row["undated"];
+    if (undated !== undefined && undated !== true) {
+      fail(`${at}/undated`, `must be \`true\` when present, got ${describe(undated)}`);
+    }
+    return {
+      actor,
+      kind: requireString(row, "kind", at),
+      census: requireString(row, "census", at),
+      entranceTicks,
+      undated: undated === true,
+    };
+  });
+}
+
 function parseStep(value: unknown, pointer: string): Step {
+  const obj = requireObject(value, pointer);
+  const pursuers = parsePursuers(obj["pursuers"], `${pointer}/pursuers`);
+  const body: Record<string, unknown> = { ...obj };
+  delete body["pursuers"];
+  const step = parseStepBody(body, pointer);
+  return pursuers.length === 0 ? step : { ...step, pursuers };
+}
+
+function parseStepBody(value: unknown, pointer: string): Step {
   const obj = requireObject(value, pointer);
   const action = obj["action"];
   if (typeof action !== "string") {

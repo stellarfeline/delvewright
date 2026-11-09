@@ -15,7 +15,15 @@
 // stretches each of them.
 //
 // Assertions only: the harness predicts nothing itself. A predicted event not
-// heard fails the step; a darkness effect or a warden fails the run.
+// heard fails the step; a darkness effect no warden explains, or a warden the
+// campaign did not declare, fails the run.
+//
+// A warden the campaign itself summons — an actor's puppet or its free twin,
+// both wearing `dw_actor` — is not a shrieker's (spec-0132 §5.7), and neither
+// is the darkness a warden pulses onto every player within 20 blocks of it.
+// So the run's warden count is the server's own answer at the run's end: how
+// many wardens stand that wear no `dw_actor` tag. Every warden spawn the client
+// heard is still stated beside it.
 
 import type { Vec3Tuple } from "./critical-path.ts";
 
@@ -57,6 +65,33 @@ export const SENSOR_BUSY_STATES: readonly string[] = [
   "minecraft:calibrated_sculk_sensor[sculk_sensor_phase=cooldown]",
 ];
 export const SHRIEKER_BUSY_STATES: readonly string[] = ["minecraft:sculk_shrieker[shrieking=true]"];
+
+/** How far (blocks) a warden's darkness pulse reaches (`Warden.applyDarknessAround`, 20). */
+export const WARDEN_DARKNESS_RANGE = 20;
+
+/**
+ * The command that asks the server how many wardens stand wearing no
+ * `dw_actor` tag — the wardens the campaign did not declare — and speaks the
+ * count as `[dw:sculk <serial> undeclared <n>]` in the same reply.
+ */
+export function undeclaredWardenCommands(serial: number): string[] {
+  return [
+    `/execute store result storage dw_harness:sculk n int 1 if entity @e[type=minecraft:warden,tag=!dw_actor]`,
+    `/tellraw @s ${JSON.stringify([`[dw:sculk ${serial} undeclared `, { storage: "dw_harness:sculk", nbt: "n" }, "]"])}`,
+  ];
+}
+
+/** The undeclared-warden count reading `serial` answered, or `undefined`. */
+export function parseUndeclaredWardens(serial: number, lines: readonly string[]): number | undefined {
+  const t = `[dw:sculk ${serial} undeclared `;
+  for (const line of lines) {
+    const at = line.indexOf(t);
+    if (at < 0) continue;
+    const m = /^(\d+)\]/.exec(line.slice(at + t.length));
+    if (m) return Number(m[1]);
+  }
+  return undefined;
+}
 
 /** A sensor's listener radius squared: the parse refuses a prediction the
  * game could not make (spec-0100 §2.6). */
@@ -168,8 +203,10 @@ export function legLine(label: string, h: LegHearing, start: LegStart, heardThro
 export class SculkEar {
   private readonly clicks: Heard[] = [];
   private readonly shrieks: Heard[] = [];
-  /** Darkness effects applied to the bot. */
+  /** Darkness effects applied to the bot with no warden in reach to explain them. */
   darkness = 0;
+  /** Darkness effects applied while a warden stood within its pulse's reach. */
+  darknessByWarden = 0;
   /** Wardens that spawned. */
   wardens = 0;
 
@@ -183,9 +220,17 @@ export class SculkEar {
     if (id === SHRIEK_LEVEL_EVENT) this.shrieks.push({ pos, at });
   }
 
-  /** An effect applied to the bot itself, by registry name. */
-  onSelfEffect(name: string | undefined): void {
-    if ((name ?? "").toLowerCase() === "darkness") this.darkness += 1;
+  /**
+   * An effect applied to the bot itself, by registry name. `wardenNear` is
+   * whether the client saw a warden within {@link WARDEN_DARKNESS_RANGE} of
+   * the bot as it arrived: a warden pulses darkness onto every player in that
+   * reach, so such a darkness is the warden's and is counted apart; a warden
+   * the campaign did not declare is caught by the run's standing count.
+   */
+  onSelfEffect(name: string | undefined, wardenNear = false): void {
+    if ((name ?? "").toLowerCase() !== "darkness") return;
+    if (wardenNear) this.darknessByWarden += 1;
+    else this.darkness += 1;
   }
 
   /** An entity spawned, by registry name. */
@@ -239,18 +284,33 @@ export class SculkEar {
     };
   }
 
-  /** The run's closing `[sculk]` line. */
-  runLine(): string {
-    return `[sculk] darkness ${this.darkness}, warden ${this.wardens}`;
+  /**
+   * The run's closing `[sculk]` line: the darkness no warden explains and the
+   * darkness a warden in reach does, every warden spawn heard, and how many
+   * wardens the server held at the run's end that the campaign did not declare
+   * (`undefined` when the server was not asked).
+   */
+  runLine(undeclaredStanding?: number): string {
+    return (
+      `[sculk] darkness ${this.darkness} (${this.darknessByWarden} more with a warden in reach), ` +
+      `warden spawns heard ${this.wardens}, undeclared standing ` +
+      `${undeclaredStanding === undefined ? "unread" : undeclaredStanding}`
+    );
   }
 
-  /** Why the run fails, or `undefined`: a darkness effect or a warden. */
-  runFailure(): string | undefined {
-    if (this.darkness === 0 && this.wardens === 0) return undefined;
+  /**
+   * Why the run fails, or `undefined`: a darkness effect no warden explains,
+   * or a warden standing that the campaign did not declare. A run whose
+   * server was not asked fails when it heard a warden spawn: an unread count
+   * is never a zero.
+   */
+  runFailure(undeclaredStanding?: number): string | undefined {
+    const undeclared = undeclaredStanding ?? (this.wardens > 0 ? this.wardens : 0);
+    if (this.darkness === 0 && undeclared === 0) return undefined;
     return (
-      `${this.runLine().slice("[sculk] ".length)} — a shrieker with can_summon=false applies no ` +
-      `darkness and summons nothing (spec-0100 §2.4), so the shipped world holds a shrieker the ` +
-      `engine did not prove`
+      `${this.runLine(undeclaredStanding).slice("[sculk] ".length)} — a shrieker with ` +
+      `can_summon=false applies no darkness and summons nothing (spec-0100 §2.4), so the ` +
+      `shipped world holds a shrieker the engine did not prove`
     );
   }
 }
