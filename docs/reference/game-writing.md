@@ -10,7 +10,9 @@ Vesperhold audit and the check design are in
 
 §8 says where the player's information comes from at all (L1) and that the text
 tells it plainly and truly (L2); §1-§3 say how each line of the text those rules
-allow is written.
+allow is written. Whether the script those lines make is worth playing — its
+reasons, its variety, its crossings, its people's motives — is read whole by a
+second agent before the build: [script-review.md](script-review.md).
 
 Every rule is marked **cited** (with its source) or **authored** (this project's
 rule, with the reason it exists). An authored rule is a decision, not a finding.
