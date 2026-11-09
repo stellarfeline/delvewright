@@ -133,7 +133,9 @@ flowchart TD
         direction LR
         S5[quests] --> S6[dialogue]
     end
-    C --> F["6 · delvec fmt — EVERY campaign"]
+    C --> SR{{"5b · SCRIPT REVIEW<br/>a fresh reader, only when the story was invented"}}
+    SR -.finding.-> C
+    SR --> F["6 · delvec fmt — EVERY campaign"]
     F --> A["7 · delvec analyze<br/>reachability / deadlock / dark mitigation"]
     A --> B["8 · delvec build -o $DELVE_OUTPUT<br/>must exit 0"]
     B --> CAM["8b · showcase cameras<br/>one per approved image"]
@@ -161,6 +163,7 @@ work entirely.
 | **authoring agent** (main) | session model | theme, beats, personas, quest-plan intent, stage summaries, **all user interaction** — the opening check (A1), the design gate (A2) and the hand-over (H), and no other ask; every technical decision is its own, recorded under `DELVEWRIGHT_DEBUG` (spec-0122 §2, §4) — the branch chronicle review, visual judgment |
 | **dev subagent** | `opus` | the mechanical write of each stage's JSON + the `delvec validate` repair loop |
 | **test subagent** | `sonnet` | the machine ladder (step 10) — keeps long server logs out of the authoring context |
+| **script reviewer** (step 5b) | session model | the script read as a player meets it, from the handout `scripts/script-review.py` writes and nothing else (`docs/reference/script-review.md`): a fresh `general-purpose` agent per round, launched with the Agent tool on the one line the script prints, writing `review.md` beside the handout; the main agent revises or answers each finding and launches the next round on a new handout, never the same agent and never a fork, which would hand the reviewer the design |
 | **per-place author** (step 9) | session model | one place's grammar program, from that place's handout and nothing else (spec-0121): a fresh `general-purpose` agent per place per attempt, launched with the Agent tool on the one line `scripts/handout.py` prints. **Up to N run concurrently**, N the `concurrency:` line `delvec allocation --all` prints; each checks with `delvec detail --check`, which writes nothing, and the main agent **commits serially** with `delvec detail`, one return at a time; a commit that refuses is handed back to the next fresh agent, never repaired by the main agent, which reads no program and no handout (spec-0122 §6) |
 
 One hard rule on top: **a subagent never runs a higher tier than the main agent.**
@@ -179,11 +182,12 @@ delegating them would hand the design's intent to somebody who never held it:
 None of the model tiers appears on the skill page, and that is deliberate: a
 person following the page does the work themselves, and the page reads
 identically either way because every step is written as work to do rather than
-as work to route. **One dispatch is on the page**, because it is the
-procedure and not a routing choice: step 9's per-place author. The page carries
-the Agent call shape — a fresh `general-purpose` agent, the printed prompt,
-never a fork — and no tier; the creator's own session is where that agent runs,
-so a page that left it out would describe a step nobody could execute.
+as work to route. **Two dispatches are on the page**, because each is the
+procedure and not a routing choice: step 5b's script reviewer and step 9's
+per-place author. The page carries the Agent call shape — a fresh
+`general-purpose` agent, the printed prompt, never a fork — and no tier; the
+creator's own session is where those agents run, so a page that left them out
+would describe steps nobody could execute.
 
 ## 3. Inside one stage
 
@@ -231,6 +235,7 @@ something it does not check is how a green run ships a broken delve.
 | # | Gate | Proves | Does **not** prove |
 |---|---|---|---|
 | 4 | design gate | that the owner has seen the design **in the medium she reviews in** — the whole story, every scene, near view and far — and said yes. The images at *this* gate are **reference images**: concept art drawn from the scene description before any prefab exists, optionally by `tools/creator/refimg.py`. A render is a candidate prefab imaged by `delvec render`, and belongs to curation later. **The approved images are then committed to `campaigns/<id>/design/`** with the approval date and the approved names. The engine also reads that approval (spec-0061): `design.json` records one row per approved image with the `time` and `weather` it was drawn under, written in the same act as the approval (`references/design-gate.md`), and `DW0890` refuses at the next `delvec validate` when the skies the built world reaches and the skies the rows state are not equal, or when a row and a file do not answer to each other. A demo level is a test level whose `docs/demo-levels.md` row is its design: it still gets the walkthrough and the yes, and commits nothing to `design/` (`references/design-gate.md`) | nothing, if it was built from orbit renders. "Is the set pretty" is a different question from "what does a player walking in experience". And **nothing at all in a later session, if the approval was never persisted**: `refimg` writes to a gitignored directory, so an approval left in a published page is unreachable by every round that follows it |
+| 5b | script review | that a reader who never held the design met the script as a player meets it — the documents rendered in play order, nothing of `DESIGN.md`, a persona or a `happening` — and found nothing rated 3 or 4 on the questions of `docs/reference/script-review.md`, or that each finding still standing is answered in `GENERATION.md` with its reason; and that it ran only because the creator wrote the story, by the rule on `references/script-review.md` | that the delve is fun: one reader's severities order the author's work and the playtest measures the rest; whether the prompt gave the story, which is the creator's reading of the prompt against the plan and nothing checks; anything the design record says that the script does not carry |
 | 7 | `delvec analyze` | the quest graph is reachable, no deadlock, darkness is mitigated | that any of it is *good* |
 | 8 | `delvec build` | the DSL compiles to a datapack | nothing about play |
 | 11 | branch chronicle | every branch's storyline is coherent **in sequence**, and every branch-divergent dialogue line is licensed by a chronicle line, cited by number in `GENERATION.md` | anything on a branch with no rows — an empty table is a **fail**, not a pass |
@@ -385,6 +390,12 @@ Not a proposal — an inventory.
    per-view frame written down — but it needs a human iterating on the prompt,
    and it composes nothing.
 3. **Storybook art is a two-pass flow the agent drives** — `delvec cameras --preview` to judge layout, then `delvec cameras` and `delvec panorama` for the shipped frames, drawn by `delvec` itself (`docs/reference/tools.md` §4a); choosing the frame is still a person's judgement, and nothing composes the page.
+3a. **Whether the script review runs is the creator's judgement**, read off the
+   prompt against the plan by the rule on `references/script-review.md`, and
+   recorded in `GENERATION.md` as one line; nothing reads the prompt to check
+   it. The handout itself is derived (`scripts/script-review.py`), and the
+   script's play order is the documents' declared order, not the compiler's
+   replay, which does not exist before the build.
 4. **The ladder's project id is chosen by hand** (`dw-<campaign>-r<round>`).
    Required everywhere, defaulted nowhere — deliberately, since a shared default
    is a collision between ladders.
