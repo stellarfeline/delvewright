@@ -471,6 +471,21 @@ fn pursuers_are_the_outrun_bodies_loose_while_a_step_is_walked() {
         "happening": { "verb": "arrives", "text": "the ward wakes the sleeper" }
     })));
     let (out, _) = build(&c);
+    // spec-0132 §3.1: an entering body arrives with no target, even when a
+    // click unleashes it — no struck arrival, no seed line anywhere.
+    assert!(
+        !out.keys().any(|k| k.contains("unleash_struck_")),
+        "an entering warden gets no struck arrival"
+    );
+    assert!(
+        func(&out, "trig_gate_ward").contains(&format!("function {NS}:unleash_{SLEEPER_SAFE}")),
+        "the click calls the plain arrival"
+    );
+    assert!(
+        !out.iter().any(|(k, v)| k.starts_with("datapack/")
+            && String::from_utf8_lossy(v).contains("anger.suspects")),
+        "no seed line in the datapack"
+    );
     let rows = pursued(&critical_path(&out));
     let performed = rows
         .iter()

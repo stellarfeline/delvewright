@@ -448,8 +448,9 @@ pub(super) const WARDEN_MAX_ANGER: i32 = 150;
 /// documented rather than papered over (CLAUDE.md: no hacks at any layer — if the
 /// primitive is not really there, the feature does not get faked downstream).
 ///
-/// Guarded on the striker storage actually holding a UUID, so an `unleash-actor`
-/// fired from anywhere other than a click trigger's own bundle changes nothing.
+/// Emitted only into `unleash_struck_<id>` ([`struck_unleashed`]), which a
+/// click trigger's own bundle calls while it holds the striker; still guarded on
+/// the striker storage holding a UUID.
 pub(super) fn aggro_lock_lines(entity: &str, safe: &str) -> Vec<String> {
     let id = entity.strip_prefix("minecraft:").unwrap_or(entity);
     if id != "warden" {
@@ -605,6 +606,7 @@ pub(super) fn actor_fns(
 ) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let mut out = Vec::new();
+    let struck = struck_unleashed(plan.campaign);
     for a in &plan.campaign.quests.content.actors {
         let safe = plan::safe_local(a.id.as_str());
         let Some(pos) = plan.body_point(delvewright_dsl::BodyRef::Actor(a)) else {
@@ -657,11 +659,16 @@ pub(super) fn actor_fns(
             actor_declares_drops(a),
             Exit::Unseen,
         ));
-        if campaign_captures_striker(plan.campaign) {
-            unleash.extend(aggro_lock_lines(&a.entity, &safe));
-        }
         unleash.extend(capture.clone());
         out.push((format!("unleash_{safe}"), lines(&unleash)));
+        // spec-0132 §3.1: the arrival a click provokes — the plain one, then the
+        // lock onto the striker the click's own bundle holds. Called from that
+        // bundle alone; no other unleash carries a lock line.
+        if struck.contains(a.id.as_str()) {
+            let mut provoked = vec![format!("function {ns}:unleash_{safe}")];
+            provoked.extend(aggro_lock_lines(&a.entity, &safe));
+            out.push((format!("unleash_struck_{safe}"), lines(&provoked)));
+        }
         // spec-0074: an actor's `on_kill` — the kill advancement's reward (pay,
         // then re-arm) and the bundle. Absent → byte-identical.
         if let Some(ok) = &a.on_kill {

@@ -18,13 +18,16 @@
 //   T8  the emerge window: whether an emerging warden hears a walker, takes a
 //       blow, and keeps a seeded anger through to the hunt;
 //   T9  whether a body summoned and removed in one tick is ever seen by a client
-//       — the shape an `ambushes[]` puppet takes under `unleash-actor`.
+//       — the shape an `ambushes[]` puppet takes under `unleash-actor`;
+//   T10 the entering warden the engine emits (spec-0132): summoned with the
+//       gallery's `unleash_the_sleeper` NBT, no player near — what it is angry
+//       at after its emerge, whether it roams, and whether a lure turns it.
 //
 // One mineflayer bot is the "player" where a player is the question (T2, T4, T6,
 // T7, T8, T9: it reads the warden's synced pose, the wither's boss bar and every
 // entity spawn off its own client). Everything else is read back over rcon
 // through the repo's one rejection rule (`tools/lib/rcon.mjs`).
-// The written records are `docs/reference/warden-behaviour.md` (T1–T6, T8) and
+// The written records are `docs/reference/warden-behaviour.md` (T1–T6, T8, T10) and
 // `docs/reference/native-entrance.md` (T7, T9).
 //
 //   docker run -d --name dw-<round>-warden --cpus=2 --memory=2g -e EULA=TRUE \
@@ -719,6 +722,51 @@ async function t9(bot) {
   await rcon.probe('reload')
 }
 
+// T10: the entering warden as the engine emits it (spec-0132 §3.1) — the NBT of
+// the gallery's `unleash_the_sleeper` mark line, verbatim but for its tags. No
+// player within hearing: is it angry at anyone once it stands, does it roam, and
+// does a sourceless snowball within its hearing turn it.
+const ENTERING_NBT =
+  '{Rotation:[0f,0f],PersistenceRequired:1b,DeathLootTable:"minecraft:empty",Tags:["dw_actor","dw_actor_the_sleeper"],' +
+  'Brain:{memories:{"minecraft:dig_cooldown":{value:{},ttl:1200L},"minecraft:is_emerging":{value:{},ttl:133L}}}}'
+async function t10(bot) {
+  await park(bot)
+  await clearBodies()
+  begin('T10-entering-roams', 'the emitted entering warden, no player near: anger and feet read every second for 25 s')
+  await summonWarden(W, ENTERING_NBT)
+  const tS = now()
+  const start = parsePos(await wardenGet('Pos'))
+  let far = 0
+  let angerSeen = new Set()
+  while (now() - tS < 25_000) {
+    const r = await reading()
+    const moved = r.pos && start ? dist2(r.pos, start) : null
+    if (moved != null) far = Math.max(far, moved)
+    angerSeen.add(String(r.anger))
+    row(`t=${((now() - tS) / 1000).toFixed(1)}s`, `pos=${r.pos?.map(f1)}`, `fromArrival=${f1(moved)}`, `anger=${r.anger}`)
+    await sleep(1000)
+  }
+  row('summary-roam', `farthestFromArrival=${f1(far)}`, `angerReadings=${[...angerSeen].join('|')}`)
+  begin('T10-entering-lured', 'a sourceless snowball lands 12 blocks east of where the entering warden stands')
+  const here = parsePos(await wardenGet('Pos'))
+  const landing = [Math.floor(here[0]) + 12, FLOOR_Y + 1, Math.floor(here[2])]
+  await rcon.run(`summon minecraft:snowball ${landing[0]} ${FLOOR_Y + 4} ${landing[2]}`)
+  const tL = now()
+  let reachedMs = null
+  let nearest = Infinity
+  while (now() - tL < 15_000) {
+    const r = await reading()
+    const dl = r.pos ? dist2(r.pos, landing) : null
+    if (dl != null) {
+      nearest = Math.min(nearest, dl)
+      if (dl <= 2 && reachedMs == null) reachedMs = now() - tL
+    }
+    row(`pos=${r.pos?.map(f1)}`, `toLanding=${f1(dl)}`, `anger=${r.anger}`)
+    await sleep(500)
+  }
+  row('summary-lure', `wardenToLandingAtLanding=${f1(dist2(here, landing))}`, `reached=${reachedMs != null}`, `reachedMs=${reachedMs}`, `nearestToLanding=${f1(nearest)}`)
+}
+
 // ---- run --------------------------------------------------------------------
 async function setup() {
   await rcon.run('gamerule spawn_mobs false')
@@ -764,6 +812,7 @@ try {
   if (wants('T7')) await t7(bot)
   if (wants('T8')) await t8(bot)
   if (wants('T9')) await t9(bot)
+  if (wants('T10')) await t10(bot)
   console.log('== probe complete ==')
 } catch (e) {
   console.error(`probe failed: ${e.stack ?? e}`)
