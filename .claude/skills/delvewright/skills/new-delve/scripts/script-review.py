@@ -171,6 +171,18 @@ class Script:
         self.lines = 0  # player-facing lines counted
         self.out: list[str] = []
         self.talk_roots = self.find_talk_roots()
+        # Every objective's title, so a completing option can say which beat it
+        # closes — and that it is drawn only while that beat is open, which is the
+        # engine's rule (compiler.md, stage 6: a completing option is drawn under
+        # the objective's whole pending guard), a fact a reader of the documents
+        # alone cannot see.
+        self.obj_title: dict[str, str] = {}
+        for quest in self.quests.get("quests", []):
+            if isinstance(quest, dict):
+                for o in quest.get("objectives", []):
+                    if isinstance(o, dict) and o.get("id"):
+                        self.obj_title[o["id"]] = o.get("title") or o["id"]
+        self.visited: dict[str, int] = {}  # anchor -> the line it was first walked to
 
     # -- helpers ---------------------------------------------------------------
 
@@ -249,7 +261,13 @@ class Script:
             elif kind in ("firework", "particle", "lightning", "play-sound", "stop-sound"):
                 out.append(f"{pad}- {kind.replace('-', ' ')}{suffix}")
             elif kind == "complete-objective":
-                out.append(f"{pad}- completes `{e.get('objective')}`{suffix}")
+                oid = e.get("objective")
+                title = self.obj_title.get(oid)
+                beat = f"*{title}* (`{oid}`)" if title else f"`{oid}`"
+                out.append(
+                    f"{pad}- completes {beat}; this button is drawn only while that objective is open — "
+                    f"its line started, everything it comes after done, its own gates met{suffix}"
+                )
             else:
                 out.append(f"{pad}- {kind}{suffix}")
         return out
@@ -453,6 +471,37 @@ class Script:
         out.append("")
         return out
 
+    def stands_at(self, quest: dict, npc: str) -> str | None:
+        """The anchor `npc` stands at during `quest`, by its first cast placement."""
+        for _, placement in self.cast_dialogue(quest, npc):
+            at = (placement or {}).get("at")
+            if isinstance(at, str):
+                return at
+            if isinstance(at, dict) and isinstance(at.get("anchor"), str):
+                return at["anchor"]
+        return None
+
+    def itinerary(self, quest: dict, ordered: list[dict], line_no: int) -> str:
+        """The anchors a line walks the party to, in order, each return named."""
+        stops: list[str] = []
+        seen_here: list[str] = []
+        for o in ordered:
+            kind = o.get("type")
+            anchor = o.get("anchor") if kind in ("reach-anchor", "interact", "collect") else None
+            if kind == "talk-to" and o.get("npc"):
+                anchor = self.stands_at(quest, o["npc"])
+            if not isinstance(anchor, str):
+                continue
+            note = ""
+            if anchor in seen_here:
+                note = " (again)"
+            elif anchor in self.visited and self.visited[anchor] != line_no:
+                note = f" (as in line {self.visited[anchor]})"
+            seen_here.append(anchor)
+            self.visited.setdefault(anchor, line_no)
+            stops.append(f"`{anchor}`{note}")
+        return " → ".join(stops)
+
     def quest_lines(self, i: int, plan_entry: dict, quest: dict | None) -> list[str]:
         qid = plan_entry["id"]
         goal = plan_entry.get("goal", "")
@@ -472,6 +521,10 @@ class Script:
             out.append(
                 f"*{len(open_together)} objectives open together at the line's start; the party takes them in any order.*"
             )
+            out.append("")
+        itinerary = self.itinerary(quest, ordered, i)
+        if itinerary:
+            out.append(f"*Where it walks you, in order:* {itinerary}")
             out.append("")
         for j, o in enumerate(ordered, 1):
             out.extend(self.objective_lines(quest, o, f"{i}.{j}", titles))

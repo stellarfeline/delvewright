@@ -108,11 +108,14 @@ here is the question asked.
   story they have been told before it is set, and finishing it changes
   something they can see. A task whose only purpose is to be finished — three
   things found so that three things have been found — or whose result the story
-  never picks up again, is unmotivated, however pleasant the doing. **Cited:**
-  Tomaszkiewicz (a fetch quest is one with little or no story around it; an
-  errand that leads somewhere is not one); Desurvire et al., Game Play 2 and
-  Game Story 1. The "told before it is set" clause is **authored**: a reason
-  the player learns afterwards did not move them.
+  never picks up again, is unmotivated, however pleasant the doing. A lock, a
+  latch or a puzzle is a task too: ask who put it there, why, and whether the
+  player learns it; one that exists because the line needed a middle is the
+  same defect in a harder shell. **Cited:** Tomaszkiewicz (a fetch quest is one
+  with little or no story around it; an errand that leads somewhere is not
+  one); Desurvire et al., Game Play 2 and Game Story 1. The "told before it is
+  set" clause and the lock clause are **authored**: a reason the player learns
+  afterwards did not move them, and a well-made lock is still an errand.
 - **Q2 — What is new here?** Each line's body is a different kind of deed from
   the lines before it, and a deed repeated inside a line asks something new of
   the player each time — a new way to find it, a new thing to read, a rule
@@ -150,16 +153,22 @@ here is the question asked.
   meets — a refusal, a lie, a forgetting, a favour, a change of subject — has a
   motive the player can read from the lines or the events by the time it
   matters, and no character's own lines contradict it. An act with no motive is
-  a hole; a character who exists for one errand is cut or given a reason.
+  a hole; a character who exists for one errand is cut or given a reason; and a
+  character who hides an innocent act — denies knowing where a thing is that
+  they borrowed for a good reason — needs a reason to hide it as much as a
+  guilty one would, or the evasion is the author's device and not the person's.
   **Cited:** Van Dine, rules 5 and 19; Desurvire et al., Game Story 8; Sasko.
-  The "by the time it matters" clause is **authored**.
+  The "by the time it matters" clause and the innocent-evasion clause are
+  **authored**, the second from a playtest.
 - **Q7 — Does each conversation earn its place?** A conversation changes what
   the player knows, has or can do, and two conversations of one shape in a row
   — the same question put to everyone — are padding. Where one person's manner
   alone would give the answer, the round of asking is the defect, not the
-  manner. **Cited:** Slabinski (concision; dialogue is for the player); the
-  table-read finding that a scene drags. The "one shape in a row" reading is
-  **authored**.
+  manner: count the witnesses and clues the answer needs against the ones the
+  script provides, and name the surplus even where each one is well written.
+  **Cited:** Slabinski (concision; dialogue is for the player); the table-read
+  finding that a scene drags. The "one shape in a row" reading and the surplus
+  count are **authored**, the second from a playtest.
 - **Q8 — Is this a choice?** A set of options is a choice when it is a
   trade-off, depends on the situation, lasts, and is made with enough
   information; a set with one obvious pick, or whose options come to the same,

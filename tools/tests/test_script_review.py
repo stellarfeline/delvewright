@@ -200,7 +200,7 @@ def test_the_script_is_laid_out_in_play_order_not_file_order(rig):
     script = (c / ".out" / "script-review" / "round-1" / "script.md").read_text()
     hub, spoke, side, finale = (script.index(f"`quest/{q}`") for q in ("hub", "spoke", "side", "finale"))
     assert hub < spoke < side < finale
-    assert script.index("Pull the lever") < script.index("Tell Anna")
+    assert script.index("### 2.1 Pull the lever") < script.index("### 2.2 Tell Anna")
     assert "*optional ·" in script[side:finale]
 
 
@@ -211,6 +211,12 @@ def test_a_talk_to_writes_out_the_tree_the_cast_shows_and_nothing_the_author_mea
     script = (c / ".out" / "script-review" / "round-1" / "script.md").read_text()
     assert "Hello, strangers." in script and "It is the only one." in script
     assert "(only if `flag/x`)" in script  # the gated option is shown with its gate
+    # A completing option says which beat it closes and that it is drawn only
+    # while that beat is open — the engine's rule, which the documents do not show.
+    assert "completes *Tell Anna* (`obj/report`); this button is drawn only while that objective is open" in script
+    # Each line's itinerary names its stops in order, and a return by name.
+    assert "*Where it walks you, in order:* `anchor/lever` → `anchor/a` (as in line 1)" in script
+    assert "*Where it walks you, in order:* `anchor/a` (as in line 1)" in script
     assert "compass hidden" in script
     assert "before it is time: Stiff." in script
     assert "**A Stick**" in script and "remembers `flag/x`" in script

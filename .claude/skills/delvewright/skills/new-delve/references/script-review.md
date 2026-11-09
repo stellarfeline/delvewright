@@ -46,10 +46,13 @@ reviewer judges the script against it under Q10. Then:
 
 It writes `<campaign-dir>/.out/script-review/round-<n>/script.md` — the script
 in play order: title and premise, the parts on offer, every line of play with
-its objectives in the order they open, each objective's title, hint, hidden
+the places it walks the party to in order (a return named as one) and its
+objectives in the order they open, each objective's title, hint, hidden
 compass or announcement, what it needs and what it answers, every dialogue tree
-as the cast shows it during that line, every narration and visible effect, then
-everything pressed or passed in the world — and `handout.md` beside it, which
+as the cast shows it during that line (a completing option named with the beat
+it closes, and the engine's rule that it is drawn only while that beat is
+open), every narration and visible effect, then everything pressed or passed
+in the world — and `handout.md` beside it, which
 carries your brief, the questions the reviewer asks and the form the review
 takes, both read from `$DELVEWRIGHT_ENGINE/docs/reference/script-review.md`
 (§2 and §3) and never restated here. `n` counts the rounds already there. It
