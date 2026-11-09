@@ -1562,12 +1562,15 @@ fn two_lines() -> (Value, Value) {
         "campaign_id": NS, "stage": "quest-plan",
         "content": { "finale": "quest/line-b-on", "quests": [
             { "id": "quest/line-a", "goal": "Speak with the Keeper and find the exit.",
+              "activity": ["reach", "talk"],
               "area": "area/keep", "npcs": ["npc/keeper"], "depends_on": [],
               "mandatory": false, "act": 1 },
             { "id": "quest/line-b", "goal": "Find the latch and the Keeper's post.",
+              "activity": ["reach"],
               "area": "area/keep", "npcs": ["npc/keeper"], "depends_on": [],
               "mandatory": true, "act": 1 },
             { "id": "quest/line-b-on", "goal": "Leave the keep.",
+              "activity": ["reach"],
               "area": "area/keep", "npcs": ["npc/keeper"], "depends_on": ["quest/line-b"],
               "mandatory": true, "act": 1 }
         ] }

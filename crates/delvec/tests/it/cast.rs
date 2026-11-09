@@ -732,7 +732,7 @@ fn sibling_plan(four: Option<&str>) -> String {
         .map(|parent| {
             format!(
                 r#",
-    {{ "id": "quest/four", "goal": "Report back.", "area": "area/keep",
+    {{ "id": "quest/four", "goal": "Report back.", "activity": ["reach"], "area": "area/keep",
       "npcs": ["npc/scout"], "depends_on": ["{parent}"], "mandatory": false, "act": 1 }}"#
             )
         })
@@ -741,11 +741,11 @@ fn sibling_plan(four: Option<&str>) -> String {
         r#"{{
   "dsl_version": "%dsl_version%", "campaign_id": "hello-world", "stage": "quest-plan",
   "content": {{ "quests": [
-    {{ "id": "quest/one", "goal": "Speak with the Keeper.", "area": "area/keep",
+    {{ "id": "quest/one", "goal": "Speak with the Keeper.", "activity": ["talk"], "area": "area/keep",
       "npcs": ["npc/keeper"], "depends_on": [], "mandatory": true, "act": 1 }},
-    {{ "id": "quest/two", "goal": "Ask the scout.", "area": "area/keep",
+    {{ "id": "quest/two", "goal": "Ask the scout.", "activity": ["talk"], "area": "area/keep",
       "npcs": ["npc/scout"], "depends_on": ["quest/one"], "mandatory": true, "act": 1 }},
-    {{ "id": "quest/three", "goal": "Leave the keep.", "area": "area/keep",
+    {{ "id": "quest/three", "goal": "Leave the keep.", "activity": ["reach"], "area": "area/keep",
       "npcs": ["npc/keeper"], "depends_on": ["quest/one"], "mandatory": true, "act": 1 }}{tail}
   ], "finale": "quest/three" }}
 }}"#
