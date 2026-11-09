@@ -824,6 +824,7 @@ pub fn write_review(
         let rows: Vec<&crate::compiler::placed::Placed> =
             fw.rows.iter().map(|i| &ledger.rows[*i]).collect();
         let (blocks, mut w) = maker.encode(plan, picture, &fw.config, &fw.clock, &rows);
+        crate::compiler::notes::mark(&format!("review world {key}: encoded"));
         let bodies = body_targets(&rows);
         let mut targets = targets.clone();
         targets.extend(bodies.iter().map(|b| b.target.clone()));
@@ -841,6 +842,7 @@ pub fn write_review(
         // What each shot standing in this world shows: one grid, one sight
         // rule.
         let grid = crate::compiler::framing::VoxelGrid::build(&blocks);
+        crate::compiler::notes::mark("review world: grid built");
         // The grid answers every sight question the shots ask; the world's
         // block map is not read again.
         drop(blocks);

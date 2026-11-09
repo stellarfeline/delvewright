@@ -239,6 +239,7 @@ pub(super) fn prove_world(
             // still running out of is not a verdict (see its doc comment). This
             // call and that one cannot disagree — the measurement is pure and
             // reads the same two sets.
+            crate::compiler::notes::mark("fluid escape: start");
             let fluid_escape = crate::compiler::nav::measure_fluid_escape(world);
             fluid_escape_ledger = Some(fluid_escape.ledger());
             if let Some(e) = fluid_escape.finding() {
@@ -254,6 +255,7 @@ pub(super) fn prove_world(
             // cannot disagree with it because the measurement is pure and reads
             // the same sets. A pass owes the numbers as much as a failure does —
             // `contact_face_cells: 0` is a watertight hull saying so.
+            crate::compiler::notes::mark("party walk for seepage: start");
             let party_walk = world.body_region_rooted(&crate::compiler::edit::anchor_starts(plan));
             let seepage = crate::compiler::nav::measure_sea_seepage(world, &party_walk);
             crate::note!("{}", seepage.line());
@@ -267,6 +269,7 @@ pub(super) fn prove_world(
             // because this is the first point at which the walk region and the
             // placed boxes are both in hand, and printed before it is raised,
             // for the same vacuity reason the exposure line is.
+            crate::compiler::notes::mark("ocean walk plane: start");
             let (sea_walk, sea_walk_findings) =
                 crate::compiler::plan::check_ocean_walk_plane(plan, prefabs, &party_walk);
             crate::note!("{}", sea_walk.line());
@@ -294,6 +297,7 @@ pub(super) fn prove_world(
             // finds something owes its reader the same counts as the run that
             // finds nothing, and a check whose line appears only on a pass is one
             // whose denominator nobody can read at the moment it matters.
+            crate::compiler::notes::mark("burial: start");
             let (exposure, findings) = crate::compiler::burial::check(
                 plan,
                 prefabs,
@@ -365,6 +369,7 @@ pub(super) fn prove_world(
             // `DW0322` floods from where a body can start a walk: every anchor
             // but a station of a scenery place nobody is put in
             // (`edit::body_starts`). The line states what it left out.
+            crate::compiler::notes::mark("body starts + boundary safety: start");
             let body_starts = crate::compiler::edit::body_starts(plan, world);
             crate::note!(
                 "boundary-safety binding: {} of {} anchor(s) root the walk region, {} \
@@ -636,10 +641,13 @@ pub(super) fn prove_world(
                 }
             }
             let (moves, actor_moves) = if crate::compiler::nav::needs_world(plan) {
+                crate::compiler::notes::mark("moves: start");
                 let m = crate::compiler::nav::plan_moves(plan, world)?;
                 // move-actor (spec-0014): A* over the actor's footprint; DW0325 if
                 // unroutable. Planned alongside move-npc from the same occupancy model.
+                crate::compiler::notes::mark("actor moves: start");
                 let am = crate::compiler::nav::plan_actor_moves(plan, world)?;
+                crate::compiler::notes::mark("cutscenes: start");
                 cutscene_proof =
                     crate::compiler::nav::check_cutscenes(plan, world, &m, &am, frame_worlds)?;
                 // spec-0110: a shot frames its subject (`DW1033`) and a body
@@ -648,6 +656,7 @@ pub(super) fn prove_world(
                 // that first. The binding line prints before the verdict, for
                 // every build with a cutscene.
                 {
+                    crate::compiler::notes::mark("framing: start");
                     let (ledger, verdict) = crate::compiler::framing::judge(plan, world, &m, &am);
                     if !ledger.cutscenes.is_empty() {
                         crate::note!("{}", ledger.line());
@@ -790,6 +799,7 @@ pub(super) fn prove_world(
                 // DW0921: no place a body can reach from the route by walking,
                 // falling or jumping is one it cannot leave. The binding is
                 // printed before the verdict is taken, like DW0891's.
+                crate::compiler::notes::mark("bodies can leave (DW0921): start");
                 let (leave_binding, leave_verdict) = crate::compiler::nav::check_bodies_can_leave(
                     plan,
                     world,
@@ -818,6 +828,7 @@ pub(super) fn prove_world(
                 // jump or swim gets a body from its near face to its far one.
                 // Over the same configurations DW0921 judges; the binding is
                 // printed before the verdict is taken.
+                crate::compiler::notes::mark("gates separate: start");
                 let (separation, separation_verdict) =
                     crate::compiler::nav::check_gates_separate(plan, world);
                 crate::note!("{}", separation.line());
@@ -832,6 +843,7 @@ pub(super) fn prove_world(
                 // confirms the word — over the configurations, faces and reach
                 // DW1011 just judged. The binding is printed and the ledger
                 // written before the verdict is taken.
+                crate::compiler::notes::mark("shut ways learned: start");
                 let (shut_ways, shut_ways_verdict) =
                     crate::compiler::nav::check_shut_ways_learned(plan, world, prefabs);
                 crate::note!("{}", shut_ways.line());
@@ -947,6 +959,7 @@ pub(super) fn prove_world(
                 // packtest-datapack/). Emitted only when a walked leg exists, so a
                 // campaign with none stays byte-identical to before. Uses the same
                 // relight-aware `world` as the DW0311 check it exports.
+                crate::compiler::notes::mark("critical path routes: start");
                 let routes = crate::compiler::nav::critical_path_routes(plan, world);
                 // Structural self-check: every exported waypoint must be
                 // genuinely standable in this FINAL world (settled + water-flooded +
@@ -1135,6 +1148,7 @@ pub(super) fn prove_world(
                 // spec-0108 §4.3: the rows are story worlds, each walked in a
                 // world of its own — every world that exports a path gets its
                 // own proof and waypoints, keyed by its slug (`world-<k>`).
+                crate::compiler::notes::mark("branch worlds: start");
                 let rows: Vec<crate::compiler::branch::WorldRow> =
                     if crate::compiler::branch::plans_worlds(plan.campaign) {
                         crate::compiler::branch::world_rows(plan.campaign)
@@ -1143,89 +1157,24 @@ pub(super) fn prove_world(
                     };
                 if !rows.is_empty() {
                     let flow = crate::compiler::flow::Flow::new(plan.campaign);
-                    for row in rows.iter().filter(|w| w.no_path.is_none()) {
-                        let r = &row.realized;
-                        let widx = row.k;
-                        let who = row.label();
-                        let label = |e: Failure| Failure {
-                            code: e.code,
-                            message: format!("{who}: {}", e.message),
-                        };
-                        let branch_fail = |e: plan::PlanError| BuildFailure::Diagnostic {
-                            code: e.failure.code,
-                            message: format!("{who}: {}", e.failure.message),
-                        };
-                        let unlinked = plan
-                            .branch_critical_path(&flow, &flow.story_playthrough(widx))
-                            .map_err(branch_fail)?;
-                        // The branch's own links (spec-0083 §6): taken over its
-                        // own steps and gate model, then spliced into its path.
-                        let (unlinked_events, unlinked_ancestors) =
-                            plan.branch_gate_model(&unlinked);
-                        let takes = if plan.links.is_empty() && !unlinked_events.has_keep_out() {
-                            plan::LinkTakes::default()
-                        } else {
-                            let (region_events, ancestors) = (unlinked_events, unlinked_ancestors);
-                            let ancestor = |g: usize, s: usize| {
-                                g == 0 || ancestors.get(&s).is_some_and(|a| a.contains(&g))
-                            };
-                            crate::compiler::nav::take_branch_links(
-                                plan,
-                                world,
-                                campaign_spawn(plan),
-                                &unlinked,
-                                &region_events,
-                                &ancestor,
-                            )
-                            .map_err(label)?
-                        };
-                        let cp = if takes.is_empty() {
-                            unlinked
-                        } else {
-                            plan.branch_critical_path_linked(
-                                &flow,
-                                &flow.story_playthrough(widx),
-                                &takes,
-                            )
-                            .map_err(branch_fail)?
-                        };
-                        branch_takes.insert(r.branch.slug.clone(), takes);
-                        let (region_events, ancestors) = plan.branch_gate_model(&cp);
-                        let ancestor = |g: usize, s: usize| {
-                            g == 0 || ancestors.get(&s).is_some_and(|a| a.contains(&g))
-                        };
-                        crate::compiler::nav::check_branch_path(
-                            plan,
-                            world,
-                            campaign_spawn(plan),
-                            &cp,
-                            &region_events,
-                            &ancestor,
-                        )
-                        .map_err(label)?;
-                        let branch_routes = crate::compiler::nav::branch_path_routes(
-                            world,
-                            campaign_spawn(plan),
-                            &cp.steps,
-                            &cp.transport_by_step,
-                            &region_events,
-                            &ancestor,
-                        );
-                        crate::compiler::nav::verify_exported_routes(world, &branch_routes)
-                            .map_err(label)?;
-                        if !branch_routes.is_empty() {
-                            branch_waypoints.push((
-                                r.branch.slug.clone(),
-                                crate::compiler::waypoints::waypoints_json(
-                                    plan,
-                                    &branch_routes,
-                                    &listening,
-                                    &cp.sneak_by_step,
-                                    &proven_jumps,
-                                ),
-                            ));
+                    // Each row is walked in its own world from its own path,
+                    // and reads nothing another row computes: the rows are
+                    // proven in parallel (`par::map`, one row's transients per
+                    // thread) and folded here in row order, so the first row
+                    // that fails is the one named and every ledger is the
+                    // sequential loop's (ADR-0006).
+                    let walked: Vec<&crate::compiler::branch::WorldRow> =
+                        rows.iter().filter(|w| w.no_path.is_none()).collect();
+                    let proven = crate::par::map(&walked, |row| {
+                        prove_branch_world(plan, world, &flow, row, &listening, &proven_jumps)
+                    });
+                    for row in proven {
+                        let row = row?;
+                        branch_takes.insert(row.slug.clone(), row.takes);
+                        if let Some(w) = row.waypoints {
+                            branch_waypoints.push((row.slug.clone(), w));
                         }
-                        path_legs.push((r.branch.slug.clone(), cp.steps.clone(), branch_routes));
+                        path_legs.push((row.slug, row.steps, row.routes));
                     }
                 }
                 // `DW1025`: a body the party talks to faces the party as they
@@ -1234,6 +1183,7 @@ pub(super) fn prove_world(
                 // the branches are routed) and the walks that leave a body
                 // where it is talked to. The line prints before the verdict.
                 {
+                    crate::compiler::notes::mark("approach check: start");
                     let (binding, findings) =
                         crate::compiler::approach::check(plan, &path_legs, &m);
                     crate::note!("{}", binding.line());
@@ -1259,6 +1209,7 @@ pub(super) fn prove_world(
             // island shipped a 2.9-tall warden inside the cliff face beside its
             // cave mouth with every other proof green. Runs after the moves are
             // planned because the walked waypoints are half of what it proves.
+            crate::compiler::notes::mark("body clearance: start");
             warnings.extend(
                 crate::compiler::clearance::check_body_clearance(plan, world, &moves, &actor_moves)
                     .map_err(|e| BuildFailure::Diagnostic {
@@ -1274,6 +1225,7 @@ pub(super) fn prove_world(
             // beach fold by stepping onto its wall's full-cube course instead of
             // using the pen's opening. Capabilities come from the entity, so a
             // spider routed over a wall stays silent and a sheep does not.
+            crate::compiler::notes::mark("traversal: start");
             let (traversal_warnings, gate) =
                 crate::compiler::traversal::check_traversal(plan, world, &moves, &actor_moves)
                     .map_err(|e| BuildFailure::Diagnostic {
@@ -1348,6 +1300,7 @@ pub(super) fn prove_world(
             //
             // Before the combat plan: a run-back is measured against where the
             // hostiles actually are, and a lane wave is where it marches.
+            crate::compiler::notes::mark("lanes + combat: start");
             let lanes = crate::compiler::nav::plan_lanes(plan, world)?;
             // A campaign whose only fight is an ACTOR still ships a plan. It has no
             // `encounters[]` for the ladder to read or clear, but `fights` is the
@@ -1441,5 +1394,110 @@ pub(super) fn prove_world(
         lightning_gate,
         stake_table,
         death_plan,
+    })
+}
+
+/// One story world's proven walk (spec-0108 §4.3): what [`prove_world`]'s
+/// branch rows fold, in row order.
+struct BranchWorld {
+    slug: String,
+    takes: plan::LinkTakes,
+    waypoints: Option<Value>,
+    steps: Vec<plan::Step>,
+    routes: Vec<crate::compiler::nav::LegRoute>,
+}
+
+/// **One story world, walked in a world of its own** (spec-0108 §4.3,
+/// spec-0083 §6, spec-0025): its path built, its own links taken and spliced
+/// in, every walked leg proven routable under its own gate seals (`DW0311`),
+/// its routes planned and checked standable (`DW0314`), and its waypoint
+/// artifact written. It reads nothing another row computes, which is what lets
+/// [`prove_world`] prove the rows in parallel and fold them in row order.
+fn prove_branch_world(
+    plan: &Plan,
+    world: &crate::compiler::nav::World,
+    flow: &crate::compiler::flow::Flow,
+    row: &crate::compiler::branch::WorldRow,
+    listening: &crate::compiler::sculk::Listening,
+    proven_jumps: &[crate::compiler::nav::ProvenJump],
+) -> Result<BranchWorld, BuildFailure> {
+    let r = &row.realized;
+    let widx = row.k;
+    let who = row.label();
+    crate::compiler::notes::mark(&format!("branch world {who}: start"));
+    let label = |e: Failure| Failure {
+        code: e.code,
+        message: format!("{who}: {}", e.message),
+    };
+    let branch_fail = |e: plan::PlanError| BuildFailure::Diagnostic {
+        code: e.failure.code,
+        message: format!("{who}: {}", e.failure.message),
+    };
+    let unlinked = plan
+        .branch_critical_path(flow, &flow.story_playthrough(widx))
+        .map_err(branch_fail)?;
+    // The branch's own links (spec-0083 §6): taken over its own steps and gate
+    // model, then spliced into its path.
+    let (unlinked_events, unlinked_ancestors) = plan.branch_gate_model(&unlinked);
+    let takes = if plan.links.is_empty() && !unlinked_events.has_keep_out() {
+        plan::LinkTakes::default()
+    } else {
+        let (region_events, ancestors) = (unlinked_events, unlinked_ancestors);
+        let ancestor =
+            |g: usize, s: usize| g == 0 || ancestors.get(&s).is_some_and(|a| a.contains(&g));
+        crate::compiler::nav::take_branch_links(
+            plan,
+            world,
+            campaign_spawn(plan),
+            &unlinked,
+            &region_events,
+            &ancestor,
+        )
+        .map_err(label)?
+    };
+    let cp = if takes.is_empty() {
+        unlinked
+    } else {
+        plan.branch_critical_path_linked(flow, &flow.story_playthrough(widx), &takes)
+            .map_err(branch_fail)?
+    };
+    crate::compiler::notes::mark("branch world: path built and links taken");
+    let (region_events, ancestors) = plan.branch_gate_model(&cp);
+    let ancestor = |g: usize, s: usize| g == 0 || ancestors.get(&s).is_some_and(|a| a.contains(&g));
+    crate::compiler::nav::check_branch_path(
+        plan,
+        world,
+        campaign_spawn(plan),
+        &cp,
+        &region_events,
+        &ancestor,
+    )
+    .map_err(label)?;
+    crate::compiler::notes::mark("branch world: path checked");
+    let routes = crate::compiler::nav::branch_path_routes(
+        world,
+        campaign_spawn(plan),
+        &cp.steps,
+        &cp.transport_by_step,
+        &region_events,
+        &ancestor,
+    );
+    crate::compiler::nav::verify_exported_routes(world, &routes).map_err(label)?;
+    crate::compiler::notes::mark("branch world: routes planned and verified");
+    let waypoints = (!routes.is_empty()).then(|| {
+        crate::compiler::waypoints::waypoints_json(
+            plan,
+            &routes,
+            listening,
+            &cp.sneak_by_step,
+            proven_jumps,
+        )
+    });
+    Ok(BranchWorld {
+        slug: r.branch.slug.clone(),
+        takes,
+        waypoints,
+        steps: cp.steps,
+        routes,
     })
 }

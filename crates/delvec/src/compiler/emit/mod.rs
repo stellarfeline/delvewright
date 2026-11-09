@@ -406,6 +406,7 @@ fn emit_all(
     // under different atmospheres; a repaint past the map's extent), and the
     // binding line — printed on every build, a campaign with no atmosphere
     // included, because a zero is a measurement.
+    crate::compiler::notes::mark("emit: start (biome map)");
     let biome_map = {
         let map = crate::compiler::horizon::biome_map(plan);
         crate::compiler::horizon::check_paints(plan, &map).map_err(|e| {
@@ -438,7 +439,9 @@ fn emit_all(
     //
     // The world is assembled here, once, and every model below is derived from
     // this one assembly (or from the edit replay's edited copy of it).
+    crate::compiler::notes::mark("assemble: start");
     let mut pristine = Some(crate::compiler::assembled::assemble(plan, structures));
+    crate::compiler::notes::mark("assemble: done");
     if let Some(message) = crate::compiler::assembled::gravity_despawn_error_of(
         plan,
         pristine.as_ref().expect("assembled above"),
@@ -454,6 +457,7 @@ fn emit_all(
     // (gravity, relight, walkability, boundary safety — each failure names its
     // batch). `None` for a campaign without an edit script — every downstream
     // pass then takes its exact pre-stage-7 path, byte-identically.
+    crate::compiler::notes::mark("edit replay: start");
     let edit_replay =
         crate::compiler::edit::replay_taking(plan, prefabs, structures, &mut pristine).map_err(
             |e| BuildFailure::Diagnostic {
@@ -474,6 +478,7 @@ fn emit_all(
     // the judged part; the picture the review worlds and the render plan are
     // written from is the whole one.
     let whole = assembled;
+    crate::compiler::notes::mark("edit replay: done; judged columns + cost: start");
     let judged = boundary::judged_columns(plan).and_then(|(lo, hi)| whole.judged_within(lo, hi));
     if let Some((_, j)) = &judged {
         crate::note!("{}", j.line());
@@ -652,6 +657,7 @@ fn emit_all(
     // The world every route below is walked in, with the holder stances the
     // census judges further down (spec-0111 §5.2): one derivation, the one
     // every reader of the critical path takes (`holders::final_walk`).
+    crate::compiler::notes::mark("holders: start");
     let owned_holders = crate::compiler::holders::own_holders(plan, &entity_holders);
     let (walked, relight) = crate::compiler::holders::final_walk(plan, assembled, &owned_holders);
     crate::note!("{}", relight.binding.line());
@@ -802,6 +808,7 @@ fn emit_all(
     // both party populations below all read the same steps. A campaign whose
     // legs all walk takes nothing and keeps the plan it was handed, byte for
     // byte.
+    crate::compiler::notes::mark("links taken: start");
     let relinked = crate::compiler::nav::with_links_taken(plan, prefabs, &world)?;
     let plan: &Plan = relinked.as_ref().unwrap_or(plan);
     // The respawn seats, derived over the final world for the plan every proof
@@ -818,28 +825,34 @@ fn emit_all(
     //
     // The binding is kept: the critical path carries the bot's witness of each
     // blow, and the staging record states which were witnessed.
+    crate::compiler::notes::mark("seats fixed; walked population: start");
     let population = walked_population(plan, &world);
     // spec-0110 §5.8: how far a standing player's eye is from each assembly,
     // in the place it stands in — the floor its `view_range` is derived to.
     let assembly_place_reach = crate::compiler::framing::place_reach(plan, &population);
+    crate::compiler::notes::mark("assemblies: start");
     let assembly_binding: Option<crate::compiler::assembly::AssemblyBinding> =
         Some(prove_assemblies(plan, &world, &population)?);
 
     // ---- the stage-5 blockout battery (spec-0049 §5.3) ----
+    crate::compiler::notes::mark("blockout battery: start");
     prove_blockout(plan, assembled, &mut warnings)?;
 
     // ---- the declaration proofs: no occupancy model, `DW0360` first ----
+    crate::compiler::notes::mark("declaration proofs: start");
     let teleport_gate = prove_declarations(plan, &mut warnings)?;
 
     // ---- spec-0101: the watchers (`DW0997`), over the assemblies' population ----
     //
     // After the declaration proofs, so a body whose mark leaves its piece
     // (`DW0897`) is sent to that line rather than told nobody can reach it.
+    crate::compiler::notes::mark("watchers: start");
     let mut watch_binding = prove_watchers(plan, &population)?;
 
     // The configurations the critical path arrives under (spec-0112 §3): the
     // worlds the review frames stand in, and the worlds a cutscene a critical
     // step fires is flown through (`DW0308`).
+    crate::compiler::notes::mark("frame worlds: start");
     let frame_worlds = crate::compiler::view::review::frame_worlds(plan, &world);
 
     // The exported path's layout (`Plan::exported_layout`): the one answer to
@@ -857,6 +870,7 @@ fn emit_all(
     let layout = plan.exported_layout(&plan.critical_path, &witness_counts);
 
     // ---- the world block: every proof over the assembled world ----
+    crate::compiler::notes::mark("world proofs: start");
     let WorldProofs {
         moves,
         actor_moves,
@@ -903,6 +917,7 @@ fn emit_all(
     // where it stands (`moves`), over the watchers' population. The line prints
     // before the verdict.
     {
+        crate::compiler::notes::mark("world proofs: done; held facing: start");
         let (binding, findings) = crate::compiler::approach::check_held(plan, &population, &moves);
         crate::note!("{}", binding.line());
         if let Some((first, rest)) = findings.split_first() {
@@ -973,6 +988,7 @@ fn emit_all(
     // `DW0991` first. The binding is printed whichever way it goes.
     // Its refusal waits for the write-sequence arm below, so one refusal names
     // every block either arm finds.
+    crate::compiler::notes::mark("attached/resting over the load: start");
     let picture = crate::compiler::view::beat::picture_base(plan, assembled, &relight.placements);
     let load = crate::compiler::view::beat::load_blocks(plan, &world, &picture);
     let attached_refusal = {
@@ -1142,6 +1158,7 @@ fn emit_all(
     };
     // spec-0104 §6–§8: the compass, the journal and the highlights, derived once
     // over the assembled world every emitter here reads.
+    crate::compiler::notes::mark("datapack emission + guidance: start");
     let guide = guidance::guide(plan, &assembled.blocks, &owned_holders, &world);
     // spec-0109 §5.1: what every biome a camera can stand in plays, what each
     // cutscene hears, what each `stop-sound` cuts — read over the forced
@@ -1484,6 +1501,7 @@ fn emit_all(
         .is_some()
         .then(|| crate::compiler::view::beat::picture_base(plan, whole, &relight.placements));
     let picture = whole_picture.as_ref().unwrap_or(&picture);
+    crate::compiler::notes::mark("render plan: start");
     let (render_plan_doc, camera_warnings) = crate::compiler::render_plan::render_plan(
         plan,
         prefabs,
@@ -1495,6 +1513,7 @@ fn emit_all(
     )?;
     warnings.extend(camera_warnings);
     put_json(&mut out, "render-plan.json", &render_plan_doc);
+    crate::compiler::notes::mark("review worlds: start");
     if review == Review::Written {
         let maker =
             crate::compiler::view::review::WorldMaker::new(plan, whole, picture, structures);
@@ -1974,6 +1993,7 @@ fn emit_all(
     // whole reason spec-0029's risk is an invariant rather than an audit.
     check_untranslated_literals(&out, &extra_assets)?;
 
+    crate::compiler::notes::mark("emit: done");
     warnings.extend(pacing);
     Ok((out, warnings))
 }

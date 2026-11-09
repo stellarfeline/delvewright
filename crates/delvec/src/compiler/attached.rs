@@ -1163,39 +1163,87 @@ fn replay_by_chunk(
             .filter(|own| load.iter().any(|w| own.meets(w.lo, w.hi)))
             .collect()
     };
-    let mut drops: Vec<KeyedDrop> = Vec::new();
-    for own in chunks {
-        stats.chunks += 1;
-        let mut r = if stats.whole { 0 } else { halo };
+    // Each chunk is replayed from the load alone and reads nothing another
+    // chunk's replay computes, so the chunks are replayed in parallel
+    // (`par::try_for_each_ordered`) and folded here in chunk order: the counts
+    // summed, the cells laid and the drops gathered as the sequential walk
+    // gathered them. At most `threads` replays' worlds (each a chunk and its
+    // halo) and `2 × threads` chunks' own cells and drops are held at once,
+    // where the sequential walk held one replay (ADR-0037 §2).
+    let whole = stats.whole;
+    let judge_chunk = |own: &Columns| -> JudgedChunk {
+        let mut r = if whole { 0 } else { halo };
+        let mut replays = 0;
+        let mut sections = 0;
         loop {
             let reach = own.grown(r);
-            let held = stats.whole || reach.covers(&span);
-            stats.replays += 1;
-            let rep = replay(load, functions, own, reach, templates, structures, surround);
-            stats.sections = stats.sections.max(rep.cells.sections());
-            if held || !reaches_past(&rep.reads, own, reach, all) {
-                stats.widest = stats.widest.max(r);
-                b.changed += rep.changed;
-                b.attached += rep.attached;
-                b.falling += rep.falling;
-                drops.extend(rep.drops);
-                for (c, st) in rep.cells.in_box(
-                    [own.lo[0], i32::MIN, own.lo[1]],
-                    [own.hi[0], i32::MAX, own.hi[1]],
-                ) {
-                    cells.insert(c, *st);
-                }
-                break;
-            }
-            if r == halo {
-                stats.regrown += 1;
+            let held = whole || reach.covers(&span);
+            replays += 1;
+            let rep = replay(
+                load, functions, *own, reach, templates, structures, surround,
+            );
+            sections = sections.max(rep.cells.sections());
+            if held || !reaches_past(&rep.reads, *own, reach, all) {
+                let cells = rep
+                    .cells
+                    .in_box(
+                        [own.lo[0], i32::MIN, own.lo[1]],
+                        [own.hi[0], i32::MAX, own.hi[1]],
+                    )
+                    .map(|(c, st)| (c, *st))
+                    .collect();
+                return JudgedChunk {
+                    halo: r,
+                    regrown: r > halo,
+                    replays,
+                    sections,
+                    changed: rep.changed,
+                    attached: rep.attached,
+                    falling: rep.falling,
+                    drops: rep.drops,
+                    cells,
+                };
             }
             r *= 2;
         }
-    }
+    };
+    let mut drops: Vec<KeyedDrop> = Vec::new();
+    let folded: Result<(), std::convert::Infallible> =
+        crate::par::try_for_each_ordered(&chunks, judge_chunk, |j| {
+            stats.chunks += 1;
+            stats.replays += j.replays;
+            stats.sections = stats.sections.max(j.sections);
+            stats.widest = stats.widest.max(j.halo);
+            stats.regrown += usize::from(j.regrown);
+            b.changed += j.changed;
+            b.attached += j.attached;
+            b.falling += j.falling;
+            drops.extend(j.drops);
+            for (c, st) in j.cells {
+                cells.insert(c, st);
+            }
+            Ok(())
+        });
+    let Ok(()) = folded;
     drops.sort_by_key(|d| d.0);
     b.dropped = drops.into_iter().map(|(_, d)| d).collect();
     (cells, stats)
+}
+
+/// One chunk as [`replay_by_chunk`] folds it: the replay that held (its
+/// halo, and whether it was regrown past the first), how many replays and the
+/// most sections one held, its counts, its drops, and the cells it leaves in
+/// its own columns, in cell order.
+struct JudgedChunk {
+    halo: i32,
+    regrown: bool,
+    replays: usize,
+    sections: usize,
+    changed: usize,
+    attached: usize,
+    falling: usize,
+    drops: Vec<KeyedDrop>,
+    cells: Vec<([i32; 3], crate::compiler::blockstate::BlockState)>,
 }
 
 /// A drop with its place in the load: function, line (`usize::MAX` for the
@@ -2515,7 +2563,8 @@ mod tests {
     /// chunk sides of one, two and four section columns and first halos of
     /// one cell to sixteen, every verdict, count, drop and its order, and the
     /// runtime arm judged over the world the chunks leave, equal the one
-    /// replay of the whole load. Refuses a zero count of drops, of chunks, of
+    /// replay of the whole load, at one thread and with the chunks replayed
+    /// in parallel on four. Refuses a zero count of drops, of chunks, of
     /// regrown halos and of the chains' drops.
     #[test]
     fn a_sequence_judged_by_chunk_is_the_one_judged_whole() {
@@ -2550,6 +2599,17 @@ mod tests {
                         "seed {seed}, side {side}, halo {halo}: {}",
                         by.by_chunk.line()
                     );
+                    // The chunks replayed in parallel fold to the same answer
+                    // and the same binding line as at one thread.
+                    let par = crate::par::with_threads(4, || {
+                        judge_writes_by("t", &f, &templates, &structures, &surround, side, halo)
+                    });
+                    assert_eq!(
+                        answer(&par),
+                        want,
+                        "seed {seed}, side {side}, halo {halo}, 4 threads"
+                    );
+                    assert_eq!(par.by_chunk.line(), by.by_chunk.line(), "4 threads");
                     if (side, halo) == (1, 1) {
                         regrown += by.by_chunk.regrown;
                         chunks += by.by_chunk.chunks;
