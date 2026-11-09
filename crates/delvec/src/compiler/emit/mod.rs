@@ -830,9 +830,9 @@ fn emit_all(
     // spec-0110 §5.8: how far a standing player's eye is from each assembly,
     // in the place it stands in — the floor its `view_range` is derived to.
     let assembly_place_reach = crate::compiler::framing::place_reach(plan, &population);
+    crate::compiler::notes::mark("assemblies: start");
     let assembly_binding: Option<crate::compiler::assembly::AssemblyBinding> =
-        crate::compiler::notes::mark("assemblies: start");
-    Some(prove_assemblies(plan, &world, &population)?);
+        Some(prove_assemblies(plan, &world, &population)?);
 
     // ---- the stage-5 blockout battery (spec-0049 §5.3) ----
     crate::compiler::notes::mark("blockout battery: start");
