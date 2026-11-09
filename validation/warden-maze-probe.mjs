@@ -448,7 +448,7 @@ async function t6(bot) {
 // "Test failed"; anything else is reported as it came, never guessed.
 async function countEntities(sel) {
   const reply = await rcon.probe(`execute if entity ${sel}`)
-  const m = reply.match(/count: (\d+)/)
+  const m = reply.match(/[Cc]ount: (\d+)/)
   if (m) return Number(m[1])
   if (/Test failed/.test(reply)) return 0
   return `?(${reply})`
@@ -514,17 +514,21 @@ async function t7(bot) {
   bot.on('bossBarUpdated', onBar)
   bot.on('bossBarCreated', onBar)
   const T = { x: W.x + 8, y: W.y, z: W.z }
+  // The ring stands between the body and the two targets, so an arm that reads
+  // the blast's reach on bodies stands no ring: a block in the line shadows an
+  // explosion (`getSeenPercent`), and the first run read 1 damage through it.
   const arms = [
-    ['bare', '', 'mob_griefing false', 9_000],
-    ['invul-220', '{PersistenceRequired:1b,Invul:220,Health:100f}', 'mob_griefing false', 15_000],
-    ['invul-220-griefing', '{PersistenceRequired:1b,Invul:220}', 'mob_griefing true', 15_000],
-    ['invul-220-noai', '{PersistenceRequired:1b,Invul:220,NoAI:1b}', 'mob_griefing false', 4_000],
+    ['bare', '', 'mob_griefing false', 9_000, true],
+    ['invul-220', '{PersistenceRequired:1b,Invul:220,Health:100f}', 'mob_griefing false', 15_000, true],
+    ['invul-220-open', '{PersistenceRequired:1b,Invul:220}', 'mob_griefing false', 15_000, false],
+    ['invul-220-griefing', '{PersistenceRequired:1b,Invul:220}', 'mob_griefing true', 15_000, true],
+    ['invul-220-noai', '{PersistenceRequired:1b,Invul:220,NoAI:1b}', 'mob_griefing false', 4_000, true],
   ]
-  for (const [label, nbt, griefing, watchMs] of arms) {
+  for (const [label, nbt, griefing, watchMs, ring] of arms) {
     await clearBodies()
     await rcon.run(`gamerule ${griefing}`)
     await clearRing(W)
-    await placeRing(W)
+    if (ring) await placeRing(W)
     // Two targets the blast can reach, at 3 and 6 blocks, with health to spare so
     // the damage is read as a number rather than a death.
     await summonTarget({ x: W.x + 3, y: W.y, z: W.z + 3 }, 'dw_t3', ',attributes:[{id:"minecraft:max_health",base:1024}],Health:1024f')
@@ -533,7 +537,7 @@ async function t7(bot) {
     await summonTarget(T, 'dw_wtarget', ',active_effects:[{id:"minecraft:resistance",amplifier:4b,duration:-1,show_particles:0b}]')
     const ring0 = await countStone(ringCells(W))
     bars.length = 0
-    begin(`T7-wither-${label}`, `summon wither ${nbt || '<no nbt>'}; ${griefing}; ring of ${ring0} stone at 2 blocks; targets at 3, 6 (1024 hp) and 8 (resistance V) blocks`)
+    begin(`T7-wither-${label}`, `summon wither ${nbt || '<no nbt>'}; ${griefing}; ${ring ? `ring of ${ring0} stone at 2 blocks` : 'no ring'}; targets at 3, 6 (1024 hp) and 8 (resistance V) blocks`)
     await rcon.run(`summon minecraft:wither ${W.x} ${W.y} ${W.z}${nbt ? ' ' + nbt : ''}`)
     const tS = now()
     let p0 = null
@@ -568,8 +572,9 @@ async function t7(bot) {
         hitAt = now() - tS
         const h3 = await entityGet('@e[tag=dw_t3,limit=1]', 'Health')
         const h6 = await entityGet('@e[tag=dw_t6,limit=1]', 'Health')
-        const ring1 = await countStone(ringCells(W))
-        row('blast', `at=${hitAt}ms`, `target3=${h3}`, `target6=${h6}`, `ring ${ring0} -> ${ring1}`)
+        const readAt = now() - tS
+        const ring1 = ring ? await countStone(ringCells(W)) : 0
+        row('blast', `at=${hitAt}ms`, `targetsReadAt=${readAt}ms`, `target3=${h3}`, `target6=${h6}`, ring ? `ring ${ring0} -> ${ring1}` : 'no ring')
       }
       await sleep(500)
     }
