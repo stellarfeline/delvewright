@@ -1,10 +1,10 @@
 # Init — the commands, and what every failure means
 
-The page carries the step list, each step's postcondition, and the checklist Init is finished by. This file carries the commands and the meaning of every way each one fails. Read it while running Init and at no other time.
+The page carries the step list and the checklist Init is finished by. This file carries the commands, what each step leaves true, and the meaning of every way each one fails. Read it while running Init and at no other time.
 
 Every command below runs through the environment file I4 writes, once I4 has written it: `. .out/env.sh && <the command>`, from the working directory. **I0, I1 and I1b are the exception**: they run on every run, before `env.sh` is sourced, because I1b is the step that decides whether `env.sh` still describes this run.
 
-**What is per machine and what is per session.** `~/.delvewright/` holds what one machine shares: `engine/` the clone at the pin, `bin/` the binary, `client/` the jar — written by Init, read-only after it. What belongs to one working directory lives in that directory's build output, `.out/`: the environment file `.out/env.sh` and the build tree `.out/delve`. Two sessions in two working directories therefore never rewrite each other's library or build into one tree. Two sessions in **one** working directory are one working tree with two writers, which nothing here makes safe: run one.
+**What is per machine and what is per session.** `~/.delvewright/` holds what one machine shares: `engine/` the clone at the pin, `bin/` the binary, `client/` the jar, and `campaigns/` if the shipped library is ever taken — created by the first run, read-only after Init, and held to the pin by I1b on every run. What belongs to one working directory lives in that directory's build output, `.out/`: the environment file `.out/env.sh` and the build tree `.out/delve`. Two sessions in two working directories therefore never rewrite each other's library or build into one tree. Two sessions in **one** working directory are one working tree with two writers, which nothing here makes safe: run one.
 
 ## Contents
 
@@ -382,6 +382,8 @@ The checklist is on the page; this section is what each of its lines means when 
 | `grammar expand` then `palette` | the texture ladder. A `DW0723` here says the same thing it says on the line above; a `DW0722` says the output could not be written |
 | `docker info` | steps 10 and 13 cannot run. Halt |
 | `docker compose version` | the daemon is fine and the **Compose plugin** is not installed for this user — `docker info` above already passed and says nothing about it. Step 10 cannot run: halt for it. `docker: unknown command: docker compose` is the whole message you get |
+
+`delvec prefab`, `delvec schem` and `delvec harvest` are subcommands of the binary those lines already exercised, so there is nothing separate to check for them. The drawing path adds `refimg.py --dry-run`.
 
 **Any line answering wrongly means Init is not finished**, and a run that continues authors against a half-built toolchain.
 

@@ -498,7 +498,7 @@ def headings(text: str) -> list[str]:
     return out
 
 
-_BLOCK_START_RE = re.compile(r"^\s*(?:#{1,6}\s|\||>|<|(?:[-*_]\s*){3,}$|\[[^\]]+\]:\s)")
+_BLOCK_START_RE = re.compile(r"^\s*(?:#{1,6}\s|\||>|<(?:!--|/?(?:details|summary|div|p|br|img|table|a|span|sup|sub|kbd|pre|hr)\b)|(?:[-*_]\s*){3,}$|\[[^\]]+\]:\s)")
 _LIST_MARK_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s")
 
 
@@ -518,6 +518,7 @@ def wrapped_lines(text: str) -> list[int]:
         start = lines.index("---", 1) + 1
     fence = False
     prose = False
+    quote_prev = False
     for i in range(start, len(lines)):
         line = lines[i]
         if FENCE_RE.match(line):
@@ -529,10 +530,17 @@ def wrapped_lines(text: str) -> list[int]:
         if not line.strip():
             prose = False
             continue
+        quote = line.lstrip().startswith(">")
         opens = _BLOCK_START_RE.match(line) is not None or _LIST_MARK_RE.match(line) is not None
+        if quote:
+            # A quote line continues the quote line above it, when that one has words.
+            if prose and quote_prev and line.lstrip().lstrip(">").strip():
+                out.append(i + 1)
+            opens = True
         if prose and not opens:
             out.append(i + 1)
-        prose = not _BLOCK_START_RE.match(line) and not (
+        quote_prev = quote and bool(line.lstrip().lstrip(">").strip())
+        prose = (quote_prev or not _BLOCK_START_RE.match(line)) and not (
             line.endswith("  ") or line.endswith("\\")
         )
     return out

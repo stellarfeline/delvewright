@@ -102,30 +102,21 @@ They hold at every step by their nature, and nothing below repeats them.
 
 ## Init — build the toolchain before you author anything
 
-**Every run starts here, and a run on a machine that has run Init before is no exception.** I0, I1 and **I1b** run first on every run; I1b compares the binary, the engine tree and `.out/env.sh` with this page's own `versions.toml`, and **no campaign document is read and no `delvec` subcommand is run until it exits 0**. What else in Init a run owes is what I1b's row says. **If any step here cannot be completed, say so and stop.**
+**Every run starts here, and a run on a machine that has run Init before is no exception.** I0, I1 and **I1b** run first on every run; I1b compares the binary, the engine tree and `.out/env.sh` with this page's own `versions.toml`, and **no campaign document is read and no `delvec` subcommand is run until it exits 0**. **If any step here cannot be completed, say so and stop.**
 
-The machine's toolchain lives in **`~/.delvewright/`** — `engine/` the checkout, `bin/` the unpacked archive, `client/` the jar, and `campaigns/` if the shipped library is ever taken — created by the first run, read-only after Init, and held to the pin by I1b on every run. The **session's** state lives in the working directory's own `.out/`: `.out/env.sh`, the environment every later command sources, and `.out/delve`, the build tree. Two sessions in two working directories never share either; two in one working directory are two writers of one tree, so run one.
+**The commands, what each step leaves true, and the meaning of every failure are `references/init.md`.** Read it now and run from it. The steps, in order:
 
-**The commands, and the meaning of every failure, are `references/init.md`.** Read it now and run from it. The table below is the order and the postconditions.
-
-| step | what it establishes, and what has to be true after it |
-|---|---|
-| **I0 · mode** | `DELVEWRIGHT_MODE` is `dev` when the working directory carries **both** `crates/delvec/Cargo.toml` and `.claude/skills/delvewright/skills/new-delve/SKILL.md`, else `creator`. `DELVEWRIGHT_ENGINE` is the working directory in dev, `~/.delvewright/engine` otherwise. `DELVEWRIGHT_DEBUG` is read from the shell that started the session: unset or `0` is off — **the released default** — and any other value is on; it decides only whether the final report carries *Technical decisions and engine limits*. Dev: `campaigns/` there resolves to a directory, or **stop** |
-| **I1 · already here** | `git`; a Python ≥ 3.11 recorded as `DELVEWRIGHT_PYTHON` and used by every Python invocation on this page; the **skill root** recorded as `DELVEWRIGHT_SKILL` — every bundled path below is `"$DELVEWRIGHT_SKILL/…"`, and it is never the working directory; `docker info` exits 0, **and `docker compose version` exits 0** — Compose v2 is a separate per-user CLI plugin that `docker info` says nothing about, and every entry point of step 10 is built on it. Not here: Rust and `git-lfs` |
-| **I1b · the pin, every run** | `"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/check-toolchain.py" --mode "$DELVEWRIGHT_MODE" --engine "$DELVEWRIGHT_ENGINE"`, with **this run's** I0 and I1 values and never `.out/env.sh`'s, exits 0: `delvec --version` through `.out/env.sh` equals the version `[engine].ref` states (dev: the checkout's `[engine].version`), the creator engine tree's `rev-parse HEAD` equals the commit `[engine].ref` resolves to, and `.out/env.sh`'s `DELVEWRIGHT_SKILL`, `DELVEWRIGHT_MODE`, `DELVEWRIGHT_ENGINE` and `DELVE_OUTPUT` are this run's, and no stale `~/.delvewright/env.sh` stands. **Exit 3 is a refusal**: run the steps it prints, in order, then I1b again. Exit 4: no toolchain, all of I2–I8. Exit 2: stop. After 0: I2–I4 are skipped and nothing is downloaded; I5 only if the jar is not at its path; I6 on every run; I7 and I8 after a repair or a first run |
-| **I2 · engine tree** | `"$DELVEWRIGHT_SKILL/versions.toml"` is read, never restated. Creator: the clone at `~/.delvewright/engine` fetches the tag `[engine].ref`, is `--detach`ed at it, and `rev-parse HEAD` equals `rev-parse "$ENGINE_REF^{commit}"`. Dev: HEAD is recorded and said out loud |
-| **I3a · `delvec`** | `"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/fetch-delvec.py" --into ~/.delvewright/bin` exits 0 having printed its target, archive, digest and version. Exit 3 or 4 → I3b. **Exit 5 is a refusal** — never the floor, never a retry. Exit 6: stop |
-| **I3b · the floor** | Only after exit 3 or 4, and in dev mode always. `cargo build --release -p delvec` **from inside** the engine tree, with `cargo --version` and `rustc --version` equal to the channel `rust-toolchain.toml` names. No `cargo`: hand over `rustup` and wait |
-| **I3c · the binary** | `delvec --version` answers **the number I1b holds it to**. **Write down the `dsl` number** — step 1 needs it on every document. The GPU arms are **not** asked here: they draw with the client jar I5 fetches, so a gate run now refuses on every clean machine there is, for a reason this page created |
-| **I4 · environment** | `$PWD/.out/env.sh` carries `DELVEWRIGHT_MODE`, `DELVEWRIGHT_ENGINE`, `DELVEWRIGHT_PYTHON`, `DELVEWRIGHT_SKILL`, `DELVEWRIGHT_PREFABS`, `DELVEWRIGHT_DEBUG`, `DELVE_OUTPUT` (`$PWD/.out/delve`), `DELVE_DOCKERFILE` and `PATH`, this run's values in the lines I4 owns and every other line kept. Every later command runs as `. .out/env.sh && <command>`, from the working directory |
-| **I5 · client jar** | Downloaded by default, digest-verified; a copy only when the prompt itself names a Minecraft directory. Either way the jar lands at `~/.delvewright/client/minecraft-1.21.11.jar` and you have looked at it there. That it *reads* is I8's line |
-| **I6 · the library** | `DELVEWRIGHT_PREFABS` names a prefabs directory and you have said which of the four cases produced it. **Nothing is cloned here** — step 2 takes the shipped library, if the campaign wants one |
-| **I7 · named, not installed** | On the drawing path only: `refimg.py --dry-run` exits 0, with the key the opening check's item (c) put in `.out/env.sh` under its provider's name. The skin toolchain is not mentioned. Nothing is installed for frames: `delvec` draws them itself, with the jar I5 placed |
-| **I8 · finished when** | Every line of the checklist below answers, through `.out/env.sh`. This is the one place the toolchain is exercised end to end, because three of those lines need the jar, the binary and the library at once |
+- **I0 · mode**: `dev` or `creator`, and where the engine tree is.
+- **I1 · already here**: `git`, Python 3.11 or later, the skill root, Docker and Compose v2.
+- **I1b · the pin, every run**: `scripts/check-toolchain.py` exits 0.
+- **I2 · engine tree**, **I3a · `delvec`**, **I3b · the floor**, **I3c · the binary**: the toolchain at the pin.
+- **I4 · environment**: `.out/env.sh`.
+- **I5 · client jar**, **I6 · the library**, **I7 · named, not installed**: what the pictures and the pieces are read from.
+- **I8 · finished when** every line of the checklist below answers.
 
 ### I8 — Init is finished when every one of these answers
 
-Each of them through `.out/env.sh`, since a line answering wrongly because the environment was lost is indistinguishable from a missing tool:
+Each of them through `.out/env.sh`:
 
 ```sh
 mkdir -p .out
@@ -143,7 +134,7 @@ docker info                              # the daemon: step 13's play server
 docker compose version                   # the plugin: all of step 10's ladder
 ```
 
-`delvec prefab`, `delvec schem` and `delvec harvest` are subcommands of the binary those lines already exercised, so there is nothing separate to check for them. The drawing path adds `refimg.py --dry-run`. **Any line answering wrongly means Init is not finished**, and a run that continues authors against a half-built toolchain — `references/init.md`'s I8 says what each one means when it does not answer, and `render fidelity-gate` in particular says three different things.
+**Any line answering wrongly means Init is not finished**, and `references/init.md`'s I8 says what each one means when it does not answer.
 
 ## The opening check — one message, before step 1
 
@@ -204,7 +195,7 @@ A key pasted under (c) or (d) goes into `.out/env.sh` under its provider's name,
 
 ## 9. Detail — every place
 
-Required for every place: the staging gate at step 13 refuses a build with no detail plan, or with any place still standing in its stand-in. **Needs**: step 8. **Produces**: `detail-plan.json`. **You write no program**: each place's program is written by a **fresh agent** handed only that place's handout — `scripts/handout.py` writes it from the campaign, and you launch the agent with the Agent tool on the one-line prompt the script prints. **Up to N at once**, N the `concurrency:` line `delvec --prefabs "$DELVEWRIGHT_PREFABS" allocation <campaign> --all` prints, in critical-path order then allocation order, scenery last. Each author checks with `detail --check`, which runs the commit's own battery over a scratch copy and writes nothing; on each return **you commit, one at a time**, with `delvec --prefabs "$DELVEWRIGHT_PREFABS" detail <campaign> <place>`, and launch the next. A commit that refuses goes back into a fresh agent's handout, never into your own edit. **Before the first handout**, record at least two human-built references for every building in its node's `references[]` and fetch them with `scripts/references.py`. **Read**: `references/detail.md`; a piece the library does not have is `references/new-pieces.md`; a row that binds a piece the shipped library holds takes the library through `references/the-shipped-library.md`. Before a form, a statue, an organic interior or a single large box is authored, start from the nearest reference work and meet its level of detail: `references/reference-works.md`.
+Required for every place: the staging gate at step 13 refuses a build with no detail plan, or with any place still standing in its stand-in. **Needs**: step 8. **Produces**: `detail-plan.json`. **You write no program**: each place's program is written by a **fresh agent** handed only that place's handout, and you commit what it leaves, one at a time. **Read**: `references/detail.md`; a piece the library does not have is `references/new-pieces.md`; a row that binds a piece the shipped library holds takes the library through `references/the-shipped-library.md`. Before a form, a statue, an organic interior or a single large box is authored, start from the nearest reference work and meet its level of detail: `references/reference-works.md`.
 
 ## 10. The machine ladder
 
@@ -216,7 +207,7 @@ Skip if it does not. If it does, this step is not optional and not delegable: sk
 
 ## 12. Visual review
 
-**Needs**: step 10 green. **Produces**: your judgement of the POV sequence in route order, read against `campaigns/<id>/design/concept/`, scene by scene. Yours to do, not a checklist to hand off: judging a frame is the whole task. `delvec --prefabs "$DELVEWRIGHT_PREFABS" frames` draws the whole set from the worlds the build wrote; quote its first line. Then the threshold frames, blind: three lines under each — the trade, the front, the thing — with the place's `validation/piece-census.json` entry beside it, a fourth on each part frame — the holding — with the plot's `validation/plot-program.json` entry beside it, and the `threshold read:` line. **Read**: `references/visual-review.md`. **A POV frame that is the wrong picture** is a camera question, not a render one: place that one by hand in the running game (`references/tools-by-symptom.md`, *a render camera nobody is satisfied with*).
+**Needs**: step 10 green. **Produces**: your judgement of the POV sequence in route order, read against `campaigns/<id>/design/concept/`, scene by scene. Yours to do, not a checklist to hand off: judging a frame is the whole task. **Read**: `references/visual-review.md` — drawing the set, the threshold frames read blind, and what the review writes. **A POV frame that is the wrong picture** is a camera question, not a render one: place that one by hand in the running game (`references/tools-by-symptom.md`, *a render camera nobody is satisfied with*).
 
 ## 13. Hand it over
 

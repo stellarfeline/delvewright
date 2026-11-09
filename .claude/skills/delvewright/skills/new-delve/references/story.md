@@ -40,9 +40,7 @@ A plan in which every quest `depends_on` the one before it is a chain: one order
 
 Run `delvec --prefabs "$DELVEWRIGHT_PREFABS" validate <campaign-dir>` and sort the output by **one rule, which is the whole of this step**:
 
-> A refusal whose message names something only `quests.json` or `dialogue.json`
-> can supply is the step-3 state, and is not a repair you owe. Every other code
-> is a repair you owe now.
+> A refusal whose message names something only `quests.json` or `dialogue.json` can supply is the step-3 state, and is not a repair you owe. Every other code is a repair you owe now.
 
 Those two documents are step 5, so nothing you write here can produce what they hold. **Read the message, not the code.** Each of these says in its own words what is missing and where it comes from — a flag no `set-flag` produces, an ending no `campaign-complete` declares, a body no `spawn-npc` summons. Every one of them is a stage-5 effect or a stage-6 dialogue option, every one of them clears at step 5, and looping on any of them here is the way to lose an afternoon.
 

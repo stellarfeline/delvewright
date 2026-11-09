@@ -369,8 +369,8 @@ def test_an_ask_outside_every_listed_section_reds(mod, tree, engine):
     """spec-0122 §5's first perturbation: the provider question back in Init I7."""
     edit(
         tree / "references" / "init.md",
-        "A variable whose name says what a key is *for* and nothing about *whose* it\n    is names no provider and is treated as absent.",
-        "A variable whose name says what a key is *for* and nothing about *whose* it\n    is names no provider and is treated as absent. Ask the user which provider the key is for.",
+        "A variable whose name says what a key is *for* and nothing about *whose* it is names no provider and is treated as absent.",
+        "A variable whose name says what a key is *for* and nothing about *whose* it is names no provider and is treated as absent. Ask the user which provider the key is for.",
     )
     rep = run(mod, engine)
     assert has(rep, "references/init.md:")
@@ -997,8 +997,8 @@ def test_a_moved_layout_manifest_reds(mod, tree, engine):
     """
     edit(
         tree / "references" / "tools-by-symptom.md",
-        "calibrate\n  <report> --layout <out>/creator-datapack/layout.json",
-        "calibrate\n  <report> --layout <out>/creator-datapack/manifest.json",
+        "calibrate <report> --layout <out>/creator-datapack/layout.json",
+        "calibrate <report> --layout <out>/creator-datapack/manifest.json",
     )
     assert has(run(mod, engine), "names path `creator-datapack/manifest.json`")
 
