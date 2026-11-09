@@ -86,6 +86,10 @@ pub(super) struct Watched {
     /// Where the compass points: a cell, a body's tag (a `talk-to`'s NPC), or
     /// a wave (a `kill`'s).
     pub target: Option<Target>,
+    /// For a tracked objective, its **line** ([`line_of`]): the ordinals the
+    /// compass moves to, first open first, once this objective is followed
+    /// and no longer open — before the campaign-wide fallback.
+    pub line: Vec<usize>,
 }
 
 /// Where the compass points for one objective (§6.3).
@@ -230,6 +234,43 @@ fn drawn_by_renderer(block: &str) -> bool {
     .contains(block)
 }
 
+/// The line a tracked objective `w` stands on, as the ordinals the compass
+/// tries in turn once `w` is followed and no longer open: the quest's other
+/// tracked objectives — those declared after `w`, then those before — and
+/// then, breadth first, the tracked objectives of every quest `w`'s quest's
+/// completion activates ([`armed_by`], what `complete_q_<q>` activates), each
+/// quest's in declaration order, their own successors after them. Empty for
+/// an untracked objective. A cycle in the trigger chain (`DW0130`'s) is
+/// walked once.
+fn line_of(c: &delvewright_dsl::Campaign, g: &Guide, w: &Watched) -> Vec<usize> {
+    if w.ordinal.is_none() {
+        return Vec::new();
+    }
+    let quests = &c.quests.content.quests;
+    let tracked_of = |qi: usize| {
+        g.watched
+            .iter()
+            .filter(move |x| x.quest == qi)
+            .filter_map(|x| x.ordinal.map(|k| (x.objective, k)))
+    };
+    let mut out: Vec<usize> = tracked_of(w.quest)
+        .filter(|(oi, _)| *oi > w.objective)
+        .chain(tracked_of(w.quest).filter(|(oi, _)| *oi < w.objective))
+        .map(|(_, k)| k)
+        .collect();
+    let mut seen: BTreeSet<usize> = BTreeSet::from([w.quest]);
+    let mut queue: std::collections::VecDeque<usize> = [w.quest].into();
+    while let Some(qi) = queue.pop_front() {
+        for (di, _) in armed_by(c, quests[qi].id.as_str()) {
+            if seen.insert(di) {
+                out.extend(tracked_of(di).map(|(_, k)| k));
+                queue.push_back(di);
+            }
+        }
+    }
+    out
+}
+
 /// `minecraft:<id>` for a block id written with or without its namespace.
 fn namespaced(id: &str) -> String {
     if id.contains(':') {
@@ -291,8 +332,13 @@ pub(super) fn guide(
                 announced,
                 ordinal: ord,
                 target,
+                line: Vec::new(),
             });
         }
+    }
+    let lines: Vec<Vec<usize>> = g.watched.iter().map(|w| line_of(c, &g, w)).collect();
+    for (w, l) in g.watched.iter_mut().zip(lines) {
+        w.line = l;
     }
     g.compass = ordinal > 0;
     g.journal = g.watched.iter().any(|w| w.announced) || guidance.manual.is_some();
@@ -1316,7 +1362,8 @@ fn compass_functions(
         lines(&[format!("{}give @s {spin}", unless_held(&compass_item()))]),
     ));
 
-    // compass_refresh: give if missing, resolve the followed, tell, aim.
+    // compass_refresh: give if missing, resolve the followed (kept while open,
+    // else the next open one on its line, else the first open one), tell, aim.
     let mut r = vec![
         format!("function {ns}:compass_give"),
         format!("scoreboard players set @s {NEXT} 0"),
@@ -1327,6 +1374,29 @@ fn compass_functions(
             "execute if score @s {TRACK} matches {k}{} run scoreboard players set @s {NEXT} {k}",
             w.guard
         ));
+    }
+    // The followed objective closed: the next open one on its line.
+    let by_ord: BTreeMap<usize, &Watched> = tracked
+        .iter()
+        .map(|x| (x.ordinal.expect("tracked"), *x))
+        .collect();
+    for w in tracked.iter().filter(|w| !w.line.is_empty()) {
+        let k = w.ordinal.expect("tracked");
+        r.push(format!(
+            "execute if score @s {NEXT} matches 0 if score @s {TRACK} matches {k} run function {ns}:compass_line_{}",
+            w.safe
+        ));
+        let next: Vec<String> = w
+            .line
+            .iter()
+            .map(|s| {
+                format!(
+                    "execute if score @s {NEXT} matches 0{} run scoreboard players set @s {NEXT} {s}",
+                    by_ord[s].guard
+                )
+            })
+            .collect();
+        fns.push((format!("compass_line_{}", w.safe), lines(&next)));
     }
     for w in &tracked {
         let k = w.ordinal.expect("tracked");

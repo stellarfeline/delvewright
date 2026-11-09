@@ -387,7 +387,7 @@ fn capabilities_are_per_entity_not_global() {
 /// `continue`, so exactly this fixture compiled green.
 #[test]
 fn a_flier_walked_through_a_closed_gate_is_still_dw0452() {
-    for entity in ["minecraft:ghast", "minecraft:bat", "minecraft:phantom"] {
+    for entity in ["minecraft:allay", "minecraft:bat", "minecraft:phantom"] {
         // The classification is real — this is not passing because the body was
         // read as Ground.
         assert_eq!(
@@ -424,7 +424,7 @@ fn the_same_flier_is_excused_the_surmount_advisory() {
             .any(|d| d.code == DW_BARRIER_SURMOUNTED && d.message.contains("actor/subject")),
         "the fixture must flag a WALKING body, or a flier's silence proves nothing: {ground:#?}"
     );
-    let flying = build_with(quests_with_actor("minecraft:ghast"), surmount)
+    let flying = build_with(quests_with_actor("minecraft:phantom"), surmount)
         .expect("surmounting is advisory");
     assert!(
         !flying
@@ -483,7 +483,7 @@ fn a_climber_is_exempt_from_the_advisory_tier_only() {
         "the fixture must flag a WALKING body, or the spider's silence proves \
          nothing: {ground:#?}"
     );
-    let warnings = build_with(quests_with_actor("minecraft:spider"), surmount)
+    let warnings = build_with(quests_with_actor("minecraft:cave_spider"), surmount)
         .expect("surmounting is advisory");
     assert!(
         !warnings
@@ -492,7 +492,7 @@ fn a_climber_is_exempt_from_the_advisory_tier_only() {
         "a spider going over a wall is correct: {warnings:#?}"
     );
     let err = build_with(
-        quests_with_actor("minecraft:spider"),
+        quests_with_actor("minecraft:cave_spider"),
         barrier_line(
             "minecraft:oak_fence",
             "minecraft:oak_fence_gate[facing=north,open=false]",
@@ -658,7 +658,7 @@ fn a_declared_climber_still_cannot_walk_through_a_closed_gate() {
 #[test]
 fn declaring_ground_binds_a_spider_back_to_the_surmount_rule() {
     let silent = build_npcs(
-        npcs_declaring("minecraft:spider", None),
+        npcs_declaring("minecraft:cave_spider", None),
         surmountable_wall(),
     )
     .expect("a spider over a wall is what a spider does");
@@ -667,7 +667,7 @@ fn declaring_ground_binds_a_spider_back_to_the_surmount_rule() {
         "a derived climber must be silent, or the declared half proves nothing: {silent:#?}"
     );
     let bound = build_npcs(
-        npcs_declaring("minecraft:spider", Some("ground")),
+        npcs_declaring("minecraft:cave_spider", Some("ground")),
         surmountable_wall(),
     )
     .expect("surmounting stays advisory");
