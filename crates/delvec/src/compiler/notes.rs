@@ -9,12 +9,73 @@
 //!
 //! A refusal is never a note: it is printed where it is raised, held or not.
 use std::sync::Mutex;
+use std::sync::OnceLock;
 
 /// The lines said while a hold is open; `None` when nothing holds them.
 static HELD: Mutex<Option<Vec<String>>> = Mutex::new(None);
 
+/// **Research instrumentation (build wall time).** When `DELVEC_PHASE_TIMING`
+/// is set, every note is prefixed with the wall seconds since the process
+/// started, the process's CPU seconds so far and its thread count, and
+/// [`mark`] says a line of its own at a phase boundary that owns no note.
+/// Unset, nothing here changes a byte of the build's output or its stderr.
+static START: OnceLock<std::time::Instant> = OnceLock::new();
+
+/// Whether the timing prefix is on.
+pub fn timing() -> bool {
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("DELVEC_PHASE_TIMING").is_some())
+}
+
+/// Start the wall clock; called once at the top of `main` so validation and
+/// analysis are on it. A later first note starts it itself.
+pub fn start_clock() {
+    START.get_or_init(std::time::Instant::now);
+}
+
+/// The process's CPU seconds (user + system) and thread count, read from
+/// `/proc/self/stat`; `None` where there is no such file.
+fn cpu_and_threads() -> Option<(f64, u64)> {
+    let s = std::fs::read_to_string("/proc/self/stat").ok()?;
+    // Fields after the parenthesised command name: utime is field 14, stime
+    // 15, num_threads 20 (1-based over the whole line).
+    let rest = &s[s.rfind(')')? + 2..];
+    let f: Vec<&str> = rest.split_whitespace().collect();
+    let utime: f64 = f.get(11)?.parse().ok()?;
+    let stime: f64 = f.get(12)?.parse().ok()?;
+    let threads: u64 = f.get(17)?.parse().ok()?;
+    Some(((utime + stime) / 100.0, threads))
+}
+
+/// The timing prefix, or an empty string when timing is off.
+pub fn stamp() -> String {
+    if !timing() {
+        return String::new();
+    }
+    let wall = START
+        .get_or_init(std::time::Instant::now)
+        .elapsed()
+        .as_secs_f64();
+    match cpu_and_threads() {
+        Some((cpu, thr)) => format!("[t=+{wall:.1}s cpu={cpu:.1}s thr={thr}] "),
+        None => format!("[t=+{wall:.1}s] "),
+    }
+}
+
+/// Say a phase mark, only when timing is on.
+pub fn mark(what: &str) {
+    if timing() {
+        say(format!("phase: {what}"));
+    }
+}
+
 /// Say one binding note: printed on stderr, or kept by the open [`hold`].
 pub fn say(line: String) {
+    let line = if timing() {
+        format!("{}{line}", stamp())
+    } else {
+        line
+    };
     let mut held = HELD
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);

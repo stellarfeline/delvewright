@@ -636,10 +636,13 @@ pub(super) fn prove_world(
                 }
             }
             let (moves, actor_moves) = if crate::compiler::nav::needs_world(plan) {
+                crate::compiler::notes::mark("moves: start");
                 let m = crate::compiler::nav::plan_moves(plan, world)?;
                 // move-actor (spec-0014): A* over the actor's footprint; DW0325 if
                 // unroutable. Planned alongside move-npc from the same occupancy model.
+                crate::compiler::notes::mark("actor moves: start");
                 let am = crate::compiler::nav::plan_actor_moves(plan, world)?;
+                crate::compiler::notes::mark("cutscenes: start");
                 cutscene_proof =
                     crate::compiler::nav::check_cutscenes(plan, world, &m, &am, frame_worlds)?;
                 // spec-0110: a shot frames its subject (`DW1033`) and a body
@@ -648,6 +651,7 @@ pub(super) fn prove_world(
                 // that first. The binding line prints before the verdict, for
                 // every build with a cutscene.
                 {
+                    crate::compiler::notes::mark("framing: start");
                     let (ledger, verdict) = crate::compiler::framing::judge(plan, world, &m, &am);
                     if !ledger.cutscenes.is_empty() {
                         crate::note!("{}", ledger.line());
@@ -790,6 +794,7 @@ pub(super) fn prove_world(
                 // DW0921: no place a body can reach from the route by walking,
                 // falling or jumping is one it cannot leave. The binding is
                 // printed before the verdict is taken, like DW0891's.
+                crate::compiler::notes::mark("bodies can leave (DW0921): start");
                 let (leave_binding, leave_verdict) = crate::compiler::nav::check_bodies_can_leave(
                     plan,
                     world,
@@ -818,6 +823,7 @@ pub(super) fn prove_world(
                 // jump or swim gets a body from its near face to its far one.
                 // Over the same configurations DW0921 judges; the binding is
                 // printed before the verdict is taken.
+                crate::compiler::notes::mark("gates separate: start");
                 let (separation, separation_verdict) =
                     crate::compiler::nav::check_gates_separate(plan, world);
                 crate::note!("{}", separation.line());
@@ -832,6 +838,7 @@ pub(super) fn prove_world(
                 // confirms the word — over the configurations, faces and reach
                 // DW1011 just judged. The binding is printed and the ledger
                 // written before the verdict is taken.
+                crate::compiler::notes::mark("shut ways learned: start");
                 let (shut_ways, shut_ways_verdict) =
                     crate::compiler::nav::check_shut_ways_learned(plan, world, prefabs);
                 crate::note!("{}", shut_ways.line());
@@ -947,6 +954,7 @@ pub(super) fn prove_world(
                 // packtest-datapack/). Emitted only when a walked leg exists, so a
                 // campaign with none stays byte-identical to before. Uses the same
                 // relight-aware `world` as the DW0311 check it exports.
+                crate::compiler::notes::mark("critical path routes: start");
                 let routes = crate::compiler::nav::critical_path_routes(plan, world);
                 // Structural self-check: every exported waypoint must be
                 // genuinely standable in this FINAL world (settled + water-flooded +
@@ -1135,6 +1143,7 @@ pub(super) fn prove_world(
                 // spec-0108 §4.3: the rows are story worlds, each walked in a
                 // world of its own — every world that exports a path gets its
                 // own proof and waypoints, keyed by its slug (`world-<k>`).
+                crate::compiler::notes::mark("branch worlds: start");
                 let rows: Vec<crate::compiler::branch::WorldRow> =
                     if crate::compiler::branch::plans_worlds(plan.campaign) {
                         crate::compiler::branch::world_rows(plan.campaign)
@@ -1259,6 +1268,7 @@ pub(super) fn prove_world(
             // island shipped a 2.9-tall warden inside the cliff face beside its
             // cave mouth with every other proof green. Runs after the moves are
             // planned because the walked waypoints are half of what it proves.
+            crate::compiler::notes::mark("body clearance: start");
             warnings.extend(
                 crate::compiler::clearance::check_body_clearance(plan, world, &moves, &actor_moves)
                     .map_err(|e| BuildFailure::Diagnostic {
@@ -1274,6 +1284,7 @@ pub(super) fn prove_world(
             // beach fold by stepping onto its wall's full-cube course instead of
             // using the pen's opening. Capabilities come from the entity, so a
             // spider routed over a wall stays silent and a sheep does not.
+            crate::compiler::notes::mark("traversal: start");
             let (traversal_warnings, gate) =
                 crate::compiler::traversal::check_traversal(plan, world, &moves, &actor_moves)
                     .map_err(|e| BuildFailure::Diagnostic {
@@ -1348,6 +1359,7 @@ pub(super) fn prove_world(
             //
             // Before the combat plan: a run-back is measured against where the
             // hostiles actually are, and a lane wave is where it marches.
+            crate::compiler::notes::mark("lanes + combat: start");
             let lanes = crate::compiler::nav::plan_lanes(plan, world)?;
             // A campaign whose only fight is an ACTOR still ships a plan. It has no
             // `encounters[]` for the ladder to read or clear, but `fights` is the
