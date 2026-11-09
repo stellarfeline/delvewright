@@ -241,12 +241,73 @@ pub(super) fn mannequin_pose_nbt(entity: &str) -> &'static str {
 ///
 /// Only species whose un-finalized state is actually *wrong* appear here, so every
 /// campaign without one stays byte-identical.
-pub(super) fn spawn_finalize_nbt(entity: &str) -> &'static str {
+///
+/// The memories are returned as `Brain.memories` entries rather than a whole
+/// `Brain` key, so a summon that seeds a memory of its own (an entrance,
+/// spec-0132 §2.3) writes ONE `Brain` key holding both: SNBT keeps the last of
+/// two keys with one name, and a second `Brain` would silently drop the
+/// `dig_cooldown` and bury the body.
+pub(super) fn spawn_finalize_memories(entity: &str) -> &'static [&'static str] {
     match entity.strip_prefix("minecraft:").unwrap_or(entity) {
         // `Warden.finalizeSpawn` → `setMemoryWithExpiry(DIG_COOLDOWN, Unit, 1200)`.
-        "warden" => ",Brain:{memories:{\"minecraft:dig_cooldown\":{value:{},ttl:1200L}}}",
-        _ => "",
+        "warden" => &["\"minecraft:dig_cooldown\":{value:{},ttl:1200L}"],
+        _ => &[],
     }
+}
+
+/// The `,Brain:{memories:{…}}` fragment (leading comma) holding `memories`, or
+/// `""` when there are none.
+fn brain_nbt(memories: &[String]) -> String {
+    if memories.is_empty() {
+        String::new()
+    } else {
+        format!(",Brain:{{memories:{{{}}}}}", memories.join(","))
+    }
+}
+
+/// What a body's **native entrance** (spec-0132 §2.3) adds to the twin's
+/// summon: the memories its `Brain` carries beside the finalization's, and the
+/// top-level fields appended after everything else. Read off the registry
+/// record ([`delvewright_dsl::entrance::native_entrance`]), so the emitter
+/// writes what the record states and nothing of its own.
+fn entrance_nbt(a: &delvewright_dsl::Actor) -> (Vec<String>, String) {
+    use delvewright_dsl::entrance::Mechanism;
+    let Some(record) = delvewright_dsl::entrance::native_entrance(a) else {
+        return (Vec::new(), String::new());
+    };
+    match record.mechanism {
+        Mechanism::BrainMemory { memory, ttl } => (
+            vec![format!("\"{memory}\":{{value:{{}},ttl:{ttl}L}}")],
+            String::new(),
+        ),
+        Mechanism::ChargeUp {
+            invul,
+            base_max_health,
+        } => {
+            // A third of the body's maximum — the declared one when stated — as
+            // a float with one decimal: vanilla's own start for a built body.
+            let max = a
+                .attributes
+                .as_ref()
+                .and_then(|m| m.max_health)
+                .unwrap_or(base_max_health);
+            let third = (max / 3.0 * 10.0).round() / 10.0;
+            (
+                Vec::new(),
+                format!(",Invul:{invul},Health:{}f", fmt_f64(third)),
+            )
+        }
+    }
+}
+
+/// Whether an actor's twin arrives (`unleash_<id>`, which plays its entrance)
+/// or is re-seated (`actor_restand_<id>`, a body that already arrived).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum TwinArrival {
+    /// The story's `unleash-actor`: the body's arrival, entrance included.
+    Arrives,
+    /// The bonfire's undefeated re-seat: a body restored, never an arrival.
+    Reseated,
 }
 
 /// The `/summon` command for an actor's real-AI twin (spec-0014 `unleash`): the
@@ -264,7 +325,17 @@ pub(super) fn spawn_finalize_nbt(entity: &str) -> &'static str {
 /// [`spawn_finalize_nbt`] matters: a caged puppet is `NoAI`, and a `NoAI` mob never
 /// runs `customServerAiStep`, which is why the island's herdsman warden could stand
 /// in the meadow indefinitely while the unleashed one burrowed away.
-pub(super) fn actor_twin_summon(ns: &str, a: &delvewright_dsl::Actor, at: &str) -> String {
+///
+/// `arrival` says which of the two it is: only an arrival carries the actor's
+/// native entrance (spec-0132 §2.3) — the re-seat restores a body that already
+/// arrived, which is not an arrival the story wrote. An actor that declares no
+/// `entrance` writes the same bytes either way.
+pub(super) fn actor_twin_summon(
+    ns: &str,
+    a: &delvewright_dsl::Actor,
+    at: &str,
+    arrival: TwinArrival,
+) -> String {
     let safe = plan::safe_local(a.id.as_str());
     let name = a
         .name
@@ -272,7 +343,16 @@ pub(super) fn actor_twin_summon(ns: &str, a: &delvewright_dsl::Actor, at: &str) 
         .map(|n| format!(",CustomName:{},CustomNameVisible:1b", snbt_component(n)))
         .unwrap_or_default();
     let pose = mannequin_pose_nbt(&a.entity);
-    let finalize = spawn_finalize_nbt(&a.entity);
+    let (entrance_memories, entrance_fields) = match arrival {
+        TwinArrival::Arrives => entrance_nbt(a),
+        TwinArrival::Reseated => (Vec::new(), String::new()),
+    };
+    let memories: Vec<String> = spawn_finalize_memories(&a.entity)
+        .iter()
+        .map(|m| m.to_string())
+        .chain(entrance_memories)
+        .collect();
+    let finalize = brain_nbt(&memories);
     // The twin inherits the puppet's gear: unleashing swaps the body, not the
     // costume. Drop chances stay 0 — killing the elite must never drop its kit.
     let equip = actor_equipment(a, &a.entity)
@@ -296,7 +376,7 @@ pub(super) fn actor_twin_summon(ns: &str, a: &delvewright_dsl::Actor, at: &str) 
         String::new()
     };
     format!(
-        "summon {} {at} {{PersistenceRequired:1b{pose}{loot},Tags:[\"dw_actor\",\"dw_actor_{safe}\"]{name}{finalize}{attrs}{equip}}}",
+        "summon {} {at} {{PersistenceRequired:1b{pose}{loot},Tags:[\"dw_actor\",\"dw_actor_{safe}\"]{name}{finalize}{attrs}{equip}{entrance_fields}}}",
         a.entity
     )
 }
@@ -393,6 +473,92 @@ pub(super) fn aggro_lock_lines(entity: &str, safe: &str) -> Vec<String> {
     ]
 }
 
+/// A twin summon that wears a spawn yaw: `Rotation:[<yaw>f,0f]` spliced into
+/// its NBT, as the puppet's summon carries it. The yaw rides in the compound
+/// rather than in the position arguments so the summon line keeps one shape.
+fn with_rotation(summon: &str, yaw: i32) -> String {
+    match summon.find('{') {
+        Some(i) => format!(
+            "{}{{Rotation:[{yaw}f,0f],{}",
+            &summon[..i],
+            &summon[i + 1..]
+        ),
+        None => summon.to_string(),
+    }
+}
+
+/// The actor census (spec-0132 §5.3): `actor_census_<id>` and the function it
+/// runs as the body. One anchored line per call,
+/// `[dw:actor <campaign> <actor> <seq> <alive> <x> <y> <z>]` — `alive` 1 and
+/// the body's feet ×100 when the free body (wearing `dw_actor_<id>`, not
+/// `dw_pup_<id>`) stands, `alive` 0 and no coordinates when none does. `seq`
+/// counts censuses server-side, so the harness tells an answer from a stale
+/// one without writing any delve state to ask. Emitted for every `outrun`
+/// actor: the harness calls what the exported path names.
+pub(super) fn actor_census_fns(plan: &Plan) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    for a in plan
+        .campaign
+        .quests
+        .content
+        .actors
+        .iter()
+        .filter(|a| a.outrun)
+    {
+        let safe = plan::safe_local(a.id.as_str());
+        let id = a.id.as_str();
+        let body = format!(
+            "@e[type={},tag=dw_actor_{safe},tag=!dw_pup_{safe},limit=1]",
+            a.entity
+        );
+        let line = |fields: Vec<Value>| -> String {
+            let mut extra: Vec<Value> = vec![sys_score("#acen_seq")];
+            extra.extend(fields);
+            extra.push(json!({ "text": "]" }));
+            format!(
+                "tellraw @a {}",
+                json!({
+                    "text": format!("[dw:{} {ns} {id} ", plan::MARKER_TOKEN_ACTOR),
+                    "color": "dark_gray",
+                    "extra": extra
+                })
+            )
+        };
+        out.push((
+            format!("actor_census_one_{safe}"),
+            lines(&[
+                "execute store result score #acen_x dw.sys run data get entity @s Pos[0] 100"
+                    .to_string(),
+                "execute store result score #acen_y dw.sys run data get entity @s Pos[1] 100"
+                    .to_string(),
+                "execute store result score #acen_z dw.sys run data get entity @s Pos[2] 100"
+                    .to_string(),
+                line(vec![
+                    json!({ "text": " 1 " }),
+                    sys_score("#acen_x"),
+                    json!({ "text": " " }),
+                    sys_score("#acen_y"),
+                    json!({ "text": " " }),
+                    sys_score("#acen_z"),
+                ]),
+            ]),
+        ));
+        out.push((
+            format!("actor_census_{safe}"),
+            lines(&[
+                "scoreboard players add #acen_seq dw.sys 1".to_string(),
+                format!(
+                    "execute unless entity {body} run {}",
+                    line(vec![json!({ "text": " 0" })])
+                ),
+                format!("execute as {body} run function {ns}:actor_census_one_{safe}"),
+            ]),
+        ));
+    }
+    out
+}
+
 /// The generated start-function name for a `move-actor` (content key).
 pub(super) fn moveactor_fn(actor: &str, to: &delvewright_dsl::Mark, gate_key: &str) -> String {
     format!("ma_{}_{}{gate_key}", plan::safe_local(actor), mark_key(to))
@@ -461,8 +627,26 @@ pub(super) fn actor_fns(
         let mut unleash: Vec<String> = actor_answer_box_kill(a).into_iter().collect();
         unleash.push(format!(
             "execute at @e[tag=dw_pup_{safe},limit=1] run {}",
-            actor_twin_summon(ns, a, "~ ~ ~")
+            actor_twin_summon(ns, a, "~ ~ ~", TwinArrival::Arrives)
         ));
+        // spec-0132 §3: the unleash is the body's arrival with or without a
+        // puppet. With none standing, the twin is summoned at the actor's own
+        // mark — the cell the re-seat summons at — wearing its `facing` as the
+        // puppet would; guarded on the body tag, so an unleash of a body already
+        // standing (the twin the line above just stood up included) is a no-op.
+        {
+            let p = ent_xyz(pos);
+            let summon = actor_twin_summon(
+                ns,
+                a,
+                &format!("{} {} {}", p[0], p[1], p[2]),
+                TwinArrival::Arrives,
+            );
+            unleash.push(format!(
+                "execute unless entity @e[tag=dw_actor_{safe}] run {}",
+                with_rotation(&summon, yaw)
+            ));
+        }
         // The cage leaves unseen: the elite standing up is the twin, and a
         // puppet dying beside it is a death the story never wrote. A puppet
         // carrying a declared drop is stripped first — the twin is the body
@@ -524,6 +708,7 @@ pub(super) fn actor_fns(
                 ns,
                 a,
                 &format!("{} {} {}", p[0], p[1], p[2]),
+                TwinArrival::Reseated,
             ));
             restand.extend(capture.clone());
             out.push((format!("actor_restand_{safe}"), lines(&restand)));

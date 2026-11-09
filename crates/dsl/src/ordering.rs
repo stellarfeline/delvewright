@@ -316,6 +316,7 @@ impl<'a> Order<'a> {
             placings.push((Beat::Setup, "setup".to_string()));
         }
         let mut removals: Vec<(&QuestEffect, String)> = Vec::new();
+        let mut arrivals: Vec<(&QuestEffect, String)> = Vec::new();
         crate::effects::for_each_campaign_effect(self.campaign, &mut |path, _site, e| {
             if placing_of(e) == Some(body) {
                 placings.push((Beat::Effect(e), path.to_string()));
@@ -323,7 +324,23 @@ impl<'a> Order<'a> {
             if removal_of(e) == Some(body) {
                 removals.push((e, path.to_string()));
             }
+            if arrival_of(e) == Some(body) {
+                arrivals.push((e, path.to_string()));
+            }
         });
+        // spec-0132 §3: an `unleash-actor` is the body's arrival when no
+        // placing is ordered before it — the twin stands at the actor's mark.
+        // One that follows a placing replaces the puppet it stood up from and
+        // places nothing new.
+        let placed_before: Vec<Beat<'_>> = placings.iter().map(|(p, _)| *p).collect();
+        for (e, path) in arrivals {
+            if !placed_before
+                .iter()
+                .any(|p| self.ordered_before(*p, Beat::Effect(e)))
+            {
+                placings.push((Beat::Effect(e), path));
+            }
+        }
         let before: Vec<&(Beat<'_>, String)> = placings
             .iter()
             .filter(|(p, _)| self.ordered_before(*p, at))
@@ -408,6 +425,16 @@ pub fn placing_of(e: &QuestEffect) -> Option<&str> {
     match &e.verb {
         Verb::SpawnAssembly { assembly } => Some(assembly.as_str()),
         _ => e.body_entry(),
+    }
+}
+
+/// The actor an `unleash-actor` brings into the world when no puppet stands
+/// (spec-0132 §3): its twin is summoned at the actor's own mark, so the
+/// unleash is the body's arrival when nothing placed it before.
+pub fn arrival_of(e: &QuestEffect) -> Option<&str> {
+    match &e.verb {
+        Verb::UnleashActor { actor } => Some(actor.as_str()),
+        _ => None,
     }
 }
 

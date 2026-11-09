@@ -99,6 +99,8 @@ fn mk_actor(id: &str, entity: &str, vulnerable: bool) -> delvewright_dsl::Actor 
         watch: None,
         answers: None,
         health_bar: None,
+        entrance: None,
+        outrun: false,
     }
 }
 
@@ -265,7 +267,7 @@ fn a_skinned_puppet_keeps_everything_declared_about_its_body() {
 #[test]
 fn twin_summon_has_ai_and_no_puppet_marker() {
     let a = mk_actor("actor/giant", "minecraft:warden", false);
-    let s = actor_twin_summon("dw", &a, "~ ~ ~");
+    let s = actor_twin_summon("dw", &a, "~ ~ ~", TwinArrival::Arrives);
     assert!(s.starts_with("summon minecraft:warden ~ ~ ~ "));
     assert!(!s.contains("NoAI"), "the twin has real AI");
     assert!(s.contains("dw_actor_giant") && !s.contains("dw_pup"));

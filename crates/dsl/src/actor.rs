@@ -123,6 +123,24 @@ pub struct Actor {
     /// `vulnerable` actor (`DW1056`). Absent = byte-identical.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub answers: Option<crate::BodyAnswers>,
+    /// How this body arrives in the world with its will (spec-0132): `native`,
+    /// the way its kind does in vanilla — a warden digs out of the ground, a
+    /// wither charges up ([`crate::entrance::KIND_ACTIONS`]). Played by the
+    /// free twin `unleash-actor` summons, never by a puppet: an actor that
+    /// enters has no puppet life (`DW1083`), its `unleash-actor` is its first
+    /// appearance, and its kind must have an entrance (`DW1081`). Absent =
+    /// byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entrance: Option<crate::entrance::Entrance>,
+    /// The party survives this body by moving, never by fighting (spec-0132
+    /// §5.1): the proof of every critical-path step walked while it is loose
+    /// is a walk beside it with nothing removed and nothing healed, and the
+    /// exported path names it as that step's pursuer. A declaration of intent
+    /// the ladder confirms, never an inference from the kind; one on a body
+    /// nothing unleashes, or that is loose on no step of the path, is
+    /// `DW1082`. Absent = `false`, judged as every other actor.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub outrun: bool,
 }
 
 /// A cardinal facing keyword (DSL v0.6). Emitted as the puppet's spawn yaw
@@ -228,6 +246,10 @@ pub(crate) fn actor_checks(
     // the compiler, so their presence defers the check — mirroring `DW0142`'s
     // single-prefab-only scope; never a false positive).
     let providers = AnchorProviders::build(c, anchors);
+
+    // spec-0132: the entrance registry's refusals (DW1081, DW1082's first
+    // arm, DW1083).
+    crate::entrance::entrance_checks(c, d);
 
     // Actor declarations: entity id, skin, spawn anchor.
     for (i, a) in quests.actors.iter().enumerate() {

@@ -75,31 +75,38 @@ pub struct Ambush {
 impl Ambush {
     /// The environment trigger this ambush desugars to (spec-0016 §3): a
     /// one-shot trigger at `at` whose effects are the telegraph, then a
-    /// `spawn-actor` + `unleash-actor` per listed actor, in declared order.
+    /// `spawn-actor` per listed actor, in declared order, then an
+    /// `unleash-actor` per listed actor, in declared order.
+    ///
+    /// An actor that **enters** (`entrance`, spec-0132 §3) has no puppet life,
+    /// so it gets its `unleash-actor` alone: the unleash is its arrival at its
+    /// own mark. `actors` is the stage-5 actor list the ids resolve against;
+    /// an id it does not hold is desugared as a plain actor and refused as a
+    /// dangling reference (`DW0112`).
     ///
     /// This is the **single** expansion authority. Every consumer — validation,
     /// the l10n inventory, the flag/wave producer scans, nav, emission — reads
     /// triggers through [`QuestsContent::all_triggers`], so the sugar cannot
     /// diverge from a hand-written equivalent, and an ambush is exactly as
     /// debuggable as the trigger an author would otherwise type.
-    pub fn to_trigger(&self) -> EnvTrigger {
+    pub fn to_trigger(&self, actors: &[crate::Actor]) -> EnvTrigger {
+        let enters = |id: &ActorId| actors.iter().any(|a| a.id == *id && a.entrance.is_some());
         let mut effects = self.telegraph.clone();
-        for (i, a) in self.actors.iter().enumerate() {
-            effects.push(QuestEffect {
-                when: None,
-                // The ambush declaration, on the beat where the spring becomes
-                // real. Only the FIRST, for the reason the field documents: one
-                // ambush is one beat, and stamping the line on every generated
-                // effect would pad the chronicle and trip `DW0485`.
-                happening: if i == 0 { self.happening.clone() } else { None },
-                audience: None,
-                within: None,
-                verb: Verb::SpawnActor { actor: a.clone() },
-            });
+        let mut generated: Vec<QuestEffect> = Vec::new();
+        for a in self.actors.iter().filter(|a| !enters(a)) {
+            generated.push(Verb::SpawnActor { actor: a.clone() }.into());
         }
         for a in &self.actors {
-            effects.push(Verb::UnleashActor { actor: a.clone() }.into());
+            generated.push(Verb::UnleashActor { actor: a.clone() }.into());
         }
+        // The ambush declaration, on the beat where the spring becomes real:
+        // the first generated effect only, for the reason the field documents —
+        // one ambush is one beat, and stamping the line on every generated
+        // effect would pad the chronicle and trip `DW0485`.
+        if let Some(first) = generated.first_mut() {
+            first.happening = self.happening.clone();
+        }
+        effects.extend(generated);
         EnvTrigger {
             id: TriggerId(format!(
                 "trigger/{}",

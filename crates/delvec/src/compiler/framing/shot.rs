@@ -868,17 +868,19 @@ fn judge_subject(
             },
             Presence::NeverPlaced(found) => {
                 rec.presence = Some("never placed before the cutscene".to_string());
+                // spec-0132 §3: an actor is placed by its `spawn-actor`, or by
+                // an `unleash-actor` that brings its twin to its mark.
                 let placing = match subject {
-                    CameraSubject::Assembly(_) => "spawn-assembly",
-                    CameraSubject::Actor(_) => "spawn-actor",
-                    _ => "spawn-npc",
+                    CameraSubject::Assembly(_) => "`spawn-assembly`",
+                    CameraSubject::Actor(_) => "`spawn-actor` or `unleash-actor`",
+                    _ => "`spawn-npc`",
                 };
                 fail(
                     DW_SUBJECT_ABSENT,
                     format!(
                         "cutscene {path}: shot {si} frames `{body_id}`, which no beat places \
                          before the cutscene on every path ({}) — the shot shows an empty mark. \
-                         Put a `{placing}` ahead of the cutscene: earlier in the same effect list, \
+                         Put a {placing} ahead of the cutscene: earlier in the same effect list, \
                          in an earlier `sequence` step, or in a beat the quest graph orders before \
                          it, outside any flag gate and any reaction bundle",
                         if found.is_empty() {

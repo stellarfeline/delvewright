@@ -5,12 +5,15 @@ use super::*;
 mod ancestors;
 mod drive;
 mod mock;
+mod pursuers;
 mod region;
 mod triggers;
 
 pub(in crate::compiler::plan) use ancestors::*;
 pub use mock::mock_function;
 pub(crate) use mock::path_mocks;
+pub use pursuers::Pursuer;
+pub(crate) use pursuers::{check_outrun_loose, pursuers_by_step};
 pub use region::*;
 pub(crate) use triggers::*;
 
@@ -371,10 +374,16 @@ pub fn completed_on_landing(walked: &[Step], transports: &[Option<[i32; 3]>], i:
 ///   format change for `4`'s reason: a format-4 bot would have to guess a
 ///   holder's act, would walk into an armed volume, and would refuse a `mock`
 ///   step it cannot perform.
+/// * `6` — every step carries `pursuers` (spec-0132 §5.3): the `outrun` bodies
+///   loose while it is walked, each with its kind, its census function and its
+///   entrance window ([`Pursuer`]), empty for a step walked beside none. The
+///   key is required in both directions: a path that cannot say whether a step
+///   is pursued cannot be walked under the pursuit rule, and a bot that guessed
+///   would be the compiler's knowledge written where it cannot be right.
 ///
 /// The harness **requires** the current version: an older `critical-path.json`
 /// (which it cannot verify) is rejected rather than run hollow.
-pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 5;
+pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 6;
 
 impl<'a> Plan<'a> {
     /// The EXECUTABLE critical path of one enumerated branch (spec-0025 §3).

@@ -284,7 +284,7 @@ impl QuestsContent {
     /// the sugar to drift down. Deterministic (declaration order, no hashing).
     pub fn all_triggers(&self) -> Vec<EnvTrigger> {
         let mut out = self.triggers.clone();
-        out.extend(self.ambushes.iter().map(Ambush::to_trigger));
+        out.extend(self.ambushes.iter().map(|a| a.to_trigger(&self.actors)));
         out
     }
 
