@@ -11,6 +11,7 @@ pub use leg::*;
 pub use region::*;
 
 use crate::compiler::failure::Failure;
+use crate::compiler::nav::walkway::WalkWays;
 use crate::compiler::nav::world::body::{Footprint, SNAP_RADIUS, STEP_COST_16, step_cost_16};
 use crate::compiler::nav::world::{Liveness, World};
 use crate::compiler::nav::{DW_WAYPOINT_NOT_STANDABLE, MovePlan};
@@ -133,6 +134,38 @@ impl World {
         fp: &Footprint,
         avoid: &dyn Fn([i32; 3]) -> bool,
     ) -> Option<Vec<[i32; 3]>> {
+        self.search(start, goal, fp, avoid, &|_| 1)
+    }
+
+    /// **A staged walk's route**: [`World::find_path_fp`] over the same walk
+    /// graph, each step charged the toll `ways` sets on the cell it enters
+    /// ([`WalkWays::toll`]) — so a walk keeps to the plan's declared ways
+    /// wherever they join its ends, and steps off them only to reach or leave
+    /// one, or where none joins. The walk graph is the router's, so every walk
+    /// this returns is one [`World::find_path_fp`] proves exists; only the
+    /// preference among them moves. With no way declared every toll is one and
+    /// the route is [`World::find_path_fp`]'s, byte for byte.
+    pub(in crate::compiler::nav) fn find_walk_fp(
+        &self,
+        start: [i32; 3],
+        goal: [i32; 3],
+        fp: &Footprint,
+        ways: &WalkWays<'_>,
+    ) -> Option<Vec<[i32; 3]>> {
+        self.search(start, goal, fp, &|_| false, &|c| ways.toll(c))
+    }
+
+    /// The one A* every route above asks: `avoid` withholds cells, `toll`
+    /// multiplies the step cost of entering a cell. A toll is never under one,
+    /// so the flat-step heuristic stays admissible and consistent.
+    fn search(
+        &self,
+        start: [i32; 3],
+        goal: [i32; 3],
+        fp: &Footprint,
+        avoid: &dyn Fn([i32; 3]) -> bool,
+        toll: &dyn Fn([i32; 3]) -> u32,
+    ) -> Option<Vec<[i32; 3]>> {
         if avoid(start) || avoid(goal) {
             return None;
         }
@@ -169,7 +202,7 @@ impl World {
                 if avoid(n) {
                     continue;
                 }
-                let tentative = g + step_cost_16(here, self.feet_16_fp(n, fp));
+                let tentative = g + step_cost_16(here, self.feet_16_fp(n, fp)) * toll(n).max(1);
                 if tentative < *g_score.get(&n).unwrap_or(&u32::MAX) {
                     came_from.insert(n, cur);
                     g_score.insert(n, tentative);

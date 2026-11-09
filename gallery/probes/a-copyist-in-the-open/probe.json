@@ -44,7 +44,17 @@
     {
       "doc": "quests.json",
       "op": "replace",
-      "path": "/content/quests/3/cast/npc~1copyist/at/offset",
+      "path": "/content/quests/3/cast/npc~1copyist/0/at/offset",
+      "value": [
+        0,
+        0,
+        -3
+      ]
+    },
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/3/cast/npc~1copyist/1/at/offset",
       "value": [
         0,
         0,

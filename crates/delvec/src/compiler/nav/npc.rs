@@ -1,6 +1,7 @@
 //! The `move-npc` walk: an NPC's staged legs over the assembled world
 //! (`DW0307`).
 
+use super::walkway::Ways;
 use super::*;
 use crate::compiler::failure::Failure;
 use crate::compiler::plan::{BodyScope, BodyStation, Plan, ResolvedAnchor, body_station};
@@ -198,6 +199,8 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> 
     let mut planned_origin: BTreeMap<(String, String, String), ([i32; 3], BranchGate)> =
         BTreeMap::new();
     let mut cache = SealCache::default();
+    // The plan's declared ways, read once: every leg keeps to them.
+    let ways = Ways::of(plan);
     for (eff, seal, beat) in crate::compiler::timeline::walk_with_beat_area(plan) {
         let Verb::MoveNpc { npc, to, speed, .. } = &eff.verb else {
             continue;
@@ -296,7 +299,8 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> 
             }
         };
         let seed_yaw = prior.and_then(|s| s.yaw);
-        let cells = match leg_world.find_path(start, target) {
+        let leg_ways = ways.leg(plan, start, target);
+        let cells = match leg_world.find_walk_fp(start, target, &Footprint::player(), &leg_ways) {
             Some(cells) => cells,
             // Routable open, unroutable sealed ⇒ this timeline's own `close-gate`
             // is the cause (DW0410); otherwise the geometry never connected (DW0307).
@@ -343,7 +347,7 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> 
         // it. Routed on the player footprint (this is `find_path`), swept at the
         // width the NPC actually wears.
         let width = npc_render_width(plan, npc.as_str());
-        let walked = smooth_walk(leg_world, &cells, &Footprint::player(), width);
+        let walked = smooth_walk(leg_world, &cells, &Footprint::player(), width, &leg_ways);
         let (waypoints, exact) = resample_body(&walked, speed.unwrap_or(DEFAULT_SPEED), width);
         // Seed: the facing this body already has — the exit yaw of the previous
         // leg **on this branch** if this NPC has walked before, else the yaw its

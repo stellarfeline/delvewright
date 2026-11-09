@@ -2056,10 +2056,9 @@ impl<'a> Flow<'a> {
         out
     }
 
-    /// The dialogue node an NPC's right-click opens in state `st`: the last cast
-    /// clause whose quest has begun and whose branch gate holds wins (the emitter's
-    /// `dw.cast` dispatch), falling back to the stage-6 root when no clause
-    /// governs. `None` when the governing scene is a bark pool or silence — a body
+    /// The dialogue node an NPC's right-click opens in state `st`: the scene
+    /// [`crate::compiler::cast::governing_scene`] selects (the emitter's `dw.cast`
+    /// dispatch), falling back to the stage-6 root when no clause governs. `None` when the governing scene is a bark pool or silence — a body
     /// with no options to press.
     fn scene_root(
         &self,
@@ -2071,19 +2070,17 @@ impl<'a> Flow<'a> {
         let Some(cast) = casts.get(npc) else {
             return Some(t.root.clone());
         };
-        let mut scene: Option<u32> = None;
-        for cl in &cast.by_quest {
-            if !st.active.contains(&cl.quest)
-                || !cl.requires_flags.iter().all(|f| st.flags.contains(f))
-                || cl.forbids_flags.iter().any(|f| st.flags.contains(f))
-            {
-                continue;
-            }
-            scene = Some(cl.scene);
-        }
+        let scene = crate::compiler::cast::governing_scene(
+            cast,
+            |q| st.active.contains(q),
+            |cl| {
+                cl.requires_flags.iter().all(|f| st.flags.contains(f))
+                    && !cl.forbids_flags.iter().any(|f| st.flags.contains(f))
+            },
+        );
         match scene {
-            None => Some(t.root.clone()),
-            Some(i) => match cast.scenes.iter().find(|s| s.index == i).map(|s| &s.action) {
+            0 => Some(t.root.clone()),
+            i => match cast.scenes.iter().find(|s| s.index == i).map(|s| &s.action) {
                 Some(crate::compiler::cast::SceneAction::Root(r)) => Some(r.clone()),
                 _ => None,
             },
