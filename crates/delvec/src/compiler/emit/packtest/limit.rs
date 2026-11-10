@@ -90,6 +90,7 @@ fn open_and_close(
             quest_score(q.id.as_str())
         ),
         format!("scoreboard players set {latch} dw.sys 0"),
+        format!("scoreboard players set {} dw.sys 0", ran_out_latch(oid)),
     ];
     let mut close = vec![
         format!("scoreboard players set {p} {qa} 0"),
@@ -101,6 +102,7 @@ fn open_and_close(
             quest_score(q.id.as_str())
         ),
         format!("scoreboard players set {latch} dw.sys 0"),
+        format!("scoreboard players set {} dw.sys 0", ran_out_latch(oid)),
     ];
     for a in ancestors(q, oid) {
         open.push(format!(

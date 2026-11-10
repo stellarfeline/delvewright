@@ -1015,6 +1015,9 @@ pub(super) fn emit_functions(
     // spec-0133 §3: a quest that starts a clock runs its activation once, the
     // tick it is active. Empty for a campaign with no `quest-start` limit.
     tick.extend(quest_start_drivers(plan));
+    // spec-0133 §3: an objective whose clock ran out before it opened settles
+    // expired the tick it opens. Empty without such a limit.
+    tick.extend(born_expired_drivers(plan));
     // **The wave countdown is a MEASUREMENT of the living bodies, not a tally of
     // kills.** One line pair per spawned wave, recomputed every tick, ahead of
     // every gate that reads the countdown.

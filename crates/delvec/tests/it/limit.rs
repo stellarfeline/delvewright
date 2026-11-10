@@ -268,9 +268,10 @@ fn the_three_starts_schedule_where_they_say() {
     assert!(qa.contains("expire_o_exit 2400t replace"), "{qa}");
     let tick = func(&out, "tick");
     assert!(
-        tick.contains(&format!(
-            "execute if score #party dw.qa_open_the_door matches 1 unless score #actq_open_the_door dw.sys matches 1 run function {NS}:activate_q_open_the_door"
-        )),
+        tick.lines().any(|l| l.starts_with("execute if score #party dw.qa_open_the_door matches 1")
+            && l.ends_with(&format!(
+                "unless score #actq_open_the_door dw.sys matches 1 run function {NS}:activate_q_open_the_door"
+            ))),
         "{tick}"
     );
     // {objective}: in the named objective's activation.
@@ -540,4 +541,64 @@ fn quest_start_measures_from_the_triggering_step() {
         "quest-start walks from the spawn, past the keeper: {qs} vs {act}"
     );
     assert_ne!(qs["walk_from"], act["walk_from"], "{qs} vs {act}");
+}
+
+/// spec-0133 §3: a clock started before its objective opens — here at the
+/// keeper's talk — can run out while the objective is still closed. The clock
+/// marks it run out (`#lx_<obj>`), and the objective is **born expired**: the
+/// tick it opens it settles expired, `on_expire` firing, never left with no
+/// window at all. The old behaviour had neither the mark nor the driver, and
+/// left such an objective open forever with no clock.
+#[test]
+fn an_objective_whose_clock_ran_out_before_it_opened_is_born_expired() {
+    let mut l = minute();
+    l["from"] = json!({"objective": "obj/talk"});
+    let out = build(&fixture("born", l, |_| {}));
+    let exp = func(&out, "expire_o_exit");
+    assert!(
+        exp.contains(
+            "execute unless score #party dw.o_exit matches 1 run scoreboard players set #lx_exit dw.sys 1"
+        ),
+        "the clock marks a not-done objective run out, open or not:\n{exp}"
+    );
+    let tick = func(&out, "tick");
+    let born = tick
+        .lines()
+        .find(|l| l.starts_with("execute if score #lx_exit dw.sys matches 1"))
+        .unwrap_or_else(|| panic!("no born-expired driver in\n{tick}"));
+    assert!(
+        born.contains("if score #party dw.o_talk matches 1")
+            && born.contains("unless score #party dw.x_exit matches 1")
+            && born.ends_with(&format!("run function {NS}:settle_expired_o_exit")),
+        "it settles the objective the tick its own guard opens, once: {born}"
+    );
+    assert!(func(&out, "setup").contains("scoreboard players set #lx_exit dw.sys 0"));
+    // A clock from the objective's own activation cannot run out before it
+    // opens: no driver.
+    let out = build(&fixture("born-act", minute(), |_| {}));
+    assert!(!func(&out, "tick").contains("#lx_exit dw.sys matches 1"));
+}
+
+/// spec-0133 §3: a `quest-start` clock on a quest active at world load starts
+/// at the first player's arrival — the first-join hook `join_place` keys on —
+/// never at tick 1 of a world nobody has entered.
+#[test]
+fn a_quest_start_clock_at_world_load_waits_for_the_first_arrival() {
+    let mut l = minute();
+    l["from"] = json!("quest-start");
+    let out = build(&fixture("arrival", l, |_| {}));
+    let tick = func(&out, "tick");
+    let driver = tick
+        .lines()
+        .find(|l| l.ends_with(&format!("run function {NS}:activate_q_open_the_door")))
+        .unwrap_or_else(|| panic!("no quest-start driver in\n{tick}"));
+    let joined = out.contains_key(&format!(
+        "datapack/data/{NS}/function/join_place.mcfunction"
+    ));
+    let arrival = if joined {
+        " if entity @a[tag=dw_joined] "
+    } else {
+        " if entity @a "
+    };
+    assert!(driver.contains(arrival), "{driver}");
 }

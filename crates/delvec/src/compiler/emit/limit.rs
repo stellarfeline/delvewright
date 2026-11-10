@@ -212,6 +212,10 @@ pub(super) fn limit_setup_lines(plan: &Plan) -> Vec<String> {
             settled_score(oid)
         ));
         out.push(format!("bossbar remove {}", bar_id(ns, oid)));
+        out.push(format!(
+            "scoreboard players set {} dw.sys 0",
+            ran_out_latch(oid)
+        ));
     }
     out
 }
@@ -227,8 +231,22 @@ pub(super) fn quest_start_drivers(plan: &Plan) -> Vec<String> {
         .iter()
         .filter(|q| !clocks_started_by_quest(q).is_empty())
         .map(|q| {
+            // A quest active at world load starts its clocks at the first
+            // player's arrival, never at tick 1 of an empty world: the same
+            // first-join hook `join_place` keys on (`dw_joined`), or — in a
+            // campaign with no spawn anchor, which places nobody — the first
+            // player online.
+            let arrived = if matches!(q.trigger, Trigger::CampaignStart) {
+                if super::world::campaign_spawn(plan).is_some() {
+                    " if entity @a[tag=dw_joined]"
+                } else {
+                    " if entity @a"
+                }
+            } else {
+                ""
+            };
             format!(
-                "execute if score {} {} matches 1 unless score {} dw.sys matches 1 run function {ns}:{}",
+                "execute if score {} {} matches 1{arrived} unless score {} dw.sys matches 1 run function {ns}:{}",
                 plan::PARTY,
                 quest_active_score(q.id.as_str()),
                 quest_start_latch(q.id.as_str()),
@@ -236,6 +254,40 @@ pub(super) fn quest_start_drivers(plan: &Plan) -> Vec<String> {
             )
         })
         .collect()
+}
+
+/// The `dw.sys` latch a limited objective's clock sets when it runs out with
+/// the objective not done (spec-0133 §3): read by its born-expired driver.
+pub(super) fn ran_out_latch(oid: &str) -> String {
+    format!("#lx_{}", plan::safe_local(oid))
+}
+
+/// The tick drivers that settle **born expired** (spec-0133 §3): a limited
+/// objective whose clock starts before it opens — at its quest's start or at
+/// an ancestor's activation — and has already run out when it opens settles
+/// expired that tick, its `on_expire` firing and the story going on. An
+/// objective clocked from its own activation cannot open after its clock
+/// ran out, so it has none.
+pub(super) fn born_expired_drivers(plan: &Plan) -> Vec<String> {
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    for q in &plan.campaign.quests.content.quests {
+        let qa = quest_active_score(q.id.as_str());
+        for o in &q.objectives {
+            let Some(l) = o.limit() else { continue };
+            if l.from.is_activation() {
+                continue;
+            }
+            let oid = o.id().as_str();
+            out.push(format!(
+                "execute if score {} dw.sys matches 1{} run function {ns}:{}",
+                ran_out_latch(oid),
+                pending_guard(plan, o, &qa),
+                settle_fn(oid)
+            ));
+        }
+    }
+    out
 }
 
 /// Every function a limit owns: the quest-start activations, and per limited
@@ -267,14 +319,25 @@ pub(super) fn limit_fns(
             let Some(limit) = o.limit() else { continue };
             let oid = o.id().as_str();
             // The clock settles only an objective still pending: one done
-            // first, or not yet open, is left alone.
+            // first is left alone. One not yet open when a clock started
+            // before it runs out is marked run out (`#lx_<obj>`): it is born
+            // expired the tick it opens ([`born_expired_drivers`]), never left
+            // with no window at all.
             fns.push((
                 expire_fn(oid),
-                lines(&[format!(
-                    "execute{} run function {ns}:{}",
-                    pending_guard(plan, o, &qa),
-                    settle_fn(oid)
-                )]),
+                lines(&[
+                    format!(
+                        "execute unless score {} {} matches 1 run scoreboard players set {} dw.sys 1",
+                        plan::PARTY,
+                        obj_score(oid),
+                        ran_out_latch(oid)
+                    ),
+                    format!(
+                        "execute{} run function {ns}:{}",
+                        pending_guard(plan, o, &qa),
+                        settle_fn(oid)
+                    ),
+                ]),
             ));
             let mut settle: Vec<String> = vec![
                 format!(
