@@ -396,6 +396,7 @@ async function mountByClick(bot, name) {
   await sleep(1000)
   return rideState(bot)
 }
+let riseHook = null
 async function t4(bot) {
   await home(bot)
   await clearBodies()
@@ -428,21 +429,37 @@ async function t4(bot) {
   begin('T4-pig-client-move', 'the bot reports the pig\'s position 0.2 blocks east per tick for 2 s, the way a client steers; the server\'s reading of the pig')
   await hold(bot, 'carrot_on_a_stick')
   await clientDrive(bot, 'dw_pig', 'flat', 1, 0, 2000)
-  for (const [name, note, build] of [
-    ['T4-pig-client-full-step', 'a one-block step 2 blocks east of the pig; the client reports moves through it at the pig\'s own height for 2 s', (x, z) => `fill ${x} ${FLOOR_Y + 1} ${z - 2} ${x} ${FLOOR_Y + 1} ${z + 2} minecraft:stone`],
-    ['T4-pig-client-slab-step', 'a bottom slab 2 blocks east, then a full block; the same reports for 2 s', (x, z) => `fill ${x} ${FLOOR_Y + 1} ${z - 2} ${x} ${FLOOR_Y + 1} ${z + 2} minecraft:stone_slab\nfill ${x + 1} ${FLOOR_Y + 1} ${z - 2} ${x + 1} ${FLOOR_Y + 1} ${z + 2} minecraft:stone`],
-  ]) {
+  // Obstacles are built ahead of where the pig now stands; the pig is never
+  // teleported between trials, because the harness's client cannot parse this
+  // version's entity teleport and would report from a stale position.
+  const obstacle = async (name, note, build, ms) => {
     begin(name, note)
     const p0 = parsePos(await entityGet('@e[tag=dw_pig,limit=1]', 'Pos'))
-    const sx = Math.floor(p0[0]) + 2
+    const sx = Math.floor(p0[0]) + 3
     const sz = Math.floor(p0[2])
     for (const line of build(sx, sz).split('\n')) await rcon.run(line)
-    const p1 = await clientDrive(bot, 'dw_pig', `stepAtX=${sx}`, 1, 0, 2000)
-    row(`pastStep=${p1 ? (p1[0] > sx + 1 ? 'yes' : 'no') : '-'}`, `serverY=${f2(p1?.[1])}`)
+    const x0 = bot.vehicle?.position?.x
+    const reads = []
+    const watcher = (async () => {
+      const t = now()
+      while (now() - t < ms + 600) {
+        const p = parsePos(await entityGet('@e[tag=dw_pig,limit=1]', 'Pos'))
+        if (p) reads.push(`${f2(p[0])}/${f2(p[1])}`)
+        await sleep(200)
+      }
+    })()
+    const p1 = await clientDrive(bot, 'dw_pig', `obstacleAtX=${sx} clientStartX=${f2(x0)}`, 1, 0, ms, 0.2, riseHook ? riseHook(sx) : null)
+    riseHook = null
+    await watcher
+    row(`serverXYDuring=${reads.join(' ')}`)
+    row(`pastObstacle=${p1 ? (p1[0] > sx + 1 ? 'yes' : 'no') : '-'}`, `serverX=${f2(p1?.[0])}`, `serverY=${f2(p1?.[1])}`, `clientX=${f2(bot.vehicle?.position?.x)}`)
     await rcon.probe(`fill ${sx} ${FLOOR_Y + 1} ${sz - 2} ${sx + 1} ${FLOOR_Y + 2} ${sz + 2} minecraft:air`)
-    await rcon.run(`tp @e[tag=dw_pig,limit=1] ${H.x + 2.5} ${H.y} ${H.z + 0.5}`)
-    await sleep(800)
   }
+  await obstacle('T4-pig-client-full-step', 'a one-block step 3 blocks ahead; reports at the pig\'s own height for 2 s', (x, z) => `fill ${x} ${FLOOR_Y + 1} ${z - 2} ${x} ${FLOOR_Y + 1} ${z + 2} minecraft:stone`, 2000)
+  await obstacle('T4-pig-client-wall', 'a two-block wall 3 blocks ahead; the same reports for 2 s', (x, z) => `fill ${x} ${FLOOR_Y + 1} ${z - 2} ${x} ${FLOOR_Y + 2} ${z + 2} minecraft:stone`, 2000)
+  await obstacle('T4-pig-client-slab-step', 'a bottom slab 3 blocks ahead, then a full block; the same reports for 2 s', (x, z) => `fill ${x} ${FLOOR_Y + 1} ${z - 2} ${x} ${FLOOR_Y + 1} ${z + 2} minecraft:stone_slab\nfill ${x + 1} ${FLOOR_Y + 1} ${z - 2} ${x + 1} ${FLOOR_Y + 1} ${z + 2} minecraft:stone`, 2000)
+  riseHook = (sx) => (x, y) => (x >= sx + 1.5 ? y + 1.0 : x >= sx + 0.5 ? y + 0.5 : y)
+  await obstacle('T4-pig-client-slab-rise', 'a bottom slab 3 blocks ahead, then a full block; reports that rise 0.5 at the slab and 1.0 at the block', (x, z) => `fill ${x} ${FLOOR_Y + 1} ${z - 2} ${x} ${FLOOR_Y + 1} ${z + 2} minecraft:stone_slab\nfill ${x + 1} ${FLOOR_Y + 1} ${z - 2} ${x + 1} ${FLOOR_Y + 1} ${z + 2} minecraft:stone`, 2000)
   for (const [name, note, build] of [
     ['T4-pig-full-step', 'a one-block step across the pig\'s way east, 5 blocks ahead; 6 s of driving', (x, z) => `fill ${x} ${FLOOR_Y + 1} ${z - 2} ${x} ${FLOOR_Y + 1} ${z + 2} minecraft:stone`],
     ['T4-pig-slab-step', 'a bottom slab then a full block, as two half steps; 6 s of driving', (x, z) => `fill ${x} ${FLOOR_Y + 1} ${z - 2} ${x} ${FLOOR_Y + 1} ${z + 2} minecraft:stone_slab\nfill ${x + 1} ${FLOOR_Y + 1} ${z - 2} ${x + 1} ${FLOOR_Y + 1} ${z + 2} minecraft:stone`],
@@ -496,7 +513,7 @@ async function driveFor(bot, ms, tag, label) {
 }
 
 /** The way a vanilla client moves a ridden body: it reports the vehicle's position. */
-async function clientDrive(bot, tag, label, dx, dz, ms, perTick = 0.2) {
+async function clientDrive(bot, tag, label, dx, dz, ms, perTick = 0.2, yAt = null) {
   const { v: s0, b: b0 } = await readVehicle(bot, tag)
   let x = bot.vehicle?.position?.x ?? s0[0]
   let z = bot.vehicle?.position?.z ?? s0[2]
@@ -508,7 +525,7 @@ async function clientDrive(bot, tag, label, dx, dz, ms, perTick = 0.2) {
     x += dx * perTick
     z += dz * perTick
     ticks += 1
-    bot._client.write('vehicle_move', { x, y, z, yaw, pitch: 0, onGround: true })
+    bot._client.write('vehicle_move', { x, y: yAt ? yAt(x, y) : y, z, yaw, pitch: 0, onGround: true })
     await sleep(50)
   }
   await sleep(700)
@@ -536,7 +553,7 @@ async function t5(bot) {
   row(`boatPos=${v?.map(f2)}`, `botPosOnServer=${b?.map(f2)}`, `botPosOnClient=${bot.entity.position.toArray().map(f2)}`)
   await rcon.probe(`execute store result score #onv ${OBJ} as ${BOT} on vehicle if entity @s[type=minecraft:oak_boat]`)
   row(`executeOnVehicleBoat=${await score('#onv')}`, `(1 = the rider's vehicle is an oak boat)`)
-  const inBox = await countOf(`${BOT}[x=${B.x1},y=${FLOOR_Y - 1},z=${B.z1},dx=${B.x2 - B.x1},dy=4,dz=${B.z2 - B.z1}]`)
+  const inBox = await countOf(`@a[name=${BOT},x=${B.x1},y=${FLOOR_Y - 1},z=${B.z1},dx=${B.x2 - B.x1},dy=4,dz=${B.z2 - B.z1}]`)
   row(`riderCountedInBasinBox=${inBox}`)
   await bot.lookAt(new Vec3(H.x + 0.5, FLOOR_Y + 1, B.z2), true)
   await driveFor(bot, 4000, 'dw_boat', 'forwardInput')
@@ -544,15 +561,14 @@ async function t5(bot) {
   // reports the boat's position. Here the position is reported along a straight
   // line south at a stated speed, and the server's own reading of the boat says
   // whether it took the report.
-  for (const perTick of [0.1, 0.25, 0.5, 1.0]) {
-    await rcon.run(`tp @e[tag=dw_boat,limit=1] ${H.x + 0.5} ${FLOOR_Y + 1} ${B.z1 + 1.5}`)
-    await sleep(1200)
+  for (const [perTick, ms] of [[0.1, 1000], [0.25, 1000], [0.5, 1000], [1.0, 500]]) {
     const { v: s0 } = await readVehicle(bot, 'dw_boat')
     const t = now()
     let z = bot.vehicle?.position?.z ?? s0[2]
     const x = s0[0]
     let ticks = 0
-    while (now() - t < 2000) {
+    row(`speed ${(perTick * 20).toFixed(0)}b/s`, `clientBoatZ=${f2(bot.vehicle?.position?.z)}`, `serverBoatZ=${f2(s0?.[2])}`)
+    while (now() - t < ms) {
       z += perTick
       ticks += 1
       bot._client.write('vehicle_move', { x, y: s0[1], z, yaw: 0, pitch: 0, onGround: true })
