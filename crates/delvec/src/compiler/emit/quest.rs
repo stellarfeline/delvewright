@@ -208,20 +208,39 @@ pub(super) fn armed_by<'a>(
 /// objective's [`pending_guard`] without its own gate, because the press may be
 /// what opens that gate (a puzzle whose presses count into the datum the
 /// objective reads), and a press held to the gate it feeds could never be made.
-pub(super) fn serving_guard(o: &Objective, quest_active: &str) -> String {
+pub(super) fn serving_guard(
+    c: &delvewright_dsl::Campaign,
+    o: &Objective,
+    quest_active: &str,
+) -> String {
     let p = plan::PARTY;
     let mut g = format!(" if score {p} {quest_active} matches 1");
     for a in o.after() {
         g.push_str(&format!(
             " if score {p} {} matches 1",
-            obj_score(a.as_str())
+            after_score(c, a.as_str())
         ));
     }
     g.push_str(&format!(
         " unless score {p} {} matches 1",
         obj_score(o.id().as_str())
     ));
+    g.push_str(&expired_term(o));
     g
+}
+
+/// spec-0133 §3: the term every guard of a limited objective gains — once
+/// its clock has run out, nothing completes it.
+pub(super) fn expired_term(o: &Objective) -> String {
+    if o.limit().is_some() {
+        format!(
+            " unless score {} {} matches 1",
+            plan::PARTY,
+            expired_score(o.id().as_str())
+        )
+    } else {
+        String::new()
+    }
 }
 
 /// Whether a trigger declares `serves: {objective: o}` (spec-0117 §4): the
@@ -240,7 +259,7 @@ pub(super) fn is_served(plan: &Plan, o: &Objective) -> bool {
 /// [`serving_guard`]; any other objective under its [`pending_guard`].
 pub(super) fn told_guard(plan: &Plan, o: &Objective, quest_active: &str) -> String {
     if is_served(plan, o) {
-        serving_guard(o, quest_active)
+        serving_guard(plan.campaign, o, quest_active)
     } else {
         pending_guard(plan, o, quest_active)
     }
@@ -252,7 +271,7 @@ pub(super) fn pending_guard(plan: &Plan, o: &Objective, quest_active: &str) -> S
     for a in o.after() {
         g.push_str(&format!(
             " if score {p} {} matches 1",
-            obj_score(a.as_str())
+            after_score(plan.campaign, a.as_str())
         ));
     }
     // The objective's whole gate, in gate field order: required flags, forbidden
@@ -265,6 +284,7 @@ pub(super) fn pending_guard(plan: &Plan, o: &Objective, quest_active: &str) -> S
         " unless score {p} {} matches 1",
         obj_score(o.id().as_str())
     ));
+    g.push_str(&expired_term(o));
     g
 }
 
@@ -287,12 +307,17 @@ pub(super) fn quest_completion_fns(
             // activates (driven from `tick`) — set the global once-flag, then place
             // the objective's prop(s). Emitted only for objectives with a prop.
             let cmds = activation_commands(plan, holders, q_area, o);
-            if !cmds.is_empty() {
+            // spec-0133 §3: the clocks this objective's activation starts.
+            let clocks = clocks_started_by_objective(c, oid);
+            if !cmds.is_empty() || !clocks.is_empty() {
                 let mut act = vec![format!(
                     "scoreboard players set {} dw.sys 1",
                     activation_flag(oid)
                 )];
                 act.extend(cmds);
+                for l in clocks {
+                    act.extend(start_lines(ns, l));
+                }
                 fns.push((format!("activate_{}", safe_obj_fn(oid)), lines(&act)));
             }
             // v0.3 objective-activation feedback (M2 fix 4): the announce function
@@ -416,6 +441,9 @@ pub(super) fn quest_completion_fns(
             }
             // spec-0104 §7.3: the highlight goes out with the act.
             body.extend(guidance::completion_lines(guide, ns, oid));
+            // spec-0133 §3: a limited objective is settled, and its clock
+            // cleared, so a done objective is never expired.
+            body.extend(limit_completion_lines(ns, o));
             // `complete_<obj>` is dispatched `as @a` from `tick`, so this bundle
             // runs with the acting player as `@s` (see `Audience::Party`).
             body.extend(emit_effect_bundle(
@@ -480,10 +508,12 @@ pub(super) fn quest_completion_fns(
         let mut check: Vec<String> = Vec::new();
         let mut guard = "execute".to_string();
         for o in &q.objectives {
+            // A limited objective counts as settled done or expired
+            // (spec-0133 §1).
             guard.push_str(&format!(
                 " if score {} {} matches 1",
                 plan::PARTY,
-                obj_score(o.id().as_str())
+                after_score(c, o.id().as_str())
             ));
         }
         guard.push_str(&format!(

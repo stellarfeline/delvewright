@@ -220,6 +220,9 @@ pub(super) fn emit_functions(
     // spec-0032: the economy's objectives and constants. Empty for a campaign that
     // declares neither a shop nor a stake → byte-identical.
     setup.extend(economy_setup(plan));
+    // spec-0133: each limited objective's expired and settled scores. Empty for a
+    // campaign with no limit → byte-identical.
+    setup.extend(limit_setup_lines(plan));
     // spec-0073: every declared health bar is re-created from nothing at world
     // init. Empty for a campaign that declares none → byte-identical.
     let health_bars = crate::compiler::healthbar::bars(c);
@@ -996,7 +999,9 @@ pub(super) fn emit_functions(
         let area = plan.quest_area(q.id.as_str()).unwrap_or("");
         let qa = quest_active_score(q.id.as_str());
         for o in &q.objectives {
-            if activation_commands(plan, holders, area, o).is_empty() {
+            if activation_commands(plan, holders, area, o).is_empty()
+                && clocks_started_by_objective(c, o.id().as_str()).is_empty()
+            {
                 continue;
             }
             tick.push(format!(
@@ -1007,6 +1012,9 @@ pub(super) fn emit_functions(
             ));
         }
     }
+    // spec-0133 §3: a quest that starts a clock runs its activation once, the
+    // tick it is active. Empty for a campaign with no `quest-start` limit.
+    tick.extend(quest_start_drivers(plan));
     // **The wave countdown is a MEASUREMENT of the living bodies, not a tally of
     // kills.** One line pair per spawned wave, recomputed every tick, ahead of
     // every gate that reads the countdown.
@@ -1431,6 +1439,9 @@ pub(super) fn emit_functions(
 
     // --- campaign_complete (shared by campaign-complete effect) ---
     fns.extend(campaign_complete_fns(plan, chrome));
+    // spec-0133: every limit's clock, settlement and countdown. Empty for a
+    // campaign with none → byte-identical.
+    fns.extend(limit_fns(plan, chrome, holders, guide));
 
     // --- v0.3: wave spawn functions + verb reward functions ---
     fns.extend(wave_fns(plan, wave_placements, lane_routes, &item_combat));
