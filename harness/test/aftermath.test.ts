@@ -41,7 +41,7 @@ const GALLERY_AFTERMATH = [
 function pathWith(aftermath: unknown): Record<string, unknown> {
   return {
     version: "0.2.0",
-    format_version: 6,
+    format_version: 7,
     campaign_id: "gallery",
     non_combatants: { kinds: ["villager"], ambiguous: [], examined: 1, unbound: false },
     steps: [

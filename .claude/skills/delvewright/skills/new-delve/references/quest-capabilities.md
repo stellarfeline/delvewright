@@ -2,6 +2,7 @@
 
 - [Reference: what a quest can do](#reference-what-a-quest-can-do)
 - [Objectives](#objectives)
+- [A task that can be lost](#a-task-that-can-be-lost)
 - [Items, containers and loot](#items-containers-and-loot)
 - [State, flags and gates](#state-flags-and-gates)
 - [The story layer](#the-story-layer)
@@ -25,6 +26,15 @@ The verbs, effects and fields available in `quests.json` and `dialogue.json`. Ge
 - **The journal's `manual`** (`guidance.manual {title?, pages[]}`) is written only for a setting that contradicts vanilla behaviour or an item that needs instructions; most delves write none. Each page carries the key span for any key it names (`[[key|use]]`). The compass page is the engine's.
 - **`interact.requires_item` is HELD, not carried**: the player must have the item in their **main hand** when they click — presenting it is the action. Author `missing_item_hint` whenever the empty-handed click deserves diegetic feedback (a sleeping giant mumbles in its sleep; a locked door rattles and holds). It is narrated in chat to that player, only while the objective is open, and without it the click is met with total silence, which reads as a broken affordance.
 - **The item a player lays (`takes_item`) is the thing the receiving block shows**: a lectern shows a book, so lay a book (`minecraft:written_book` or `minecraft:writable_book`); an item frame or display shows the item itself. A paper laid on a lectern leaves a book on the lectern.
+
+## A task that can be lost
+
+- **A soft failure is a `limit` on the objective.** `"limit": {"ticks": 6000, "on_expire": [...]}` gives the objective a window in game ticks (20 a second; 6000 is five minutes): done in time, it completes as ever; still open when the window runs out, it **expires** — its `on_expire` fires instead of its completion bundle, and the objectives after it and its quest go on either way. The day goes on; what the ending reads is the flags the two bundles wrote.
+- **`on_expire` tells the party the task is over and writes what the night reads**: a `narrate` in the voice of the place (the engine already prints *Objective expired* with the title), and a `set-flag` an ending, an epilogue line or a later conversation reads. Whatever the expiry should take back is written as a world change: the crates sink with a `clear-region` at the holder, never by reaching into an inventory.
+- **A task about bodies ends with `despawn-wave`**: the goats nobody herded are taken home, unseen, by the same removal a rest's re-seat uses. A `kill` objective on a wave an expiry can remove is a beat the party may find gone.
+- **The clock starts at `activation`** (when the objective is announced), **`quest-start`**, or **`{"objective": "obj/<ancestor>"}`** — one clock over a chain, from an earlier objective of the same quest the limited one comes `after`. The party watches it as a bar at the top of the screen; a limit on an objective with no title, or one whose announcement is hidden, is refused (`DW1085`), because a clock the player cannot see is a trap.
+- **Leave room beyond the walk.** The build measures the walk from where the clock starts to the objective at a sprint and refuses a window shorter than it (`DW1084`, its `limit binding` line printing the walk as a share of the window); a fight, a search, a shot or reading a line all take time the walk does not count. A window the walk fills is a sprint nobody makes on a first visit.
+- **Every limit is a world the build exports and the bot walks by waiting** (*Reference: ladder*, *Branch runs*): the party's run in which that one task lapses must still reach an ending.
 
 ## Items, containers and loot
 

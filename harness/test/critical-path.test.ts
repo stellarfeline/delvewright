@@ -47,7 +47,7 @@ const parseCriticalPathJson = (text: string) => {
 function validRaw(): Record<string, unknown> {
   return {
     version: "0.2.0",
-    format_version: 6,
+    format_version: 7,
     campaign_id: "hello-world",
     non_combatants: {
       kinds: ["mannequin", "villager"],
@@ -223,7 +223,7 @@ test("rejects an unknown action with the closed enum in the message", () => {
     (err: unknown) =>
       err instanceof CriticalPathParseError &&
       err.pointer === "/steps/1/action" &&
-      /select-class, talk-to, reach, kill, collect, interact, rest, trigger, witness-strike, loop, mock, assert-complete/.test(err.message),
+      /select-class, talk-to, reach, kill, collect, interact, rest, trigger, witness-strike, loop, mock, expire, assert-complete/.test(err.message),
   );
 });
 
@@ -1324,5 +1324,50 @@ test("format 6: a pursuer row is whole — a malformed actor or an unknown key i
   assert.throws(
     () => parseStrict(extra),
     (err: unknown) => err instanceof CriticalPathParseError && err.pointer === "/steps/2/pursuers/0/width",
+  );
+});
+
+// --- contract format 7: a limited objective let lapse (spec-0133 §8) --------------
+
+const lapse = {
+  action: "expire",
+  objective: "obj/exit",
+  wait_ticks: 1200,
+  stand: [4, 65, 4],
+  pos: [4, 65, 4],
+};
+
+test("format 7: an expire step parses with its objective, its wait and its stand", () => {
+  const step = parseCriticalPath(withStep(lapse)).steps[2]!;
+  assert.equal(step.action, "expire");
+  if (step.action !== "expire") return;
+  assert.equal(step.objective, "obj/exit");
+  assert.equal(step.waitTicks, 1200);
+  assert.deepEqual(step.stand, [4, 65, 4]);
+});
+
+test("format 7: an expire step without any one of its three fields is refused", () => {
+  for (const key of ["objective", "wait_ticks", "stand"] as const) {
+    const bad: Record<string, unknown> = { ...lapse };
+    delete bad[key];
+    assert.throws(
+      () => parseCriticalPath(withStep(bad)),
+      (e: unknown) => e instanceof CriticalPathParseError && e.pointer === `/steps/2/${key}`,
+      key,
+    );
+  }
+  assert.throws(
+    () => parseCriticalPath(withStep({ ...lapse, wait_ticks: 0 })),
+    (e: unknown) => e instanceof CriticalPathParseError && e.pointer === "/steps/2/wait_ticks",
+  );
+});
+
+test("format 7: the constant moved, and a format-6 artifact is refused", () => {
+  assert.equal(CRITICAL_PATH_FORMAT_VERSION, 7);
+  const raw = validRaw();
+  raw["format_version"] = 6;
+  assert.throws(
+    () => parseCriticalPath(raw),
+    (err: unknown) => err instanceof CriticalPathParseError && err.pointer === "/format_version",
   );
 });

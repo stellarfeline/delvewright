@@ -109,7 +109,7 @@ pub fn despawn_wave_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
             stage,
             path.to_string(),
             format!(
-                "`despawn-wave` of `{wave}` can never remove anything: no beat spawns wave                  `{wave}` — no `spawn-wave` names it where the engine can seat it, so it has no                  bodies. Spawn it from a beat, or remove the `despawn-wave`."
+                "`despawn-wave` of `{wave}` can never remove anything: no beat spawns wave `{wave}` — no `spawn-wave` names it where the engine can seat it, so it has no bodies. Spawn it from a beat, or remove the `despawn-wave`."
             ),
         ));
     });

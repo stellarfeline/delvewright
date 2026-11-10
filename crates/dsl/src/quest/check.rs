@@ -136,9 +136,9 @@ pub(crate) fn limit_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 d.push(Diagnostic::error(
                     codes::SCHEMA,
                     "quests",
-                    format!("{path}/ticks"),
+ format!("{path}/ticks"),
                     format!(
-                        "`limit.ticks` on objective `{}` is {}: the window is {LIMIT_MIN_TICKS} to                          {LIMIT_MAX_TICKS} game ticks (one second to the ten-hour ceiling of a                          delve; 20 ticks are one second).",
+                        "`limit.ticks` on objective `{}` is {}: the window is {LIMIT_MIN_TICKS} to {LIMIT_MAX_TICKS} game ticks (one second to the ten-hour ceiling of a delve; 20 ticks are one second).",
                         o.id(),
                         limit.ticks
                     ),
@@ -148,9 +148,9 @@ pub(crate) fn limit_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 d.push(Diagnostic::error(
                     codes::SCHEMA,
                     "quests",
-                    format!("{path}/on_expire"),
+ format!("{path}/on_expire"),
                     format!(
-                        "`limit.on_expire` on objective `{}` has no effects. The schema requires                          at least one (`minItems: 1`): add what expiry does, or remove                          `on_expire`.",
+                        "`limit.on_expire` on objective `{}` has no effects. The schema requires at least one (`minItems: 1`): add what expiry does, or remove `on_expire`.",
                         o.id()
                     ),
                 ));
@@ -166,7 +166,7 @@ pub(crate) fn limit_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     "quests",
                     path.clone(),
                     format!(
-                        "objective `{}` carries a `limit` of {} tick(s) but the party is never                          told it exists: {why}. A clock the player cannot see is a hazard they                          cannot see. Give the objective a `title` and show its announcement, or                          remove the `limit`.",
+                        "objective `{}` carries a `limit` of {} tick(s) but the party is never told it exists: {why}. A clock the player cannot see is a hazard they cannot see. Give the objective a `title` and show its announcement, or remove the `limit`.",
                         o.id(),
                         limit.ticks
                     ),
@@ -178,12 +178,12 @@ pub(crate) fn limit_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     Some("it names the limited objective itself".to_string())
                 } else if !in_quest {
                     Some(format!(
-                        "`{start}` is not an objective of quest `{}` — a clock runs inside one                          quest",
+                        "`{start}` is not an objective of quest `{}` — a clock runs inside one quest",
                         q.id
                     ))
                 } else if !after_ancestors(q, o.id().as_str()).contains(start.as_str()) {
                     Some(format!(
-                        "`{start}` is not an `after`-ancestor of `{}`, so the clock can start                          after the objective it closes is already open, or never",
+                        "`{start}` is not an `after`-ancestor of `{}`, so the clock can start after the objective it closes is already open, or never",
                         o.id()
                     ))
                 } else {
@@ -193,9 +193,9 @@ pub(crate) fn limit_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     d.push(Diagnostic::error(
                         LIMIT_STARTS_AFTER,
                         "quests",
-                        format!("{path}/from"),
+ format!("{path}/from"),
                         format!(
-                            "objective `{}`'s `limit.from` names `{start}`, a clock that starts                              after the thing it closes: {why}. Name one of `{}`'s `after`                              ancestors, or use `activation`.",
+                            "objective `{}`'s `limit.from` names `{start}`, a clock that starts after the thing it closes: {why}. Name one of `{}`'s `after` ancestors, or use `activation`.",
                             o.id(),
                             o.id()
                         ),
@@ -247,7 +247,7 @@ pub(crate) fn after_ordering(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 format!("/content/quests/{i}/objectives"),
                 format!(
                     "objective `after` ordering in quest `{}` contains a cycle — the `after` \
-                     edges must form a DAG; remove one `after` entry to break the cycle",
+ edges must form a DAG; remove one `after` entry to break the cycle",
                     q.id
                 ),
             ));
@@ -450,14 +450,14 @@ fn check_one_status_effect(
             format!("{path}/seconds"),
             format!(
                 "`give-effect` duration {seconds}s is out of range — it must be between 1 and {} \
-                 seconds. {}",
+ seconds. {}",
                 crate::MAX_EFFECT_SECONDS,
                 if seconds == 0 {
                     "Zero grants nothing at all: the effect is applied and gone before the next \
-                     tick, so the beat reports green and the player sees nothing."
+ tick, so the beat reports green and the player sees nothing."
                 } else {
                     "The ceiling is vanilla's own field width (past the 10-hour delve ceiling), \
-                     so a value above it is a duration typed in ticks or milliseconds."
+ so a value above it is a duration typed in ticks or milliseconds."
                 }
             ),
         ));
@@ -469,7 +469,7 @@ fn check_one_status_effect(
             format!("{path}/amplifier"),
             format!(
                 "`give-effect` amplifier {amplifier} is out of range — vanilla stores it in an \
-                 unsigned byte, so {} is the end of the field, not a policy",
+ unsigned byte, so {} is the end of the field, not a policy",
                 crate::MAX_POTION_AMPLIFIER
             ),
         ));
@@ -657,7 +657,7 @@ pub(crate) fn check_effect_v04(
                 format!("{base_path}/npc"),
                 format!(
                     "`{verb}` references unknown npc `{npc}` — declare it in stage 2 or correct \
-                     the reference"
+ the reference"
                 ),
             ));
         }
@@ -703,10 +703,10 @@ fn anchor_resolves(
             format!("/content/quests/{qi}/objectives/{oi}/{field}"),
             format!(
                 "objective `{field}` anchor `{anchor}` is not provided by the prefab bound to \
-                 this quest's area — {remedy}",
+ this quest's area — {remedy}",
                 remedy = providers.anchor_remedy(
                     "use an anchor the prefab exposes (anchor names come from prefab metadata; \
-                     do NOT invent one)"
+ do NOT invent one)"
                 ),
             ),
         ));
@@ -837,7 +837,7 @@ pub(crate) fn cross_stage(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 format!("/content/quests/{i}"),
                 format!(
                     "stage-5 quest `{}` is not planned in stage 4 — add a stage-4 plan entry with \
-                     id `{}` (every quest must be planned), or remove this expansion",
+ id `{}` (every quest must be planned), or remove this expansion",
                     q.id, q.id
                 ),
             ));
@@ -929,7 +929,7 @@ fn trigger_agrees_with_plan(c: &Campaign, d: &mut Vec<Diagnostic>) {
                          lists {} — nothing at runtime waits for {}, so the party can take this \
                          quest before the ones the plan puts first. Arm it with \
                          `{{\"type\": \"quest-complete\", \"quest\": \"{}\"}}` (a quest its \
-                         `depends_on` lists), or empty its `depends_on`",
+ `depends_on` lists), or empty its `depends_on`",
                         q.id,
                         deps.iter()
                             .map(|x| format!("`{x}`"))
@@ -1008,10 +1008,10 @@ pub(crate) fn quest_anchor_checks(
                     format!("/content/quests/{i}/objectives/{j}/anchor"),
                     format!(
                         "objective anchor `{anchor}` is not provided by the prefab bound to \
-                         this quest's area — {}",
+ this quest's area — {}",
                         providers.anchor_remedy(
                             "use an anchor the prefab exposes (anchor names come from prefab \
-                             metadata; do NOT invent one)"
+ metadata; do NOT invent one)"
                         ),
                     ),
                 ));
@@ -1066,7 +1066,7 @@ pub(crate) fn quest_anchor_checks(
                         "`{verb}` anchor `{anchor}` is not provided by {scope} — {}",
                         providers.anchor_remedy(
                             "use an anchor a prefab exposes (anchor names come from prefab \
-                             metadata; do NOT invent one)"
+ metadata; do NOT invent one)"
                         ),
                         verb = eff.verb.tag(),
                     ),
@@ -1128,7 +1128,7 @@ pub(crate) fn quest_reference_checks(
                             format!("/content/quests/{i}/objectives/{j}/wave"),
                             format!(
                                 "`kill` objective references unknown wave `{wave}` — declare it \
-                                 in the stage-5 `waves` section or correct the reference"
+ in the stage-5 `waves` section or correct the reference"
                             ),
                         ));
                     } else if !spawned_waves.contains(wave.as_str()) {
@@ -1273,8 +1273,8 @@ pub(crate) fn quest_reference_checks(
                         format!("/content/quests/{i}/objectives/{j}/requires_flags/{m}"),
                         format!(
                             "objective `requires_flags` references flag `{f}`, which no \
-                             `set-flag` effect ever produces — add a `set-flag {{ flag: \"{f}\" }}` \
-                             effect on an earlier objective/quest, or correct the flag name"
+ `set-flag` effect ever produces — add a `set-flag {{ flag: \"{f}\" }}` \
+ effect on an earlier objective/quest, or correct the flag name"
                         ),
                     ));
                 }
@@ -1292,7 +1292,7 @@ pub(crate) fn quest_reference_checks(
                             "objective `forbids_flags` references flag `{f}`, which no `set-flag` \
                              effect ever produces — the gate can never suppress anything; add the \
                              producing `set-flag {{ flag: \"{f}\" }}` effect, or correct the flag \
-                             name"
+ name"
                         ),
                     ));
                 }
@@ -1309,7 +1309,7 @@ pub(crate) fn quest_reference_checks(
                     format!("/content/quests/{i}/{path}/wave"),
                     format!(
                         "`spawn-wave` effect references unknown wave `{w}` — declare it in the \
-                         stage-5 `waves` section or correct the reference"
+ stage-5 `waves` section or correct the reference"
                     ),
                 ));
             }
@@ -1322,7 +1322,7 @@ pub(crate) fn quest_reference_checks(
                     format!("/content/quests/{i}/{path}/item"),
                     format!(
                         "`give-item` item `{it}` is not in the pinned 1.21.11 item registry — use \
-                         a valid namespaced item id (e.g. `minecraft:golden_apple`)"
+ a valid namespaced item id (e.g. `minecraft:golden_apple`)"
                     ),
                 ));
             }
@@ -1336,8 +1336,8 @@ pub(crate) fn quest_reference_checks(
                         format!("/content/quests/{i}/{path}/when/requires_flags/{n}"),
                         format!(
                             "effect `requires_flags` references flag `{f}`, which no `set-flag` \
-                             effect ever produces — add a `set-flag {{ flag: \"{f}\" }}` effect \
-                             earlier, or correct the flag name"
+ effect ever produces — add a `set-flag {{ flag: \"{f}\" }}` effect \
+ earlier, or correct the flag name"
                         ),
                     ));
                 }
@@ -1353,7 +1353,7 @@ pub(crate) fn quest_reference_checks(
                             "effect `forbids_flags` references flag `{f}`, which no `set-flag` \
                              effect ever produces — the gate can never suppress anything; add the \
                              producing `set-flag {{ flag: \"{f}\" }}` effect, or correct the flag \
-                             name"
+ name"
                         ),
                     ));
                 }
@@ -1385,7 +1385,7 @@ pub(crate) fn quest_prop_checks(c: &Campaign, blocks: &dyn BlockRegistry, d: &mu
                     d.push(Diagnostic::error(
                         INTERACT_PROP_STEPPED,
                         "quests",
-                        format!("/content/quests/{i}/objectives/{j}/prop/block"),
+ format!("/content/quests/{i}/objectives/{j}/prop/block"),
                         format!(
                             "`interact` objective `{}` uses `{}` as its prop, a block a player \
                              fires by stepping on it — but an `interact` completes on a \
@@ -1496,7 +1496,7 @@ pub(crate) fn quest_dangling_refs(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 format!("/content/quests/{i}/trigger/quest"),
                 format!(
                     "quest trigger `quest-complete` references unknown quest `{quest}` — declare \
-                     that quest in stage 5 or correct the reference"
+ that quest in stage 5 or correct the reference"
                 ),
             );
         }
@@ -1510,7 +1510,7 @@ pub(crate) fn quest_dangling_refs(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     format!("/content/quests/{i}/objectives/{j}/npc"),
                     format!(
                         "`talk-to` objective references unknown npc `{npc}` — declare it in \
-                         stage 2 or correct the reference"
+ stage 2 or correct the reference"
                     ),
                 );
             }
@@ -1536,7 +1536,7 @@ pub(crate) fn quest_dangling_refs(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 format!("/content/quests/{i}/on_objective_complete/{key}"),
                 format!(
                     "`on_objective_complete` is keyed by unknown objective `{key}` — the key must \
-                     name an objective declared in this quest; declare it or correct the key"
+ name an objective declared in this quest; declare it or correct the key"
                 ),
             );
         }
@@ -1597,16 +1597,16 @@ impl ActivityBinding {
     /// quests are all unexpanded reads as a zero binding of this check.
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
-            "code": ACTIVITY_NOT_CARRIED_OUT.id(),
-            "lines": self.lines,
-            "judged": self.judged,
-            "examined": self.judged,
-            "undeclared": self.undeclared.iter().map(|(q, acts)| serde_json::json!({
-                "quest": q,
-                "acts": acts.iter().map(|a| a.as_str()).collect::<Vec<_>>(),
-            })).collect::<Vec<_>>(),
-            "refused": self.refused,
-        })
+                   "code": ACTIVITY_NOT_CARRIED_OUT.id(),
+        "lines": self.lines,
+                   "judged": self.judged,
+        "examined": self.judged,
+                   "undeclared": self.undeclared.iter().map(|(q, acts)| serde_json::json!({
+        "quest": q,
+                       "acts": acts.iter().map(|a| a.as_str()).collect::<Vec<_>>(),
+                   })).collect::<Vec<_>>(),
+                   "refused": self.refused,
+               })
     }
 }
 

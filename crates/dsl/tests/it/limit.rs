@@ -86,7 +86,10 @@ fn with(code: &str, d: &[Diagnostic]) -> Vec<Diagnostic> {
 fn the_schema_exports_the_limit_and_despawn_wave() {
     let s = serde_json::to_string(&stage_schema(Stage::Quests)).unwrap();
     let v: Value = serde_json::from_str(&s).unwrap();
-    let defs = v["$defs"].as_object().or(v["definitions"].as_object()).expect("defs");
+    let defs = v["$defs"]
+        .as_object()
+        .or(v["definitions"].as_object())
+        .expect("defs");
     let limit = &defs["Limit"];
     assert_eq!(limit["properties"]["ticks"]["minimum"], 20, "{limit}");
     assert_eq!(limit["properties"]["ticks"]["maximum"], 720000, "{limit}");
@@ -140,19 +143,32 @@ fn a_clock_that_starts_after_its_objective_is_dw1086() {
         ("obj/exit", "itself"),
         ("obj/elsewhere", "is not an objective of quest"),
     ] {
-        let c = campaign(limit_on(2, json!({"ticks": 600, "from": {"objective": from}})));
+        let c = campaign(limit_on(
+            2,
+            json!({"ticks": 600, "from": {"objective": from}}),
+        ));
         let d = with("DW1086", &validate_campaign(&c));
         assert_eq!(d.len(), 1, "{from}: {d:#?}");
         assert_eq!(d[0].path, "/content/quests/0/objectives/2/limit/from");
         assert!(d[0].message.contains(why), "{}", d[0].message);
     }
     // `obj/exit` is not an ancestor of `obj/look`: refused.
-    let c = campaign(limit_on(1, json!({"ticks": 600, "from": {"objective": "obj/exit"}})));
+    let c = campaign(limit_on(
+        1,
+        json!({"ticks": 600, "from": {"objective": "obj/exit"}}),
+    ));
     let d = with("DW1086", &validate_campaign(&c));
     assert_eq!(d.len(), 1, "{d:#?}");
-    assert!(d[0].message.contains("not an `after`-ancestor"), "{}", d[0].message);
+    assert!(
+        d[0].message.contains("not an `after`-ancestor"),
+        "{}",
+        d[0].message
+    );
     // Two hops up: green.
-    let c = campaign(limit_on(2, json!({"ticks": 600, "from": {"objective": "obj/talk"}})));
+    let c = campaign(limit_on(
+        2,
+        json!({"ticks": 600, "from": {"objective": "obj/talk"}}),
+    ));
     assert!(with("DW1086", &validate_campaign(&c)).is_empty());
 }
 
@@ -178,7 +194,10 @@ fn a_window_out_of_bounds_or_an_empty_expiry_is_dw0100() {
     }
     let c = campaign(limit_on(2, json!({"ticks": 600, "on_expire": []})));
     let d = with("DW0100", &validate_campaign(&c));
-    assert!(d.iter().any(|x| x.path.ends_with("/limit/on_expire")), "{d:#?}");
+    assert!(
+        d.iter().any(|x| x.path.ends_with("/limit/on_expire")),
+        "{d:#?}"
+    );
 }
 
 /// A `despawn-wave` of a wave no beat seats removes nothing: `DW0913` at the
@@ -197,27 +216,31 @@ fn despawn_wave_of_an_unseated_wave_is_dw0913() {
     });
     let d = with("DW0913", &validate_campaign(&c));
     assert_eq!(d.len(), 1, "{d:#?}");
-    assert_eq!(d[0].path, "/content/quests/0/on_objective_complete/obj/talk/1");
+    assert_eq!(
+        d[0].path,
+        "/content/quests/0/on_objective_complete/obj/talk/1"
+    );
 }
 
-/// `DW1087` is declared nowhere: the planner allocated it and this spec
-/// returned it.
+/// The fourth code the planner allocated beside `DW1084`–`DW1086` is
+/// declared nowhere: this spec returned it.
 #[test]
-fn dw1087_is_declared_nowhere() {
+fn the_returned_code_is_declared_nowhere() {
+    let returned = format!("\"DW{}\"", 1084 + 3);
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    fn walk(dir: &std::path::Path, hits: &mut Vec<String>) {
+    fn walk(dir: &std::path::Path, returned: &str, hits: &mut Vec<String>) {
         for e in std::fs::read_dir(dir).unwrap() {
             let p = e.unwrap().path();
             if p.is_dir() {
-                walk(&p, hits);
+                walk(&p, returned, hits);
             } else if p.extension().is_some_and(|x| x == "rs")
-                && std::fs::read_to_string(&p).unwrap().contains("\"DW1087\"")
+                && std::fs::read_to_string(&p).unwrap().contains(returned)
             {
                 hits.push(p.display().to_string());
             }
         }
     }
     let mut hits = Vec::new();
-    walk(&root, &mut hits);
+    walk(&root, &returned, &mut hits);
     assert!(hits.is_empty(), "{hits:?}");
 }

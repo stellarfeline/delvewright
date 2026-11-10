@@ -142,7 +142,7 @@ fn a_limited_objective_settles_done_or_expired() {
     // Completion settles it and clears the clock.
     let done = func(&out, "complete_o_exit");
     assert!(
-        done.contains("scoreboard players set #party dw.s_exit 1"),
+        done.contains("scoreboard players set #party dw.os_exit 1"),
         "{done}"
     );
     assert!(
@@ -164,7 +164,7 @@ fn a_limited_objective_settles_done_or_expired() {
         "{settle}"
     );
     assert!(
-        settle.contains("scoreboard players set #party dw.s_exit 1"),
+        settle.contains("scoreboard players set #party dw.os_exit 1"),
         "{settle}"
     );
     let marker = line_of(&settle, &format!("[dw:expired {NS} obj/exit]"));
@@ -185,7 +185,7 @@ fn a_limited_objective_settles_done_or_expired() {
     // The quest counts the expired objective as settled.
     let check = func(&out, "check_q_open_the_door");
     assert!(
-        check.contains("if score #party dw.s_exit matches 1"),
+        check.contains("if score #party dw.os_exit matches 1"),
         "{check}"
     );
     // Every driver of the objective reads the expired score.
@@ -222,7 +222,7 @@ fn an_objective_after_a_limited_one_opens_on_either_settlement() {
         .find(|l| l.contains("run function hello-world:complete_o_exit"))
         .unwrap_or_else(|| panic!("no exit driver in\n{tick}"));
     assert!(
-        exit_driver.contains("if score #party dw.s_talk matches 1"),
+        exit_driver.contains("if score #party dw.os_talk matches 1"),
         "the dependent's `after` term reads the settled score: {exit_driver}"
     );
     // A talk-to's completing dialogue option is closed by its expiry too.

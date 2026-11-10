@@ -25,11 +25,11 @@ pub(super) fn expired_score(oid: &str) -> String {
 }
 
 /// The scoreboard objective marking a limited objective **settled** — done or
-/// expired (party holder). Every reading of "`after` this objective" and the
+/// expired (party holder). `dw.os_`, because `dw.s_` is a datum's. Every reading of "`after` this objective" and the
 /// quest's completion check read it in place of the objective's done score,
 /// so both settlements let the line go on.
 pub(super) fn settled_score(oid: &str) -> String {
-    format!("dw.s_{}", plan::safe_local(oid))
+    format!("dw.os_{}", plan::safe_local(oid))
 }
 
 /// The score an `after` term or a quest's completion check reads for `oid`:
