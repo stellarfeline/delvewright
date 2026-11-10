@@ -1,0 +1,15 @@
+{
+  "code": "DW1085",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/3/objectives/0/limit",
+      "value": {
+        "ticks": 600
+      }
+    }
+  ],
+  "units": [],
+  "why": "A window of 600 ticks put on the untitled arrival at the long hall's porch, and nothing else changed. Nothing announces that objective, so the party would race a clock on a task they were never told about; the countdown bar would carry no name. Refused at the objective's `limit`, naming it, with the remedy: give it a title and show its announcement, or drop the limit."
+}

@@ -21,7 +21,7 @@ import {
 function pathWith(watchers: unknown): Record<string, unknown> {
   return {
     version: "fixture",
-    format_version: 6,
+    format_version: 7,
     campaign_id: "gallery",
     non_combatants: { kinds: ["villager"], ambiguous: [], examined: 1, unbound: false },
     steps: [

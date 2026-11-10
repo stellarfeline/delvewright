@@ -5,9 +5,71 @@ use serde::{Deserialize, Serialize};
 
 use crate::serde_fields::{is_false, is_zero};
 use crate::{
-    AnchorId, FlagId, Guidance, Happening, Highlight, NpcId, ObjectiveId, Prop, StateCompare,
-    Visibility, WaveId,
+    AnchorId, FlagId, Guidance, Happening, Highlight, NpcId, ObjectiveId, Prop, QuestEffect,
+    StateCompare, Visibility, WaveId,
 };
+
+/// The fewest ticks a `limit` may run (one second).
+pub const LIMIT_MIN_TICKS: u32 = 20;
+/// The most ticks a `limit` may run (the ten-hour ceiling of a delve).
+pub const LIMIT_MAX_TICKS: u32 = 720_000;
+
+/// **An objective's window** (spec-0133 §2): how long it stays open, the event
+/// its clock starts at, and what its expiry does.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Limit {
+    /// The window in game ticks, `20..=720000` (one second to the ten-hour
+    /// ceiling of a delve). The player sees minutes and seconds.
+    #[schemars(range(min = 20, max = 720000))]
+    pub ticks: u32,
+    /// The event the clock starts at. Absent = [`LimitFrom::Activation`].
+    #[serde(default, skip_serializing_if = "LimitFrom::is_activation")]
+    pub from: LimitFrom,
+    /// What expiry fires, as the party (`Audience::Party`): an effect root of
+    /// its own. Optional; when present, at least one effect (`DW0100`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(length(min = 1))]
+    pub on_expire: Option<Vec<QuestEffect>>,
+}
+
+impl Limit {
+    /// The `on_expire` bundle, empty when none is declared.
+    pub fn on_expire(&self) -> &[QuestEffect] {
+        self.on_expire.as_deref().unwrap_or(&[])
+    }
+}
+
+/// **The event a limit's clock starts at** (spec-0133 §2).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum LimitFrom {
+    /// The tick the objective's told guard first holds — it activates.
+    #[default]
+    Activation,
+    /// The tick the objective's quest activates.
+    QuestStart,
+    /// The activation of an earlier objective of the same quest, one of the
+    /// limited objective's `after`-ancestors (`DW1086`).
+    Objective(ObjectiveId),
+}
+
+impl LimitFrom {
+    /// Whether this is the default start.
+    pub fn is_activation(&self) -> bool {
+        matches!(self, LimitFrom::Activation)
+    }
+
+    /// The token a reader names the start by: `activation`, `quest-start`, or
+    /// the named objective's id.
+    pub fn token(&self) -> String {
+        match self {
+            LimitFrom::Activation => "activation".to_string(),
+            LimitFrom::QuestStart => "quest-start".to_string(),
+            LimitFrom::Objective(o) => o.as_str().to_string(),
+        }
+    }
+}
 
 /// A quest objective.
 ///
@@ -73,6 +135,12 @@ pub enum Objective {
         /// at 0.8.0, `DW0481`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         happening: Option<Happening>,
+        /// **The window this objective is open for** (spec-0133): absent, it
+        /// stays pending until its act; present, it settles **expired** when
+        /// the clock runs out first — `on_expire` fires instead of the
+        /// completion bundle, and its `after`-dependents and its quest go on.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        limit: Option<Limit>,
     },
     /// Completed by reaching an anchor once prerequisites are met.
     ReachAnchor {
@@ -127,6 +195,12 @@ pub enum Objective {
         /// at 0.8.0, `DW0481`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         happening: Option<Happening>,
+        /// **The window this objective is open for** (spec-0133): absent, it
+        /// stays pending until its act; present, it settles **expired** when
+        /// the clock runs out first — `on_expire` fires instead of the
+        /// completion bundle, and its `after`-dependents and its quest go on.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        limit: Option<Limit>,
     },
     /// Completed when the referenced wave is fully slain (v0.3).
     Kill {
@@ -184,6 +258,12 @@ pub enum Objective {
         /// at 0.8.0, `DW0481`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         happening: Option<Happening>,
+        /// **The window this objective is open for** (spec-0133): absent, it
+        /// stays pending until its act; present, it settles **expired** when
+        /// the clock runs out first — `on_expire` fires instead of the
+        /// completion bundle, and its `after`-dependents and its quest go on.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        limit: Option<Limit>,
     },
     /// Completed when `count` of `item` have been collected (v0.3).
     ///
@@ -336,6 +416,12 @@ pub enum Objective {
         /// at 0.8.0, `DW0481`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         happening: Option<Happening>,
+        /// **The window this objective is open for** (spec-0133): absent, it
+        /// stays pending until its act; present, it settles **expired** when
+        /// the clock runs out first — `on_expire` fires instead of the
+        /// completion bundle, and its `after`-dependents and its quest go on.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        limit: Option<Limit>,
     },
     /// Completed by interacting with an entity at `anchor`; if `requires_item` is
     /// set, the item must be **held in the main hand** (v0.3; held semantics since
@@ -439,6 +525,12 @@ pub enum Objective {
         /// at 0.8.0, `DW0481`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         happening: Option<Happening>,
+        /// **The window this objective is open for** (spec-0133): absent, it
+        /// stays pending until its act; present, it settles **expired** when
+        /// the clock runs out first — `on_expire` fires instead of the
+        /// completion bundle, and its `after`-dependents and its quest go on.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        limit: Option<Limit>,
     },
 }
 
@@ -772,6 +864,29 @@ impl Objective {
             | Objective::Kill { happening, .. }
             | Objective::Collect { happening, .. }
             | Objective::Interact { happening, .. } => happening.as_ref(),
+        }
+    }
+
+    /// The objective's window (spec-0133), when it declares one.
+    pub fn limit(&self) -> Option<&Limit> {
+        match self {
+            Objective::TalkTo { limit, .. }
+            | Objective::ReachAnchor { limit, .. }
+            | Objective::Kill { limit, .. }
+            | Objective::Collect { limit, .. }
+            | Objective::Interact { limit, .. } => limit.as_ref(),
+        }
+    }
+
+    /// Mutable access to the objective's window (i18n localization of its
+    /// `on_expire`).
+    pub fn limit_mut(&mut self) -> Option<&mut Limit> {
+        match self {
+            Objective::TalkTo { limit, .. }
+            | Objective::ReachAnchor { limit, .. }
+            | Objective::Kill { limit, .. }
+            | Objective::Collect { limit, .. }
+            | Objective::Interact { limit, .. } => limit.as_mut(),
         }
     }
 

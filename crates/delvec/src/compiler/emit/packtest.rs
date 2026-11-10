@@ -24,6 +24,7 @@ mod lane;
 mod lethal;
 pub(super) use lethal::emitted_lethal_templates;
 mod lightning;
+mod limit;
 mod r#loop;
 mod loot;
 mod music;
@@ -221,6 +222,8 @@ pub(super) fn emit_packtest(
     shortcut::emit_shortcut_packtest(plan, out);
     // spec-0016 §4: the clock really alternates the gate region.
     timed_gate::emit_timed_gate_packtest(plan, out);
+    // spec-0133 §8: every limit expires at its tick and never after a done.
+    limit::emit_limit_packtests(plan, out);
     // Per-object bodies whose family the suite claims whole (DW0811): every
     // declared wave's own kill reward, every declared objective's own activation,
     // every declared class's own apply. Each emits nothing for a campaign that
@@ -684,7 +687,7 @@ fn packtest_guards(plan: &Plan, quest_id: &str, o: &Objective, with_flags: bool)
     for a in o.after() {
         p.push(format!(
             "scoreboard players set {party} {} 1",
-            obj_score(a.as_str())
+            after_score(plan.campaign, a.as_str())
         ));
     }
     p.extend(packtest_gate_drive(plan, o.gate(), with_flags));

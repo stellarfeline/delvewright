@@ -119,7 +119,7 @@ pub(super) fn emit_party_join_packtests(plan: &Plan, out: &mut BuildOutput) {
             for prereq in ao.after() {
                 baseline.push(format!(
                     "scoreboard players set {party} {} 1",
-                    obj_score(prereq.as_str())
+                    after_score(c, prereq.as_str())
                 ));
             }
             baseline.push(format!(

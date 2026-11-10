@@ -85,3 +85,14 @@ The entry leaves out documentation, tests and release machinery, which change no
 - The place handout reads every cast shape the DSL accepts.
 
 The entry leaves out the release machinery itself, which changes nothing in what a creator does.
+
+## delvewright-dsl 0.72.0
+
+### Highlights
+
+- An objective can carry a time limit: the task is done in time or lost, and the story goes on either way.
+
+### Added
+
+- Every objective kind takes `limit {ticks, from, on_expire}`: a window in game ticks, started at the objective's activation, its quest's start or an earlier objective's activation, whose expiry fires `on_expire` in place of the completion.
+- The `despawn-wave` verb removes a wave's standing bodies unseen.

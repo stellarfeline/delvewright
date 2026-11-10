@@ -387,6 +387,7 @@ fn root_words(root: &EffectRoot<'_>) -> String {
         EffectRoot::OnKill(_) => "an `on_kill` bundle".to_string(),
         EffectRoot::AssemblyLand(m) => format!("assembly `{}`'s strike landing", m.id.as_str()),
         EffectRoot::LoopCross(l) => format!("loop `{}`'s `on_cross`", l.id.as_str()),
+        EffectRoot::ObjectiveExpire { objective, .. } => format!("the expiry of `{objective}`"),
     }
 }
 

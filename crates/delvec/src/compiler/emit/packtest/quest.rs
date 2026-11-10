@@ -223,6 +223,16 @@ fn campaign_progression_baseline(c: &delvewright_dsl::Campaign, comp_obj: &str) 
                 "scoreboard players set {party} {} 0",
                 obj_score(o.id().as_str())
             ));
+            // spec-0133: a limited objective's two settlement scores start
+            // clear, as a fresh delve's do.
+            if o.limit().is_some() {
+                for s in [
+                    expired_score(o.id().as_str()),
+                    settled_score(o.id().as_str()),
+                ] {
+                    b.push(format!("scoreboard players set {party} {s} 0"));
+                }
+            }
         }
     }
     for qid in campaign_start_quests(c) {

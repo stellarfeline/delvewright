@@ -1,0 +1,20 @@
+{
+  "code": "DW1086",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/1/objectives/2/limit",
+      "value": {
+        "from": {
+          "objective": "obj/take-the-bone"
+        },
+        "ticks": 600
+      }
+    }
+  ],
+  "units": [
+    "Objective::collect.limit"
+  ],
+  "why": "The muster's bone given a window whose clock starts at the taking itself, and nothing else changed. A clock started by the objective it closes starts once that objective is already open, so it measures nothing the party is told; a start is one of the objective's own `after` ancestors, or its activation. Refused at `limit.from`, naming the objective, with the remedy: name an ancestor, or use `activation`. It declares `Objective::collect.limit`: a `collect` takes a `limit` exactly as the primary's `reach-anchor` does, one field of every objective kind, and this is where the `collect` form is written."
+}

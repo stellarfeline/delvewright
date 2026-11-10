@@ -2327,7 +2327,8 @@ pub fn plans_worlds(c: &Campaign) -> bool {
         return true;
     }
     let flow = Flow::new(c);
-    !flow.story().relevant.is_empty()
+    // spec-0133 §5: every expiry is a world, whether or not an ending reads it.
+    !flow.story().relevant.is_empty() || flow.electives().iter().any(|e| e.kind == "expiry")
 }
 
 /// The spec-0025/spec-0108 validation artifacts: `validation/branch-plan.json`,

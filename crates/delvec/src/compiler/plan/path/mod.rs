@@ -190,6 +190,26 @@ pub enum Step {
         /// The same terms as the act leaves them.
         after: Vec<GateTerm>,
     },
+    /// **Let a limited objective lapse** (spec-0133 §8): walk to `pos`, perform
+    /// nothing, and pass on the objective's `[dw:expired …]` marker. Stands
+    /// where the objective's own step stands in the order, in a story world
+    /// that expires it.
+    Expire {
+        /// The `obj/<id>` this step lets expire.
+        objective_id: String,
+        /// The most ticks the harness waits for the marker: the window, a
+        /// ceiling on what is left of it when the step begins.
+        wait_ticks: u32,
+        /// Where the party waits: the cell the party already stands on, as the
+        /// path left it ([`Self::stand`] once the route proof has refined it).
+        pos: [i32; 3],
+        /// Volumes a body waiting here must stay out of: the objective's own
+        /// completion volume, when it has one.
+        avoid: Vec<crate::compiler::reach::KeepOut>,
+        /// For a `kill`: the wave's anchor and the range its bodies notice a
+        /// player from, which the wait stands outside.
+        aggro: Option<([i32; 3], f64)>,
+    },
     /// Assert a scoreboard objective value.
     AssertComplete {
         /// The objective (`dw.campaign`).
@@ -210,7 +230,8 @@ impl Step {
             | Step::Reach { objective_id, .. }
             | Step::Kill { objective_id, .. }
             | Step::Collect { objective_id, .. }
-            | Step::Interact { objective_id, .. } => Some(objective_id.as_str()),
+            | Step::Interact { objective_id, .. }
+            | Step::Expire { objective_id, .. } => Some(objective_id.as_str()),
             Step::SelectClass { .. }
             | Step::AssertComplete { .. }
             | Step::Trigger { .. }
@@ -234,6 +255,7 @@ impl Step {
             | Step::Collect { pos, .. }
             | Step::Interact { pos, .. }
             | Step::Trigger { pos, .. }
+            | Step::Expire { pos, .. }
             | Step::Loop { pos, .. } => Some(*pos),
             Step::SelectClass { .. } | Step::AssertComplete { .. } | Step::Mock { .. } => None,
         }
@@ -294,6 +316,8 @@ impl Step {
             }
             | Step::Kill { .. }
             | Step::Loop { .. }
+            // A lapse completes nothing, wherever the party stands.
+            | Step::Expire { .. }
             | Step::SelectClass { .. }
             | Step::Mock { .. }
             | Step::AssertComplete { .. } => false,
@@ -381,9 +405,16 @@ pub fn completed_on_landing(walked: &[Step], transports: &[Option<[i32; 3]>], i:
 ///   is pursued cannot be walked under the pursuit rule, and a bot that guessed
 ///   would be the compiler's knowledge written where it cannot be right.
 ///
+/// * `7` — a step may be `expire` (spec-0133 §8): `{objective, wait_ticks,
+///   stand}` — walk to `stand`, perform nothing, and pass on the objective's
+///   anchored `[dw:expired …]` marker within `wait_ticks` and the ordinary
+///   grace. A format change for `6`'s reason: a format-6 bot handed one would
+///   refuse a step kind it does not know, and one that guessed would perform
+///   the act the step is there to let lapse.
+///
 /// The harness **requires** the current version: an older `critical-path.json`
 /// (which it cannot verify) is rejected rather than run hollow.
-pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 6;
+pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 7;
 
 impl<'a> Plan<'a> {
     /// The EXECUTABLE critical path of one enumerated branch (spec-0025 §3).
@@ -1025,7 +1056,40 @@ pub(super) fn build_critical_path(
             continue;
         };
         let before = steps.len();
-        {
+        // spec-0133 §8: in a story world that expires this objective, the step
+        // is a wait where the party already stands, passed on the expiry marker.
+        if path.expires(&st.objective) {
+            let pos = steps
+                .iter()
+                .rev()
+                .find_map(Step::pos)
+                .or_else(|| start.map(|(_, p)| *p))
+                .unwrap_or([0, 0, 0]);
+            let avoid = match obj {
+                Objective::ReachAnchor { anchor, radius, .. } => {
+                    let at = point_of(anchors, area, anchor.as_str())?;
+                    vec![crate::compiler::reach::KeepOut {
+                        objective: st.objective.clone(),
+                        completion: reach_completion(at, *radius),
+                    }]
+                }
+                _ => Vec::new(),
+            };
+            let aggro = match obj {
+                Objective::Kill { wave, .. } => wave_of(campaign, wave.as_str())
+                    .and_then(|w| point_of(anchors, area, w.anchor.as_str()).ok())
+                    .map(|at| (at, f64::from(crate::compiler::nav::DEFAULT_FOLLOW_RANGE))),
+                _ => None,
+            };
+            steps.push(Step::Expire {
+                objective_id: st.objective.clone(),
+                wait_ticks: obj.limit().map_or(0, |l| l.ticks),
+                pos,
+                avoid,
+                aggro,
+            });
+            obj_areas.push((st.objective.clone(), area.to_string(), steps.len() - 1));
+        } else {
             match obj {
                 Objective::TalkTo { id, npc, .. } => {
                     let npc_plan =

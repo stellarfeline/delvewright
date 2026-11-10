@@ -69,6 +69,34 @@ export function markerLine(campaignId: string, token: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// The EXPIRY channel (spec-0133 §3)
+// ---------------------------------------------------------------------------
+//
+// A limited objective whose clock runs out first is settled **expired**, and the
+// compiler broadcasts the completion channel's grammar with a second token, the
+// instant it does:
+//
+//     [dw:expired <campaign-id> obj/<kebab>]
+//
+// Same sigil, same whole-line match, same three unforgeability properties. An
+// `expire` step passes on this line alone.
+
+const EXPIRED_RE =
+  /^\[dw:expired ([a-z0-9]+(?:-[a-z0-9]+)*) (obj\/[a-z0-9]+(?:-[a-z0-9]+)*)\]$/;
+
+/** Parse one chat line as an expiry marker, or `undefined`. Whole-line, strict. */
+export function parseExpiredMarker(line: string): CompletionMarker | undefined {
+  const match = EXPIRED_RE.exec(line);
+  if (!match) return undefined;
+  return { campaignId: match[1]!, token: match[2]! };
+}
+
+/** Render an expiry marker line, mirroring `plan::expired_marker_line`. */
+export function expiredMarkerLine(campaignId: string, objective: string): string {
+  return `[dw:expired ${campaignId} ${objective}]`;
+}
+
+// ---------------------------------------------------------------------------
 // The wave CENSUS channel
 // ---------------------------------------------------------------------------
 //

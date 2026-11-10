@@ -8,7 +8,7 @@ import { GameTimeStoppedError, STOPPED_CLOCK_MS } from "../src/game-time.ts";
 import { LOOP_BARREN_TRIPS, LOOP_MOVE_TICKS, LoopNotMovedError, LoopWalkBarrenError } from "../src/loop-cross.ts";
 import { MineflayerExecutor, completionWindowMs, respawnLanded, type BotConfig } from "../src/executor.ts";
 import { BotDeathError } from "../src/death.ts";
-import type { AssertCompleteStep } from "../src/critical-path.ts";
+import type { AssertCompleteStep, ExpireStep } from "../src/critical-path.ts";
 import {
   SUPPORTED_DEATH_PLAN_FORMAT,
   deathLoopBinding,
@@ -6282,4 +6282,71 @@ test("stageAway and holdFullHealth return without acting while a pursued step ru
   assert.match(executor.pursuedStep.refusals[0]!, /staging warden#12 away/);
   assert.match(executor.pursuedStep.refusals[1]!, /holding full health/);
   assert.match(executor.pursuedStep.refusals[2]!, /refunding 6\.0 health warden#12 took/);
+});
+
+// --- spec-0133 §8: a limited objective let lapse ----------------------------------
+
+/** A fake bot that logs every act a waiting bot must not perform. */
+function lapseBot(log: string[]): FakeBot {
+  const bot = new FakeBot();
+  Object.assign(bot, {
+    chat: (m: string) => log.push(`chat ${m}`),
+    activateBlock: () => log.push("use"),
+    activateEntity: () => log.push("use"),
+    activateItem: () => log.push("use"),
+    attack: () => log.push("attack"),
+  });
+  return bot;
+}
+
+function lapseExecutor(bot: FakeBot, log: string[]): MineflayerExecutor {
+  const executor = attach(bot);
+  executor.campaignId = "hello-world";
+  (executor as unknown as { walkTo: (p: readonly number[]) => Promise<void> }).walkTo = async (
+    p: readonly number[],
+  ) => {
+    log.push(`walk ${p.join(",")}`);
+  };
+  return executor;
+}
+
+const lapse: ExpireStep = {
+  action: "expire",
+  objective: "obj/exit",
+  waitTicks: 20,
+  stand: [4, 65, 4],
+  pos: [4, 65, 4],
+};
+
+test("an expire step passes on its expiry marker, having done nothing but walk", async () => {
+  const log: string[] = [];
+  const bot = lapseBot(log);
+  const executor = lapseExecutor(bot, log);
+  const run = executor.expire(lapse);
+  setTimeout(() => bot.emit("messagestr", "[dw:expired hello-world obj/exit]"), 50);
+  await within("the expiry wait", run);
+  assert.deepEqual(log, ["walk 4,65,4"]);
+  assert.equal(executor.expireWaits.length, 1);
+  assert.equal(executor.expireWaits[0]!.passed, true);
+});
+
+test("an expire step whose objective completes first fails by name", async () => {
+  const log: string[] = [];
+  const bot = lapseBot(log);
+  const executor = lapseExecutor(bot, log);
+  const run = executor.expire(lapse);
+  setTimeout(() => bot.emit("messagestr", "[dw:complete hello-world obj/exit]"), 50);
+  await assert.rejects(within("the expiry wait", run), /completed the objective it was to let lapse/);
+  assert.deepEqual(log, ["walk 4,65,4"]);
+});
+
+test("an expiry marker for another campaign or another objective is not this step's", async () => {
+  const log: string[] = [];
+  const bot = lapseBot(log);
+  const executor = lapseExecutor(bot, log);
+  bot.emit("messagestr", "[dw:expired other-delve obj/exit]");
+  bot.emit("messagestr", "[dw:expired hello-world obj/talk]");
+  bot.emit("messagestr", "x [dw:expired hello-world obj/exit]");
+  assert.equal(executor.expiredObjectives.has("obj/exit"), false);
+  assert.equal(executor.expiredObjectives.has("obj/talk"), true);
 });

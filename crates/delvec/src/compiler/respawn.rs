@@ -486,9 +486,9 @@ fn site_effects(plan: &Plan) -> Vec<Sited> {
     let mut bundle = 0usize;
     crate::compiler::plan::for_each_effect_root(plan.campaign, &mut |site, list| {
         let (root, gate) = match site.root {
-            EffectRoot::ObjectiveComplete { .. } | EffectRoot::QuestComplete(_) => {
-                (Root::Quest, Vec::new())
-            }
+            EffectRoot::ObjectiveComplete { .. }
+            | EffectRoot::QuestComplete(_)
+            | EffectRoot::ObjectiveExpire { .. } => (Root::Quest, Vec::new()),
             EffectRoot::Trigger(t) => (
                 Root::Trigger {
                     id: t.id.as_str().to_string(),

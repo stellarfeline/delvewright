@@ -1982,6 +1982,34 @@
             },
             "hint": "Up the flight, once its treads are back.",
             "id": "obj/climb-the-loft",
+            "limit": {
+              "from": "activation",
+              "on_expire": [
+                {
+                  "style": "chat",
+                  "text": "Above you the mezzanine's lamps go out one by one; the loft is shut for the night.",
+                  "type": "narrate"
+                },
+                {
+                  "flag": "flag/loft-went-dark",
+                  "happening": {
+                    "text": "the loft goes dark before the party climbs to it",
+                    "verb": "seals"
+                  },
+                  "type": "set-flag"
+                },
+                {
+                  "happening": {
+                    "subject": "wave/lane",
+                    "text": "the lane's patrol is called off",
+                    "verb": "departs"
+                  },
+                  "type": "despawn-wave",
+                  "wave": "wave/lane"
+                }
+              ],
+              "ticks": 700
+            },
             "radius": 1,
             "requires_flags": [
               "flag/muster-cleared",
@@ -2281,6 +2309,16 @@
               }
             ],
             "type": "cutscene"
+          },
+          {
+            "style": "chat",
+            "text": "The mezzanine stayed dark behind you; nobody climbed to it in time.",
+            "type": "narrate",
+            "when": {
+              "requires_flags": [
+                "flag/loft-went-dark"
+              ]
+            }
           }
         ],
         "on_objective_complete": {
@@ -5156,6 +5194,6 @@
       }
     ]
   },
-  "dsl_version": "0.71.0",
+  "dsl_version": "0.72.0",
   "stage": "quests"
 }

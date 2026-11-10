@@ -2,7 +2,7 @@
 
 import type { AssertCompleteStep } from "../critical-path.ts";
 import { aftermathFailures, blockReading, observeAftermath } from "../aftermath.ts";
-import { CAMPAIGN_TOKEN, markerLine, parseCompletionMarker } from "../markers.ts";
+import { CAMPAIGN_TOKEN, markerLine, parseCompletionMarker, parseExpiredMarker } from "../markers.ts";
 import { delay, fmt } from "./connection.ts";
 import { SCORE_POLL_MS } from "./score.ts";
 import { swallowedTriggerVerdict } from "./trigger.ts";
@@ -72,6 +72,13 @@ export const methods = {
    * not relabel when an objective actually completed.
    */
   observeMarker(this: MineflayerExecutor, message: string): void {
+    const expired = parseExpiredMarker(message);
+    if (expired && expired.campaignId === this.campaignId) {
+      if (!this.expiredObjectives.has(expired.token)) {
+        this.expiredObjectives.set(expired.token, this.currentStep);
+      }
+      return;
+    }
     const marker = parseCompletionMarker(message);
     if (!marker || marker.campaignId !== this.campaignId) return;
     this.observeCueMarker(marker.token);

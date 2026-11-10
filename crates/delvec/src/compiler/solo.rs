@@ -120,6 +120,11 @@ pub fn isolate(ns: &str, out: &mut BTreeMap<String, Vec<u8>>) -> SoloBinding {
         solo: Vec::new(),
     };
     for (name, body) in &templates {
+        // A template that already runs in an environment of its own (a limit's,
+        // spec-0133 §8) is alone already.
+        if body.lines().any(|l| l.starts_with("# @environment ")) {
+            continue;
+        }
         let mut witness = own_take(body).map(|l| format!("{name}: {l}"));
         if witness.is_none() {
             let mut seen: BTreeSet<String> = BTreeSet::new();

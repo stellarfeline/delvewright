@@ -66,7 +66,10 @@ fn every_exported_index_a_harness_document_states_is_the_step_it_names() {
     // spec-0132 §5.3: format 6 — every exported step says which bodies it is
     // walked beside, and the gallery's porch warden is the pursuer of exactly
     // the one step that runs the long hall.
-    assert_eq!(path["format_version"], serde_json::json!(6));
+    assert_eq!(
+        path["format_version"],
+        serde_json::json!(delvec::compiler::plan::CRITICAL_PATH_FORMAT_VERSION)
+    );
     let pursued: Vec<usize> = steps
         .iter()
         .enumerate()

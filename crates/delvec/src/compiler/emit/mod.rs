@@ -60,6 +60,7 @@ mod holders;
 mod lane;
 mod lethal;
 mod lightning;
+mod limit;
 mod r#loop;
 mod loot;
 mod manifest;
@@ -116,6 +117,7 @@ use holders::*;
 use lane::*;
 use lethal::*;
 use lightning::*;
+use limit::*;
 use r#loop::*;
 use loot::*;
 use manifest::*;
@@ -1694,8 +1696,25 @@ fn emit_all(
     // A branch's scripted dialogue choices ride inside its own `talk-to` steps
     // (each carries the `/trigger` line of the option belonging to that branch),
     // which is the only player-legal way to actuate a server-driven dialog button.
+    // spec-0133 §6: every limit measured against the walk the critical path
+    // proves, and the expiry worlds' waits summed below.
+    let (mut limit_binding, limit_verdict) =
+        crate::compiler::nav::judge_limits(plan, exported_routes);
+    let mut expired_in_paths: BTreeSet<String> = BTreeSet::new();
     for (slug, mut path) in branch_paths(plan, &moves, &actor_moves, &branch_takes, &path_legs)? {
         annotate_holder_steps(&mut path, &holder_step_hints);
+        for e in path["steps"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|s| s["action"] == "expire")
+        {
+            limit_binding.wait_ticks += e["wait_ticks"].as_u64().unwrap_or(0);
+            if let Some(o) = e["objective"].as_str() {
+                expired_in_paths.insert(o.to_string());
+            }
+            limit_binding.expiry_worlds += 1;
+        }
         // spec-0108 §6.5: a mock runs exactly the engine's own function for its
         // act's bundle — one this datapack ships, or the build is wrong.
         for m in path["steps"]
@@ -1737,6 +1756,20 @@ fn emit_all(
             &path,
         );
     }
+    limit_binding.unproven = limit_binding
+        .rows
+        .iter()
+        .map(|r| r.objective.clone())
+        .filter(|o| !expired_in_paths.contains(o))
+        .collect();
+    crate::note!("{}", limit_binding.line());
+    if !limit_binding.rows.is_empty() {
+        put_json(&mut out, "validation/limit.json", &limit_binding.to_json());
+    }
+    limit_verdict.map_err(|f| BuildFailure::Diagnostic {
+        code: f.code,
+        message: f.message,
+    })?;
     // ...and each reachable branch's own waypoint artifact, derived
     // in the world block above from the same assembled model its per-branch
     // DW0311 proof ran over. The harness derives the name from the branch's
