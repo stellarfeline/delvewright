@@ -50,6 +50,7 @@ fn prefabs(tag: &str) -> PathBuf {
     meta["anchors"]["anchor/pillar"] = serde_json::json!({ "pos": [1, 1, 1] });
     meta["anchors"]["anchor/pillar-top"] = serde_json::json!({ "pos": [1, 3, 1] });
     meta["anchors"]["anchor/plank"] = serde_json::json!({ "pos": [9, 1, 9] });
+    meta["anchors"]["anchor/pulse"] = serde_json::json!({ "pos": [9, 1, 5] });
     std::fs::write(&path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
     dir
 }
@@ -102,12 +103,16 @@ fn quests() -> String {
 }
 
 fn campaign() -> Campaign {
+    campaign_over(&quests())
+}
+
+fn campaign_over(quests: &str) -> Campaign {
     parse_campaign(&RawCampaign {
         world: hw("world.json"),
         npcs: hw("npcs.json"),
         classes: hw("classes.json"),
         quest_plan: hw("quest-plan.json"),
-        quests: quests(),
+        quests: quests.to_string(),
         dialogue: hw("dialogue.json"),
         world_edits: None,
         geometry_brief: None,
@@ -139,10 +144,17 @@ fn cam(name: &str, after: Option<&str>) -> camera::Camera {
 
 /// Where every camera stands, and the worlds they stand in, for the fixture.
 fn stands(tag: &str, cams: &[camera::Camera]) -> Result<(beat::Stands, BlockMap), String> {
+    stands_in(tag, &campaign(), cams)
+}
+
+fn stands_in(
+    tag: &str,
+    c: &Campaign,
+    cams: &[camera::Camera],
+) -> Result<(beat::Stands, BlockMap), String> {
     let lib = prefabs(tag);
-    let c = campaign();
     let reg = PrefabRegistry::load_dir(&lib).unwrap();
-    let plan = Plan::build(&c, &reg).expect("plan builds");
+    let plan = Plan::build(c, &reg).expect("plan builds");
     let structures = common::plan_structures_with_trap_triggers(&plan, &lib);
     let assembled = delvec::compiler::assembled::assemble(&plan, &structures);
     let world = delvec::compiler::nav::World::from_occupancy(
@@ -255,6 +267,43 @@ fn a_camera_after_a_step_holds_what_the_proofs_hold_there() {
     let after_exit = &stood.stands[2];
     assert_eq!(after_exit.unforced, 1, "the plank is counted as not laid");
     assert!(after_exit.cells_moved > 0);
+}
+
+/// **A block only a pressed button writes is in no world** (`DW0955`). A
+/// trigger's `set-block` lays a redstone block beside a bell for a few ticks and
+/// clears it; the party presses the button, or does not, so the world at load
+/// and every world a camera stands in hold air there, as the server does. The
+/// walk still takes the cell as written (the region model is unchanged).
+#[test]
+fn a_block_only_a_pressed_button_writes_is_in_no_world() {
+    let mut doc: serde_json::Value = serde_json::from_str(&quests()).unwrap();
+    doc["content"]["triggers"] = serde_json::json!([{
+        "id": "trigger/ring",
+        "at": "anchor/exit",
+        "on": { "on": "use" },
+        "prop": { "block": "minecraft:stone_button[face=floor,facing=east,powered=false]" },
+        "answers": { "done": "Already done." },
+        "effects": [
+            { "type": "set-block", "anchor": "anchor/pulse", "block": "minecraft:redstone_block" },
+            { "type": "sequence", "steps": [ { "at_ticks": 4, "effects": [
+                { "type": "set-block", "anchor": "anchor/pulse", "block": "minecraft:air" }
+            ] } ] }
+        ]
+    }]);
+    let c = campaign_over(&doc.to_string());
+    let cams = [cam("before", None), cam("after-exit", Some("obj/exit"))];
+    let (stood, _) = stands_in("pressed", &c, &cams).expect("every camera stands somewhere");
+    for (key, name) in [("at-load", "load"), ("after-obj-exit", "exit")] {
+        let map = &stood.worlds.iter().find(|(k, _)| k == key).unwrap().1;
+        let (_, back) = write("pressed", key, map);
+        assert_ne!(
+            base_name(back.get("9,65,5")),
+            Some("minecraft:redstone_block"),
+            "the {name} world holds a block only a pressed button writes"
+        );
+        // The control: the world is the fixture's, not an empty one.
+        assert!(!back.is_empty(), "the {name} world is the fixture's");
+    }
 }
 
 /// **Criterion 2's second half**: no site of `crates/delvec/src` lays a region

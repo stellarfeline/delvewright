@@ -2570,15 +2570,9 @@
     },
     {
       "applies_when": {
-        "files": [
-          "quests.json"
-        ],
-        "kind": "dsl",
-        "match": {
-          "prefix": {
-            "id": "actor/"
-          }
-        }
+        "contains": "\"equipment\"\\s*:",
+        "glob": "[!.]*.json",
+        "kind": "campaign"
       },
       "binding": {
         "files": [
@@ -2599,7 +2593,7 @@
       "finding": "the equipment block a body wears names six slots and the pinned game has eight, so no campaign can bard a horse or saddle one",
       "general_form": "the equipment block names every equipment slot the pinned game declares, held as the game's own eight-slot set (`EquipSlot::ALL`, the values the `minecraft:equippable` component's `slot` takes) and cross-checked against the pinned item registry: every `slot` value an item declares must be in the set, so a slot the game gains and an item uses reds the day the data is re-pinned, and `mainhand`, which no item declares, is in the set because the game names it; and a piece is refused where the pinned game would store it and never show it on the body that wears it (DW0898)",
       "id": "doune-04",
-      "note": "Re-measured on the tree this row lands on: the engine at this branch's merge commit `f34a93be1588e1a297488a684e59c927cd1e4146`, against the released campaign at content `73182027db05e14d3a52a39e0c30fabd9025b9c0`. The game's side is unmoved: `crates/delvec/data/PROVENANCE.md` still pins `item_components/data.min.json` at sha-256 `51b191e13f86813ca02f1498942e5bc235947edb71eb8105a78401670b3665c4` — byte-identical across the merge (`git diff` over that file between this branch's pre-merge head and the merge commit is empty) — so the 8-slot/84-item registry fact the original reproduction read from it stands. The engine's side reproduces in the identical words: writing `body`/`saddle` into `actor/captain`'s equipment is refused at DW0100 — `unknown field `body`/`saddle`, expected one of `head`, `chest`, `legs`, `feet`, `main_hand`, `off_hand`` — and `MobEquipment::slots()` (`crates/dsl/src/stages.rs`) still returns the same fixed array of 6. The binding, computed by `tools/creator/staging-gate.py`'s own `probe()`, still counts the equipment declarations this campaign makes: 7 of the 155 nodes `quests.json` now holds, one per actor; the precondition (bodies that could carry one) is also 7. Closed by spec-0067: `EquipSlot::ALL` carries the eight slots and every slot list derives from it; `crates/delvec/tests/it/equipment_tables.rs::every_slot_the_item_data_declares_is_in_the_vocabulary` reads `crates/delvec/data/item-equippable-1.21.11.json` (84 items over 7 slot values, extracted from the same item-components digest) and asserts each value is in the set. Measured with `tools/creator/staging-gate.py` against the gallery primary built by a delvec force-built from the branch that carries the change: BOUND, binding 4 equipment declarations, among them a horse in `body` and `saddle`.",
+      "note": "Re-measured on the tree this row lands on: the engine at this branch's merge commit `f34a93be1588e1a297488a684e59c927cd1e4146`, against the released campaign at content `73182027db05e14d3a52a39e0c30fabd9025b9c0`. The game's side is unmoved: `crates/delvec/data/PROVENANCE.md` still pins `item_components/data.min.json` at sha-256 `51b191e13f86813ca02f1498942e5bc235947edb71eb8105a78401670b3665c4` — byte-identical across the merge (`git diff` over that file between this branch's pre-merge head and the merge commit is empty) — so the 8-slot/84-item registry fact the original reproduction read from it stands. The engine's side reproduces in the identical words: writing `body`/`saddle` into `actor/captain`'s equipment is refused at DW0100 — `unknown field `body`/`saddle`, expected one of `head`, `chest`, `legs`, `feet`, `main_hand`, `off_hand`` — and `MobEquipment::slots()` (`crates/dsl/src/stages.rs`) still returns the same fixed array of 6. The binding, computed by `tools/creator/staging-gate.py`'s own `probe()`, still counts the equipment declarations this campaign makes: 7 of the 155 nodes `quests.json` now holds, one per actor; the precondition (bodies that could carry one) is also 7. Closed by spec-0067: `EquipSlot::ALL` carries the eight slots and every slot list derives from it; `crates/delvec/tests/it/equipment_tables.rs::every_slot_the_item_data_declares_is_in_the_vocabulary` reads `crates/delvec/data/item-equippable-1.21.11.json` (84 items over 7 slot values, extracted from the same item-components digest) and asserts each value is in the set. Measured with `tools/creator/staging-gate.py` against the gallery primary built by a delvec force-built from the branch that carries the change: BOUND, binding 4 equipment declarations, among them a horse in `body` and `saddle`. The precondition counts the equipment block itself, read as text (`\"equipment\":`) across every document the campaign ships, because an actor that wears nothing carries no equipment-slot defect: a campaign whose actors declare none is INAPPLICABLE, and one that declares equipment where the `dsl` walk of `quests.json` does not look is UNBOUND.",
       "round": 1,
       "triage": "capability"
     },
