@@ -18,7 +18,7 @@ An entry is a summary, and `tools/ci/check-release-notes.py` holds it to that: a
 
 ### Added
 
-- An actor can declare `entrance: "native"` and `outrun`: the body arrives the way its kind does in vanilla, and the ladder walks every step it is loose beside it (`DW1081`, `DW1082`, `DW1083`).
+- An actor can declare `entrance: "native"` and `outrun`: the body arrives the way its kind does in vanilla, and the ladder walks every step it is loose beside it, with nothing staged away or healed (`DW1081`, `DW1082`, `DW1083`). That the body is free to act is proven by the compiler's tests, not by a check at run time.
 - `unleash-actor` now arrives a body whether or not a puppet stands, and only a click's own bundle can lock the new body onto its striker.
 - Each planned quest states its activity; `delvec validate` prints the activity census, every build writes `validation/activity-census.json`, and a goal that names an act nobody performs on its line is refused (`DW1079`).
 - The exported critical path names the bodies each step is walked beside, and the gallery gains a warden that digs up out of the long hall's porch.
@@ -37,6 +37,9 @@ An entry is a summary, and `tools/ci/check-release-notes.py` holds it to that: a
 - A flag set behind a numeric gate is credited only once the presses that open it are on the path (`DW1080`); before, a puzzle could ship whose bot run stuck.
 - A followed objective that completes hands the compass to the next step on its own line.
 - The bot judges a watcher's facing after its watch line has run.
+- A generated PackTest wounds a body to half of its own maximum health, so a small body's census no longer reads full health and reds.
+- The load world and each arrival hold no block that only a pressed button writes, so `delvec written-world` matches the server.
+- The staging gate's equipment row applies only to a campaign that declares equipment; a campaign whose actors wear nothing is no longer refused as unbound.
 - The required Rust partition checks report on a pull request that changes no Rust.
 
 The entry leaves out documentation, tests and release machinery, which change nothing in what a creator does.
