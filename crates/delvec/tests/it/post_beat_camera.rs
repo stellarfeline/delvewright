@@ -279,6 +279,7 @@ fn one_function_lays_a_configuration() {
                     let t = line.trim_start();
                     let walks_laid = t.starts_with("for ")
                         && t.contains("laid")
+                        && t.contains("block")
                         && (t.contains(" in &") || t.ends_with(" in laid {"));
                     if walks_laid {
                         sites.push(format!("{}:{}", p.display(), i + 1));
@@ -444,7 +445,7 @@ fn a_step_after_which_nothing_moves_is_refused_naming_the_first_that_does() {
     });
     let err = plain_stands(door.clone(), &[cam("t", Some("obj/look"))]).unwrap_err();
     assert!(
-        err.contains("is the world at load block for block")
+        err.contains("is the world at load — no block, no member of the cast and no sky differs")
             && err.contains("REMOVE `after` from camera `t`")
             && err.contains("the first on the critical path is `obj/talk`"),
         "{err}"
@@ -454,7 +455,9 @@ fn a_step_after_which_nothing_moves_is_refused_naming_the_first_that_does() {
     // A path that moves nothing at all says so.
     let err = plain_stands(serde_json::json!({}), &[cam("t", Some("obj/look"))]).unwrap_err();
     assert!(
-        err.contains("the critical path moves no block at all"),
+        err.contains(
+            "the critical path moves no block, no member of the cast and no sky after a step it carries once"
+        ),
         "{err}"
     );
 }
@@ -692,7 +695,7 @@ fn cameras_print_where_every_camera_stands() {
     let (code, log) = cameras(&out, &camp, &scenes, &[]);
     assert_eq!(code, 0, "{log}");
     let want = format!(
-        "after: door after obj/talk (step {} of {steps} on the critical path): 6 cells moved from load, 0 unforced write(s) not laid, 0 block entit(ies) omitted; biomes: at load; clock: as the picture",
+        "after: door after obj/talk (step {} of {steps} on the critical path): 6 cells moved from load, 0 of the cast moved, sky as at load, 0 unforced write(s) not laid, 0 block entit(ies) omitted; biomes: at load; clock: as the picture",
         talk + 1
     );
     assert!(log.contains(&want), "`{want}` in:\n{log}");
@@ -1427,7 +1430,7 @@ fn a_camera_after_a_repaint_and_a_strike_names_the_biomes_it_does_not_lay() {
         .find(|l| l.starts_with("after: door after obj/talk"))
         .unwrap_or_else(|| panic!("{log}"));
     assert!(
-        line.contains(": 6 cells moved from load, 0 unforced write(s) not laid,"),
+        line.contains(": 6 cells moved from load, 0 of the cast moved, sky as at load, 0 unforced write(s) not laid,"),
         "the bolt writes no block: {line}"
     );
     assert!(
