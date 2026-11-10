@@ -1,0 +1,15 @@
+{
+  "code": "DW1086",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/1/objectives/3/limit/from",
+      "value": {
+        "objective": "obj/board-the-ferry"
+      }
+    }
+  ],
+  "units": [],
+  "why": "The mezzanine's window started from the ferry instead of from its own activation. Boarding the ferry comes `after` the climb, so the clock would start once the climb is already open, or never; a start is one of the limited objective's own `after` ancestors. Refused at `limit.from`, naming both objectives, with the remedy: name an ancestor, or use `activation`."
+}

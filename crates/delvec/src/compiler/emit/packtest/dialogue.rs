@@ -200,7 +200,7 @@ pub(super) fn emit_one_dialogue_mask_packtest(
                 vec![format!("scoreboard players set {p} {os} 0")],
             ));
             for a in objective.after() {
-                let sc = obj_score(a.as_str());
+                let sc = after_score(plan.campaign, a.as_str());
                 satisfied.push(format!("scoreboard players set {p} {sc} 1"));
                 terms.push((
                     vec![format!("scoreboard players set {p} {sc} 0")],

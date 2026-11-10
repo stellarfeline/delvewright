@@ -687,7 +687,7 @@ fn packtest_guards(plan: &Plan, quest_id: &str, o: &Objective, with_flags: bool)
     for a in o.after() {
         p.push(format!(
             "scoreboard players set {party} {} 1",
-            obj_score(a.as_str())
+            after_score(plan.campaign, a.as_str())
         ));
     }
     p.extend(packtest_gate_drive(plan, o.gate(), with_flags));

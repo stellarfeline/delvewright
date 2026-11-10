@@ -1,0 +1,13 @@
+{
+  "code": "DW1084",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/1/objectives/3/limit/ticks",
+      "value": 20
+    }
+  ],
+  "units": [],
+  "why": "The mezzanine's window cut from 700 ticks to 20, one second, and nothing else changed. The proven walk from the end of the long gallery up to the loft is far longer than that at a sprint, so no party could climb in time: a task nobody can do. Refused at build, naming the objective, the start cell, the walk and the window, with the remedy: lengthen the window or shorten the route."
+}

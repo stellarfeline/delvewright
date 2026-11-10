@@ -485,7 +485,7 @@ fn objective_drive(plan: &Plan, oid: &str, complete: Option<bool>) -> Vec<String
     for a in o.after() {
         v.push(format!(
             "scoreboard players set {party} {} 1",
-            obj_score(a.as_str())
+            after_score(plan.campaign, a.as_str())
         ));
     }
     v.push(format!(

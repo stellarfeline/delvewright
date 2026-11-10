@@ -20,12 +20,18 @@
         "id": "quest/walk-the-bank",
         "objectives": [
           {
+            "announcement": "shown",
             "happening": {
               "text": "the party completes obj/ask-the-warden",
               "verb": "learns"
             },
             "id": "obj/ask-the-warden",
+            "limit": {
+              "from": "quest-start",
+              "ticks": 2400
+            },
             "npc": "npc/bank-warden",
+            "title": "Ask the warden",
             "type": "talk-to"
           },
           {
@@ -33,12 +39,20 @@
               "obj/ask-the-warden"
             ],
             "anchor": "anchor/bank-corner",
+            "announcement": "shown",
             "happening": {
               "text": "the party completes obj/far-corner",
               "verb": "arrives"
             },
             "id": "obj/far-corner",
+            "limit": {
+              "from": {
+                "objective": "obj/ask-the-warden"
+              },
+              "ticks": 2400
+            },
             "radius": 2,
+            "title": "Reach the far corner",
             "type": "reach-anchor"
           },
           {
