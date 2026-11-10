@@ -95,11 +95,10 @@ async function score(holder) {
 async function resetScore(holder) {
   await rcon.probe(`scoreboard players reset ${holder} ${OBJ}`)
 }
-/** `execute if entity …` answers the source `Test passed, count: N` or `Test failed`. */
+/** A count over a selector, stored into a score and read back (`execute if entity` alone answers rcon nothing). */
 async function countOf(selector) {
-  const r = await rcon.probe(`execute if entity ${selector}`)
-  const m = r.match(/count: (\d+)/)
-  return m ? Number(m[1]) : 0
+  await rcon.probe(`execute store result score #count ${OBJ} if entity ${selector}`)
+  return score('#count')
 }
 
 let trialName = ''
@@ -322,7 +321,7 @@ async function t2(bot) {
   await sleep(1500)
   bot.deactivateItem()
   await sleep(500)
-  const loaded = await rcon.probe(`execute if items entity ${BOT} weapon.mainhand minecraft:crossbow[charged_projectiles~[{id:"minecraft:firework_rocket"}]]`)
+  const loaded = await rcon.probe(`execute if items entity ${BOT} weapon.mainhand minecraft:crossbow[charged_projectiles~{id:"minecraft:firework_rocket"}]`)
   row('loaded', loaded)
   const botBefore = bot.health
   await bot.lookAt(new Vec3(near.x, near.y + 0.6, near.z), true)
@@ -342,29 +341,34 @@ async function t3(bot) {
   await home(bot)
   await clearBodies()
   await rcon.run(`gamemode survival ${BOT}`)
-  for (const [name, item] of [['T3-goat-wheat', 'wheat'], ['T3-goat-control', null], ['T3-goat-wheat-again', 'wheat']]) {
+  const trials = [['T3-goat-wheat', 'wheat'], ['T3-goat-control', 'stone'], ['T3-goat-wheat-2', 'wheat'], ['T3-goat-control-2', 'stone'], ['T3-goat-wheat-3', 'wheat'], ['T3-goat-control-3', 'stone']]
+  for (const [name, item] of trials) {
     await clearBodies()
     await home(bot)
     await hold(bot, item)
-    begin(name, `${item ? 'the bot holds wheat' : 'the bot holds nothing'}; a goat summoned 8 blocks south; its distance to the bot read every 0.5 s for 15 s`)
-    const G = { x: H.x + 0.5, y: H.y, z: H.z + 8.5 }
+    begin(name, `the bot holds ${item}; a goat summoned 9 blocks south; distance read every 0.5 s for 12 s; then the bot is moved 8 blocks west and the goat read for 10 s more`)
+    const G = { x: H.x + 0.5, y: H.y, z: H.z + 9.5 }
     await rcon.run(`summon minecraft:goat ${G.x} ${G.y} ${G.z} {PersistenceRequired:1b,Tags:["dw_goat"]}`)
     await bot.lookAt(new Vec3(G.x, G.y + 1, G.z), true)
-    const tStart = now()
-    let nearest = Infinity
-    let reachedMs = null
-    while (now() - tStart < 15_000) {
-      const p = parsePos(await entityGet('@e[tag=dw_goat,limit=1]', 'Pos'))
-      const b = await botPos()
-      const d = p && b ? dist2(p, b) : null
-      if (d != null) {
-        nearest = Math.min(nearest, d)
-        if (d <= 2.5 && reachedMs == null) reachedMs = now() - tStart
+    const read = async (ms, label) => {
+      const tStart = now()
+      let nearest = Infinity
+      let last = null
+      while (now() - tStart < ms) {
+        const p = parsePos(await entityGet('@e[tag=dw_goat,limit=1]', 'Pos'))
+        const b = await botPos()
+        last = p && b ? dist2(p, b) : null
+        if (last != null) nearest = Math.min(nearest, last)
+        row(label, `goatPos=${p?.map(f1)}`, `toBot=${f1(last)}`)
+        await sleep(500)
       }
-      row(`goatPos=${p?.map(f1)}`, `toBot=${f1(d)}`)
-      await sleep(500)
+      return { nearest, last }
     }
-    row('summary', `nearest=${f1(nearest)}`, `within2.5=${reachedMs != null}`, `reachedMs=${reachedMs}`)
+    const a = await read(12_000, 'phase1')
+    await rcon.run(`tp ${BOT} ${H.x - 8} ${H.y} ${H.z}`)
+    await bot.lookAt(new Vec3(G.x, G.y + 1, G.z), true)
+    const b = await read(10_000, 'phase2-botMoved8West')
+    row('summary', `phase1Nearest=${f1(a.nearest)}`, `phase1Final=${f1(a.last)}`, `phase2Nearest=${f1(b.nearest)}`, `phase2Final=${f1(b.last)}`, `followed=${b.last != null && b.last <= 3.5}`)
   }
 }
 
@@ -421,6 +425,24 @@ async function t4(bot) {
     row(`pigPos=${p?.map(f1)}`, `moved=${s2 && p ? f1(dist2(s2, p)) : '-'}`)
     await sleep(500)
   }
+  begin('T4-pig-client-move', 'the bot reports the pig\'s position 0.2 blocks east per tick for 2 s, the way a client steers; the server\'s reading of the pig')
+  await hold(bot, 'carrot_on_a_stick')
+  await clientDrive(bot, 'dw_pig', 'flat', 1, 0, 2000)
+  for (const [name, note, build] of [
+    ['T4-pig-client-full-step', 'a one-block step 2 blocks east of the pig; the client reports moves through it at the pig\'s own height for 2 s', (x, z) => `fill ${x} ${FLOOR_Y + 1} ${z - 2} ${x} ${FLOOR_Y + 1} ${z + 2} minecraft:stone`],
+    ['T4-pig-client-slab-step', 'a bottom slab 2 blocks east, then a full block; the same reports for 2 s', (x, z) => `fill ${x} ${FLOOR_Y + 1} ${z - 2} ${x} ${FLOOR_Y + 1} ${z + 2} minecraft:stone_slab\nfill ${x + 1} ${FLOOR_Y + 1} ${z - 2} ${x + 1} ${FLOOR_Y + 1} ${z + 2} minecraft:stone`],
+  ]) {
+    begin(name, note)
+    const p0 = parsePos(await entityGet('@e[tag=dw_pig,limit=1]', 'Pos'))
+    const sx = Math.floor(p0[0]) + 2
+    const sz = Math.floor(p0[2])
+    for (const line of build(sx, sz).split('\n')) await rcon.run(line)
+    const p1 = await clientDrive(bot, 'dw_pig', `stepAtX=${sx}`, 1, 0, 2000)
+    row(`pastStep=${p1 ? (p1[0] > sx + 1 ? 'yes' : 'no') : '-'}`, `serverY=${f2(p1?.[1])}`)
+    await rcon.probe(`fill ${sx} ${FLOOR_Y + 1} ${sz - 2} ${sx + 1} ${FLOOR_Y + 2} ${sz + 2} minecraft:air`)
+    await rcon.run(`tp @e[tag=dw_pig,limit=1] ${H.x + 2.5} ${H.y} ${H.z + 0.5}`)
+    await sleep(800)
+  }
   for (const [name, note, build] of [
     ['T4-pig-full-step', 'a one-block step across the pig\'s way east, 5 blocks ahead; 6 s of driving', (x, z) => `fill ${x} ${FLOOR_Y + 1} ${z - 2} ${x} ${FLOOR_Y + 1} ${z + 2} minecraft:stone`],
     ['T4-pig-slab-step', 'a bottom slab then a full block, as two half steps; 6 s of driving', (x, z) => `fill ${x} ${FLOOR_Y + 1} ${z - 2} ${x} ${FLOOR_Y + 1} ${z + 2} minecraft:stone_slab\nfill ${x + 1} ${FLOOR_Y + 1} ${z - 2} ${x + 1} ${FLOOR_Y + 1} ${z + 2} minecraft:stone`],
@@ -472,6 +494,29 @@ async function driveFor(bot, ms, tag, label) {
   const { v } = await readVehicle(bot, tag)
   row(label, 'summary', `moved=${v0 && v ? f2(dist2(v0, v)) : '-'}`)
 }
+
+/** The way a vanilla client moves a ridden body: it reports the vehicle's position. */
+async function clientDrive(bot, tag, label, dx, dz, ms, perTick = 0.2) {
+  const { v: s0, b: b0 } = await readVehicle(bot, tag)
+  let x = bot.vehicle?.position?.x ?? s0[0]
+  let z = bot.vehicle?.position?.z ?? s0[2]
+  const y = bot.vehicle?.position?.y ?? s0[1]
+  const yaw = bot.vehicle?.yaw ?? 0
+  const t = now()
+  let ticks = 0
+  while (now() - t < ms) {
+    x += dx * perTick
+    z += dz * perTick
+    ticks += 1
+    bot._client.write('vehicle_move', { x, y, z, yaw, pitch: 0, onGround: true })
+    await sleep(50)
+  }
+  await sleep(700)
+  const { v: s1, b: b1 } = await readVehicle(bot, tag)
+  row(label, `reported=${ticks} moves of ${perTick} (${f2(ticks * perTick)} blocks, y held at ${f2(y)})`, `vehiclePos=${s1?.map(f2)}`, `botPos=${b1?.map(f2)}`, `serverMoved=${s0 && s1 ? f2(dist2(s0, s1)) : '-'}`, `serverY=${f2(s1?.[1])}`, `clientVehiclePos=${bot.vehicle?.position?.toArray().map(f2)}`)
+  return s1
+}
+
 async function t5(bot) {
   await home(bot)
   await clearBodies()
@@ -489,8 +534,8 @@ async function t5(bot) {
   row('mount', await mountByClick(bot, 'oak_boat'))
   const { v, b } = await readVehicle(bot, 'dw_boat')
   row(`boatPos=${v?.map(f2)}`, `botPosOnServer=${b?.map(f2)}`, `botPosOnClient=${bot.entity.position.toArray().map(f2)}`)
-  const onVehicle = await rcon.probe(`execute as ${BOT} on vehicle run data get entity @s id`)
-  row(`executeOnVehicle=${onVehicle}`)
+  await rcon.probe(`execute store result score #onv ${OBJ} as ${BOT} on vehicle if entity @s[type=minecraft:oak_boat]`)
+  row(`executeOnVehicleBoat=${await score('#onv')}`, `(1 = the rider's vehicle is an oak boat)`)
   const inBox = await countOf(`${BOT}[x=${B.x1},y=${FLOOR_Y - 1},z=${B.z1},dx=${B.x2 - B.x1},dy=4,dz=${B.z2 - B.z1}]`)
   row(`riderCountedInBasinBox=${inBox}`)
   await bot.lookAt(new Vec3(H.x + 0.5, FLOOR_Y + 1, B.z2), true)
@@ -499,7 +544,9 @@ async function t5(bot) {
   // reports the boat's position. Here the position is reported along a straight
   // line south at a stated speed, and the server's own reading of the boat says
   // whether it took the report.
-  for (const perTick of [0.1, 0.25, 0.5]) {
+  for (const perTick of [0.1, 0.25, 0.5, 1.0]) {
+    await rcon.run(`tp @e[tag=dw_boat,limit=1] ${H.x + 0.5} ${FLOOR_Y + 1} ${B.z1 + 1.5}`)
+    await sleep(1200)
     const { v: s0 } = await readVehicle(bot, 'dw_boat')
     const t = now()
     let z = bot.vehicle?.position?.z ?? s0[2]
@@ -563,9 +610,13 @@ async function t6(bot) {
   row('mount', await mountByClick(bot, 'minecart'))
   const { v, b } = await readVehicle(bot, 'dw_cart')
   row(`cartPos=${v?.map(f2)}`, `botPosOnServer=${b?.map(f2)}`)
-  row(`executeOnVehicle=${await rcon.probe(`execute as ${BOT} on vehicle run data get entity @s id`)}`)
+  await rcon.probe(`execute store result score #onv ${OBJ} as ${BOT} on vehicle if entity @s[type=minecraft:minecart]`)
+  row(`executeOnVehicleMinecart=${await score('#onv')}`)
   await bot.lookAt(new Vec3(R.x2, FLOOR_Y + 1.5, R.z + 0.5), true)
   await driveFor(bot, 3000, 'dw_cart', 'forwardInput')
+  await clientDrive(bot, 'dw_cart', 'clientVehicleMoveAlongRail', 1, 0, 2000)
+  await rcon.run(`tp @e[tag=dw_cart,limit=1] ${R.x1 + 2.5} ${FLOOR_Y + 1.1} ${R.z + 0.5}`)
+  await sleep(800)
   await rcon.run(`execute as @e[tag=dw_cart,limit=1] run data merge entity @s {Motion:[0.3d,0.0d,0.0d]}`)
   const t = now()
   const { v: v0 } = await readVehicle(bot, 'dw_cart')
@@ -651,8 +702,20 @@ async function t8(bot) {
   await sleep(600)
   const h2 = parseNum(await entityGet('@e[tag=dw_fx,limit=1]', 'Health'))
   const p2 = parsePos(await entityGet('@e[tag=dw_fx,limit=1]', 'Pos'))
-  row(`healthAfterBy=${h2}`, `movedAfterBy=${p1 && p2 ? f2(dist2(p1, p2)) : '-'}`)
+  row(`healthAfterBy=${h2}`, `movedAfterBy=${p1 && p2 ? f2(dist2(p1, p2)) : '-'}`, '(NoAI: a body that does not move)')
   await rcon.probe('kill @e[tag=dw_fx]')
+  // The same two blows on a body with its AI, which the knockback can move.
+  await rcon.run(`summon minecraft:pig ${D.x} ${D.y} ${D.z} {Silent:1b,PersistenceRequired:1b,Tags:["dw_fx2"],attributes:[{id:"minecraft:max_health",base:200d},{id:"minecraft:movement_speed",base:0d}],Health:200f}`)
+  await sleep(500)
+  const q0 = parsePos(await entityGet('@e[tag=dw_fx2,limit=1]', 'Pos'))
+  await rcon.probe('damage @e[tag=dw_fx2,limit=1] 3 minecraft:generic')
+  await sleep(800)
+  const q1 = parsePos(await entityGet('@e[tag=dw_fx2,limit=1]', 'Pos'))
+  await rcon.probe(`damage @e[tag=dw_fx2,limit=1] 3 minecraft:player_attack by ${BOT}`)
+  await sleep(800)
+  const q2 = parsePos(await entityGet('@e[tag=dw_fx2,limit=1]', 'Pos'))
+  row('aiBody', `movedAfterPlain=${q0 && q1 ? f2(dist2(q0, q1)) : '-'}`, `movedAfterBy=${q1 && q2 ? f2(dist2(q1, q2)) : '-'}`, `awayFromBot=${q1 && q2 ? f2(dist2(q2, [H.x, 0, H.z]) - dist2(q1, [H.x, 0, H.z])) : '-'}`)
+  await rcon.probe('kill @e[tag=dw_fx2]')
 }
 
 // ---- T9: the spyglass ------------------------------------------------------------------
