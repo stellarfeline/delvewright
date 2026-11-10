@@ -129,9 +129,7 @@ fn emit_one_wave_census_packtest(plan: &Plan, w: &delvewright_dsl::Wave, out: &m
     b.push(format!("assert score #cen_by_{safe} dw.sys matches 0"));
     // Wound one, and the census says so — read off the server's own Health and
     // max_health, not a table and not whatever the client was sent.
-    b.push(format!(
-        "data modify entity @e[tag={tag},limit=1] Health set value 1.0f"
-    ));
+    b.push(wound_to_half(&format!("@e[tag={tag},limit=1]")));
     b.push(format!("function {ns}:wave_census_{safe}"));
     cen(&mut b, "d", "1");
     // A re-summon is a NEW mob: the brand cannot survive it, which is exactly the
