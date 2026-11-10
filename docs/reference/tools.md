@@ -1382,7 +1382,8 @@ Nucleation; `versions.toml [render] lumenwright_version` holds the same version,
 dependency is named by `git` or `path`. Its `glam` is reached
 as `lumenwright::glam`, so the engine holds no second copy. `delvec` reaches it
 through one module, `compiler::view::frames`: a frame request (world, chunk
-rectangle, jar, the build's resource pack, camera, sky, mode, backend, size)
+rectangle, jar, the build's resource pack, camera, sky, mode, backend, size,
+the sea level an hq frame carries to the horizon)
 in, RGBA pixels and the renderer's own statistics out.
 
 **Backends.** `--backend auto` (default) takes the GPU wgpu finds — Metal on
@@ -1533,10 +1534,14 @@ moved, sky …`, per world its `world:` line, and `configurations: <k> written f
 watching body within its reach of the lens faces the camera, as it would a
 player standing there (`facing:` lines). **A frame that looks out past the
 build sees the horizon**: an `ocean`'s sea is loaded out to where the frame's
-fog closes (`horizon:` lines); an hq frame draws no fog, so the sea there ends
-at that distance. **A body the renderer cannot draw refuses the picture**: a
-body in frame of a kind the renderer has no model for is named under `DW1100`,
-and its hq frame is not written (exit 5); a preview names it and is drawn. What a frame does not show — an item, a text display, the rain in
+fog closes (`horizon:` lines); an hq frame draws no fog, so over an `ocean`
+horizon it states the renderer's sea plane at the level above the topmost
+generator water block (`frames::sea_plane_at`), which carries the sea to the
+horizon, and states none over any other horizon. **A body the renderer cannot
+draw refuses the picture**: a body in frame of a kind the renderer reports
+skipped for that frame (read from the renderer's statistics, never from a list
+the engine keeps) is named under `DW1100`, and its hq frame is not written
+(exit 5); a preview names it and is drawn. What a frame does not show — an item, a text display, the rain in
 the air, a `collapse`'s debris — is `compiler.md` §7, `delvec cameras`. The sky
 comes from the picture (the camera's `sky`, else its row's), never from the
 world's initial hour, and `delvec cameras` prints the sky each camera is drawn

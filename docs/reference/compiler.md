@@ -7115,9 +7115,11 @@ the surface or to the fog's distance over the loaded extent,
 widened to every such frame standing in it; the fog stays where the build's
 extent puts it. Printed per such frame: `horizon: <name> sees past the build:
 chunks [x, z]..[x, z] of the horizon's ground loaded beside the build's [x,
-z]..[x, z], the fog at <r> blocks`. An hq frame draws no fog, so the ground
-there ends at the fog's distance (a renderer with an unbounded sea plane would
-carry it to the horizon). **A watch at the lens** (spec-0101): a body that
+z]..[x, z], the fog at <r> blocks`. An hq frame draws no fog: over an `ocean`
+horizon it states the renderer's sea plane (`frames::sea_plane_at`, one rule
+for every frame the engine draws: the level above the topmost generator water
+block, `sea_level + 1`), which carries the sea to the horizon; over `void` and
+`valley` it states none. **A watch at the lens** (spec-0101): a body that
 turns to the nearest player within its reach (`watching::watchers`, `who`
 nearest) and whose feet are within that reach of the feet of a player whose
 eyes are at the lens turns to the lens, its yaw the game's look-at bearing
