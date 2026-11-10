@@ -106,7 +106,7 @@ type UnforcedBox = (([i32; 3], [i32; 3]), String);
 /// it leaves, whether the party is forced to cause it, and the beat to blame if they
 /// are not. Forcedness travels WITH the winner, so latest-write-wins needs no special
 /// case for a forced write landing on top of an unforced one.
-type LatestWrite = (usize, RegionWrite, bool, String, Option<String>);
+type LatestWrite = (usize, RegionWrite, bool, String, Option<String>, bool);
 
 impl RegionState {
     /// Nothing has been written by this point — the caller routes the base world
@@ -374,6 +374,7 @@ impl World {
                     ev.is_forced(),
                     ev.blame().to_string(),
                     ev.block().map(str::to_string),
+                    ev.is_pressed(),
                 );
                 let e = latest.entry(ev.region).or_insert_with(|| key.clone());
                 if ev.fire_step >= e.0 {
@@ -382,11 +383,12 @@ impl World {
             }
         }
         let mut st = RegionState::default();
-        for (region, (_, write, forced, blame, block)) in latest {
+        for (region, (_, write, forced, blame, block, pressed)) in latest {
             // The bytes this configuration holds: a forced write lays its block
             // (or air); a fill whose block the model does not know — a world-load
             // seal — leaves the bytes as the prefab built them.
-            if forced {
+            // A pressed write (a trigger's fill) stands for the walk and in no bytes.
+            if forced && !pressed {
                 match write {
                     RegionWrite::Clear | RegionWrite::Unseal => st.laid.push((region, None)),
                     RegionWrite::Fill | RegionWrite::Flood | RegionWrite::Pass => {
@@ -1029,6 +1031,38 @@ mod tests {
         );
         verify_exported_routes(&world, &legs)
             .expect("a waypoint on floor the campaign lays must pass the export self-check");
+    }
+
+    /// **A pressed fill stands for the walk and in no bytes.** A trigger's fill is
+    /// modelled as standing from load, so a leg it would wall stays walled; the
+    /// party presses the button, or does not, so the load world and every other
+    /// configuration's bytes hold none of it. The same fill, not pressed, is laid.
+    #[test]
+    fn a_pressed_fill_walls_the_walk_and_lays_no_bytes() {
+        let world = chasm();
+        let cell = [2, 64, 0];
+        let box_ = (cell, cell);
+        let ancestor = |_: usize, _: usize| true;
+        let standing = RegionEvent::forced(box_, RegionWrite::Fill, 0).laying("minecraft:stone");
+        let st = world.region_state_at(&RegionEvents::from(vec![standing]), 1, &ancestor);
+        assert_eq!(
+            st.laid,
+            vec![(box_, Some("minecraft:stone".to_string()))],
+            "a standing forced fill is laid"
+        );
+        let pressed = RegionEvent::forced(box_, RegionWrite::Fill, 0)
+            .laying("minecraft:redstone_block")
+            .pressed();
+        let st = world.region_state_at(&RegionEvents::from(vec![pressed]), 1, &ancestor);
+        assert!(
+            st.laid.is_empty(),
+            "a pressed fill is laid in no bytes: {:?}",
+            st.laid
+        );
+        assert!(
+            st.solid.contains(&cell),
+            "the walk still takes the pressed fill as solid"
+        );
     }
 
     /// The direction the self-check exists for is untouched: a cell a **later pass**
