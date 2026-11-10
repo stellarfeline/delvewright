@@ -6,20 +6,79 @@ Each of the three lines is released on its own clock — a plugin release needs 
 
 An entry is a summary, and `tools/ci/check-release-notes.py` holds it to that: a short `### Highlights` section, then the changes as bullets under at least one `### <group>` — the Keep a Changelog kinds (`Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`) or the areas of the engine they touch — within the ceilings `tools/lib/release_notes.py` states, every line written for the reader: a line that is a merged change's own title is refused, and so is an entry for a version the tree has moved past. A closing paragraph may say what the entry leaves out.
 
-
-## delvewright 1.15.1
+## delvec 1.16.0
 
 ### Highlights
 
-- The place handout now describes every cast shape the format accepts, so a place agent reads the whole set of shapes it may draw with.
-- The plugin is released on its own version line: this release updates the page and installs the same `delvec` 1.15.0 as before.
+- A body can enter the way its kind does: a warden digs up out of the ground, a wither charges up, and then it hunts the party.
+- The bot proof walks a route beside a body it never fights, so a level whose party survives by moving can be proven completable.
+- Every quest line states what the player does on it, and the build counts and prices those acts against the delve's target length.
+- A wide town builds in about six minutes, with identical output.
+- Several playtest bugs are fixed: a compass that jumped lines, walks that cut across lawns, and a flag a puzzle never paid.
 
-### Fixed
+### Added
 
-- The handout a place agent reads left out cast shapes the format accepts, so an agent drawing with one of them was told it did not exist.
+- An actor can declare `entrance: "native"` and `outrun`: the body arrives the way its kind does in vanilla, and the ladder walks every step it is loose beside it (`DW1081`, `DW1082`, `DW1083`).
+- `unleash-actor` now arrives a body whether or not a puppet stands, and only a click's own bundle can lock the new body onto its striker.
+- Each planned quest states its activity; `delvec validate` prints the activity census, every build writes `validation/activity-census.json`, and a goal that names an act nobody performs on its line is refused (`DW1079`).
+- The exported critical path names the bodies each step is walked beside, and the gallery gains a warden that digs up out of the long hall's porch.
+- The playtest server ops its creator and hands every client the resource pack.
+- `DELVEC_PHASE_TIMING` stamps the build log with wall time, CPU and threads for each phase.
 
 ### Changed
 
-- `/plugin update` brings a page fix on its own, without waiting for an engine release; the page still names the one engine release it is proven on.
+- A build of the 95-place town takes about six minutes: the branch worlds, the review worlds' light strips and the write sequence run in parallel.
+- A cast row that says `unchanged` claims nothing, and `DW0858` judges the clause that wins.
+- A staged walk between places keeps to the declared ways, at the width of the body that walks it.
+- A registered body's click box and reach are sized to the body its registry row names, so a large friendly mob can be clicked anywhere it is drawn.
+
+### Fixed
+
+- A flag set behind a numeric gate is credited only once the presses that open it are on the path (`DW1080`); before, a puzzle could ship whose bot run stuck.
+- A followed objective that completes hands the compass to the next step on its own line.
+- The bot judges a watcher's facing after its watch line has run.
+- The required Rust partition checks report on a pull request that changes no Rust.
+
+The entry leaves out documentation, tests and release machinery, which change nothing in what a creator does.
+
+## delvewright-dsl 0.71.0
+
+### Highlights
+
+- The DSL format number moves with this release; documents declare it and `delvec fmt` writes it.
+- Actors can declare how they arrive and whether the party outruns them, and every planned quest states its activity.
+
+### Added
+
+- Actors gain `entrance`, read off a kind-action registry (`minecraft:warden`, `minecraft:wither`), and `outrun`.
+- The quest plan gains `activity` on each line, and the metrics table prices each act in minutes.
+- The ambush sugar keeps one continuation site and no story note.
+
+### Changed
+
+- A goal is held to the acts of its line, so a fixture or campaign that named an act nobody performs is re-headed.
+
+## delvewright 1.16.0
+
+### Highlights
+
+- The page now sends a fresh reader through an invented script before the build, so a story that only its author understands is caught first.
+- Every `/new-delve` page is one paragraph per line, and `SKILL.md` points at its step pages.
+- The page pins `delvec` 1.16.0 and describes the entrance, the pursuers and the activity census.
+
+### Added
+
+- A new step 5b has a fresh reader review the invented script before anything is built, with a script for the reader's hand-off.
+- The pages describe an actor's native entrance, `outrun` and the pursuit leg of the exported path.
+- The pages describe each quest line's activity and the `DW1079` refusal.
+
+### Changed
+
+- Every page in `references/` is written one paragraph per line, and `SKILL.md` points at the step page that carries each step's body.
+- The page is proven against `delvec` 1.16.0.
+
+### Fixed
+
+- The place handout reads every cast shape the DSL accepts.
 
 The entry leaves out the release machinery itself, which changes nothing in what a creator does.
