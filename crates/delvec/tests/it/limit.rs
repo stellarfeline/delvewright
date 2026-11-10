@@ -478,7 +478,7 @@ fn limit_ledger(out: &Path) -> Value {
 /// The perturbation moves the window alone across the walk it measured.
 #[test]
 fn a_window_shorter_than_its_walk_is_refused() {
-    let (code, log, out) = delvec_build(&fixture("walk-green", minute(), |_| {}));
+    let (code, log, _) = delvec_build(&fixture("walk-green", minute(), |_| {}));
     assert_eq!(code, 0, "{log}");
     let line = log
         .lines()

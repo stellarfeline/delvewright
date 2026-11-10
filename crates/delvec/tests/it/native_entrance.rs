@@ -479,7 +479,10 @@ fn pursuers_are_the_outrun_bodies_loose_while_a_step_is_walked() {
     // the rest between them included.
     let (out, _) = build(&base());
     let cp = critical_path(&out);
-    assert_eq!(cp["format_version"], json!(6));
+    assert_eq!(
+        cp["format_version"],
+        json!(delvec::compiler::plan::CRITICAL_PATH_FORMAT_VERSION)
+    );
     let mine: Vec<(String, bool)> = pursued(&cp)
         .into_iter()
         .map(|(what, who)| (what, who == vec![SLEEPER.to_string()]))
@@ -837,7 +840,11 @@ fn every_branch_world_path_names_the_bodies_it_is_walked_beside() {
     );
     for k in worlds {
         let cp: Value = serde_json::from_str(&text(&out, k)).unwrap();
-        assert_eq!(cp["format_version"], json!(6), "{k}");
+        assert_eq!(
+            cp["format_version"],
+            json!(delvec::compiler::plan::CRITICAL_PATH_FORMAT_VERSION),
+            "{k}"
+        );
         let rows = pursued(&cp);
         let fork = rows
             .iter()

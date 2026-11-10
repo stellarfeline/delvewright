@@ -68,6 +68,9 @@ const PLAYED: &[&str] = &[
     // `hl_off_<a>`; no frame's world holds it.
     "hl_hold_",
     "hl_off_",
+    // A limit's expiry (spec-0133): runs only in a world whose clock ran out
+    // with the objective still open, which the mainline's frames never are.
+    "settle_expired_",
 ];
 
 fn tmp(name: &str) -> PathBuf {

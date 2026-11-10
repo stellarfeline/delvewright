@@ -78,6 +78,11 @@ fn every_verb_answers_the_census() {
             Some("wave/muster"),
         ),
         (
+            "despawn-wave",
+            serde_json::json!({"type":"despawn-wave","wave":"wave/muster"}),
+            Some("wave/muster"),
+        ),
+        (
             "narrate",
             serde_json::json!({"type":"narrate","text":"The hall answers."}),
             None,
