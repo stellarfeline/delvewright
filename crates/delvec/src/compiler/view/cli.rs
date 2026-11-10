@@ -1501,8 +1501,8 @@ pub fn run_cameras(
                 missing.join("; ")
             );
             eprintln!("{}: {line}", frameset::DW_FRAME_SKIPS_A_BODY.id());
+            undrawn.push(line);
             if !preview {
-                undrawn.push(line);
                 continue;
             }
         }
@@ -1622,13 +1622,13 @@ pub fn run_cameras(
         undrawn.len(),
         frames.len(),
         frameset::DW_FRAME_SKIPS_A_BODY.id(),
-        if undrawn.is_empty() {
-            String::new()
-        } else {
-            "; their pictures were not written".to_string()
+        match (undrawn.is_empty(), preview) {
+            (true, _) => "",
+            (false, true) => "; previews are drawn, an hq picture of them is refused",
+            (false, false) => "; their pictures were not written",
         }
     );
-    if let Some(first) = undrawn.first() {
+    if let Some(first) = undrawn.first().filter(|_| !preview) {
         return fail(
             Diagnostic::error(frameset::DW_FRAME_SKIPS_A_BODY.id(), first.clone()),
             json,

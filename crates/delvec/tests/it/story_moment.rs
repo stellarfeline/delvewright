@@ -378,7 +378,12 @@ fn a_frame_of_a_body_the_renderer_cannot_draw_is_refused() {
     );
     let (code, log) = cameras(&out, &camp, &lib, &tmp("undrawn-preview"), &["--preview"]);
     assert_eq!(code, 0, "{log}");
-    assert!(log.contains("DW1100"), "{log}");
+    assert!(
+        log.contains("DW1100: camera `hero` frames a body")
+            && log.contains("undrawn: 1 of 1 frame(s) frame a body the renderer draws nothing of")
+            && log.contains("previews are drawn, an hq picture of them is refused"),
+        "{log}"
+    );
     // The same keeper as a villager: drawn, nothing refused.
     let camp = campaign("drawn", |_| {}, |_| {}, &[("hero", None)]);
     common::patch_file(&camp.join("design/cameras.json"), |c| {

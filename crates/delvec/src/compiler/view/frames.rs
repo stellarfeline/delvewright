@@ -655,11 +655,15 @@ mod tests {
             lo[0] < 0 && lo[1] < 0 && hi[0] > 3 && hi[1] > 3,
             "{lo:?}..{hi:?}"
         );
-        // Every chunk of the cover is within the fog of the build's extent.
+        // The cover reaches no farther along either axis than the fog of the
+        // build's extent (a chunk's width of rounding).
         let reach = f64::from(draw_distance(down.pos, loaded));
-        for c in [lo, hi] {
-            let d = (((c[0] * 16 - 32) as f64).powi(2) + ((c[1] * 16 - 32) as f64).powi(2)).sqrt();
-            assert!(d <= reach + 32.0, "{c:?} at {d} past the fog at {reach}");
+        for a in 0..2 {
+            let (l, h) = (f64::from(lo[a] * 16), f64::from(hi[a] * 16 + 16));
+            assert!(
+                32.0 - l <= reach + 16.0 && h - 32.0 <= reach + 16.0,
+                "axis {a}: {l}..{h} past the fog at {reach}"
+            );
         }
         // Out over the sea, level: the cover runs out to the fog and no
         // further, however far the surface would carry the ray.
