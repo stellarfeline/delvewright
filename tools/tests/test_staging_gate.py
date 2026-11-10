@@ -1584,6 +1584,66 @@ def test_the_live_label_precondition_binds_on_a_dialogue_node(gate, tmp_path):
         assert adjudicate_on(gate, silent, build, r)["verdict"] == "INAPPLICABLE"
 
 
+def actor_campaign(tmp_path, where, *, equipment_in_quests=False, equipment_in_npcs=False):
+    """A campaign of two actors, with the equipment block declared where the test says."""
+    d = tmp_path / where
+    d.mkdir(parents=True, exist_ok=True)
+    actors = [{"id": "actor/a"}, {"id": "actor/b"}]
+    if equipment_in_quests:
+        actors[0]["equipment"] = {"head": "minecraft:iron_helmet"}
+    (d / "quests.json").write_text(
+        json.dumps(
+            {
+                "dsl_version": FIXTURE_DSL_VERSION,
+                "stage": 5,
+                "content": {"quests": [], "actors": actors},
+            }
+        )
+    )
+    if equipment_in_npcs:
+        (d / "npcs.json").write_text(
+            json.dumps(
+                {
+                    "dsl_version": FIXTURE_DSL_VERSION,
+                    "stage": "npcs",
+                    "content": {"npcs": [{"id": "npc/a", "equipment": {"head": "minecraft:iron_helmet"}}]},
+                }
+            )
+        )
+    return d
+
+
+def test_the_live_equipment_row_counts_the_declaration_not_the_body(gate, tmp_path):
+    """An actor that wears nothing carries no equipment-slot defect: the
+    declaration is optional by design, and a campaign that makes none is a
+    declaration of zero objects, which passes with its count stated. The row's
+    precondition is the equipment block itself, read a second way (the key as
+    text, across every document the campaign ships), so it answers the question
+    the DSL walk cannot ask of itself — did the campaign declare equipment where
+    the walk did not look? Four subjects, one variable each."""
+    row = live_rows(gate, {"doune-04"})["doune-04"]
+    build = make_build(tmp_path)
+    bare = actor_campaign(tmp_path, "bare")
+    worn = actor_campaign(tmp_path, "worn", equipment_in_quests=True)
+    unseen = actor_campaign(tmp_path, "unseen", equipment_in_npcs=True)
+
+    # Actors exist, none wears anything: the zero is measured, not refused.
+    r = adjudicate_on(gate, bare, build, row)
+    assert r["verdict"] == "INAPPLICABLE", r
+    assert (r["binding"], r["precondition"]) == (0, 0)
+    assert gate.probe({"kind": "dsl", "files": ["quests.json"], "match": {"prefix": {"id": "actor/"}}},
+                      gate.Subject(bare, build))[0] == 2, "the actors the old precondition counted are there"
+    # One actor wears something: bound.
+    r = adjudicate_on(gate, worn, build, row)
+    assert r["verdict"] == "BOUND" and r["binding"] == 1, r
+    # Equipment declared in a document the binding does not read: the walk
+    # counts zero, the text finds it — the check is inert over a declaration
+    # that exists, which is the refusal this gate is for.
+    r = adjudicate_on(gate, unseen, build, row)
+    assert r["verdict"] == "UNBOUND", r
+    assert r["binding"] == 0 and r["precondition"] == 1
+
+
 def test_the_live_cast_precondition_counts_the_npcs_a_ledger_is_keyed_by(gate, tmp_path):
     """`DW0460`/`DW0461` read the `cast` ledger, a declaration ON a quest whose
     keys are stage-2 NPC ids (`DW0464` refuses any other). A campaign with no
