@@ -1983,6 +1983,7 @@
             "hint": "Up the flight, once its treads are back.",
             "id": "obj/climb-the-loft",
             "limit": {
+              "from": "activation",
               "on_expire": [
                 {
                   "style": "chat",

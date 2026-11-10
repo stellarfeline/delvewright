@@ -1,0 +1,20 @@
+{
+  "code": "DW1086",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/1/objectives/1/limit",
+      "value": {
+        "from": {
+          "objective": "obj/clear-the-muster"
+        },
+        "ticks": 600
+      }
+    }
+  ],
+  "units": [
+    "Objective::kill.limit"
+  ],
+  "why": "The muster's fight given a window whose clock starts at the fight itself, and nothing else changed. A clock started by the objective it closes starts once that objective is already open, so it measures nothing the party is told; a start is one of the objective's own `after` ancestors, or its activation. Refused at `limit.from`, naming the objective, with the remedy: name an ancestor, or use `activation`. It declares `Objective::kill.limit`: a `kill` takes a `limit` exactly as the primary's `reach-anchor` does, one field of every objective kind, and this is where the `kill` form is written."
+}
