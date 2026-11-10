@@ -2101,8 +2101,7 @@ second on the server's clock through the `census` the row names
 (`[dw:actor <campaign> <actor> <seq> <alive> <x> <y> <z>]`, the sigil and anchored
 match of the completion channel) and once after the completion, and judges the
 step in the `pursuit` ladder stage: red on a death, a staged removal or a restore,
-a pursuer absent at a reading, a pursuer that never moved past its own width after
-its `entrance_ticks`, or no reading (`docs/reference/playtest-methodology.md`
+a pursuer absent at a reading, or no reading (the pursuer's displacement is stated, never judged) (`docs/reference/playtest-methodology.md`
 *What the ladder asserts beside a body it never fights*). The run closes with
 `[pursuit] <n> pursued step(s) of <N>, <m> pursuer(s), <k> reading(s); closest
 approach <d>`. The sculk ear's warden rule reads the declaration too: the run's

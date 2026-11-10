@@ -193,6 +193,63 @@ fn summons(f: &str) -> Vec<&str> {
     f.lines().filter(|l| l.contains("summon ")).collect()
 }
 
+/// **A free body** (spec-0132 §5.2): what the compiler writes for a body it
+/// unleashes or re-seats must not leave it unable to act — no `NoAI`, no
+/// `Invulnerable`, no `NoGravity` (the caged puppet's marks), and no
+/// `movement_speed` of zero written by the emitter.
+fn assert_free_body(summon: &str) {
+    for caged in ["NoAI", "Invulnerable", "NoGravity"] {
+        assert!(
+            !summon.contains(caged),
+            "an unleashed body is free, but its summon writes `{caged}`: {summon}"
+        );
+    }
+    assert!(
+        !summon.contains("movement_speed\",base:0.0}")
+            && !summon.contains("movement_speed\",base:0}"),
+        "an unleashed body is free, but its summon writes a zero movement_speed: {summon}"
+    );
+}
+
+/// Every `unleash_*` and `actor_restand_*` function of a build: its twin
+/// summons are free bodies, and no line outside a removal (the puppet's, or the
+/// old body's unseen exit) writes a cage onto a body.
+fn assert_every_unleashed_body_is_free(out: &BuildOutput, safe: &str) {
+    let mut checked = 0;
+    for name in [format!("unleash_{safe}"), format!("actor_restand_{safe}")] {
+        let f = func(out, &name);
+        for l in f.lines() {
+            if l.contains("summon ") {
+                assert_free_body(l);
+                checked += 1;
+            } else if !l.contains("dw_pup_") && !l.contains("dw_unseen") {
+                assert!(
+                    !l.contains("NoAI:1b") && !l.contains("Invulnerable:1b"),
+                    "`{name}` cages a body outside the puppet's removal: {l}"
+                );
+            }
+        }
+    }
+    assert!(
+        checked >= 2,
+        "the proof bound {checked} summon line(s) of `{safe}`"
+    );
+}
+
+/// Criterion 10 (the compiler half, moved here from the runtime stage): the
+/// body every arrival writes — the entering warden's two arrival lines and the
+/// re-seat, and an ordinary zombie twin — is a free body, so the pursuit
+/// stage never has to ask whether the danger could act.
+#[test]
+fn every_unleashed_and_every_entering_twin_is_a_free_body() {
+    let (out, _) = build(&base());
+    assert_every_unleashed_body_is_free(&out, SLEEPER_SAFE);
+    let mut c = base();
+    with_guardian(&mut c);
+    let (out, _) = build(&c);
+    assert_every_unleashed_body_is_free(&out, "the_guardian");
+}
+
 // ---------------------------------------------------------------------------
 // §2.3 — the entrance on the twin's summon
 // ---------------------------------------------------------------------------
@@ -295,6 +352,7 @@ fn the_wither_twin_charges_up() {
             assert!(l.contains(",Invul:220,"), "the charge-up: {l}");
             assert!(l.contains(health), "a third of the maximum ({health}): {l}");
             assert!(!l.contains("Brain:"), "a wither needs no finalization: {l}");
+            assert_free_body(l);
         }
     }
 }

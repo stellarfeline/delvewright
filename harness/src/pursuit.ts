@@ -1,8 +1,9 @@
 // The pursuit leg's verdict (spec-0132 §5): a pursued step — one the compiler
 // says is walked while an `outrun` body is loose — passes only when the bot
 // arrives alive, nothing was staged away and nothing restored, every pursuer was
-// read standing at every reading, every pursuer moved past its own width after
-// its entrance window, and at least one reading was taken.
+// read standing at every reading, and at least one reading was taken. Whether the
+// body is free to act is the compiler's output, proven by its Rust tests; whether
+// it then moves is vanilla's, and is stated as displacement, never judged.
 //
 // The readings are the compiler's census (`actor_census_<id>`, the anchored
 // `[dw:actor …]` line), called once a second on the server's clock while the
@@ -80,18 +81,15 @@ function fmt(n: number): string {
 /**
  * **Judge one pursued step.** `arrivals` is the run's record of where each
  * pursuer was first read standing (updated here: the first standing reading of
- * a body sets its arrival cell and the tick its entrance window counts from).
- * `widthOf` is a body's width by kind, from the pinned registry.
+ * a body sets its arrival cell and tick; an undated pursuer not yet arrived is not lost).
  *
  * The refusals, each a `pursuit` failure naming the step and the pursuer:
  * `died`, `staged`, `restored`, `pursuer_lost` (absent or dead at a reading),
- * `pursuer_inert` (never moved past its own width after its window — the
- * vacuous shape: a danger whose will never ran), `unread` (no reading).
+ * `unread` (no reading). Displacement is a measurement, never a refusal.
  */
 export function judgePursuedStep(
   rec: PursuitStepRecord,
   arrivals: Map<string, Arrival>,
-  widthOf: (kind: string) => number,
 ): PursuitVerdict {
   const failures: string[] = [];
   const at = `step ${rec.step} (${rec.label})`;
@@ -122,9 +120,7 @@ export function judgePursuedStep(
       failures.push(`${at}: unread — no census of \`${p.actor}\` was read while the step was walked`);
       continue;
     }
-    const width = widthOf(p.kind);
     let lost: PursuitReading | undefined;
-    let moved = false;
     let last: Vec3Tuple | undefined;
     for (const r of mine) {
       if (!r.alive || r.feet === undefined) {
@@ -135,14 +131,10 @@ export function judgePursuedStep(
         continue;
       }
       if (!arrivals.has(p.actor)) arrivals.set(p.actor, { cell: r.feet, tick: r.tick });
-      const arrival = arrivals.get(p.actor)!;
       const d = distance(r.botFeet, r.feet);
       closest = closest === undefined ? d : Math.min(closest, d);
       if (last !== undefined) displacement += distance(last, r.feet);
       last = r.feet;
-      if (r.tick >= arrival.tick + p.entranceTicks && distance(r.feet, arrival.cell) > width) {
-        moved = true;
-      }
     }
     if (lost !== undefined) {
       failures.push(
@@ -152,15 +144,6 @@ export function judgePursuedStep(
     if (!arrivals.has(p.actor)) {
       failures.push(`${at}: unread — \`${p.actor}\` was never read standing while the step was walked`);
       continue;
-    }
-    if (!moved) {
-      const arrival = arrivals.get(p.actor)!;
-      failures.push(
-        `${at}: pursuer_inert — \`${p.actor}\` never left its arrival cell ` +
-          `[${arrival.cell.map(fmt).join(", ")}] by more than its width (${fmt(width)}) after its ` +
-          `entrance window (${p.entranceTicks} tick(s) from game tick ${arrival.tick}): a danger ` +
-          `whose will never ran is not one the walk escaped`,
-      );
     }
   }
   return {

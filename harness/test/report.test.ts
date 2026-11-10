@@ -502,7 +502,7 @@ test("the pursuit line states its binding with its denominator, with one pursued
 
   // A failure in a pursued step's verdict reds the stage.
   const red = new RunReport("gallery", "normal");
-  red.recordPursuit([{ record, verdict: { ...verdict, failures: ["step 16: pursuer_inert — x"] } }], 34);
+  red.recordPursuit([{ record, verdict: { ...verdict, failures: ["step 16: pursuer_lost — x"] } }], 34);
   assert.deepEqual(
     red.redStages().map((s) => s.stage),
     ["pursuit"],

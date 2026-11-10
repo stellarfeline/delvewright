@@ -79,15 +79,6 @@ export const methods = {
     return out;
   },
 
-  /** A body's width by kind, from the pinned registry the client was built for. */
-  bodyWidth(this: MineflayerExecutor, kind: string): number {
-    const name = kind.replace(/^minecraft:/, "");
-    const registry = (this.bot as unknown as {
-      registry?: { entitiesByName?: Record<string, { width?: number }> };
-    })?.registry;
-    return registry?.entitiesByName?.[name]?.width ?? 1;
-  },
-
   /**
    * **Walk a pursued step** (spec-0132 §5.2): `act` is the step exactly as
    * every other is performed. While it runs every pursuer is read once a
@@ -165,7 +156,7 @@ export const methods = {
       refusals: [...this.pursuedStep.refusals],
     };
     this.pursuedStep = undefined;
-    const verdict = judgePursuedStep(record, this.pursuitArrivals, (kind) => this.bodyWidth(kind));
+    const verdict = judgePursuedStep(record, this.pursuitArrivals);
     this.pursuitRecords.push({ record, verdict });
     const m = verdict.measurement;
     process.stderr.write(
