@@ -706,7 +706,12 @@ fn cameras_print_where_every_camera_stands() {
     assert!(log.contains("world: after-obj-talk "), "{log}");
     let door = json(&scenes.join("hello-world_camera_door.manifest.json"));
     assert_eq!(door["world"]["key"], "after-obj-talk", "{door}");
-    assert_eq!(door["world"]["path"], "worlds/after-obj-talk", "{door}");
+    // The keeper watches and the lens is within his reach: the frame stands
+    // in its world's copy with him turned to the lens.
+    assert_eq!(
+        door["world"]["path"], "worlds/after-obj-talk.facing-hello-world_camera_door",
+        "{door}"
+    );
     let hero = json(&scenes.join("hello-world_camera_hero.manifest.json"));
     assert_eq!(hero["world"]["key"], "at-load", "{hero}");
     // The six cells are the door's, read back from the two written worlds.
