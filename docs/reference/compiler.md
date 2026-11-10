@@ -4055,6 +4055,21 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   `reason`. `DW0426` is error-tier, so a build that ships proves no press lands
   on nothing; that sentence is equally true of a campaign that arms no press at
   all, and only the count tells the two apart.
+- `<out>/validation/press-proof.json` (every build): the press proof's **binding
+  ledger** (`compiler::pressable::PressProof`) — what the proof over the placed
+  world judged: `pressables` (the sum of `forms`), `forms` (the count per form
+  of pressable: boxed and acting on its own, boxed and struck, boxed and
+  unobservable, pressed on its own), `gates`, `own_answers`, `knockers`,
+  `answers` and `reconciled`. The refusals it binds are `DW1059`, `DW1052`,
+  `DW0429` and `DW0896`; only the counts tell a campaign that arms no press from
+  a proof that bound nothing.
+- `<out>/validation/sheet-gate.json` (every build): the sheet judgement's
+  **binding ledger** (`compiler::skinparts::Binding`) — `examined` and
+  `declared` (the mannequin skins plus the `world.textures[]` rows an entity
+  model is drawn with), each split into `skins_*` and `rows_*`, `by_model` (the
+  sheets judged per model key), `refused` (`DW0978`, `DW0979`), the model-parts
+  `table` name and its `instrument_revision`; only the counts tell a campaign
+  that declares no sheet from a judgement that reached none.
 - `<out>/validation/leave-proof.json`: the `DW0921` proof's **binding ledger**
   (`compiler::nav::LeaveBinding`): `configurations` (distinct quest
   configurations judged), `route_cells` (the critical path's route cells the
