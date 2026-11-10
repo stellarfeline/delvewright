@@ -391,6 +391,10 @@ pub struct WorldMaker {
     ground: Ground,
     /// The loaded extent every chunk of which is written.
     pub extent: ([i32; 3], [i32; 3]),
+    /// The height of the level generator's surface — the top of an ocean's
+    /// sea — where the declared horizon lays ground past the build; `None`
+    /// where it lays none (`void`, `valley`).
+    pub surface: Option<i32>,
     /// The templates' block entities, by cell, with the block they belong to.
     template_block_entities: BTreeMap<[i32; 3], (crate::compiler::blockstate::BlockState, Nbt)>,
 }
@@ -411,7 +415,12 @@ impl WorldMaker {
         for c in picture.keys() {
             ground.mark(c);
         }
+        let surface = match delvewright_dsl::horizon_base(&plan.campaign.world.content.horizon) {
+            delvewright_dsl::HorizonBase::Ocean => Some(crate::compiler::plan::SEA_LEVEL),
+            delvewright_dsl::HorizonBase::Void | delvewright_dsl::HorizonBase::Valley => None,
+        };
         WorldMaker {
+            surface,
             biome: crate::compiler::horizon::biome_map(plan),
             spawn: plan.campaign_start().map_or([0, 64, 0], |(_, p)| p),
             ground,
@@ -444,17 +453,24 @@ impl WorldMaker {
             .collect()
     }
 
-    /// **Encode a world**: `blocks` (a configuration's bytes) with the regions
-    /// its writes `laid` held out of the generator's ground, the ledger `rows`
-    /// its arrival holds laid in firing order (a block at its cell, a
-    /// container's item into the container's compound, a body into the
-    /// entity file), its block entities, its light and `day_time`.
+    /// **Encode a world**: `blocks` (a moment's bytes, every write and every
+    /// ledger block row already laid in firing order —
+    /// [`crate::compiler::view::moment::Laid`]) with the regions written
+    /// (`laid`) held out of the generator's ground, the ledger `rows` its
+    /// arrival holds put in (a container's item into the container's
+    /// compound, a sign's keys into its block entity, and — unless `bodies`
+    /// states them — each body into the entity file), its block entities, its
+    /// light and `day_time`. `extent` widens the box every chunk of which is
+    /// written beyond the build's loaded extent (a picture's horizon).
+    #[allow(clippy::too_many_arguments)]
     pub fn encode_blocks(
         &self,
-        mut blocks: BlockMap,
+        blocks: BlockMap,
         laid: &[Region],
         day_time: i64,
         rows: &[&crate::compiler::placed::Placed],
+        bodies: Option<&[EntityRecord]>,
+        extent: Option<([i32; 3], [i32; 3])>,
     ) -> (BlockMap, WrittenWorld) {
         use crate::compiler::placed::PlacedObject;
         let mut ground = self.ground.clone();
@@ -466,14 +482,8 @@ impl WorldMaker {
         let mut entities: Vec<EntityRecord> = Vec::new();
         for r in rows {
             match &r.object {
-                PlacedObject::Block { cell, state } => {
-                    ground.mark(*cell);
-                    if crate::compiler::assembled::base_id(state) == "minecraft:air" {
-                        blocks.remove(cell);
-                    } else {
-                        blocks.insert(*cell, crate::compiler::blockstate::BlockState::new(state));
-                    }
-                }
+                // Laid with the moment's writes, in firing order.
+                PlacedObject::Block { .. } => {}
                 PlacedObject::Item { cell, slot, stack } => {
                     items
                         .entry(*cell)
@@ -484,6 +494,9 @@ impl WorldMaker {
                 PlacedObject::Entity { .. } => entities.extend(r.entity_record()),
                 PlacedObject::Removed { .. } => {}
             }
+        }
+        if let Some(b) = bodies {
+            entities = b.to_vec();
         }
         let mut bes = self.block_entities(&blocks);
         for (cell, stacks) in &items {
@@ -522,7 +535,13 @@ impl WorldMaker {
             biome: &biome,
             spawn: self.spawn,
             ground: &ground,
-            extent: Some(self.extent),
+            extent: Some(match extent {
+                Some((lo, hi)) => (
+                    std::array::from_fn(|i| lo[i].min(self.extent.0[i])),
+                    std::array::from_fn(|i| hi[i].max(self.extent.1[i])),
+                ),
+                None => self.extent,
+            }),
             block_entities: &bes,
             entities: &entities,
             day_time: Some(day_time),
@@ -531,7 +550,7 @@ impl WorldMaker {
     }
 
     /// A configuration's world over `picture`, at `clock`, with the ledger
-    /// rows `rows` laid.
+    /// rows `rows` laid, every write in firing order.
     pub fn encode(
         &self,
         plan: &Plan,
@@ -540,11 +559,14 @@ impl WorldMaker {
         clock: &Clock,
         rows: &[&crate::compiler::placed::Placed],
     ) -> (BlockMap, WrittenWorld) {
+        let laid = crate::compiler::view::moment::Laid::of(&config.laid_writes(), rows);
         self.encode_blocks(
-            config.blocks(picture),
-            &config.laid_regions(),
+            laid.bytes(picture),
+            &laid.regions(),
             clock.day_time(plan),
             rows,
+            None,
+            None,
         )
     }
 }

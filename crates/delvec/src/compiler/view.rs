@@ -56,6 +56,7 @@ pub mod frames;
 pub mod frameset;
 pub mod index;
 pub mod meta;
+pub mod moment;
 pub mod nbt;
 pub mod panorama;
 pub mod review;

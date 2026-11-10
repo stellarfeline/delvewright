@@ -73,6 +73,10 @@ pub(in crate::compiler::nav) struct RegionState {
     /// (`None` = air), in region order — what [`RegionState::blocks_over`] lays
     /// over the assembled bytes to give this configuration's block map.
     pub(in crate::compiler::nav) laid: Vec<LaidWrite>,
+    /// Per entry of `laid`, the step its write fires at: what orders a laid
+    /// write against the placements ledger's rows when a picture lays both
+    /// ([`crate::compiler::nav::Configuration::laid_writes`]).
+    pub(in crate::compiler::nav) laid_steps: FiredAt,
     /// For each cell in `solid` whose fill block does not cover its cell — iron
     /// bars, a pane — that block's server footprint
     /// ([`delvewright_dsl::blockshape::server_footprint`]). A world-load seal
@@ -87,6 +91,20 @@ pub(in crate::compiler::nav) struct RegionState {
     /// is solid to a body and looked through by an eye.
     pub(in crate::compiler::nav) fill_hides: BTreeSet<[i32; 3]>,
 }
+
+/// The step each laid write fires at, beside [`RegionState::laid`]. Provenance,
+/// never state: two states that lay the same blocks over the same regions are
+/// one state whichever steps laid them, so this compares equal to any other.
+#[derive(Debug, Default, Clone)]
+pub(in crate::compiler::nav) struct FiredAt(pub(in crate::compiler::nav) Vec<usize>);
+
+impl PartialEq for FiredAt {
+    fn eq(&self, _: &FiredAt) -> bool {
+        true
+    }
+}
+
+impl Eq for FiredAt {}
 
 /// A region's inclusive corners.
 type Bbox = ([i32; 3], [i32; 3]);
@@ -158,13 +176,27 @@ impl RegionState {
         &self,
         base: &crate::compiler::blockstate::BlockMap,
     ) -> crate::compiler::blockstate::BlockMap {
+        lay_writes(base, &self.laid)
+    }
+}
+
+/// **The one writer of region writes over a block map**: each write of
+/// `laid`, in order, laid cell by cell as its block (`region_fill`) or air.
+/// [`RegionState::blocks_over`] lays a configuration's writes through it, and
+/// a picture its writes and the placements ledger's rows in firing order
+/// ([`crate::compiler::view::moment::lay_in_order`]).
+pub(crate) fn lay_writes(
+    base: &crate::compiler::blockstate::BlockMap,
+    laid: &[(([i32; 3], [i32; 3]), Option<String>)],
+) -> crate::compiler::blockstate::BlockMap {
+    {
         let mut out = base.clone();
         // The writes, cell by cell in the order laid, are laid section by
         // section (ADR-0037 §2): the same map, with a working set of one
         // section at a time.
         let mut writes: Vec<([i32; 3], Option<crate::compiler::blockstate::BlockState>)> =
             Vec::new();
-        for ((lo, hi), block) in &self.laid {
+        for ((lo, hi), block) in laid {
             match block {
                 // Cell by cell from the write's block (`region_fill`).
                 Some(b) => {
@@ -182,7 +214,9 @@ impl RegionState {
         out.write_by_section(writes);
         out
     }
+}
 
+impl RegionState {
     /// This state as it would be **if every unforced fill were credited** — the
     /// counterfactual [`DW_UNFORCED_FOOTING`] is derived from, and exactly the model
     /// this compiler ran before a firing's forcedness reached the geometry.
@@ -382,16 +416,20 @@ impl World {
             }
         }
         let mut st = RegionState::default();
-        for (region, (_, write, forced, blame, block)) in latest {
+        for (region, (step, write, forced, blame, block)) in latest {
             // The bytes this configuration holds: a forced write lays its block
             // (or air); a fill whose block the model does not know — a world-load
             // seal — leaves the bytes as the prefab built them.
             if forced {
                 match write {
-                    RegionWrite::Clear | RegionWrite::Unseal => st.laid.push((region, None)),
+                    RegionWrite::Clear | RegionWrite::Unseal => {
+                        st.laid.push((region, None));
+                        st.laid_steps.0.push(step);
+                    }
                     RegionWrite::Fill | RegionWrite::Flood | RegionWrite::Pass => {
                         if block.is_some() {
                             st.laid.push((region, block.clone()));
+                            st.laid_steps.0.push(step);
                         }
                     }
                 }

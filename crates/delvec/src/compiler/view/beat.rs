@@ -1,14 +1,17 @@
 //! **The configuration a camera stands in** (spec-0089 §4).
 //!
 //! A showcase camera stating `after: {step, path?}` is taken after that step
-//! of that exported path: the world as the region model holds it on arrival at
-//! the step after it, which is the state the proofs route the leg leaving the
-//! step under. Its bytes are [`crate::compiler::nav::Configuration::blocks`]
-//! over the assembled block map — the one derivation of a configuration's
-//! block map, which `DW0891` reads too — and nothing here lays a write itself.
+//! of that exported path: the world as that path leaves it once every step up
+//! to and including the stated one is played, in the path's own order
+//! ([`crate::compiler::view::moment`]) — every write fired on the way laid in
+//! firing order over the load bytes, the cast where the cast ledger stations
+//! it then, and the sky the path's beats set. The region writes are
+//! [`crate::compiler::nav::Configuration`]'s, read under the path's order
+//! rather than the proofs' causal ancestry: a picture is of one play of the
+//! path, and on it every earlier step has been played.
 //!
-//! A camera with no `after` stands at load: the configuration arriving at the
-//! critical path's first step, every world-load seal in place, no beat fired.
+//! A camera with no `after` stands at load: arrival at the critical path's
+//! first step, every world-load seal and setup write in place, no beat fired.
 //!
 //! Every rule of the field is a rule of the camera record and is refused under
 //! the record's own code (`DW0721`), by `delvec cameras` and `delvec build`
@@ -17,9 +20,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::compiler::blockstate::BlockMap;
+use crate::compiler::flow::{JournalStep, Playthrough};
 use crate::compiler::nav::{Configuration, World, configuration_at};
-use crate::compiler::plan::{Plan, RegionEvents, Step};
+use crate::compiler::placed::{Ledger, Placed};
+use crate::compiler::plan::{PathFiring, Plan, RegionEvents, Step};
 use crate::compiler::view::camera::{CAMERAS_FILE, Camera};
+use crate::compiler::view::moment::{CastMark, Laid};
+use crate::compiler::view::world::EntityRecord;
 
 /// The key of the world a camera with no `after` stands in.
 pub const AT_LOAD: &str = "at-load";
@@ -44,6 +51,11 @@ pub struct PathModel {
     events: RegionEvents,
     /// `None`: the plan's own ancestry ([`Plan::gate_fired_before`]).
     ancestors: Option<BTreeMap<usize, BTreeSet<usize>>>,
+    /// A branch's playthrough and what its path fires; `None` for the
+    /// critical path, which is the plan's.
+    story: Option<(Playthrough, PathFiring)>,
+    /// The playthrough's flow journal, asked once.
+    journal: std::sync::OnceLock<Vec<JournalStep>>,
 }
 
 impl PathModel {
@@ -55,6 +67,45 @@ impl PathModel {
             steps: plan.critical_path.clone(),
             events: plan.region_events.clone(),
             ancestors: None,
+            story: None,
+            journal: std::sync::OnceLock::new(),
+        }
+    }
+
+    /// **The configuration of a moment on this path**: the writes fired at
+    /// every step before `arrival`, in the path's own order — the world one
+    /// play of the path leaves, which a picture of the moment is of. (The
+    /// proofs read [`PathModel::at`], under causal ancestry.)
+    pub fn at_moment(&self, world: &World, arrival: usize) -> Configuration {
+        let played = |g: usize, s: usize| g == 0 || g < s;
+        configuration_at(world, &self.events, &played, arrival)
+    }
+
+    /// The flow journal of this path's playthrough.
+    pub fn journal(&self, plan: &Plan) -> &[JournalStep] {
+        self.journal.get_or_init(|| {
+            let flow = crate::compiler::flow::Flow::new(plan.campaign);
+            match &self.story {
+                Some((pt, _)) => flow.journal(pt),
+                None => flow.journal(&flow.playthrough()),
+            }
+        })
+    }
+
+    /// The placements ledger as this path fires it
+    /// ([`Ledger::on_path`]); the build's own on the critical path.
+    pub fn ledger(&self, plan: &Plan, ledger: &Ledger) -> Ledger {
+        match (&self.story, &self.ancestors) {
+            (Some((_, firing)), Some(ancestors)) => ledger.on_path(
+                plan,
+                &crate::compiler::placed::OnPath {
+                    steps: &self.steps,
+                    obj_step: &firing.obj_step,
+                    firing,
+                    ancestors,
+                },
+            ),
+            _ => ledger.clone(),
         }
     }
 
@@ -117,9 +168,8 @@ pub fn branch_paths(plan: &Plan) -> Vec<(String, Option<PathModel>)> {
         .iter()
         .map(|r| {
             let model = r.world.and_then(|w| {
-                let cp = plan
-                    .branch_critical_path(&flow, &flow.story_playthrough(w))
-                    .ok()?;
+                let pt = flow.story_playthrough(w);
+                let cp = plan.branch_critical_path(&flow, &pt).ok()?;
                 let (events, ancestors) = plan.branch_gate_model(&cp);
                 Some(PathModel {
                     branch: Some(r.branch.id.clone()),
@@ -127,6 +177,8 @@ pub fn branch_paths(plan: &Plan) -> Vec<(String, Option<PathModel>)> {
                     steps: cp.steps,
                     events,
                     ancestors: Some(ancestors),
+                    story: Some((pt, cp.firing)),
+                    journal: std::sync::OnceLock::new(),
                 })
             });
             (r.branch.id.clone(), model)
@@ -144,8 +196,13 @@ pub struct Stand {
     pub key: String,
     /// What the camera is taken after; `None` at load.
     pub after: Option<StandAfter>,
-    /// Cells whose block differs from load.
+    /// Cells whose block differs from load in the world written.
     pub cells_moved: usize,
+    /// Members of the cast standing elsewhere than at load, or out of the
+    /// world where they stood at load, or back in it.
+    pub cast_moved: usize,
+    /// Whether the path has set another sky than load's by then.
+    pub sky_moved: bool,
     /// Unforced writes the configuration holds and does not lay.
     pub unforced: usize,
 }
@@ -168,10 +225,22 @@ impl Stand {
         match &self.after {
             None => format!("after: {} at load", self.camera),
             Some(a) => format!(
-                "after: {} after {} (step {} of {} on {}): {} cells moved from load, {} unforced \
-                 write(s) not laid, {block_entities_omitted} block entit(ies) omitted; biomes: at \
-                 load; clock: as the picture",
-                self.camera, a.step, a.index, a.of, a.path, self.cells_moved, self.unforced
+                "after: {} after {} (step {} of {} on {}): {} cells moved from load, {} of the \
+                 cast moved, sky {}, {} unforced write(s) not laid, {block_entities_omitted} block \
+                 entit(ies) omitted; biomes: at load; clock: as the picture",
+                self.camera,
+                a.step,
+                a.index,
+                a.of,
+                a.path,
+                self.cells_moved,
+                self.cast_moved,
+                if self.sky_moved {
+                    "set by the story"
+                } else {
+                    "as at load"
+                },
+                self.unforced
             ),
         }
     }
@@ -189,31 +258,122 @@ pub fn after_key(step: &str, slug: Option<&str>) -> String {
 /// An inclusive box of cells, `(min, max)`.
 pub type Region = ([i32; 3], [i32; 3]);
 
-/// A configuration's bytes and the regions its writes lay.
-pub type Laid = (BlockMap, Vec<Region>);
+/// **What a moment holds** on one path: its writes in firing order, the
+/// ledger rows it holds, its bodies with the cast stood where the ledger puts
+/// it, and its sky.
+#[derive(Clone)]
+pub struct Moment {
+    pub laid: Laid,
+    /// The path's ledger rows the moment holds, in firing order.
+    pub rows: Vec<Placed>,
+    /// Every body the world holds.
+    pub bodies: Vec<EntityRecord>,
+    pub cast: Vec<CastMark>,
+    /// The latest `set-time` and `set-weather` the path fired by then.
+    pub sky: (Option<String>, Option<String>),
+    /// Unforced writes the configuration holds and does not lay.
+    pub unforced: usize,
+}
 
-/// What a set of cameras stands in: the load map, and per distinct key the
-/// configuration's bytes.
-#[derive(Debug, Clone, PartialEq)]
+impl Moment {
+    /// How many of the cast stand elsewhere than in `other`.
+    pub fn cast_moved_from(&self, other: &Moment) -> usize {
+        let mut ids: BTreeSet<&str> = self.cast.iter().map(|m| m.npc.as_str()).collect();
+        ids.extend(other.cast.iter().map(|m| m.npc.as_str()));
+        let at = |m: &Moment, id: &str| m.cast.iter().find(|c| c.npc == id).map(|c| c.at);
+        ids.into_iter()
+            .filter(|id| at(self, id) != at(other, id))
+            .count()
+    }
+}
+
+/// What every moment of one run is read against: the build's placements
+/// ledger and the walks its NPCs are planned to take.
+pub struct MomentInputs<'a> {
+    pub ledger: &'a Ledger,
+    pub moves: Vec<crate::compiler::nav::MovePlan>,
+}
+
+impl<'a> MomentInputs<'a> {
+    /// The ledger and the plan's walks over `world` (none when they do not
+    /// plan: the build refuses that by name).
+    pub fn of(plan: &Plan, world: &World, ledger: &'a Ledger) -> MomentInputs<'a> {
+        MomentInputs {
+            ledger,
+            moves: crate::compiler::nav::plan_moves(plan, world).unwrap_or_default(),
+        }
+    }
+}
+
+/// **The moment at arrival `arrival` of `path`** ([`crate::compiler::view::moment`]).
+pub fn moment(
+    plan: &Plan,
+    world: &World,
+    path: &PathModel,
+    arrival: usize,
+    inputs: &MomentInputs<'_>,
+) -> Moment {
+    let cfg = path.at_moment(world, arrival);
+    let ledger = path.ledger(plan, inputs.ledger);
+    let rows: Vec<&Placed> =
+        crate::compiler::placed::rows_under(&ledger, arrival, &|g, s| g == 0 || g < s);
+    let laid = Laid::of(&cfg.laid_writes(), &rows);
+    let journal = path.journal(plan);
+    let cast = crate::compiler::view::moment::story_at(&path.steps, journal, arrival)
+        .map(|story| crate::compiler::view::moment::cast_at(plan, &story, &inputs.moves))
+        .unwrap_or_default();
+    let bodies = crate::compiler::view::moment::bodies_of(&rows, &cast, &ledger.rows);
+    let sky = crate::compiler::view::moment::clock_at(plan, &path.steps, journal, arrival);
+    Moment {
+        laid,
+        rows: rows.into_iter().cloned().collect(),
+        bodies,
+        cast,
+        sky,
+        unforced: cfg.unforced_writes(),
+    }
+}
+
+/// What a set of cameras stands in: per distinct key the moment's bytes and
+/// what its world holds beyond them.
+#[derive(Clone)]
 pub struct Stands {
     /// Per camera, in the order asked.
     pub stands: Vec<Stand>,
     /// Per distinct key, in first-asked order, the block map its world holds.
     pub worlds: Vec<(String, BlockMap)>,
-    /// Per distinct key, the regions its configuration's writes lay
-    /// ([`crate::compiler::nav::Configuration::laid_regions`]): the writer
-    /// holds the level generator's block out of them.
+    /// Per distinct key, the regions its writes lay: the writer holds the
+    /// level generator's block out of them.
     pub laid: Vec<(String, Vec<Region>)>,
+    /// Per distinct key, the moment its world is of.
+    pub moments: Vec<(String, Moment)>,
+}
+
+impl std::fmt::Debug for Stands {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Stands")
+            .field("stands", &self.stands)
+            .field(
+                "worlds",
+                &self.worlds.iter().map(|(k, _)| k).collect::<Vec<_>>(),
+            )
+            .finish()
+    }
 }
 
 impl Stands {
-    /// The regions the configuration of world `key` lays (empty for a key it
-    /// does not hold).
+    /// The regions the moment of world `key` lays (empty for a key it does
+    /// not hold).
     pub fn laid_in(&self, key: &str) -> &[Region] {
         self.laid
             .iter()
             .find(|(k, _)| k == key)
             .map_or(&[], |(_, r)| r.as_slice())
+    }
+
+    /// The moment world `key` is of.
+    pub fn moment(&self, key: &str) -> Option<&Moment> {
+        self.moments.iter().find(|(k, _)| k == key).map(|(_, m)| m)
     }
 }
 
@@ -277,27 +437,22 @@ pub struct Stood {
     pub maker: crate::compiler::view::review::WorldMaker,
     /// `level.dat`'s `DayTime` for every world written.
     pub day_time: i64,
-    /// The plan's causal ancestry of critical-path steps
-    /// ([`Plan::gate_fired_before`]'s relation), so a world can lay the
-    /// placements ledger rows its arrival holds.
-    pub ancestors: BTreeMap<usize, BTreeSet<usize>>,
+    /// Every body that turns to face the nearest player within its reach
+    /// ([`crate::compiler::watching::watchers`] with `who` nearest): the tag
+    /// its body carries and its reach in blocks. A picture's lens stands in for
+    /// that player ([`crate::compiler::view::moment::facing_the_lens`]).
+    pub watchers: Vec<(String, u32)>,
 }
 
 impl Stood {
-    /// The critical-path arrival world `key` stands at: 0 at load, the step
-    /// after the camera's `after` on the critical path, `None` on a branch's.
-    pub fn arrival_of(&self, key: &str) -> Option<usize> {
-        if key == AT_LOAD {
-            return Some(0);
-        }
-        let s = self.stands.stands.iter().find(|s| s.key == key)?;
-        let a = s.after.as_ref()?;
-        (a.path == "the critical path").then_some(a.index)
-    }
-
-    /// Whether step `g` fires before arrival `s` ([`Plan::gate_fired_before`]).
-    pub fn fired_before(&self, g: usize, s: usize) -> bool {
-        g == 0 || self.ancestors.get(&s).is_some_and(|a| a.contains(&g))
+    /// The watches a picture turns: every watcher a player of any class
+    /// draws.
+    pub fn watchers_of(plan: &Plan) -> Vec<(String, u32)> {
+        crate::compiler::watching::watchers(plan)
+            .into_iter()
+            .filter(|w| w.class_tag.is_none())
+            .map(|w| (w.tag, w.within))
+            .collect()
     }
 }
 
@@ -313,18 +468,25 @@ pub fn load_laid(plan: &Plan, world: &World) -> Vec<Region> {
     PathModel::critical(plan).at(plan, world, 0).laid_regions()
 }
 
+/// The moment at load: arrival at the critical path's first step.
+pub fn load_moment(plan: &Plan, world: &World, inputs: &MomentInputs<'_>) -> Moment {
+    moment(plan, world, &PathModel::critical(plan), 0, inputs)
+}
+
 /// **Where one camera stands**, or the record's refusal of its `after`.
 ///
 /// `branches` is [`branch_paths`], asked only when a camera names a path.
+#[allow(clippy::too_many_arguments)]
 pub fn stand(
     plan: &Plan,
     world: &World,
     base: &BlockMap,
-    load: &BlockMap,
+    load: &Moment,
     critical: &PathModel,
     branches: &mut dyn FnMut() -> Vec<(String, Option<PathModel>)>,
     cam: &Camera,
-) -> Result<(Stand, Option<Laid>), String> {
+    inputs: &MomentInputs<'_>,
+) -> Result<(Stand, Option<Moment>), String> {
     let Some(after) = &cam.after else {
         return Ok((
             Stand {
@@ -332,6 +494,8 @@ pub fn stand(
                 key: AT_LOAD.to_string(),
                 after: None,
                 cells_moved: 0,
+                cast_moved: 0,
+                sky_moved: false,
                 unforced: 0,
             },
             None,
@@ -400,25 +564,40 @@ pub fn stand(
             ));
         }
     };
-    let cfg = path.at(plan, world, i + 1);
-    let moved = cfg.moved_from(load);
-    if moved == 0 {
+    let m = moment(plan, world, path, i + 1, inputs);
+    // **A moment is distinct from load** when a block, a member of the cast
+    // or the sky differs: each is something a picture of it shows.
+    let differs = |m: &Moment| {
+        (
+            m.laid.moved_from(&load.laid, base),
+            m.cast_moved_from(load),
+            m.sky != load.sky,
+        )
+    };
+    let (moved, cast_moved, sky_moved) = differs(&m);
+    if moved == 0 && cast_moved == 0 && !sky_moved {
         // The remedy names a step a camera can state: one the path carries
         // once, so the step it names is never refused as a candidate.
         let first = (0..path.steps.len())
             .filter(|j| step_id(&path.steps[*j]).is_some_and(|id| path.indices_of(id).len() == 1))
-            .find(|j| path.at(plan, world, j + 1).moved_from(load) > 0)
+            .find(|j| {
+                let (b, c, s) = differs(&moment(plan, world, path, j + 1, inputs));
+                b > 0 || c > 0 || s
+            })
             .and_then(|j| step_id(&path.steps[j]).map(str::to_string));
         return Err(format!(
             "{who} states `after.step` `{}`, and the world after it on {label} is the world at load \
-             block for block: a picture of nothing different, which goes stale the moment a beat \
-             is added. REMOVE `after` from camera `{}`, or name a step after which a block moves — \
-             {}",
+             — no block, no member of the cast and no sky differs: a picture of nothing different, \
+             which goes stale the moment a beat is added. REMOVE `after` from camera `{}`, or name \
+             a step after which something moves — {}",
             after.step,
             cam.name,
             match first {
                 Some(f) => format!("the first on {label} is `{f}`"),
-                None => format!("{label} moves no block at all after a step it carries once"),
+                None => format!(
+                    "{label} moves no block, no member of the cast and no sky after a step it \
+                     carries once"
+                ),
             }
         ));
     }
@@ -433,36 +612,51 @@ pub fn stand(
                 path: label,
             }),
             cells_moved: moved,
-            unforced: cfg.unforced_writes(),
+            cast_moved,
+            sky_moved,
+            unforced: m.unforced,
         },
-        Some((cfg.blocks(base), cfg.laid_regions())),
+        Some(m),
     ))
 }
 
-/// Where every camera stands, and one block map per distinct key — the load
-/// map under [`AT_LOAD`] whenever a camera stands there. Refuses at the first
-/// camera whose `after` the record's rules refuse, naming it.
+/// Where every camera stands, and one world per distinct key — the load
+/// moment under [`AT_LOAD`] whenever a camera stands there. Refuses at the
+/// first camera whose `after` the record's rules refuse, naming it.
 pub fn stands(
     plan: &Plan,
     world: &World,
     base: &BlockMap,
     cameras: &[Camera],
+    ledger: &Ledger,
 ) -> Result<Stands, String> {
-    let load = load_blocks(plan, world, base);
+    let inputs = MomentInputs::of(plan, world, ledger);
+    let load = load_moment(plan, world, &inputs);
     let critical = PathModel::critical(plan);
     let mut cache: Option<Vec<(String, Option<PathModel>)>> = None;
     let mut out = Stands {
         stands: Vec::new(),
         worlds: Vec::new(),
         laid: Vec::new(),
+        moments: Vec::new(),
     };
     for cam in cameras {
         let mut branches = || cache.get_or_insert_with(|| branch_paths(plan)).clone();
-        let (s, blocks) = stand(plan, world, base, &load, &critical, &mut branches, cam)?;
+        let (s, m) = stand(
+            plan,
+            world,
+            base,
+            &load,
+            &critical,
+            &mut branches,
+            cam,
+            &inputs,
+        )?;
         if !out.worlds.iter().any(|(k, _)| *k == s.key) {
-            let (map, laid) = blocks.unwrap_or_else(|| (load.clone(), load_laid(plan, world)));
-            out.worlds.push((s.key.clone(), map));
-            out.laid.push((s.key.clone(), laid));
+            let m = m.unwrap_or_else(|| load.clone());
+            out.worlds.push((s.key.clone(), m.laid.bytes(base)));
+            out.laid.push((s.key.clone(), m.laid.regions()));
+            out.moments.push((s.key.clone(), m));
         }
         out.stands.push(s);
     }
@@ -470,7 +664,9 @@ pub fn stands(
 }
 
 /// The record's `after` rules, as the build asks them: every camera of the
-/// record stands somewhere. Returns how many cameras state an `after`.
+/// record stands somewhere. Returns how many cameras state an `after`. The
+/// build asks before its ledger is written, so a moment is judged by its
+/// region writes, its cast and its sky.
 pub fn check_record(
     plan: &Plan,
     world: &World,
@@ -485,7 +681,25 @@ pub fn check_record(
         .filter(|c| c.after.is_some())
         .cloned()
         .collect();
-    stands(plan, world, base, &with).map(|s| s.stands.len())
+    let none = Ledger::default();
+    let inputs = MomentInputs::of(plan, world, &none);
+    let load = load_moment(plan, world, &inputs);
+    let critical = PathModel::critical(plan);
+    let mut cache: Option<Vec<(String, Option<PathModel>)>> = None;
+    for cam in &with {
+        let mut branches = || cache.get_or_insert_with(|| branch_paths(plan)).clone();
+        stand(
+            plan,
+            world,
+            base,
+            &load,
+            &critical,
+            &mut branches,
+            cam,
+            &inputs,
+        )?;
+    }
+    Ok(with.len())
 }
 
 /// The summary binding line: `configurations: <k> written for <c> camera(s),

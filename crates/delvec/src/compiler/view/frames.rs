@@ -277,6 +277,11 @@ pub struct FrameRequest<'a> {
     /// the fog closing at `16 · n` blocks — so a frame taken at a pose shows
     /// what a player standing there sees, and nothing the server never sends.
     pub served: Option<u8>,
+    /// **Where the fog closes** when `served` is `None`: `None` past the
+    /// farthest chunk of `chunks`; `Some(r)` at `r` blocks — a frame whose
+    /// `chunks` are widened to its horizon ([`horizon_cover`]) keeps the fog
+    /// where the build's own extent puts it.
+    pub reach: Option<f32>,
 }
 
 /// The chunks the pinned client draws at render distance `n` around a camera
@@ -410,7 +415,7 @@ impl Drawn {
 /// How far the quick-mode fog closes from `eye` so every loaded chunk is
 /// drawn: the distance to the farthest corner of the chunk rectangle at the
 /// eye's height band, never under 64 blocks.
-fn draw_distance(eye: [f64; 3], chunks: ([i32; 2], [i32; 2])) -> f32 {
+pub fn draw_distance(eye: [f64; 3], chunks: ([i32; 2], [i32; 2])) -> f32 {
     let (lo, hi) = chunks;
     let mut far: f64 = 64.0;
     for x in [lo[0] * 16, hi[0] * 16 + 16] {
@@ -425,6 +430,52 @@ fn draw_distance(eye: [f64; 3], chunks: ([i32; 2], [i32; 2])) -> f32 {
         }
     }
     far.ceil() as f32
+}
+
+/// **The chunks a frame's horizon needs beyond `loaded`** (the declared
+/// horizon's ground): the level generator lays its ground (an ocean's sea) in
+/// every chunk of the world the server makes, so a player standing at the lens
+/// sees that ground out to where the fog closes. Every ray of the frame
+/// (sampled on a grid, its edges included) that meets the ground's surface
+/// `surface_y` is followed to that surface, or to `reach` blocks out
+/// horizontally where it meets it farther — the frame's fog
+/// ([`draw_distance`] over `loaded`); the result is `loaded` widened to the
+/// chunks those points stand in. `None` when `loaded` already holds them all.
+pub fn horizon_cover(
+    camera: &Camera,
+    width: u32,
+    height: u32,
+    loaded: ([i32; 2], [i32; 2]),
+    surface_y: f64,
+) -> Option<([i32; 2], [i32; 2])> {
+    const SAMPLES: u32 = 64;
+    let reach = f64::from(draw_distance(camera.pos, loaded));
+    let (mut lo, mut hi) = loaded;
+    let eye = camera.pos;
+    let drop = eye[1] - surface_y;
+    let at = |n: u32, of: u32| (n * (of - 1)) / (SAMPLES - 1);
+    for i in 0..SAMPLES {
+        for j in 0..SAMPLES {
+            let d = camera.ray(width, height, at(i, width), at(j, height));
+            // A ray that never comes down to the surface meets no ground.
+            if drop <= 0.0 || d[1] >= 0.0 {
+                continue;
+            }
+            let t = drop / -d[1];
+            let flat = (d[0] * d[0] + d[2] * d[2]).sqrt();
+            let t = if t * flat > reach { reach / flat } else { t };
+            let p = [eye[0] + d[0] * t, eye[2] + d[2] * t];
+            let c = [
+                (p[0].floor() as i32).div_euclid(16),
+                (p[1].floor() as i32).div_euclid(16),
+            ];
+            for a in 0..2 {
+                lo[a] = lo[a].min(c[a]);
+                hi[a] = hi[a].max(c[a]);
+            }
+        }
+    }
+    ((lo, hi) != loaded).then_some((lo, hi))
 }
 
 /// The world a run renders from, opened once and drawn many times.
@@ -448,7 +499,11 @@ impl OpenedWorld {
 /// backend that cannot be opened are `DW0723`, naming what was asked.
 pub fn draw(req: &FrameRequest<'_>, opened: Option<&OpenedWorld>) -> Result<Drawn, Diagnostic> {
     let (chunks, reach) = match req.served {
-        None => (req.chunks, draw_distance(req.camera.pos, req.chunks)),
+        None => (
+            req.chunks,
+            req.reach
+                .unwrap_or_else(|| draw_distance(req.camera.pos, req.chunks)),
+        ),
         Some(n) => match served_rect(req.camera.pos, n, req.chunks) {
             Some(r) => (r, f32::from(n) * 16.0),
             None => {

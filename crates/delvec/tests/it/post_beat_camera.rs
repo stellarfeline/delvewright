@@ -151,7 +151,7 @@ fn stands(tag: &str, cams: &[camera::Camera]) -> Result<(beat::Stands, BlockMap)
     );
     let relight = delvec::compiler::light::relight_over(&plan, &assembled);
     let base = beat::picture_base(&plan, &assembled, &relight.placements);
-    beat::stands(&plan, &world, &base, cams).map(|s| (s, base))
+    beat::stands(&plan, &world, &base, cams, &Default::default()).map(|s| (s, base))
 }
 
 /// Read a written world back through `tools/lib/anvil.py`: every non-air cell
@@ -364,7 +364,7 @@ fn plain_stands(
         delvec::compiler::nav::Premises::of_plan(&plan, assembled.gate_seals.clone()),
     );
     let base = beat::picture_base(&plan, &assembled, &[]);
-    beat::stands(&plan, &world, &base, cams)
+    beat::stands(&plan, &world, &base, cams, &Default::default())
 }
 
 /// **Criterion 3 — an after equal to load**: a step after which no block moves

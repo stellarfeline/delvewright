@@ -650,6 +650,7 @@ fn run_panorama(
             width: pano.frame.width,
             height: pano.frame.height,
             served: None,
+            reach: None,
         },
         draw.threads,
     ) {
@@ -776,7 +777,12 @@ pub struct PlaceFrom<'a> {
 /// (spec-0089 §4): the caller assembles the campaign, so this module never
 /// plans one. A refusal is `(diagnostic, exit code)`, or `(None, code)` when
 /// the caller has already printed why.
-pub type StandAsker<'a> = dyn FnMut(&[camera::Camera]) -> Result<crate::compiler::view::beat::Stood, (Option<Diagnostic>, u8)>
+/// The build's placements ledger is handed with the cameras: a moment's world
+/// lays the rows its path fires by then.
+pub type StandAsker<'a> = dyn FnMut(
+        &[camera::Camera],
+        &crate::compiler::placed::Ledger,
+    ) -> Result<crate::compiler::view::beat::Stood, (Option<Diagnostic>, u8)>
     + 'a;
 
 /// `delvec place-camera`: write one row of the record. `ask` is consulted only
@@ -997,7 +1003,7 @@ pub fn run_place_camera(
     // And its `after` rules (spec-0089 §6): the same question `delvec cameras`
     // and `delvec build` ask, asked of the campaign's own planned path.
     let stood = if placed_row.iter().any(|c| c.after.is_some()) {
-        match ask(&placed_row) {
+        match ask(&placed_row, &crate::compiler::placed::Ledger::default()) {
             Ok(s) => Some(s),
             Err((Some(d), code)) => return fail(d, json, code),
             Err((None, code)) => return ExitCode::from(code),
@@ -1062,14 +1068,22 @@ pub fn write_world(
     key: &str,
     blocks: &crate::compiler::blockstate::BlockMap,
     stood: &crate::compiler::view::beat::Stood,
-    rows: &[&crate::compiler::placed::Placed],
+    extent: Option<([i32; 3], [i32; 3])>,
     dir: &Path,
 ) -> Result<WorldWritten, Diagnostic> {
     let started = std::time::Instant::now();
     let laid = stood.stands.laid_in(key).to_vec();
-    let (blocks, written) = stood
-        .maker
-        .encode_blocks(blocks.clone(), &laid, stood.day_time, rows);
+    let moment = stood.stands.moment(key);
+    let rows: Vec<&crate::compiler::placed::Placed> =
+        moment.map(|m| m.rows.iter().collect()).unwrap_or_default();
+    let (blocks, written) = stood.maker.encode_blocks(
+        blocks.clone(),
+        &laid,
+        stood.day_time,
+        &rows,
+        moment.map(|m| m.bodies.as_slice()),
+        extent,
+    );
     let blocks = &blocks;
     crate::compiler::view::world::write_files(&written, dir)
         .map_err(|e| Diagnostic::error(DW_OUTPUT, format!("write {}: {e}", dir.display())))?;
@@ -1196,30 +1210,80 @@ pub fn run_cameras(
     // distinct configuration, written by the engine under `<out>/worlds/`.
     // Asked of exactly the cameras this run frames — a candidate stands where
     // its camera does, since it carries the camera's `after`.
-    let stood = match ask(&framed) {
-        Ok(s) => s,
-        Err((Some(d), code)) => return fail(d, json, code),
-        Err((None, code)) => return ExitCode::from(code),
-    };
     // The bodies and props the datapack places, from the build's own ledger
-    // (`validation/placed.json`): the rows each world's arrival holds.
+    // (`validation/placed.json`): each moment lays the rows its path fires.
     let ledger = std::fs::read(build_dir.join("validation").join("placed.json"))
         .ok()
         .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
         .map(|v| crate::compiler::placed::Ledger::from_json(&v))
         .unwrap_or_default();
+    let stood = match ask(&framed, &ledger) {
+        Ok(s) => s,
+        Err((Some(d), code)) => return fail(d, json, code),
+        Err((None, code)) => return ExitCode::from(code),
+    };
+    let size_of = |f: &camera::CameraFrame| {
+        if preview {
+            (
+                (f.frame.width / camera::PREVIEW_DIVISOR).max(1),
+                (f.frame.height / camera::PREVIEW_DIVISOR).max(1),
+            )
+        } else {
+            (f.frame.width, f.frame.height)
+        }
+    };
+    let loaded = {
+        let (lo, hi) = stood.maker.extent;
+        crate::compiler::view::scene::chunk_rect(lo, hi)
+    };
+    // **The horizon each frame shows** (the declared horizon's ground): the
+    // chunks past the build a frame looks out over, widened to where its fog
+    // closes, and per world the box every frame standing in it needs.
+    let covers: Vec<Option<([i32; 2], [i32; 2])>> = frames
+        .iter()
+        .map(|f| {
+            let (w, h) = size_of(f);
+            stood.maker.surface.and_then(|y| {
+                crate::compiler::view::frames::horizon_cover(
+                    &f.frame.view(),
+                    w,
+                    h,
+                    loaded,
+                    f64::from(y) + 1.0,
+                )
+            })
+        })
+        .collect();
+    let key_of = |f: &camera::CameraFrame| {
+        stood
+            .stands
+            .stands
+            .iter()
+            .find(|s| s.camera == f.camera.name)
+            .map(|s| s.key.clone())
+    };
     let worlds_dir = out.join("worlds");
     let mut world_lines = Vec::new();
     let mut paths = std::collections::BTreeMap::new();
     let mut omitted = std::collections::BTreeMap::new();
     for (key, blocks) in &stood.stands.worlds {
-        let rows = match stood.arrival_of(key) {
-            Some(a) => {
-                crate::compiler::placed::rows_under(&ledger, a, &|g, s| stood.fired_before(g, s))
+        let mut extent: Option<([i32; 3], [i32; 3])> = None;
+        for (f, c) in frames.iter().zip(&covers) {
+            let Some((lo, hi)) = c else { continue };
+            if key_of(f).as_deref() != Some(key) {
+                continue;
             }
-            None => crate::compiler::placed::rows_under(&ledger, 0, &|_, _| false),
-        };
-        let w = match write_world(key, blocks, &stood, &rows, &worlds_dir.join(key)) {
+            let (elo, ehi) = extent.unwrap_or(stood.maker.extent);
+            extent = Some((
+                [elo[0].min(lo[0] * 16), elo[1], elo[2].min(lo[1] * 16)],
+                [
+                    ehi[0].max(hi[0] * 16 + 15),
+                    ehi[1],
+                    ehi[2].max(hi[1] * 16 + 15),
+                ],
+            ));
+        }
+        let w = match write_world(key, blocks, &stood, extent, &worlds_dir.join(key)) {
             Ok(w) => w,
             Err(d) => return fail(d, json, exit::OUTPUT),
         };
@@ -1234,11 +1298,55 @@ pub fn run_cameras(
         eprintln!("{l}");
     }
     eprintln!("{}", crate::compiler::view::beat::summary(&stood.stands));
+    // **The cast as each frame shows it**: a body that turns to the nearest
+    // player within its reach turns to the lens, where a player stands for
+    // the picture; a frame whose lens turns one stands in its own copy of its
+    // world, the same blocks with its bodies turned.
+    let mut frame_world: Vec<(PathBuf, Vec<crate::compiler::view::world::EntityRecord>)> =
+        Vec::new();
+    let mut turned_total = 0usize;
+    let mut turned_frames = 0usize;
+    for f in &frames {
+        let key = key_of(f).unwrap_or_else(|| crate::compiler::view::beat::AT_LOAD.to_string());
+        let mut bodies = stood
+            .stands
+            .moment(&key)
+            .map(|m| m.bodies.clone())
+            .unwrap_or_default();
+        let turned = crate::compiler::view::moment::facing_the_lens(
+            &mut bodies,
+            &stood.watchers,
+            f.frame.pos,
+        );
+        let base = paths.get(&key).cloned().unwrap_or_default();
+        if turned == 0 {
+            frame_world.push((base, bodies));
+            continue;
+        }
+        turned_total += turned;
+        turned_frames += 1;
+        let dir = worlds_dir.join(format!("{key}.facing-{}", f.stem));
+        if let Err(e) = crate::compiler::view::world::copy_with_entities(&base, &bodies, &dir) {
+            return fail(
+                Diagnostic::error(DW_OUTPUT, format!("write {}: {e}", dir.display())),
+                json,
+                exit::OUTPUT,
+            );
+        }
+        eprintln!(
+            "facing: {} {turned} watching bod(ies) within reach of the lens turned to it -> {}",
+            f.camera.name,
+            dir.display()
+        );
+        frame_world.push((dir, bodies));
+    }
+    eprintln!(
+        "facing: {turned_total} bod(ies) turned to the lens over {turned_frames} of {} frame(s); \
+         {} watching bod(ies) a player of any class draws",
+        frames.len(),
+        stood.watchers.len()
+    );
     let packs = frameset::build_packs(build_dir);
-    let chunks = {
-        let (lo, hi) = stood.maker.extent;
-        crate::compiler::view::scene::chunk_rect(lo, hi)
-    };
     if let Err(e) = std::fs::create_dir_all(out) {
         return fail(
             Diagnostic::error(DW_OUTPUT, format!("mkdir {}: {e}", out.display())),
@@ -1249,7 +1357,8 @@ pub fn run_cameras(
     let mut first = true;
     let mut seconds = 0.0f64;
     let mut obstructed = 0usize;
-    for f in &frames {
+    let mut undrawn: Vec<String> = Vec::new();
+    for (fi, f) in frames.iter().enumerate() {
         let Some(stand) = stood
             .stands
             .stands
@@ -1304,9 +1413,38 @@ pub fn run_cameras(
                 format!("{}.png", f.stem),
             )
         };
+        let (world_dir, bodies) = &frame_world[fi];
+        // A frame that looks out past the build loads its horizon's chunks
+        // and keeps the fog where the build's own extent puts it.
+        let (chunks, reach) = match covers[fi] {
+            Some(c) => {
+                eprintln!(
+                    "horizon: {} sees past the build: chunks [{}, {}]..[{}, {}] of the horizon's \
+                     ground loaded beside the build's [{}, {}]..[{}, {}], the fog at {:.0} blocks",
+                    f.camera.name,
+                    c.0[0],
+                    c.0[1],
+                    c.1[0],
+                    c.1[1],
+                    loaded.0[0],
+                    loaded.0[1],
+                    loaded.1[0],
+                    loaded.1[1],
+                    crate::compiler::view::frames::draw_distance(f.frame.pos, loaded)
+                );
+                (
+                    c,
+                    Some(crate::compiler::view::frames::draw_distance(
+                        f.frame.pos,
+                        loaded,
+                    )),
+                )
+            }
+            None => (loaded, None),
+        };
         let drawn = match frameset::draw_frame(
             &crate::compiler::view::frames::FrameRequest {
-                world: &paths[&stand.key],
+                world: world_dir,
                 chunks,
                 jar: Path::new(&jar),
                 packs: &packs,
@@ -1321,6 +1459,7 @@ pub fn run_cameras(
                 width,
                 height,
                 served: None,
+                reach,
             },
             draw.threads,
         ) {
@@ -1332,6 +1471,42 @@ pub fn run_cameras(
             first = false;
         }
         seconds += drawn.seconds();
+        // **Every body in frame is drawn, or the picture is refused**: a body
+        // of a kind the renderer skipped standing inside this frame is a
+        // picture that misses what the world holds. A preview names it; an hq
+        // frame, the picture an author approves, is not written.
+        let missing = frameset::undrawn_in_frame(
+            bodies,
+            &drawn.stats,
+            &f.frame.view(),
+            (width, height),
+            f64::from(reach.unwrap_or_else(|| {
+                crate::compiler::view::frames::draw_distance(f.frame.pos, loaded)
+            })),
+            grid_blocks.unwrap_or(&crate::compiler::blockstate::BlockMap::new()),
+        );
+        if !missing.is_empty() {
+            let line = format!(
+                "{}: camera `{}` frames {} the renderer ({}) has no model for and draws nothing \
+                 of: {}. A picture of the world without them is not the world. Move the camera so \
+                 none stands in frame, give the body a kind the renderer draws, or wait for a \
+                 renderer that draws it",
+                frameset::DW_FRAME_SKIPS_A_BODY.id(),
+                f.camera.name,
+                if missing.len() == 1 {
+                    "a body"
+                } else {
+                    "bodies"
+                },
+                crate::compiler::view::frames::renderer(),
+                missing.join("; ")
+            );
+            eprintln!("{line}");
+            if !preview {
+                undrawn.push(line);
+                continue;
+            }
+        }
         if let Err(d) = frameset::write_png(&out.join(&file), &drawn) {
             return fail(d, json, exit::OUTPUT);
         }
@@ -1357,7 +1532,12 @@ pub fn run_cameras(
             "image": { "path": file, "width": drawn.width, "height": drawn.height },
             "world": {
                 "key": stand.key,
-                "path": format!("worlds/{}", stand.key),
+                "path": format!(
+                    "worlds/{}",
+                    world_dir
+                        .file_name()
+                        .map_or(stand.key.clone(), |n| n.to_string_lossy().into_owned())
+                ),
             },
             "sky": {
                 "day": f.sky.day,
@@ -1438,6 +1618,24 @@ pub fn run_cameras(
         camera::LENS_CLEARANCE
     );
     eprintln!("{}", answers.line());
+    eprintln!(
+        "undrawn: {} of {} frame(s) frame a body the renderer draws nothing of ({}){}",
+        undrawn.len(),
+        frames.len(),
+        frameset::DW_FRAME_SKIPS_A_BODY.id(),
+        if undrawn.is_empty() {
+            String::new()
+        } else {
+            "; their pictures were not written".to_string()
+        }
+    );
+    if let Some(first) = undrawn.first() {
+        return fail(
+            Diagnostic::error(frameset::DW_FRAME_SKIPS_A_BODY.id(), first.clone()),
+            json,
+            exit::RENDER,
+        );
+    }
     ExitCode::SUCCESS
 }
 

@@ -39,6 +39,95 @@ delvewright_dsl::dw_code! {
     pub const DW_FRAME_UNDRAWN: DwCode = DwCode::new("DW1039", ExitTier::Build);
 }
 
+delvewright_dsl::dw_code! {
+    /// `DW1100`: **a showcase picture frames a body the renderer draws
+    /// nothing of.** A body of the world a showcase camera stands in, whose
+    /// kind the renderer's own statistics for that frame put among the kinds
+    /// it skipped (no model), stands inside the frame. `delvec cameras` names
+    /// the camera, each such body's kind, tag and position; an hq frame — the
+    /// picture an author approves — is not written and the run exits 5; a
+    /// preview prints the same line and is written, so the camera can be
+    /// moved while it is being placed.
+    pub const DW_FRAME_SKIPS_A_BODY: DwCode = DwCode::new("DW1100", ExitTier::Build);
+}
+
+/// **The bodies in a showcase frame the renderer drew nothing of**: every
+/// body of `bodies` whose kind `stats` counts among the kinds it skipped, that
+/// stands inside the `width`×`height` frame of `camera` (its feet or its head,
+/// the feet raised a block, projects inside), nearer than the fog closes
+/// (`reach`, blocks) and in sight of the lens over `blocks` (a sight line
+/// reaches a point of the cells it stands in) — each as `<kind> <tag> at
+/// [x, y, z]`. The renderer counts what it skipped over every loaded chunk;
+/// the frame is what decides which of them a viewer would miss.
+pub fn undrawn_in_frame(
+    bodies: &[crate::compiler::view::world::EntityRecord],
+    stats: &frames::Stats,
+    camera: &crate::compiler::framing::Camera,
+    (width, height): (u32, u32),
+    reach: f64,
+    blocks: &crate::compiler::blockstate::BlockMap,
+) -> Vec<String> {
+    struct Bytes<'a>(&'a crate::compiler::blockstate::BlockMap);
+    impl crate::compiler::framing::Occupancy for Bytes<'_> {
+        fn hides(&self, c: [i32; 3]) -> bool {
+            self.0
+                .get(&c)
+                .is_some_and(|s| delvewright_dsl::blockshape::hides(s.as_str()))
+        }
+    }
+    let inside = |p: [f64; 3]| {
+        camera.project(width, height, p).is_some_and(|([x, y], _)| {
+            (0.0..f64::from(width)).contains(&x) && (0.0..f64::from(height)).contains(&y)
+        })
+    };
+    let near = |p: [f64; 3]| {
+        (0..3)
+            .map(|i| (p[i] - camera.pos[i]).powi(2))
+            .sum::<f64>()
+            .sqrt()
+            <= reach
+    };
+    bodies
+        .iter()
+        .filter(|e| {
+            let short = e.kind.strip_prefix("minecraft:").unwrap_or(&e.kind);
+            stats.entities_skipped.contains_key(short)
+        })
+        .filter(|e| {
+            let head = [e.pos[0], e.pos[1] + 1.0, e.pos[2]];
+            (inside(e.pos) || inside(head)) && near(e.pos)
+        })
+        .filter(|e| {
+            let c = |p: [f64; 3]| {
+                [
+                    p[0].floor() as i32,
+                    p[1].floor() as i32,
+                    p[2].floor() as i32,
+                ]
+            };
+            let cells = crate::compiler::framing::CellBox {
+                min: c(e.pos),
+                max: c([e.pos[0], e.pos[1] + 1.0, e.pos[2]]),
+            };
+            crate::compiler::framing::in_sight(&Bytes(blocks), camera.pos, &cells, &[]).seen()
+        })
+        .map(|e| {
+            format!(
+                "{} {} at [{:.1}, {:.1}, {:.1}]",
+                e.kind,
+                e.tags
+                    .iter()
+                    .find(|t| t.starts_with("dw_npc_") || t.starts_with("dw_pup_"))
+                    .or(e.tags.first())
+                    .map_or("(untagged)", |t| t.as_str()),
+                e.pos[0],
+                e.pos[1],
+                e.pos[2]
+            )
+        })
+        .collect()
+}
+
 /// The directory a build's frames are drawn to by default: `<build>/frames`.
 pub const FRAMES_DIR: &str = "frames";
 
@@ -461,6 +550,7 @@ pub fn run_frames(build_dir: &Path, opts: &FramesOptions, json: bool) -> ExitCod
                 width: opts.size,
                 height: opts.size,
                 served: None,
+                reach: None,
             },
             opened.get(&shot.world),
             opts.draw.threads,
