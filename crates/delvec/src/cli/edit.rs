@@ -306,6 +306,7 @@ pub(crate) fn run_edit(
                 height: FRAME_HEIGHT,
                 served: None,
                 reach: None,
+                sea: delvec::compiler::view::frames::sea_plane_at(maker.surface),
             },
             None,
         ) {

@@ -348,16 +348,18 @@ fn a_moment_lays_every_write_its_path_fired_and_counts_what_it_wrote() {
 }
 
 /// **`DW1100`: a body the renderer draws nothing of, in frame.** The keeper is
-/// an allay, a kind the pinned renderer has no model for, standing in the
-/// frame of the fixture's lens turned south to him: the hq picture is refused (exit 5) and not written; a
-/// preview names it and is written.
+/// a bat, a kind the pinned renderer still has no model for, standing in the
+/// frame of the fixture's lens turned south to him: the hq picture is refused
+/// (exit 5) and not written; a preview names it and is written. The refusal
+/// reads the renderer's own skip statistics, so a kind the renderer draws (the
+/// happy ghast, see below) is never refused.
 #[test]
 fn a_frame_of_a_body_the_renderer_cannot_draw_is_refused() {
     let lib = common::prefabs_dir();
     let camp = campaign(
         "undrawn",
         |_| {},
-        |n| n["base_entity"] = serde_json::json!("minecraft:allay"),
+        |n| n["base_entity"] = serde_json::json!("minecraft:bat"),
         &[("hero", None)],
     );
     // The fixture's lens turned south, to the keeper.
@@ -369,7 +371,7 @@ fn a_frame_of_a_body_the_renderer_cannot_draw_is_refused() {
     let (code, log) = cameras(&out, &camp, &lib, &scenes, &[]);
     assert_eq!(code, 5, "{log}");
     assert!(
-        log.contains("DW1100") && log.contains("minecraft:allay dw_npc_keeper at [5.5, 65.0, 4.5]"),
+        log.contains("DW1100") && log.contains("minecraft:bat dw_npc_keeper at [5.5, 65.0, 4.5]"),
         "{log}"
     );
     assert!(
@@ -396,4 +398,135 @@ fn a_frame_of_a_body_the_renderer_cannot_draw_is_refused() {
         log.contains("undrawn: 0 of 1 frame(s) frame a body the renderer draws nothing of"),
         "{log}"
     );
+}
+
+/// **A body the renderer draws is not refused under `DW1100`, and one it skips
+/// is**: a world of a stone floor holding a happy ghast and a bat, drawn in hq
+/// by the pinned renderer. The renderer's own statistics put the ghast among
+/// the kinds it drew and the bat among those it skipped, and the refusal reads
+/// those statistics, so it names the bat and not the ghast. The keeper's room
+/// cannot hold a four-block body (`DW0450`), so the world is written directly.
+#[test]
+fn a_happy_ghast_is_drawn_in_hq_and_a_bat_is_still_refused() {
+    use delvec::compiler::blockstate::{BlockMap, BlockState};
+    use delvec::compiler::view::frames::{self, Backend, FrameRequest, FrameSky, Mode};
+    use delvec::compiler::view::world::{EntityRecord, Ground, Nbt, WorldInput};
+    let mut floor = BlockMap::new();
+    for x in 0..32 {
+        for z in 0..32 {
+            floor.insert([x, 64, z], BlockState::new("minecraft:stone"));
+        }
+    }
+    let body = |kind: &str, pos: [f64; 3]| EntityRecord {
+        kind: kind.to_string(),
+        pos,
+        yaw: 0.0,
+        tags: vec![format!("dw_{kind}")],
+        nbt: Nbt::Compound(Vec::new()),
+    };
+    let entities = [
+        body("minecraft:happy_ghast", [10.0, 66.0, 16.0]),
+        body("minecraft:bat", [20.0, 66.0, 16.0]),
+    ];
+    let written = delvec::compiler::view::world::encode_world(&WorldInput {
+        blocks: &floor,
+        biome: &|_| "minecraft:plains".to_string(),
+        spawn: [16, 65, 16],
+        ground: &Ground::void(),
+        extent: None,
+        block_entities: &std::collections::BTreeMap::new(),
+        entities: &entities,
+        day_time: Some(6000),
+    });
+    let world = tmp("ghast-world");
+    delvec::compiler::view::world::write_files(&written, &world).unwrap();
+    let jar = delvec::compiler::view::cli::resolve_textures(None).expect("a client jar");
+    let camera =
+        delvec::compiler::framing::Camera::looking_at([15.0, 70.0, 26.0], [15.0, 66.0, 16.0], 70.0);
+    let drawn = frames::draw(
+        &FrameRequest {
+            world: &world,
+            chunks: ([0, 0], [1, 1]),
+            jar: std::path::Path::new(&jar),
+            packs: &[],
+            camera,
+            sky: FrameSky {
+                day: 0,
+                daytime_ticks: 6000,
+                weather: delvewright_dsl::WorldWeather::Clear,
+            },
+            mode: Mode::Hq { spp: 4 },
+            backend: Backend::Cpu,
+            width: 96,
+            height: 96,
+            served: None,
+            reach: None,
+            sea: None,
+        },
+        None,
+    )
+    .expect("the hq frame draws");
+    assert!(drawn.stats.drew("happy_ghast"), "{:?}", drawn.stats);
+    assert!(!drawn.stats.undrew("happy_ghast"), "{:?}", drawn.stats);
+    assert!(drawn.stats.undrew("bat"), "{:?}", drawn.stats);
+}
+
+/// **The sea plane carries an ocean to the horizon** (hq only): the same far
+/// frame over a loaded patch of sea differs when the plane is stated and when
+/// it is not, and the plane lies where the loaded sea's surface does.
+#[test]
+fn the_sea_plane_changes_an_hq_far_frame_over_a_sea() {
+    use delvec::compiler::blockstate::{BlockMap, BlockState};
+    use delvec::compiler::view::frames::{self, Backend, FrameRequest, FrameSky, Mode};
+    use delvec::compiler::view::world::{Ground, WorldInput};
+    let mut sea = BlockMap::new();
+    for x in 0..32 {
+        for z in 0..32 {
+            sea.insert([x, 62, z], BlockState::new("minecraft:water"));
+        }
+    }
+    let written = delvec::compiler::view::world::encode_world(&WorldInput {
+        blocks: &sea,
+        biome: &|_| "minecraft:ocean".to_string(),
+        spawn: [16, 64, 16],
+        ground: &Ground::void(),
+        extent: None,
+        block_entities: &std::collections::BTreeMap::new(),
+        entities: &[],
+        day_time: Some(6000),
+    });
+    let world = tmp("sea-world");
+    delvec::compiler::view::world::write_files(&written, &world).unwrap();
+    let jar = delvec::compiler::view::cli::resolve_textures(None).expect("a client jar");
+    let camera =
+        delvec::compiler::framing::Camera::looking_at([16.0, 70.0, 2.0], [16.0, 66.5, 200.0], 70.0);
+    let level = frames::sea_plane_at(Some(62));
+    assert_eq!(level, Some(63.0));
+    let draw = |sea: Option<f64>| {
+        frames::draw(
+            &FrameRequest {
+                world: &world,
+                chunks: ([0, 0], [1, 1]),
+                jar: std::path::Path::new(&jar),
+                packs: &[],
+                camera,
+                sky: FrameSky {
+                    day: 0,
+                    daytime_ticks: 6000,
+                    weather: delvewright_dsl::WorldWeather::Clear,
+                },
+                mode: Mode::Hq { spp: 4 },
+                backend: Backend::Cpu,
+                width: 96,
+                height: 96,
+                served: None,
+                reach: None,
+                sea,
+            },
+            None,
+        )
+        .expect("the hq frame draws")
+        .rgba
+    };
+    assert_ne!(draw(None), draw(level), "the plane moved no pixel");
 }

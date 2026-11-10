@@ -214,6 +214,7 @@ pub(crate) fn run_frames_campaign(
                 .served
                 .then(|| delvewright_dsl::viewdistance::chunks(&campaign)),
             reach: None,
+            sea: delvec::compiler::view::frames::sea_plane_at(maker.surface),
         },
         args.draw.threads,
     ) {

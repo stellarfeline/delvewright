@@ -651,6 +651,7 @@ fn run_panorama(
             height: pano.frame.height,
             served: None,
             reach: None,
+            sea: pano.sea,
         },
         draw.threads,
     ) {
@@ -1460,6 +1461,7 @@ pub fn run_cameras(
                 height,
                 served: None,
                 reach,
+                sea: crate::compiler::view::frames::sea_plane_at(stood.maker.surface),
             },
             draw.threads,
         ) {

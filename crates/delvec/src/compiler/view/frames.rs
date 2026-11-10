@@ -59,7 +59,7 @@ use crate::compiler::view::scene;
 /// lumenwright_version` and `crates/delvec/Cargo.toml` pin it — written on
 /// every frame manifest and on the first line of every run, so a frame's
 /// provenance is readable without the frame.
-pub const RENDERER_VERSION: &str = "0.3.0";
+pub const RENDERER_VERSION: &str = "0.4.0";
 
 /// The client's *Mipmap Levels* option at its default, the texture filtering
 /// a player who has not changed it sees.
@@ -282,6 +282,28 @@ pub struct FrameRequest<'a> {
     /// `chunks` are widened to its horizon ([`horizon_cover`]) keeps the fog
     /// where the build's own extent puts it.
     pub reach: Option<f32>,
+    /// **The sea the frame looks out over** ([`sea_plane_at`]): `Some(level)`
+    /// where the world's horizon is an ocean, and an hq frame then draws the
+    /// sea out to the horizon past the loaded chunks; `None` everywhere else.
+    /// A quick frame never draws it.
+    pub sea: Option<f64>,
+}
+
+/// **The one rule for the sea plane**: the level Lumenwright's hq water plane
+/// takes for a world whose ground is a sea whose topmost generator water block
+/// is at `top_water_y` — the Y of the surface above that block, which is the
+/// sea level the client names. `None` where the horizon lays no sea (`void`,
+/// `valley`), so the plane is off there.
+pub fn sea_plane_at(top_water_y: Option<i32>) -> Option<f64> {
+    top_water_y.map(|y| f64::from(y) + 1.0)
+}
+
+/// [`sea_plane_at`] for the horizon a `render-plan.json` declares.
+pub fn sea_plane(horizon: Option<scene::Horizon>) -> Option<f64> {
+    sea_plane_at(match horizon {
+        Some(scene::Horizon::Ocean { sea_level }) => Some(sea_level),
+        _ => None,
+    })
 }
 
 /// The chunks the pinned client draws at render distance `n` around a camera
@@ -531,6 +553,7 @@ pub fn draw(req: &FrameRequest<'_>, opened: Option<&OpenedWorld>) -> Result<Draw
             HqOptions {
                 spp,
                 exposure: HQ_EXPOSURE,
+                water_plane: req.sea,
                 ..HqOptions::default()
             },
         ),
@@ -632,6 +655,19 @@ pub fn mean_luma(rgba: &[u8]) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    /// The sea plane's one rule: an ocean horizon states the level above its
+    /// topmost water block; every other horizon, and none, state nothing.
+    #[test]
+    fn the_sea_plane_is_stated_for_an_ocean_horizon_only() {
+        assert_eq!(sea_plane_at(Some(62)), Some(63.0));
+        assert_eq!(sea_plane_at(None), None);
+        assert_eq!(
+            sea_plane(Some(scene::Horizon::Ocean { sea_level: 62 })),
+            Some(63.0)
+        );
+        assert_eq!(sea_plane(None), None);
+    }
+
     use super::*;
 
     /// **A frame that looks out past the build loads its horizon** out to

@@ -496,10 +496,13 @@ pub fn run_frames(build_dir: &Path, opts: &FramesOptions, json: bool) -> ExitCod
         Err(d) => return fail(d, json, exit::RENDER),
     };
     let packs = build_packs(build_dir);
-    let chunks = match crate::compiler::view::scene::parse_plan(&plan_bytes) {
+    let (chunks, sea) = match crate::compiler::view::scene::parse_plan(&plan_bytes) {
         Ok(p) => {
             let (lo, hi) = crate::compiler::view::scene::loaded_extent(&p.layout_aabb, p.horizon);
-            crate::compiler::view::scene::chunk_rect(lo, hi)
+            (
+                crate::compiler::view::scene::chunk_rect(lo, hi),
+                frames::sea_plane(p.horizon),
+            )
         }
         Err(d) => return fail(d, json, exit::INPUT),
     };
@@ -551,6 +554,7 @@ pub fn run_frames(build_dir: &Path, opts: &FramesOptions, json: bool) -> ExitCod
                 height: opts.size,
                 served: None,
                 reach: None,
+                sea,
             },
             opened.get(&shot.world),
             opts.draw.threads,
