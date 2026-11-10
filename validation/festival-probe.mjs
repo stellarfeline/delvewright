@@ -119,7 +119,8 @@ function begin(name, note) {
 // is an advancement whose reward counts, then re-arms itself.
 const PACK = '/data/world/datapacks/dw_probe'
 async function writeInContainer(path, content) {
-  await execFileP('docker', ['exec', '-i', container, 'sh', '-c', `mkdir -p "$(dirname '${path}')" && cat > '${path}'`], { input: content })
+  // The content travels as an argument: `execFile` has no stdin to feed `cat`.
+  await execFileP('docker', ['exec', container, 'sh', '-c', 'mkdir -p "$(dirname "$1")" && printf %s "$2" > "$1"', 'sh', path, content])
 }
 async function installPack() {
   await writeInContainer(`${PACK}/pack.mcmeta`, JSON.stringify({ pack: { pack_format: 94, description: 'festival probe' } }))
