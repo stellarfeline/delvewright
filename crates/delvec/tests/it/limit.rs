@@ -437,3 +437,107 @@ fn despawn_wave_is_the_reseat_removal() {
         });
     assert!(at > 0);
 }
+
+// ---------------------------------------------------------------------------
+// §6 — the window, measured against the walk (`DW1084`).
+// ---------------------------------------------------------------------------
+
+fn delvec_build(dir: &Path) -> (i32, String, PathBuf) {
+    let out = dir.with_extension("out");
+    let _ = std::fs::remove_dir_all(&out);
+    let o = std::process::Command::new(env!("CARGO_BIN_EXE_delvec"))
+        .args([
+            "build",
+            dir.to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+            "--prefabs",
+            common::prefabs_dir().to_str().unwrap(),
+        ])
+        .output()
+        .expect("delvec runs");
+    (
+        o.status.code().unwrap_or(-1),
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&o.stdout),
+            String::from_utf8_lossy(&o.stderr)
+        ),
+        out,
+    )
+}
+
+fn limit_ledger(out: &Path) -> Value {
+    serde_json::from_str(&std::fs::read_to_string(out.join("validation/limit.json")).unwrap())
+        .unwrap()
+}
+
+/// A window longer than the walk is green and the line states walk, window
+/// and percentage; the same window one tick shorter than the walk is
+/// `DW1084`, naming the objective, the start cell and both tick counts.
+/// The perturbation moves the window alone across the walk it measured.
+#[test]
+fn a_window_shorter_than_its_walk_is_refused() {
+    let (code, log, out) = delvec_build(&fixture("walk-green", minute(), |_| {}));
+    assert_eq!(code, 0, "{log}");
+    let line = log
+        .lines()
+        .find(|l| l.starts_with("limit binding (DW1084):"))
+        .unwrap_or_else(|| panic!("no binding line:\n{log}"));
+    assert!(line.contains("1 objective(s) carry a limit"), "{line}");
+    assert!(
+        line.contains("of 1200 tick(s)") && line.contains("%) — obj/exit"),
+        "{line}"
+    );
+    // The perturbation is taken from the spawn (`quest-start`), the longer
+    // walk, so a window one tick under it is still a legal window.
+    let mut l = minute();
+    l["from"] = json!("quest-start");
+    let (code, log, out) = delvec_build(&fixture("walk-measure", l, |_| {}));
+    assert_eq!(code, 0, "{log}");
+    let ledger = limit_ledger(&out);
+    let walk = ledger["limits"][0]["walk_ticks"].as_u64().expect("walked");
+    assert!(
+        walk > 20,
+        "the door is more than five blocks from the spawn: {ledger}"
+    );
+    // Exactly the walk: green (the party sprints it exactly).
+    let mut l = minute();
+    l["from"] = json!("quest-start");
+    l["ticks"] = json!(walk);
+    let (code, log, _) = delvec_build(&fixture("walk-equal", l, |_| {}));
+    assert_eq!(code, 0, "a window the walk equals is green:\n{log}");
+    // One tick under: refused.
+    let mut l = minute();
+    l["from"] = json!("quest-start");
+    l["ticks"] = json!(walk - 1);
+    let (code, log, _) = delvec_build(&fixture("walk-red", l, |_| {}));
+    assert_ne!(code, 0, "{log}");
+    assert!(log.contains("DW1084"), "{log}");
+    assert!(log.contains("obj/exit"), "{log}");
+    assert!(log.contains(&format!("{} tick(s)", walk - 1)), "{log}");
+    assert!(log.contains(&format!("{walk} tick(s)")), "{log}");
+    assert!(
+        log.contains("[5, 65, 2]") || log.contains("step 0"),
+        "the start is named: {log}"
+    );
+}
+
+/// `from: quest-start` measures from the step that opens the quest — the
+/// spawn, for hello-world's campaign-start quest — which is a longer walk
+/// than from the keeper.
+#[test]
+fn quest_start_measures_from_the_triggering_step() {
+    let (_, log, out) = delvec_build(&fixture("qs-act", minute(), |_| {}));
+    let act = limit_ledger(&out)["limits"][0].clone();
+    let mut l = minute();
+    l["from"] = json!("quest-start");
+    let (code, log2, out) = delvec_build(&fixture("qs-quest", l, |_| {}));
+    assert_eq!(code, 0, "{log}\n{log2}");
+    let qs = limit_ledger(&out)["limits"][0].clone();
+    assert!(
+        qs["walk_ticks"].as_u64() > act["walk_ticks"].as_u64(),
+        "quest-start walks from the spawn, past the keeper: {qs} vs {act}"
+    );
+    assert_ne!(qs["walk_from"], act["walk_from"], "{qs} vs {act}");
+}

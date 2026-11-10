@@ -275,6 +275,7 @@ pub(super) fn emit_critical_path(
         &fired,
         layout,
         witnesses,
+        routes,
     )
 }
 
@@ -311,6 +312,7 @@ pub(super) fn critical_path_json(
     fired: &BTreeSet<String>,
     layout: &plan::ExportedLayout,
     witnesses: &[(String, Vec<Value>)],
+    routes: &[crate::compiler::nav::LegRoute],
 ) -> Value {
     // spec-0108 §6.3: what the world the ending left looks like, for the bot to
     // read after the campaign marker and the tail — each aftermath line of the
@@ -435,6 +437,26 @@ pub(super) fn critical_path_json(
                         "after": after.iter().map(term).collect::<Vec<_>>(),
                     })
                 }
+                // spec-0133 §8: a lapse — walk to `stand`, do nothing, pass on
+                // the expiry marker. `stand` is a cell of the proven route.
+                Step::Expire { objective_id, wait_ticks, pos, avoid, aggro } => {
+                    let keep: &[crate::compiler::reach::KeepOut] =
+                        keep_out.get(i).map_or(&[], Vec::as_slice);
+                    // A body stands on every cell a `talk-to` walks to; the
+                    // world model holds no entity, so those cells are named.
+                    let bodies: BTreeSet<[i32; 3]> = walked
+                        .iter()
+                        .filter_map(|x| match x {
+                            Step::TalkTo { pos, .. } => Some(*pos),
+                            _ => None,
+                        })
+                        .collect();
+                    let stand = expire_stand(i, *pos, avoid, keep, *aggro, &bodies, routes);
+                    json!({
+                        "action": "expire", "objective": objective_id,
+                        "wait_ticks": wait_ticks, "stand": stand, "pos": stand
+                    })
+                }
                 Step::AssertComplete { objective, value } => {
                     let mut v = json!({
                         "action": "assert-complete", "scoreboard": { "objective": objective, "value": value }
@@ -478,7 +500,23 @@ pub(super) fn critical_path_json(
             // `reach` armed while the party performs it and not its own. The bot
             // keeps every walk of the step out of them by the selector's hitbox
             // rule. Present only when non-empty.
-            if let Some(ko) = keep_out.get(i)
+            // A lapse keeps out of its own objective's volume as well as the
+            // armed ones (spec-0133 §8).
+            let own: Vec<crate::compiler::reach::KeepOut> = match s {
+                Step::Expire { avoid, .. } => avoid.clone(),
+                _ => Vec::new(),
+            };
+            let joined: Option<Vec<crate::compiler::reach::KeepOut>> =
+                (!own.is_empty()).then(|| {
+                    keep_out
+                        .get(i)
+                        .into_iter()
+                        .flatten()
+                        .cloned()
+                        .chain(own.iter().cloned())
+                        .collect()
+                });
+            if let Some(ko) = joined.as_ref().or(keep_out.get(i))
                 && !ko.is_empty()
                 && let Some(obj) = step.as_object_mut()
             {
@@ -537,6 +575,41 @@ pub(super) fn critical_path_json(
         "non_combatants": crate::compiler::combat::non_combatants_json(plan.campaign),
         "steps": steps
     })
+}
+
+/// **Where a lapse waits** (spec-0133 §8): a cell of the route the walk proof
+/// proved into this step — or, walking back, into an earlier one — outside the
+/// objective's own completion volume, outside every volume armed at the step,
+/// and outside a wave's notice. The last such cell the party reaches, so the
+/// wait stands where the walk already is. `pos` when no route cell qualifies
+/// (a campaign that walks no world).
+fn expire_stand(
+    i: usize,
+    pos: [i32; 3],
+    avoid: &[crate::compiler::reach::KeepOut],
+    keep: &[crate::compiler::reach::KeepOut],
+    aggro: Option<([i32; 3], f64)>,
+    bodies: &BTreeSet<[i32; 3]>,
+    routes: &[crate::compiler::nav::LegRoute],
+) -> [i32; 3] {
+    let ok = |c: [i32; 3]| {
+        !bodies.contains(&c)
+            && !avoid
+                .iter()
+                .chain(keep)
+                .any(|k| k.completion.contains_cell(c))
+            && aggro.is_none_or(|(at, r)| {
+                let d2: i64 = (0..3).map(|a| i64::from(c[a] - at[a]).pow(2)).sum();
+                (d2 as f64) > r * r
+            })
+    };
+    let mut legs: Vec<&crate::compiler::nav::LegRoute> =
+        routes.iter().filter(|r| r.to_step <= i).collect();
+    legs.sort_by_key(|r| std::cmp::Reverse(r.to_step));
+    legs.into_iter()
+        .flat_map(|r| r.cells.iter().rev().copied())
+        .find(|c| ok(*c))
+        .unwrap_or(pos)
 }
 
 /// `manifest.json` — the compiler's SHA-256 index over what it READ and what it

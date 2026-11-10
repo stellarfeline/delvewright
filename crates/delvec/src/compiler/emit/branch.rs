@@ -147,6 +147,7 @@ pub(super) fn branch_paths(
                 &super::manifest::shown(&story.runs[w].fired, &story.runs[w].undecided),
                 &plan.exported_layout(&cp.steps, &[]),
                 &[],
+                routes,
             ),
         ));
     }
