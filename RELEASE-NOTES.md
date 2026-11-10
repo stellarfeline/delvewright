@@ -24,7 +24,6 @@ An entry is a summary, and `tools/ci/check-release-notes.py` holds it to that: a
 - The exported critical path names the bodies each step is walked beside, and the gallery gains a warden that digs up out of the long hall's porch.
 - The playtest server ops its creator and hands every client the resource pack.
 - `DELVEC_PHASE_TIMING` stamps the build log with wall time, CPU and threads for each phase.
-- A task can be lost: an objective's `limit` is a clock the party watches, its expiry fires `on_expire`, every limit is a world the build exports, and the bot walks that world by waiting (`DW1084`, `DW1085`, `DW1086`; `critical-path.json` format 7).
 
 ### Changed
 
@@ -45,20 +44,18 @@ An entry is a summary, and `tools/ci/check-release-notes.py` holds it to that: a
 
 The entry leaves out documentation, tests and release machinery, which change nothing in what a creator does.
 
-## delvewright-dsl 0.72.0
+## delvewright-dsl 0.71.0
 
 ### Highlights
 
 - The DSL format number moves with this release; documents declare it and `delvec fmt` writes it.
 - Actors can declare how they arrive and whether the party outruns them, and every planned quest states its activity.
-- An objective can carry a time limit, and a wave can be sent away by a beat.
 
 ### Added
 
 - Actors gain `entrance`, read off a kind-action registry (`minecraft:warden`, `minecraft:wither`), and `outrun`.
 - The quest plan gains `activity` on each line, and the metrics table prices each act in minutes.
 - The ambush sugar keeps one continuation site and no story note.
-- Every objective kind takes `limit {ticks, from, on_expire}`: the task is done in time or it expires, and either way the line goes on. The new `despawn-wave` verb removes a wave's standing bodies unseen.
 
 ### Changed
 
@@ -88,3 +85,14 @@ The entry leaves out documentation, tests and release machinery, which change no
 - The place handout reads every cast shape the DSL accepts.
 
 The entry leaves out the release machinery itself, which changes nothing in what a creator does.
+
+## delvewright-dsl 0.72.0
+
+### Highlights
+
+- An objective can carry a time limit: the task is done in time or lost, and the story goes on either way.
+
+### Added
+
+- Every objective kind takes `limit {ticks, from, on_expire}`: a window in game ticks, started at the objective's activation, its quest's start or an earlier objective's activation, whose expiry fires `on_expire` in place of the completion.
+- The `despawn-wave` verb removes a wave's standing bodies unseen.
