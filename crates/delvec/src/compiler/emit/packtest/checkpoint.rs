@@ -73,9 +73,7 @@ pub(super) fn emit_bonfire_packtests(plan: &Plan, out: &mut BuildOutput) {
     // brand it with a tag no re-summon can carry (`spawn_<wave>` writes the
     // authored NBT and nothing else), rest, and demand the brand is gone while the
     // wave stands at full count. Identity, not just arithmetic.
-    b.push(format!(
-        "data modify entity @e[tag={tag},limit=1] Health set value 1.0f"
-    ));
+    b.push(wound_to_half(&format!("@e[tag={tag},limit=1]")));
     b.push(format!("tag @e[tag={tag},limit=1] add dw_bfchip"));
     b.push("execute store result score #bp_bfs dw.sys if entity @e[tag=dw_bfchip]".to_string());
     b.push("assert score #bp_bfs dw.sys matches 1".to_string());
@@ -370,9 +368,7 @@ pub(super) fn emit_reseat_undefeated_packtests(plan: &Plan, out: &mut BuildOutpu
         b.push(format!(
             "execute at {sel} run tp @e[tag=dw_actor_{safe}] ~ ~ ~"
         ));
-        b.push(format!(
-            "data modify entity @e[tag=dw_actor_{safe},limit=1] Health set value 1.0f"
-        ));
+        b.push(wound_to_half(&format!("@e[tag=dw_actor_{safe},limit=1]")));
         b.push(format!("tag @e[tag=dw_actor_{safe}] add dw_rsua_brand"));
         // The rest, through the REAL generated rest function.
         b.push(format!("function {ns}:bonfire_rest_{i}"));
@@ -438,9 +434,7 @@ pub(super) fn emit_reseat_undefeated_packtests(plan: &Plan, out: &mut BuildOutpu
     if total > 1 {
         b.push(format!("kill @e[tag={tag},limit={}]", total - 1));
     }
-    b.push(format!(
-        "data modify entity @e[tag={tag},limit=1] Health set value 1.0f"
-    ));
+    b.push(wound_to_half(&format!("@e[tag={tag},limit=1]")));
     b.push(format!(
         "execute store result score #s_rsuw dw.sys if entity @e[tag={tag}]"
     ));

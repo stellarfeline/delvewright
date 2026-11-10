@@ -242,6 +242,34 @@ fn sequence_fired_wave_census_walks_its_own_tag() {
     );
 }
 
+/// The generated census PackTest wounds a body RELATIVE to its own maximum
+/// health. A literal health is full health for a body whose maximum is at or below
+/// it (a small slime has 1), so the "damaged" assertion would red on a census that
+/// is right. Every PackTest that wounds a body goes through one helper; none
+/// writes a literal `Health`.
+#[test]
+fn census_packtest_wounds_relative_to_the_bodys_own_maximum() {
+    let out = build_ok(&parse_hw_with(&[("quests.json", top_level_quests())]));
+    let path = "packtest-datapack/data/hello-world/test/wave_census_ambush.mcfunction";
+    let t = String::from_utf8(out.get(path).expect("census template").clone()).unwrap();
+    assert!(
+        t.contains(
+            "execute as @e[tag=dw_wave_ambush,limit=1] store result entity @s Health float \
+             0.005 run attribute @s minecraft:max_health get 100"
+        ),
+        "the wound is half of the body's own maximum health:\n{t}"
+    );
+    for (name, bytes) in out.iter() {
+        if name.starts_with("packtest-datapack/") && name.ends_with(".mcfunction") {
+            let body = String::from_utf8_lossy(bytes);
+            assert!(
+                !body.contains("Health set value 1.0f"),
+                "{name} writes a literal health, which is full health for a small body:\n{body}"
+            );
+        }
+    }
+}
+
 /// **Attribution.** The countdown is a measurement of what still stands, so it
 /// clears whether a body was cut down or fell into a lethal volume. That is the
 /// point of it, and it is also why nothing downstream could tell those two apart:
