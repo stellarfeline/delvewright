@@ -1487,11 +1487,10 @@ pub fn run_cameras(
         );
         if !missing.is_empty() {
             let line = format!(
-                "{}: camera `{}` frames {} the renderer ({}) has no model for and draws nothing \
-                 of: {}. A picture of the world without them is not the world. Move the camera so \
-                 none stands in frame, give the body a kind the renderer draws, or wait for a \
-                 renderer that draws it",
-                frameset::DW_FRAME_SKIPS_A_BODY.id(),
+                "camera `{}` frames {} the renderer ({}) has no model for and draws nothing of: \
+                 {}. A picture of the world without them is not the world. Move the camera so none \
+                 stands in frame, give the body a kind the renderer draws, or wait for a renderer \
+                 that draws it",
                 f.camera.name,
                 if missing.len() == 1 {
                     "a body"
@@ -1501,7 +1500,7 @@ pub fn run_cameras(
                 crate::compiler::view::frames::renderer(),
                 missing.join("; ")
             );
-            eprintln!("{line}");
+            eprintln!("{}: {line}", frameset::DW_FRAME_SKIPS_A_BODY.id());
             if !preview {
                 undrawn.push(line);
                 continue;

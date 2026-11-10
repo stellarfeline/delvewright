@@ -634,6 +634,65 @@ pub fn mean_luma(rgba: &[u8]) -> f64 {
 mod tests {
     use super::*;
 
+    /// **A frame that looks out past the build loads its horizon** out to
+    /// where its fog closes, and a frame that sees nothing past the build
+    /// loads nothing more.
+    #[test]
+    fn a_frame_looking_past_the_build_loads_the_horizon_to_its_fog() {
+        // A 4×4-chunk build, its middle at (32, 32).
+        let loaded = ([0, 0], [3, 3]);
+        let sea = 63.0;
+        // Straight down from 200 blocks over the middle, a wide lens: the
+        // floor of the frame runs past the build on every side.
+        let down = Camera {
+            pos: [32.0, 263.0, 32.0],
+            yaw: 0.0,
+            pitch: 90.0,
+            fov: 110.0,
+        };
+        let (lo, hi) = horizon_cover(&down, 160, 90, loaded, sea).expect("past the build");
+        assert!(
+            lo[0] < 0 && lo[1] < 0 && hi[0] > 3 && hi[1] > 3,
+            "{lo:?}..{hi:?}"
+        );
+        // Every chunk of the cover is within the fog of the build's extent.
+        let reach = f64::from(draw_distance(down.pos, loaded));
+        for c in [lo, hi] {
+            let d = (((c[0] * 16 - 32) as f64).powi(2) + ((c[1] * 16 - 32) as f64).powi(2)).sqrt();
+            assert!(d <= reach + 32.0, "{c:?} at {d} past the fog at {reach}");
+        }
+        // Out over the sea, level: the cover runs out to the fog and no
+        // further, however far the surface would carry the ray.
+        let out = Camera {
+            pos: [32.0, 70.0, 32.0],
+            yaw: 0.0,
+            pitch: 0.0,
+            fov: 60.0,
+        };
+        let (_, far) = horizon_cover(&out, 160, 90, loaded, sea).expect("past the build");
+        let reach = f64::from(draw_distance(out.pos, loaded));
+        assert!(
+            f64::from(far[1] * 16) <= 32.0 + reach + 16.0,
+            "{far:?} beyond {reach}"
+        );
+        assert!(far[1] > 3, "{far:?}");
+        // Looking down at the build's own floor from a few blocks up: nothing
+        // past it is in frame.
+        let near = Camera {
+            pos: [32.0, 70.0, 32.0],
+            yaw: 0.0,
+            pitch: 90.0,
+            fov: 60.0,
+        };
+        assert_eq!(horizon_cover(&near, 160, 90, loaded, sea), None);
+        // A lens under the surface meets no surface ground from above.
+        let under = Camera {
+            pos: [32.0, 40.0, 32.0],
+            ..down
+        };
+        assert_eq!(horizon_cover(&under, 160, 90, loaded, sea), None);
+    }
+
     #[test]
     fn the_sun_rises_in_the_east_and_sets_in_the_west() {
         let dawn = sun_direction(0);

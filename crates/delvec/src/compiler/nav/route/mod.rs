@@ -8,7 +8,10 @@
 pub(in crate::compiler::nav) mod leg;
 pub(in crate::compiler::nav) mod region;
 pub use leg::*;
-pub(crate) use region::lay_writes;
+pub(crate) use region::{LaidWrite, lay_writes};
+
+/// A laid write with the step it fires at ([`Configuration::laid_writes`]).
+pub type FiredWrite = (([i32; 3], [i32; 3]), Option<String>, usize);
 pub use region::*;
 
 use crate::compiler::failure::Failure;
@@ -615,7 +618,7 @@ impl Configuration {
     /// write). What a picture orders against the placements ledger's rows, so
     /// a cell the setup writes and a later beat rewrites holds the beat's
     /// block.
-    pub fn laid_writes(&self) -> Vec<(([i32; 3], [i32; 3]), Option<String>, usize)> {
+    pub fn laid_writes(&self) -> Vec<FiredWrite> {
         self.state
             .laid
             .iter()

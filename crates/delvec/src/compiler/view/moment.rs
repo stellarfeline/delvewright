@@ -39,7 +39,7 @@ pub type Region = ([i32; 3], [i32; 3]);
 #[derive(Clone)]
 pub struct Laid {
     /// The writes in the order they are laid.
-    pub ops: Vec<(Region, Option<String>)>,
+    pub ops: Vec<crate::compiler::nav::LaidWrite>,
     /// What the writes leave in the cells they reach, laid over nothing.
     over: BlockMap,
     /// Every cell a write reaches.
@@ -48,13 +48,13 @@ pub struct Laid {
 
 impl Laid {
     /// The writes of a moment, ordered.
-    pub fn of(writes: &[(Region, Option<String>, usize)], rows: &[&Placed]) -> Laid {
+    pub fn of(writes: &[crate::compiler::nav::FiredWrite], rows: &[&Placed]) -> Laid {
         use crate::compiler::placed::Firing;
         // (time, kind, sequence): the setup at world init, then a step's
         // region writes, then the same step's ledger rows.
-        let mut ops: Vec<((usize, u8, usize), Region, Option<String>)> = Vec::new();
+        let mut ops: Vec<((usize, u8, usize), crate::compiler::nav::LaidWrite)> = Vec::new();
         for (i, (r, b, step)) in writes.iter().enumerate() {
-            ops.push(((*step, 1, i), *r, b.clone()));
+            ops.push(((*step, 1, i), (*r, b.clone())));
         }
         for (i, row) in rows.iter().enumerate() {
             let PlacedObject::Block { cell, state } = &row.object else {
@@ -67,10 +67,10 @@ impl Laid {
             };
             let block = (crate::compiler::assembled::base_id(state) != "minecraft:air")
                 .then(|| state.clone());
-            ops.push((key, (*cell, *cell), block));
+            ops.push((key, ((*cell, *cell), block)));
         }
-        ops.sort_by_key(|(k, _, _)| *k);
-        let ops: Vec<(Region, Option<String>)> = ops.into_iter().map(|(_, r, b)| (r, b)).collect();
+        ops.sort_by_key(|(k, _)| *k);
+        let ops: Vec<crate::compiler::nav::LaidWrite> = ops.into_iter().map(|(_, w)| w).collect();
         let mut cells = BTreeSet::new();
         for ((lo, hi), _) in &ops {
             cells.extend(crate::compiler::assembled::region_cells(*lo, *hi));
@@ -384,4 +384,88 @@ pub fn facing_the_lens(
         turned += 1;
     }
     turned
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::compiler::placed::Firing;
+
+    /// **Every write in firing order**: the setup lays stone at a cell, and
+    /// the beat at step 3 lays gold over it — a region write and a ledger row
+    /// alike; the moment holds the gold, and two moments' moved count is the
+    /// count of cells their bytes differ in.
+    #[test]
+    fn a_beat_s_write_lands_over_the_setup_s_and_the_count_is_the_bytes() {
+        let cell = [1, 65, 1];
+        let setup = Placed::block(Firing::Setup, cell, "minecraft:stone");
+        let beat_row = Placed::block(Firing::Step(3), [2, 65, 1], "minecraft:gold_block");
+        let base = BlockMap::new();
+        let load = Laid::of(&[], &[&setup]);
+        let writes = [((cell, cell), Some("minecraft:gold_block".to_string()), 3)];
+        // The rows handed in their ledger order, setup last: firing order
+        // decides, not the order handed.
+        let after = Laid::of(&writes, &[&beat_row, &setup]);
+        let bytes = after.bytes(&base);
+        assert_eq!(
+            bytes.get(&cell).map(|s| s.as_str()),
+            Some("minecraft:gold_block")
+        );
+        assert_eq!(
+            bytes.get(&[2, 65, 1]).map(|s| s.as_str()),
+            Some("minecraft:gold_block")
+        );
+        let lb = load.bytes(&base);
+        let differ = [cell, [2, 65, 1]]
+            .iter()
+            .filter(|c| lb.get(c).map(|s| s.as_str()) != bytes.get(c).map(|s| s.as_str()))
+            .count();
+        assert_eq!(after.moved_from(&load, &base), differ);
+        assert_eq!(differ, 2);
+        // An unforced row is never laid.
+        let unforced = Placed::block(Firing::Unforced("a trap".into()), cell, "minecraft:dirt");
+        let none = Laid::of(&[], &[&unforced]);
+        assert_eq!(none.bytes(&base).get(&cell), None);
+    }
+
+    /// **A watcher faces the lens it is within reach of**, and only that one.
+    #[test]
+    fn a_watcher_within_reach_turns_to_the_lens() {
+        let body = |tag: &str, pos: [f64; 3]| EntityRecord {
+            kind: "minecraft:villager".into(),
+            pos,
+            yaw: 180.0,
+            tags: vec![
+                "dw_npc".into(),
+                tag.into(),
+                crate::compiler::watching::WATCH_TAG.into(),
+            ],
+            nbt: crate::compiler::view::world::Nbt::Compound(Vec::new()),
+        };
+        let mut bodies = vec![
+            body("dw_npc_near", [0.5, 64.0, 4.5]),
+            body("dw_npc_far", [0.5, 64.0, 40.5]),
+            body("dw_npc_none", [1.5, 64.0, 4.5]),
+        ];
+        let watchers = vec![
+            ("dw_npc_near".to_string(), 8),
+            ("dw_npc_far".to_string(), 8),
+        ];
+        let lens = [0.5, 65.62, 0.5];
+        assert_eq!(facing_the_lens(&mut bodies, &watchers, lens), 1);
+        // South of the lens, the body turns north to it.
+        assert!(
+            (f64::from(bodies[0].yaw) - 180.0).abs() < 1e-3
+                || (f64::from(bodies[0].yaw) + 180.0).abs() < 1e-3
+        );
+        assert_eq!(bodies[1].yaw, 180.0, "beyond its reach");
+        assert_eq!(bodies[2].yaw, 180.0, "not a watcher");
+        let mut east = vec![body("dw_npc_near", [4.5, 64.0, 0.5])];
+        facing_the_lens(&mut east, &watchers, lens);
+        assert!(
+            (f64::from(east[0].yaw) - 90.0).abs() < 1e-3,
+            "{}",
+            east[0].yaw
+        );
+    }
 }

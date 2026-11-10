@@ -257,12 +257,16 @@ fn a_camera_after_a_step_holds_what_the_proofs_hold_there() {
     assert!(after_exit.cells_moved > 0);
 }
 
-/// **Criterion 2's second half**: no site of `crates/delvec/src` lays a region
-/// write's block over a block map but `RegionState::blocks_over`.
+/// **Criterion 2's second half**: one function lays region writes over a
+/// block map — `nav::lay_writes`, which a configuration's bytes
+/// (`RegionState::blocks_over`) and a picture's moment
+/// (`view::moment::Laid`) both lay through — and every site that walks a
+/// state's laid writes is in `compiler/nav`.
 #[test]
 fn one_function_lays_a_configuration() {
     let src = common::repo_root().join("crates/delvec/src");
     let mut sites = Vec::new();
+    let mut writers = Vec::new();
     let mut stack = vec![src];
     while let Some(d) = stack.pop() {
         for e in std::fs::read_dir(&d).unwrap() {
@@ -271,23 +275,84 @@ fn one_function_lays_a_configuration() {
                 stack.push(p);
             } else if p.extension().is_some_and(|x| x == "rs") {
                 let text = std::fs::read_to_string(&p).unwrap();
-                // The only iteration over a state's laid writes.
                 for (i, line) in text.lines().enumerate() {
                     let t = line.trim_start();
-                    if t.starts_with("for ") && t.contains(" in &") && t.contains("laid") {
+                    let walks_laid = t.starts_with("for ")
+                        && t.contains("laid")
+                        && (t.contains(" in &") || t.ends_with(" in laid {"));
+                    if walks_laid {
                         sites.push(format!("{}:{}", p.display(), i + 1));
+                    }
+                    if t.contains("fn lay_writes(") {
+                        writers.push(format!("{}:{}", p.display(), i + 1));
                     }
                 }
             }
         }
     }
-    eprintln!("laid-write sites: {} — {sites:?}", sites.len());
-    // `blocks_over` lays them; `moved_from` counts the same cells without
-    // laying. Two readers of one list, one writer.
-    assert_eq!(sites.len(), 2, "{sites:?}");
+    eprintln!(
+        "laid-write sites: {} — {sites:?}; writers: {writers:?}",
+        sites.len()
+    );
+    assert_eq!(writers.len(), 1, "{writers:?}");
+    assert!(
+        writers[0].contains("compiler/nav/route/region.rs"),
+        "{writers:?}"
+    );
+    assert!(!sites.is_empty());
     assert!(
         sites.iter().all(|s| s.contains("compiler/nav/")),
         "{sites:?}"
+    );
+}
+
+/// **A setup write and a later beat on one cell**: the placements ledger lays
+/// stone at the pillar's foot at world setup, and `obj/talk`'s fill lays gold
+/// there. The world after `obj/talk` holds the gold — every write in firing
+/// order — and its count of moved cells is the count of cells its bytes
+/// differ from load's in.
+#[test]
+fn a_beat_s_write_lands_over_the_setup_s() {
+    let lib = prefabs("setup-row");
+    let c = campaign();
+    let reg = PrefabRegistry::load_dir(&lib).unwrap();
+    let plan = Plan::build(&c, &reg).expect("plan builds");
+    let structures = common::plan_structures_with_trap_triggers(&plan, &lib);
+    let assembled = delvec::compiler::assembled::assemble(&plan, &structures);
+    let world = delvec::compiler::nav::World::from_occupancy(
+        delvec::compiler::assembled::occupancy_over(&assembled.blocks, &assembled.open_gates),
+        delvec::compiler::nav::Premises::of_plan(&plan, assembled.gate_seals.clone()),
+    );
+    let relight = delvec::compiler::light::relight_over(&plan, &assembled);
+    let base = beat::picture_base(&plan, &assembled, &relight.placements);
+    let setup = delvec::compiler::placed::Placed::block(
+        delvec::compiler::placed::Firing::Setup,
+        [1, 65, 1],
+        "minecraft:stone",
+    );
+    let ledger = delvec::compiler::placed::Ledger { rows: vec![setup] };
+    let cams = [cam("before", None), cam("after-talk", Some("obj/talk"))];
+    let stood = beat::stands(&plan, &world, &base, &cams, &ledger).unwrap();
+    let map = |k: &str| &stood.worlds.iter().find(|(key, _)| key == k).unwrap().1;
+    let (load, talk) = (map("at-load"), map("after-obj-talk"));
+    let at = |m: &BlockMap, c: [i32; 3]| m.get(&c).map(|s| s.as_str().to_string());
+    assert_eq!(at(load, [1, 65, 1]).as_deref(), Some("minecraft:stone"));
+    assert_eq!(
+        at(talk, [1, 65, 1])
+            .as_deref()
+            .map(|s| s.split('[').next().unwrap()),
+        Some("minecraft:gold_block"),
+        "the beat's fill lands over the setup's stone"
+    );
+    let mut cells: std::collections::BTreeSet<[i32; 3]> = load.keys().collect();
+    cells.extend(talk.keys());
+    let differ = cells
+        .iter()
+        .filter(|c| at(load, **c) != at(talk, **c))
+        .count();
+    assert_eq!(
+        stood.stands[1].cells_moved, differ,
+        "the count is the bytes'"
     );
 }
 
