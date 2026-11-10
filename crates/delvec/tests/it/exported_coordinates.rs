@@ -63,6 +63,28 @@ fn every_exported_index_a_harness_document_states_is_the_step_it_names() {
     );
     let path = read(&out.join("critical-path.json"));
     let steps = path["steps"].as_array().unwrap();
+    // spec-0132 §5.3: format 6 — every exported step says which bodies it is
+    // walked beside, and the gallery's porch warden is the pursuer of exactly
+    // the one step that runs the long hall.
+    assert_eq!(path["format_version"], serde_json::json!(6));
+    let pursued: Vec<usize> = steps
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            let rows = s["pursuers"]
+                .as_array()
+                .unwrap_or_else(|| panic!("step {i} carries `pursuers`: {s}"));
+            (i, rows.len())
+        })
+        .filter(|(_, n)| *n > 0)
+        .map(|(i, _)| i)
+        .collect();
+    assert_eq!(pursued.len(), 1, "one pursued step: {pursued:?}");
+    assert_eq!(steps[pursued[0]]["loop"], "loop/the-hall-that-runs-on");
+    assert_eq!(
+        steps[pursued[0]]["pursuers"][0]["actor"],
+        "actor/the-sleeper"
+    );
     let death = read(&out.join("validation/death-plan.json"));
     let combat = read(&out.join("validation/combat-plan.json"));
     let quests = read(&campaign.join("quests.json"));

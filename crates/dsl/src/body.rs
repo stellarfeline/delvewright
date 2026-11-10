@@ -484,9 +484,14 @@ impl<'a> BodyRef<'a> {
     /// Whether this body is **inert** while it is staged: it cannot be harmed
     /// and does not fight (spec-0119 §2). Every NPC is, for its whole life; an
     /// actor is unless it is `vulnerable` — while its puppet stands, before any
-    /// `unleash-actor` replaces it with a twin that fights.
+    /// `unleash-actor` replaces it with a twin that fights. An actor that
+    /// enters (`entrance`, spec-0132) is never staged — its first appearance
+    /// is the twin that fights — so it is never inert.
     pub fn inert(self) -> bool {
-        !self.killable_by_players()
+        match self {
+            BodyRef::Actor(a) if a.entrance.is_some() => false,
+            _ => !self.killable_by_players(),
+        }
     }
 
     /// The presses this class can be answered for (spec-0119 §3): an NPC's

@@ -203,7 +203,36 @@ fn laid_out(
             }
         }
     }
+    laid_pursuers(&mut out);
     out
+}
+
+/// A step the layout lays between two walked steps — a rest, a witness —
+/// is walked beside the bodies loose on BOTH sides of it (spec-0132 §5.3):
+/// one loose before and after was loose throughout. A laid step at either end
+/// of the path, or beside a step that names none, is walked beside none.
+fn laid_pursuers(out: &mut [Value]) {
+    let rows =
+        |v: &Value| -> Option<Vec<Value>> { v.get("pursuers").and_then(Value::as_array).cloned() };
+    let walked: Vec<Option<Vec<Value>>> = out.iter().map(rows).collect();
+    for i in 0..out.len() {
+        if walked[i].is_some() {
+            continue;
+        }
+        let before = walked[..i].iter().rev().flatten().next();
+        let after = walked[i + 1..].iter().flatten().next();
+        let both: Vec<Value> = match (before, after) {
+            (Some(b), Some(a)) => b
+                .iter()
+                .filter(|p| a.iter().any(|q| q.get("actor") == p.get("actor")))
+                .cloned()
+                .collect(),
+            _ => Vec::new(),
+        };
+        if let Some(obj) = out[i].as_object_mut() {
+            obj.insert("pursuers".to_string(), Value::Array(both));
+        }
+    }
 }
 
 pub(super) fn emit_critical_path(
@@ -236,7 +265,7 @@ pub(super) fn emit_critical_path(
         &plan.critical_path,
         &plan.critical_path_transport,
         &plan.critical_path_sneak,
-        &plan.path_firing.keep_out,
+        &plan.path_firing,
         CutsceneHolds {
             after: &plan.critical_path_cutscene,
             en_route: &en_route,
@@ -275,7 +304,7 @@ pub(super) fn critical_path_json(
     walked: &[plan::Step],
     transports: &[Option<[i32; 3]>],
     sneak: &[bool],
-    keep_out: &[Vec<crate::compiler::reach::KeepOut>],
+    firing: &plan::PathFiring,
     holds: CutsceneHolds<'_>,
     moves: &[crate::compiler::nav::MovePlan],
     actor_moves: &[crate::compiler::nav::ActorMovePlan],
@@ -304,6 +333,9 @@ pub(super) fn critical_path_json(
             .collect()
     };
     let ending_tail = quests_ending_tail(plan.campaign, &path_quests, moves, actor_moves);
+    let keep_out = &firing.keep_out;
+    // spec-0132 §5.3: the `outrun` bodies loose while each step is walked.
+    let pursuers = plan::pursuers_by_step(plan.campaign, &plan.namespace, walked, firing);
     let steps: Vec<Value> = walked
         .iter()
         .enumerate()
@@ -464,6 +496,15 @@ pub(super) fn critical_path_json(
                 && let Some(obj) = step.as_object_mut()
             {
                 obj.insert("cutscene_seconds".to_string(), json!(secs));
+            }
+            // Format 6: every step says which bodies it is walked beside —
+            // empty included, because a step that cannot say is one the
+            // harness refuses to walk under the pursuit rule.
+            if let Some(obj) = step.as_object_mut() {
+                obj.insert(
+                    "pursuers".to_string(),
+                    Value::Array(pursuers[i].iter().map(plan::Pursuer::to_json).collect()),
+                );
             }
             // The longest a cutscene fired by something this step's walk passes
             // can hold the party (`compiler::hold::en_route_holds`); present only

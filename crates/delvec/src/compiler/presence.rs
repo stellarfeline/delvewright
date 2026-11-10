@@ -29,7 +29,10 @@
 //! step, an `on_arrive`) runs later, so it is its own state. Every state is
 //! judged, the init state included.
 //!
-//! A `spawn-npc` or `spawn-actor` the replay cannot date — in an environment
+//! An `unleash-actor` of an actor not on stage places it too: its twin arrives
+//! at the actor's mark when no puppet stands (spec-0132 §3).
+//!
+//! A `spawn-npc`, `spawn-actor` or `unleash-actor` the replay cannot date — in an environment
 //! trigger, a trap payload, a reaction bundle, an `on_kill`, a shop, or on a
 //! dialogue option the path does not take — can fire at any state, so its body
 //! is counted as possibly present in every state. A `despawn-*` the replay
@@ -167,6 +170,7 @@ pub fn check(c: &Campaign) -> (Vec<Diagnostic>, PresenceBinding) {
     // Every lifecycle line, by pointer, and the bodies an undatable one spawns.
     let mut lines: BTreeMap<String, &QuestEffect> = BTreeMap::new();
     let mut anytime: BTreeSet<Body> = BTreeSet::new();
+    let mut unleashed_undated: BTreeSet<Body> = BTreeSet::new();
     delvewright_dsl::for_each_effect_root(c, &mut |site, list| {
         let datable_root = matches!(
             site.owner,
@@ -186,10 +190,32 @@ pub fn check(c: &Campaign) -> (Vec<Diagnostic>, PresenceBinding) {
                 Verb::SpawnActor { actor, .. } => {
                     anytime.insert(actor.as_str().to_string());
                 }
+                // spec-0132 §3: an unleash with no puppet standing is the
+                // body's arrival at its mark. Undated, it is counted as one
+                // only for an actor nothing stages: where a `spawn-actor`
+                // exists, the unleash may as well stand up the puppet it
+                // placed, and that spawn is what is counted.
+                Verb::UnleashActor { actor } => {
+                    unleashed_undated.insert(actor.as_str().to_string());
+                }
                 _ => {}
             }
         }
     });
+    let staged: BTreeSet<&str> = {
+        let mut out = BTreeSet::new();
+        delvewright_dsl::for_each_campaign_effect(c, &mut |_, _, e| {
+            if let Verb::SpawnActor { actor } = &e.verb {
+                out.insert(actor.as_str());
+            }
+        });
+        out
+    };
+    anytime.extend(
+        unleashed_undated
+            .into_iter()
+            .filter(|a| !staged.contains(a.as_str())),
+    );
     // Dialogue options, flattened as `plan::OptionPlan::n` numbers them:
     // (npc, n) -> (the objectives it completes, the npcs it spawns).
     type Opt = (Vec<String>, Vec<String>, String);
@@ -373,6 +399,14 @@ pub fn check(c: &Campaign) -> (Vec<Diagnostic>, PresenceBinding) {
                         Verb::SpawnActor { actor, .. } => {
                             present.insert(actor.as_str().to_string());
                             changed.get_or_insert_with(|| p.clone());
+                        }
+                        // spec-0132 §3: an unleash places the body when it is
+                        // not already placed (its twin arrives at the mark),
+                        // and replaces the puppet in place when it is.
+                        Verb::UnleashActor { actor } => {
+                            if present.insert(actor.as_str().to_string()) {
+                                changed.get_or_insert_with(|| p.clone());
+                            }
                         }
                         Verb::DespawnNpc { npc, .. } => {
                             present.remove(npc.as_str());

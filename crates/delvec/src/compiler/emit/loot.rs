@@ -288,6 +288,8 @@ mod loot_emit_tests {
             watch: None,
             answers: None,
             health_bar: None,
+            entrance: None,
+            outrun: false,
         }
     }
 
@@ -336,7 +338,7 @@ mod loot_emit_tests {
         a.entity = "minecraft:horse".to_string();
         for s in [
             actor_puppet_summon("dw", &a, [1, 2, 3], 0),
-            actor_twin_summon("dw", &a, "~ ~ ~"),
+            actor_twin_summon("dw", &a, "~ ~ ~", TwinArrival::Arrives),
         ] {
             assert!(
                 s.contains(
@@ -351,7 +353,7 @@ mod loot_emit_tests {
         a.drops = vec![delvewright_dsl::MobDrop::Slot(delvewright_dsl::SlotDrop {
             slot: EquipSlot::Saddle,
         })];
-        let twin = actor_twin_summon("dw", &a, "~ ~ ~");
+        let twin = actor_twin_summon("dw", &a, "~ ~ ~", TwinArrival::Arrives);
         assert!(
             twin.contains(&format!(
                 "drop_chances:{{body:0.0f,saddle:{DECLARED_DROP_CHANCE}}}"
@@ -390,7 +392,7 @@ mod loot_emit_tests {
         assert_eq!(actor_equipment(&a, &a.entity), None);
         let puppet = actor_puppet_summon("dw", &a, [1, 2, 3], 0);
         assert!(!puppet.contains("equipment:"), "{puppet}");
-        assert!(!actor_twin_summon("dw", &a, "~ ~ ~").contains("equipment:"));
+        assert!(!actor_twin_summon("dw", &a, "~ ~ ~", TwinArrival::Arrives).contains("equipment:"));
     }
 
     /// The gear rides on BOTH bodies — the dormant puppet and the twin that
@@ -399,7 +401,7 @@ mod loot_emit_tests {
     fn equipment_lands_on_both_the_puppet_and_the_twin() {
         let a = actor_with(Some(full_kit()));
         let puppet = actor_puppet_summon("dw", &a, [1, 2, 3], 0);
-        let twin = actor_twin_summon("dw", &a, "~ ~ ~");
+        let twin = actor_twin_summon("dw", &a, "~ ~ ~", TwinArrival::Arrives);
         for s in [&puppet, &twin] {
             assert!(
                 s.contains(

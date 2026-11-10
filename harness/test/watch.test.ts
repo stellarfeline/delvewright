@@ -21,12 +21,12 @@ import {
 function pathWith(watchers: unknown): Record<string, unknown> {
   return {
     version: "fixture",
-    format_version: 5,
+    format_version: 6,
     campaign_id: "gallery",
     non_combatants: { kinds: ["villager"], ambiguous: [], examined: 1, unbound: false },
     steps: [
-      { action: "select-class", class: "class/warder", command: "/trigger dw.class set 2" },
-      { action: "assert-complete", scoreboard: { objective: "dw.campaign", value: 1 } },
+      { action: "select-class", class: "class/warder", command: "/trigger dw.class set 2", pursuers: [] },
+      { action: "assert-complete", scoreboard: { objective: "dw.campaign", value: 1 }, pursuers: [] },
     ],
     ...(watchers === undefined ? {} : { watchers }),
   };

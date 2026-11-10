@@ -6050,26 +6050,30 @@ test("a predicted shrieker whose 3007 is never heard fails the step; heard, it p
   );
 });
 
-test("a darkness effect on the bot, or a warden, fails the run; others do not", () => {
+test("a darkness effect no warden explains, or an undeclared warden, fails the run; others do not", () => {
   const bot = new FakeBot();
   (bot.entity as unknown as { id: number }).id = 7;
   (bot as unknown as { registry: unknown }).registry = {
     effects: { 32: { name: "Darkness" }, 16: { name: "NightVision" } },
   };
   const executor = attach(bot);
-  assert.equal(executor.sculkRunVerdict(), undefined, "a run with neither passes");
+  assert.equal(executor.sculkRunVerdict(0), undefined, "a run with neither passes");
   // An effect on another entity, or another effect on the bot, is not darkness.
   bot.emit("entityEffect", { id: 99 }, { id: 32 });
   bot.emit("entityEffect", bot.entity, { id: 16 });
   bot.emit("entitySpawn", { id: 50, name: "zombie" });
-  assert.equal(executor.sculkRunVerdict(), undefined);
+  assert.equal(executor.sculkRunVerdict(0), undefined);
   bot.emit("entityEffect", bot.entity, { id: 32 });
-  const verdict = executor.sculkRunVerdict();
-  assert.ok(verdict !== undefined && /darkness 1, warden 0/.test(verdict), verdict);
+  const verdict = executor.sculkRunVerdict(0);
+  assert.ok(verdict !== undefined && /darkness 1 \(0 more with a warden in reach\)/.test(verdict), verdict);
+  // spec-0132 §5.7: a warden spawn heard is a failure only while the server's
+  // count of undeclared wardens is unread or non-zero.
   const spawned = new FakeBot();
   const other = attach(spawned);
   spawned.emit("entitySpawn", { id: 51, name: "warden" });
-  assert.match(other.sculkRunVerdict() ?? "", /darkness 0, warden 1/);
+  assert.match(other.sculkRunVerdict() ?? "", /warden spawns heard 1, undeclared standing unread/);
+  assert.match(other.sculkRunVerdict(1) ?? "", /undeclared standing 1/);
+  assert.equal(other.sculkRunVerdict(0), undefined, "a declared warden is not a shrieker's");
 });
 
 // --- the sculk window opens with the first walk along the leg (spec-0100 §4.7) ---
@@ -6251,4 +6255,31 @@ test("a click before the leg does not answer for it once the server says the sen
         /0 predicted device\(s\) were busy/.test(err.message),
     ),
   );
+});
+
+// --- spec-0132 §5.2: a pursued step is walked with nothing staged, refunded or restored ---
+
+test("stageAway and holdFullHealth return without acting while a pursued step runs, and record the refusal", async () => {
+  const bot = new FakeBot();
+  (bot as unknown as { entities: Record<number, unknown> }).entities = {
+    12: { id: 12, name: "warden", uuid: "0-0-0-0-12", position: new FakeVec3(5, 64, 5) },
+  };
+  (bot as unknown as { health: number }).health = 8;
+  const executor = attach(bot);
+  executor.pursuedStep = { index: 16, label: "loop loop/the-hall-that-runs-on", refusals: [] };
+  const sent: string[] = [];
+  (bot as unknown as { chat: (m: string) => void }).chat = (m: string) => {
+    sent.push(m);
+  };
+  await executor.stageAway(12, "it hit the bot (the server named it)", "warden");
+  await executor.holdFullHealth("a drop to 8.0 on it");
+  executor.damageBy.set(12, 6);
+  await executor.refundBlows("warden", 12);
+  assert.deepEqual(sent, [], "no command reached the server");
+  assert.equal(executor.stagedRemovals.length, 0, "nothing staged, nothing restored");
+  assert.equal(executor.stagedIds.has(12), false);
+  assert.equal(executor.pursuedStep.refusals.length, 3);
+  assert.match(executor.pursuedStep.refusals[0]!, /staging warden#12 away/);
+  assert.match(executor.pursuedStep.refusals[1]!, /holding full health/);
+  assert.match(executor.pursuedStep.refusals[2]!, /refunding 6\.0 health warden#12 took/);
 });

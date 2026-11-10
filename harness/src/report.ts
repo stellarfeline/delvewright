@@ -17,6 +17,7 @@
 // run behaves exactly as before (stderr only). Deterministic key order, so two
 // runs of the same delve diff cleanly.
 
+import { pursuitBinding, pursuitLine } from "./pursuit.ts";
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import type {
@@ -92,6 +93,7 @@ export interface BranchOutcome {
 export const STAGES = [
   "branch-run",
   "critical-path",
+  "pursuit",
   "die-retry",
   "death-loop",
   "crush-death",
@@ -185,6 +187,17 @@ export class RunReport {
         line: string;
         verdicts: readonly import("./journal.ts").JournalVerdict[];
       })
+    | undefined;
+  /** spec-0132 §5: the pursuit leg's binding and every pursued step's row. */
+  private pursuit:
+    | {
+        binding: import("./pursuit.ts").PursuitBinding;
+        line: string;
+        steps: readonly {
+          record: import("./pursuit.ts").PursuitStepRecord;
+          verdict: import("./pursuit.ts").PursuitVerdict;
+        }[];
+      }
     | undefined;
   private watchBinding:
     | { inRecord: number; withinReach: number; asserted: number; judgements: number; line: string }
@@ -366,6 +379,37 @@ export class RunReport {
     line: string;
   }): void {
     this.watchBinding = binding;
+  }
+
+  /**
+   * Record the pursuit leg (spec-0132 §5): every pursued step's record and
+   * verdict, the binding over them with its denominator — the exported steps
+   * walked — and the `pursuit` stage row, red on any failure. Recorded on every
+   * run, zero included: a run walked beside no pursuer says so with its `<N>`.
+   */
+  recordPursuit(
+    steps: readonly {
+      record: import("./pursuit.ts").PursuitStepRecord;
+      verdict: import("./pursuit.ts").PursuitVerdict;
+    }[],
+    walked: number,
+  ): string {
+    const binding = pursuitBinding(
+      steps.map((s) => s.record),
+      steps.map((s) => s.verdict.measurement),
+      walked,
+    );
+    const line = pursuitLine(binding);
+    this.pursuit = { binding, line, steps: [...steps] };
+    const failures = steps.flatMap((s) => [...s.verdict.failures]);
+    this.stage({
+      stage: "pursuit",
+      ran: true,
+      passed: failures.length === 0,
+      findings: [line],
+      failures,
+    });
+    return line;
   }
 
   /** Where the engine's quest cues arrived, judged against the build's cue ledger. */
@@ -726,6 +770,34 @@ export class RunReport {
       // means zero scripted deaths were taken, whatever the stage's `passed` says
       // — the two are different questions and only this one answers "was anything
       // about dying looked at".
+      // spec-0132 §5: the pursuit leg — what it judged and over what, and per
+      // pursued step what was read, beside its verdict.
+      ...(this.pursuit === undefined
+        ? {}
+        : {
+            pursuit: {
+              line: this.pursuit.line,
+              pursued_steps: this.pursuit.binding.pursued,
+              walked_steps: this.pursuit.binding.walked,
+              pursuers: this.pursuit.binding.pursuers,
+              readings: this.pursuit.binding.readings,
+              closest_approach: this.pursuit.binding.closestApproach ?? null,
+              steps: this.pursuit.steps.map(({ record, verdict }) => ({
+                step: record.step,
+                label: record.label,
+                pursuers: record.pursuers.map((p) => p.actor),
+                readings: record.readings.length,
+                died: record.died?.attacker ?? null,
+                staged: record.staged,
+                restored: record.restored,
+                refusals: [...record.refusals],
+                closest_approach: verdict.measurement.closestApproach ?? null,
+                displacement: verdict.measurement.displacement,
+                lowest_health: verdict.measurement.lowestHealth ?? null,
+                failures: [...verdict.failures],
+              })),
+            },
+          }),
       ...(this.watchBinding !== undefined && this.watchBinding.inRecord > 0
         ? {
             watch_binding: {

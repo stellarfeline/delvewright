@@ -726,6 +726,19 @@ async function main(): Promise<number> {
         ...shotFailures,
       ],
     });
+    // spec-0132 §5: the pursuit leg — every step walked beside a loose
+    // `outrun` body, judged, with its binding over the exported steps walked.
+    {
+      const walked =
+        pathFailure === undefined
+          ? criticalPath.steps.length
+          : Math.max(0, Math.min(executor.currentStep + 1, criticalPath.steps.length));
+      const line = report.recordPursuit(executor.pursuitRecords, walked);
+      process.stderr.write(`${line}\n`);
+      for (const { verdict } of executor.pursuitRecords) {
+        for (const f of verdict.failures) process.stderr.write(`[pursuit] FAIL ${f}\n`);
+      }
+    }
     // The death loop. Recorded whether it ran or not, and a stage that
     // did not run carries the reason: a skipped stage must never be readable as a
     // passed one, and this stage is the ONLY runtime proof of the mechanic the
@@ -900,7 +913,7 @@ async function main(): Promise<number> {
 
     // spec-0100 §4.7: the run's closing `[sculk]` line, printed whether or not
     // the path passed; a darkness effect on the bot or a warden fails the run.
-    const sculkFailure = executor.sculkRunVerdict();
+    const sculkFailure = executor.sculkRunVerdict(await executor.readUndeclaredWardens());
     if (failure !== undefined) throw failure;
     if (sculkFailure !== undefined) throw new Error(`sculk: ${sculkFailure}`);
     // EVERY red stage ends the run red — the critical path's muster, a die-retry

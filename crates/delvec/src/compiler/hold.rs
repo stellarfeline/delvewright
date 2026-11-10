@@ -206,7 +206,7 @@ pub(crate) fn completion_bundles<'a>(
             }
         }
         for a in &quests.ambushes {
-            let t = a.to_trigger();
+            let t = a.to_trigger(&quests.actors);
             if t.id.as_str() == trigger_id {
                 // An ambush's bundle is its telegraph plus generated spawns.
                 out.push(a.telegraph.as_slice());

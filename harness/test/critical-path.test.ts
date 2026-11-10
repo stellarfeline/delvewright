@@ -5,18 +5,49 @@ import {
   CriticalPathParseError,
   insideCompletion,
   landingCarrier,
-  parseCriticalPath,
-  parseCriticalPathJson,
+  parseCriticalPath as parseStrict,
+  parseCriticalPathJson as parseStrictJson,
+  pursuersOf,
   reachGoal,
 } from "../src/critical-path.ts";
 import type { ReachCompletion } from "../src/critical-path.ts";
+
+/**
+ * Every step a fixture here writes is walked beside nobody unless it says so:
+ * the fixtures predate format 6, so the empty `pursuers` row the wire requires
+ * is filled in where a step omits it. The format-6 refusals are asserted
+ * against the strict parser itself (`parseStrict`).
+ */
+function fillPursuers(raw: unknown): unknown {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return raw;
+  const steps = (raw as Record<string, unknown>)["steps"];
+  if (!Array.isArray(steps)) return raw;
+  return {
+    ...(raw as Record<string, unknown>),
+    steps: steps.map((s) =>
+      s !== null && typeof s === "object" && !Array.isArray(s) && !("pursuers" in s)
+        ? { ...(s as Record<string, unknown>), pursuers: [] }
+        : s,
+    ),
+  };
+}
+const parseCriticalPath = (raw: unknown) => parseStrict(fillPursuers(raw));
+const parseCriticalPathJson = (text: string) => {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return parseStrictJson(text);
+  }
+  return parseStrict(fillPursuers(raw));
+};
 
 // The canonical spec-0002 example (amended 2026-07-30), as a fresh object per call
 // so tests can mutate.
 function validRaw(): Record<string, unknown> {
   return {
     version: "0.2.0",
-    format_version: 5,
+    format_version: 6,
     campaign_id: "hello-world",
     non_combatants: {
       kinds: ["mannequin", "villager"],
@@ -1221,4 +1252,77 @@ test("a mock that asserts nothing, or asserts a different set before and after, 
       JSON.stringify(bad),
     );
   }
+});
+
+// --- contract format 6: the pursuers each step is walked beside (spec-0132 §5.3) ---
+
+/** `validRaw()` with every step's `pursuers` written out, the reach pursued. */
+function pursuedRaw(): Record<string, unknown> {
+  const raw = validRaw();
+  const steps = raw["steps"] as Record<string, unknown>[];
+  for (const s of steps) s["pursuers"] = [];
+  steps[2]!["pursuers"] = [
+    {
+      actor: "actor/the-sleeper",
+      kind: "minecraft:warden",
+      census: "hello-world:actor_census_the_sleeper",
+      entrance_ticks: 133,
+    },
+  ];
+  return raw;
+}
+
+test("format 6: a step's pursuers are parsed, and an empty row is the default", () => {
+  const path = parseStrict(pursuedRaw());
+  assert.deepEqual(pursuersOf(path.steps[2]!), [
+    {
+      actor: "actor/the-sleeper",
+      kind: "minecraft:warden",
+      census: "hello-world:actor_census_the_sleeper",
+      entranceTicks: 133,
+      undated: false,
+    },
+  ]);
+  assert.deepEqual(pursuersOf(path.steps[1]!), []);
+  assert.ok(!("pursuers" in path.steps[1]!), "an empty row leaves no key on the parsed step");
+});
+
+test("format 6: a format-5 artifact is refused", () => {
+  const raw = pursuedRaw();
+  raw["format_version"] = 5;
+  assert.throws(
+    () => parseStrict(raw),
+    (err: unknown) => err instanceof CriticalPathParseError && err.pointer === "/format_version",
+  );
+});
+
+test("format 6: a walked step without `pursuers` is refused at parse", () => {
+  const raw = pursuedRaw();
+  delete (raw["steps"] as Record<string, unknown>[])[1]!["pursuers"];
+  assert.throws(
+    () => parseStrict(raw),
+    (err: unknown) =>
+      err instanceof CriticalPathParseError &&
+      err.pointer === "/steps/1/pursuers" &&
+      /required on every step/.test(err.message),
+  );
+});
+
+test("format 6: a pursuer row is whole — a malformed actor or an unknown key is refused", () => {
+  const bad = pursuedRaw();
+  ((bad["steps"] as Record<string, unknown>[])[2]!["pursuers"] as Record<string, unknown>[])[0]![
+    "actor"
+  ] = "npc/curator";
+  assert.throws(
+    () => parseStrict(bad),
+    (err: unknown) => err instanceof CriticalPathParseError && err.pointer === "/steps/2/pursuers/0/actor",
+  );
+  const extra = pursuedRaw();
+  ((extra["steps"] as Record<string, unknown>[])[2]!["pursuers"] as Record<string, unknown>[])[0]![
+    "width"
+  ] = 0.9;
+  assert.throws(
+    () => parseStrict(extra),
+    (err: unknown) => err instanceof CriticalPathParseError && err.pointer === "/steps/2/pursuers/0/width",
+  );
 });

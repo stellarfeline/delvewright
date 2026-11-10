@@ -265,6 +265,27 @@ pub(super) fn emit_v06_actor_packtests(
         // test, and any later spawn no-ops against its body tag while owning no
         // puppet marker (the exact v06_spawn_idempotent red).
         b.push(format!("kill @e[tag=dw_actor_{safe}]"));
+        // spec-0132 §3: the unleash is the body's arrival with or without a
+        // puppet. With none standing, one twin stands at the actor's own mark
+        // — and a second unleash of the body now standing stands no other.
+        if let Some(cell) = plan.body_point(delvewright_dsl::BodyRef::Actor(a)) {
+            let p = ent_xyz(cell);
+            let at_mark = format!(
+                "@e[type={},tag=dw_actor_{safe},x={},y={},z={},distance=..0.5]",
+                a.entity, p[0], p[1], p[2]
+            );
+            b.push(format!("function {ns}:unleash_{safe}"));
+            b.push(format!(
+                "execute store result score #mark_unl_{safe} dw.sys if entity {at_mark}"
+            ));
+            b.push(format!("assert score #mark_unl_{safe} dw.sys matches 1"));
+            b.push(format!("function {ns}:unleash_{safe}"));
+            b.push(format!(
+                "execute store result score #once_unl_{safe} dw.sys if entity @e[tag=dw_actor_{safe}]"
+            ));
+            b.push(format!("assert score #once_unl_{safe} dw.sys matches 1"));
+            b.push(format!("kill @e[tag=dw_actor_{safe}]"));
+        }
         write(&format!("v06_unleash_{safe}"), b);
     }
 

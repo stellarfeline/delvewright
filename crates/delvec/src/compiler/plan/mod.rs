@@ -1273,6 +1273,11 @@ impl<'a> Plan<'a> {
             }
         }
 
+        // spec-0132 §4: an `outrun` actor loose on no step of the exported
+        // path is `DW1082`'s second arm.
+        check_outrun_loose(campaign, &namespace, &cp.steps, &path_firing)
+            .map_err(|e| e.with_warnings(warnings.clone()))?;
+
         let movement = crate::compiler::nav::movement_items(campaign, &cp.steps);
 
         let mut plan = Self {

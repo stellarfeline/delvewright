@@ -52,6 +52,11 @@ export const methods = {
    */
   async stageAway(this: MineflayerExecutor, id: number, why: string, name?: string): Promise<void> {
     if (this.sneaking) return;
+    // spec-0132 §5.2: a pursued step is walked beside a body the party
+    // escapes and never fights, so nothing is removed on it.
+    if (this.pursuitRefuses(`staging ${name ?? this.bot?.entities[id]?.name ?? "?"}#${id} away (${why})`)) {
+      return;
+    }
     if (this.stagedIds.has(id) || this.stagingInFlight.has(id)) return;
     const bot = this.bot;
     if (!bot?.entity) return;
@@ -200,6 +205,7 @@ export const methods = {
     const bot = this.bot;
     if (!bot || this.death) return;
     if (dealt <= 0) return;
+    if (this.pursuitRefuses(`refunding ${dealt.toFixed(1)} health ${kind}#${id} took`)) return;
     // On a walk leg the bot is already held at full health, whoever dealt the
     // blow — a refund on top of that gives back nothing and would read as if it had.
     if (this.walkLegs > 0) return;

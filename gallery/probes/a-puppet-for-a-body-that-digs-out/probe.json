@@ -1,0 +1,21 @@
+{
+  "code": "DW1083",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/3/on_objective_complete/obj~1arrive-at-the-porch/7",
+      "value": {
+        "actor": "actor/the-sleeper",
+        "happening": {
+          "subject": "actor/the-sleeper",
+          "text": "A still shape waits on the porch floor.",
+          "verb": "arrives"
+        },
+        "type": "spawn-actor"
+      }
+    }
+  ],
+  "units": [],
+  "why": "A `spawn-actor` written for `actor/the-sleeper` just ahead of its `unleash-actor`. The warden enters by digging up out of the floor, and a body that enters has no puppet life: a caged warden standing on the porch first would be the thing the party sees, and the client is told of a body even when it stands for no tick. The refusal names the actor, the surface and where it is written, and prescribes removing it — the body's first appearance is its `unleash-actor`. It declares no unit: the primary binds `actors[].entrance`."
+}
