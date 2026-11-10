@@ -597,6 +597,19 @@ fn pin_dummy(tag: &str) -> (String, String) {
     )
 }
 
+/// **The one way a generated PackTest wounds a body.** Sets the first body
+/// `selector` names to half of ITS OWN maximum health, read from the server's
+/// `max_health` attribute at the moment of the wound. A literal health would be
+/// full health for any body whose maximum is at or below it (a small slime has 1),
+/// and a "damaged" assertion written against it would red on a census that is
+/// right. `selector` must name one body (`limit=1`).
+fn wound_to_half(selector: &str) -> String {
+    format!(
+        "execute as {selector} store result entity @s Health float 0.005 run attribute @s \
+         minecraft:max_health get 100"
+    )
+}
+
 /// **The one way a generated PackTest establishes a gate.** Takes a whole
 /// [`Gate`] and drives every term it reads to the value that opens (`satisfy`)
 /// or shuts it, across all three axes at once.
