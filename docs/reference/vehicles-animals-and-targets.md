@@ -1,0 +1,81 @@
+# A target block, a rocket, a tempted goat, a steered pig, a boat and a minecart — what the pinned server does
+
+Reader: the engine work that proves a level in which a target is shot, a rocket is fired, an animal is lured, a body is ridden, bodies are counted in a volume and an effect is aimed at a mob (spec-0133, spec-0134, spec-0135). Every statement is **[cited]** — measured on the pinned server, Minecraft Java 1.21.11, by `validation/festival-probe.mjs`, with the trial named — or **[authored]**, a judgement made here from the measurements. Established once and treated as constant (CLAUDE.md, *A check guards only what our toolchain owns*); the read site is stated so the reading can be repeated when the pin moves.
+
+## Instrument
+
+- Server: `ghcr.io/stellarfeline/delvewright-base@sha256:3e7db2562b492dbf442568a327d361547628c98c04a7cb68218c8dde6abdd1de` (`versions.toml`, `[images.base]`), `TYPE=VANILLA VERSION=1.21.11` (the server reports `1.21.11`, data `4671`, protocol `774`), superflat, `difficulty easy`, `spawn_mobs false`, `random_tick_speed 0`, `advance_time false` (the pinned game's name for the daylight rule; `do_daylight_cycle` is refused), noon, a throwaway container with no published port.
+- Arena: a stone pad 121 × 121 at y = 100 in open air and open sky, forceloaded; the bot's home at its centre; a basin of water 41 × 31, one deep, flush with the pad; a rail 60 long on the pad.
+- Player: one mineflayer 4.37.1 bot (offline mode, survival), the harness's own copy; it is the "player" wherever a player is the question. Its client-side beliefs are reported beside the server's reading where they differ.
+- Reading: `data get entity` over rcon through `tools/lib/rcon.mjs`; counts through `execute store result score … if entity` and `scoreboard players get`, because `execute if entity` alone answers rcon nothing (the third run read every count as zero beside a stored score of three). The advancement criteria are read through a datapack the probe writes into the world — one advancement per criterion whose reward counts a score and revokes itself.
+- Five runs: the first refused at the daylight rule's old name; the second hung on a datapack write; the third measured every trial with counts read the wrong way; the fourth re-read the counts, re-designed the goat trial and added the client-reported moves; the fifth re-ran the pig's obstacles and the boat's speeds without a teleport the client cannot parse (§5, §10).
+
+## 1. A target block **[cited, T1]**
+
+- **`minecraft:target_hit` is granted to the player who shot.** An arrow from the bot's bow, drawn 1.2 s and released at a target block 27 blocks east (its centre one block over the bot's feet), counted one hit each time it struck; an arrow summoned 6 blocks west of the block with a motion toward it and no shooter counted nothing in three tries; a snowball the bot threw from 6 blocks counted one hit on the throw that struck (one of three — the other two missed).
+- **The aim that hits at 27 blocks.** Aimed at the block's centre raised 1.5, 2.0 and 2.5 blocks (pitch 3.0°, 4.0°, 5.1° above level), both shots at each elevation struck; raised 0, 1, 3 and 4 blocks, none did. At 2.0 both shots also met `signal_strength` of at least 8 — the centre; at 1.5 and 2.5 neither did, the rim.
+- [authored] The static proof of a shot is a clear line from a standing cell, and the bot's leg is a bow drawn full and aimed about two blocks over the centre at 27 blocks, with the elevations either side as the next tries. A shot nobody fired is not a hit; the engine's own projectiles cannot stand in for the player's.
+
+## 2. A firework rocket **[cited, T2]**
+
+- **The burst's damage rises with the star count.** A rocket summoned inside a NoAI pig of 200 health with `LifeTime` 1, by explosions on its `minecraft:fireworks` component: 0 stars, no damage; 1 star 6.7; 2 stars 8.6; 3 stars 10.6; 4 stars 12.5; 5 stars 14.4; 6 stars 16.3; 7 stars 18.2 — two more a star, from about seven.
+- **A crossbow the bot loads fires it.** The bot held a crossbow, eight 3-star rockets in its off hand, charged 1.5 s and released, then used the crossbow once at the pig 6 blocks east: the pig lost 10.5, the bot standing 6 blocks off lost nothing.
+- [authored] A rocket with no stars is a flare; the stars are the weapon, and the item the campaign hands over must carry them (spec-0134 §5). A bot can fire a crossbow; the engine does not yet ask it to.
+
+## 3. A goat beside wheat **[cited, T3, fourth run]**
+
+- **A goat is tempted by wheat and follows it.** A goat summoned 9 blocks south of a bot holding wheat came to 2.1 blocks within the first seconds and held there for 12 s; the bot moved 8 blocks west, and the goat came to 2.2 blocks of it again and held — in all three trials. Holding a stone instead, the goat wandered: once past the bot (0.4) and off to 11.2 blocks after the move; once never nearer than 9.0; it followed the moved bot in neither.
+- [authored] Luring is the vanilla tempt, reliable at this range; the engine does not reproduce it in the bot and proves the pen by the ruling of spec-0134 §1.
+
+## 4. A saddled pig under a rider **[cited, T4]**
+
+- **Mounting.** A right-click on a saddled pig (`equipment:{saddle:…}`) seats the bot: the server's `RootVehicle` reads `minecraft:pig` and the client agrees; the rider's position on the server is the pig's cell, 0.27 over its feet.
+- **The rider's input does not steer it.** Holding a carrot on a stick and looking east, with the forward input sent twenty times a second for 6 s, the pig did not move. With the hand emptied the pig walked 5.8 blocks under the rider in 4 s on its own.
+- **The rider's client moves it.** The pig's position reported by the rider's client (`vehicle_move`, 0.2 blocks east a tick for 2 s, 8 blocks) is what the server holds: the pig stood 8 blocks east, the rider on it.
+- **Obstacles under a reported move** (fifth run; the pig never teleported, each obstacle built three blocks ahead of where it stood, reads of the server's pig every 0.2 s). A one-block step, reported through at the pig's own height: the server held the pig a reading at the step's face, then took the positions beyond it — 8 blocks on, back on the ground. A two-block wall: the server held the pig at the wall's face and took nothing beyond; 2 blocks of 8. A bottom slab then a full block, reported flat: held at the slab's face, 2 of 8. The same slab and block with the report rising 0.5 at the slab and 1.0 at the block: taken whole, the pig standing on the block at y = 102. The pig's own AI never drove any of these; the rider's client did.
+- **Leaving.** mineflayer's `dismount` sends the jump bit of this version's `player_input` packet and leaves the rider seated; the sneak bit dismounts on the server (`RootVehicle` none) while the client's `bot.vehicle` stays stale; the body stands one block beside the pig. `ride <player> mount <pig>` seats and `ride <player> dismount` unseats, and the client sees both.
+- [authored] A ridden mob is moved by its rider's client; the harness drives a mount by reporting its position along the proven route and reads every verdict on the server (spec-0135 §6).
+
+## 5. A boat **[cited, T5]**
+
+- **It floats where the water puts it.** Summoned at y = 101 over water flush with the pad, it settled at y = 100.52.
+- **Mounting and the rider's place.** A right-click seats the bot; `RootVehicle` reads `minecraft:oak_boat`; the rider's position on the server is the boat's cell at y = 100.11 (the client agrees); `execute as <player> on vehicle if entity @s[type=minecraft:oak_boat]` stores 1.
+- **The rider's input does not move it.** The forward input for 4 s moved the boat nothing.
+- **A `Motion` written to the boat moves it with its rider**: 0.6 south a tick carried boat and rider 28.5 blocks to the basin's end.
+- **The rider's client moves it, at every speed tried.** Fifth run, in sequence from where the boat was, the client's and the server's boat agreeing at each start: reported positions south at 2 blocks a second for 1 s (2 blocks), 5 for 1 s (5), 10 for 1 s (10) and 20 for half a second (10) were each taken whole — the server's boat and rider exactly where the last report put them. (The fourth run's 5 and 10 readings are void: the boat had been teleported between them and the client, which cannot parse the teleport, reported from the cell it last knew.)
+- **A teleport carries the rider**, by one `tp` and by a chain of ten a tenth of a second apart: the rider's server position followed the boat each time and the seat held. The client did not follow: mineflayer 4.37.1 fails to parse this version's `entity_teleport` (`Chunk size is 63 but only 29 was read`) and keeps the old position — every vehicle position the harness acts on is read from the server.
+- **Leaving in open water** by the sneak bit (the jump bit does nothing here either) stands the body **on the boat**, at y = 101.10 over a boat at 100.52, not in the water. `ride … dismount` does the same.
+- **A rider is counted in a box**: `@a[name=…,x,y,z,dx,dy,dz]` over the basin counted the seated bot (fifth run; the fourth run's zero was a selector the server refused, a bare name with arguments).
+- [authored] A boat is driven by its rider's client; the server takes a reported move at the speeds the harness would ever report; a dismount in open water puts the body on the hull, from which the next step is a swim (spec-0134 §10) or a re-mount.
+
+## 6. A minecart **[cited, T6]**
+
+- **Mounting** by a right-click; `RootVehicle` reads `minecraft:minecart`; `on vehicle` stores 1; the rider sits at the cart's cell, 0.65 under its own feet reading.
+- **The rider's input barely moves it**: the forward input for 3 s moved it 0.23 blocks on plain rail. **The rider's client does not move it**: reported moves of 8 blocks along the rail left the server's cart 0.37 blocks on — a minecart is the server's.
+- **The rails move it.** Given a motion of 0.3 east a tick on plain rail with the rider aboard, it ran three powered rails on redstone blocks at 6–8 blocks and reached 10.4 blocks a second (read every half second), held that speed over the 45 blocks of plain rail that followed, and stopped only two blocks past the rail's end.
+- **A teleport carries the rider**, as for the boat. **Leaving** by the sneak bit stands the body beside the rail, one cell off; `ride … dismount` does the same.
+- [authored] A minecart's driver is its rails: a ride leg needs a push and powered rails where the run must not die, and on flat plain rail a ridden cart at speed loses almost nothing over forty-five blocks (spec-0135 §3).
+
+## 7. A box selector over bodies **[cited, T7, fourth run]**
+
+- **A body is counted by its hitbox, over the box `[x, x + dx + 1)`.** With `x=230,dx=6` (and the like on z and y), three NoAI goats inside counted 3; a fourth whose centre stood at 237.3 (hitbox 236.85–237.75) counted, at 237.6 (237.15–238.05) did not; at 229.7 (229.25–230.15) counted, at 229.4 (228.95–229.85) did not. The box's faces are at 230.0 and 237.0.
+- **A teleport in or out is seen on the next read**: one goat teleported out, 2; back in, 3. `execute store result score … if entity` wrote 3.
+- [authored] A census region is the selector box, and a body on its rim counts when its hitbox reaches in (spec-0134 §1); the harness's census teleport is read by the game as any arrival is.
+
+## 8. An effect and a blow aimed at a mob **[cited, T8]**
+
+- `effect give @e[tag=…] minecraft:glowing 10 0 true` applied (`active_effects` reads the id and 192 ticks left a few ticks on).
+- `damage @e[tag=…] 3 minecraft:generic` took 3 health; `damage … 3 minecraft:player_attack by <player>` took 3 more.
+- **Knockback needs a body that moves**: the NoAI pig did not move under either; a pig with its AI (speed 0) did not move under the plain blow and was knocked 1.99 blocks, away from the player, under the blow `by` the player.
+- [authored] A body audience on `give-effect` and `damage` is the game's own targeting (spec-0134 §9); knockback is the `by` form on a body with AI, which a puppet is not.
+
+## 9. A spyglass **[cited, T9, third run]**
+
+- **`minecraft:using_item` is granted every tick a spyglass is held in use**: 1.5 s of use counted 30, the advancement re-armed by its own reward each tick, as the compass's is.
+- [authored] A `use-item` trigger is one advancement with the item and the place (spec-0134 §3).
+
+## 10. What the engine takes from it **[authored]**
+
+- A shot is the player's or nobody's; the bot lands one about two blocks over the centre at 27 blocks (§1). A rocket's stars are its damage (§2). Wheat lures a goat and keeps it (§3).
+- A ridden body — boat or mount — is where its rider's client says it is, up to a step the server's own collision refuses; a minecart is where its rails put it; a teleport carries a rider and a dismount is the sneak bit, read on the server (§4–§6). The harness therefore drives a boat and a mount by reporting positions along the proven route with the route's own heights, lets the rails drive a cart, and reads every position from the server, because its client neither simulates a vehicle nor parses this version's entity teleport.
+- A census box is `[x, x + dx + 1)` by hitbox (§7); an effect and a blow aimed by tag are the game's own (§8); a raised spyglass is seen every tick (§9).
