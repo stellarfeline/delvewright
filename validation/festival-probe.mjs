@@ -146,7 +146,7 @@ async function installPack() {
 async function setup() {
   await rcon.run('gamerule spawn_mobs false')
   await rcon.run('gamerule random_tick_speed 0')
-  await rcon.run('gamerule do_daylight_cycle false')
+  await rcon.run('gamerule advance_time false')
   await rcon.run('time set noon')
   await rcon.run(`forceload add ${H.x - PAD - 8} ${H.z - PAD - 8} ${H.x + PAD + 8} ${H.z + PAD + 8}`)
   // 121 × 121 of stone, in strips a `fill` admits (32768 cells).
@@ -420,6 +420,25 @@ async function t4(bot) {
     row(`pigPos=${p?.map(f1)}`, `moved=${s2 && p ? f1(dist2(s2, p)) : '-'}`)
     await sleep(500)
   }
+  for (const [name, note, build] of [
+    ['T4-pig-full-step', 'a one-block step across the pig\'s way east, 5 blocks ahead; 6 s of driving', (x, z) => `fill ${x} ${FLOOR_Y + 1} ${z - 2} ${x} ${FLOOR_Y + 1} ${z + 2} minecraft:stone`],
+    ['T4-pig-slab-step', 'a bottom slab then a full block, as two half steps; 6 s of driving', (x, z) => `fill ${x} ${FLOOR_Y + 1} ${z - 2} ${x} ${FLOOR_Y + 1} ${z + 2} minecraft:stone_slab\nfill ${x + 1} ${FLOOR_Y + 1} ${z - 2} ${x + 1} ${FLOOR_Y + 1} ${z + 2} minecraft:stone`],
+  ]) {
+    begin(name, note)
+    const p0 = parsePos(await entityGet('@e[tag=dw_pig,limit=1]', 'Pos'))
+    const sx = Math.floor(p0[0]) + 5
+    const sz = Math.floor(p0[2])
+    for (const line of build(sx, sz).split('\n')) await rcon.run(line)
+    await hold(bot, 'carrot_on_a_stick')
+    await bot.lookAt(new Vec3(H.x + 80, H.y + 1.5, p0[2]), true)
+    const ts = now()
+    while (now() - ts < 6000) {
+      const p = parsePos(await entityGet('@e[tag=dw_pig,limit=1]', 'Pos'))
+      row(`pigPos=${p?.map(f2)}`, `stepAtX=${sx}`, `pastStep=${p ? (p[0] > sx + 1 ? 'yes' : 'no') : '-'}`)
+      await sleep(500)
+    }
+    await rcon.probe(`fill ${sx} ${FLOOR_Y + 1} ${sz - 2} ${sx + 1} ${FLOOR_Y + 1} ${sz + 2} minecraft:air`)
+  }
   begin('T4-pig-dismount', 'the bot dismounts: mineflayer\'s dismount (jump), then a sneak input')
   row(await tryDismount(bot))
   row(`botPosAfter=${(await botPos())?.map(f2)}`)
@@ -475,6 +494,26 @@ async function t5(bot) {
   row(`riderCountedInBasinBox=${inBox}`)
   await bot.lookAt(new Vec3(H.x + 0.5, FLOOR_Y + 1, B.z2), true)
   await driveFor(bot, 4000, 'dw_boat', 'forwardInput')
+  // The way a vanilla client drives a boat: it computes the boat's physics and
+  // reports the boat's position. Here the position is reported along a straight
+  // line south at a stated speed, and the server's own reading of the boat says
+  // whether it took the report.
+  for (const perTick of [0.1, 0.25, 0.5]) {
+    const { v: s0 } = await readVehicle(bot, 'dw_boat')
+    const t = now()
+    let z = bot.vehicle?.position?.z ?? s0[2]
+    const x = s0[0]
+    let ticks = 0
+    while (now() - t < 2000) {
+      z += perTick
+      ticks += 1
+      bot._client.write('vehicle_move', { x, y: s0[1], z, yaw: 0, pitch: 0, onGround: true })
+      await sleep(50)
+    }
+    await sleep(600)
+    const { v: s1, b: b1 } = await readVehicle(bot, 'dw_boat')
+    row(`clientVehicleMove(${perTick}/tick=${(perTick * 20).toFixed(0)}b/s)`, `reported=${ticks} moves, ${f2(ticks * perTick)} blocks`, `boatPos=${s1?.map(f2)}`, `botPos=${b1?.map(f2)}`, `serverMoved=${s0 && s1 ? f2(dist2(s0, s1)) : '-'}`, `clientBoatZ=${f2(bot.vehicle?.position?.z)}`)
+  }
   await rcon.run(`execute as @e[tag=dw_boat,limit=1] run data merge entity @s {Motion:[0.0d,0.0d,0.6d]}`)
   await sleep(1500)
   const { v: v2, b: b2 } = await readVehicle(bot, 'dw_boat')
@@ -512,11 +551,11 @@ async function t6(bot) {
   await home(bot)
   await clearBodies()
   await rcon.run(`gamemode survival ${BOT}`)
-  begin('T6-minecart', 'a straight rail 40 long on the pad, a powered rail on a redstone block 12 in; a minecart at its west end, the bot 2 blocks south')
-  const R = { x1: H.x - 50, x2: H.x - 10, z: H.z - 20 }
+  begin('T6-minecart', 'a straight rail 60 long on the pad, three powered rails on redstone blocks 6..8 in; a minecart at its west end, the bot 2 blocks south')
+  const R = { x1: H.x - 55, x2: H.x + 5, z: H.z - 20 }
   await rcon.run(`fill ${R.x1} ${FLOOR_Y + 1} ${R.z} ${R.x2} ${FLOOR_Y + 1} ${R.z} minecraft:rail`)
-  await rcon.run(`setblock ${R.x1 + 12} ${FLOOR_Y} ${R.z} minecraft:redstone_block`)
-  await rcon.run(`setblock ${R.x1 + 12} ${FLOOR_Y + 1} ${R.z} minecraft:powered_rail`)
+  await rcon.run(`fill ${R.x1 + 6} ${FLOOR_Y} ${R.z} ${R.x1 + 8} ${FLOOR_Y} ${R.z} minecraft:redstone_block`)
+  await rcon.run(`fill ${R.x1 + 6} ${FLOOR_Y + 1} ${R.z} ${R.x1 + 8} ${FLOOR_Y + 1} ${R.z} minecraft:powered_rail`)
   await rcon.run(`summon minecraft:minecart ${R.x1 + 2.5} ${FLOOR_Y + 1.1} ${R.z + 0.5} {Tags:["dw_cart"]}`)
   await home(bot, { x: R.x1 + 2.5, y: H.y, z: R.z + 2.5 })
   await hold(bot, null)
@@ -529,9 +568,11 @@ async function t6(bot) {
   await rcon.run(`execute as @e[tag=dw_cart,limit=1] run data merge entity @s {Motion:[0.3d,0.0d,0.0d]}`)
   const t = now()
   const { v: v0 } = await readVehicle(bot, 'dw_cart')
-  while (now() - t < 5000) {
+  let last = v0
+  while (now() - t < 12000) {
     const { v: vv, b: bb } = await readVehicle(bot, 'dw_cart')
-    row('motionMerge', `cartPos=${vv?.map(f2)}`, `botPos=${bb?.map(f2)}`, `moved=${v0 && vv ? f2(dist2(v0, vv)) : '-'}`)
+    row('motionMerge', `cartPos=${vv?.map(f2)}`, `botPos=${bb?.map(f2)}`, `moved=${v0 && vv ? f2(dist2(v0, vv)) : '-'}`, `speedBlocksPerSec=${last && vv ? f2(dist2(last, vv) * 2) : '-'}`)
+    last = vv
     await sleep(500)
   }
   await rcon.run(`tp @e[tag=dw_cart,limit=1] ${R.x1 + 2.5} ${FLOOR_Y + 1.1} ${R.z + 0.5}`)
@@ -550,7 +591,7 @@ async function t6(bot) {
   row(`dismountReply=${dm}`, await rideState(bot))
   await rcon.probe('kill @e[tag=dw_cart]')
   await rcon.probe(`fill ${R.x1} ${FLOOR_Y + 1} ${R.z} ${R.x2} ${FLOOR_Y + 1} ${R.z} minecraft:air`)
-  await rcon.probe(`setblock ${R.x1 + 12} ${FLOOR_Y} ${R.z} minecraft:stone`)
+  await rcon.probe(`fill ${R.x1 + 6} ${FLOOR_Y} ${R.z} ${R.x1 + 8} ${FLOOR_Y} ${R.z} minecraft:stone`)
 }
 
 // ---- T7: a box selector over bodies ---------------------------------------------
