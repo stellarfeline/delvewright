@@ -260,6 +260,13 @@ pub struct RegionEvent {
     /// Read only by [`crate::compiler::nav`]'s per-configuration block map, which
     /// `DW0891` asks whether a cell is shown in that configuration.
     block: Option<String>,
+    /// **Pressed, not standing**: a trigger's fill, which the walk assumes up from
+    /// load (a wall is never assumed down before somebody strikes it) but which no
+    /// bytes hold at load or at any arrival — the party presses the button, or
+    /// does not, and the world is as the prefabs and the forced writes left it
+    /// until then. Read by [`RegionEvent::is_pressed`] only; the walk's own
+    /// reading of the event is unchanged.
+    pressed: bool,
 }
 
 impl RegionEvent {
@@ -273,6 +280,7 @@ impl RegionEvent {
             forced: true,
             blame: String::new(),
             block: None,
+            pressed: false,
         }
     }
 
@@ -291,7 +299,22 @@ impl RegionEvent {
             forced: false,
             blame: blame.into(),
             block: None,
+            pressed: false,
         }
+    }
+
+    /// This write, a trigger's fill: modelled as standing for the walk, laid in
+    /// no bytes (see [`Self::pressed`]).
+    #[must_use]
+    pub fn pressed(mut self) -> Self {
+        self.pressed = true;
+        self
+    }
+
+    /// Whether this write is a trigger's fill, which the party must press to
+    /// cause and which therefore stands in no world's bytes.
+    pub fn is_pressed(&self) -> bool {
+        self.pressed
     }
 
     /// This write, stating the block its command lays (see [`Self::block`]).
@@ -644,12 +667,12 @@ pub(in crate::compiler::plan) fn collect_region_events(
             // step 0 and forced, which seals every leg against it. Only its
             // openings are dated by the step that performs it: a wall is assumed
             // up from the start, never assumed down before somebody strikes it.
-            let (fire_step, forced) =
-                if write.closes() && matches!(site.root, EffectRoot::Trigger(_)) {
-                    (0, true)
-                } else {
-                    (fire_step, forced)
-                };
+            let pressed = write.closes() && matches!(site.root, EffectRoot::Trigger(_));
+            let (fire_step, forced) = if pressed {
+                (0, true)
+            } else {
+                (fire_step, forced)
+            };
             if !write.closes() && !forced {
                 // An optional firing may make a region impassable, never passable — a
                 // flood is credited for the same reason a fill is: the proof must
@@ -661,6 +684,7 @@ pub(in crate::compiler::plan) fn collect_region_events(
             } else {
                 RegionEvent::unforced(region, write, fire_step, blame())
             };
+            let ev = if pressed { ev.pressed() } else { ev };
             out.push(match &laid {
                 Some(b) => ev.laying(b),
                 None => ev,

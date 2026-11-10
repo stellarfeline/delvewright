@@ -437,7 +437,8 @@ fn the_undefeated_reseat_ships_its_packtests() {
     assert!(t.contains(&format!("function {NS}:unleash_{ELITE_SAFE}")));
     assert!(
         t.contains(&format!(
-            "data modify entity @e[tag=dw_actor_{ELITE_SAFE},limit=1] Health set value 1.0f"
+            "execute as @e[tag=dw_actor_{ELITE_SAFE},limit=1] store result entity @s Health float \
+             0.005 run attribute @s minecraft:max_health get 100"
         )),
         "the template chips the elite before resting — the anti-grind claim:\n{t}"
     );
