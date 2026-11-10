@@ -77,15 +77,40 @@ pub(super) fn trigger_unleashes(t: &delvewright_dsl::EnvTrigger) -> bool {
         .any(|e| matches!(&e.verb, Verb::UnleashActor { .. }))
 }
 
-/// Whether any click trigger in the campaign captures a striker — i.e. whether
-/// [`STRIKER_STORAGE`] can ever hold a value. Gates the aggro-lock lines in
-/// `unleash_<id>` so an unrelated campaign's unleash functions are unchanged.
-pub(super) fn campaign_captures_striker(c: &delvewright_dsl::Campaign) -> bool {
-    c.quests
+/// **The actors a click can provoke** (spec-0132 §3.1): every actor an
+/// `unleash-actor` names at the TOP LEVEL of a click trigger's own bundle — the
+/// one place the striker is held — whose species has a target primitive
+/// ([`aggro_lock_lines`]) and that does not enter. Each gets `unleash_struck_<id>`
+/// (the plain arrival, then the lock), called from that bundle alone; every
+/// other `unleash-actor` — a story beat, a nested timeline, an approach — calls
+/// `unleash_<id>`, which holds no lock line at all, so no stale or foreign
+/// striker can ever seed a body nobody struck. An entering actor arrives the way
+/// its kind does, with no target: its kind's own hearing and sniff find the
+/// walker (`warden-behaviour.md` §6).
+pub(super) fn struck_unleashed(c: &delvewright_dsl::Campaign) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    for t in c
+        .quests
         .content
         .triggers
         .iter()
-        .any(|t| trigger_is_click(t) && trigger_unleashes(t))
+        .filter(|t| trigger_is_click(t))
+    {
+        for e in &t.effects {
+            let Verb::UnleashActor { actor } = &e.verb else {
+                continue;
+            };
+            let Some(a) = c.quests.content.actors.iter().find(|a| a.id == *actor) else {
+                continue;
+            };
+            if a.entrance.is_none()
+                && !aggro_lock_lines(&a.entity, &plan::safe_local(a.id.as_str())).is_empty()
+            {
+                out.insert(a.id.as_str().to_string());
+            }
+        }
+    }
+    out
 }
 
 /// `DW0426`: every click trigger must be anchored somewhere a player can click.
@@ -591,8 +616,29 @@ pub(super) fn env_trigger_fns(
         // The trigger's own flag gate is already proven by `env_trigger_tick`
         // (or by `press_<id>`) before it dispatches here; each effect still
         // carries its own gate.
+        let struck = if capture {
+            struck_unleashed(plan.campaign)
+        } else {
+            BTreeSet::new()
+        };
         for e in &t.effects {
-            emit_gated_effect(plan, e, trigger_audience(t), &mut body);
+            let mut lines_of: Vec<String> = Vec::new();
+            emit_gated_effect(plan, e, trigger_audience(t), &mut lines_of);
+            // A top-level unleash of an actor this click provokes calls its
+            // struck arrival, which locks the twin onto the striker held here.
+            if let Verb::UnleashActor { actor } = &e.verb
+                && struck.contains(actor.as_str())
+            {
+                let safe = plan::safe_local(actor.as_str());
+                let plain = format!("function {}:unleash_{safe}", plan.namespace);
+                let provoked = format!("function {}:unleash_struck_{safe}", plan.namespace);
+                for l in &mut lines_of {
+                    if l.ends_with(&plain) {
+                        *l = format!("{}{provoked}", &l[..l.len() - plain.len()]);
+                    }
+                }
+            }
+            body.extend(lines_of);
         }
         if capture {
             body.push(format!(

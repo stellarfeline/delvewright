@@ -15,6 +15,7 @@ the real verbs against a fake `docker` whose server answers rcon from a state
 file the test writes.
 """
 
+import fcntl
 import importlib.util
 import json
 import os
@@ -387,9 +388,17 @@ def served(tmp_path):
         return json.loads(state_file.read_text(encoding="utf-8"))
 
     def write_state(**kw):
-        st = read_state()
-        st.update(kw)
-        state_file.write_text(json.dumps(st), encoding="utf-8")
+        # The fake docker rewrites this file under the same lock on every call,
+        # and the watcher calls it while the test runs: an unlocked
+        # read-modify-write here can be overwritten by a call that loaded the
+        # state before the edit (a lost update), reverting it.
+        with open(str(state_file) + ".lock", "w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            st = read_state()
+            st.update(kw)
+            tmp = pathlib.Path(str(state_file) + ".tmp")
+            tmp.write_text(json.dumps(st), encoding="utf-8")
+            os.replace(tmp, state_file)
 
     def run(*args, name="dw-t"):
         return subprocess.run(["bash", str(SCRIPT), *args, "--name", name],

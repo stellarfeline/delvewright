@@ -91,9 +91,12 @@ test("the ladder's labelled stages: spec-0023's two, framed by spec-0025's branc
   // `death-loop` comes last because it deliberately kills the player:
   // it is the one stage that must not run until everything else is proven.
   // `crush-death` follows it: its last trials also run after the proven path.
+  // `pursuit` follows the critical path: it judges steps of that walk
+  // (spec-0132 §5).
   assert.deepEqual([...STAGES], [
     "branch-run",
     "critical-path",
+    "pursuit",
     "die-retry",
     "death-loop",
     "crush-death",
@@ -446,4 +449,62 @@ test("a stage row that failed is a red run — the muster's included — and a s
   const green = new RunReport("gallery", "normal");
   for (const stage of STAGES) green.stage({ stage, ran: true, passed: true, findings: [], failures: [] });
   assert.deepEqual(green.redStages(), []);
+});
+
+// --- spec-0132 §5: the pursuit stage and its binding line ---
+
+test("the pursuit line states its binding with its denominator, with one pursued step and with none", () => {
+  const none = new RunReport("gallery", "normal");
+  assert.equal(
+    none.recordPursuit([], 34),
+    "[pursuit] 0 pursued step(s) of 34, 0 pursuer(s), 0 reading(s); closest approach none",
+  );
+  assert.deepEqual(none.redStages(), []);
+  const row = (none.toJSON()["stages"] as { stage: string; findings: string[] }[]).find(
+    (s) => s.stage === "pursuit",
+  );
+  assert.deepEqual(row?.findings, [
+    "[pursuit] 0 pursued step(s) of 34, 0 pursuer(s), 0 reading(s); closest approach none",
+  ]);
+
+  const one = new RunReport("gallery", "normal");
+  const record = {
+    step: 16,
+    label: "loop loop/the-hall-that-runs-on",
+    pursuers: [
+      {
+        actor: "actor/the-sleeper",
+        kind: "minecraft:warden",
+        census: "gallery:actor_census_the_sleeper",
+        entranceTicks: 133,
+        undated: false,
+      },
+    ],
+    readings: [
+      { actor: "actor/the-sleeper", tick: 1, alive: true, feet: [0, 64, 0] as const, botFeet: [0, 64, 12] as const, botHealth: 20 },
+      { actor: "actor/the-sleeper", tick: 200, alive: true, feet: [3, 64, 0] as const, botFeet: [0, 64, 30] as const, botHealth: 20 },
+    ],
+    staged: 0,
+    restored: 0,
+    refusals: [],
+  };
+  const verdict = {
+    failures: [],
+    measurement: { closestApproach: 12, displacement: 3, lowestHealth: 20, readings: 2 },
+  };
+  assert.equal(
+    one.recordPursuit([{ record, verdict }], 34),
+    "[pursuit] 1 pursued step(s) of 34, 1 pursuer(s), 2 reading(s); closest approach 12.00 block(s)",
+  );
+  const pursuit = one.toJSON()["pursuit"] as { walked_steps: number; pursued_steps: number };
+  assert.equal(pursuit.walked_steps, 34);
+  assert.equal(pursuit.pursued_steps, 1);
+
+  // A failure in a pursued step's verdict reds the stage.
+  const red = new RunReport("gallery", "normal");
+  red.recordPursuit([{ record, verdict: { ...verdict, failures: ["step 16: pursuer_lost — x"] } }], 34);
+  assert.deepEqual(
+    red.redStages().map((s) => s.stage),
+    ["pursuit"],
+  );
 });

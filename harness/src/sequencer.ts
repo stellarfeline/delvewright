@@ -19,7 +19,7 @@ import type {
   TriggerStep,
   MockStep,
 } from "./critical-path.ts";
-import { landingCarrier } from "./critical-path.ts";
+import { landingCarrier, pursuersOf } from "./critical-path.ts";
 import { BotDeathError } from "./death.ts";
 
 /**
@@ -112,6 +112,15 @@ export interface StepExecutor {
    * called once the campaign's completion is due.
    */
   afterStep?(index: number, step: Step): Promise<void>;
+  /**
+   * Optional (spec-0132 §5): walk a step the compiler says is walked beside a
+   * loose `outrun` body. `act` performs the step exactly as every other is
+   * performed; the executor reads every pursuer while it runs and once after,
+   * with staging and restoring off, and records the verdict before a death
+   * ends the run. A pursued step against an executor without it is a hard
+   * failure, never a silent skip.
+   */
+  pursue?(index: number, step: Step, act: () => Promise<void>): Promise<void>;
   /**
    * Optional (AUDIT-P0): assert the campaign has NOT completed yet. Called after
    * every step that still has an objective step ahead of it. Campaign completion
@@ -303,7 +312,18 @@ export async function runSequence(
     for (;;) {
       try {
         await executor.beforeStep?.(step);
-        await dispatch(executor, step);
+        if (pursuersOf(step).length > 0) {
+          if (!executor.pursue) {
+            throw new Error(
+              `step ${i} (${step.action}) is walked beside ${pursuersOf(step)
+                .map((p) => p.actor)
+                .join(", ")}, and this executor cannot walk a pursued step`,
+            );
+          }
+          await executor.pursue(i, step, () => dispatch(executor, step));
+        } else {
+          await dispatch(executor, step);
+        }
         // Endgame discipline (AUDIT-P0): the campaign must not already be complete
         // while objective steps remain. Checked before the transport/cutscene waits
         // so an incoherent path fails at the step that revealed it, not later.

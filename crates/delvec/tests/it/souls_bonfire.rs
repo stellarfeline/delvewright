@@ -733,8 +733,10 @@ fn bonfire_runtime_behaviour_is_packtested() {
     // removed and replaced, not left standing at whatever health it had. Proven by
     // identity, not arithmetic — the brand cannot survive a re-summon.
     assert!(
-        reseat.contains("data modify entity @e[tag=dw_wave_guards,limit=1] Health set value 1.0f")
-            && reseat.contains("tag @e[tag=dw_wave_guards,limit=1] add dw_bfchip"),
+        reseat.contains(
+            "execute as @e[tag=dw_wave_guards,limit=1] store result entity @s Health float 0.005 \
+             run attribute @s minecraft:max_health get 100"
+        ) && reseat.contains("tag @e[tag=dw_wave_guards,limit=1] add dw_bfchip"),
         "the template chips and brands one survivor: {reseat}"
     );
     assert!(

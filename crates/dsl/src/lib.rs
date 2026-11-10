@@ -41,6 +41,7 @@ pub mod dialogue;
 pub mod difficulty;
 pub mod economy;
 pub mod effects;
+pub mod entrance;
 pub mod envelope;
 pub mod equipment;
 pub mod fight;

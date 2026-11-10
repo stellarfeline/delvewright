@@ -826,7 +826,11 @@ fn check_happenings(c: &Campaign, d: &mut Vec<Diagnostic>) {
             .ambushes
             .iter()
             .flat_map(|a| {
-                let tid = a.to_trigger().id.as_str().to_string();
+                let tid = a
+                    .to_trigger(&c.quests.content.actors)
+                    .id
+                    .as_str()
+                    .to_string();
                 a.actors
                     .iter()
                     .map(move |act| (tid.clone(), act.as_str().to_string()))

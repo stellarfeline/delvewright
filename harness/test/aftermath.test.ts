@@ -41,13 +41,14 @@ const GALLERY_AFTERMATH = [
 function pathWith(aftermath: unknown): Record<string, unknown> {
   return {
     version: "0.2.0",
-    format_version: 5,
+    format_version: 6,
     campaign_id: "gallery",
     non_combatants: { kinds: ["villager"], ambiguous: [], examined: 1, unbound: false },
     steps: [
-      { action: "select-class", class: "class/wanderer", command: "/trigger dw.class set 1" },
+      { action: "select-class", class: "class/wanderer", command: "/trigger dw.class set 1", pursuers: [] },
       {
         action: "assert-complete",
+        pursuers: [],
         scoreboard: { objective: "dw.campaign", value: 1 },
         ending_tail_ticks: 42,
         aftermath,

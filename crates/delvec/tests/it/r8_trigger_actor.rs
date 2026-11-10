@@ -79,8 +79,16 @@ fn build_dir(dir: &Path) -> BuildOutput {
 /// `entity` is a parameter so the same fixture proves the warden path and a
 /// species with no vanilla aggro primitive.
 fn build_two_trigger(entity: &str) -> BuildOutput {
+    build_two_trigger_shaped(entity, false)
+}
+
+fn build_two_trigger_shaped(entity: &str, beat: bool) -> BuildOutput {
     let src = common::hello_world_dir();
-    let dst = scratch_dir("two-trigger");
+    let dst = scratch_dir(if beat {
+        "two-trigger-beat"
+    } else {
+        "two-trigger"
+    });
     let _ = std::fs::remove_dir_all(&dst);
     std::fs::create_dir_all(&dst).unwrap();
     for f in common::STAGE_FILES {
@@ -107,10 +115,25 @@ fn build_two_trigger(entity: &str) -> BuildOutput {
             { "id": "actor/giant", "entity": entity, "answers": { "struck": "It does not stir.", "touched": "Cold, and still." }, "name": "The Sleeper",
               "anchor": "spawn", "facing": "east" }
         ]);
+        if beat {
+            let oc = &mut d["content"]["quests"][0]["on_objective_complete"]["obj/talk"];
+            if oc.is_null() {
+                *oc = serde_json::json!([]);
+            }
+            oc.as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({ "type": "unleash-actor", "actor": "actor/giant" }));
+        }
     });
     let out = build_dir(&dst);
     let _ = std::fs::remove_dir_all(&dst);
     out
+}
+
+/// [`build_two_trigger`] with the same actor also unleashed by a story beat:
+/// `obj/talk`'s completion.
+fn build_two_trigger_with_beat(entity: &str) -> BuildOutput {
+    build_two_trigger_shaped(entity, true)
 }
 
 /// The marks the concurrent movers stand on before they walk, one apiece.
@@ -372,32 +395,94 @@ fn click_trigger_captures_and_releases_the_striker() {
     );
 }
 
-/// The warden's vanilla `anger` primitive, seeded from the captured UUID.
+/// The warden's vanilla `anger` primitive, seeded from the captured UUID — in
+/// the struck arrival the click's own bundle calls, never in `unleash_<id>`
+/// (spec-0132 §3.1).
 #[test]
 fn unleashed_warden_locks_onto_the_striker() {
     let out = build_two_trigger("minecraft:warden");
-    let unleash = func(&out, "unleash_giant");
+    let struck = func(&out, "unleash_struck_giant");
     assert!(
-        unleash.contains(
+        struck.starts_with("function hello-world:unleash_giant\n"),
+        "the struck arrival is the plain arrival first:\n{struck}"
+    );
+    assert!(
+        struck.contains(
             "execute if data storage dw:strike player run data modify entity @e[tag=dw_actor_giant,limit=1] anger.suspects set value [{anger:150,uuid:[I;0,0,0,0]}]"
         ),
-        "a max-anger suspect slot is written:\n{unleash}"
+        "a max-anger suspect slot is written:\n{struck}"
     );
     assert!(
-        unleash.contains("anger.suspects[0].uuid set from storage dw:strike player"),
-        "and its UUID comes from the striker storage:\n{unleash}"
+        struck.contains("anger.suspects[0].uuid set from storage dw:strike player"),
+        "and its UUID comes from the striker storage:\n{struck}"
     );
-    // Order matters: the puppet must be gone before the twin is addressed by the
-    // body tag, or `limit=1` could pick the puppet. The unseen removal takes the
-    // puppet out of every selector the moment its tags are replaced.
-    let gone = unleash
-        .find("execute as @e[tag=dw_pup_giant] run data merge entity @s {Tags:[\"dw_unseen\"]")
-        .unwrap();
-    let lock = unleash.find("anger.suspects").unwrap();
+    let wake = func(&out, "trig_wake");
+    let call = wake
+        .find("function hello-world:unleash_struck_giant")
+        .expect("the click calls the struck arrival");
+    let release = wake.find("data remove storage dw:strike player").unwrap();
+    assert!(call < release, "while it holds the striker:\n{wake}");
+    // The plain arrival carries no lock line at all.
+    let unleash = func(&out, "unleash_giant");
     assert!(
-        gone < lock,
-        "the lock addresses the twin, not the puppet:\n{unleash}"
+        !unleash.contains("anger.suspects") && !unleash.contains("dw:strike"),
+        "{unleash}"
     );
+}
+
+/// spec-0132 §3.1: an `unleash-actor` a story beat fires never seeds anger —
+/// even beside a click trigger that unleashes the same warden, whose striker
+/// the storage may once have held. Only the click's own bundle calls the struck
+/// arrival; the beat calls `unleash_<id>`, which holds no lock line.
+#[test]
+fn a_beat_fired_unleash_never_seeds_anger() {
+    let out = build_two_trigger_with_beat("minecraft:warden");
+    // Every function that calls an arrival, by which arrival it calls.
+    let mut plain: Vec<&str> = Vec::new();
+    let mut provoked: Vec<&str> = Vec::new();
+    for (path, bytes) in &out {
+        if !path.starts_with("datapack/") || !path.ends_with(".mcfunction") {
+            continue;
+        }
+        let text = String::from_utf8_lossy(bytes);
+        if text
+            .lines()
+            .any(|l| l.ends_with("function hello-world:unleash_giant"))
+            && !path.ends_with("unleash_struck_giant.mcfunction")
+        {
+            plain.push(path);
+        }
+        if text.contains("function hello-world:unleash_struck_giant") {
+            provoked.push(path);
+        }
+    }
+    assert!(
+        plain.iter().any(|p| !p.contains("/trig_")),
+        "the beat's own root calls the plain arrival: {plain:?}"
+    );
+    assert_eq!(
+        provoked,
+        vec!["datapack/data/hello-world/function/trig_wake.mcfunction"],
+        "only the click calls the struck arrival"
+    );
+    let unleash = func(&out, "unleash_giant");
+    assert!(
+        !unleash.contains("anger.suspects"),
+        "no seed line in the plain arrival:\n{unleash}"
+    );
+    for (path, bytes) in &out {
+        if !path.ends_with(".mcfunction")
+            || path.contains("unleash_struck_")
+            || path.contains("packtest")
+        {
+            continue;
+        }
+        let text = String::from_utf8_lossy(bytes);
+        assert!(
+            !text.contains("anger.suspects"),
+            "a seed line outside the struck arrival in {path}"
+        );
+    }
 }
 
 /// A species with no vanilla way to be handed a target gets none invented for it —

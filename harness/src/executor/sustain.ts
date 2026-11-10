@@ -263,6 +263,10 @@ export const methods = {
    * reach.
    */
   holdFullHealth(this: MineflayerExecutor, when: string): Promise<void> {
+    // spec-0132 §5.2: a pursued step is walked with nothing healed.
+    if (this.pursuitRefuses(`holding full health for walk leg '${this.walkLabel}' (${when})`)) {
+      return Promise.resolve();
+    }
     if (this.restoringHealth) return this.restoringHealth;
     // Read now: the effect's reply is awaited, and the leg can end meanwhile.
     const leg = this.walkLabel;

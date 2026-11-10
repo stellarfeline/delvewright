@@ -75,16 +75,25 @@ pub struct Ambush {
 impl Ambush {
     /// The environment trigger this ambush desugars to (spec-0016 §3): a
     /// one-shot trigger at `at` whose effects are the telegraph, then a
-    /// `spawn-actor` + `unleash-actor` per listed actor, in declared order.
+    /// `spawn-actor` per listed actor, in declared order, then an
+    /// `unleash-actor` per listed actor, in declared order.
+    ///
+    /// An actor that **enters** (`entrance`, spec-0132 §3) has no puppet life,
+    /// so it gets its `unleash-actor` alone: the unleash is its arrival at its
+    /// own mark. `actors` is the stage-5 actor list the ids resolve against;
+    /// an id it does not hold is desugared as a plain actor and refused as a
+    /// dangling reference (`DW0112`).
     ///
     /// This is the **single** expansion authority. Every consumer — validation,
     /// the l10n inventory, the flag/wave producer scans, nav, emission — reads
     /// triggers through [`QuestsContent::all_triggers`], so the sugar cannot
     /// diverge from a hand-written equivalent, and an ambush is exactly as
     /// debuggable as the trigger an author would otherwise type.
-    pub fn to_trigger(&self) -> EnvTrigger {
+    pub fn to_trigger(&self, actors: &[crate::Actor]) -> EnvTrigger {
+        let enters = |id: &ActorId| actors.iter().any(|a| a.id == *id && a.entrance.is_some());
         let mut effects = self.telegraph.clone();
-        for (i, a) in self.actors.iter().enumerate() {
+        let spawned: Vec<&ActorId> = self.actors.iter().filter(|a| !enters(a)).collect();
+        for (i, a) in spawned.iter().enumerate() {
             effects.push(QuestEffect {
                 when: None,
                 // The ambush declaration, on the beat where the spring becomes
@@ -94,11 +103,21 @@ impl Ambush {
                 happening: if i == 0 { self.happening.clone() } else { None },
                 audience: None,
                 within: None,
-                verb: Verb::SpawnActor { actor: a.clone() },
+                verb: Verb::SpawnActor {
+                    actor: (*a).clone(),
+                },
             });
         }
+        let first_unleash = effects.len();
         for a in &self.actors {
             effects.push(Verb::UnleashActor { actor: a.clone() }.into());
+        }
+        // An ambush of entering actors alone stands no puppet: its first
+        // unleash is where the spring becomes real, and carries the line.
+        if spawned.is_empty()
+            && let Some(first) = effects.get_mut(first_unleash)
+        {
+            first.happening = self.happening.clone();
         }
         EnvTrigger {
             id: TriggerId(format!(

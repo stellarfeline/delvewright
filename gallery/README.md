@@ -210,6 +210,9 @@ holding them at once.
 | `a-fight-nobody-points-at` | `DW0863` | `validate` | requiring a fight and saying nothing about where it happens |
 | `a-bar-in-a-colour-the-game-lacks` | `DW0911` | `validate` | drawing a boss bar in `crimson`, a colour the pinned game's `bossbar` command does not list |
 | `a-bar-over-a-body-nothing-can-hurt` | `DW0909` | `validate` | hanging a health bar over the usher, a body nothing unleashes and nothing can hurt |
+| `a-zombie-that-digs-out` | `DW1081` | `validate` | making the sleeper on the long hall's porch a zombie that still enters the way its kind does — a kind with no entrance the engine knows |
+| `an-entrance-nothing-unleashes` | `DW1082` | `validate` | removing the porch beat's `unleash-actor`, so the sleeper's `entrance` and `outrun` describe a body that never comes |
+| `a-puppet-for-a-body-that-digs-out` | `DW1083` | `validate` | writing a `spawn-actor` for the sleeper ahead of its unleash, a puppet for a body that enters from nothing |
 | `a-bar-with-nothing-to-draw` | `DW0910` | `validate` | removing the muster's bar `title`, when the wave fields two kinds of body and no one name is the fight's |
 | `a-body-two-areas-answer-for` | `DW0884` | `validate` | casting the curator at `anchor/lectern` when the annex is bound to the hall's piece and both areas answer to that name |
 | `a-face-nothing-stands-in-front-of` | `DW0886` | `validate` | placing the open-topped yard as its own area on a `void` base, with sides nothing buries and nothing declares shown |
@@ -885,6 +888,12 @@ across the hall 36 blocks past the slab, so the hall ends in view too near for a
 its loop binding first) and `a-figure-down-the-long-hall` (the hall moth posted 16
 blocks past the slab, past the near field but moved too far by the jump;
 `DW0947`).
+
+## The sleeper on the porch, and the walk beside it
+
+When the party arrives on the long hall's porch (`obj/arrive-at-the-porch`), a warden digs up out of the porch floor two blocks behind them: `actor/the-sleeper`, declared `entrance: "native"` and `outrun: true` (spec-0132). It is never a puppet — no `spawn-actor` names it — so the porch beat's `unleash-actor` is its arrival, summoned at its own mark with the emerge memory beside the `dig_cooldown` in its one `Brain` key (`unleash_the_sleeper`), and for 133 ticks it hears nothing and takes no blow. The porch is its roaming ground and the hall its lane: the party runs south down the hall while it stands up, out of its hearing before it sniffs, and the hall end's beat (`obj/reach-the-hall-end`) vanishes it.
+
+The exported path names it as the pursuer of the one step walked while it is loose — the loop step that runs the hall (`pursuers` on that step, format 6; the porch step fires the unleash and the hall-end step the despawn, so neither is walked beside it). The bot walks that step with nothing staged away and nothing healed, reads the warden through `actor_census_the_sleeper` once a second, and the `pursuit` ladder stage reds on a death, on the warden absent at a reading, and on no reading at all; how far the warden wanders is vanilla's and is stated, not judged; the run closes with its `[pursuit]` line. The sculk ear counts the warden as the campaign's own: the run fails on a warden standing at the end with no `dw_actor` tag, on any shriek no walk was predicted to set off, and on a darkness no declared warden can stand for — one with no warden in reach, or one that arrives with a shriek. Three probes show what the engine refuses about it (`a-zombie-that-digs-out`, `an-entrance-nothing-unleashes`, `a-puppet-for-a-body-that-digs-out`). The wither's entrance is not in the gallery — its blast in a shared hall would reach every other element — and is proven by the emission tests (`crates/delvec/tests/it/native_entrance.rs`) against `docs/reference/native-entrance.md`.
 
 ## The fight, and the floor it needs
 

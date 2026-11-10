@@ -15,7 +15,15 @@
 // stretches each of them.
 //
 // Assertions only: the harness predicts nothing itself. A predicted event not
-// heard fails the step; a darkness effect or a warden fails the run.
+// heard fails the step; a darkness effect no warden explains, or a warden the
+// campaign did not declare, fails the run.
+//
+// A warden the campaign itself summons — an actor's puppet or its free twin,
+// both wearing `dw_actor` — is not a shrieker's (spec-0132 §5.7), and neither
+// is the darkness a warden pulses onto every player within 20 blocks of it.
+// So the run's warden count is the server's own answer at the run's end: how
+// many wardens stand that wear no `dw_actor` tag. Every warden spawn the client
+// heard is still stated beside it.
 
 import type { Vec3Tuple } from "./critical-path.ts";
 
@@ -57,6 +65,41 @@ export const SENSOR_BUSY_STATES: readonly string[] = [
   "minecraft:calibrated_sculk_sensor[sculk_sensor_phase=cooldown]",
 ];
 export const SHRIEKER_BUSY_STATES: readonly string[] = ["minecraft:sculk_shrieker[shrieking=true]"];
+
+/**
+ * How far apart (ms, either way) a shriek and a darkness effect may arrive and
+ * still be one event: a shrieker darkens the players around it in the tick it
+ * shrieks, and both packets leave in that tick. Authored: a second either side
+ * covers a slow connection's batching; a warden's pulse is every 120 ticks.
+ */
+export const SHRIEK_DARKNESS_WINDOW_MS = 1_000;
+
+/** How far (blocks) a warden's darkness pulse reaches (`Warden.applyDarknessAround`, 20). */
+export const WARDEN_DARKNESS_RANGE = 20;
+
+/**
+ * The command that asks the server how many wardens stand wearing no
+ * `dw_actor` tag — the wardens the campaign did not declare — and speaks the
+ * count as `[dw:sculk <serial> undeclared <n>]` in the same reply.
+ */
+export function undeclaredWardenCommands(serial: number): string[] {
+  return [
+    `/execute store result storage dw_harness:sculk n int 1 if entity @e[type=minecraft:warden,tag=!dw_actor]`,
+    `/tellraw @s ${JSON.stringify([`[dw:sculk ${serial} undeclared `, { storage: "dw_harness:sculk", nbt: "n" }, "]"])}`,
+  ];
+}
+
+/** The undeclared-warden count reading `serial` answered, or `undefined`. */
+export function parseUndeclaredWardens(serial: number, lines: readonly string[]): number | undefined {
+  const t = `[dw:sculk ${serial} undeclared `;
+  for (const line of lines) {
+    const at = line.indexOf(t);
+    if (at < 0) continue;
+    const m = /^(\d+)\]/.exec(line.slice(at + t.length));
+    if (m) return Number(m[1]);
+  }
+  return undefined;
+}
 
 /** A sensor's listener radius squared: the parse refuses a prediction the
  * game could not make (spec-0100 §2.6). */
@@ -168,10 +211,48 @@ export function legLine(label: string, h: LegHearing, start: LegStart, heardThro
 export class SculkEar {
   private readonly clicks: Heard[] = [];
   private readonly shrieks: Heard[] = [];
-  /** Darkness effects applied to the bot. */
-  darkness = 0;
+  /** Every darkness effect applied to the bot: when, and whether the client
+   * saw a warden within its pulse's reach as it arrived. */
+  private readonly darknessEvents: { readonly at: number; readonly wardenNear: boolean }[] = [];
+  /** Every shrieker cell some leg of the run's proven route predicts. */
+  private readonly predictedShriekers = new Set<string>();
   /** Wardens that spawned. */
   wardens = 0;
+
+  /**
+   * Record the shrieker cells the compiler predicts the run's walks set off
+   * (every leg's `vibrations`, spec-0100 §4.6). A shriek heard anywhere else
+   * is unpredicted, and fails the run whatever else stands near it.
+   */
+  predictShriekers(cells: readonly Vec3Tuple[]): void {
+    for (const c of cells) this.predictedShriekers.add(cellKey(c));
+  }
+
+  /** The shrieks heard at a cell no leg predicts. */
+  unpredictedShrieks(): Vec3Tuple[] {
+    return this.shrieks.filter((h) => !this.predictedShriekers.has(cellKey(h.pos))).map((h) => h.pos);
+  }
+
+  /**
+   * The darkness tally: `counted` is every darkness no declared warden can
+   * stand for — one with no warden in reach, or one that arrived within
+   * {@link SHRIEK_DARKNESS_WINDOW_MS} of ANY shriek the run heard, predicted
+   * or not, since a shriek's darkness and a warden's pulse look alike to the
+   * client and only the shriek's absence tells them apart. `byWarden` is the
+   * rest: a warden's pulse with no shriek around it.
+   */
+  darknessTally(): { counted: number; byWarden: number } {
+    let counted = 0;
+    let byWarden = 0;
+    for (const d of this.darknessEvents) {
+      const shriekNear = this.shrieks.some(
+        (h) => h.at >= d.at - SHRIEK_DARKNESS_WINDOW_MS && h.at <= d.at + SHRIEK_DARKNESS_WINDOW_MS,
+      );
+      if (d.wardenNear && !shriekNear) byWarden += 1;
+      else counted += 1;
+    }
+    return { counted, byWarden };
+  }
 
   /** A block changed: a sensor whose new state is `active` clicked. */
   onBlockUpdate(pos: Vec3Tuple, props: Record<string, unknown> | undefined, at: number): void {
@@ -183,9 +264,16 @@ export class SculkEar {
     if (id === SHRIEK_LEVEL_EVENT) this.shrieks.push({ pos, at });
   }
 
-  /** An effect applied to the bot itself, by registry name. */
-  onSelfEffect(name: string | undefined): void {
-    if ((name ?? "").toLowerCase() === "darkness") this.darkness += 1;
+  /**
+   * An effect applied to the bot itself, by registry name. `wardenNear` is
+   * whether the client saw a warden within {@link WARDEN_DARKNESS_RANGE} of
+   * the bot as it arrived: a warden pulses darkness onto every player in that
+   * reach, so such a darkness is the warden's and is counted apart; a warden
+   * the campaign did not declare is caught by the run's standing count.
+   */
+  onSelfEffect(name: string | undefined, wardenNear = false, at = Date.now()): void {
+    if ((name ?? "").toLowerCase() !== "darkness") return;
+    this.darknessEvents.push({ at, wardenNear });
   }
 
   /** An entity spawned, by registry name. */
@@ -239,18 +327,40 @@ export class SculkEar {
     };
   }
 
-  /** The run's closing `[sculk]` line. */
-  runLine(): string {
-    return `[sculk] darkness ${this.darkness}, warden ${this.wardens}`;
+  /**
+   * The run's closing `[sculk]` line: the darkness no warden explains and the
+   * darkness a warden in reach does, every warden spawn heard, and how many
+   * wardens the server held at the run's end that the campaign did not declare
+   * (`undefined` when the server was not asked).
+   */
+  runLine(undeclaredStanding?: number): string {
+    const d = this.darknessTally();
+    const unpredicted = this.unpredictedShrieks();
+    return (
+      `[sculk] darkness ${d.counted} (${d.byWarden} more with a warden in reach), ` +
+      `unpredicted shrieks ${unpredicted.length}` +
+      (unpredicted.length === 0 ? "" : ` (at ${unpredicted.map((p) => `[${p.join(", ")}]`).join(", ")})`) +
+      `, warden spawns heard ${this.wardens}, undeclared standing ` +
+      `${undeclaredStanding === undefined ? "unread" : undeclaredStanding}`
+    );
   }
 
-  /** Why the run fails, or `undefined`: a darkness effect or a warden. */
-  runFailure(): string | undefined {
-    if (this.darkness === 0 && this.wardens === 0) return undefined;
+  /**
+   * Why the run fails, or `undefined`: a darkness no declared warden can stand
+   * for, a shriek at a cell no leg predicts, or a warden standing that the
+   * campaign did not declare. A run whose server was not asked fails when it
+   * heard a warden spawn: an unread count is never a zero.
+   */
+  runFailure(undeclaredStanding?: number): string | undefined {
+    const undeclared = undeclaredStanding ?? (this.wardens > 0 ? this.wardens : 0);
+    const unpredicted = this.unpredictedShrieks().length;
+    if (this.darknessTally().counted === 0 && undeclared === 0 && unpredicted === 0) return undefined;
+    const line = this.runLine(undeclaredStanding).slice("[sculk] ".length);
     return (
-      `${this.runLine().slice("[sculk] ".length)} — a shrieker with can_summon=false applies no ` +
-      `darkness and summons nothing (spec-0100 §2.4), so the shipped world holds a shrieker the ` +
-      `engine did not prove`
+      `${line} — a shrieker the engine did ` +
+      `not predict, or one with can_summon=true, shrieks or darkens where no walk was proven to set ` +
+      `it off (spec-0100 §2.4), and a warden the campaign did not declare is a shrieker's ` +
+      `summoning — the shipped world holds a shrieker the engine did not prove`
     );
   }
 }

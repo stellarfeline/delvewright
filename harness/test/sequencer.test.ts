@@ -685,3 +685,43 @@ test("a path with a loop step against an executor that cannot cross one fails lo
     (err: unknown) => err instanceof StepExecutionError && /cannot cross a loop/.test(err.message),
   );
 });
+
+// --- spec-0132 §5: a pursued step is walked through the executor's pursuit ---
+
+test("a pursued step is performed inside `pursue`; one against an executor without it is refused", async () => {
+  const pursuedReach: ReachStep = {
+    ...reach,
+    pursuers: [
+      {
+        actor: "actor/the-sleeper",
+        kind: "minecraft:warden",
+        census: "hello-world:actor_census_the_sleeper",
+        entranceTicks: 133,
+        undated: false,
+      },
+    ],
+  };
+  const steps: Step[] = [selectClass, talkTo, pursuedReach, assertComplete];
+  const p: CriticalPath = {
+    version: "0.2.0",
+    formatVersion: 6,
+    campaignId: "hello-world",
+    nonCombatants: { kinds: new Set(), ambiguous: [], examined: 0, unbound: false },
+    steps,
+    watchers: [],
+  } as unknown as CriticalPath;
+  class Pursuing extends RecordingExecutor {
+    readonly pursued: number[] = [];
+    async pursue(index: number, _step: Step, act: () => Promise<void>): Promise<void> {
+      this.pursued.push(index);
+      await act();
+    }
+  }
+  const ex = new Pursuing();
+  await runSequence(p, ex);
+  assert.deepEqual(ex.pursued, [2]);
+  assert.deepEqual(ex.calls, ["select-class", "talk-to", "reach", "assert-complete"]);
+  await assert.rejects(runSequence(p, new RecordingExecutor()), (err: unknown) =>
+    err instanceof StepExecutionError && /cannot walk a pursued step/.test(String((err as Error).message)),
+  );
+});

@@ -1443,6 +1443,9 @@ pub(super) fn emit_functions(
     fns.extend(despawn_npc_fns(plan));
     fns.extend(movenpc_fns(plan, moves));
     fns.extend(actor_fns(plan, actor_moves));
+    // spec-0132 §5.3: the census of every `outrun` actor, which the exported
+    // path names on each step it is loose on.
+    fns.extend(actor_census_fns(plan));
     fns.extend(sequence_fns(plan));
     fns.extend(teleport_fns(plan));
     fns.extend(cutscene_fns(plan, moves, actor_moves));

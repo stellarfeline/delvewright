@@ -10,6 +10,7 @@ import { traceLoadWindows, type LoadWindowRecord, type TracedBot } from "../load
 import { serverAge } from "./death.ts";
 import { answersTrigger } from "./trigger.ts";
 import { chunkKey } from "../shot-subjects.ts";
+import { WARDEN_DARKNESS_RANGE } from "../sculk.ts";
 import { pathfinder } from "./walk.ts";
 import { holdWalkedClimbableNodes, type ClimbHoldBot } from "../movement.ts";
 import type { MineflayerExecutor } from "../executor.ts";
@@ -397,7 +398,18 @@ export const methods = {
       if (!entity || entity.id !== bot.entity?.id) return;
       const registry = (bot as unknown as { registry?: { effects?: Record<number, { name?: string }> } })
         .registry;
-      this.sculk.onSelfEffect(registry?.effects?.[effect.id]?.name);
+      // spec-0132 §5.7: a warden pulses darkness onto every player within
+      // its reach; one the client sees in reach explains the effect.
+      const here = bot.entity?.position;
+      const wardenNear =
+        here !== undefined &&
+        Object.values(bot.entities ?? {}).some(
+          (e) =>
+            e?.name === "warden" &&
+            e.position !== undefined &&
+            e.position.distanceTo(here) <= WARDEN_DARKNESS_RANGE,
+        );
+      this.sculk.onSelfEffect(registry?.effects?.[effect.id]?.name, wardenNear, Date.now());
     });
     bot.on("entitySpawn", (entity: Entity) => {
       this.sculk.onSpawn(entity?.name);
