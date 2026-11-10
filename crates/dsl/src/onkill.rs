@@ -88,6 +88,33 @@ pub fn on_kill_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     }
 }
 
+/// The `despawn-wave` arm of `DW0913` (spec-0133 §2): a `despawn-wave` of a
+/// wave no beat seats removes nothing, the shape an `on_kill` on that wave
+/// has. Raised at the verb's path, at every root and nesting depth.
+pub fn despawn_wave_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    crate::for_each_campaign_effect(c, &mut |path, _site, eff| {
+        let Some(wave) = eff.despawn_wave() else {
+            return;
+        };
+        if wave_area(c, wave.as_str()).is_some() {
+            return;
+        }
+        let stage = if path.starts_with("/content/dialogues") {
+            "dialogue"
+        } else {
+            "quests"
+        };
+        d.push(Diagnostic::error(
+            codes::ON_KILL_UNREACHABLE,
+            stage,
+            path.to_string(),
+            format!(
+                "`despawn-wave` of `{wave}` can never remove anything: no beat spawns wave                  `{wave}` — no `spawn-wave` names it where the engine can seat it, so it has no                  bodies. Spawn it from a beat, or remove the `despawn-wave`."
+            ),
+        ));
+    });
+}
+
 /// What happens each time a body of this fight is killed (spec-0074): the
 /// `on_kill` of a wave or an actor.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]

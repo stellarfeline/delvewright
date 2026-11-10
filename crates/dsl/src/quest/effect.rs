@@ -257,6 +257,14 @@ impl QuestEffect {
         }
     }
 
+    /// The wave id if this is `despawn-wave` (spec-0133 §2).
+    pub fn despawn_wave(&self) -> Option<&WaveId> {
+        match &self.verb {
+            Verb::DespawnWave { wave } => Some(wave),
+            _ => None,
+        }
+    }
+
     /// The flag id if this is `set-flag` (v0.3).
     pub fn set_flag(&self) -> Option<&FlagId> {
         match &self.verb {
@@ -381,6 +389,8 @@ impl QuestEffect {
             | Verb::Particle { .. }
             // spec-0092's `lightning`.
             | Verb::Lightning { .. }
+            // spec-0133's `despawn-wave`.
+            | Verb::DespawnWave { .. }
             | Verb::DropStake { .. } => None,
         }
     }
@@ -1056,7 +1066,9 @@ impl QuestEffect {
             Verb::SpawnNpc { npc, .. }
             | Verb::DespawnNpc { npc, .. }
             | Verb::MoveNpc { npc, .. } => add(npc.as_str(), &mut out),
-            Verb::SpawnWave { wave, .. } => add(wave.as_str(), &mut out),
+            Verb::SpawnWave { wave, .. } | Verb::DespawnWave { wave } => {
+                add(wave.as_str(), &mut out)
+            }
             _ => {}
         }
         if let Some(actor) = self.actor_ref() {

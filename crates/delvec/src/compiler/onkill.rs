@@ -135,7 +135,9 @@ fn root_repeats(owner: &EffectRootOwner<'_>) -> Option<&'static str> {
     match owner {
         EffectRootOwner::ObjectiveComplete { .. }
         | EffectRootOwner::QuestComplete { .. }
-        | EffectRootOwner::ShortcutUnlock(_) => None,
+        | EffectRootOwner::ShortcutUnlock(_)
+        // spec-0133: an objective settles once.
+        | EffectRootOwner::ObjectiveExpire { .. } => None,
         EffectRootOwner::Trigger(t) => {
             (!t.once).then_some("an environment trigger with `once: false`")
         }

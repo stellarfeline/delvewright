@@ -125,6 +125,15 @@ pub enum Verb {
         /// The wave (stage-5 `waves` ref) to spawn.
         wave: WaveId,
     },
+    /// Removes every standing body of a stage-5 wave, unseen (spec-0133 §2):
+    /// the goats not herded by dusk are taken home. Emission is the removal
+    /// the wave's re-seat performs — any declared `drops` stripped first, so
+    /// nothing is seen to die and nothing is left behind. A wave no beat seats
+    /// cannot be despawned (`DW0913`).
+    DespawnWave {
+        /// The wave (stage-5 `waves` ref) to remove.
+        wave: WaveId,
+    },
     /// Narrates a player-visible line (DSL v0.4, spec-0008 §3). `text` enters the
     /// l10n key inventory like any player-visible string. The payload is the
     /// one [`Narration`] type every player-facing line declares.
@@ -1085,6 +1094,7 @@ impl Verb {
             Verb::ClearState { .. } => "clear-state",
             Verb::DropStake { .. } => "drop-stake",
             Verb::SpawnWave { .. } => "spawn-wave",
+            Verb::DespawnWave { .. } => "despawn-wave",
             Verb::Narrate(..) => "narrate",
             Verb::SetBlock { .. } => "set-block",
             Verb::FillRegion { .. } => "fill-region",
@@ -1159,6 +1169,7 @@ impl Verb {
             | Verb::ClearState { .. }
             | Verb::DropStake { .. }
             | Verb::SpawnWave { .. }
+            | Verb::DespawnWave { .. }
             | Verb::SetBlock { .. }
             | Verb::FillRegion { .. }
             | Verb::ClearRegion { .. }
@@ -1228,6 +1239,7 @@ impl Verb {
             | Verb::MoveActor { .. }
             | Verb::UnleashActor { .. }
             | Verb::SpawnWave { .. }
+            | Verb::DespawnWave { .. }
             | Verb::SpawnAssembly { .. }
             | Verb::DespawnAssembly { .. }
             | Verb::Volley { .. }

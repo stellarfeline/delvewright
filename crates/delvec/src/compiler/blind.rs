@@ -283,6 +283,8 @@ fn root_is_solo(root: &EffectRoot<'_>) -> bool {
         // spec-0086: a loop's `on_cross` runs from the server source after the
         // move (`Audience::Scheduled`).
         | EffectRoot::LoopCross(_)
+        // spec-0133: the clock settles from the schedule, with no acting player.
+        | EffectRoot::ObjectiveExpire { .. }
         | EffectRoot::ObjectiveComplete { .. }
         | EffectRoot::QuestComplete(_)
         | EffectRoot::TrapPayload(_)
@@ -430,7 +432,9 @@ fn standing_set(
         | EffectRoot::AssemblyLand(_)
         // spec-0086: an `on_cross` addresses the party (`@a`) from the loop's
         // tick; every cell the party may stand on is a seat.
-        | EffectRoot::LoopCross(_) => population.clone(),
+        | EffectRoot::LoopCross(_)
+        // spec-0133: the clock runs out wherever the party stands.
+        | EffectRoot::ObjectiveExpire { .. } => population.clone(),
     }
 }
 

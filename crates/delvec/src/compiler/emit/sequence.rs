@@ -80,6 +80,7 @@ pub(super) fn site_audience(root: &plan::EffectRoot<'_>) -> Audience {
         R::OnKill(_) => root_audience(K::OnKill),
         R::AssemblyLand(_) => root_audience(K::AssemblyLand),
         R::LoopCross(_) => root_audience(K::LoopCross),
+        R::ObjectiveExpire { .. } => root_audience(K::ObjectiveExpire),
     }
 }
 

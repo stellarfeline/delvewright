@@ -105,6 +105,124 @@ crate::dw_code! {
     pub const PARTY_CARRIER_SCHEDULED: DwCode = DwCode::new("DW0357", ExitTier::Build);
 }
 
+crate::dw_code! {
+    /// (spec-0133 §7) **A limit the player is not told about**: an objective
+    /// with a `limit` that is not announced (no `title`, or an `announcement`
+    /// resolving to `hidden`). The clock would run on something the player was
+    /// never told exists. Validation-tier (exit 1).
+    pub const LIMIT_UNANNOUNCED: DwCode = DwCode::new("DW1085", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (spec-0133 §7) **A clock that starts after the thing it closes**: a
+    /// `limit.from` naming the limited objective itself, an objective of
+    /// another quest, or one that is not an `after`-ancestor of the limited
+    /// one. Validation-tier (exit 1).
+    pub const LIMIT_STARTS_AFTER: DwCode = DwCode::new("DW1086", ExitTier::Build);
+}
+
+/// The document-tier `limit` refusals (spec-0133 §2, §7): `DW0100` for a
+/// window outside `20..=720000` ticks or an empty `on_expire`, `DW1085` for a
+/// limit on an objective the party is not told about, `DW1086` for a clock
+/// started by an objective that is not one of the limited one's ancestors.
+pub(crate) fn limit_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    use crate::{LIMIT_MAX_TICKS, LIMIT_MIN_TICKS, LimitFrom};
+    let guidance = &c.quests.content.guidance;
+    for (qi, q) in c.quests.content.quests.iter().enumerate() {
+        for (oi, o) in q.objectives.iter().enumerate() {
+            let Some(limit) = o.limit() else { continue };
+            let path = format!("/content/quests/{qi}/objectives/{oi}/limit");
+            if !(LIMIT_MIN_TICKS..=LIMIT_MAX_TICKS).contains(&limit.ticks) {
+                d.push(Diagnostic::error(
+                    codes::SCHEMA,
+                    "quests",
+                    format!("{path}/ticks"),
+                    format!(
+                        "`limit.ticks` on objective `{}` is {}: the window is {LIMIT_MIN_TICKS} to                          {LIMIT_MAX_TICKS} game ticks (one second to the ten-hour ceiling of a                          delve; 20 ticks are one second).",
+                        o.id(),
+                        limit.ticks
+                    ),
+                ));
+            }
+            if limit.on_expire.as_ref().is_some_and(Vec::is_empty) {
+                d.push(Diagnostic::error(
+                    codes::SCHEMA,
+                    "quests",
+                    format!("{path}/on_expire"),
+                    format!(
+                        "`limit.on_expire` on objective `{}` has no effects. The schema requires                          at least one (`minItems: 1`): add what expiry does, or remove                          `on_expire`.",
+                        o.id()
+                    ),
+                ));
+            }
+            if !o.announced(guidance) {
+                let why = if o.title().is_none_or(|t| t.trim().is_empty()) {
+                    "it has no `title`"
+                } else {
+                    "its `announcement` resolves to `hidden`"
+                };
+                d.push(Diagnostic::error(
+                    LIMIT_UNANNOUNCED,
+                    "quests",
+                    path.clone(),
+                    format!(
+                        "objective `{}` carries a `limit` of {} tick(s) but the party is never                          told it exists: {why}. A clock the player cannot see is a hazard they                          cannot see. Give the objective a `title` and show its announcement, or                          remove the `limit`.",
+                        o.id(),
+                        limit.ticks
+                    ),
+                ));
+            }
+            if let LimitFrom::Objective(start) = &limit.from {
+                let in_quest = q.objectives.iter().any(|x| x.id() == start);
+                let why = if start == o.id() {
+                    Some("it names the limited objective itself".to_string())
+                } else if !in_quest {
+                    Some(format!(
+                        "`{start}` is not an objective of quest `{}` — a clock runs inside one                          quest",
+                        q.id
+                    ))
+                } else if !after_ancestors(q, o.id().as_str()).contains(start.as_str()) {
+                    Some(format!(
+                        "`{start}` is not an `after`-ancestor of `{}`, so the clock can start                          after the objective it closes is already open, or never",
+                        o.id()
+                    ))
+                } else {
+                    None
+                };
+                if let Some(why) = why {
+                    d.push(Diagnostic::error(
+                        LIMIT_STARTS_AFTER,
+                        "quests",
+                        format!("{path}/from"),
+                        format!(
+                            "objective `{}`'s `limit.from` names `{start}`, a clock that starts                              after the thing it closes: {why}. Name one of `{}`'s `after`                              ancestors, or use `activation`.",
+                            o.id(),
+                            o.id()
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+}
+
+/// Every objective `id` is transitively `after`, inside quest `q`.
+pub(crate) fn after_ancestors<'a>(q: &'a crate::Quest, id: &str) -> BTreeSet<&'a str> {
+    let mut seen: BTreeSet<&'a str> = BTreeSet::new();
+    let mut stack: Vec<&str> = vec![id];
+    while let Some(cur) = stack.pop() {
+        let Some(o) = q.objectives.iter().find(|o| o.id().as_str() == cur) else {
+            continue;
+        };
+        for a in o.after() {
+            if seen.insert(a.as_str()) {
+                stack.push(a.as_str());
+            }
+        }
+    }
+    seen
+}
+
 pub(crate) fn after_ordering(c: &Campaign, d: &mut Vec<Diagnostic>) {
     for (i, q) in c.quests.content.quests.iter().enumerate() {
         let local: BTreeSet<&str> = q.objectives.iter().map(|o| o.id().as_str()).collect();

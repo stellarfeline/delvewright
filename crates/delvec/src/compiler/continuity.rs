@@ -491,7 +491,9 @@ fn excluded_npcs(c: &Campaign) -> BTreeMap<String, &'static str> {
     // (spec-0031) join them for the same reason and with the same answer.
     delvewright_dsl::for_each_effect_root(c, &mut |site, effs| match site.owner {
         delvewright_dsl::EffectRootOwner::ObjectiveComplete { .. }
-        | delvewright_dsl::EffectRootOwner::QuestComplete { .. } => {
+        | delvewright_dsl::EffectRootOwner::QuestComplete { .. }
+        // spec-0133: an expiry is dated at its objective's step.
+        | delvewright_dsl::EffectRootOwner::ObjectiveExpire { .. } => {
             scan(effs, false, &mut out);
         }
         // No DAG position at all: the whole bundle is unordered, so every

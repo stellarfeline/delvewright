@@ -256,6 +256,9 @@ pub(super) fn root_audience(kind: delvewright_dsl::EffectRootKind) -> Audience {
         // A loop's answer (spec-0086 §3.5) is the dungeon acting, run from the
         // server source after the move: no executor, like a trap's payload.
         K::LoopCross => Audience::Scheduled,
+        // spec-0133: an expiry runs from the objective's scheduled clock, with
+        // no executor; its player-facing lines address the party (`@a`).
+        K::ObjectiveExpire => Audience::Scheduled,
     }
 }
 
@@ -640,6 +643,19 @@ pub(super) fn emit_quest_effect(
                 "function {ns}:spawn_{}",
                 plan::safe_local(wave.as_str())
             ));
+        }
+        // spec-0133 §2: the removal the wave's re-seat performs, alone.
+        Verb::DespawnWave { wave } => {
+            if let Some(w) = plan
+                .campaign
+                .quests
+                .content
+                .waves
+                .iter()
+                .find(|w| w.id == *wave)
+            {
+                body.extend(super::wave::wave_removal_lines(ns, w));
+            }
         }
         // --- DSL v0.4 effects ---
         Verb::Narrate(n) => {

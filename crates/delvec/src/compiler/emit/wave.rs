@@ -571,12 +571,7 @@ pub(super) fn wave_fns(
             // The standing bodies leave unseen through [`removal_lines`]: a
             // re-seat is a reset, not a death the party watches at the fire, and
             // not a kill the party earned — a declared drop is stripped first.
-            let mut reseat = removal_lines(
-                ns,
-                &plan::wave_tag(w.id.as_str()),
-                wave_declares_drops(w),
-                Exit::Unseen,
-            );
+            let mut reseat = wave_removal_lines(ns, w);
             reseat.push(format!("function {ns}:spawn_{safe}"));
             fns.push((format!("wave_reseat_{safe}"), lines(&reseat)));
         }
@@ -735,4 +730,17 @@ pub(super) fn wave_fns(
         }
     }
     fns
+}
+
+/// **The one removal of a wave's standing bodies** (spec-0133 §2): every
+/// survivor carrying the wave's tag leaves unseen through [`removal_lines`],
+/// any declared drop stripped first. The re-seat runs it before its spawn and a
+/// `despawn-wave` runs it alone, so the two cannot remove a wave two ways.
+pub(super) fn wave_removal_lines(ns: &str, w: &delvewright_dsl::Wave) -> Vec<String> {
+    removal_lines(
+        ns,
+        &plan::wave_tag(w.id.as_str()),
+        wave_declares_drops(w),
+        Exit::Unseen,
+    )
 }

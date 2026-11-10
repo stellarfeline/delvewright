@@ -80,6 +80,16 @@ pub(crate) enum EffectRoot<'a> {
     /// crossings the path's exercise step performs are credited as forced at
     /// that step by `Plan::build`, effect by effect, from the loop replay.
     LoopCross(&'a delvewright_dsl::Loop),
+    /// An objective's `limit.on_expire` (spec-0133) — fired by the clock at
+    /// the objective's own step in a world that expires it, and in no other.
+    /// Never forced: the all world completes every objective, so nothing on
+    /// the mainline relies on it; a story world dates it.
+    ObjectiveExpire {
+        /// The quest that holds the objective.
+        quest: &'a str,
+        /// The objective whose expiry fires it.
+        objective: &'a str,
+    },
 }
 
 /// **The area an [`EffectRoot`]'s bundle plays in, when it has one.**
@@ -180,6 +190,12 @@ pub(crate) fn for_each_effect_root<'a>(
             delvewright_dsl::EffectRootOwner::OnKill(f) => EffectRoot::OnKill(f),
             delvewright_dsl::EffectRootOwner::AssemblyLand(m) => EffectRoot::AssemblyLand(m),
             delvewright_dsl::EffectRootOwner::LoopCross(l) => EffectRoot::LoopCross(l),
+            delvewright_dsl::EffectRootOwner::ObjectiveExpire { quest, objective } => {
+                EffectRoot::ObjectiveExpire {
+                    quest: quest.id.as_str(),
+                    objective,
+                }
+            }
         };
         f(
             &EffectRootSite {

@@ -17,6 +17,7 @@
 //! |----------|-----|
 //! | `set-flag` in `on_objective_complete[o]` | [`ProducerSite::ObjectiveComplete`], gated by the effect chain |
 //! | `set-flag` in a quest's `on_complete` | [`ProducerSite::QuestComplete`], same gate rule |
+//! | `set-flag` in an objective's `limit.on_expire` | [`ProducerSite::ObjectiveExpire`], same gate rule; its act is the objective's expiry ([`expiry_act`]), which only a world that expires it performs (spec-0133 §5) |
 //! | `set-flag` in an environment trigger's effects | [`ProducerSite::Ambient`] at the trigger's `at`, gated by its `requires_flags` |
 //! | `set-flag` in a `traps[].payload` | ambient at the trap's `at`, gated by the trap's `requires_flags` |
 //! | a trap's `disarm.sets_flag` | ambient at the disarm's `via`, gated by the trap's `requires_flags` |
@@ -50,6 +51,14 @@ pub enum ProducerSite<'a> {
         /// The quest whose `on_objective_complete` map holds the bundle.
         quest: &'a str,
         /// The objective whose completion fires it.
+        objective: &'a str,
+    },
+    /// Fires when this objective expires (spec-0133): dated at the
+    /// objective's own position, in a world that performs its expiry.
+    ObjectiveExpire {
+        /// The quest that holds the objective.
+        quest: &'a str,
+        /// The objective whose expiry fires it.
         objective: &'a str,
     },
     /// Fires when this quest completes.
@@ -104,6 +113,7 @@ pub fn act_of_owner(owner: &EffectRootOwner<'_>, path: &str) -> Option<String> {
             Some(format!("{}/offer-{offer}", h.id.as_str()))
         }
         EffectRootOwner::OnKill(f) => Some(f.id().to_string()),
+        EffectRootOwner::ObjectiveExpire { objective, .. } => Some(expiry_act(objective)),
         EffectRootOwner::ObjectiveComplete { .. }
         | EffectRootOwner::QuestComplete { .. }
         | EffectRootOwner::DialogueRespawn
@@ -111,6 +121,19 @@ pub fn act_of_owner(owner: &EffectRootOwner<'_>, path: &str) -> Option<String> {
         | EffectRootOwner::AssemblyLand(_)
         | EffectRootOwner::LoopCross(_) => None,
     }
+}
+
+/// The act an objective's expiry is (spec-0133 §5): `<objective>/expire`.
+#[must_use]
+pub fn expiry_act(objective: &str) -> String {
+    format!("{objective}/expire")
+}
+
+/// The objective an expiry act names, when `act` is one.
+#[must_use]
+pub fn expiry_objective(act: &str) -> Option<&str> {
+    act.strip_suffix("/expire")
+        .filter(|o| o.starts_with("obj/"))
 }
 
 /// The act a trap's or timed gate's disarm is.
@@ -139,6 +162,13 @@ pub fn flag_producers(c: &Campaign) -> Vec<FlagProducer<'_>> {
                 Vec::new(),
                 ProducerSite::QuestComplete {
                     quest: quest.id.as_str(),
+                },
+            ),
+            EffectRootOwner::ObjectiveExpire { quest, objective } => (
+                Vec::new(),
+                ProducerSite::ObjectiveExpire {
+                    quest: quest.id.as_str(),
+                    objective,
                 },
             ),
             EffectRootOwner::Trigger(t) => (
