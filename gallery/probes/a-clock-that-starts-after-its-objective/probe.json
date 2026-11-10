@@ -3,7 +3,7 @@
   "patch": [
     {
       "doc": "quests.json",
-      "op": "add",
+      "op": "replace",
       "path": "/content/quests/1/objectives/3/limit/from",
       "value": {
         "objective": "obj/board-the-ferry"
