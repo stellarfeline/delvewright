@@ -62,6 +62,8 @@ pub fn validate_campaign_with(
     crate::dialogue::dialogue_graph_checks(c, &mut d);
     crate::quest_plan::plan_checks(c, &mut d);
     crate::quest::check::after_ordering(c, &mut d);
+    // spec-0133: an objective's window — its bounds, its announcement, its start.
+    crate::quest::check::limit_checks(c, &mut d);
     crate::trigger::press_answer_checks(c, &mut d);
     d.extend(crate::trigger::press_checks(c).0);
     crate::world::horizon_param_checks(c, &mut d);
@@ -246,6 +248,8 @@ pub fn validate_campaign_with(
     // (`DW0913`), and an empty one (`DW0100`). The pair that needs the rest
     // points (`DW0914`/`DW0915`) is compiler-side.
     crate::onkill::on_kill_checks(c, &mut d);
+    // spec-0133: a `despawn-wave` of a wave no beat seats (`DW0913`'s third arm).
+    crate::onkill::despawn_wave_checks(c, &mut d);
     // spec-0061: the design record's own document-level refusals — an empty
     // `references`, a name that is not a path under `design/`, two rows for one
     // picture. The comparison against the world's reachable skies (`DW0890`) is
@@ -519,6 +523,9 @@ fn collected_effect_any(c: &Campaign, pred: impl Fn(&QuestEffect) -> bool) -> bo
         let collected = match site {
             EffectSite::Objective { .. }
             | EffectSite::QuestComplete { .. }
+            // spec-0133: an expiry is dated at its objective's step, as a
+            // completion bundle is.
+            | EffectSite::ObjectiveExpire { .. }
             | EffectSite::Trigger { .. } => true,
             EffectSite::Trap { .. }
             | EffectSite::DialogueRespawn { .. }

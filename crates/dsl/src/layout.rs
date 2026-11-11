@@ -1129,7 +1129,11 @@ impl Grants {
         {
             let row = (flags_of(&p.requires), Grant::Flag(p.flag.to_string()));
             match p.site {
-                crate::producers::ProducerSite::ObjectiveComplete { quest, objective } => {
+                // An expiry settles the objective at the same beat its
+                // completion would: the graph places both where the
+                // objective is (spec-0133).
+                crate::producers::ProducerSite::ObjectiveComplete { quest, objective }
+                | crate::producers::ProducerSite::ObjectiveExpire { quest, objective } => {
                     on_objective
                         .entry((quest, objective))
                         .or_default()

@@ -988,7 +988,9 @@ fn act_places(
         EffectRootOwner::DialogueRespawn
         | EffectRootOwner::ShortcutUnlock(_)
         | EffectRootOwner::OnDeath
-        | EffectRootOwner::LoopCross(_) => None,
+        | EffectRootOwner::LoopCross(_)
+        // spec-0133: the clock runs out wherever the party happens to be.
+        | EffectRootOwner::ObjectiveExpire { .. } => None,
     }
 }
 

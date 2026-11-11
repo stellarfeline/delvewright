@@ -376,6 +376,10 @@ fn samples() -> Vec<(&'static str, Value)> {
             json!({"type":"spawn-wave","wave":"wave/muster"}),
         ),
         (
+            "despawn-wave",
+            json!({"type":"despawn-wave","wave":"wave/muster"}),
+        ),
+        (
             "narrate",
             json!({"type":"narrate","text":"The hall answers."}),
         ),

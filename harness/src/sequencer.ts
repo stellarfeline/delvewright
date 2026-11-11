@@ -18,6 +18,7 @@ import type {
   TalkToStep,
   TriggerStep,
   MockStep,
+  ExpireStep,
 } from "./critical-path.ts";
 import { landingCarrier, pursuersOf } from "./critical-path.ts";
 import { BotDeathError } from "./death.ts";
@@ -58,6 +59,11 @@ export interface StepExecutor {
    * fakes keep compiling; a path carrying a `mock` step against an executor
    * without it is a hard failure, never a silent skip. */
   mock?(step: MockStep): Promise<void>;
+  /** Let a limited objective lapse (spec-0133 §8): walk to `stand`, perform
+   * nothing, pass on its expiry marker. Optional so existing fakes keep
+   * compiling; a path carrying one against an executor without it is a hard
+   * failure, never a silent skip. */
+  expire?(step: ExpireStep): Promise<void>;
   assertComplete(step: AssertCompleteStep): Promise<void>;
   /**
    * Optional (gap 8): after a step whose completion teleports the player to
@@ -254,6 +260,14 @@ async function dispatch(executor: StepExecutor, step: Step): Promise<void> {
         );
       }
       return executor.mock(step);
+    case "expire":
+      if (!executor.expire) {
+        throw new Error(
+          `critical path lets ${step.objective} lapse but this executor cannot wait one out — ` +
+            `the world would walk on without the expiry that makes it this world`,
+        );
+      }
+      return executor.expire(step);
     case "assert-complete":
       return executor.assertComplete(step);
   }

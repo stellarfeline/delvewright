@@ -96,6 +96,9 @@ pub enum WorldOrigin {
     None,
     /// The first candidate that realized some target.
     Witness,
+    /// The all world with one limited objective expired (spec-0133 §5) —
+    /// enumerated for every limit, whether or not an ending reads it.
+    Expiry,
 }
 
 impl WorldOrigin {
@@ -105,6 +108,7 @@ impl WorldOrigin {
             WorldOrigin::All => "all",
             WorldOrigin::None => "none",
             WorldOrigin::Witness => "witness",
+            WorldOrigin::Expiry => "expiry",
         }
     }
 }
@@ -368,6 +372,7 @@ impl<'a> Flow<'a> {
     fn story_initial(&self, performs: &BTreeSet<String>, barred: &BTreeSet<String>) -> ReplayState {
         let mut st = ReplayState {
             barred: barred.clone(),
+            expired: self.expired_in(performs),
             ..ReplayState::default()
         };
         for q in &self.c.quests.content.quests {
@@ -388,6 +393,15 @@ impl<'a> Flow<'a> {
         st
     }
 
+    /// The limited objectives a participation expires (spec-0133 §5).
+    fn expired_in(&self, performs: &BTreeSet<String>) -> BTreeSet<String> {
+        performs
+            .iter()
+            .filter_map(|a| delvewright_dsl::producers::expiry_objective(a))
+            .map(str::to_string)
+            .collect()
+    }
+
     /// The optional quests a participation does not perform.
     fn barred(&self, performs: &BTreeSet<String>) -> BTreeSet<String> {
         self.c
@@ -405,7 +419,8 @@ impl<'a> Flow<'a> {
         let performs = &w.performs;
         let barred = self.barred(performs);
         let credit = |g: &GatedFlag| self.story_credit(g, performs);
-        let sol = self.solve_with(&self.worlds[w.selection], &credit, &barred);
+        let expired = self.expired_in(performs);
+        let sol = self.solve_with(&self.worlds[w.selection], &credit, &barred, &expired);
         let flags = sol.flags.clone();
         let completed = sol.completed.clone();
         let mut pt = self.playthrough_from(Some(sol), true);
@@ -670,6 +685,19 @@ impl<'a> Flow<'a> {
                 });
             }
         }
+        // spec-0133 §5: every limited objective's expiry is an outcome a world
+        // performs or skips. Never forced — the all world completes it.
+        for q in &content.quests {
+            for o in &q.objectives {
+                if o.limit().is_some() {
+                    electives.push(Elective {
+                        id: delvewright_dsl::producers::expiry_act(o.id().as_str()),
+                        kind: "expiry",
+                        undrivable: None,
+                    });
+                }
+            }
+        }
         for g in &content.timed_gates {
             if let Some(d) = &g.disarm {
                 let id = crate::compiler::ending::disarm_act(g.id.as_str());
@@ -721,7 +749,10 @@ impl<'a> Flow<'a> {
         delvewright_dsl::for_each_effect_root(c, &mut |site, list| {
             let dated = match &site.owner {
                 delvewright_dsl::EffectRootOwner::ObjectiveComplete { .. }
-                | delvewright_dsl::EffectRootOwner::QuestComplete { .. } => true,
+                | delvewright_dsl::EffectRootOwner::QuestComplete { .. }
+                // spec-0133: dated at its objective's step, in the worlds that
+                // expire it.
+                | delvewright_dsl::EffectRootOwner::ObjectiveExpire { .. } => true,
                 other => crate::compiler::ending::act_of_owner(other, &site.path)
                     .is_some_and(|a| electives.contains(&a)),
             };
@@ -752,7 +783,26 @@ impl<'a> Flow<'a> {
     fn build_story(&self, bound: usize) -> StoryModel {
         let scenes = Scenes::of(self.c);
         let acts = self.acts();
-        let all: BTreeSet<String> = acts.elective_ids.clone();
+        // The all world completes every objective: it performs every elective
+        // but an expiry (spec-0133 §5).
+        let all: BTreeSet<String> = acts
+            .elective_ids
+            .iter()
+            .filter(|a| delvewright_dsl::producers::expiry_objective(a).is_none())
+            .cloned()
+            .collect();
+        // One expiry witness per limited objective, in document order: the all
+        // world with that one objective expired.
+        let expiries: Vec<String> = self
+            .c
+            .quests
+            .content
+            .quests
+            .iter()
+            .flat_map(|q| &q.objectives)
+            .filter(|o| o.limit().is_some())
+            .map(|o| delvewright_dsl::producers::expiry_act(o.id().as_str()))
+            .collect();
         let relevant: Vec<String> = self.relevant_acts().into_iter().collect();
         let mut worlds: Vec<StoryWorld> = Vec::new();
         let mut runs: Vec<StoryRun> = Vec::new();
@@ -793,6 +843,15 @@ impl<'a> Flow<'a> {
             };
             let i_all = run_of(all.clone(), WorldOrigin::All, &mut local);
             let i_none = run_of(BTreeSet::new(), WorldOrigin::None, &mut local);
+            let mut expiry_runs: Vec<usize> = Vec::new();
+            for x in &expiries {
+                let mut p = all.clone();
+                p.insert(x.clone());
+                let i = run_of(p, WorldOrigin::Expiry, &mut local);
+                if !expiry_runs.contains(&i) {
+                    expiry_runs.push(i);
+                }
+            }
             let mut cand_runs: Vec<usize> = Vec::new();
             for p in candidates {
                 cand_runs.push(run_of(p, WorldOrigin::Witness, &mut local));
@@ -801,6 +860,7 @@ impl<'a> Flow<'a> {
             let mut chosen: BTreeSet<usize> = BTreeSet::new();
             chosen.insert(i_all);
             chosen.insert(i_none);
+            chosen.extend(expiry_runs.iter().copied());
             let mut scene_targets: Vec<Target> = Vec::new();
             for scene in &scenes.scenes {
                 let classes: Vec<Vec<Class>> =
@@ -813,6 +873,7 @@ impl<'a> Flow<'a> {
                 let mut reached = false;
                 let order: Vec<usize> = std::iter::once(i_none)
                     .chain(cand_runs.iter().copied())
+                    .chain(expiry_runs.iter().copied())
                     .chain(std::iter::once(i_all))
                     .collect();
                 for &ri in &order {
@@ -902,10 +963,15 @@ impl<'a> Flow<'a> {
             if i_none != i_all {
                 order.push(i_none);
             }
+            for &i in &expiry_runs {
+                if !order.contains(&i) {
+                    order.push(i);
+                }
+            }
             let mut wit: Vec<usize> = chosen
                 .iter()
                 .copied()
-                .filter(|i| *i != i_all && *i != i_none)
+                .filter(|i| !order.contains(i))
                 .collect();
             wit.sort_by(|a, b| {
                 let (pa, pb) = (&local[*a].0, &local[*b].0);

@@ -146,10 +146,10 @@ fn the_walk_enumerates_every_root_and_reports_what_it_bound_to() {
     );
     assert_eq!(
         EffectRootKind::COUNT,
-        11,
-        "eleven roots (spec-0022 + v0.6, then spec-0031's R6 shortcut `on_unlock` \
+        12,
+        "twelve roots (spec-0022 + v0.6, then spec-0031's R6 shortcut `on_unlock` \
          and R7 campaign `on_death`, then spec-0032's R8 shop offer, then \
-         spec-0074's R9 fight `on_kill`, then spec-0082's R10 assembly `on_land`, then spec-0086's R11 loop `on_cross`)"
+         spec-0074's R9 fight `on_kill`, then spec-0082's R10 assembly `on_land`, then spec-0086's R11 loop `on_cross`, then spec-0133's R12 objective `on_expire`)"
     );
 
     // hello-world has one quest with one `on_objective_complete` bundle and one
@@ -166,6 +166,7 @@ fn the_walk_enumerates_every_root_and_reports_what_it_bound_to() {
     assert_eq!(n(EffectRootKind::OnKill), 0);
     assert_eq!(n(EffectRootKind::AssemblyLand), 0);
     assert_eq!(n(EffectRootKind::LoopCross), 0);
+    assert_eq!(n(EffectRootKind::ObjectiveExpire), 0);
 
     // …and the ledger says so out loud, rather than leaving a reader to notice an
     // empty count on their own.
@@ -181,6 +182,7 @@ fn the_walk_enumerates_every_root_and_reports_what_it_bound_to() {
             EffectRootKind::OnKill,
             EffectRootKind::AssemblyLand,
             EffectRootKind::LoopCross,
+            EffectRootKind::ObjectiveExpire,
         ],
         "a root this campaign has no bundle at is NAMED as unbound"
     );
@@ -193,13 +195,17 @@ fn the_walk_enumerates_every_root_and_reports_what_it_bound_to() {
     );
 }
 
+/// R12 (spec-0133): a titled window on `obj/exit` whose `on_expire` is one line.
+const EXPIRE_TAIL: &str = r#", "title": "Leave by the door",
+             "limit": { "ticks": 600, "on_expire": [ { "type": "narrate", "text": "Too late." } ] }"#;
+
 /// A campaign that exercises all ten roots binds all ten. The control for the
 /// test above: without it, "enumerated 10" could be true of a walk that visits ten
 /// roots and finds nothing at any of them.
 #[test]
 fn a_campaign_using_every_root_binds_every_root() {
     let c = parse_hw(
-        &quests_doc_versioned(ALL_ROOTS_PRELUDE, "", "", ON_DEATH_TAIL),
+        &quests_doc_versioned(ALL_ROOTS_PRELUDE, EXPIRE_TAIL, "", ON_DEATH_TAIL),
         Some(RESPAWN_DIALOGUE.as_str()),
     );
     let binding = delvewright_dsl::for_each_effect_root(&c, &mut |_, _| {});

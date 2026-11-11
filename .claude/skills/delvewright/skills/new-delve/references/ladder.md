@@ -56,6 +56,8 @@ The check must exit 0. A red names every cell the server holds differently from 
 DELVE_OUTPUT="$DELVE_OUTPUT" EULA=TRUE "$DELVEWRIGHT_ENGINE/validation/branch-runs.sh" --project dw-<campaign>-r1
 ```
 
+Every objective with a `limit` is a world of its own (the run in which that one task lapses), and its path waits the lapse out: the bot walks to where it stands, does nothing, and passes on the expiry. That wait is real game time — the step's `wait_ticks`, at most the whole window — and the build's `limit binding` line states the sum over every expiry world before the run pays it.
+
 It writes `$DELVEWRIGHT_ENGINE/validation/run-out/<id>/branch-runs.json`: per branch, ran or skipped-with-reason, and the result. `DELVEWRIGHT_BRANCHES=<ids>` narrows it for local iteration, and **a narrowed run is not a validated campaign** — the report says which branches it skipped.
 
 ## On a red

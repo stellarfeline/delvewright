@@ -604,6 +604,10 @@ pub(in crate::compiler::plan) fn collect_region_events(
                  the path does not make",
                 l.id, site.path
             ),
+            EffectRoot::ObjectiveExpire { quest, objective } => format!(
+                "the `on_expire` bundle of `{objective}` in quest `{quest}`, which fires only in \
+                 a world where its clock runs out first"
+            ),
             // The two DAG roots reach this arm when their owning quest is
             // OPTIONAL (spec-0051 §8.6), or when this path never plays the beat
             // at all (a branch the path does not take) — on a path that plays a
@@ -993,6 +997,15 @@ pub(crate) fn firing_of(
             fires && !optional.contains(q.id.as_str()),
         ),
         EffectRoot::QuestComplete(_) => (0, false),
+        // spec-0133 §6: an expiry is dated at its objective's own step, and
+        // fires only on a path whose replay expires the objective there — a
+        // story world's expiry witness. On every other path the replay never
+        // fires it, so it is unforced, exactly as a completion bundle is on a
+        // path that expires the objective instead.
+        EffectRoot::ObjectiveExpire { quest, objective } => match path.obj_step.get(*objective) {
+            Some(&s) => (s, fires && !optional.contains(*quest)),
+            None => (0, false),
+        },
         // Performed by the path at its own `trigger` step, or not at all: a
         // trigger nobody on the path fires is as optional as a trap nobody
         // springs. A line of it is forced only where its gate holds at that step.

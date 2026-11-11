@@ -270,6 +270,17 @@ pub struct Playthrough {
     pub story: Option<std::sync::Arc<StoryCtx>>,
 }
 
+impl Playthrough {
+    /// Whether this playthrough's story world expires `objective` (spec-0133
+    /// §5): the step for it is waited out, never performed.
+    pub fn expires(&self, objective: &str) -> bool {
+        self.story.as_ref().is_some_and(|s| {
+            s.performs
+                .contains(&delvewright_dsl::producers::expiry_act(objective))
+        })
+    }
+}
+
 /// A story world's run, as a playthrough carries it (spec-0108 §4.1, §4.3).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StoryCtx {
@@ -292,6 +303,10 @@ struct ReplayState {
     /// Quests a story world does not perform (spec-0108 §4.1): never
     /// activated, so nothing of them fires. Empty outside a story world.
     barred: BTreeSet<String>,
+    /// The limited objectives a story world expires (spec-0133 §5): settled at
+    /// their step by the clock, firing `on_expire` instead of their completion
+    /// bundle. Empty outside a story world.
+    expired: BTreeSet<String>,
     /// What the party held the moment each final scene began to fire
     /// (spec-0108 §4.2), keyed by the scene list's pointer — the flags and
     /// every datum's value, read before the scene's own lines run.
@@ -1009,6 +1024,10 @@ pub struct Flow<'a> {
     /// Producers with no DAG position: environment triggers and trap disarms.
     ambient: Vec<GatedFlag>,
     obj_flags: BTreeMap<String, Vec<GatedFlag>>,
+    /// The producers of each limited objective's `on_expire` (spec-0133 §5):
+    /// credited in place of its completion producers, and only in a world
+    /// that expires it.
+    expire_flags: BTreeMap<String, Vec<GatedFlag>>,
     quest_flags: BTreeMap<String, Vec<GatedFlag>>,
     worlds: Vec<World>,
     /// Every declared datum's starting value — what it holds before anything
@@ -1036,6 +1055,7 @@ impl<'a> Flow<'a> {
         let mut ambient = Vec::new();
         let mut obj_flags: BTreeMap<String, Vec<GatedFlag>> = BTreeMap::new();
         let mut quest_flags: BTreeMap<String, Vec<GatedFlag>> = BTreeMap::new();
+        let mut expire_flags: BTreeMap<String, Vec<GatedFlag>> = BTreeMap::new();
         // The producer model is the ONE table `delvewright_dsl::producers`
         // holds — the layout graph's closure reads the same rows — so this
         // model and the graph cannot disagree about which effects set a flag.
@@ -1053,6 +1073,12 @@ impl<'a> Flow<'a> {
                 delvewright_dsl::producers::ProducerSite::ObjectiveComplete {
                     objective, ..
                 } => obj_flags.entry(objective.to_string()).or_default().push(g),
+                delvewright_dsl::producers::ProducerSite::ObjectiveExpire { objective, .. } => {
+                    expire_flags
+                        .entry(objective.to_string())
+                        .or_default()
+                        .push(g)
+                }
                 delvewright_dsl::producers::ProducerSite::QuestComplete { quest } => {
                     quest_flags.entry(quest.to_string()).or_default().push(g);
                 }
@@ -1081,6 +1107,7 @@ impl<'a> Flow<'a> {
             cast_roots: cast_roots(c),
             ambient,
             obj_flags,
+            expire_flags,
             quest_flags,
             worlds,
             initial,
@@ -1388,7 +1415,9 @@ impl<'a> Flow<'a> {
                 ));
             }
         }
-        if let Objective::TalkTo { npc, .. } = obj {
+        if let Objective::TalkTo { npc, .. } = obj
+            && !st8.expired.contains(&st.objective)
+        {
             let Some(n) = st.talk_option else {
                 return Some(format!(
                     "no dialogue option of `{}` completes it in the chosen branch",
@@ -1853,12 +1882,33 @@ impl<'a> Flow<'a> {
         st.done_obj.insert(step.objective.clone());
         st.fired.clear();
         st.undecided.clear();
-        if let Some(n) = step.talk_option {
+        let expires = st.expired.contains(&step.objective);
+        if let Some(n) = step.talk_option
+            && !expires
+        {
             for f in self.option_sets(&step.objective, n) {
                 st.flags.insert(f);
             }
         }
-        if let Some(quest) = self.quest(&step.quest)
+        // spec-0133 §5: an objective this world expires settles here by the
+        // clock — its `on_expire` fires, its completion bundle does not.
+        if expires {
+            if let Some((qi, oi, o)) = self.objective_site(&step.objective)
+                && let Some(l) = o.limit()
+            {
+                let beat = Beat::Objective(step.objective.clone());
+                let base = format!("/content/quests/{qi}/objectives/{oi}/limit/on_expire");
+                self.fire(
+                    l.on_expire(),
+                    &base,
+                    st,
+                    complete_at,
+                    pos,
+                    &step.objective,
+                    &beat,
+                );
+            }
+        } else if let Some(quest) = self.quest(&step.quest)
             && let Some(effs) = quest
                 .on_objective_complete
                 .get(&delvewright_dsl::ObjectiveId(step.objective.clone()))
@@ -1924,6 +1974,25 @@ impl<'a> Flow<'a> {
             .iter()
             .flat_map(|q| &q.objectives)
             .find(|o| o.id().as_str() == id)
+    }
+
+    /// The objective with this id, with its quest's index and its own index
+    /// in that quest — the coordinates its `limit.on_expire` pointer is built
+    /// from.
+    fn objective_site(&self, id: &str) -> Option<(usize, usize, &'a Objective)> {
+        self.c
+            .quests
+            .content
+            .quests
+            .iter()
+            .enumerate()
+            .find_map(|(qi, q)| {
+                q.objectives
+                    .iter()
+                    .enumerate()
+                    .find(|(_, o)| o.id().as_str() == id)
+                    .map(|(oi, o)| (qi, oi, o))
+            })
     }
 
     /// The quest that owns `id`.
@@ -2374,7 +2443,7 @@ impl<'a> Flow<'a> {
 
     /// The monotone fixpoint, restricted to one branch world.
     fn solve(&self, world: &World) -> Solution {
-        self.solve_with(world, &default_credit, &BTreeSet::new())
+        self.solve_with(world, &default_credit, &BTreeSet::new(), &BTreeSet::new())
     }
 
     /// [`Self::solve`] crediting only the ambient producers `credit` admits and
@@ -2385,6 +2454,7 @@ impl<'a> Flow<'a> {
         world: &World,
         credit: &dyn Fn(&GatedFlag) -> bool,
         barred: &BTreeSet<String>,
+        expired: &BTreeSet<String>,
     ) -> Solution {
         let mut s = Solution::default();
         loop {
@@ -2457,14 +2527,25 @@ impl<'a> Flow<'a> {
                     {
                         continue;
                     }
-                    if let Objective::TalkTo { .. } = obj {
+                    // spec-0133 §5: an objective this world expires settles by
+                    // the clock, with no act — no option needed, and its
+                    // `on_expire` producers credited instead of its completion's.
+                    let expires = expired.contains(oid);
+                    if let Objective::TalkTo { .. } = obj
+                        && !expires
+                    {
                         let Some(&n) = dlg_completes.get(oid) else {
                             continue;
                         };
                         s.talk_option.insert(oid.to_string(), n);
                     }
                     s.completable.insert(oid.to_string());
-                    produce(self.obj_flags.get(oid), &mut s.flags, &mut changed);
+                    let producers = if expires {
+                        self.expire_flags.get(oid)
+                    } else {
+                        self.obj_flags.get(oid)
+                    };
+                    produce(producers, &mut s.flags, &mut changed);
                     changed = true;
                 }
             }

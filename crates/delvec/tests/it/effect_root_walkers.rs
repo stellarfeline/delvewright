@@ -363,6 +363,19 @@ fn probe_at(loaded: &LoadedCampaign, k: EffectRootKind, bundle_json: &str) -> Ca
             a.strikes.as_mut().expect("declared above").pattern[0].on_land = bundle;
             c.quests.content.assemblies.push(a);
         }
+        // Root 12 (spec-0133). The fixture's first objective, given a title it
+        // is announced by and a window whose `on_expire` IS the probe bundle.
+        EffectRootKind::ObjectiveExpire => {
+            let o = &mut c.quests.content.quests[0].objectives[0];
+            let mut v = serde_json::to_value(&*o).expect("objective serializes");
+            v["title"] = serde_json::json!("Probe");
+            v["announcement"] = serde_json::json!("shown");
+            v["limit"] = serde_json::json!({ "ticks": 6000, "on_expire": [] });
+            let mut limited: delvewright_dsl::Objective =
+                serde_json::from_value(v).expect("limited objective parses");
+            limited.limit_mut().expect("declared above").on_expire = Some(bundle);
+            *o = limited;
+        }
     }
     c
 }
@@ -569,6 +582,7 @@ fn site_kind(site: &EffectSite) -> EffectRootKind {
         EffectSite::OnKill { .. } => EffectRootKind::OnKill,
         EffectSite::AssemblyLand { .. } => EffectRootKind::AssemblyLand,
         EffectSite::LoopCross { .. } => EffectRootKind::LoopCross,
+        EffectSite::ObjectiveExpire { .. } => EffectRootKind::ObjectiveExpire,
     }
 }
 

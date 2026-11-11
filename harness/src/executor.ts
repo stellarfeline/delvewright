@@ -56,6 +56,7 @@ import { methods as cutsceneMethods } from "./executor/cutscene.ts";
 import { methods as transportMethods } from "./executor/transport.ts";
 import { methods as loopMethods } from "./executor/loop.ts";
 import { methods as mockMethods } from "./executor/mock.ts";
+import { methods as expireMethods } from "./executor/expire.ts";
 import { methods as sustainMethods } from "./executor/sustain.ts";
 import { methods as deathMethods } from "./executor/death.ts";
 import { methods as pulseMethods } from "./executor/pulse.ts";
@@ -121,6 +122,14 @@ export class MineflayerExecutor implements StepExecutor {
    * wait for it) and campaign completion lands during the last objective step.
    */
   readonly completedObjectives = new Map<string, number>();
+  /**
+   * Limited objectives whose anchored expiry marker has arrived (spec-0133), and
+   * the step index executing when it did. Buffered from connect, like
+   * {@link completedObjectives}.
+   */
+  readonly expiredObjectives = new Map<string, number>();
+  /** Every expire step's wait, for the run report. */
+  readonly expireWaits: { objective: string; waitedMs: number; passed: boolean }[] = [];
   /** The sculk family's ear (spec-0100 §4.7): sensor clicks, shrieks, darkness
    * on the bot and warden spawns, from connect. */
   readonly sculk = new SculkEar();
@@ -649,6 +658,7 @@ type Methods = typeof connectionMethods &
   typeof transportMethods &
   typeof loopMethods &
   typeof mockMethods &
+  typeof expireMethods &
   typeof sustainMethods &
   typeof deathMethods &
   typeof pulseMethods &
@@ -672,4 +682,4 @@ type Methods = typeof connectionMethods &
   typeof clockMethods &
   typeof pursuitMethods;
 export interface MineflayerExecutor extends Methods {}
-for (const methods of [connectionMethods, chatMethods, objectiveMethods, triggerMethods, interactMethods, classMethods, talkMethods, walkMethods, timedGateMethods, climbMethods, cutsceneMethods, transportMethods, loopMethods, mockMethods, sustainMethods, deathMethods, pulseMethods, cueMethods, journalMethods, scoreMethods, lethalMethods, crushMethods, stakeMethods, waveMethods, dieRetryMethods, stagingMethods, musterMethods, restMethods, witnessMethods, watchMethods, crosshairMethods, collectMethods, settleMethods, placementMethods, clockMethods, pursuitMethods]) Object.assign(MineflayerExecutor.prototype, methods);
+for (const methods of [connectionMethods, chatMethods, objectiveMethods, triggerMethods, interactMethods, classMethods, talkMethods, walkMethods, timedGateMethods, climbMethods, cutsceneMethods, transportMethods, loopMethods, mockMethods, expireMethods, sustainMethods, deathMethods, pulseMethods, cueMethods, journalMethods, scoreMethods, lethalMethods, crushMethods, stakeMethods, waveMethods, dieRetryMethods, stagingMethods, musterMethods, restMethods, witnessMethods, watchMethods, crosshairMethods, collectMethods, settleMethods, placementMethods, clockMethods, pursuitMethods]) Object.assign(MineflayerExecutor.prototype, methods);

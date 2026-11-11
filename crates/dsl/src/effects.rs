@@ -139,12 +139,18 @@ pub enum EffectRootKind {
     /// runtime machinery of its own (the loop's tick poll and its move
     /// function). Visited only where declared.
     LoopCross,
+    /// An objective's `limit.on_expire` bundle (spec-0133) — what the clock
+    /// does when the objective is still pending at the end of its window. A
+    /// root rather than sugar because it hangs off an object with runtime
+    /// machinery of its own (the objective's scheduled `expire_<obj>`), and it
+    /// fires from the schedule, with no executor. Visited only where declared.
+    ObjectiveExpire,
 }
 
 impl EffectRootKind {
     /// Every root, in enumeration order. Not the *visit* order — see
     /// [`for_each_effect_root`], which interleaves R1/R2 per quest.
-    pub const ALL: [EffectRootKind; 11] = [
+    pub const ALL: [EffectRootKind; 12] = [
         EffectRootKind::ObjectiveComplete,
         EffectRootKind::QuestComplete,
         EffectRootKind::Trigger,
@@ -156,6 +162,7 @@ impl EffectRootKind {
         EffectRootKind::OnKill,
         EffectRootKind::AssemblyLand,
         EffectRootKind::LoopCross,
+        EffectRootKind::ObjectiveExpire,
     ];
 
     /// How many roots there are. The binding ledger reports coverage against this.
@@ -173,7 +180,8 @@ impl EffectRootKind {
             | EffectRootKind::ShopOffer
             | EffectRootKind::OnKill
             | EffectRootKind::AssemblyLand
-            | EffectRootKind::LoopCross => "quests",
+            | EffectRootKind::LoopCross
+            | EffectRootKind::ObjectiveExpire => "quests",
             EffectRootKind::DialogueRespawn => "dialogue",
         }
     }
@@ -226,7 +234,10 @@ impl EffectRootKind {
             | EffectRootKind::AssemblyLand
             // A loop's answer is the dungeon acting, as a trap's payload is: it
             // runs from the server source, so `@s` has no body.
-            | EffectRootKind::LoopCross => false,
+            | EffectRootKind::LoopCross
+            // spec-0133: the clock settles the objective from the schedule,
+            // with no acting player.
+            | EffectRootKind::ObjectiveExpire => false,
         }
     }
 
@@ -245,6 +256,7 @@ impl EffectRootKind {
             EffectRootKind::OnKill => "fight on_kill",
             EffectRootKind::AssemblyLand => "assembly strike on_land",
             EffectRootKind::LoopCross => "loop on_cross",
+            EffectRootKind::ObjectiveExpire => "objective limit on_expire",
         }
     }
 }
@@ -313,6 +325,15 @@ pub enum EffectRootOwner<'a> {
     /// performed by the path's exercise step, elsewhere it is **optional**.
     /// Carries the loop.
     LoopCross(&'a Loop),
+    /// An objective's `limit.on_expire` (spec-0133) — fires at that
+    /// objective's `critical_path` step in a world where it expires, and in no
+    /// other. Elective: the all world completes every objective.
+    ObjectiveExpire {
+        /// The owning quest.
+        quest: &'a Quest,
+        /// The objective whose expiry fires the bundle.
+        objective: &'a str,
+    },
 }
 
 impl<'a> EffectRootOwner<'a> {
@@ -330,6 +351,7 @@ impl<'a> EffectRootOwner<'a> {
             EffectRootOwner::OnKill(_) => EffectRootKind::OnKill,
             EffectRootOwner::AssemblyLand(_) => EffectRootKind::AssemblyLand,
             EffectRootOwner::LoopCross(_) => EffectRootKind::LoopCross,
+            EffectRootOwner::ObjectiveExpire { .. } => EffectRootKind::ObjectiveExpire,
         }
     }
 
@@ -355,7 +377,8 @@ impl<'a> EffectRootOwner<'a> {
     pub fn quest(&self) -> Option<&'a Quest> {
         match self {
             EffectRootOwner::ObjectiveComplete { quest, .. }
-            | EffectRootOwner::QuestComplete { quest } => Some(quest),
+            | EffectRootOwner::QuestComplete { quest }
+            | EffectRootOwner::ObjectiveExpire { quest, .. } => Some(quest),
             EffectRootOwner::Trigger(_)
             | EffectRootOwner::TrapPayload(_)
             | EffectRootOwner::DialogueRespawn
@@ -519,6 +542,8 @@ macro_rules! effect_root_walk {
         actor_owner: |$a:ident| $owna:expr,
         assembly_owner: |$m:ident| $ownm:expr,
         loop_owner: |$l:ident| $ownl:expr,
+        limit: $lim:ident,
+        objective_of: |$o:ident| $objof:expr,
     ) => {{
         #[allow(unused_mut)]
         let mut visit = $visit;
@@ -535,6 +560,7 @@ macro_rules! effect_root_walk {
         // later root produces byte-identical output.
         note(EffectRootKind::ObjectiveComplete);
         note(EffectRootKind::QuestComplete);
+        note(EffectRootKind::ObjectiveExpire);
         for (qi, $q) in $c.quests.content.quests.$iter().enumerate() {
             let ql = local($q.id.as_str()).to_string();
             let owner = $ownq;
@@ -556,6 +582,26 @@ macro_rules! effect_root_walk {
                 format!("fx.{ql}.done"),
                 $q.on_complete.$slice(),
             );
+            // R12 an objective's `limit.on_expire` (spec-0133), visited only
+            // where an objective declares a bundle, keyed by the quest and the
+            // objective (`fx.<quest>.ox.<objective>`). Interleaved here rather
+            // than appended as its own loop because the mutable walk cannot
+            // borrow the quest list twice; a campaign with no limit visits
+            // nothing new, so every earlier campaign keys and emits as before.
+            for (oi, $o) in $q.objectives.$iter().enumerate() {
+                let ol = local($o.id().as_str()).to_string();
+                let objective = $objof;
+                if let Some(lim) = $o.$lim()
+                    && let Some(effs) = lim.on_expire.$opt()
+                {
+                    visit(
+                        (EffectRootKind::ObjectiveExpire, owner, objective),
+                        format!("/content/quests/{qi}/objectives/{oi}/limit/on_expire"),
+                        format!("fx.{ql}.ox.{ol}"),
+                        effs.$slice(),
+                    );
+                }
+            }
         }
         // R3 `triggers[].effects`.
         note(EffectRootKind::Trigger);
@@ -767,6 +813,12 @@ impl<'a> RawOwner<'a> {
                 EffectRootOwner::AssemblyLand(m)
             }
             (RawOwner::Loop(l), EffectRootKind::LoopCross) => EffectRootOwner::LoopCross(l),
+            (RawOwner::Quest(quest), EffectRootKind::ObjectiveExpire) => {
+                EffectRootOwner::ObjectiveExpire {
+                    quest,
+                    objective: objective.expect("an on_expire root always names its objective"),
+                }
+            }
             (owner, kind) => unreachable!(
                 "effect root {kind:?} was handed an owner of the wrong shape ({})",
                 match owner {
@@ -834,6 +886,7 @@ pub fn for_each_effect_root<'a>(
         (EffectRootKind::OnKill, 0usize),
         (EffectRootKind::AssemblyLand, 0usize),
         (EffectRootKind::LoopCross, 0usize),
+        (EffectRootKind::ObjectiveExpire, 0usize),
     ];
     debug_assert_eq!(
         sites.map(|(k, _)| k),
@@ -890,6 +943,8 @@ pub fn for_each_effect_root<'a>(
         actor_owner: |a| RawOwner::Fight(Fight::Actor(a)),
         assembly_owner: |m| RawOwner::Assembly(m),
         loop_owner: |l| RawOwner::Loop(l),
+        limit: limit,
+        objective_of: |o| Some(o.id().as_str()),
     );
 
     let missed: Vec<&str> = EffectRootKind::ALL
@@ -956,6 +1011,8 @@ pub fn for_each_effect_root_mut<'a>(c: &'a mut Campaign, f: &mut RootVisitorMut<
         actor_owner: |_a| (),
         assembly_owner: |_m| (),
         loop_owner: |_l| (),
+        limit: limit_mut,
+        objective_of: |_o| None::<&str>,
     );
 }
 
@@ -1039,6 +1096,14 @@ pub enum EffectSite {
         /// The loop id (`loop/<kebab>`).
         r#loop: String,
     },
+    /// An objective's `limit.on_expire` bundle (spec-0133) — dated at the
+    /// objective's own step, in a world where it expires.
+    ObjectiveExpire {
+        /// The owning quest.
+        quest: String,
+        /// The objective whose expiry fires the bundle.
+        objective: String,
+    },
 }
 
 impl EffectSite {
@@ -1057,9 +1122,9 @@ impl EffectSite {
     /// threshold, so the reasoning lives here now rather than in an exemption.
     pub fn quest(&self) -> Option<&str> {
         match self {
-            EffectSite::Objective { quest, .. } | EffectSite::QuestComplete { quest } => {
-                Some(quest)
-            }
+            EffectSite::Objective { quest, .. }
+            | EffectSite::QuestComplete { quest }
+            | EffectSite::ObjectiveExpire { quest, .. } => Some(quest),
             EffectSite::Trigger { .. }
             | EffectSite::Trap { .. }
             | EffectSite::DialogueRespawn { .. }
@@ -1151,6 +1216,12 @@ pub fn for_each_campaign_effect<'a>(
             crate::effects::EffectRootOwner::LoopCross(l) => EffectSite::LoopCross {
                 r#loop: l.id.as_str().to_string(),
             },
+            crate::effects::EffectRootOwner::ObjectiveExpire { quest, objective } => {
+                EffectSite::ObjectiveExpire {
+                    quest: quest.id.as_str().to_string(),
+                    objective: objective.to_string(),
+                }
+            }
         };
         for (i, eff) in list.iter().enumerate() {
             campaign_effect_deep(eff, &format!("{}/{i}", root.path), &site, f);
@@ -1194,6 +1265,7 @@ mod tests {
                 (EffectRootKind::OnKill, 0),
                 (EffectRootKind::AssemblyLand, 0),
                 (EffectRootKind::LoopCross, 0),
+                (EffectRootKind::ObjectiveExpire, 0),
             ],
             effects: 0,
         };

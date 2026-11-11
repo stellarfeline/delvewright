@@ -52,6 +52,14 @@ pub fn marker_line(campaign_id: &str, token: &str) -> String {
     format!("[dw:complete {campaign_id} {token}]")
 }
 
+/// One line of the expiry channel (spec-0133 §3):
+/// `[dw:expired <campaign_id> <objective>]` — the completion channel's grammar
+/// with a second token, broadcast the instant a limited objective's clock
+/// settles it expired.
+pub fn expired_marker_line(campaign_id: &str, objective: &str) -> String {
+    format!("[dw:expired {campaign_id} {objective}]")
+}
+
 /// Scoreboard objective for a DSL objective id.
 pub fn obj_score(objective_id: &str) -> String {
     format!("dw.o_{}", safe_local(objective_id))

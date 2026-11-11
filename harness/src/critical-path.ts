@@ -78,9 +78,13 @@ import type { GateTerm } from "./death-loop.ts";
  *   that guessed would be the compiler's knowledge written where it cannot be
  *   right.
  *
+ * * `7` — a step may be `expire` (spec-0133 §8): `{objective, wait_ticks,
+ *   stand}` — walk to `stand`, perform nothing, and pass on the objective's
+ *   anchored `[dw:expired …]` marker. A format-6 bot would refuse the kind.
+ *
  * Rebuild the delve with a current `delvec` to produce a supported path.
  */
-export const CRITICAL_PATH_FORMAT_VERSION = 6;
+export const CRITICAL_PATH_FORMAT_VERSION = 7;
 
 /**
  * One body a step is walked beside (spec-0132 §5.3): an `outrun` actor loose
@@ -126,6 +130,7 @@ export const STEP_ACTIONS = [
   "witness-strike",
   "loop",
   "mock",
+  "expire",
   "assert-complete",
 ] as const;
 
@@ -507,6 +512,25 @@ export interface MockStep extends Pursued {
   readonly after: readonly GateTerm[];
 }
 
+/**
+ * spec-0133 §8: let a limited objective lapse. Walk to `stand`, a cell the
+ * compiler proved outside the objective's own volume, perform nothing, and pass
+ * on the objective's `[dw:expired …]` marker within `waitTicks` (a ceiling the
+ * harness converts to its own timeout with the ordinary grace). A
+ * `[dw:complete …]` for the same objective arriving first fails the step by name.
+ */
+export interface ExpireStep extends PresentationMarkers, Pursued {
+  readonly action: "expire";
+  /** The `obj/<id>` that must expire, never complete. */
+  readonly objective: string;
+  /** The most game ticks the wait can take. */
+  readonly waitTicks: number;
+  /** Where the bot waits. */
+  readonly stand: Vec3Tuple;
+  /** The same cell, as every positioned step names its place. */
+  readonly pos: Vec3Tuple;
+}
+
 export type Step =
   | SelectClassStep
   | TalkToStep
@@ -519,6 +543,7 @@ export type Step =
   | WitnessStrikeStep
   | LoopStep
   | MockStep
+  | ExpireStep
   | AssertCompleteStep;
 
 /**
@@ -1438,6 +1463,30 @@ function parseStepBody(value: unknown, pointer: string): Step {
         function: fn,
         before,
         after,
+      };
+    }
+    case "expire": {
+      rejectUnknownKeys(
+        obj,
+        ["action", "objective", "wait_ticks", "stand", "pos", "keep_out", "sneak", "cutscene_seconds", "en_route_cutscene_seconds"],
+        pointer,
+      );
+      const wait = obj["wait_ticks"];
+      if (typeof wait !== "number" || !Number.isInteger(wait) || wait <= 0) {
+        fail(`${pointer}/wait_ticks`, `must be a positive integer, got ${describe(wait)}`);
+      }
+      const stand = requireVec3(obj, "stand", pointer);
+      const pos = requirePos(obj, pointer);
+      if (pos.some((c, i) => c !== stand[i])) {
+        fail(`${pointer}/pos`, `must be the step's \`stand\` (${JSON.stringify(stand)}), got ${JSON.stringify(pos)}`);
+      }
+      return {
+        action: "expire",
+        objective: requireObjectiveId(obj, pointer),
+        waitTicks: wait as number,
+        stand,
+        pos,
+        ...presentationFields(obj, pointer),
       };
     }
     case "assert-complete": {

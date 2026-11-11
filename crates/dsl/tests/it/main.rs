@@ -28,6 +28,7 @@ mod item_gate_class;
 mod l10n_effect_roots;
 mod l10n_intent;
 mod l10n_surface;
+mod limit;
 mod matrix;
 mod metrics;
 mod nested_anchor_refs;
