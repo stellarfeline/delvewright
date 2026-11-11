@@ -1395,6 +1395,36 @@ test("format 7: an expire step without any one of its three fields is refused", 
   );
 });
 
+test("format 7: an expire step's pos is its critical position, which may differ from its stand", () => {
+  const step = parseCriticalPath(withStep({ ...lapse, pos: [2, 65, 2] })).steps[2]!;
+  if (step.action !== "expire") throw new Error(step.action);
+  assert.deepEqual(step.pos, [2, 65, 2]);
+  assert.deepEqual(step.stand, [4, 65, 4]);
+});
+
+test("a kill step carries the compiler's seat date when one is exported, and nothing when not", () => {
+  const kill = {
+    action: "kill",
+    objective: "obj/beach",
+    wave: "wave/beach",
+    pos: [22, 65, 12],
+    tag: "dw_wave_beach",
+    count: 4,
+    pursuers: [],
+  };
+  const dated = parseCriticalPath(withStep({ ...kill, seat_ticks: 600 })).steps[2]!;
+  assert.equal(dated.action === "kill" && dated.seatTicks, 600);
+  const plain = parseCriticalPath(withStep(kill)).steps[2]!;
+  assert.equal(plain.action === "kill" && "seatTicks" in plain, false);
+  for (const bad of [0, -1, 1.5, "600"]) {
+    assert.throws(
+      () => parseCriticalPath(withStep({ ...kill, seat_ticks: bad })),
+      (e: unknown) => e instanceof CriticalPathParseError && e.pointer === "/steps/2/seat_ticks",
+      String(bad),
+    );
+  }
+});
+
 test("format 9: the constant moved, and a format-7 artifact is refused", () => {
   assert.equal(CRITICAL_PATH_FORMAT_VERSION, 9);
   const raw = validRaw();

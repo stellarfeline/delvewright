@@ -441,9 +441,11 @@ pub fn completed_on_landing(walked: &[Step], transports: &[Option<[i32; 3]>], i:
 ///   would be the compiler's knowledge written where it cannot be right.
 ///
 /// * `7` — a step may be `expire` (spec-0133 §8): `{objective, wait_ticks,
-///   stand}` — walk to `stand`, perform nothing, and pass on the objective's
-///   anchored `[dw:expired …]` marker within `wait_ticks` and the ordinary
-///   grace. A format change for `6`'s reason: a format-6 bot handed one would
+///   stand, pos}` — walk to `stand`, perform nothing, and pass on the
+///   objective's anchored `[dw:expired …]` marker within `wait_ticks` and the
+///   ordinary grace. `pos` is the critical position the path left the party
+///   on, where the proven leg into the step ends: the walk to `stand` is not
+///   that leg, so the leg is consumed unwalked. A format change for `6`'s reason: a format-6 bot handed one would
 ///   refuse a step kind it does not know, and one that guessed would perform
 ///   the act the step is there to let lapse.
 ///
