@@ -993,3 +993,37 @@ fn lava_stays_impassable() {
     let w = blocks_world(&cells);
     assert!(w.find_route([1, 64, 0], [7, 64, 0]).is_none());
 }
+
+/// The water ledger reads a dived leg (spec-0134 §10): the roofed pool's leg
+/// swims, its longest submerged run is at least the roof's three courses, and
+/// the binding line states it; a dry leg is a row with a run of zero.
+#[test]
+fn a_pool_under_a_ceiling_states_its_submerged_run_in_the_water_ledger() {
+    let w = pool(false, true);
+    let legs: Vec<LegRoute> = route_walked_legs(
+        &w,
+        &[
+            at_step([1, 64, 1], 1),
+            at_step([13, 64, 1], 2),
+            at_step([13, 64, 2], 3),
+        ],
+        &RegionEvents::default(),
+        &linear,
+    )
+    .into_iter()
+    .map(|(leg, _)| leg)
+    .collect();
+    assert_eq!(legs.len(), 2);
+    let doc = crate::compiler::waypoints::water_json(&w, &legs);
+    let rows = doc["legs"].as_array().unwrap();
+    assert_eq!(rows.len(), 2, "one row per leg, the dry one included");
+    assert!(rows[0]["longest_submerged"].as_u64().unwrap() >= 3, "{doc}");
+    assert_eq!(rows[1]["water"], 0);
+    assert_eq!(rows[1]["longest_submerged"], 0);
+    let line = crate::compiler::waypoints::water_line(&doc);
+    assert!(
+        line.starts_with("water binding: 1 of 2 leg(s) swim"),
+        "{line}"
+    );
+    assert!(line.contains("longest submerged run"), "{line}");
+}

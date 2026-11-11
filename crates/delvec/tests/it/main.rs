@@ -307,6 +307,7 @@ mod vision_camera_coverage;
 mod walk_ways;
 mod watch;
 mod watch_coverage;
+mod water_route;
 mod wave_count;
 mod wave_lethal;
 mod wave_machinery;

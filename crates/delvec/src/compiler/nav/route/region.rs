@@ -1777,7 +1777,8 @@ mod tests {
     /// (`a_fluid_fill_takes_the_floor_away_and_a_solid_fill_does_not`).
     #[test]
     fn a_runtime_water_fill_a_body_climbs_out_of_is_swum() {
-        let world = floored(5, 1, 65, &[]);
+        // A course under the floor cell the fill takes, so the water is held.
+        let world = floored(5, 1, 65, &[[2, 63, 0]]);
         let a = at_step([0, 65, 0], 1);
         let b = at_step([4, 65, 0], 2);
         let water = RegionEvent::forced(([2, 64, 0], [2, 64, 0]), RegionWrite::Flood, 0)
@@ -1822,6 +1823,21 @@ mod tests {
             route_visited(&world, &[a, b], &RegionEvents::from(vec![water]), &linear).is_err(),
             "water with no climb-out on the far side is not crossed"
         );
+    }
+
+    /// **A water sheet over open air is not swum.** The same forced fill with
+    /// nothing under the floor cell runs down into the void: no pool, so the
+    /// floor it took is `DW0544`'s.
+    #[test]
+    fn a_runtime_water_fill_over_open_air_is_not_swum() {
+        let world = floored(5, 1, 65, &[]);
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        let water = RegionEvent::forced(([2, 64, 0], [2, 64, 0]), RegionWrite::Flood, 0)
+            .laying("minecraft:water");
+        let err = route_visited(&world, &[a, b], &RegionEvents::from(vec![water]), &linear)
+            .expect_err("a sheet of water over the void holds no swimmer");
+        assert_eq!(err.code, DW_FLUID_FILL_ON_CRITICAL_PATH);
     }
 
     /// **An unforced water fill is not swum.** The party may arrive to find the

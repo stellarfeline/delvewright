@@ -1654,6 +1654,14 @@ impl World {
             base: self.base,
             built: self.built.clone(),
         };
+        // A written water cell is held when what is under it holds water: a
+        // solid block, a cell of the same fill, or water already there. A sheet
+        // over open air runs down and is no pool a body swims (spec-0134 §10).
+        let held = |c: &[i32; 3]| {
+            let below = [c[0], c[1] - 1, c[2]];
+            extra.contains(&below) || self.solid.contains(&below) || self.is_water(below)
+        };
+        let unheld: Vec<[i32; 3]> = extra.iter().filter(|c| !held(c)).copied().collect();
         for c in extra {
             w.solid.remove(c);
             w.tall.remove(c);
@@ -1664,7 +1672,7 @@ impl World {
             w.pinned.insert(*c);
             w.flood_written.insert(*c);
             w.floors.footprints.remove(c);
-            if unswum.contains(c) {
+            if unswum.contains(c) || unheld.contains(c) {
                 w.unswum.insert(*c);
             } else {
                 w.unswum.remove(c);

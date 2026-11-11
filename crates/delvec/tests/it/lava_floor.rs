@@ -166,14 +166,5 @@ fn the_same_room_with_a_stone_course_builds() {
     build_with("minecraft:stone").expect("a stone floor is a floor");
 }
 
-/// And the same for water, which was already classified correctly: the two fluids
-/// now reach `flooded` by one route, so this asserts the answer does not depend on
-/// which fluid the prefab happens to hold.
-#[test]
-fn a_water_moat_refuses_the_build_identically() {
-    match build_with("minecraft:water") {
-        Ok(_) => panic!("the build SUCCEEDED over a water moat"),
-        Err(BuildFailure::Diagnostic { code, message }) => assert_eq!(code, "DW0311", "{message}"),
-        Err(other) => panic!("expected a diagnostic failure, got {other:?}"),
-    }
-}
+// Water is not this file's: a water course over a sub-course is a pool a body
+// swims and climbs out of (spec-0134 §10), proven in `water_route`.

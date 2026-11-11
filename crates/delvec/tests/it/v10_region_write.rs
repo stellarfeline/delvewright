@@ -474,7 +474,8 @@ fn a_fill_region_of_water_is_collected_as_a_flood() {
 /// **The soundness hole, end to end.** `hello-room`'s only doorway stands on two
 /// floor cells over open void. A runtime `fill-region` replaces whatever is in its
 /// box — so filling those cells with `minecraft:water` deletes the floor and leaves
-/// water, and the party cannot cross.
+/// water with open void under it: a sheet that runs down, not a pool a body swims
+/// (spec-0134 §10 swims only water something holds), and the party cannot cross.
 ///
 /// Before a region write's conclusion was read off its block, this campaign built
 /// **green**: the model added the box to `solid` whatever the block, so it proved a

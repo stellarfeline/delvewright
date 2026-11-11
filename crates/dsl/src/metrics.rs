@@ -1466,6 +1466,24 @@ impl Metrics {
             })
     }
 
+    /// **The swim rate** (spec-0134 §10): ticks a player body takes per block
+    /// across still water, `pacing.ticks-per-block-swimming`, read — so a
+    /// route that swims names the entry in its `DW0813` line. An accessor, as
+    /// [`Metrics::datum`] is, so the key lives here and nowhere else.
+    ///
+    /// `None` only if the table stopped defining it.
+    #[must_use]
+    pub fn swim_ticks_per_block(&self, reads: &mut Reads) -> Option<f64> {
+        match self
+            .building
+            .get("pacing.ticks-per-block-swimming")?
+            .value(reads)
+        {
+            MetricValue::Number(n) => Some(*n),
+            _ => None,
+        }
+    }
+
     /// The datum convention that fixes what a declared floor `y` means.
     ///
     /// One of the entries **no document names**: an author writes a number, not

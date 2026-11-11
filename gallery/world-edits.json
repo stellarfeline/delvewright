@@ -835,6 +835,115 @@
         ],
         "id": "batch/lay-the-barrier",
         "note": "A pocket in the north-east corner whose only way in is a full-cube course in a wall line. Three declared bodies walk here and each has to make the move its species does or does not allow, which is what makes their `traversal` declarations paid for rather than decorative."
+      },
+      {
+        "area": "area/long-hall",
+        "edits": [
+          {
+            "name": "region/pool-near-rim",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-long-hall"
+              },
+              "kind": "box",
+              "max": [
+                6,
+                1,
+                11
+              ],
+              "min": [
+                4,
+                1,
+                11
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:polished_deepslate",
+                  "weight": 1.0
+                }
+              ]
+            },
+            "region": "region/pool-near-rim",
+            "verb": "fill"
+          },
+          {
+            "name": "region/pool-far-rim",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-long-hall"
+              },
+              "kind": "box",
+              "max": [
+                6,
+                1,
+                13
+              ],
+              "min": [
+                4,
+                1,
+                13
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:polished_deepslate",
+                  "weight": 1.0
+                }
+              ]
+            },
+            "region": "region/pool-far-rim",
+            "verb": "fill"
+          },
+          {
+            "name": "region/pool",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-long-hall"
+              },
+              "kind": "box",
+              "max": [
+                6,
+                1,
+                12
+              ],
+              "min": [
+                4,
+                1,
+                12
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:water",
+                  "weight": 1.0
+                }
+              ]
+            },
+            "region": "region/pool",
+            "verb": "fill"
+          }
+        ],
+        "id": "batch/sink-the-pool",
+        "note": "A pool across the long hall's whole width, a rim either side, so the party's route to the hall's end swims one course of water and climbs out over the far rim: the leg the route proof crosses by swimming (spec-0134 §10), exported with its `water` cells, and the course the bot swims. The hall's walls close it on both sides, so the walk cannot go round."
       }
     ]
   },

@@ -146,8 +146,11 @@ impl World {
     /// **The route leg's walk** (spec-0134 §10): [`World::find_path`] with the
     /// water moves added — into a connected body of water, through it in every
     /// direction, and out over the climb-out band — each water step priced at
-    /// the swim rate. Only the critical path's legs (and their export) ask this;
-    /// every other proof keeps the dry walk.
+    /// the swim rate. Every proof of where the **party** walks asks this — the
+    /// critical path's legs and their export, a checkpoint's way on
+    /// (`DW0315`), the respawn walk, a shortcut's long route (`DW0373`/`DW0374`)
+    /// and a timed gate's disarm (`DW0393`); a body that is not a
+    /// player (an NPC, an actor, a wave's mob) keeps the dry walk.
     pub fn find_route(&self, start: [i32; 3], goal: [i32; 3]) -> Option<Vec<[i32; 3]>> {
         self.search(start, goal, &Footprint::player(), &|_| false, &|_| 1, true)
     }
@@ -318,9 +321,14 @@ impl World {
 /// over `walk.ticks-per-block`), rounded up — never under the flat step, so the
 /// route's heuristic stays admissible.
 pub(in crate::compiler::nav) fn swim_step_cost() -> u32 {
-    let ratio = delvewright_dsl::metrics::body::swim_ticks_per_block()
-        / delvewright_dsl::metrics::walk_ticks_per_block();
-    ((f64::from(STEP_COST_16) * ratio).ceil() as u32).max(STEP_COST_16)
+    static COST: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+    *COST.get_or_init(|| {
+        let swim = delvewright_dsl::metrics::Metrics::table()
+            .swim_ticks_per_block(&mut delvewright_dsl::metrics::Reads::new())
+            .expect("the metrics table defines the swim rate");
+        let ratio = swim / delvewright_dsl::metrics::walk_ticks_per_block();
+        ((f64::from(STEP_COST_16) * ratio).ceil() as u32).max(STEP_COST_16)
+    })
 }
 
 /// The player-visited critical-path positions in order, each tagged with whether
@@ -616,7 +624,7 @@ pub(crate) fn critical_route_cells(plan: &Plan, world: &World) -> Vec<(usize, Ve
             if let (Some(a), Some(b)) = (
                 leg.snap_endpoint(pair[0].pos, pair[0].talk_to),
                 leg.snap_endpoint(pair[1].pos, pair[1].talk_to),
-            ) && let Some(path) = leg.find_path(a, b)
+            ) && let Some(path) = leg.find_route(a, b)
             {
                 cells.extend(path);
             }

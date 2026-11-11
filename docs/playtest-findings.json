@@ -3972,6 +3972,25 @@
       "note": "Direction: it can let something ship — a walk the model proved across a door's open leaf for a body that opens nothing is one the game refuses — and it cannot turn a proof red. The party was already read right: a door's shut and open leaves stand on two faces, so a body that sets the door before it steps is never stopped by it (`Leaf::stops_crossing` with `may_use`). Closed by `blockshape::leaf` (the door's leaf per `facing`, `hinge` and `open`, from the jar's tables), read by the walk for every door cell, and `DW1068`, which refuses a walked leg across a leaf its mover cannot set and names the `facing` and `hinge` that clear the way. The binding counts the door cells whose leaf the walk reads (`validation/door-leaves.json` `doors`).",
       "round": 1,
       "triage": "capability"
+    },
+    {
+      "binding": {
+        "file": "water.json",
+        "kind": "artifact",
+        "path": "legs"
+      },
+      "campaign": "gallery",
+      "carrier": {
+        "file": "water.json",
+        "kind": "artifact",
+        "path": "legs"
+      },
+      "finding": "the route proof crosses a connected body of water by swimming, and a stretch of it can be submerged — the body's head under water for cell after cell — with nothing judging whether a body holds its breath that long",
+      "general_form": "every walked leg's longest run of submerged cells is stated where the build writes the route (`validation/water.json`, one row per leg, a dry leg's run of zero included; the `water binding:` line); a run longer than a body's breath is not judged (spec-0134 §10, recorded debt)",
+      "id": "gal-04",
+      "note": "Recorded by spec-0134 §10 as a debt, not found in play: breath and underwater light are out of that spec's scope. The binding counts the legs the build examined, so it is non-zero on every build that exports a route; on the gallery it includes the long hall's pool leg. The carrier states the run and refuses nothing — the row closes when a rule judges a submerged run against a body's air supply.",
+      "round": null,
+      "triage": "capability"
     }
   ],
   "ledger_version": "2026-08-11"
