@@ -111,3 +111,37 @@ def test_branch_runs_under_the_bots_project_keeps_its_run_report(tmp_path):
     # The merged row names the build its run walked, as the bot stamped it:
     # what the staging gate binds the row to (`--branch-runs`).
     assert merged["branches"][0]["manifest_sha256"] == "feed"
+
+
+def test_a_run_that_exits_non_zero_after_a_passing_walk_is_not_a_passed_row(tmp_path):
+    """The bot's report says the walk passed, and the run still exited 3: a
+    run-level check outside the report's stages (the sculk ear) failed it. The
+    exit code is the verdict, so the merged row the staging gate reads is not
+    a pass."""
+    engine = tmp_path / "engine"
+    for rel in COPIED:
+        dst = engine / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(REPO / rel, dst)
+    out = tmp_path / "delve-output"
+    (out / "validation").mkdir(parents=True)
+    (out / "critical-path.json").write_text("{}\n")
+    (out / "validation" / "branch-plan.json").write_text(
+        json.dumps({"campaign_id": "c", "branches": [{"id": "world/a", "chronicle": None, "endings": []}]})
+    )
+    stubs = tmp_path / "bin"
+    stubs.mkdir()
+    _exe(stubs / "docker", DOCKER_STUB.replace('esac\nexit 0', 'esac\ncase " $* " in *" up "*) exit 3;; esac\nexit 0'))
+    _exe(stubs / "node", NODE_STUB)
+    env = {**os.environ, "PATH": f"{stubs}{os.pathsep}{os.environ['PATH']}", "EULA": "TRUE", "DELVE_OUTPUT": str(out)}
+    for k in ("DW_RUN_OUT", "DW_BOT_OUT", "DW_COMPOSE_PROJECT", "DELVEWRIGHT_BRANCHES"):
+        env.pop(k, None)
+    r = subprocess.run(
+        ["bash", str(engine / "validation" / "branch-runs.sh"), "--project", "dw-c-r2"],
+        cwd=tmp_path, env=env, capture_output=True, text=True,
+    )
+    assert r.returncode == 1, r.stdout + r.stderr
+    merged = json.loads((engine / "validation" / "run-out" / "dw-c-r2" / "branch-runs.json").read_text())
+    row = merged["branches"][0]
+    assert (row["ran"], row["passed"]) == (True, False), row
+    assert "exited 3 after its walk" in row["reason"]
