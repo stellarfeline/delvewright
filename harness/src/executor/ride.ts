@@ -224,12 +224,19 @@ export const methods = {
     if (!reading.riding) failRide("the server did not seat the bot on the vehicle after the click");
     const start = reading.pos;
     let reported = 0;
+    // Where the server held a waited-for rider, reading by reading: said when
+    // the ride does not arrive.
+    const trace: string[] = [];
     if (step.kind === "minecart") {
       const travel = step.medium.length / step.rate;
       const by = Date.now() + travel * 1000 + MOUNT_GRACE_MS + 2000;
+      const t0 = Date.now();
       while (!arrivedAt(reading.pos, last) && Date.now() < by) {
         await delay(500);
         reading = await this.readRide(tag);
+        trace.push(
+          `${((Date.now() - t0) / 1000).toFixed(1)}s ${JSON.stringify(reading.pos.map((v) => Number(v.toFixed(2))))}`,
+        );
       }
     } else {
       const y0 = (bot as unknown as { vehicle?: Entity | null }).vehicle?.position?.y ?? start[1];
@@ -252,7 +259,8 @@ export const methods = {
     if (!arrivedAt(reading.pos, last)) {
       failRide(
         `the server holds the rider at ${JSON.stringify(reading.pos.map((v) => Number(v.toFixed(2))))}, ` +
-          `not at the medium's last cell ${JSON.stringify(last)} — the server did not take the ride`,
+          `not at the medium's last cell ${JSON.stringify(last)} — the server did not take the ride` +
+          (trace.length > 0 ? `; the rider was held at ${trace.join(", ")}` : ""),
         { reported, serverSeen, seat: reading.pos },
       );
     }
@@ -269,16 +277,6 @@ export const methods = {
       failRide("the server did not position the bot after it left the vehicle", { reported, serverSeen, seat: arrived });
     }
     this.landingSwims = step.kind === "boat";
-    // Every position the server hands the bot on the walk off is said: a walk
-    // the server undoes is the vehicle's or the delve's, and is read here.
-    const said = (): void => {
-      const p = bot.entity.position;
-      process.stderr.write(
-        `[ride] ${step.vehicle}: the server positioned the bot at ` +
-          `[${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)}] on its walk off\n`,
-      );
-    };
-    bot.on("forcedMove", said);
     try {
       const p = bot.entity.position;
       process.stderr.write(
@@ -287,7 +285,6 @@ export const methods = {
       );
       await this.walkTo(step.leave, 0, `the shore after ${step.vehicle}`, step.sneak);
     } finally {
-      bot.removeListener("forcedMove", said);
       this.landingSwims = false;
     }
     record({ reported, serverSeen, seat: arrived, left: true, passed: true });
