@@ -949,11 +949,12 @@ pub struct LegRoute {
     /// and no other; empty for every dry leg.
     pub water: Vec<[i32; 3]>,
     /// The hops the route takes (spec-0113 §4.5, [`World::hops_fp`]), in
-    /// route order, as `(from, to, run_up)`: jumps across a gap no declaration
-    /// names, proven by the declared jump's own window. Exported among the
-    /// leg's `jumps` so the harness drives each as it drives a declared one;
-    /// empty for every leg the walk carries.
-    pub hops: Vec<([i32; 3], [i32; 3], u32)>,
+    /// route order, as `(from, to, sprint, run_up)`: jumps across a gap no
+    /// declaration names, proven by the declared jump's own window
+    /// ([`World::hop_sprint`]). Exported among the leg's `jumps` so the
+    /// harness drives each as it drives a declared one; empty for every leg
+    /// the walk carries.
+    pub hops: Vec<([i32; 3], [i32; 3], bool, u32)>,
     /// The runtime-region state in force while the player walks this leg — the
     /// world the A* above actually ran in ([`World::walked_leg_region_state`]).
     ///

@@ -75,7 +75,7 @@ pub fn waypoints_json(
                             leg.hops
                                 .iter()
                                 .find(|h| h.0 == w[0] && h.1 == w[1])
-                                .map(|h| (h.0, h.1, true, h.2))
+                                .map(|h| (h.0, h.1, h.2, h.3))
                         })
                 })
                 .collect();

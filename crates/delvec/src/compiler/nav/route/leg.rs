@@ -72,7 +72,14 @@ pub(in crate::compiler::nav) fn route_walked_legs(
                     (w[1][0] - w[0][0]).abs() + (w[1][2] - w[0][2]).abs() > 1
                         && !leg_world.declared_jumps.contains(&(w[0], w[1]))
                 })
-                .map(|w| (w[0], w[1], leg_world.run_up(w[0], w[1])))
+                .map(|w| {
+                    (
+                        w[0],
+                        w[1],
+                        leg_world.hop_sprint(w[0], w[1]).unwrap_or(true),
+                        leg_world.run_up(w[0], w[1]),
+                    )
+                })
                 .collect();
             out.push((
                 LegRoute {

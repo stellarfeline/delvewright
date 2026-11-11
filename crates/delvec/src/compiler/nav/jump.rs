@@ -91,8 +91,10 @@ impl World {
     /// leave `c` by, the nearest standable cell along that axis — up to
     /// [`HOP_REACH`] cells off, its feet within a cell of `c`'s, over columns
     /// clear from the lower feet to a head above the higher — that a body on
-    /// cue reaches by a sprinted jump from the run-up the course gives
-    /// ([`makeable`]). In the fixed direction order.
+    /// cue reaches by a jump from the run-up the course gives ([`hop_sprint`]).
+    /// In the fixed direction order.
+    ///
+    /// [`hop_sprint`]: World::hop_sprint
     pub(in crate::compiler::nav) fn hops_fp(&self, c: [i32; 3], fp: &Footprint) -> Vec<[i32; 3]> {
         const HORIZ: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
         if !self.standable_fp(c, fp) {
@@ -114,7 +116,7 @@ impl World {
                     let clear = (1..k).all(|j| {
                         (lo..=hi).all(|y| !self.is_occupied([c[0] + dx * j, y, c[2] + dz * j]))
                     });
-                    if clear && makeable(self, c, to, true, self.run_up(c, to)).is_none() {
+                    if clear && self.hop_sprint(c, to).is_some() {
                         out.push(to);
                     }
                     break 'along;
@@ -127,6 +129,23 @@ impl World {
             }
         }
         out
+    }
+
+    /// **How a hop from `from` to `to` is made**, when it is: `Some(false)`
+    /// when a walking jump makes it, else `Some(true)` when a sprinted one does
+    /// ([`makeable`], from the run-up the course gives), `None` when neither.
+    /// The walk is asked first: a sprint carries a body past a landing one
+    /// tread long (the next step of a stair, measured), where a walking jump
+    /// stops on it.
+    pub(in crate::compiler::nav) fn hop_sprint(
+        &self,
+        from: [i32; 3],
+        to: [i32; 3],
+    ) -> Option<bool> {
+        let run_up = self.run_up(from, to);
+        [false, true]
+            .into_iter()
+            .find(|sprint| makeable(self, from, to, *sprint, run_up).is_none())
     }
 }
 
@@ -407,6 +426,78 @@ mod tests {
         // And the one judgement: the declaration of the same jump is refused.
         let (_, _, verdict) = judge_jumps(&[jump([0, 1, 0], [6, 1, 0])], &w);
         assert!(verdict.is_err());
+    }
+
+    /// The festival lighthouse's stair as the town builds it: a lane one cell
+    /// wide round a 2x2 newel, a tread a course, three treads missing, the
+    /// tread after each gap level with the one before it — and the tread
+    /// after that a course up, one cell past the landing. A sprinted jump from
+    /// the corner overshoots the landing onto that next tread (measured: the
+    /// feet end at x 15.7, a course up); the walking jump stops on it. The
+    /// route climbs the whole stair, hopping each gap walked.
+    #[test]
+    fn the_lighthouse_stair_is_climbed_hopping_each_gap_walked() {
+        let ring: [(i32, i32); 12] = [
+            (12, 12),
+            (13, 12),
+            (14, 12),
+            (15, 12),
+            (15, 13),
+            (15, 14),
+            (15, 15),
+            (14, 15),
+            (13, 15),
+            (12, 15),
+            (12, 14),
+            (12, 13),
+        ];
+        let broken = [10, 19, 28];
+        let mut treads = Vec::new();
+        let (mut y, mut after, mut k) = (0, false, 0usize);
+        while y < 32 {
+            if broken.contains(&k) {
+                after = true;
+                k += 1;
+                continue;
+            }
+            if !after {
+                y += 1;
+            }
+            after = false;
+            let (x, z) = ring[(3 + k) % 12];
+            treads.push([x, y, z]);
+            k += 1;
+        }
+        let mut solid: BTreeSet<[i32; 3]> = treads.iter().copied().collect();
+        for x in 10..=17 {
+            for z in 10..=17 {
+                for yy in 0..=40 {
+                    if yy == 0 || !ring.contains(&(x, z)) {
+                        solid.insert([x, yy, z]);
+                    }
+                }
+            }
+        }
+        let w = World::from_solid_cells(solid);
+        let (launch, landing) = ([12, 11, 12], [14, 11, 12]);
+        assert!(
+            w.find_path(launch, landing).is_none(),
+            "the gap is not walked"
+        );
+        assert!(
+            makeable(&w, launch, landing, true, 0).is_some(),
+            "a sprint overshoots the landing"
+        );
+        assert_eq!(w.hop_sprint(launch, landing), Some(false));
+        let feet = |t: [i32; 3]| [t[0], t[1] + 1, t[2]];
+        let route = w
+            .find_route(feet(treads[0]), feet(*treads.last().unwrap()))
+            .expect("the route climbs the broken stair");
+        let hops = route
+            .windows(2)
+            .filter(|p| (p[1][0] - p[0][0]).abs() + (p[1][2] - p[0][2]).abs() > 1)
+            .count();
+        assert_eq!(hops, 3, "one hop a gap: {route:?}");
     }
 
     #[test]

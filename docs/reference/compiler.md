@@ -3539,8 +3539,8 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   `DW1041`) or a **hop** (a jump across a gap no declaration names, taken only
   where the walk does not reach the leg's end, `World::hops_fp`) carries a
   `jumps` array, in route order: each `{from, to, sprint, run_up}` — the launch
-  and landing cells (both kept waypoints), whether it sprints (a hop always
-  does), and the straight run-up the course gives, as the proof measured it. The bot drives each as a parkour hop and no other leg lets its
+  and landing cells (both kept waypoints), whether it sprints (a hop sprints only
+  where a walking jump does not make it), and the straight run-up the course gives, as the proof measured it. The bot drives each as a parkour hop and no other leg lets its
   pathfinder parkour. Omitted for a leg that jumps nothing. A leg that sets a sculk sensor off (spec-0100 §4.6)
   carries a `vibrations` array: each `{sensor, shriekers}` — the sensor's cell
   and the cells of the shriekers that answer it. A sensor is **predicted** for a
