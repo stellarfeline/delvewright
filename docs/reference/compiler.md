@@ -3124,6 +3124,15 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   the campaign marker arriving earlier fails the run on the spot, because every
   remaining step is then provably hollow.
 
+  **`sneak: true` marks a step walked crouched** (present only when true): an
+  objective step whose objective declares `stealth`, and a `trigger` step
+  performed in front of one — it takes the `sneak` of the first step after it
+  that is not a trigger, a spliced link's press included, because its walk is
+  part of the walk to that objective (`plan::path`,
+  `tests/it/teleport_link.rs`). The harness holds the crouch on every tick of
+  such a walk and stands only for a downward climb, a step down and a declared
+  jump (`harness/src/movement.ts` `configureLeg`, `hopStandsUp`).
+
   **Every cutscene a step can fire is on the step** (`compiler::hold`), as two
   optional positive integers. `cutscene_seconds` is the time from the step's
   completion to the end of the last cutscene its completion schedules: the
