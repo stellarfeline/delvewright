@@ -20,6 +20,9 @@ pub struct LootPlan {
     /// Contents in declaration order; a positional stack's index IS its
     /// container slot (spec-0111 §3.3).
     pub items: Vec<LootItemPlan>,
+    /// The fill waits for a `fill-loot` effect (spec-0134 §6) instead of
+    /// running in `setup_finish`.
+    pub by_effect: bool,
 }
 
 /// One stack in a [`LootPlan`].
@@ -144,6 +147,7 @@ pub(super) fn collect_loot(
                         fireworks: it.fireworks.clone(),
                     })
                     .collect(),
+                by_effect: l.filled == delvewright_dsl::LootFilled::ByEffect,
             })
         })
         .collect()

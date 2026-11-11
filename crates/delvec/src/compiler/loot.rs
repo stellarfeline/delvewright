@@ -758,6 +758,7 @@ mod tests {
                     fireworks: None,
                 })
                 .collect(),
+            by_effect: false,
         }
     }
 

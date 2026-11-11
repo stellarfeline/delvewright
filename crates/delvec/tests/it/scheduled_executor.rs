@@ -17,7 +17,7 @@
 //! that names no selector at all, and is therefore immune to the seam *by
 //! construction* — the island soft-lock class cannot recur for flags. What stays
 //! executor-shaped is the genuinely player-facing set (`narrate`, `give-item`,
-//! `play-sound`, `damage-players`), which now addresses `@a`: the party sees the
+//! `play-sound`, `damage`), which now addresses `@a`: the party sees the
 //! beat, and `@a` needs no executor either.
 //!
 //! The invariant below is the strongest available form of the lesson, and after

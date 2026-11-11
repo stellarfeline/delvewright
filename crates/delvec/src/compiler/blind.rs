@@ -352,9 +352,13 @@ fn standing_set(
     }
     // A grant addressed to the party blinds every player wherever they stand,
     // so where its root fired says nothing about where they are.
-    let to_actor = match f.eff.audience {
+    let to_actor = match &f.eff.audience {
         Some(delvewright_dsl::EffectAudience::Actor) => true,
         Some(delvewright_dsl::EffectAudience::Party) => false,
+        // spec-0134 §9: a grant aimed at bodies blinds no player.
+        Some(
+            delvewright_dsl::EffectAudience::Wave(_) | delvewright_dsl::EffectAudience::Body(_),
+        ) => return Default::default(),
         None => f.solo,
     };
     if !to_actor {

@@ -139,11 +139,20 @@ pub(crate) fn holder_body(o: &OwnedHolder) -> Vec<String> {
         p[2],
         summon_nbt(o)
     )];
-    for f in &o.fills {
-        let Some(it) = &f.stack else { continue };
-        out.push(fill_line(o, &f.slot, it));
+    if !o.loot_by_effect {
+        out.extend(holder_loot_lines(o));
     }
     out
+}
+
+/// The lines that fill a holder entity's `loot` slots — run by its body at
+/// `setup_finish`, or by the fill's own function when it waits for a
+/// `fill-loot` (spec-0134 §6).
+pub(super) fn holder_loot_lines(o: &OwnedHolder) -> Vec<String> {
+    o.fills
+        .iter()
+        .filter_map(|f| f.stack.as_ref().map(|it| fill_line(o, &f.slot, it)))
+        .collect()
 }
 
 /// `setup_finish`: run every holder's own body, in
@@ -336,6 +345,7 @@ mod tests {
             }],
             loot: Some("loot/map".to_string()),
             collect: None,
+            loot_by_effect: false,
         };
         assert_eq!(
             holder_setup("ns", std::slice::from_ref(&o)),
@@ -367,6 +377,7 @@ mod tests {
             }],
             loot: Some("loot/rack".to_string()),
             collect: None,
+            loot_by_effect: false,
         };
         let nbt = summon_nbt(&o);
         assert!(nbt.contains("ShowArms:1b"), "{nbt}");

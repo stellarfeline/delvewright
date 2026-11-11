@@ -1,0 +1,11 @@
+{
+  "code": "DW1093",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/loot/1/filled"
+    }
+  ],
+  "why": "The ferryman's barrel filled at load again (its `filled` removed), while boarding the ferry still fires its `fill-loot`. The beat would write the barrel a second time over whatever the party left in it. Refused at the `fill-loot`'s `loot`, with the remedy: declare `filled: by-effect`, or remove the `fill-loot`."
+}

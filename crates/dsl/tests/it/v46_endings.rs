@@ -205,7 +205,7 @@ fn every_verb_is_in_exactly_one_aftermath_class() {
         "close-gate",
         "open-way",
         "teleport",
-        "damage-players",
+        "damage",
         "give-effect",
         "clear-effect",
         "give-item",

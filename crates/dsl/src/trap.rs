@@ -66,7 +66,7 @@ pub struct Trap {
     /// effect vocabulary, so a trap's payload is authored like any other effect
     /// bundle rather than built out of dust and repeaters. Expressiveness moves
     /// from "what dust can carry" to "what the effect vocabulary can say":
-    /// `volley` and `collapse` (spec-0022's trap verbs) join `damage-players`,
+    /// `volley` and `collapse` (spec-0022's trap verbs) join `damage`,
     /// `play-sound`, `narrate`, `set-flag` and `spawn-wave`.
     ///
     /// Empty = a pure spec-0011 redstone trap, which emits exactly what it
@@ -474,7 +474,7 @@ pub(crate) fn trap_checks(
                 format!("/content/traps/{i}"),
                 format!(
                     "trap `{}` declares no consequence — give it a `payload` (an ordered \
-                     effect list: `volley`, `collapse`, `damage-players`, `play-sound`, \
+                     effect list: `volley`, `collapse`, `damage`, `play-sound`, \
                      `narrate`, `set-flag`, `spawn-wave`, …). A trigger with nothing \
                      downstream of it is scenery, not a trap",
                     t.id

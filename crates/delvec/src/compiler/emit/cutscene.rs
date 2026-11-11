@@ -167,7 +167,7 @@ pub(crate) fn cutscene_digest(shots: &[delvewright_dsl::CameraShot]) -> String {
 /// **Staging invariant — a cutscene is pure observation.** While a player is in
 /// the cutscene state, campaign machinery must not require anything of them and
 /// must not punish them: the stealth judge is suspended for that player (grace
-/// neither accrues nor expires, `on_caught` cannot fire) and `damage-players`
+/// neither accrues nor expires, `on_caught` cannot fire) and `damage`
 /// skips them. Any future verb that *demands* input or *deals harm* joins this
 /// list — the player is watching, not playing.
 ///

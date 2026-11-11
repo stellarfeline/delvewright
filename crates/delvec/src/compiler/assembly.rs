@@ -25,7 +25,7 @@
 //!   [`crate::compiler::strand::eye_reaches_box`], the measure `DW0924` uses.
 //! * **`DW0938` — the strike.** Danger is visible, or the engine refuses it. A
 //!   blow lands only where it was announced (every landing box, grown to its
-//!   keep-out, lies inside the arming region's keep-out; a `damage-players`
+//!   keep-out, lies inside the arming region's keep-out; a `damage`
 //!   with no `in` strikes every player in the world and is refused), and the
 //!   blow's area is the area the limb comes down on, both ways
 //!   ([`correspondence`]): the strike clip's last frame comes down on every
@@ -336,7 +336,7 @@ fn in_box(c: [i32; 3], (lo, hi): ([i32; 3], [i32; 3])) -> bool {
 // The judgement
 // ---------------------------------------------------------------------------
 
-/// One landing: a `damage-players` inside a step's `on_land`, at any depth.
+/// One landing: a `damage` inside a step's `on_land`, at any depth.
 #[derive(Clone, Debug)]
 pub struct Landing {
     /// JSON pointer to the effect.
@@ -1259,7 +1259,7 @@ pub fn judge(
                     out.push(Failure::new(
                         DW_ASSEMBLY_STRIKE,
                         format!(
-                            "assembly `{}`'s strike step {} lands a `damage-players` with no `in` \
+                            "assembly `{}`'s strike step {} lands a `damage` with no `in` \
                              ({}). A landing runs with no acting player, so a box-less blow \
                              strikes every player in the world, wherever they stand — a blow \
                              nobody was shown. Give it an `in` box inside the arming region, \
@@ -1275,10 +1275,10 @@ pub fn judge(
                     DW_ASSEMBLY_STRIKE,
                     format!(
                         "assembly `{}`'s strike pattern is aimed, and its step {} lands a \
-                         `damage-players` ({}) inside another effect's list. An aimed pattern \
+                         `damage` ({}) inside another effect's list. An aimed pattern \
                          turns every landing box with the facing it strikes from, and only a box \
                          at the top of `on_land` is turned; this one would land where the first \
-                         facing put it whichever way the thing turned. Move the `damage-players` \
+                         facing put it whichever way the thing turned. Move the `damage` \
                          to the top of `on_land` (a `when` on it is kept)",
                         s.id, step.index, l.path
                     ),
@@ -1579,11 +1579,11 @@ fn cells_of((lo, hi): ([i32; 3], [i32; 3])) -> Vec<[i32; 3]> {
     out
 }
 
-/// Every `damage-players` inside a list, at any depth, with its pointer.
+/// Every `damage` inside a list, at any depth, with its pointer.
 fn landings(plan: &Plan, path: &str, effs: &[QuestEffect], nested: bool, out: &mut Vec<Landing>) {
     for (i, e) in effs.iter().enumerate() {
         let here = format!("{path}/{i}");
-        if let Verb::DamagePlayers { amount, .. } = &e.verb {
+        if let Verb::Damage { amount, .. } = &e.verb {
             // spec-0085: `in` is the effect envelope's field, read through
             // the one accessor every damage reader takes.
             let within = e.damage_within();
@@ -2710,9 +2710,10 @@ pub fn assembly_functions(
                             let mut body = Vec::new();
                             for e in &step.on_land {
                                 match &e.verb {
-                                    Verb::DamagePlayers {
+                                    Verb::Damage {
                                         amount,
                                         damage_type,
+                                        ..
                                     } if e.damage_within().is_none() => {
                                         let kind = damage_type
                                             .unwrap_or(delvewright_dsl::DamageKind::Generic)
@@ -2754,7 +2755,7 @@ pub fn assembly_functions(
                             // reader takes.
                             match (&e.verb, e.damage_within()) {
                                 (
-                                    Verb::DamagePlayers {
+                                    Verb::Damage {
                                         amount,
                                         damage_type,
                                         ..
@@ -3089,7 +3090,7 @@ mod tests {
         assert!(f.is_empty(), "{:?}", codes(&f));
     }
 
-    /// A box-less `damage-players` in a landing is refused.
+    /// A box-less `damage` in a landing is refused.
     #[test]
     fn a_boxless_blow_is_refused() {
         let r = rig();

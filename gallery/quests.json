@@ -285,7 +285,7 @@
                       0
                     ]
                   },
-                  "type": "damage-players"
+                  "type": "damage"
                 },
                 {
                   "at": {
@@ -346,7 +346,7 @@
               "on_land": [
                 {
                   "amount": 1,
-                  "type": "damage-players"
+                  "type": "damage"
                 },
                 {
                   "at": {
@@ -380,7 +380,7 @@
               "on_land": [
                 {
                   "amount": 1,
-                  "type": "damage-players"
+                  "type": "damage"
                 }
               ],
               "strike": "near",
@@ -405,7 +405,7 @@
               "on_land": [
                 {
                   "amount": 1,
-                  "type": "damage-players"
+                  "type": "damage"
                 }
               ],
               "strike": "near",
@@ -637,11 +637,38 @@
       },
       {
         "anchor": "anchor/cabin-barrel",
+        "filled": "by-effect",
         "id": "loot/ferryman-stores",
         "items": [
           {
             "count": 3,
             "item": "minecraft:bread"
+          },
+          {
+            "count": 2,
+            "fireworks": {
+              "explosions": [
+                {
+                  "colors": [
+                    "#ffd700"
+                  ],
+                  "shape": "star",
+                  "trail": true
+                },
+                {
+                  "colors": [
+                    "#e04040"
+                  ],
+                  "fade_colors": [
+                    "#ffffff"
+                  ],
+                  "shape": "burst",
+                  "twinkle": true
+                }
+              ],
+              "flight": 2
+            },
+            "item": "minecraft:firework_rocket"
           }
         ]
       },
@@ -1300,6 +1327,34 @@
                 "verb": "arrives"
               },
               "type": "spawn-actor"
+            },
+            {
+              "carrier": "all",
+              "count": 1,
+              "fireworks": {
+                "explosions": [
+                  {
+                    "colors": [
+                      "#40a0e0"
+                    ],
+                    "shape": "small_ball"
+                  }
+                ]
+              },
+              "item": "minecraft:firework_rocket",
+              "type": "give-item",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             }
           ],
           "obj/press-the-case": [
@@ -2355,6 +2410,19 @@
               "atmosphere": "atmosphere/the-reckoning",
               "place": "area/hall",
               "type": "set-atmosphere"
+            },
+            {
+              "audience": {
+                "wave": "wave/muster"
+              },
+              "effect": "minecraft:glowing",
+              "happening": {
+                "subject": "wave/muster",
+                "text": "The muster glows where it stands, so the party can count it.",
+                "verb": "gains"
+              },
+              "seconds": 10,
+              "type": "give-effect"
             }
           ],
           "obj/back-in-the-hall": [
@@ -2376,6 +2444,15 @@
                 "verb": "gains"
               },
               "type": "set-flag"
+            },
+            {
+              "happening": {
+                "subject": "anchor/cabin-barrel",
+                "text": "The ferryman's barrel is stocked for the crossing.",
+                "verb": "gains"
+              },
+              "loot": "loot/ferryman-stores",
+              "type": "fill-loot"
             }
           ],
           "obj/clear-the-muster": [
@@ -2544,7 +2621,7 @@
                   5
                 ]
               },
-              "type": "damage-players",
+              "type": "damage",
               "when": {
                 "forbids_flags": [
                   "flag/hall-sealed"
@@ -2971,7 +3048,7 @@
                   2
                 ]
               },
-              "type": "damage-players",
+              "type": "damage",
               "when": {
                 "forbids_flags": [
                   "flag/hall-sealed"
@@ -2999,7 +3076,7 @@
                   2
                 ]
               },
-              "type": "damage-players",
+              "type": "damage",
               "when": {
                 "forbids_flags": [
                   "flag/hall-sealed"
@@ -3027,7 +3104,7 @@
                   2
                 ]
               },
-              "type": "damage-players",
+              "type": "damage",
               "when": {
                 "forbids_flags": [
                   "flag/hall-sealed"
@@ -3055,7 +3132,7 @@
                   2
                 ]
               },
-              "type": "damage-players",
+              "type": "damage",
               "when": {
                 "forbids_flags": [
                   "flag/hall-sealed"
@@ -3083,7 +3160,7 @@
                   2
                 ]
               },
-              "type": "damage-players",
+              "type": "damage",
               "when": {
                 "forbids_flags": [
                   "flag/hall-sealed"
@@ -3111,7 +3188,7 @@
                   2
                 ]
               },
-              "type": "damage-players",
+              "type": "damage",
               "when": {
                 "forbids_flags": [
                   "flag/hall-sealed"
@@ -3373,6 +3450,19 @@
                   "flag/hall-open"
                 ]
               }
+            },
+            {
+              "amount": 1,
+              "audience": {
+                "actor": "actor/hall-moth"
+              },
+              "by": "actor",
+              "happening": {
+                "subject": "actor/hall-moth",
+                "text": "The party's blow knocks it back.",
+                "verb": "loses"
+              },
+              "type": "damage"
             }
           ],
           "obj/take-the-bone": [
@@ -4306,7 +4396,7 @@
                 3
               ]
             },
-            "type": "damage-players",
+            "type": "damage",
             "when": {
               "forbids_flags": [
                 "flag/hall-sealed"
@@ -5066,7 +5156,10 @@
               "max_health": 12.0,
               "movement_speed": 0.23
             },
-            "count": 2,
+            "count": {
+              "base": 2,
+              "per_player": 1
+            },
             "drops": [
               {
                 "item": "minecraft:bone",

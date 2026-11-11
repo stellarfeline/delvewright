@@ -1285,15 +1285,15 @@ pub(super) fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
         );
     }
 
-    // damage-players: the `/damage` primitive the effect emits actually subtracts
+    // damage: the `/damage` primitive the effect emits actually subtracts
     // health. A 0-player void does not tick a real player, so the test drives the
     // damage on a summoned dummy (NoAI/Silent zombie, full 20 HP) with the exact
-    // amount + type the first declared `damage-players` uses, then asserts its
+    // amount + type the first declared `damage` uses, then asserts its
     // Health dropped by that amount. Emitted only when the campaign uses the verb.
     if let Some((amount, kind)) = first_damage_players(plan.campaign) {
         let type_id = kind.id();
         let mut t = packtest_header(&format!(
-            "{title}: damage-players subtracts {amount} half-hearts ({type_id}) (spec-0014)"
+            "{title}: damage subtracts {amount} half-hearts ({type_id}) (spec-0014)"
         ));
         t.push(format!("function {ns}:setup"));
         // A body where this template's own PackTest dummy stands: NoAI so it
@@ -1341,9 +1341,9 @@ pub(super) fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
     }
 }
 
-/// The `(amount, damage_type)` of the first `damage-players` effect declared in the
+/// The `(amount, damage_type)` of the first `damage` effect declared in the
 /// campaign (deep-walked through nested effect lists), in quest-then-trigger order.
-/// `None` when the campaign uses no `damage-players`. Drives the damage PackTest.
+/// `None` when the campaign uses no `damage`. Drives the damage PackTest.
 fn first_damage_players(
     c: &delvewright_dsl::Campaign,
 ) -> Option<(u32, delvewright_dsl::DamageKind)> {
@@ -1353,7 +1353,7 @@ fn first_damage_players(
         if found.is_none() {
             eff.visit_deep(&mut |e| {
                 if found.is_none()
-                    && let Verb::DamagePlayers {
+                    && let Verb::Damage {
                         amount,
                         damage_type,
                         ..
@@ -1366,7 +1366,7 @@ fn first_damage_players(
     };
     // Every root, inherited. Strictly additive: the roots keep their order, so the
     // "first" effect is unchanged for any campaign that has one in R1-R3 — this only
-    // ever finds a `damage-players` where the generator previously found none and
+    // ever finds a `damage` where the generator previously found none and
     // emitted no damage PackTest at all.
     crate::compiler::plan::for_each_effect_root(c, &mut |_site, effs| {
         for eff in effs {

@@ -352,7 +352,7 @@ export const methods = {
    * **A `sneak` leg is exempt from all of it.** `sneak: true` is the delve
    * declaring that stealth, not combat, is the mechanic on this leg, and a stealth
    * section runs on a clock: nobodys-cave-island's `begin-stealth` gives 90 ticks
-   * of grace outside a safe zone and answers a miss with `damage-players 40` — an
+   * of grace outside a safe zone and answers a miss with `damage 40` — an
    * instant kill. The stealth damage itself carries NO source entity, so it is
    * attributed to the nearest hostile — the (Invulnerable) warden the delve wants
    * the player to creep past — and staging it away would be the harness answering

@@ -39,7 +39,7 @@
 //! and reading only that would make this module wrong by 2× in the *lenient*
 //! direction. Difficulty scaling is a property of the DAMAGE TYPE: a type scales
 //! only when its `scaling` field says so for the attacker at hand, and
-//! `damage-players` emits a bare `/damage <target> <amount> <type>` with **no
+//! `damage` emits a bare `/damage <target> <amount> <type>` with **no
 //! attacker at all**. Eight of the nine types the DSL exposes are
 //! `when_caused_by_living_non_player` — i.e. unscaled here. Only
 //! `minecraft:explosion` (`always`) is scaled. The arithmetic states which rule
@@ -288,7 +288,7 @@ fn difficulty_scaled(amount: f64, difficulty: WorldDifficulty) -> f64 {
     }
 }
 
-/// What a declared `damage-players` amount actually lands as, and the one-line
+/// What a declared `damage` amount actually lands as, and the one-line
 /// statement of how that number was reached.
 ///
 /// Returns `None` when the compiler declines to adjudicate: an armour-respecting
@@ -322,7 +322,7 @@ pub fn incoming_damage(
             raw,
             format!(
                 "{raw}, UNSCALED: damage type {damage_type} has scaling=\"{}\", and \
-                 `damage-players` emits `/damage` with no attacker — so difficulty \
+                 `damage` emits `/damage` with no attacker — so difficulty \
                  ({}) does not touch it",
                 facts.scaling,
                 difficulty.token()
@@ -1229,7 +1229,7 @@ pub fn check_winnability(
                  {PLAYER_MAX_HEALTH}, or move the consequence onto a beat the party can play \
                  around (a trap with a telegraph, a caught-in-stealth reaction). Note the \
                  arithmetic above states the damage type's own scaling rule — do NOT assume the \
-                 Easy halving applies: `damage-players` emits `/damage` with no attacker, so \
+                 Easy halving applies: `damage` emits `/damage` with no attacker, so \
                  only a `scaling=\"always\"` type is ever scaled.",
                 lethal.join("\n")
             ),
@@ -1239,7 +1239,7 @@ pub fn check_winnability(
     Ok(warnings)
 }
 
-/// Walk an effect bundle for `damage-players` hits the party cannot dodge.
+/// Walk an effect bundle for `damage` hits the party cannot dodge.
 ///
 /// Descends `sequence` steps (a timeline is still the same unconditional
 /// bundle), and deliberately stops at every reaction list — `on_respawn`,
@@ -1254,7 +1254,7 @@ fn collect_unconditional_damage(
 ) {
     for (i, e) in effects.iter().enumerate() {
         match &e.verb {
-            Verb::DamagePlayers {
+            Verb::Damage {
                 amount,
                 damage_type,
                 ..

@@ -194,15 +194,21 @@ crate::dw_code! {
 /// * `DW0944` — in one timeline, a sight grant whose window overlaps a cutscene
 ///   step's and ends inside it or within its own wind-down after it.
 pub(crate) fn perception_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    fn descend(stage: &'static str, path: String, eff: &QuestEffect, d: &mut Vec<Diagnostic>) {
-        perception_one(stage, &path, eff, d);
+    fn descend(
+        c: &Campaign,
+        stage: &'static str,
+        path: String,
+        eff: &QuestEffect,
+        d: &mut Vec<Diagnostic>,
+    ) {
+        perception_one(c, stage, &path, eff, d);
         for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
             if !matches!(eff.verb, Verb::Sequence { .. }) {
                 // A nested bundle is a timeline of one step, at tick 0.
                 sight_under_camera(stage, &[(0, format!("{path}/{pseg}"), list)], d);
             }
             for (j, inner) in list.iter().enumerate() {
-                descend(stage, format!("{path}/{pseg}/{j}"), inner, d);
+                descend(c, stage, format!("{path}/{pseg}/{j}"), inner, d);
             }
         }
     }
@@ -210,13 +216,19 @@ pub(crate) fn perception_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
         // A root's bundle fires all at once: a timeline of one step, at tick 0.
         sight_under_camera(site.stage, &[(0, site.path.clone(), effs)], d);
         for (i, eff) in effs.iter().enumerate() {
-            descend(site.stage, format!("{}/{i}", site.path), eff, d);
+            descend(c, site.stage, format!("{}/{i}", site.path), eff, d);
         }
     });
 }
 
 /// One effect's perception rules, at the pointer it was found at.
-fn perception_one(stage: &'static str, path: &str, eff: &QuestEffect, d: &mut Vec<Diagnostic>) {
+fn perception_one(
+    c: &Campaign,
+    stage: &'static str,
+    path: &str,
+    eff: &QuestEffect,
+    d: &mut Vec<Diagnostic>,
+) {
     use crate::perception;
     if let Verb::Particle {
         particle, count, ..
@@ -259,6 +271,69 @@ fn perception_one(stage: &'static str, path: &str, eff: &QuestEffect, d: &mut Ve
             ));
         }
     }
+    // spec-0134 §9: a body audience is admitted on a verb that acts on a body,
+    // and names a body the campaign declares; `by` credits a player, so it
+    // stands only beside a body audience.
+    if let Some(aud) = &eff.audience
+        && aud.is_body()
+    {
+        if eff.addresses_players() && !eff.verb.addresses_bodies() {
+            d.push(Diagnostic::error(
+                PERCEPTION_AUDIENCE_ON_A_PARTY_FACT,
+                stage,
+                format!("{path}/audience"),
+                format!(
+                    "`{}` declares a body audience (`{{\"{}\": …}}`), and a `{}` reaches a \
+                     player only — a line is read, a sound heard, an item carried by a player, \
+                     never by a mob. A wave's or an actor's bodies are the audience of \
+                     `give-effect`, `clear-effect` and `damage`. Address the party here, or \
+                     move the body audience onto one of those",
+                    eff.verb.tag(),
+                    aud.token(),
+                    eff.verb.tag()
+                ),
+            ));
+        }
+        let q = &c.quests.content;
+        let (known, what, id) = match aud {
+            crate::EffectAudience::Wave(w) => (
+                q.waves.iter().any(|x| x.id == *w),
+                "wave",
+                w.as_str().to_string(),
+            ),
+            crate::EffectAudience::Body(a) => (
+                q.actors.iter().any(|x| x.id == *a),
+                "actor",
+                a.as_str().to_string(),
+            ),
+            _ => (true, "", String::new()),
+        };
+        if !known {
+            d.push(Diagnostic::error(
+                codes::DANGLING_REF,
+                stage,
+                format!("{path}/audience/{what}"),
+                format!("the audience names {what} `{id}`, which stage 5 does not declare."),
+            ));
+        }
+    }
+    if let Verb::Damage { by: Some(_), .. } = &eff.verb
+        && !eff
+            .audience
+            .as_ref()
+            .is_some_and(crate::EffectAudience::is_body)
+    {
+        d.push(Diagnostic::error(
+            PERCEPTION_AUDIENCE_ON_A_PARTY_FACT,
+            stage,
+            format!("{path}/by"),
+            "`damage` declares `by: actor` on an audience of players. `by` credits the acting \
+             player as the source of damage dealt to a body — it knocks a wave's or an \
+             actor's bodies back from them — and a player is never damaged by another here. \
+             Name a body audience (`{\"wave\": …}` or `{\"actor\": …}`), or remove `by`"
+                .to_string(),
+        ));
+    }
     if !eff.addresses_players() {
         for (field, present) in [
             ("audience", eff.audience.is_some()),
@@ -274,7 +349,7 @@ fn perception_one(stage: &'static str, path: &str, eff: &QuestEffect, d: &mut Ve
                          addresses no player, so there is no audience to narrow. `audience` and \
                          `in` belong on the effects a player sees, hears or receives (`narrate`, \
                          `play-sound`, `particle`, `give-effect`, `clear-effect`, \
-                         `damage-players`, `give-item`); a `sequence`'s steps each state their \
+                         `damage`, `give-item`); a `sequence`'s steps each state their \
                          own. Remove `{field}` here, or move it onto those effects",
                         eff.verb.tag(),
                         eff.verb.tag()

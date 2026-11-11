@@ -10,7 +10,7 @@ use super::*;
 ///
 /// It exists because every anchor consumer in [`emit_quest_effect`] fails *open*:
 /// `open-gate`/`close-gate` scan `plan.anchors` for a name match and simply fall
-/// out of the loop, `set-block`/`set-checkpoint`/`play-sound`/`damage-players`
+/// out of the loop, `set-block`/`set-checkpoint`/`play-sound`/`damage`
 /// bail out of an `if let Some(pos)`, and a cutscene waypoint silently degrades to
 /// `[0, BASE_Y, 0]`. A single typo'd anchor therefore used to emit **nothing** —
 /// a gate that never opens, a checkpoint that never binds — and shipped a broken
@@ -179,7 +179,7 @@ pub(super) fn fired_only_by_global_roots(c: &delvewright_dsl::Campaign, wave_id:
 /// [`plan::PARTY`] holder, so a *party-fact* effect (`set-flag`, `open-gate`,
 /// `spawn-*`, `set-checkpoint`, a driver start, …) names no player at all and
 /// fires exactly once, under every audience. Only *player-facing* effects
-/// (`narrate`, `play-sound`, `damage-players`, `give-item`) need a selector, and
+/// (`narrate`, `play-sound`, `damage`, `give-item`) need a selector, and
 /// that selector is what this enum decides.
 ///
 /// **The scheduled-executor bug this still models (AUDIT-P0).** Vanilla's
@@ -412,14 +412,87 @@ pub(super) const AIR: &str = "minecraft:air";
 /// Byte impact: none for an effect that states no `audience`.
 pub(super) fn effect_audience(eff: &QuestEffect, aud: Audience) -> Audience {
     use delvewright_dsl::EffectAudience;
-    match eff.audience {
+    match &eff.audience {
         None => aud,
         Some(EffectAudience::Actor) if aud.has_actor() => Audience::Solo,
         Some(EffectAudience::Actor) => aud,
         Some(EffectAudience::Party) if aud.has_actor() => Audience::Party,
         Some(EffectAudience::Party) => Audience::Scheduled,
+        // A body audience is resolved by `emit_body_effect`, never here.
+        Some(EffectAudience::Wave(_) | EffectAudience::Body(_)) => aud,
     }
 }
+
+/// **An effect aimed at bodies** (spec-0134 §9): the selector of a wave's or
+/// an actor's bodies, through the tag the engine puts on them, narrowed by the
+/// envelope's `in` box — or `None` when the audience names players.
+pub(super) fn body_selector(plan: &Plan, eff: &QuestEffect) -> Option<Option<String>> {
+    use delvewright_dsl::EffectAudience;
+    let tag = match eff.audience.as_ref()? {
+        EffectAudience::Wave(w) => plan::wave_tag(w.as_str()),
+        EffectAudience::Body(a) => format!("dw_actor_{}", plan::safe_local(a.as_str())),
+        EffectAudience::Party | EffectAudience::Actor => return None,
+    };
+    Some(match eff.within.as_ref() {
+        None => Some(format!("@e[tag={tag}]")),
+        Some(zone) => plan.zone_box(zone).map(|(lo, hi)| {
+            // A box carries the one class exclusion every box-narrowed
+            // entity selector here does (`DW0545`).
+            format!(
+                "@e[tag={tag},{},tag=!{}]",
+                box_selector_args(lo, hi),
+                crate::compiler::affordance::FIXTURE_TAG
+            )
+        }),
+    })
+}
+
+/// The commands of a `give-effect`, `clear-effect` or `damage` aimed at the
+/// bodies `sel` names (spec-0134 §9). `damage … by: actor` credits the acting
+/// player: they are tagged for the line, so each body's `damage` names them
+/// as its source while `@s` is the body.
+fn emit_body_effect(eff: &QuestEffect, sel: &str, body: &mut Vec<String>) {
+    match &eff.verb {
+        Verb::GiveEffect { .. } => {
+            if let Some((effect, seconds, amplifier, hide, _)) = eff.give_effect() {
+                body.push(effect_give_command(sel, effect, seconds, amplifier, hide));
+            }
+        }
+        Verb::ClearEffect { .. } => {
+            if let Some((effect, _)) = eff.clear_effect() {
+                body.push(match effect {
+                    Some(id) => format!("effect clear {sel} {id}"),
+                    None => format!("effect clear {sel}"),
+                });
+            }
+        }
+        Verb::Damage {
+            amount,
+            damage_type,
+            by,
+        } => {
+            let kind = damage_type
+                .unwrap_or(delvewright_dsl::DamageKind::Generic)
+                .id();
+            match by {
+                Some(delvewright_dsl::DamageBy::Actor) => {
+                    body.push(format!("tag @s add {DAMAGE_SOURCE_TAG}"));
+                    body.push(format!(
+                        "execute as {sel} run damage @s {amount} {kind} by @a[tag={DAMAGE_SOURCE_TAG},limit=1]"
+                    ));
+                    body.push(format!("tag @s remove {DAMAGE_SOURCE_TAG}"));
+                }
+                None => body.push(format!("execute as {sel} run damage @s {amount} {kind}")),
+            }
+        }
+        // Refused at validation (`DW0942`): a body hears, reads and carries nothing.
+        _ => {}
+    }
+}
+
+/// The tag the acting player wears for the one line a `damage … by: actor`
+/// credits them in (spec-0134 §9).
+pub(super) const DAMAGE_SOURCE_TAG: &str = "dw_damage_by";
 
 /// **One effect's emitted commands, under a party or a solo bundle** — the
 /// instrument `crates/delvec/tests/it/v35_perception.rs` binds
@@ -444,7 +517,7 @@ pub fn effect_commands(plan: &Plan, eff: &QuestEffect, solo: bool) -> Vec<String
 ///
 /// The envelope's `audience` and `in` (spec-0085 §3.2) are resolved here, once,
 /// for every verb the emitter addresses to players: `who` is the audience's
-/// selector narrowed by the `in` box. `damage-players` takes the box apart from
+/// selector narrowed by the `in` box. `damage` takes the box apart from
 /// the selector, because its own filter carries the cutscene guard beside it.
 pub(super) fn emit_quest_effect(
     plan: &Plan,
@@ -453,11 +526,16 @@ pub(super) fn emit_quest_effect(
     body: &mut Vec<String>,
 ) {
     let ns = &plan.namespace;
+    if let Some(sel) = body_selector(plan, eff) {
+        // An unresolved `in` box is `DW0142` at validation.
+        if let Some(sel) = sel {
+            emit_body_effect(eff, &sel, body);
+        }
+        return;
+    }
     let aud = effect_audience(eff, aud);
     let narrowed: String = match eff.within.as_ref() {
-        Some(zone)
-            if eff.addresses_players() && !matches!(eff.verb, Verb::DamagePlayers { .. }) =>
-        {
+        Some(zone) if eff.addresses_players() && !matches!(eff.verb, Verb::Damage { .. }) => {
             // An unresolved box is `DW0142` at validation; emitting a selector with
             // a blank box would be an invalid command rather than a diagnosis.
             match effect_selector(plan, aud.selector(), Some(zone)) {
@@ -647,6 +725,13 @@ pub(super) fn emit_quest_effect(
                 plan::safe_local(wave.as_str())
             ));
         }
+        // spec-0134 §6: a fill that waits for its beat runs its own function.
+        Verb::FillLoot { loot } => {
+            body.push(format!(
+                "function {ns}:{}",
+                super::loot::fill_fn(loot.as_str())
+            ));
+        }
         // spec-0133 §2: the removal the wave's re-seat performs, alone.
         Verb::DespawnWave { wave } => {
             if let Some(w) = plan
@@ -773,7 +858,7 @@ pub(super) fn emit_quest_effect(
         Verb::StopSound { category, sound } => {
             body.push(stop_sound_command(who, *category, sound.as_deref()));
         }
-        Verb::DamagePlayers {
+        Verb::Damage {
             amount,
             damage_type,
             ..
@@ -1172,7 +1257,7 @@ pub(super) fn emit_particle(
     }
 }
 
-/// Emit a `damage-players` effect (DSL v0.6). `who` is the audience selector
+/// Emit a `damage` effect (DSL v0.6). `who` is the audience selector
 /// (spec-0018): `@a` on a party beat — the hazard is a fact about the delve, so
 /// it hits every party member once — and `@s` inside a solo `on_caught` /
 /// `on_respawn` bundle, where exactly the one player it belongs to is hurt.

@@ -37,6 +37,28 @@ pub struct Loot {
     /// `contents`), the second in `container.1`, and so on (ADR-0006: no RNG,
     /// no loot tables); a stack that names its `slot` lands there.
     pub items: Vec<LootItem>,
+    /// **When the holder is filled** (DSL v0.73, spec-0134 §6): `at-load` (the
+    /// default) in `setup_finish` at world init; `by-effect` by the
+    /// `fill-loot` verb from whichever bundle the story fires it in.
+    #[serde(default, skip_serializing_if = "LootFilled::is_at_load")]
+    pub filled: LootFilled,
+}
+
+/// When a [`Loot`] fill runs (spec-0134 §6).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum LootFilled {
+    /// At world init, in `setup_finish` (the default).
+    #[default]
+    AtLoad,
+    /// By a `fill-loot` effect.
+    ByEffect,
+}
+
+impl LootFilled {
+    fn is_at_load(&self) -> bool {
+        *self == LootFilled::AtLoad
+    }
 }
 
 /// One stack inside a [`Loot`] container.
@@ -720,5 +742,68 @@ pub(crate) fn stack_fireworks_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     }
     for (path, stage, message) in found {
         d.push(Diagnostic::error(codes::SCHEMA, stage, path, message));
+    }
+}
+
+crate::dw_code! {
+    /// (spec-0134 §6) A fill and its beat disagree: a `by-effect` fill no
+    /// bundle fires (it is declared and never emitted into the world), or a
+    /// `fill-loot` of an `at-load` fill (a second fill of a filled holder).
+    pub const LOOT_FILL_UNFIRED: DwCode = DwCode::new("DW1093", ExitTier::Build);
+}
+
+/// **A fill and the beat that fires it** (spec-0134 §6): every `fill-loot`, at
+/// every effect root and nesting depth, names a declared fill (`DW0112`) that
+/// waits for it (`DW1093`); every `by-effect` fill is named by at least one
+/// `fill-loot` (`DW1093`). One rule, two messages.
+pub(crate) fn loot_fill_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let loot = &c.quests.content.loot;
+    let mut fired: BTreeSet<String> = BTreeSet::new();
+    crate::for_each_campaign_effect(c, &mut |path, _site, eff| {
+        let Some(id) = eff.fill_loot() else {
+            return;
+        };
+        let stage = if path.starts_with("/content/dialogues") {
+            "dialogue"
+        } else {
+            "quests"
+        };
+        fired.insert(id.as_str().to_string());
+        match loot.iter().find(|l| l.id == *id) {
+            None => d.push(Diagnostic::error(
+                codes::DANGLING_REF,
+                stage,
+                format!("{path}/loot"),
+                format!("`fill-loot` names `{id}`, which no `loot[]` entry declares."),
+            )),
+            Some(l) if l.filled == LootFilled::AtLoad => d.push(Diagnostic::error(
+                LOOT_FILL_UNFIRED,
+                stage,
+                format!("{path}/loot"),
+                format!(
+                    "`fill-loot` fills `{id}`, and `{id}` is already filled at load (`filled` is \
+                     `at-load`, the default), so this would write its holder a second time over \
+                     whatever the party left there. Declare `\"filled\": \"by-effect\"` on \
+                     `{id}` so the beat is its only fill, or remove the `fill-loot`."
+                ),
+            )),
+            Some(_) => {}
+        }
+    });
+    for (i, l) in loot.iter().enumerate() {
+        if l.filled == LootFilled::ByEffect && !fired.contains(l.id.as_str()) {
+            d.push(Diagnostic::error(
+                LOOT_FILL_UNFIRED,
+                "quests",
+                format!("/content/loot/{i}/filled"),
+                format!(
+                    "`{}` waits for its beat (`filled: by-effect`), and no bundle fires a \
+                     `fill-loot` of it, so its holder stays empty for the whole delve. Add a \
+                     `fill-loot` naming `{}` to the beat that fills it, or remove `filled` so it \
+                     is filled at load.",
+                    l.id, l.id
+                ),
+            ));
+        }
     }
 }

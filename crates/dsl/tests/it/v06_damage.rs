@@ -1,4 +1,4 @@
-//! DSL v0.6 `damage-players` (spec-0014): the stealth/souls consequence verb.
+//! DSL v0.6 `damage` (spec-0014): the stealth/souls consequence verb.
 //! Validates under `dsl_version 0.6.0`; an unknown
 //! `damage_type` is a schema rejection (`DW0100`); an `in` filter-zone anchor the
 //! prefab does not provide is `DW0142`; per-effect `requires_flags` is allowed
@@ -30,7 +30,7 @@ static QUESTS_V06: LazyLock<String> = LazyLock::new(|| {
           "obj/talk": [ { "type": "open-gate", "anchor": "anchor/door" } ]
         },
         "on_complete": [
-          { "type": "damage-players", "amount": 40, "damage_type": "wither" },
+          { "type": "damage", "amount": 40, "damage_type": "wither" },
           { "type": "campaign-complete" }
         ]
       }
@@ -57,13 +57,13 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
     }
 }
 
-/// `damage-players` (with a curated `damage_type`) validates clean under 0.6.0.
+/// `damage` (with a curated `damage_type`) validates clean under 0.6.0.
 #[test]
 fn damage_players_validates_clean() {
     let diags = check_campaign(&campaign_with_quests(QUESTS_V06.as_str()));
     assert!(
         diags.is_empty(),
-        "expected zero diagnostics for a v0.6 damage-players, got: {diags:#?}"
+        "expected zero diagnostics for a v0.6 damage, got: {diags:#?}"
     );
 }
 
@@ -79,22 +79,22 @@ fn unknown_damage_type_is_dw0100() {
     );
 }
 
-/// A `damage-players` `in` anchor the prefab does not provide is `DW0142`.
+/// A `damage` `in` anchor the prefab does not provide is `DW0142`.
 #[test]
 fn damage_players_unresolved_in_anchor_is_dw0142() {
     let scoped = QUESTS_V06.replace(
-        r#"{ "type": "damage-players", "amount": 40, "damage_type": "wither" }"#,
-        r#"{ "type": "damage-players", "amount": 6,
+        r#"{ "type": "damage", "amount": 40, "damage_type": "wither" }"#,
+        r#"{ "type": "damage", "amount": 6,
              "in": { "anchor": "anchor/nope", "extent": [2, 2, 2] } }"#,
     );
     let diags = check_campaign(&campaign_with_quests(&scoped));
     assert!(
         diags.iter().any(|d| d.code == "DW0142"),
-        "an unresolved damage-players `in` anchor must be DW0142: {diags:#?}"
+        "an unresolved damage `in` anchor must be DW0142: {diags:#?}"
     );
 }
 
-/// `damage-players` accepts a per-effect `requires_flags` (it is a per-`@s` verb,
+/// `damage` accepts a per-effect `requires_flags` (it is a per-`@s` verb,
 /// unlike the party/session-global checkpoint/stealth verbs); the flag must resolve
 /// to a `set-flag` producer (`DW0172`).
 #[test]
@@ -106,14 +106,14 @@ fn damage_players_requires_flags_resolves() {
                          { "type": "set-flag", "flag": "flag/doomed" } ]"#,
     );
     let gated = gated.replace(
-        r#"{ "type": "damage-players", "amount": 40, "damage_type": "wither" }"#,
-        r#"{ "type": "damage-players",
+        r#"{ "type": "damage", "amount": 40, "damage_type": "wither" }"#,
+        r#"{ "type": "damage",
              "when": { "requires_flags": ["flag/doomed"] }, "amount": 40, "damage_type": "wither" }"#,
     );
     let diags = check_campaign(&campaign_with_quests(&gated));
     assert!(
         diags.is_empty(),
-        "damage-players with a resolvable requires_flags must validate clean: {diags:#?}"
+        "damage with a resolvable requires_flags must validate clean: {diags:#?}"
     );
 
     // An unresolved flag is DW0172.
@@ -121,6 +121,6 @@ fn damage_players_requires_flags_resolves() {
     let diags = check_campaign(&campaign_with_quests(&bad));
     assert!(
         diags.iter().any(|d| d.code == "DW0172"),
-        "an unresolved damage-players requires_flags must be DW0172: {diags:#?}"
+        "an unresolved damage requires_flags must be DW0172: {diags:#?}"
     );
 }

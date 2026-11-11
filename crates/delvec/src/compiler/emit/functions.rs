@@ -795,6 +795,7 @@ pub(super) fn emit_functions(
     // spec-0021: fill each declared container. Empty for a campaign with no
     // `loot` -> byte-identical.
     setup.extend(loot_setup(&plan.loot, holders));
+    fns.extend(loot_fill_fns(&plan.loot, holders));
     // spec-0128 §8: write each sign text into the sign the piece placed.
     // Empty for a campaign with no `signs` -> byte-identical.
     setup.extend(sign_setup(&plan.signs));

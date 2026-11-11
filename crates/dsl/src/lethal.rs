@@ -8,7 +8,15 @@ use crate::{Guard, LethalVolumeId, StealthZone};
 #[cfg(doc)]
 use crate::Verb;
 
-/// The damage type of a [`Verb::DamagePlayers`] effect (DSL v0.6). A
+/// The source a `damage` effect credits (spec-0134 §9).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum DamageBy {
+    /// The acting player: the body is knocked back from them.
+    Actor,
+}
+
+/// The damage type of a [`Verb::Damage`] effect (DSL v0.6). A
 /// **curated** subset of the vanilla 1.21.11 damage-type registry: every variant
 /// respects the `keepInventory` death flow (a gamerule, so all deaths do) and does
 /// **not** bypass a totem of undying — the totem-bypassing `out_of_world` /
@@ -82,7 +90,7 @@ impl DamageKind {
 ///
 /// # It rides the death edge that already exists
 ///
-/// The kill is a `/damage`, exactly like `damage-players`, a trap payload or a
+/// The kill is a `/damage`, exactly like `damage`, a trap payload or a
 /// timed gate's crush. Everything downstream — the vanilla `deathCount` edge
 /// (`dw.deaths` / `dw.death_ack`), the checkpoint re-seat (`cp_respawn_check`),
 /// `keep_inventory` — sees an ordinary death and needs no second detector.
@@ -95,7 +103,7 @@ pub struct LethalVolume {
     ///
     /// **Deliberately the existing zone type**, not a second struct with the same
     /// two fields. `StealthZone` is already the engine's anchor-centred box object
-    /// class — `damage-players`'s `in` filter reuses it, and the compiler resolves
+    /// class — `damage`'s `in` filter reuses it, and the compiler resolves
     /// every one of them through the single `Plan::zone_box`. A private twin here
     /// would be `tools/ci/check-capability-ownership.py` check C by construction, and
     /// would fork the resolution the very next time a box grew a capability.
@@ -112,7 +120,7 @@ pub struct LethalVolume {
     /// This is what words vanilla's own broadcast — `fall` says the party member
     /// fell from a high place, `on_fire` that they burnt to a crisp — while
     /// [`Self::message`] says what the *place* was. The curated enum is shared
-    /// with `damage-players`, so a lethal volume can no more void a held totem
+    /// with `damage`, so a lethal volume can no more void a held totem
     /// than a scripted hit can.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub damage_type: Option<DamageKind>,

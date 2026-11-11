@@ -141,7 +141,7 @@ pub struct AssemblyStrikes {
     /// Aim (spec-0082 §5.7). Absent: every blow lands where its `on_land`
     /// boxes say. Present: at the start of every wind-up the assembly turns to
     /// the one of its declared facings nearest the bearing of the nearest
-    /// player in `while_in`, and every `damage-players` box in `on_land` turns
+    /// player in `while_in`, and every `damage` box in `on_land` turns
     /// with it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aim: Option<StrikeAim>,
@@ -187,7 +187,7 @@ pub struct StrikeStep {
     /// in, turns the assembly to it and strikes it with whichever of `strike`
     /// and `lock.reaches` the compiler proved comes down there. The blow's area
     /// is then the cells that clip comes down on, derived by the compiler: a
-    /// `damage-players` in a locked step declares no `in` (`DW0969`). Absent:
+    /// `damage` in a locked step declares no `in` (`DW0969`). Absent:
     /// the blow lands where its `on_land` boxes say.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lock: Option<StrikeLock>,
@@ -277,13 +277,13 @@ crate::dw_code! {
 crate::dw_code! {
     /// (spec-0094 §5.2) **A locked strike's blow is declared where the lock
     /// derives it.** A locked step's blow lands on the cells its chosen
-    /// clip comes down on at the locked turn, so a `damage-players` at the
-    /// top of its `on_land` that declares an `in` box, any `damage-players`
+    /// clip comes down on at the locked turn, so a `damage` at the
+    /// top of its `on_land` that declares an `in` box, any `damage`
     /// nested inside another effect's list there (it cannot be moved with
     /// the lock), and a locked step in a pattern that also declares `aim`
     /// (two rules choosing one turn) are refused, each naming the field.
     /// Validation-tier (exit 1). Prescription: drop the `in`, lift the
-    /// `damage-players` to the top of `on_land`, or drop `aim` or `lock`.
+    /// `damage` to the top of `on_land`, or drop `aim` or `lock`.
     pub const ASSEMBLY_LOCK_SHAPE: DwCode = DwCode::new("DW0969", ExitTier::Build);
 }
 
@@ -618,8 +618,8 @@ fn assembly_verb(e: &QuestEffect) -> Option<(&str, Option<&str>)> {
 /// spec-0094 §5.2 (`DW0969`): **a locked step's blow is the lock's to place.**
 /// A locked step lands on the cells its chosen clip comes down on at the turn
 /// it locked to, so a box an author writes cannot be where the blow lands: a
-/// top-level `damage-players` in its `on_land` declares no `in`, no
-/// `damage-players` stands inside another effect's list there, and a pattern
+/// top-level `damage` in its `on_land` declares no `in`, no
+/// `damage` stands inside another effect's list there, and a pattern
 /// that turns by `aim` has no locked step.
 fn lock_shape_checks(
     a: &crate::Assembly,
@@ -630,7 +630,7 @@ fn lock_shape_checks(
     fn nested_damage(effs: &[QuestEffect], path: &str, out: &mut Vec<String>) {
         for (k, e) in effs.iter().enumerate() {
             let here = format!("{path}/{k}");
-            if matches!(e.verb, Verb::DamagePlayers { .. }) {
+            if matches!(e.verb, Verb::Damage { .. }) {
                 out.push(here.clone());
             }
             for (seg, _, list) in e.nested_effect_lists_labeled() {
@@ -660,14 +660,14 @@ fn lock_shape_checks(
         }
         for (k, e) in step.on_land.iter().enumerate() {
             let p = format!("{here}/on_land/{k}");
-            if matches!(e.verb, Verb::DamagePlayers { .. }) && e.damage_within().is_some() {
+            if matches!(e.verb, Verb::Damage { .. }) && e.damage_within().is_some() {
                 d.push(Diagnostic::error(
                     ASSEMBLY_LOCK_SHAPE,
                     "quests",
                     format!("{p}/in"),
                     format!(
                         "assembly `{}`'s strike step {j} locks onto a player, and its \
-                         `damage-players` ({p}) declares an `in` box. A locked blow lands on the \
+                         `damage` ({p}) declares an `in` box. A locked blow lands on the \
                          cells its clip comes down on at the turn it locked to — the compiler \
                          derives that area for every cell it can lock, so a written box is a \
                          second, fixed answer that is wrong at every other cell. Drop the `in`",
@@ -686,7 +686,7 @@ fn lock_shape_checks(
                     q.clone(),
                     format!(
                         "assembly `{}`'s strike step {j} locks onto a player, and a \
-                         `damage-players` ({q}) stands inside another effect's list. Only a blow \
+                         `damage` ({q}) stands inside another effect's list. Only a blow \
                          at the top of a locked step's `on_land` is moved to the cells the clip \
                          comes down on; this one would land nowhere the lock chose. Move it to the \
                          top of `on_land` (a `when` on it is kept)",

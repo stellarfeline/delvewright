@@ -164,7 +164,7 @@ test("the carry is judged by the selector's rule: a hitbox meeting the box was i
 test("weather, health and effects are read off the bot's own state", () => {
   const rows: AftermathEntry[] = [
     { path: "/a", verb: "set-weather", observable: { kind: "weather", weather: "rain" } },
-    { path: "/b", verb: "damage-players", observable: { kind: "health", amount: 4 } },
+    { path: "/b", verb: "damage", observable: { kind: "health", amount: 4 } },
     { path: "/c", verb: "give-effect", observable: { kind: "effect", effect: "minecraft:slowness" } },
     { path: "/d", verb: "clear-effect", observable: { kind: "no-effect", effect: null } },
   ];
