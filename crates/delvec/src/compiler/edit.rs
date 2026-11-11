@@ -705,6 +705,15 @@ fn check_batch_invariants(
     // proofs below can never see (they model walkability and light, not whether
     // a dispenser is still a dispenser).
     check_trap_hardware(plan, bid, batch_writes)?;
+    // The world the final build's proofs judge (`Assembled::judged_within`,
+    // the boundary's playable region grown by its margin), here as there:
+    // ground past it is placed and judged by nothing, and a re-check over the
+    // whole placed world walked a window more than twice the build's own.
+    let columns = crate::compiler::emit::judged_columns(plan);
+    let judged = columns.and_then(|(lo, hi)| assembled.judged_within(lo, hi));
+    let assembled = judged.as_ref().map_or(assembled, |(a, _)| a);
+    let judged_before = before.and_then(|b| columns.and_then(|(lo, hi)| b.judged_within(lo, hi)));
+    let before = judged_before.as_ref().map(|(a, _)| a).or(before);
     let geometry = crate::compiler::light::geometry_world(assembled);
     // The darkness re-check is charged what the batch changes, against the
     // world it was written over (`DW1042`): never the whole island again.
