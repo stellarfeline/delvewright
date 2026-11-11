@@ -4057,7 +4057,7 @@
               "wave": "wave/yard-hen"
             }
           ],
-          "obj/ride-clover": [
+          "obj/row-the-basin": [
             {
               "type": "despawn-vehicle",
               "vehicle": "vehicle/race-pig"
