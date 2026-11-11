@@ -222,17 +222,15 @@ export const methods = {
       reading = await this.readRide(tag);
     }
     if (!reading.riding) failRide("the server did not seat the bot on the vehicle after the click");
+    // DIAGNOSTIC (one run): does the bot hold the boarding advancement now.
+    bot.chat(`/execute if entity @s[advancements={gallery:vehicle_board=true}] run say DIAG ${step.kind} boarding advancement HELD`);
+    bot.chat(`/execute unless entity @s[advancements={gallery:vehicle_board=true}] run say DIAG ${step.kind} boarding advancement not held`);
     const start = reading.pos;
     let reported = 0;
     // Where the server held a waited-for rider, reading by reading: said when
     // the ride does not arrive.
     const trace: string[] = [];
     if (step.kind === "minecart") {
-      // DIAGNOSTIC (one run): the push by hand, four seconds in.
-      setTimeout(() => {
-        const f = step.medium[1]!;
-        bot.chat(`/execute on vehicle run data merge entity @s[tag=${tag}] {Motion:[${(f[0] - seat[0]) * 0.3}d,0.0d,${(f[2] - seat[2]) * 0.3}d]}`);
-      }, 4000);
       const travel = step.medium.length / step.rate;
       const by = Date.now() + travel * 1000 + MOUNT_GRACE_MS + 2000;
       const t0 = Date.now();
