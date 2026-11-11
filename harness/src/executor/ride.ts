@@ -228,6 +228,10 @@ export const methods = {
     // the ride does not arrive.
     const trace: string[] = [];
     if (step.kind === "minecart") {
+      // DIAGNOSTIC (one run): what the server holds as the cart's motion.
+      bot.chat(`/data get entity @e[tag=${tag},limit=1] Motion`);
+      bot.chat(`/data get entity @e[tag=${tag},limit=1] Tags`);
+      bot.chat(`/execute on vehicle run data get entity @s Motion`);
       const travel = step.medium.length / step.rate;
       const by = Date.now() + travel * 1000 + MOUNT_GRACE_MS + 2000;
       const t0 = Date.now();
