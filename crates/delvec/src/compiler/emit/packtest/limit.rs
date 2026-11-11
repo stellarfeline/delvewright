@@ -205,12 +205,25 @@ pub(super) fn emit_limit_packtests(plan: &Plan, out: &mut BuildOutput) {
                 ));
             }
             // Every driver of the objective is closed: its guard no longer holds,
-            // with its gate held open again in this same tick — a census the
-            // engine rewrote, or a datum `on_expire` moved, cannot close it in
-            // the expired term's place.
+            // with every other term of it held open again in this same tick —
+            // the quest the settlement may have completed, the `after`
+            // ancestors, the gate (a census the engine rewrote, a datum
+            // `on_expire` moved) — so only the expired term can close it. The
+            // answer is written whichever way the guard goes: a guard whose
+            // early term fails ends the command before a `store` writes, and
+            // the holder then had no score to assert.
+            b.push(format!("scoreboard players set {} {qa} 1", plan::PARTY));
+            for a in ancestors(q, oid) {
+                b.push(format!(
+                    "scoreboard players set {} {} 1",
+                    plan::PARTY,
+                    after_score(c, a.id().as_str())
+                ));
+            }
             b.extend(packtest_gate_drive(plan, o.gate(), true));
+            b.push(format!("scoreboard players set #lim_open_{safe} dw.sys 0"));
             b.push(format!(
-                "execute store success score #lim_open_{safe} dw.sys{}",
+                "execute{} run scoreboard players set #lim_open_{safe} dw.sys 1",
                 pending_guard(plan, o, &qa)
             ));
             b.push(format!("assert score #lim_open_{safe} dw.sys matches 0"));
