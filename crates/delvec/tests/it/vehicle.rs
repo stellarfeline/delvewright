@@ -1060,6 +1060,33 @@ fn a_cart_whose_run_enters_its_objectives_volume_is_refused() {
     assert!(msg.contains("from the saddle"), "{msg}");
 }
 
+/// A leg declared ridden on a vehicle the path has despawned is `DW0311`
+/// at the plan; seated again in the same bundle, it builds and is ridden.
+#[test]
+fn a_ride_after_its_vehicles_despawn_is_refused() {
+    let bay = Bay {
+        rails: true,
+        ride: Some("vehicle/cart"),
+        ..Bay::default()
+    };
+    let gone = r#"{ "type": "despawn-vehicle", "vehicle": "vehicle/cart" }"#;
+    let (dir, lib) = write("ride-after-despawn", bay, cart(), gone);
+    let c = campaign(&dir);
+    let prefabs = PrefabRegistry::load_dir(&lib).unwrap();
+    let err = match Plan::build(&c, &prefabs) {
+        Ok(_) => panic!("expected the plan to be refused"),
+        Err(e) => format!("{e:?}"),
+    };
+    assert!(
+        err.contains("DW0311") && err.contains("takes that vehicle away"),
+        "{err}"
+    );
+    let back = format!(r#"{gone}, {{ "type": "seat-vehicle", "vehicle": "vehicle/cart" }}"#);
+    let (dir, lib) = write("ride-after-reseat", bay, cart(), &back);
+    let out = try_build(&dir, &lib).expect("seated again, the ride stands");
+    assert_eq!(rides(&out).len(), 1);
+}
+
 /// A `ride` that names no declared vehicle is refused at validation.
 #[test]
 fn a_ride_on_an_undeclared_vehicle_is_dangling() {

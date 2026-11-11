@@ -13,7 +13,7 @@ pub(in crate::compiler::plan) use ancestors::*;
 pub use mock::mock_function;
 pub(crate) use mock::path_mocks;
 pub use pursuers::Pursuer;
-pub(crate) use pursuers::{check_outrun_loose, pursuers_by_step};
+pub(crate) use pursuers::{check_outrun_loose, check_ridden_vehicles_stand, pursuers_by_step};
 pub use region::*;
 pub(crate) use triggers::*;
 

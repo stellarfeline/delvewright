@@ -255,3 +255,99 @@ pub(crate) fn check_outrun_loose(
     }
     Ok(())
 }
+
+/// **A leg declared ridden on a vehicle the path has taken away** (spec-0135
+/// §4): the objective's `ride` names a vehicle whose last lifecycle line the
+/// path certainly fires before the objective's step is a `despawn-vehicle` —
+/// the party walks up to a mark nothing stands at. Dated as a pursuer's
+/// lines are ([`dated`]): a `seat-vehicle` the path cannot date may fire at
+/// any step, so it seats the vehicle for every step; a `despawn-vehicle` the
+/// path cannot date, or does not certainly fire, removes nothing. Every
+/// vehicle is seated at load. `DW0311`: the leg is one its vehicle does not
+/// carry.
+pub(crate) fn check_ridden_vehicles_stand(
+    c: &Campaign,
+    firing: &PathFiring,
+) -> Result<(), PlanError> {
+    fn walk<'a>(
+        list: &'a [QuestEffect],
+        base: &str,
+        reaction: bool,
+        owner: &EffectRootOwner<'a>,
+        out: &mut Vec<(String, EffectRootOwner<'a>, bool, &'a QuestEffect)>,
+    ) {
+        for (i, e) in list.iter().enumerate() {
+            let path = format!("{base}/{i}");
+            if matches!(
+                e.verb,
+                Verb::SeatVehicle { .. } | Verb::DespawnVehicle { .. }
+            ) {
+                out.push((path.clone(), *owner, reaction, e));
+            }
+            for (seg, _, nested) in e.nested_effect_lists_labeled() {
+                let r = reaction || matches!(seg.as_str(), "on_respawn" | "on_rest" | "on_caught");
+                walk(nested, &format!("{path}/{seg}"), r, owner, out);
+            }
+        }
+    }
+    let rides: Vec<(&str, &str)> = c
+        .quests
+        .content
+        .quests
+        .iter()
+        .flat_map(|q| &q.objectives)
+        .filter_map(|o| Some((o.id().as_str(), o.ride()?.as_str())))
+        .collect();
+    if rides.is_empty() {
+        return Ok(());
+    }
+    let mut lines = Vec::new();
+    delvewright_dsl::for_each_effect_root(c, &mut |site, list| {
+        walk(list, &site.path, false, &site.owner, &mut lines);
+    });
+    for (objective, vehicle) in rides {
+        let Some(&at) = firing.obj_step.get(objective) else {
+            continue;
+        };
+        // (step, seats) for every line of this vehicle the path dates before
+        // the objective's step.
+        let mut events: Vec<(usize, bool)> = Vec::new();
+        let mut seated_undated = false;
+        for (pointer, owner, reaction, e) in &lines {
+            let (seats, v) = match &e.verb {
+                Verb::SeatVehicle { vehicle } => (true, vehicle),
+                Verb::DespawnVehicle { vehicle } => (false, vehicle),
+                _ => continue,
+            };
+            if v.as_str() != vehicle {
+                continue;
+            }
+            match dated(owner, pointer, *reaction, firing) {
+                Some(When::At(s)) if s < at && (seats || firing.fires(pointer)) => {
+                    events.push((s, seats));
+                }
+                Some(When::Undated) if seats => seated_undated = true,
+                _ => {}
+            }
+        }
+        // Within one step the lines keep the order their bundle writes them
+        // in (the sort is stable over the reading order).
+        events.sort_by_key(|(s, _)| *s);
+        if let Some((s, false)) = events.last().copied()
+            && !seated_undated
+        {
+            return Err(PlanError::new(
+                crate::compiler::nav::DW_CRITICAL_UNROUTABLE,
+                format!(
+                    "objective `{objective}` declares its leg ridden on `{vehicle}`, and the \
+                     path takes that vehicle away before it: a `despawn-vehicle` fires at step \
+                     {s}, the objective is performed at step {at}, and no `seat-vehicle` puts \
+                     it back in between (a despawn ends the re-seat) — the party walks up to a \
+                     mark nothing stands at. Move the `despawn-vehicle` to a beat after the \
+                     ride, seat the vehicle again before it, or drop the objective's `ride`"
+                ),
+            ));
+        }
+    }
+    Ok(())
+}

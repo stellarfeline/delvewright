@@ -1295,6 +1295,10 @@ impl<'a> Plan<'a> {
         // path is `DW1082`'s second arm.
         check_outrun_loose(campaign, &namespace, &cp.steps, &path_firing)
             .map_err(|e| e.with_warnings(warnings.clone()))?;
+        // spec-0135 §4: a leg declared ridden on a vehicle the path has
+        // despawned is `DW0311`.
+        check_ridden_vehicles_stand(campaign, &path_firing)
+            .map_err(|e| e.with_warnings(warnings.clone()))?;
 
         let movement = crate::compiler::nav::movement_items(campaign, &cp.steps);
 
