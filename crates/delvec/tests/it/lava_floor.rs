@@ -15,8 +15,9 @@
 //!
 //! One course of that floor — the `z == 7` row, the full width of the interior —
 //! is the variable. Filled with stone the room is an ordinary hall; filled with
-//! lava it is a hall with a moat, and a moat is not a bridge. Nothing else in the
-//! two worlds differs, which is what makes the red a statement about the block.
+//! lava it is a hall with a moat, and a moat is not a bridge: the route jumps
+//! it. Nothing else in the two worlds differs, which is what makes the red a
+//! statement about the block.
 
 use crate::common;
 
@@ -135,27 +136,54 @@ fn build_with(moat: &str) -> Result<BuildOutput, BuildFailure> {
     )
 }
 
-/// The binding case: the party cannot walk across lava, so a lava moat across the
-/// only route makes the delve incompletable and the build is refused.
+/// The jumps a build's critical path takes, as `(from, to)` over every leg of
+/// `validation/critical-path-waypoints.json`.
+fn route_jumps(out: &BuildOutput) -> Vec<([i64; 3], [i64; 3])> {
+    let doc: serde_json::Value = serde_json::from_slice(
+        out.get("validation/critical-path-waypoints.json")
+            .expect("the build exports its waypoints"),
+    )
+    .unwrap();
+    let cell = |v: &serde_json::Value| -> [i64; 3] {
+        let a = v.as_array().unwrap();
+        [
+            a[0].as_i64().unwrap(),
+            a[1].as_i64().unwrap(),
+            a[2].as_i64().unwrap(),
+        ]
+    };
+    doc["legs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|l| l["jumps"].as_array().cloned().unwrap_or_default())
+        .map(|j| (cell(&j["from"]), cell(&j["to"])))
+        .collect()
+}
+
+/// The binding case: the party cannot walk across lava. A moat one cell wide
+/// across the only route is crossed by a hop — the walking jump the declared
+/// jump's window proves (`World::hops_fp`), which the game allows — and never
+/// walked: the route's only way over the `z == 7` course is a jump from the
+/// row before it to the row after it.
 ///
-/// Before the classification fix this campaign built **green**: the lava course
-/// was `solid`, the cells above it were standable, and the critical-path walk
-/// crossed the moat as if it were a paved floor.
+/// Before the classification fix this campaign built with the lava course
+/// `solid`, the cells above it standable, and the critical-path walk crossing
+/// the moat as if it were a paved floor — no jump at all, which this reds on.
 #[test]
-fn a_lava_moat_across_the_only_route_refuses_the_build() {
-    match build_with("minecraft:lava") {
-        // A `BuildOutput` here is the defect itself, and printing it prints a whole
-        // datapack — say what happened instead.
-        Ok(_) => panic!(
-            "the build SUCCEEDED: the lava course was taken for floor and the \
-             critical-path walk crossed the moat"
-        ),
-        Err(BuildFailure::Diagnostic { code, message }) => assert_eq!(
-            code, "DW0311",
-            "the critical path is what the moat breaks: {message}"
-        ),
-        Err(other) => panic!("expected a diagnostic failure, got {other:?}"),
-    }
+fn a_lava_moat_across_the_only_route_is_jumped_never_walked() {
+    let out = match build_with("minecraft:lava") {
+        Ok(out) => out,
+        Err(e) => panic!("a one-cell moat is hopped: {e:?}"),
+    };
+    let jumps = route_jumps(&out);
+    assert!(
+        !jumps.is_empty()
+            && jumps
+                .iter()
+                .all(|(a, b)| (a[2] - b[2]).abs() == 2 && a[2].min(b[2]) == 6),
+        "the moat is crossed only by a jump over z 7: {jumps:?}"
+    );
 }
 
 /// The counter-case that keeps the red from being a statement about the geometry:
@@ -163,7 +191,11 @@ fn a_lava_moat_across_the_only_route_refuses_the_build() {
 /// of a fluid — and the party walks across it.
 #[test]
 fn the_same_room_with_a_stone_course_builds() {
-    build_with("minecraft:stone").expect("a stone floor is a floor");
+    let out = build_with("minecraft:stone").expect("a stone floor is a floor");
+    assert!(
+        route_jumps(&out).is_empty(),
+        "a floor is walked, never jumped"
+    );
 }
 
 // Water is not this file's: a water course over a sub-course is a pool a body

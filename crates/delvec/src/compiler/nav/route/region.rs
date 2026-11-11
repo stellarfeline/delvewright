@@ -1798,13 +1798,15 @@ mod tests {
     }
 
     /// **Water the body cannot climb out of is a wall.** The same water fill,
-    /// with the floor beyond it raised a block — the far rim two blocks over the
-    /// water, past the climb-out band — strands a swimmer, so the leg does not
-    /// route.
+    /// with the floor beyond it raised two blocks — the far rim three blocks
+    /// over the water, past the climb-out band, and two over the near floor,
+    /// past any jump (a rim one over the near floor is a hop the route takes
+    /// across the channel, `World::hops_fp`) — strands a swimmer, so the leg
+    /// does not route.
     #[test]
     fn a_runtime_water_fill_with_no_climb_out_is_not_crossed() {
         // Near floor at y = 64 (stand at 65) for x ∈ {0,1}; the cell to fill at
-        // [2,64,0]; far floor at y = 65 (stand at 66) for x ∈ {3,4}. No ceiling.
+        // [2,64,0]; far floor at y = 66 (stand at 67) for x ∈ {3,4}. No ceiling.
         let mut solid = BTreeSet::new();
         for x in 0..2 {
             solid.insert([x, 64, 0]);
@@ -1813,10 +1815,11 @@ mod tests {
         for x in 3..5 {
             solid.insert([x, 64, 0]);
             solid.insert([x, 65, 0]);
+            solid.insert([x, 66, 0]);
         }
         let world = World::from_solid_cells(solid);
         let a = at_step([0, 65, 0], 1);
-        let b = at_step([4, 66, 0], 2);
+        let b = at_step([4, 67, 0], 2);
         let water = RegionEvent::forced(([2, 64, 0], [2, 64, 0]), RegionWrite::Flood, 0)
             .laying("minecraft:water");
         assert!(
