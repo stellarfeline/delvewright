@@ -164,8 +164,9 @@ fn the_stack_sites_are_enumerated_from_the_schema() {
     assert_eq!(delvewright_dsl::StackSiteKind::ALL.len(), 5);
 }
 
-/// hello-world with a fox set out at the keeper's talk, wearing a starred
-/// rocket in its off hand and declaring one as its drop.
+/// hello-world with an elite fox set out at the keeper's talk, carrying a
+/// starred rocket in its mouth (the main hand, the one slot a fox draws) and
+/// declaring two as its drop.
 fn with_fox(dir: &Path) {
     let stars = json!({"flight": 2, "explosions": [
         {"shape": "star", "colors": ["#ffd700"], "trail": true}
@@ -173,8 +174,8 @@ fn with_fox(dir: &Path) {
     common::patch_file(&dir.join("quests.json"), move |q| {
         q["content"]["actors"] = json!([{
             "id": "actor/fox", "entity": "minecraft:fox", "anchor": "spawn",
-            "offset": [2, 0, 0], "facing": "south",
-            "equipment": {"off_hand": {"item": "minecraft:firework_rocket", "fireworks": stars}},
+            "offset": [2, 0, 0], "facing": "south", "tier": "elite", "vulnerable": true,
+            "equipment": {"main_hand": {"item": "minecraft:firework_rocket", "fireworks": stars}},
             "drops": [{"item": "minecraft:firework_rocket", "count": 2, "fireworks": stars}]
         }]);
         q["content"]["quests"][0]["on_objective_complete"]["obj/talk"]
@@ -195,7 +196,7 @@ fn a_worn_rocket_carries_its_stars() {
     let summons = lines_with(&out, "summon minecraft:fox");
     assert!(
         summons.iter().any(|l| l.contains(
-            "offhand:{id:\"minecraft:firework_rocket\",count:1,components:{\"minecraft:fireworks\":{flight_duration:2b,explosions:[{shape:\"star\",colors:[I;16766720],has_trail:1b}]}}}"
+            "mainhand:{id:\"minecraft:firework_rocket\",count:1,components:{\"minecraft:fireworks\":{flight_duration:2b,explosions:[{shape:\"star\",colors:[I;16766720],has_trail:1b}]}}}"
         )),
         "{summons:#?}"
     );
