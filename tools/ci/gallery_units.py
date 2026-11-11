@@ -353,11 +353,11 @@ class Binder:
             #
             #   `CastEntry`  — one placement, or a LIST of them. The value's own
             #                  JSON type separates them, which is what serde uses.
-            #   `MobDrop`    — `SlotDrop{slot}` or `ItemDrop{item, name}`: two
+            #   `MobDrop`    — `SlotDrop{slot}` or a `Stack{item, …}`: two
             #                  RECORDS, so the JSON type says nothing. Picking
             #                  the first record branch bound `SlotDrop.slot` for
             #                  every drop in the campaign and left the whole
-            #                  `ItemDrop` surface reading as unbound — on a
+            #                  stack surface reading as unbound — on a
             #                  gallery that writes both. Silent, and wrong in the
             #                  direction that hides work.
             #

@@ -1,0 +1,13 @@
+{
+  "code": "DW1092",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/triggers/21/on/item",
+      "value": "minecraft:snowball"
+    }
+  ],
+  "units": [],
+  "why": "The survey from the vantage waits for a snowball held in use. The pinned game never holds a snowball in use (its use duration is zero, read from the jar into `crates/dsl/data/item-use-duration-1.21.11.json`), so `minecraft:using_item` never fires and the trigger could never fire. It declares no unit: `use-item.item` is bound by the spyglass."
+}

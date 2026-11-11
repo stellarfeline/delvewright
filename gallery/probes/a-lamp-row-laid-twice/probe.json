@@ -1,0 +1,12 @@
+{
+  "code": "DW1094",
+  "patch": [
+    {
+      "doc": "world-edits.json",
+      "op": "remove",
+      "path": "/content/batches/13/applied"
+    }
+  ],
+  "units": [],
+  "why": "The floor-lamp batch is applied at build (the default), and reaching the counter still fires its `apply-edits`, which would write the row's cells a second time over a world that already holds them. Refused at the `apply-edits`."
+}
