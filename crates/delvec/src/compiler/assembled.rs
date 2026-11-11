@@ -1372,7 +1372,35 @@ fn settle_column(
 /// the model re-settles and the same despawn rule applies. Same algorithm,
 /// same determinism as the assembly-time [`settle`].
 pub(crate) fn resettle(blocks: &mut BlockMap) -> Vec<Settled> {
-    settle(blocks)
+    let out = settle(blocks);
+    turn_unkept(blocks);
+    out
+}
+
+/// **The blocks a shape update turns** ([`delvewright_dsl::support::turned_under`]):
+/// a `dirt_path` or `farmland` under a solid block that is not a fence gate is
+/// dirt in the world the server keeps, whichever of the two was written first —
+/// every block a structure or a `setblock` writes takes the update. Applied
+/// wherever the world is settled, so the model every proof and every picture
+/// reads holds what the server holds. Returns the cells turned.
+pub(crate) fn turn_unkept(blocks: &mut BlockMap) -> usize {
+    let turned: Vec<([i32; 3], &'static str)> = blocks
+        .iter()
+        .filter(|(_, b)| {
+            let s = b.as_str();
+            s.starts_with("minecraft:dirt_path") || s.starts_with("minecraft:farmland")
+        })
+        .filter_map(|(c, b)| {
+            let above = blocks
+                .get(&[c[0], c[1] + 1, c[2]])
+                .map_or("minecraft:air", |a| a.as_str());
+            delvewright_dsl::support::turned_under(b.as_str(), above).map(|t| (c, t))
+        })
+        .collect();
+    for (c, t) in &turned {
+        blocks.insert(*c, BlockState::new(t));
+    }
+    turned.len()
 }
 
 /// The authoritative assembled-world model: the settled cell→block map plus the
@@ -1608,6 +1636,7 @@ pub fn shipped_within(
 pub fn assemble(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Assembled {
     let mut placed = placed_blocks(plan, structures);
     let settled = settle(&mut placed.blocks);
+    turn_unkept(&mut placed.blocks);
     Assembled {
         blocks: std::sync::Arc::new(placed.blocks),
         settled,
@@ -2614,6 +2643,46 @@ mod tests {
         let out = settle(&mut map);
         *blocks = map.into_iter().map(|(c, s)| (c, s.to_string())).collect();
         out
+    }
+
+    /// **A path under a solid block is dirt in the world the server keeps**
+    /// ([`turn_unkept`]): the town's four `dirt_path` cells under hay stooks
+    /// were dirt in the pinned server's save. A fence gate keeps a path, as
+    /// air and a non-solid block do; `farmland` turns by the same rule. Red
+    /// before: the model kept every path it was handed, and the written
+    /// world differed from the save at each (`DW0955`).
+    #[test]
+    fn a_path_under_a_solid_block_turns_to_dirt() {
+        let mut m = crate::compiler::blockstate::interned(BTreeMap::from([
+            ([0, 64, 0], "minecraft:dirt_path".to_string()),
+            ([0, 65, 0], "minecraft:hay_block[axis=y]".to_string()),
+            ([1, 64, 0], "minecraft:dirt_path".to_string()),
+            (
+                [1, 65, 0],
+                "minecraft:oak_fence_gate[facing=north,in_wall=false,open=false,powered=false]"
+                    .to_string(),
+            ),
+            ([2, 64, 0], "minecraft:dirt_path".to_string()),
+            ([3, 64, 0], "minecraft:dirt_path".to_string()),
+            ([3, 65, 0], "minecraft:torch".to_string()),
+            ([4, 64, 0], "minecraft:farmland[moisture=0]".to_string()),
+            ([4, 65, 0], "minecraft:stone".to_string()),
+        ]));
+        assert_eq!(turn_unkept(&mut m), 2);
+        let at = |c: [i32; 3]| m.get(&c).map(|b| b.as_str());
+        assert_eq!(at([0, 64, 0]), Some("minecraft:dirt"));
+        assert_eq!(
+            at([1, 64, 0]),
+            Some("minecraft:dirt_path"),
+            "a fence gate keeps it"
+        );
+        assert_eq!(at([2, 64, 0]), Some("minecraft:dirt_path"), "air keeps it");
+        assert_eq!(
+            at([3, 64, 0]),
+            Some("minecraft:dirt_path"),
+            "a torch is not solid"
+        );
+        assert_eq!(at([4, 64, 0]), Some("minecraft:dirt"));
     }
 
     /// A one-cell-thick gate anchor at `z`, spanning x 0..=1, y 64..=65.

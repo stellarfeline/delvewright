@@ -193,6 +193,33 @@ pub fn falls_into(name: &str) -> Option<bool> {
     pinned_row(&bases().flags, name).map(|f| f.contains('f'))
 }
 
+/// **Whether a block state is solid** — the pinned jar's `BlockState.isSolid()`
+/// (measured into `support-bases-1.21.11.tsv`'s `s` flag). `None` for a block
+/// the table does not hold.
+pub fn is_solid(name: &str) -> Option<bool> {
+    pinned_row(&bases().flags, name).map(|f| f.contains('s'))
+}
+
+/// **What a shape update leaves of a block the server does not keep under its
+/// upper neighbour** — the pinned jar's `DirtPathBlock` (and `FarmBlock`):
+/// `canSurvive` holds while the block above is not solid
+/// ([`is_solid`]) or is a fence gate, and a shape update from above that
+/// finds it false schedules the tick that turns it to dirt
+/// (`FarmBlock.turnToDirt`). Every block a structure or a `setblock` writes
+/// takes that update (`Block.updateFromNeighbourShapes`), whichever of the two
+/// was written first. `Some("minecraft:dirt")` for a `dirt_path` or a
+/// `farmland` under `above` that does not keep it; `None` otherwise. Measured
+/// on the pinned server: a written world's `dirt_path` under a hay block is
+/// dirt in the save (`docs/reference/delvec/compiler/assembled.md`).
+pub fn turned_under(state: &str, above: &str) -> Option<&'static str> {
+    let id = namespaced_id(state);
+    if id != "minecraft:dirt_path" && id != "minecraft:farmland" {
+        return None;
+    }
+    let gate = namespaced_id(above).ends_with("_fence_gate");
+    (is_solid(above) == Some(true) && !gate).then_some("minecraft:dirt")
+}
+
 /// Whether a block state is one a table row names: the row's block, carrying
 /// every property the row lists ([`crate::blockshape`]'s one comparison).
 fn pattern_has(pattern: &str, name: &str) -> bool {

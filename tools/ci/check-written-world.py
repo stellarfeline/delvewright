@@ -39,6 +39,12 @@ count, printed with its cells, never an allowlist of cells — or it reds as
   stage being `<stem>` (`copper_block` for the stem `copper`). A waxed block
   (`waxed_` prefix: honeycomb, never advanced by the tick) that changed, and a
   stage going backwards, stay in no class.
+  The same class holds a cane or a cactus the server aged: the same block on
+  both sides, differing only in `age`. Vanilla's `SugarCaneBlock.randomTick`
+  and `CactusBlock.randomTick` advance `age` by one on a random tick while the
+  cell above is air (and grow the plant a block at the top of the count), and
+  nothing else moves it unprompted (1.21.11 server, Mojang mappings); measured
+  on the pinned server, a written `sugar_cane[age=0]` read `age=1` in the save.
 - **re-derived** — the same block on both sides, differing only in a property
   the server re-derives on a block update (a fence, wall, bar or pane's
   `north`/`south`/`east`/`west`/`up`, a stair's `shape`, leaves' `distance`).
@@ -105,6 +111,9 @@ GRAVITY = {"sand", "red_sand", "gravel", "anvil", "chipped_anvil", "damaged_anvi
 # The blocks `SpreadingSnowyDirtBlock.randomTick` turns into dirt, or spreads
 # onto dirt as (grass block and mycelium are its two subclasses).
 TURF = {"grass_block", "mycelium"}
+# The blocks whose own random tick advances `age` and nothing else
+# (`SugarCaneBlock.randomTick`, `CactusBlock.randomTick`).
+AGEING = {"sugar_cane", "cactus"}
 REGISTRY = Path(__file__).resolve().parents[2] / "crates" / "dsl" / "data" / "blocks-1.21.11.json"
 STAGES = ("exposed", "weathered", "oxidized")
 
@@ -185,6 +194,8 @@ def classify(a: str | None, b: str | None, cell, clocked) -> str:
     if {base(na), base(nb)} in ({"dirt", t} for t in TURF):
         return "random-tick"
     if is_weathered(na, pa, nb, pb):
+        return "random-tick"
+    if na == nb and base(na) in AGEING and {k for k in set(pa) | set(pb) if pa.get(k) != pb.get(k)} == {"age"}:
         return "random-tick"
     if na == nb:
         differ = {k for k in set(pa) | set(pb) if pa.get(k) != pb.get(k)}
