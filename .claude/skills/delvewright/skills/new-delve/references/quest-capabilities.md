@@ -203,10 +203,10 @@ Run each of these; each names what it judges and how many objects it bound.
 
 ## A boat, a cart, a mount
 
-- `vehicles[]` places a body a player boards and leaves: a boat on water, the rider's minecart on a rail, a saddled pig, horse, camel or strider on ground. Write the `entity`, the mark it is seated at (`at`) and the `bounds` it lives in; the kind, the seats and the steering item come from the engine. A chest boat, a cart that carries cargo and a llama carry no rider (`DW1096`).
-- The engine proves the seat is in its medium (`DW1097`), that somebody can stand beside it and climb on (`DW1099`), and that a rider who leaves anywhere it goes can walk back to the party's ground (`DW1098`). A vehicle left riderless outside its `bounds` is put back at its mark every five seconds.
-- The walk is taken wherever it exists: a ride becomes part of the route only on a leg nothing else crosses, and then the vehicles there must seat the whole party of four (`DW1099`) — a boat seats two, so a crossing nobody can walk needs two boats.
-- A pig or a strider is steered by an item in the rider's hand: put a carrot on a stick (a warped fungus on a stick for a strider) in every class's kit, or give it before the ride (`DW1096`).
+- `vehicles[]` places a body a player boards and leaves: a boat on water, the rider's minecart on a rail, a saddled pig, horse, camel or strider on ground. Write the `entity`, the mark it is seated at (`at`) and the `bounds` it lives in; the kind, the seats and the steering item come from the engine. A chest boat, a cart that carries cargo and a llama carry no rider, and are refused.
+- The engine proves the seat is in its medium, that somebody can stand beside it and climb on, and that a rider who leaves anywhere it goes can walk back to the party's ground. A vehicle left riderless outside its `bounds` is put back at its mark every five seconds.
+- The walk is taken wherever it exists: a ride becomes part of the route only on a leg nothing else crosses, and then the vehicles there must seat the whole party of four — a boat seats two, so a crossing nobody can walk needs two boats.
+- A pig or a strider is steered by an item in the rider's hand: put a carrot on a stick (a warped fungus on a stick for a strider) in every class's kit, or give it before the ride.
 - `seat-vehicle` puts a vehicle back at its mark from a beat; `despawn-vehicle` takes it away for good (its re-seat stops with it).
 
 ## Sealed things, and pacing
