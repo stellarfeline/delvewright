@@ -634,7 +634,13 @@ fn every_limited_objective_kind_owns_its_expired_score_in_packtest() {
     };
     let ns = "keep-trial";
     let mut judged = 0;
-    for name in ["verb_collect", "verb_interact", "collect_preheld"] {
+    for name in [
+        "verb_collect",
+        "verb_interact",
+        "collect_preheld",
+        "verb_kill",
+        "verb_flag_gate",
+    ] {
         let path = format!("packtest-datapack/data/{ns}/test/{name}.mcfunction");
         let Some(bytes) = out.get(&path) else {
             continue;
@@ -647,5 +653,8 @@ fn every_limited_objective_kind_owns_its_expired_score_in_packtest() {
         );
         judged += 1;
     }
-    assert!(judged >= 2, "at least the collect and interact verb templates were judged: {judged}");
+    assert!(
+        judged >= 4,
+        "the kill, collect and interact verb templates were judged: {judged}"
+    );
 }
