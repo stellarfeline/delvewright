@@ -268,6 +268,10 @@ pub struct EditReplay {
     /// The runtime materialization: coalesced `fill`/`setblock` lines for the
     /// `world_edits` function, in application order.
     pub commands: Vec<String>,
+    /// **The batches that wait for their beat** (spec-0134 §6): each
+    /// `applied: by-effect` batch's coalesced lines, the body of its own
+    /// `edit_<batch>` function, which `apply-edits` calls. Script order.
+    pub by_effect: Vec<(String, Vec<String>)>,
     /// Per-batch outcomes, in script order.
     pub batches: Vec<BatchOutcome>,
     /// Advisory findings (`DW0353`/`DW0354`) raised during the replay, in batch
@@ -340,6 +344,12 @@ pub fn placement_gate_json(rows: &[Placement]) -> serde_json::Value {
     })
 }
 
+/// The function a `by-effect` batch's writes are emitted as, `edit_<batch>`,
+/// which `apply-edits` calls (spec-0134 §6).
+pub fn edit_fn(batch: &str) -> String {
+    format!("edit_{}", crate::compiler::plan::safe_local(batch))
+}
+
 /// Whether the campaign carries a non-empty edit script. `false` keeps the
 /// build on the exact pre-stage-7 code path (byte-identical output).
 pub fn has_edits(campaign: &delvewright_dsl::Campaign) -> bool {
@@ -406,6 +416,7 @@ fn replay_with(
         .take()
         .unwrap_or_else(|| assembled::assemble(plan, structures));
     let mut commands: Vec<String> = Vec::new();
+    let mut by_effect: Vec<(String, Vec<String>)> = Vec::new();
     let mut batches: Vec<BatchOutcome> = Vec::new();
     let mut warnings: Vec<Diagnostic> = Vec::new();
     let mut placements: Vec<Placement> = Vec::new();
@@ -429,6 +440,11 @@ fn replay_with(
                     batch.area
                 ),
             })?;
+
+        // The world before a batch that waits for its beat, restored after it
+        // is judged (spec-0134 §6).
+        let before =
+            (batch.applied == delvewright_dsl::EditApplied::ByEffect).then(|| assembled.clone());
 
         // Named regions of this batch (strictly backward references, validated).
         let mut regions: BTreeMap<String, BTreeSet<[i32; 3]>> = BTreeMap::new();
@@ -633,7 +649,21 @@ fn replay_with(
             warnings.extend(gate_region_warnings(plan, bid, &batch_writes));
         }
 
-        // Runtime materialization + frame bounds for this batch.
+        // Runtime materialization + frame bounds for this batch. A batch that
+        // waits for its beat (spec-0134 §6) was judged above with its writes
+        // applied — the light proof sees the world it makes — and is now taken
+        // back out, so every later batch, the final build and its proofs judge
+        // the world without it: both states of the batch are judged. Its lines
+        // are its own function, run by `apply-edits`.
+        if batch.applied == delvewright_dsl::EditApplied::ByEffect {
+            assembled = before.expect("a by-effect batch keeps the world it started from");
+            by_effect.push((bid.to_string(), coalesce_commands(&batch_writes)));
+            batches.push(BatchOutcome {
+                id: bid.to_string(),
+                bounds: bounds_of(batch_writes.keys()),
+            });
+            continue;
+        }
         commands.extend(coalesce_commands(&batch_writes));
         batches.push(BatchOutcome {
             id: bid.to_string(),
@@ -645,6 +675,7 @@ fn replay_with(
     Ok(Some(EditReplay {
         assembled,
         commands,
+        by_effect,
         batches,
         warnings,
         placements,

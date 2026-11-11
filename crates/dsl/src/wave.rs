@@ -315,6 +315,37 @@ impl MobEquipment {
         EquipSlot::ALL.map(|s| (s.field(), self.filled(s)))
     }
 
+    /// Every filled slot as `(slot, piece)`, mutably, in [`EquipSlot::ALL`]'s
+    /// order — the l10n traversal's hook.
+    pub fn pieces_mut(&mut self) -> Vec<(EquipSlot, &mut EquipItem)> {
+        let MobEquipment {
+            head,
+            chest,
+            legs,
+            feet,
+            main_hand,
+            off_hand,
+            body,
+            saddle,
+        } = self;
+        let mut by: Vec<(EquipSlot, &mut EquipItem)> = Vec::new();
+        for (s, p) in [
+            (EquipSlot::MainHand, main_hand),
+            (EquipSlot::OffHand, off_hand),
+            (EquipSlot::Head, head),
+            (EquipSlot::Chest, chest),
+            (EquipSlot::Legs, legs),
+            (EquipSlot::Feet, feet),
+            (EquipSlot::Body, body),
+            (EquipSlot::Saddle, saddle),
+        ] {
+            if let Some(p) = p.as_mut() {
+                by.push((s, p));
+            }
+        }
+        by
+    }
+
     /// Every slot as `(slot, piece)`, in [`EquipSlot::ALL`]'s order.
     pub fn pieces(&self) -> [(EquipSlot, Option<&EquipItem>); EquipSlot::ALL.len()] {
         EquipSlot::ALL.map(|s| (s, self.filled(s)))
@@ -417,6 +448,22 @@ impl EquipSlot {
         }
     }
 
+    /// The slot as `item replace entity` names it (`weapon.mainhand`,
+    /// `armor.head`, `armor.body`, `saddle`) — what a taken stack's clear writes
+    /// (spec-0134 §8).
+    pub fn item_slot(self) -> &'static str {
+        match self {
+            EquipSlot::Head => "armor.head",
+            EquipSlot::Chest => "armor.chest",
+            EquipSlot::Legs => "armor.legs",
+            EquipSlot::Feet => "armor.feet",
+            EquipSlot::MainHand => "weapon.mainhand",
+            EquipSlot::OffHand => "weapon.offhand",
+            EquipSlot::Body => "armor.body",
+            EquipSlot::Saddle => "saddle",
+        }
+    }
+
     /// The slot the game names `name` (`mainhand`), if it is one.
     pub fn from_nbt(name: &str) -> Option<EquipSlot> {
         EquipSlot::ALL.into_iter().find(|s| s.nbt() == name)
@@ -453,8 +500,9 @@ impl EquipSlot {
 pub enum MobDrop {
     /// A worn/held piece, named by its equipment slot.
     Slot(SlotDrop),
-    /// A quest token the fight yields (not worn).
-    Item(ItemDrop),
+    /// A quest token the fight yields (not worn): the one [`crate::Stack`]
+    /// every item site writes.
+    Item(crate::Stack),
 }
 
 /// The worn-piece form of a [`MobDrop`].
@@ -464,20 +512,6 @@ pub struct SlotDrop {
     /// The equipment slot whose piece drops. Must be filled by the entity's own
     /// `equipment` declaration (`DW0490`).
     pub slot: EquipSlot,
-}
-
-/// The quest-token form of a [`MobDrop`].
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct ItemDrop {
-    /// Vanilla item id, validated against the pinned 1.21.11 registry
-    /// (`DW0143`, the give-item family).
-    pub item: String,
-    /// Display name the dropped stack carries as a `custom_name` component.
-    /// Player-visible, so it enters the l10n string inventory and translates
-    /// like any other line.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
 }
 
 impl MobDrop {
@@ -514,11 +548,10 @@ impl MobDrop {
     }
 }
 
-/// One equipped item: either a bare item id, or an id carrying enchantments.
+/// One equipped item: either a bare item id, or the one [`crate::Stack`] every
+/// item site writes.
 ///
-/// The plain form is the common case and stays a plain JSON string, which is
-/// what keeps every campaign written before enchantments existed byte-identical
-/// on re-serialisation:
+/// The plain form is the common case and stays a plain JSON string:
 ///
 /// ```json
 /// "main_hand": "minecraft:netherite_sword"
@@ -528,10 +561,10 @@ impl MobDrop {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum EquipItem {
-    /// A bare item id — no enchantments.
+    /// A bare item id — a stack of one with no components.
     Plain(String),
-    /// An item id plus its enchantments.
-    Enchanted(EnchantedItem),
+    /// A stack written out.
+    Stack(crate::Stack),
 }
 
 impl EquipItem {
@@ -539,7 +572,7 @@ impl EquipItem {
     pub fn item(&self) -> &str {
         match self {
             EquipItem::Plain(s) => s,
-            EquipItem::Enchanted(e) => &e.item,
+            EquipItem::Stack(e) => &e.item,
         }
     }
 
@@ -551,7 +584,23 @@ impl EquipItem {
             std::sync::LazyLock::new(BTreeMap::new);
         match self {
             EquipItem::Plain(_) => &EMPTY,
-            EquipItem::Enchanted(e) => &e.enchantments,
+            EquipItem::Stack(e) => &e.enchantments,
+        }
+    }
+
+    /// Mutable access to the piece's display name — the l10n traversal's hook.
+    pub fn name_mut(&mut self) -> Option<&mut String> {
+        match self {
+            EquipItem::Plain(_) => None,
+            EquipItem::Stack(e) => e.name.as_mut(),
+        }
+    }
+
+    /// The piece as a stack: the written one, or a bare stack of one.
+    pub fn stack(&self) -> std::borrow::Cow<'_, crate::Stack> {
+        match self {
+            EquipItem::Plain(s) => std::borrow::Cow::Owned(crate::Stack::of(s.clone())),
+            EquipItem::Stack(e) => std::borrow::Cow::Borrowed(e),
         }
     }
 }
@@ -573,18 +622,6 @@ pub fn enchantment_component(item: &str) -> &'static str {
         "enchanted_book" => "minecraft:stored_enchantments",
         _ => "minecraft:enchantments",
     }
-}
-
-/// The enchanted form of [`EquipItem`].
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct EnchantedItem {
-    /// Item id (e.g. `minecraft:netherite_chestplate`).
-    pub item: String,
-    /// Enchantment id → level (e.g. `{"minecraft:protection": 4}`). Emitted as
-    /// the 1.21 `minecraft:enchantments` item component.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub enchantments: BTreeMap<String, u32>,
 }
 
 /// Attribute overrides for a wave mob (DSL v0.4). Each field maps to a 1.21.11
@@ -625,7 +662,7 @@ pub struct MobEffect {
 use crate::Objective;
 use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
 use crate::envelope::Campaign;
-use crate::registry::{AnchorRegistry, EffectRegistry, EntityRegistry, ItemRegistry};
+use crate::registry::{AnchorRegistry, EffectRegistry, EntityRegistry};
 use crate::validate::{AnchorProviders, declares_bonfire, quest_ancestors, station_kind_diag};
 use std::collections::BTreeSet;
 
@@ -1066,12 +1103,7 @@ pub(crate) fn lane_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Ve
 /// * `DW0493` — that collect must be **ordered after** the fight, so the chain
 ///   "kill the boss → take its key → open the door" is a proof rather than an
 ///   intention.
-pub(crate) fn check_drops(
-    c: &Campaign,
-    quests: &crate::QuestsContent,
-    items: &dyn ItemRegistry,
-    d: &mut Vec<Diagnostic>,
-) {
+pub(crate) fn check_drops(c: &Campaign, quests: &crate::QuestsContent, d: &mut Vec<Diagnostic>) {
     use crate::{EncounterTier, MobDrop};
 
     // --- the declaration side: waves and actors ---------------------------
@@ -1100,7 +1132,6 @@ pub(crate) fn check_drops(
                 m.equipment.as_ref(),
                 &format!("wave `{}` mob {k}", w.id),
                 &format!("/content/waves/{i}/mobs/{k}/drops"),
-                items,
                 d,
             );
         }
@@ -1127,7 +1158,6 @@ pub(crate) fn check_drops(
             a.equipment.as_ref(),
             &format!("actor `{}`", a.id),
             &format!("/content/actors/{i}/drops"),
-            items,
             d,
         );
     }
@@ -1254,15 +1284,41 @@ pub(crate) fn check_drops(
     }
 }
 
-/// One entity's `drops[]` list: distinct, really-worn slots (`DW0490`) and
-/// registry-valid quest items (`DW0143`). Shared by wave mobs and actors so the
+/// **Does a body's `equipment` fill `slot`?** The one question a `drops[]`
+/// `slot` entry and a `give-item` `from` an actor's slot (spec-0134 §8) ask
+/// (`DW0490`): `None` when it does; otherwise the words saying what it does
+/// fill.
+pub(crate) fn slot_unfilled(
+    equipment: Option<&crate::MobEquipment>,
+    slot: EquipSlot,
+) -> Option<String> {
+    if equipment.is_some_and(|eq| eq.filled(slot).is_some()) {
+        return None;
+    }
+    let filled: Vec<&str> = equipment
+        .map(|eq| {
+            eq.slots()
+                .into_iter()
+                .filter(|(_, p)| p.is_some())
+                .map(|(name, _)| name)
+                .collect()
+        })
+        .unwrap_or_default();
+    Some(if filled.is_empty() {
+        "it declares no equipment at all".to_string()
+    } else {
+        format!("it fills {}", filled.join(", "))
+    })
+}
+
+/// One entity's `drops[]` list: distinct, really-worn slots (`DW0490`).
+/// Shared by wave mobs and actors so the
 /// two surfaces cannot drift.
 fn check_drop_list(
     drops: &[crate::MobDrop],
     equipment: Option<&crate::MobEquipment>,
     what: &str,
     base_path: &str,
-    items: &dyn ItemRegistry,
     d: &mut Vec<Diagnostic>,
 ) {
     use crate::MobDrop;
@@ -1272,29 +1328,15 @@ fn check_drop_list(
         match dr {
             MobDrop::Slot(s) => {
                 let field = s.slot.field();
-                let filled: Vec<&str> = equipment
-                    .map(|eq| {
-                        eq.slots()
-                            .into_iter()
-                            .filter(|(_, p)| p.is_some())
-                            .map(|(name, _)| name)
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                if equipment.is_none_or(|eq| eq.filled(s.slot).is_none()) {
+                if let Some(fills) = slot_unfilled(equipment, s.slot) {
                     d.push(Diagnostic::error(
                         DROP_SLOT_UNFILLED,
                         "quests",
                         format!("{base_path}/{n}/slot"),
                         format!(
                             "{what} declares a `{field}` drop, but its `equipment` puts nothing \
-                             in `{field}` — {}. A body can only leave behind a piece it wears: \
-                             equip the slot, or drop a slot it fills",
-                            if filled.is_empty() {
-                                "it declares no equipment at all".to_string()
-                            } else {
-                                format!("it fills {}", filled.join(", "))
-                            }
+                             in `{field}` — {fills}. A body can only leave behind a piece it \
+                             wears: equip the slot, or drop a slot it fills"
                         ),
                     ));
                 } else if !seen_slots.insert(field) {
@@ -1309,21 +1351,9 @@ fn check_drop_list(
                     ));
                 }
             }
-            MobDrop::Item(it) => {
-                if !items.contains(&it.item) {
-                    d.push(Diagnostic::error(
-                        codes::ITEM_UNKNOWN,
-                        "quests",
-                        format!("{base_path}/{n}/item"),
-                        format!(
-                            "{what} declares a drop of `{}`, which is not in the pinned 1.21.11 \
-                             item registry — use a valid namespaced item id (e.g. \
-                             `minecraft:tripwire_hook`)",
-                            it.item
-                        ),
-                    ));
-                }
-            }
+            // A quest-item drop is a stack, asked what every stack is
+            // (`crate::stack::stack_checks`).
+            MobDrop::Item(_) => {}
         }
     }
 }
@@ -1359,71 +1389,6 @@ fn objective_ancestors(q: &crate::Quest) -> BTreeMap<&str, BTreeSet<&str>> {
         out.insert(o.id().as_str(), anc);
     }
     out
-}
-
-/// Validate one [`MobEquipment`] block — item ids against the pinned registry
-/// (`DW0143`) and every piece's enchantments against the pinned enchantment
-/// registry (`DW0433`) and level range (`DW0434`).
-///
-/// Shared verbatim by wave mobs and actors so the two surfaces cannot drift:
-/// they are the same schema type and therefore must be the same rules.
-pub(crate) fn check_equipment(
-    eq: &crate::MobEquipment,
-    what: &str,
-    base_path: &str,
-    items: &dyn ItemRegistry,
-    d: &mut Vec<Diagnostic>,
-) {
-    let ench_reg = crate::registry::VendoredEnchantmentRegistry::v1_21_11();
-    for (slot, piece) in eq.slots() {
-        let Some(piece) = piece else { continue };
-        let it = piece.item();
-        if !items.contains(it) {
-            d.push(Diagnostic::error(
-                codes::ITEM_UNKNOWN,
-                "quests",
-                format!("{base_path}/{slot}"),
-                format!(
-                    "{what} equipment `{slot}` item `{it}` is not in the pinned 1.21.11 \
-                     item registry — use a valid namespaced item id (e.g. \
-                     `minecraft:iron_helmet`)"
-                ),
-            ));
-        }
-        check_enchantments(
-            piece.enchantments(),
-            &format!("{what} equipment `{slot}`"),
-            "quests",
-            &format!("{base_path}/{slot}/enchantments"),
-            &ench_reg,
-            d,
-        );
-    }
-}
-
-/// Wave-mob `equipment` (spec-0014): item ids and enchantments
-/// ([`check_equipment`]).
-pub(crate) fn wave_equipment_checks(
-    c: &Campaign,
-    items: &dyn ItemRegistry,
-    d: &mut Vec<Diagnostic>,
-) {
-    let quests = &c.quests.content;
-    // Wave-mob `equipment` item ids: every present slot must name a
-    // pinned-1.21.11 item — the same registry and DW family as `give-item`
-    // (`DW0143`).
-    for (i, w) in quests.waves.iter().enumerate() {
-        for (k, m) in w.mobs.iter().enumerate() {
-            let Some(eq) = &m.equipment else { continue };
-            check_equipment(
-                eq,
-                "wave-mob",
-                &format!("/content/waves/{i}/mobs/{k}/equipment"),
-                items,
-                d,
-            );
-        }
-    }
 }
 
 /// A wave's `respawns_on_rest` (spec-0016 §1): inert with no `bonfire`

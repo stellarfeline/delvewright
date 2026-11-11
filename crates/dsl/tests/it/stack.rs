@@ -1,6 +1,7 @@
 //! spec-0134 §5, document tier: a rocket stack carries its stars. The
-//! `fireworks` field is exported on every stack site that carries it (a `loot`
-//! stack, a `give-item`, a class kit stack), admitted on
+//! `fireworks` field is exported on the one stack shape every site writes (a
+//! class kit, a `loot` stack, a `give-item`, a worn piece, a declared drop),
+//! admitted on
 //! `minecraft:firework_rocket` and refused on any other item at each site
 //! (`DW1095`), and held to the bounds a `firework` effect's stars are
 //! (`DW0100`). The emitted component is the compiler's, proven in
@@ -57,9 +58,10 @@ fn with(code: &str, d: &[Diagnostic]) -> Vec<Diagnostic> {
     d.iter().filter(|x| x.code == code).cloned().collect()
 }
 
-/// The two stack sites a quests document holds: a `give-item` on the keeper's
-/// beat, and a `loot` fill (its anchor's holder is a build-tier question; the
-/// stack's own questions are all answered here).
+/// The four stack sites a quests document holds: a `give-item` on the keeper's
+/// beat, a `loot` fill (its anchor's holder is a build-tier question; the
+/// stack's own questions are all answered here), an actor's worn piece and its
+/// declared drop.
 fn quests_with(item: &'static str, fw: Value) -> impl FnOnce(&mut Value) {
     move |q| {
         q["content"]["quests"][0]["on_objective_complete"]["obj/talk"]
@@ -71,6 +73,11 @@ fn quests_with(item: &'static str, fw: Value) -> impl FnOnce(&mut Value) {
             );
         q["content"]["loot"] = json!([{"id": "loot/stores", "anchor": "anchor/keeper-stand",
             "items": [{"item": item, "count": 2, "fireworks": fw}]}]);
+        q["content"]["actors"] = json!([{
+            "id": "actor/fox", "entity": "minecraft:fox", "anchor": "spawn",
+            "equipment": {"off_hand": {"item": item, "fireworks": fw}},
+            "drops": [{"item": item, "fireworks": fw}]
+        }]);
     }
 }
 
@@ -95,11 +102,24 @@ fn the_schema_exports_fireworks_on_every_stack_site() {
         .or(q["definitions"].as_object())
         .unwrap();
     assert!(defs["LootItem"]["properties"].get("fireworks").is_some());
-    let give = serde_json::to_string(&q).unwrap();
-    let at = give.find("\"give-item\"").expect("give-item is exported");
-    let arm_start = give[..at].rfind("\"properties\"").unwrap();
+    assert!(defs["Stack"]["properties"].get("fireworks").is_some());
+    fn arm<'a>(v: &'a Value, tag: &str) -> Option<&'a Value> {
+        match v {
+            Value::Object(m) => {
+                if v["properties"]["type"]["const"] == tag {
+                    return Some(v);
+                }
+                m.values().find_map(|x| arm(x, tag))
+            }
+            Value::Array(a) => a.iter().find_map(|x| arm(x, tag)),
+            _ => None,
+        }
+    }
+    let give = arm(&q, "give-item").expect("give-item is exported");
     assert!(
-        give[arm_start..at].contains("\"fireworks\""),
+        serde_json::to_string(give)
+            .unwrap()
+            .contains("\"fireworks\""),
         "the give-item arm carries `fireworks`"
     );
     let sf = &defs["StackFireworks"];
@@ -132,7 +152,7 @@ fn a_rocket_with_stars_is_admitted_at_every_site() {
     );
 }
 
-/// `DW1095` at each of the three sites, at the stack's `fireworks`.
+/// `DW1095` at each of the five sites, at the stack's `fireworks`.
 #[test]
 fn stars_on_an_arrow_are_dw1095_at_each_site() {
     let c = campaign(
@@ -145,6 +165,8 @@ fn stars_on_an_arrow_are_dw1095_at_each_site() {
     assert_eq!(
         paths,
         vec![
+            "/content/actors/0/drops/0/fireworks",
+            "/content/actors/0/equipment/off_hand/fireworks",
             "/content/classes/0/kit/3/fireworks",
             "/content/loot/0/items/0/fireworks",
             "/content/quests/0/on_objective_complete/obj/talk/1/fireworks",

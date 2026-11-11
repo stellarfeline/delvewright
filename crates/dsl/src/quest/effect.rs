@@ -350,6 +350,14 @@ impl QuestEffect {
         }
     }
 
+    /// The batch id if this is `apply-edits` (spec-0134 §6).
+    pub fn apply_edits(&self) -> Option<&crate::EditBatchId> {
+        match &self.verb {
+            Verb::ApplyEdits { batch } => Some(batch),
+            _ => None,
+        }
+    }
+
     /// The fill id if this is `fill-loot` (spec-0134 §6).
     pub fn fill_loot(&self) -> Option<&crate::LootId> {
         match &self.verb {
@@ -366,17 +374,19 @@ impl QuestEffect {
         }
     }
 
-    /// The item id if this is `give-item` (v0.3).
+    /// The item id if this is a `give-item` that writes its stack out (v0.3).
+    /// A stack taken `from` an actor names its item through the actor's
+    /// equipment ([`crate::GiveSource::resolve`]).
     pub fn give_item(&self) -> Option<&str> {
         match &self.verb {
-            Verb::GiveItem { item, .. } => Some(item),
+            Verb::GiveItem { source, .. } => source.stack().map(|s| s.item.as_str()),
             _ => None,
         }
     }
 
     /// `true` if this is a `give-item` carrying a v0.4 display `name`.
     pub fn give_item_named(&self) -> bool {
-        matches!(self.verb, Verb::GiveItem { name: Some(_), .. })
+        matches!(&self.verb, Verb::GiveItem { source, .. } if source.stack().is_some_and(|s| s.name.is_some()))
     }
 
     /// The declared `carrier` if this is a `give-item` that states one (v0.6,
@@ -486,6 +496,8 @@ impl QuestEffect {
             | Verb::DespawnWave { .. }
             // spec-0134's `fill-loot`.
             | Verb::FillLoot { .. }
+            // spec-0134's `apply-edits`.
+            | Verb::ApplyEdits { .. }
             | Verb::DropStake { .. } => None,
         }
     }

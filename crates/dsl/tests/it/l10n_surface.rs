@@ -111,7 +111,6 @@ const SURFACE: &[(&str, &str, Kind)] = &[
         NotPlayerVisible("why an edit batch exists; machine-ignored authoring context (spec-0017)"),
     ),
     ("EditFrame", "kind", Machine),
-    ("EnchantedItem", "item", Reference),
     ("Happening", "subject", Reference),
     (
         "Happening",
@@ -124,8 +123,6 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ("HealthBar", "color", Reference),
     ("HealthBar", "style", Reference),
     ("HealthBar", "title", Inventoried),
-    ("ItemDrop", "item", Reference),
-    ("ItemDrop", "name", Inventoried),
     ("KitItem", "item", Reference),
     ("KitItem", "name", Inventoried),
     (
@@ -185,6 +182,8 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ("Manual", "title", Inventoried),
     ("Manual", "pages", Inventoried),
     ("LootItem", "item", Reference),
+    ("Stack", "item", Reference),
+    ("Stack", "name", Inventoried),
     ("LootItem", "name", Inventoried),
     ("LootItem", "slot", Machine),
     ("Sign", "front", Inventoried),

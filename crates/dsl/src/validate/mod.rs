@@ -111,7 +111,6 @@ pub fn validate_campaign_with(
     crate::npc::npc_anchor_checks(c, &providers, &mut d);
     crate::quest::check::quest_anchor_checks(c, &providers, &mut d);
     crate::trigger::trigger_anchor_checks(c, &providers, &mut d);
-    crate::class::kit_item_checks(c, items, &mut d);
     crate::trigger::use_item_checks(c, items, &mut d);
     crate::quest::check::cross_stage(c, &mut d);
     crate::dialogue::npc_tree_checks(c, &mut d);
@@ -151,13 +150,11 @@ pub fn validate_campaign_with(
     crate::cutscene::cutscene_style_checks(c, &mut d);
     crate::actor::actor_checks(c, anchors, entities, &mut d);
     crate::quest::check::carrier_one_checks(c, &mut d);
-    crate::wave::wave_equipment_checks(c, items, &mut d);
-    crate::actor::actor_equipment_checks(c, items, &mut d);
     // spec-0067: every piece is put where the pinned game shows it on the body
     // that wears it (`DW0898`).
     crate::equipment::fit_checks(c, items, &mut d);
     // Declared drops — the subset an elite/boss leaves behind.
-    crate::wave::check_drops(c, &c.quests.content, items, &mut d);
+    crate::wave::check_drops(c, &c.quests.content, &mut d);
     crate::wave::rest_reseat_checks(c, &mut d);
     crate::class::bonfire_flask_checks(c, declares_bonfire(c), &mut d);
     // spec-0082: assemblies, their rigs and the verbs and trigger that name
@@ -171,12 +168,11 @@ pub fn validate_campaign_with(
     crate::loot::collect_slot_checks(c, items, &mut d);
     crate::loot::container_declaration_checks(c, &mut d);
     crate::sign::sign_checks(c, anchors, &mut d);
-    crate::quest::check::give_item_enchantment_checks(c, &mut d);
     crate::wave::lane_checks(c, anchors, &mut d);
     crate::wave::difficulty_checks(c, &mut d);
     crate::firework::firework_checks(c, &mut d);
-    crate::loot::stack_fireworks_checks(c, &mut d);
     crate::loot::loot_fill_checks(c, &mut d);
+    crate::world_edits::apply_edits_checks(c, &mut d);
     crate::wave::mob_count_checks(c, &mut d);
     // spec-0085: the perception bundle — a particle's id, the envelope's audience
     // on a party fact, and a sight grant that ends under a camera.
@@ -232,7 +228,10 @@ pub fn validate_campaign_with(
     // and the potion registry is complete in-crate, so no injected registry is
     // needed.
     let effects_reg = VendoredEffectRegistry::v1_21_11();
-    crate::class::kit_potion_checks(c, &effects_reg, &mut d);
+    // spec-0134 §5: every item stack, at every site, asked one set of
+    // questions — the item, its enchantments, its potion, its stars.
+    crate::stack::stack_checks(c, items, &effects_reg, &mut d);
+    crate::stack::give_from_checks(c, &mut d);
     // spec-0031: the stage-5 lethal volumes. Structural only — the
     // completability half (`DW0510` the forced route, `DW0511` the respawn seat)
     // is compiler-tier, because it needs the solved layout.

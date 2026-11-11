@@ -25,22 +25,22 @@ pub struct LootPlan {
     pub by_effect: bool,
 }
 
-/// One stack in a [`LootPlan`].
+/// One stack in a [`LootPlan`]: the declared stack (its name already
+/// localized by the build language) and the slot it names.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LootItemPlan {
-    /// Item id.
-    pub item: String,
-    /// Stack size.
-    pub count: u32,
-    /// Custom name, already localized by the build language.
-    pub name: Option<String>,
-    /// Enchantment id → level.
-    pub enchantments: BTreeMap<String, u32>,
+    /// The stack.
+    pub stack: delvewright_dsl::Stack,
     /// The slot the stack names (spec-0111 §3.3), or `None` for a positional
     /// stack.
     pub slot: Option<String>,
-    /// The rocket's stars (spec-0134 §5), or `None`.
-    pub fireworks: Option<delvewright_dsl::StackFireworks>,
+}
+
+impl std::ops::Deref for LootItemPlan {
+    type Target = delvewright_dsl::Stack;
+    fn deref(&self) -> &delvewright_dsl::Stack {
+        &self.stack
+    }
 }
 
 /// A `collect` objective that ADOPTS a prefab-placed holder (`holder`,
@@ -139,12 +139,8 @@ pub(super) fn collect_loot(
                     .items
                     .iter()
                     .map(|it| LootItemPlan {
-                        item: it.item.clone(),
-                        count: it.count,
-                        name: it.name.clone(),
-                        enchantments: it.enchantments.clone(),
+                        stack: it.stack.clone(),
                         slot: it.slot.clone(),
-                        fireworks: it.fireworks.clone(),
                     })
                     .collect(),
                 by_effect: l.filled == delvewright_dsl::LootFilled::ByEffect,

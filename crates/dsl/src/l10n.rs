@@ -56,6 +56,7 @@
 //! | `wave.<wave>.mob.<i>.name` | a wave mob's custom `name` (only if set) |
 //! | `wave.<wave>.mob.<i>.drop.<n>.name` | a declared quest-item drop's display `name` (v0.9, only if set) |
 //! | `actor.<actor>.drop.<n>.name` | an actor's declared quest-item drop `name` (v0.9, only if set) |
+//! | `wave.<wave>.mob.<i>.equipment.<slot>.name` / `actor.<actor>.equipment.<slot>.name` | a worn piece's display `name` (v0.73, spec-0134 §5, only if set) |
 //! | `fx.…​.narrate` / `fx.…​.give` | a `narrate` line / named `give-item` in an effect list |
 //! | `fx.…​.rest_prompt` / `.rest_label` / `.save_label` | a `bonfire`'s authored rest-dialog strings (v0.8, only if set) |
 //! | `fx.…​.rest_tooltip` / `.save_tooltip` | a `bonfire` button's hover tooltip (spec-0078, only if set) |
@@ -126,7 +127,10 @@ use crate::{NarrateStyle, QuestEffect};
 fn effect_strings(eff: &mut QuestEffect, keybase: &str, f: &mut dyn FnMut(&str, &mut String)) {
     match &mut eff.verb {
         Verb::Narrate(crate::Narration { text, .. }) => f(&format!("{keybase}.narrate"), text),
-        Verb::GiveItem { name: Some(n), .. } => f(&format!("{keybase}.give"), n),
+        Verb::GiveItem {
+            source: crate::GiveSource::Stack(crate::Stack { name: Some(n), .. }),
+            ..
+        } => f(&format!("{keybase}.give"), n),
         // spec-0016 §1: the bonfire's rest dialog is
         // read by the player like any other on-screen line, so its authored
         // strings translate like any other. Unauthored fields are absent from the
@@ -472,6 +476,18 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
                     f(&format!("wave.{wl}.mob.{i}.drop.{n}.name"), name);
                 }
             }
+            // A worn piece is a stack, and a named one is read off the body
+            // and off the ground it drops to (spec-0134 §5).
+            if let Some(eq) = mob.equipment.as_mut() {
+                for (slot, piece) in eq.pieces_mut() {
+                    if let Some(name) = piece.name_mut() {
+                        f(
+                            &format!("wave.{wl}.mob.{i}.equipment.{}.name", slot.field()),
+                            name,
+                        );
+                    }
+                }
+            }
         }
         // Stage 5 — a wave's stated health-bar title (DSL v0.31, spec-0073). A
         // DERIVED title is not a string of its own: it is the one mob entry's
@@ -502,6 +518,13 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
         for (n, dr) in a.drops.iter_mut().enumerate() {
             if let Some(name) = dr.name_mut() {
                 f(&format!("actor.{al}.drop.{n}.name"), name);
+            }
+        }
+        if let Some(eq) = a.equipment.as_mut() {
+            for (slot, piece) in eq.pieces_mut() {
+                if let Some(name) = piece.name_mut() {
+                    f(&format!("actor.{al}.equipment.{}.name", slot.field()), name);
+                }
             }
         }
         // An actor's stated health-bar title (spec-0073); a derived one is the
@@ -817,7 +840,7 @@ pub fn key_kind(key: &str) -> Option<TextKind> {
             _ => return None,
         },
         "wave" | "actor" => match last {
-            "name" if segs.contains(&"drop") => ItemName,
+            "name" if segs.contains(&"drop") || segs.contains(&"equipment") => ItemName,
             "name" => Name,
             "title" if segs[n - 2] == "health_bar" => Title,
             _ => return None,

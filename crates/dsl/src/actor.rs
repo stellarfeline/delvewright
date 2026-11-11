@@ -213,9 +213,8 @@ use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::Campaign;
 use crate::ids::is_kebab;
 use crate::quest::check::check_no_nested_sequence;
-use crate::registry::{AnchorRegistry, EntityRegistry, ItemRegistry};
+use crate::registry::{AnchorRegistry, EntityRegistry};
 use crate::validate::{AnchorProviders, station_kind_diag};
-use crate::wave::check_equipment;
 use std::collections::BTreeSet;
 
 /// Recursively visit every effect in `effs`, descending into every nested effect
@@ -371,28 +370,6 @@ pub(crate) fn actor_checks(
         };
         walk_effects_deep(effs, &mut visit);
         check_no_nested_sequence(effs, path, d);
-    }
-}
-
-/// Actor `equipment` (spec-0021): item ids and enchantments, by the wave mob's
-/// rule ([`crate::wave::check_equipment`]).
-pub(crate) fn actor_equipment_checks(
-    c: &Campaign,
-    items: &dyn ItemRegistry,
-    d: &mut Vec<Diagnostic>,
-) {
-    let quests = &c.quests.content;
-    // Actor `equipment` (spec-0021): the same shape, the same registries, the
-    // same diagnostics as a wave mob's — one surface, one rule set.
-    for (i, a) in quests.actors.iter().enumerate() {
-        let Some(eq) = &a.equipment else { continue };
-        check_equipment(
-            eq,
-            "actor",
-            &format!("/content/actors/{i}/equipment"),
-            items,
-            d,
-        );
     }
 }
 

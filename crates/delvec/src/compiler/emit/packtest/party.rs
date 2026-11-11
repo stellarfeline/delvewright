@@ -94,7 +94,10 @@ fn judged_carrier_gives(c: &delvewright_dsl::Campaign) -> Vec<(&str, Vec<(&str, 
                 .into_iter()
                 .filter(|e| judgeable(e))
                 .filter_map(|e| match &e.verb {
-                    Verb::GiveItem { item, count, .. } => Some((item.as_str(), *count)),
+                    Verb::GiveItem {
+                        source: delvewright_dsl::GiveSource::Stack(s),
+                        ..
+                    } => Some((s.item.as_str(), s.count)),
                     _ => None,
                 })
                 .collect();

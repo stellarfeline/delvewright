@@ -78,12 +78,7 @@ fn block_fill_lines(l: &crate::compiler::plan::LootPlan) -> Vec<String> {
                 c[1],
                 c[2],
                 it.item,
-                container_stack_components(
-                    &it.item,
-                    it.name.as_deref(),
-                    &it.enchantments,
-                    it.fireworks.as_ref()
-                ),
+                super::stack::command_suffix(&it.stack, vec![]),
                 it.count
             ));
         }
@@ -91,57 +86,13 @@ fn block_fill_lines(l: &crate::compiler::plan::LootPlan) -> Vec<String> {
     out
 }
 
-/// The `[custom_name=…,enchantments=…]` component suffix a container-fill stack
-/// carries in `item replace … with <item><suffix> <count>`, or `""` when it
-/// carries neither — which is what keeps every unnamed, unenchanted fill
-/// byte-identical to the emission that predates both fields.
-///
-/// ONE renderer for every container fill: spec-0021 `loot` and the DSL v0.8
-/// `collect` `item_name`. A quest item named on one surface and
-/// unnamed on the other would be the same defect the wave-arming table taught —
-/// two places describing one stack, drifting apart the moment either moves.
-/// Enchantment order is the `BTreeMap`'s id order, never hash order (ADR-0006).
-pub(super) fn container_stack_components(
-    item: &str,
-    name: Option<&str>,
-    ench: &std::collections::BTreeMap<String, u32>,
-    fireworks: Option<&delvewright_dsl::StackFireworks>,
-) -> String {
-    let mut comps: Vec<String> = Vec::new();
-    if let Some(n) = name {
-        comps.push(format!(
-            "custom_name={}",
-            tr_with(n, &[("italic", json!(false))])
-        ));
-    }
-    if !ench.is_empty() {
-        let body = ench
-            .iter()
-            .map(|(id, lvl)| format!("\"{id}\":{lvl}"))
-            .collect::<Vec<_>>()
-            .join(",");
-        // The component the item writes them to: an enchanted book stores them.
-        let comp = delvewright_dsl::enchantment_component(item);
-        comps.push(format!(
-            "{}={{{body}}}",
-            comp.strip_prefix("minecraft:").unwrap_or(comp)
-        ));
-    }
-    if let Some(fw) = fireworks {
-        comps.push(super::firework::stack_fireworks_component(fw));
-    }
-    if comps.is_empty() {
-        return String::new();
-    }
-    format!("[{}]", comps.join(","))
-}
-
 /// The component suffix a v0.8 `collect` stack carries: its `item_name`, or `""`
-/// when the objective declares none. A thin alias over
-/// [`container_stack_components`] — a collect stack is a container fill, and is
-/// rendered by the container fill's renderer.
+/// when the objective declares none — a collect stack is a stack, written by
+/// the one stack writer ([`super::stack::command_suffix`]).
 pub(super) fn item_component_tail(item: &str, name: Option<&str>) -> String {
-    container_stack_components(item, name, &std::collections::BTreeMap::new(), None)
+    let mut s = delvewright_dsl::Stack::of(item);
+    s.name = name.map(str::to_string);
+    super::stack::command_suffix(&s, vec![])
 }
 
 #[cfg(test)]
@@ -154,14 +105,10 @@ mod loot_emit_tests {
     }
 
     fn item(item: &str, count: u32, name: Option<&str>, ench: &[(&str, u32)]) -> LootItemPlan {
-        LootItemPlan {
-            item: item.to_string(),
-            count,
-            name: name.map(str::to_string),
-            enchantments: ench.iter().map(|(k, v)| ((*k).to_string(), *v)).collect(),
-            slot: None,
-            fireworks: None,
-        }
+        let mut stack = delvewright_dsl::Stack::counted(item, count);
+        stack.name = name.map(str::to_string);
+        stack.enchantments = ench.iter().map(|(k, v)| ((*k).to_string(), *v)).collect();
+        LootItemPlan { stack, slot: None }
     }
 
     fn plan_of(items: Vec<LootItemPlan>) -> Vec<LootPlan> {
@@ -197,7 +144,7 @@ mod loot_emit_tests {
     #[test]
     fn a_rocket_in_a_fill_carries_its_stars() {
         let mut rocket = item("minecraft:firework_rocket", 2, None, &[]);
-        rocket.fireworks = Some(delvewright_dsl::StackFireworks {
+        rocket.stack.fireworks = Some(delvewright_dsl::StackFireworks {
             flight: None,
             explosions: vec![delvewright_dsl::FireworkExplosion {
                 shape: delvewright_dsl::FireworkShape::Burst,
@@ -310,15 +257,17 @@ mod loot_emit_tests {
             "{}",
             out[0]
         );
-        let mut ench = std::collections::BTreeMap::new();
-        ench.insert("minecraft:mending".to_string(), 1);
+        let mut book = delvewright_dsl::Stack::of("minecraft:enchanted_book");
+        book.enchantments.insert("minecraft:mending".to_string(), 1);
         assert_eq!(
-            enchantment_component_tail("minecraft:enchanted_book", &ench),
-            r#",components:{"minecraft:stored_enchantments":{"minecraft:mending":1}}"#
+            super::super::stack::nbt(&book),
+            r#"{id:"minecraft:enchanted_book",count:1,components:{"minecraft:stored_enchantments":{"minecraft:mending":1}}}"#
         );
+        let mut sword = book.clone();
+        sword.item = "minecraft:iron_sword".to_string();
         assert_eq!(
-            enchantment_component_tail("minecraft:iron_sword", &ench),
-            r#",components:{"minecraft:enchantments":{"minecraft:mending":1}}"#
+            super::super::stack::nbt(&sword),
+            r#"{id:"minecraft:iron_sword",count:1,components:{"minecraft:enchantments":{"minecraft:mending":1}}}"#
         );
         let tree = crate::compiler::commands::CommandTree::v1_21_11();
         for line in &out {
@@ -387,25 +336,28 @@ mod loot_emit_tests {
     }
 
     fn full_kit() -> delvewright_dsl::MobEquipment {
-        use delvewright_dsl::{EnchantedItem, EquipItem};
+        use delvewright_dsl::EquipItem;
+        let enchanted = |item: &str, e: &str, lvl: u32| {
+            let mut s = delvewright_dsl::Stack::of(item);
+            s.enchantments.insert(e.to_string(), lvl);
+            EquipItem::Stack(s)
+        };
         delvewright_dsl::MobEquipment {
-            head: Some(EquipItem::Enchanted(EnchantedItem {
-                item: "minecraft:netherite_helmet".to_string(),
-                enchantments: [("minecraft:protection".to_string(), 4)]
-                    .into_iter()
-                    .collect(),
-            })),
+            head: Some(enchanted(
+                "minecraft:netherite_helmet",
+                "minecraft:protection",
+                4,
+            )),
             chest: Some(EquipItem::Plain(
                 "minecraft:netherite_chestplate".to_string(),
             )),
             legs: None,
             feet: None,
-            main_hand: Some(EquipItem::Enchanted(EnchantedItem {
-                item: "minecraft:netherite_sword".to_string(),
-                enchantments: [("minecraft:sharpness".to_string(), 5)]
-                    .into_iter()
-                    .collect(),
-            })),
+            main_hand: Some(enchanted(
+                "minecraft:netherite_sword",
+                "minecraft:sharpness",
+                5,
+            )),
             off_hand: None,
             body: None,
             saddle: None,

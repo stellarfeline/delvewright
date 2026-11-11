@@ -179,12 +179,7 @@ fn fill_line(o: &OwnedHolder, slot: &str, it: &crate::compiler::plan::LootItemPl
         "item replace entity {} {slot} with {}{} {}",
         o.selector(),
         it.item,
-        container_stack_components(
-            &it.item,
-            it.name.as_deref(),
-            &it.enchantments,
-            it.fireworks.as_ref()
-        ),
+        super::stack::command_suffix(&it.stack, vec![]),
         it.count
     )
 }
@@ -324,12 +319,8 @@ mod tests {
 
     fn stack(item: &str) -> crate::compiler::plan::LootItemPlan {
         crate::compiler::plan::LootItemPlan {
-            item: item.to_string(),
-            count: 1,
-            name: None,
-            enchantments: BTreeMap::new(),
+            stack: delvewright_dsl::Stack::of(item),
             slot: None,
-            fireworks: None,
         }
     }
 
