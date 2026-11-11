@@ -5052,10 +5052,11 @@ const LONG_HALL_ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/long-hall-groom",
-        pos: [6, 1, LONG_HALL_END_Z + 31],
-        facing: Some("north"),
+        pos: [8, 1, LONG_HALL_END_Z + 33],
+        facing: Some("west"),
         trigger_block: None,
-        note: "the east yard's far end: where the groom stands, a ride on the mare away \
+        note: "the east yard's far end, abreast of the rail line's last cell: where the groom \
+               stands, a ride on the mare away, and whom a rider off the cart walks up to \
                (spec-0135)",
         role: None,
     },
