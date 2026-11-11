@@ -91,4 +91,5 @@ mod v31_health_bar;
 mod v36_lightning;
 mod v46_endings;
 mod v48_shot_subject;
+mod vehicle;
 mod world_difficulty;

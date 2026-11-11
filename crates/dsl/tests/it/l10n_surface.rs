@@ -249,6 +249,8 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ("Narration", "sound", Reference),
     ("Narration", "text", Inventoried),
     ("Pulse", "sound", Reference),
+    ("Vehicle", "entity", Reference),
+    ("Vehicle", "name", Inventoried),
     ("QuestEffect", "block", Reference),
     ("QuestEffect", "place", Reference),
     ("QuestEffect", "effect", Reference),

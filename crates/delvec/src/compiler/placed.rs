@@ -633,7 +633,7 @@ impl Ledger {
 }
 
 /// Which functions the ledger reads, and how each one fires: `setup_finish`,
-/// a shortcut gate's `seal_arm_` and a holder's `holder_<id>` at setup; `activate_<obj>` at the step
+/// a shortcut gate's `seal_arm_`, a holder's `holder_<id>` and a vehicle's `vehicle_seat_<v>` at setup; `activate_<obj>` at the step
 /// its objective activates on; a
 /// `complete_<obj>` at its objective's step and a `complete_q_<quest>` at its
 /// last objective's; a `trig_<trigger>` at the trigger's own step; a `trap_`
@@ -751,6 +751,13 @@ fn firings_of(
         // An item holder's body (spec-0111 §4.1): summoned at world init, its
         // one call site `setup_finish` (`emit::holders::holder_setup`). Its
         // `item replace entity` fills place nothing the ledger records.
+        return Some(vec![Firing::Setup]);
+    }
+    if name.starts_with("vehicle_seat_") {
+        // A vehicle's body (spec-0135 §2): seated at world init by
+        // `setup_finish` (`emit::vehicle::vehicle_setup`); a `seat-vehicle`
+        // beat and the re-seat run the same function and put the same body on
+        // the same mark, so every frame's world holds it from setup.
         return Some(vec![Firing::Setup]);
     }
     if name.starts_with("shortcut_open_") {

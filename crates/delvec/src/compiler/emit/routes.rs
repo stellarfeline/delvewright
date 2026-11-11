@@ -782,6 +782,10 @@ pub(super) fn prove_world(
                 // the route's verdict so a vehicle out of its medium is named
                 // as that, not as the leg it could not carry.
                 {
+                    // The walk region, not the reach graph: a rider is walked on
+                    // cue from where it leaves (a ride step's `leave`), so a
+                    // leaving cell must be ground the party walks. A rider who
+                    // could only fall back in is refused — the conservative half.
                     let walk = if plan.vehicles.is_empty() {
                         BTreeSet::new()
                     } else {

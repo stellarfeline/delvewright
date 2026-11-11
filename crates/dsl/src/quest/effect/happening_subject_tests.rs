@@ -264,6 +264,18 @@ fn every_verb_answers_the_census() {
             serde_json::json!({"type":"lightning","at":{"anchor":"anchor/court"}}),
             Some("anchor/court"),
         ),
+        // spec-0135: a vehicle is not a story subject (no `happening` is
+        // demanded of its verbs), so neither resolves one.
+        (
+            "seat-vehicle",
+            serde_json::json!({"type":"seat-vehicle","vehicle":"vehicle/gull"}),
+            None,
+        ),
+        (
+            "despawn-vehicle",
+            serde_json::json!({"type":"despawn-vehicle","vehicle":"vehicle/gull"}),
+            None,
+        ),
     ];
     // The binding: the table answers for every verb the schema declares, and
     // for no name the schema does not.

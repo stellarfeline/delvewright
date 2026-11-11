@@ -44,6 +44,7 @@ const LEDGER: &[&str] = &[
     "seal_arm_",
     "shortcut_open_",
     "holder_",
+    "vehicle_seat_",
 ];
 
 /// A placing function the ledger does not read, by class and prefix.
