@@ -330,6 +330,28 @@ fn the_shot_and_the_raised_item_are_dispatched_by_their_own_criteria() {
     assert!(press.contains("function hello-world:trig_hit_the_mark"));
 }
 
+/// The kit rule `DW1096` shares (`MovementItems::first_held`): a bow in one
+/// class's kit of two is a path with no bow.
+#[test]
+fn a_bow_in_one_class_of_two_is_dw1090() {
+    let (c, q) = docs(|c, _| {
+        let mut second = c["content"]["classes"][0].clone();
+        second["id"] = json!("class/second");
+        second["name"] = json!("Second");
+        second["kit"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|k| k["item"] != "minecraft:bow");
+        c["content"]["classes"].as_array_mut().unwrap().push(second);
+    });
+    match build(&c, &q, &[]) {
+        Err(BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code, "DW1090", "{message}");
+        }
+        other => panic!("expected DW1090, got {other:?}"),
+    }
+}
+
 #[test]
 fn a_shot_with_no_bow_in_any_hand_is_dw1090() {
     let (c, q) = docs(|c, _| {

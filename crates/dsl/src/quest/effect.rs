@@ -350,6 +350,14 @@ impl QuestEffect {
         }
     }
 
+    /// The vehicle a `seat-vehicle` or `despawn-vehicle` names (spec-0135 §2).
+    pub fn vehicle_ref(&self) -> Option<&crate::VehicleId> {
+        match &self.verb {
+            Verb::SeatVehicle { vehicle } | Verb::DespawnVehicle { vehicle } => Some(vehicle),
+            _ => None,
+        }
+    }
+
     /// The batch id if this is `apply-edits` (spec-0134 §6).
     pub fn apply_edits(&self) -> Option<&crate::EditBatchId> {
         match &self.verb {
@@ -494,6 +502,9 @@ impl QuestEffect {
             | Verb::Lightning { .. }
             // spec-0133's `despawn-wave`.
             | Verb::DespawnWave { .. }
+            // spec-0135's vehicle verbs.
+            | Verb::SeatVehicle { .. }
+            | Verb::DespawnVehicle { .. }
             // spec-0134's `fill-loot`.
             | Verb::FillLoot { .. }
             // spec-0134's `apply-edits`.

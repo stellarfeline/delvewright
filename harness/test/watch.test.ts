@@ -3,7 +3,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CriticalPathParseError, parseCriticalPath } from "../src/critical-path.ts";
+import { CRITICAL_PATH_FORMAT_VERSION, CriticalPathParseError, parseCriticalPath } from "../src/critical-path.ts";
 import {
   WatchLedger,
   bearing,
@@ -21,7 +21,7 @@ import {
 function pathWith(watchers: unknown): Record<string, unknown> {
   return {
     version: "fixture",
-    format_version: 8,
+    format_version: CRITICAL_PATH_FORMAT_VERSION,
     campaign_id: "gallery",
     non_combatants: { kinds: ["villager"], ambiguous: [], examined: 1, unbound: false },
     steps: [

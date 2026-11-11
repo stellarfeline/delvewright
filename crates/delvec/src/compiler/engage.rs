@@ -407,6 +407,7 @@ mod tests {
             partial: (BTreeMap::new()).into(),
             waterloggable: (std::collections::BTreeSet::new()).into(),
             hurting: Default::default(),
+            rails: Default::default(),
         };
         let mut blocks = BTreeMap::new();
         for x in 0..9 {

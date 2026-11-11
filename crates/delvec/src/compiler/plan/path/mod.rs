@@ -13,7 +13,7 @@ pub(in crate::compiler::plan) use ancestors::*;
 pub use mock::mock_function;
 pub(crate) use mock::path_mocks;
 pub use pursuers::Pursuer;
-pub(crate) use pursuers::{check_outrun_loose, pursuers_by_step};
+pub(crate) use pursuers::{check_outrun_loose, check_ridden_vehicles_stand, pursuers_by_step};
 pub use region::*;
 pub(crate) use triggers::*;
 
@@ -213,6 +213,29 @@ pub enum Step {
         /// player from, which the wait stands outside.
         aggro: Option<([i32; 3], f64)>,
     },
+    /// **Ride a vehicle on a leg its objective declares ridden** (spec-0135 §4, §6):
+    /// walk to `pos` (the boarding cell), mount the vehicle, be carried along
+    /// `medium`, leave and stand at `transport` (the leaving cell). Spliced in
+    /// front of the step whose leg it carries.
+    Ride {
+        /// The `vehicle/<id>` ridden.
+        vehicle_id: String,
+        /// Its kind token (`boat`, `minecart`, `mount`).
+        kind: &'static str,
+        /// The boarding cell.
+        pos: [i32; 3],
+        /// The medium cells ridden, the seat first.
+        medium: Vec<[i32; 3]>,
+        /// The rate the harness drives at, blocks a second.
+        rate: f64,
+        /// The leaving cell, where the party goes on from.
+        transport: [i32; 3],
+        /// The item a rider holds to steer, where the kind needs one.
+        steering_item: Option<String>,
+        /// The cells the vehicle's body stands in at its mark: the walk to
+        /// the boarding cell goes round them.
+        body: Vec<[i32; 3]>,
+    },
     /// Assert a scoreboard objective value.
     AssertComplete {
         /// The objective (`dw.campaign`).
@@ -239,6 +262,7 @@ impl Step {
             | Step::AssertComplete { .. }
             | Step::Trigger { .. }
             | Step::Mock { .. }
+            | Step::Ride { .. }
             | Step::Loop { .. } => None,
         }
     }
@@ -259,6 +283,7 @@ impl Step {
             | Step::Interact { pos, .. }
             | Step::Trigger { pos, .. }
             | Step::Expire { pos, .. }
+            | Step::Ride { pos, .. }
             | Step::Loop { pos, .. } => Some(*pos),
             Step::SelectClass { .. } | Step::AssertComplete { .. } | Step::Mock { .. } => None,
         }
@@ -319,6 +344,7 @@ impl Step {
             }
             | Step::Kill { .. }
             | Step::Loop { .. }
+            | Step::Ride { .. }
             // A lapse completes nothing, wherever the party stands.
             | Step::Expire { .. }
             | Step::SelectClass { .. }
@@ -422,9 +448,14 @@ pub fn completed_on_landing(walked: &[Step], transports: &[Option<[i32; 3]>], i:
 ///   target. A format change for `7`'s reason: a format-7 bot handed a census
 ///   step would wait on a count no body of its making raises.
 ///
+/// * `9` — a step may be `ride` (spec-0135 §6): `{vehicle, kind, board,
+///   medium, rate, leave, steering_item?}` — walk to `board`, mount, be
+///   carried along `medium`, leave and stand at `leave`. A format change for
+///   `7`'s reason: an older bot handed one would refuse the kind.
+///
 /// The harness **requires** the current version: an older `critical-path.json`
 /// (which it cannot verify) is rejected rather than run hollow.
-pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 8;
+pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 9;
 
 impl<'a> Plan<'a> {
     /// The EXECUTABLE critical path of one enumerated branch (spec-0025 §3).
@@ -826,6 +857,7 @@ pub(super) fn build_critical_path(
     carry: PathLinks<'_>,
 ) -> Result<CriticalPath, PlanError> {
     let PathLinks { links, takes } = carry;
+    let vehicles = crate::compiler::nav::vehicle::vehicle_plans(campaign, anchors);
     let mut steps = Vec::new();
     // `(path step index, first critical step it produced)`, in path order — how
     // a critical step is mapped back to the flags and data the party holds
@@ -1747,7 +1779,7 @@ pub(super) fn build_critical_path(
             transport_by_step[k] = Some(l.to);
         }
     }
-    if !takes.spliced.is_empty() {
+    if !takes.spliced.is_empty() || !takes.rides.is_empty() {
         let n = steps.len();
         let mut new_steps = Vec::with_capacity(n);
         let mut new_transport = Vec::with_capacity(n);
@@ -1774,6 +1806,25 @@ pub(super) fn build_critical_path(
                     item: None,
                 });
                 new_transport.push(Some(l.to));
+                new_sneak.push(false);
+                new_live.push(live_links_by_step[k].clone());
+                new_armed.push(armed_by_step[k].clone());
+                new_armed_ids.push(armed_ids_by_step[k].clone());
+            }
+            if let Some(r) = takes.rides.get(&k)
+                && let Some(v) = vehicles.get(r.vehicle)
+            {
+                new_steps.push(Step::Ride {
+                    vehicle_id: v.id.clone(),
+                    kind: v.kind.token(),
+                    pos: r.board,
+                    medium: r.medium.clone(),
+                    rate: v.rate(),
+                    transport: r.leave,
+                    steering_item: v.steering_item.clone(),
+                    body: v.body_cells().into_iter().collect(),
+                });
+                new_transport.push(None);
                 new_sneak.push(false);
                 new_live.push(live_links_by_step[k].clone());
                 new_armed.push(armed_by_step[k].clone());

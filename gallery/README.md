@@ -290,6 +290,9 @@ holding them at once.
 | `a-watcher-for-a-class-nobody-plays` | `DW0996` | `validate` | setting the Warden to watch the nearest `class/pilgrim`, a class stage 3 does not declare |
 | `a-watcher-nobody-can-reach` | `DW0997` | `build` | setting the destrier at the annex threshold to watch within one block, where no cell the party walks to stands |
 | `a-beat-with-no-interval` | `DW0993` | `validate` | setting the slow heartbeat to beat `every: 0` ticks, the same tick again forever |
+| `a-chest-boat-with-a-rider` | `DW1096` | `validate` | declaring the hall's cart as an oak chest boat, whose second seat is its chest |
+| `a-llama-under-a-saddle` | `DW1096` | `validate` | declaring the race pig as a llama, which the game does not steer under a rider |
+| `a-boat-on-the-floor` | `DW1097` | `build` | seating an oak boat on the end room's dry floor |
 | `a-floor-as-loud-as-the-source` | `DW0993` | `validate` | setting the slow heartbeat's `floor` to 1.0, the farthest ear as loud as the source, a reach without end |
 | `a-beat-one-player-hears` | `DW0993` | `validate` | gating the slow heartbeat on the tokens, a datum each player holds for themselves |
 | `a-beat-heard-both-here-and-there` | `DW0929` | `validate` | giving the annex drip, heard in a `region`, a `place` as well |
@@ -888,6 +891,10 @@ across the hall 36 blocks past the slab, so the hall ends in view too near for a
 its loop binding first) and `a-figure-down-the-long-hall` (the hall moth posted 16
 blocks past the slab, past the near field but moved too far by the jump;
 `DW0947`).
+
+## The yard: five vehicles, and a ridden leg of every objective kind
+
+Behind the long hall's end room is a yard where five vehicles live (spec-0135), and the last five objectives of `quest/long-hall` each declare their leg ridden on one — one of every objective kind. `vehicle/yard-jenny`, a donkey, stands by the door; `obj/catch-the-hen` (a `kill`) rides her up the lane to the hen the hall's end loosed. `vehicle/race-pig`, a saddled pig named Clover, stands in the paddock, the paddock its `bounds`; its saddle is declared in `equipment` and its `movement_speed` in `attributes`, every class's kit carries a carrot on a stick, and `obj/ride-clover` (a `collect`) rides it to the paddock's edge on the way back to the hen's feather; the sluice lever's beat takes it away (`despawn-vehicle`) and ends its re-seat — not the feather's own, because a drop is picked up where the hen falls and the pig would be gone before it was ridden. `vehicle/yard-skiff`, an oak boat named The Gull, is moored on a basin four wide and seven long against the far wall; `obj/row-the-basin` (an `interact`) rows it down the basin, steps off onto the rim and throws the sluice lever beyond. `vehicle/yard-mare`, a horse, stands in the stable; `obj/ask-the-groom` (a `talk-to`) rides her down the yard to the groom. `vehicle/hall-cart`, a minecart, rests on the first of twelve level rails, a stop at each end; `obj/ride-the-line` (a `reach-anchor`) rides it: the engine pushes it when a body sits down. The party arriving on the porch seats the cart again (`seat-vehicle`). A vehicle nobody rides returns to its mark every 100 ticks, and each has its two PackTest templates, `vehicle_<id>_seated` and `vehicle_<id>_reseats`. `state/aboard-the-gull` counts the boat's riders and `trigger/the-gull-casts-off` speaks when the first boards. The bot rides all five, and its run report's `rides[]` carries a row each. Probes show what the class refuses: `a-chest-boat-with-a-rider` and `a-llama-under-a-saddle` (`DW1096`), `a-boat-on-the-floor` and `a-cart-facing-across-its-rail` (`DW1097`), `a-boat-moored-outside-its-bounds` (`DW1099`), `a-ride-that-goes-nowhere` (`DW0311`) and `a-ride-on-no-vehicle` (`DW0112`).
 
 ## The sleeper on the porch, and the walk beside it
 

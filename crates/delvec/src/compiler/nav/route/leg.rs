@@ -183,7 +183,23 @@ pub(crate) struct Carries<'p> {
     pub(in crate::compiler::nav) gathers: &'p [crate::compiler::link::GatherPlan],
     pub(in crate::compiler::nav) live: &'p [Vec<usize>],
     pub(in crate::compiler::nav) steps: &'p [Step],
+    /// The plan's vehicles (spec-0135 §4): a ride carries a leg no walk and no
+    /// link crosses.
+    pub(in crate::compiler::nav) vehicles: &'p [crate::compiler::nav::vehicle::VehiclePlan],
+    /// The legs the campaign declares ridden: objective id → vehicle index.
+    pub(in crate::compiler::nav) declared: &'p BTreeMap<String, usize>,
+    /// The ridden objectives that wait for their own rider
+    /// ([`crate::compiler::plan::Plan::rides_aboard`]).
+    pub(in crate::compiler::nav) aboard: &'p BTreeSet<String>,
 }
+
+/// The declared rides of a proof that carries none.
+#[cfg(test)]
+static NO_RIDES: BTreeMap<String, usize> = BTreeMap::new();
+
+/// The riders-gated objectives of a proof that carries none.
+#[cfg(test)]
+static NO_ABOARD: BTreeSet<String> = BTreeSet::new();
 
 impl<'p> Carries<'p> {
     /// Nothing to be carried by: the walk proof alone.
@@ -194,6 +210,9 @@ impl<'p> Carries<'p> {
             gathers: &[],
             live: &[],
             steps: &[],
+            vehicles: &[],
+            declared: &NO_RIDES,
+            aboard: &NO_ABOARD,
         }
     }
 
@@ -204,6 +223,9 @@ impl<'p> Carries<'p> {
             gathers: &plan.gathers,
             live: &plan.critical_path_live_links,
             steps: &plan.critical_path,
+            vehicles: &plan.vehicles,
+            declared: &plan.declared_rides,
+            aboard: &plan.rides_aboard,
         }
     }
 
@@ -228,6 +250,9 @@ pub struct RouteBinding {
     pub carried: usize,
     /// Of those, legs a loop's exercise move carries (spec-0086 §5.2).
     pub looped: usize,
+    /// Of those, legs a vehicle carries (spec-0135 §4). Read by the vehicle
+    /// binding, not by this line.
+    pub ridden: usize,
     /// Links the campaign declares.
     pub links: usize,
     /// Of those, links live at the end of some leg.
@@ -688,6 +713,140 @@ fn decompose(
     false
 }
 
+impl Carries<'_> {
+    /// **The vehicle the leg ending at step `k` is declared ridden on**
+    /// (spec-0135 §4): the `ride` of the objective the step performs. `None`
+    /// for a step that performs no objective, one that lets its objective
+    /// lapse, and one whose ride is already in the path — a `ride` step stands
+    /// directly in front of it.
+    fn declared_ride(&self, k: usize) -> Option<usize> {
+        let step = self.steps.get(k)?;
+        if matches!(step, Step::Expire { .. }) {
+            return None;
+        }
+        if k > 0 && matches!(self.steps.get(k - 1), Some(Step::Ride { .. })) {
+            return None;
+        }
+        self.declared.get(step.objective()?).copied()
+    }
+}
+
+/// **The ride that carries `from → end`** (spec-0135 §4), over the leg's own
+/// world, on vehicle `vi` — the one the leg is declared ridden on: the party
+/// walks from `from` to a boarding cell of it, rides, and leaves at a cell it
+/// walks to `end` from. Beside it, the seats of every vehicle that carries
+/// the leg.
+fn ride_leg(
+    world: &World,
+    from: &VisitedPos,
+    end: &VisitedPos,
+    region_events: &RegionEvents,
+    ancestor: &dyn Fn(usize, usize) -> bool,
+    carries: &Carries<'_>,
+    vi: usize,
+) -> Result<(crate::compiler::nav::vehicle::RideTake, u32), crate::compiler::nav::vehicle::RideMiss>
+{
+    let mut st =
+        world.walked_leg_region_state(region_events, ancestor, from.src_step, end.src_step);
+    // The ride is its own step in front of the one that performs the
+    // objective, so the objective's completion volume is armed and not yet due
+    // while the party rides: the ride keeps out of it as of every other armed
+    // volume, and the walk that follows is the one that enters it.
+    if let Some(Step::Reach {
+        objective_id,
+        completion,
+        ..
+    }) = carries.steps.get(end.src_step)
+        // …unless the objective waits for its own rider (a `riders` census of
+        // this vehicle in its gate): it completes under the rider and nowhere
+        // else, so the ride goes into its volume.
+        && !carries.aboard.contains(objective_id)
+    {
+        st.keep_out.push((
+            objective_id.clone(),
+            crate::compiler::reach::KeepOut {
+                objective: objective_id.clone(),
+                completion: *completion,
+            }
+            .bounds(),
+        ));
+    }
+    let owned;
+    let leg: &World = if st.is_empty() {
+        world
+    } else {
+        owned = world.with_region_state(&st);
+        &owned
+    };
+    let at = |pos: [i32; 3], src: &VisitedPos| VisitedPos {
+        pos,
+        transport_before: false,
+        talk_to: false,
+        by_link: false,
+        by_loop: false,
+        ..*src
+    };
+    // The walk to the boarding cell goes round the vehicle's body, never
+    // through it: the world model holds no entity, so the cells it stands in
+    // are sealed for that walk (and named on the step, for the bot's).
+    let round_the_body = world.with_sealed(&carries.vehicles[vi].body_cells());
+    let walks = |a: [i32; 3], b: [i32; 3]| {
+        let (pa, pb) = if a == from.pos {
+            (*from, at(b, end))
+        } else if b == end.pos {
+            (at(a, end), *end)
+        } else {
+            (at(a, end), at(b, end))
+        };
+        let over = if a == from.pos {
+            &round_the_body
+        } else {
+            world
+        };
+        judge_leg(over, &[pa, pb], region_events, ancestor).is_ok()
+    };
+    let ride = crate::compiler::nav::vehicle::ride_of(
+        leg,
+        vi,
+        &carries.vehicles[vi],
+        from.pos,
+        &walks,
+        end.pos,
+    )?;
+    let seats = crate::compiler::nav::vehicle::boardable_seats(
+        leg,
+        carries.vehicles,
+        from.pos,
+        &walks,
+        end.pos,
+    );
+    Ok((ride, seats))
+}
+
+/// `DW1099`'s last arm: a ride the party has no walk around seats too few.
+fn too_few_seats(
+    from: &VisitedPos,
+    end: &VisitedPos,
+    v: &crate::compiler::nav::vehicle::VehiclePlan,
+    seats: u32,
+) -> Failure {
+    Failure {
+        code: crate::compiler::nav::vehicle::DW_VEHICLE_UNBOARDABLE,
+        message: format!(
+            "critical path: the party cannot walk from {:?} to {:?}, and the ride that carries \
+             the leg — `{}`, a {} — and every other vehicle boardable there seat {seats} of the \
+             party's {}: a required ride carries the whole party, and the engine never proves a \
+             party split. Seat more vehicles there (a boat seats {}), or give the leg a walk.",
+            from.pos,
+            end.pos,
+            v.id,
+            v.kind.token(),
+            crate::compiler::nav::vehicle::PARTY_SEATS,
+            v.seats
+        ),
+    }
+}
+
 /// The link a performed `trigger` step stands for, and the cell the party
 /// stands on to perform it from `from` — `None` when the step's trigger is no
 /// link, or no stand cell of its volume is reachable from `from` (the press
@@ -993,6 +1152,10 @@ pub(in crate::compiler::nav) fn route_with_links(
                 if let Some(Step::Trigger { trigger_id, .. }) = carries.steps.get(next.src_step) {
                     taken.insert(format!("{trigger_id}{:?}", next.pos));
                 }
+            } else if next.by_loop
+                && matches!(carries.steps.get(next.src_step), Some(Step::Ride { .. }))
+            {
+                b.ridden += 1;
             } else if next.by_loop {
                 b.looped += 1;
             } else {
@@ -1061,6 +1224,55 @@ pub(in crate::compiler::nav) fn route_with_links(
             Ok(None) => {}
         }
         let walked = judge_leg(world, &[cur, *next], region_events, ancestor);
+        // A leg the campaign declares ridden (spec-0135 §4): the proof routes
+        // it through the vehicle's medium whether or not a walk crosses, and
+        // refuses it when the vehicle does not carry it.
+        if let Some(vi) = carries.declared_ride(next.src_step) {
+            let v = &carries.vehicles[vi];
+            match ride_leg(world, &cur, next, region_events, ancestor, carries, vi) {
+                Ok((_, seats))
+                    if walked.is_err() && seats < crate::compiler::nav::vehicle::PARTY_SEATS =>
+                {
+                    result = Err(too_few_seats(&cur, next, v, seats));
+                    break;
+                }
+                Ok((ride, _)) => {
+                    b.legs += 2;
+                    b.walked += 2;
+                    b.ridden += 1;
+                    takes.rides.insert(next.src_step, ride);
+                    cur = *next;
+                    continue;
+                }
+                // A vehicle out of its medium or its bounds is refused as that
+                // (`DW1097`, `DW1099`) by the proofs over the class, which run
+                // on every build; the leg is judged here as the walk it is.
+                Err(crate::compiler::nav::vehicle::RideMiss::Unseated) => {}
+                Err(miss) => {
+                    result = Err(Failure {
+                        code: DW_CRITICAL_UNROUTABLE,
+                        message: format!(
+                            "critical path: the leg from {:?} to {:?} is declared ridden on `{}` \
+                             (a {}, seated at {:?}), and that ride does not carry it: {}. {} Move \
+                             the vehicle's mark or its `bounds`, build its medium through to the \
+                             leg's end, or drop the objective's `ride` so the leg is walked.",
+                            cur.pos,
+                            next.pos,
+                            v.id,
+                            v.kind.token(),
+                            v.seat,
+                            miss.words(),
+                            if walked.is_ok() {
+                                "The party can walk this leg; it is the ride that has no route."
+                            } else {
+                                "The party cannot walk this leg either."
+                            },
+                        ),
+                    });
+                    break;
+                }
+            }
+        }
         let Err(e) = walked else {
             b.walked += 1;
             cur = *next;

@@ -2062,6 +2062,30 @@ jobs:
           if b["asserted"] != b["within_reach"]:
               sys.exit("a watcher the path reached was not asserted")
           PY
+      # spec-0135 §7: the gallery owes a declared ride of each kind, and the bot
+      # rides every ride step the build exported — boarded, arrived and left,
+      # each read on the server. The count is the build's own, never written
+      # here.
+      - name: the gallery's rides are ridden, one of each kind
+        run: |
+          python3 - <<'PY'
+          import json
+          import sys
+          sys.stdout.reconfigure(newline="\n")
+          path = json.load(open("validation/delve-output-gallery-primary/critical-path.json"))
+          steps = [s for s in path["steps"] if s["action"] == "ride"]
+          r = json.load(open("validation/run-out/dw-ci-gallery-bot/run-report.json"))
+          rides = r.get("rides") or []
+          kinds = sorted({s["kind"] for s in steps})
+          print(f"ride steps in the build: {len(steps)} ({', '.join(kinds)}); rides in the bot's record: {len(rides)}, passed {sum(1 for x in rides if x.get('passed'))}")
+          if kinds != ["boat", "minecart", "mount"]:
+              sys.exit(f"the gallery's path rides {kinds}, not one of each kind")
+          if [x["vehicle"] for x in rides] != [s["vehicle"] for s in steps]:
+              sys.exit("the bot's record does not carry the build's ride steps, in order")
+          for x in rides:
+              if not (x.get("passed") and x.get("left") and x.get("seat") is not None):
+                  sys.exit(f"ride {x['vehicle']} ({x['kind']}) was not boarded, ridden to its end and left: {x.get('why')}")
+          PY
       # A crush gate's death is walked at the one boundary the build names
       # (`death-plan.json` `trial_at`), never at one the run's pathfinder found:
       # the seat a death returns to is judged at that boundary, so a run that

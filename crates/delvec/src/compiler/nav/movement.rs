@@ -67,22 +67,34 @@ pub struct MovementItems {
     pub unmodelled: Vec<MovementItem>,
     /// The fall reducers, in reading order.
     pub reducers: Vec<MovementItem>,
-    /// Every stack read, `(item, the first step a body can hold it at)`, in
-    /// reading order — what `DW1090` asks of a `shot` (spec-0134 §2).
+    /// Every stack a source other than a class kit gives, `(item, the first
+    /// step a body can hold it at)`, in reading order.
     pub held: Vec<(String, usize)>,
+    /// Every class's kit, its items in order: one row a class.
+    pub kits: Vec<Vec<String>>,
 }
 
 impl MovementItems {
-    /// The first critical-path step at which a body may hold one of `items`,
-    /// or `None` when the campaign gives none of them.
+    /// **The first critical-path step by which every body holds one of
+    /// `items`** — the one answer to "is this item in hand by then", asked by
+    /// a `shot`'s bow and arrows (`DW1090`, spec-0134 §2) and a mount's
+    /// steering item (`DW1096`, spec-0135 §3), both of which owe the item on
+    /// every path. A kit gives it from the first step only when **every**
+    /// class's kit carries one: a player who chose the class without it is a
+    /// path without it. Any other source gives it from the step it is read at
+    /// (a `give-item` from the step after its objective). `None` when nothing
+    /// gives it. Ids are compared with or without the `minecraft:` namespace.
     #[must_use]
     pub fn first_held(&self, items: &[&str]) -> Option<usize> {
+        let bare = |i: &str| i.strip_prefix("minecraft:").unwrap_or(i).to_string();
+        let want: Vec<String> = items.iter().map(|i| bare(i)).collect();
+        let is = |i: &String| want.contains(&bare(i));
+        if !self.kits.is_empty() && self.kits.iter().all(|k| k.iter().any(is)) {
+            return Some(0);
+        }
         self.held
             .iter()
-            .filter(|(i, _)| {
-                let bare = i.strip_prefix("minecraft:").unwrap_or(i);
-                items.contains(&bare)
-            })
+            .filter(|(i, _)| is(i))
             .map(|(_, s)| *s)
             .min()
     }
@@ -247,6 +259,8 @@ struct Reader<'a> {
     out: MovementItems,
     path: &'a [Step],
     campaign: &'a delvewright_dsl::Campaign,
+    /// The class whose kit is being read, when one is.
+    kit: Option<usize>,
 }
 
 impl Reader<'_> {
@@ -274,7 +288,10 @@ impl Reader<'_> {
         at: (usize, bool),
     ) {
         self.out.examined += 1;
-        self.out.held.push((item.to_string(), at.0));
+        match self.kit {
+            Some(class) => self.out.kits[class].push(item.to_string()),
+            None => self.out.held.push((item.to_string(), at.0)),
+        }
         if let Some(rule) = item_rule(item) {
             self.push(Kind::Unmodelled, item, rule, source, at);
         }
@@ -423,8 +440,11 @@ pub fn movement_items(campaign: &delvewright_dsl::Campaign, path: &[Step]) -> Mo
         out: MovementItems::default(),
         path,
         campaign,
+        kit: None,
     };
-    for class in &campaign.classes.content.classes {
+    for (ci, class) in campaign.classes.content.classes.iter().enumerate() {
+        r.out.kits.push(Vec::new());
+        r.kit = Some(ci);
         for k in &class.kit {
             let source = format!("class `{}`'s kit", class.id.as_str());
             let contents = k
@@ -441,6 +461,7 @@ pub fn movement_items(campaign: &delvewright_dsl::Campaign, path: &[Step]) -> Mo
             );
         }
     }
+    r.kit = None;
     let docs: [(&str, Option<Value>); 4] = [
         (
             "world.json",
@@ -477,6 +498,49 @@ mod tests {
             .join("../dsl/fixtures/valid/hello-world");
         let loaded = crate::compiler::load::load_campaign_dir(&dir).expect("the fixture loads");
         crate::compiler::load::parse_loaded(&loaded).expect("the fixture parses")
+    }
+
+    /// The one kit rule both `DW1090` and `DW1096` read: an item is held from
+    /// the first step only when every class's kit carries it; one class of
+    /// two is nobody's guarantee; a `give-item` holds whatever the kits say.
+    #[test]
+    fn an_item_is_held_from_the_kit_only_when_every_class_carries_it() {
+        let kit = |items: &[&str]| -> serde_json::Value {
+            items
+                .iter()
+                .map(|i| serde_json::json!({"item": i, "count": 1}))
+                .collect()
+        };
+        for item in ["minecraft:bow", "minecraft:carrot_on_a_stick"] {
+            let bare = item.strip_prefix("minecraft:").unwrap();
+            for (first, second, held) in [
+                (vec![item], vec![item], Some(0)),
+                (vec![item], vec![], None),
+                (vec![], vec![item], None),
+                (vec![], vec![], None),
+            ] {
+                let mut c = hello_world();
+                let mut two = c.classes.content.classes[0].clone();
+                c.classes.content.classes[0].kit = serde_json::from_value(kit(&first)).unwrap();
+                two.kit = serde_json::from_value(kit(&second)).unwrap();
+                c.classes.content.classes.push(two);
+                let m = movement_items(&c, &[]);
+                for asked in [item, bare] {
+                    assert_eq!(
+                        m.first_held(&[asked]),
+                        held,
+                        "{item}: {first:?} / {second:?}"
+                    );
+                }
+            }
+        }
+        let mut given = hello_world();
+        let give: delvewright_dsl::QuestEffect = serde_json::from_value(serde_json::json!({
+            "type": "give-item", "item": "minecraft:bow", "count": 1
+        }))
+        .unwrap();
+        given.quests.content.quests[0].on_complete.push(give);
+        assert!(movement_items(&given, &[]).first_held(&["bow"]).is_some());
     }
 
     /// spec-0113 A14: every source an item reaches a player by is read. Each

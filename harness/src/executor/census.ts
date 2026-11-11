@@ -19,6 +19,9 @@ export const methods = {
    */
   async performCensus(this: MineflayerExecutor, step: Step): Promise<void> {
     for (const row of censusOf(step)) {
+      // spec-0135 §5: a `riders` census is read by the ride that boards the
+      // vehicle, at its end (`executor/ride.ts`).
+      if (row.riders !== undefined) continue;
       const commands = censusCommands(row);
       process.stderr.write(
         `[census] ${row.state}: putting ${row.count} body(ies) of ${row.select} in the box\n`,

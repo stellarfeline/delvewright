@@ -4,7 +4,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CriticalPathParseError, parseCriticalPath } from "../src/critical-path.ts";
+import { CRITICAL_PATH_FORMAT_VERSION, CriticalPathParseError, parseCriticalPath } from "../src/critical-path.ts";
 import {
   aftermathFailures,
   blockReading,
@@ -41,7 +41,7 @@ const GALLERY_AFTERMATH = [
 function pathWith(aftermath: unknown): Record<string, unknown> {
   return {
     version: "0.2.0",
-    format_version: 8,
+    format_version: CRITICAL_PATH_FORMAT_VERSION,
     campaign_id: "gallery",
     non_combatants: { kinds: ["villager"], ambiguous: [], examined: 1, unbound: false },
     steps: [

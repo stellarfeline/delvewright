@@ -179,6 +179,16 @@ fn the_graph_declines_are_enumerated() {
             2,
             Question::BotRoute,
         ),
+        // The bot's own route. `DW1098` (spec-0135 §4): whether the cell a
+        // rider leaves at is ground the party walks — the bot is walked on cue
+        // from a ride step's `leave`. A rider who could only fall back in is
+        // refused: the conservative half of the reach graph's answer.
+        (
+            "compiler/emit/routes.rs",
+            ".walk_region_rooted(",
+            1,
+            Question::BotRoute,
+        ),
         // The bot's own route. `DW0920`: the fight is a `kill` the critical
         // path performs, so the question is whether the party, walked on cue
         // to where the wave is seated, gets its feet wet there.

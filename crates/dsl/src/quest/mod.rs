@@ -152,6 +152,12 @@ pub struct QuestsContent {
     /// stays byte-identical.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pulses: Vec<Pulse>,
+    /// Vehicles (spec-0135): boats, the rider's minecart and saddled mounts
+    /// the campaign places, a player boards and leaves, and a route may ride.
+    /// Each is seated at load. Empty/absent for every campaign that declares
+    /// none, so such a campaign stays byte-identical.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub vehicles: Vec<crate::Vehicle>,
     #[serde(default, skip_serializing)]
     pub ambushes: Vec<Ambush>,
     /// Whether [`Self::expand_ambushes`] has already run (never serialized). The

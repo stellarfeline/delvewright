@@ -282,9 +282,35 @@
         ],
         "npc": "npc/copyist",
         "root": "dlg/copyist-root"
+      },
+      {
+        "nodes": [
+          {
+            "id": "dlg/groom-root",
+            "options": [
+              {
+                "effects": [
+                  {
+                    "objective": "obj/ask-the-groom",
+                    "type": "complete-objective"
+                  }
+                ],
+                "happening": {
+                  "subject": "npc/groom",
+                  "text": "They thank the groom.",
+                  "verb": "departs"
+                },
+                "label": "Thank you."
+              }
+            ],
+            "text": "\"She'll carry anyone who asks nicely,\" he says of the mare. \"The cart's the same. Sit down and it goes.\""
+          }
+        ],
+        "npc": "npc/groom",
+        "root": "dlg/groom-root"
       }
     ]
   },
-  "dsl_version": "0.73.0",
+  "dsl_version": "0.74.0",
   "stage": "dialogue"
 }

@@ -1,0 +1,13 @@
+{
+  "code": "DW1096",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/vehicles/1/entity",
+      "value": "minecraft:llama"
+    }
+  ],
+  "units": [],
+  "why": "One edit: the race pig declared as a llama. A llama wears a carpet, not a saddle, and the pinned game does not steer it under a rider; the entity is refused at the document. It declares no unit."
+}

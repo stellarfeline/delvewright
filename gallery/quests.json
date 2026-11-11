@@ -931,6 +931,11 @@
             },
             "doing": "minding the counter"
           },
+          "npc/groom": {
+            "at": "anchor/long-hall-groom",
+            "dialogue": "dlg/groom-root",
+            "doing": "mucking out the stable in the yard behind the long hall"
+          },
           "npc/marshal": [
             {
               "at": "offstage",
@@ -1965,6 +1970,11 @@
             "at": "anchor/stall",
             "dialogue": "unchanged",
             "doing": "shutting the counter for the day"
+          },
+          "npc/groom": {
+            "at": "anchor/long-hall-groom",
+            "dialogue": "unchanged",
+            "doing": "mucking out the stable in the yard behind the long hall"
           },
           "npc/marshal": [
             {
@@ -3658,6 +3668,11 @@
             "dialogue": "unchanged",
             "doing": "minding the counter"
           },
+          "npc/groom": {
+            "at": "anchor/long-hall-groom",
+            "dialogue": "unchanged",
+            "doing": "mucking out the stable in the yard behind the long hall"
+          },
           "npc/marshal": [
             {
               "at": {
@@ -3882,6 +3897,11 @@
             "dialogue": "unchanged",
             "doing": "minding the counter while the party is away"
           },
+          "npc/groom": {
+            "at": "anchor/long-hall-groom",
+            "dialogue": "unchanged",
+            "doing": "mucking out the stable in the yard behind the long hall"
+          },
           "npc/marshal": [
             {
               "at": {
@@ -3958,6 +3978,93 @@
             "radius": 2,
             "title": "Reach the light",
             "type": "reach-anchor"
+          },
+          {
+            "after": [
+              "obj/reach-the-hall-end"
+            ],
+            "happening": {
+              "text": "the yard's loose hen is caught",
+              "verb": "dies"
+            },
+            "hint": "A hen is loose in the lane by the door; the donkey there will carry you to her.",
+            "id": "obj/catch-the-hen",
+            "ride": "vehicle/yard-jenny",
+            "title": "Clear the lane of the hen",
+            "type": "kill",
+            "wave": "wave/yard-hen"
+          },
+          {
+            "after": [
+              "obj/catch-the-hen"
+            ],
+            "anchor": "anchor/long-hall-hen-run",
+            "count": 1,
+            "dropped_by": "wave/yard-hen",
+            "happening": {
+              "subject": "anchor/long-hall-hen-run",
+              "text": "the party rides the pig back and picks the hen's feather up off the flags",
+              "verb": "gains"
+            },
+            "hint": "It lies where the hen was caught; the saddled pig by the door will carry you back across the yard.",
+            "id": "obj/ride-clover",
+            "item": "minecraft:feather",
+            "ride": "vehicle/race-pig",
+            "title": "Pick up the feather",
+            "type": "collect"
+          },
+          {
+            "after": [
+              "obj/ride-clover"
+            ],
+            "anchor": "anchor/long-hall-far-bank",
+            "answers": {
+              "done": "The lever is thrown; water mutters somewhere under the flags.",
+              "not_yet": "The lever is pinned; it will not move yet."
+            },
+            "happening": {
+              "subject": "anchor/long-hall-far-bank",
+              "text": "the party rows the basin and throws the sluice lever on its far bank",
+              "verb": "opens"
+            },
+            "hint": "The lever is set in the wall past the basin; the boat is moored on it.",
+            "id": "obj/row-the-basin",
+            "prop": {
+              "block": "minecraft:lever[face=wall,facing=west,powered=false]"
+            },
+            "ride": "vehicle/yard-skiff",
+            "title": "Throw the sluice lever",
+            "type": "interact"
+          },
+          {
+            "after": [
+              "obj/row-the-basin"
+            ],
+            "happening": {
+              "subject": "npc/groom",
+              "text": "The groom tells the party the cart still runs.",
+              "verb": "learns"
+            },
+            "hint": "The groom is at the far end of the yard, past the stable; the mare will take you down it.",
+            "id": "obj/ask-the-groom",
+            "npc": "npc/groom",
+            "ride": "vehicle/yard-mare",
+            "title": "Ask the groom",
+            "type": "talk-to"
+          },
+          {
+            "after": [
+              "obj/ask-the-groom"
+            ],
+            "anchor": "anchor/long-hall-line-end",
+            "happening": {
+              "text": "the party rides the cart to the end of its line",
+              "verb": "arrives"
+            },
+            "id": "obj/ride-the-line",
+            "radius": 1,
+            "ride": "vehicle/hall-cart",
+            "type": "reach-anchor"
           }
         ],
         "on_complete": [],
@@ -4004,6 +4111,10 @@
                 "verb": "arrives"
               },
               "type": "unleash-actor"
+            },
+            {
+              "type": "seat-vehicle",
+              "vehicle": "vehicle/hall-cart"
             }
           ],
           "obj/reach-the-hall-end": [
@@ -4016,6 +4127,21 @@
               },
               "style": "vanish",
               "type": "despawn-actor"
+            },
+            {
+              "happening": {
+                "subject": "anchor/long-hall-hen-run",
+                "text": "A hen gets loose in the yard's west lane.",
+                "verb": "arrives"
+              },
+              "type": "spawn-wave",
+              "wave": "wave/yard-hen"
+            }
+          ],
+          "obj/row-the-basin": [
+            {
+              "type": "despawn-vehicle",
+              "vehicle": "vehicle/race-pig"
             }
           ]
         },
@@ -4450,6 +4576,24 @@
         "id": "state/villagers-about",
         "initial": 0,
         "note": "The census of a kind: every villager by the usher's post (spec-0134 §1); a kind names no seat, so nothing is proven statically.",
+        "scope": "party"
+      },
+      {
+        "counts": {
+          "of": {
+            "riders": "vehicle/yard-skiff"
+          },
+          "region": {
+            "anchor": "anchor/long-hall-yard",
+            "extent": [
+              5,
+              2,
+              17
+            ]
+          }
+        },
+        "id": "state/aboard-the-gull",
+        "note": "How many of the party sit in the yard's boat: the census the engine keeps of a vehicle's riders (spec-0135 §5).",
         "scope": "party"
       }
     ],
@@ -5441,6 +5585,133 @@
         "prop": {
           "block": "minecraft:target"
         }
+      },
+      {
+        "effects": [
+          {
+            "style": "chat",
+            "text": "The Gull rocks as someone steps aboard.",
+            "type": "narrate",
+            "when": {
+              "requires_state": [
+                {
+                  "op": "at-least",
+                  "state": "state/aboard-the-gull",
+                  "value": 1
+                }
+              ]
+            }
+          }
+        ],
+        "id": "trigger/the-gull-casts-off",
+        "on": {
+          "on": "body-enters",
+          "state": "state/aboard-the-gull"
+        }
+      }
+    ],
+    "vehicles": [
+      {
+        "at": {
+          "anchor": "anchor/long-hall-cart"
+        },
+        "bounds": {
+          "anchor": "anchor/long-hall-cart",
+          "extent": [
+            2,
+            2,
+            16
+          ]
+        },
+        "entity": "minecraft:minecart",
+        "facing": "south",
+        "id": "vehicle/hall-cart"
+      },
+      {
+        "at": {
+          "anchor": "anchor/long-hall-paddock",
+          "offset": [
+            0,
+            0,
+            1
+          ]
+        },
+        "attributes": {
+          "movement_speed": 0.25
+        },
+        "bounds": {
+          "anchor": "anchor/long-hall-paddock",
+          "extent": [
+            2,
+            2,
+            2
+          ]
+        },
+        "entity": "minecraft:pig",
+        "equipment": {
+          "saddle": {
+            "item": "minecraft:saddle"
+          }
+        },
+        "facing": "west",
+        "id": "vehicle/race-pig",
+        "name": "Clover"
+      },
+      {
+        "at": {
+          "anchor": "anchor/long-hall-slip",
+          "offset": [
+            2,
+            -1,
+            0
+          ]
+        },
+        "bounds": {
+          "anchor": "anchor/long-hall-yard",
+          "extent": [
+            5,
+            2,
+            17
+          ]
+        },
+        "entity": "minecraft:oak_boat",
+        "facing": "south",
+        "id": "vehicle/yard-skiff",
+        "name": "The Gull"
+      },
+      {
+        "at": {
+          "anchor": "anchor/long-hall-stable"
+        },
+        "bounds": {
+          "anchor": "anchor/long-hall-stable",
+          "extent": [
+            1,
+            2,
+            3
+          ]
+        },
+        "entity": "minecraft:horse",
+        "facing": "south",
+        "id": "vehicle/yard-mare",
+        "name": "Bramble"
+      },
+      {
+        "at": {
+          "anchor": "anchor/long-hall-jenny"
+        },
+        "bounds": {
+          "anchor": "anchor/long-hall-jenny",
+          "extent": [
+            1,
+            2,
+            3
+          ]
+        },
+        "entity": "minecraft:donkey",
+        "facing": "south",
+        "id": "vehicle/yard-jenny",
+        "name": "Jenny"
       }
     ],
     "waves": [
@@ -5588,9 +5859,27 @@
         },
         "summon": "aggro-edge",
         "tier": "ordinary"
+      },
+      {
+        "anchor": "anchor/long-hall-hen-run",
+        "id": "wave/yard-hen",
+        "mobs": [
+          {
+            "count": 1,
+            "drops": [
+              {
+                "item": "minecraft:feather"
+              }
+            ],
+            "entity": "minecraft:chicken"
+          }
+        ],
+        "respawns_on_rest": false,
+        "summon": "anchor",
+        "tier": "elite"
       }
     ]
   },
-  "dsl_version": "0.73.0",
+  "dsl_version": "0.74.0",
   "stage": "quests"
 }

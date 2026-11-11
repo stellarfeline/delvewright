@@ -19,6 +19,7 @@ import type {
   TriggerStep,
   MockStep,
   ExpireStep,
+  RideStep,
 } from "./critical-path.ts";
 import { landingCarrier, pursuersOf, censusOf } from "./critical-path.ts";
 import { BotDeathError } from "./death.ts";
@@ -64,6 +65,10 @@ export interface StepExecutor {
    * compiling; a path carrying one against an executor without it is a hard
    * failure, never a silent skip. */
   expire?(step: ExpireStep): Promise<void>;
+  /** Ride a vehicle on a leg its objective declares ridden (spec-0135 §6). Optional so
+   * existing fakes keep compiling; a path carrying one against an executor
+   * without it is a hard failure, never a silent skip. */
+  ride?(step: RideStep): Promise<void>;
   assertComplete(step: AssertCompleteStep): Promise<void>;
   /**
    * Optional (gap 8): after a step whose completion teleports the player to
@@ -274,6 +279,14 @@ async function dispatch(executor: StepExecutor, step: Step): Promise<void> {
         );
       }
       return executor.expire(step);
+    case "ride":
+      if (!executor.ride) {
+        throw new Error(
+          `critical path rides ${step.vehicle} but this executor cannot ride — the leg it ` +
+            `carries has no walk`,
+        );
+      }
+      return executor.ride(step);
     case "assert-complete":
       return executor.assertComplete(step);
   }
@@ -307,7 +320,8 @@ export async function runSequence(
         action !== "trigger" &&
         action !== "witness-strike" &&
         action !== "loop" &&
-        action !== "mock"
+        action !== "mock" &&
+        action !== "ride"
       ) {
         return i;
       }

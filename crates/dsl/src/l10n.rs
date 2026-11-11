@@ -497,6 +497,15 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
             f(&format!("wave.{wl}.health_bar.title"), t);
         }
     }
+    // Stage 5 — vehicles (spec-0135): the nameplate over the body, shared
+    // with an identical NPC or actor name as theirs are.
+    for v in &mut c.quests.content.vehicles {
+        let vl = local(v.id.as_str()).to_string();
+        if let Some(name) = v.name.as_mut() {
+            let key = entity_name_key(&mut entity_names, name, format!("vehicle.{vl}.name"));
+            f(&key, name);
+        }
+    }
     // Stage 5 — actors: the nameplate over the puppet, then its v0.9 drops,
     // keyed off the actor id exactly as a wave mob's drop is keyed off its
     // wave.
@@ -845,6 +854,8 @@ pub fn key_kind(key: &str) -> Option<TextKind> {
             "title" if segs[n - 2] == "health_bar" => Title,
             _ => return None,
         },
+        // spec-0135: a vehicle's nameplate.
+        "vehicle" if n == 3 && last == "name" => Name,
         "loot" if n == 5 && last == "name" => ItemName,
         "sign" if n == 4 && matches!(segs[2], "front" | "back") => Sign,
         "lethal" if n == 3 && last == "message" => Narration,

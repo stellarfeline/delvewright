@@ -19,10 +19,12 @@ pub(super) const CENSUS_TICK_FN: &str = "census_tick";
 /// and an actor's by the tag the engine puts on them, an NPC's by its body
 /// tag, a kind by type. The `minecraft:interaction` a body wears (an answer
 /// box, a dialogue hitbox) carries the same tag and is no body, so it is
-/// excluded by type.
-pub(crate) fn census_terms(plan: &Plan, of: &delvewright_dsl::CensusOf) -> String {
+/// excluded by type. `None` for a vehicle's riders, which no selector picks:
+/// a rider is a player whose vehicle carries the tag ([`census_store_lines`]).
+pub(crate) fn census_terms(plan: &Plan, of: &delvewright_dsl::CensusOf) -> Option<String> {
     use delvewright_dsl::CensusOf;
-    match of {
+    Some(match of {
+        CensusOf::Riders(_) => return None,
         CensusOf::Wave(w) => format!("tag={}", plan::wave_tag(w.as_str())),
         CensusOf::Actor(a) => format!(
             "tag=dw_actor_{},type=!minecraft:interaction",
@@ -40,7 +42,7 @@ pub(crate) fn census_terms(plan: &Plan, of: &delvewright_dsl::CensusOf) -> Strin
             format!("tag={tag},type=!minecraft:interaction")
         }
         CensusOf::Kind(k) => format!("type={k}"),
-    }
+    })
 }
 
 /// One counted datum, its census, and the box resolved.
@@ -65,20 +67,32 @@ pub(crate) fn censuses<'p>(plan: &'p Plan) -> Vec<Census<'p>> {
         .collect()
 }
 
-/// The line that writes one census.
-pub(crate) fn census_store_line(
+/// The lines that write one census: one `store` over the set's selector, or
+/// — for a vehicle's riders (spec-0135 §5) — the datum set to nothing and one
+/// added for every player in the box whose vehicle is the vehicle's body.
+pub(crate) fn census_store_lines(
     plan: &Plan,
     s: &delvewright_dsl::StateDecl,
     k: &delvewright_dsl::StateCounts,
     b: ([i32; 3], [i32; 3]),
-) -> String {
-    format!(
-        "execute store result score {} {} if entity @e[{},{}]",
-        plan::PARTY,
-        plan::state_score(s.id.as_str()),
-        census_terms(plan, &k.of),
-        entity_box_selector(b.0, b.1)
-    )
+) -> Vec<String> {
+    let score = format!("{} {}", plan::PARTY, plan::state_score(s.id.as_str()));
+    let boxed = entity_box_selector(b.0, b.1);
+    match (&k.of, census_terms(plan, &k.of)) {
+        (delvewright_dsl::CensusOf::Riders(v), _) => vec![
+            format!("scoreboard players set {score} 0"),
+            format!(
+                "execute as @a[{},tag=!dw_cutscene] on vehicle if entity @s[tag=dw_vehicle_{}] run \
+                 scoreboard players add {score} 1",
+                box_selector_args(b.0, b.1),
+                plan::safe_local(v.as_str())
+            ),
+        ],
+        (_, Some(terms)) => vec![format!(
+            "execute store result score {score} if entity @e[{terms},{boxed}]"
+        )],
+        (_, None) => Vec::new(),
+    }
 }
 
 /// The setup line that starts the census, or nothing.
@@ -112,7 +126,7 @@ pub(super) fn census_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(
     let ns = &plan.namespace;
     let mut tick: Vec<String> = all
         .iter()
-        .map(|(s, k, b)| census_store_line(plan, s, k, *b))
+        .flat_map(|(s, k, b)| census_store_lines(plan, s, k, *b))
         .collect();
     let mut out = Vec::new();
     for t in &plan.emitted_triggers(chrome) {

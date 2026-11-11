@@ -30,12 +30,48 @@ pub(super) fn emit_loot_packtests(
             continue;
         }
         let short = kind.kind.trim_start_matches("minecraft:");
+        let b = loot_template(ns, &title, l, short);
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/v06_loot_{short}.mcfunction"),
+            lines(&b).into_bytes(),
+        );
+    }
+}
+
+/// One loot template's lines: the fill, then what the container holds.
+///
+/// A fill that runs at load is read after `setup`. A fill that waits for its
+/// beat (`filled: "by-effect"`, spec-0134 §6) is run by the template itself —
+/// `function <ns>:fill_<loot>`, the function `fill-loot` calls — because
+/// nothing at load fills it: a template that only read the container passed
+/// or failed by whichever other template had completed the beat in the shared
+/// world before it.
+fn loot_template(
+    ns: &str,
+    title: &str,
+    l: &crate::compiler::plan::LootPlan,
+    short: &str,
+) -> Vec<String> {
+    {
         let c = l.cell;
-        let mut b = packtest_header(&format!(
-            "{title}: loot `{}` fills its {short} on init (spec-0021)",
-            l.id
-        ));
+        let mut b = packtest_header(&if l.by_effect {
+            format!(
+                "{title}: loot `{}` fills its {short} when its beat runs it (spec-0134)",
+                l.id
+            )
+        } else {
+            format!(
+                "{title}: loot `{}` fills its {short} on init (spec-0021)",
+                l.id
+            )
+        });
         b.push(format!("function {ns}:setup"));
+        if l.by_effect {
+            b.push(format!(
+                "function {ns}:{}",
+                super::super::loot::fill_fn(&l.id)
+            ));
+        }
         // Slot 0 and the last slot: presence AND identity, so neither a dropped
         // fill nor a shifted slot assignment can pass. Each score is this
         // test's own and is zeroed before it is stored, so a value another
@@ -62,9 +98,48 @@ pub(super) fn emit_loot_packtests(
             ));
             b.push(format!("assert score {holder} dw.sys matches 1"));
         }
-        out.insert(
-            format!("packtest-datapack/data/{ns}/test/v06_loot_{short}.mcfunction"),
-            lines(&b).into_bytes(),
+        b
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fill(by_effect: bool) -> crate::compiler::plan::LootPlan {
+        let item = |i: &str| crate::compiler::plan::LootItemPlan {
+            stack: delvewright_dsl::Stack::of(i),
+            slot: None,
+        };
+        crate::compiler::plan::LootPlan {
+            id: "loot/stores".to_string(),
+            anchor: "anchor/barrel".to_string(),
+            cell: [2, 67, 29],
+            items: vec![item("minecraft:bread"), item("minecraft:potion")],
+            by_effect,
+        }
+    }
+
+    /// A fill that waits for its beat is run by its own template, between
+    /// `setup` and the first read; a fill at load is only read. Without the
+    /// call the by-effect template reads a container nothing has filled.
+    #[test]
+    fn a_fill_that_waits_is_run_by_its_own_template() {
+        let at = |b: &[String], what: &str| b.iter().position(|l| l.contains(what));
+        let waits = loot_template("ns", "T", &fill(true), "barrel");
+        let (setup, run, read) = (
+            at(&waits, "function ns:setup").expect("setup"),
+            at(&waits, "function ns:fill_stores").expect("the fill's own function"),
+            at(&waits, "execute store success").expect("a read"),
         );
+        assert!(setup < run && run < read, "{waits:#?}");
+        assert!(
+            waits
+                .iter()
+                .any(|l| l.contains("Slot:1b,id:\"minecraft:potion\""))
+        );
+        let loads = loot_template("ns", "T", &fill(false), "barrel");
+        assert!(at(&loads, "fill_stores").is_none(), "{loads:#?}");
+        assert!(at(&loads, "on init").is_some());
     }
 }

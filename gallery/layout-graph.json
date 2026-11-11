@@ -94,6 +94,21 @@
       },
       {
         "node": "node/long-hall",
+        "objective": "obj/ride-clover",
+        "quest": "quest/long-hall"
+      },
+      {
+        "node": "node/long-hall",
+        "objective": "obj/row-the-basin",
+        "quest": "quest/long-hall"
+      },
+      {
+        "node": "node/long-hall",
+        "objective": "obj/ride-the-line",
+        "quest": "quest/long-hall"
+      },
+      {
+        "node": "node/long-hall",
         "objective": "obj/arrive-at-the-porch",
         "quest": "quest/long-hall"
       },
@@ -116,6 +131,16 @@
         "node": "node/near-hall",
         "objective": "obj/lift-the-lid",
         "quest": "quest/the-reliquary"
+      },
+      {
+        "node": "node/long-hall",
+        "objective": "obj/catch-the-hen",
+        "quest": "quest/long-hall"
+      },
+      {
+        "node": "node/long-hall",
+        "objective": "obj/ask-the-groom",
+        "quest": "quest/long-hall"
       }
     ],
     "critical_path": [
@@ -359,6 +384,6 @@
       }
     ]
   },
-  "dsl_version": "0.73.0",
+  "dsl_version": "0.74.0",
   "stage": "layout-graph"
 }

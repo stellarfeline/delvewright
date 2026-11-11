@@ -42,6 +42,7 @@ mod teleport;
 mod timed_gate;
 mod trap;
 mod trigger;
+mod vehicle;
 mod watching;
 mod wave;
 mod world;
@@ -165,6 +166,9 @@ pub(super) fn emit_packtest(
     // spec-0102: a pulse's open edge, its cut and its re-arm. Emits nothing for
     // a campaign that declares no pulse.
     pulse::emit_pulse_packtests(plan, out);
+    // spec-0135: a vehicle's seat and re-seat. Emits nothing for a campaign
+    // that declares no vehicle.
+    vehicle::emit_vehicle_packtests(plan, out);
     economy::emit_economy_packtests(plan, out);
 
     // spec-0108 §6.2: per (ending, witness world), the world after the final

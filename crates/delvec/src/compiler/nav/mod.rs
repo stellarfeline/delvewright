@@ -65,6 +65,7 @@ mod stealth;
 mod threshold;
 mod timed_gate;
 mod trap;
+pub mod vehicle;
 mod view;
 mod walkway;
 mod wave;

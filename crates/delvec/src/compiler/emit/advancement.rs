@@ -11,6 +11,9 @@ pub(super) fn emit_advancements(
     let c = plan.campaign;
     let mut advs = Vec::new();
 
+    // spec-0135 §3: boarding a cart or a mount, answered as the rider.
+    advs.extend(vehicle::boarding_advancement(plan));
+
     // spec-0016 §1: one advancement per bonfire, so a press opens the rest
     // dialog AS the player who pressed. `bonfire_open_<i>` revokes it, so the
     // bonfire is re-openable forever (a rest point is used, never consumed).

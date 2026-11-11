@@ -279,6 +279,17 @@ pub struct Plan<'a> {
     /// **Every gather** — every other `teleport`. Read by the put-at population
     /// and by `DW0311`'s message; never leaned on by a route.
     pub gathers: Vec<crate::compiler::link::GatherPlan>,
+    /// **Every vehicle** (spec-0135), resolved: kind, seat, bounds. Empty for
+    /// every campaign that declares none.
+    pub vehicles: Vec<crate::compiler::nav::vehicle::VehiclePlan>,
+    /// **Every leg the campaign declares ridden** (spec-0135 §4): objective id
+    /// → the vehicle its `ride` names, as an index into [`Plan::vehicles`].
+    pub declared_rides: BTreeMap<String, usize>,
+    /// **The declared rides whose objective waits for its own rider**
+    /// (spec-0135 §5): objective ids whose `requires_state` reads a `riders`
+    /// census of the very vehicle the leg is ridden on, at one or more. Such
+    /// an objective completes under the rider, so its ride enters its volume.
+    pub rides_aboard: BTreeSet<String>,
     /// Per critical-path step, the links live there (indices into
     /// [`Plan::links`]): the trigger's flag gate and every `when` on the way to
     /// the teleport hold under the flags the path holds walking up to the step,
@@ -555,13 +566,20 @@ pub struct LinkTakes {
     /// no link, performed from a cell the route proof chose outside every
     /// completion volume the step keeps out of (`DW0311`): its `stand`.
     pub stood: BTreeMap<usize, [i32; 3]>,
+    /// Leg end (unlinked step index) → the ride that carries that leg
+    /// (spec-0135 §4): a `ride` step spliced directly in front of the leg's
+    /// end, after any link taken on it.
+    pub rides: BTreeMap<usize, crate::compiler::nav::vehicle::RideTake>,
 }
 
 impl LinkTakes {
     /// Whether the route proof decided nothing about the path: no link taken
     /// and no stance chosen.
     pub fn is_empty(&self) -> bool {
-        self.spliced.is_empty() && self.performed.is_empty() && self.stood.is_empty()
+        self.spliced.is_empty()
+            && self.performed.is_empty()
+            && self.stood.is_empty()
+            && self.rides.is_empty()
     }
 }
 
@@ -1282,6 +1300,10 @@ impl<'a> Plan<'a> {
         // path is `DW1082`'s second arm.
         check_outrun_loose(campaign, &namespace, &cp.steps, &path_firing)
             .map_err(|e| e.with_warnings(warnings.clone()))?;
+        // spec-0135 §4: a leg declared ridden on a vehicle the path has
+        // despawned is `DW0311`.
+        check_ridden_vehicles_stand(campaign, &path_firing)
+            .map_err(|e| e.with_warnings(warnings.clone()))?;
 
         let movement = crate::compiler::nav::movement_items(campaign, &cp.steps);
 
@@ -1339,8 +1361,33 @@ impl<'a> Plan<'a> {
             face_binding: binding,
             acts: std::sync::OnceLock::new(),
             seats: std::sync::OnceLock::new(),
+            vehicles: Vec::new(),
+            declared_rides: BTreeMap::new(),
+            rides_aboard: BTreeSet::new(),
             shot_stances: std::sync::OnceLock::new(),
         };
+        plan.vehicles = crate::compiler::nav::vehicle::vehicle_plans(campaign, &plan.anchors);
+        plan.declared_rides = campaign
+            .quests
+            .content
+            .quests
+            .iter()
+            .flat_map(|q| &q.objectives)
+            .filter_map(|o| {
+                let id = o.ride()?;
+                let vi = plan.vehicles.iter().position(|v| v.id == id.as_str())?;
+                Some((o.id().as_str().to_string(), vi))
+            })
+            .collect();
+        plan.rides_aboard = campaign
+            .quests
+            .content
+            .quests
+            .iter()
+            .flat_map(|q| &q.objectives)
+            .filter(|o| !crate::compiler::nav::vehicle::riders_gates(campaign, o).is_empty())
+            .map(|o| o.id().as_str().to_string())
+            .collect();
         // The props the datapack sets at load, which only the finished plan can
         // list ([`Plan::load_prop_events`]).
         let props = plan.load_prop_events();
