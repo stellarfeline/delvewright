@@ -414,6 +414,7 @@ fn each_kind_is_seated_in_its_medium() {
         Bay {
             bridge: true,
             rails: true,
+            ..Bay::default()
         },
         vs,
     );
@@ -425,7 +426,7 @@ fn each_kind_is_seated_in_its_medium() {
         );
         assert!(
             setup.contains(&format!(
-                "schedule function hello_world:vehicle_reseat_{s} 100t replace"
+                "schedule function hello-world:vehicle_reseat_{s} 100t replace"
             )) || setup.contains(&format!("vehicle_reseat_{s} 100t replace")),
             "{s}"
         );
@@ -482,7 +483,7 @@ fn the_two_verbs_seat_and_remove() {
     assert!(all.matches(":vehicle_seat_gull\n").count() >= 2, "{all}");
     // A despawn stops the re-seat that would put the body back; a seat arms it.
     assert!(
-        all.contains("schedule clear hello_world:vehicle_reseat_gull"),
+        all.contains("schedule clear hello-world:vehicle_reseat_gull"),
         "{all}"
     );
 }
