@@ -3,6 +3,7 @@
 use super::*;
 
 /// A dialogue plan for one NPC.
+#[derive(Clone)]
 pub struct NpcPlan {
     /// NPC id.
     pub npc_id: String,
@@ -19,6 +20,7 @@ pub struct NpcPlan {
 }
 
 /// One dialogue option and the `/trigger` value it fires.
+#[derive(Clone)]
 pub struct OptionPlan {
     /// Trigger value (`/trigger dw.dlg_<npc> set <n>`), 1-based across the NPC.
     pub n: i32,

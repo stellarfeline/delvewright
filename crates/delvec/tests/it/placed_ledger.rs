@@ -54,6 +54,10 @@ const REGION: &[&str] = &[
     "shortcut_",
     "world_build",
     "world_ground",
+    // A world-edits batch that waits for its beat (spec-0134 §6): its cells
+    // are the region model's dated writes from its `apply-edits`, which every
+    // frame after the beat is laid from.
+    "edit_",
 ];
 const PLAYED: &[&str] = &[
     "spawn_",
@@ -76,10 +80,6 @@ const PLAYED: &[&str] = &[
     // a frame or stand filled this way is not yet carried into the frames
     // after its beat (a recorded debt of spec-0134).
     "fill_",
-    // A world-edits batch that waits for its beat (spec-0134 §6): its cells
-    // are written by `apply-edits` at play time, and the frames after its
-    // beat do not yet carry them (a recorded debt of spec-0134).
-    "edit_",
 ];
 
 fn tmp(name: &str) -> PathBuf {

@@ -76,6 +76,7 @@ pub use press::gate_blocks;
 mod proofs;
 mod pulse;
 mod quest;
+mod quorum;
 mod removal;
 mod respawn;
 mod routes;
@@ -469,6 +470,20 @@ fn emit_all(
                 message: e.message,
             },
         )?;
+    // spec-0134 §6: every by-effect batch's cells join the region model as
+    // dated runtime writes, from the step its `apply-edits` fires at — every
+    // pass below reads this plan.
+    let edited_plan;
+    let plan = match edit_replay
+        .as_ref()
+        .and_then(|er| plan.with_edit_writes(&er.by_effect_writes))
+    {
+        Some(p) => {
+            edited_plan = p;
+            &edited_plan
+        }
+        None => plan,
+    };
     // The one assembled world every pass below reads: the edited copy when the
     // campaign has an edit script, the pristine assembly otherwise.
     let assembled: &crate::compiler::assembled::Assembled = match &edit_replay {

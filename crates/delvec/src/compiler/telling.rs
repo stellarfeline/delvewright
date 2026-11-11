@@ -950,7 +950,10 @@ impl Sites {
                     (
                         q.id.as_str().to_string(),
                         o.id().as_str().to_string(),
-                        o.after().iter().map(|a| a.as_str().to_string()).collect(),
+                        o.after_edges()
+                            .iter()
+                            .map(|a| a.as_str().to_string())
+                            .collect(),
                         o.announced(guidance),
                     ),
                 );

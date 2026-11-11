@@ -3777,6 +3777,45 @@
             "after": [
               "obj/open-the-bay-door"
             ],
+            "anchor": "anchor/arrival",
+            "happening": {
+              "subject": "anchor/arrival",
+              "text": "The party looks back at the hall's entry.",
+              "verb": "arrives"
+            },
+            "hint": "Back at the near hall's entry, where the party came in.",
+            "id": "obj/stand-at-the-arrival",
+            "radius": 1,
+            "title": "Look back from the entry",
+            "type": "reach-anchor"
+          },
+          {
+            "after": [
+              "obj/open-the-bay-door"
+            ],
+            "anchor": "anchor/vantage",
+            "happening": {
+              "subject": "anchor/vantage",
+              "text": "The party looks down the hall from its far end.",
+              "verb": "arrives"
+            },
+            "hint": "At the far end of the hall, where it can be seen whole.",
+            "id": "obj/stand-at-the-vantage",
+            "radius": 1,
+            "title": "Look down the hall",
+            "type": "reach-anchor"
+          },
+          {
+            "after": [
+              "obj/open-the-bay-door",
+              {
+                "any": [
+                  "obj/stand-at-the-arrival",
+                  "obj/stand-at-the-vantage"
+                ],
+                "at_least": 1
+              }
+            ],
             "anchor": "anchor/reliquary-chest",
             "announcement": "shown",
             "answers": {

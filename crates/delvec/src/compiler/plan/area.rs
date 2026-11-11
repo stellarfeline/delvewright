@@ -121,6 +121,7 @@ pub fn area_base_y(
 }
 
 /// A placed area: one or more pieces plus their socket seals.
+#[derive(Clone)]
 pub struct AreaPlacement {
     /// Area id (`area/…`).
     pub area_id: String,
@@ -163,6 +164,7 @@ impl AreaPlacement {
 }
 
 /// One placed structure piece.
+#[derive(Clone)]
 pub struct PiecePlacement {
     /// Bound prefab id (`prefab/…`).
     pub prefab_id: String,

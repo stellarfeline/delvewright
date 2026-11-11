@@ -215,17 +215,13 @@ pub(super) fn serving_guard(
 ) -> String {
     let p = plan::PARTY;
     let mut g = format!(" if score {p} {quest_active} matches 1");
-    for a in o.after() {
-        g.push_str(&format!(
-            " if score {p} {} matches 1",
-            after_score(c, a.as_str())
-        ));
-    }
+    g.push_str(&super::quorum::after_cond(c, o));
     g.push_str(&format!(
         " unless score {p} {} matches 1",
         obj_score(o.id().as_str())
     ));
     g.push_str(&expired_term(o));
+    g.push_str(&super::quorum::lapsed_term(c, o));
     g
 }
 
@@ -268,12 +264,7 @@ pub(super) fn told_guard(plan: &Plan, o: &Objective, quest_active: &str) -> Stri
 pub(super) fn pending_guard(plan: &Plan, o: &Objective, quest_active: &str) -> String {
     let p = plan::PARTY;
     let mut g = format!(" if score {p} {quest_active} matches 1");
-    for a in o.after() {
-        g.push_str(&format!(
-            " if score {p} {} matches 1",
-            after_score(plan.campaign, a.as_str())
-        ));
-    }
+    g.push_str(&super::quorum::after_cond(plan.campaign, o));
     // The objective's whole gate, in gate field order: required flags, forbidden
     // flags, then (DSL v0.10) the numeric terms. Written through `gate_cond` so
     // this guard cannot end up knowing about two of the gate's three fields —
@@ -285,6 +276,7 @@ pub(super) fn pending_guard(plan: &Plan, o: &Objective, quest_active: &str) -> S
         obj_score(o.id().as_str())
     ));
     g.push_str(&expired_term(o));
+    g.push_str(&super::quorum::lapsed_term(plan.campaign, o));
     g
 }
 
@@ -451,6 +443,10 @@ pub(super) fn quest_completion_fns(
                 objective_effects(c, oid),
                 root_audience(delvewright_dsl::EffectRootKind::ObjectiveComplete),
             ));
+            // spec-0134 §7: a quorum member is settled, and every quorum naming
+            // it re-summed — the members not done lapse the moment it holds,
+            // after this completion's own bundle and before its quest is asked.
+            body.extend(super::quorum::member_completion_lines(plan, oid));
             // Inter-area transport: if completing this objective moves the player
             // into a different area on the critical path, teleport them to that
             // area's entry spawn (areas are AREA_SPACING apart across void). Runs

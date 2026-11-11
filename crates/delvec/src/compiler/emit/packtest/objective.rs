@@ -9,7 +9,8 @@ pub(super) fn and_joins(c: &delvewright_dsl::Campaign) -> Vec<(&str, &Objective)
     let mut out = Vec::new();
     for q in &c.quests.content.quests {
         for o in &q.objectives {
-            if o.after().len() >= 2 {
+            // Two or more prerequisites ALL done: a quorum is not an AND.
+            if o.after_required().len() >= 2 {
                 out.push((q.id.as_str(), o));
             }
         }
@@ -56,7 +57,7 @@ pub(super) fn emit_party_join_packtests(plan: &Plan, out: &mut BuildOutput) {
     for (ji, (qid, join)) in and_joins(c).into_iter().enumerate() {
         let jid = join.id().as_str();
         let jsafe = plan::safe_local(jid);
-        let arms: Vec<&str> = join.after().iter().map(|a| a.as_str()).collect();
+        let arms: Vec<&str> = join.after_required().iter().map(|a| a.as_str()).collect();
         let n = arms.len().max(min_players).min(MAX_PARTY);
         // Member selectors. Member 1 is the framework dummy (`@s` — the binding
         // survives teleports and can never resolve to a neighbour's dummy);
@@ -116,12 +117,7 @@ pub(super) fn emit_party_join_packtests(plan: &Plan, out: &mut BuildOutput) {
                 continue;
             };
             push_obj_baseline(&mut baseline, aq, ao);
-            for prereq in ao.after() {
-                baseline.push(format!(
-                    "scoreboard players set {party} {} 1",
-                    after_score(c, prereq.as_str())
-                ));
-            }
+            baseline.extend(super::super::quorum::after_drive(c, ao));
             baseline.push(format!(
                 "scoreboard players set {party} {} 0",
                 obj_score(arm)

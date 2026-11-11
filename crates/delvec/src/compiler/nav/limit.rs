@@ -140,7 +140,8 @@ fn activation_step(
     o: &Objective,
 ) -> usize {
     let mut at = quest_start_step(plan, steps, q);
-    for a in o.after() {
+    // Every member a path performs: a lapsed one has no step.
+    for a in o.after_edges() {
         if let Some(&s) = steps.get(a.as_str()) {
             at = at.max(s);
         }

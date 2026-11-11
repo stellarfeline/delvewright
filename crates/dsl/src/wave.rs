@@ -1369,7 +1369,11 @@ fn objective_ancestors(q: &crate::Quest) -> BTreeMap<&str, BTreeSet<&str>> {
         .map(|o| {
             (
                 o.id().as_str(),
-                o.after().iter().map(|a| a.as_str()).collect::<Vec<_>>(),
+                // Must complete before: a quorum's member may lapse.
+                o.after_required()
+                    .iter()
+                    .map(|a| a.as_str())
+                    .collect::<Vec<_>>(),
             )
         })
         .collect();

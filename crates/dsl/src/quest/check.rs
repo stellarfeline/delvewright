@@ -213,13 +213,62 @@ pub(crate) fn after_ancestors<'a>(q: &'a crate::Quest, id: &str) -> BTreeSet<&'a
         let Some(o) = q.objectives.iter().find(|o| o.id().as_str() == cur) else {
             continue;
         };
-        for a in o.after() {
+        // A clock starts at an objective that certainly comes first: a
+        // quorum's member may lapse and never be done.
+        for a in o.after_required() {
             if seen.insert(a.as_str()) {
                 stack.push(a.as_str());
             }
         }
     }
     seen
+}
+
+/// **A quorum's shape** (spec-0134 §7), at the schema tier (`DW0100`): the
+/// schema states `at_least` in `1..=|any| − 1` and a member named once, and
+/// serde enforces neither. A quorum of every member is the plain list; a
+/// quorum of none is no requirement; a member named twice counts twice.
+pub(crate) fn quorum_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    for (i, q) in c.quests.content.quests.iter().enumerate() {
+        for (j, o) in q.objectives.iter().enumerate() {
+            for (m, t) in o.after_terms().iter().enumerate() {
+                let crate::AfterTerm::Quorum(qu) = t else {
+                    continue;
+                };
+                let base = format!("/content/quests/{i}/objectives/{j}/after/{m}");
+                let n = qu.any.len() as u32;
+                if qu.at_least == 0 || qu.at_least >= n {
+                    d.push(Diagnostic::error(
+                        codes::SCHEMA,
+                        "quests",
+                        format!("{base}/at_least"),
+                        format!(
+                            "objective `{}` waits for any {} of {n} objective(s): a quorum asks \
+                             for at least one and fewer than all of its members — of all of \
+                             them, list them as plain `after` ids; of none, remove the quorum",
+                            o.id(),
+                            qu.at_least
+                        ),
+                    ));
+                }
+                let mut seen = BTreeSet::new();
+                for (k, id) in qu.any.iter().enumerate() {
+                    if !seen.insert(id.as_str()) {
+                        d.push(Diagnostic::error(
+                            codes::SCHEMA,
+                            "quests",
+                            format!("{base}/any/{k}"),
+                            format!(
+                                "objective `{}`'s quorum names `{id}` twice — a member counts \
+                                 once; remove the repeat",
+                                o.id()
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
+    }
 }
 
 pub(crate) fn after_ordering(c: &Campaign, d: &mut Vec<Diagnostic>) {
@@ -229,9 +278,11 @@ pub(crate) fn after_ordering(c: &Campaign, d: &mut Vec<Diagnostic>) {
             .objectives
             .iter()
             .map(|o| {
+                // Every member of a quorum is an edge of the order (spec-0134
+                // §7): a cycle through one is a cycle.
                 let deps = o
-                    .after()
-                    .iter()
+                    .after_edges()
+                    .into_iter()
                     .map(|x| x.as_str())
                     .filter(|x| local.contains(x))
                     .collect();
@@ -1463,12 +1514,25 @@ pub(crate) fn quest_dangling_refs(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     ),
                 );
             }
-            for (m, aft) in obj.after().iter().enumerate() {
+            let named = obj
+                .after_terms()
+                .iter()
+                .enumerate()
+                .flat_map(|(m, t)| match t {
+                    crate::AfterTerm::Objective(id) => vec![(format!("after/{m}"), id)],
+                    crate::AfterTerm::Quorum(q) => q
+                        .any
+                        .iter()
+                        .enumerate()
+                        .map(|(k, id)| (format!("after/{m}/any/{k}"), id))
+                        .collect(),
+                });
+            for (at, aft) in named {
                 dangling(
                     d,
                     local_objs.contains(aft.as_str()),
                     "quests",
-                    format!("/content/quests/{i}/objectives/{j}/after/{m}"),
+                    format!("/content/quests/{i}/objectives/{j}/{at}"),
                     format!(
                         "objective `after` references unknown objective `{aft}` — `after` may \
                          only name another objective in the same quest; declare it or correct \

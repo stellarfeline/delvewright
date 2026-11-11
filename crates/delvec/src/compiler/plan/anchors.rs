@@ -4,6 +4,7 @@
 use super::*;
 
 /// A resolved anchor (absolute world coords).
+#[derive(Clone)]
 pub enum ResolvedAnchor {
     /// A point with optional facing.
     Point {
@@ -64,7 +65,7 @@ pub fn resolve_campaign_start(
 /// The index is keyed by role rather than shaped around the entry: a second
 /// role costs a variant of [`AnchorRole`] and nothing here, and its
 /// one-per-area refusal is the same refusal.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct AnchorTable {
     at: BTreeMap<(String, String), ResolvedAnchor>,
     /// `(area, role)` → the name of the anchor that declared it. At most one

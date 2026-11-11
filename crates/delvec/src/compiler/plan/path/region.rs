@@ -548,11 +548,101 @@ impl std::ops::DerefMut for RegionEvents {
 /// A **flood** needs no such split and gets none: a flooded cell is impassable and
 /// never floor, which is already the pointwise-worst of "the water is there" and "it
 /// is not", so an unforced flood is exactly as conservative as a forced one.
+/// **One firing's writes, dated** — the one rule every runtime write of the
+/// region model is registered by. A trigger's FILL keeps the treatment it has
+/// always had — fired at step 0 and forced, which seals every leg against it;
+/// only its openings are dated by the step that performs it: a wall is assumed
+/// up from the start, never assumed down before somebody strikes it. An
+/// optional firing may make a region impassable, never passable.
+fn dated_writes(
+    resolved: Vec<ResolvedWrite>,
+    fire_step: usize,
+    forced: bool,
+    by_trigger: bool,
+    blame: &dyn Fn() -> String,
+) -> Vec<RegionEvent> {
+    let mut out = Vec::new();
+    for (region, write, laid) in resolved {
+        let pressed = write.closes() && by_trigger;
+        let (fire_step, forced) = if pressed {
+            (0, true)
+        } else {
+            (fire_step, forced)
+        };
+        if !write.closes() && !forced {
+            continue;
+        }
+        let ev = if forced {
+            RegionEvent::forced(region, write, fire_step)
+        } else {
+            RegionEvent::unforced(region, write, fire_step, blame())
+        };
+        let ev = if pressed { ev.pressed() } else { ev };
+        out.push(match &laid {
+            Some(b) => ev.laying(b),
+            None => ev,
+        });
+    }
+    out
+}
+
+/// **An `apply-edits` firing** (spec-0134 §6): the batch, and how the path
+/// fires it — dated by the region model's own rule, its cells added once the
+/// edit replay has resolved them ([`edit_events`]).
+#[derive(Clone, Debug)]
+pub struct EditFiring {
+    /// The batch it applies.
+    pub batch: String,
+    /// The critical-path step it fires at.
+    pub fire_step: usize,
+    /// Whether the party is certain to cause it.
+    pub forced: bool,
+    /// Whether a trigger fires it.
+    pub by_trigger: bool,
+    /// The beat it hangs off, in words, when it is unforced.
+    pub blame: String,
+}
+
+/// **A by-effect batch's cells as dated runtime writes** (spec-0134 §6): for
+/// every firing of `apply-edits`, the cells the replay resolved for its batch
+/// (`writes`: batch id → cell → block), registered as one-cell writes under the
+/// rule every runtime write takes ([`dated_writes`]), each with its block's
+/// collision class ([`RegionWrite::of_block`]).
+pub fn edit_events(
+    firings: &[EditFiring],
+    writes: &BTreeMap<String, BTreeMap<[i32; 3], String>>,
+) -> Vec<RegionEvent> {
+    let mut out = Vec::new();
+    for f in firings {
+        let Some(cells) = writes.get(&f.batch) else {
+            continue;
+        };
+        let resolved: Vec<ResolvedWrite> = cells
+            .iter()
+            .map(|(cell, block)| {
+                let write = RegionWrite::of_block(block);
+                let laid = (write != RegionWrite::Clear).then(|| block.clone());
+                ((*cell, *cell), write, laid)
+            })
+            .collect();
+        let blame = f.blame.clone();
+        out.extend(dated_writes(
+            resolved,
+            f.fire_step,
+            f.forced,
+            f.by_trigger,
+            &|| blame.clone(),
+        ));
+    }
+    out
+}
+
 pub(in crate::compiler::plan) fn collect_region_events(
     campaign: &Campaign,
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,
     path: &PathFiring,
     ways: &crate::compiler::ways::WayStaging,
+    edit_firings: &mut Vec<EditFiring>,
 ) -> Vec<RegionEvent> {
     // spec-0051 §8.6: the skippable-root class, widened. A bundle rooted in an
     // OPTIONAL quest is one the party may never fire, so it seals like a trap
@@ -661,39 +751,33 @@ pub(in crate::compiler::plan) fn collect_region_events(
             ),
         };
         let (fire_step, forced) = firing_of(site, path, &optional);
+        let by_trigger = matches!(site.root, EffectRoot::Trigger(_));
+        // spec-0134 §6: a world-edits batch that waits for its beat is resolved
+        // against the assembled world, which the plan does not hold; its firing
+        // is dated here, by the same rule as every write, and its cells are
+        // added when the replay has resolved them ([`edit_events`]).
+        if let Some(batch) = e.apply_edits() {
+            edit_firings.push(EditFiring {
+                batch: batch.as_str().to_string(),
+                fire_step,
+                forced,
+                by_trigger,
+                blame: if forced { String::new() } else { blame() },
+            });
+            return;
+        }
         // The one reading of what this effect writes ([`effect_writes`]).
         let resolved = effect_writes(e, anchors, ways);
         if resolved.is_empty() {
             return; // an unresolvable anchor is DW0142/DW0343/DW0360's finding
         }
-        for (region, write, laid) in resolved {
-            // A trigger's FILL keeps the treatment it has always had — fired at
-            // step 0 and forced, which seals every leg against it. Only its
-            // openings are dated by the step that performs it: a wall is assumed
-            // up from the start, never assumed down before somebody strikes it.
-            let pressed = write.closes() && matches!(site.root, EffectRoot::Trigger(_));
-            let (fire_step, forced) = if pressed {
-                (0, true)
-            } else {
-                (fire_step, forced)
-            };
-            if !write.closes() && !forced {
-                // An optional firing may make a region impassable, never passable — a
-                // flood is credited for the same reason a fill is: the proof must
-                // survive it.
-                continue;
-            }
-            let ev = if forced {
-                RegionEvent::forced(region, write, fire_step)
-            } else {
-                RegionEvent::unforced(region, write, fire_step, blame())
-            };
-            let ev = if pressed { ev.pressed() } else { ev };
-            out.push(match &laid {
-                Some(b) => ev.laying(b),
-                None => ev,
-            });
-        }
+        out.extend(dated_writes(
+            resolved,
+            fire_step,
+            forced,
+            by_trigger,
+            &|| blame(),
+        ));
     });
     // The props an objective places when it ACTIVATES (gap 13): a conjured
     // `collect` chest — the one activation write left; an `interact`'s block

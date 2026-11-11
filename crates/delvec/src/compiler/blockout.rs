@@ -139,6 +139,7 @@ pub mod palette {
 /// module: the battery reads the declaration and the bytes, and if it read a
 /// declaration this module had computed for itself it would be judging the
 /// derivation against the derivation's own opinion.
+#[derive(Clone)]
 pub struct Blockout {
     /// The synthesized spatial vocabulary, by anchor name — see
     /// [`Blockout::anchors`].

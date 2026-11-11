@@ -114,6 +114,16 @@
       },
       {
         "node": "node/near-hall",
+        "objective": "obj/stand-at-the-arrival",
+        "quest": "quest/the-reliquary"
+      },
+      {
+        "node": "node/near-hall",
+        "objective": "obj/stand-at-the-vantage",
+        "quest": "quest/the-reliquary"
+      },
+      {
+        "node": "node/near-hall",
         "objective": "obj/lift-the-lid",
         "quest": "quest/the-reliquary"
       }

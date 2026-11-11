@@ -684,12 +684,7 @@ fn packtest_guards(plan: &Plan, quest_id: &str, o: &Objective, with_flags: bool)
         "scoreboard players set {party} {} 1",
         quest_active_score(quest_id)
     )];
-    for a in o.after() {
-        p.push(format!(
-            "scoreboard players set {party} {} 1",
-            after_score(plan.campaign, a.as_str())
-        ));
-    }
+    p.extend(super::quorum::after_drive(plan.campaign, o));
     p.extend(packtest_gate_drive(plan, o.gate(), with_flags));
     // spec-0133 §3: a limited objective's every guard also reads its expired
     // score ([`expired_term`]), so the template owns it too — clear, as the
@@ -699,6 +694,13 @@ fn packtest_guards(plan: &Plan, quest_id: &str, o: &Objective, with_flags: bool)
         p.push(format!(
             "scoreboard players set {party} {} 0",
             expired_score(o.id().as_str())
+        ));
+    } else if super::quorum::is_member(plan.campaign, o.id().as_str()) {
+        // spec-0134 §7: a quorum member's every guard reads its settled score
+        // (it is refused once lapsed), so the template owns it too.
+        p.push(format!(
+            "scoreboard players set {party} {} 0",
+            settled_score(o.id().as_str())
         ));
     }
     p

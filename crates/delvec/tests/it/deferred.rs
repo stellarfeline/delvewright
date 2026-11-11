@@ -275,3 +275,80 @@ fn a_batch_nothing_applies_and_a_second_write_are_dw1094() {
         "{all}"
     );
 }
+
+/// **The batch's cells are dated runtime writes, and the frames after its beat
+/// carry them** (spec-0134 §6): every cell the replay resolved for a by-effect
+/// batch is a forced write of the region model at the step its `apply-edits`
+/// fires at, laying the batch's block; the frame world of an arrival after
+/// that step holds the block, and the one before it does not.
+#[test]
+fn a_batch_that_waits_is_written_at_its_beat_and_the_frames_after_it_carry_it() {
+    use delvec::compiler::load::load_campaign_dir;
+    use delvec::compiler::plan::Plan;
+    use delvec::compiler::registry::PrefabRegistry;
+    let dir = edits_copy("deferred-edit-dated");
+    defer(&dir, Some("batch/lamplight"), Some("batch/lamplight"));
+    let loaded = load_campaign_dir(&dir).unwrap();
+    let c = parse_campaign(&loaded.raw).expect("parses");
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&c, &prefabs).expect("plan builds");
+    let mut structures = std::collections::BTreeMap::new();
+    for area in &plan.areas {
+        for piece in &area.pieces {
+            for t in &piece.templates {
+                let bytes = std::fs::read(common::prefabs_dir().join(&t.structure_file)).unwrap();
+                structures.insert(t.structure_file.clone(), bytes);
+            }
+        }
+    }
+    let replay = delvec::compiler::edit::replay(&plan, &prefabs, &structures)
+        .expect("replays")
+        .expect("the fixture has edits");
+    let cells = replay
+        .by_effect_writes
+        .get("batch/lamplight")
+        .expect("the batch's cells are resolved")
+        .clone();
+    assert!(!cells.is_empty());
+    let edited = plan
+        .with_edit_writes(&replay.by_effect_writes)
+        .expect("the batch's cells join the region model");
+    // The step `obj/talk` completes at, where the `apply-edits` fires.
+    let firing = plan.edit_firings.first().expect("one firing").fire_step;
+    for (cell, block) in &cells {
+        assert!(
+            edited
+                .region_events
+                .iter()
+                .any(|e| e.region == (*cell, *cell)
+                    && e.fire_step == firing
+                    && e.block() == Some(block.as_str())),
+            "{cell:?} `{block}` is a write at step {firing}"
+        );
+        assert!(
+            !plan
+                .region_events
+                .iter()
+                .any(|e| e.region == (*cell, *cell)),
+            "the plan before the replay holds no write at {cell:?}"
+        );
+    }
+    let world = delvec::compiler::nav::World::from_plan(&edited, &structures);
+    let frames = delvec::compiler::view::review::frame_worlds(&edited, &world);
+    let base = delvec::compiler::blockstate::BlockMap::new();
+    let (cell, block) = cells.iter().next().unwrap();
+    let laid = |s: usize| {
+        frames
+            .at(s)
+            .config
+            .blocks(&base)
+            .get(cell)
+            .map(|b| b.as_str().to_string())
+    };
+    assert_eq!(
+        laid(firing + 1).as_deref(),
+        Some(block.as_str()),
+        "after the beat"
+    );
+    assert_ne!(laid(0).as_deref(), Some(block.as_str()), "before it");
+}

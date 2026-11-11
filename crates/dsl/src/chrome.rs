@@ -209,10 +209,13 @@ chrome! {
     /// The line a party reads when a limited objective's clock runs out
     /// (spec-0133 §3). `%s` is its title.
     LIMIT_EXPIRED = 29, "delvewright.ui.limit.expired", 1, "Objective expired: %s";
+    /// The line a party reads when a quorum holds and an objective it no
+    /// longer needs is settled lapsed (spec-0134 §7). `%s` is its title.
+    LIMIT_LAPSED = 30, "delvewright.ui.limit.lapsed", 1, "Objective lapsed: %s";
 }
 
 /// One language's rendition of [`ALL`], in slot order.
-type Table = [&'static str; 30];
+type Table = [&'static str; 31];
 
 // --- the tables ------------------------------------------------------------
 // Slot order is ALL's: objective.new, objective.complete, campaign.complete,
@@ -222,7 +225,7 @@ type Table = [&'static str; 30];
 // compass.nothing, journal.title, journal.compass.heading,
 // journal.compass.follows, journal.compass.switch, journal.compass.spin,
 // journal.compass.pages, journal.open, journal.done, journal.following,
-// compass.choose, limit.countdown, limit.expired.
+// compass.choose, limit.countdown, limit.expired, limit.lapsed.
 
 const ZH_HANS: Table = [
     "新目标：%s",
@@ -255,6 +258,7 @@ const ZH_HANS: Table = [
     "追踪哪个任务？",
     "%s —— %s",
     "目标超时：%s",
+    "目标已作罢：%s",
 ];
 
 const ZH_HANT: Table = [
@@ -288,6 +292,7 @@ const ZH_HANT: Table = [
     "追蹤哪個任務？",
     "%s —— %s",
     "目標超時：%s",
+    "目標已作罷：%s",
 ];
 
 const JA: Table = [
@@ -321,6 +326,7 @@ const JA: Table = [
     "どのタスクを追跡する？",
     "%s —— %s",
     "目標の期限切れ：%s",
+    "目標は不要になった：%s",
 ];
 
 const KO: Table = [
@@ -354,6 +360,7 @@ const KO: Table = [
     "어떤 임무를 추적할까?",
     "%s — %s",
     "목표 시간 초과: %s",
+    "목표가 필요 없어짐: %s",
 ];
 
 const DE: Table = [
@@ -387,6 +394,7 @@ const DE: Table = [
     "Welcher Aufgabe folgen?",
     "%s — %s",
     "Ziel abgelaufen: %s",
+    "Ziel entfallen: %s",
 ];
 
 const FR: Table = [
@@ -420,6 +428,7 @@ const FR: Table = [
     "Suivre quelle tâche ?",
     "%s — %s",
     "Objectif expiré : %s",
+    "Objectif abandonné : %s",
 ];
 
 const ES: Table = [
@@ -453,6 +462,7 @@ const ES: Table = [
     "¿Qué tarea seguir?",
     "%s — %s",
     "Objetivo expirado: %s",
+    "Objetivo descartado: %s",
 ];
 
 const PT_BR: Table = [
@@ -486,6 +496,7 @@ const PT_BR: Table = [
     "Seguir qual tarefa?",
     "%s — %s",
     "Objetivo expirado: %s",
+    "Objetivo dispensado: %s",
 ];
 
 const PT_PT: Table = [
@@ -519,6 +530,7 @@ const PT_PT: Table = [
     "Seguir que tarefa?",
     "%s — %s",
     "Objetivo expirado: %s",
+    "Objetivo dispensado: %s",
 ];
 
 const RU: Table = [
@@ -552,6 +564,7 @@ const RU: Table = [
     "Какую задачу отслеживать?",
     "%s — %s",
     "Срок цели истёк: %s",
+    "Цель больше не нужна: %s",
 ];
 
 const IT: Table = [
@@ -585,6 +598,7 @@ const IT: Table = [
     "Quale incarico seguire?",
     "%s — %s",
     "Obiettivo scaduto: %s",
+    "Obiettivo decaduto: %s",
 ];
 
 const NL: Table = [
@@ -618,6 +632,7 @@ const NL: Table = [
     "Welke taak volgen?",
     "%s — %s",
     "Doel verlopen: %s",
+    "Doel vervallen: %s",
 ];
 
 const PL: Table = [
@@ -651,6 +666,7 @@ const PL: Table = [
     "Które zadanie śledzić?",
     "%s — %s",
     "Cel wygasł: %s",
+    "Cel przestał być potrzebny: %s",
 ];
 
 const TR: Table = [
@@ -684,6 +700,7 @@ const TR: Table = [
     "Hangi görev takip edilsin?",
     "%s — %s",
     "Görevin süresi doldu: %s",
+    "Görev artık gerekmiyor: %s",
 ];
 
 const UK: Table = [
@@ -717,6 +734,7 @@ const UK: Table = [
     "Яке завдання відстежувати?",
     "%s — %s",
     "Термін цілі минув: %s",
+    "Ціль більше не потрібна: %s",
 ];
 
 const CS: Table = [
@@ -750,6 +768,7 @@ const CS: Table = [
     "Který úkol sledovat?",
     "%s — %s",
     "Cíl vypršel: %s",
+    "Cíl odpadl: %s",
 ];
 
 const SK: Table = [
@@ -783,6 +802,7 @@ const SK: Table = [
     "Ktorú úlohu sledovať?",
     "%s — %s",
     "Cieľ vypršal: %s",
+    "Cieľ odpadol: %s",
 ];
 
 const SV: Table = [
@@ -816,6 +836,7 @@ const SV: Table = [
     "Vilken uppgift ska följas?",
     "%s — %s",
     "Målet har gått ut: %s",
+    "Målet har bortfallit: %s",
 ];
 
 const DA: Table = [
@@ -849,6 +870,7 @@ const DA: Table = [
     "Hvilken opgave skal følges?",
     "%s — %s",
     "Mål udløbet: %s",
+    "Mål bortfaldet: %s",
 ];
 
 const NB: Table = [
@@ -882,6 +904,7 @@ const NB: Table = [
     "Hvilken oppgave skal følges?",
     "%s — %s",
     "Mål utløpt: %s",
+    "Mål bortfalt: %s",
 ];
 
 const FI: Table = [
@@ -915,6 +938,7 @@ const FI: Table = [
     "Mitä tehtävää seurataan?",
     "%s — %s",
     "Tavoite vanheni: %s",
+    "Tavoite raukesi: %s",
 ];
 
 const HU: Table = [
@@ -948,6 +972,7 @@ const HU: Table = [
     "Melyik feladatot kövesse?",
     "%s — %s",
     "Lejárt cél: %s",
+    "Okafogyott cél: %s",
 ];
 
 const RO: Table = [
@@ -981,6 +1006,7 @@ const RO: Table = [
     "Ce sarcină urmărești?",
     "%s — %s",
     "Obiectiv expirat: %s",
+    "Obiectiv renunțat: %s",
 ];
 
 const EL: Table = [
@@ -1014,6 +1040,7 @@ const EL: Table = [
     "Ποια αποστολή να ακολουθήσει;",
     "%s — %s",
     "Ο στόχος έληξε: %s",
+    "Ο στόχος δεν χρειάζεται πια: %s",
 ];
 
 const BG: Table = [
@@ -1047,6 +1074,7 @@ const BG: Table = [
     "Коя задача да следиш?",
     "%s — %s",
     "Целта изтече: %s",
+    "Целта отпадна: %s",
 ];
 
 const TH: Table = [
@@ -1080,6 +1108,7 @@ const TH: Table = [
     "ติดตามภารกิจไหน?",
     "%s — %s",
     "วัตถุประสงค์หมดเวลา: %s",
+    "วัตถุประสงค์ไม่จำเป็นแล้ว: %s",
 ];
 
 const VI: Table = [
@@ -1113,6 +1142,7 @@ const VI: Table = [
     "Theo dõi nhiệm vụ nào?",
     "%s — %s",
     "Mục tiêu đã hết hạn: %s",
+    "Mục tiêu không còn cần: %s",
 ];
 
 const ID: Table = [
@@ -1146,6 +1176,7 @@ const ID: Table = [
     "Ikuti tugas yang mana?",
     "%s — %s",
     "Tujuan kedaluwarsa: %s",
+    "Tujuan tidak diperlukan lagi: %s",
 ];
 
 const MS: Table = [
@@ -1179,6 +1210,7 @@ const MS: Table = [
     "Ikut tugas yang mana?",
     "%s — %s",
     "Objektif tamat tempoh: %s",
+    "Objektif tidak diperlukan lagi: %s",
 ];
 
 const AR: Table = [
@@ -1212,6 +1244,7 @@ const AR: Table = [
     "أيّ مهمة تتبع؟",
     "%s — %s",
     "انتهت مهلة الهدف: %s",
+    "لم يعد الهدف مطلوبًا: %s",
 ];
 
 const HE: Table = [
@@ -1245,6 +1278,7 @@ const HE: Table = [
     "אחר איזו משימה לעקוב?",
     "%s — %s",
     "זמן המטרה פג: %s",
+    "המטרה כבר לא נדרשת: %s",
 ];
 
 const HI: Table = [
@@ -1278,6 +1312,7 @@ const HI: Table = [
     "किस कार्य का अनुसरण करें?",
     "%s — %s",
     "उद्देश्य का समय समाप्त: %s",
+    "उद्देश्य की अब ज़रूरत नहीं: %s",
 ];
 
 const CA: Table = [
@@ -1311,6 +1346,7 @@ const CA: Table = [
     "Quina tasca vols seguir?",
     "%s — %s",
     "Objectiu caducat: %s",
+    "Objectiu descartat: %s",
 ];
 
 const FIL: Table = [
@@ -1344,6 +1380,7 @@ const FIL: Table = [
     "Aling gawain ang susundan?",
     "%s — %s",
     "Nag-expire ang layunin: %s",
+    "Hindi na kailangan ang layunin: %s",
 ];
 
 /// Which Minecraft language file gets which table. Keyed on the client's own file
@@ -1586,7 +1623,7 @@ mod tests {
             );
             assert!(seen.insert(c.key), "duplicate chrome key `{}`", c.key);
         }
-        assert_eq!(ALL.len(), 30, "the chrome inventory changed size");
+        assert_eq!(ALL.len(), 31, "the chrome inventory changed size");
     }
 
     /// **The binding that makes `%s` safe.** Every language table renders every
@@ -1631,7 +1668,7 @@ mod tests {
     /// Chinese story is the exact defect this module exists to close.
     #[test]
     fn zh_cn_is_complete() {
-        assert_eq!(coverage("zh_cn"), (30, 30));
+        assert_eq!(coverage("zh_cn"), (31, 31));
         assert_eq!(lang_entries("zh_cn")[CLASS_TITLE.key], "选择你的职业");
     }
 
@@ -1639,9 +1676,9 @@ mod tests {
     /// masquerading as a translation.
     #[test]
     fn untabled_language_ships_no_chrome() {
-        assert_eq!(coverage("tlh_aa"), (0, 30));
+        assert_eq!(coverage("tlh_aa"), (0, 31));
         assert!(lang_entries("en_us").is_empty());
-        assert_eq!(english_entries().len(), 30);
+        assert_eq!(english_entries().len(), 31);
     }
 
     /// The multi-language build puts English on the component (the pack carries the

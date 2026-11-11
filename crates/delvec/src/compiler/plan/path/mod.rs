@@ -496,8 +496,17 @@ impl<'a> Plan<'a> {
         &self,
         cp: &CriticalPath,
     ) -> (RegionEvents, BTreeMap<usize, BTreeSet<usize>>) {
-        let mut region_events =
-            collect_region_events(self.campaign, &self.anchors, &cp.firing, &self.ways);
+        let mut firings = Vec::new();
+        let mut region_events = collect_region_events(
+            self.campaign,
+            &self.anchors,
+            &cp.firing,
+            &self.ways,
+            &mut firings,
+        );
+        // spec-0134 §6: a by-effect batch's cells, dated at this branch's own
+        // `apply-edits` firings.
+        region_events.extend(edit_events(&firings, &self.edit_writes));
         region_events.extend(self.shortcuts.iter().map(|sc| {
             RegionEvent::forced(sc.gate_region, RegionWrite::of_block(&sc.gate_block), 0)
         }));

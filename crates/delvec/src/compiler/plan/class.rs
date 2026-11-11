@@ -1,6 +1,7 @@
 //! Classes: the selectable class record.
 
 /// One selectable class.
+#[derive(Clone)]
 pub struct ClassPlan {
     /// Trigger value (`/trigger dw.class set <n>`), 1-based.
     pub n: i32,

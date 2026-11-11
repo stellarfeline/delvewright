@@ -235,6 +235,9 @@ struct Solution {
     /// `talk-to` objective id → the flat dialogue option index that completes it
     /// in this world.
     talk_option: BTreeMap<String, usize>,
+    /// The quorum members this world lapses (spec-0134 §7): settled when their
+    /// quorum holds, with no act and no completion bundle — no path step.
+    lapsed: BTreeSet<String>,
 }
 
 /// One objective on the exported critical path.
@@ -307,6 +310,9 @@ struct ReplayState {
     /// their step by the clock, firing `on_expire` instead of their completion
     /// bundle. Empty outside a story world.
     expired: BTreeSet<String>,
+    /// The quorum members this walk has lapsed (spec-0134 §7): settled the
+    /// moment their quorum held, their completion bundle never fired.
+    lapsed: BTreeSet<String>,
     /// What the party held the moment each final scene began to fire
     /// (spec-0108 §4.2), keyed by the scene list's pointer — the flags and
     /// every datum's value, read before the scene's own lines run.
@@ -1208,11 +1214,20 @@ impl<'a> Flow<'a> {
         } else {
             finale_order(self.c, &keep)
         };
+        // spec-0134 §7: a member this world lapses is settled by its quorum,
+        // with no act — it is no step of the path.
+        let lapsed = match &sol {
+            Some(s) => s.lapsed.clone(),
+            None => default_lapsed(self.c),
+        };
         let mut steps = Vec::new();
         for qid in &order {
             let Some(q) = self.quest(qid) else { continue };
             for obj in objectives_in_order(&q.objectives) {
                 let oid = obj.id().as_str().to_string();
+                if lapsed.contains(&oid) {
+                    continue;
+                }
                 let talk_option = match (&sol, obj) {
                     (Some(s), Objective::TalkTo { .. }) => s.talk_option.get(&oid).copied(),
                     _ => None,
@@ -1390,13 +1405,14 @@ impl<'a> Flow<'a> {
                 st.quest
             ));
         }
-        for a in obj.after() {
-            if !st8.done_obj.contains(a.as_str()) {
-                return Some(format!(
-                    "its `after` prerequisite `{}` has not been completed at this point",
-                    a.as_str()
-                ));
-            }
+        if !self.after_open(obj, st8) {
+            let missing = obj
+                .after_required()
+                .into_iter()
+                .find(|a| !st8.done_obj.contains(a.as_str()))
+                .map(|a| format!("its `after` prerequisite `{}` has not been completed at this point", a.as_str()))
+                .unwrap_or_else(|| "its `after` quorum does not hold at this point — too few of its members are done".to_string());
+            return Some(missing);
         }
         for f in obj.requires_flags() {
             if !st8.flags.contains(f.as_str()) {
@@ -1765,10 +1781,13 @@ impl<'a> Flow<'a> {
         let mut out = Vec::new();
         for q in &self.c.quests.content.quests {
             for o in &q.objectives {
-                if o.after().len() >= 2 {
+                // An AND-join is two or more prerequisites ALL of which must
+                // be done; a quorum's members are not one (spec-0134 §7).
+                let required = o.after_required();
+                if required.len() >= 2 {
                     out.push((
                         o.id().as_str().to_string(),
-                        o.after().iter().map(|a| a.as_str().to_string()).collect(),
+                        required.iter().map(|a| a.as_str().to_string()).collect(),
                     ));
                 }
             }
@@ -1792,9 +1811,10 @@ impl<'a> Flow<'a> {
             return false;
         }
         if obj
-            .after()
+            .after_edges()
             .iter()
-            .any(|a| siblings.iter().any(|s| s == a.as_str()) || !st.done_obj.contains(a.as_str()))
+            .any(|a| siblings.iter().any(|s| s == a.as_str()))
+            || !self.after_open(obj, st)
         {
             return false;
         }
@@ -1921,6 +1941,10 @@ impl<'a> Flow<'a> {
             );
             self.fire(effs, &base, st, complete_at, pos, &step.objective, &beat);
         }
+        // spec-0134 §7: a quorum that holds now lapses every member not done —
+        // settled, its completion bundle never fired — before its quest is
+        // asked whether it is complete.
+        self.lapse(st);
         // Quest completion cascade.
         loop {
             let mut progressed = false;
@@ -1963,6 +1987,36 @@ impl<'a> Flow<'a> {
             }
         }
         self.saturate_ambient_with(&mut st.flags, allow);
+    }
+
+    /// **Whether `o`'s `after` holds in this walk** (spec-0134 §7): through
+    /// [`Objective::after_holds`], the one definition — a plain prerequisite
+    /// settled (done, expired or lapsed), a quorum's members counted done only
+    /// when completed by their act.
+    fn after_open(&self, o: &Objective, st: &ReplayState) -> bool {
+        o.after_holds(&|a| st.done_obj.contains(a), &|a| completed(st, a))
+    }
+
+    /// Whether some quorum naming `member` holds by `done`.
+    fn quorum_holds_for(&self, member: &str, done: &dyn Fn(&str) -> bool) -> bool {
+        quorums(self.c)
+            .into_iter()
+            .any(|(_, q)| q.any.iter().any(|m| m.as_str() == member) && q.holds(done))
+    }
+
+    /// Lapse every member of every quorum that holds and is not yet done
+    /// (spec-0134 §7).
+    fn lapse(&self, st: &mut ReplayState) {
+        for (_, q) in quorums(self.c) {
+            if !q.holds(&|a| completed(st, a)) {
+                continue;
+            }
+            for m in &q.any {
+                if st.done_obj.insert(m.as_str().to_string()) {
+                    st.lapsed.insert(m.as_str().to_string());
+                }
+            }
+        }
     }
 
     /// The objective with this id, anywhere in the campaign.
@@ -2030,7 +2084,8 @@ impl<'a> Flow<'a> {
             let Some(o) = self.objective(&cur) else {
                 continue;
             };
-            for a in o.after() {
+            // What the DSL declares MUST precede: a quorum's member may lapse.
+            for a in o.after_required() {
                 if seen.insert(a.as_str().to_string()) {
                     stack.push(a.as_str().to_string());
                 }
@@ -2075,7 +2130,7 @@ impl<'a> Flow<'a> {
                 .objective_quest(obj)
                 .is_some_and(|q| st.active.contains(q))
             && self.objective(obj).is_none_or(|ob| {
-                ob.after().iter().all(|a| st.done_obj.contains(a.as_str()))
+                self.after_open(ob, st)
                     && ob
                         .requires_flags()
                         .iter()
@@ -2443,7 +2498,13 @@ impl<'a> Flow<'a> {
 
     /// The monotone fixpoint, restricted to one branch world.
     fn solve(&self, world: &World) -> Solution {
-        self.solve_with(world, &default_credit, &BTreeSet::new(), &BTreeSet::new())
+        self.solve_with(
+            world,
+            &default_credit,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            &default_lapsed(self.c),
+        )
     }
 
     /// [`Self::solve`] crediting only the ambient producers `credit` admits and
@@ -2455,8 +2516,12 @@ impl<'a> Flow<'a> {
         credit: &dyn Fn(&GatedFlag) -> bool,
         barred: &BTreeSet<String>,
         expired: &BTreeSet<String>,
+        lapsed: &BTreeSet<String>,
     ) -> Solution {
-        let mut s = Solution::default();
+        let mut s = Solution {
+            lapsed: lapsed.clone(),
+            ..Solution::default()
+        };
         loop {
             let mut changed = false;
             self.saturate_ambient_tracked(&mut s.flags, &mut changed, credit);
@@ -2513,11 +2578,20 @@ impl<'a> Flow<'a> {
                     if s.completable.contains(oid) {
                         continue;
                     }
-                    if !obj
-                        .after()
-                        .iter()
-                        .all(|a| s.completable.contains(a.as_str()))
-                    {
+                    if !obj.after_holds(&|a| s.completable.contains(a), &|a| {
+                        s.completable.contains(a) && !expired.contains(a) && !lapsed.contains(a)
+                    }) {
+                        continue;
+                    }
+                    // spec-0134 §7: a member this world lapses settles when its
+                    // quorum holds, with no act — and produces nothing.
+                    if lapsed.contains(oid) {
+                        if self.quorum_holds_for(oid, &|a| {
+                            s.completable.contains(a) && !expired.contains(a) && !lapsed.contains(a)
+                        }) {
+                            s.completable.insert(oid.to_string());
+                            changed = true;
+                        }
                         continue;
                     }
                     if !obj
@@ -3105,7 +3179,7 @@ pub fn objectives_in_order(objectives: &[Objective]) -> Vec<&Objective> {
     let ids: Vec<&str> = objectives.iter().map(|o| o.id().as_str()).collect();
     let mut indeg: BTreeMap<&str, usize> = ids.iter().map(|i| (*i, 0)).collect();
     for o in objectives {
-        for a in o.after() {
+        for a in o.after_edges() {
             if indeg.contains_key(a.as_str()) {
                 *indeg.get_mut(o.id().as_str()).unwrap() += 1;
             }
@@ -3118,7 +3192,7 @@ pub fn objectives_in_order(objectives: &[Objective]) -> Vec<&Objective> {
     while let Some(id) = queue.pop_front() {
         order.push(by_id[id]);
         for o in objectives {
-            if o.after().iter().any(|a| a.as_str() == id) {
+            if o.after_edges().iter().any(|a| a.as_str() == id) {
                 let e = indeg.get_mut(o.id().as_str()).unwrap();
                 *e -= 1;
                 if *e == 0 {
@@ -3131,4 +3205,33 @@ pub fn objectives_in_order(objectives: &[Objective]) -> Vec<&Objective> {
         return objectives.iter().collect();
     }
     order
+}
+
+/// Whether `id` is done by its own act in `st`: settled, and neither expired
+/// nor lapsed (spec-0134 §7) — what a quorum counts.
+fn completed(st: &ReplayState, id: &str) -> bool {
+    st.done_obj.contains(id) && !st.expired.contains(id) && !st.lapsed.contains(id)
+}
+
+/// Every quorum of the campaign with the objective that waits on it, in
+/// document order (spec-0134 §7).
+pub fn quorums(c: &delvewright_dsl::Campaign) -> Vec<(&Objective, &delvewright_dsl::Quorum)> {
+    c.quests
+        .content
+        .quests
+        .iter()
+        .flat_map(|q| &q.objectives)
+        .flat_map(|o| o.after_quorums().into_iter().map(move |q| (o, q)))
+        .collect()
+}
+
+/// The members the default world lapses (spec-0134 §7): of every quorum,
+/// every member past its first `at_least` by id order.
+pub fn default_lapsed(c: &delvewright_dsl::Campaign) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    for (_, q) in quorums(c) {
+        let chosen = q.default_completers();
+        out.extend(q.lapsing(&chosen).map(str::to_string));
+    }
+    out
 }

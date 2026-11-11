@@ -199,13 +199,9 @@ pub(super) fn emit_one_dialogue_mask_packtest(
                 vec![format!("scoreboard players set {p} {os} 1")],
                 vec![format!("scoreboard players set {p} {os} 0")],
             ));
-            for a in objective.after() {
-                let sc = after_score(plan.campaign, a.as_str());
-                satisfied.push(format!("scoreboard players set {p} {sc} 1"));
-                terms.push((
-                    vec![format!("scoreboard players set {p} {sc} 0")],
-                    vec![format!("scoreboard players set {p} {sc} 1")],
-                ));
+            for (shut, open) in super::super::quorum::after_term_lines(plan.campaign, objective) {
+                satisfied.push(open.clone());
+                terms.push((vec![shut], vec![open]));
             }
             for f in objective.requires_flags() {
                 let sc = plan::flag_score(f.as_str());

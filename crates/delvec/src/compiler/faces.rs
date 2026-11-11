@@ -329,7 +329,7 @@ impl Piece {
 /// The verdict of the mating check, over the denominator the placement itself
 /// supplies: how many pairs of placed pieces touch, how many of those any piece
 /// declared a face across, and how many declared faces met another piece.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct FaceBinding {
     /// Declared faces that abut another placed piece.
     pub bound: usize,

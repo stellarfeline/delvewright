@@ -482,12 +482,7 @@ fn objective_drive(plan: &Plan, oid: &str, complete: Option<bool>) -> Vec<String
         quest_active_score(q.id.as_str()),
         if complete.is_some() { 1 } else { 0 }
     )];
-    for a in o.after() {
-        v.push(format!(
-            "scoreboard players set {party} {} 1",
-            after_score(plan.campaign, a.as_str())
-        ));
-    }
+    v.extend(super::super::quorum::after_drive(plan.campaign, o));
     v.push(format!(
         "scoreboard players set {party} {} {}",
         obj_score(oid),
