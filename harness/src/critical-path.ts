@@ -1211,6 +1211,7 @@ function parseStepBody(value: unknown, pointer: string): Step {
           "en_route_cutscene_seconds",
           "keep_out",
           "block",
+          "sneak",
         ],
         pointer,
       );

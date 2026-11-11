@@ -409,7 +409,24 @@ export const methods = {
             e.position !== undefined &&
             e.position.distanceTo(here) <= WARDEN_DARKNESS_RANGE,
         );
-      this.sculk.onSelfEffect(registry?.effects?.[effect.id]?.name, wardenNear, Date.now());
+      const effectName = registry?.effects?.[effect.id]?.name;
+      if ((effectName ?? "").toLowerCase() === "darkness") {
+        // Where the bot stood and the nearest warden the client saw, so a
+        // darkness the ear counts can be read against the deaths and respawns
+        // around it.
+        let nearest: number | undefined;
+        for (const e of Object.values(bot.entities ?? {})) {
+          if (e?.name !== "warden" || e.position === undefined || here === undefined) continue;
+          const d = e.position.distanceTo(here);
+          nearest = nearest === undefined ? d : Math.min(nearest, d);
+        }
+        process.stderr.write(
+          `[sculk] darkness on the bot at ${here === undefined ? "?" : `[${here.x.toFixed(1)}, ${here.y.toFixed(1)}, ${here.z.toFixed(1)}]`}` +
+            ` during step ${this.currentStep}, deaths so far ${this.deathSeq}; nearest warden the client sees: ` +
+            `${nearest === undefined ? "none" : `${nearest.toFixed(1)} block(s)`}\n`,
+        );
+      }
+      this.sculk.onSelfEffect(effectName, wardenNear, Date.now());
     });
     bot.on("entitySpawn", (entity: Entity) => {
       this.sculk.onSpawn(entity?.name);
@@ -490,6 +507,8 @@ export const methods = {
   /** Sequencer hook: the run has moved on to step `index`. Attribution only. */
   beginStep(this: MineflayerExecutor, index: number): void {
     this.currentStep = index;
+    this.stepStartCursor = this.legCursor;
+    this.stepLegs.clear();
     // A trigger echo belongs to the step that sent it. Dropping it here keeps a
     // later step's timeout from quoting the previous step's `/trigger` as if it
     // were its own — a diagnostic that names the wrong command is worse than none.

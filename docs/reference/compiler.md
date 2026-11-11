@@ -2100,15 +2100,17 @@ staging, refunds and the full-health hold turned off, reads each pursuer once a
 second on the server's clock through the `census` the row names
 (`[dw:actor <campaign> <actor> <seq> <alive> <x> <y> <z>]`, the sigil and anchored
 match of the completion channel) and once after the completion, and judges the
-step in the `pursuit` ladder stage: red on a death, a staged removal or a restore,
-a pursuer absent at a reading, or no reading (the pursuer's displacement is stated, never judged) (`docs/reference/playtest-methodology.md`
+step in the `pursuit` ladder stage: red on a staged removal or a restore, a
+pursuer absent at a reading, or no reading — a death is recorded, the bot
+respawns and walks the step again, and only a death loop is red (the pursuer's displacement is stated, never judged) (`docs/reference/playtest-methodology.md`
 *What the ladder asserts beside a body it never fights*). The run closes with
 `[pursuit] <n> pursued step(s) of <N>, <m> pursuer(s), <k> reading(s); closest
-approach <d>`. The sculk ear's warden rule reads the declaration too: the run's
+approach <d>; <x> death(s)`. The sculk ear's warden rule reads the declaration too: the run's
 warden failure is the server's count of wardens standing at the end that wear no
 `dw_actor` tag; a shriek at a cell no leg predicts fails the run on its own; and a
-darkness is set apart as a declared warden's only when the client saw a warden in
-reach and no shriek was heard within a second of it.
+darkness is set apart as a declared warden's only when the pursuit census read a
+declared warden within 20 blocks of the bot around it (the server's positions,
+never the client's) and no shriek was heard within a second of it.
 
 ### A cutscene is pure observation (`dw_cutscene`)
 
@@ -3123,6 +3125,21 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   cannot verify. Endgame rule: campaign completion is due at the LAST objective step;
   the campaign marker arriving earlier fails the run on the spot, because every
   remaining step is then provably hollow.
+
+  **`sneak: true` marks a step walked crouched** (present only when true): an
+  objective step whose objective declares `stealth`, and a `trigger` step
+  performed in front of one — it takes the `sneak` of the first step after it
+  that is not a trigger, a spliced link's press included, because its walk is
+  part of the walk to that objective (`plan::path`,
+  `tests/it/teleport_link.rs`). The harness holds the crouch on every tick of
+  such a walk (`harness/src/movement.ts` `configureLeg`) and stands only for
+  the leg's `stand_ups`: the moves a crouched body cannot make — a climb down,
+  a step from a route cell to a lower one outside any climb, a declared jump —
+  which `compiler::waypoints::stand_ups` derives once and exports on the sneak
+  leg in the waypoints artifact (`{from, to, why}`, both ends kept waypoints,
+  present only when non-empty). The sculk model reads the same answer: a sneak
+  leg's cells are silent but those its stand-ups put the body in
+  (`waypoints::standing_cells` → `Listening::leg_vibrations`).
 
   **Every cutscene a step can fire is on the step** (`compiler::hold`), as two
   optional positive integers. `cutscene_seconds` is the time from the step's

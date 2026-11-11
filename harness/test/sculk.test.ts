@@ -64,13 +64,45 @@ test("a declared warden no longer fails the run; an undeclared one still does", 
   assert.match(ear.runFailure() ?? "", /undeclared standing unread/);
 });
 
-test("a darkness a warden in reach explains is counted apart and fails nothing", () => {
+test("a darkness a warden in reach explains is counted apart and fails nothing — judged on the census", () => {
   const ear = new SculkEar();
-  ear.onSelfEffect("darkness", true);
+  ear.onWardenReading("actor/the-sleeper", 12, 1_000);
+  ear.onSelfEffect("darkness", true, 1_200);
+  ear.onWardenReading("actor/the-sleeper", 13, 2_000);
   assert.equal(ear.runFailure(0), undefined);
   assert.match(ear.runLine(0), /darkness 0 \(1 more with a warden in reach\)/);
-  ear.onSelfEffect("darkness", false);
+  // The census reads the warden 25 and 26 blocks off around the next one.
+  ear.onWardenReading("actor/the-sleeper", 25, 5_000);
+  ear.onSelfEffect("darkness", false, 5_500);
+  ear.onWardenReading("actor/the-sleeper", 26, 6_000);
   assert.match(ear.runFailure(0) ?? "", /darkness 1 \(1 more with a warden in reach\)/);
+});
+
+test("a darkness whose warden the client places at 20.5 and the server at 19.5 is the warden's", () => {
+  const ear = new SculkEar();
+  ear.onWardenReading("actor/the-sleeper", 19.5, 1_000);
+  ear.onSelfEffect("darkness", false, 1_300); // the client saw it at 20.5
+  ear.onWardenReading("actor/the-sleeper", 21, 2_000);
+  assert.equal(ear.runFailure(0), undefined, "the server's reading is the judge");
+  assert.deepEqual(ear.disagreements(), [
+    "[sculk] darkness at 1300: the client saw no warden within 20 blocks, the census read one within 20 blocks",
+  ]);
+});
+
+test("a darkness with no warden within 20 blocks on the server fails the run, whatever the client saw", () => {
+  const ear = new SculkEar();
+  ear.onWardenReading("actor/the-sleeper", 20.5, 1_000);
+  ear.onSelfEffect("darkness", true, 1_300); // the client saw it at 19.5
+  ear.onWardenReading("actor/the-sleeper", 21, 2_000);
+  assert.match(ear.runFailure(0) ?? "", /darkness 1 \(0 more with a warden in reach\)/);
+  assert.deepEqual(ear.disagreements(), [
+    "[sculk] darkness at 1300: the client saw a warden within 20 blocks, the census read none within 20 blocks",
+  ]);
+  // No census reading around a darkness is no warden the census can stand for.
+  const unread = new SculkEar();
+  unread.onSelfEffect("darkness", true, 1_300);
+  assert.match(unread.runFailure(0) ?? "", /darkness 1 /);
+  assert.match(unread.disagreements()[0]!, /the census held no reading around it/);
 });
 
 test("the undeclared-warden reading asks for wardens wearing no dw_actor tag, and parses its count", () => {
@@ -88,6 +120,7 @@ test("an unpredicted shriek beside a declared warden fails the run, and its dark
   // A shrieker nobody predicted shrieks at [30, 64, 30], and its darkness lands
   // on the bot in the same moment, with the warden within 20 blocks.
   ear.onWorldEvent(3007, [30, 64, 30], 1_000);
+  ear.onWardenReading("actor/the-sleeper", 10, 1_000);
   ear.onSelfEffect("darkness", true, 1_050);
   const failure = ear.runFailure(0);
   assert.ok(failure !== undefined, "an unpredicted shriek is never excused by a warden in reach");
@@ -99,12 +132,14 @@ test("a predicted shriek still un-excuses the darkness that arrives with it", ()
   const ear = new SculkEar();
   ear.predictShriekers([[4, 64, 4]]);
   ear.onWorldEvent(3007, [4, 64, 4], 1_000);
+  ear.onWardenReading("actor/the-sleeper", 10, 1_000);
   ear.onSelfEffect("darkness", true, 1_020);
   assert.match(ear.runFailure(0) ?? "", /darkness 1 \(0 more with a warden in reach\), unpredicted shrieks 0/);
   // A warden's pulse with no shriek around it is the warden's.
   const quiet = new SculkEar();
   quiet.onWorldEvent(3007, [4, 64, 4], 1_000);
   quiet.predictShriekers([[4, 64, 4]]);
+  quiet.onWardenReading("actor/the-sleeper", 10, 8_500);
   quiet.onSelfEffect("darkness", true, 9_000);
   assert.equal(quiet.runFailure(0), undefined);
 });

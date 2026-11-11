@@ -69,6 +69,18 @@ pub fn waypoints_json(
                 keep.push(j.from);
                 keep.push(j.to);
             }
+            // spec-0132 §5.2: on a sneak leg, the moves a crouched body cannot
+            // make — both ends kept, so the hop between them is the move.
+            let sneaking = sneak.get(leg.to_step).copied().unwrap_or(false);
+            let ups = if sneaking {
+                stand_ups(&leg.cells, &leg.climbs, &taken)
+            } else {
+                Vec::new()
+            };
+            for u in &ups {
+                keep.push(u.from);
+                keep.push(u.to);
+            }
             let wps: Vec<Value> = leg_waypoints(&leg.cells, &keep, &gates)
                 .into_iter()
                 .filter(|c| !held_inside(leg, c))
@@ -99,6 +111,16 @@ pub fn waypoints_json(
             }
             // Emitted only when present, so a campaign with no declared jump
             // stays byte-identical.
+            // spec-0132 §5.2: the hops of a sneak leg the body makes standing,
+            // in route order. Emitted only when present, so a leg that is not
+            // walked sneaking, or makes every move crouched, stays byte-identical.
+            if !ups.is_empty() {
+                leg_json["stand_ups"] = json!(
+                    ups.iter()
+                        .map(|u| json!({"from": u.from, "to": u.to, "why": u.why}))
+                        .collect::<Vec<Value>>()
+                );
+            }
             if !taken.is_empty() {
                 leg_json["jumps"] = json!(
                     taken
@@ -137,11 +159,17 @@ pub fn waypoints_json(
                 |c| step_done(leg.from_step, c),
                 |c| step_done(leg.to_step, c),
             );
-            let heard = listening.leg_vibrations(
-                &leg.cells,
-                &walked,
-                sneak.get(leg.to_step).copied().unwrap_or(false),
-            );
+            // A sneak leg's crouched cells make no vibration; the cells of the
+            // moves it makes standing do, the one answer the bot is handed.
+            let crouched: Vec<bool> = if sneaking {
+                standing_cells(&leg.cells, &ups)
+                    .into_iter()
+                    .map(|standing| !standing)
+                    .collect()
+            } else {
+                vec![false; leg.cells.len()]
+            };
+            let heard = listening.leg_vibrations(&leg.cells, &walked, &crouched);
             if !heard.is_empty() {
                 leg_json["vibrations"] = json!(
                     heard
@@ -221,6 +249,117 @@ pub fn vibration_line(doc: &Value, listening: &crate::compiler::sculk::Listening
 /// route take, the waypoint export and the POV planner
 /// ([`crate::compiler::render_plan::pov_shots`]), so a camera is never stood
 /// where the bot is never sent.
+/// One move of a sneak leg a crouched body cannot make, so a player stands up
+/// for it: the route cell it starts from, the one it ends in, and which move.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StandUp {
+    /// The route cell the move starts from.
+    pub from: [i32; 3],
+    /// The route cell it ends in.
+    pub to: [i32; 3],
+    /// `climb-down`, `step-down` or `jump`.
+    pub why: &'static str,
+}
+
+/// **The moves of a leg a crouched body cannot make** (spec-0132 §5.2), in
+/// route order: a climb that goes down (a crouching body holds on the
+/// climbable and will not walk off the brink it starts from), a step from a
+/// route cell to a lower one outside any climb (vanilla backs a crouching body
+/// off every edge), and a declared jump the route takes (`taken`). The one
+/// answer to "which moves of a sneak leg are made standing": the exported leg
+/// carries it to the bot as `stand_ups`, and the sculk model hears exactly
+/// those moves ([`standing_cells`]).
+pub fn stand_ups(
+    cells: &[[i32; 3]],
+    climbs: &[crate::compiler::nav::ClimbRun],
+    taken: &[&crate::compiler::nav::ProvenJump],
+) -> Vec<StandUp> {
+    let index =
+        |c: [i32; 3], from: usize| cells[from..].iter().position(|x| *x == c).map(|i| i + from);
+    // (start index, end index, move) per move found.
+    let mut found: Vec<(usize, usize, StandUp)> = Vec::new();
+    let mut covered = vec![false; cells.len()];
+    let mut at = 0usize;
+    for run in climbs {
+        let (Some(a), Some(b)) = (index(run.from, at), index(run.to, at)) else {
+            continue;
+        };
+        if b <= a {
+            continue;
+        }
+        for c in covered.iter_mut().take(b).skip(a) {
+            *c = true;
+        }
+        at = b;
+        if run.to[1] < run.from[1] {
+            found.push((
+                a,
+                b,
+                StandUp {
+                    from: run.from,
+                    to: run.to,
+                    why: "climb-down",
+                },
+            ));
+        }
+    }
+    for j in taken {
+        let Some(a) = index(j.from, 0) else { continue };
+        if cells.get(a + 1) != Some(&j.to) {
+            continue;
+        }
+        covered[a] = true;
+        found.push((
+            a,
+            a + 1,
+            StandUp {
+                from: j.from,
+                to: j.to,
+                why: "jump",
+            },
+        ));
+    }
+    for (k, w) in cells.windows(2).enumerate() {
+        if !covered[k] && w[1][1] < w[0][1] {
+            found.push((
+                k,
+                k + 1,
+                StandUp {
+                    from: w[0],
+                    to: w[1],
+                    why: "step-down",
+                },
+            ));
+        }
+    }
+    found.sort_by_key(|(a, b, _)| (*a, *b));
+    found.into_iter().map(|(_, _, u)| u).collect()
+}
+
+/// Per route cell, whether the body is standing in it on a sneak leg: every
+/// cell a [`StandUp`] moves the body into, after its start up to its end.
+pub fn standing_cells(cells: &[[i32; 3]], ups: &[StandUp]) -> Vec<bool> {
+    let mut out = vec![false; cells.len()];
+    let mut at = 0usize;
+    for u in ups {
+        let Some(a) = cells[at..]
+            .iter()
+            .position(|c| *c == u.from)
+            .map(|i| i + at)
+        else {
+            continue;
+        };
+        let Some(b) = cells[a..].iter().position(|c| *c == u.to).map(|i| i + a) else {
+            continue;
+        };
+        for s in out.iter_mut().take(b + 1).skip(a + 1) {
+            *s = true;
+        }
+        at = b;
+    }
+    out
+}
+
 pub(crate) fn held_inside(leg: &LegRoute, c: &[i32; 3]) -> bool {
     leg.climbs
         .iter()
@@ -448,6 +587,61 @@ fn delta(a: [i32; 3], b: [i32; 3]) -> [i32; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The moves a sneak leg makes standing: the down climb, a step off a
+    /// dais and a jump — never the up climb or a level step.
+    #[test]
+    fn a_sneak_leg_stands_for_a_climb_down_a_step_down_and_a_jump() {
+        let run =
+            |from: [i32; 3], to: [i32; 3], cells: Vec<[i32; 3]>| crate::compiler::nav::ClimbRun {
+                from,
+                to,
+                cells,
+                block: "minecraft:ladder[facing=north,waterlogged=false]".to_string(),
+                facing: None,
+            };
+        // Up a ladder at x=0 from y=1 to y=4, along the top, down a ladder at
+        // x=3, off a one-block dais, across a declared jump.
+        let mut cells = vec![[0, 1, 1], [0, 2, 0], [0, 3, 0], [1, 4, 0], [2, 4, 0]];
+        cells.extend([
+            [3, 3, 0],
+            [3, 2, 0],
+            [4, 1, 0],
+            [5, 1, 0],
+            [6, 0, 0],
+            [8, 0, 0],
+        ]);
+        let up = run([0, 1, 1], [1, 4, 0], vec![[0, 1, 0], [0, 2, 0], [0, 3, 0]]);
+        let down = run([2, 4, 0], [4, 1, 0], vec![[3, 3, 0], [3, 2, 0], [3, 1, 0]]);
+        let jump = crate::compiler::nav::ProvenJump {
+            id: "jump/gap".to_string(),
+            from: [6, 0, 0],
+            to: [8, 0, 0],
+            sprint: false,
+            run_up: 1,
+        };
+        let ups = stand_ups(&cells, &[up, down], &[&jump]);
+        let got: Vec<([i32; 3], [i32; 3], &str)> =
+            ups.iter().map(|u| (u.from, u.to, u.why)).collect();
+        assert_eq!(
+            got,
+            vec![
+                ([2, 4, 0], [4, 1, 0], "climb-down"),
+                ([5, 1, 0], [6, 0, 0], "step-down"),
+                ([6, 0, 0], [8, 0, 0], "jump"),
+            ]
+        );
+        // The cells the body stands in: the down climb's after its start, the
+        // step's landing, the jump's landing.
+        let standing = standing_cells(&cells, &ups);
+        let at: Vec<usize> = standing
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| **s)
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(at, vec![5, 6, 7, 9, 10]);
+    }
 
     #[test]
     fn no_waypoint_stands_inside_a_timed_gate_even_after_a_corner_at_its_mouth() {

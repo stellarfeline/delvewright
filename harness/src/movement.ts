@@ -7,6 +7,10 @@
 /** The subset of a mineflayer Bot this helper drives. */
 export interface ControlBot {
   setControlState(control: "sneak", state: boolean): void;
+  /** The control states as the client holds them (mineflayer's `bot.controlState`). */
+  readonly controlState: { readonly sneak: boolean };
+  on(event: "physicsTick", listener: () => void): unknown;
+  removeListener(event: "physicsTick", listener: () => void): unknown;
 }
 
 /**
@@ -14,7 +18,8 @@ export interface ControlBot {
  * and `allow1by1towers` are always locked off (adventure mode: never break or
  * pillar); `canOpenDoors` is turned ON (opening a door/fence-gate is a use
  * interaction vanilla permits in adventure mode — see {@link configureLeg});
- * `allowSprinting` is turned off only for a sneak leg; `allowParkour` is
+ * `allowSprinting` is turned off for a sneak leg, except on the hop of a proven
+ * sprint jump the leg makes standing ({@link hopMovements}); `allowParkour` is
  * turned off for every leg, and on only for the hop of a jump the compiler
  * proved (spec-0113 §6, {@link parkourFor}).
  */
@@ -187,10 +192,25 @@ export function describeStuckNeighbours(
 
 /**
  * Apply the standard adventure-mode movement locks, and — for a sneak leg — disable
- * sprinting in the Movements and turn the bot's sneak control state ON. Returns a
- * restore function that clears the sneak control state again; the caller MUST invoke
- * it (in a `finally`) so a later non-sneak leg is not left crouched. A non-sneak leg
- * returns a no-op restore.
+ * sprinting in the Movements and HOLD the bot's sneak control state on for the whole
+ * leg. Returns a restore function that releases the hold and clears the crouch; the
+ * caller MUST invoke it (in a `finally`) so a later non-sneak leg is not left
+ * crouched. A non-sneak leg returns a no-op restore.
+ *
+ * **The crouch is held every tick, not set once.** mineflayer-pathfinder clears
+ * every control state on `setMovements`, on every `setGoal` and on arrival
+ * (`resetPath`, `fullStop` → `bot.clearControlStates()`), and the leg calls the
+ * first two on every hop, so a crouch set once at the leg's start was gone before
+ * the body took a step: a sneak leg was walked upright on every tick
+ * (`test/sneak-leg.test.ts` reproduces it on the real library). The hold re-asserts
+ * the crouch on each `physicsTick` — after the library's steering ran and before
+ * the client sends that tick's position — so the server reads the body crouched
+ * at every move it is sent.
+ *
+ * `yieldCrouch` names the moments a crouched body cannot do what the leg asks
+ * and a player stands up for it: the leg's `stand_ups`, the compiler's one
+ * answer (a climb down, a step down, a jump — `waypoints::stand_ups`). While it
+ * answers `true` the hold stands the body up instead.
  *
  * `canOpenDoors` is enabled: some delve areas are entered only through a closed
  * door or fence gate (the ram pen's only opening is its oak_fence_gate). Opening one
@@ -204,6 +224,7 @@ export function configureLeg(
   bot: ControlBot,
   movements: LegMovements,
   sneak: boolean,
+  yieldCrouch: () => boolean = () => false,
 ): () => void {
   movements.canDig = false; // adventure mode: never break blocks
   movements.allow1by1towers = false;
@@ -216,8 +237,16 @@ export function configureLeg(
     return () => {};
   }
   movements.allowSprinting = false; // a sprinting bot is not sneaking
-  bot.setControlState("sneak", true);
-  return () => bot.setControlState("sneak", false);
+  const hold = (): void => {
+    const want = !yieldCrouch();
+    if (bot.controlState.sneak !== want) bot.setControlState("sneak", want);
+  };
+  hold();
+  bot.on("physicsTick", hold);
+  return () => {
+    bot.removeListener("physicsTick", hold);
+    bot.setControlState("sneak", false);
+  };
 }
 
 /**
@@ -228,6 +257,37 @@ export function configureLeg(
 export function parkourFor(movements: Pick<LegMovements, "allowParkour">, jump: boolean): boolean {
   movements.allowParkour = jump;
   return jump;
+}
+
+/** What {@link hopMovements} reads of one hop (a `GoalSpec`). */
+export interface HopKind {
+  /** The proven jump the hop is, when it is one; its `sprint` is the world's declaration. */
+  readonly jump?: { readonly sprint: boolean };
+  /** Set when the hop is one of a sneak leg's `stand_ups`. */
+  readonly standsUp?: true;
+}
+
+/**
+ * Set the pathfinder's moves for one hop of a leg walked `sneak` or not, and
+ * return them: the parkour move ({@link parkourFor}) and the sprint.
+ *
+ * A plain leg sprints wherever the pathfinder chooses. A sneak leg does not —
+ * except on the hop of a proven jump declared `sprint` that the leg makes
+ * standing (its `stand_ups`): mineflayer-pathfinder 2.4.5's parkour move lands
+ * at most two cells forward with sprinting off (`getMoveParkourForward`,
+ * `maxD`), so a sprint jump on a sneak leg is no neighbour of its take-off
+ * cell and the hop answers `No path to the goal!`. Called with an empty hop,
+ * it restores the leg's own moves.
+ */
+export function hopMovements(
+  movements: Pick<LegMovements, "allowParkour" | "allowSprinting">,
+  sneak: boolean,
+  hop: HopKind,
+): { parkour: boolean; sprint: boolean } {
+  const parkour = parkourFor(movements, hop.jump !== undefined);
+  const sprint = !sneak || (hop.standsUp === true && hop.jump?.sprint === true);
+  movements.allowSprinting = sprint;
+  return { parkour, sprint };
 }
 
 /**

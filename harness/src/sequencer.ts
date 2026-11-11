@@ -94,6 +94,13 @@ export interface StepExecutor {
    */
   rearmAfterRespawn?(): Promise<unknown>;
   /**
+   * Optional (spec-0132 §5.2): after a death on a pursued step and the respawn,
+   * ready the step to be walked again from where the game put the bot — or
+   * throw, naming a death loop, when the step has taken more deaths than its
+   * proven route has waypoints.
+   */
+  resumePursuedStep?(index: number, label: string): void;
+  /**
    * Optional (AUDIT-P0): the run is about to execute step `index`. Attribution only
    * — the executor uses it to record which step a completion marker arrived during.
    */
@@ -140,6 +147,17 @@ export interface RunOptions {
    * future lethal-delve validation; the safe-route ladder stays fail-fast.
    */
   readonly retryOnDeath?: boolean;
+}
+
+/**
+ * Wait out a death and re-arm the bot WHERE IT STANDS: the one recovery every
+ * retry after a death takes. Re-running `select-class` here would teleport it to
+ * the campaign entry point, so the retried step would be walked from the start
+ * of the delve rather than from the respawn the player actually got.
+ */
+async function respawnInPlace(executor: StepExecutor): Promise<void> {
+  await executor.recoverFromDeath?.();
+  await executor.rearmAfterRespawn?.();
 }
 
 /** Raised when the step sequence violates a structural ordering invariant. */
@@ -345,6 +363,23 @@ export async function runSequence(
         }
         break;
       } catch (cause) {
+        // spec-0132 §5.2: a death on a pursued step is a measurement. The bot
+        // respawns where the game puts it, as a player does, and walks the step
+        // again, until it has died more often than its route has waypoints.
+        if (
+          cause instanceof BotDeathError &&
+          pursuersOf(step).length > 0 &&
+          executor.resumePursuedStep &&
+          executor.recoverFromDeath
+        ) {
+          try {
+            await respawnInPlace(executor);
+            executor.resumePursuedStep(i, step.action);
+          } catch (resumeCause) {
+            throw new StepExecutionError(i, step.action, resumeCause);
+          }
+          continue;
+        }
         if (
           options.retryOnDeath &&
           !deathRetryUsed &&
@@ -353,12 +388,7 @@ export async function runSequence(
         ) {
           deathRetryUsed = true;
           try {
-            await executor.recoverFromDeath();
-            // Re-arm WHERE THE BOT STANDS. Re-running `select-class` here would
-            // teleport it to the campaign entry point, so the retried
-            // step would be walked from the start of the delve rather than from
-            // the respawn the player actually got.
-            await executor.rearmAfterRespawn?.();
+            await respawnInPlace(executor);
           } catch (recoverCause) {
             throw new StepExecutionError(i, step.action, recoverCause);
           }

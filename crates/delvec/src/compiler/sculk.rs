@@ -688,7 +688,9 @@ impl Listening {
             .any(|c| (0..3).all(|i| lo[i] <= c[i] && c[i] <= hi[i]))
     }
 
-    /// **The vibrations a leg makes** (spec-0100 §4.6): none on a `sneak` leg;
+    /// **The vibrations a leg makes** (spec-0100 §4.6): none from a cell the
+    /// body is in crouched (`crouched`, per route cell: a `sneak` leg's cells
+    /// but those of the moves it makes standing, `waypoints::standing_cells`);
     /// otherwise every sensor for which [`PREDICTED_RUN`] consecutive route
     /// cells the party must walk (`must_walk`: a cell it may stop in, having
     /// completed the leg's last step or able to complete its next one, breaks
@@ -701,9 +703,9 @@ impl Listening {
         &self,
         cells: &[[i32; 3]],
         must_walk: &[bool],
-        sneak: bool,
+        crouched: &[bool],
     ) -> Vec<Vibration> {
-        if sneak || self.sensors.is_empty() {
+        if self.sensors.is_empty() {
             return Vec::new();
         }
         let mut out = Vec::new();
@@ -711,6 +713,7 @@ impl Listening {
             let mut run = 0usize;
             let heard = cells.iter().enumerate().any(|(i, c)| {
                 let counts = must_walk.get(i).copied().unwrap_or(false)
+                    && !crouched.get(i).copied().unwrap_or(false)
                     && dist_sq(*c, s) <= r2
                     && !self.dampeners.contains(c)
                     && !self.dampeners.contains(&[c[0], c[1] - 1, c[2]])
@@ -1058,7 +1061,7 @@ mod tests {
         assert_eq!((l.sensors(), l.shriekers()), (2, 1));
         let route: Vec<[i32; 3]> = (0..=10).map(|x| [x, 1, 0]).collect();
         let all = vec![true; route.len()];
-        let v = l.leg_vibrations(&route, &all, false);
+        let v = l.leg_vibrations(&route, &all, &[]);
         assert_eq!(
             v,
             vec![Vibration {
@@ -1067,17 +1070,34 @@ mod tests {
             }]
         );
         assert!(
-            l.leg_vibrations(&route, &all, true).is_empty(),
-            "a sneak leg"
+            l.leg_vibrations(&route, &all, &vec![true; route.len()])
+                .is_empty(),
+            "a sneak leg, crouched throughout"
+        );
+        // A sneak leg that stands for four cells in reach — the moves a
+        // crouched body cannot make (`waypoints::standing_cells`) — is heard.
+        let mut crouched = vec![true; route.len()];
+        for c in crouched.iter_mut().take(7).skip(3) {
+            *c = false;
+        }
+        assert_eq!(
+            l.leg_vibrations(&route, &all, &crouched).len(),
+            1,
+            "a sneak leg's standing cells"
+        );
+        crouched[5] = true;
+        assert!(
+            l.leg_vibrations(&route, &all, &crouched).is_empty(),
+            "three standing cells in a row"
         );
         // A leg that walks fewer than four cells inside the radius sets off
         // nothing a bot can be held to.
         assert!(
-            l.leg_vibrations(&route[..3], &all, false).is_empty(),
+            l.leg_vibrations(&route[..3], &all, &[]).is_empty(),
             "three cells"
         );
         assert_eq!(
-            l.leg_vibrations(&route[..4], &all, false).len(),
+            l.leg_vibrations(&route[..4], &all, &[]).len(),
             1,
             "four cells"
         );
@@ -1087,7 +1107,7 @@ mod tests {
             ([5, 0, 7], "minecraft:white_wool"),
             ([5, 0, 10], "minecraft:sculk_shrieker"),
         ]);
-        let v = Listening::of(&walled, &[]).leg_vibrations(&route, &all, false);
+        let v = Listening::of(&walled, &[]).leg_vibrations(&route, &all, &[]);
         assert_eq!(v.len(), 1);
         assert!(v[0].shriekers.is_empty(), "{v:?}");
         // A carpet underfoot dampens every step.
@@ -1095,7 +1115,7 @@ mod tests {
         for x in 0..=10 {
             carpeted.push(([x, 0, 0], "minecraft:red_carpet"));
         }
-        let v = Listening::of(&map(&carpeted), &[]).leg_vibrations(&route, &all, false);
+        let v = Listening::of(&map(&carpeted), &[]).leg_vibrations(&route, &all, &[]);
         assert!(v.is_empty(), "{v:?}");
         // A sensor a runtime write covers is not predicted.
         let w = Write {
@@ -1126,7 +1146,7 @@ mod tests {
         let east_to_middle: Vec<[i32; 3]> = (163..=166).rev().map(|x| [x, 64, 625]).collect();
         let all = vec![true; east_to_middle.len()];
         assert_eq!(
-            l.leg_vibrations(&east_to_middle, &all, false).len(),
+            l.leg_vibrations(&east_to_middle, &all, &[]).len(),
             1,
             "over every route cell, the sensor is predicted"
         );
@@ -1141,7 +1161,7 @@ mod tests {
             "each cell clicks one valve or the other"
         );
         assert!(
-            l.leg_vibrations(&east_to_middle, &walked, false).is_empty(),
+            l.leg_vibrations(&east_to_middle, &walked, &[]).is_empty(),
             "a leg the party need not walk predicts nothing"
         );
         // From the middle valve south to a talk at [163, 64, 616]: the route
@@ -1154,7 +1174,7 @@ mod tests {
         let walked = must_walk(&south, reach([163, 64, 625]), reach([163, 64, 616]));
         assert_eq!(walked.iter().filter(|w| **w).count(), 4, "{walked:?}");
         assert_eq!(
-            l.leg_vibrations(&south, &walked, false),
+            l.leg_vibrations(&south, &walked, &[]),
             vec![Vibration {
                 sensor: [163, 63, 622],
                 shriekers: vec![],

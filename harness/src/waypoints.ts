@@ -129,6 +129,10 @@ export interface WaypointLeg {
   readonly vibrations: readonly Vibration[];
   /** The declared jumps the leg's route takes, in route order (spec-0113 §6). */
   readonly jumps: readonly Jump[];
+  /** The moves of a sneak leg the body makes standing (`stand_ups`, spec-0132
+   * §5.2), in route order: each a pair of consecutive waypoints. Empty for a
+   * leg not walked sneaking. */
+  readonly standUps: readonly StandUp[];
   /** The closed doors, trapdoors and fence gates a hand opens that the leg's
    * proven route walks through (`use_gates`, spec-0123 §3.1): each a feet cell
    * and a waypoint of the leg. Empty for a leg that crosses none. */
@@ -161,6 +165,9 @@ export interface GoalSpec {
   /** Set when this hop is a declared jump the compiler proved (spec-0113 §6):
    * the pathfinder's parkour move is on for it, and for no other hop. */
   readonly jump?: Jump;
+  /** Set when this hop is a move of a sneak leg the body makes standing
+   * (`stand_ups`, spec-0132 §5.2). */
+  readonly standsUp?: true;
 }
 
 /**
@@ -304,6 +311,41 @@ function parseClimbs(entry: Record<string, unknown>, pointer: string): Climb[] {
       top,
       block: requireString(c, "block", at),
       facing: facing as Face | undefined,
+    };
+  });
+}
+
+/**
+ * One move of a sneak leg a crouched body cannot make (spec-0132 §5.2): the
+ * compiler's answer (`waypoints::stand_ups`), which the bot reads and never
+ * re-derives — the sculk model hears exactly these moves.
+ */
+export interface StandUp {
+  readonly from: Vec3Tuple;
+  readonly to: Vec3Tuple;
+  readonly why: "climb-down" | "step-down" | "jump";
+}
+
+const STAND_UP_MOVES = ["climb-down", "step-down", "jump"] as const;
+
+/** Parse a leg's optional `stand_ups` (spec-0132 §5.2). Absent → `[]`. */
+function parseStandUps(entry: Record<string, unknown>, pointer: string): StandUp[] {
+  const value = entry["stand_ups"];
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    fail(`${pointer}/stand_ups`, `must be an array, got ${describe(value)}`);
+  }
+  return value.map((u, i) => {
+    const at = `${pointer}/stand_ups/${i}`;
+    if (!isRecord(u)) fail(at, `must be an object, got ${describe(u)}`);
+    const why = u["why"];
+    if (typeof why !== "string" || !(STAND_UP_MOVES as readonly string[]).includes(why)) {
+      fail(`${at}/why`, `must be one of ${STAND_UP_MOVES.join(", ")}, got ${describe(why)}`);
+    }
+    return {
+      from: requireVec3(u["from"], `${at}/from`),
+      to: requireVec3(u["to"], `${at}/to`),
+      why: why as StandUp["why"],
     };
   });
 }
@@ -452,6 +494,16 @@ export function parseWaypoints(raw: unknown): Waypoints {
         fail(`${pointer}/jumps/${j}`, "its from and to are not consecutive waypoints of the leg");
       }
     }
+    const standUps = parseStandUps(entry, pointer);
+    // A stand-up's two ends are waypoints of its own leg, adjacent: the hop
+    // between them is the move made standing.
+    for (const [j, u] of standUps.entries()) {
+      const a = waypoints.findIndex((w) => samePos(w, u.from));
+      const b = waypoints.findIndex((w, k) => k > a && samePos(w, u.to));
+      if (a < 0 || b !== a + 1) {
+        fail(`${pointer}/stand_ups/${j}`, "its from and to are not consecutive waypoints of the leg");
+      }
+    }
     // A door the route opens is a kept waypoint by contract (the compiler never
     // thins it away); one that is not is a structural fault — the crossing could
     // not then be asserted.
@@ -469,7 +521,7 @@ export function parseWaypoints(raw: unknown): Waypoints {
         return cell;
       });
     }
-    return { from, to, waypoints, timedGates: legGates, climbs, vibrations, jumps, doors };
+    return { from, to, waypoints, timedGates: legGates, climbs, vibrations, jumps, standUps, doors };
   });
 
   return { version, campaignId, timedGates, legs };
@@ -579,6 +631,8 @@ export interface LegMatch {
   readonly vibrations: readonly Vibration[];
   /** The declared jumps the matched leg's route takes (empty when none, or no match). */
   readonly jumps: readonly Jump[];
+  /** The moves the matched sneak leg makes standing (empty when none, or no match). */
+  readonly standUps: readonly StandUp[];
   /** The doors a hand opens the matched leg's route walks through (empty when
    * none, or no match). */
   readonly doors: readonly Vec3Tuple[];
@@ -636,6 +690,7 @@ export function nextLegWaypoints(
       climbs: leg.climbs,
       vibrations: leg.vibrations,
       jumps: leg.jumps,
+      standUps: leg.standUps,
       doors: leg.doors,
       cursor: cursor + 1,
       startsOnLeg: startOffset === undefined || startOffset <= LEG_START_REACH,
@@ -649,6 +704,7 @@ export function nextLegWaypoints(
     climbs: [],
     vibrations: [],
     jumps: [],
+    standUps: [],
     doors: [],
     cursor,
     startsOnLeg: true,
@@ -764,6 +820,7 @@ export function walkGoals(
   finalRange: number,
   climbs: readonly Climb[] = [],
   jumps: readonly Jump[] = [],
+  standUps: readonly StandUp[] = [],
 ): readonly GoalSpec[] {
   const out: GoalSpec[] = [];
   if (legWaypoints) {
@@ -778,7 +835,11 @@ export function walkGoals(
       const jump = jumps.find(
         (j) => samePos(j.to, [x, y, z]) && prev !== undefined && samePos(j.from, [prev.x, prev.y, prev.z]),
       );
-      const base = { x, y, z, range: WAYPOINT_RANGE };
+      // The hop from a stand-up's `from` to its `to` is made standing (spec-0132 §5.2).
+      const standsUp = standUps.some(
+        (u) => samePos(u.to, [x, y, z]) && prev !== undefined && samePos(u.from, [prev.x, prev.y, prev.z]),
+      );
+      const base = { x, y, z, range: WAYPOINT_RANGE, ...(standsUp ? { standsUp: true as const } : {}) };
       out.push(climb ? { ...base, climb } : jump ? { ...base, jump } : base);
     }
   }

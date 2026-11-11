@@ -1737,6 +1737,19 @@ pub(super) fn build_critical_path(
         armed_ids_by_step = new_armed_ids;
     }
 
+    // A trigger performed in front of an objective is walked as part of the
+    // walk to it, so it is walked as that objective declares: it takes the
+    // `sneak` of the first step after it that is not a trigger (links spliced,
+    // so a taken link's press is one of them).
+    let mut walked_as = false;
+    for k in (0..steps.len()).rev() {
+        if matches!(steps[k], Step::Trigger { .. }) {
+            sneak_by_step[k] = walked_as;
+        } else {
+            walked_as = sneak_by_step[k];
+        }
+    }
+
     // Every cutscene a step's completion schedules, at any depth of its
     // bundles, read off the step list as it is exported (links spliced).
     let cutscene_by_step = crate::compiler::hold::after_holds(campaign, &steps);

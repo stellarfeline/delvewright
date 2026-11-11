@@ -6266,7 +6266,8 @@ test("stageAway and holdFullHealth return without acting while a pursued step ru
   };
   (bot as unknown as { health: number }).health = 8;
   const executor = attach(bot);
-  executor.pursuedStep = { index: 16, label: "loop loop/the-hall-that-runs-on", refusals: [] };
+  const pursued = { index: 16, label: "loop loop/the-hall-that-runs-on", refusals: [] as string[] };
+  executor.pursuedStep = pursued;
   const sent: string[] = [];
   (bot as unknown as { chat: (m: string) => void }).chat = (m: string) => {
     sent.push(m);
@@ -6278,8 +6279,42 @@ test("stageAway and holdFullHealth return without acting while a pursued step ru
   assert.deepEqual(sent, [], "no command reached the server");
   assert.equal(executor.stagedRemovals.length, 0, "nothing staged, nothing restored");
   assert.equal(executor.stagedIds.has(12), false);
-  assert.equal(executor.pursuedStep.refusals.length, 3);
-  assert.match(executor.pursuedStep.refusals[0]!, /staging warden#12 away/);
-  assert.match(executor.pursuedStep.refusals[1]!, /holding full health/);
-  assert.match(executor.pursuedStep.refusals[2]!, /refunding 6\.0 health warden#12 took/);
+  assert.equal(pursued.refusals.length, 3);
+  assert.match(pursued.refusals[0]!, /staging warden#12 away/);
+  assert.match(pursued.refusals[1]!, /holding full health/);
+  assert.match(pursued.refusals[2]!, /refunding 6\.0 health warden#12 took/);
+});
+
+// ---------------------------------------------------------------------------
+// spec-0132 §5.2: a pursued step walked again after a death, until a life gets
+// no further than the best before it.
+// ---------------------------------------------------------------------------
+
+test("a pursued step walked again resumes its leg where the bot respawned, and dies at most as often as its route has waypoints", () => {
+  const bot = new FakeBot();
+  const executor = attach(bot);
+  (executor as unknown as { feetCell: () => [number, number, number] }).feetCell = () => [29, 65, 31];
+  executor.waypoints = parseWaypoints({
+    version: "0.4.0",
+    campaign_id: "c",
+    legs: [
+      { from: [0, 65, 0], to: [10, 65, 0], waypoints: [[0, 65, 0], [10, 65, 0]] },
+      { from: [10, 65, 0], to: [47, 65, 48], waypoints: [[10, 65, 0], [29, 65, 30], [47, 65, 30], [47, 65, 48]] },
+    ],
+  });
+  executor.legCursor = 1;
+  executor.beginStep(4);
+  executor.noteStepLeg(1); // the step's walk matched its leg …
+  executor.legCursor = 2; // … and consumed it
+  executor.resumePursuedStep(4, "reach");
+  assert.equal(executor.legCursor, 1, "the cursor goes back to the step's leg");
+  assert.deepEqual(executor.legResume, { leg: 1, from: 1 }, "resumed from the waypoint nearest the respawn");
+  // Progress is never asked: three more deaths, each no further, are walked again.
+  for (let d = 2; d <= 4; d++) executor.resumePursuedStep(4, "reach");
+  assert.equal(executor.pursuedDeaths.get(4), 4);
+  // The fifth death is past the leg's four proven waypoints: a death loop.
+  assert.throws(
+    () => executor.resumePursuedStep(4, "reach"),
+    /step 4 \(reach\): death loop — death 5 on this pursued step, past its bound of 4: the proven waypoints of the leg\(s\) it walks \(1\)/,
+  );
 });

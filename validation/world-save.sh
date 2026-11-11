@@ -133,6 +133,15 @@ export DELVE_DOCKERFILE="$here/Dockerfile.delve"
 # shellcheck source=validation/lib/delve-image.sh
 . "$here/lib/delve-image.sh"
 dw_export_delve_image "$project"
+# Compose builds through buildx bake, and bake refuses to read a file outside
+# the working directory without an `fs.read` entitlement: run from anywhere
+# else (the content tree, where the skill runs the ladder), the engine's
+# Dockerfile.delve sits outside it and the image build is refused before any
+# rung runs. Every path above is absolute or resolved against this directory,
+# so the compose session runs from the engine root (a relative `--seed` is
+# made absolute first, against the directory it was given in).
+if [ -n "$seed" ] && [ -d "$seed" ]; then seed="$(cd "$seed" && pwd)"; fi
+cd "$here/.."
 COMPOSE=(docker compose -p "$project" -f "$here/compose.yaml" --profile play)
 # Every compose call starts from validation/. Compose builds through buildx
 # bake, which grants read access to files under the working directory it was

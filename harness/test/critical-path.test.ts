@@ -823,6 +823,22 @@ test("an approach trigger carries its range and a strike-npc its npc", () => {
   assert.equal(npc!.action === "trigger" && npc!.npc, "npc/giant");
 });
 
+test("a trigger step walked sneaking carries `sneak`, as every walking step does", () => {
+  // The compiler marks a trigger performed in front of a stealth objective.
+  const step = parseCriticalPath(
+    withStep({
+      action: "trigger",
+      trigger: "trigger/cross-the-bridge",
+      on: "approach",
+      anchor: "anchor/node-bridge",
+      pos: [82, 87, 47],
+      range: 3,
+      sneak: true,
+    }),
+  ).steps[2];
+  assert.equal(step!.action === "trigger" && step!.sneak, true);
+});
+
 test("a step trigger names its plate's anchor and carries no range", () => {
   const step = parseCriticalPath(
     withStep({

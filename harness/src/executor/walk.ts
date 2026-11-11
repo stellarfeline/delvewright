@@ -12,8 +12,8 @@ import {
   allowNonCollidingEntities,
   configureLeg,
   describeStuckNeighbours,
+  hopMovements,
   isDoorByHand,
-  parkourFor,
 } from "../movement.ts";
 import {
   doorsCrossed,
@@ -27,6 +27,7 @@ import {
   type Jump,
   parkourGap,
   type GoalSpec,
+  type StandUp,
   type TimedGate,
   type Waypoints,
 } from "../waypoints.ts";
@@ -555,7 +556,7 @@ export const methods = {
   ): Promise<void> {
     const bot = this.requireBot();
     const movements = new Movements(bot);
-    const restoreControls = configureLeg(bot, movements, sneak);
+    const restoreControls = configureLeg(bot, movements, sneak, () => this.crouchYielded);
     // No cave-specific Movements override is needed — the compiler-proven
     // waypoints keep the bot on clear standable ground (the DW0311 A* treats water
     // and fences as impassable, so the route never crosses them, and gravity blocks
@@ -605,6 +606,7 @@ export const methods = {
       let legWaypoints: readonly Vec3Tuple[] | undefined;
       let legClimbs: readonly Climb[] = [];
       let legJumps: readonly Jump[] = [];
+      let legStandUps: readonly StandUp[] = [];
       // spec-0100 §4.7: the vibrations the proven leg is predicted to make,
       // heard from the walk's start — or from the first walk along part of the
       // leg before it (a run-back approach, a pulse station walk), which is
@@ -641,6 +643,7 @@ export const methods = {
         legWaypoints = match.waypoints;
         legClimbs = match.climbs;
         legJumps = match.jumps;
+        legStandUps = match.standUps;
         legVibrations = match.vibrations;
         // A walk that starts off the leg, or resumes it part-way, does not walk
         // the whole proven route, so its doors are not this walk's to assert.
@@ -655,6 +658,8 @@ export const methods = {
             heardFrom = await this.sculkLegStart(legVibrations);
           }
         }
+        // spec-0132 §5.2: the proven legs a step walks bound its deaths.
+        if (match.matched && legWaypoints) this.noteStepLeg(this.legCursor);
         if (match.matched && legWaypoints && this.legResume?.leg === this.legCursor) {
           legWaypoints = legWaypoints.slice(this.legResume.from);
           this.legResume = undefined;
@@ -728,6 +733,7 @@ export const methods = {
           (a, b) =>
             climbs.some((c) => same(c.from, a) && same(c.to, b)) ||
             legJumps.some((j) => same(j.from, a) && same(j.to, b)) ||
+            legStandUps.some((u) => same(u.from, a) && same(u.to, b)) ||
             gatesCrossedByHop(a, b, declaredGates).length > 0,
         );
         if (stops.inserted > 0) {
@@ -786,7 +792,7 @@ export const methods = {
         }
         legWaypoints = kept;
       }
-      const goalsList = walkGoals(legWaypoints, [pos[0], pos[1], pos[2]], r, legClimbs, legJumps);
+      const goalsList = walkGoals(legWaypoints, [pos[0], pos[1], pos[2]], r, legClimbs, legJumps, legStandUps);
       // spec-0113 §6: a declared jump the pathfinder's parkour move cannot
       // express is a harness gap, refused by name before the walk starts.
       for (const j of legJumps) {
@@ -849,15 +855,20 @@ export const methods = {
             await this.openDoorBefore(door, spec, glabel, sneak);
           }
           // The parkour move is on for a proven jump's hop and off for every
-          // other (spec-0113 §6): the bot walks what the proof proved.
-          parkourFor(movements, spec.jump !== undefined);
+          // other (spec-0113 §6): the bot walks what the proof proved. A sneak
+          // leg sprints only for a sprint jump it makes standing.
+          hopMovements(movements, sneak, spec);
           bot.pathfinder.setMovements(movements);
+          // A move of a sneak leg a crouched body cannot make is made standing
+          // (`stand_ups`, the compiler's answer).
+          this.crouchYielded = spec.standsUp === true;
           try {
             await (spec.climb
               ? this.raceDeath(() => this.climbHop(spec, glabel))
               : this.gotoStaged(spec, glabel, sneak));
           } finally {
-            parkourFor(movements, false);
+            hopMovements(movements, sneak, {});
+            this.crouchYielded = false;
           }
           await this.judgeWatchers(glabel);
         },
@@ -1113,6 +1124,7 @@ export const methods = {
       (this.waypoints?.legs ?? []).flatMap((l) => l.vibrations.flatMap((v) => v.shriekers)),
     );
     process.stderr.write(`${this.sculk.runLine(undeclared)}\n`);
+    for (const line of this.sculk.disagreements()) process.stderr.write(`${line}\n`);
     return this.sculk.runFailure(undeclared);
   },
 

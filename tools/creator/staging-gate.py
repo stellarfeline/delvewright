@@ -1688,6 +1688,12 @@ def build_fingerprint(build: pathlib.Path) -> str | None:
 #   `DW1040`), the world the pinned server built compared cell by cell and
 #   object by object with the world the engine writes. Refused when absent, for
 #   another build, without the object comparison, or not a pass on both.
+# - `--branch-runs`: `validation/branch-runs.sh`'s merged `branch-runs.json`,
+#   owed exactly when the build plans story worlds (its
+#   `validation/branch-plan.json` names a branch). Every branch that plan names
+#   must have been walked to a pass on THIS build (each driven row carries the
+#   `manifest_sha256` its run stamped); a branch the plan declares and no world
+#   realizes is refused. The critical path alone is one world of several.
 #
 # `--stage-anyway "<reason>"` overrides both like every other refusal, and the
 # refusals it overrode are printed one per line and recorded in the token.
@@ -1709,13 +1715,76 @@ def _read_record(path: pathlib.Path | None, flag: str, what: str) -> tuple[dict 
     return doc, None
 
 
+def branch_run_refusals(
+    fingerprint: str | None,
+    build: pathlib.Path,
+    branch_runs: pathlib.Path | None,
+) -> tuple[list[str], dict | None]:
+    """Every reason the branch runs do not admit this build, and what they
+    established. The build's own `validation/branch-plan.json` decides whether
+    any are owed: no plan, or a plan naming no branch, owes none (`None`)."""
+    plan_path = build / "validation" / "branch-plan.json"
+    if not plan_path.is_file():
+        return [], None
+    try:
+        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        return [f"branch runs: {plan_path} is not readable JSON ({e})"], None
+    planned = [b.get("id") for b in plan.get("branches") or [] if isinstance(b, dict)]
+    unrealized = list(plan.get("branches_unrealized") or [])
+    if not planned and not unrealized:
+        return [], None
+    reasons: list[str] = [
+        f"branch runs: `{b}` is declared and no story world realizes it (DW0482)" for b in unrealized
+    ]
+    doc, err = _read_record(branch_runs, "--branch-runs", "branch-runs record")
+    if err:
+        reasons.append(
+            f"branch runs: {err} — this build plans {len(planned)} story world(s) "
+            f"({', '.join(planned)}), and the critical path walks one"
+        )
+        return reasons, None
+    if doc.get("campaign_id") != plan.get("campaign_id"):
+        reasons.append(
+            f"branch runs: {branch_runs} is a run of `{doc.get('campaign_id')}`, this build is "
+            f"`{plan.get('campaign_id')}`"
+        )
+    rows = {r.get("branch"): r for r in doc.get("branches") or [] if isinstance(r, dict)}
+    passed = 0
+    for bid in planned:
+        row = rows.get(bid)
+        if row is None:
+            reasons.append(f"branch runs: `{bid}` has no row in {branch_runs}")
+        elif not row.get("ran"):
+            reasons.append(f"branch runs: `{bid}` did not run ({row.get('reason') or 'no reason given'})")
+        elif row.get("manifest_sha256") != fingerprint:
+            reasons.append(
+                f"branch runs: `{bid}` ran on another build (manifest "
+                f"{(row.get('manifest_sha256') or 'none')[:12]}…, this tree {(fingerprint or 'none')[:12]}…)"
+            )
+        elif not row.get("passed"):
+            reasons.append(f"branch runs: `{bid}` is RED")
+        else:
+            passed += 1
+    proven = {
+        "record_sha256": hashlib.sha256(branch_runs.read_bytes()).hexdigest(),
+        "passed": passed,
+        "planned": len(planned),
+    }
+    return reasons, proven
+
+
 def proof_refusals(
     fingerprint: str | None,
     run_report: pathlib.Path | None,
     written_world: pathlib.Path | None,
+    build_tree: pathlib.Path | None = None,
+    branch_runs: pathlib.Path | None = None,
 ) -> tuple[list[str], dict]:
-    """Every reason the two machine proofs do not admit this build, and what
-    they established (carried into the token). Empty list = both proven."""
+    """Every reason the machine proofs do not admit this build, and what they
+    established (carried into the token). Empty list = all proven. The branch
+    runs are judged when `build_tree` is given (the tree whose plan says whether any
+    are owed)."""
     reasons: list[str] = []
     proven: dict = {}
     short = (fingerprint or "none")[:12]
@@ -1816,6 +1885,11 @@ def proof_refusals(
             "model": classes.get("model"),
             "objects": (objs or {}).get("differing"),
         }
+    if build_tree is not None:
+        branch_reasons, branch_proven = branch_run_refusals(fingerprint, build_tree, branch_runs)
+        reasons.extend(branch_reasons)
+        if branch_proven is not None:
+            proven["branch_runs"] = branch_proven
     return reasons, proven
 
 
@@ -1827,7 +1901,8 @@ def refuse_unproven(reasons: list[str], subj: Subject, report: pathlib.Path | No
         *[f"  {r}" for r in reasons],
         "  Run the ladder and the written-world comparison on THIS build "
         "(`validation/bot-run.sh`, `validation/world-save.sh`, `delvec written-world`, "
-        "`tools/ci/check-written-world.py --record`) and present both records, or "
+        "`tools/ci/check-written-world.py --record`, and `validation/branch-runs.sh` for a "
+        "build that plans story worlds) and present the records, or "
         'override deliberately with `--stage-anyway "<reason>"`.',
     ]
     if report is not None and report.is_file():
@@ -1963,6 +2038,15 @@ def main() -> int:
         help=(
             "the written-world record for THIS build (tools/ci/check-written-world.py "
             "--record, DW0955). Required to admit."
+        ),
+    )
+    ap.add_argument(
+        "--branch-runs",
+        type=pathlib.Path,
+        help=(
+            "validation/branch-runs.sh's merged branch-runs.json for THIS build. "
+            "Required to admit a build whose validation/branch-plan.json names a branch: "
+            "every planned world walked to a pass on this build."
         ),
     )
     ap.add_argument(
@@ -2221,7 +2305,9 @@ def main() -> int:
         )
         return 2
 
-    unproven, proven = proof_refusals(fingerprint, args.run_report, args.written_world)
+    unproven, proven = proof_refusals(
+        fingerprint, args.run_report, args.written_world, args.build, args.branch_runs
+    )
     if unproven:
         if override_reason is None:
             return refuse_unproven(unproven, subj, args.report)

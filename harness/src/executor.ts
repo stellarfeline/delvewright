@@ -489,6 +489,20 @@ export class MineflayerExecutor implements StepExecutor {
   /** True while a `sneak` leg is walking: nothing is staged away on one. */
   sneaking = false;
   /**
+   * True while a hop of a sneak leg the crouch cannot make is driven (one of
+   * the leg's exported `stand_ups`): the crouch hold (`configureLeg`) stands
+   * the body up for it.
+   */
+  crouchYielded = false;
+  /** The waypoint leg cursor as the current step began: where a step walked
+   * again after a death on it rewinds to (spec-0132 §5.2). */
+  stepStartCursor = 0;
+  /** The proven legs the current step has walked, by index into the
+   * waypoints artifact: whose waypoints bound its deaths (spec-0132 §5.2). */
+  readonly stepLegs = new Set<number>();
+  /** Per pursued step, the deaths taken on it. */
+  readonly pursuedDeaths = new Map<number, number>();
+  /**
    * The pursued step being walked (spec-0132 §5), while one is: nothing is
    * staged away, refunded or restored on it, and every act refused is recorded.
    */

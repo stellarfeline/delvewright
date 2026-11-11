@@ -782,6 +782,7 @@ export class RunReport {
               pursuers: this.pursuit.binding.pursuers,
               readings: this.pursuit.binding.readings,
               closest_approach: this.pursuit.binding.closestApproach ?? null,
+              deaths: this.pursuit.binding.deaths,
               steps: this.pursuit.steps.map(({ record, verdict }) => ({
                 step: record.step,
                 label: record.label,
