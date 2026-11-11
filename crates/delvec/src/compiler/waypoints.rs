@@ -60,14 +60,28 @@ pub fn waypoints_json(
             // spec-0113 §6: the declared jumps the route takes — each pair of
             // consecutive route cells a proven jump joins. Both ends are kept
             // waypoints, so the hop between them is the jump.
-            let taken: Vec<&crate::compiler::nav::ProvenJump> = leg
+            // And the hops it takes (spec-0113 §4.5): a jump no declaration
+            // names, driven the same way. One list, in route order, as
+            // `(from, to, sprint, run_up)`.
+            let taken: Vec<([i32; 3], [i32; 3], bool, u32)> = leg
                 .cells
                 .windows(2)
-                .filter_map(|w| jumps.iter().find(|j| j.from == w[0] && j.to == w[1]))
+                .filter_map(|w| {
+                    jumps
+                        .iter()
+                        .find(|j| j.from == w[0] && j.to == w[1])
+                        .map(|j| (j.from, j.to, j.sprint, j.run_up))
+                        .or_else(|| {
+                            leg.hops
+                                .iter()
+                                .find(|h| h.0 == w[0] && h.1 == w[1])
+                                .map(|h| (h.0, h.1, true, h.2))
+                        })
+                })
                 .collect();
             for j in &taken {
-                keep.push(j.from);
-                keep.push(j.to);
+                keep.push(j.0);
+                keep.push(j.1);
             }
             // spec-0134 §10: every water cell is a kept waypoint, so the leg's
             // water stretch is walked cell by cell as it was proven.
@@ -106,13 +120,13 @@ pub fn waypoints_json(
                 leg_json["climbs"] =
                     json!(leg.climbs.iter().map(climb_json).collect::<Vec<Value>>());
             }
-            // Emitted only when present, so a campaign with no declared jump
-            // stays byte-identical.
+            // Emitted only when present, so a campaign with no jump stays
+            // byte-identical.
             if !taken.is_empty() {
                 leg_json["jumps"] = json!(
                     taken
                         .iter()
-                        .map(|j| json!({"from": j.from, "to": j.to, "sprint": j.sprint, "run_up": j.run_up}))
+                        .map(|j| json!({"from": j.0, "to": j.1, "sprint": j.2, "run_up": j.3}))
                         .collect::<Vec<Value>>()
                 );
             }

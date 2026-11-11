@@ -1,6 +1,14 @@
-//! Declared jumps (spec-0113 §5.2, §6): a `world.jumps[]` entry is proven
-//! makeable by flying its window, or refused (`DW1041`); a proven one is a move
-//! the route relation takes.
+//! Jumps the route relation takes (spec-0113 §4.4, §5.2, §6).
+//!
+//! A `world.jumps[]` entry is proven makeable by flying its window, or refused
+//! (`DW1041`); a proven one is a move the route relation takes. And a **hop**:
+//! where a leg's walk does not reach its goal, the route also takes the jumps
+//! across a gap its own frontier meets that the same window proves (the
+//! one-cell gap between two level landings a player clears without
+//! thinking). One question — can a body on cue make this jump — with one
+//! answer, [`makeable`], asked of a declared jump and of a hop alike; the
+//! reach graph flies the same simulator over every launch, so the route never
+//! credits a jump the reach graph does not.
 
 use super::*;
 use crate::compiler::failure::Failure;
@@ -55,6 +63,72 @@ impl JumpBinding {
 /// Every rule set a declared jump is proven under: the jar's, which a player
 /// plays by, and the bot's, which drives it (spec-0113 §3.1).
 const PROVEN_UNDER: [Rules; 2] = [Rules::Game, Rules::Bot];
+
+/// **Whether a body on cue makes the jump from `from` to `to`**: the window
+/// of spec-0113 §4.4 flown under every rule set of [`PROVEN_UNDER`] from the
+/// straight run-up `run_up` the course gives. `None` when every launch lands;
+/// the first miss otherwise. The one judgement a declared jump (`DW1041`) and
+/// a route's hop ([`World::hops_fp`]) both answer to.
+pub(in crate::compiler::nav) fn makeable(
+    world: &World,
+    from: [i32; 3],
+    to: [i32; 3],
+    sprint: bool,
+    run_up: u32,
+) -> Option<crate::compiler::nav::world::reach::JumpMiss> {
+    PROVEN_UNDER
+        .iter()
+        .find_map(|r| world.declared_jump(from, to, sprint, run_up, *r).err())
+}
+
+/// The farthest along its axis a hop's landing is looked for, in cells from
+/// the launch: four columns of air, the most a sprint jump clears on the flat
+/// (`body-movement.md` §5). Whether a body makes it is [`makeable`]'s.
+const HOP_REACH: i32 = 5;
+
+impl World {
+    /// **The hops out of `c`**: for each cardinal direction the walk does not
+    /// leave `c` by, the nearest standable cell along that axis — up to
+    /// [`HOP_REACH`] cells off, its feet within a cell of `c`'s, over columns
+    /// clear from the lower feet to a head above the higher — that a body on
+    /// cue reaches by a sprinted jump from the run-up the course gives
+    /// ([`makeable`]). In the fixed direction order.
+    pub(in crate::compiler::nav) fn hops_fp(&self, c: [i32; 3], fp: &Footprint) -> Vec<[i32; 3]> {
+        const HORIZ: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+        if !self.standable_fp(c, fp) {
+            return Vec::new();
+        }
+        let walk = self.neighbors_walk_fp(c, fp);
+        let mut out = Vec::new();
+        for (dx, dz) in HORIZ {
+            if walk.iter().any(|n| n[0] - c[0] == dx && n[2] - c[2] == dz) {
+                continue;
+            }
+            'along: for k in 2..=HOP_REACH {
+                for dy in [0, 1, -1] {
+                    let to = [c[0] + dx * k, c[1] + dy, c[2] + dz * k];
+                    if !self.standable_fp(to, fp) {
+                        continue;
+                    }
+                    let (lo, hi) = (c[1].min(to[1]), c[1].max(to[1]) + fp.height);
+                    let clear = (1..k).all(|j| {
+                        (lo..=hi).all(|y| !self.is_occupied([c[0] + dx * j, y, c[2] + dz * j]))
+                    });
+                    if clear && makeable(self, c, to, true, self.run_up(c, to)).is_none() {
+                        out.push(to);
+                    }
+                    break 'along;
+                }
+                // A column that is not clear ends the look along this axis.
+                let col = [c[0] + dx * k, c[1], c[2] + dz * k];
+                if self.is_occupied(col) || self.is_occupied([col[0], col[1] + 1, col[2]]) {
+                    break;
+                }
+            }
+        }
+        out
+    }
+}
 
 fn rules_words(r: Rules) -> &'static str {
     match r {
@@ -130,11 +204,7 @@ pub(in crate::compiler::nav) fn judge_jumps(
         }
         let run_up = world.run_up(j.from, j.to);
         b.run_ups.push(run_up);
-        let miss = PROVEN_UNDER.iter().find_map(|r| {
-            world
-                .declared_jump(j.from, j.to, j.sprint, run_up, *r)
-                .err()
-        });
+        let miss = makeable(world, j.from, j.to, j.sprint, run_up);
         match miss {
             None => {
                 b.proven += 1;
@@ -288,6 +358,55 @@ mod tests {
         assert!(err.message.contains("already joins"), "{}", err.message);
         assert_eq!((b.proven, b.refused, b.not_a_jump), (0, 1, 1));
         assert!(b.line().contains("0 proven, 1 refused, 1 not a jump"));
+    }
+
+    /// The festival town's lighthouse stair: a tread, a one-cell gap, the next
+    /// tread level with it, and no run-up behind the launch (a wall). The walk
+    /// does not cross; the route does, by a hop the window proves from a
+    /// standing start, and the reach graph flies the same crossing.
+    #[test]
+    fn a_one_cell_gap_between_level_landings_is_a_hop_the_route_takes() {
+        let mut solid = BTreeSet::new();
+        for z in -2..=2 {
+            solid.insert([-1, 1, z]);
+            solid.insert([-1, 2, z]);
+            solid.insert([-1, 3, z]);
+            solid.insert([0, 0, z]);
+            for x in 2..6 {
+                solid.insert([x, 0, z]);
+            }
+        }
+        let w = World::from_solid_cells(solid);
+        let (from, to) = ([0, 1, 0], [5, 1, 0]);
+        assert!(
+            w.find_path(from, to).is_none(),
+            "the walk alone does not cross the gap"
+        );
+        assert_eq!(w.run_up([0, 1, 0], [2, 1, 0]), 0);
+        let route = w.find_route(from, to).expect("the route hops the gap");
+        assert!(
+            route
+                .windows(2)
+                .any(|p| p[0] == [0, 1, 0] && p[1] == [2, 1, 0]),
+            "the hop is from the tread's edge to the next tread: {route:?}"
+        );
+        assert!(
+            w.body_reach(&[from]).cells().contains(&[2, 1, 0]),
+            "the reach graph crosses what the route hops"
+        );
+    }
+
+    /// The direction that could let something ship: a gap no window makes is
+    /// no hop. Five columns of air from a full run-up, which `DW1041` refuses
+    /// as a declaration, is not taken by the route either.
+    #[test]
+    fn a_gap_the_window_does_not_make_is_no_hop() {
+        let w = course(6, 5);
+        assert!(w.hops_fp([0, 1, 0], &Footprint::player()).is_empty());
+        assert!(w.find_route([-6, 1, 0], [8, 1, 0]).is_none());
+        // And the one judgement: the declaration of the same jump is refused.
+        let (_, _, verdict) = judge_jumps(&[jump([0, 1, 0], [6, 1, 0])], &w);
+        assert!(verdict.is_err());
     }
 
     #[test]

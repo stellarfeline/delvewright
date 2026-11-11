@@ -234,7 +234,8 @@ is the owner's hour until the physics carries it.
 ## What the ladder asserts at a declared jump
 
 **The bot leaps only where the compiler proved a leap** (spec-0113). A leg whose
-proven route takes a declared jump (`world.jumps[]`, proven by `DW1041`) carries
+proven route takes a declared jump (`world.jumps[]`, proven by `DW1041`) or a hop
+(the same window, over a gap its walk could not cross) carries
 `jumps[]` in `validation/critical-path-waypoints.json`: the launch and landing
 cells, whether it is sprinted, and the run-up the proof measured. mineflayer-
 pathfinder 2.4.5 leaps gaps on its own (`allowParkour` defaults on), so the
