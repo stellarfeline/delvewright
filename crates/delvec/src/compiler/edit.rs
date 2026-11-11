@@ -446,10 +446,11 @@ fn replay_with(
                 ),
             })?;
 
-        // The world before a batch that waits for its beat, restored after it
-        // is judged (spec-0134 §6).
-        let before =
-            (batch.applied == delvewright_dsl::EditApplied::ByEffect).then(|| assembled.clone());
+        // The world before the batch: restored after a batch that waits for
+        // its beat is judged (spec-0134 §6), and the world every batch's
+        // darkness re-check is charged against (`DW1042`).
+        let by_effect_batch = batch.applied == delvewright_dsl::EditApplied::ByEffect;
+        let before = (by_effect_batch || enforce).then(|| assembled.clone());
 
         // Named regions of this batch (strictly backward references, validated).
         let mut regions: BTreeMap<String, BTreeSet<[i32; 3]>> = BTreeMap::new();
@@ -643,7 +644,7 @@ fn replay_with(
         // relight re-entry (spec-0010), walkability re-proof, boundary safety
         // (spec-0017). Each failure names the batch.
         if enforce {
-            check_batch_invariants(plan, &assembled, bid, &batch_writes)?;
+            check_batch_invariants(plan, &assembled, before.as_ref(), bid, &batch_writes)?;
             check_support(
                 &assembled,
                 bid,
@@ -660,7 +661,7 @@ fn replay_with(
         // back out, so every later batch, the final build and its proofs judge
         // the world without it: both states of the batch are judged. Its lines
         // are its own function, run by `apply-edits`.
-        if batch.applied == delvewright_dsl::EditApplied::ByEffect {
+        if by_effect_batch {
             assembled = before.expect("a by-effect batch keeps the world it started from");
             by_effect.push((bid.to_string(), coalesce_commands(&batch_writes)));
             by_effect_writes.insert(bid.to_string(), batch_writes.clone());
@@ -696,6 +697,7 @@ fn replay_with(
 fn check_batch_invariants(
     plan: &Plan,
     assembled: &Assembled,
+    before: Option<&Assembled>,
     bid: &str,
     batch_writes: &BTreeMap<[i32; 3], String>,
 ) -> Result<(), Failure> {
@@ -704,7 +706,10 @@ fn check_batch_invariants(
     // a dispenser is still a dispenser).
     check_trap_hardware(plan, bid, batch_writes)?;
     let geometry = crate::compiler::light::geometry_world(assembled);
-    let relight = crate::compiler::light::relight_with(plan, assembled, &geometry);
+    // The darkness re-check is charged what the batch changes, against the
+    // world it was written over (`DW1042`): never the whole island again.
+    let since = before.map(crate::compiler::light::geometry_world);
+    let relight = crate::compiler::light::relight_with(plan, assembled, &geometry, since.as_ref());
     if let Some(diag) = relight.diagnostics.first() {
         return Err(Failure {
             code: diag.code,

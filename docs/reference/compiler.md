@@ -71,7 +71,12 @@ Methodology; CI enforces the DW-code subset — see `tools/ci/check-dw-codes.py`
   **exit 2**. Its relight fixtures feed both `setup_finish` emission and the nav
   re-verification in pass 10. Its survey reads a whole reach graph or refuses
   `DW1042` (`light::surveyed_region`): a closure that passed its budget is
-  partial and is never surveyed.
+  partial and is never surveyed. After a world-edits batch the re-check's
+  survey is charged against the world the batch was written over (the
+  earlier world's survey taken first, under the same ceiling): it pays for the
+  flights the batch's writes reach and the states they open, never for the
+  whole island again; the final build's survey of that world reads the same
+  closure.
 - The light field itself (`compiler::light`) is **held by section** (ADR-0037
   §2): over the assembled AABB plus the layer of open air above it (the cell a
   body stands in on the tallest block, which reads the sky and block light it
