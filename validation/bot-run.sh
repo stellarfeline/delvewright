@@ -107,6 +107,13 @@ dw_export_delve_image "$project"
 # shellcheck source=tools/lib/server-heap.sh
 . "$here/../tools/lib/server-heap.sh"
 export DW_BOT_OUT="$run_abs"
+# Compose builds through buildx bake, and bake refuses to read a file outside
+# the working directory without an `fs.read` entitlement: run from anywhere
+# else (the content tree, where the skill runs the ladder), the engine's
+# Dockerfile.delve sits outside it and the image build is refused before any
+# rung runs. Every path above is absolute or resolved against this directory,
+# so the compose session runs from the engine root.
+cd "$here/.."
 COMPOSE=(docker compose -p "$project" -f "$here/compose.yaml" --profile validate)
 
 cleanup() { "$here/fresh-volumes.sh" --project "$project" >/dev/null 2>&1 || true; }
