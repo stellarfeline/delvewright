@@ -207,6 +207,67 @@ fn a_shot_with_no_prop_or_another_block_is_dw1090() {
     );
 }
 
+/// The pair `DW1090` and `DW0964` (CLAUDE.md, *Pairs*): the remedy `DW1090`
+/// names for a `shot` with no prop — `"prop": {"block": "minecraft:target"}`
+/// — is reachable, refused by neither rule; and `DW0964`'s remedy for a prop
+/// on an event with no cell — make the trigger a `shot` — is reachable too.
+#[test]
+fn the_prop_dw1090_asks_for_is_not_dw0964() {
+    use delvec::compiler::promise;
+    let promise_codes = |c: &Value, q: &Value| -> Vec<String> {
+        promise::check(&campaign(c, q))
+            .0
+            .iter()
+            .map(|d| d.code.clone())
+            .collect()
+    };
+    // Without a prop: DW1090, and its message names the prop to add.
+    let (c, q) = docs(|_, q| {
+        q["content"]["triggers"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("prop");
+    });
+    let d = diags(&c, &q);
+    let asked = d
+        .iter()
+        .find(|x| x.code == "DW1090")
+        .expect("a shot with no prop is DW1090");
+    assert!(
+        asked
+            .message
+            .contains(r#""prop": {"block": "minecraft:target"}"#),
+        "{}",
+        asked.message
+    );
+    // With exactly that prop: neither DW1090 nor DW0964.
+    let (c, q) = docs(|_, q| {
+        q["content"]["triggers"][0]["prop"] = json!({"block": "minecraft:target"});
+    });
+    assert!(codes(&diags(&c, &q), "DW1090").is_empty());
+    let p = promise_codes(&c, &q);
+    assert!(
+        !p.iter().any(|x| x == "DW0964"),
+        "the prop DW1090 asks for is refused by DW0964: {p:?}"
+    );
+    // DW0964 on the same prop under an `approach`, and its remedy (`shot`) clears it.
+    let (c, q) = docs(|_, q| {
+        q["content"]["triggers"][0]["on"] = json!({"on": "approach", "range": 3});
+    });
+    let p = promise_codes(&c, &q);
+    assert!(p.iter().any(|x| x == "DW0964"), "{p:?}");
+    let msg = promise::check(&campaign(&c, &q))
+        .0
+        .into_iter()
+        .find(|x| x.code == "DW0964")
+        .unwrap()
+        .message;
+    assert!(
+        msg.contains("`shot`"),
+        "DW0964 names the shot as a remedy: {msg}"
+    );
+}
+
 #[test]
 fn a_raised_item_outside_the_registry_is_dw0143() {
     let (c, q) = docs(|_, q| {
