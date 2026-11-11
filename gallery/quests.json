@@ -2053,6 +2053,7 @@
             "requires_flags": [
               "flag/muster-cleared"
             ],
+            "stealth": true,
             "title": "Cross to the ferry cabin",
             "type": "reach-anchor"
           },
