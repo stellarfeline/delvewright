@@ -2034,6 +2034,7 @@
             "requires_flags": [
               "flag/muster-cleared"
             ],
+            "stealth": true,
             "title": "Step onto the ferry",
             "type": "reach-anchor"
           },
