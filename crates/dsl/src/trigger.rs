@@ -511,6 +511,27 @@ crate::dw_code! {
 }
 
 crate::dw_code! {
+    /// (spec-0134 §3) A `use-item` trigger naming an item the pinned game never
+    /// reports in use — one whose use duration is zero, read from the table
+    /// `tools/maintenance/extract-item-use-duration.py` writes from the jar.
+    pub const USE_ITEM_NEVER_USED: DwCode = DwCode::new("DW1092", ExitTier::Build);
+}
+
+/// The pinned game's use duration of an item, in ticks: the vendored table
+/// `tools/maintenance/extract-item-use-duration.py` writes from the jar
+/// (`Item#getUseDuration` over the registry). An item absent from it is never
+/// reported in use (`minecraft:using_item` never fires for it).
+pub fn item_use_duration(item: &str) -> Option<u32> {
+    static T: std::sync::OnceLock<BTreeMap<String, u32>> = std::sync::OnceLock::new();
+    T.get_or_init(|| {
+        serde_json::from_str(include_str!("../data/item-use-duration-1.21.11.json"))
+            .expect("the vendored use-duration table parses")
+    })
+    .get(item)
+    .copied()
+}
+
+crate::dw_code! {
     /// (v0.4, added round-6) A `use` trigger anchored where an NPC stands.
     /// Right-click on an NPC already belongs to its dialogue advancement; a
     /// second interaction hitbox in the same cell makes the client's entity
@@ -1915,7 +1936,7 @@ pub fn press_checks(c: &Campaign) -> (Vec<Diagnostic>, PressBinding) {
 }
 
 /// spec-0134 §3: a `use-item` trigger names an item of the pinned registry
-/// (`DW0143`).
+/// (`DW0143`) that the game holds in use (`DW1092`).
 pub(crate) fn use_item_checks(
     c: &Campaign,
     items: &dyn crate::registry::ItemRegistry,
@@ -1933,6 +1954,18 @@ pub(crate) fn use_item_checks(
                 format!(
                     "`use-item` trigger `{}` names `{item}`, which is not an item of the pinned \
                      1.21.11 registry — use a namespaced item id (`minecraft:spyglass`)",
+                    t.id
+                ),
+            ));
+        } else if item_use_duration(item).is_none() {
+            d.push(Diagnostic::error(
+                USE_ITEM_NEVER_USED,
+                "quests",
+                format!("/content/triggers/{i}/on/item"),
+                format!(
+                    "`use-item` trigger `{}` names `{item}`, which the pinned game never holds in \
+                     use (its use duration is zero), so the trigger could never fire — name an \
+                     item a player holds raised: a spyglass, a bow, a shield, a goat horn, a food",
                     t.id
                 ),
             ));

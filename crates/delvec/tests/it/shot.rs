@@ -280,3 +280,27 @@ fn a_shot_with_no_bow_in_any_hand_is_dw1090() {
 // `DW1091` over a walled hall, and the stance seeing the centre by the sight
 // rule's own walk, are `nav::shot`'s unit tests: a refusal here would need
 // a world the critical path still crosses, which this room cannot hold.
+
+#[test]
+fn a_raised_item_the_game_never_holds_in_use_is_dw1092() {
+    let (c, q) = docs(|_, q| {
+        q["content"]["triggers"][1]["on"]["item"] = json!("minecraft:snowball");
+    });
+    let d = diags(&c, &q);
+    assert_eq!(codes(&d, "DW1092"), vec!["/content/triggers/1/on/item"]);
+    assert!(codes(&d, "DW0143").is_empty(), "{d:#?}");
+    // The spyglass is held in use; the primary is clean of the code.
+    let (c, q) = docs(|_, _| {});
+    assert!(codes(&diags(&c, &q), "DW1092").is_empty());
+}
+
+#[test]
+fn the_use_duration_table_is_the_pinned_games() {
+    use delvewright_dsl::trigger::item_use_duration;
+    // Read from the jar by `tools/maintenance/extract-item-use-duration.py`.
+    assert_eq!(item_use_duration("minecraft:spyglass"), Some(1200));
+    assert_eq!(item_use_duration("minecraft:bow"), Some(72000));
+    assert_eq!(item_use_duration("minecraft:goat_horn"), Some(140));
+    assert_eq!(item_use_duration("minecraft:snowball"), None);
+    assert_eq!(item_use_duration("minecraft:stone"), None);
+}
