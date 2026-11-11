@@ -3157,7 +3157,9 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   for it stands. The harness walks to `stand`, performs nothing, and passes on the
   objective's `[dw:expired …]` marker within `wait_ticks` (the window, a ceiling)
   and the ordinary grace; a `[dw:complete …]` for it arriving first fails the step
-  by name. `stand` (= `pos`) is the last cell of the proven route into the step —
+  by name. `pos` is the critical position the path left the party on, where the
+  proven leg into the step ends; the harness consumes that leg unwalked, and its
+  walk to `stand` names no leg. `stand` is the last cell of the proven route into the step —
   or, walking back, into an earlier one — outside the objective's own completion
   volume, every volume armed at the step, a `kill` wave's notice
   (`nav::DEFAULT_FOLLOW_RANGE` from its anchor) and every cell a `talk-to` walks
@@ -4419,6 +4421,17 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
     comes from `emit::wave_equipment_slots`, the one resolution the `summon` line
     is also written from, so the probe can never verify a copy of the
     declaration instead of the emitted one.
+
+  A `kill` step in a path carries **`seat_ticks`** when an earlier step's
+  completion fires a beat that seats the step's wave later than at once
+  (`combat::seat_ticks`): the latest tick, dated along that bundle's timeline as
+  `hold` dates a cutscene (a `sequence` step's effects `at_ticks` after it, at any
+  depth), at which a `spawn-wave` of the wave plays; gates are not read, and a
+  spawn inside an `on_arrive`/`on_rest`/`on_respawn`/`on_caught` list is dated by
+  no tick count and contributes nothing. Absent otherwise. A muster that reads no
+  body at the step's open waits for the wave's first body by the census, up to
+  that date plus a grace, before it reads it (and only then walks to the anchor
+  for a wave an approach trigger seats).
 
   Together these are what turn a `kill` step into a verified encounter for the
   harness: which fights get the die-retry stage, where a death is supposed to put

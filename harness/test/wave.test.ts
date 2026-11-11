@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 import {
   WAVE_ENGAGE_NEAR,
   WAVE_KILL_NEAR,
+  SEAT_GRACE_MS,
   beginWave,
   creditsWaveKill,
+  seatWindowMs,
   waveEngagementCleared,
 } from "../src/wave.ts";
 
@@ -96,4 +98,10 @@ test("the live-mob exit can never fire before the bot has fought something", () 
     }),
     false,
   );
+});
+
+test("a late seat is waited for up to the compiler's date at 20 ticks a second, plus the grace", () => {
+  // The festival's beach landing: 600 ticks after the dock's completion.
+  assert.equal(seatWindowMs(600), 30_000 + SEAT_GRACE_MS);
+  assert.equal(seatWindowMs(1), 50 + SEAT_GRACE_MS);
 });

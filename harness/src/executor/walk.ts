@@ -501,7 +501,7 @@ export const methods = {
     sneak = false,
     completion?: StepCompletion,
     explicitWaypoints?: readonly Vec3Tuple[],
-    legTo?: Vec3Tuple,
+    legTo?: Vec3Tuple | null,
   ): Promise<void> {
     this.requireBot();
     // A range of exactly 0 is a block goal: a link's stand cell, which the bot
@@ -552,7 +552,7 @@ export const methods = {
     sneak: boolean,
     completion: StepCompletion | undefined,
     explicitWaypoints: readonly Vec3Tuple[] | undefined,
-    legTo?: Vec3Tuple,
+    legTo?: Vec3Tuple | null,
   ): Promise<void> {
     const bot = this.requireBot();
     const movements = new Movements(bot);
@@ -650,8 +650,12 @@ export const methods = {
         // whose goal is not that position (a holder's stance, spec-0111 §5.2,
         // where the leg's last cell is the stance and its `to` the holder)
         // names the leg it walks with `legTo`.
+        // `legTo: null` is a walk that names no leg (an expire's walk to its
+        // stand): it is matched against none, so it can never take the next
+        // step's, and it is bound by the declared gate table as every
+        // unmatched walk is.
         const match = nextLegWaypoints(
-          this.waypoints.legs,
+          legTo === null ? [] : this.waypoints.legs,
           this.legCursor,
           legTo ?? [pos[0], pos[1], pos[2]],
           this.feetCell(),

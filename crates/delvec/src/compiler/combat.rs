@@ -1605,6 +1605,55 @@ pub fn combat_plan_json(
     })
 }
 
+/// Per step of `steps`, for a `kill`: the latest tick, counted from the
+/// completion of a step before it, at which a bundle that completion fires
+/// seats the step's wave (`spawn-wave`, dated along its own timeline as
+/// [`crate::compiler::hold`] dates a cutscene: a `sequence` step's effects
+/// play `at_ticks` after it, at any depth). `None` for every other step, and
+/// for a kill whose wave no earlier completion seats later than at once —
+/// one seated at the world's load, by an approach trigger the walk passes,
+/// or in the same tick as the completion that fires it.
+///
+/// The bound is read from the completion, and a step opens at or after the
+/// completion before it, so the wave stands at the latest this many ticks
+/// after the kill step opens. Gates (`when`, `requires_flags`) are not read:
+/// an over-statement is a longer ceiling on a wait the harness ends as soon
+/// as the wave stands, never a reading taken before it does. A spawn inside a
+/// list that fires on an arrival, a rest, a death or a capture is dated by no
+/// tick count and contributes nothing. Aligned 1:1 with `steps`.
+pub fn seat_ticks(c: &Campaign, steps: &[Step]) -> Vec<Option<u32>> {
+    fn dates(list: &[QuestEffect], wave: &str, t0: u32, best: &mut u32) {
+        for e in list {
+            if let Verb::SpawnWave { wave: w } = &e.verb
+                && w.as_str() == wave
+            {
+                *best = (*best).max(t0);
+            }
+            for (n, inner) in crate::compiler::hold::nested(e) {
+                if let crate::compiler::hold::Nesting::Timeline(at) = n {
+                    dates(inner, wave, t0.saturating_add(at), best);
+                }
+            }
+        }
+    }
+    steps
+        .iter()
+        .enumerate()
+        .map(|(k, s)| {
+            let Step::Kill { wave_id, .. } = s else {
+                return None;
+            };
+            let mut best = 0u32;
+            for before in &steps[..k] {
+                for b in crate::compiler::hold::completion_bundles(c, before) {
+                    dates(b, wave_id, 0, &mut best);
+                }
+            }
+            (best > 0).then_some(best)
+        })
+        .collect()
+}
+
 /// The checkpoint that governs a death at step `i`: of `(fire_step, index)`
 /// rows in any order, the one fired latest strictly before `i` (the later row
 /// of two fired at one step).
