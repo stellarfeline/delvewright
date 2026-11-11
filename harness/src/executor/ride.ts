@@ -213,13 +213,31 @@ export const methods = {
         Math.abs(e.position.y - centre[1]) <= VEHICLE_NEAR,
     );
     if (body === null) failRide(`no body stands within ${VEHICLE_NEAR} blocks of the seat ${JSON.stringify(seat)}`);
-    // DIAGNOSTIC (one run): the cart is boarded after a revoke by hand.
-    if (step.kind === "minecart") {
-      bot.chat(`/advancement revoke @s only gallery:vehicle_board`);
-      await delay(300);
-    }
+    // DIAGNOSTIC (one run): the vehicle's place and motion around the click.
+    const diag = async (when: string): Promise<void> => {
+      const from = this.chatMark();
+      bot.chat(
+        `/tellraw @s ${JSON.stringify([
+          { text: `[dw:diag ${when} pos=` },
+          { nbt: "Pos", entity: `@e[tag=${tag},limit=1]` },
+          { text: " motion=" },
+          { nbt: "Motion", entity: `@e[tag=${tag},limit=1]` },
+          { text: " ground=" },
+          { nbt: "OnGround", entity: `@e[tag=${tag},limit=1]` },
+          { text: "]" },
+        ])}`,
+      );
+      await delay(250);
+      const line = this.chatSince(from).lines.find((l) => l.includes("[dw:diag"));
+      process.stderr.write(`[ride-diag] ${step.vehicle} ${line ?? `${when}: no answer`}\n`);
+    };
+    if (step.kind === "minecart") await diag("before");
     await bot.lookAt(body!.position.offset(0, (body!.height ?? 0.5) / 2, 0), true);
     bot.mount(body!);
+    if (step.kind === "minecart") {
+      await diag("after-1");
+      await diag("after-2");
+    }
     const mountBy = Date.now() + MOUNT_GRACE_MS;
     let reading = await this.readRide(tag);
     while (!reading.riding && Date.now() < mountBy) {
@@ -227,12 +245,6 @@ export const methods = {
       reading = await this.readRide(tag);
     }
     if (!reading.riding) failRide("the server did not seat the bot on the vehicle after the click");
-    // DIAGNOSTIC (one run): did the boarding reward run for a mount.
-    if (step.kind === "mount") {
-      bot.chat(`/execute on vehicle store result score #diag dw.sys run attribute @s minecraft:movement_speed get 1000`);
-      bot.chat(`/execute if score #diag dw.sys matches 1.. run say DIAG the mount's speed is restored`);
-      bot.chat(`/execute unless score #diag dw.sys matches 1.. run say DIAG the mount's speed is still nothing`);
-    }
     const start = reading.pos;
     let reported = 0;
     // Where the server held a waited-for rider, reading by reading: said when
