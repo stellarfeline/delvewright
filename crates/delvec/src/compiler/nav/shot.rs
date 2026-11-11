@@ -7,7 +7,11 @@
 //! [`SHOT_REACH_MIN`] and [`SHOT_REACH_MAX`] blocks of the target whose eye
 //! (`metrics::PLAYER_EYE_HEIGHT` over its feet) sees the block's centre
 //! through air, nearest the target first; none is `DW1091`. The cell is
-//! exported on the trigger's step as `stand`, where the bot draws.
+//! exported on the trigger's step as `stand`, where the bot draws, and it is
+//! where the route proof's leg to the step ends ([`fix_stances`]): the cells
+//! it is chosen among are the walk region from where the party begins
+//! ([`World::walk_region`]), every one of which a leg's walk reaches, never a
+//! ledge only a jump of the launch set lands on.
 //!
 //! "Through air" is stricter than the sight rule a reader's eye takes
 //! (`sight-through-blocks.md`): an arrow is stopped by anything a body is
@@ -155,16 +159,8 @@ const ARROWS: &[&str] = &["arrow", "spectral_arrow", "tipped_arrow"];
 pub fn check_shots(plan: &Plan, world: &World) -> Result<ShotBinding, Failure> {
     let mut b = ShotBinding::default();
     let targets = plan.shot_targets();
-    let walk = if targets.is_empty() {
-        BTreeSet::new()
-    } else {
-        // Where a body can stand: the reach graph's standing states, the one
-        // answer to that question (`World::body_reach`).
-        world
-            .body_reach_rooted(&crate::compiler::edit::anchor_starts(plan))
-            .standing()
-    };
-    let mut fixed = std::collections::BTreeMap::new();
+    let walk = stance_walk(plan, world, &targets);
+    let fixed = fix_stances(plan, world);
     for (id, cell, _) in &targets {
         let step = plan
             .critical_path
@@ -190,12 +186,69 @@ pub fn check_shots(plan: &Plan, world: &World) -> Result<ShotBinding, Failure> {
                 ),
             });
         }
-        let stance = stance_or_unseen(world, &walk, id, *cell)?;
-        fixed.insert(id.clone(), stance.cell);
+        // The stance the route proof's leg ended at, fixed the first time a
+        // proof asked; a target with none is `DW1091`'s.
+        let stance = match fixed.get(id) {
+            Some(&c) => ShotStance {
+                cell: c,
+                distance: distance(c, *cell),
+            },
+            None => stance_or_unseen(world, &walk, id, *cell)?,
+        };
         b.stances.push((id.clone(), stance));
     }
-    let _ = plan.shot_stances.set(fixed);
     Ok(b)
+}
+
+/// The cells a stance is chosen among: the walk region from where the party
+/// begins ([`Plan::campaign_start`], [`World::walk_region`]), every cell of
+/// which a leg's walk reaches from the party's own ground — never a floor only
+/// an anchor of its own seats (a belfry's, beside its target), and never a
+/// ledge only a jump of the launch set lands on. A campaign with no start
+/// takes the walk region from its anchors. Empty for a campaign with no shot.
+fn stance_walk(
+    plan: &Plan,
+    world: &World,
+    targets: &[(String, [i32; 3], String)],
+) -> BTreeSet<[i32; 3]> {
+    if targets.is_empty() {
+        return BTreeSet::new();
+    }
+    match plan.campaign_start() {
+        Some((_, pos)) => world.walk_region(&[pos]),
+        None => world.walk_region_rooted(&crate::compiler::edit::anchor_starts(plan)),
+    }
+}
+
+/// From a body's eye in `cell` to `target`'s centre, in blocks.
+fn distance(cell: [i32; 3], target: [i32; 3]) -> f64 {
+    let eye = eye_of(cell);
+    (0..3)
+        .map(|i| (eye[i] - (f64::from(target[i]) + 0.5)).powi(2))
+        .sum::<f64>()
+        .sqrt()
+}
+
+/// **Every shot's stance, fixed once per plan** (spec-0134 §2): the first
+/// proof over a world that asks — the route proof's legs, the relight pass's
+/// required cells, the shot proof — chooses each `shot` trigger's
+/// [`shot_stance`] over that world's [`stance_walk`], and every later reader
+/// (the legs, the export's `stand`, the binding) reads the same cells. A
+/// target with no stance is left out, for `DW1091` to name.
+pub fn fix_stances<'p>(
+    plan: &'p Plan,
+    world: &World,
+) -> &'p std::collections::BTreeMap<String, [i32; 3]> {
+    plan.shot_stances.get_or_init(|| {
+        let targets = plan.shot_targets();
+        let walk = stance_walk(plan, world, &targets);
+        targets
+            .iter()
+            .filter_map(|(id, cell, _)| {
+                shot_stance(world, &walk, *cell).map(|s| (id.clone(), s.cell))
+            })
+            .collect()
+    })
 }
 
 #[cfg(test)]

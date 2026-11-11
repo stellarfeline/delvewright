@@ -87,6 +87,7 @@ impl World {
         &self,
         plan: &Plan,
     ) -> Vec<(LegRoute, BTreeSet<[i32; 3]>)> {
+        crate::compiler::nav::shot::fix_stances(plan, self);
         route_walked_legs(
             self,
             &critical_positions(plan),
@@ -405,6 +406,7 @@ pub(in crate::compiler::nav) fn critical_positions(plan: &Plan) -> Vec<VisitedPo
         plan.campaign_start().map(|(_, pos)| pos),
         &plan.critical_path,
         &plan.critical_path_transport,
+        plan.shot_stances.get(),
     )
 }
 
@@ -423,10 +425,15 @@ pub(in crate::compiler::nav) fn critical_positions(plan: &Plan) -> Vec<VisitedPo
 /// of it is always a walk for `DW0311` to prove. It carries `src_step: 0`, the
 /// class-select step, which is what every `src_step > fire_step` filter already
 /// treats as preceding everything.
+///
+/// A `shot` step stands where it is loosed from: its stance in `shots`
+/// ([`crate::compiler::nav::shot::fix_stances`]), the cell the export hands
+/// the bot as its `stand`, never the target it hits.
 pub(in crate::compiler::nav) fn positions_of(
     start: Option<[i32; 3]>,
     steps: &[Step],
     transports: &[Option<[i32; 3]>],
+    shots: Option<&BTreeMap<String, [i32; 3]>>,
 ) -> Vec<VisitedPos> {
     let mut out = Vec::new();
     if let Some(pos) = start {
@@ -479,8 +486,17 @@ pub(in crate::compiler::nav) fn positions_of(
             continue;
         }
         // A `trigger` step stands somewhere like an objective does: the party walks
-        // to what it strikes, so the leg to it is a leg the proof owes.
-        if let Some(pos) = step.pos() {
+        // to what it strikes, so the leg to it is a leg the proof owes — a shot
+        // to the stance it is loosed from.
+        let loosed = match step {
+            Step::Trigger {
+                on: "shot",
+                trigger_id,
+                ..
+            } => shots.and_then(|m| m.get(trigger_id.as_str())).copied(),
+            _ => None,
+        };
+        if let Some(pos) = loosed.or_else(|| step.pos()) {
             out.push(VisitedPos {
                 pos,
                 transport_before: transport_pending,
@@ -530,6 +546,7 @@ pub fn check_critical_path_bound(
     plan: &Plan,
     world: &World,
 ) -> (RouteBinding, Result<(), Failure>) {
+    crate::compiler::nav::shot::fix_stances(plan, world);
     let (b, r) = route_with_links(
         world,
         &critical_positions(plan),
@@ -600,9 +617,15 @@ pub fn take_branch_links(
     region_events: &RegionEvents,
     ancestor: &dyn Fn(usize, usize) -> bool,
 ) -> Result<crate::compiler::plan::LinkTakes, Failure> {
+    crate::compiler::nav::shot::fix_stances(plan, world);
     route_with_links(
         world,
-        &positions_of(start, &cp.steps, &cp.transport_by_step),
+        &positions_of(
+            start,
+            &cp.steps,
+            &cp.transport_by_step,
+            plan.shot_stances.get(),
+        ),
         region_events,
         ancestor,
         &Carries {
@@ -1036,9 +1059,15 @@ pub fn check_branch_path(
     region_events: &RegionEvents,
     ancestor: &dyn Fn(usize, usize) -> bool,
 ) -> Result<(), Failure> {
+    crate::compiler::nav::shot::fix_stances(plan, world);
     route_with_links(
         world,
-        &positions_of(start, &cp.steps, &cp.transport_by_step),
+        &positions_of(
+            start,
+            &cp.steps,
+            &cp.transport_by_step,
+            plan.shot_stances.get(),
+        ),
         region_events,
         ancestor,
         &Carries {
@@ -1061,17 +1090,19 @@ pub fn check_branch_path(
 /// selection, endpoint snapping and per-leg gate seals as [`check_branch_path`];
 /// call it only after that check has succeeded (a leg that fails to snap or
 /// route is omitted, which cannot occur once the check has passed).
+#[allow(clippy::too_many_arguments)]
 pub fn branch_path_routes(
     world: &World,
     start: Option<[i32; 3]>,
     steps: &[Step],
     transports: &[Option<[i32; 3]>],
+    shots: Option<&BTreeMap<String, [i32; 3]>>,
     region_events: &RegionEvents,
     ancestor: &dyn Fn(usize, usize) -> bool,
 ) -> Vec<LegRoute> {
     route_walked_legs(
         world,
-        &positions_of(start, steps, transports),
+        &positions_of(start, steps, transports, shots),
         region_events,
         ancestor,
     )
