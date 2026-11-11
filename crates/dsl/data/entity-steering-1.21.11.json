@@ -17,13 +17,13 @@
   "minecraft:camel": {
     "kind": "mount",
     "medium": "ground",
-    "seats": 3,
+    "seats": 2,
     "tame": true
   },
   "minecraft:camel_husk": {
     "kind": "mount",
     "medium": "ground",
-    "seats": 3,
+    "seats": 2,
     "tame": true
   },
   "minecraft:cherry_boat": {

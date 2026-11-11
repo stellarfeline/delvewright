@@ -213,6 +213,11 @@ export const methods = {
         Math.abs(e.position.y - centre[1]) <= VEHICLE_NEAR,
     );
     if (body === null) failRide(`no body stands within ${VEHICLE_NEAR} blocks of the seat ${JSON.stringify(seat)}`);
+    // DIAGNOSTIC (one run): the cart is boarded after a revoke by hand.
+    if (step.kind === "minecart") {
+      bot.chat(`/advancement revoke @s only gallery:vehicle_board`);
+      await delay(300);
+    }
     await bot.lookAt(body!.position.offset(0, (body!.height ?? 0.5) / 2, 0), true);
     bot.mount(body!);
     const mountBy = Date.now() + MOUNT_GRACE_MS;
@@ -222,15 +227,18 @@ export const methods = {
       reading = await this.readRide(tag);
     }
     if (!reading.riding) failRide("the server did not seat the bot on the vehicle after the click");
+    // DIAGNOSTIC (one run): did the boarding reward run for a mount.
+    if (step.kind === "mount") {
+      bot.chat(`/execute on vehicle store result score #diag dw.sys run attribute @s minecraft:movement_speed get 1000`);
+      bot.chat(`/execute if score #diag dw.sys matches 1.. run say DIAG the mount's speed is restored`);
+      bot.chat(`/execute unless score #diag dw.sys matches 1.. run say DIAG the mount's speed is still nothing`);
+    }
     const start = reading.pos;
     let reported = 0;
     // Where the server held a waited-for rider, reading by reading: said when
     // the ride does not arrive.
     const trace: string[] = [];
     if (step.kind === "minecart") {
-      // DIAGNOSTIC (one run): the advancement granted by hand three seconds in.
-      bot.chat(`/execute on vehicle if entity @s[tag=${tag}] run say DIAG the vehicle carries the tag`);
-      setTimeout(() => bot.chat(`/advancement grant @s only gallery:vehicle_board`), 3000);
       const travel = step.medium.length / step.rate;
       const by = Date.now() + travel * 1000 + MOUNT_GRACE_MS + 2000;
       const t0 = Date.now();
