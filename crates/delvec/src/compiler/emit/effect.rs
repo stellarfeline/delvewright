@@ -657,6 +657,18 @@ pub(super) fn emit_quest_effect(
                 body.extend(super::wave::wave_removal_lines(ns, w));
             }
         }
+        // spec-0135 §2: the vehicle's own seat function, and the removal its
+        // re-seat performs.
+        Verb::SeatVehicle { vehicle } => {
+            if let Some(v) = vehicle_named(plan, vehicle.as_str()) {
+                body.push(format!("function {ns}:vehicle_seat_{}", v.safe));
+            }
+        }
+        Verb::DespawnVehicle { vehicle } => {
+            if let Some(v) = vehicle_named(plan, vehicle.as_str()) {
+                body.extend(vehicle_removal_lines(ns, v));
+            }
+        }
         // --- DSL v0.4 effects ---
         Verb::Narrate(n) => {
             emit_narrate(&n.text, n.style, n.sound.as_deref(), who, body);

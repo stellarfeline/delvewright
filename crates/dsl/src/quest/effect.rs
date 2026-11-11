@@ -265,6 +265,14 @@ impl QuestEffect {
         }
     }
 
+    /// The vehicle a `seat-vehicle` or `despawn-vehicle` names (spec-0135 §2).
+    pub fn vehicle_ref(&self) -> Option<&crate::VehicleId> {
+        match &self.verb {
+            Verb::SeatVehicle { vehicle } | Verb::DespawnVehicle { vehicle } => Some(vehicle),
+            _ => None,
+        }
+    }
+
     /// The flag id if this is `set-flag` (v0.3).
     pub fn set_flag(&self) -> Option<&FlagId> {
         match &self.verb {
@@ -391,6 +399,9 @@ impl QuestEffect {
             | Verb::Lightning { .. }
             // spec-0133's `despawn-wave`.
             | Verb::DespawnWave { .. }
+            // spec-0135's vehicle verbs.
+            | Verb::SeatVehicle { .. }
+            | Verb::DespawnVehicle { .. }
             | Verb::DropStake { .. } => None,
         }
     }

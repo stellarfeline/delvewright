@@ -261,6 +261,27 @@ pub fn check_marks_in_piece(plan: &Plan<'_>) -> (MarkBinding, Result<(), Failure
         );
     }
 
+    // A vehicle's seat (spec-0135 §2): where the body is placed is a mark.
+    for (vi, v) in c.quests.content.vehicles.iter().enumerate() {
+        b.bodies += 1;
+        if v.at.is_offset() {
+            b.offset_bodies += 1;
+        }
+        let Some((area, anchor_cell)) = plan.point_any_site(v.at.anchor.as_str()) else {
+            continue;
+        };
+        judge(
+            plan,
+            format!("vehicle `{}`", v.id),
+            "quests",
+            format!("/content/vehicles/{vi}/at/offset"),
+            &v.at,
+            &area,
+            anchor_cell,
+            &mut refused,
+        );
+    }
+
     // Cast rows spelled as a mark.
     for (qi, q) in c.quests.content.quests.iter().enumerate() {
         let beat_area = plan.quest_area(q.id.as_str()).unwrap_or("");

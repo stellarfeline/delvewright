@@ -159,6 +159,9 @@ pub(crate) struct Carries<'p> {
     pub(in crate::compiler::nav) gathers: &'p [crate::compiler::link::GatherPlan],
     pub(in crate::compiler::nav) live: &'p [Vec<usize>],
     pub(in crate::compiler::nav) steps: &'p [Step],
+    /// The plan's vehicles (spec-0135 §4): a ride carries a leg no walk and no
+    /// link crosses.
+    pub(in crate::compiler::nav) vehicles: &'p [crate::compiler::nav::vehicle::VehiclePlan],
 }
 
 impl<'p> Carries<'p> {
@@ -170,6 +173,7 @@ impl<'p> Carries<'p> {
             gathers: &[],
             live: &[],
             steps: &[],
+            vehicles: &[],
         }
     }
 
@@ -180,6 +184,7 @@ impl<'p> Carries<'p> {
             gathers: &plan.gathers,
             live: &plan.critical_path_live_links,
             steps: &plan.critical_path,
+            vehicles: &plan.vehicles,
         }
     }
 
@@ -204,6 +209,9 @@ pub struct RouteBinding {
     pub carried: usize,
     /// Of those, legs a loop's exercise move carries (spec-0086 §5.2).
     pub looped: usize,
+    /// Of those, legs a vehicle carries (spec-0135 §4). Read by the vehicle
+    /// binding, not by this line.
+    pub ridden: usize,
     /// Links the campaign declares.
     pub links: usize,
     /// Of those, links live at the end of some leg.
@@ -664,6 +672,55 @@ fn decompose(
     false
 }
 
+/// **The ride that carries `from → end`** (spec-0135 §4), over the leg's own
+/// world: the first vehicle the party walks to a boarding cell of from `from`,
+/// rides, and leaves at a cell it walks to `end` from.
+fn ride_leg(
+    world: &World,
+    from: &VisitedPos,
+    end: &VisitedPos,
+    region_events: &RegionEvents,
+    ancestor: &dyn Fn(usize, usize) -> bool,
+    carries: &Carries<'_>,
+) -> Option<(crate::compiler::nav::vehicle::RideTake, u32)> {
+    let st = world.walked_leg_region_state(region_events, ancestor, from.src_step, end.src_step);
+    let owned;
+    let leg: &World = if st.is_empty() {
+        world
+    } else {
+        owned = world.with_region_state(&st);
+        &owned
+    };
+    let at = |pos: [i32; 3], src: &VisitedPos| VisitedPos {
+        pos,
+        transport_before: false,
+        talk_to: false,
+        by_link: false,
+        by_loop: false,
+        ..*src
+    };
+    let walks = |a: [i32; 3], b: [i32; 3]| {
+        let (pa, pb) = if a == from.pos {
+            (*from, at(b, end))
+        } else if b == end.pos {
+            (at(a, end), *end)
+        } else {
+            (at(a, end), at(b, end))
+        };
+        judge_leg(world, &[pa, pb], region_events, ancestor).is_ok()
+    };
+    let ride =
+        crate::compiler::nav::vehicle::find_ride(leg, carries.vehicles, from.pos, &walks, end.pos)?;
+    let seats = crate::compiler::nav::vehicle::boardable_seats(
+        leg,
+        carries.vehicles,
+        from.pos,
+        &walks,
+        end.pos,
+    );
+    Some((ride, seats))
+}
+
 /// The link a performed `trigger` step stands for, and the cell the party
 /// stands on to perform it from `from` — `None` when the step's trigger is no
 /// link, or no stand cell of its volume is reachable from `from` (the press
@@ -969,6 +1026,10 @@ pub(in crate::compiler::nav) fn route_with_links(
                 if let Some(Step::Trigger { trigger_id, .. }) = carries.steps.get(next.src_step) {
                     taken.insert(format!("{trigger_id}{:?}", next.pos));
                 }
+            } else if next.by_loop
+                && matches!(carries.steps.get(next.src_step), Some(Step::Ride { .. }))
+            {
+                b.ridden += 1;
             } else if next.by_loop {
                 b.looped += 1;
             } else {
@@ -1065,6 +1126,39 @@ pub(in crate::compiler::nav) fn route_with_links(
                 taken.insert(format!("{}{:?}", l.trigger_id, l.to));
             }
             takes.spliced.insert(next.src_step, used);
+            cur = *next;
+            continue;
+        }
+        // A ride (spec-0135 §4): a leg no walk and no link crosses, carried by
+        // a vehicle the party walks to, rides and leaves.
+        if !carries.vehicles.is_empty()
+            && let Some((ride, seats)) =
+                ride_leg(world, &cur, next, region_events, ancestor, carries)
+        {
+            if seats < crate::compiler::nav::vehicle::PARTY_SEATS {
+                let v = &carries.vehicles[ride.vehicle];
+                result = Err(Failure {
+                    code: crate::compiler::nav::vehicle::DW_VEHICLE_UNBOARDABLE,
+                    message: format!(
+                        "critical path: the party cannot walk from {:?} to {:?}, and the ride that \
+                         carries the leg — `{}`, a {} — and every other vehicle boardable there \
+                         seat {seats} of the party's {}: a required ride carries the whole party, \
+                         and the engine never proves a party split. Seat more vehicles there (a \
+                         boat seats {}), or give the leg a walk.",
+                        cur.pos,
+                        next.pos,
+                        v.id,
+                        v.kind.token(),
+                        crate::compiler::nav::vehicle::PARTY_SEATS,
+                        v.seats
+                    ),
+                });
+                break;
+            }
+            b.legs += 2;
+            b.walked += 2;
+            b.ridden += 1;
+            takes.rides.insert(next.src_step, ride);
             cur = *next;
             continue;
         }

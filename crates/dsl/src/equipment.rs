@@ -378,6 +378,18 @@ pub fn dressed_bodies(c: &Campaign) -> Vec<DressedBody<'_>> {
             });
         }
     }
+    // spec-0135: a vehicle wears what its body shows; a boat or a cart
+    // shows nothing.
+    for (i, v) in q.vehicles.iter().enumerate() {
+        if let Some(eq) = &v.equipment {
+            out.push(DressedBody {
+                path: format!("/content/vehicles/{i}/equipment"),
+                what: "vehicle",
+                entity: v.entity.clone(),
+                equipment: eq,
+            });
+        }
+    }
     out
 }
 

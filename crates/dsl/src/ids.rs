@@ -194,6 +194,12 @@ prefixed_id!(
     /// finding blames.
     LoopId, "loop");
 prefixed_id!(
+    /// Vehicle id: `vehicle/<kebab>` (stage-5 `vehicles` section, spec-0135).
+    /// Unique within the stage-5 vehicle namespace; it names the vehicle's
+    /// tag, its seat and re-seat functions, its PackTest templates and its
+    /// ride steps.
+    VehicleId, "vehicle");
+prefixed_id!(
     /// Pulse id: `pulse/<kebab>` (stage-5 `pulses` section, spec-0102). Unique
     /// within the stage-5 pulse namespace; it names the pulse's emitted
     /// function, its latch holder, its PackTest templates and its ledger row.

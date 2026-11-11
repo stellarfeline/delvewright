@@ -227,6 +227,8 @@ fn enchantment_rule(item: &str, enchantment: &str) -> Option<(Kind, &'static str
 struct Reader<'a> {
     out: MovementItems,
     path: &'a [Step],
+    /// Every stack read, with the step a body can first hold it at.
+    stacks: Vec<(String, (usize, bool))>,
 }
 
 impl Reader<'_> {
@@ -254,6 +256,8 @@ impl Reader<'_> {
         at: (usize, bool),
     ) {
         self.out.examined += 1;
+        self.stacks
+            .push((delvewright_dsl::namespaced_entity(item), at));
         if let Some(rule) = item_rule(item) {
             self.push(Kind::Unmodelled, item, rule, source, at);
         }
@@ -378,9 +382,46 @@ impl Reader<'_> {
 /// against the critical path `path`.
 #[must_use]
 pub fn movement_items(campaign: &delvewright_dsl::Campaign, path: &[Step]) -> MovementItems {
+    read_items(campaign, path).out
+}
+
+/// **The first critical-path step a body is sure to hold `item` at**
+/// (spec-0135 §3, `DW1096`): a kit gives it from the first step when every
+/// class's kit carries it; a `give-item` from the step after the objective
+/// whose completion runs it; any other source — a trigger, loot, a shop, a
+/// drop — from the first step, as [`movement_items`] reads it. `None` when
+/// nothing gives it.
+pub fn item_held_from(
+    campaign: &delvewright_dsl::Campaign,
+    path: &[Step],
+    item: &str,
+) -> Option<usize> {
+    let want = delvewright_dsl::namespaced_entity(item);
+    let classes = &campaign.classes.content.classes;
+    let in_every_kit = !classes.is_empty()
+        && classes.iter().all(|c| {
+            c.kit
+                .iter()
+                .any(|k| delvewright_dsl::namespaced_entity(&k.item) == want)
+        });
+    if in_every_kit {
+        return Some(0);
+    }
+    let r = read_items(campaign, path);
+    let kits: usize = classes.iter().map(|c| c.kit.len()).sum();
+    r.stacks
+        .iter()
+        .skip(kits)
+        .filter(|(i, _)| *i == want)
+        .map(|(_, (stage, _))| *stage)
+        .min()
+}
+
+fn read_items<'a>(campaign: &delvewright_dsl::Campaign, path: &'a [Step]) -> Reader<'a> {
     let mut r = Reader {
         out: MovementItems::default(),
         path,
+        stacks: Vec::new(),
     };
     for class in &campaign.classes.content.classes {
         for k in &class.kit {
@@ -416,7 +457,7 @@ pub fn movement_items(campaign: &delvewright_dsl::Campaign, path: &[Step]) -> Mo
             r.walk(doc, &v, &mut pointer);
         }
     }
-    r.out
+    r
 }
 
 #[cfg(test)]

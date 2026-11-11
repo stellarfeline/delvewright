@@ -222,6 +222,26 @@ pub fn check_name_tags(c: &Campaign) -> (Vec<Diagnostic>, CrowdBinding) {
             ),
         ));
     }
+    // spec-0135: a vehicle is one body, and its name tag a person's.
+    for (vi, v) in q.vehicles.iter().enumerate() {
+        let Some(n) = v.name.as_deref() else { continue };
+        let Some(why) = group.get(&shown(n)) else {
+            continue;
+        };
+        bind.refused_actors += 1;
+        d.push(Diagnostic::error(
+            DW_NAME_ON_A_CROWD,
+            "quests",
+            format!("/content/vehicles/{vi}/name"),
+            format!(
+                "vehicle `{}` wears the name `{n}`, and that name tags a group: {why}. A vehicle \
+                 is one body, and its name tag says it is one of a kind; a name a crowd also \
+                 wears says it is one of them (game-writing.md §3 N6). Give it a name of its \
+                 own, or none",
+                v.id
+            ),
+        ));
+    }
     (d, bind)
 }
 

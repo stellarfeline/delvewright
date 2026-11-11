@@ -309,7 +309,9 @@ pub(in crate::compiler::nav) fn positions_of(
         // link and a loop look the same to every proof that reads positions
         // (spec-0086 §5.4).
         let carry = match step {
-            Step::Loop { pos, transport, .. } => Some((*pos, Some(*transport), false, true)),
+            Step::Loop { pos, transport, .. } | Step::Ride { pos, transport, .. } => {
+                Some((*pos, Some(*transport), false, true))
+            }
             _ => step
                 .stand()
                 .map(|stand| (stand, transports.get(i).copied().flatten(), true, false)),
@@ -425,7 +427,7 @@ pub fn with_links_taken<'a>(
     prefabs: &crate::compiler::registry::PrefabRegistry,
     world: &World,
 ) -> Result<Option<Plan<'a>>, Failure> {
-    if plan.links.is_empty() && !plan.region_events.has_keep_out() {
+    if plan.links.is_empty() && !plan.region_events.has_keep_out() && plan.vehicles.is_empty() {
         return Ok(None);
     }
     let takes = take_links(plan, world).unwrap_or_default();
@@ -468,6 +470,7 @@ pub fn take_branch_links(
             gathers: &plan.gathers,
             live: &cp.live_links_by_step,
             steps: &cp.steps,
+            vehicles: &plan.vehicles,
         },
     )
     .1
@@ -890,6 +893,7 @@ pub fn check_branch_path(
             gathers: &plan.gathers,
             live: &cp.live_links_by_step,
             steps: &cp.steps,
+            vehicles: &plan.vehicles,
         },
     )
     .1

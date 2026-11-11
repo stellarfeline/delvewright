@@ -210,6 +210,26 @@ pub enum Step {
         /// player from, which the wait stands outside.
         aggro: Option<([i32; 3], f64)>,
     },
+    /// **Ride a vehicle across a leg no walk crosses** (spec-0135 §4, §6):
+    /// walk to `pos` (the boarding cell), mount the vehicle, be carried along
+    /// `medium`, leave and stand at `transport` (the leaving cell). Spliced in
+    /// front of the step whose leg it carries.
+    Ride {
+        /// The `vehicle/<id>` ridden.
+        vehicle_id: String,
+        /// Its kind token (`boat`, `minecart`, `mount`).
+        kind: &'static str,
+        /// The boarding cell.
+        pos: [i32; 3],
+        /// The medium cells ridden, the seat first.
+        medium: Vec<[i32; 3]>,
+        /// The rate the harness drives at, blocks a second.
+        rate: f64,
+        /// The leaving cell, where the party goes on from.
+        transport: [i32; 3],
+        /// The item a rider holds to steer, where the kind needs one.
+        steering_item: Option<String>,
+    },
     /// Assert a scoreboard objective value.
     AssertComplete {
         /// The objective (`dw.campaign`).
@@ -236,6 +256,7 @@ impl Step {
             | Step::AssertComplete { .. }
             | Step::Trigger { .. }
             | Step::Mock { .. }
+            | Step::Ride { .. }
             | Step::Loop { .. } => None,
         }
     }
@@ -256,6 +277,7 @@ impl Step {
             | Step::Interact { pos, .. }
             | Step::Trigger { pos, .. }
             | Step::Expire { pos, .. }
+            | Step::Ride { pos, .. }
             | Step::Loop { pos, .. } => Some(*pos),
             Step::SelectClass { .. } | Step::AssertComplete { .. } | Step::Mock { .. } => None,
         }
@@ -316,6 +338,7 @@ impl Step {
             }
             | Step::Kill { .. }
             | Step::Loop { .. }
+            | Step::Ride { .. }
             // A lapse completes nothing, wherever the party stands.
             | Step::Expire { .. }
             | Step::SelectClass { .. }
@@ -816,6 +839,7 @@ pub(super) fn build_critical_path(
     carry: PathLinks<'_>,
 ) -> Result<CriticalPath, PlanError> {
     let PathLinks { links, takes } = carry;
+    let vehicles = crate::compiler::nav::vehicle::vehicle_plans(campaign, anchors);
     let mut steps = Vec::new();
     // `(path step index, first critical step it produced)`, in path order — how
     // a critical step is mapped back to the flags and data the party holds
@@ -1737,7 +1761,7 @@ pub(super) fn build_critical_path(
             transport_by_step[k] = Some(l.to);
         }
     }
-    if !takes.spliced.is_empty() {
+    if !takes.spliced.is_empty() || !takes.rides.is_empty() {
         let n = steps.len();
         let mut new_steps = Vec::with_capacity(n);
         let mut new_transport = Vec::with_capacity(n);
@@ -1763,6 +1787,28 @@ pub(super) fn build_critical_path(
                     block: pressed_block(campaign, &l.trigger_id),
                 });
                 new_transport.push(Some(l.to));
+                new_sneak.push(false);
+                new_live.push(live_links_by_step[k].clone());
+                new_armed.push(armed_by_step[k].clone());
+                new_armed_ids.push(armed_ids_by_step[k].clone());
+            }
+            if let Some(r) = takes.rides.get(&k)
+                && let Some(v) = vehicles.get(r.vehicle)
+            {
+                let movement = campaign.quests.content.vehicles[v.index]
+                    .attributes
+                    .as_ref()
+                    .and_then(|a| a.movement_speed);
+                new_steps.push(Step::Ride {
+                    vehicle_id: v.id.clone(),
+                    kind: v.kind.token(),
+                    pos: r.board,
+                    medium: r.medium.clone(),
+                    rate: v.rate(movement),
+                    transport: r.leave,
+                    steering_item: v.steering_item.clone(),
+                });
+                new_transport.push(None);
                 new_sneak.push(false);
                 new_live.push(live_links_by_step[k].clone());
                 new_armed.push(armed_by_step[k].clone());

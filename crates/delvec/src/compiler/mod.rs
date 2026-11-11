@@ -215,6 +215,7 @@ pub mod presence;
 pub mod pressable;
 pub mod promise;
 pub mod pulse;
+pub mod rail;
 pub mod raster;
 pub mod reach;
 pub mod region_fill;

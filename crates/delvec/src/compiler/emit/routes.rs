@@ -778,6 +778,55 @@ pub(super) fn prove_world(
                 let (route_binding, route_verdict) =
                     crate::compiler::nav::check_critical_path_bound(plan, world);
                 crate::note!("{}", route_binding.line());
+                // spec-0135 §4: the proofs over the vehicle class, judged before
+                // the route's verdict so a vehicle out of its medium is named
+                // as that, not as the leg it could not carry.
+                {
+                    let walk = if plan.vehicles.is_empty() {
+                        BTreeSet::new()
+                    } else {
+                        world.walk_region_rooted(&crate::compiler::edit::anchor_starts(plan))
+                    };
+                    let (mut vb, vehicle_verdict) =
+                        crate::compiler::nav::vehicle::judge_vehicles(&plan.vehicles, world, &walk);
+                    vb.critical_rides = route_binding.ridden;
+                    crate::note!("{}", vb.line());
+                    for (k, s) in plan.critical_path.iter().enumerate() {
+                        let crate::compiler::plan::Step::Ride {
+                            vehicle_id,
+                            steering_item: Some(item),
+                            ..
+                        } = s
+                        else {
+                            continue;
+                        };
+                        let held = crate::compiler::nav::item_held_from(
+                            plan.campaign,
+                            &plan.critical_path,
+                            item,
+                        );
+                        if held.is_none_or(|h| h > k) {
+                            return Err(BuildFailure::Diagnostic {
+                                code: delvewright_dsl::vehicle::VEHICLE_CARRIES_NO_RIDER,
+                                message: format!(
+                                    "the critical path rides `{vehicle_id}` at step {k}, and a \
+                                     rider steers it only holding `{item}` — which {}. A mount \
+                                     with an empty hand walks where its own AI takes it. Put \
+                                     `{item}` in every class's kit, or give it by a `give-item` \
+                                     before the ride.",
+                                    match held {
+                                        None => "nothing in the campaign gives".to_string(),
+                                        Some(h) => format!("the party first holds at step {h}"),
+                                    }
+                                ),
+                            });
+                        }
+                    }
+                    vehicle_verdict.map_err(|f| BuildFailure::Diagnostic {
+                        code: f.code,
+                        message: f.message,
+                    })?;
+                }
                 route_verdict?;
                 legs_carried = route_binding.carried;
                 // DW1044: a trigger the path performs to pay a flag a later

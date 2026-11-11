@@ -1875,6 +1875,11 @@ pub struct Occupancy {
     /// a body may be put down by declaration
     /// ([`crate::compiler::nav::World::is_safe_seat`]); routing never reads it.
     pub hurting: CellSet,
+    /// Every rail cell (spec-0135 §3), with its shape and its power as the
+    /// map holds them ([`crate::compiler::rail::rail_of`]). Not a collision
+    /// class: a rail is a thin floor decoration; this is the medium a minecart
+    /// moves in.
+    pub rails: BTreeMap<[i32; 3], crate::compiler::rail::Rail>,
 }
 
 /// **What keeps one climbable where it is** (spec-0099 §3.2), as the cells its
@@ -2149,6 +2154,7 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
         BTreeMap::new();
     let mut hiding = CellSet::builder(lo, hi);
     let mut hurting = CellSet::builder(lo, hi);
+    let mut rails: BTreeMap<[i32; 3], crate::compiler::rail::Rail> = BTreeMap::new();
     let mut leaves: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Leaf> = BTreeMap::new();
     let mut material: CellMap<delvewright_dsl::metrics::body::Material> = CellMap::new();
     // Every reading below is a function of the block state alone, so it is
@@ -2156,6 +2162,9 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
     let mut classes = StateClasses::default();
     for (cell, name) in blocks {
         let k = classes.of(*name);
+        if let Some(r) = crate::compiler::rail::rail_of(name.as_str()) {
+            rails.insert(cell, r);
+        }
         if k.hurts {
             hurting.insert(cell);
         }
@@ -2279,6 +2288,7 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
         hiding,
         leaves,
         hurting,
+        rails,
     }
 }
 

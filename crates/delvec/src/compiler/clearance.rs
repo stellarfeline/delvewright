@@ -618,6 +618,7 @@ mod tests {
             leaves: Default::default(),
             hiding: Default::default(),
             hurting: Default::default(),
+            rails: Default::default(),
         }
     }
 

@@ -134,6 +134,19 @@ pub enum Verb {
         /// The wave (stage-5 `waves` ref) to remove.
         wave: WaveId,
     },
+    /// Seats a stage-5 vehicle at its mark (spec-0135 §2): the body the
+    /// vehicle's seat function places, by the function every load runs. A
+    /// vehicle already standing is removed first, so a seat is one body.
+    SeatVehicle {
+        /// The vehicle (stage-5 `vehicles` ref) to seat.
+        vehicle: crate::VehicleId,
+    },
+    /// Removes a stage-5 vehicle's body, unseen (spec-0135 §2), by the
+    /// removal a wave's re-seat performs. A rider is set down first.
+    DespawnVehicle {
+        /// The vehicle (stage-5 `vehicles` ref) to remove.
+        vehicle: crate::VehicleId,
+    },
     /// Narrates a player-visible line (DSL v0.4, spec-0008 §3). `text` enters the
     /// l10n key inventory like any player-visible string. The payload is the
     /// one [`Narration`] type every player-facing line declares.
@@ -1095,6 +1108,8 @@ impl Verb {
             Verb::DropStake { .. } => "drop-stake",
             Verb::SpawnWave { .. } => "spawn-wave",
             Verb::DespawnWave { .. } => "despawn-wave",
+            Verb::SeatVehicle { .. } => "seat-vehicle",
+            Verb::DespawnVehicle { .. } => "despawn-vehicle",
             Verb::Narrate(..) => "narrate",
             Verb::SetBlock { .. } => "set-block",
             Verb::FillRegion { .. } => "fill-region",
@@ -1170,6 +1185,8 @@ impl Verb {
             | Verb::DropStake { .. }
             | Verb::SpawnWave { .. }
             | Verb::DespawnWave { .. }
+            | Verb::SeatVehicle { .. }
+            | Verb::DespawnVehicle { .. }
             | Verb::SetBlock { .. }
             | Verb::FillRegion { .. }
             | Verb::ClearRegion { .. }
@@ -1240,6 +1257,8 @@ impl Verb {
             | Verb::UnleashActor { .. }
             | Verb::SpawnWave { .. }
             | Verb::DespawnWave { .. }
+            | Verb::SeatVehicle { .. }
+            | Verb::DespawnVehicle { .. }
             | Verb::SpawnAssembly { .. }
             | Verb::DespawnAssembly { .. }
             | Verb::Volley { .. }

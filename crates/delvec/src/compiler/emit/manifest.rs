@@ -423,6 +423,19 @@ pub(super) fn critical_path_json(
                     "action": "loop", "loop": loop_id, "pos": pos, "cross": cross,
                     "offset": offset, "times": times, "transport": transport
                 }),
+                // spec-0135 §6: a ride — walk to `board`, mount, be carried
+                // along `medium` at `rate`, leave at `leave`.
+                Step::Ride { vehicle_id, kind, pos, medium, rate, transport, steering_item } => {
+                    let mut v = json!({
+                        "action": "ride", "vehicle": vehicle_id, "kind": kind,
+                        "board": pos, "pos": pos, "medium": medium, "rate": rate,
+                        "leave": transport
+                    });
+                    if let (Some(item), Some(obj)) = (steering_item, v.as_object_mut()) {
+                        obj.insert("steering_item".to_string(), json!(item));
+                    }
+                    v
+                }
                 // spec-0108 §6.5: an act the bot runs as the engine's own bundle
                 // function, asserting the terms it changes before and after.
                 Step::Mock { act, kind, function, before, after } => {
