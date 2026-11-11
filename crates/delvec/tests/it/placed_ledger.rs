@@ -76,6 +76,10 @@ const PLAYED: &[&str] = &[
     // a frame or stand filled this way is not yet carried into the frames
     // after its beat (a recorded debt of spec-0134).
     "fill_",
+    // A world-edits batch that waits for its beat (spec-0134 §6): its cells
+    // are written by `apply-edits` at play time, and the frames after its
+    // beat do not yet carry them (a recorded debt of spec-0134).
+    "edit_",
 ];
 
 fn tmp(name: &str) -> PathBuf {

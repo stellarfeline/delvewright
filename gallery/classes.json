@@ -8,6 +8,9 @@
         "kit": [
           {
             "count": 1,
+            "enchantments": {
+              "minecraft:sharpness": 1
+            },
             "item": "minecraft:iron_sword",
             "name": "Gallery Blade"
           },
@@ -52,6 +55,18 @@
               "flight": 1
             },
             "item": "minecraft:firework_rocket"
+          },
+          {
+            "count": 1,
+            "item": "minecraft:spyglass"
+          },
+          {
+            "count": 1,
+            "item": "minecraft:bow"
+          },
+          {
+            "count": 16,
+            "item": "minecraft:arrow"
           }
         ],
         "name": "Wanderer"
@@ -77,6 +92,14 @@
             "flask": true,
             "item": "minecraft:potion",
             "name": "Warder's Flask"
+          },
+          {
+            "count": 1,
+            "item": "minecraft:bow"
+          },
+          {
+            "count": 16,
+            "item": "minecraft:arrow"
           }
         ],
         "name": "Warder"

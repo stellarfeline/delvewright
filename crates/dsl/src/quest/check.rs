@@ -13,7 +13,6 @@ use crate::validate::{
     AnchorProviders, check_block_field, for_each_effect_deep, graph_has_cycle, produced_flags,
     station_kind_diag,
 };
-use crate::wave::check_enchantments;
 use crate::{Objective, PlannedQuest, QuestEffect, Verb};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -566,43 +565,6 @@ fn check_carrier_one_not_scheduled(
             check_carrier_one_not_scheduled(list, path, how.has_actor(has_actor), false, d);
         }
     }
-}
-
-/// `give-item` enchantments (`DW0433`/`DW0434`) at **every effect root**, at
-/// any nesting depth: the same checks a `loot` stack and an equipped piece get,
-/// because it is the same field on the same object — an item stack.
-pub(crate) fn give_item_enchantment_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    let reg = crate::registry::VendoredEnchantmentRegistry::v1_21_11();
-    fn walk(
-        stage: &'static str,
-        path: &str,
-        list: &[QuestEffect],
-        reg: &dyn crate::registry::EnchantmentRegistry,
-        d: &mut Vec<Diagnostic>,
-    ) {
-        for (n, eff) in list.iter().enumerate() {
-            let p = format!("{path}/{n}");
-            if let Verb::GiveItem {
-                item, enchantments, ..
-            } = &eff.verb
-            {
-                check_enchantments(
-                    enchantments,
-                    &format!("`give-item` item `{item}`"),
-                    stage,
-                    &format!("{p}/enchantments"),
-                    reg,
-                    d,
-                );
-            }
-            for (seg, _key, inner) in eff.nested_effect_lists_labeled() {
-                walk(stage, &format!("{p}/{seg}"), inner, reg, d);
-            }
-        }
-    }
-    crate::effects::for_each_effect_root(c, &mut |site, list| {
-        walk(site.stage, &site.path, list, &reg, d);
-    });
 }
 
 /// Validate a v0.4-relevant [`QuestEffect`]'s refs: `set-block` block id
@@ -1310,19 +1272,6 @@ pub(crate) fn quest_reference_checks(
                     format!(
                         "`spawn-wave` effect references unknown wave `{w}` — declare it in the \
  stage-5 `waves` section or correct the reference"
-                    ),
-                ));
-            }
-            if let Some(it) = eff.give_item()
-                && !items.contains(it)
-            {
-                d.push(Diagnostic::error(
-                    codes::ITEM_UNKNOWN,
-                    "quests",
-                    format!("/content/quests/{i}/{path}/item"),
-                    format!(
-                        "`give-item` item `{it}` is not in the pinned 1.21.11 item registry — use \
- a valid namespaced item id (e.g. `minecraft:golden_apple`)"
                     ),
                 ));
             }

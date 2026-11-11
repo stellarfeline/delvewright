@@ -3,8 +3,10 @@
 //! answer box, which the actor gains when a trigger names it. Proven over
 //! hello-world with a fox set out at the keeper's talk.
 //!
-//! The taking (`give-item` gaining `from: {actor, slot}`) is not in this
-//! round: a recorded debt.
+//! The taking: `give-item` gaining `from: {actor, slot}` gives the stack the
+//! actor's `equipment` declares in that slot and empties the slot in the same
+//! bundle; a slot the actor does not fill is `DW0490`, the question a `drops`
+//! slot entry asks.
 
 use crate::common;
 
@@ -189,4 +191,71 @@ fn a_trigger_on_an_actor_with_an_anchor_is_dw0194() {
         "{:#?}",
         errors(&c)
     );
+}
+
+/// `pet-the-fox` takes the key off the fox: `give-item from: {actor, slot}`.
+fn taking(slot: &str, actor: &str) -> Value {
+    json!({
+        "id": "trigger/take-the-key", "on": {"on": "use-actor", "actor": "actor/fox"},
+        "audience": "presser", "once": true,
+        "answers": {"done": "The fox has nothing left to give."},
+        "effects": [{"type": "give-item", "from": {"actor": actor, "slot": slot}, "carrier": "one"}]
+    })
+}
+
+#[test]
+fn a_thing_taken_off_an_actor_is_its_declared_stack_and_the_slot_is_cleared() {
+    let c = campaign(&raw(false, vec![taking("main_hand", "actor/fox")]));
+    assert!(errors(&c).is_empty(), "{:#?}", errors(&c));
+    let out = build(&c);
+    let body = text(&out, &format!("{FN_DIR}/trig_take_the_key.mcfunction"));
+    let lines: Vec<&str> = body.lines().collect();
+    let give = lines
+        .iter()
+        .position(|l| l.contains("give @s minecraft:tripwire_hook 1"))
+        .unwrap_or_else(|| panic!("the fox's declared stack is given:\n{body}"));
+    let clear = lines
+        .iter()
+        .position(|l| {
+            l.contains(
+                "item replace entity @e[tag=dw_actor_fox,limit=1] weapon.mainhand with minecraft:air",
+            )
+        })
+        .unwrap_or_else(|| panic!("the slot is cleared in the same bundle:\n{body}"));
+    assert!(give < clear, "given, then cleared:\n{body}");
+}
+
+#[test]
+fn a_thing_taken_from_a_slot_the_actor_does_not_fill_is_dw0490() {
+    let c = campaign(&raw(false, vec![taking("off_hand", "actor/fox")]));
+    let e = errors(&c);
+    assert!(
+        e.contains(&(
+            "DW0490".to_string(),
+            "/content/triggers/0/effects/0/from/slot".to_string()
+        )),
+        "{e:#?}"
+    );
+}
+
+#[test]
+fn a_thing_taken_off_an_undeclared_actor_is_dw0112() {
+    let c = campaign(&raw(false, vec![taking("main_hand", "actor/badger")]));
+    let e = errors(&c);
+    assert!(
+        e.contains(&(
+            "DW0112".to_string(),
+            "/content/triggers/0/effects/0/from/actor".to_string()
+        )),
+        "{e:#?}"
+    );
+}
+
+#[test]
+fn a_taken_stack_spelled_a_second_time_does_not_parse() {
+    let mut t = taking("main_hand", "actor/fox");
+    t["effects"][0]["item"] = json!("minecraft:stick");
+    let r = raw(false, vec![t]);
+    let err = parse_campaign(&r).expect_err("`from` beside `item` is refused");
+    assert!(format!("{err:?}").contains("second time"), "{err:?}");
 }

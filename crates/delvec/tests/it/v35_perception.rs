@@ -390,6 +390,10 @@ fn samples() -> Vec<(&'static str, Value)> {
             json!({"type":"fill-loot","loot":"loot/ferryman-stores"}),
         ),
         (
+            "apply-edits",
+            json!({"type":"apply-edits","batch":"batch/light-the-floor-lamps"}),
+        ),
+        (
             "narrate",
             json!({"type":"narrate","text":"The hall answers."}),
         ),

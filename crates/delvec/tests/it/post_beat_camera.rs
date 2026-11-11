@@ -1545,7 +1545,8 @@ fn a_filled_brewing_stand_is_written_with_its_bottles() {
             "id": "loot/two-bottles", "anchor": "anchor/filled-stand",
             "items": [
                 {"item": "minecraft:glass_bottle", "count": 1, "slot": "container.0"},
-                {"item": "minecraft:potion", "count": 1, "slot": "container.2"}
+                {"item": "minecraft:potion", "count": 1, "slot": "container.2",
+                 "contents": {"potion": "minecraft:healing"}}
             ]
         }]);
     });

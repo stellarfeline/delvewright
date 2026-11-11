@@ -106,9 +106,10 @@ fn the_enchantments_reach_the_verb() {
              "enchantments": { "minecraft:sharpness": 2, "minecraft:knockback": 1 } }"#,
     )
     .unwrap();
-    let Verb::GiveItem { enchantments, .. } = &parsed.verb else {
+    let Verb::GiveItem { source, .. } = &parsed.verb else {
         panic!("not a give-item: {parsed:?}")
     };
+    let enchantments = &source.stack().expect("a written stack").enchantments;
     assert_eq!(
         enchantments.iter().collect::<Vec<_>>(),
         vec![

@@ -1,0 +1,13 @@
+{
+  "code": "DW0490",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/triggers/20/effects/0/from/slot",
+      "value": "off_hand"
+    }
+  ],
+  "units": [],
+  "why": "Asking the page takes the thing in his off hand, and his equipment fills only his main hand. A thing can only be taken off a body that holds it; the question is the one a `drops` slot entry asks, answered by the same function. It declares no unit: `from.slot` is bound by the page's main hand."
+}

@@ -49,21 +49,15 @@ pub struct Class {
     pub kit: Vec<KitItem>,
 }
 
-/// One item in a class kit.
-///
-/// Note: `lore`, `enchantments` and `attributes` are reserved for M2/M3
-/// (spec-0001). They are intentionally *not* defined as fields in v0, so a
-/// document using them is rejected as an unknown field (`DW0100`).
+/// One item in a class kit: the one [`crate::Stack`] every item site writes,
+/// beside what is the kit's own — who carries it and whether it is the flask.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct KitItem {
-    /// Vanilla item id, validated against the pinned 1.21.11 registry.
-    pub item: String,
-    /// Stack count.
-    pub count: u32,
-    /// Optional display name.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
+    /// The stack (`item`, `count`, `name`, `enchantments`, `contents`,
+    /// `fireworks`).
+    #[serde(flatten)]
+    pub stack: crate::Stack,
     /// Who gets it (DSL v0.6, spec-0018). Absent = [`Carrier::All`]. A class kit is
     /// per-player gear by construction — every player who picks the class gets the
     /// kit — so `carrier` here marks a **party-unique** kit item: exactly one copy
@@ -78,20 +72,19 @@ pub struct KitItem {
     /// a design choice. Absent = not the flask.
     #[serde(default, skip_serializing_if = "is_false")]
     pub flask: bool,
-    /// **What is in the bottle** (DSL v0.8, spec-0016 §1): the vanilla
-    /// `minecraft:potion_contents` component of a
-    /// potion-bearing item ([`POTION_BEARING_ITEMS`]). Without it a
-    /// `minecraft:potion` is the *Uncraftable Potion* — a bottle that heals
-    /// nothing — which is exactly the placeholder flask this field exists to
-    /// abolish, so at `dsl_version` 0.8.0 a potion-bearing kit item that declares
-    /// no `contents` is `DW0487`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub contents: Option<PotionContents>,
-    /// **A rocket's stars** (DSL v0.73, spec-0134 §5): the `minecraft:fireworks`
-    /// component of a `minecraft:firework_rocket` kit stack. On any other item
-    /// it is `DW1095`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fireworks: Option<crate::StackFireworks>,
+}
+
+impl std::ops::Deref for KitItem {
+    type Target = crate::Stack;
+    fn deref(&self) -> &crate::Stack {
+        &self.stack
+    }
+}
+
+impl std::ops::DerefMut for KitItem {
+    fn deref_mut(&mut self) -> &mut crate::Stack {
+        &mut self.stack
+    }
 }
 
 /// The items whose vanilla item definition carries a `minecraft:potion_contents`
@@ -202,7 +195,7 @@ pub const MAX_EFFECT_SECONDS: u32 = MAX_POTION_DURATION_TICKS / 20;
 use std::collections::BTreeSet;
 
 use crate::Objective;
-use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
+use crate::diagnostic::{Diagnostic, DwCode, ExitTier};
 use crate::envelope::Campaign;
 use crate::registry::EffectRegistry;
 
@@ -449,24 +442,26 @@ pub(crate) fn item_gate_class_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
 /// honest: `DW0487` refuses the placeholder (a potion-bearing kit item that
 /// declares no contents), `DW0486` refuses contents 1.21.11 cannot pour.
 ///
-pub(crate) fn kit_potion_checks(
-    c: &Campaign,
+pub(crate) fn check_potion_contents(
+    item: &crate::Stack,
+    what: &str,
+    stage: &'static str,
+    path: &str,
     effects: &dyn EffectRegistry,
     d: &mut Vec<Diagnostic>,
 ) {
-    for (i, cl) in c.classes.content.classes.iter().enumerate() {
-        for (k, item) in cl.kit.iter().enumerate() {
+    {
+        {
             let bearing = crate::is_potion_bearing_item(&item.item);
-            let path = format!("/content/classes/{i}/kit/{k}");
             let Some(contents) = &item.contents else {
                 // The placeholder flask, as a build error.
                 if bearing {
                     d.push(Diagnostic::error(
                         KIT_POTION_MISSING,
-                        "classes",
+                        stage,
                         format!("{path}/contents"),
                         format!(
-                            "kit item `{}` declares no `contents`, so it compiles to the \
+                            "{} declares no `contents`, so it compiles to the \
                              *Uncraftable Potion* — a bottle with no `minecraft:potion_contents` \
                              component, which grants nothing when drunk however it is named. \
                              Declare what is in it: `\"contents\": {{\"potion\": \
@@ -474,34 +469,34 @@ pub(crate) fn kit_potion_checks(
                              `{{\"effect\", \"duration\", \"amplifier\"}}`. Do NOT rename the \
                              bottle instead — semantics never key on player-facing text \
                              (spec-0016 §1).",
-                            item.item
+                            what
                         ),
                     ));
                 }
-                continue;
+                return;
             };
             // `contents` on an item with no such component: the data would be
             // dropped on the floor, silently.
             if !bearing {
                 d.push(Diagnostic::error(
                     KIT_POTION_INVALID,
-                    "classes",
+                    stage,
                     format!("{path}/contents"),
                     format!(
-                        "kit item `{}` cannot carry potion `contents` — in 1.21.11 only \
+                        "{} cannot carry potion `contents` — in 1.21.11 only \
                          `minecraft:potion`, `minecraft:splash_potion`, \
                          `minecraft:lingering_potion` and `minecraft:tipped_arrow` carry a \
                          `minecraft:potion_contents` component, and on anything else the game \
                          discards it. Put the contents on a potion item, or drop the field.",
-                        item.item
+                        what
                     ),
                 ));
-                continue;
+                return;
             }
             if contents.potion.is_none() && contents.effects.is_empty() {
                 d.push(Diagnostic::error(
                     KIT_POTION_INVALID,
-                    "classes",
+                    stage,
                     format!("{path}/contents"),
                     "empty potion `contents` — it names no `potion` and lists no `effects`, so \
                      the bottle still pours nothing. Name a vanilla potion (e.g. \
@@ -514,7 +509,7 @@ pub(crate) fn kit_potion_checks(
             {
                 d.push(Diagnostic::error(
                     KIT_POTION_INVALID,
-                    "classes",
+                    stage,
                     format!("{path}/contents/potion"),
                     format!(
                         "`{p}` is not in the pinned 1.21.11 `potion` registry — use a real potion \
@@ -530,7 +525,7 @@ pub(crate) fn kit_potion_checks(
             {
                 d.push(Diagnostic::error(
                     KIT_POTION_INVALID,
-                    "classes",
+                    stage,
                     format!("{path}/contents/color"),
                     format!(
                         "potion `color` `{col}` is malformed — write the bottle colour as \
@@ -544,7 +539,7 @@ pub(crate) fn kit_potion_checks(
                 if !effects.contains(&eff.effect) {
                     d.push(Diagnostic::error(
                         KIT_POTION_INVALID,
-                        "classes",
+                        stage,
                         format!("{epath}/effect"),
                         format!(
                             "potion effect `{}` is not a known 1.21.11 status-effect id — use a \
@@ -558,7 +553,7 @@ pub(crate) fn kit_potion_checks(
                 {
                     d.push(Diagnostic::error(
                         KIT_POTION_INVALID,
-                        "classes",
+                        stage,
                         format!("{epath}/amplifier"),
                         format!(
                             "potion effect `amplifier` {amp} is out of range — vanilla stores it \
@@ -572,7 +567,7 @@ pub(crate) fn kit_potion_checks(
                     // duration on it is a sentence the game never reads.
                     (true, Some(dur)) => d.push(Diagnostic::error(
                         KIT_POTION_INVALID,
-                        "classes",
+                        stage,
                         format!("{epath}/duration"),
                         format!(
                             "`{}` is instantaneous — it lands once, on the tick the potion is \
@@ -584,7 +579,7 @@ pub(crate) fn kit_potion_checks(
                     )),
                     (false, None) => d.push(Diagnostic::error(
                         KIT_POTION_INVALID,
-                        "classes",
+                        stage,
                         format!("{epath}/duration"),
                         format!(
                             "potion effect `{}` lasts over time and declares no `duration` — \
@@ -596,7 +591,7 @@ pub(crate) fn kit_potion_checks(
                     (false, Some(dur)) if dur == 0 || dur > crate::MAX_POTION_DURATION_TICKS => {
                         d.push(Diagnostic::error(
                             KIT_POTION_INVALID,
-                            "classes",
+                            stage,
                             format!("{epath}/duration"),
                             format!(
                                 "potion effect `duration` {dur} is out of range — it is in \
@@ -617,31 +612,6 @@ pub(crate) fn kit_potion_checks(
 /// rule every hex-colour surface reads.
 fn is_hex_color(s: &str) -> bool {
     crate::color::is_hex(s)
-}
-
-/// Every kit item is in the pinned item registry (`DW0143`).
-pub(crate) fn kit_item_checks(
-    c: &Campaign,
-    items: &dyn crate::registry::ItemRegistry,
-    d: &mut Vec<Diagnostic>,
-) {
-    // Kit items.
-    for (i, cl) in c.classes.content.classes.iter().enumerate() {
-        for (j, it) in cl.kit.iter().enumerate() {
-            if !items.contains(&it.item) {
-                d.push(Diagnostic::error(
-                    codes::ITEM_UNKNOWN,
-                    "classes",
-                    format!("/content/classes/{i}/kit/{j}/item"),
-                    format!(
-                        "kit item `{}` is not in the pinned 1.21.11 item registry — use a valid \
-                         namespaced item id (e.g. `minecraft:iron_sword`)",
-                        it.item
-                    ),
-                ));
-            }
-        }
-    }
 }
 
 /// spec-0016 §1: a campaign that places a bonfire owes every class a flask

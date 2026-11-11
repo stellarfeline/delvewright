@@ -1,0 +1,17 @@
+{
+  "code": "DW1088",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/0/on_objective_complete/obj~1reach-the-counter/-",
+      "value": {
+        "amount": 1,
+        "state": "state/muster-mustered",
+        "type": "add-state"
+      }
+    }
+  ],
+  "units": [],
+  "why": "The muster's census is written by an author's `add-state`. A counted datum is the engine's: it writes the count of the wave's bodies in the box every ten ticks, so a hand-written write is overwritten within half a second and says nothing. Refused at the write. It declares no unit: `counts` is bound by `state/muster-mustered`; what the engine refuses is a second writer of a derived value."
+}

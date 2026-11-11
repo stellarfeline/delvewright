@@ -6,7 +6,28 @@
         "anchor": "anchor/east-bay",
         "drops": [
           {
+            "count": 2,
             "item": "minecraft:feather"
+          },
+          {
+            "fireworks": {
+              "explosions": [
+                {
+                  "colors": [
+                    "#f0f0f0"
+                  ],
+                  "shape": "burst",
+                  "twinkle": true
+                }
+              ]
+            },
+            "item": "minecraft:firework_rocket"
+          },
+          {
+            "contents": {
+              "potion": "minecraft:healing"
+            },
+            "item": "minecraft:potion"
           }
         ],
         "entity": "minecraft:bat",
@@ -54,6 +75,9 @@
             "slot": "main_hand"
           },
           {
+            "enchantments": {
+              "minecraft:unbreaking": 1
+            },
             "item": "minecraft:iron_ingot",
             "name": "Muster Token"
           },
@@ -128,6 +152,22 @@
           },
           "main_hand": {
             "item": "minecraft:white_banner"
+          },
+          "off_hand": {
+            "count": 2,
+            "fireworks": {
+              "explosions": [
+                {
+                  "colors": [
+                    "#e04040"
+                  ],
+                  "shape": "star"
+                }
+              ],
+              "flight": 2
+            },
+            "item": "minecraft:firework_rocket",
+            "name": "Signal Rocket"
           }
         },
         "facing": "south",
@@ -163,6 +203,13 @@
       {
         "anchor": "anchor/usher",
         "entity": "minecraft:villager",
+        "equipment": {
+          "main_hand": {
+            "count": 1,
+            "item": "minecraft:paper",
+            "name": "The Page's Pass"
+          }
+        },
         "facing": "south",
         "id": "actor/hall-page",
         "offset": [
@@ -670,6 +717,13 @@
               "flight": 2
             },
             "item": "minecraft:firework_rocket"
+          },
+          {
+            "contents": {
+              "potion": "minecraft:water_breathing"
+            },
+            "count": 1,
+            "item": "minecraft:potion"
           }
         ]
       },
@@ -1116,7 +1170,9 @@
             "id": "obj/take-the-seal",
             "item": "minecraft:paper",
             "item_name": "Hall Seal",
-            "requires_flags": [],
+            "requires_flags": [
+              "flag/mark-struck"
+            ],
             "stealth": false,
             "title": "Take the seal",
             "type": "collect"
@@ -1343,6 +1399,27 @@
                 ]
               },
               "item": "minecraft:firework_rocket",
+              "type": "give-item",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
+            },
+            {
+              "carrier": "all",
+              "contents": {
+                "potion": "minecraft:healing"
+              },
+              "count": 1,
+              "item": "minecraft:potion",
               "type": "give-item",
               "when": {
                 "forbids_flags": [
@@ -1658,6 +1735,10 @@
               "atmosphere": "atmosphere/frost-hall",
               "place": "area/hall",
               "type": "set-atmosphere"
+            },
+            {
+              "batch": "batch/light-the-floor-lamps",
+              "type": "apply-edits"
             }
           ],
           "obj/take-the-emeralds": [
@@ -4313,6 +4394,63 @@
         "id": "state/muster-mustered",
         "note": "How many of the muster stand on their own ground: the census the engine keeps of the wave's bodies in a box at its anchor (spec-0134 §1).",
         "scope": "party"
+      },
+      {
+        "counts": {
+          "of": {
+            "actor": "actor/hall-usher"
+          },
+          "region": {
+            "anchor": "anchor/usher",
+            "extent": [
+              2,
+              1,
+              2
+            ]
+          }
+        },
+        "id": "state/usher-at-the-door",
+        "initial": 0,
+        "note": "The census of one actor: the usher on its own ground (spec-0134 §1).",
+        "scope": "party"
+      },
+      {
+        "counts": {
+          "of": {
+            "npc": "npc/copyist"
+          },
+          "region": {
+            "anchor": "anchor/usher",
+            "extent": [
+              2,
+              1,
+              2
+            ]
+          }
+        },
+        "id": "state/copyist-at-the-desk",
+        "initial": 0,
+        "note": "The census of one NPC: the copyist at the usher's post (spec-0134 §1); an NPC walks only by `move-npc`, so nothing is proven statically.",
+        "scope": "party"
+      },
+      {
+        "counts": {
+          "of": {
+            "kind": "minecraft:villager"
+          },
+          "region": {
+            "anchor": "anchor/usher",
+            "extent": [
+              6,
+              2,
+              4
+            ]
+          }
+        },
+        "id": "state/villagers-about",
+        "initial": 0,
+        "note": "The census of a kind: every villager by the usher's post (spec-0134 §1); a kind names no seat, so nothing is proven statically.",
+        "scope": "party"
       }
     ],
     "timed_gates": [
@@ -5178,6 +5316,130 @@
         "on": {
           "on": "body-enters",
           "state": "state/muster-mustered"
+        }
+      },
+      {
+        "audience": "presser",
+        "effects": [
+          {
+            "style": "actionbar",
+            "text": "The page flinches and clutches his pass.",
+            "type": "narrate"
+          }
+        ],
+        "id": "trigger/cuff-the-page",
+        "on": {
+          "actor": "actor/hall-page",
+          "on": "strike-actor"
+        },
+        "once": false
+      },
+      {
+        "answers": {
+          "done": "The page has nothing left to hand over."
+        },
+        "audience": "presser",
+        "effects": [
+          {
+            "carrier": "one",
+            "from": {
+              "actor": "actor/hall-page",
+              "slot": "main_hand"
+            },
+            "type": "give-item"
+          }
+        ],
+        "id": "trigger/ask-the-page",
+        "on": {
+          "actor": "actor/hall-page",
+          "on": "use-actor"
+        },
+        "once": true
+      },
+      {
+        "at": "anchor/vantage",
+        "audience": "presser",
+        "effects": [
+          {
+            "style": "actionbar",
+            "text": "Through the glass, every case in the hall stands in one line.",
+            "type": "narrate"
+          },
+          {
+            "style": "chat",
+            "text": "The usher still keeps the door.",
+            "type": "narrate",
+            "when": {
+              "requires_state": [
+                {
+                  "op": "at-least",
+                  "state": "state/usher-at-the-door",
+                  "value": 1
+                }
+              ]
+            }
+          },
+          {
+            "style": "chat",
+            "text": "The copyist is bent over the desk by the door.",
+            "type": "narrate",
+            "when": {
+              "requires_state": [
+                {
+                  "op": "at-least",
+                  "state": "state/copyist-at-the-desk",
+                  "value": 1
+                }
+              ]
+            }
+          },
+          {
+            "style": "chat",
+            "text": "More than one villager waits by the usher's post.",
+            "type": "narrate",
+            "when": {
+              "requires_state": [
+                {
+                  "op": "at-least",
+                  "state": "state/villagers-about",
+                  "value": 2
+                }
+              ]
+            }
+          }
+        ],
+        "id": "trigger/survey-the-hall",
+        "on": {
+          "item": "minecraft:spyglass",
+          "on": "use-item",
+          "range": 3
+        },
+        "once": true
+      },
+      {
+        "answers": {
+          "done": "The mark has been struck; the bolt stands in it."
+        },
+        "at": "anchor/mark",
+        "audience": "presser",
+        "effects": [
+          {
+            "style": "actionbar",
+            "text": "A clean hit. The mark rings against the wall.",
+            "type": "narrate"
+          },
+          {
+            "flag": "flag/mark-struck",
+            "type": "set-flag"
+          }
+        ],
+        "id": "trigger/hit-the-mark",
+        "on": {
+          "on": "shot"
+        },
+        "once": true,
+        "prop": {
+          "block": "minecraft:target"
         }
       }
     ],

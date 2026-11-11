@@ -154,6 +154,18 @@ NOT_CONNECTION_EMITTERS = {
         "connection, and the copy lives in the test target's scratch directory, never admitted "
         "into the library."
     ),
+    "crates/delvec/tests/it/shot.rs": (
+        "test fixture for spec-0134's shot and raised item: an 11x6x11 room whose palette is three "
+        "plain ids — air, stone and glowstone — each judged against the pinned registry by "
+        "`pal_entry` before a byte is written, none of them a fence, wall, pane or multiface "
+        "block, handed to `emit::build` in memory and never admitted into the library."
+    ),
+    "crates/delvec/tests/it/water_route.rs": (
+        "test fixture for spec-0134's water route: a room with a moat whose palette is air, stone, "
+        "glowstone and the moat's one fill (water, or stone for the dry control), each judged against the pinned "
+        "registry by `pal_entry` before a byte is written, none of them a fence, wall, pane or "
+        "multiface block, handed to `emit::build` in memory and never admitted into the library."
+    ),
 }
 
 # Sites that serialise NBT and are NOT prefab emitters. Each is named

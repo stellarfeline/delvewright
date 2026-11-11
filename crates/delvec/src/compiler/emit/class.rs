@@ -79,9 +79,9 @@ pub(super) fn potion_contents_snbt(pc: &delvewright_dsl::PotionContents) -> Stri
     format!("{{{}}}", parts.join(","))
 }
 
-/// The component suffix a kit item's `give` carries: the display name and, for a
-/// potion-bearing item, its `potion_contents`. `""` for a plain unnamed item, so
-/// every campaign that declares neither is byte-identical.
+/// The component suffix a kit item's `give` carries: the stack's components
+/// (name, enchantments, potion contents, stars) and the flask's
+/// `use_remainder`. `""` for a plain unnamed item.
 ///
 /// One function for every place a kit item is handed out — the class kit and the
 /// bonfire replenish — because those two must produce the *same item*. When they
@@ -89,27 +89,18 @@ pub(super) fn potion_contents_snbt(pc: &delvewright_dsl::PotionContents) -> Stri
 /// subtly different one (the `clear` misses it) and the "per-rest budget"
 /// contract silently becomes a stockpile.
 pub(super) fn kit_item_components(item: &delvewright_dsl::KitItem) -> String {
-    let mut parts: Vec<String> = Vec::new();
-    if let Some(n) = &item.name {
-        parts.push(format!(
-            "custom_name={}",
-            tr_with(n, &[("italic", json!(false))])
-        ));
-    }
-    if let Some(pc) = &item.contents {
-        parts.push(format!("potion_contents={}", potion_contents_snbt(pc)));
-    }
-    if let Some((id, count)) = flask_remainder(item) {
-        parts.push(format!("use_remainder={}", flask_remainder_snbt(id, count)));
-    }
-    if let Some(fw) = &item.fireworks {
-        parts.push(super::firework::stack_fireworks_component(fw));
-    }
-    if parts.is_empty() {
-        String::new()
-    } else {
-        format!("[{}]", parts.join(","))
-    }
+    // The stack's own components, by the one stack writer, then the kit's: the
+    // flask's empty bottle.
+    let site = flask_remainder(item)
+        .map(|(id, count)| {
+            super::stack::Component::site(
+                "minecraft:use_remainder",
+                flask_remainder_snbt(id, count),
+            )
+        })
+        .into_iter()
+        .collect();
+    super::stack::command_suffix(&item.stack, site)
 }
 
 /// The **item predicate** that identifies this kit item for `clear` — the item id

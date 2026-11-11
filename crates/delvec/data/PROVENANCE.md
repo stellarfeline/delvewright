@@ -697,6 +697,8 @@ not third-party reconstructions.
   answer. Feeds `DW1034` (a body subject sent and drawn) and the assembly
   `view_range` derivation.
 
+- **`item-use-duration-1.21.11.json`** (in `crates/dsl/data/`) — every item the pinned game holds in use (74 of 1505) with its use duration in ticks, from `Item#getUseDuration(ItemStack, LivingEntity)` on the item's default stack, by `tools/maintenance/extract-item-use-duration.py` from the pinned server jar through the official 1.21.11 server mappings (same verification as `entity-bodies-1.21.11.json`). Two methods: (1) a dumper boots the registries and asks every item; (2) the same jar's data generator report (`reports/items.json`) — all 43 items carrying `minecraft:consumable` take `consume_seconds × 20` ticks at runtime. The goat horn reads its duration through its holder's registries, so it is resolved from its default instrument (`ponder_goat_horn`) and the jar's `data/minecraft/instrument/ponder_goat_horn.json` (`use_duration` 7.0 s, 140 ticks). Lives in the DSL crate because `DW1092` (spec-0134 §3) is a validation rule. sha256 `6580c367de73be2fb7c6a0f83ffb80e7f9bc2f973301dced8f714d16ee33288e`.
+
 ### The item-holder table, read from the jar and written in source
 
 `delvewright_dsl::holders` (spec-0111) holds the item-holder class's entity
