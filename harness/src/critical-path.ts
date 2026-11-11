@@ -599,6 +599,9 @@ export interface RideStep extends PresentationMarkers, Pursued {
   readonly rate: number;
   /** Where the bot stands after leaving. */
   readonly leave: Vec3Tuple;
+  /** The cells the vehicle's body stands in at its mark: the walk to `board`
+   * goes round them — a body that walks into a vehicle shoves it. */
+  readonly body: readonly Vec3Tuple[];
   /** The item a rider holds to steer, where the kind needs one. */
   readonly steeringItem?: string;
 }
@@ -1608,7 +1611,7 @@ function parseStepBody(value: unknown, pointer: string): Step {
     case "ride": {
       rejectUnknownKeys(
         obj,
-        ["action", "vehicle", "kind", "board", "pos", "medium", "rate", "leave", "steering_item", "keep_out", "sneak", "cutscene_seconds", "en_route_cutscene_seconds"],
+        ["action", "vehicle", "kind", "board", "pos", "medium", "rate", "leave", "body", "steering_item", "keep_out", "sneak", "cutscene_seconds", "en_route_cutscene_seconds"],
         pointer,
       );
       const vehicle = requireString(obj, "vehicle", pointer);
@@ -1629,6 +1632,14 @@ function parseStepBody(value: unknown, pointer: string): Step {
         fail(`${pointer}/medium`, `must be an array of at least two cells, got ${describe(raw)}`);
       }
       const medium = (raw as unknown[]).map((_, i) => requireVec3(raw as unknown as Record<string, unknown>, String(i), `${pointer}/medium`));
+      const rawBody = obj["body"];
+      if (!Array.isArray(rawBody) || rawBody.length < 1) {
+        fail(`${pointer}/body`, `must be an array of at least one cell, got ${describe(rawBody)}`);
+      }
+      const body = (rawBody as unknown[]).map((_, i) => requireVec3(rawBody as unknown as Record<string, unknown>, String(i), `${pointer}/body`));
+      if (body.some((c) => c.every((v, i) => v === board[i]))) {
+        fail(`${pointer}/body`, `holds the boarding cell ${JSON.stringify(board)}: a body cannot be boarded from inside itself`);
+      }
       const rate = obj["rate"];
       if (typeof rate !== "number" || !Number.isFinite(rate) || rate <= 0) {
         fail(`${pointer}/rate`, `must be a positive number of blocks a second, got ${describe(rate)}`);
@@ -1646,6 +1657,7 @@ function parseStepBody(value: unknown, pointer: string): Step {
         medium,
         rate: rate as number,
         leave: requireVec3(obj, "leave", pointer),
+        body,
         ...(item === undefined ? {} : { steeringItem: item as string }),
         ...presentationFields(obj, pointer),
       };

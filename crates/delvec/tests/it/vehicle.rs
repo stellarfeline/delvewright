@@ -43,6 +43,8 @@ struct Bay {
     /// A platform two blocks over the east floor (`x = 14..=18`, `z = 1..=2`)
     /// with a rail along `z = 1`: no walk climbs it, a body drops from it.
     ledge: bool,
+    /// The ledge's rail has nothing behind its first cell: an open end.
+    ledge_open: bool,
     /// The ledge runs on to `z = 5`, so a goal on it stands clear of the rail.
     ledge_deep: bool,
     /// The vehicle the leg to the exit is declared ridden on.
@@ -112,6 +114,11 @@ fn cells(bay: Bay) -> Vec<([i32; 3], &'static str)> {
                 [x, 6, 1],
                 "minecraft:rail[shape=east_west,waterlogged=false]",
             );
+        }
+        if !bay.ledge_open {
+            for y in 4..=6 {
+                by.insert([13, y, 1], "minecraft:stone");
+            }
         }
     }
     if bay.nook {
@@ -1019,6 +1026,13 @@ fn a_ride_keeps_out_of_its_objectives_volume_by_the_walks_rule() {
             .as_array()
             .expect("the ride step keeps out");
         assert!(!keep.is_empty(), "{tag}: the leg's own objective is armed");
+        // The walk to the vehicle goes round its body: the step names the
+        // cells, the mark among them and the boarding cell not.
+        let body: Vec<[i64; 3]> = r[0]["body"].as_array().unwrap().iter().map(cell).collect();
+        let mark = cell(&r[0]["medium"][0]);
+        assert!(body.contains(&mark), "{tag}: {}", r[0]);
+        assert!(body.contains(&[mark[0], mark[1] + 1, mark[2]]), "{tag}");
+        assert!(!body.contains(&cell(&r[0]["board"])), "{tag}");
         let mut cells: Vec<[i64; 3]> = r[0]["medium"]
             .as_array()
             .unwrap()
@@ -1085,6 +1099,24 @@ fn a_ride_after_its_vehicles_despawn_is_refused() {
     let (dir, lib) = write("ride-after-reseat", bay, cart(), &back);
     let out = try_build(&dir, &lib).expect("seated again, the ride stands");
     assert_eq!(rides(&out).len(), 1);
+}
+
+/// Criterion 3: a cart at the open end of its line is `DW1097` — a body that
+/// walks into it rolls it off its rail, where the boarding push dies.
+#[test]
+fn a_cart_at_the_open_end_of_its_line_is_refused() {
+    let (code, msg) = refused(
+        "cart-open-end",
+        Bay {
+            bridge: true,
+            ledge: true,
+            ledge_open: true,
+            ..Bay::default()
+        },
+        ledge_cart(),
+    );
+    assert_eq!(code, "DW1097", "{msg}");
+    assert!(msg.contains("rolls it off its rail"), "{msg}");
 }
 
 /// A `ride` that names no declared vehicle is refused at validation.

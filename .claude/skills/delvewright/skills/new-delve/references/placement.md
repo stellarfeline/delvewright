@@ -75,7 +75,7 @@ Three documents, in this order, each the input the next one needs. **The order i
 
 `<place>` and `<edge>` are the part of the id after the `/` — `node/near-hall` becomes `anchor/node-near-hall`. A `gating` names a flag or a quest — one that names neither is passable from world load and is refused (`DW0818`) — and its quest layer opens the way with an `open-gate` at the beat the gating names, a `shortcut`, or a `timed-gate`, naming its own `anchor/seam-<edge>`; a gated way nothing opens is refused as a wall carrying a claim about order; a sealed door a player can push on owes an answer (`DW0429`) — a `use` trigger anchored on the gate.
 
-**A vehicle's place is a place with a mark in its medium** (spec-0135): a slip of water at a jetty for a boat, wide enough for the hull on every side; the first cell of a level rail line for a cart, with a solid stop past the line's far end; a paddock floor for a mount. Put a floor beside each, where a body stands to climb on, and keep its `bounds` to the water, the line or the paddock it belongs to.
+**A vehicle's place is a place with a mark in its medium** (spec-0135): a slip of water at a jetty for a boat, wide enough for the hull on every side; the first cell of a level rail line for a cart, with a solid block behind it and a solid stop past the line's far end; a paddock floor for a mount. Put a floor beside each, where a body stands to climb on, and keep its `bounds` to the water, the line or the paddock it belongs to.
 
 ## The numbers are provisional
 

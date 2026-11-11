@@ -87,6 +87,18 @@ impl VehiclePlan {
         entity_footprint(&self.entity)
     }
 
+    /// **The cells its body stands in at its mark**: the mark's own column,
+    /// two cells high — what a walk to it goes round, never through. A body
+    /// that walks into a vehicle shoves it (the record §11): a cart rolls
+    /// along its rail, a boat drifts, a mount is pushed off its mark. The
+    /// column and not the footprint: a boarding cell is beside the mark, and a
+    /// wide body's footprint would hold the very cell it is boarded from.
+    pub fn body_cells(&self) -> BTreeSet<[i32; 3]> {
+        (0..2)
+            .map(|dy| [self.seat[0], self.seat[1] + dy, self.seat[2]])
+            .collect()
+    }
+
     /// The rate a ride on it is driven and waited for at, in blocks a second
     /// (spec-0135 §4), each a rate the record measured the pinned server at:
     /// a boat at 5 (§5 took 2, 5, 10 and 20 whole), a cart at the slowest
@@ -193,6 +205,17 @@ impl World {
                         .exits
                         .iter()
                         .any(|(d, _)| *d == v.facing)
+                    // Behind it the rail goes on or a block stands: a body
+                    // that walks into a cart at the open end of its line
+                    // rolls it off the rail, where the boarding push dies on
+                    // the floor (the record §11).
+                    && {
+                        let back = [v.seat[0] - v.facing[0], v.seat[1], v.seat[2] - v.facing[1]];
+                        solid(back)
+                            || crate::compiler::rail::rail_neighbours(&self.rails, v.seat)
+                                .iter()
+                                .any(|n| n[0] == back[0] && n[2] == back[2])
+                    }
             }
             VehicleMedium::Ground => self.mount_stands(v.seat, &fp),
         }
@@ -444,9 +467,11 @@ pub fn judge_vehicles(
                 let medium = match v.medium {
                     VehicleMedium::Water => "water with open air above, across the boat's width",
                     VehicleMedium::Rails => {
-                        "a level rail a cart rests on, running the way the cart faces (a powered \
-                         rail that is powered, with a solid block at one end, launches a cart \
-                         nobody sits in; a slope rolls it away; `facing` is the way the engine \
+                        "a level rail a cart rests on, running the way the cart faces, with the \
+                         rail going on or a solid block standing behind it (a powered rail that \
+                         is powered, with a solid block at one end, launches a cart nobody sits \
+                         in; a slope rolls it away; at the open end of a line a body that walks \
+                         into the cart rolls it off its rail; `facing` is the way the engine \
                          pushes it when a body boards)"
                     }
                     VehicleMedium::Ground => {
@@ -638,7 +663,9 @@ pub fn ride_of(
             continue;
         }
         for l in world.leaving_cells_of(v, m) {
-            if kept(l) {
+            // Nor on the goal's own cell: what the party came for stands
+            // there — a body it talks to, a thing it takes.
+            if kept(l) || l == goal {
                 continue;
             }
             let e = best.entry(l).or_insert((len, m));

@@ -137,6 +137,9 @@ export class MineflayerExecutor implements StepExecutor {
   /** Set by a boat's ride step for its walk off the hull: that one walk
    * admits liquid (spec-0135 §6). */
   landingSwims = false;
+  /** Set by a ride step for its walk to the boarding cell: the cells the
+   * vehicle's body stands in, walled for that one walk (spec-0135 §6). */
+  rideBody: readonly Vec3Tuple[] = [];
   /** The sculk family's ear (spec-0100 §4.7): sensor clicks, shrieks, darkness
    * on the bot and warden spawns, from connect. */
   readonly sculk = new SculkEar();

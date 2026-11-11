@@ -131,6 +131,16 @@
         "node": "node/near-hall",
         "objective": "obj/lift-the-lid",
         "quest": "quest/the-reliquary"
+      },
+      {
+        "node": "node/long-hall",
+        "objective": "obj/catch-the-hen",
+        "quest": "quest/long-hall"
+      },
+      {
+        "node": "node/long-hall",
+        "objective": "obj/ask-the-groom",
+        "quest": "quest/long-hall"
       }
     ],
     "critical_path": [

@@ -596,6 +596,15 @@ export const methods = {
           `${this.stepKeepOut.map((k) => `${k.objective} [${k.lo.join(", ")}]..[${k.hi.join(", ")}]`).join("; ")}\n`,
       );
     }
+    // spec-0135 §6: the walk to a vehicle goes round its body, as the proof's
+    // did — a body that walks into a vehicle shoves it off its mark.
+    if (this.rideBody.length > 0) {
+      const cells = this.rideBody;
+      movements.exclusionAreasStep.push((block): number =>
+        cells.reduce((cost, c) => Math.max(cost, spanStepCost(block, { lo: c, hi: c })), 0),
+      );
+      process.stderr.write(`[ride] ${label}: ${cells.length} cell(s) of the vehicle's body walled for this walk\n`);
+    }
     bot.pathfinder.setMovements(movements);
     // Long multi-level layouts (e.g. a 5-storey keep, ~90 blocks + 4 staircases)
     // sit at the edge of the default A* budget and fail nondeterministically

@@ -773,6 +773,10 @@ fn ride_leg(
         by_loop: false,
         ..*src
     };
+    // The walk to the boarding cell goes round the vehicle's body, never
+    // through it: the world model holds no entity, so the cells it stands in
+    // are sealed for that walk (and named on the step, for the bot's).
+    let round_the_body = world.with_sealed(&carries.vehicles[vi].body_cells());
     let walks = |a: [i32; 3], b: [i32; 3]| {
         let (pa, pb) = if a == from.pos {
             (*from, at(b, end))
@@ -781,7 +785,12 @@ fn ride_leg(
         } else {
             (at(a, end), at(b, end))
         };
-        judge_leg(world, &[pa, pb], region_events, ancestor).is_ok()
+        let over = if a == from.pos {
+            &round_the_body
+        } else {
+            world
+        };
+        judge_leg(over, &[pa, pb], region_events, ancestor).is_ok()
     };
     let ride = crate::compiler::nav::vehicle::ride_of(
         leg,

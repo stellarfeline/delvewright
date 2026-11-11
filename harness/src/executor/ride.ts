@@ -196,7 +196,12 @@ export const methods = {
       record({ reported: 0, serverSeen: null, seat: null, left: false, passed: false, why, ...partial });
       throw new Error(`ride ${step.vehicle} (${step.kind}): ${why}`);
     };
-    await this.walkTo(step.board, 0, `the boarding of ${step.vehicle}`, step.sneak);
+    this.rideBody = step.body;
+    try {
+      await this.walkTo(step.board, 0, `the boarding of ${step.vehicle}`, step.sneak);
+    } finally {
+      this.rideBody = [];
+    }
     if (step.steeringItem !== undefined) {
       const want = step.steeringItem.replace(/^minecraft:/, "");
       const item = bot.inventory.items().find((i) => i.name === want);
@@ -213,30 +218,8 @@ export const methods = {
         Math.abs(e.position.y - centre[1]) <= VEHICLE_NEAR,
     );
     if (body === null) failRide(`no body stands within ${VEHICLE_NEAR} blocks of the seat ${JSON.stringify(seat)}`);
-    // DIAGNOSTIC (one run): the vehicle's place and motion around the click.
-    const diag = async (when: string): Promise<void> => {
-      const from = this.chatMark();
-      bot.chat(
-        `/tellraw @s ${JSON.stringify([
-          { text: `[dw:diag ${when} pos=` },
-          { nbt: "Pos", entity: `@e[tag=${tag},limit=1]` },
-          { text: " motion=" },
-          { nbt: "Motion", entity: `@e[tag=${tag},limit=1]` },
-          { text: " ground=" },
-          { nbt: "OnGround", entity: `@e[tag=${tag},limit=1]` },
-          { text: "]" },
-        ])}`,
-      );
-      await delay(250);
-      const line = this.chatSince(from).lines.find((l) => l.includes("[dw:diag"));
-      process.stderr.write(`[ride-diag] ${step.vehicle} ${line ?? `${when}: no answer`}\n`);
-    };
     await bot.lookAt(body!.position.offset(0, (body!.height ?? 0.5) / 2, 0), true);
     bot.mount(body!);
-    if (step.kind === "minecart") {
-      await diag("after-1");
-      await diag("after-2");
-    }
     const mountBy = Date.now() + MOUNT_GRACE_MS;
     let reading = await this.readRide(tag);
     while (!reading.riding && Date.now() < mountBy) {

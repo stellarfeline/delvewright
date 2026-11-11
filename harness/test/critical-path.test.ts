@@ -1387,6 +1387,7 @@ function boatRide(): Record<string, unknown> {
     board: [5, 68, 3],
     pos: [5, 68, 3],
     medium: [[8, 67, 3], [9, 67, 3], [10, 67, 3]],
+    body: [[8, 67, 3], [8, 68, 3]],
     rate: 5,
     leave: [13, 68, 3],
   };
@@ -1408,8 +1409,13 @@ test("a ride step parses with its fields per kind", () => {
   assert.equal(cart.action === "ride" && cart.kind, "minecart");
 });
 
-test("a ride step is refused without board, medium or leave, or with a rate at or under zero", () => {
-  for (const key of ["board", "medium", "leave"]) {
+test("a ride step is refused without board, medium, leave or body, or with a rate at or under zero", () => {
+  // A body cannot be boarded from inside itself.
+  assert.throws(
+    () => parseCriticalPath(withRide({ ...boatRide(), body: [boatRide()["board"]] })),
+    CriticalPathParseError,
+  );
+  for (const key of ["board", "medium", "leave", "body"]) {
     const r = boatRide();
     delete r[key];
     assert.throws(() => parseCriticalPath(withRide(r)), CriticalPathParseError, key);

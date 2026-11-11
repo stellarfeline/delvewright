@@ -9,5 +9,5 @@
     }
   ],
   "units": [],
-  "why": "One edit: the leg to `obj/ride-clover` declared ridden on a vehicle the campaign never places. Refused at the document as a dangling reference. It declares no unit."
+  "why": "One edit: the leg to `obj/catch-the-hen` declared ridden on a vehicle the campaign never places. Refused at the document as a dangling reference. It declares no unit."
 }

@@ -71,6 +71,7 @@ const step: RideStep = {
   board: [6, 67, 3],
   pos: [6, 67, 3],
   medium: [[8, 67, 3], [9, 67, 3], [10, 67, 3]],
+    body: [[8, 67, 3], [8, 68, 3]],
   rate: 10,
   leave: [11, 67, 4],
   steeringItem: "minecraft:carrot_on_a_stick",

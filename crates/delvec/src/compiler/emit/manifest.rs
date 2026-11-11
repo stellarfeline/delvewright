@@ -435,11 +435,11 @@ pub(super) fn critical_path_json(
                 }),
                 // spec-0135 §6: a ride — walk to `board`, mount, be carried
                 // along `medium` at `rate`, leave at `leave`.
-                Step::Ride { vehicle_id, kind, pos, medium, rate, transport, steering_item } => {
+                Step::Ride { vehicle_id, kind, pos, medium, rate, transport, steering_item, body } => {
                     let mut v = json!({
                         "action": "ride", "vehicle": vehicle_id, "kind": kind,
                         "board": pos, "pos": pos, "medium": medium, "rate": rate,
-                        "leave": transport
+                        "leave": transport, "body": body
                     });
                     if let (Some(item), Some(obj)) = (steering_item, v.as_object_mut()) {
                         obj.insert("steering_item".to_string(), json!(item));

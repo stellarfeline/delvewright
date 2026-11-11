@@ -232,6 +232,9 @@ pub enum Step {
         transport: [i32; 3],
         /// The item a rider holds to steer, where the kind needs one.
         steering_item: Option<String>,
+        /// The cells the vehicle's body stands in at its mark: the walk to
+        /// the boarding cell goes round them.
+        body: Vec<[i32; 3]>,
     },
     /// Assert a scoreboard objective value.
     AssertComplete {
@@ -1819,6 +1822,7 @@ pub(super) fn build_critical_path(
                     rate: v.rate(),
                     transport: r.leave,
                     steering_item: v.steering_item.clone(),
+                    body: v.body_cells().into_iter().collect(),
                 });
                 new_transport.push(None);
                 new_sneak.push(false);

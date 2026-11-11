@@ -4919,7 +4919,7 @@ const LONG_HALL_ROOM_DEPTH: i32 = 36;
 const LONG_HALL_SIZE: [i32; 3] = [11, 7, LONG_HALL_END_Z + LONG_HALL_ROOM_DEPTH + 1];
 
 /// The yard's rail line (spec-0135 §7): twelve cells of level plain rail down
-/// the yard's west lane, and a stone stop past its far end. The cart rests on
+/// the yard's west lane, a stone stop past its far end and one behind its first. The cart rests on
 /// its first cell — a launcher would run an empty cart away — and is pushed
 /// when a body boards.
 const LONG_HALL_RAIL_X: i32 = 2;
@@ -5034,11 +5034,46 @@ const LONG_HALL_ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/long-hall-far-bank",
-        pos: [7, 1, LONG_HALL_BASIN_Z.1 + 4],
+        pos: [9, 1, LONG_HALL_BASIN_Z.1 + 3],
         facing: None,
         trigger_block: None,
-        note: "the floor past the basin's far rim: where a rider who rowed the basin steps \
-               down (spec-0135)",
+        note: "the east wall's foot past the basin's far rim: where the sluice lever a rider \
+               rows to is set (spec-0135)",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-hall-stable",
+        pos: [7, 1, LONG_HALL_END_Z + 26],
+        facing: None,
+        trigger_block: None,
+        note: "the east yard's floor: where the mare is seated, the stable round it her \
+               bounds (spec-0135)",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-hall-groom",
+        pos: [6, 1, LONG_HALL_END_Z + 31],
+        facing: Some("north"),
+        trigger_block: None,
+        note: "the east yard's far end: where the groom stands, a ride on the mare away \
+               (spec-0135)",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-hall-jenny",
+        pos: [2, 1, LONG_HALL_END_Z + 3],
+        facing: None,
+        trigger_block: None,
+        note: "the west lane by the door: where the donkey is seated (spec-0135)",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-hall-hen-run",
+        pos: [2, 1, LONG_HALL_END_Z + 10],
+        facing: None,
+        trigger_block: None,
+        note: "the west lane's middle: where the yard's hen is loosed, a ride on the donkey \
+               away (spec-0135)",
         role: None,
     },
     Anchor {
@@ -5124,6 +5159,13 @@ fn build_long_hall() -> Structure {
     fill(
         [rx, 1, r1 + 1],
         [rx, 1, r1 + 1],
+        "minecraft:polished_deepslate",
+    );
+    // And one behind its first: a body that walks into the resting cart
+    // cannot roll it off the open end of its line.
+    fill(
+        [rx, 1, r0 - 1],
+        [rx, 1, r0 - 1],
         "minecraft:polished_deepslate",
     );
     // What the end room holds: a chest against its far wall, on the hall's
