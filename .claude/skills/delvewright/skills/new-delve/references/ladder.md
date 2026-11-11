@@ -56,7 +56,7 @@ The check must exit 0. A red names every cell the server holds differently from 
 DELVE_OUTPUT="$DELVE_OUTPUT" EULA=TRUE "$DELVEWRIGHT_ENGINE/validation/branch-runs.sh" --project dw-<campaign>-r1
 ```
 
-It writes `$DELVEWRIGHT_ENGINE/validation/run-out/<id>/branch-runs.json`: per branch, ran or skipped-with-reason, and the result. `DELVEWRIGHT_BRANCHES=<ids>` narrows it for local iteration, and **a narrowed run is not a validated campaign** — the report says which branches it skipped.
+It writes `$DELVEWRIGHT_ENGINE/validation/run-out/<id>/branch-runs.json`: per branch, ran or skipped-with-reason, the result, and the build each run walked. `DELVEWRIGHT_BRANCHES=<ids>` narrows it for local iteration, and **a narrowed run is not a validated campaign** — the report says which branches it skipped, and the staging gate (`--branch-runs`) refuses a build until every planned world has passed on it.
 
 ## On a red
 

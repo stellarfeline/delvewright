@@ -38,7 +38,7 @@ case " $* " in
   *" up "*)
     out="validation/${DW_BOT_OUT#./}"
     mkdir -p "$out"
-    printf '{"branches":{"tier":"all","outcomes":[{"branch":"%s","ran":true,"passed":true}]}}\n' \
+    printf '{"build":{"manifest_sha256":"feed"},"branches":{"tier":"all","outcomes":[{"branch":"%s","ran":true,"passed":true}]}}\n' \
       "$DELVEWRIGHT_BRANCH" > "$out/run-report.json"
     ;;
 esac
@@ -108,3 +108,6 @@ def test_branch_runs_under_the_bots_project_keeps_its_run_report(tmp_path):
     assert [(b["branch"], b["ran"], b["passed"]) for b in merged["branches"]] == [
         ("world/a", True, True)
     ]
+    # The merged row names the build its run walked, as the bot stamped it:
+    # what the staging gate binds the row to (`--branch-runs`).
+    assert merged["branches"][0]["manifest_sha256"] == "feed"

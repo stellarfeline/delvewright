@@ -267,6 +267,10 @@ for p in report_paths:
         # lists it as unrun, and those rows must not overwrite the real result —
         # nor an infra-failure row, whose absence of a report is the finding.
         current = rows[row["branch"]]
+        if row["ran"]:
+            # The build the run walked, as the bot stamped it: what the staging
+            # gate binds this row to (`--branch-runs`).
+            row = dict(row, manifest_sha256=(report.get("build") or {}).get("manifest_sha256"))
         if row["ran"] or (not current["ran"] and not current.get("infra_failed")):
             rows[row["branch"]] = row
 

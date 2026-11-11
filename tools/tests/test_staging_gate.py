@@ -3027,6 +3027,89 @@ def test_the_token_records_what_the_proofs_established(gate, tmp_path):
     assert len(token["proven"]["run_report_sha256"]) == 64
 
 
+def _branch_subject(tmp_path, worlds=("world/0", "world/1")):
+    """A proof subject whose build plans story worlds, and a passing
+    `branch-runs.json` for it, written beside the tree as `branch-runs.sh` merges it."""
+    import hashlib as _h
+
+    tree, base = _proof_subject(tmp_path)
+    (tree / "validation" / "branch-plan.json").write_text(json.dumps({
+        "version": 1, "campaign_id": "c", "branches_unrealized": [],
+        "branches": [{"id": w, "chronicle": None, "endings": []} for w in worlds],
+    }))
+    sha = _h.sha256((tree / "manifest.json").read_bytes()).hexdigest()
+    record = {"version": 1, "campaign_id": "c", "tier": "all", "branches": [
+        {"branch": w, "ran": True, "passed": True, "reason": None, "manifest_sha256": sha}
+        for w in worlds
+    ]}
+    return tree, base, record
+
+
+def _write_branch_runs(tmp_path, record):
+    path = tmp_path / "branch-runs.json"
+    path.write_text(json.dumps(record))
+    return ["--branch-runs", str(path)]
+
+
+def test_a_build_that_plans_story_worlds_is_admitted_only_with_every_world_passed(gate, tmp_path):
+    """The critical path walks one world. A build whose plan names several is
+    admitted only on a record of every one walked to a pass on THIS build."""
+    tree, base, record = _branch_subject(tmp_path)
+    proc = _run_gate(base + proofs(tree))
+    assert proc.returncode == 1, proc.stderr
+    assert "no branch-runs record was presented (--branch-runs <path>)" in proc.stderr, proc.stderr
+    assert "plans 2 story world(s) (world/0, world/1)" in proc.stderr
+    assert not (tree / "staging-admission.json").exists()
+
+    proc = _run_gate(base + proofs(tree) + _write_branch_runs(tmp_path, record))
+    assert proc.returncode == 0, proc.stderr
+    token = json.loads((tree / "staging-admission.json").read_text())
+    assert token["proven"]["branch_runs"]["passed"] == 2
+    assert token["proven"]["branch_runs"]["planned"] == 2
+
+
+@pytest.mark.parametrize(
+    "perturb, said",
+    [
+        (lambda r: r["branches"][0].update(passed=False), "branch runs: `world/0` is RED"),
+        (lambda r: r["branches"][1].update(ran=False, passed=False, reason="not selected by this tier"),
+         "branch runs: `world/1` did not run (not selected by this tier)"),
+        (lambda r: r["branches"].pop(), "branch runs: `world/1` has no row in"),
+        (lambda r: r["branches"][0].update(manifest_sha256="0" * 64), "branch runs: `world/0` ran on another build"),
+        (lambda r: r["branches"][0].pop("manifest_sha256"), "branch runs: `world/0` ran on another build (manifest none"),
+        (lambda r: r.update(campaign_id="other"), "is a run of `other`, this build is `c`"),
+    ],
+)
+def test_a_red_or_foreign_branch_run_refuses(gate, tmp_path, perturb, said):
+    tree, base, record = _branch_subject(tmp_path)
+    perturb(record)
+    proc = _run_gate(base + proofs(tree) + _write_branch_runs(tmp_path, record))
+    assert proc.returncode == 1, proc.stderr
+    assert said in proc.stderr, proc.stderr
+    assert not (tree / "staging-admission.json").exists()
+
+
+def test_an_unrealized_branch_refuses_whatever_the_record_says(gate, tmp_path):
+    tree, base, record = _branch_subject(tmp_path)
+    plan = json.loads((tree / "validation" / "branch-plan.json").read_text())
+    plan["branches_unrealized"] = ["branch/lost"]
+    (tree / "validation" / "branch-plan.json").write_text(json.dumps(plan))
+    proc = _run_gate(base + proofs(tree) + _write_branch_runs(tmp_path, record))
+    assert proc.returncode == 1, proc.stderr
+    assert "`branch/lost` is declared and no story world realizes it" in proc.stderr
+
+
+def test_a_build_with_no_story_worlds_owes_no_branch_runs(gate, tmp_path):
+    tree, base = _proof_subject(tmp_path)
+    (tree / "validation" / "branch-plan.json").write_text(json.dumps({
+        "version": 1, "campaign_id": "c", "branches": [], "branches_unrealized": [],
+    }))
+    proc = _run_gate(base + proofs(tree))
+    assert proc.returncode == 0, proc.stderr
+    token = json.loads((tree / "staging-admission.json").read_text())
+    assert "branch_runs" not in token["proven"]
+
+
 def test_coverage_only_judges_the_ledger_and_mints_nothing(gate, tmp_path):
     tree, base = _proof_subject(tmp_path)
     proc = _run_gate(base + ["--coverage-only"])
