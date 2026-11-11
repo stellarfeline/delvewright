@@ -39,10 +39,6 @@
             "name": "Curator's Draught"
           },
           {
-            "count": 1,
-            "item": "minecraft:carrot_on_a_stick"
-          },
-          {
             "count": 2,
             "fireworks": {
               "explosions": [

@@ -87,16 +87,17 @@ impl VehiclePlan {
         entity_footprint(&self.entity)
     }
 
-    /// The rate a ride on it is priced and driven at, in blocks a second
-    /// (spec-0135 §4): a boat at 5 (the record §5 took 2, 5, 10 and 20 whole),
-    /// a cart at the slowest run measured, a mount at its `movement_speed` scaled as a
-    /// ridden mob walks (`movement_speed` × 43.17, vanilla's blocks a second
-    /// per unit of speed).
-    pub fn rate(&self, movement_speed: Option<f64>) -> f64 {
+    /// The rate a ride on it is driven and waited for at, in blocks a second
+    /// (spec-0135 §4), each a rate the record measured the pinned server at:
+    /// a boat at 5 (§5 took 2, 5, 10 and 20 whole), a cart at the slowest
+    /// whole run measured (§11), a mount at 4 — the 0.2 blocks a tick §4 and
+    /// §11 saw taken whole, at the mount's own speed and at none, because a
+    /// reported move does not read `movement_speed`.
+    pub fn rate(&self) -> f64 {
         match self.kind {
             VehicleKind::Boat => 5.0,
             VehicleKind::Minecart => crate::compiler::rail::CART_RATE,
-            VehicleKind::Mount => (movement_speed.unwrap_or(0.25) * 43.17).max(1.0),
+            VehicleKind::Mount => 4.0,
         }
     }
 }
@@ -268,7 +269,7 @@ impl World {
 
     /// **The boarding cells** (spec-0135 §4): standable cells from which a
     /// body's eye reaches the vehicle's hitbox at its seat within the
-    /// interaction reach.
+    /// interaction reach, nearest the seat first.
     pub fn boarding_cells(&self, v: &VehiclePlan) -> Vec<[i32; 3]> {
         let (w, h) = crate::compiler::nav::entity_dims(&v.entity);
         let r = 4;
@@ -286,6 +287,16 @@ impl World {
                 }
             }
         }
+        // Nearest the seat first: a ride boards from the closest cell the
+        // party walks to.
+        out.sort_by_key(|c| {
+            (
+                (0..3)
+                    .map(|i| i64::from(c[i] - v.seat[i]).pow(2))
+                    .sum::<i64>(),
+                *c,
+            )
+        });
         out
     }
 

@@ -557,6 +557,14 @@ export const methods = {
     const bot = this.requireBot();
     const movements = new Movements(bot);
     const restoreControls = configureLeg(bot, movements, sneak);
+    // spec-0135 §6: a rider who leaves a boat is on its hull over open water
+    // (the vanilla record §5), and the walk to the leaving cell crosses the
+    // water between hull and shore.
+    const landing = this.landingSwims;
+    if (landing) {
+      swimFor(movements, true);
+      process.stderr.write(`[swim] ${label}: a boat's rider steps off into its water; liquid admitted\n`);
+    }
     // No cave-specific Movements override is needed — the compiler-proven
     // waypoints keep the bot on clear standable ground (the DW0311 A* treats water
     // and fences as impassable, so the route never crosses them, and gravity blocks
@@ -641,7 +649,7 @@ export const methods = {
         );
         legWaypoints = match.waypoints;
         // spec-0134 §10: liquid is admitted on a leg the compiler proved swims.
-        if (swimFor(movements, match.matched && match.water.length > 0)) {
+        if (swimFor(movements, landing || (match.matched && match.water.length > 0)) && !landing) {
           process.stderr.write(
             `[swim] ${label}: the proven leg swims ${match.water.length} water cell(s); liquid admitted\n`,
           );

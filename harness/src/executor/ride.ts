@@ -237,7 +237,12 @@ export const methods = {
     if (reading.riding) {
       failRide("the sneak input did not unseat the bot", { reported, serverSeen, seat: arrived });
     }
-    await this.walkTo(step.leave, 0, `the shore after ${step.vehicle}`, step.sneak);
+    this.landingSwims = step.kind === "boat";
+    try {
+      await this.walkTo(step.leave, 0, `the shore after ${step.vehicle}`, step.sneak);
+    } finally {
+      this.landingSwims = false;
+    }
     record({ reported, serverSeen, seat: arrived, left: true, passed: true });
     process.stderr.write(
       `[ride] ${step.vehicle} (${step.kind}): ${step.medium.length} cell(s), reported ` +

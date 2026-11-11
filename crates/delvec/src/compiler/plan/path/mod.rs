@@ -1811,16 +1811,12 @@ pub(super) fn build_critical_path(
             if let Some(r) = takes.rides.get(&k)
                 && let Some(v) = vehicles.get(r.vehicle)
             {
-                let movement = campaign.quests.content.vehicles[v.index]
-                    .attributes
-                    .as_ref()
-                    .and_then(|a| a.movement_speed);
                 new_steps.push(Step::Ride {
                     vehicle_id: v.id.clone(),
                     kind: v.kind.token(),
                     pos: r.board,
                     medium: r.medium.clone(),
-                    rate: v.rate(movement),
+                    rate: v.rate(),
                     transport: r.leave,
                     steering_item: v.steering_item.clone(),
                 });

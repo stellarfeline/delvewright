@@ -134,6 +134,9 @@ export class MineflayerExecutor implements StepExecutor {
   readonly expireWaits: { objective: string; waitedMs: number; passed: boolean }[] = [];
   /** Every ride step's verdicts, for the run report (spec-0135 §6). */
   readonly rides: RideRecord[] = [];
+  /** Set by a boat's ride step for its walk off the hull: that one walk
+   * admits liquid (spec-0135 §6). */
+  landingSwims = false;
   /** The sculk family's ear (spec-0100 §4.7): sensor clicks, shrieks, darkness
    * on the bot and warden spawns, from connect. */
   readonly sculk = new SculkEar();

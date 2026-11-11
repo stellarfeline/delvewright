@@ -3877,6 +3877,48 @@
             "radius": 2,
             "title": "Reach the light",
             "type": "reach-anchor"
+          },
+          {
+            "after": [
+              "obj/reach-the-hall-end"
+            ],
+            "anchor": "anchor/long-hall-winning-post",
+            "happening": {
+              "text": "the party rides the pig to the yard's mouth",
+              "verb": "arrives"
+            },
+            "id": "obj/ride-clover",
+            "radius": 1,
+            "ride": "vehicle/race-pig",
+            "type": "reach-anchor"
+          },
+          {
+            "after": [
+              "obj/ride-clover"
+            ],
+            "anchor": "anchor/long-hall-far-bank",
+            "happening": {
+              "text": "the party rows the basin and steps down on its far bank",
+              "verb": "arrives"
+            },
+            "id": "obj/row-the-basin",
+            "radius": 1,
+            "ride": "vehicle/yard-skiff",
+            "type": "reach-anchor"
+          },
+          {
+            "after": [
+              "obj/row-the-basin"
+            ],
+            "anchor": "anchor/long-hall-line-end",
+            "happening": {
+              "text": "the party rides the cart to the end of its line",
+              "verb": "arrives"
+            },
+            "id": "obj/ride-the-line",
+            "radius": 1,
+            "ride": "vehicle/hall-cart",
+            "type": "reach-anchor"
           }
         ],
         "on_complete": [],
@@ -3940,6 +3982,14 @@
               "style": "vanish",
               "type": "despawn-actor"
             },
+            {
+              "carrier": "all",
+              "count": 1,
+              "item": "minecraft:carrot_on_a_stick",
+              "type": "give-item"
+            }
+          ],
+          "obj/ride-clover": [
             {
               "type": "despawn-vehicle",
               "vehicle": "vehicle/race-pig"
@@ -4320,6 +4370,24 @@
         },
         "id": "state/muster-mustered",
         "note": "How many of the muster stand on their own ground: the census the engine keeps of the wave's bodies in a box at its anchor (spec-0134 §1).",
+        "scope": "party"
+      },
+      {
+        "counts": {
+          "of": {
+            "riders": "vehicle/yard-skiff"
+          },
+          "region": {
+            "anchor": "anchor/long-hall-yard",
+            "extent": [
+              5,
+              2,
+              17
+            ]
+          }
+        },
+        "id": "state/aboard-the-gull",
+        "note": "How many of the party sit in the yard's boat: the census the engine keeps of a vehicle's riders (spec-0135 §5).",
         "scope": "party"
       }
     ],
@@ -5187,6 +5255,29 @@
           "on": "body-enters",
           "state": "state/muster-mustered"
         }
+      },
+      {
+        "effects": [
+          {
+            "style": "chat",
+            "text": "The Gull rocks as someone steps aboard.",
+            "type": "narrate",
+            "when": {
+              "requires_state": [
+                {
+                  "op": "at-least",
+                  "state": "state/aboard-the-gull",
+                  "value": 1
+                }
+              ]
+            }
+          }
+        ],
+        "id": "trigger/the-gull-casts-off",
+        "on": {
+          "on": "body-enters",
+          "state": "state/aboard-the-gull"
+        }
       }
     ],
     "vehicles": [
@@ -5219,11 +5310,11 @@
           "movement_speed": 0.25
         },
         "bounds": {
-          "anchor": "anchor/long-hall-end",
+          "anchor": "anchor/long-hall-yard",
           "extent": [
-            4,
+            5,
             2,
-            4
+            17
           ]
         },
         "entity": "minecraft:pig",
@@ -5235,6 +5326,28 @@
         "facing": "west",
         "id": "vehicle/race-pig",
         "name": "Clover"
+      },
+      {
+        "at": {
+          "anchor": "anchor/long-hall-slip",
+          "offset": [
+            2,
+            -1,
+            0
+          ]
+        },
+        "bounds": {
+          "anchor": "anchor/long-hall-yard",
+          "extent": [
+            5,
+            2,
+            17
+          ]
+        },
+        "entity": "minecraft:oak_boat",
+        "facing": "south",
+        "id": "vehicle/yard-skiff",
+        "name": "The Gull"
       }
     ],
     "waves": [

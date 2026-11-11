@@ -94,6 +94,21 @@
       },
       {
         "node": "node/long-hall",
+        "objective": "obj/ride-clover",
+        "quest": "quest/long-hall"
+      },
+      {
+        "node": "node/long-hall",
+        "objective": "obj/row-the-basin",
+        "quest": "quest/long-hall"
+      },
+      {
+        "node": "node/long-hall",
+        "objective": "obj/ride-the-line",
+        "quest": "quest/long-hall"
+      },
+      {
+        "node": "node/long-hall",
         "objective": "obj/arrive-at-the-porch",
         "quest": "quest/long-hall"
       },
