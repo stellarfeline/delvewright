@@ -257,6 +257,19 @@ impl StateCompare {
             CompareOp::AtMost => v <= self.value,
         }
     }
+
+    /// **The bodies a census puts in its box so this term holds** (spec-0134
+    /// §1): the count the harness places by command before a step gated on a
+    /// counted datum, and therefore the value that datum holds at that step.
+    /// The one answer to "what does a census gate read at its own step": the
+    /// path's manifest row and the state-gate walk (`DW0879`) both read it.
+    pub fn census_bodies(&self) -> i32 {
+        match self.op {
+            CompareOp::AtLeast | CompareOp::Equals => self.value.max(0),
+            CompareOp::NotEquals => i32::from(self.value == 0),
+            CompareOp::AtMost => 0,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
