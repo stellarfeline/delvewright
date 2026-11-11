@@ -73,12 +73,19 @@ fn first_flag(effs: &[QuestEffect]) -> Option<String> {
 
 /// The lines that open `o` to its pending state from a clean slate, and the
 /// lines that put the slate back.
+///
+/// Every score the objective's guard reads is written here: its quest, its
+/// `after` ancestors, its settlement scores, and its whole [`Gate`] — flags
+/// and numeric terms alike, through [`packtest_gate_drive`], the one authority
+/// that opens a gate in a template — so no kind's template reads a term a
+/// sibling left behind (`DW0807`).
 fn open_and_close(
-    c: &delvewright_dsl::Campaign,
+    plan: &Plan,
     q: &delvewright_dsl::Quest,
     o: &Objective,
     latch: &str,
 ) -> (Vec<String>, Vec<String>) {
+    let c = plan.campaign;
     let p = plan::PARTY;
     let oid = o.id().as_str();
     let qa = quest_active_score(q.id.as_str());
@@ -115,20 +122,19 @@ fn open_and_close(
             after_score(c, a.id().as_str())
         ));
     }
+    open.extend(packtest_gate_drive(plan, o.gate(), true));
     for f in o.requires_flags() {
-        open.push(format!(
-            "scoreboard players set {p} {} 1",
-            plan::flag_score(f.as_str())
-        ));
         close.push(format!(
             "scoreboard players set {p} {} 0",
             plan::flag_score(f.as_str())
         ));
     }
-    for f in o.forbids_flags() {
-        open.push(format!(
-            "scoreboard players set {p} {} 0",
-            plan::flag_score(f.as_str())
+    for cmp in o.requires_state() {
+        close.push(format!(
+            "scoreboard players set {} {} {}",
+            super::super::state::state_holder(plan, &cmp.state),
+            plan::state_score(cmp.state.as_str()),
+            super::super::state::state_initial(plan, &cmp.state)
         ));
     }
     open.push(format!("scoreboard players set {p} {qa} 1"));
@@ -167,7 +173,7 @@ pub(super) fn emit_limit_packtests(plan: &Plan, out: &mut BuildOutput) {
             let oid = o.id().as_str();
             let safe = plan::safe_local(oid);
             let step = l.ticks + 1;
-            let (open, close) = open_and_close(c, q, o, &latch);
+            let (open, close) = open_and_close(plan, q, o, &latch);
             let expired = expired_score(oid);
             let done_score = obj_score(oid);
 
@@ -198,7 +204,11 @@ pub(super) fn emit_limit_packtests(plan: &Plan, out: &mut BuildOutput) {
                     plan::flag_score(f)
                 ));
             }
-            // Every driver of the objective is closed: its guard no longer holds.
+            // Every driver of the objective is closed: its guard no longer holds,
+            // with its gate held open again in this same tick — a census the
+            // engine rewrote, or a datum `on_expire` moved, cannot close it in
+            // the expired term's place.
+            b.extend(packtest_gate_drive(plan, o.gate(), true));
             b.push(format!(
                 "execute store success score #lim_open_{safe} dw.sys{}",
                 pending_guard(plan, o, &qa)
