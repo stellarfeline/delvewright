@@ -226,7 +226,9 @@ fn a_turn_takes_a_watching_bodys_facing_and_watch_hands_it_back() {
 #[test]
 fn a_hop_never_releases_the_body_and_ends_where_it_began() {
     let (c, inputs) = campaign(vec![
-        json!({"type": "hop", "audience": npc("npc/keeper")}),
+        // The keeper's hall is three blocks high: the game's own jump would
+        // put his head in its ceiling (`DW1103`), so he hops one block.
+        json!({"type": "hop", "height": 1, "audience": npc("npc/keeper")}),
         json!({"type": "hop", "height": 0.5, "audience": {"actor": "actor/herald"}}),
     ]);
     let e = errors(&c);
@@ -252,7 +254,10 @@ fn a_hop_never_releases_the_body_and_ends_where_it_began() {
     assert_eq!(
         fns["hop_start_1"],
         vec![
-            "scoreboard players set @s dw.hop 12".to_string(),
+            format!(
+                "scoreboard players set @s dw.hop {}",
+                hop_arc(Some(1.0)).len()
+            ),
             "scoreboard players set @s dw.hop_arc 1".to_string()
         ]
     );
@@ -277,7 +282,7 @@ fn a_hop_never_releases_the_body_and_ends_where_it_began() {
     // The arc: one relative teleport per remaining-tick value, counting down
     // from the arc's length to 1, whose steps are the arc's own differences
     // and sum to exactly zero.
-    for (i, height) in [(1usize, None), (2, Some(0.5))] {
+    for (i, height) in [(1usize, Some(1.0)), (2, Some(0.5))] {
         let arc = hop_arc(height);
         let body = &fns[&format!("hop_arc_{i}")];
         let mut y = 0.0_f64;
@@ -328,7 +333,7 @@ fn a_hop_never_releases_the_body_and_ends_where_it_began() {
 #[test]
 fn a_walk_and_a_hop_never_hold_one_body_together() {
     let (c, inputs) = campaign(vec![
-        json!({"type": "hop", "audience": npc("npc/keeper")}),
+        json!({"type": "hop", "height": 1, "audience": npc("npc/keeper")}),
         json!({"type": "move-npc", "npc": "npc/keeper", "to": {"anchor": "anchor/gate"}}),
     ]);
     let e = errors(&c);
@@ -383,7 +388,7 @@ fn a_cadence_repeats_and_staggers_from_the_scheduler() {
     let cast = json!({"bodies": [npc("npc/keeper"), {"actor": "actor/herald"},
                                  {"actor": "actor/moth"}]});
     let (c, inputs) = campaign(vec![
-        json!({"type": "hop", "audience": cast, "stagger_ticks": 3,
+        json!({"type": "hop", "height": 1, "audience": cast, "stagger_ticks": 3,
                "repeat": {"times": 5, "every_ticks": 14}}),
         json!({"type": "particle", "particle": "minecraft:note",
                "at": {"bodies": [npc("npc/keeper")], "up": 2.25},
@@ -642,4 +647,115 @@ fn dw1102_a_cadence_the_effect_cannot_keep() {
     let (c, _) = campaign(vec![json!({"type": "hop", "audience": cast,
         "repeat": {"times": 0, "every_ticks": 12}})]);
     assert_eq!(with(&diags(&c), "DW0100").len(), 1);
+}
+
+// ---------------------------------------------------------------------------
+// DW1103 — a hop passes through no block
+// ---------------------------------------------------------------------------
+
+use delvec::compiler::blockstate::{BlockMap, BlockState};
+use delvec::compiler::hop::{self, Hop};
+
+/// A mannequin placed at `[10, 64, 10]`, hopping to `peak`.
+fn mannequin_hop(peak: f64) -> Hop {
+    Hop {
+        path: "/content/quests/0/on_complete/0".to_string(),
+        body: "npc `npc/keeper`".to_string(),
+        cell: [10, 64, 10],
+        width: 0.6,
+        height: 1.8,
+        peak,
+    }
+}
+
+fn stone_at(cells: &[[i32; 3]]) -> BlockMap {
+    let mut m = BlockMap::new();
+    for c in cells {
+        m.insert(*c, BlockState::new("minecraft:stone"));
+    }
+    m
+}
+
+/// The rule, asked of a room built for it: the game's jump carries a
+/// 1.8-block body's top to y 67.05, so the cells at y 65, 66 and 67 over its
+/// feet are the arc's, and the cell at y 68 is not.
+#[test]
+fn dw1103_a_hop_through_a_block_is_refused() {
+    let peak = f64::from(hop_arc(None).into_iter().max().unwrap()) / 1024.0;
+    let jump = mannequin_hop(peak);
+    assert_eq!(jump.top_cell(), 67);
+    assert_eq!(
+        jump.swept(),
+        vec![[10, 65, 10], [10, 66, 10], [10, 67, 10]],
+        "one column, from over the feet's cell to the top's"
+    );
+
+    // A beam where the head arrives.
+    let (gate, findings) = hop::judge(&[jump.clone()], &stone_at(&[[10, 67, 10]]));
+    assert_eq!((gate.bodies, gate.cells, gate.refused), (1, 3, 1));
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0].code, "DW1103");
+    assert!(
+        findings[0].message.contains("npc `npc/keeper`")
+            && findings[0].message.contains("[10, 67, 10]")
+            && findings[0].message.contains("3 cell(s)"),
+        "{}",
+        findings[0].message
+    );
+
+    // Perturbations, each of which only this rule could tell apart: the same
+    // beam one cell higher, one column over, or under the feet is clear; so
+    // is a lower hop under the same beam.
+    for clear in [[10, 68, 10], [11, 66, 10], [10, 64, 10], [10, 63, 10]] {
+        let (gate, findings) = hop::judge(&[jump.clone()], &stone_at(&[clear]));
+        assert!(findings.is_empty(), "{clear:?}: {findings:?}");
+        assert_eq!(gate.cells, 3, "the sweep still looked");
+    }
+    let low = mannequin_hop(0.25);
+    assert_eq!(low.top_cell(), 66);
+    assert!(hop::judge(&[low], &stone_at(&[[10, 67, 10]])).1.is_empty());
+
+    // A block a body passes — a torch — is no ceiling.
+    let mut torch = BlockMap::new();
+    torch.insert([10, 66, 10], BlockState::new("minecraft:torch"));
+    assert!(hop::judge(&[jump.clone()], &torch).1.is_empty());
+
+    // A body wider than a block sweeps the columns its width covers.
+    let wide = Hop { width: 1.4, ..jump };
+    assert_eq!(
+        wide.swept().len(),
+        27,
+        "three columns by three, three cells each"
+    );
+    assert_eq!(
+        hop::judge(&[wide], &stone_at(&[[11, 66, 10]])).1.len(),
+        1,
+        "the neighbouring column is the wide body's"
+    );
+}
+
+/// The rule through the build, at the body's placed cell. The keeper stands
+/// at `[11, 65, 12]` in a hall three blocks high: the game's own jump carries
+/// his top to y 68.05, into the ceiling at `[11, 68, 12]`, and the build
+/// says so; a hop of one block, whose top stays at y 67.8, builds.
+#[test]
+fn dw1103_is_asked_at_the_bodys_placed_cell_by_the_build() {
+    let (c, inputs) = campaign(vec![json!({"type": "hop", "audience": npc("npc/keeper")})]);
+    let e = errors(&c);
+    assert!(e.is_empty(), "validation has no world to sweep: {e:#?}");
+    let refusal = try_build(&c, &inputs).expect_err("the build refuses the hop");
+    assert!(
+        refusal.contains("DW1103")
+            && refusal.contains("npc `npc/keeper`")
+            && refusal.contains("[11, 68, 12]"),
+        "{refusal}"
+    );
+    // Perturbation: the same hop lowered under the ceiling.
+    let (c, inputs) = campaign(vec![
+        json!({"type": "hop", "height": 1, "audience": npc("npc/keeper")}),
+    ]);
+    assert!(
+        try_build(&c, &inputs).is_ok(),
+        "a one-block hop clears the hall"
+    );
 }

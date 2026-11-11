@@ -532,6 +532,22 @@ pub(super) fn prove_world(
                     });
                 }
             }
+            // **spec-0136: a hop passes through no block** (`DW1103`). It reads
+            // the plan and the assembled blocks alone. The line prints before
+            // the verdict; a campaign with no hop prints none.
+            if crate::compiler::hop::declares_one(plan) {
+                let (binding, findings) = crate::compiler::hop::check(plan, blocks);
+                crate::note!("{}", binding.line());
+                if let Some((first, rest)) = findings.split_first() {
+                    for extra in rest {
+                        eprintln!("{} [error] build: {}", extra.code, extra.message);
+                    }
+                    return Err(BuildFailure::Diagnostic {
+                        code: first.code,
+                        message: first.message.clone(),
+                    });
+                }
+            }
             // **spec-0092: a lightning bolt strikes clear of every posted body and
             // every block it would rewrite** (`DW0958`, `DW0959`). Asked where the
             // firework is, for the firework's reason: its reach rule reads
