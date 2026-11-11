@@ -231,7 +231,6 @@ export const methods = {
       const line = this.chatSince(from).lines.find((l) => l.includes("[dw:diag"));
       process.stderr.write(`[ride-diag] ${step.vehicle} ${line ?? `${when}: no answer`}\n`);
     };
-    if (step.kind === "minecart") await diag("before");
     await bot.lookAt(body!.position.offset(0, (body!.height ?? 0.5) / 2, 0), true);
     bot.mount(body!);
     if (step.kind === "minecart") {
