@@ -1,0 +1,16 @@
+# `delvec::compiler::nav::vehicle`
+
+The reference page for `crates/delvec/src/compiler/nav/vehicle.rs`: the diagnostics-catalog row of every DW code
+this module declares. The catalog's shared rules are in [`compiler.md` §5](../../../compiler.md#5-diagnostics-catalog).
+
+## Diagnostics
+
+### DW1096–DW1099 — a body carries another (`dsl::vehicle` / `compiler::nav::vehicle`; spec-0135; error)
+
+A vehicle is a body the campaign places in `vehicles[]` that a player boards and leaves: a boat, the rider's minecart or a saddled mount. The engine resolves each one's seat (its mark), its `bounds`, and its **medium** — surface water at the boat's footprint for a boat, the launcher's driven run for a cart (a powered, powered rail laid straight with a solid block behind one end; the run goes the other way and is cut where an unpowered stretch exceeds the 45-cell coast `docs/reference/vehicles-animals-and-targets.md` §6 measured, at a brake, or where the rail ends), ground at the mount's footprint rising at most a slab for a mount — each cut at `bounds`. Its **boarding cells** are the standable cells whose eye reaches its body within the 3-block interaction reach; its **leaving cells** are the standable cells within a block past its widest column of a medium cell, a block up or down, and for a mount the cell it stands in. The route proof takes a **ride** on a leg no walk and no link crosses: the first vehicle (declaration order) the party walks to a boarding cell of, rides through its medium, and leaves at a cell it walks on from (a cart is left where its run ends); the path gains a `ride` step in front of the leg's end. A leg a walk crosses is walked. Every validate prints `vehicle binding (DW1097–DW1099): <n> vehicle(s) — <kind> <id> medium <m> cell(s) in bounds, board <b> cell(s), leave <l> cell(s), seats <s>; …; <r> ride leg(s) on the critical path and <w> on branch paths`.
+
+| Code | Meaning |
+|------|---------|
+| `DW1097` | **A vehicle seated outside its medium**: a boat whose footprint is not water with open air above, a cart off a rail, a mount that cannot stand at its footprint or stands in water. Build tier (exit 3), judged over the assembled world before the route proof's verdict. Prescription: the mark into the medium, or the medium under the mark. |
+| `DW1098` | **A medium cell the vehicle reaches from which no leaving cell reaches the proven walk region** (the walk region rooted at every anchor): a rider who leaves there is stranded — a rail into a pit. For a boat, the water body it floats on is a way off when any shore it touches is in the walk region (the rider swims). Build tier. Prescription: a way off that stretch, `bounds` cut short of it, or the medium ended before it. |
+| `DW1099` | **A vehicle nobody can board, or that cannot carry the party**: a mark outside the vehicle's own `bounds`; no boarding cell; or a ride leg no walk crosses whose boardable vehicles seat fewer than four between them (a boat seats two, a cart and most mounts one — the steering table's seats), because a required ride carries the whole party and the engine never proves a party split. Build tier. Prescription: the mark inside `bounds`; a floor beside the vehicle; more vehicles at the leg, or a walk. |

@@ -255,6 +255,12 @@ all, and the line's absence is the finding. The `gallery bot` job requires the
 gallery's broken plank to print `1 jump(s) on the proven leg, 1 driven as a
 parkour hop`.
 
+## What the ladder asserts at a ride
+
+**The bot rides only where the compiler proved a ride, and reads every verdict on the server** (spec-0135 §6). A `ride` step names the boarding cell, the medium cells, the rate and the leaving cell. The executor (`harness/src/executor/ride.ts`) walks to the boarding cell, clicks the vehicle's body, and passes the mount only when the server's `execute on vehicle` names the vehicle's tag: mineflayer 4.37.1 cannot parse this version's entity teleport and its `bot.vehicle` stays stale after a dismount (`docs/reference/vehicles-animals-and-targets.md` §4–§6), so the client is never asked. A boat or a mount is driven by `vehicle_move` reports along the medium at the rate, the way a vanilla client drives — navigation along a proven route, never a physics the harness computes; a cart is waited for. The ride passes when the server's rider stands within the landing tolerance of the last medium cell, and the leave when the sneak input unseats the bot on the server.
+
+**What the ladder does not assert.** That the server takes a reported move whole, and that `/ride` seats and unseats a body, are vanilla, measured once in the record and never re-checked. `rides[]` carries the distance reported beside the distance the server saw for a reader; the verdict is the arrival.
+
 ## What the ladder asserts at a sculk device
 
 **The bot hears what the compiler predicted, and never a warden** (spec-0100).

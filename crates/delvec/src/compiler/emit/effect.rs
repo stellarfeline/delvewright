@@ -661,12 +661,12 @@ pub(super) fn emit_quest_effect(
         // re-seat performs.
         Verb::SeatVehicle { vehicle } => {
             if let Some(v) = vehicle_named(plan, vehicle.as_str()) {
-                body.push(format!("function {ns}:vehicle_seat_{}", v.safe));
+                body.extend(vehicle_seat_lines(ns, v));
             }
         }
         Verb::DespawnVehicle { vehicle } => {
             if let Some(v) = vehicle_named(plan, vehicle.as_str()) {
-                body.extend(vehicle_removal_lines(ns, v));
+                body.extend(vehicle_despawn_lines(ns, v));
             }
         }
         // --- DSL v0.4 effects ---

@@ -3832,6 +3832,10 @@
                 "verb": "arrives"
               },
               "type": "unleash-actor"
+            },
+            {
+              "type": "seat-vehicle",
+              "vehicle": "vehicle/hall-cart"
             }
           ],
           "obj/reach-the-hall-end": [
@@ -3844,6 +3848,10 @@
               },
               "style": "vanish",
               "type": "despawn-actor"
+            },
+            {
+              "type": "despawn-vehicle",
+              "vehicle": "vehicle/race-pig"
             }
           ]
         },
@@ -5049,6 +5057,54 @@
         }
       }
     ],
+    "vehicles": [
+      {
+        "at": {
+          "anchor": "anchor/long-hall-cart"
+        },
+        "bounds": {
+          "anchor": "anchor/long-hall-cart",
+          "extent": [
+            2,
+            2,
+            16
+          ]
+        },
+        "entity": "minecraft:minecart",
+        "facing": "south",
+        "id": "vehicle/hall-cart"
+      },
+      {
+        "at": {
+          "anchor": "anchor/long-hall-paddock",
+          "offset": [
+            0,
+            0,
+            1
+          ]
+        },
+        "attributes": {
+          "movement_speed": 0.25
+        },
+        "bounds": {
+          "anchor": "anchor/long-hall-end",
+          "extent": [
+            4,
+            2,
+            4
+          ]
+        },
+        "entity": "minecraft:pig",
+        "equipment": {
+          "saddle": {
+            "item": "minecraft:saddle"
+          }
+        },
+        "facing": "west",
+        "id": "vehicle/race-pig",
+        "name": "Clover"
+      }
+    ],
     "waves": [
       {
         "anchor": "anchor/muster",
@@ -5194,6 +5250,6 @@
       }
     ]
   },
-  "dsl_version": "0.72.0",
+  "dsl_version": "0.74.0",
   "stage": "quests"
 }

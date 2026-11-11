@@ -75,6 +75,8 @@ Three documents, in this order, each the input the next one needs. **The order i
 
 `<place>` and `<edge>` are the part of the id after the `/` — `node/near-hall` becomes `anchor/node-near-hall`. A `gating` names a flag or a quest — one that names neither is passable from world load and is refused (`DW0818`) — and its quest layer opens the way with an `open-gate` at the beat the gating names, a `shortcut`, or a `timed-gate`, naming its own `anchor/seam-<edge>`; a gated way nothing opens is refused as a wall carrying a claim about order; a sealed door a player can push on owes an answer (`DW0429`) — a `use` trigger anchored on the gate.
 
+**A vehicle's place is a place with a mark in its medium** (spec-0135): a slip of water at a jetty for a boat, the launcher at the head of a rail line for a cart (a powered rail on a redstone block with a solid block behind it), a paddock floor for a mount. Put a floor beside each, where a body stands to climb on, and keep its `bounds` to the water, the line or the paddock it belongs to.
+
 ## The numbers are provisional
 
 **The numbers the whole thing is built to are provisional** until the metrics gym has been walked, and every build says so (`DW0813`). That is the gym's second job: `delvec metrics --gym <dir>` builds a site-plan campaign out of the table itself — a spine of bays chained by one seam per standard opening, two stairs to one rise whose hosts differ only in the run they afford (so one takes the gentlest standard pitch and the other the steepest), and a designed fall with a stair back out of it. It reports what the table defines that it could not instantiate (`DW0840`) — read that line, not just the green.

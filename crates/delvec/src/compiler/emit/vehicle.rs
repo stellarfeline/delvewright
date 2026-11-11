@@ -88,6 +88,28 @@ pub(super) fn vehicle_removal_lines(ns: &str, v: &VehiclePlan) -> Vec<String> {
     removal_lines(ns, &v.tag(), false, Exit::Unseen)
 }
 
+/// What a `seat-vehicle` runs: the seat function, and the re-seat chain
+/// armed — the one `setup_finish` runs, so a seat after a despawn brings the
+/// re-seat back with the body.
+pub(super) fn vehicle_seat_lines(ns: &str, v: &VehiclePlan) -> Vec<String> {
+    vec![
+        format!("function {ns}:vehicle_seat_{}", v.safe),
+        format!(
+            "schedule function {ns}:vehicle_reseat_{} {RESEAT_TICKS}t replace",
+            v.safe
+        ),
+    ]
+}
+
+/// What a `despawn-vehicle` runs: the removal, and the re-seat chain cleared —
+/// a re-seat that found the body missing would put back what the story took
+/// away.
+pub(super) fn vehicle_despawn_lines(ns: &str, v: &VehiclePlan) -> Vec<String> {
+    let mut out = vehicle_removal_lines(ns, v);
+    out.push(format!("schedule clear {ns}:vehicle_reseat_{}", v.safe));
+    out
+}
+
 /// The vehicle a `seat-vehicle` / `despawn-vehicle` names, as planned.
 pub(super) fn vehicle_named<'p>(plan: &'p Plan, id: &str) -> Option<&'p VehiclePlan> {
     plan.vehicles.iter().find(|v| v.id == id)
@@ -100,15 +122,7 @@ pub(super) fn vehicle_setup(plan: &Plan) -> Vec<String> {
     let ns = &plan.namespace;
     plan.vehicles
         .iter()
-        .flat_map(|v| {
-            [
-                format!("function {ns}:vehicle_seat_{}", v.safe),
-                format!(
-                    "schedule function {ns}:vehicle_reseat_{} {RESEAT_TICKS}t replace",
-                    v.safe
-                ),
-            ]
-        })
+        .flat_map(|v| vehicle_seat_lines(ns, v))
         .collect()
 }
 

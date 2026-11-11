@@ -32,6 +32,9 @@ struct Bay {
     /// A rail line on the west floor at `z = 2`, `x = 1..=5`, its west end a
     /// powered launcher against the wall.
     rails: bool,
+    /// A rail cell at `[16, 4, 7]` in a nook walled off from the room: no
+    /// walk reaches it.
+    nook: bool,
 }
 
 fn cells(bay: Bay) -> Vec<([i32; 3], &'static str)> {
@@ -67,6 +70,19 @@ fn cells(bay: Bay) -> Vec<([i32; 3], &'static str)> {
             );
         }
     }
+    if bay.nook {
+        for y in 4..=6 {
+            for x in 15..=17 {
+                by.insert([x, y, 6], "minecraft:stone");
+            }
+            by.insert([15, y, 7], "minecraft:stone");
+            by.insert([17, y, 7], "minecraft:stone");
+        }
+        by.insert(
+            [16, 4, 7],
+            "minecraft:rail[shape=east_west,waterlogged=false]",
+        );
+    }
     for x in [3, 7, 11, 15, 18] {
         for z in [2, 6] {
             by.insert([x, sy - 1, z], "minecraft:glowstone");
@@ -86,7 +102,8 @@ fn anchors() -> serde_json::Value {
         "anchor/bay": { "pos": [9, 3, 4] },
         "anchor/floor": { "pos": [3, 4, 3] },
         "anchor/rail-end": { "pos": [1, 4, 2] },
-        "anchor/room": { "pos": [10, 4, 4] }
+        "anchor/room": { "pos": [10, 4, 4] },
+        "anchor/nook": { "pos": [16, 4, 7] }
     })
 }
 
@@ -463,6 +480,11 @@ fn the_two_verbs_seat_and_remove() {
     assert!(all.contains("execute as @e[tag=dw_vehicle_gull] on passengers run ride @s dismount"));
     // Once in `setup_finish`, once for the beat's `seat-vehicle`.
     assert!(all.matches(":vehicle_seat_gull\n").count() >= 2, "{all}");
+    // A despawn stops the re-seat that would put the body back; a seat arms it.
+    assert!(
+        all.contains("schedule clear hello_world:vehicle_reseat_gull"),
+        "{all}"
+    );
 }
 
 /// Criterion 2 (validation half): an entity that carries no rider is
@@ -494,5 +516,28 @@ fn an_entity_that_carries_no_rider_is_refused() {
     assert!(
         d.iter().any(|x| x.message.contains("unknown vehicle")),
         "{d:#?}"
+    );
+}
+
+/// Criterion 5: a cart whose medium no walk reaches strands its rider —
+/// `DW1098`, naming the cell.
+#[test]
+fn a_cart_no_walk_reaches_strands_its_rider() {
+    let v = r#"{ "id": "vehicle/v", "entity": "minecraft:minecart",
+        "at": { "anchor": "anchor/nook" },
+        "bounds": { "anchor": "anchor/nook", "extent": [1, 1, 1] } }"#;
+    let (code, msg) = refused(
+        "nook",
+        Bay {
+            bridge: true,
+            nook: true,
+            ..Bay::default()
+        },
+        v,
+    );
+    assert_eq!(code, "DW1098", "{msg}");
+    assert!(
+        msg.contains("vehicle/v") && msg.contains("stranded"),
+        "{msg}"
     );
 }

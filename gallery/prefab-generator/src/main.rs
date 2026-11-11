@@ -4917,6 +4917,13 @@ const LONG_HALL_ROOM_DEPTH: i32 = 10;
 /// Extent: the end room's width, its height, and porch to end room.
 const LONG_HALL_SIZE: [i32; 3] = [11, 7, LONG_HALL_END_Z + LONG_HALL_ROOM_DEPTH + 1];
 
+/// The hall's rail line (spec-0135 §7): a launcher — a powered rail powered
+/// by the redstone block under it, a stone stop behind it — and plain rail on,
+/// along the hall's west lane, beside the carpet the route walks.
+const LONG_HALL_RAIL_X: i32 = 4;
+const LONG_HALL_RAIL_FROM: i32 = LONG_HALL_REAR_Z + 3;
+const LONG_HALL_RAIL_TO: i32 = LONG_HALL_REAR_Z + 15;
+
 /// The long hall's anchors. Every one says what the gallery does with it.
 const LONG_HALL_ANCHORS: &[Anchor] = &[
     Anchor {
@@ -4960,6 +4967,24 @@ const LONG_HALL_ANCHORS: &[Anchor] = &[
         trigger_block: None,
         note: "the top of the chest against the end room's far wall: what the end room holds, \
                in front of the eye that arrives at the end",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-hall-cart",
+        pos: [LONG_HALL_RAIL_X, 1, LONG_HALL_RAIL_FROM],
+        facing: None,
+        trigger_block: None,
+        note: "the launcher at the head of the hall's rail line: where the hall's minecart is \
+               seated (spec-0135)",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-hall-paddock",
+        pos: [7, 1, LONG_HALL_END_Z + 5],
+        facing: None,
+        trigger_block: None,
+        note: "the end room's east floor: where the race pig is seated, the room its bounds \
+               (spec-0135)",
         role: None,
     },
     Anchor {
@@ -5011,6 +5036,21 @@ fn build_long_hall() -> Structure {
             fill([5, 3, z], [5, 3, z], "minecraft:soul_lantern[hanging=true]");
         }
     }
+    // The rail line (spec-0135 §7): the stop, the launcher on its redstone
+    // block, and the plain rail on.
+    let (rx, r0, r1) = (LONG_HALL_RAIL_X, LONG_HALL_RAIL_FROM, LONG_HALL_RAIL_TO);
+    fill([rx, 1, r0 - 1], [rx, 1, r0 - 1], "minecraft:polished_deepslate");
+    fill([rx, 0, r0], [rx, 0, r0], "minecraft:redstone_block");
+    fill(
+        [rx, 1, r0],
+        [rx, 1, r0],
+        "minecraft:powered_rail[powered=true,shape=north_south,waterlogged=false]",
+    );
+    fill(
+        [rx, 1, r0 + 1],
+        [rx, 1, r1],
+        "minecraft:rail[shape=north_south,waterlogged=false]",
+    );
     // The end room, and the lit exit into it: a glowstone lintel over the
     // doorway, seen down the whole hall.
     fill([0, 0, end], [10, 6, room_end], "minecraft:deepslate_bricks");
@@ -5069,6 +5109,8 @@ fn write_long_hall(out: &Path) {
                     | "minecraft:red_carpet"
                     | "minecraft:lantern"
                     | "minecraft:soul_lantern"
+                    | "minecraft:rail"
+                    | "minecraft:powered_rail"
             )
         })
         .map(|(p, _)| *p)

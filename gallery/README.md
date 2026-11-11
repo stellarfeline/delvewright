@@ -290,6 +290,9 @@ holding them at once.
 | `a-watcher-for-a-class-nobody-plays` | `DW0996` | `validate` | setting the Warden to watch the nearest `class/pilgrim`, a class stage 3 does not declare |
 | `a-watcher-nobody-can-reach` | `DW0997` | `build` | setting the destrier at the annex threshold to watch within one block, where no cell the party walks to stands |
 | `a-beat-with-no-interval` | `DW0993` | `validate` | setting the slow heartbeat to beat `every: 0` ticks, the same tick again forever |
+| `a-chest-boat-with-a-rider` | `DW1096` | `validate` | declaring the hall's cart as an oak chest boat, whose second seat is its chest |
+| `a-llama-under-a-saddle` | `DW1096` | `validate` | declaring the race pig as a llama, which the game does not steer under a rider |
+| `a-boat-on-the-floor` | `DW1097` | `build` | seating an oak boat on the end room's dry floor |
 | `a-floor-as-loud-as-the-source` | `DW0993` | `validate` | setting the slow heartbeat's `floor` to 1.0, the farthest ear as loud as the source, a reach without end |
 | `a-beat-one-player-hears` | `DW0993` | `validate` | gating the slow heartbeat on the tokens, a datum each player holds for themselves |
 | `a-beat-heard-both-here-and-there` | `DW0929` | `validate` | giving the annex drip, heard in a `region`, a `place` as well |
@@ -888,6 +891,10 @@ across the hall 36 blocks past the slab, so the hall ends in view too near for a
 its loop binding first) and `a-figure-down-the-long-hall` (the hall moth posted 16
 blocks past the slab, past the near field but moved too far by the jump;
 `DW0947`).
+
+## The hall's cart and the race pig
+
+Two vehicles live in the long hall (spec-0135). `vehicle/hall-cart`, a minecart, is seated on the launcher at the head of a short rail line down the hall's west lane: a powered rail on a redstone block with a stone stop behind it, and twelve rails of plain track on. Its medium is the launcher's driven run, and the party arriving on the porch seats it again (`seat-vehicle`). `vehicle/race-pig`, a saddled pig named Clover, stands in the end room, the room its `bounds`; the saddle is declared in its `equipment` and its `movement_speed` in its `attributes`, and the wanderer's kit carries a carrot on a stick, the item a rider steers a pig by. Reaching the end room takes it away (`despawn-vehicle`), and the despawn stops its re-seat. Each is re-seated every 100 ticks when it stands riderless outside its bounds, and each has its two PackTest templates, `vehicle_<id>_seated` and `vehicle_<id>_reseats`. Neither carries a leg of the critical path: the walk crosses every leg, and a ride is taken only where no walk does. Three probes show what the class refuses: `a-chest-boat-with-a-rider` and `a-llama-under-a-saddle` (`DW1096`) and `a-boat-on-the-floor` (`DW1097`).
 
 ## The sleeper on the porch, and the walk beside it
 

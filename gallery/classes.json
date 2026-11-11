@@ -37,6 +37,10 @@
             "flask": true,
             "item": "minecraft:potion",
             "name": "Curator's Draught"
+          },
+          {
+            "count": 1,
+            "item": "minecraft:carrot_on_a_stick"
           }
         ],
         "name": "Wanderer"
@@ -68,6 +72,6 @@
       }
     ]
   },
-  "dsl_version": "0.72.0",
+  "dsl_version": "0.74.0",
   "stage": "classes"
 }

@@ -1,0 +1,13 @@
+{
+  "code": "DW1097",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/vehicles/1/entity",
+      "value": "minecraft:oak_boat"
+    }
+  ],
+  "units": [],
+  "why": "One edit: the race pig's seat on the end room's floor given to an oak boat. A boat is seated in water; on a dry floor it is a vehicle nothing can ride. Refused at build, naming the seat and the medium it lacks. It declares no unit."
+}
