@@ -6389,7 +6389,7 @@ test("an expire step consumes its leg unwalked, and its walk to the stand names 
   };
   executor.useWaypoints(
     parseWaypoints({
-      version: "0.74.0",
+      version: "0.4.0",
       campaign_id: "hello-world",
       legs: [
         { from: [2, 65, 2], to: [2, 65, 2], waypoints: [[2, 65, 2]] },
