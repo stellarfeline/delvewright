@@ -62,6 +62,7 @@ pub fn validate_campaign_with(
     crate::dialogue::dialogue_graph_checks(c, &mut d);
     crate::quest_plan::plan_checks(c, &mut d);
     crate::quest::check::after_ordering(c, &mut d);
+    crate::quest::check::quorum_checks(c, &mut d);
     // spec-0133: an objective's window — its bounds, its announcement, its start.
     crate::quest::check::limit_checks(c, &mut d);
     crate::trigger::press_answer_checks(c, &mut d);

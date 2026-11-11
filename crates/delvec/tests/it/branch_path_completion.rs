@@ -120,15 +120,26 @@ fn a_branch_path_that_runs_past_the_ending_does_not_replay() {
         .steps
         .drain(..)
         .partition(|s| s.quest == "quest/the-reliquary");
-    // The reliquary's three looks, its bay door and its chest (spec-0117 §7).
-    assert_eq!(strand.len(), 5, "branch `{id}`");
+    // The reliquary's three looks, its bay door, the one lookout its lid's
+    // quorum walks (the other lapses, spec-0134 §7) and its chest
+    // (spec-0117 §7).
+    assert_eq!(strand.len(), 6, "branch `{id}`");
+    assert!(
+        strand
+            .iter()
+            .any(|s| s.objective == "obj/stand-at-the-arrival")
+            && !strand
+                .iter()
+                .any(|s| s.objective == "obj/stand-at-the-vantage"),
+        "the default world walks the first lookout by id and lapses the other: {strand:?}"
+    );
     p.steps = rest.into_iter().chain(strand).collect();
     let err = flow
         .replay(&p)
         .expect_err("a path with objective steps past `campaign-complete` must not replay");
     assert_eq!(err.objective, "obj/reach-the-end");
     assert!(
-        err.reason.contains("5 step(s) before the end of the path"),
+        err.reason.contains("6 step(s) before the end of the path"),
         "{}",
         err.reason
     );

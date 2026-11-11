@@ -9,7 +9,8 @@ pub(super) fn and_joins(c: &delvewright_dsl::Campaign) -> Vec<(&str, &Objective)
     let mut out = Vec::new();
     for q in &c.quests.content.quests {
         for o in &q.objectives {
-            if o.after().len() >= 2 {
+            // Two or more prerequisites ALL done: a quorum is not an AND.
+            if o.after_required().len() >= 2 {
                 out.push((q.id.as_str(), o));
             }
         }
@@ -56,7 +57,7 @@ pub(super) fn emit_party_join_packtests(plan: &Plan, out: &mut BuildOutput) {
     for (ji, (qid, join)) in and_joins(c).into_iter().enumerate() {
         let jid = join.id().as_str();
         let jsafe = plan::safe_local(jid);
-        let arms: Vec<&str> = join.after().iter().map(|a| a.as_str()).collect();
+        let arms: Vec<&str> = join.after_required().iter().map(|a| a.as_str()).collect();
         let n = arms.len().max(min_players).min(MAX_PARTY);
         // Member selectors. Member 1 is the framework dummy (`@s` — the binding
         // survives teleports and can never resolve to a neighbour's dummy);
@@ -116,12 +117,7 @@ pub(super) fn emit_party_join_packtests(plan: &Plan, out: &mut BuildOutput) {
                 continue;
             };
             push_obj_baseline(&mut baseline, aq, ao);
-            for prereq in ao.after() {
-                baseline.push(format!(
-                    "scoreboard players set {party} {} 1",
-                    after_score(c, prereq.as_str())
-                ));
-            }
+            baseline.extend(super::super::quorum::after_drive(c, ao));
             baseline.push(format!(
                 "scoreboard players set {party} {} 0",
                 obj_score(arm)
@@ -595,7 +591,7 @@ pub(super) fn emit_verb_packtests(
         // Clear the wave tag before the fresh spawn — a sibling test may have
         // already fired this spawn-wave (`spawn_<wave>` is unguarded).
         b.push(format!("kill @e[tag={}]", plan::wave_tag(wave.as_str())));
-        b.push(format!("function {ns}:spawn_{ws}"));
+        b.extend(super::super::wave::packtest_spawn_lines(plan, &ws));
         b.push(format!(
             "assert score {} {} matches {total}",
             plan::wave_counter(wave.as_str()),
@@ -674,7 +670,7 @@ pub(super) fn emit_verb_packtests(
         // Own init: `spawn_<wave>` is unguarded and a sibling may already have
         // fired it, so clear before spawning — the spawn is what writes the total.
         b.push(format!("kill @e[tag={tag}]"));
-        b.push(format!("function {ns}:spawn_{ws}"));
+        b.extend(super::super::wave::packtest_spawn_lines(plan, &ws));
         b.push(format!("assert score {counter} {wobj} matches {total}"));
         // Every body dies, and no player is credited with any of it.
         b.push(format!("kill @e[tag={tag}]"));

@@ -1,0 +1,13 @@
+{
+  "code": "DW0100",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/2/objectives/6/after/1/at_least",
+      "value": 2
+    }
+  ],
+  "units": [],
+  "why": "The reliquary lid waits for any two of its two lookouts. A quorum of every member is the plain list — both must be done, and nothing ever lapses — so it is refused at `at_least`, which must be at least one and fewer than all. It declares no unit: `at_least` is bound by the lid's quorum of one of two."
+}

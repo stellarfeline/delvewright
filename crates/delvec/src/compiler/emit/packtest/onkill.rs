@@ -85,13 +85,20 @@ pub(super) fn emit_kill_pays_packtests(
     for (fight, ok) in fights {
         let f = kill_ledger(fight).trim_start_matches("#kf_").to_string();
         let ledger = kill_ledger(fight);
-        let bodies = fight_bodies(fight);
+        // The template seats a wave for its own party of one
+        // (`packtest_spawn_lines`), so it meets one player's bodies
+        // (spec-0134 §4), not the four-player maximum `fight_bodies` caps a
+        // `first-kill` ledger at.
+        let bodies = match fight {
+            Fight::Wave(w) => plan::wave_base_total(w),
+            Fight::Actor(_) => fight_bodies(fight),
+        };
         let (tag, seat): (String, Vec<String>) = match fight {
             Fight::Wave(w) => {
                 let safe = plan::safe_local(w.id.as_str());
                 (
                     plan::wave_tag(w.id.as_str()),
-                    vec![format!("function {ns}:spawn_{safe}")],
+                    super::super::wave::packtest_spawn_lines(plan, &safe),
                 )
             }
             Fight::Actor(a) => {

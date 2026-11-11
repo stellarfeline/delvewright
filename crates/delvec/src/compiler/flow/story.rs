@@ -99,6 +99,9 @@ pub enum WorldOrigin {
     /// The all world with one limited objective expired (spec-0133 §5) —
     /// enumerated for every limit, whether or not an ending reads it.
     Expiry,
+    /// The all world with one quorum settled by a subset of its members other
+    /// than the default's (spec-0134 §7) — enumerated for every such subset.
+    Quorum,
 }
 
 impl WorldOrigin {
@@ -109,6 +112,7 @@ impl WorldOrigin {
             WorldOrigin::None => "none",
             WorldOrigin::Witness => "witness",
             WorldOrigin::Expiry => "expiry",
+            WorldOrigin::Quorum => "quorum",
         }
     }
 }
@@ -420,7 +424,14 @@ impl<'a> Flow<'a> {
         let barred = self.barred(performs);
         let credit = |g: &GatedFlag| self.story_credit(g, performs);
         let expired = self.expired_in(performs);
-        let sol = self.solve_with(&self.worlds[w.selection], &credit, &barred, &expired);
+        let lapsed = lapsed_in(self.c, performs);
+        let sol = self.solve_with(
+            &self.worlds[w.selection],
+            &credit,
+            &barred,
+            &expired,
+            &lapsed,
+        );
         let flags = sol.flags.clone();
         let completed = sol.completed.clone();
         let mut pt = self.playthrough_from(Some(sol), true);
@@ -803,6 +814,7 @@ impl<'a> Flow<'a> {
             .filter(|o| o.limit().is_some())
             .map(|o| delvewright_dsl::producers::expiry_act(o.id().as_str()))
             .collect();
+        let quorum_acts: Vec<String> = quorum_choice_acts(self.c);
         let relevant: Vec<String> = self.relevant_acts().into_iter().collect();
         let mut worlds: Vec<StoryWorld> = Vec::new();
         let mut runs: Vec<StoryRun> = Vec::new();
@@ -844,6 +856,16 @@ impl<'a> Flow<'a> {
             let i_all = run_of(all.clone(), WorldOrigin::All, &mut local);
             let i_none = run_of(BTreeSet::new(), WorldOrigin::None, &mut local);
             let mut expiry_runs: Vec<usize> = Vec::new();
+            // spec-0134 §7: one witness per subset of a quorum's members of its
+            // size, by id order — the all world is the first subset's.
+            for x in &quorum_acts {
+                let mut p = all.clone();
+                p.insert(x.clone());
+                let i = run_of(p, WorldOrigin::Quorum, &mut local);
+                if !expiry_runs.contains(&i) {
+                    expiry_runs.push(i);
+                }
+            }
             for x in &expiries {
                 let mut p = all.clone();
                 p.insert(x.clone());
@@ -1286,6 +1308,48 @@ fn product_of(classes: &[Vec<Class>], cap: usize) -> Vec<Vec<Class>> {
             }
         }
         out = next;
+    }
+    out
+}
+
+/// The act a story world performs to settle quorum `k` (document order of
+/// [`super::quorums`]) by `chosen` (spec-0134 §7).
+fn quorum_act(k: usize, chosen: &[&str]) -> String {
+    format!("quorum:{k}:{}", chosen.join("+"))
+}
+
+/// Every quorum settlement but each quorum's default, as acts, in document
+/// order and then by member subset in id order (spec-0134 §7).
+pub(super) fn quorum_choice_acts(c: &delvewright_dsl::Campaign) -> Vec<String> {
+    let mut out = Vec::new();
+    for (k, (_, q)) in super::quorums(c).into_iter().enumerate() {
+        let mut ids: Vec<&str> = q.any.iter().map(|m| m.as_str()).collect();
+        ids.sort_unstable();
+        let default = q.default_completers();
+        for combo in combinations(ids.len(), q.at_least as usize) {
+            let chosen: Vec<&str> = combo.iter().map(|&i| ids[i]).collect();
+            if chosen != default {
+                out.push(quorum_act(k, &chosen));
+            }
+        }
+    }
+    out
+}
+
+/// The members a participation lapses: each quorum's default, unless the
+/// participation performs another settlement of it.
+pub(super) fn lapsed_in(
+    c: &delvewright_dsl::Campaign,
+    performs: &BTreeSet<String>,
+) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    for (k, (_, q)) in super::quorums(c).into_iter().enumerate() {
+        let prefix = format!("quorum:{k}:");
+        let chosen: Vec<&str> = match performs.iter().find_map(|a| a.strip_prefix(&prefix)) {
+            Some(list) => list.split('+').collect(),
+            None => q.default_completers(),
+        };
+        out.extend(q.lapsing(&chosen).map(str::to_string));
     }
     out
 }

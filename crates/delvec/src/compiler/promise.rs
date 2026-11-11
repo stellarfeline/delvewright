@@ -944,7 +944,7 @@ fn act_places(
                     !quest
                         .objectives
                         .iter()
-                        .any(|x| x.after().iter().any(|a| a.as_str() == o.id().as_str()))
+                        .any(|x| x.after_edges().iter().any(|a| a.as_str() == o.id().as_str()))
                 })
                 .collect();
             if sinks.is_empty() {

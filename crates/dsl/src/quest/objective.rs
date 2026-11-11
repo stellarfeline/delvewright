@@ -108,9 +108,11 @@ pub enum Objective {
         highlight: Option<Highlight>,
         /// The NPC to talk to.
         npc: NpcId,
-        /// Prerequisite objectives (intra-quest ordering).
+        /// Prerequisite objectives (intra-quest ordering): ids, all of which
+        /// must settle, and quorums (spec-0134 §7), each of which holds when
+        /// `at_least` of its members are done.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        after: Vec<ObjectiveId>,
+        after: Vec<AfterTerm>,
         /// Flags that must be set before this objective activates (v0.3).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
@@ -176,9 +178,11 @@ pub enum Objective {
         anchor: AnchorId,
         /// Completion radius (blocks).
         radius: u32,
-        /// Prerequisite objectives (intra-quest ordering).
+        /// Prerequisite objectives (intra-quest ordering): ids, all of which
+        /// must settle, and quorums (spec-0134 §7), each of which holds when
+        /// `at_least` of its members are done.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        after: Vec<ObjectiveId>,
+        after: Vec<AfterTerm>,
         /// Flags that must be set before this objective activates (v0.3).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
@@ -249,7 +253,7 @@ pub enum Objective {
         wave: WaveId,
         /// Prerequisite objectives.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        after: Vec<ObjectiveId>,
+        after: Vec<AfterTerm>,
         /// Flags that must be set before this objective activates (v0.3).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
@@ -415,7 +419,7 @@ pub enum Objective {
         fill_count: u32,
         /// Prerequisite objectives.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        after: Vec<ObjectiveId>,
+        after: Vec<AfterTerm>,
         /// Flags that must be set before this objective activates (v0.3).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
@@ -532,7 +536,7 @@ pub enum Objective {
         release: bool,
         /// Prerequisite objectives.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        after: Vec<ObjectiveId>,
+        after: Vec<AfterTerm>,
         /// Flags that must be set before this objective activates (v0.3).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
@@ -641,6 +645,58 @@ pub fn acts_line(acts: &std::collections::BTreeSet<Act>) -> String {
         .map(|a| a.as_str())
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// One term of an objective's `after` (spec-0134 §7): an objective that must
+/// settle, or a quorum of several.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum AfterTerm {
+    /// An objective (same quest) that must settle first.
+    Objective(ObjectiveId),
+    /// Any `at_least` of several objectives, done.
+    Quorum(Quorum),
+}
+
+/// **A quorum** (spec-0134 §7): it holds when `at_least` of its members are
+/// done. When it first holds, every member not yet done is **lapsed** —
+/// settled, its completion bundle never fired, its act refused after. The
+/// schema bounds `at_least` to `1..=|any| − 1` and refuses a repeated member
+/// (`DW0100`): a quorum of every member is the plain list.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Quorum {
+    /// The members (same quest), at least two.
+    #[schemars(length(min = 2))]
+    pub any: Vec<ObjectiveId>,
+    /// How many of them must be done, at least one and fewer than all.
+    #[schemars(range(min = 1))]
+    pub at_least: u32,
+}
+
+impl Quorum {
+    /// Whether at least `at_least` members are `done`.
+    pub fn holds(&self, done: &dyn Fn(&str) -> bool) -> bool {
+        self.any.iter().filter(|m| done(m.as_str())).count() >= self.at_least as usize
+    }
+
+    /// The members a world that completes `chosen` lapses: every member not
+    /// in it.
+    pub fn lapsing<'a>(&'a self, chosen: &'a [&'a str]) -> impl Iterator<Item = &'a str> + 'a {
+        self.any
+            .iter()
+            .map(ObjectiveId::as_str)
+            .filter(move |m| !chosen.contains(m))
+    }
+
+    /// The members the default world completes: the first `at_least`, by id
+    /// order. The rest lapse.
+    pub fn default_completers(&self) -> Vec<&str> {
+        let mut ids: Vec<&str> = self.any.iter().map(ObjectiveId::as_str).collect();
+        ids.sort_unstable();
+        ids.truncate(self.at_least as usize);
+        ids
+    }
 }
 
 impl Objective {
@@ -752,8 +808,8 @@ impl Objective {
         }
     }
 
-    /// This objective's prerequisites.
-    pub fn after(&self) -> &[ObjectiveId] {
+    /// This objective's prerequisite terms, as declared.
+    pub fn after_terms(&self) -> &[AfterTerm] {
         match self {
             Objective::TalkTo { after, .. }
             | Objective::ReachAnchor { after, .. }
@@ -761,6 +817,56 @@ impl Objective {
             | Objective::Collect { after, .. }
             | Objective::Interact { after, .. } => after,
         }
+    }
+
+    /// **Every objective this one's `after` names** — its plain prerequisites
+    /// and every member of its quorums — in declaration order: the edges of the
+    /// intra-quest order. Ordering, cycles (`DW0140`) and "may come before"
+    /// read these; whether the objective may open reads [`Self::after_holds`].
+    pub fn after_edges(&self) -> Vec<&ObjectiveId> {
+        let mut out = Vec::new();
+        for t in self.after_terms() {
+            match t {
+                AfterTerm::Objective(id) => out.push(id),
+                AfterTerm::Quorum(q) => out.extend(q.any.iter()),
+            }
+        }
+        out
+    }
+
+    /// The prerequisites that must settle before this objective opens, every
+    /// one of them: the plain ids, never a quorum's members. "Is certainly
+    /// done before" reads these.
+    pub fn after_required(&self) -> Vec<&ObjectiveId> {
+        self.after_terms()
+            .iter()
+            .filter_map(|t| match t {
+                AfterTerm::Objective(id) => Some(id),
+                AfterTerm::Quorum(_) => None,
+            })
+            .collect()
+    }
+
+    /// This objective's quorums (spec-0134 §7), in declaration order.
+    pub fn after_quorums(&self) -> Vec<&Quorum> {
+        self.after_terms()
+            .iter()
+            .filter_map(|t| match t {
+                AfterTerm::Quorum(q) => Some(q),
+                AfterTerm::Objective(_) => None,
+            })
+            .collect()
+    }
+
+    /// **Whether this objective's `after` holds** — the one definition every
+    /// reader of the gate answers through (spec-0134 §7): every plain
+    /// prerequisite `settled` (done, expired or lapsed), and every quorum with
+    /// at least `at_least` of its members `done` (completed by their act).
+    pub fn after_holds(&self, settled: &dyn Fn(&str) -> bool, done: &dyn Fn(&str) -> bool) -> bool {
+        self.after_terms().iter().all(|t| match t {
+            AfterTerm::Objective(id) => settled(id.as_str()),
+            AfterTerm::Quorum(q) => q.holds(done),
+        })
     }
 
     /// The short player-facing objective title (v0.3, optional).

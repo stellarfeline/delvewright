@@ -76,7 +76,9 @@ pub(in crate::compiler::plan) fn compute_strict_ancestor_steps(
             let oid = o.id().as_str();
             quest_objs.entry(qid).or_default().push(oid);
             obj_quest.insert(oid, qid);
-            obj_after.insert(oid, o.after().iter().map(|a| a.as_str()).collect());
+            // Certainly before: a quorum's member may lapse, its writes never
+            // made (spec-0134 §7).
+            obj_after.insert(oid, o.after_required().iter().map(|a| a.as_str()).collect());
         }
     }
     let after_closure: BTreeMap<&str, BTreeSet<&str>> = obj_after

@@ -41,7 +41,8 @@ fn ancestors<'a>(q: &'a delvewright_dsl::Quest, id: &str) -> Vec<&'a Objective> 
     let mut stack = vec![id];
     while let Some(cur) = stack.pop() {
         if let Some(o) = q.objectives.iter().find(|o| o.id().as_str() == cur) {
-            for a in o.after() {
+            // A clock starts at an objective that certainly comes first.
+            for a in o.after_required() {
                 if seen.insert(a.as_str()) {
                     stack.push(a.as_str());
                 }

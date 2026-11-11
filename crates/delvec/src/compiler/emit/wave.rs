@@ -426,9 +426,11 @@ pub(super) fn wave_fns(
         // count; each further body adds itself below. A wave of constants
         // emits neither line and is byte-identical.
         let scales = w.mobs.iter().any(|m| m.count.scales());
+        let measured_at = body.len();
         if scales {
             body.push(format!(
-                "execute store result score {PARTY_SIZE} dw.sys if entity @a[tag=!dw_cutscene]"
+                "execute store result score {} dw.sys if entity @a[tag=!dw_cutscene]",
+                party_size(w.id.as_str())
             ));
         }
         body.push(format!(
@@ -541,10 +543,12 @@ pub(super) fn wave_fns(
                     None => body.push(summon),
                     Some(n) => {
                         body.push(format!(
-                            "execute if score {PARTY_SIZE} dw.sys matches {n}.. run {summon}"
+                            "execute if score {} dw.sys matches {n}.. run {summon}",
+                            party_size(w.id.as_str())
                         ));
                         body.push(format!(
-                            "execute if score {PARTY_SIZE} dw.sys matches {n}.. run scoreboard players add {} {} 1",
+                            "execute if score {} dw.sys matches {n}.. run scoreboard players add {} {} 1",
+                            party_size(w.id.as_str()),
                             plan::wave_counter(w.id.as_str()),
                             plan::WAVE_OBJECTIVE,
                         ));
@@ -580,6 +584,17 @@ pub(super) fn wave_fns(
         if let Some(bar) = crate::compiler::healthbar::wave_bar(c, w.id.as_str()) {
             body.push(bar.capture_call(ns));
         }
+        // A scaling wave's seating is its own function, `spawn_<wave>_party`,
+        // which reads the party size the spawn measured — so a PackTest, whose
+        // party is its own dummy and not every player the shared server holds,
+        // states the size it judges and seats the wave at it.
+        if scales {
+            let measure = body.remove(measured_at);
+            let party = std::mem::take(&mut body);
+            body.push(measure);
+            body.push(format!("function {ns}:{}", party_spawn_fn(w.id.as_str())));
+            fns.push((party_spawn_fn(w.id.as_str()), lines(&party)));
+        }
         fns.push((
             format!("spawn_{}", plan::safe_local(w.id.as_str())),
             lines(&body),
@@ -598,7 +613,13 @@ pub(super) fn wave_fns(
             // re-seat is a reset, not a death the party watches at the fire, and
             // not a kill the party earned — a declared drop is stripped first.
             let mut reseat = wave_removal_lines(ns, w);
-            reseat.push(format!("function {ns}:spawn_{safe}"));
+            // spec-0134 §4: a wave that scales is re-seated as it was seated,
+            // at the party size its spawn measured — the same composition.
+            if w.mobs.iter().any(|m| m.count.scales()) {
+                reseat.push(format!("function {ns}:{}", party_spawn_fn(w.id.as_str())));
+            } else {
+                reseat.push(format!("function {ns}:spawn_{safe}"));
+            }
             fns.push((format!("wave_reseat_{safe}"), lines(&reseat)));
         }
         // --- The wave CENSUS probe surface ---
@@ -771,9 +792,43 @@ pub(super) fn wave_removal_lines(ns: &str, w: &delvewright_dsl::Wave) -> Vec<Str
     )
 }
 
+/// The function that seats a scaling wave at the party size its spawn
+/// measured (spec-0134 §4).
+pub(super) fn party_spawn_fn(wave: &str) -> String {
+    format!("spawn_{}_party", plan::safe_local(wave))
+}
+
+/// **The lines a PackTest seats wave `safe` with**: a constant wave's own
+/// spawn; a scaling wave seated for a party of one — the template's own
+/// dummy — rather than for every player the shared batch server holds, whose
+/// other templates' dummies are present while it runs (spec-0134 §4).
+pub(super) fn packtest_spawn_lines(plan: &Plan, safe: &str) -> Vec<String> {
+    let ns = &plan.namespace;
+    match plan
+        .campaign
+        .quests
+        .content
+        .waves
+        .iter()
+        .find(|w| plan::safe_local(w.id.as_str()) == safe)
+    {
+        Some(w) if w.mobs.iter().any(|m| m.count.scales()) => vec![
+            format!(
+                "scoreboard players set {} dw.sys 1",
+                party_size(w.id.as_str())
+            ),
+            format!("function {ns}:{}", party_spawn_fn(w.id.as_str())),
+        ],
+        _ => vec![format!("function {ns}:spawn_{safe}")],
+    }
+}
+
 /// The `dw.sys` holder a scaling wave's spawn writes the party size to
-/// (spec-0134 §4).
-pub(super) const PARTY_SIZE: &str = "#party_n";
+/// (spec-0134 §4), one per wave: a re-seat seats the wave the party met, at
+/// the size it was first seated for, whatever wave was seated since.
+pub(super) fn party_size(wave: &str) -> String {
+    format!("#pn_{}", plan::safe_local(wave))
+}
 
 /// The fewest players present at which body `k` (0-based) of a stack is
 /// summoned, or `None` when it is one of the stack's `base` and always is.

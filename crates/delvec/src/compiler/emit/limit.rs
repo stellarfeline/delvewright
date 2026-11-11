@@ -35,7 +35,9 @@ pub(super) fn settled_score(oid: &str) -> String {
 /// The score an `after` term or a quest's completion check reads for `oid`:
 /// its settled score when it carries a limit, else its done score.
 pub(super) fn after_score(c: &delvewright_dsl::Campaign, oid: &str) -> String {
-    if limited(c, oid).is_some() {
+    // A quorum member settles done or lapsed (spec-0134 §7), as a limited
+    // objective settles done or expired.
+    if limited(c, oid).is_some() || super::quorum::is_member(c, oid) {
         settled_score(oid)
     } else {
         obj_score(oid)
@@ -158,6 +160,15 @@ pub(super) fn start_lines(ns: &str, o: &Objective) -> Vec<String> {
             l.ticks
         ),
     ]
+}
+
+/// The lines a settlement that is not the clock's own runs on a limited
+/// objective (a lapse, spec-0134 §7): its expiry unscheduled, its countdown
+/// stopped.
+pub(super) fn stop_settlement_lines(ns: &str, oid: &str) -> Vec<String> {
+    let mut out = vec![format!("schedule clear {ns}:{}", expire_fn(oid))];
+    out.extend(stop_lines(ns, oid));
+    out
 }
 
 /// The lines either settlement runs to stop `oid`'s countdown: the bar

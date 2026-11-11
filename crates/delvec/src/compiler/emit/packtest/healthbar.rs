@@ -76,7 +76,7 @@ pub(super) fn emit_health_bar_packtests(
                         .iter()
                         .any(|w| w.id.as_str() == bar.fight.id());
                 (
-                    vec![format!("function {ns}:spawn_{safe}")],
+                    super::super::wave::packtest_spawn_lines(plan, safe),
                     rests,
                     format!("kill @e[tag={}]", plan::wave_tag(bar.fight.id())),
                 )

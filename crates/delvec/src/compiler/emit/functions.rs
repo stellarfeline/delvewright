@@ -223,6 +223,7 @@ pub(super) fn emit_functions(
     // spec-0133: each limited objective's expired and settled scores. Empty for a
     // campaign with no limit → byte-identical.
     setup.extend(limit_setup_lines(plan));
+    setup.extend(super::quorum::quorum_setup_lines(plan));
     // spec-0073: every declared health bar is re-created from nothing at world
     // init. Empty for a campaign that declares none → byte-identical.
     let health_bars = crate::compiler::healthbar::bars(c);
@@ -1458,6 +1459,7 @@ pub(super) fn emit_functions(
     // spec-0133: every limit's clock, settlement and countdown. Empty for a
     // campaign with none → byte-identical.
     fns.extend(limit_fns(plan, chrome, holders, guide));
+    fns.extend(super::quorum::quorum_fns(plan, chrome, holders, guide));
 
     // --- v0.3: wave spawn functions + verb reward functions ---
     fns.extend(wave_fns(plan, wave_placements, lane_routes, &item_combat));

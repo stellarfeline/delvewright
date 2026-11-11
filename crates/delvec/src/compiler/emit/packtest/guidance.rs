@@ -90,7 +90,10 @@ fn isolate(plan: &Plan, open: &[&Watched], d: &mut Drive) {
         let q = &c.quests.content.quests[*qi];
         d.put(&quest_active_score(q.id.as_str()), 1);
         for o in &q.objectives {
-            let follows = o.after().iter().any(|a| open_ids.contains(a.as_str()));
+            let follows = o
+                .after_edges()
+                .iter()
+                .any(|a| open_ids.contains(a.as_str()));
             let keep_open = open_ids.contains(o.id().as_str()) || follows;
             d.put(&obj_score(o.id().as_str()), if keep_open { 0 } else { 1 });
         }
@@ -121,7 +124,7 @@ fn follows(plan: &Plan, a: &Watched, b: &Watched) -> bool {
     let q = &plan.campaign.quests.content.quests[a.quest];
     let mut seen: BTreeSet<String> = BTreeSet::new();
     let mut stack: Vec<String> = q.objectives[a.objective]
-        .after()
+        .after_edges()
         .iter()
         .map(|x| x.as_str().to_string())
         .collect();
@@ -133,7 +136,7 @@ fn follows(plan: &Plan, a: &Watched, b: &Watched) -> bool {
             continue;
         }
         if let Some(o) = q.objectives.iter().find(|o| o.id().as_str() == x) {
-            stack.extend(o.after().iter().map(|y| y.as_str().to_string()));
+            stack.extend(o.after_edges().iter().map(|y| y.as_str().to_string()));
         }
     }
     false
@@ -406,7 +409,7 @@ pub(super) fn emit_journal_packtests(
         w.quest == first.quest
             && drivable(plan, w)
             && c.quests.content.quests[w.quest].objectives[w.objective]
-                .after()
+                .after_required()
                 .iter()
                 .any(|a| a.as_str() == first.id)
     });

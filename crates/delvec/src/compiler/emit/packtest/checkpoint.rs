@@ -53,7 +53,7 @@ pub(super) fn emit_bonfire_packtests(plan: &Plan, out: &mut BuildOutput) {
     ));
     b.push("assert score #bu_bfs dw.sys matches 0".to_string());
     // Met wave: spawn it, wipe it, rest — it stands again at the authored count.
-    b.push(format!("function {ns}:spawn_{safe}"));
+    b.extend(super::super::wave::packtest_spawn_lines(plan, &safe));
     b.push(format!("assert score {seated} dw.sys matches 1"));
     b.push(format!("kill @e[tag={tag}]"));
     b.push(format!(
@@ -194,7 +194,7 @@ pub(super) fn emit_reseat_stationed_packtest(
         ));
     }
     // Meet the wave.
-    b.push(format!("function {ns}:spawn_{safe}"));
+    b.extend(super::super::wave::packtest_spawn_lines(plan, &safe));
     b.push(format!(
         "assert score {} dw.sys matches 1",
         wave_seated_holder(w.id.as_str())
@@ -429,7 +429,7 @@ pub(super) fn emit_reseat_undefeated_packtests(plan: &Plan, out: &mut BuildOutpu
     b.push(format!("kill @e[tag={tag}]"));
     b.push(format!("function {ns}:wave_unbrand_{safe}"));
     // Meet it, and grind it down to a sliver — the path the ruling forbids.
-    b.push(format!("function {ns}:spawn_{safe}"));
+    b.extend(super::super::wave::packtest_spawn_lines(plan, &safe));
     b.push(format!("function {ns}:wave_brand_{safe}"));
     if total > 1 {
         b.push(format!("kill @e[tag={tag},limit={}]", total - 1));
@@ -652,9 +652,9 @@ pub(super) fn emit_reseat_yields_nothing_packtest(
     // Meet every fight, on top of the party; a hostile actor is met as the
     // unleashed twin a rest re-stands.
     for w in &waves {
-        b.push(format!(
-            "function {ns}:spawn_{}",
-            plan::safe_local(w.id.as_str())
+        b.extend(super::super::wave::packtest_spawn_lines(
+            plan,
+            &plan::safe_local(w.id.as_str()),
         ));
     }
     for safe in &actor_safe {

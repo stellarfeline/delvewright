@@ -334,6 +334,7 @@ pub(super) fn build_surround(
 }
 
 /// A compiler-generated horizon surround, planned.
+#[derive(Clone)]
 pub struct SurroundPlan {
     /// The surround as **one placed piece**. However many structure templates
     /// the annulus ships as — and it is many, because it is far past the

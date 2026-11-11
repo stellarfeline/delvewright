@@ -202,6 +202,7 @@ mod preview_palette;
 mod promise;
 mod pulse;
 mod quiet_guidance;
+mod quorum;
 mod r6_staging;
 mod r8_trigger_actor;
 mod reach_cache;

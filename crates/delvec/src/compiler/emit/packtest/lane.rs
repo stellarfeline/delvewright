@@ -66,7 +66,7 @@ pub(super) fn emit_td_lane_packtests(
         ));
         b.push(format!("function {ns}:setup"));
         b.push(format!("kill @e[tag={tag}]"));
-        b.push(format!("function {ns}:spawn_{safe}"));
+        b.extend(super::super::wave::packtest_spawn_lines(plan, &safe));
         b.push(format!(
             "execute store result score #n_tdnbt dw.sys if entity @e[tag={tag}]"
         ));
@@ -95,7 +95,7 @@ pub(super) fn emit_td_lane_packtests(
         ));
         b.push(format!("function {ns}:setup"));
         b.push(format!("kill @e[tag={tag}]"));
-        b.push(format!("function {ns}:spawn_{safe}"));
+        b.extend(super::super::wave::packtest_spawn_lines(plan, &safe));
         b.push(format!("scoreboard players set {idx} dw.sys 0"));
         if wps.len() > 1 {
             // Standing at a LATER waypoint does not skip the lane forward: the
@@ -131,7 +131,7 @@ pub(super) fn emit_td_lane_packtests(
         b.push(format!("function {ns}:setup"));
         b.push(pin);
         b.push(format!("kill @e[tag={tag}]"));
-        b.push(format!("function {ns}:spawn_{safe}"));
+        b.extend(super::super::wave::packtest_spawn_lines(plan, &safe));
         b.push(format!("scoreboard players set {idx} dw.sys 0"));
         b.push(format!("tp @e[tag={tag}] {}", high(wps[0])));
         b.push(format!("function {ns}:lane_tick_{safe}"));
@@ -173,7 +173,7 @@ pub(super) fn emit_td_lane_packtests(
         b.push(format!("function {ns}:setup"));
         b.push(pin);
         b.push(format!("kill @e[tag={tag}]"));
-        b.push(format!("function {ns}:spawn_{safe}"));
+        b.extend(super::super::wave::packtest_spawn_lines(plan, &safe));
         b.push(format!("execute at {sel} run tp @e[tag={tag}] ~ ~ ~"));
         b.push(format!("function {ns}:lane_tick_{safe}"));
         b.push(format!(
@@ -186,7 +186,7 @@ pub(super) fn emit_td_lane_packtests(
         ));
         // The re-seat body, verbatim.
         b.push(format!("kill @e[tag={tag}]"));
-        b.push(format!("function {ns}:spawn_{safe}"));
+        b.extend(super::super::wave::packtest_spawn_lines(plan, &safe));
         b.push(format!(
             "execute store result score #n_tdrst dw.sys if entity @e[tag={tag},nbt={{Patrolling:1b}}]"
         ));
@@ -219,7 +219,7 @@ pub(super) fn emit_td_lane_packtests(
         ));
         b.push(format!("function {ns}:setup"));
         b.push(format!("kill @e[tag={tag}]"));
-        b.push(format!("function {ns}:spawn_{safe}"));
+        b.extend(super::super::wave::packtest_spawn_lines(plan, &safe));
         b.push(format!(
             "execute store result score #n_tdedg dw.sys if entity @e[tag={tag}]"
         ));

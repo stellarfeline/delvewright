@@ -116,6 +116,7 @@ pub struct SceneRect {
 /// One compiler-generated surround tile: gzip-framed vanilla structure NBT plus
 /// its world placement. `size` obeys the library's ≤48×48 XZ safe-template
 /// envelope; tall tiles are sliced vertically into ≤48-high stacked tiles.
+#[derive(Clone)]
 pub struct SurroundTile {
     /// Datapack structure id (`horizon/valley/t<n>`), unique per tile.
     pub structure_id: String,
@@ -150,6 +151,7 @@ pub struct BiomeRect {
 /// A generated valley surround, ready for the caller to wire into the plan
 /// (placement + emission), the bootstrap (`fillbiome`), and the nav proof
 /// (`gap_floor_starts` → `reachable must never satisfy `beyond_crest`).
+#[derive(Clone)]
 pub struct ValleySurround {
     pub tiles: Vec<SurroundTile>,
     pub biome: Vec<BiomeRect>,

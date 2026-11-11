@@ -1772,7 +1772,7 @@ pub(super) fn journal_ledger(plan: &Plan, g: &Guide) -> Option<Value> {
         .map(|q| {
             let mut told = Vec::new();
             let mut gated = Vec::new();
-            for o in q.objectives.iter().filter(|o| o.after().is_empty()) {
+            for o in q.objectives.iter().filter(|o| o.after_terms().is_empty()) {
                 let Some(hint) = o.hint().filter(|_| o.announced(guidance)) else {
                     continue;
                 };

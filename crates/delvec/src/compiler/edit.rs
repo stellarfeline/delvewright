@@ -272,6 +272,10 @@ pub struct EditReplay {
     /// `applied: by-effect` batch's coalesced lines, the body of its own
     /// `edit_<batch>` function, which `apply-edits` calls. Script order.
     pub by_effect: Vec<(String, Vec<String>)>,
+    /// Each by-effect batch's resolved cells, cell → block (spec-0134 §6): the
+    /// writes the region model dates at its `apply-edits`
+    /// ([`crate::compiler::plan::Plan::with_edit_writes`]).
+    pub by_effect_writes: BTreeMap<String, BTreeMap<[i32; 3], String>>,
     /// Per-batch outcomes, in script order.
     pub batches: Vec<BatchOutcome>,
     /// Advisory findings (`DW0353`/`DW0354`) raised during the replay, in batch
@@ -417,6 +421,7 @@ fn replay_with(
         .unwrap_or_else(|| assembled::assemble(plan, structures));
     let mut commands: Vec<String> = Vec::new();
     let mut by_effect: Vec<(String, Vec<String>)> = Vec::new();
+    let mut by_effect_writes: BTreeMap<String, BTreeMap<[i32; 3], String>> = BTreeMap::new();
     let mut batches: Vec<BatchOutcome> = Vec::new();
     let mut warnings: Vec<Diagnostic> = Vec::new();
     let mut placements: Vec<Placement> = Vec::new();
@@ -658,6 +663,7 @@ fn replay_with(
         if batch.applied == delvewright_dsl::EditApplied::ByEffect {
             assembled = before.expect("a by-effect batch keeps the world it started from");
             by_effect.push((bid.to_string(), coalesce_commands(&batch_writes)));
+            by_effect_writes.insert(bid.to_string(), batch_writes.clone());
             batches.push(BatchOutcome {
                 id: bid.to_string(),
                 bounds: bounds_of(batch_writes.keys()),
@@ -676,6 +682,7 @@ fn replay_with(
         assembled,
         commands,
         by_effect,
+        by_effect_writes,
         batches,
         warnings,
         placements,

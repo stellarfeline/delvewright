@@ -10,6 +10,7 @@ use super::*;
 /// volume cannot drift into its own geometry rule. A volume whose anchor no placed
 /// piece provides is simply absent from this list (validation reports it as
 /// `DW0142`), never a blank box at the world origin.
+#[derive(Clone)]
 pub struct LethalVolumePlan {
     /// The authored id (`lethal/<kebab>`).
     pub id: String,

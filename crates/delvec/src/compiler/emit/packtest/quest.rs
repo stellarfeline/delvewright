@@ -232,6 +232,13 @@ fn campaign_progression_baseline(c: &delvewright_dsl::Campaign, comp_obj: &str) 
                 ] {
                     b.push(format!("scoreboard players set {party} {s} 0"));
                 }
+            } else if super::super::quorum::is_member(c, o.id().as_str()) {
+                // spec-0134 §7: a quorum member's settlement score starts
+                // clear, as a fresh delve's does.
+                b.push(format!(
+                    "scoreboard players set {party} {} 0",
+                    settled_score(o.id().as_str())
+                ));
             }
         }
     }

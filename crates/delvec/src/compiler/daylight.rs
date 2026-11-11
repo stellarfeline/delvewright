@@ -503,7 +503,8 @@ impl Clock {
                 .map(|o| {
                     (
                         o.id().as_str(),
-                        o.after().iter().map(|a| a.as_str()).collect(),
+                        // Certainly before: a quorum's member may lapse.
+                        o.after_required().iter().map(|a| a.as_str()).collect(),
                     )
                 })
                 .collect();

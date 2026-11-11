@@ -660,8 +660,9 @@ fn objectives_in_after_order(objs: &[Objective]) -> Vec<&Objective> {
             if placed[i] {
                 continue;
             }
+            // Every edge of the order, a quorum's members included (spec-0134 §7).
             let ready = o
-                .after()
+                .after_edges()
                 .iter()
                 .all(|a| index.get(a.as_str()).is_none_or(|&j| placed[j]));
             if ready {

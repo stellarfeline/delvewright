@@ -112,6 +112,7 @@ pub use trigger::*;
 pub use wave::*;
 
 /// The compiled model.
+#[derive(Clone)]
 pub struct Plan<'a> {
     /// The source campaign.
     pub campaign: &'a Campaign,
@@ -251,6 +252,13 @@ pub struct Plan<'a> {
     /// `close-gate` completability model in `crate::compiler::nav`. Empty when the campaign
     /// uses no gate effects (byte-identical routing to pre-close-gate behavior).
     pub region_events: RegionEvents,
+    /// Every `apply-edits` firing the region model dated (spec-0134 §6): its
+    /// batch's cells join [`Self::region_events`] once the edit replay has
+    /// resolved them ([`Plan::with_edit_writes`]).
+    pub edit_firings: Vec<EditFiring>,
+    /// The cells of every by-effect batch, batch id → cell → block, once the
+    /// edit replay has resolved them ([`Plan::with_edit_writes`]); empty before.
+    pub edit_writes: BTreeMap<String, BTreeMap<[i32; 3], String>>,
     /// Every `set-time` and `set-weather` the quest graph performs, dated on
     /// the critical path ([`collect_clock_events`], spec-0112 §7.6).
     pub clock_events: Vec<ClockEvent>,
@@ -586,6 +594,28 @@ impl LinkTakes {
 /// Inter-area transport map: objective id → absolute teleport target (see
 /// [`Plan::transport`]).
 pub type TransportMap = BTreeMap<String, [i32; 3]>;
+
+impl<'a> Plan<'a> {
+    /// **This plan with every by-effect batch's cells as dated runtime writes**
+    /// (spec-0134 §6): `writes` is the edit replay's resolution, batch id →
+    /// cell → block. Every proof that reads the region model reads the batch
+    /// from the step its `apply-edits` fires at, as it reads a `set-block`.
+    /// `None` when no `apply-edits` fires or nothing was resolved — the plan is
+    /// then the one to use as it is.
+    pub fn with_edit_writes(
+        &self,
+        writes: &BTreeMap<String, BTreeMap<[i32; 3], String>>,
+    ) -> Option<Plan<'a>> {
+        let events = edit_events(&self.edit_firings, writes);
+        if events.is_empty() {
+            return None;
+        }
+        let mut p = self.clone();
+        p.region_events.extend(events);
+        p.edit_writes = writes.clone();
+        Some(p)
+    }
+}
 
 impl<'a> Plan<'a> {
     /// Build the plan. Requires a validated campaign and loaded prefab metadata.
@@ -1162,7 +1192,9 @@ impl<'a> Plan<'a> {
         ways.seal().map_err(|e| e.with_warnings(warnings.clone()))?;
 
         // ---- v0.6 gate open/close firings (drives the close-gate nav proof) ----
-        let mut region_events = collect_region_events(campaign, &anchors, &path_firing, &ways);
+        let mut edit_firings: Vec<EditFiring> = Vec::new();
+        let mut region_events =
+            collect_region_events(campaign, &anchors, &path_firing, &ways, &mut edit_firings);
         // A shortcut gate is sealed from world-load and is opened only by an
         // OPTIONAL far-side interaction no proof can order (spec-0016 §2). Seal it
         // for the whole completability model — `fire_step: 0` precedes every leg —
@@ -1348,6 +1380,8 @@ impl<'a> Plan<'a> {
             presses: std::sync::OnceLock::new(),
             answer_plans: std::sync::OnceLock::new(),
             region_events,
+            edit_firings,
+            edit_writes: BTreeMap::new(),
             clock_events,
             ways,
             way_gate,

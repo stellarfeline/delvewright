@@ -540,7 +540,7 @@ pub(super) fn emit_v04_packtests(
                     // exact-count assert needs a known-empty tag.
                     b.push(format!("kill @e[tag={}]", plan::wave_tag(wave.as_str())));
                     // No wave is live yet; the effect's driver spawns it.
-                    b.push(format!("function {ns}:spawn_{ws}"));
+                    b.extend(super::super::wave::packtest_spawn_lines(plan, &ws));
                     b.push(format!(
                         "execute store result score #kw_klwv dw.sys if entity @e[tag={}]",
                         plan::wave_tag(wave.as_str())
