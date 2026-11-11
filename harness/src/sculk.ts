@@ -212,8 +212,13 @@ export class SculkEar {
   private readonly clicks: Heard[] = [];
   private readonly shrieks: Heard[] = [];
   /** Every darkness effect applied to the bot: when, and whether the client
-   * saw a warden within its pulse's reach as it arrived. */
-  private readonly darknessEvents: { readonly at: number; readonly wardenNear: boolean }[] = [];
+   * saw a warden within its pulse's reach as it arrived (reported beside the
+   * census, never the judge). */
+  private readonly darknessEvents: { readonly at: number; readonly clientNear: boolean }[] = [];
+  /** Every server reading of a declared warden the pursuit census took: when,
+   * which actor, and its distance to the bot (`undefined` when it was read
+   * absent). The one source the warden-in-reach excuse is judged on. */
+  private readonly wardenReadings: { readonly actor: string; readonly at: number; readonly distance: number | undefined }[] = [];
   /** Every shrieker cell some leg of the run's proven route predicts. */
   private readonly predictedShriekers = new Set<string>();
   /** Wardens that spawned. */
@@ -248,10 +253,63 @@ export class SculkEar {
       const shriekNear = this.shrieks.some(
         (h) => h.at >= d.at - SHRIEK_DARKNESS_WINDOW_MS && h.at <= d.at + SHRIEK_DARKNESS_WINDOW_MS,
       );
-      if (d.wardenNear && !shriekNear) byWarden += 1;
+      if (this.censusWardenNear(d.at) === true && !shriekNear) byWarden += 1;
       else counted += 1;
     }
     return { counted, byWarden };
+  }
+
+  /**
+   * **Whether the server had a declared warden within its pulse's reach of the
+   * bot at `at`**, on the pursuit census's readings (spec-0132 §5.7): for each
+   * warden, its last reading at or before `at` and its first after; `true`
+   * when either stands within {@link WARDEN_DARKNESS_RANGE}, `false` when
+   * every such reading is farther or absent, `undefined` when no reading
+   * brackets `at` at all (no pursued step was being read).
+   */
+  censusWardenNear(at: number): boolean | undefined {
+    const actors = new Set(this.wardenReadings.map((r) => r.actor));
+    let read = false;
+    for (const actor of actors) {
+      const mine = this.wardenReadings.filter((r) => r.actor === actor);
+      const before = mine.filter((r) => r.at <= at).at(-1);
+      const after = mine.find((r) => r.at >= at);
+      for (const r of [before, after]) {
+        if (r === undefined) continue;
+        read = true;
+        if (r.distance !== undefined && r.distance <= WARDEN_DARKNESS_RANGE) return true;
+      }
+    }
+    return read ? false : undefined;
+  }
+
+  /**
+   * Every darkness on which the client and the census disagree about a warden
+   * in reach, by name: the client's entity table lags the server's, so the
+   * excuse is judged on the census alone, and a disagreement is reported,
+   * never decided.
+   */
+  disagreements(): string[] {
+    const out: string[] = [];
+    for (const d of this.darknessEvents) {
+      const census = this.censusWardenNear(d.at);
+      if (census === d.clientNear) continue;
+      const client = d.clientNear ? "saw a warden within 20 blocks" : "saw no warden within 20 blocks";
+      const server =
+        census === undefined
+          ? "the census held no reading around it"
+          : census
+            ? "the census read one within 20 blocks"
+            : "the census read none within 20 blocks";
+      out.push(`[sculk] darkness at ${d.at}: the client ${client}, ${server}`);
+    }
+    return out;
+  }
+
+  /** A pursuit census reading of a declared warden: its distance to the bot,
+   * or `undefined` when it was read absent. */
+  onWardenReading(actor: string, distance: number | undefined, at = Date.now()): void {
+    this.wardenReadings.push({ actor, at, distance });
   }
 
   /** A block changed: a sensor whose new state is `active` clicked. */
@@ -265,15 +323,17 @@ export class SculkEar {
   }
 
   /**
-   * An effect applied to the bot itself, by registry name. `wardenNear` is
+   * An effect applied to the bot itself, by registry name. `clientNear` is
    * whether the client saw a warden within {@link WARDEN_DARKNESS_RANGE} of
-   * the bot as it arrived: a warden pulses darkness onto every player in that
-   * reach, so such a darkness is the warden's and is counted apart; a warden
-   * the campaign did not declare is caught by the run's standing count.
+   * the bot as it arrived — reported beside the census, never the judge: a
+   * warden pulses darkness onto every player in that reach on the SERVER's
+   * positions, so whether a darkness is a declared warden's is read off the
+   * pursuit census ({@link censusWardenNear}); a warden the campaign did not
+   * declare is caught by the run's standing count.
    */
-  onSelfEffect(name: string | undefined, wardenNear = false, at = Date.now()): void {
+  onSelfEffect(name: string | undefined, clientNear = false, at = Date.now()): void {
     if ((name ?? "").toLowerCase() !== "darkness") return;
-    this.darknessEvents.push({ at, wardenNear });
+    this.darknessEvents.push({ at, clientNear });
   }
 
   /** An entity spawned, by registry name. */

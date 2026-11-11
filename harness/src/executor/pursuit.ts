@@ -109,6 +109,17 @@ export const methods = {
         })
         .find((c) => c !== undefined && c.actor === row.actor && c.campaignId === this.campaignId);
       if (census === undefined) continue; // not answered: no reading, never a zero
+      // spec-0132 §5.7: a warden's darkness is judged on the server's
+      // positions — this reading — never on the client's entity table.
+      if (row.kind.replace(/^minecraft:/, "") === "warden") {
+        const f = census.feet;
+        this.sculk.onWardenReading(
+          row.actor,
+          census.alive && f !== undefined && Number.isFinite(botFeet[0])
+            ? Math.hypot(f[0] - botFeet[0], f[1] - botFeet[1], f[2] - botFeet[2])
+            : undefined,
+        );
+      }
       out.push({
         actor: row.actor,
         tick: reading.tick,

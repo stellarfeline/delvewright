@@ -330,7 +330,9 @@ neither fails a crossing.
 `[sculk] <walk>: N sensor(s) predicted, N heard; M shrieker(s) predicted, M heard (leg start at game tick T, B predicted device(s) busy then[; heard through game tick U])`.
 At the end of every run, passed or failed, `[sculk] darkness D (E more with a warden in reach), unpredicted shrieks S (at …), warden spawns heard W, undeclared standing U`
 states every `darkness` effect on the bot no declared warden can stand for (`D`):
-one with no warden the client saw within 20 blocks, or one that arrived within a
+one with no declared warden within 20 blocks on the pursuit census's readings
+around it (the server's positions; a darkness the client and the census disagree
+on is printed by name), or one that arrived within a
 second of any shriek the run heard, predicted or not — a shriek's darkness and a
 warden's pulse look alike to the client, and only the shriek's absence tells them
 apart; the rest, a warden's pulse with no shriek around it (`E`); every shriek

@@ -2108,8 +2108,9 @@ respawns and walks the step again, and only a death loop is red (the pursuer's d
 approach <d>; <x> death(s)`. The sculk ear's warden rule reads the declaration too: the run's
 warden failure is the server's count of wardens standing at the end that wear no
 `dw_actor` tag; a shriek at a cell no leg predicts fails the run on its own; and a
-darkness is set apart as a declared warden's only when the client saw a warden in
-reach and no shriek was heard within a second of it.
+darkness is set apart as a declared warden's only when the pursuit census read a
+declared warden within 20 blocks of the bot around it (the server's positions,
+never the client's) and no shriek was heard within a second of it.
 
 ### A cutscene is pure observation (`dw_cutscene`)
 

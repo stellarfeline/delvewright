@@ -1123,6 +1123,7 @@ export const methods = {
       (this.waypoints?.legs ?? []).flatMap((l) => l.vibrations.flatMap((v) => v.shriekers)),
     );
     process.stderr.write(`${this.sculk.runLine(undeclared)}\n`);
+    for (const line of this.sculk.disagreements()) process.stderr.write(`${line}\n`);
     return this.sculk.runFailure(undeclared);
   },
 
