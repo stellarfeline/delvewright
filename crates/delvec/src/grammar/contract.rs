@@ -1457,7 +1457,6 @@ fn closure(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> Gat
 /// the same code. `Ok(())` means the class holds; `Err` carries the class's own
 /// red, in its own words.
 #[allow(clippy::too_many_arguments)]
-#[allow(clippy::too_many_arguments)]
 fn prove_class(
     class: &str,
     model: &VoxelModel,

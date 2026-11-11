@@ -258,7 +258,10 @@ pub fn survey(req: &Request) -> Result<Answer, String> {
             .copied()
             .collect()
     };
-    let spaces: Vec<(&String, BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>)> = req
+    // Per space: its name, its floor a body reaches, and every cell of it
+    // (the pool a walk between two spaces may swim).
+    type Space<'a> = (&'a String, BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>);
+    let spaces: Vec<Space<'_>> = req
         .spaces
         .iter()
         .map(|(n, c)| (n, floor_of(c), c.iter().copied().collect()))
