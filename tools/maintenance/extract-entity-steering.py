@@ -21,7 +21,9 @@ A campaign's `vehicles[]` entry names an entity; the engine derives its kind
   draws a `saddle` slot.
 - **medium**: `water` for a boat, `rails` for the minecart, and for a mount
   `water` when the type is in `#minecraft:aquatic`, else `ground`.
-- **seats**: read from the bytecode of the first `Entity#canAddPassenger`
+- **seats**: the riders a party seats by clicking — the bound below, lowered
+  to the measured click bound where the record holds one (`SEATS_BY_CLICK`).
+  The bound is read from the bytecode of the first `Entity#canAddPassenger`
   on the class chain: `getPassengers().isEmpty()` seats 1; `size() <
   getMaxPassengers()` seats the constant that method returns; `size() <= k`
   seats k + 1; `!isVehicle()` seats 1; any other shape refuses.
@@ -83,6 +85,14 @@ CLASS_HORSE = "net.minecraft.world.entity.animal.equine.AbstractHorse"
 SIG_TICK_RIDDEN = "tickRidden(net.minecraft.world.entity.player.Player,net.minecraft.world.phys.Vec3)"
 SIG_CAN_ADD = "canAddPassenger(net.minecraft.world.entity.Entity)"
 SIG_MAX = "getMaxPassengers()"
+CLASS_CAMEL = "net.minecraft.world.entity.animal.camel.Camel"
+
+# Seats a PLAYER takes by a click, where that is fewer than `canAddPassenger`
+# admits. Measured on the pinned server, never read from the jar:
+# `docs/reference/vehicles-animals-and-targets.md` §12 — a camel seats a second
+# player by a click and refuses a third, whom `ride … mount` then seats. Keyed
+# by the class that owns the rule, so every type of that class takes it.
+SEATS_BY_CLICK = {CLASS_CAMEL: 2}
 
 
 def fail(msg: str) -> None:
@@ -340,6 +350,11 @@ def main() -> None:
                 fail(f"{ident} has a steering item but is no vehicle")
             continue
         row["seats"] = seats_of(maps, str(inner[0]), chain)
+        for owner, by_click in SEATS_BY_CLICK.items():
+            if owner in chain:
+                if by_click > row["seats"]:
+                    fail(f"{ident}: {by_click} seats by a click, and the jar admits {row['seats']}")
+                row["seats"] = by_click
         if ident in steering:
             header = javap(str(inner[0]), maps[chain[0]][0]).splitlines()
             if not any(steerable_obf in h for h in header[:3]):
