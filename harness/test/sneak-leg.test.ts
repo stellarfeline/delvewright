@@ -10,7 +10,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { configureLeg, hopStandsUp, type LegMovements } from "../src/movement.ts";
+import { configureLeg, type LegMovements } from "../src/movement.ts";
+import { walkGoals } from "../src/waypoints.ts";
 import { cellKey, fmtPos, simBot, simWalk, type Cells, type SimBot } from "./sim-bot.ts";
 
 const requireCjs = createRequire(import.meta.url);
@@ -91,27 +92,29 @@ test("a crouched body stops at a step down; the leg stands for that hop and arri
   // will not walk off a one-block step. Held crouched through it, the hop stalls.
   const held = walkSneakLeg(simBot(lane(true), [1.5, 64, 2.5]), [[18, 63, 2]]);
   assert.equal(held.reached, false, `a crouched body stepped down to ${fmtPos(held.at)}`);
-  // The leg's rule stands the body up for the hop down, and only that hop.
-  const feet = 64;
-  const ruled = walkSneakLeg(
-    simBot(lane(true), [1.5, 64, 2.5]),
+  // The compiler's `stand_ups` names the hop down; the leg stands for it, and
+  // only for it.
+  const goals = walkGoals(
     [
       [9, 64, 2],
-      [12, 63, 2],
-      [18, 63, 2],
+      [10, 64, 2],
+      [11, 63, 2],
     ],
-    (hop) => hopStandsUp({ y: hop[1] }, hop[0] === 12 ? feet : 63),
+    [18, 63, 2],
+    0,
+    [],
+    [],
+    [{ from: [10, 64, 2], to: [11, 63, 2], why: "step-down" }],
+  );
+  assert.deepEqual(
+    goals.map((g) => g.standsUp === true),
+    [false, false, true, false],
+  );
+  const ruled = walkSneakLeg(
+    simBot(lane(true), [1.5, 64, 2.5]),
+    goals.map((g) => [g.x, g.y, g.z] as const),
+    (hop) => goals.some((g) => g.standsUp && g.x === hop[0] && g.y === hop[1] && g.z === hop[2]),
   );
   assert.ok(ruled.reached, `stopped at ${fmtPos(ruled.at)}`);
   assert.equal(ruled.upright, 0, `upright on ${ruled.upright} of ${ruled.ticks} crouched ticks`);
-});
-
-test("a hop stands up exactly for a step down or a jump, never for a climb", () => {
-  assert.equal(hopStandsUp({ y: 64 }, 64), false, "level");
-  assert.equal(hopStandsUp({ y: 65 }, 64), false, "up a step");
-  assert.equal(hopStandsUp({ y: 63 }, 64), true, "down a step");
-  assert.equal(hopStandsUp({ y: 63 }, 64.5), true, "down from a slab");
-  assert.equal(hopStandsUp({ y: 64 }, 64.5), false, "off a slab onto the floor below it");
-  assert.equal(hopStandsUp({ y: 64, jump: {} }, 64), true, "a declared jump");
-  assert.equal(hopStandsUp({ y: 50, climb: {} }, 64), false, "a climb is the climb's to decide");
 });

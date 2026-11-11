@@ -103,10 +103,6 @@ export const methods = {
       `[climb] ${label}: ${dir} ${climb.block} from [${climb.from.join(", ")}] to ` +
         `[${climb.to.join(", ")}], column [${climb.bottom.join(", ")}]..[${climb.top.join(", ")}]\n`,
     );
-    // A crouching body holds on a ladder and will not walk off the brink a
-    // downward climb starts from, so a sneak leg's crouch stands up for the
-    // whole of one (`configureLeg`); an upward climb is made crouched.
-    this.crouchYielded = dir === "down";
     try {
       bot.clearControlStates();
       // 1. Into the column. Going down from a brink this walks off it; the
@@ -150,7 +146,6 @@ export const methods = {
       process.stderr.write(`[climb] ${label}: let go at ${fmt(bot.entity.position)}\n`);
     } finally {
       bot.clearControlStates();
-      this.crouchYielded = false;
     }
   },
 };

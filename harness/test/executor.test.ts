@@ -6266,7 +6266,8 @@ test("stageAway and holdFullHealth return without acting while a pursued step ru
   };
   (bot as unknown as { health: number }).health = 8;
   const executor = attach(bot);
-  executor.pursuedStep = { index: 16, label: "loop loop/the-hall-that-runs-on", refusals: [] };
+  const pursued = { index: 16, label: "loop loop/the-hall-that-runs-on", refusals: [] as string[], rows: [], latest: new Map() };
+  executor.pursuedStep = pursued;
   const sent: string[] = [];
   (bot as unknown as { chat: (m: string) => void }).chat = (m: string) => {
     sent.push(m);
@@ -6278,8 +6279,89 @@ test("stageAway and holdFullHealth return without acting while a pursued step ru
   assert.deepEqual(sent, [], "no command reached the server");
   assert.equal(executor.stagedRemovals.length, 0, "nothing staged, nothing restored");
   assert.equal(executor.stagedIds.has(12), false);
-  assert.equal(executor.pursuedStep.refusals.length, 3);
-  assert.match(executor.pursuedStep.refusals[0]!, /staging warden#12 away/);
-  assert.match(executor.pursuedStep.refusals[1]!, /holding full health/);
-  assert.match(executor.pursuedStep.refusals[2]!, /refunding 6\.0 health warden#12 took/);
+  assert.equal(pursued.refusals.length, 3);
+  assert.match(pursued.refusals[0]!, /staging warden#12 away/);
+  assert.match(pursued.refusals[1]!, /holding full health/);
+  assert.match(pursued.refusals[2]!, /refunding 6\.0 health warden#12 took/);
+});
+
+// ---------------------------------------------------------------------------
+// spec-0132 §5.2: a move made standing on a pursued step waits for quiet.
+// ---------------------------------------------------------------------------
+
+import { distanceToMove, inEarshot } from "../src/executor/pursuit.ts";
+import type { PursuitReading } from "../src/pursuit.ts";
+import type { PursuerRow } from "../src/critical-path.ts";
+
+const HEARS: PursuerRow = {
+  actor: "actor/the-sleeper",
+  kind: "minecraft:warden",
+  census: "c:actor_census_the_sleeper",
+  entranceTicks: 133,
+  undated: false,
+  hearing: { reach: 16, forgetTicks: 3000 },
+};
+
+function reading(tick: number, feet: [number, number, number] | undefined): PursuitReading {
+  return {
+    actor: HEARS.actor,
+    tick,
+    alive: feet !== undefined,
+    ...(feet === undefined ? {} : { feet }),
+    botFeet: [0, 87, 0],
+    botHealth: 20,
+  };
+}
+
+test("a pursuer is in earshot of a move by its least distance to the move, in three axes", () => {
+  // The tower descent: from the deck at y=87 to the foot at y=65.
+  const from: [number, number, number] = [47, 87, 47];
+  const to: [number, number, number] = [47, 65, 48];
+  assert.ok(Math.abs(distanceToMove([57, 65, 47], from, to) - 10) < 0.1, "beside the foot");
+  const latest = new Map([[HEARS.actor, reading(1, [60, 65, 47])]]);
+  assert.deepEqual(inEarshot([HEARS], latest, from, to).map((n) => n.actor), [HEARS.actor]);
+  latest.set(HEARS.actor, reading(2, [70, 65, 47]));
+  assert.deepEqual(inEarshot([HEARS], latest, from, to), [], "23 blocks off");
+  latest.set(HEARS.actor, reading(3, undefined));
+  assert.deepEqual(inEarshot([HEARS], latest, from, to), [], "a body read absent hears nothing");
+  assert.equal(inEarshot([HEARS], new Map(), from, to).length, 1, "an unread body is not out of earshot");
+  const deaf: PursuerRow = { ...HEARS, actor: "actor/the-wither", kind: "minecraft:wither" };
+  delete (deaf as { hearing?: unknown }).hearing;
+  assert.deepEqual(inEarshot([deaf], new Map(), from, to), [], "a kind that hears nothing known");
+});
+
+test("a move made standing waits until every pursuer that hears is out of earshot", async () => {
+  const executor = attach(new FakeBot());
+  const latest = new Map([[HEARS.actor, reading(100, [52, 65, 47])]]);
+  executor.pursuedStep = { index: 9, label: "talk-to obj/meet-wren", refusals: [], rows: [HEARS], latest };
+  let done = false;
+  const wait = executor
+    .quietBeforeStanding([47, 87, 47], [47, 65, 48], "npc npc/wren")
+    .then(() => {
+      done = true;
+    });
+  await delay(700);
+  assert.equal(done, false, "the move went ahead with the warden 5 blocks from it");
+  latest.set(HEARS.actor, reading(140, [70, 65, 47]));
+  await within("the wait ends once the warden is out of earshot", wait, 2_000);
+  assert.equal(done, true);
+});
+
+test("a wait for quiet that spends its bound fails the step by name", async () => {
+  const executor = attach(new FakeBot());
+  const latest = new Map([[HEARS.actor, reading(100, [52, 65, 47])]]);
+  executor.pursuedStep = { index: 9, label: "talk-to obj/meet-wren", refusals: [], rows: [HEARS], latest };
+  const wait = executor.quietBeforeStanding([47, 87, 47], [47, 65, 48], "npc npc/wren");
+  await delay(300);
+  latest.set(HEARS.actor, reading(100 + 3000, [52, 65, 47]));
+  await assert.rejects(wait, /made standing and waited 3000 tick\(s\), its bound .*actor\/the-sleeper 5\.\d block\(s\) \(reach 16\)/);
+});
+
+test("off a pursued step, or beside nobody that hears, a move made standing does not wait", async () => {
+  const executor = attach(new FakeBot());
+  await within("off a pursued step", executor.quietBeforeStanding([0, 0, 0], [0, -1, 1], "x"), 500);
+  const deaf: PursuerRow = { ...HEARS };
+  delete (deaf as { hearing?: unknown }).hearing;
+  executor.pursuedStep = { index: 1, label: "x", refusals: [], rows: [deaf], latest: new Map() };
+  await within("beside a body that hears nothing", executor.quietBeforeStanding([0, 0, 0], [0, -1, 1], "x"), 500);
 });

@@ -728,3 +728,36 @@ test("a leg's doors parse, are waypoints of the leg, and are asserted crossed (s
   assert.deepEqual(doorsCrossed([[0, 64, 3]], [[0, 64, 2], [0, 64, 3]]), [{ door: [0, 64, 3], crossed: true }]);
   assert.deepEqual(doorsCrossed([[0, 64, 3]], [[0, 64, 2], [0, 65, 3]]), [{ door: [0, 64, 3], crossed: false }]);
 });
+
+// spec-0132 §5.2: a sneak leg's `stand_ups` parse, each a pair of consecutive
+// waypoints, and the hop between them is the one walked standing.
+test("a leg's stand-ups parse onto the hops between their ends, and nowhere else", () => {
+  const leg = {
+    from: [0, 66, 0],
+    to: [9, 65, 0],
+    waypoints: [
+      [0, 66, 0],
+      [3, 66, 0],
+      [4, 65, 0],
+      [9, 65, 0],
+    ],
+    stand_ups: [{ from: [3, 66, 0], to: [4, 65, 0], why: "step-down" }],
+  };
+  const w = parseWaypoints({ version: "0.4.0", campaign_id: "c", legs: [leg] });
+  const ups = w.legs[0]!.standUps;
+  assert.deepEqual(ups, [{ from: [3, 66, 0], to: [4, 65, 0], why: "step-down" }]);
+  const goals = walkGoals(w.legs[0]!.waypoints, [9, 65, 0], 1, [], [], ups);
+  assert.deepEqual(
+    goals.map((g) => g.standsUp === true),
+    [false, false, true, false, false],
+  );
+  for (const bad of [
+    [{ from: [0, 66, 0], to: [4, 65, 0], why: "step-down" }],
+    [{ from: [3, 66, 0], to: [4, 65, 0], why: "crawl" }],
+  ]) {
+    assert.throws(
+      () => parseWaypoints({ version: "0.4.0", campaign_id: "c", legs: [{ ...leg, stand_ups: bad }] }),
+      WaypointsParseError,
+    );
+  }
+});

@@ -504,7 +504,8 @@ fn pursuers_are_the_outrun_bodies_loose_while_a_step_is_walked() {
             "actor": SLEEPER,
             "kind": "minecraft:warden",
             "census": format!("{NS}:actor_census_{SLEEPER_SAFE}"),
-            "entrance_ticks": 133
+            "entrance_ticks": 133,
+            "hearing": { "reach": 16, "forget_ticks": 3000 }
         })
     );
     let census = func(&out, &format!("actor_census_{SLEEPER_SAFE}"));

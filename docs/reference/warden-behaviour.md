@@ -67,3 +67,11 @@ Four summons at one cell, the bot 12 blocks away reading the warden's synced pos
 - **A hunting warden is faster than a walking player and is not called off by a sound; the walker's escape is a loop that breaks the warden's line, not a sprint down a lane.** [authored, from §2 and §3]
 - **Walking is detection; sneaking is detection inside 6 blocks.** [authored, from §4]
 - **The entrance is one memory entry; the close-up is seven seconds, in which the body hears nothing and takes nothing, and a lock set on it is kept. The engine sets none: an entering warden starts roaming, and only its own hearing and sniff start a hunt.** [authored, from §6 and spec-0132 §3.1]
+
+## 8. What the engine takes as the warden's hearing
+
+`delvewright_dsl::senses` carries one record per kind that hears, and the bot reads it off a pursuer's row (spec-0132 §5.2). The warden's is read here.
+
+- **Reach: 16 blocks, in all three axes.** [cited, §1, and the Hush Garden's `world/2` branch run on engine revision `31a532345`] §1 bounds it at 15.7 heard and 17.3 not heard, horizontally. The branch run read the warden's `Pos` and `anger` and the bot's `Pos` over the server's rcon once a second while the bot slid down a 22-block ladder above it: with the bot 7.6 blocks off horizontally and 17.7 in three axes, no anger entry for the bot; one reading later, 7.0 horizontally and 14.2 in three axes, its entry read 34. A vibration's reach is measured from the warden to the sound's cell in three axes.
+- **Forgetting: 150 seconds.** [authored, from §2 and the same branch run] Anger at one body decays 1 a second (§2), and no reading has ever exceeded 150: §2 and §6 seed 150 and read it falling, and the branch run read three bodies' entries for minutes with a highest of 150. So 150 seconds after the last sound, no anger any sound earned remains.
+- **Crouched, the walk is not heard.** [cited, the same branch run] Over about four minutes of the bot walking crouched, the warden within 2.4 to 33 blocks of it and hunting other bodies, the bot never entered its anger list; the server granted the bot the `Sneak 100` advancement. The first entry came on the standing ladder descent above.

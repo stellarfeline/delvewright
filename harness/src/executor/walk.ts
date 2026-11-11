@@ -11,7 +11,6 @@ import { lethalStepCost, sameBox, spanStepCost } from "../death-loop.ts";
 import {
   allowNonCollidingEntities,
   configureLeg,
-  hopStandsUp,
   describeStuckNeighbours,
   isDoorByHand,
   parkourFor,
@@ -28,6 +27,7 @@ import {
   type Jump,
   parkourGap,
   type GoalSpec,
+  type StandUp,
   type TimedGate,
   type Waypoints,
 } from "../waypoints.ts";
@@ -606,6 +606,7 @@ export const methods = {
       let legWaypoints: readonly Vec3Tuple[] | undefined;
       let legClimbs: readonly Climb[] = [];
       let legJumps: readonly Jump[] = [];
+      let legStandUps: readonly StandUp[] = [];
       // spec-0100 §4.7: the vibrations the proven leg is predicted to make,
       // heard from the walk's start — or from the first walk along part of the
       // leg before it (a run-back approach, a pulse station walk), which is
@@ -642,6 +643,7 @@ export const methods = {
         legWaypoints = match.waypoints;
         legClimbs = match.climbs;
         legJumps = match.jumps;
+        legStandUps = match.standUps;
         legVibrations = match.vibrations;
         // A walk that starts off the leg, or resumes it part-way, does not walk
         // the whole proven route, so its doors are not this walk's to assert.
@@ -729,6 +731,7 @@ export const methods = {
           (a, b) =>
             climbs.some((c) => same(c.from, a) && same(c.to, b)) ||
             legJumps.some((j) => same(j.from, a) && same(j.to, b)) ||
+            legStandUps.some((u) => same(u.from, a) && same(u.to, b)) ||
             gatesCrossedByHop(a, b, declaredGates).length > 0,
         );
         if (stops.inserted > 0) {
@@ -787,7 +790,7 @@ export const methods = {
         }
         legWaypoints = kept;
       }
-      const goalsList = walkGoals(legWaypoints, [pos[0], pos[1], pos[2]], r, legClimbs, legJumps);
+      const goalsList = walkGoals(legWaypoints, [pos[0], pos[1], pos[2]], r, legClimbs, legJumps, legStandUps);
       // spec-0113 §6: a declared jump the pathfinder's parkour move cannot
       // express is a harness gap, refused by name before the walk starts.
       for (const j of legJumps) {
@@ -853,8 +856,14 @@ export const methods = {
           // other (spec-0113 §6): the bot walks what the proof proved.
           parkourFor(movements, spec.jump !== undefined);
           bot.pathfinder.setMovements(movements);
-          // A step down or a jump on a sneak leg is made standing (`hopStandsUp`).
-          this.crouchYielded = hopStandsUp(spec, bot.entity.position.y);
+          // A move of a sneak leg a crouched body cannot make is made standing
+          // (`stand_ups`, the compiler's answer); on a pursued step it waits
+          // first for every pursuer that hears to be out of earshot of it.
+          if (spec.standsUp) {
+            const p = bot.entity.position;
+            await this.quietBeforeStanding([p.x, p.y, p.z], [spec.x, spec.y, spec.z], glabel);
+          }
+          this.crouchYielded = spec.standsUp === true;
           try {
             await (spec.climb
               ? this.raceDeath(() => this.climbHop(spec, glabel))

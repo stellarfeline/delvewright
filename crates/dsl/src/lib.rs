@@ -81,6 +81,7 @@ pub mod quest_plan;
 pub mod registry;
 pub mod rig;
 pub mod schema;
+pub mod senses;
 mod serde_fields;
 pub mod shortcut;
 pub mod sign;

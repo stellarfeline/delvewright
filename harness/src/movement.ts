@@ -207,9 +207,9 @@ export function describeStuckNeighbours(
  * at every move it is sent.
  *
  * `yieldCrouch` names the moments a crouched body cannot do what the leg asks
- * and a player stands up for it: a downward climb (a crouching body holds on a
- * ladder and does not slide, and it will not walk off the brink it climbs down
- * from). While it answers `true` the hold stands the body up instead.
+ * and a player stands up for it: the leg's `stand_ups`, the compiler's one
+ * answer (a climb down, a step down, a jump — `waypoints::stand_ups`). While it
+ * answers `true` the hold stands the body up instead.
  *
  * `canOpenDoors` is enabled: some delve areas are entered only through a closed
  * door or fence gate (the ram pen's only opening is its oak_fence_gate). Opening one
@@ -246,19 +246,6 @@ export function configureLeg(
     bot.removeListener("physicsTick", hold);
     bot.setControlState("sneak", false);
   };
-}
-
-/**
- * **Whether a sneak leg's hop is walked standing** ({@link configureLeg}'s
- * `yieldCrouch`): a hop down onto a lower floor, or a declared jump. A crouched
- * body stops at every brink (vanilla's edge back-off, which the client physics
- * reproduces), so it can neither step down a block nor leap a gap; a player
- * stands up for the one move and crouches again. `feetY` is the body's feet
- * height when the hop starts; a climb hop is decided by the climb itself.
- */
-export function hopStandsUp(hop: { readonly y: number; readonly jump?: unknown; readonly climb?: unknown }, feetY: number): boolean {
-  if (hop.climb !== undefined) return false;
-  return hop.jump !== undefined || hop.y < Math.floor(feetY + 1e-6);
 }
 
 /**

@@ -1303,6 +1303,17 @@ test("format 6: a step's pursuers are parsed, and an empty row is the default", 
   assert.ok(!("pursuers" in path.steps[1]!), "an empty row leaves no key on the parsed step");
 });
 
+test("a pursuer's kind's hearing is parsed off its row, and a malformed one refused", () => {
+  const raw = pursuedRaw();
+  const row = ((raw["steps"] as Record<string, unknown>[])[2]!["pursuers"] as Record<string, unknown>[])[0]!;
+  row["hearing"] = { reach: 16, forget_ticks: 3000 };
+  assert.deepEqual(pursuersOf(parseStrict(raw).steps[2]!)[0]!.hearing, { reach: 16, forgetTicks: 3000 });
+  row["hearing"] = { reach: 0, forget_ticks: 3000 };
+  assert.throws(() => parseStrict(raw), CriticalPathParseError);
+  row["hearing"] = { reach: 16 };
+  assert.throws(() => parseStrict(raw), CriticalPathParseError);
+});
+
 test("format 6: a format-5 artifact is refused", () => {
   const raw = pursuedRaw();
   raw["format_version"] = 5;
