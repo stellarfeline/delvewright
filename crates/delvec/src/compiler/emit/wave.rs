@@ -566,6 +566,17 @@ pub(super) fn wave_fns(
                 body.push("tag @e[tag=dw_tmp] remove dw_tmp".to_string());
             }
         }
+        // spec-0134 §4 × spec-0074 §6: the most bodies this wave has ever
+        // seated — what a `first-kill` bundle pays at most once per body for,
+        // at whatever size the party met it.
+        if w.mobs.iter().any(|m| m.count.scales()) {
+            body.push(format!(
+                "scoreboard players operation {} dw.sys > {} {}",
+                seated_most(w.id.as_str()),
+                plan::wave_counter(w.id.as_str()),
+                plan::WAVE_OBJECTIVE,
+            ));
+        }
         // spec-0016 §6: the squad marches from waypoint 0 and its clock starts
         // with it. `schedule … <n>t` is replace-mode, so a re-seat (spec-0016 §1)
         // can never double the clock up.
@@ -821,6 +832,13 @@ pub(super) fn packtest_spawn_lines(plan: &Plan, safe: &str) -> Vec<String> {
         ],
         _ => vec![format!("function {ns}:spawn_{safe}")],
     }
+}
+
+/// The `dw.sys` holder of the most bodies a scaling wave has seated
+/// (spec-0134 §4): raised by every seating, never lowered; a `first-kill`
+/// bundle pays while its ledger is below it (spec-0074 §6).
+pub(super) fn seated_most(wave: &str) -> String {
+    format!("#wb_{}", plan::safe_local(wave))
 }
 
 /// The `dw.sys` holder a scaling wave's spawn writes the party size to

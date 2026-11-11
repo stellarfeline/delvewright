@@ -250,6 +250,9 @@ export const methods = {
     } else if (step.on === "use-item") {
       await this.walkTo(step.pos, Math.max(0, (step.range ?? 1) - 1), label);
       await this.raiseItem(step, label);
+    } else if (step.on === "body-enters") {
+      // spec-0134 §1: the body that enters was put in the box by the step's
+      // own census, performed before it; the bot only waits for the marker.
     } else if (step.on === "approach") {
       if (!step.stand) {
         await this.walkTo(step.pos, approachGoalRange(step.range ?? 1), label);

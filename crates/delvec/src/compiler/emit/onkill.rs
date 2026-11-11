@@ -53,11 +53,23 @@ pub(super) fn on_kill_call(
     let call = format!("function {ns}:{}", on_kill_function(fight));
     match ok.fires {
         Some(delvewright_dsl::KillFires::EveryKill) => call,
-        Some(delvewright_dsl::KillFires::FirstKill) | None => format!(
-            "execute if score {} dw.sys matches ..{} run {call}",
-            kill_ledger(fight),
-            fight_bodies(fight) - 1
-        ),
+        // A wave that scales has met as many bodies as it has seated at
+        // most (`seated_most`, written by its seating), not its four-player
+        // maximum (spec-0134 §4).
+        Some(delvewright_dsl::KillFires::FirstKill) | None => match fight {
+            delvewright_dsl::Fight::Wave(w) if w.mobs.iter().any(|m| m.count.scales()) => {
+                format!(
+                    "execute if score {} dw.sys < {} dw.sys run {call}",
+                    kill_ledger(fight),
+                    super::wave::seated_most(w.id.as_str())
+                )
+            }
+            _ => format!(
+                "execute if score {} dw.sys matches ..{} run {call}",
+                kill_ledger(fight),
+                fight_bodies(fight) - 1
+            ),
+        },
     }
 }
 

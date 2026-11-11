@@ -823,6 +823,39 @@ test("an approach trigger carries its range and a strike-npc its npc", () => {
   assert.equal(npc!.action === "trigger" && npc!.npc, "npc/giant");
 });
 
+test("a body-enters deed names no anchor and is performed by its census, which it must carry", () => {
+  const census = [
+    {
+      state: "state/muster-mustered",
+      objective: "dw.s_muster_mustered",
+      select: "tag=dw_wave_muster",
+      region: [
+        [12, 66, 16],
+        [18, 68, 22],
+      ],
+      count: 1,
+    },
+  ];
+  const deed = {
+    action: "trigger",
+    trigger: "trigger/the-muster-forms",
+    on: "body-enters",
+    pos: [15, 66, 19],
+  };
+  const step = parseCriticalPath(withStep({ ...deed, census })).steps[2];
+  assert.equal(step!.action === "trigger" && step!.on, "body-enters");
+  assert.equal(step!.action === "trigger" && step!.anchor, undefined);
+  assert.equal(step!.census?.length, 1);
+  assert.throws(
+    () => parseCriticalPath(withStep(deed)),
+    /body-enters trigger is performed by its census/,
+  );
+  assert.throws(
+    () => parseCriticalPath(withStep({ ...deed, anchor: "anchor/muster", census })),
+    /watches no anchor/,
+  );
+});
+
 test("a step trigger names its plate's anchor and carries no range", () => {
   const step = parseCriticalPath(
     withStep({

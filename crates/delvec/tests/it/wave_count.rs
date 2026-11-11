@@ -288,3 +288,53 @@ fn a_kill_reward_template_counts_the_bodies_its_party_of_one_meets() {
         "{t}"
     );
 }
+
+/// **A `first-kill` bundle on a wave that scales pays once per body the party
+/// met** (spec-0134 §4 × spec-0074 §6): every seating raises `#wb_<wave>` to
+/// the bodies it seated, and the bundle is called while the ledger is below
+/// it — never below the four-player maximum, which a party of one, meeting
+/// `base` bodies, would be paid up to over the wave's re-seats.
+#[test]
+fn a_first_kill_bundle_on_a_wave_that_scales_pays_once_per_body_met() {
+    let mut max = 0;
+    let out = build_with(|c| {
+        let w = &mut c.quests.content.waves[0];
+        w.mobs[0].count = two_plus_one();
+        w.respawns_on_rest = true;
+        w.on_kill = Some(
+            serde_json::from_str(
+                r#"{ "fires": "first-kill",
+                     "effects": [ { "type": "play-sound", "sound": "minecraft:entity.experience_orb.pickup" } ] }"#,
+            )
+            .unwrap(),
+        );
+        max = w.mobs.iter().map(|m| m.count.max()).sum::<u32>();
+    });
+    let seat = text(
+        &out,
+        "datapack/data/souls-bonfire/function/spawn_guards_party.mcfunction",
+    );
+    assert!(
+        seat.lines()
+            .any(|l| l == "scoreboard players operation #wb_guards dw.sys > #guards dw.wave"),
+        "{seat}"
+    );
+    let call = "run function souls-bonfire:on_kill_w_guards";
+    let calls: Vec<&str> = out
+        .iter()
+        .filter(|(p, _)| p.starts_with("datapack/") && p.ends_with(".mcfunction"))
+        .flat_map(|(_, b)| std::str::from_utf8(b).unwrap().lines())
+        .filter(|l| l.ends_with(call))
+        .collect();
+    assert!(!calls.is_empty(), "the bundle is called from no line");
+    for l in &calls {
+        assert!(
+            l.contains("if score #kf_w_guards dw.sys < #wb_guards dw.sys"),
+            "the bundle is capped at something other than the bodies met: {l}"
+        );
+        assert!(
+            !l.contains(&format!("matches ..{}", max - 1)),
+            "the bundle is capped at the four-player maximum: {l}"
+        );
+    }
+}
