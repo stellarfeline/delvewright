@@ -1094,7 +1094,7 @@ impl World {
     /// `is_lethal` answers about.
     /// Whether a body of this footprint in `c` meets a volume this leg keeps out
     /// of ([`World::keep_out`]), by the rule a lethal volume is met by.
-    fn meets_keep_out_fp(&self, c: [i32; 3], fp: &Footprint) -> bool {
+    pub(in crate::compiler::nav) fn meets_keep_out_fp(&self, c: [i32; 3], fp: &Footprint) -> bool {
         self.keep_out
             .iter()
             .any(|(_, (lo, hi))| self.body_can_meet_volume(c, fp, *lo, *hi))

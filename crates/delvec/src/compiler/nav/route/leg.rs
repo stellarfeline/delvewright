@@ -737,7 +737,27 @@ fn ride_leg(
     vi: usize,
 ) -> Result<(crate::compiler::nav::vehicle::RideTake, u32), crate::compiler::nav::vehicle::RideMiss>
 {
-    let st = world.walked_leg_region_state(region_events, ancestor, from.src_step, end.src_step);
+    let mut st =
+        world.walked_leg_region_state(region_events, ancestor, from.src_step, end.src_step);
+    // The ride is its own step in front of the one that performs the
+    // objective, so the objective's completion volume is armed and not yet due
+    // while the party rides: the ride keeps out of it as of every other armed
+    // volume, and the walk that follows is the one that enters it.
+    if let Some(Step::Reach {
+        objective_id,
+        completion,
+        ..
+    }) = carries.steps.get(end.src_step)
+    {
+        st.keep_out.push((
+            objective_id.clone(),
+            crate::compiler::reach::KeepOut {
+                objective: objective_id.clone(),
+                completion: completion.clone(),
+            }
+            .bounds(),
+        ));
+    }
     let owned;
     let leg: &World = if st.is_empty() {
         world

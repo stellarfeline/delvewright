@@ -43,6 +43,8 @@ struct Bay {
     /// A platform two blocks over the east floor (`x = 14..=18`, `z = 1..=2`)
     /// with a rail along `z = 1`: no walk climbs it, a body drops from it.
     ledge: bool,
+    /// The ledge runs on to `z = 5`, so a goal on it stands clear of the rail.
+    ledge_deep: bool,
     /// The vehicle the leg to the exit is declared ridden on.
     ride: Option<&'static str>,
     /// The anchor the second objective is reached at, when not the exit.
@@ -51,6 +53,8 @@ struct Bay {
     more: &'static str,
     /// A carrot on a stick in every class's kit.
     carrot: bool,
+    /// A second class, whose kit carries no carrot on a stick.
+    second_class: bool,
     /// A rail cell at `[16, 4, 7]` in a nook walled off from the room: no
     /// walk reaches it.
     nook: bool,
@@ -100,7 +104,7 @@ fn cells(bay: Bay) -> Vec<([i32; 3], &'static str)> {
     }
     if bay.ledge {
         for x in 14..=18 {
-            for z in 1..=2 {
+            for z in 1..=(if bay.ledge_deep { 5 } else { 2 }) {
                 by.insert([x, 4, z], "minecraft:stone");
                 by.insert([x, 5, z], "minecraft:stone");
             }
@@ -142,7 +146,8 @@ fn anchors() -> serde_json::Value {
         "anchor/bay": { "pos": [9, 3, 4] },
         "anchor/floor": { "pos": [3, 4, 3] },
         "anchor/rail-end": { "pos": [1, 4, 7] },
-        "anchor/ledge-end": { "pos": [18, 6, 2] },
+        "anchor/ledge-end": { "pos": [18, 6, 5] },
+        "anchor/rail-mid": { "pos": [10, 4, 6] },
         "anchor/room": { "pos": [10, 4, 4] },
         "anchor/nook": { "pos": [16, 4, 7] }
     })
@@ -175,6 +180,18 @@ fn write(tag: &str, bay: Bay, vehicles: &str, talk: &str) -> (PathBuf, PathBuf) 
                     .unwrap()
                     .push(serde_json::json!({ "item": "minecraft:carrot_on_a_stick", "count": 1 }));
             }
+        });
+    }
+    if bay.second_class {
+        common::patch_file(&dir.join("classes.json"), |v| {
+            let mut second = v["content"]["classes"][0].clone();
+            second["id"] = serde_json::json!("class/second");
+            second["name"] = serde_json::json!("Second");
+            second["kit"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|k| k["item"] != "minecraft:carrot_on_a_stick");
+            v["content"]["classes"].as_array_mut().unwrap().push(second);
         });
     }
     let ride = bay
@@ -427,6 +444,7 @@ fn a_required_ride_seats_the_party() {
         Bay {
             bridge: true,
             ledge: true,
+            ledge_deep: true,
             ride: Some("vehicle/v"),
             goal: Some("anchor/ledge-end"),
             ..Bay::default()
@@ -912,6 +930,134 @@ fn a_ridden_pig_owes_its_steering_item() {
     );
     assert_eq!(code, "DW1096", "{msg}");
     assert!(msg.contains("minecraft:carrot_on_a_stick"), "{msg}");
+}
+
+/// The kit rule `DW1090` shares (`MovementItems::first_held`): a carrot on a
+/// stick in one class's kit of two is a path that rides with an empty hand.
+#[test]
+fn a_carrot_in_one_class_of_two_is_dw1096() {
+    let (code, msg) = refused(
+        "pig-one-class",
+        Bay {
+            bridge: true,
+            ride: Some("vehicle/race-pig"),
+            carrot: true,
+            second_class: true,
+            ..Bay::default()
+        },
+        pig(),
+    );
+    assert_eq!(code, "DW1096", "{msg}");
+}
+
+/// Whether a player's body with its feet anywhere in `cell` can touch the
+/// inclusive cell box `lo..=hi` — the swept body box the bot's walk is held
+/// to (`harness` `volumeReachesCell`) and the proof's keep-out rule is
+/// (`World::body_can_meet_volume`).
+fn body_touches(cell: [i64; 3], lo: [i64; 3], hi: [i64; 3]) -> bool {
+    let (c, lo, hi) = (
+        cell.map(|v| v as f64),
+        lo.map(|v| v as f64),
+        hi.map(|v| v as f64),
+    );
+    let over = |a0: f64, a1: f64, b0: f64, b1: f64| a0 < b1 && b0 < a1;
+    over(c[0] - 0.3, c[0] + 1.3, lo[0], hi[0] + 1.0)
+        && over(c[2] - 0.3, c[2] + 1.3, lo[2], hi[2] + 1.0)
+        && over(c[1], c[1] + 1.8, lo[1], hi[1] + 1.0)
+}
+
+fn cell(v: &serde_json::Value) -> [i64; 3] {
+    let a = v.as_array().unwrap();
+    [
+        a[0].as_i64().unwrap(),
+        a[1].as_i64().unwrap(),
+        a[2].as_i64().unwrap(),
+    ]
+}
+
+/// The proof and the bot keep a ride out of an armed objective's completion
+/// volume by one rule: no cell a ride boards from, passes or leaves at is one
+/// a body touches the volume from, so the ride ends short of its own
+/// objective and the party walks in. Asked of every ride the bay's three
+/// kinds make to the exit, against the step's own exported `keep_out`.
+#[test]
+fn a_ride_keeps_out_of_its_objectives_volume_by_the_walks_rule() {
+    let cases: [(&str, Bay, String); 3] = [
+        (
+            "keep-pig",
+            Bay {
+                bridge: true,
+                ride: Some("vehicle/race-pig"),
+                carrot: true,
+                ..Bay::default()
+            },
+            pig().to_string(),
+        ),
+        (
+            "keep-boat",
+            Bay {
+                ride: Some("vehicle/gull"),
+                ..Bay::default()
+            },
+            boat("gull", "dock", [8, 3, 4]),
+        ),
+        (
+            "keep-cart",
+            Bay {
+                rails: true,
+                ride: Some("vehicle/cart"),
+                ..Bay::default()
+            },
+            cart().to_string(),
+        ),
+    ];
+    let mut judged = 0;
+    for (tag, bay, vehicles) in cases {
+        let r = rides(&build(tag, bay, &vehicles));
+        assert_eq!(r.len(), 1, "{tag}: {r:#?}");
+        let keep = r[0]["keep_out"]
+            .as_array()
+            .expect("the ride step keeps out");
+        assert!(!keep.is_empty(), "{tag}: the leg's own objective is armed");
+        let mut cells: Vec<[i64; 3]> = r[0]["medium"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(cell)
+            .collect();
+        cells.push(cell(&r[0]["board"]));
+        cells.push(cell(&r[0]["leave"]));
+        for k in keep {
+            let (lo, hi) = (cell(&k["lo"]), cell(&k["hi"]));
+            for c in &cells {
+                judged += 1;
+                assert!(
+                    !body_touches(*c, lo, hi),
+                    "{tag}: ride cell {c:?} touches {lo:?}..{hi:?}: {}",
+                    r[0]
+                );
+            }
+        }
+    }
+    assert!(judged > 20, "{judged} cell(s) judged");
+}
+
+/// A cart cannot stop short of where its rails take it: a line that runs
+/// through its objective's completion volume carries no declared ride there.
+#[test]
+fn a_cart_whose_run_enters_its_objectives_volume_is_refused() {
+    let (code, msg) = refused(
+        "cart-into-volume",
+        Bay {
+            rails: true,
+            ride: Some("vehicle/cart"),
+            goal: Some("anchor/rail-mid"),
+            ..Bay::default()
+        },
+        cart(),
+    );
+    assert_eq!(code, "DW0311", "{msg}");
+    assert!(msg.contains("from the saddle"), "{msg}");
 }
 
 /// A `ride` that names no declared vehicle is refused at validation.

@@ -475,6 +475,49 @@ mod tests {
         crate::compiler::load::parse_loaded(&loaded).expect("the fixture parses")
     }
 
+    /// The one kit rule both `DW1090` and `DW1096` read: an item is held from
+    /// the first step only when every class's kit carries it; one class of
+    /// two is nobody's guarantee; a `give-item` holds whatever the kits say.
+    #[test]
+    fn an_item_is_held_from_the_kit_only_when_every_class_carries_it() {
+        let kit = |items: &[&str]| -> serde_json::Value {
+            items
+                .iter()
+                .map(|i| serde_json::json!({"item": i, "count": 1}))
+                .collect()
+        };
+        for item in ["minecraft:bow", "minecraft:carrot_on_a_stick"] {
+            let bare = item.strip_prefix("minecraft:").unwrap();
+            for (first, second, held) in [
+                (vec![item], vec![item], Some(0)),
+                (vec![item], vec![], None),
+                (vec![], vec![item], None),
+                (vec![], vec![], None),
+            ] {
+                let mut c = hello_world();
+                let mut two = c.classes.content.classes[0].clone();
+                c.classes.content.classes[0].kit = serde_json::from_value(kit(&first)).unwrap();
+                two.kit = serde_json::from_value(kit(&second)).unwrap();
+                c.classes.content.classes.push(two);
+                let m = movement_items(&c, &[]);
+                for asked in [item, bare] {
+                    assert_eq!(
+                        m.first_held(&[asked]),
+                        held,
+                        "{item}: {first:?} / {second:?}"
+                    );
+                }
+            }
+        }
+        let mut given = hello_world();
+        let give: delvewright_dsl::QuestEffect = serde_json::from_value(serde_json::json!({
+            "type": "give-item", "item": "minecraft:bow", "count": 1
+        }))
+        .unwrap();
+        given.quests.content.quests[0].on_complete.push(give);
+        assert!(movement_items(&given, &[]).first_held(&["bow"]).is_some());
+    }
+
     /// spec-0113 A14: every source an item reaches a player by is read. Each
     /// of the four — a kit, a `give-item`, a container's loot, a shop offer —
     /// perturbed alone with a movement the graph does not fly is one

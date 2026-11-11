@@ -223,14 +223,29 @@ impl World {
     /// breadth-first order with each cell's parent — the medium graph of
     /// spec-0135 §4. A cart's is its driven run ([`crate::compiler::rail::driven_run`]).
     pub fn medium_tree(&self, v: &VehiclePlan) -> BTreeMap<[i32; 3], Option<[i32; 3]>> {
+        self.medium_tree_avoiding(v, &|_| false)
+    }
+
+    /// [`World::medium_tree`] through no cell `avoid` names — the medium a
+    /// ride may take on a leg that keeps out of some volume. A cart cannot
+    /// stop short of where its rails take it, so a run that meets an avoided
+    /// cell is no medium at all: the seat alone.
+    fn medium_tree_avoiding(
+        &self,
+        v: &VehiclePlan,
+        avoid: &dyn Fn([i32; 3]) -> bool,
+    ) -> BTreeMap<[i32; 3], Option<[i32; 3]>> {
         let mut parent: BTreeMap<[i32; 3], Option<[i32; 3]>> = BTreeMap::new();
         if !self.seat_in_medium(v) || !v.within(v.seat) {
             return parent;
         }
         if v.medium == VehicleMedium::Rails {
             let within = |c: [i32; 3]| v.within(c);
-            let run = crate::compiler::rail::driven_run(&self.rails, v.seat, v.facing, &within)
+            let mut run = crate::compiler::rail::driven_run(&self.rails, v.seat, v.facing, &within)
                 .unwrap_or_else(|| vec![v.seat]);
+            if run.iter().any(|c| avoid(*c)) {
+                run = vec![v.seat];
+            }
             let mut prev = None;
             for c in run {
                 parent.insert(c, prev);
@@ -243,7 +258,7 @@ impl World {
         parent.insert(v.seat, None);
         while let Some(c) = queue.pop_front() {
             for n in self.medium_next(v, &fp, c) {
-                if v.within(n) && !parent.contains_key(&n) {
+                if v.within(n) && !avoid(n) && !parent.contains_key(&n) {
                     parent.insert(n, Some(c));
                     queue.push_back(n);
                 }
@@ -528,6 +543,9 @@ pub enum RideMiss {
     NoMedium,
     /// The party walks to the leg's end from none of the cells it is left at.
     NoLeave,
+    /// Its seat, or a cart's whole run, lies in a volume the leg keeps out of:
+    /// a rider there would complete an armed objective out of turn.
+    KeptOut,
 }
 
 impl RideMiss {
@@ -540,6 +558,12 @@ impl RideMiss {
             }
             RideMiss::NoMedium => {
                 "its medium inside `bounds` is its mark alone, so a ride on it goes nowhere"
+            }
+            RideMiss::KeptOut => {
+                "its mark, or the run its rails carry it on, lies within reach of the completion \
+                 volume of an objective armed on this leg, so a rider would complete that \
+                 objective from the saddle; end the medium, or move the objective's anchor, so \
+                 the ride stops short and the party walks in"
             }
             RideMiss::NoLeave => {
                 "the party walks to the leg's end from no cell a rider stands on after leaving it, \
@@ -571,14 +595,24 @@ pub fn ride_of(
     if !world.seat_in_medium(v) || !v.within(v.seat) {
         return Err(RideMiss::Unseated);
     }
+    // The leg keeps out of every completion volume armed on it, its own
+    // objective's included (`World::keep_out`), by the hitbox rule a walk is
+    // held to: a rider is a body at the seat, so no cell the ride boards
+    // from, passes or leaves at may meet one. The ride ends short of its
+    // objective's volume and the party walks in.
+    let body = Footprint::player();
+    let kept = |c: [i32; 3]| world.meets_keep_out_fp(c, &body);
+    if kept(v.seat) {
+        return Err(RideMiss::KeptOut);
+    }
     let Some(board) = world
         .boarding_cells(v)
         .into_iter()
-        .find(|c| walks(from, *c))
+        .find(|c| !kept(*c) && walks(from, *c))
     else {
         return Err(RideMiss::NoBoard);
     };
-    let tree = world.medium_tree(v);
+    let tree = world.medium_tree_avoiding(v, &kept);
     // Leaving cell → the shortest ride that reaches it.
     let mut best: BTreeMap<[i32; 3], (usize, [i32; 3])> = BTreeMap::new();
     let mut longest = 0usize;
@@ -591,13 +625,22 @@ pub fn ride_of(
         }
     }
     if rides.is_empty() {
-        return Err(RideMiss::NoMedium);
+        // A cart whose run was refused for the volume it enters, not for
+        // going nowhere.
+        return Err(if tree.len() < world.medium_tree(v).len() {
+            RideMiss::KeptOut
+        } else {
+            RideMiss::NoMedium
+        });
     }
     for (len, m) in rides {
         if v.kind == VehicleKind::Minecart && len != longest {
             continue;
         }
         for l in world.leaving_cells_of(v, m) {
+            if kept(l) {
+                continue;
+            }
             let e = best.entry(l).or_insert((len, m));
             if (len, m) < *e {
                 *e = (len, m);
