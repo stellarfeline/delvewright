@@ -1774,7 +1774,10 @@ fn dw0891_lowering_the_volume_onto_the_pits_bottom_builds() {
     let (code, after) = build("pit-lower-bottom", &camp, &prefabs);
     assert_green(code, &after, "the volume on the pit's bottom");
     assert!(
-        after.contains("5 owed anchor name(s) checked, 1 of them a killing volume's seat"),
+        after.contains(
+            "5 owed anchor name(s) checked, 1 of them a station no body is put at (a killing \
+             volume's centre, a shot's target) in out-of-walk floor"
+        ),
         "the admission is counted:\n{after}"
     );
 }
@@ -1869,9 +1872,56 @@ fn dw0845_still_refuses_a_killing_seat_a_quest_also_names() {
     assert_eq!(r.status.code(), Some(1), "refused at validation:\n{t}");
     assert!(t.contains("DW0845"), "{t}");
     assert!(
-        t.contains("centres the killing volume(s) `lethal/the-pit`")
+        t.contains("It is the killing volume `lethal/the-pit`'s centre")
             && t.contains("quests:/quests/0/objectives/2/anchor"),
         "names the volume and the use that disqualifies the seat:\n{t}"
+    );
+}
+
+/// **A shot's target is a station no body is put at** (spec-0134 §2): the
+/// target block hangs where it is seen and never stood at — a belfry's
+/// opening — and is shot from a stance between 4 and 40 blocks off. The pit's
+/// station, seated on its `no_body` bottom, named by nothing but a `shot`
+/// trigger's `at`, is admitted by `DW0845`; the same station also named by a
+/// quest's `reach-anchor` (a body put there) is still refused, naming the
+/// shot and the use that disqualifies it.
+#[test]
+fn dw0845_admits_a_shot_target_in_out_of_walk_floor() {
+    let (camp, prefabs) = pit_campaign("shot-target", "bottom", [0, 0, 0]);
+    edit_doc(&camp, "quests.json", |v| {
+        v["content"]
+            .as_object_mut()
+            .unwrap()
+            .remove("lethal_volumes");
+        v["content"]["triggers"] = serde_json::json!([{
+            "id": "trigger/hit-the-mark", "at": "anchor/pit", "on": {"on": "shot"},
+            "prop": {"block": "minecraft:target"},
+            "effects": [{"type": "narrate", "text": "A clean hit.", "style": "chat"}]
+        }]);
+    });
+    let validate = |camp: &Path| {
+        log(&delvec(&[
+            "validate",
+            camp.to_str().unwrap(),
+            "--prefabs",
+            prefabs.to_str().unwrap(),
+        ]))
+    };
+    let t = validate(&camp);
+    assert!(!t.contains("DW0845"), "a shot's target is admitted:\n{t}");
+    assert!(
+        t.contains("checked, 1 of them a station no body is put at"),
+        "the admission is counted:\n{t}"
+    );
+    edit_doc(&camp, "quests.json", |v| {
+        v["content"]["quests"][0]["objectives"][2]["anchor"] = serde_json::json!("anchor/pit");
+    });
+    let t = validate(&camp);
+    assert!(t.contains("DW0845"), "{t}");
+    assert!(
+        t.contains("It is the target `shot` trigger `trigger/hit-the-mark` lands on")
+            && t.contains("quests:/quests/0/objectives/2/anchor"),
+        "names the shot and the use that disqualifies the seat:\n{t}"
     );
 }
 
