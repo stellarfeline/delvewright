@@ -556,12 +556,15 @@ pub(super) fn emit_quest_effect(
             count,
             name,
             enchantments,
+            fireworks,
             ..
         } => {
             // One renderer for every stack a command writes: a given stack is
-            // described exactly as a container fill's is, name and enchantments
-            // alike, so a `give-item` and a `loot` entry for one item agree.
-            let comp = container_stack_components(item, name.as_deref(), enchantments);
+            // described exactly as a container fill's is, name, enchantments
+            // and stars alike, so a `give-item` and a `loot` entry for one item
+            // agree.
+            let comp =
+                container_stack_components(item, name.as_deref(), enchantments, fireworks.as_ref());
             // spec-0018: a quest beat arms the whole party (`@a`) unless the item
             // declares `carrier: "one"` — one quest prop, handed to the player
             // whose action earned it (`@s`), for the party to pass around. A

@@ -924,7 +924,7 @@ pub(crate) fn collect_staged(
         // takes `wave_total` of them, stack by stack), so walk them the same way.
         let mut next = 0usize;
         for m in &w.mobs {
-            let take = (m.count as usize).min(cells.len().saturating_sub(next));
+            let take = (m.count.max() as usize).min(cells.len().saturating_sub(next));
             let mine = cells[next..next + take].to_vec();
             next += take;
             if mine.is_empty() {

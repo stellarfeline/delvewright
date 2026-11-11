@@ -37,7 +37,7 @@ pub(super) fn emit_bonfire_packtests(plan: &Plan, out: &mut BuildOutput) {
     let tag = plan::wave_tag(w.id.as_str());
     let safe = plan::safe_local(w.id.as_str());
     let seated = wave_seated_holder(w.id.as_str());
-    let total = plan::wave_total(w);
+    let total = plan::wave_base_total(w);
     let mut b = packtest_header(&format!(
         "{title}: a bonfire rest re-seats wave `{}` — but only once met (spec-0016 §1)",
         w.id
@@ -151,7 +151,7 @@ pub(super) fn emit_reseat_stationed_packtest(
     let Some(&seat) = cells.first() else {
         return;
     };
-    let total = plan::wave_total(w);
+    let total = plan::wave_base_total(w);
     if total < 1 {
         return;
     }
@@ -411,14 +411,14 @@ pub(super) fn emit_reseat_undefeated_packtests(plan: &Plan, out: &mut BuildOutpu
     let Some(w) = plan
         .undefeated_reseat_waves()
         .into_iter()
-        .find(|w| plan::wave_total(w) >= 1)
+        .find(|w| plan::wave_base_total(w) >= 1)
     else {
         return;
     };
     let safe = plan::safe_local(w.id.as_str());
     let tag = plan::wave_tag(w.id.as_str());
     let brand = plan::wave_brand_tag(w.id.as_str());
-    let total = plan::wave_total(w);
+    let total = plan::wave_base_total(w);
     let mut b = packtest_header(&format!(
         "{title}: a rest re-seats the undefeated boss wave `{}` whole, and never resurrects a \
          beaten one (spec-0016 §1)",
@@ -513,7 +513,7 @@ pub(super) fn emit_reseat_yields_nothing_packtest(
     waves.extend(plan.undefeated_reseat_waves());
     waves.retain(|w| {
         wave_declares_drops(w)
-            && plan::wave_total(w) >= 1
+            && plan::wave_base_total(w) >= 1
             && wave_placements
                 .get(w.id.as_str())
                 .is_some_and(|c| !c.is_empty())

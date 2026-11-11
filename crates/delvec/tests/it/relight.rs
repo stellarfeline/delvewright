@@ -474,6 +474,7 @@ fn renamed_potion_kit_item_no_longer_mitigates_dw0210() {
             // classes stage is earlier, which is why the item survives to reach
             // the mitigation heuristic at all.)
             contents: None,
+            fireworks: None,
         });
     match build_with_structure(&c, dark_box_nbt([11, 6, 11], &[])).unwrap_err() {
         BuildFailure::Diagnostic { code, .. } => assert_eq!(

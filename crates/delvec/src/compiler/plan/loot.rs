@@ -36,6 +36,8 @@ pub struct LootItemPlan {
     /// The slot the stack names (spec-0111 §3.3), or `None` for a positional
     /// stack.
     pub slot: Option<String>,
+    /// The rocket's stars (spec-0134 §5), or `None`.
+    pub fireworks: Option<delvewright_dsl::StackFireworks>,
 }
 
 /// A `collect` objective that ADOPTS a prefab-placed holder (`holder`,
@@ -139,6 +141,7 @@ pub(super) fn collect_loot(
                         name: it.name.clone(),
                         enchantments: it.enchantments.clone(),
                         slot: it.slot.clone(),
+                        fireworks: it.fireworks.clone(),
                     })
                     .collect(),
             })

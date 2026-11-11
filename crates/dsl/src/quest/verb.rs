@@ -74,6 +74,12 @@ pub enum Verb {
         /// the book's stored enchantments, the ones an anvil applies.
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         enchantments: BTreeMap<String, u32>,
+        /// **A rocket's stars** (DSL v0.73, spec-0134 §5): the
+        /// `minecraft:fireworks` component of a `minecraft:firework_rocket`
+        /// stack, the field a `loot` stack and a kit stack carry. On any other
+        /// item it is `DW1095`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fireworks: Option<crate::StackFireworks>,
     },
     /// Sets a campaign flag, enabling flag-gated objectives (v0.3).
     SetFlag {

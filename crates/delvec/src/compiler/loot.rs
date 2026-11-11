@@ -755,6 +755,7 @@ mod tests {
                     name: None,
                     enchantments: BTreeMap::new(),
                     slot: None,
+                    fireworks: None,
                 })
                 .collect(),
         }

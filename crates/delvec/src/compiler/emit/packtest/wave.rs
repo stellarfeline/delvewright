@@ -74,13 +74,13 @@ fn emit_one_wave_census_packtest(plan: &Plan, w: &delvewright_dsl::Wave, out: &m
     let ns = &plan.namespace;
     let title = artifact_title(plan.campaign);
     // A wave the compiler could not place emits no `spawn_<wave>` to drive.
-    if plan::wave_total(w) < 1 || w.mobs.is_empty() {
+    if plan::wave_base_total(w) < 1 || w.mobs.is_empty() {
         return;
     }
     let safe = plan::safe_local(w.id.as_str());
     let tag = plan::wave_tag(w.id.as_str());
     let brand = plan::wave_brand_tag(w.id.as_str());
-    let total = plan::wave_total(w);
+    let total = plan::wave_base_total(w);
     let species = &w.mobs[0].entity;
 
     let mut b = packtest_header(&format!(
@@ -167,7 +167,7 @@ pub(super) fn emit_kill_reward_packtests(
     let ns = &plan.namespace;
     let title = artifact_title(plan.campaign);
     for w in wave_machinery_waves(plan, wave_placements) {
-        let total = plan::wave_total(w);
+        let total = plan::wave_base_total(w);
         let safe = plan::safe_local(w.id.as_str());
         let tag = plan::wave_tag(w.id.as_str());
         let counter = plan::wave_counter(w.id.as_str());

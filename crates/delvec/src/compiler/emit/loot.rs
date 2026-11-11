@@ -38,7 +38,12 @@ pub(super) fn loot_setup(
                 c[1],
                 c[2],
                 it.item,
-                container_stack_components(&it.item, it.name.as_deref(), &it.enchantments),
+                container_stack_components(
+                    &it.item,
+                    it.name.as_deref(),
+                    &it.enchantments,
+                    it.fireworks.as_ref()
+                ),
                 it.count
             ));
         }
@@ -60,6 +65,7 @@ pub(super) fn container_stack_components(
     item: &str,
     name: Option<&str>,
     ench: &std::collections::BTreeMap<String, u32>,
+    fireworks: Option<&delvewright_dsl::StackFireworks>,
 ) -> String {
     let mut comps: Vec<String> = Vec::new();
     if let Some(n) = name {
@@ -81,6 +87,9 @@ pub(super) fn container_stack_components(
             comp.strip_prefix("minecraft:").unwrap_or(comp)
         ));
     }
+    if let Some(fw) = fireworks {
+        comps.push(super::firework::stack_fireworks_component(fw));
+    }
     if comps.is_empty() {
         return String::new();
     }
@@ -92,7 +101,7 @@ pub(super) fn container_stack_components(
 /// [`container_stack_components`] — a collect stack is a container fill, and is
 /// rendered by the container fill's renderer.
 pub(super) fn item_component_tail(item: &str, name: Option<&str>) -> String {
-    container_stack_components(item, name, &std::collections::BTreeMap::new())
+    container_stack_components(item, name, &std::collections::BTreeMap::new(), None)
 }
 
 #[cfg(test)]
@@ -111,6 +120,7 @@ mod loot_emit_tests {
             name: name.map(str::to_string),
             enchantments: ench.iter().map(|(k, v)| ((*k).to_string(), *v)).collect(),
             slot: None,
+            fireworks: None,
         }
     }
 
@@ -121,6 +131,30 @@ mod loot_emit_tests {
             cell: [10, 64, -3],
             items,
         }]
+    }
+
+    /// spec-0134 §5: a rocket stack in a fill carries its stars as the
+    /// `fireworks` component, through the renderer `give-item` shares.
+    #[test]
+    fn a_rocket_in_a_fill_carries_its_stars() {
+        let mut rocket = item("minecraft:firework_rocket", 2, None, &[]);
+        rocket.fireworks = Some(delvewright_dsl::StackFireworks {
+            flight: None,
+            explosions: vec![delvewright_dsl::FireworkExplosion {
+                shape: delvewright_dsl::FireworkShape::Burst,
+                colors: vec!["#ff0000".to_string()],
+                fade_colors: vec!["#0000ff".to_string()],
+                trail: false,
+                twinkle: true,
+            }],
+        });
+        let out = loot_setup_none(&plan_of(vec![rocket]));
+        assert!(
+            out.iter().any(|l| l.ends_with(
+                "with minecraft:firework_rocket[fireworks={flight_duration:1b,explosions:[{shape:\"burst\",colors:[I;16711680],fade_colors:[I;255],has_twinkle:1b}]}] 2"
+            )),
+            "{out:#?}"
+        );
     }
 
     /// Slots are positional and deterministic: nth declared stack -> container.n.

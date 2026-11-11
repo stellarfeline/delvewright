@@ -170,7 +170,12 @@ fn fill_line(o: &OwnedHolder, slot: &str, it: &crate::compiler::plan::LootItemPl
         "item replace entity {} {slot} with {}{} {}",
         o.selector(),
         it.item,
-        container_stack_components(&it.item, it.name.as_deref(), &it.enchantments),
+        container_stack_components(
+            &it.item,
+            it.name.as_deref(),
+            &it.enchantments,
+            it.fireworks.as_ref()
+        ),
         it.count
     )
 }
@@ -315,6 +320,7 @@ mod tests {
             name: None,
             enchantments: BTreeMap::new(),
             slot: None,
+            fireworks: None,
         }
     }
 

@@ -527,7 +527,7 @@ pub(super) fn emit_v04_packtests(
                     && !killed.contains(wave.as_str())
                     && let Some(w) = plan::wave_of(c, wave.as_str())
                 {
-                    let total = plan::wave_total(w);
+                    let total = plan::wave_base_total(w);
                     let ws = plan::safe_local(wave.as_str());
                     let mut b = packtest_header(&format!(
                         "{}: kill-less spawn-wave `{wave}` spawns its mobs",

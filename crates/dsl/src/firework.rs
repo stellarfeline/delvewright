@@ -176,6 +176,30 @@ pub struct FireworkExplosion {
     pub twinkle: bool,
 }
 
+/// **A rocket stack's stars** (spec-0134 §5): the `firework` effect's own
+/// type, carried by a stack of `minecraft:firework_rocket` wherever a stack is
+/// written — a `loot` fill, a `give-item`, a class kit — and emitted as the
+/// `minecraft:fireworks` item component. A rocket with no stars bursts with
+/// no damage; the stars are what make a crossbow's rocket hurt (the vanilla
+/// record, `docs/reference/vehicles-animals-and-targets.md` §2). On any other
+/// item it is `DW1095`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct StackFireworks {
+    /// Flight duration, 1–3. Absent = [`MIN_FLIGHT`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 1, max = 3))]
+    pub flight: Option<u8>,
+    /// One to seven bursts, in the order the component carries them.
+    #[schemars(length(min = 1, max = 7))]
+    pub explosions: Vec<FireworkExplosion>,
+}
+
+/// Whether `item` (namespaced or not) is the rocket.
+pub fn is_rocket(item: &str) -> bool {
+    item.strip_prefix("minecraft:").unwrap_or(item) == "firework_rocket"
+}
+
 /// serde `skip_serializing_if` helper: skip a `false` flag.
 fn is_false(b: &bool) -> bool {
     !*b
@@ -234,15 +258,27 @@ fn firework_shape(
     eff: &QuestEffect,
     found: &mut Vec<(String, &'static str, String)>,
 ) {
-    use crate::firework;
     let Verb::Firework {
         flight, explosions, ..
     } = &eff.verb
     else {
         return;
     };
+    firework_bounds(stage, path, *flight, explosions, found);
+}
+
+/// The bounds of one rocket's stars — a `firework` effect's and a stack's
+/// `fireworks` alike (spec-0134 §5): one rule, at whichever pointer it is met.
+pub(crate) fn firework_bounds(
+    stage: &'static str,
+    path: &str,
+    flight: Option<u8>,
+    explosions: &[FireworkExplosion],
+    found: &mut Vec<(String, &'static str, String)>,
+) {
+    use crate::firework;
     if let Some(f) = flight
-        && !(firework::MIN_FLIGHT..=firework::MAX_FLIGHT).contains(f)
+        && !(firework::MIN_FLIGHT..=firework::MAX_FLIGHT).contains(&f)
     {
         found.push((
             format!("{path}/flight"),

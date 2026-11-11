@@ -69,6 +69,11 @@ pub struct LootItem {
     /// author's judgement. A fill names every slot or none (`DW1035`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slot: Option<String>,
+    /// **A rocket's stars** (DSL v0.73, spec-0134 §5): the `minecraft:fireworks`
+    /// component of a `minecraft:firework_rocket` stack. On any other item it
+    /// is `DW1095`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fireworks: Option<crate::StackFireworks>,
 }
 
 /// **The container class's home in stage 5** (DSL v0.43, spec-0105).
@@ -621,5 +626,99 @@ pub(crate) fn loot_checks(
             items,
             d,
         );
+    }
+}
+
+crate::dw_code! {
+    /// (spec-0134 §5) A stack carries `fireworks` and its item is not
+    /// `minecraft:firework_rocket` — the game keeps the component on no other
+    /// item, so the stars are written and never seen.
+    pub const STACK_FIREWORKS_NOT_ROCKET: DwCode = DwCode::new("DW1095", ExitTier::Build);
+}
+
+/// **A rocket's stars, at every stack site that carries them** (spec-0134 §5):
+/// a `loot` stack, a `give-item` at any effect root (nested ones included) and
+/// a class kit stack. Each is asked the same two questions — is the item the
+/// rocket (`DW1095`), and are the stars within the bounds a `firework` effect's
+/// are (`DW0100`, the one rule `firework::firework_bounds` states).
+pub(crate) fn stack_fireworks_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let mut found: Vec<(String, &'static str, String)> = Vec::new();
+    let mut ask = |stage: &'static str,
+                   path: String,
+                   item: &str,
+                   fw: &crate::StackFireworks,
+                   d: &mut Vec<Diagnostic>| {
+        if !crate::firework::is_rocket(item) {
+            d.push(Diagnostic::error(
+                STACK_FIREWORKS_NOT_ROCKET,
+                stage,
+                format!("{path}/fireworks"),
+                format!(
+                    "a stack of `{item}` carries `fireworks`, and the game keeps a rocket's \
+                     stars on `{rocket}` alone, so these stars would be written and never \
+                     seen. Make the stack `{rocket}`, or remove `fireworks`.",
+                    rocket = crate::firework::ROCKET_ITEM,
+                ),
+            ));
+        }
+        crate::firework::firework_bounds(stage, &path, fw.flight, &fw.explosions, &mut found);
+    };
+    for (i, l) in c.quests.content.loot.iter().enumerate() {
+        for (k, it) in l.items.iter().enumerate() {
+            if let Some(fw) = &it.fireworks {
+                ask(
+                    "quests",
+                    format!("/content/loot/{i}/items/{k}"),
+                    &it.item,
+                    fw,
+                    d,
+                );
+            }
+        }
+    }
+    for (i, cl) in c.classes.content.classes.iter().enumerate() {
+        for (k, it) in cl.kit.iter().enumerate() {
+            if let Some(fw) = &it.fireworks {
+                ask(
+                    "classes",
+                    format!("/content/classes/{i}/kit/{k}"),
+                    &it.item,
+                    fw,
+                    d,
+                );
+            }
+        }
+    }
+    fn descend<'a>(
+        stage: &'static str,
+        path: String,
+        eff: &'a crate::QuestEffect,
+        out: &mut Vec<(&'static str, String, &'a str, &'a crate::StackFireworks)>,
+    ) {
+        if let crate::Verb::GiveItem {
+            item,
+            fireworks: Some(fw),
+            ..
+        } = &eff.verb
+        {
+            out.push((stage, path.clone(), item.as_str(), fw));
+        }
+        for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
+            for (j, inner) in list.iter().enumerate() {
+                descend(stage, format!("{path}/{pseg}/{j}"), inner, out);
+            }
+        }
+    }
+    let mut gives = Vec::new();
+    crate::effects::for_each_effect_root(c, &mut |site, effs| {
+        for (i, eff) in effs.iter().enumerate() {
+            descend(site.stage, format!("{}/{i}", site.path), eff, &mut gives);
+        }
+    });
+    for (stage, path, item, fw) in gives {
+        ask(stage, path, item, fw, d);
+    }
+    for (path, stage, message) in found {
+        d.push(Diagnostic::error(codes::SCHEMA, stage, path, message));
     }
 }

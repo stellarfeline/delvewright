@@ -174,6 +174,8 @@ pub fn validate_campaign_with(
     crate::wave::lane_checks(c, anchors, &mut d);
     crate::wave::difficulty_checks(c, &mut d);
     crate::firework::firework_checks(c, &mut d);
+    crate::loot::stack_fireworks_checks(c, &mut d);
+    crate::wave::mob_count_checks(c, &mut d);
     // spec-0085: the perception bundle — a particle's id, the envelope's audience
     // on a party fact, and a sight grant that ends under a camera.
     crate::perception::perception_checks(c, &mut d);

@@ -898,7 +898,7 @@ fn undamageable_hostiles(waves: &[Wave], mandatory: &BTreeSet<String>) -> Vec<St
                 "  {} x{} in {} carries `{effect}` amplifier {amplifier} (level {}): \
                  100% damage reduction, i.e. total immunity",
                 mob.entity,
-                mob.count,
+                mob.count.max(),
                 wave.id.as_str(),
                 amplifier + 1,
             ));
@@ -1008,10 +1008,10 @@ pub fn time_to_kill(wave: &Wave, hit: f64, items: &ItemCombatRegistry) -> Encoun
         } else {
             u64::MAX
         };
-        swings = swings.saturating_add(u64::from(mob.count).saturating_mul(per_body));
+        swings = swings.saturating_add(u64::from(mob.count.base()).saturating_mul(per_body));
         stacks.push(StackTtk {
             entity: mob.entity.clone(),
-            count: mob.count,
+            count: mob.count.base(),
             max_health,
             defence,
             resistance,
@@ -1151,7 +1151,7 @@ pub fn check_winnability(
         if !undeclared.is_empty() && best.is_some() {
             let names: Vec<String> = undeclared
                 .iter()
-                .map(|m| format!("{} x{}", m.entity, m.count))
+                .map(|m| format!("{} x{}", m.entity, m.count.base()))
                 .collect();
             unproven.push(format!(
                 "  {}: {} declare no `attributes.max_health`",
@@ -1676,7 +1676,7 @@ mod tests {
     fn resistance_five_is_total_immunity() {
         let mob = WaveMob {
             entity: "minecraft:zombie".to_string(),
-            count: 1,
+            count: 1.into(),
             name: None,
             attributes: None,
             effects: vec![delvewright_dsl::MobEffect {
@@ -1695,7 +1695,7 @@ mod tests {
     fn resistance_four_still_lets_damage_through() {
         let mob = WaveMob {
             entity: "minecraft:zombie".to_string(),
-            count: 1,
+            count: 1.into(),
             name: None,
             attributes: None,
             effects: vec![delvewright_dsl::MobEffect {
@@ -1741,7 +1741,7 @@ mod tests {
             anchor: delvewright_dsl::AnchorId("anchor/pit".to_string()),
             mobs: vec![WaveMob {
                 entity: entity.to_string(),
-                count: 1,
+                count: 1.into(),
                 name: None,
                 attributes: None,
                 effects,

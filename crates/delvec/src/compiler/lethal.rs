@@ -1750,10 +1750,10 @@ pub fn wave_reach(
         b.waves += 1;
         let mut seat = 0usize;
         for mob in &w.mobs {
-            let roots: Vec<[i32; 3]> = (0..mob.count as usize)
+            let roots: Vec<[i32; 3]> = (0..mob.count.max() as usize)
                 .filter_map(|i| cells.get(seat + i).copied())
                 .collect();
-            seat += mob.count as usize;
+            seat += mob.count.max() as usize;
             if roots.is_empty() {
                 continue;
             }

@@ -11,9 +11,18 @@ pub fn wave_of<'a>(campaign: &'a Campaign, wave_id: &str) -> Option<&'a delvewri
         .iter()
         .find(|w| w.id.as_str() == wave_id)
 }
-/// A wave's total mob count.
+/// A wave's total mob count at its largest — a full party's
+/// (`MobCount::max`, spec-0134 §4): the bodies every spawn cell is proven for
+/// and every upper bound reads.
 pub fn wave_total(wave: &delvewright_dsl::Wave) -> i32 {
-    wave.mobs.iter().map(|m| m.count as i32).sum()
+    wave.mobs.iter().map(|m| m.count.max() as i32).sum()
+}
+
+/// A wave's mob count for one player (`MobCount::base`, spec-0134 §4): what
+/// a PackTest (no player present) and the one bot meet, and what the kill
+/// countdown starts from before the party's extra bodies are added.
+pub fn wave_base_total(wave: &delvewright_dsl::Wave) -> i32 {
+    wave.mobs.iter().map(|m| m.count.base() as i32).sum()
 }
 
 /// **Which body lands on which seated cell** — the wave's declared stacks paired
@@ -38,7 +47,7 @@ pub fn wave_seats<'a>(
     let mut out = Vec::new();
     let mut seat = 0usize;
     for mob in &wave.mobs {
-        for _ in 0..mob.count {
+        for _ in 0..mob.count.max() {
             if let Some(cell) = cells.get(seat) {
                 out.push((mob.entity.as_str(), *cell));
             }

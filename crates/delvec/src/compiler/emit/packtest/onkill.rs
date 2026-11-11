@@ -120,7 +120,7 @@ pub(super) fn emit_kill_pays_packtests(
                 "scoreboard players set {} {} {}",
                 plan::wave_counter(w.id.as_str()),
                 plan::WAVE_OBJECTIVE,
-                plan::wave_total(w)
+                plan::wave_base_total(w)
             )],
             Fight::Actor(_) => Vec::new(),
         };

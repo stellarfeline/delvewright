@@ -149,7 +149,7 @@ pub fn check_name_tags(c: &Campaign) -> (Vec<Diagnostic>, CrowdBinding) {
         for m in &w.mobs {
             if let Some(n) = m.name.as_deref() {
                 let e = bodies.entry(shown(n)).or_default();
-                e.0 += m.count;
+                e.0 += m.count.max();
                 e.1 += 1;
             }
         }
@@ -195,7 +195,9 @@ pub fn check_name_tags(c: &Campaign) -> (Vec<Diagnostic>, CrowdBinding) {
                      entry; if the fight needs a heading, state the wave's `health_bar.title`. \
                      If one of these bodies is a character, give it its own entry of `count: 1` \
                      and its own name",
-                    w.id, m.entity, m.count
+                    w.id,
+                    m.entity,
+                    m.count.max()
                 ),
             ));
         }
