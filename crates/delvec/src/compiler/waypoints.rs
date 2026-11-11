@@ -69,6 +69,9 @@ pub fn waypoints_json(
                 keep.push(j.from);
                 keep.push(j.to);
             }
+            // spec-0134 §10: every water cell is a kept waypoint, so the leg's
+            // water stretch is walked cell by cell as it was proven.
+            keep.extend(leg.water.iter().copied());
             let wps: Vec<Value> = leg_waypoints(&leg.cells, &keep, &gates)
                 .into_iter()
                 .filter(|c| !held_inside(leg, c))
@@ -86,6 +89,12 @@ pub fn waypoints_json(
             // cells first-class instead of leaving them workaround folklore.
             if !leg.use_gates.is_empty() {
                 leg_json["use_gates"] = json!(leg.use_gates);
+            }
+            // spec-0134 §10: the cells this leg swims (`medium: water`), in
+            // route order. Emitted only when present, so a dry leg is
+            // byte-identical; the harness admits liquid on this leg alone.
+            if !leg.water.is_empty() {
+                leg_json["water"] = json!(leg.water);
             }
             // spec-0099: the climbs the proven route takes, in route order. Each
             // names where the body takes hold (`from`) and lets go (`to`) — both
@@ -443,6 +452,66 @@ pub(crate) fn thin(cells: &[[i32; 3]], force_keep: &[[i32; 3]]) -> Vec<[i32; 3]>
 /// The step vector from `a` to `b`.
 fn delta(a: [i32; 3], b: [i32; 3]) -> [i32; 3] {
     [b[0] - a[0], b[1] - a[1], b[2] - a[2]]
+}
+
+/// **The water ledger** (spec-0134 §10): every walked leg, the water cells
+/// its route swims and its longest run of submerged cells — the breath debt
+/// the route proof does not judge, stated so it can be read. One row per leg,
+/// a dry leg included (a run of zero), so the ledger's count is the legs it
+/// examined. Written as `validation/water.json` on every build that exports a
+/// route; [`water_line`] is its binding line.
+pub fn water_json(
+    world: &crate::compiler::nav::World,
+    routes: &[crate::compiler::nav::LegRoute],
+) -> Value {
+    let legs: Vec<Value> = routes
+        .iter()
+        .map(|leg| {
+            let (mut run, mut longest) = (0usize, 0usize);
+            for c in &leg.cells {
+                if leg.water.contains(c) && world.submerged(*c) {
+                    run += 1;
+                    longest = longest.max(run);
+                } else {
+                    run = 0;
+                }
+            }
+            json!({
+                "from": leg.from,
+                "to": leg.to,
+                "water": leg.water.len(),
+                "longest_submerged": longest,
+            })
+        })
+        .collect();
+    json!({
+        "breath": "not judged (spec-0134 debt)",
+        "legs": legs,
+    })
+}
+
+/// **The water binding** (spec-0134 §10): how many legs swim, over how many
+/// water cells, and each swimming leg's longest run of submerged cells, read
+/// off [`water_json`].
+pub fn water_line(doc: &Value) -> String {
+    let all = doc["legs"].as_array().map(Vec::as_slice).unwrap_or(&[]);
+    let mut legs = Vec::new();
+    let mut cells = 0u64;
+    for leg in all.iter().filter(|l| l["water"].as_u64().unwrap_or(0) > 0) {
+        let n = leg["water"].as_u64().unwrap_or(0);
+        cells += n;
+        legs.push(format!(
+            "{}->{} {n} cell(s), longest submerged run {}",
+            leg["from"], leg["to"], leg["longest_submerged"]
+        ));
+    }
+    format!(
+        "water binding: {} of {} leg(s) swim, {cells} water cell(s); breath not judged (spec-0134 debt){}{}",
+        legs.len(),
+        all.len(),
+        if legs.is_empty() { "" } else { ": " },
+        legs.join("; ")
+    )
 }
 
 #[cfg(test)]

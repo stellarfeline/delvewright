@@ -784,7 +784,7 @@ failing more than a third means it wears the costume without the grammar.
 | Optional elite with a bypass | optional-elite proof (a route avoiding its aggro radius) | 🟡 — proves existence, not **legibility** (G4) |
 | Elite that stays dead | absence of `respawns_on_rest` on that wave | ✅ |
 | Guarded visible reward | `collect` + `prop` chest at an ambush anchor | ✅ |
-| Toll-road attrition hazard | area `mitigation` + `damage-players{amount,in}` over a zone; dry path = ordinary geometry | ✅ |
+| Toll-road attrition hazard | area `mitigation` + `damage{amount,in}` over a zone; dry path = ordinary geometry | ✅ |
 | Finite bonfire-refilled heal | a class kit entry's `flask: true`, replenished to its declared count at every `bonfire` rest (`DW0476` refuses a bonfire with no flask) | ✅ |
 | Boss fog gate as a mandatory marker | `close-gate` seals behind; nothing marks *ahead* | 🟡 (G5) |
 | Secret with an in-world cue | `set-block` / `play-sound` / lighting | ✅ (authoring discipline, not a primitive gap) |

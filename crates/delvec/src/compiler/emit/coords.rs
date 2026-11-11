@@ -52,7 +52,7 @@ pub(super) fn corner(cell: i32) -> String {
 }
 
 /// A `@a`-selector volume covering an inclusive block region — the same box
-/// model `damage-players`' `within` filter uses. `dx/dy/dz` are spans, so a
+/// model `damage`' `within` filter uses. `dx/dy/dz` are spans, so a
 /// one-block region is `dx=0` and still selects the whole block.
 ///
 /// Corners are normalised because a gate region's stored corners are whatever
@@ -100,7 +100,7 @@ pub(super) fn selector_box(region: ([i32; 3], [i32; 3])) -> String {
 /// here, so no two verbs can disagree by one block about what "inside" means.
 ///
 /// The exclusion is NOT added here, because the *player* selectors
-/// (`damage-players`, `give-effect`, the volume's `@a` half) share this
+/// (`damage`, `give-effect`, the volume's `@a` half) share this
 /// formatter and no player is a fixture. [`entity_box_selector`] is the entity
 /// spelling, and `DW0545` proves nothing else reaches a box.
 pub(crate) fn box_selector_args(lo: [i32; 3], hi: [i32; 3]) -> String {

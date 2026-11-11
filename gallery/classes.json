@@ -37,6 +37,21 @@
             "flask": true,
             "item": "minecraft:potion",
             "name": "Curator's Draught"
+          },
+          {
+            "count": 2,
+            "fireworks": {
+              "explosions": [
+                {
+                  "colors": [
+                    "#a0e040"
+                  ],
+                  "shape": "large_ball"
+                }
+              ],
+              "flight": 1
+            },
+            "item": "minecraft:firework_rocket"
           }
         ],
         "name": "Wanderer"
@@ -68,6 +83,6 @@
       }
     ]
   },
-  "dsl_version": "0.72.0",
+  "dsl_version": "0.73.0",
   "stage": "classes"
 }

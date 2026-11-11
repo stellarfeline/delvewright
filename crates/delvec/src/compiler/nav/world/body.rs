@@ -188,7 +188,7 @@ use delvewright_dsl::metrics::{FULL_16, step_allowed, unarmoured_survivable_fall
 /// `LivingEntity.jumpOutOfFluid`, spec-0113 §4.3); this is only the cheap edge
 /// the mob relation and the graph's first pass take, and the curbed-pool tests
 /// of `DW0921` hold the two to the same answer.
-const AFLOAT_CLIMB_OUT_CELLS: i32 = 1;
+pub(in crate::compiler::nav) const AFLOAT_CLIMB_OUT_CELLS: i32 = 1;
 
 impl World {
     /// Whether a cell is a valid standing position (feet + head passable, solid
@@ -1189,7 +1189,10 @@ impl World {
 
     /// Water, not lava: a flooded cell a body could float in.
     pub(in crate::compiler::nav) fn is_water(&self, c: [i32; 3]) -> bool {
-        self.flooded.contains(&c) && !self.lava.contains(&c) && !self.lethal.contains(&c)
+        self.flooded.contains(&c)
+            && !self.lava.contains(&c)
+            && !self.lethal.contains(&c)
+            && !self.unswum.contains(&c)
     }
 
     /// A **surface cell** of water: water with open air over it, where a body

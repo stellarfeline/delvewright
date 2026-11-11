@@ -685,6 +685,27 @@ fn check_player_state_not_scheduled(
         // spec-0085 §3.3: the fourth shape — an actor-addressed effect where
         // emission has no acting player. One rule, *no `@s` where emission has
         // none*, and one remedy.
+        if scheduled
+            && matches!(
+                e.verb,
+                crate::Verb::Damage {
+                    by: Some(crate::DamageBy::Actor),
+                    ..
+                }
+            )
+        {
+            d.push(Diagnostic::error(
+                STATE_SCOPE_UNREACHABLE,
+                stage,
+                format!("{path}/by"),
+                "a `damage` effect declares `by: actor` in a bundle that runs with no acting \
+                 player (a polled trigger's effects, a trap's payload, a shortcut's `on_unlock`, \
+                 an `on_arrive`, an `on_rest`, a cutscene's `then`, and every step of a timeline \
+                 started there). There is no player to credit the blow to. Move the beat onto a \
+                 site a player drives, or drop `by`"
+                    .to_string(),
+            ));
+        }
         if scheduled && e.audience == Some(crate::EffectAudience::Actor) {
             d.push(Diagnostic::error(
                 STATE_SCOPE_UNREACHABLE,

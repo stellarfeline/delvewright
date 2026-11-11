@@ -96,7 +96,7 @@ region verb select?** — and the measurement answering it is short:
 |---|---|
 | `teleport` (`from`) | every **entity** in the box — the only verb with no filter at all |
 | `lethal_volumes[]` (`region`) | every entity in the box minus six **types** (`@e`), plus every player (`@a`) |
-| `give-effect` / `clear-effect` (`in`), `damage-players` (`in`), stealth zones, the night-vision area grant | **players only** (`@a`/`@s`) — no engine entity is reachable |
+| `give-effect` / `clear-effect` (`in`), `damage` (`in`), stealth zones, the night-vision area grant | **players only** (`@a`/`@s`) — no engine entity is reachable |
 | `fill-region`, `clear-region`, `collapse`, `close-gate` | **blocks**; no entity selector exists |
 
 So exactly two verbs quantify over non-player entities, and only they have the

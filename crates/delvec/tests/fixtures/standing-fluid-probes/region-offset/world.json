@@ -23,6 +23,6 @@
     "title": "Probe: a region one block below its anchor",
     "weather": "clear"
   },
-  "dsl_version": "0.72.0",
+  "dsl_version": "0.73.0",
   "stage": "world"
 }

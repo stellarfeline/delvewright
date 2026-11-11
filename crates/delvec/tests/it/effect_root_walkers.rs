@@ -349,7 +349,7 @@ fn probe_at(loaded: &LoadedCampaign, k: EffectRootKind, bundle_json: &str) -> Ca
         // Root 10 (spec-0082). The smallest assembly with a strike step: the
         // probe library's one-part rig on the probe's free anchor, armed over
         // that anchor, whose one step's `on_land` IS the probe bundle. The
-        // bundle carries no `damage-players`, so there is no landing for
+        // bundle carries no `damage`, so there is no landing for
         // `DW0938` to judge — the probe is about the root, not the blow.
         EffectRootKind::AssemblyLand => {
             let mut a: delvewright_dsl::Assembly = serde_json::from_str(

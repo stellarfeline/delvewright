@@ -140,7 +140,7 @@ pub(super) fn plan_aggro_edge_spawns(
         let Some(radius) = mob.attributes.and_then(|a| a.follow_range) else {
             continue;
         };
-        let need = mob.count as usize;
+        let need = mob.count.max() as usize;
         // Band [r-2, r-1], strictly INSIDE perception. Ladder evidence (the
         // drowned bell, runs 10 and 12): the original one-sided [r-1, r] band
         // seats mobs at the marginal edge of perceiving a defender AT the
@@ -421,11 +421,21 @@ pub(super) fn wave_fns(
                 wave_seated_holder(w.id.as_str())
             ));
         }
+        // spec-0134 §4: a wave that scales with the party counts the players
+        // present before it summons, and its countdown starts at one player's
+        // count; each further body adds itself below. A wave of constants
+        // emits neither line and is byte-identical.
+        let scales = w.mobs.iter().any(|m| m.count.scales());
+        if scales {
+            body.push(format!(
+                "execute store result score {PARTY_SIZE} dw.sys if entity @a[tag=!dw_cutscene]"
+            ));
+        }
         body.push(format!(
             "scoreboard players set {} {} {}",
             plan::wave_counter(w.id.as_str()),
             plan::WAVE_OBJECTIVE,
-            plan::wave_total(w)
+            plan::wave_base_total(w)
         ));
         // A fresh seating starts a fresh attribution ([`wave_credited_holder`]):
         // the credited-kill ledger is about THIS cohort, so a re-seat's own
@@ -487,7 +497,7 @@ pub(super) fn wave_fns(
             // wave). Empty for a plain mob.
             let has_effects = !mob.effects.is_empty();
             let tmp = if has_effects { ",\"dw_tmp\"" } else { "" };
-            for _ in 0..mob.count {
+            for body_k in 0..mob.count.max() {
                 // Each mob takes the next validated standable cell (ascending BFS
                 // distance from the anchor); `cells` has exactly one per mob. AI is
                 // left enabled (no NoAI) so the mobs fight.
@@ -516,14 +526,30 @@ pub(super) fn wave_fns(
                     }
                     _ => String::new(),
                 };
-                body.push(format!(
+                let summon = format!(
                     "summon {} {} {} {} {{Tags:[\"{}\"{lead_tag}{tmp}],PersistenceRequired:1b{name}{equip}{loot}{attrs}{patrol}}}",
                     mob.entity,
                     c[0],
                     c[1],
                     c[2],
                     plan::wave_tag(w.id.as_str())
-                ));
+                );
+                // spec-0134 §4: a body past the stack's `base` is the party's —
+                // summoned, on its own proven cell, only when enough players
+                // are present, and counted into the countdown with it.
+                match party_threshold(mob.count, body_k) {
+                    None => body.push(summon),
+                    Some(n) => {
+                        body.push(format!(
+                            "execute if score {PARTY_SIZE} dw.sys matches {n}.. run {summon}"
+                        ));
+                        body.push(format!(
+                            "execute if score {PARTY_SIZE} dw.sys matches {n}.. run scoreboard players add {} {} 1",
+                            plan::wave_counter(w.id.as_str()),
+                            plan::WAVE_OBJECTIVE,
+                        ));
+                    }
+                }
                 idx += 1;
             }
             if has_effects {
@@ -743,4 +769,54 @@ pub(super) fn wave_removal_lines(ns: &str, w: &delvewright_dsl::Wave) -> Vec<Str
         wave_declares_drops(w),
         Exit::Unseen,
     )
+}
+
+/// The `dw.sys` holder a scaling wave's spawn writes the party size to
+/// (spec-0134 §4).
+pub(super) const PARTY_SIZE: &str = "#party_n";
+
+/// The fewest players present at which body `k` (0-based) of a stack is
+/// summoned, or `None` when it is one of the stack's `base` and always is.
+/// Body `base + j` belongs to the `(j / per_player + 1)`-th further player, so
+/// it needs `j / per_player + 2` players (spec-0134 §4: `base + p × (n − 1)`).
+pub(super) fn party_threshold(count: delvewright_dsl::MobCount, k: u32) -> Option<u32> {
+    let base = count.base();
+    if k < base {
+        return None;
+    }
+    let p = count.per_player().max(1);
+    Some((k - base) / p + 2)
+}
+
+#[cfg(test)]
+mod party_tests {
+    use super::*;
+    use delvewright_dsl::{MobCount, ScaledCount};
+
+    /// `{base: 2, per_player: 1}` summons 2, 3, 4, 5 bodies for 1–4 players.
+    #[test]
+    fn a_scaled_stack_meets_each_party_size() {
+        let c = MobCount::Scaled(ScaledCount {
+            base: 2,
+            per_player: 1,
+        });
+        assert_eq!(c.max(), 5);
+        let at = |n: u32| {
+            (0..c.max())
+                .filter(|k| party_threshold(c, *k).is_none_or(|t| n >= t))
+                .count()
+        };
+        assert_eq!([at(1), at(2), at(3), at(4)], [2, 3, 4, 5]);
+        let c2 = MobCount::Scaled(ScaledCount {
+            base: 1,
+            per_player: 2,
+        });
+        let at2 = |n: u32| {
+            (0..c2.max())
+                .filter(|k| party_threshold(c2, *k).is_none_or(|t| n >= t))
+                .count()
+        };
+        assert_eq!([at2(1), at2(2), at2(3), at2(4)], [1, 3, 5, 7]);
+        assert_eq!(party_threshold(MobCount::Fixed(3), 2), None);
+    }
 }

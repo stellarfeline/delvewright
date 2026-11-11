@@ -20,13 +20,53 @@ pub(super) fn loot_setup(
 ) -> Vec<String> {
     let mut out = Vec::new();
     for l in loot {
-        // A fill of a holder ENTITY is the holder setup's (spec-0111 §4.1).
-        if holders
-            .iter()
-            .any(|o| o.loot.as_deref() == Some(l.id.as_str()))
+        // A fill of a holder ENTITY is the holder setup's (spec-0111 §4.1),
+        // and a fill that waits for its beat is its own function's (§6).
+        if l.by_effect
+            || holders
+                .iter()
+                .any(|o| o.loot.as_deref() == Some(l.id.as_str()))
         {
             continue;
         }
+        out.extend(block_fill_lines(l));
+    }
+    out
+}
+
+/// The name of a `by-effect` fill's own function (spec-0134 §6):
+/// `fill_<loot>`, called by `fill-loot`.
+pub(crate) fn fill_fn(loot_id: &str) -> String {
+    format!("fill_{}", crate::compiler::plan::safe_local(loot_id))
+}
+
+/// **Every `by-effect` fill's own function** (spec-0134 §6): the same lines
+/// the fill would have run in `setup_finish` — a container's `item replace
+/// block`, a holder entity's `item replace entity` — run when a `fill-loot`
+/// fires. Empty for a campaign with none, so its function set is unchanged.
+pub(super) fn loot_fill_fns(
+    loot: &[crate::compiler::plan::LootPlan],
+    holders: &[crate::compiler::holders::OwnedHolder],
+) -> Vec<(String, String)> {
+    loot.iter()
+        .filter(|l| l.by_effect)
+        .map(|l| {
+            let body = match holders
+                .iter()
+                .find(|o| o.loot.as_deref() == Some(l.id.as_str()))
+            {
+                Some(o) => super::holders::holder_loot_lines(o),
+                None => block_fill_lines(l),
+            };
+            (fill_fn(&l.id), lines(&body))
+        })
+        .collect()
+}
+
+/// One container fill's `item replace block` lines.
+fn block_fill_lines(l: &crate::compiler::plan::LootPlan) -> Vec<String> {
+    let mut out = Vec::new();
+    {
         let c = l.cell;
         for (n, it) in l.items.iter().enumerate() {
             // A named slot is the stack's own (spec-0111 §3.3); an unnamed
@@ -38,7 +78,12 @@ pub(super) fn loot_setup(
                 c[1],
                 c[2],
                 it.item,
-                container_stack_components(&it.item, it.name.as_deref(), &it.enchantments),
+                container_stack_components(
+                    &it.item,
+                    it.name.as_deref(),
+                    &it.enchantments,
+                    it.fireworks.as_ref()
+                ),
                 it.count
             ));
         }
@@ -60,6 +105,7 @@ pub(super) fn container_stack_components(
     item: &str,
     name: Option<&str>,
     ench: &std::collections::BTreeMap<String, u32>,
+    fireworks: Option<&delvewright_dsl::StackFireworks>,
 ) -> String {
     let mut comps: Vec<String> = Vec::new();
     if let Some(n) = name {
@@ -81,6 +127,9 @@ pub(super) fn container_stack_components(
             comp.strip_prefix("minecraft:").unwrap_or(comp)
         ));
     }
+    if let Some(fw) = fireworks {
+        comps.push(super::firework::stack_fireworks_component(fw));
+    }
     if comps.is_empty() {
         return String::new();
     }
@@ -92,7 +141,7 @@ pub(super) fn container_stack_components(
 /// [`container_stack_components`] — a collect stack is a container fill, and is
 /// rendered by the container fill's renderer.
 pub(super) fn item_component_tail(item: &str, name: Option<&str>) -> String {
-    container_stack_components(item, name, &std::collections::BTreeMap::new())
+    container_stack_components(item, name, &std::collections::BTreeMap::new(), None)
 }
 
 #[cfg(test)]
@@ -111,6 +160,7 @@ mod loot_emit_tests {
             name: name.map(str::to_string),
             enchantments: ench.iter().map(|(k, v)| ((*k).to_string(), *v)).collect(),
             slot: None,
+            fireworks: None,
         }
     }
 
@@ -120,7 +170,50 @@ mod loot_emit_tests {
             anchor: "anchor/stores".to_string(),
             cell: [10, 64, -3],
             items,
+            by_effect: false,
         }]
+    }
+
+    /// spec-0134 §6: a `by-effect` fill writes nothing in `setup_finish`
+    /// and its own `fill_<loot>` function carries exactly the lines the
+    /// at-load fill would have; an at-load fill has no function.
+    #[test]
+    fn a_fill_that_waits_is_its_own_function() {
+        let at_load = plan_of(vec![item("minecraft:bread", 3, None, &[])]);
+        let at_load_lines = loot_setup_none(&at_load);
+        assert_eq!(at_load_lines.len(), 1);
+        assert!(loot_fill_fns(&at_load, &[]).is_empty());
+        let mut waits = at_load.clone();
+        waits[0].by_effect = true;
+        assert!(loot_setup_none(&waits).is_empty(), "nothing at load");
+        let fns = loot_fill_fns(&waits, &[]);
+        assert_eq!(fns.len(), 1);
+        assert_eq!(fns[0].0, "fill_stores");
+        assert_eq!(fns[0].1, lines(&at_load_lines));
+    }
+
+    /// spec-0134 §5: a rocket stack in a fill carries its stars as the
+    /// `fireworks` component, through the renderer `give-item` shares.
+    #[test]
+    fn a_rocket_in_a_fill_carries_its_stars() {
+        let mut rocket = item("minecraft:firework_rocket", 2, None, &[]);
+        rocket.fireworks = Some(delvewright_dsl::StackFireworks {
+            flight: None,
+            explosions: vec![delvewright_dsl::FireworkExplosion {
+                shape: delvewright_dsl::FireworkShape::Burst,
+                colors: vec!["#ff0000".to_string()],
+                fade_colors: vec!["#0000ff".to_string()],
+                trail: false,
+                twinkle: true,
+            }],
+        });
+        let out = loot_setup_none(&plan_of(vec![rocket]));
+        assert!(
+            out.iter().any(|l| l.ends_with(
+                "with minecraft:firework_rocket[fireworks={flight_duration:1b,explosions:[{shape:\"burst\",colors:[I;16711680],fade_colors:[I;255],has_twinkle:1b}]}] 2"
+            )),
+            "{out:#?}"
+        );
     }
 
     /// Slots are positional and deterministic: nth declared stack -> container.n.

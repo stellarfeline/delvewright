@@ -483,7 +483,7 @@ not third-party reconstructions.
   `data/damage_type/data.min.json` + `data/tag/damage_type/data.min.json`. 50 entries.
   Feeds the spec-0023 incoming-damage arithmetic (`DW0473`). **The finding this table
   pins**: eight of the nine damage types the DSL exposes are
-  `when_caused_by_living_non_player`, and `damage-players` emits a bare
+  `when_caused_by_living_non_player`, and `damage` emits a bare
   `/damage <target> <amount> <type>` with **no attacker** — so an Easy campaign's
   scripted hits are *not* halved by the `min(dmg/2+1, dmg)` formula. Only
   `minecraft:explosion` (`always`) scales. Deriving the arithmetic from the

@@ -52,7 +52,12 @@ pub(in crate::compiler::nav) fn route_walked_legs(
         ) else {
             continue;
         };
-        if let Some(cells) = leg_world.find_path(start, goal) {
+        if let Some(cells) = leg_world.find_route(start, goal) {
+            let water = cells
+                .iter()
+                .copied()
+                .filter(|&c| leg_world.swims_in(c))
+                .collect();
             let use_gates = cells
                 .iter()
                 .copied()
@@ -68,6 +73,7 @@ pub(in crate::compiler::nav) fn route_walked_legs(
                     cells,
                     use_gates,
                     climbs,
+                    water,
                     // The leg carries the world it was PROVEN over, not just the
                     // route. Anything that re-judges these cells has to ask this
                     // value for the world to judge them in — see
@@ -552,7 +558,7 @@ fn nearest_stand(w: &World, from: &VisitedPos, cands: &[[i32; 3]]) -> Option<[i3
     let start = w.snap_endpoint(from.pos, false)?;
     cands
         .iter()
-        .filter_map(|c| w.find_path(start, *c).map(|p| (p.len(), *c)))
+        .filter_map(|c| w.find_route(start, *c).map(|p| (p.len(), *c)))
         .min()
         .map(|(_, c)| c)
 }
@@ -824,7 +830,7 @@ fn keep_out_stance(
                 if best.is_some_and(|(bd, _, _)| bd < d2) {
                     continue;
                 }
-                let Some(route) = leg.find_path(start, c) else {
+                let Some(route) = leg.find_route(start, c) else {
                     continue;
                 };
                 let key = (d2, route.len(), c);
@@ -1105,7 +1111,7 @@ pub(in crate::compiler::nav) fn route_with_links(
                     if let (Some(a), Some(b)) = (
                         credited.snap_endpoint(at, false),
                         credited.snap_endpoint(stand, talk),
-                    ) && let Some(path) = credited.find_path(a, b)
+                    ) && let Some(path) = credited.find_route(a, b)
                     {
                         cells.extend(path);
                     }
@@ -1463,12 +1469,12 @@ fn judge_leg(
                 });
             }
         };
-        if leg_world.find_path(start, goal).is_none() {
+        if leg_world.find_route(start, goal).is_none() {
             // An armed objective first: the most specific answer there is — the
             // geometry and every premise carry the party, and only the order
             // the path walks its objectives in does not.
             if let Some(free) = unkept
-                && let Some(cells) = free.find_path(start, goal)
+                && let Some(cells) = free.find_route(start, goal)
             {
                 return Err(keep_out_failure(
                     &cells,
@@ -1485,7 +1491,7 @@ fn judge_leg(
                     free.snap_endpoint(from, false),
                     free.snap_endpoint(to, pair[1].talk_to),
                 )
-                && let Some(cells) = free.find_path(s2, g2)
+                && let Some(cells) = free.find_route(s2, g2)
             {
                 let held = held_blame_over(&held_regions, &cells).join("; ");
                 return Err(Failure {
@@ -1509,7 +1515,7 @@ fn judge_leg(
                     open.snap_endpoint(from, false),
                     open.snap_endpoint(to, pair[1].talk_to),
                 )
-                && let Some(cells) = open.find_path(s2, g2)
+                && let Some(cells) = open.find_route(s2, g2)
             {
                 let volumes = leg_world.lethal_volumes_over(&cells);
                 let tables = leg_world.furniture_over(&cells);
@@ -1547,7 +1553,7 @@ fn judge_leg(
                     dry.snap_endpoint(from, false),
                     dry.snap_endpoint(to, pair[1].talk_to),
                 )
-                && let Some(cells) = dry.find_path(s2, g2)
+                && let Some(cells) = dry.find_route(s2, g2)
             {
                 let boxes = boxes_of(&leg_world.flood_regions_over(&cells));
                 return Err(Failure {
@@ -1576,7 +1582,7 @@ fn judge_leg(
                     credited.snap_endpoint(from, false),
                     credited.snap_endpoint(to, pair[1].talk_to),
                 )
-                && let Some(cells) = credited.find_path(s2, g2)
+                && let Some(cells) = credited.find_route(s2, g2)
             {
                 let boxes = unforced_blame_over(&unforced_regions, &cells).join("; ");
                 return Err(Failure {
@@ -1605,7 +1611,7 @@ fn judge_leg(
                     ungated.snap_endpoint(from, false),
                     ungated.snap_endpoint(to, pair[1].talk_to),
                 )
-                && let Some(cells) = ungated.find_path(s2, g2)
+                && let Some(cells) = ungated.find_route(s2, g2)
             {
                 let blamed = gate_blame(
                     &world.gate_seals_over(&cells),
@@ -1639,7 +1645,7 @@ fn judge_leg(
                 if let (Some(s2), Some(g2)) = (
                     credited.snap_endpoint(from, false),
                     credited.snap_endpoint(to, pair[1].talk_to),
-                ) && let Some(cells) = credited.find_path(s2, g2)
+                ) && let Some(cells) = credited.find_route(s2, g2)
                 {
                     let named = leg_world.unheld_climbs_words(&cells);
                     return Err(Failure {

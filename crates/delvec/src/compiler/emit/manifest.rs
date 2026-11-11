@@ -701,7 +701,7 @@ pub(super) fn emit_manifest(
 /// ending whose `campaign-complete` the path's replay fires, every aftermath
 /// effect of its scene that fires too, with what the bot can observe of it —
 /// the §6.2 observable, or what a player's own body shows (`health` after
-/// `damage-players`, an `effect` given or cleared) — or `emission-only`.
+/// `damage`, an `effect` given or cleared) — or `emission-only`.
 pub(super) fn path_aftermath(plan: &Plan, fired: &BTreeSet<String>) -> Vec<Value> {
     let scenes = crate::compiler::ending::Scenes::of(plan.campaign);
     let mut by_path: BTreeMap<String, &QuestEffect> = BTreeMap::new();
@@ -722,7 +722,7 @@ pub(super) fn path_aftermath(plan: &Plan, fired: &BTreeSet<String>) -> Vec<Value
                 continue;
             };
             let observable = match &eff.verb {
-                Verb::DamagePlayers { amount, .. } => json!({"kind": "health", "amount": amount}),
+                Verb::Damage { amount, .. } => json!({"kind": "health", "amount": amount}),
                 Verb::GiveEffect { effect, .. } => json!({"kind": "effect", "effect": effect}),
                 Verb::ClearEffect { effect, .. } => {
                     json!({"kind": "no-effect", "effect": effect})

@@ -1317,7 +1317,7 @@ mod health_bar {
             if w.id.as_str() == "wave/guards" {
                 // One body under the bar, and a name tag on it: a name marks a
                 // single body, never the fixture's unnamed pair.
-                w.mobs[0].count = 1;
+                w.mobs[0].count = 1.into();
                 w.mobs[0].name = Some("Keep Guard".to_string());
                 w.health_bar = wave_bar
                     .clone()
@@ -1883,7 +1883,7 @@ fn a_first_kill_wave_of_three_is_guarded_on_its_ledger() {
         )
     };
     let three = |c: &mut delvewright_dsl::Campaign, json: &str| {
-        c.quests.content.waves[0].mobs[0].count = 3;
+        c.quests.content.waves[0].mobs[0].count = 3.into();
         c.quests.content.waves[0].on_kill = on_kill(json);
     };
     let first = build_fight(|c| three(c, &bundle("first-kill", 1)));

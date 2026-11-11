@@ -309,7 +309,7 @@ impl DamageTypeFacts {
     ///
     /// Only `always` does. This is the trap the table exists to close: eight of
     /// the nine types the DSL exposes are `when_caused_by_living_non_player`, so
-    /// a scripted `damage-players` is NOT halved on Easy, whatever the
+    /// a scripted `damage` is NOT halved on Easy, whatever the
     /// `WorldDifficulty` doc-comment formula reads like in isolation.
     pub fn scales_without_attacker(&self) -> bool {
         self.scaling == "always"

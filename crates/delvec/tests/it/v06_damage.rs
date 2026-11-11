@@ -1,4 +1,4 @@
-//! DSL v0.6 `damage-players` emission + PackTest: the `/damage` primitive the
+//! DSL v0.6 `damage` emission + PackTest: the `/damage` primitive the
 //! effect lowers to, the default + explicit damage type, the `in` box filter, and
 //! the generated PackTest that drives the damage on a dummy and asserts it lands.
 
@@ -102,14 +102,14 @@ fn build_hw(on_complete: &str) -> BuildOutput {
     build(&c, &prefabs)
 }
 
-/// An unscoped `damage-players` on a quest beat lowers to `damage @a[…]
+/// An unscoped `damage` on a quest beat lowers to `damage @a[…]
 /// <amount> minecraft:generic` — the hazard is a fact about the delve, so it hits
 /// the whole party (spec-0018) — behind the cutscene guard folded into the
 /// selector (a player watching a cinematic is never harmed).
 #[test]
 fn damage_players_default_emits_generic_at_the_party() {
     let out = build_hw(
-        r#"{ "type": "damage-players", "amount": 6 },
+        r#"{ "type": "damage", "amount": 6 },
            { "type": "campaign-complete" }"#,
     );
     let all = shipped_functions(&out);
@@ -124,7 +124,7 @@ fn damage_players_default_emits_generic_at_the_party() {
 #[test]
 fn damage_players_explicit_type_maps_to_vanilla_id() {
     let out = build_hw(
-        r#"{ "type": "damage-players", "amount": 40, "damage_type": "wither" },
+        r#"{ "type": "damage", "amount": 40, "damage_type": "wither" },
            { "type": "campaign-complete" }"#,
     );
     let all = shipped_functions(&out);
@@ -140,7 +140,7 @@ fn damage_players_explicit_type_maps_to_vanilla_id() {
 #[test]
 fn damage_players_in_box_filters_the_party_by_position() {
     let out = build_hw(
-        r#"{ "type": "damage-players", "amount": 6,
+        r#"{ "type": "damage", "amount": 6,
              "in": { "anchor": "anchor/exit", "extent": [3, 2, 3] } },
            { "type": "campaign-complete" }"#,
     );
@@ -160,11 +160,11 @@ fn damage_players_in_box_filters_the_party_by_position() {
 }
 
 /// The generated PackTest drives the damage on a summoned dummy and asserts its
-/// Health strictly dropped — the runtime proof that `damage-players` lands.
+/// Health strictly dropped — the runtime proof that `damage` lands.
 #[test]
 fn damage_players_emits_packtest_asserting_damage() {
     let out = build_hw(
-        r#"{ "type": "damage-players", "amount": 12, "damage_type": "magic" },
+        r#"{ "type": "damage", "amount": 12, "damage_type": "magic" },
            { "type": "campaign-complete" }"#,
     );
     let path = "packtest-datapack/data/hello-world/test/v06_damage.mcfunction";

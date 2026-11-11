@@ -83,6 +83,11 @@ fn every_verb_answers_the_census() {
             Some("wave/muster"),
         ),
         (
+            "fill-loot",
+            serde_json::json!({"type":"fill-loot","loot":"loot/supplies"}),
+            None,
+        ),
+        (
             "narrate",
             serde_json::json!({"type":"narrate","text":"The hall answers."}),
             None,
@@ -148,8 +153,8 @@ fn every_verb_answers_the_census() {
             None,
         ),
         (
-            "damage-players",
-            serde_json::json!({"type":"damage-players","amount":2}),
+            "damage",
+            serde_json::json!({"type":"damage","amount":2}),
             None,
         ),
         (
@@ -310,8 +315,8 @@ fn every_verb_answers_the_census() {
 fn a_verb_whose_object_is_optional_answers_per_instance() {
     for (what, effect, want) in [
         (
-            "damage-players with an `in` filter",
-            serde_json::json!({"type":"damage-players","amount":2,"in":{"anchor":"anchor/lane","extent":[3,2,3]}}),
+            "damage with an `in` filter",
+            serde_json::json!({"type":"damage","amount":2,"in":{"anchor":"anchor/lane","extent":[3,2,3]}}),
             Some("anchor/lane"),
         ),
         (

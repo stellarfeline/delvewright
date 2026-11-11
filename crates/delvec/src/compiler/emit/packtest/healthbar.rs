@@ -269,7 +269,7 @@ fn declared_max_health(
                 .find(|w| w.id.as_str() == bar.fight.id())?;
             w.mobs.iter().try_fold(0i64, |acc, m| {
                 let h = m.attributes.as_ref()?.max_health?;
-                Some(acc + floor(h) * i64::from(m.count))
+                Some(acc + floor(h) * i64::from(m.count.base()))
             })
         }
         FightKind::Actor => {

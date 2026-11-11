@@ -1,0 +1,12 @@
+{
+  "code": "DW1095",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/loot/1/items/1/item",
+      "value": "minecraft:arrow"
+    }
+  ],
+  "why": "The ferryman's rocket stack turned into arrows with its stars kept, and nothing else changed. The game keeps a rocket's stars on `minecraft:firework_rocket` alone, so stars on any other stack are written and never seen. Refused at the stack's `fireworks`, naming the item, with the remedy: make the stack a rocket, or drop `fireworks`."
+}

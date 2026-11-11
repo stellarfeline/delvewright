@@ -34,9 +34,31 @@ pub(super) fn emit_firework(
     let cell = at.cell(anchor);
     let v = ent_xyz(cell);
     let flight = flight.unwrap_or(firework::MIN_FLIGHT);
-    // `[I;…]` packed integers, the form the component reads. Validation proved
-    // every literal well-formed (`DW0100`), so a colour that will not pack is a
-    // colour that never reached here.
+    let value = fireworks_value(flight, explosions);
+    body.push(format!(
+        "summon {entity} {x} {y} {z} {{LifeTime:{life},{item}:{{id:\"{item_id}\",count:1,\
+         components:{{\"{component}\":{value}}}}}}}",
+        entity = firework::ROCKET_ENTITY,
+        x = v[0],
+        y = v[1],
+        z = v[2],
+        life = firework::lifetime_ticks(flight),
+        item = firework::ITEM_FIELD,
+        item_id = firework::ROCKET_ITEM,
+        component = firework::FIREWORKS_COMPONENT,
+    ));
+}
+
+/// **The `minecraft:fireworks` component's value** — `{flight_duration:Nb,
+/// explosions:[…]}` — one renderer for every rocket the engine writes: the
+/// `firework` effect's summoned rocket and a stack's `fireworks` (spec-0134
+/// §5), so the two cannot disagree about a star. Colours are the packed
+/// integers the component reads; validation proved every literal well-formed
+/// (`DW0100`), so a colour that will not pack never reaches here.
+pub(super) fn fireworks_value(
+    flight: u8,
+    explosions: &[delvewright_dsl::FireworkExplosion],
+) -> String {
     let packed = |list: &[String]| -> String {
         list.iter()
             .filter_map(|c| delvewright_dsl::color::packed(c))
@@ -63,17 +85,21 @@ pub(super) fn emit_firework(
             format!("{{{}}}", f.join(","))
         })
         .collect();
-    body.push(format!(
-        "summon {entity} {x} {y} {z} {{LifeTime:{life},{item}:{{id:\"{item_id}\",count:1,\
-         components:{{\"{component}\":{{flight_duration:{flight}b,explosions:[{bursts}]}}}}}}}}",
-        entity = firework::ROCKET_ENTITY,
-        x = v[0],
-        y = v[1],
-        z = v[2],
-        life = firework::lifetime_ticks(flight),
-        item = firework::ITEM_FIELD,
-        item_id = firework::ROCKET_ITEM,
-        component = firework::FIREWORKS_COMPONENT,
-        bursts = bursts.join(","),
-    ));
+    format!(
+        "{{flight_duration:{flight}b,explosions:[{}]}}",
+        bursts.join(",")
+    )
+}
+
+/// The `fireworks=…` component a rocket STACK carries (spec-0134 §5): the
+/// stack's flight (default [`delvewright_dsl::firework::MIN_FLIGHT`]) and its
+/// stars, in the item-stack syntax `give` and `item replace` read.
+pub(super) fn stack_fireworks_component(fw: &delvewright_dsl::StackFireworks) -> String {
+    format!(
+        "fireworks={}",
+        fireworks_value(
+            fw.flight.unwrap_or(delvewright_dsl::firework::MIN_FLIGHT),
+            &fw.explosions
+        )
+    )
 }

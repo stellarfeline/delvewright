@@ -258,7 +258,7 @@ fn an_unavoidable_forty_damage_beat_is_dw0473() {
         let bundle = quest["on_objective_complete"]["obj/talk"]
             .as_array_mut()
             .unwrap();
-        bundle.push(serde_json::json!({"type": "damage-players", "amount": 40}));
+        bundle.push(serde_json::json!({"type": "damage", "amount": 40}));
     });
     assert_eq!(failure_code(tmp.path()), "DW0473");
 }
@@ -274,7 +274,7 @@ fn the_same_hit_inside_a_zone_is_dodgeable_and_builds() {
             .as_array_mut()
             .unwrap();
         bundle.push(serde_json::json!({
-            "type": "damage-players",
+            "type": "damage",
             "amount": 40,
             "in": {"anchor": "anchor/gate", "extent": [3, 2, 3]}
         }));
@@ -290,7 +290,7 @@ fn a_hit_that_leaves_one_heart_builds() {
         let bundle = quest["on_objective_complete"]["obj/talk"]
             .as_array_mut()
             .unwrap();
-        bundle.push(serde_json::json!({"type": "damage-players", "amount": 19}));
+        bundle.push(serde_json::json!({"type": "damage", "amount": 19}));
     });
     build(tmp.path()).expect("19 of 20 HP is a beating, not a scripted death");
 }

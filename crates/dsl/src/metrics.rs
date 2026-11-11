@@ -147,7 +147,7 @@ crate::dw_code! {
 /// No document declares a metrics version and no surface is gated by one. What
 /// it needs is that the number cannot stand still while the table moves, and
 /// that is the digest test.
-pub const METRICS_VERSION: u32 = 5;
+pub const METRICS_VERSION: u32 = 6;
 
 /// Player collision-box width in blocks (`0.6 × 0.6 × 1.8` standing).
 pub const PLAYER_WIDTH: f64 = 0.6;
@@ -1141,9 +1141,11 @@ impl Metrics {
                     MetricValue::Flag(false),
                     "none",
                     Provenance::VanillaRule,
-                    "Water and lava are impassable to every proof in this engine and are \
-                     never floor either: a body cannot stand on a fluid surface, so the \
-                     two sets are disjoint and both gate standability. Marked as a rule \
+                    "Water and lava are never floor: a body cannot stand on a fluid \
+                     surface, so the two sets are disjoint and both gate standability. \
+                     The route proof alone crosses a connected body of water by swimming \
+                     (spec-0134 §10, priced at `pacing.ticks-per-block-swimming`); lava \
+                     stays impassable everywhere. Marked as a rule \
                      rather than an engine constant deliberately — the navigation model \
                      encodes this as the SHAPE of its occupancy sets and not as a shared \
                      `const`, so there is no single definition for this row to be, and \
@@ -1333,6 +1335,17 @@ impl Metrics {
                  party achieves.",
             ),
             building(
+                "pacing.ticks-per-block-swimming",
+                MetricValue::Number(crate::metrics::body::swim_ticks_per_block()),
+                "ticks",
+                Provenance::Provisional,
+                "Ticks a player body takes per block across still water, holding \
+                 forward and jump: the body simulator under the game's rules over a \
+                 flat pool (`metrics::body::swim_ticks_per_block`), measured, never \
+                 typed (spec-0134 §10). The route proof prices a water step at this \
+                 rate against the sprint's. Provisional until the gym has swum it.",
+            ),
+            building(
                 "pacing.walk-only-blocks-per-minute",
                 MetricValue::Count((WALK_SPEED_BLOCKS_PER_SECOND * 60.0) as u32),
                 "blocks/minute",
@@ -1451,6 +1464,24 @@ impl Metrics {
                 named: named.to_string(),
                 defined: self.names_of(kind),
             })
+    }
+
+    /// **The swim rate** (spec-0134 §10): ticks a player body takes per block
+    /// across still water, `pacing.ticks-per-block-swimming`, read — so a
+    /// route that swims names the entry in its `DW0813` line. An accessor, as
+    /// [`Metrics::datum`] is, so the key lives here and nowhere else.
+    ///
+    /// `None` only if the table stopped defining it.
+    #[must_use]
+    pub fn swim_ticks_per_block(&self, reads: &mut Reads) -> Option<f64> {
+        match self
+            .building
+            .get("pacing.ticks-per-block-swimming")?
+            .value(reads)
+        {
+            MetricValue::Number(n) => Some(*n),
+            _ => None,
+        }
     }
 
     /// The datum convention that fixes what a declared floor `y` means.

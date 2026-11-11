@@ -614,7 +614,7 @@ export function scriptedDeathCommand(): string {
  * The gamemode a player must be in for a scripted death to be takeable at all.
  *
  * A spectator is invulnerable, so `/damage` does nothing to one — and the engine
- * says the same thing from the other side: every `damage-players` effect the
+ * says the same thing from the other side: every `damage` effect the
  * compiler emits carries `tag=!dw_cutscene`, the tag a cutscene adds to `@a` in the
  * same breath as `gamemode spectator @a`.
  */

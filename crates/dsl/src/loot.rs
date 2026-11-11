@@ -37,6 +37,28 @@ pub struct Loot {
     /// `contents`), the second in `container.1`, and so on (ADR-0006: no RNG,
     /// no loot tables); a stack that names its `slot` lands there.
     pub items: Vec<LootItem>,
+    /// **When the holder is filled** (DSL v0.73, spec-0134 §6): `at-load` (the
+    /// default) in `setup_finish` at world init; `by-effect` by the
+    /// `fill-loot` verb from whichever bundle the story fires it in.
+    #[serde(default, skip_serializing_if = "LootFilled::is_at_load")]
+    pub filled: LootFilled,
+}
+
+/// When a [`Loot`] fill runs (spec-0134 §6).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum LootFilled {
+    /// At world init, in `setup_finish` (the default).
+    #[default]
+    AtLoad,
+    /// By a `fill-loot` effect.
+    ByEffect,
+}
+
+impl LootFilled {
+    fn is_at_load(&self) -> bool {
+        *self == LootFilled::AtLoad
+    }
 }
 
 /// One stack inside a [`Loot`] container.
@@ -69,6 +91,11 @@ pub struct LootItem {
     /// author's judgement. A fill names every slot or none (`DW1035`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slot: Option<String>,
+    /// **A rocket's stars** (DSL v0.73, spec-0134 §5): the `minecraft:fireworks`
+    /// component of a `minecraft:firework_rocket` stack. On any other item it
+    /// is `DW1095`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fireworks: Option<crate::StackFireworks>,
 }
 
 /// **The container class's home in stage 5** (DSL v0.43, spec-0105).
@@ -621,5 +648,162 @@ pub(crate) fn loot_checks(
             items,
             d,
         );
+    }
+}
+
+crate::dw_code! {
+    /// (spec-0134 §5) A stack carries `fireworks` and its item is not
+    /// `minecraft:firework_rocket` — the game keeps the component on no other
+    /// item, so the stars are written and never seen.
+    pub const STACK_FIREWORKS_NOT_ROCKET: DwCode = DwCode::new("DW1095", ExitTier::Build);
+}
+
+/// **A rocket's stars, at every stack site that carries them** (spec-0134 §5):
+/// a `loot` stack, a `give-item` at any effect root (nested ones included) and
+/// a class kit stack. Each is asked the same two questions — is the item the
+/// rocket (`DW1095`), and are the stars within the bounds a `firework` effect's
+/// are (`DW0100`, the one rule `firework::firework_bounds` states).
+pub(crate) fn stack_fireworks_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let mut found: Vec<(String, &'static str, String)> = Vec::new();
+    let mut ask = |stage: &'static str,
+                   path: String,
+                   item: &str,
+                   fw: &crate::StackFireworks,
+                   d: &mut Vec<Diagnostic>| {
+        if !crate::firework::is_rocket(item) {
+            d.push(Diagnostic::error(
+                STACK_FIREWORKS_NOT_ROCKET,
+                stage,
+                format!("{path}/fireworks"),
+                format!(
+                    "a stack of `{item}` carries `fireworks`, and the game keeps a rocket's \
+                     stars on `{rocket}` alone, so these stars would be written and never \
+                     seen. Make the stack `{rocket}`, or remove `fireworks`.",
+                    rocket = crate::firework::ROCKET_ITEM,
+                ),
+            ));
+        }
+        crate::firework::firework_bounds(stage, &path, fw.flight, &fw.explosions, &mut found);
+    };
+    for (i, l) in c.quests.content.loot.iter().enumerate() {
+        for (k, it) in l.items.iter().enumerate() {
+            if let Some(fw) = &it.fireworks {
+                ask(
+                    "quests",
+                    format!("/content/loot/{i}/items/{k}"),
+                    &it.item,
+                    fw,
+                    d,
+                );
+            }
+        }
+    }
+    for (i, cl) in c.classes.content.classes.iter().enumerate() {
+        for (k, it) in cl.kit.iter().enumerate() {
+            if let Some(fw) = &it.fireworks {
+                ask(
+                    "classes",
+                    format!("/content/classes/{i}/kit/{k}"),
+                    &it.item,
+                    fw,
+                    d,
+                );
+            }
+        }
+    }
+    fn descend<'a>(
+        stage: &'static str,
+        path: String,
+        eff: &'a crate::QuestEffect,
+        out: &mut Vec<(&'static str, String, &'a str, &'a crate::StackFireworks)>,
+    ) {
+        if let crate::Verb::GiveItem {
+            item,
+            fireworks: Some(fw),
+            ..
+        } = &eff.verb
+        {
+            out.push((stage, path.clone(), item.as_str(), fw));
+        }
+        for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
+            for (j, inner) in list.iter().enumerate() {
+                descend(stage, format!("{path}/{pseg}/{j}"), inner, out);
+            }
+        }
+    }
+    let mut gives = Vec::new();
+    crate::effects::for_each_effect_root(c, &mut |site, effs| {
+        for (i, eff) in effs.iter().enumerate() {
+            descend(site.stage, format!("{}/{i}", site.path), eff, &mut gives);
+        }
+    });
+    for (stage, path, item, fw) in gives {
+        ask(stage, path, item, fw, d);
+    }
+    for (path, stage, message) in found {
+        d.push(Diagnostic::error(codes::SCHEMA, stage, path, message));
+    }
+}
+
+crate::dw_code! {
+    /// (spec-0134 §6) A fill and its beat disagree: a `by-effect` fill no
+    /// bundle fires (it is declared and never emitted into the world), or a
+    /// `fill-loot` of an `at-load` fill (a second fill of a filled holder).
+    pub const LOOT_FILL_UNFIRED: DwCode = DwCode::new("DW1093", ExitTier::Build);
+}
+
+/// **A fill and the beat that fires it** (spec-0134 §6): every `fill-loot`, at
+/// every effect root and nesting depth, names a declared fill (`DW0112`) that
+/// waits for it (`DW1093`); every `by-effect` fill is named by at least one
+/// `fill-loot` (`DW1093`). One rule, two messages.
+pub(crate) fn loot_fill_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let loot = &c.quests.content.loot;
+    let mut fired: BTreeSet<String> = BTreeSet::new();
+    crate::for_each_campaign_effect(c, &mut |path, _site, eff| {
+        let Some(id) = eff.fill_loot() else {
+            return;
+        };
+        let stage = if path.starts_with("/content/dialogues") {
+            "dialogue"
+        } else {
+            "quests"
+        };
+        fired.insert(id.as_str().to_string());
+        match loot.iter().find(|l| l.id == *id) {
+            None => d.push(Diagnostic::error(
+                codes::DANGLING_REF,
+                stage,
+                format!("{path}/loot"),
+                format!("`fill-loot` names `{id}`, which no `loot[]` entry declares."),
+            )),
+            Some(l) if l.filled == LootFilled::AtLoad => d.push(Diagnostic::error(
+                LOOT_FILL_UNFIRED,
+                stage,
+                format!("{path}/loot"),
+                format!(
+                    "`fill-loot` fills `{id}`, and `{id}` is already filled at load (`filled` is \
+                     `at-load`, the default), so this would write its holder a second time over \
+                     whatever the party left there. Declare `\"filled\": \"by-effect\"` on \
+                     `{id}` so the beat is its only fill, or remove the `fill-loot`."
+                ),
+            )),
+            Some(_) => {}
+        }
+    });
+    for (i, l) in loot.iter().enumerate() {
+        if l.filled == LootFilled::ByEffect && !fired.contains(l.id.as_str()) {
+            d.push(Diagnostic::error(
+                LOOT_FILL_UNFIRED,
+                "quests",
+                format!("/content/loot/{i}/filled"),
+                format!(
+                    "`{}` waits for its beat (`filled: by-effect`), and no bundle fires a \
+                     `fill-loot` of it, so its holder stays empty for the whole delve. Add a \
+                     `fill-loot` naming `{}` to the beat that fills it, or remove `filled` so it \
+                     is filled at load.",
+                    l.id, l.id
+                ),
+            ));
+        }
     }
 }

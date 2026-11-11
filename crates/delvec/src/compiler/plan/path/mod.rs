@@ -1359,7 +1359,7 @@ pub(super) fn build_critical_path(
                         wave_id: wave.as_str().to_string(),
                         pos,
                         tag: wave_tag(wave.as_str()),
-                        count: wave_total(w),
+                        count: crate::compiler::plan::wave_base_total(w),
                     });
                     obj_areas.push((id.as_str().to_string(), area.to_string(), steps.len() - 1));
                 }

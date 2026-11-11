@@ -376,7 +376,7 @@ fn verify_checkpoints(
         let Some(goal) = leg_world.snap_endpoint(target.pos, target.talk_to) else {
             continue; // the target itself is unsnappable → a DW0311 concern, not ours
         };
-        if leg_world.find_path(cell, goal).is_none() {
+        if leg_world.find_route(cell, goal).is_none() {
             return Err(Failure {
                 code: DW_CHECKPOINT_STRANDED,
                 message: format!(
@@ -481,7 +481,7 @@ fn verify_retry_cost(
             let Some(goal) = world.snap_endpoint(target.pos, target.talk_to) else {
                 continue;
             };
-            let Some(path) = world.find_path(from, goal) else {
+            let Some(path) = world.find_route(from, goal) else {
                 continue; // DW0315 owns an unreachable one
             };
             walked += 1;

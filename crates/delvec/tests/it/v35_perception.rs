@@ -179,9 +179,11 @@ fn the_surface_is_exported() {
         q["properties"]["audience"].is_object(),
         "`audience` is an envelope field"
     );
-    let audience: Vec<&str> = defs["EffectAudience"]["oneOf"]
+    // The players an audience names (spec-0085), beside the bodies it may name
+    // instead (spec-0134 §9: `{wave}`, `{actor}`).
+    let audience: Vec<&str> = defs["PlayerAudience"]["oneOf"]
         .as_array()
-        .or(defs["EffectAudience"]["enum"].as_array())
+        .or(defs["PlayerAudience"]["enum"].as_array())
         .map(|a| {
             a.iter()
                 .filter_map(|b| b["const"].as_str().or(b.as_str()))
@@ -189,6 +191,10 @@ fn the_surface_is_exported() {
         })
         .unwrap_or_default();
     assert_eq!(audience, ["party", "actor"]);
+    let whole = defs["EffectAudience"].to_string();
+    for arm in ["PlayerAudience", "WaveAudience", "ActorAudience"] {
+        assert!(whole.contains(arm), "{whole}");
+    }
     let branches = q["oneOf"].as_array().unwrap();
     // The union's size is stated once, by `v29_firework`'s
     // `the_effect_union_names_forty_six_verbs`.
@@ -198,7 +204,7 @@ fn the_surface_is_exported() {
             .find(|b| b["properties"]["type"]["const"] == t)
             .unwrap_or_else(|| panic!("`{t}` is a verb"))
     };
-    for t in ["give-effect", "clear-effect", "damage-players"] {
+    for t in ["give-effect", "clear-effect", "damage"] {
         assert!(
             branch(t)["properties"].get("in").is_none(),
             "`{t}` carries no `in` of its own"
@@ -380,6 +386,10 @@ fn samples() -> Vec<(&'static str, Value)> {
             json!({"type":"despawn-wave","wave":"wave/muster"}),
         ),
         (
+            "fill-loot",
+            json!({"type":"fill-loot","loot":"loot/ferryman-stores"}),
+        ),
+        (
             "narrate",
             json!({"type":"narrate","text":"The hall answers."}),
         ),
@@ -425,10 +435,7 @@ fn samples() -> Vec<(&'static str, Value)> {
             "stop-sound",
             json!({"type":"stop-sound","category":"music"}),
         ),
-        (
-            "damage-players",
-            json!({"type":"damage-players","amount":2}),
-        ),
+        ("damage", json!({"type":"damage","amount":2})),
         (
             "set-checkpoint",
             json!({"type":"set-checkpoint","anchor":"anchor/keeper-stand"}),

@@ -521,7 +521,7 @@ mod tests {
     }
 
     /// A player selector may carry a box freely: no player is a fixture, and
-    /// `damage-players`, `give-effect` and a lethal volume's `@a` half all
+    /// `damage`, `give-effect` and a lethal volume's `@a` half all
     /// legitimately quantify over one.
     #[test]
     fn a_player_box_selector_is_not_this_rules_business() {

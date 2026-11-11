@@ -71,6 +71,11 @@ const PLAYED: &[&str] = &[
     // A limit's expiry (spec-0133): runs only in a world whose clock ran out
     // with the objective still open, which the mainline's frames never are.
     "settle_expired_",
+    // A fill that waits for its beat (spec-0134 §6): its slots are written by
+    // `fill-loot` at play time. A container's contents are drawn by no frame;
+    // a frame or stand filled this way is not yet carried into the frames
+    // after its beat (a recorded debt of spec-0134).
+    "fill_",
 ];
 
 fn tmp(name: &str) -> PathBuf {

@@ -14,7 +14,7 @@ data-dependent terms, and both are vanilla DATA rather than folklore:
 - **difficulty.** A damage type's `scaling` field decides whether the Easy/Hard
   multipliers apply at all. The trap this closes: eight of the nine damage types
   the DSL exposes are `when_caused_by_living_non_player`, and the compiler emits
-  `damage-players` as a bare `/damage <target> <amount> <type>` with NO attacker —
+  `damage` as a bare `/damage <target> <amount> <type>` with NO attacker —
   so those hits are NOT halved on Easy. Only `minecraft:explosion` scales
   (`always`). Reading the doc-comment formula without reading this field would
   have made every Easy campaign's arithmetic wrong by a factor of two, in the

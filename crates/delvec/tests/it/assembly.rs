@@ -950,7 +950,7 @@ fn locked_quests() -> Value {
             "pick": "nearest",
             "reaches": ["far"]
         });
-        step["on_land"] = json!([{ "type": "damage-players", "amount": 4 }]);
+        step["on_land"] = json!([{ "type": "damage", "amount": 4 }]);
     })
 }
 
@@ -1087,7 +1087,7 @@ fn the_lock_shape_and_arming_refusals() {
     let mut nested = locked_quests();
     assembly(&mut nested)["strikes"]["pattern"][0]["on_land"] = json!([{
         "type": "sequence",
-        "steps": [{ "at_ticks": 0, "effects": [{ "type": "damage-players", "amount": 4 }] }]
+        "steps": [{ "at_ticks": 0, "effects": [{ "type": "damage", "amount": 4 }] }]
     }]);
     has(&nested, "DW0969", "/on_land/0/steps/0/effects/0");
     let mut aimed = locked_quests();
