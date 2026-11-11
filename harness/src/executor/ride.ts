@@ -228,6 +228,9 @@ export const methods = {
     // the ride does not arrive.
     const trace: string[] = [];
     if (step.kind === "minecart") {
+      // DIAGNOSTIC (one run): the advancement granted by hand three seconds in.
+      bot.chat(`/execute on vehicle if entity @s[tag=${tag}] run say DIAG the vehicle carries the tag`);
+      setTimeout(() => bot.chat(`/advancement grant @s only gallery:vehicle_board`), 3000);
       const travel = step.medium.length / step.rate;
       const by = Date.now() + travel * 1000 + MOUNT_GRACE_MS + 2000;
       const t0 = Date.now();

@@ -67,22 +67,34 @@ pub struct MovementItems {
     pub unmodelled: Vec<MovementItem>,
     /// The fall reducers, in reading order.
     pub reducers: Vec<MovementItem>,
-    /// Every stack read, `(item, the first step a body can hold it at)`, in
-    /// reading order — what `DW1090` asks of a `shot` (spec-0134 §2).
+    /// Every stack a source other than a class kit gives, `(item, the first
+    /// step a body can hold it at)`, in reading order.
     pub held: Vec<(String, usize)>,
+    /// Every class's kit, its items in order: one row a class.
+    pub kits: Vec<Vec<String>>,
 }
 
 impl MovementItems {
-    /// The first critical-path step at which a body may hold one of `items`,
-    /// or `None` when the campaign gives none of them.
+    /// **The first critical-path step by which every body holds one of
+    /// `items`** — the one answer to "is this item in hand by then", asked by
+    /// a `shot`'s bow and arrows (`DW1090`, spec-0134 §2) and a mount's
+    /// steering item (`DW1096`, spec-0135 §3), both of which owe the item on
+    /// every path. A kit gives it from the first step only when **every**
+    /// class's kit carries one: a player who chose the class without it is a
+    /// path without it. Any other source gives it from the step it is read at
+    /// (a `give-item` from the step after its objective). `None` when nothing
+    /// gives it. Ids are compared with or without the `minecraft:` namespace.
     #[must_use]
     pub fn first_held(&self, items: &[&str]) -> Option<usize> {
+        let bare = |i: &str| i.strip_prefix("minecraft:").unwrap_or(i).to_string();
+        let want: Vec<String> = items.iter().map(|i| bare(i)).collect();
+        let is = |i: &String| want.contains(&bare(i));
+        if !self.kits.is_empty() && self.kits.iter().all(|k| k.iter().any(is)) {
+            return Some(0);
+        }
         self.held
             .iter()
-            .filter(|(i, _)| {
-                let bare = i.strip_prefix("minecraft:").unwrap_or(i);
-                items.contains(&bare)
-            })
+            .filter(|(i, _)| is(i))
             .map(|(_, s)| *s)
             .min()
     }
@@ -246,6 +258,8 @@ fn enchantment_rule(item: &str, enchantment: &str) -> Option<(Kind, &'static str
 struct Reader<'a> {
     out: MovementItems,
     path: &'a [Step],
+    /// The class whose kit is being read, when one is.
+    kit: Option<usize>,
 }
 
 impl Reader<'_> {
@@ -273,7 +287,10 @@ impl Reader<'_> {
         at: (usize, bool),
     ) {
         self.out.examined += 1;
-        self.out.held.push((item.to_string(), at.0));
+        match self.kit {
+            Some(class) => self.out.kits[class].push(item.to_string()),
+            None => self.out.held.push((item.to_string(), at.0)),
+        }
         if let Some(rule) = item_rule(item) {
             self.push(Kind::Unmodelled, item, rule, source, at);
         }
@@ -401,45 +418,15 @@ pub fn movement_items(campaign: &delvewright_dsl::Campaign, path: &[Step]) -> Mo
     read_items(campaign, path).out
 }
 
-/// **The first critical-path step a body is sure to hold `item` at**
-/// (spec-0135 §3, `DW1096`): a kit gives it from the first step when every
-/// class's kit carries it; a `give-item` from the step after the objective
-/// whose completion runs it; any other source — a trigger, loot, a shop, a
-/// drop — from the first step, as [`movement_items`] reads it. `None` when
-/// nothing gives it.
-pub fn item_held_from(
-    campaign: &delvewright_dsl::Campaign,
-    path: &[Step],
-    item: &str,
-) -> Option<usize> {
-    let want = delvewright_dsl::namespaced_entity(item);
-    let classes = &campaign.classes.content.classes;
-    let in_every_kit = !classes.is_empty()
-        && classes.iter().all(|c| {
-            c.kit
-                .iter()
-                .any(|k| delvewright_dsl::namespaced_entity(&k.item) == want)
-        });
-    if in_every_kit {
-        return Some(0);
-    }
-    let r = read_items(campaign, path);
-    let kits: usize = classes.iter().map(|c| c.kit.len()).sum();
-    r.out
-        .held
-        .iter()
-        .skip(kits)
-        .filter(|(i, _)| delvewright_dsl::namespaced_entity(i) == want)
-        .map(|(_, stage)| *stage)
-        .min()
-}
-
 fn read_items<'a>(campaign: &delvewright_dsl::Campaign, path: &'a [Step]) -> Reader<'a> {
     let mut r = Reader {
         out: MovementItems::default(),
         path,
+        kit: None,
     };
-    for class in &campaign.classes.content.classes {
+    for (ci, class) in campaign.classes.content.classes.iter().enumerate() {
+        r.out.kits.push(Vec::new());
+        r.kit = Some(ci);
         for k in &class.kit {
             let source = format!("class `{}`'s kit", class.id.as_str());
             let contents = k
@@ -449,6 +436,7 @@ fn read_items<'a>(campaign: &delvewright_dsl::Campaign, path: &'a [Step]) -> Rea
             r.stack(&k.item, None, contents.as_ref(), &source, (0, true));
         }
     }
+    r.kit = None;
     let docs: [(&str, Option<Value>); 4] = [
         (
             "world.json",

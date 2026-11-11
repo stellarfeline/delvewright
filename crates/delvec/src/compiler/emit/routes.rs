@@ -803,11 +803,7 @@ pub(super) fn prove_world(
                         else {
                             continue;
                         };
-                        let held = crate::compiler::nav::item_held_from(
-                            plan.campaign,
-                            &plan.critical_path,
-                            item,
-                        );
+                        let held = plan.movement.first_held(&[item.as_str()]);
                         if held.is_none_or(|h| h > k) {
                             return Err(BuildFailure::Diagnostic {
                                 code: delvewright_dsl::vehicle::VEHICLE_CARRIES_NO_RIDER,
