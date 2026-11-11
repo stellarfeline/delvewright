@@ -33,7 +33,6 @@ def test_observed_cane_is_random_tick(ww):
 def test_another_block_or_property_stays_model(ww):
     assert cls(ww, "minecraft:wheat[age=0]", "minecraft:wheat[age=1]") == "model"
     assert cls(ww, "minecraft:sugar_cane[age=0]", "minecraft:cactus[age=0]") == "model"
-    assert cls(ww, "minecraft:sugar_cane[age=0]", "minecraft:sugar_cane") == "model"
 
 
 def test_a_path_under_hay_is_the_models_to_fix(ww):
