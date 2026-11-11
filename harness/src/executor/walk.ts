@@ -12,8 +12,8 @@ import {
   allowNonCollidingEntities,
   configureLeg,
   describeStuckNeighbours,
+  hopMovements,
   isDoorByHand,
-  parkourFor,
 } from "../movement.ts";
 import {
   doorsCrossed,
@@ -855,8 +855,9 @@ export const methods = {
             await this.openDoorBefore(door, spec, glabel, sneak);
           }
           // The parkour move is on for a proven jump's hop and off for every
-          // other (spec-0113 §6): the bot walks what the proof proved.
-          parkourFor(movements, spec.jump !== undefined);
+          // other (spec-0113 §6): the bot walks what the proof proved. A sneak
+          // leg sprints only for a sprint jump it makes standing.
+          hopMovements(movements, sneak, spec);
           bot.pathfinder.setMovements(movements);
           // A move of a sneak leg a crouched body cannot make is made standing
           // (`stand_ups`, the compiler's answer).
@@ -866,7 +867,7 @@ export const methods = {
               ? this.raceDeath(() => this.climbHop(spec, glabel))
               : this.gotoStaged(spec, glabel, sneak));
           } finally {
-            parkourFor(movements, false);
+            hopMovements(movements, sneak, {});
             this.crouchYielded = false;
           }
           await this.judgeWatchers(glabel);

@@ -10,8 +10,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { configureLeg, type LegMovements } from "../src/movement.ts";
-import { walkGoals } from "../src/waypoints.ts";
+import { configureLeg, hopMovements, type LegMovements } from "../src/movement.ts";
+import { type GoalSpec, walkGoals } from "../src/waypoints.ts";
 import { cellKey, fmtPos, simBot, simWalk, type Cells, type SimBot } from "./sim-bot.ts";
 
 const requireCjs = createRequire(import.meta.url);
@@ -30,13 +30,12 @@ function lane(step: boolean): Cells {
 
 /**
  * Walk one leg the way `walkLeg` drives it — `configureLeg`, then for each hop
- * `setMovements` and a goal — counting the ticks the body is not crouched.
- * `standing` is `yieldCrouch`'s answer, decided per hop as the leg decides it.
+ * `hopMovements`, `setMovements`, the crouch yielded for a stand-up, and a goal —
+ * counting the ticks the body is not crouched outside a stand-up.
  */
 function walkSneakLeg(
   bot: SimBot,
-  hops: ReadonlyArray<readonly [number, number, number]>,
-  standing: (hop: readonly [number, number, number]) => boolean = () => false,
+  hops: ReadonlyArray<readonly [number, number, number] | GoalSpec>,
 ): { upright: number; ticks: number; reached: boolean; at: readonly number[] } {
   const movements = new Movements(bot);
   let yielded = false;
@@ -52,14 +51,18 @@ function walkSneakLeg(
   };
   let reached = true;
   try {
-    for (const hop of hops) {
+    for (const h of hops) {
+      const hop: GoalSpec = Array.isArray(h) ? { x: h[0], y: h[1], z: h[2], range: 0 } : (h as GoalSpec);
+      hopMovements(movements, true, hop);
       bot.run(() => bot.pathfinder.setMovements(movements));
-      yielded = standing(hop);
+      yielded = hop.standsUp === true;
       bot.on("physicsTick", count);
-      const r = simWalk(bot, hop, 0, 900);
+      const r = simWalk(bot, [hop.x, hop.y, hop.z], 0, 900);
       bot.off("physicsTick", count);
+      hopMovements(movements, true, {});
       yielded = false;
       reached &&= r.reached;
+      if (!r.reached) break;
     }
   } finally {
     restore();
@@ -112,9 +115,48 @@ test("a crouched body stops at a step down; the leg stands for that hop and arri
   );
   const ruled = walkSneakLeg(
     simBot(lane(true), [1.5, 64, 2.5]),
-    goals.map((g) => [g.x, g.y, g.z] as const),
-    (hop) => goals.some((g) => g.standsUp && g.x === hop[0] && g.y === hop[1] && g.z === hop[2]),
+    goals.map((g) => ({ ...g, range: 0 })),
   );
   assert.ok(ruled.reached, `stopped at ${fmtPos(ruled.at)}`);
   assert.equal(ruled.upright, 0, `upright on ${ruled.upright} of ${ruled.ticks} crouched ticks`);
+});
+
+/** A stone floor at y=63 over x ∈ 0..20, z ∈ 0..4, open over x ∈ 10..12: a three-wide gap. */
+function gapLane(): Cells {
+  const cells: Cells = new Map();
+  for (let x = 0; x <= 20; x++) {
+    if (x >= 10 && x <= 12) continue;
+    for (let z = 0; z <= 4; z++) cells.set(cellKey(x, 63, z), "minecraft:stone");
+  }
+  return cells;
+}
+
+test("a sneak leg makes its proven sprint jump standing, at a sprint, and lands", () => {
+  // The gallery's broken plank on a walk declared stealth: a three-wide gap,
+  // declared `sprint`, the compiler's `stand_ups` naming the jump.
+  const jump = { from: [9, 64, 2] as const, to: [13, 64, 2] as const, sprint: true, runUp: 1 };
+  const goals = walkGoals(
+    [
+      [5, 64, 2],
+      [9, 64, 2],
+      [13, 64, 2],
+    ],
+    [18, 64, 2],
+    0,
+    [],
+    [jump],
+    [{ from: jump.from, to: jump.to, why: "jump" }],
+  );
+  const r = walkSneakLeg(
+    simBot(gapLane(), [1.5, 64, 2.5]),
+    goals.map((g) => ({ ...g, range: 0 })),
+  );
+  assert.ok(r.reached, `stopped at ${fmtPos(r.at)}`);
+  assert.equal(r.upright, 0, `upright on ${r.upright} of ${r.ticks} crouched ticks`);
+  const flags = goals.map((g) => hopMovements({ allowParkour: false, allowSprinting: false }, true, g));
+  assert.deepEqual(
+    flags.map((f) => f.sprint),
+    [false, false, true, false],
+    "a sneak leg sprints for its sprint jump's hop and no other",
+  );
 });
