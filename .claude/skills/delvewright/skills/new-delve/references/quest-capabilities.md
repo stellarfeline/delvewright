@@ -11,6 +11,7 @@
 - [Things that change the world](#things-that-change-the-world)
 - [Danger, death and money](#danger-death-and-money)
 - [Bodies](#bodies)
+- [A boat, a cart, a mount](#a-boat-a-cart-a-mount)
 - [Sealed things, and pacing](#sealed-things-and-pacing)
 
 # Reference: what a quest can do
@@ -212,6 +213,16 @@ Run each of these; each names what it judges and how many objects it bound.
   - *Where a blow lands is checked; when and how hard is yours.* `strikes {while_in, pattern: [{windup, hold, strike, on_land}]}` winds up, holds, strikes, and runs `on_land` the moment the strike clip's last frame has finished drawing — usually a `damage` with an `in` box, and a sound. Three things are refused (`DW0938`), all so the danger stays visible: **a blow that reaches a player who never stepped into the arming region** (keep every landing box inside `while_in`); **a blow on a cell the limb does not come down on** — within a block of the floor, where the player stands; a limb hanging over their head has not landed on them; and **a limb that comes down beyond the blow's area** — the area is what the animation shows, so a long limb's blow is a long box along where it lies, not one cell, with one cell of give round the box. Declare the box along the cells where the strike clip's last frame lies on the floor (rig describe prints them).
   - *The wind-up's length is two numbers, both yours*: the wind-up clip's frames times its cadence (rig describe prints the ticks), then `hold`. `ticks_per_frame` on a step plays its wind-up and strike at a pace you choose (1–20 ticks a keyframe) instead of the clip's own. How long the wind-up is, how long it holds and how much it hurts — down to no warning and a blow that kills — are your judgement; nothing refuses them. For reference, a single expected stimulus takes a person about a quarter of a second to answer (roughly five ticks of clear movement), and a wind-up that barely moves at first gives no warning at all however long it is.
   - *It can turn to strike.* `"aim": {"facings": 8}` in `strikes` turns the thing, at every wind-up, to whichever of 8 (or your number of) evenly spaced facings points nearest the closest player in `while_in`, and the blow's box turns with it. Write the box for the assembly's own `facing`; every facing a player in `while_in` can make it take is checked the same way, so keep `while_in` to the side the thing is meant to strike, and keep the `damage` at the top of `on_land` (one inside another effect cannot be turned and is refused).
+
+## A boat, a cart, a mount
+
+- `vehicles[]` places a body a player boards and leaves: a boat on water, the rider's minecart on a rail, a saddled pig, horse, camel or strider on ground. Write the `entity`, the mark it is seated at (`at`) and the `bounds` it lives in; the kind, the seats and the steering item come from the engine. A chest boat, a cart that carries cargo and a llama carry no rider, and are refused.
+- The engine proves the seat is in its medium, that somebody can stand beside it and climb on, and that a rider who leaves anywhere it goes can get back to the party's ground. A vehicle nobody is riding returns to its mark within five seconds wherever it was left, so a ride always starts from the mark.
+- A leg is ridden only where you say so: put `"ride": "vehicle/<id>"` on the objective the party rides to. The party then walks to the vehicle, rides it as near the objective as its water, rail or ground reaches, and walks the rest — the ride always stops short of the place a `reach-anchor` completes at, so the party arrives on foot; with no `ride` the leg is walked or swum and the vehicle is scenery the players may use. A ride the vehicle cannot make is refused by name. Where nobody could walk the leg either, the vehicles there must seat the whole party of four.
+- A minecart is seated on level plain rail and faces the way it will run (`facing`); the engine pushes it when a player sits down, and one push carries it about 45 rails. Put a solid block behind its first rail and do not seat it on a powered launcher: a cart at an open end is knocked off its rail by whoever walks into it, and a launcher rolls it away empty.
+- A gate can wait for riders: `state[].counts` with `"of": {"riders": "vehicle/<id>"}` counts the players aboard inside its `region`, and a `body-enters` trigger over it fires when the first one boards. Put that datum in the `requires_state` of an objective that declares `ride` on the same vehicle and the objective completes only from the saddle: the ride then goes all the way in.
+- A pig or a strider is steered by an item in the rider's hand: put a carrot on a stick (a warped fungus on a stick for a strider) in every class's kit, or give it before the ride.
+- `seat-vehicle` puts a vehicle back at its mark from a beat; `despawn-vehicle` takes it away for good (its re-seat stops with it).
 
 ## Sealed things, and pacing
 

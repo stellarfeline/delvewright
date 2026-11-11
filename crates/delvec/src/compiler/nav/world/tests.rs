@@ -39,6 +39,7 @@ fn floored_with_furniture(
             leaves: Default::default(),
             hiding: Default::default(),
             hurting: Default::default(),
+            rails: Default::default(),
         },
         Premises {
             ambient: Ambient::Void,

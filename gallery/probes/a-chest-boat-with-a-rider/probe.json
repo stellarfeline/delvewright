@@ -1,0 +1,13 @@
+{
+  "code": "DW1096",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/vehicles/0/entity",
+      "value": "minecraft:oak_chest_boat"
+    }
+  ],
+  "units": [],
+  "why": "One edit: the hall's cart declared as an oak chest boat. A chest boat gives its second seat to its chest, and the engine models the boats that carry riders; the entity is refused at the document, naming the entities that carry a rider. It declares no unit."
+}

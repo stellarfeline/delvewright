@@ -256,6 +256,14 @@ all, and the line's absence is the finding. The `gallery bot` job requires the
 gallery's broken plank to print `1 jump(s) on the proven leg, 1 driven as a
 parkour hop`.
 
+## What the ladder asserts at a ride
+
+**The bot rides only where the campaign declared a ride and the compiler proved it, and reads every verdict on the server** (spec-0135 §6). A `ride` step names the boarding cell, the medium cells, the rate and the leaving cell. The executor (`harness/src/executor/ride.ts`) walks to the boarding cell round the cells the step names as the vehicle's `body` — walled for that one walk, as the proof sealed them, because a body that walks into a vehicle shoves it — clicks the vehicle's body, and passes the mount only when the server's `execute on vehicle` names the vehicle's tag: mineflayer 4.37.1 cannot parse this version's entity teleport and its `bot.vehicle` stays stale after a dismount (`docs/reference/vehicles-animals-and-targets.md` §4–§6), so the client is never asked. A boat or a mount is driven by `vehicle_move` reports along the medium at the rate, the way a vanilla client drives — navigation along a proven route, never a physics the harness computes; a cart is waited for — the engine pushes it when the bot boards, and the rails carry it. After the leave the bot teleports itself to where it stands (`tp @s ~ ~ ~`): mineflayer stops its physics at a mount and starts it only at the server's next position packet, which a sneak dismount does not send, and the teleport moves nothing. A boat's rider is set down on its hull, so the walk from the hull to the leaving cell is the one walk outside a swum leg that admits liquid. The ride passes when the server's rider stands within the landing tolerance of the last medium cell, and the leave when the sneak input unseats the bot on the server.
+
+**A ride that carries a census reads it aboard.** Where the ridden objective waits for its own rider, the `ride` step carries a `riders` row; at the ride's end, still seated, the bot waits one census period and reads the datum on the server. It is the one body the census counts: a read that is not 1, a gate that needs more than one rider, or a row for another vehicle fails the ride by name.
+
+**What the ladder does not assert.** That the server takes a reported move whole, and that `/ride` seats and unseats a body, are vanilla, measured once in the record and never re-checked. `rides[]` carries the distance reported beside the distance the server saw for a reader; the verdict is the arrival.
+
 ## What the ladder asserts at a sculk device
 
 **The bot hears what the compiler predicted, and never a warden** (spec-0100).

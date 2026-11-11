@@ -111,9 +111,22 @@
         },
         "role": "flavor",
         "watch": "none"
+      },
+      {
+        "anchor": "anchor/long-hall-groom",
+        "area": "area/long-hall",
+        "base_entity": "minecraft:villager",
+        "id": "npc/groom",
+        "name": "The Groom",
+        "persona": {
+          "archetype": "groom of the yard behind the hall",
+          "motivation": "Keep the animals fed and the cart oiled.",
+          "speech_style": "Short, kindly, busy with his hands."
+        },
+        "role": "flavor"
       }
     ]
   },
-  "dsl_version": "0.73.0",
+  "dsl_version": "0.74.0",
   "stage": "npcs"
 }

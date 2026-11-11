@@ -4922,11 +4922,27 @@ const LONG_HALL_END_Z: i32 = LONG_HALL_SLAB_Z + 54;
 /// The hall's rear mouth, where the porch opens onto it.
 const LONG_HALL_REAR_Z: i32 = 8;
 
-/// The end room's depth past its front wall.
-const LONG_HALL_ROOM_DEPTH: i32 = 10;
+/// The end room's depth past its front wall: the room the hall ends in, and
+/// behind it the yard the vehicles are ridden in (spec-0135 §7).
+const LONG_HALL_ROOM_DEPTH: i32 = 36;
 
 /// Extent: the end room's width, its height, and porch to end room.
 const LONG_HALL_SIZE: [i32; 3] = [11, 7, LONG_HALL_END_Z + LONG_HALL_ROOM_DEPTH + 1];
+
+/// The yard's rail line (spec-0135 §7): twelve cells of level plain rail down
+/// the yard's west lane, a stone stop past its far end and one behind its first. The cart rests on
+/// its first cell — a launcher would run an empty cart away — and is pushed
+/// when a body boards.
+const LONG_HALL_RAIL_X: i32 = 2;
+const LONG_HALL_RAIL_FROM: i32 = LONG_HALL_END_Z + 22;
+const LONG_HALL_RAIL_TO: i32 = LONG_HALL_END_Z + 33;
+
+/// The yard's basin (spec-0135 §7): water four wide and seven long against
+/// the east wall, one course deep on the floor, held by a rim a block high on
+/// its three open sides — wide enough for a boat's body and long enough for
+/// it to be rowed.
+const LONG_HALL_BASIN_X: (i32, i32) = (6, 9);
+const LONG_HALL_BASIN_Z: (i32, i32) = (LONG_HALL_END_Z + 13, LONG_HALL_END_Z + 19);
 
 /// The long hall's anchors. Every one says what the gallery does with it.
 const LONG_HALL_ANCHORS: &[Anchor] = &[
@@ -4971,6 +4987,105 @@ const LONG_HALL_ANCHORS: &[Anchor] = &[
         trigger_block: None,
         note: "the top of the chest against the end room's far wall: what the end room holds, \
                in front of the eye that arrives at the end",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-hall-cart",
+        pos: [LONG_HALL_RAIL_X, 1, LONG_HALL_RAIL_FROM],
+        facing: None,
+        trigger_block: None,
+        note: "the head of the yard's rail line: where the hall's minecart is seated \
+               (spec-0135)",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-hall-line-end",
+        pos: [LONG_HALL_RAIL_X + 3, 1, LONG_HALL_RAIL_TO],
+        facing: None,
+        trigger_block: None,
+        note: "the yard's middle lane abreast of the rail line's last cell, the groom in sight beyond it: where a rider who took \
+               the cart walks to after it (spec-0135)",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-hall-paddock",
+        pos: [7, 1, LONG_HALL_END_Z + 5],
+        facing: None,
+        trigger_block: None,
+        note: "the end room's east floor: where the race pig is seated, the paddock round it \
+               its bounds (spec-0135)",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-hall-winning-post",
+        pos: [4, 1, LONG_HALL_END_Z + 12],
+        facing: None,
+        trigger_block: None,
+        note: "the yard's mouth, down the middle lane from the paddock: where the pig's race \
+               ends (spec-0135)",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-hall-yard",
+        pos: [4, 1, LONG_HALL_END_Z + 18],
+        facing: None,
+        trigger_block: None,
+        note: "the yard's middle lane, half-way down it: the box the vehicles live in is \
+               centred here (spec-0135)",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-hall-slip",
+        pos: [5, 2, LONG_HALL_BASIN_Z.0 + 1],
+        facing: None,
+        trigger_block: None,
+        note: "the top of the basin's west rim at its near end: the boat is moored two cells \
+               east of it, on the water (spec-0135)",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-hall-far-bank",
+        pos: [9, 1, LONG_HALL_BASIN_Z.1 + 3],
+        facing: None,
+        trigger_block: None,
+        note: "the east wall's foot past the basin's far rim: where the sluice lever a rider \
+               rows to is set (spec-0135)",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-hall-stable",
+        pos: [7, 1, LONG_HALL_END_Z + 26],
+        facing: None,
+        trigger_block: None,
+        note: "the east yard's floor: where the mare is seated, the stable round it her \
+               bounds (spec-0135)",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-hall-groom",
+        pos: [9, 1, LONG_HALL_END_Z + 33],
+        facing: Some("west"),
+        trigger_block: None,
+        note: "the east yard's far end, abreast of the rail line's last cell: where the groom \
+               stands, a ride on the mare away, and whom a rider off the cart walks up to \
+               (spec-0135)",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-hall-jenny",
+        pos: [2, 1, LONG_HALL_END_Z + 3],
+        facing: None,
+        trigger_block: None,
+        note: "the west lane by the door: where the donkey is seated (spec-0135)",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-hall-hen-run",
+        pos: [2, 1, LONG_HALL_END_Z + 10],
+        facing: None,
+        trigger_block: None,
+        note: "the west lane's middle: where the yard's hen is loosed, a ride on the donkey \
+               away (spec-0135)",
         role: None,
     },
     Anchor {
@@ -5028,14 +5143,43 @@ fn build_long_hall() -> Structure {
     fill([1, 1, end + 1], [9, 5, room_end - 1], "minecraft:air");
     fill([4, 1, end], [6, 3, end], "minecraft:air");
     fill([4, 4, end], [6, 4, end], "minecraft:glowstone");
-    for (x, z) in [
-        (2, end + 3),
-        (8, end + 3),
-        (2, room_end - 3),
-        (8, room_end - 3),
-    ] {
-        fill([x, 5, z], [x, 5, z], "minecraft:lantern[hanging=true]");
+    // A pair of hanging lanterns every six courses, the room's whole depth.
+    let mut z = end + 3;
+    while z <= room_end - 3 {
+        for x in [2, 8] {
+            fill([x, 5, z], [x, 5, z], "minecraft:lantern[hanging=true]");
+        }
+        z += 6;
     }
+    // The basin (spec-0135 §7): the rim on its three open sides, the water
+    // inside it against the east wall.
+    let ((bx0, bx1), (bz0, bz1)) = (LONG_HALL_BASIN_X, LONG_HALL_BASIN_Z);
+    fill(
+        [bx0 - 1, 1, bz0 - 1],
+        [bx1, 1, bz1 + 1],
+        "minecraft:polished_deepslate",
+    );
+    fill([bx0, 1, bz0], [bx1, 1, bz1], "minecraft:water[level=0]");
+    // The rail line (spec-0135 §7): level plain rail, and the stop past its
+    // far end.
+    let (rx, r0, r1) = (LONG_HALL_RAIL_X, LONG_HALL_RAIL_FROM, LONG_HALL_RAIL_TO);
+    fill(
+        [rx, 1, r0],
+        [rx, 1, r1],
+        "minecraft:rail[shape=north_south,waterlogged=false]",
+    );
+    fill(
+        [rx, 1, r1 + 1],
+        [rx, 1, r1 + 1],
+        "minecraft:polished_deepslate",
+    );
+    // And one behind its first: a body that walks into the resting cart
+    // cannot roll it off the open end of its line.
+    fill(
+        [rx, 1, r0 - 1],
+        [rx, 1, r0 - 1],
+        "minecraft:polished_deepslate",
+    );
     // What the end room holds: a chest against its far wall, on the hall's
     // axis, in front of the eye that arrives at the end.
     fill(
@@ -5080,6 +5224,7 @@ fn write_long_hall(out: &Path) {
                     | "minecraft:red_carpet"
                     | "minecraft:lantern"
                     | "minecraft:soul_lantern"
+                    | "minecraft:rail"
             )
         })
         .map(|(p, _)| *p)

@@ -386,6 +386,14 @@ fn samples() -> Vec<(&'static str, Value)> {
             json!({"type":"despawn-wave","wave":"wave/muster"}),
         ),
         (
+            "seat-vehicle",
+            json!({"type":"seat-vehicle","vehicle":"vehicle/gull"}),
+        ),
+        (
+            "despawn-vehicle",
+            json!({"type":"despawn-vehicle","vehicle":"vehicle/gull"}),
+        ),
+        (
             "fill-loot",
             json!({"type":"fill-loot","loot":"loot/ferryman-stores"}),
         ),

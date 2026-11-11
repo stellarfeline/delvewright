@@ -328,7 +328,7 @@ pub struct World {
     /// of where a body can be — the reach graph and a mob's moves: a body that
     /// enters water floats at its surface, and one that enters lava does not
     /// come out of it at all.
-    lava: CellSet,
+    pub(in crate::compiler::nav) lava: CellSet,
     /// The blocks that change how a body moves ([`crate::compiler::assembled::Occupancy::material`]).
     /// Read by the reach graph's simulator alone ([`reach`]).
     pub(in crate::compiler::nav) material: CellMap<delvewright_dsl::metrics::body::Material>,
@@ -347,6 +347,9 @@ pub struct World {
     /// The climbables the block map holds and the world does not keep — read as
     /// air. Carried only so a route that needed one can name it (`DW0991`).
     pub(in crate::compiler::nav) unheld_climb: UnheldClimbs,
+    /// Every rail cell (spec-0135 §3): the medium a minecart moves in. Not a
+    /// collision class.
+    pub(in crate::compiler::nav) rails: Rails,
     /// Cells inside a declared **lethal volume** (DSL v0.10, spec-0031).
     ///
     /// A volume that kills whatever enters it is, for a route, a volume no route
@@ -554,7 +557,13 @@ struct Cells {
     footprints: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Footprint16>,
     leaves: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Leaf>,
     hurting: CellSet,
+    rails: Rails,
 }
+
+/// The rail cells of the assembled world (spec-0135 §3), shared between the
+/// views of one world.
+pub(in crate::compiler::nav) type Rails =
+    std::sync::Arc<BTreeMap<[i32; 3], crate::compiler::rail::Rail>>;
 
 /// **Everything a [`World`] carries that is not a block** — the premises the
 /// campaign states about the world its geometry sits in: what the generator put
@@ -879,6 +888,7 @@ impl World {
             climb_holds: self.climb_holds.clone(),
             climb: self.climb.clone(),
             unheld_climb: self.unheld_climb.clone(),
+            rails: self.rails.clone(),
             objective_cells: self.objective_cells.clone(),
             unbounded_fall: self.unbounded_fall,
             declared_jumps: self.declared_jumps.clone(),
@@ -1084,7 +1094,7 @@ impl World {
     /// `is_lethal` answers about.
     /// Whether a body of this footprint in `c` meets a volume this leg keeps out
     /// of ([`World::keep_out`]), by the rule a lethal volume is met by.
-    fn meets_keep_out_fp(&self, c: [i32; 3], fp: &Footprint) -> bool {
+    pub(in crate::compiler::nav) fn meets_keep_out_fp(&self, c: [i32; 3], fp: &Footprint) -> bool {
         self.keep_out
             .iter()
             .any(|(_, (lo, hi))| self.body_can_meet_volume(c, fp, *lo, *hi))
@@ -1177,6 +1187,7 @@ impl World {
                 footprints: occ.footprints,
                 leaves: occ.leaves,
                 hurting: occ.hurting,
+                rails: std::sync::Arc::new(occ.rails),
             },
             premises,
         )
@@ -1200,6 +1211,7 @@ impl World {
                 material: self.material.clone(),
                 climb_holds: self.climb_holds.clone(),
                 unheld_climb: self.unheld_climb.clone(),
+                rails: self.rails.clone(),
                 footprints: self.floors.footprints.clone(),
                 leaves: self.floors.leaves.clone(),
                 hurting: self.seating.hurting.clone(),
@@ -1304,6 +1316,7 @@ impl World {
             climb: cells.climb_holds.keys().copied().collect(),
             climb_holds: cells.climb_holds,
             unheld_climb: cells.unheld_climb,
+            rails: cells.rails,
             lethal: premises
                 .lethal_regions
                 .iter()
@@ -1481,6 +1494,7 @@ impl World {
             climb_holds: self.climb_holds.clone(),
             climb: self.climb.clone(),
             unheld_climb: self.unheld_climb.clone(),
+            rails: self.rails.clone(),
             objective_cells: self.objective_cells.clone(),
             unbounded_fall: self.unbounded_fall,
             declared_jumps: self.declared_jumps.clone(),
@@ -1549,6 +1563,7 @@ impl World {
             climb_holds: self.climb_holds.clone(),
             climb: self.climb.clone(),
             unheld_climb: self.unheld_climb.clone(),
+            rails: self.rails.clone(),
             objective_cells: self.objective_cells.clone(),
             unbounded_fall: self.unbounded_fall,
             declared_jumps: self.declared_jumps.clone(),
@@ -1630,6 +1645,7 @@ impl World {
             climb_holds: self.climb_holds.clone(),
             climb: self.climb.clone(),
             unheld_climb: self.unheld_climb.clone(),
+            rails: self.rails.clone(),
             objective_cells: self.objective_cells.clone(),
             unbounded_fall: self.unbounded_fall,
             declared_jumps: self.declared_jumps.clone(),
@@ -1720,6 +1736,7 @@ impl World {
             climb_holds: self.climb_holds.clone(),
             climb: self.climb.clone(),
             unheld_climb: self.unheld_climb.clone(),
+            rails: self.rails.clone(),
             objective_cells: self.objective_cells.clone(),
             unbounded_fall: self.unbounded_fall,
             declared_jumps: self.declared_jumps.clone(),
@@ -1888,6 +1905,7 @@ impl World {
             climb_holds: self.climb_holds.clone(),
             climb: self.climb.clone(),
             unheld_climb: self.unheld_climb.clone(),
+            rails: self.rails.clone(),
             objective_cells: self.objective_cells.clone(),
             unbounded_fall: self.unbounded_fall,
             declared_jumps: self.declared_jumps.clone(),
@@ -1983,6 +2001,7 @@ impl World {
             climb_holds: self.climb_holds.clone(),
             climb: self.climb.clone(),
             unheld_climb: self.unheld_climb.clone(),
+            rails: self.rails.clone(),
             objective_cells: self.objective_cells.clone(),
             unbounded_fall: self.unbounded_fall,
             declared_jumps: self.declared_jumps.clone(),
@@ -2128,6 +2147,7 @@ impl World {
                 hiding: (solid_hides).into(),
                 leaves: BTreeMap::new(),
                 hurting: Default::default(),
+                rails: BTreeMap::new(),
             },
             Premises::geometry_only(),
         )

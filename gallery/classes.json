@@ -58,6 +58,10 @@
           },
           {
             "count": 1,
+            "item": "minecraft:carrot_on_a_stick"
+          },
+          {
+            "count": 1,
             "item": "minecraft:spyglass"
           },
           {
@@ -95,6 +99,10 @@
           },
           {
             "count": 1,
+            "item": "minecraft:carrot_on_a_stick"
+          },
+          {
+            "count": 1,
             "item": "minecraft:bow"
           },
           {
@@ -106,6 +114,6 @@
       }
     ]
   },
-  "dsl_version": "0.73.0",
+  "dsl_version": "0.74.0",
   "stage": "classes"
 }

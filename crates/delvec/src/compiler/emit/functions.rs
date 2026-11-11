@@ -820,6 +820,9 @@ pub(super) fn emit_functions(
     // spec-0102: seed each gated pulse's latch, start each ungated pulse's
     // chain. Empty for a campaign that declares none → byte-identical.
     setup.extend(pulse_setup(plan, pulses));
+    // spec-0135: each vehicle seated and its re-seat chain started. Empty for
+    // a campaign that declares none → byte-identical.
+    setup.extend(vehicle_setup(plan));
     // Forceload lifecycle (map-editor audit finding 6, planner decision). The
     // edit-AABB forceloads exist for ONE reason — letting the one-shot
     // edit writes land — and `place_verify` above has now proven every
@@ -1336,6 +1339,7 @@ pub(super) fn emit_functions(
     fns.extend(emit_loop_functions(plan));
     // --- spec-0102 pulse functions ---
     fns.extend(emit_pulse_functions(plan, pulses));
+    fns.extend(emit_vehicle_functions(plan));
     // --- spec-0032 trade and recovery-stake functions ---
     fns.extend(emit_shop_functions(plan));
     fns.extend(emit_stake_functions(plan, stake_table));

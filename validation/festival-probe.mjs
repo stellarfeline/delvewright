@@ -14,7 +14,17 @@
 //   T6  a minecart on rails: the same questions, plus a powered rail;
 //   T7  a box selector's count over bodies, and a body on the box's edge;
 //   T8  `effect give` and `damage` aimed at a mob;
-//   T9  `minecraft:using_item` for a spyglass.
+//   T9  `minecraft:using_item` for a spyglass;
+//   T10 a minecart at rest: on a powered launcher with nobody in it, under a
+//       rider who boards, and pushed once on plain rail;
+//   T11 a saddled pig whose speed is taken to nothing: does it wait, does
+//       `minecraft:started_riding` fire for the rider, does the rider's client
+//       still move it;
+//   T12 the cart pushed at boarding under a delve's conditions: the summon a
+//       build emits, a north-south line of twelve with a stop, a bot that
+//       stands, walks into it, or has just left another vehicle;
+//   T13 a saddled camel and three players who each click it: how many it
+//       seats by a click.
 //
 // One mineflayer bot is the player wherever a player is the question. Everything
 // else is read back over rcon through the repo's one rejection rule
@@ -128,6 +138,15 @@ async function installPack() {
   await writeInContainer(`${PACK}/data/dw_probe/advancement/target_any.json`, adv('minecraft:target_hit', {}, 'target_any'))
   await writeInContainer(`${PACK}/data/dw_probe/advancement/target_strong.json`, adv('minecraft:target_hit', { signal_strength: { min: 8 } }, 'target_strong'))
   await writeInContainer(`${PACK}/data/dw_probe/advancement/spyglass.json`, adv('minecraft:using_item', { item: { items: 'minecraft:spyglass' } }, 'spyglass'))
+  await writeInContainer(`${PACK}/data/dw_probe/advancement/riding.json`, adv('minecraft:started_riding', {}, 'riding'))
+  await writeInContainer(
+    `${PACK}/data/dw_probe/function/riding.mcfunction`,
+    `scoreboard players add #riding ${OBJ} 1\n` +
+      `execute on vehicle run attribute @s[tag=dw_still] minecraft:movement_speed modifier remove dw_probe:still\n` +
+      `execute on vehicle run data merge entity @s[tag=dw_push] {Motion:[0.3d,0.0d,0.0d]}\n` +
+      `execute on vehicle run data merge entity @s[tag=dw_push_s] {Motion:[0.0d,0.0d,0.3d]}\n` +
+      `advancement revoke @s only dw_probe:riding\n`,
+  )
   for (const n of ['target_any', 'target_strong', 'spyglass']) {
     await writeInContainer(`${PACK}/data/dw_probe/function/${n}.mcfunction`, `scoreboard players add #${n} ${OBJ} 1\nadvancement revoke @s only dw_probe:${n}\n`)
   }
@@ -164,9 +183,9 @@ async function containerIp() {
   if (!ip) throw new Error('container has no IP address')
   return ip
 }
-async function joinBot() {
+async function joinBot(username = BOT) {
   const host = await containerIp()
-  const bot = mineflayer.createBot({ host, port: 25565, version: '1.21.11', username: BOT, auth: 'offline' })
+  const bot = mineflayer.createBot({ host, port: 25565, version: '1.21.11', username, auth: 'offline' })
   await new Promise((resolve, reject) => {
     bot.once('spawn', resolve)
     bot.once('kicked', (r) => reject(new Error(`kicked: ${JSON.stringify(r)}`)))
@@ -750,6 +769,280 @@ async function t9(bot) {
   await rcon.run(`clear ${BOT}`)
 }
 
+// ---- T10: a minecart at rest ------------------------------------------------------
+async function watch(tag, label, ms, every = 500) {
+  const t = now()
+  const p0 = parsePos(await entityGet(`@e[tag=${tag},limit=1]`, 'Pos'))
+  let last = p0
+  let lastT = now()
+  while (now() - t < ms) {
+    await sleep(every)
+    const p = parsePos(await entityGet(`@e[tag=${tag},limit=1]`, 'Pos'))
+    const dt = (now() - lastT) / 1000
+    row(label, `pos=${p?.map(f2)}`, `moved=${p0 && p ? f2(dist2(p0, p)) : '-'}`, `speedBlocksPerSec=${last && p ? f2(dist2(last, p) / dt) : '-'}`)
+    last = p
+    lastT = now()
+  }
+  return { p0, p1: last }
+}
+async function t10(bot) {
+  await home(bot)
+  await clearBodies()
+  await rcon.run(`gamemode survival ${BOT}`)
+  await resetScore('#riding')
+  const R = { x1: H.x - 55, x2: H.x + 5, z: H.z - 24 }
+  const y = FLOOR_Y + 1
+  const lay = async () => {
+    await rcon.run(`fill ${R.x1} ${y} ${R.z} ${R.x2} ${y} ${R.z} minecraft:rail`)
+    await rcon.run(`setblock ${R.x1 - 1} ${y} ${R.z} minecraft:stone`)
+  }
+  const launcher = async () => {
+    await rcon.run(`setblock ${R.x1} ${FLOOR_Y} ${R.z} minecraft:redstone_block`)
+    await rcon.run(`setblock ${R.x1} ${y} ${R.z} minecraft:powered_rail[shape=east_west]`)
+  }
+  await lay()
+  await launcher()
+  row('launcherState', await rcon.probe(`execute if block ${R.x1} ${y} ${R.z} minecraft:powered_rail[powered=true]`))
+
+  begin('T10-launcher-empty', 'a powered rail on a redstone block, a stone block behind it, 60 plain rails on; a minecart summoned on the launcher with nobody in it; its position every 0.5 s for 12 s')
+  await rcon.run(`summon minecraft:minecart ${R.x1 + 0.5} ${y + 0.1} ${R.z + 0.5} {Tags:["dw_cart"]}`)
+  await watch('dw_cart', 'empty', 12000)
+  await rcon.probe('kill @e[tag=dw_cart]')
+
+  begin('T10-launcher-ridden', 'the same launcher; the bot is seated in a cart on plain rail 3 cells on by `ride`, and cart and rider are teleported onto the launcher; 14 s')
+  await rcon.run(`summon minecraft:minecart ${R.x1 + 3.5} ${y + 0.1} ${R.z + 0.5} {Tags:["dw_cart"]}`)
+  await home(bot, { x: R.x1 + 3.5, y: H.y, z: R.z + 2.5 })
+  await sleep(500)
+  row('rideMount', await rcon.probe(`ride ${BOT} mount @e[tag=dw_cart,limit=1]`), await rideState(bot))
+  await sleep(1500)
+  row('restOnPlainRail', `cartPos=${parsePos(await entityGet('@e[tag=dw_cart,limit=1]', 'Pos'))?.map(f2)}`)
+  await rcon.run(`tp @e[tag=dw_cart,limit=1] ${R.x1 + 0.5} ${y + 0.1} ${R.z + 0.5}`)
+  await watch('dw_cart', 'ridden', 14000)
+  row('end', await rideState(bot), `botPos=${(await botPos())?.map(f2)}`)
+  await rcon.probe(`ride ${BOT} dismount`)
+  await rcon.probe('kill @e[tag=dw_cart]')
+
+  begin('T10-rest-on-plain-rail', 'the launcher replaced by plain rail; a cart on plain rail with nobody in it for 4 s, then the bot boards by a click and sits 4 s')
+  await rcon.run(`setblock ${R.x1} ${y} ${R.z} minecraft:rail[shape=east_west]`)
+  await rcon.run(`setblock ${R.x1} ${FLOOR_Y} ${R.z} minecraft:stone`)
+  await rcon.run(`summon minecraft:minecart ${R.x1 + 3.5} ${y + 0.1} ${R.z + 0.5} {Tags:["dw_cart"]}`)
+  await home(bot, { x: R.x1 + 3.5, y: H.y, z: R.z + 2.5 })
+  await watch('dw_cart', 'empty', 4000, 1000)
+  const before = await score('#riding')
+  row('mount', await mountByClick(bot, 'minecart'), `startedRidingCount=${(await score('#riding')) - before}`)
+  await watch('dw_cart', 'seated', 4000, 1000)
+
+  begin('T10-push-on-plain-rail', 'the seated cart given a motion of 0.3 east a tick once, on 57 cells of plain rail with no powered rail; 30 s')
+  await rcon.run(`execute as @e[tag=dw_cart,limit=1] run data merge entity @s {Motion:[0.3d,0.0d,0.0d]}`)
+  await watch('dw_cart', 'pushed', 30000, 1000)
+  await rcon.probe(`ride ${BOT} dismount`)
+  await rcon.probe('kill @e[tag=dw_cart]')
+
+  begin('T10-push-on-boarding', 'a cart at rest on plain rail tagged for the `started_riding` reward, which writes a motion of 0.3 east a tick to the rider\'s vehicle; the bot boards by a click; 12 s')
+  await rcon.run(`summon minecraft:minecart ${R.x1 + 3.5} ${y + 0.1} ${R.z + 0.5} {Tags:["dw_cart","dw_push"]}`)
+  await home(bot, { x: R.x1 + 3.5, y: H.y, z: R.z + 2.5 })
+  const b2 = await score('#riding')
+  row('mount', await mountByClick(bot, 'minecart'), `startedRidingCount=${(await score('#riding')) - b2}`)
+  await watch('dw_cart', 'boarded', 12000, 1000)
+  row('end', await rideState(bot))
+  await rcon.probe(`ride ${BOT} dismount`)
+  await sleep(500)
+  begin('T10-left-cart', 'the rider gone, the cart where it was left; 4 s')
+  await watch('dw_cart', 'left', 4000, 1000)
+  await rcon.probe('kill @e[tag=dw_cart]')
+  await rcon.probe(`fill ${R.x1 - 1} ${y} ${R.z} ${R.x2} ${y} ${R.z} minecraft:air`)
+}
+
+// ---- T12: the push at boarding, as a delve seats and boards a cart ---------------
+async function t12(bot) {
+  await home(bot)
+  await clearBodies()
+  await rcon.run(`gamemode survival ${BOT}`)
+  const R = { x: H.x + 20, z0: H.z - 30, n: 12 }
+  const y = FLOOR_Y + 1
+  for (let i = 0; i < R.n; i++) await rcon.run(`setblock ${R.x} ${y} ${R.z0 + i} minecraft:rail[shape=north_south,waterlogged=false]`)
+  await rcon.run(`setblock ${R.x} ${y} ${R.z0 + R.n} minecraft:stone`)
+  const seat = `${R.x + 0.5} ${y}.0 ${R.z0 + 0.5}`
+  const cart = () => rcon.run(`summon minecraft:minecart ${seat} {Invulnerable:1b,Rotation:[0f,0f],Tags:["dw_cart","dw_push_s"]}`)
+  const motion = async () => `motion=${await entityGet('@e[tag=dw_cart,limit=1]', 'Motion')}`
+  const run = async (label) => {
+    row(label, await rideState(bot), await motion(), `startedRiding=${await score('#riding')}`)
+    await watch('dw_cart', label, 8000, 1000)
+    bot.clearControlStates()
+    await rcon.probe(`ride ${BOT} dismount`)
+    await rcon.probe('kill @e[tag=dw_cart]')
+    await sleep(600)
+  }
+  const click = (b) => {
+    const e = entityNamed(b, 'minecart')
+    if (!e) throw new Error("the bot's client sees no minecart")
+    b.mount(e)
+  }
+
+  begin('T12-still', 'the build\'s summon on the line\'s first cell; the bot stands one cell west and clicks')
+  await cart()
+  await home(bot, { x: R.x - 0.5, y: H.y, z: R.z0 + 0.5 })
+  await resetScore('#riding')
+  await bot.lookAt(entityNamed(bot, 'minecart').position.offset(0, 0.5, 0), true)
+  click(bot)
+  await sleep(150)
+  await run('still')
+
+  begin('T12-walking', 'the same; the bot starts three cells west, holds forward toward the cart, clicks when within two blocks, and keeps forward held')
+  await cart()
+  await home(bot, { x: R.x - 2.5, y: H.y, z: R.z0 + 0.5 })
+  await resetScore('#riding')
+  await bot.lookAt(entityNamed(bot, 'minecart').position.offset(0, 0.5, 0), true)
+  bot.setControlState('forward', true)
+  for (let i = 0; i < 40 && bot.entity.position.x < R.x - 1.2; i++) await sleep(50)
+  click(bot)
+  await sleep(150)
+  await run('walking')
+
+  begin('T12-bumped', 'the same; the bot walks into the cart for a second before it clicks, forward held throughout')
+  await cart()
+  await home(bot, { x: R.x - 2.5, y: H.y, z: R.z0 + 0.5 })
+  await resetScore('#riding')
+  await bot.lookAt(entityNamed(bot, 'minecart').position.offset(0, 0.5, 0), true)
+  bot.setControlState('forward', true)
+  await sleep(1500)
+  row('beforeClick', `cartPos=${parsePos(await entityGet('@e[tag=dw_cart,limit=1]', 'Pos'))?.map(f2)}`, await motion())
+  click(bot)
+  await sleep(150)
+  await run('bumped')
+
+  begin('T12-after-a-ride', 'the bot rides a boat on the pad, leaves by the sneak input, is teleported to where it stands, walks to the cart and clicks')
+  await rcon.run(`summon minecraft:oak_boat ${R.x - 6.5} ${y} ${R.z0 + 0.5} {Tags:["dw_boat"]}`)
+  await home(bot, { x: R.x - 4.5, y: H.y, z: R.z0 + 0.5 })
+  await heal()
+  await sleep(800)
+  bot.mount(entityNamed(bot, 'oak_boat'))
+  await sleep(1200)
+  bot._client.write('player_input', { inputs: { shift: true } })
+  await sleep(400)
+  bot._client.write('player_input', { inputs: { shift: false } })
+  await sleep(600)
+  await rcon.probe(`execute as ${BOT} at @s run tp @s ~ ~ ~`)
+  await sleep(500)
+  row('leftBoat', await rideState(bot), `botPos=${(await botPos())?.map(f2)}`)
+  await rcon.probe('kill @e[tag=dw_boat]')
+  await cart()
+  await home(bot, { x: R.x - 0.5, y: H.y, z: R.z0 + 0.5 })
+  await resetScore('#riding')
+  await bot.lookAt(entityNamed(bot, 'minecart').position.offset(0, 0.5, 0), true)
+  click(bot)
+  await sleep(150)
+  await run('after-a-ride')
+  await rcon.probe(`fill ${R.x} ${y} ${R.z0} ${R.x} ${y} ${R.z0 + R.n} minecraft:air`)
+}
+
+// ---- T13: a camel's seats by a click ---------------------------------------------
+async function t13(bot) {
+  await home(bot)
+  await clearBodies()
+  await rcon.probe('kill @e[type=minecraft:camel]')
+  const names = [BOT, 'dw-fest-two', 'dw-fest-three']
+  const bots = [bot, await joinBot(names[1]), await joinBot(names[2])]
+  const C = { x: H.x + 10.5, z: H.z + 20.5 }
+  // A player's saved `RootVehicle` is written only for a vehicle with exactly
+  // one player aboard, so the riders are counted from each player's side.
+  const riders = async () => {
+    await rcon.probe(`scoreboard players set #riders ${OBJ} 0`)
+    await rcon.probe(`execute as @a on vehicle if entity @s[tag=dw_camel] run scoreboard players add #riders ${OBJ} 1`)
+    return score('#riders')
+  }
+  begin('T13-camel-seats', 'a tamed, saddled camel standing; three players stand beside it and click it one after another; the server\'s passenger list after each click')
+  await rcon.run(`summon minecraft:camel ${C.x} ${FLOOR_Y + 1} ${C.z} {Tame:1b,PersistenceRequired:1b,NoAI:1b,Tags:["dw_camel"],equipment:{saddle:{id:"minecraft:saddle",count:1}}}`)
+  for (let i = 0; i < 3; i++) {
+    await rcon.run(`gamemode survival ${names[i]}`)
+    await rcon.run(`tp ${names[i]} ${C.x - 2} ${H.y} ${C.z + (i - 1) * 1.2}`)
+  }
+  await sleep(1500)
+  for (let i = 0; i < 3; i++) {
+    const b = bots[i]
+    const e = Object.values(b.entities).find((x) => x.name === 'camel')
+    if (!e) {
+      row(`click${i + 1}`, `${names[i]} sees no camel`)
+      continue
+    }
+    await b.lookAt(e.position.offset(0, 1.2, 0), true)
+    await sleep(200)
+    b.mount(e)
+    await sleep(1200)
+    row(`click${i + 1}`, `player=${names[i]}`, `playersOnCamel=${await riders()}`)
+  }
+  row('byCommand', await rcon.probe(`ride ${names[2]} mount @e[tag=dw_camel,limit=1]`), `playersOnCamel=${await riders()}`)
+  for (const n of names) await rcon.probe(`ride ${n} dismount`)
+  await rcon.probe('kill @e[tag=dw_camel]')
+  bots[1].quit()
+  bots[2].quit()
+  await sleep(500)
+}
+
+// ---- T11: a mount that waits ------------------------------------------------------
+async function speedOf(tag) {
+  const r = await rcon.probe(`attribute @e[tag=${tag},limit=1] minecraft:movement_speed get`)
+  const m = r.match(/is (-?[\d.]+)/)
+  return m ? Number(m[1]) : r
+}
+async function t11(bot) {
+  await home(bot)
+  await clearBodies()
+  await rcon.run(`gamemode survival ${BOT}`)
+  const P = { x: H.x + 6, z: H.z + 10 }
+  const pig = (dx, tags) =>
+    `summon minecraft:pig ${P.x + dx + 0.5} ${FLOOR_Y + 1} ${P.z + 0.5} {PersistenceRequired:1b,Silent:1b,equipment:{saddle:{id:"minecraft:saddle",count:1}},Tags:[${tags.map((t) => `"${t}"`).join(',')}]}`
+
+  begin('T11-pig-waits', 'two saddled pigs 8 blocks apart with their AI: one as summoned, one with `movement_speed` multiplied to nothing by a modifier; each position every 2 s for 40 s')
+  await rcon.run(pig(0, ['dw_free']))
+  await rcon.run(pig(8, ['dw_pig', 'dw_still']))
+  row('modifier', await rcon.probe(`attribute @e[tag=dw_pig,limit=1] minecraft:movement_speed modifier add dw_probe:still -1 add_multiplied_total`))
+  row(`speedFree=${await speedOf('dw_free')}`, `speedStill=${await speedOf('dw_pig')}`)
+  const f0 = parsePos(await entityGet('@e[tag=dw_free,limit=1]', 'Pos'))
+  const s0 = parsePos(await entityGet('@e[tag=dw_pig,limit=1]', 'Pos'))
+  let farFree = 0
+  let farStill = 0
+  for (let i = 0; i < 20; i++) {
+    await sleep(2000)
+    const f = parsePos(await entityGet('@e[tag=dw_free,limit=1]', 'Pos'))
+    const s = parsePos(await entityGet('@e[tag=dw_pig,limit=1]', 'Pos'))
+    farFree = Math.max(farFree, dist2(f0, f))
+    farStill = Math.max(farStill, dist2(s0, s))
+    row(`free=${f?.map(f2)}`, `still=${s?.map(f2)}`)
+  }
+  row('summary', `freeFarthest=${f2(farFree)}`, `stillFarthest=${f2(farStill)}`)
+  await rcon.probe('kill @e[tag=dw_free]')
+
+  begin('T11-pig-boarded', 'the bot boards the waiting pig by a click, a carrot on a stick in hand; the `started_riding` reward removes the modifier from the rider\'s vehicle')
+  await home(bot, { x: P.x + 8.5, y: H.y, z: P.z + 2.5 })
+  await hold(bot, 'carrot_on_a_stick')
+  const b = await score('#riding')
+  row('before', `speed=${await speedOf('dw_pig')}`)
+  row('mount', await mountByClick(bot, 'pig'), `startedRidingCount=${(await score('#riding')) - b}`, `speed=${await speedOf('dw_pig')}`)
+  await clientDrive(bot, 'dw_pig', 'clientMoveAfterBoarding', 1, 0, 2000)
+  await rcon.probe(`ride ${BOT} dismount`)
+  await sleep(500)
+
+  begin('T11-pig-still-ridden', 'the modifier put back and the pig left untagged for the reward, so it stays at speed nothing under the rider; the rider\'s client reports the same move')
+  await rcon.run('tag @e[tag=dw_pig] remove dw_still')
+  row('modifier', await rcon.probe(`attribute @e[tag=dw_pig,limit=1] minecraft:movement_speed modifier add dw_probe:still -1 add_multiplied_total`))
+  const b3 = await score('#riding')
+  row('mount', await mountByClick(bot, 'pig'), `startedRidingCount=${(await score('#riding')) - b3}`, `speed=${await speedOf('dw_pig')}`)
+  await clientDrive(bot, 'dw_pig', 'clientMoveAtSpeedNothing', 1, 0, 2000)
+  await rcon.probe(`ride ${BOT} dismount`)
+  await sleep(500)
+  await rcon.probe('kill @e[tag=dw_pig]')
+
+  begin('T11-boat-boarded', 'a boat on the pad; the bot boards by a click: does `started_riding` fire')
+  await rcon.run(`summon minecraft:oak_boat ${P.x + 0.5} ${FLOOR_Y + 1} ${P.z + 0.5} {Tags:["dw_boat"]}`)
+  await home(bot, { x: P.x + 0.5, y: H.y, z: P.z + 2.5 })
+  await hold(bot, null)
+  const b4 = await score('#riding')
+  row('mount', await mountByClick(bot, 'oak_boat'), `startedRidingCount=${(await score('#riding')) - b4}`)
+  await rcon.probe(`ride ${BOT} dismount`)
+  await rcon.probe('kill @e[tag=dw_boat]')
+}
+
 async function teardown(bot) {
   try {
     await clearBodies()
@@ -784,6 +1077,10 @@ try {
   if (wants('T7')) await t7(bot)
   if (wants('T8')) await t8(bot)
   if (wants('T9')) await t9(bot)
+  if (wants('T10')) await t10(bot)
+  if (wants('T11')) await t11(bot)
+  if (wants('T12')) await t12(bot)
+  if (wants('T13')) await t13(bot)
   console.log('== probe complete ==')
 } catch (e) {
   console.error(`probe failed: ${e.stack ?? e}`)

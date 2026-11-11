@@ -126,6 +126,19 @@ pub enum Verb {
         /// The wave (stage-5 `waves` ref) to remove.
         wave: WaveId,
     },
+    /// Seats a stage-5 vehicle at its mark (spec-0135 §2): the body the
+    /// vehicle's seat function places, by the function every load runs. A
+    /// vehicle already standing is removed first, so a seat is one body.
+    SeatVehicle {
+        /// The vehicle (stage-5 `vehicles` ref) to seat.
+        vehicle: crate::VehicleId,
+    },
+    /// Removes a stage-5 vehicle's body, unseen (spec-0135 §2), by the
+    /// removal a wave's re-seat performs. A rider is set down first.
+    DespawnVehicle {
+        /// The vehicle (stage-5 `vehicles` ref) to remove.
+        vehicle: crate::VehicleId,
+    },
     /// Fills a `loot` holder whose fill waits for its beat (spec-0134 §6): the
     /// `loot[]` entry declares `filled: "by-effect"`, and this verb runs its
     /// fill — the supply chest is filled at dusk. Naming an `at-load` fill, and
@@ -1113,6 +1126,8 @@ impl Verb {
             Verb::DropStake { .. } => "drop-stake",
             Verb::SpawnWave { .. } => "spawn-wave",
             Verb::DespawnWave { .. } => "despawn-wave",
+            Verb::SeatVehicle { .. } => "seat-vehicle",
+            Verb::DespawnVehicle { .. } => "despawn-vehicle",
             Verb::FillLoot { .. } => "fill-loot",
             Verb::ApplyEdits { .. } => "apply-edits",
             Verb::Narrate(..) => "narrate",
@@ -1202,6 +1217,8 @@ impl Verb {
             | Verb::DropStake { .. }
             | Verb::SpawnWave { .. }
             | Verb::DespawnWave { .. }
+            | Verb::SeatVehicle { .. }
+            | Verb::DespawnVehicle { .. }
             | Verb::FillLoot { .. }
             | Verb::ApplyEdits { .. }
             | Verb::SetBlock { .. }
@@ -1274,6 +1291,8 @@ impl Verb {
             | Verb::UnleashActor { .. }
             | Verb::SpawnWave { .. }
             | Verb::DespawnWave { .. }
+            | Verb::SeatVehicle { .. }
+            | Verb::DespawnVehicle { .. }
             | Verb::FillLoot { .. }
             | Verb::ApplyEdits { .. }
             | Verb::SpawnAssembly { .. }

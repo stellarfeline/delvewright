@@ -138,16 +138,20 @@ pub enum CensusOf {
     Npc(crate::NpcId),
     /// Every entity of a type (a pinned registry id).
     Kind(String),
+    /// The players a vehicle carries (spec-0135 §5): every player in the box
+    /// whose vehicle is a body of that stage-5 vehicle.
+    Riders(crate::VehicleId),
 }
 
 impl CensusOf {
-    /// The wire key (`wave` / `actor` / `npc` / `kind`).
+    /// The wire key (`wave` / `actor` / `npc` / `kind` / `riders`).
     pub fn key(&self) -> &'static str {
         match self {
             CensusOf::Wave(_) => "wave",
             CensusOf::Actor(_) => "actor",
             CensusOf::Npc(_) => "npc",
             CensusOf::Kind(_) => "kind",
+            CensusOf::Riders(_) => "riders",
         }
     }
 }
@@ -1009,6 +1013,10 @@ fn census_decl_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 n.as_str().to_string(),
             ),
             CensusOf::Kind(_) => (true, String::new()),
+            CensusOf::Riders(v) => (
+                q.vehicles.iter().any(|x| x.id == *v),
+                v.as_str().to_string(),
+            ),
         };
         if !known {
             d.push(Diagnostic::error(

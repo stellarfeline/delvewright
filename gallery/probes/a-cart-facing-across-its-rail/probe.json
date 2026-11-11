@@ -1,0 +1,13 @@
+{
+  "code": "DW1097",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/vehicles/0/facing",
+      "value": "east"
+    }
+  ],
+  "units": [],
+  "why": "One edit: the yard's cart, on a rail that runs north and south, faced east. A cart is pushed the way it faces when a body boards, so a cart facing across its rail is seated where nothing can carry it. Refused at build, naming the seat and the rail it must run along. It declares no unit."
+}

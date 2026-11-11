@@ -656,6 +656,7 @@ async function main(): Promise<number> {
     // at its silent one; a pulse with no station is reported, never passed.
     const pulseVerdicts = executor.pulseVerdicts();
     report.recordPulseStations(executor.pulseStations);
+    report.recordRides(executor.rides);
     if (containerLedger) {
       const v = executor.noticeVerdict;
       if (v) report.recordContainerNotice(v);

@@ -96,6 +96,7 @@ mod text;
 mod timed_gate;
 mod trap;
 mod trigger;
+mod vehicle;
 mod wave;
 mod world;
 
@@ -148,6 +149,7 @@ pub use text::*;
 use timed_gate::*;
 use trap::*;
 use trigger::*;
+use vehicle::*;
 use wave::*;
 use world::*;
 

@@ -778,6 +778,54 @@ pub(super) fn prove_world(
                 let (route_binding, route_verdict) =
                     crate::compiler::nav::check_critical_path_bound(plan, world);
                 crate::note!("{}", route_binding.line());
+                // spec-0135 §4: the proofs over the vehicle class, judged before
+                // the route's verdict so a vehicle out of its medium is named
+                // as that, not as the leg it could not carry.
+                {
+                    // The region the party walks; a rider who leaves must get
+                    // back to it by the reach graph (`judge_vehicles`).
+                    let walk = if plan.vehicles.is_empty() {
+                        BTreeSet::new()
+                    } else {
+                        world.walk_region_rooted(&crate::compiler::edit::anchor_starts(plan))
+                    };
+                    let (mut vb, vehicle_verdict) =
+                        crate::compiler::nav::vehicle::judge_vehicles(&plan.vehicles, world, &walk);
+                    vb.critical_rides = route_binding.ridden;
+                    vb.declared = plan.declared_rides.len();
+                    crate::note!("{}", vb.line());
+                    for (k, s) in plan.critical_path.iter().enumerate() {
+                        let crate::compiler::plan::Step::Ride {
+                            vehicle_id,
+                            steering_item: Some(item),
+                            ..
+                        } = s
+                        else {
+                            continue;
+                        };
+                        let held = plan.movement.first_held(&[item.as_str()]);
+                        if held.is_none_or(|h| h > k) {
+                            return Err(BuildFailure::Diagnostic {
+                                code: delvewright_dsl::vehicle::VEHICLE_CARRIES_NO_RIDER,
+                                message: format!(
+                                    "the critical path rides `{vehicle_id}` at step {k}, and a \
+                                     rider steers it only holding `{item}` — which {}. A mount \
+                                     with an empty hand walks where its own AI takes it. Put \
+                                     `{item}` in every class's kit, or give it by a `give-item` \
+                                     before the ride.",
+                                    match held {
+                                        None => "nothing in the campaign gives".to_string(),
+                                        Some(h) => format!("the party first holds at step {h}"),
+                                    }
+                                ),
+                            });
+                        }
+                    }
+                    vehicle_verdict.map_err(|f| BuildFailure::Diagnostic {
+                        code: f.code,
+                        message: f.message,
+                    })?;
+                }
                 route_verdict?;
                 legs_carried = route_binding.carried;
                 // DW1044: a trigger the path performs to pay a flag a later
@@ -1476,22 +1524,23 @@ fn prove_branch_world(
     // The branch's own links (spec-0083 §6): taken over its own steps and gate
     // model, then spliced into its path.
     let (unlinked_events, unlinked_ancestors) = plan.branch_gate_model(&unlinked);
-    let takes = if plan.links.is_empty() && !unlinked_events.has_keep_out() {
-        plan::LinkTakes::default()
-    } else {
-        let (region_events, ancestors) = (unlinked_events, unlinked_ancestors);
-        let ancestor =
-            |g: usize, s: usize| g == 0 || ancestors.get(&s).is_some_and(|a| a.contains(&g));
-        crate::compiler::nav::take_branch_links(
-            plan,
-            world,
-            campaign_spawn(plan),
-            &unlinked,
-            &region_events,
-            &ancestor,
-        )
-        .map_err(label)?
-    };
+    let takes =
+        if plan.links.is_empty() && !unlinked_events.has_keep_out() && plan.vehicles.is_empty() {
+            plan::LinkTakes::default()
+        } else {
+            let (region_events, ancestors) = (unlinked_events, unlinked_ancestors);
+            let ancestor =
+                |g: usize, s: usize| g == 0 || ancestors.get(&s).is_some_and(|a| a.contains(&g));
+            crate::compiler::nav::take_branch_links(
+                plan,
+                world,
+                campaign_spawn(plan),
+                &unlinked,
+                &region_events,
+                &ancestor,
+            )
+            .map_err(label)?
+        };
     let cp = if takes.is_empty() {
         unlinked
     } else {
@@ -1511,6 +1560,15 @@ fn prove_branch_world(
     )
     .map_err(label)?;
     crate::compiler::notes::mark("branch world: path checked");
+    if !plan.vehicles.is_empty() {
+        crate::note!(
+            "vehicle binding, {who}: {} ride leg(s) on its path",
+            cp.steps
+                .iter()
+                .filter(|s| matches!(s, plan::Step::Ride { .. }))
+                .count()
+        );
+    }
     let routes = crate::compiler::nav::branch_path_routes(
         world,
         campaign_spawn(plan),

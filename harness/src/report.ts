@@ -143,6 +143,7 @@ export class RunReport {
   private readonly trials: DeathTrial[] = [];
   private readonly muster: string[] = [];
   private readonly pulseStations: import("./pulse.ts").StationRecord[] = [];
+  private readonly rides: import("./executor/ride.ts").RideRecord[] = [];
   /** The arrival notice's verdict (spec-0105 §5.3), when the build wrote a ledger. */
   private containerNotice: import("./containers.ts").NoticeVerdict | null = null;
   private readonly shotSubjects: import("./shot-subjects.ts").BodyRecord[] = [];
@@ -282,6 +283,11 @@ export class RunReport {
   /** Every framed body watched through its cutscene (spec-0110 §7). */
   recordShotSubjects(rows: readonly import("./shot-subjects.ts").BodyRecord[]): void {
     this.shotSubjects.push(...rows);
+  }
+
+  /** Every ride step's verdicts (spec-0135 §6). */
+  recordRides(rows: readonly import("./executor/ride.ts").RideRecord[]): void {
+    this.rides.push(...rows);
   }
 
   /** What every pulse station heard (spec-0102 §5.3). */
@@ -926,6 +932,21 @@ export class RunReport {
       // Every pulse station the walk stood at (spec-0102 §5.3), with the beats
       // it heard; empty for a build that declares no pulse or stations none.
       pulse_stations: this.pulseStations.map((s) => ({ ...s, cell: [...s.cell] })),
+      // Every ride (spec-0135 §6): the vehicle, its kind, the medium, the
+      // distance reported and the distance the server saw, where the rider
+      // arrived and the cell left at; empty for a path that rides nothing.
+      rides: this.rides.map((r) => ({
+        vehicle: r.vehicle,
+        kind: r.kind,
+        medium_cells: r.mediumCells,
+        reported: r.reported,
+        server_seen: r.serverSeen,
+        seat: r.seat === null ? null : [...r.seat],
+        leave: [...r.leave],
+        left: r.left,
+        passed: r.passed,
+        ...(r.why === undefined ? {} : { why: r.why }),
+      })),
       // The arrival notice (spec-0105 §5.3): its verdict and the sound packet
       // as it arrived — name and position — or null when no ledger was read or
       // no class was selected.

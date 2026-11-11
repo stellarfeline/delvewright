@@ -87,9 +87,14 @@ import type { GateTerm } from "./death-loop.ts";
  *   the box by command before the step, and the count it reads back. A
  *   format-7 bot would wait on a count no body of its making raises.
  *
+ * * `9` — a step may be `ride` (spec-0135 §6): `{vehicle, kind, board, medium,
+ *   rate, leave, steering_item?}` — walk to `board`, mount, be carried along
+ *   `medium` at `rate`, leave and stand at `leave`. A format-7 bot would refuse
+ *   the kind.
+ *
  * Rebuild the delve with a current `delvec` to produce a supported path.
  */
-export const CRITICAL_PATH_FORMAT_VERSION = 8;
+export const CRITICAL_PATH_FORMAT_VERSION = 9;
 
 /**
  * One census a step is gated on (spec-0134 §1): the datum, its scoreboard
@@ -99,7 +104,13 @@ export const CRITICAL_PATH_FORMAT_VERSION = 8;
 export interface CensusRow {
   readonly state: string;
   readonly objective: string;
-  readonly select: string;
+  /** The selector terms that pick the set's bodies — exactly one of this and
+   * `riders` is present. */
+  readonly select?: string;
+  /** spec-0135 §5: the tag of the vehicle whose riders the datum counts. A
+   * rider is placed by boarding, never by a teleport, so the row rides on the
+   * `ride` step that boards it, and the count is read at the ride's end. */
+  readonly riders?: string;
   readonly region: readonly [Vec3Tuple, Vec3Tuple];
   readonly count: number;
 }
@@ -156,6 +167,7 @@ export const STEP_ACTIONS = [
   "loop",
   "mock",
   "expire",
+  "ride",
   "assert-complete",
 ] as const;
 
@@ -567,6 +579,39 @@ export interface ExpireStep extends PresentationMarkers, Pursued {
   readonly pos: Vec3Tuple;
 }
 
+/** The kinds of vehicle a ride step names (spec-0135 §1). */
+export const VEHICLE_KINDS = ["boat", "minecart", "mount"] as const;
+export type VehicleKind = (typeof VEHICLE_KINDS)[number];
+
+/**
+ * spec-0135 §6: ride a vehicle on a leg its objective declares ridden. Walk to `board`,
+ * mount the vehicle by its body, be carried along `medium` (the seat first) —
+ * a boat or a mount by the rider's reported moves at `rate`, a minecart by its
+ * rails — then leave by the sneak input and stand at `leave`. Every verdict is
+ * read on the server.
+ */
+export interface RideStep extends PresentationMarkers, Pursued {
+  readonly action: "ride";
+  /** The `vehicle/<id>` ridden. */
+  readonly vehicle: string;
+  readonly kind: VehicleKind;
+  /** Where the bot stands to mount. */
+  readonly board: Vec3Tuple;
+  /** The same cell, as every positioned step names its place. */
+  readonly pos: Vec3Tuple;
+  /** The medium cells, the seat first; at least two. */
+  readonly medium: readonly Vec3Tuple[];
+  /** Blocks a second the harness drives at; positive. */
+  readonly rate: number;
+  /** Where the bot stands after leaving. */
+  readonly leave: Vec3Tuple;
+  /** The cells the vehicle's body stands in at its mark: the walk to `board`
+   * goes round them — a body that walks into a vehicle shoves it. */
+  readonly body: readonly Vec3Tuple[];
+  /** The item a rider holds to steer, where the kind needs one. */
+  readonly steeringItem?: string;
+}
+
 export type Step =
   | SelectClassStep
   | TalkToStep
@@ -580,6 +625,7 @@ export type Step =
   | LoopStep
   | MockStep
   | ExpireStep
+  | RideStep
   | AssertCompleteStep;
 
 /**
@@ -1061,7 +1107,15 @@ export function parseCensus(value: unknown, pointer: string): CensusRow[] {
   return value.map((row, i) => {
     const at = `${pointer}/${i}`;
     if (!isRecord(row)) fail(at, `must be an object, got ${describe(row)}`);
-    rejectUnknownKeys(row, ["state", "objective", "select", "region", "count"], at);
+    rejectUnknownKeys(row, ["state", "objective", "select", "riders", "region", "count"], at);
+    const select = row["select"];
+    const riders = row["riders"];
+    if ((select === undefined) === (riders === undefined)) {
+      fail(at, "carries exactly one of `select` (bodies put in the box) and `riders` (a vehicle boarded)");
+    }
+    if (riders !== undefined && (typeof riders !== "string" || !/^dw_vehicle_[a-z0-9_]+$/.test(riders))) {
+      fail(`${at}/riders`, `must be a vehicle's tag (\`dw_vehicle_<id>\`), got ${describe(riders)}`);
+    }
     const region = row["region"];
     if (!Array.isArray(region) || region.length !== 2) {
       fail(`${at}/region`, `must be [lo, hi], got ${describe(region)}`);
@@ -1071,7 +1125,8 @@ export function parseCensus(value: unknown, pointer: string): CensusRow[] {
     return {
       state: requireString(row, "state", at),
       objective: requireString(row, "objective", at),
-      select: requireString(row, "select", at),
+      ...(select === undefined ? {} : { select: requireString(row, "select", at) }),
+      ...(riders === undefined ? {} : { riders: riders as string }),
       region: [
         requireVec3({ lo: region[0] }, "lo", `${at}/region`),
         requireVec3({ hi: region[1] }, "hi", `${at}/region`),
@@ -1565,6 +1620,60 @@ function parseStepBody(value: unknown, pointer: string): Step {
         waitTicks: wait as number,
         stand,
         pos,
+        ...presentationFields(obj, pointer),
+      };
+    }
+    case "ride": {
+      rejectUnknownKeys(
+        obj,
+        ["action", "vehicle", "kind", "board", "pos", "medium", "rate", "leave", "body", "steering_item", "keep_out", "sneak", "cutscene_seconds", "en_route_cutscene_seconds"],
+        pointer,
+      );
+      const vehicle = requireString(obj, "vehicle", pointer);
+      if (!/^vehicle\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(vehicle)) {
+        fail(`${pointer}/vehicle`, `must be a \`vehicle/<kebab>\` id, got ${JSON.stringify(vehicle)}`);
+      }
+      const kind = obj["kind"];
+      if (typeof kind !== "string" || !(VEHICLE_KINDS as readonly string[]).includes(kind)) {
+        fail(`${pointer}/kind`, `must be one of ${VEHICLE_KINDS.join(", ")}, got ${describe(kind)}`);
+      }
+      const board = requireVec3(obj, "board", pointer);
+      const pos = requirePos(obj, pointer);
+      if (pos.some((c, i) => c !== board[i])) {
+        fail(`${pointer}/pos`, `must be the step's \`board\` (${JSON.stringify(board)}), got ${JSON.stringify(pos)}`);
+      }
+      const raw = obj["medium"];
+      if (!Array.isArray(raw) || raw.length < 2) {
+        fail(`${pointer}/medium`, `must be an array of at least two cells, got ${describe(raw)}`);
+      }
+      const medium = (raw as unknown[]).map((_, i) => requireVec3(raw as unknown as Record<string, unknown>, String(i), `${pointer}/medium`));
+      const rawBody = obj["body"];
+      if (!Array.isArray(rawBody) || rawBody.length < 1) {
+        fail(`${pointer}/body`, `must be an array of at least one cell, got ${describe(rawBody)}`);
+      }
+      const body = (rawBody as unknown[]).map((_, i) => requireVec3(rawBody as unknown as Record<string, unknown>, String(i), `${pointer}/body`));
+      if (body.some((c) => c.every((v, i) => v === board[i]))) {
+        fail(`${pointer}/body`, `holds the boarding cell ${JSON.stringify(board)}: a body cannot be boarded from inside itself`);
+      }
+      const rate = obj["rate"];
+      if (typeof rate !== "number" || !Number.isFinite(rate) || rate <= 0) {
+        fail(`${pointer}/rate`, `must be a positive number of blocks a second, got ${describe(rate)}`);
+      }
+      const item = obj["steering_item"];
+      if (item !== undefined && typeof item !== "string") {
+        fail(`${pointer}/steering_item`, `must be an item id, got ${describe(item)}`);
+      }
+      return {
+        action: "ride",
+        vehicle,
+        kind: kind as VehicleKind,
+        board,
+        pos,
+        medium,
+        rate: rate as number,
+        leave: requireVec3(obj, "leave", pointer),
+        body,
+        ...(item === undefined ? {} : { steeringItem: item as string }),
         ...presentationFields(obj, pointer),
       };
     }
