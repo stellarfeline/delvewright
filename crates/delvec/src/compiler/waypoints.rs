@@ -69,6 +69,9 @@ pub fn waypoints_json(
                 keep.push(j.from);
                 keep.push(j.to);
             }
+            // spec-0134 §10: every water cell is a kept waypoint, so the leg's
+            // water stretch is walked cell by cell as it was proven.
+            keep.extend(leg.water.iter().copied());
             let wps: Vec<Value> = leg_waypoints(&leg.cells, &keep, &gates)
                 .into_iter()
                 .filter(|c| !held_inside(leg, c))
@@ -86,6 +89,12 @@ pub fn waypoints_json(
             // cells first-class instead of leaving them workaround folklore.
             if !leg.use_gates.is_empty() {
                 leg_json["use_gates"] = json!(leg.use_gates);
+            }
+            // spec-0134 §10: the cells this leg swims (`medium: water`), in
+            // route order. Emitted only when present, so a dry leg is
+            // byte-identical; the harness admits liquid on this leg alone.
+            if !leg.water.is_empty() {
+                leg_json["water"] = json!(leg.water);
             }
             // spec-0099: the climbs the proven route takes, in route order. Each
             // names where the body takes hold (`from`) and lets go (`to`) — both
@@ -443,6 +452,42 @@ pub(crate) fn thin(cells: &[[i32; 3]], force_keep: &[[i32; 3]]) -> Vec<[i32; 3]>
 /// The step vector from `a` to `b`.
 fn delta(a: [i32; 3], b: [i32; 3]) -> [i32; 3] {
     [b[0] - a[0], b[1] - a[1], b[2] - a[2]]
+}
+
+/// **The water binding** (spec-0134 §10): how many legs swim, over how many
+/// water cells, and each swimming leg's longest run of submerged cells — the
+/// breath debt the route proof does not judge, printed so it can be read.
+pub fn water_line(
+    world: &crate::compiler::nav::World,
+    routes: &[crate::compiler::nav::LegRoute],
+) -> String {
+    let mut legs = Vec::new();
+    let mut cells = 0usize;
+    for leg in routes.iter().filter(|l| !l.water.is_empty()) {
+        cells += leg.water.len();
+        let (mut run, mut longest) = (0usize, 0usize);
+        for c in &leg.cells {
+            if world.submerged(*c) {
+                run += 1;
+                longest = longest.max(run);
+            } else {
+                run = 0;
+            }
+        }
+        legs.push(format!(
+            "{:?}->{:?} {} cell(s), longest submerged run {longest}",
+            leg.from,
+            leg.to,
+            leg.water.len()
+        ));
+    }
+    format!(
+        "water binding: {} of {} leg(s) swim, {cells} water cell(s); breath not judged (spec-0134 debt){}{}",
+        legs.len(),
+        routes.len(),
+        if legs.is_empty() { "" } else { ": " },
+        legs.join("; ")
+    )
 }
 
 #[cfg(test)]

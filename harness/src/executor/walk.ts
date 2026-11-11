@@ -14,6 +14,7 @@ import {
   describeStuckNeighbours,
   isDoorByHand,
   parkourFor,
+  swimFor,
 } from "../movement.ts";
 import {
   doorsCrossed,
@@ -639,6 +640,12 @@ export const methods = {
           this.feetCell(),
         );
         legWaypoints = match.waypoints;
+        // spec-0134 §10: liquid is admitted on a leg the compiler proved swims.
+        if (swimFor(movements, match.matched && match.water.length > 0)) {
+          process.stderr.write(
+            `[swim] ${label}: the proven leg swims ${match.water.length} water cell(s); liquid admitted\n`,
+          );
+        }
         legClimbs = match.climbs;
         legJumps = match.jumps;
         legVibrations = match.vibrations;

@@ -24,6 +24,10 @@ export interface LegMovements {
   canOpenDoors: boolean;
   allowSprinting: boolean;
   allowParkour: boolean;
+  /** mineflayer-pathfinder's `Movements.liquidCost` (present at runtime,
+   * absent from its typings). */
+  liquidCost?: number;
+  allowFreeMotion?: boolean;
 }
 
 /**
@@ -212,6 +216,9 @@ export function configureLeg(
   // walks what the compiler proved, so a leap is taken only on the hop of a
   // declared jump the compiler proved makeable (spec-0113 §6).
   movements.allowParkour = false;
+  // spec-0134 §10: the route proof crosses water only on a leg it exported a
+  // `water` stretch for; every other leg keeps out of it, as the proof did.
+  swimFor(movements, false);
   if (!sneak) {
     return () => {};
   }
@@ -328,4 +335,23 @@ export function holdWalkedClimbableNodes(bot: ClimbHoldBot, log: (line: string) 
       log(`[ladder] ${held.length} ladder node(s) walked through on the floor, aimed at the feet: ${held.join(" ")}\n`);
     }
   });
+}
+
+/** The pathfinder's per-block cost of a liquid cell on a leg the compiler
+ * proved swims (spec-0134 §10): finite, so the leg's water is crossed. */
+export const SWIM_LIQUID_COST = 1;
+
+/**
+ * Admit liquid on a leg the compiler proved swims (its `water` stretch), and
+ * on no other (spec-0134 §10): `liquidCost` finite on a water leg and
+ * unreachable otherwise; free motion off either way, so the bot swims the
+ * cells the proof did. Returns whether the leg swims.
+ */
+export function swimFor(
+  movements: Pick<LegMovements, "liquidCost" | "allowFreeMotion">,
+  water: boolean,
+): boolean {
+  movements.liquidCost = water ? SWIM_LIQUID_COST : Number.POSITIVE_INFINITY;
+  movements.allowFreeMotion = false;
+  return water;
 }

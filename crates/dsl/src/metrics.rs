@@ -147,7 +147,7 @@ crate::dw_code! {
 /// No document declares a metrics version and no surface is gated by one. What
 /// it needs is that the number cannot stand still while the table moves, and
 /// that is the digest test.
-pub const METRICS_VERSION: u32 = 5;
+pub const METRICS_VERSION: u32 = 6;
 
 /// Player collision-box width in blocks (`0.6 × 0.6 × 1.8` standing).
 pub const PLAYER_WIDTH: f64 = 0.6;
@@ -1141,9 +1141,11 @@ impl Metrics {
                     MetricValue::Flag(false),
                     "none",
                     Provenance::VanillaRule,
-                    "Water and lava are impassable to every proof in this engine and are \
-                     never floor either: a body cannot stand on a fluid surface, so the \
-                     two sets are disjoint and both gate standability. Marked as a rule \
+                    "Water and lava are never floor: a body cannot stand on a fluid \
+                     surface, so the two sets are disjoint and both gate standability. \
+                     The route proof alone crosses a connected body of water by swimming \
+                     (spec-0134 §10, priced at `pacing.ticks-per-block-swimming`); lava \
+                     stays impassable everywhere. Marked as a rule \
                      rather than an engine constant deliberately — the navigation model \
                      encodes this as the SHAPE of its occupancy sets and not as a shared \
                      `const`, so there is no single definition for this row to be, and \
@@ -1331,6 +1333,17 @@ impl Metrics {
                  calibrate it: a threshold on a number this uncertain would be defending \
                  nothing. Its upper bound is the pure-walk figure beside it, which no \
                  party achieves.",
+            ),
+            building(
+                "pacing.ticks-per-block-swimming",
+                MetricValue::Number(crate::metrics::body::swim_ticks_per_block()),
+                "ticks",
+                Provenance::Provisional,
+                "Ticks a player body takes per block across still water, holding \
+                 forward and jump: the body simulator under the game's rules over a \
+                 flat pool (`metrics::body::swim_ticks_per_block`), measured, never \
+                 typed (spec-0134 §10). The route proof prices a water step at this \
+                 rate against the sprint's. Provisional until the gym has swum it.",
             ),
             building(
                 "pacing.walk-only-blocks-per-minute",

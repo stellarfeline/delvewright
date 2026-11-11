@@ -1302,6 +1302,55 @@ pub fn saturated_velocity(
     st.vel
 }
 
+/// **Ticks a swimming player takes per block** across a flat body of still
+/// water (spec-0134 §10): the simulator under [`Rules::Game`], a player body
+/// afloat in water three deep over a floor, holding forward and jump (the
+/// keys a body crossing a pool holds to keep its head out), facing `+z`. The
+/// rate is the distance covered between tick 100 and tick 300, once the
+/// entry has settled, over those 200 ticks. Measured, never typed: the
+/// metrics table's `pacing.ticks-per-block-swimming` is this function.
+#[must_use]
+pub fn swim_ticks_per_block() -> f64 {
+    struct Pool;
+    impl CollisionWorld for Pool {
+        fn shapes(&self, c: [i32; 3], out: &mut Vec<Aabb>) {
+            if c[1] == -1 {
+                out.push(Aabb::new(
+                    f64::from(c[0]),
+                    -1.0,
+                    f64::from(c[2]),
+                    f64::from(c[0]) + 1.0,
+                    0.0,
+                    f64::from(c[2]) + 1.0,
+                ));
+            }
+        }
+        fn material(&self, _: [i32; 3]) -> Material {
+            Material::Plain
+        }
+        fn fluid(&self, c: [i32; 3]) -> Option<Fluid> {
+            (0..3).contains(&c[1]).then_some(Fluid::SOURCE_WATER)
+        }
+    }
+    let body = Attributes::PLAYER;
+    let mut st = State::standing([0.5, 0.0, 0.5], &body);
+    let held = Input {
+        jump: true,
+        ..Input::forward(0.0)
+    };
+    let (mut z100, mut z300) = (0.0, 0.0);
+    for t in 0..300 {
+        tick(&Pool, &body, Rules::Game, &mut st, &held);
+        if t == 99 {
+            z100 = st.pos[2];
+        }
+        if t == 299 {
+            z300 = st.pos[2];
+        }
+    }
+    200.0 / (z300 - z100)
+}
+
 pub mod ballistics;
 
 #[cfg(test)]

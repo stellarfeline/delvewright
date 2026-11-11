@@ -52,7 +52,12 @@ pub(in crate::compiler::nav) fn route_walked_legs(
         ) else {
             continue;
         };
-        if let Some(cells) = leg_world.find_path(start, goal) {
+        if let Some(cells) = leg_world.find_route(start, goal) {
+            let water = cells
+                .iter()
+                .copied()
+                .filter(|&c| leg_world.swims_in(c))
+                .collect();
             let use_gates = cells
                 .iter()
                 .copied()
@@ -68,6 +73,7 @@ pub(in crate::compiler::nav) fn route_walked_legs(
                     cells,
                     use_gates,
                     climbs,
+                    water,
                     // The leg carries the world it was PROVEN over, not just the
                     // route. Anything that re-judges these cells has to ask this
                     // value for the world to judge them in — see
@@ -1463,7 +1469,7 @@ fn judge_leg(
                 });
             }
         };
-        if leg_world.find_path(start, goal).is_none() {
+        if leg_world.find_route(start, goal).is_none() {
             // An armed objective first: the most specific answer there is — the
             // geometry and every premise carry the party, and only the order
             // the path walks its objectives in does not.

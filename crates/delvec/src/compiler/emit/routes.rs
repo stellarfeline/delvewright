@@ -1103,6 +1103,9 @@ pub(super) fn prove_world(
                     warnings.extend(gate.findings());
                     pulse_gate = Some(gate);
                 }
+                // spec-0134 §10: what the route swims, and the breath debt
+                // stated, not judged: the longest submerged run of every leg.
+                crate::note!("{}", crate::compiler::waypoints::water_line(world, &routes));
                 if !routes.is_empty() {
                     let doc = crate::compiler::waypoints::waypoints_json(
                         plan,

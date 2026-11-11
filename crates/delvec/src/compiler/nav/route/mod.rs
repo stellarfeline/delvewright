@@ -16,7 +16,9 @@ pub use region::*;
 
 use crate::compiler::failure::Failure;
 use crate::compiler::nav::walkway::WalkWays;
-use crate::compiler::nav::world::body::{Footprint, SNAP_RADIUS, STEP_COST_16, step_cost_16};
+use crate::compiler::nav::world::body::{
+    AFLOAT_CLIMB_OUT_CELLS, Footprint, SNAP_RADIUS, STEP_COST_16, step_cost_16,
+};
 use crate::compiler::nav::world::{Liveness, World};
 use crate::compiler::nav::{DW_WAYPOINT_NOT_STANDABLE, MovePlan};
 use crate::compiler::plan::{Plan, RegionEvents, Step};
@@ -138,7 +140,78 @@ impl World {
         fp: &Footprint,
         avoid: &dyn Fn([i32; 3]) -> bool,
     ) -> Option<Vec<[i32; 3]>> {
-        self.search(start, goal, fp, avoid, &|_| 1)
+        self.search(start, goal, fp, avoid, &|_| 1, false)
+    }
+
+    /// **The route leg's walk** (spec-0134 §10): [`World::find_path`] with the
+    /// water moves added — into a connected body of water, through it in every
+    /// direction, and out over the climb-out band — each water step priced at
+    /// the swim rate. Only the critical path's legs (and their export) ask this;
+    /// every other proof keeps the dry walk.
+    pub fn find_route(&self, start: [i32; 3], goal: [i32; 3]) -> Option<Vec<[i32; 3]>> {
+        self.search(start, goal, &Footprint::player(), &|_| false, &|_| 1, true)
+    }
+
+    /// A player body afloat or submerged with its feet in `c`: water at the
+    /// feet (never lava, never a lethal volume) and water or air at the head.
+    pub fn swims_in(&self, c: [i32; 3]) -> bool {
+        let head = [c[0], c[1] + 1, c[2]];
+        self.is_water(c) && (self.is_water(head) || !self.is_occupied(head))
+    }
+
+    /// A body in `c` with water over its head too: a submerged cell, the run
+    /// of which a leg's breath debt is printed against.
+    pub fn submerged(&self, c: [i32; 3]) -> bool {
+        self.is_water(c) && self.is_water([c[0], c[1] + 1, c[2]])
+    }
+
+    /// The water moves out of `c` (spec-0134 §10). From a standable cell: into
+    /// an adjacent water cell at or under its level. From a water cell: to
+    /// every adjacent water cell of the body (a swimmer rises and dives), and
+    /// out onto a standable cell beside it within the climb-out band the
+    /// stranding proof uses (`AFLOAT_CLIMB_OUT_CELLS`), with headroom over the
+    /// water for the lift.
+    fn swim_moves(&self, c: [i32; 3], fp: &Footprint) -> Vec<[i32; 3]> {
+        const HORIZ: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+        let mut out = Vec::new();
+        if self.swims_in(c) {
+            for d in [
+                [-1, 0, 0],
+                [1, 0, 0],
+                [0, 0, -1],
+                [0, 0, 1],
+                [0, -1, 0],
+                [0, 1, 0],
+            ] {
+                let n = [c[0] + d[0], c[1] + d[1], c[2] + d[2]];
+                if self.swims_in(n) {
+                    out.push(n);
+                }
+            }
+            for (dx, dz) in HORIZ {
+                for rise in 0..=AFLOAT_CLIMB_OUT_CELLS {
+                    let up = [c[0] + dx, c[1] + rise, c[2] + dz];
+                    let headroom = (c[1] + 1..=c[1] + rise + 1).all(|y| {
+                        !self.is_occupied([c[0], y, c[2]]) || self.is_water([c[0], y, c[2]])
+                    });
+                    if headroom && self.standable_fp(up, fp) {
+                        out.push(up);
+                        break;
+                    }
+                }
+            }
+        } else if self.standable_fp(c, fp) {
+            for (dx, dz) in HORIZ {
+                for dy in [0, -1] {
+                    let n = [c[0] + dx, c[1] + dy, c[2] + dz];
+                    if self.swims_in(n) {
+                        out.push(n);
+                        break;
+                    }
+                }
+            }
+        }
+        out
     }
 
     /// **A staged walk's route**: [`World::find_path_fp`] over the same walk
@@ -156,7 +229,7 @@ impl World {
         fp: &Footprint,
         ways: &WalkWays<'_>,
     ) -> Option<Vec<[i32; 3]>> {
-        self.search(start, goal, fp, &|_| false, &|c| ways.toll(c))
+        self.search(start, goal, fp, &|_| false, &|c| ways.toll(c), false)
     }
 
     /// The one A* every route above asks: `avoid` withholds cells, `toll`
@@ -169,6 +242,7 @@ impl World {
         fp: &Footprint,
         avoid: &dyn Fn([i32; 3]) -> bool,
         toll: &dyn Fn([i32; 3]) -> u32,
+        swim: bool,
     ) -> Option<Vec<[i32; 3]>> {
         if avoid(start) || avoid(goal) {
             return None;
@@ -201,12 +275,33 @@ impl World {
             if g > *g_score.get(&cur).unwrap_or(&u32::MAX) {
                 continue;
             }
-            let here = self.feet_16_fp(cur, fp);
-            for n in self.neighbors_fp(cur, fp) {
+            let wet = swim && self.swims_in(cur);
+            let mut next = if wet {
+                Vec::new()
+            } else {
+                self.neighbors_fp(cur, fp)
+            };
+            if swim {
+                for n in self.swim_moves(cur, fp) {
+                    if !next.contains(&n) {
+                        next.push(n);
+                    }
+                }
+            }
+            let here = if wet { 0 } else { self.feet_16_fp(cur, fp) };
+            for n in next {
                 if avoid(n) {
                     continue;
                 }
-                let tentative = g + step_cost_16(here, self.feet_16_fp(n, fp)) * toll(n).max(1);
+                // spec-0134 §10: a step into or out of water is priced at the
+                // swim rate; the flat-step heuristic stays admissible because
+                // the swim is slower than the walk.
+                let cost = if wet || (swim && self.swims_in(n)) {
+                    swim_step_cost()
+                } else {
+                    step_cost_16(here, self.feet_16_fp(n, fp))
+                };
+                let tentative = g + cost * toll(n).max(1);
                 if tentative < *g_score.get(&n).unwrap_or(&u32::MAX) {
                     came_from.insert(n, cur);
                     g_score.insert(n, tentative);
@@ -216,6 +311,16 @@ impl World {
         }
         None
     }
+}
+
+/// The A* cost of one swum block (spec-0134 §10): the flat step's cost scaled
+/// by the measured swim rate over the walk's (`pacing.ticks-per-block-swimming`
+/// over `walk.ticks-per-block`), rounded up — never under the flat step, so the
+/// route's heuristic stays admissible.
+pub(in crate::compiler::nav) fn swim_step_cost() -> u32 {
+    let ratio = delvewright_dsl::metrics::body::swim_ticks_per_block()
+        / delvewright_dsl::metrics::walk_ticks_per_block();
+    ((f64::from(STEP_COST_16) * ratio).ceil() as u32).max(STEP_COST_16)
 }
 
 /// The player-visited critical-path positions in order, each tagged with whether
@@ -804,6 +909,10 @@ pub struct LegRoute {
     /// proven over. Exported in the waypoint metadata so the harness bot drives
     /// the climb the compiler proved; empty for every leg that climbs nothing.
     pub climbs: Vec<crate::compiler::nav::ClimbRun>,
+    /// The cells of `cells` a body swims in (spec-0134 §10), in path order —
+    /// exported as the leg's `water` so the harness admits liquid on this leg
+    /// and no other; empty for every dry leg.
+    pub water: Vec<[i32; 3]>,
     /// The runtime-region state in force while the player walks this leg — the
     /// world the A* above actually ran in ([`World::walked_leg_region_state`]).
     ///
@@ -844,7 +953,7 @@ impl LegRoute {
         let w: &World = owned.as_ref().unwrap_or(world);
         let start = w.snap_standable(from, SNAP_RADIUS)?;
         let goal = *self.cells.last()?;
-        w.find_path(start, goal)
+        w.find_route(start, goal)
     }
 }
 
@@ -941,7 +1050,10 @@ pub fn verify_exported_routes(world: &World, routes: &[LegRoute]) -> Result<(), 
         for &cell in &leg.cells {
             // A cell a route holds a body in on a climb (spec-0099) is a cell the
             // body can be in, though it stands on nothing.
-            if !leg_world.holds_body(cell) {
+            // A water cell of a route (spec-0134 §10) holds a body afloat.
+            if !leg_world.holds_body(cell)
+                && !(leg.water.contains(&cell) && leg_world.swims_in(cell))
+            {
                 return Err(Failure {
                     code: DW_WAYPOINT_NOT_STANDABLE,
                     message: format!(

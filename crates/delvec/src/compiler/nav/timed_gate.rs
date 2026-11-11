@@ -507,6 +507,7 @@ mod tests {
             cells: vec![start],
             use_gates: Vec::new(),
             climbs: Vec::new(),
+            water: Vec::new(),
             region_state: RegionState::default(),
         }
     }

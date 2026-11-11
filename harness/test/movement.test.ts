@@ -5,6 +5,8 @@ import {
   allowNonCollidingEntities,
   configureLeg,
   parkourFor,
+  swimFor,
+  SWIM_LIQUID_COST,
   describeStuckNeighbours,
   NON_COLLIDING_ENTITY_TYPES,
   partitionByPassability,
@@ -197,4 +199,20 @@ test("isDoorByHand is every door but the iron one", () => {
   assert.equal(isDoorByHand("iron_door"), false);
   assert.equal(isDoorByHand("iron_trapdoor"), false);
   assert.equal(isDoorByHand("oak_fence_gate"), false);
+});
+
+// spec-0134 §10: liquid is admitted on a leg the compiler proved swims, and on
+// no other; free motion stays off either way.
+test("swimFor admits liquid on a water leg only (spec-0134)", () => {
+  const m: { liquidCost?: number; allowFreeMotion?: boolean } = { liquidCost: 1, allowFreeMotion: true };
+  assert.equal(swimFor(m, false), false);
+  assert.equal(m.liquidCost, Number.POSITIVE_INFINITY);
+  assert.equal(m.allowFreeMotion, false);
+  assert.equal(swimFor(m, true), true);
+  assert.equal(m.liquidCost, SWIM_LIQUID_COST);
+  assert.ok(Number.isFinite(m.liquidCost));
+  assert.equal(m.allowFreeMotion, false);
+  const leg = freshMovements();
+  configureLeg(new FakeControlBot(), leg, false);
+  assert.equal(leg.liquidCost, Number.POSITIVE_INFINITY, "a leg starts dry");
 });

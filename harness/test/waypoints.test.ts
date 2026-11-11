@@ -728,3 +728,35 @@ test("a leg's doors parse, are waypoints of the leg, and are asserted crossed (s
   assert.deepEqual(doorsCrossed([[0, 64, 3]], [[0, 64, 2], [0, 64, 3]]), [{ door: [0, 64, 3], crossed: true }]);
   assert.deepEqual(doorsCrossed([[0, 64, 3]], [[0, 64, 2], [0, 65, 3]]), [{ door: [0, 64, 3], crossed: false }]);
 });
+
+// spec-0134 §10: a leg's water parses, each cell a waypoint of the leg; one
+// that is not is a structural fault; a dry leg carries none.
+test("a leg's water parses, is waypoints of the leg, and is empty on a dry leg (spec-0134)", () => {
+  const leg = {
+    from: [0, 64, 0],
+    to: [0, 64, 6],
+    waypoints: [
+      [0, 64, 0],
+      [0, 63, 2],
+      [0, 63, 3],
+      [0, 64, 6],
+    ],
+    water: [
+      [0, 63, 2],
+      [0, 63, 3],
+    ],
+  };
+  const wp = parseWaypoints({ version: "0.4.0", campaign_id: "pool", legs: [leg] });
+  assert.deepEqual(wp.legs[0]!.water, [
+    [0, 63, 2],
+    [0, 63, 3],
+  ]);
+  assert.equal(nextLegWaypoints(wp.legs, 0, [0, 64, 6], [0, 64, 0]).water.length, 2);
+  assert.deepEqual(nextLegWaypoints(wp.legs, 0, [9, 9, 9]).water, []);
+  assert.throws(
+    () => parseWaypoints({ version: "0.4.0", campaign_id: "pool", legs: [{ ...leg, water: [[5, 63, 3]] }] }),
+    (e: unknown) => e instanceof WaypointsParseError && e.pointer === "/legs/0/water/0",
+  );
+  const dry = parseWaypoints({ version: "0.4.0", campaign_id: "pool", legs: [{ ...leg, water: undefined }] });
+  assert.deepEqual(dry.legs[0]!.water, []);
+});
