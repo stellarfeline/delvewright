@@ -560,10 +560,16 @@ pub fn encounters(plan: &Plan) -> Vec<Encounter> {
         // over-generous claim here is a proof that measures the delve against a
         // rest point the player never had. An encounter with no governing
         // checkpoint reports none, and the ladder judges it for what it is.
+        //
+        // "Last" is by the step that fires it, never by where the document
+        // writes it: `plan.checkpoints` is content-ordered, and a campaign
+        // whose quests are written in another order than the path walks them
+        // has an earlier checkpoint later in that list.
         let checkpoint = plan
             .checkpoints
             .iter()
-            .rfind(|cp| cp.fire_step < i)
+            .filter(|cp| cp.fire_step < i)
+            .max_by_key(|cp| cp.fire_step)
             .map(|cp| cp.index);
         out.push(Encounter {
             wave_id: wave_id.clone(),
