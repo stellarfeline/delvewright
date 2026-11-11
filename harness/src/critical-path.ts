@@ -104,7 +104,13 @@ export const CRITICAL_PATH_FORMAT_VERSION = 9;
 export interface CensusRow {
   readonly state: string;
   readonly objective: string;
-  readonly select: string;
+  /** The selector terms that pick the set's bodies — exactly one of this and
+   * `riders` is present. */
+  readonly select?: string;
+  /** spec-0135 §5: the tag of the vehicle whose riders the datum counts. A
+   * rider is placed by boarding, never by a teleport, so the row rides on the
+   * `ride` step that boards it, and the count is read at the ride's end. */
+  readonly riders?: string;
   readonly region: readonly [Vec3Tuple, Vec3Tuple];
   readonly count: number;
 }
@@ -1101,7 +1107,15 @@ export function parseCensus(value: unknown, pointer: string): CensusRow[] {
   return value.map((row, i) => {
     const at = `${pointer}/${i}`;
     if (!isRecord(row)) fail(at, `must be an object, got ${describe(row)}`);
-    rejectUnknownKeys(row, ["state", "objective", "select", "region", "count"], at);
+    rejectUnknownKeys(row, ["state", "objective", "select", "riders", "region", "count"], at);
+    const select = row["select"];
+    const riders = row["riders"];
+    if ((select === undefined) === (riders === undefined)) {
+      fail(at, "carries exactly one of `select` (bodies put in the box) and `riders` (a vehicle boarded)");
+    }
+    if (riders !== undefined && (typeof riders !== "string" || !/^dw_vehicle_[a-z0-9_]+$/.test(riders))) {
+      fail(`${at}/riders`, `must be a vehicle's tag (\`dw_vehicle_<id>\`), got ${describe(riders)}`);
+    }
     const region = row["region"];
     if (!Array.isArray(region) || region.length !== 2) {
       fail(`${at}/region`, `must be [lo, hi], got ${describe(region)}`);
@@ -1111,7 +1125,8 @@ export function parseCensus(value: unknown, pointer: string): CensusRow[] {
     return {
       state: requireString(row, "state", at),
       objective: requireString(row, "objective", at),
-      select: requireString(row, "select", at),
+      ...(select === undefined ? {} : { select: requireString(row, "select", at) }),
+      ...(riders === undefined ? {} : { riders: riders as string }),
       region: [
         requireVec3({ lo: region[0] }, "lo", `${at}/region`),
         requireVec3({ hi: region[1] }, "hi", `${at}/region`),

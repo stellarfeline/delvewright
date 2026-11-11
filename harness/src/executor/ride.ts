@@ -2,7 +2,8 @@
 
 import type { Entity } from "prismarine-entity";
 import type { RideStep, Vec3Tuple } from "../critical-path.ts";
-import { TRANSPORT_NEAR, TRANSPORT_NEAR_Y } from "../critical-path.ts";
+import { TRANSPORT_NEAR, TRANSPORT_NEAR_Y, censusOf } from "../critical-path.ts";
+import { CENSUS_SETTLE_MS } from "./census.ts";
 import { isRejection } from "../rejection.ts";
 import { delay } from "./connection.ts";
 import { LEDGER_POLL_MS, SCORE_TRACK_TIMEOUT_MS } from "./score.ts";
@@ -270,6 +271,30 @@ export const methods = {
       );
     }
     const arrived = reading.pos;
+    // spec-0135 §5: a ride whose objective waits for its own rider carries
+    // that census. The bot, aboard, is the one body it counts: one census
+    // period, then the datum is read on the server, and a count that
+    // disagrees fails the ride by name.
+    for (const row of censusOf(step)) {
+      if (row.riders === undefined) continue;
+      if (row.riders !== tag) {
+        failRide(`its census \`${row.state}\` counts the riders of ${row.riders}, not of the vehicle ridden`, { reported, serverSeen, seat: arrived });
+      }
+      await delay(CENSUS_SETTLE_MS);
+      const read = await this.askTerm({ objective: row.objective, holder: "#party", min: 1, max: 1, negate: false });
+      const passed = read === true && row.count === 1;
+      const detail =
+        read === undefined
+          ? `the server never said what \`${row.objective}\` holds`
+          : read === false
+            ? `the game's census of \`${row.state}\` does not read 1 with the bot aboard`
+            : row.count === 1
+              ? `\`${row.state}\` reads 1, the bot aboard`
+              : `\`${row.state}\` reads 1 with the bot aboard, and the step needs ${row.count}: one bot is one rider`;
+      this.censusResults.push({ state: row.state, placed: 1, passed, detail });
+      process.stderr.write(`[census] ${row.state}: ${passed ? "counted" : "FAILED"} — ${detail}\n`);
+      if (!passed) failRide(`census ${row.state}: ${detail}`, { reported, serverSeen, seat: arrived });
+    }
     bot._client.write("player_input", { inputs: { shift: true } });
     await delay(400);
     bot._client.write("player_input", { inputs: { shift: false } });

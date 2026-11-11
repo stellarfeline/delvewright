@@ -1393,6 +1393,20 @@ function boatRide(): Record<string, unknown> {
   };
 }
 
+test("a ride step carries a riders census, and a census row is one of select and riders", () => {
+  const row = { state: "state/aboard", objective: "dw.s_aboard", riders: "dw_vehicle_gull", region: [[0, 60, 0], [20, 70, 20]], count: 1 };
+  const ride = parseCriticalPath(withRide({ ...boatRide(), census: [row] })).steps[2]!;
+  assert.equal(ride.census?.[0]?.riders, "dw_vehicle_gull");
+  assert.equal(ride.census?.[0]?.select, undefined);
+  for (const bad of [
+    { ...row, select: "tag=dw_wave_x" },
+    { state: row.state, objective: row.objective, region: row.region, count: 1 },
+    { ...row, riders: "gull" },
+  ]) {
+    assert.throws(() => parseCriticalPath(withRide({ ...boatRide(), census: [bad] })), CriticalPathParseError);
+  }
+});
+
 test("a ride step parses with its fields per kind", () => {
   const boat = parseCriticalPath(withRide(boatRide())).steps[2]!;
   assert.equal(boat.action, "ride");

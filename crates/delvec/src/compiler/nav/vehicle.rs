@@ -160,6 +160,36 @@ pub fn vehicle_plans(
     out
 }
 
+/// **The `riders` censuses a ridden objective waits on** (spec-0135 §5): of
+/// the objective's `requires_state`, the terms over a datum that counts the
+/// riders of the vehicle its own leg is declared ridden on, and that need at
+/// least one aboard — `(datum, riders needed)`. Empty for an objective that
+/// declares no ride or waits for no rider.
+pub fn riders_gates<'c>(
+    campaign: &'c delvewright_dsl::Campaign,
+    o: &'c delvewright_dsl::Objective,
+) -> Vec<(&'c delvewright_dsl::StateDecl, i32)> {
+    let Some(ride) = o.ride() else {
+        return Vec::new();
+    };
+    o.requires_state()
+        .iter()
+        .filter_map(|cmp| {
+            let decl = campaign.quests.content.state_decl(cmp.state.as_str())?;
+            let delvewright_dsl::CensusOf::Riders(v) = &decl.counts.as_ref()?.of else {
+                return None;
+            };
+            let need = match cmp.op {
+                delvewright_dsl::CompareOp::AtLeast | delvewright_dsl::CompareOp::Equals => {
+                    cmp.value
+                }
+                _ => 0,
+            };
+            (v == ride && need >= 1).then_some((decl, need))
+        })
+        .collect()
+}
+
 /// One ride the route proof takes (spec-0135 §4).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RideTake {

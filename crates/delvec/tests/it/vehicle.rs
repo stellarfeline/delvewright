@@ -53,6 +53,8 @@ struct Bay {
     goal: Option<&'static str>,
     /// Extra members of the quests document's content: `"state": […], …`.
     more: &'static str,
+    /// Extra members of the second objective, from a leading comma.
+    gate: &'static str,
     /// A carrot on a stick in every class's kit.
     carrot: bool,
     /// A second class, whose kit carries no carrot on a stick.
@@ -206,6 +208,7 @@ fn write(tag: &str, bay: Bay, vehicles: &str, talk: &str) -> (PathBuf, PathBuf) 
         .map(|v| format!(r#", "ride": "{v}""#))
         .unwrap_or_default();
     let goal = bay.goal.unwrap_or("anchor/exit-west");
+    let gate = bay.gate;
     let more = if bay.more.is_empty() {
         String::new()
     } else {
@@ -229,7 +232,7 @@ fn write(tag: &str, bay: Bay, vehicles: &str, talk: &str) -> (PathBuf, PathBuf) 
         "objectives": [
           {{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }},
           {{ "type": "reach-anchor", "id": "obj/exit", "anchor": "{goal}",
-             "radius": 1, "after": ["obj/talk"]{ride} }}
+             "radius": 1, "after": ["obj/talk"]{ride}{gate} }}
         ],
         "on_objective_complete": {{
           "obj/talk": [ {talk} ]
@@ -1117,6 +1120,62 @@ fn a_cart_at_the_open_end_of_its_line_is_refused() {
     );
     assert_eq!(code, "DW1097", "{msg}");
     assert!(msg.contains("rolls it off its rail"), "{msg}");
+}
+
+/// spec-0135 §5: a ridden objective that waits for its own rider. The ride
+/// goes into the objective's volume — it completes under the rider and
+/// nowhere else — and the `ride` step carries the census the bot, aboard,
+/// answers. Without the gate the same ride keeps out of the volume and
+/// carries none.
+#[test]
+fn a_ride_whose_objective_waits_for_its_rider_enters_its_volume() {
+    let pig_ride = |tag: &str, gate: &'static str, more: &'static str| {
+        let out = build(
+            tag,
+            Bay {
+                bridge: true,
+                ride: Some("vehicle/race-pig"),
+                carrot: true,
+                gate,
+                more,
+                ..Bay::default()
+            },
+            pig(),
+        );
+        let r = rides(&out);
+        assert_eq!(r.len(), 1, "{tag}: {r:#?}");
+        r[0].clone()
+    };
+    // The objective's volume, as the ungated ride's step names it (a gated
+    // objective is not armed while its gate is shut, so its own step names
+    // none).
+    let free = pig_ride("aboard-ungated", "", "");
+    let k = free["keep_out"][0].clone();
+    let (lo, hi) = (cell(&k["lo"]), cell(&k["hi"]));
+    let touches = |ride: &serde_json::Value| {
+        ride["medium"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(cell)
+            .chain([cell(&ride["leave"])])
+            .any(|c| body_touches(c, lo, hi))
+    };
+    assert!(!touches(&free), "{free}");
+    assert!(free.get("census").is_none(), "{free}");
+    let gated = pig_ride(
+        "aboard-gated",
+        r#", "requires_state": [ { "state": "state/aboard", "op": "at-least", "value": 1 } ]"#,
+        r#""state": [ { "id": "state/aboard", "scope": "party",
+            "counts": { "region": { "anchor": "anchor/room", "extent": [9, 3, 3] },
+                        "of": { "riders": "vehicle/race-pig" } } } ]"#,
+    );
+    assert!(touches(&gated), "the ride goes into the volume: {gated}");
+    let row = &gated["census"][0];
+    assert_eq!(row["state"], "state/aboard", "{gated}");
+    assert_eq!(row["riders"], "dw_vehicle_race_pig");
+    assert_eq!(row["count"], 1);
+    assert!(row.get("select").is_none());
 }
 
 /// A `ride` that names no declared vehicle is refused at validation.

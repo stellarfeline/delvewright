@@ -612,6 +612,7 @@ pub fn take_branch_links(
             steps: &cp.steps,
             vehicles: &plan.vehicles,
             declared: &plan.declared_rides,
+            aboard: &plan.rides_aboard,
         },
     )
     .1
@@ -1047,6 +1048,7 @@ pub fn check_branch_path(
             steps: &cp.steps,
             vehicles: &plan.vehicles,
             declared: &plan.declared_rides,
+            aboard: &plan.rides_aboard,
         },
     )
     .1

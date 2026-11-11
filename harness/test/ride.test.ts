@@ -32,6 +32,9 @@ test("arrival is the landing tolerance around the last cell", () => {
 });
 
 /** A mock executor: a bot that mounts and reports, and a server read the test scripts. */
+/** What the mock server answers a census read with; a test sets it. */
+const census: { read: boolean | undefined } = { read: true };
+
 function mock(serverReads: { riding: boolean; pos: Vec3Tuple }[]) {
   const sent: { name: string; data: unknown }[] = [];
   const walked: Vec3Tuple[] = [];
@@ -56,6 +59,8 @@ function mock(serverReads: { riding: boolean; pos: Vec3Tuple }[]) {
       walked.push(to);
     },
     resyncBody: async () => true,
+    censusResults: [] as { state: string; passed: boolean; detail: string }[],
+    askTerm: async () => census.read,
     readRide: async () => {
       assert.ok(mounted, "the server is read only after the click");
       return reads.length > 1 ? reads.shift()! : reads[0]!;
@@ -102,6 +107,56 @@ test("the vehicle the server left behind is named", async () => {
   const far = { ...step, medium: [[8, 67, 3], [12, 67, 3], [16, 67, 3]] as Vec3Tuple[] };
   await assert.rejects(() => methods.ride.call(self as never, far), /did not take the ride/);
   assert.equal((self.rides[0] as { passed: boolean }).passed, false);
+});
+
+// spec-0135 §5: a ride whose objective waits for its own rider.
+const aboard = {
+  state: "state/aboard",
+  objective: "dw.s_aboard",
+  riders: "dw_vehicle_race_pig",
+  region: [[0, 60, 0], [20, 70, 20]] as [Vec3Tuple, Vec3Tuple],
+  count: 1,
+};
+const rideReads = (): { riding: boolean; pos: Vec3Tuple }[] => [
+  { riding: true, pos: [8.5, 67.3, 3.5] },
+  { riding: true, pos: [10.5, 67.3, 3.5] },
+  { riding: false, pos: [11.5, 67, 4.5] },
+];
+
+test("a riders census is read at the ride's end, with the bot aboard", async () => {
+  census.read = true;
+  const { self } = mock(rideReads());
+  await methods.ride.call(self as never, { ...step, census: [aboard] });
+  assert.equal(self.censusResults.length, 1);
+  assert.ok(self.censusResults[0]!.passed, self.censusResults[0]!.detail);
+  assert.ok((self.rides[0] as { passed: boolean }).passed);
+});
+
+test("a riders census the game does not count fails the ride by name", async () => {
+  census.read = false;
+  const { self } = mock(rideReads());
+  await assert.rejects(
+    () => methods.ride.call(self as never, { ...step, census: [aboard] }),
+    /census state\/aboard: .*does not read 1 with the bot aboard/,
+  );
+  assert.equal((self.rides[0] as { passed: boolean }).passed, false);
+  census.read = undefined;
+  const silent = mock(rideReads());
+  await assert.rejects(() => methods.ride.call(silent.self as never, { ...step, census: [aboard] }), /never said/);
+  census.read = true;
+});
+
+test("a riders census that needs two, or names another vehicle, fails by name", async () => {
+  const two = mock(rideReads());
+  await assert.rejects(
+    () => methods.ride.call(two.self as never, { ...step, census: [{ ...aboard, count: 2 }] }),
+    /one bot is one rider/,
+  );
+  const other = mock(rideReads());
+  await assert.rejects(
+    () => methods.ride.call(other.self as never, { ...step, census: [{ ...aboard, riders: "dw_vehicle_gull" }] }),
+    /not of the vehicle ridden/,
+  );
 });
 
 test("a click the server does not seat fails by name", async () => {

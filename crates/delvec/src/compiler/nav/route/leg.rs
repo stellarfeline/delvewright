@@ -188,11 +188,18 @@ pub(crate) struct Carries<'p> {
     pub(in crate::compiler::nav) vehicles: &'p [crate::compiler::nav::vehicle::VehiclePlan],
     /// The legs the campaign declares ridden: objective id → vehicle index.
     pub(in crate::compiler::nav) declared: &'p BTreeMap<String, usize>,
+    /// The ridden objectives that wait for their own rider
+    /// ([`crate::compiler::plan::Plan::rides_aboard`]).
+    pub(in crate::compiler::nav) aboard: &'p BTreeSet<String>,
 }
 
 /// The declared rides of a proof that carries none.
 #[cfg(test)]
 static NO_RIDES: BTreeMap<String, usize> = BTreeMap::new();
+
+/// The riders-gated objectives of a proof that carries none.
+#[cfg(test)]
+static NO_ABOARD: BTreeSet<String> = BTreeSet::new();
 
 impl<'p> Carries<'p> {
     /// Nothing to be carried by: the walk proof alone.
@@ -205,6 +212,7 @@ impl<'p> Carries<'p> {
             steps: &[],
             vehicles: &[],
             declared: &NO_RIDES,
+            aboard: &NO_ABOARD,
         }
     }
 
@@ -217,6 +225,7 @@ impl<'p> Carries<'p> {
             steps: &plan.critical_path,
             vehicles: &plan.vehicles,
             declared: &plan.declared_rides,
+            aboard: &plan.rides_aboard,
         }
     }
 
@@ -748,6 +757,10 @@ fn ride_leg(
         completion,
         ..
     }) = carries.steps.get(end.src_step)
+        // …unless the objective waits for its own rider (a `riders` census of
+        // this vehicle in its gate): it completes under the rider and nowhere
+        // else, so the ride goes into its volume.
+        && !carries.aboard.contains(objective_id)
     {
         st.keep_out.push((
             objective_id.clone(),

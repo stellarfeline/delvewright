@@ -561,7 +561,36 @@ pub(super) fn critical_path_json(
             // Format 8 (spec-0134 §1): a step gated on a counted datum carries
             // the census the harness stands in for the mob's own walk —
             // present only when the step's gate reads one.
-            let census = step_census(plan, s);
+            let mut census = step_census(plan, s);
+            // spec-0135 §5: a ride whose objective waits for its own rider
+            // carries that census — the bot, aboard at the ride's end, is the
+            // body it counts.
+            if let Step::Ride { vehicle_id, .. } = s
+                && let Some(o) = walked.get(i + 1).and_then(|n| n.objective())
+                && let Some(obj) = plan
+                    .campaign
+                    .quests
+                    .content
+                    .quests
+                    .iter()
+                    .flat_map(|q| &q.objectives)
+                    .find(|x| x.id().as_str() == o)
+            {
+                for (decl, need) in crate::compiler::nav::vehicle::riders_gates(plan.campaign, obj)
+                {
+                    let Some((lo, hi)) = decl.counts.as_ref().and_then(|k| plan.zone_box(&k.region))
+                    else {
+                        continue;
+                    };
+                    census.push(json!({
+                        "state": decl.id.as_str(),
+                        "objective": plan::state_score(decl.id.as_str()),
+                        "riders": format!("dw_vehicle_{}", plan::safe_local(vehicle_id)),
+                        "region": [lo, hi],
+                        "count": need,
+                    }));
+                }
+            }
             if !census.is_empty()
                 && let Some(obj) = step.as_object_mut()
             {

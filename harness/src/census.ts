@@ -28,7 +28,8 @@ export function censusCentre(row: CensusRow): [number, number, number] {
  * nothing and asks only that the box hold none.
  */
 export function censusCommands(row: CensusRow): string[] {
-  if (row.count === 0) return [];
+  // A vehicle's riders are placed by boarding (the `ride` step), never here.
+  if (row.count === 0 || row.select === undefined) return [];
   const [x, y, z] = censusCentre(row);
   return [`/tp @e[${row.select},limit=${row.count},sort=nearest] ${x} ${y} ${z}`];
 }
